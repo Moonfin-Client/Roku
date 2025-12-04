@@ -1,90 +1,145 @@
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
+import "pkg:/source/api/sdk.bs"
 import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
 
 sub init()
+    m.name = m.top.findNode("name")
+    m.birthInfo = m.top.findNode("birthInfo")
     m.dscr = m.top.findNode("description")
-    m.vidsList = m.top.findNode("extrasGrid")
-    m.btnGrp = m.top.findNode("buttons")
-    m.btnGrp.observeField("escape", "onButtonGroupEscaped")
-    m.favBtn = m.top.findNode("favorite-button")
-    m.extrasGrp = m.top.findNode("extrasGrp")
-    m.extrasGrp.opacity = 1.0
+    m.personImage = m.top.findNode("personImage")
+    m.favoriteButtonGroup = m.top.findNode("favoriteButtonGroup")
+    m.favoriteIcon = m.top.findNode("favoriteIcon")
+    m.favoriteText = m.top.findNode("favoriteText")
+
+    ' Find the extrasSlider and get its child extrasGrid
+    m.extrasSlider = m.top.findNode("extrasSlider")
+    if isValid(m.extrasSlider)
+        m.vidsList = m.extrasSlider.findNode("extrasGrid")
+    end if
+
     m.top.optionsAvailable = false
+
+    ' Set up focus handling
+    m.top.observeField("setFocus", "onSetFocus")
+end sub
+
+sub onSetFocus()
+    if m.top.setFocus and isValid(m.favoriteButtonGroup)
+        m.favoriteButtonGroup.setFocus(true)
+    end if
 end sub
 
 sub loadPerson()
     item = m.top.itemContent
     itemData = item.json
     m.top.Id = itemData.id
-    name = m.top.findNode("Name")
-    name.Text = itemData.Name
-    name.font.size = 70
-    if itemData.PremiereDate <> invalid and itemData.PremiereDate <> ""
-        lifeStringLabel = createObject("rosgnode", "Label")
-        lifeStringLabel.id = "premierDate"
-        lifeStringLabel.font = "font:SmallestBoldSystemFont"
-        lifeStringLabel.height = "100"
-        lifeStringLabel.vertAlign = "bottom"
-        name.vertAlign = "top"
-        name.font.size = 60
-        m.top.findNode("title_rectangle").appendChild(lifeStringLabel)
+
+    ' Set person name
+    if isValid(m.name) and isValid(itemData.Name)
+        m.name.text = itemData.Name
+    end if
+
+    ' Set birth info with date and age
+    if isValid(m.birthInfo) and isValidAndNotEmpty(itemData.PremiereDate)
         birthDate = CreateObject("roDateTime")
         birthDate.FromISO8601String(itemData.PremiereDate)
-        deathDate = CreateObject("roDatetime")
-        lifeString = tr("Born") + ": " + birthDate.AsDateString("short-month-no-weekday")
 
-        if itemData.EndDate <> invalid and itemData.EndDate <> ""
-            deathDate.FromISO8601String(itemData.EndDate)
-            lifeString = lifeString + " * " + tr("Died") + ": " + deathDate.AsDateString("short-month-no-weekday")
+        ' Format: Born (Oct 9, 1964 (61))
+        birthString = tr("Born") + " " + birthDate.AsDateString("short-month-no-weekday")
 
-        end if
-        ' Calculate age
-        age = deathDate.getYear() - birthDate.getYear()
-        if deathDate.getMonth() < birthDate.getMonth()
-            age--
-        else if deathDate.getMonth() = birthDate.getMonth()
-            if deathDate.getDayOfMonth() < birthDate.getDayOfMonth()
+        ' Calculate current age if still alive
+        if itemData.EndDate = invalid or itemData.EndDate = ""
+            currentDate = CreateObject("roDateTime")
+            age = currentDate.getYear() - birthDate.getYear()
+            if currentDate.getMonth() < birthDate.getMonth()
                 age--
+            else if currentDate.getMonth() = birthDate.getMonth()
+                if currentDate.getDayOfMonth() < birthDate.getDayOfMonth()
+                    age--
+                end if
             end if
+            birthString += " (" + stri(age).trim()
+        else
+            ' If deceased, show death date and age at death
+            deathDate = CreateObject("roDateTime")
+            deathDate.FromISO8601String(itemData.EndDate)
+            age = deathDate.getYear() - birthDate.getYear()
+            if deathDate.getMonth() < birthDate.getMonth()
+                age--
+            else if deathDate.getMonth() = birthDate.getMonth()
+                if deathDate.getDayOfMonth() < birthDate.getDayOfMonth()
+                    age--
+                end if
+            end if
+            birthString += " - " + deathDate.AsDateString("short-month-no-weekday") + " (" + stri(age).trim() + ")"
         end if
-        lifeString = lifeString + " * " + tr("Age") + ": " + stri(age)
-        lifeStringLabel.Text = lifeString
+
+        birthString += ")"
+        m.birthInfo.text = birthString
     end if
-    if itemData.Overview <> invalid and itemData.Overview <> ""
-        m.dscr.text = itemData.Overview
-    else
-        m.dscr.text = tr("Biographical information for this person is not currently available.")
-        m.dscr.horizAlign = "center"
-        m.dscr.vertAlign = "center"
+
+    ' Set biography
+    if isValid(m.dscr)
+        if isValidAndNotEmpty(itemData.Overview)
+            m.dscr.text = itemData.Overview
+        else
+            m.dscr.text = tr("Biographical information for this person is not currently available.")
+        end if
     end if
-    if item.posterURL <> invalid and item.posterURL <> ""
-        m.top.findnode("personImage").uri = item.posterURL
-    else
-        m.top.findnode("personImage").uri = "pkg:/images/baseline_person_white_48dp.png"
+
+    ' Set person image
+    if isValid(m.personImage)
+        if isValidAndNotEmpty(item.posterURL)
+            m.personImage.uri = item.posterURL
+        else
+            m.personImage.uri = "pkg:/images/baseline_person_white_48dp.png"
+        end if
     end if
-    m.vidsList.callFunc("loadPersonVideos", m.top.Id)
+
+    ' Load credits using task
+    if isValid(m.vidsList)
+        loadPersonVideos()
+    end if
 
     setFavoriteColor()
-    if not m.favBtn.hasFocus() then dscrShowFocus()
+
+    ' Set focus on favorite button after content loads
+    if isValid(m.favoriteButtonGroup)
+        timer = CreateObject("roSGNode", "Timer")
+        timer.duration = 0.05
+        timer.repeat = false
+        timer.observeField("fire", "focusFavoriteButton")
+        timer.control = "start"
+        m.focusTimer = timer
+    end if
 end sub
 
-sub dscrShowFocus()
-    m.dscr.setFocus(true)
-    group = m.global.sceneManager.callFunc("getActiveScene")
-    group.lastFocus = m.dscr
-    m.dscr.opacity = 1.0
-    m.top.findNode("dscrBorder").color = "#d0d0d0ff"
-end sub
-
-sub onButtonGroupEscaped()
-    key = m.btnGrp.escape
-    if key = "down"
-        m.dscr.setFocus(true)
+sub OnScreenShown()
+    if isValid(m.top.lastFocus)
+        m.top.lastFocus.setFocus(true)
         group = m.global.sceneManager.callFunc("getActiveScene")
-        group.lastFocus = m.dscr
-        m.dscr.opacity = 1.0
-        m.top.findNode("dscrBorder").color = "#d0d0d0ff"
+        group.lastFocus = m.top.lastFocus
+    else
+        if isValid(m.favoriteButtonGroup)
+            ' Small delay to ensure button is fully added to scene graph
+            timer = CreateObject("roSGNode", "Timer")
+            timer.duration = 0.05
+            timer.repeat = false
+            timer.observeField("fire", "focusFavoriteButton")
+            timer.control = "start"
+            m.focusTimer = timer
+        end if
+    end if
+end sub
+
+sub focusFavoriteButton()
+    if isValid(m.favoriteButtonGroup)
+        m.favoriteButtonGroup.setFocus(true)
+        group = m.global.sceneManager.callFunc("getActiveScene")
+        group.lastFocus = m.favoriteButtonGroup
+        m.top.lastFocus = m.favoriteButtonGroup
     end if
 end sub
 
@@ -92,8 +147,17 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
     if key = "OK"
-        if m.dscr.hasFocus()
-            createFullDscrDlg()
+        if m.favoriteButtonGroup.hasFocus()
+            toggleFavorite()
+            return true
+        else if isValid(m.vidsList) and m.vidsList.isInFocusChain()
+            ' User pressed OK on a grid item - navigate to that media
+            if isValid(m.vidsList.rowItemSelected) and m.vidsList.rowItemSelected.count() = 2
+                selectedItem = m.top.content.getChild(m.vidsList.rowItemSelected[0]).getChild(m.vidsList.rowItemSelected[1])
+                if isValid(selectedItem)
+                    m.top.selectedItem = selectedItem
+                end if
+            end if
             return true
         end if
         return false
@@ -105,51 +169,96 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if key = "down"
-        if m.dscr.hasFocus()
-            m.dscr.opacity = 0.6
-            m.top.findNode("dscrBorder").color = "#data202020ff"
-            m.vidsList.setFocus(true)
-            group = m.global.sceneManager.callFunc("getActiveScene")
-            group.lastFocus = m.vidsList
-            m.top.findNode("VertSlider").reverse = false
-            m.top.findNode("pplAnime").control = "start"
-            return true
+        if m.favoriteButtonGroup.hasFocus()
+            if isValid(m.vidsList)
+                m.vidsList.setFocus(true)
+                group = m.global.sceneManager.callFunc("getActiveScene")
+                group.lastFocus = m.vidsList
+                m.top.lastFocus = m.vidsList
+                if isValid(m.extrasSlider)
+                    vertSlider = m.extrasSlider.findNode("VertSlider")
+                    pplAnime = m.extrasSlider.findNode("pplAnime")
+                    if isValid(vertSlider) then vertSlider.reverse = false
+                    if isValid(pplAnime) then pplAnime.control = "start"
+                end if
+                return true
+            end if
         end if
     else if key = "up"
-        if m.dscr.hasFocus()
-            m.favBtn.setFocus(true)
+        if isValid(m.vidsList) and m.vidsList.isInFocusChain() and m.vidsList.itemFocused = 0
+            if isValid(m.extrasSlider)
+                vertSlider = m.extrasSlider.findNode("VertSlider")
+                pplAnime = m.extrasSlider.findNode("pplAnime")
+                if isValid(vertSlider) then vertSlider.reverse = true
+                if isValid(pplAnime) then pplAnime.control = "start"
+            end if
+            m.favoriteButtonGroup.setFocus(true)
             group = m.global.sceneManager.callFunc("getActiveScene")
-            group.lastFocus = m.favBtn
-            m.dscr.opacity = 0.6
-            m.top.findNode("dscrBorder").color = "#data202020ff"
-            return true
-        else if m.vidsList.isInFocusChain() and m.vidsList.itemFocused = 0
-            m.top.findNode("VertSlider").reverse = true
-            m.top.findNode("pplAnime").control = "start"
-            dscrShowFocus()
+            group.lastFocus = m.favoriteButtonGroup
+            m.top.lastFocus = m.favoriteButtonGroup
             return true
         end if
     end if
     return false
 end function
 
-sub setFavoriteColor()
-    fave = m.top.itemContent.favorite
-    fave_button = m.top.findNode("favorite-button")
-    if fave <> invalid and fave
-        fave_button.textColor = "#00ff00ff"
-        fave_button.focusedTextColor = "#269926ff"
-        fave_button.text = tr("Favorite")
-    else
-        fave_button.textColor = "0xddddddff"
-        fave_button.focusedTextColor = "#262626ff"
-        fave_button.text = tr("Set Favorite")
+' Load person videos using a task
+sub loadPersonVideos()
+    ' Create and configure the task
+    loadTask = CreateObject("roSGNode", "LoadExtrasTask")
+    loadTask.itemId = m.top.Id
+    loadTask.isPersonMode = true
+
+    ' Observe content field for when data is loaded
+    loadTask.observeField("content", "onPersonVideosLoaded")
+
+    ' Start the task
+    loadTask.control = "RUN"
+end sub
+
+' Handle loaded person videos
+sub onPersonVideosLoaded(event as object)
+    content = event.getData()
+    if isValid(content) and isValid(m.vidsList)
+        m.vidsList.callFunc("updateContent", content)
     end if
 end sub
 
-sub createFullDscrDlg()
-    if isAllValid([m.top.itemContent.json.Name, m.dscr.text])
-        m.global.sceneManager.callFunc("standardDialog", m.top.itemContent.json.Name, { data: ["<p>" + m.dscr.text + "</p>"] })
+sub toggleFavorite()
+    if not isValid(m.top.itemContent) then return
+    itemData = m.top.itemContent.json
+    if not isValid(itemData) or not isValid(itemData.id) then return
+
+    newStatus = not chainLookupReturn(itemData, "UserData.IsFavorite", false)
+    if newStatus
+        api.users.MarkFavorite(m.global.session.user.id, itemData.id)
+    else
+        api.users.UnmarkFavorite(m.global.session.user.id, itemData.id)
+    end if
+
+    if isChainValid(itemData, "UserData")
+        itemData.UserData.IsFavorite = newStatus
+    end if
+
+    setFavoriteColor()
+end sub
+
+sub setFavoriteColor()
+    if not isValid(m.top.itemContent) then return
+    fave = chainLookupReturn(m.top.itemContent.json, "UserData.IsFavorite", false)
+
+    if isValid(m.favoriteIcon)
+        if fave
+            m.favoriteIcon.blendColor = "#CC3333"
+            if isValid(m.favoriteText)
+                m.favoriteText.text = tr("Favorited")
+            end if
+        else
+            m.favoriteIcon.blendColor = "#FFFFFF"
+            if isValid(m.favoriteText)
+                m.favoriteText.text = tr("Favorite")
+            end if
+        end if
     end if
 end sub
 

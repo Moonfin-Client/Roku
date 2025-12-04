@@ -2210,5 +2210,49 @@
             <translation>Burn in all subtitles when transcoding is triggered. This ensures subtitle synchronization after transcoding at the cost of reduced transcoding speed.</translation>
             <extracomment>Settings Menu - Description for option</extracomment>
         </message>
+        <message>
+            <source>Support Moonfin Development</source>
+            <translation>Support Moonfin Development</translation>
+            <extracomment>Donation Dialog - Title</extracomment>
+        </message>
+        <message>
+            <source>Moonfin is free and open source. If you find it useful, please consider supporting continued development. Scan the QR code below to donate:</source>
+            <translation>Moonfin is free and open source. If you find it useful, please consider supporting continued development. Scan the QR code below to donate:</translation>
+            <extracomment>Donation Dialog - Message</extracomment>
+        </message>
+        <message>
+            <source>Thank you for your support!</source>
+            <translation>Thank you for your support!</translation>
+            <extracomment>Donation Dialog - Thanks message</extracomment>
+        </message>
+        <message>
+            <source>Close</source>
+            <translation>Close</translation>
+        </message>
+        <message>
+            <source>Update Available</source>
+            <translation>Update Available</translation>
+            <extracomment>Update Dialog - Title</extracomment>
+        </message>
+        <message>
+            <source>Version</source>
+            <translation>Version</translation>
+            <extracomment>Update Dialog - Version label</extracomment>
+        </message>
+        <message>
+            <source>is now available</source>
+            <translation>is now available</translation>
+            <extracomment>Update Dialog - Version availability text</extracomment>
+        </message>
+        <message>
+            <source>Current</source>
+            <translation>Current</translation>
+            <extracomment>Update Dialog - Current version label</extracomment>
+        </message>
+        <message>
+            <source>A new version is available. Please visit the GitHub releases page to download.</source>
+            <translation>A new version is available. Please visit the GitHub releases page to download.</translation>
+            <extracomment>Update Dialog - Default message</extracomment>
+        </message>
     </context>
 </TS>

@@ -6,6 +6,7 @@ import "pkg:/source/enums/SettingType.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
+import "pkg:/source/utils/JellyseerrUtils.bs"
 import "pkg:/source/utils/misc.bs"
 
 sub init()
@@ -44,7 +45,7 @@ sub init()
 
     if isValid(m.version)
         m.version.drawingStyles = drawingStyles
-        m.version.text = `jellyfin ${m.global.app.version} - ${tr("What's New")}?`
+        m.version.text = `${LCase(m.global.app.name)} ${m.global.app.version} - ${tr("What's New")}?`
     end if
 
     m.boolSetting = m.top.findNode("boolSetting")
@@ -73,6 +74,10 @@ sub init()
 
     m.keypressTimer = m.top.findNode("keypressTimer")
     m.keypressTimer.observeField("fire", "onKeypressTimerFire")
+
+    ' String input dialog tracking
+    m.currentStringSetting = invalid
+    m.stringInputDialog = invalid
 
     ' Load Configuration Tree
     m.configTree = GetConfigTree()
@@ -154,6 +159,444 @@ sub onKeyGridEscape()
     end if
 end sub
 
+sub showStringInputDialog(settingItem as object)
+    ' Show keyboard dialog for string input
+    m.currentStringSetting = settingItem
+
+    ' Get current value
+    currentValue = get_user_setting(settingItem.settingName)
+    if not isValid(currentValue) then currentValue = ""
+
+    ' Determine if this is a password/secure field
+    isSecure = (InStr(LCase(settingItem.settingName), "password") > 0 or InStr(LCase(settingItem.settingName), "apikey") > 0)
+
+    ' Create keyboard dialog
+    dialog = createObject("roSGNode", "StandardKeyboardDialog")
+    dialog.title = tr(settingItem.title)
+    dialog.text = currentValue
+
+    if isSecure
+        dialog.textEditBox.secureMode = true
+    end if
+
+    ' Set palette
+    dlgPalette = createObject("roSGNode", "RSGPalette")
+    dlgPalette.colors = {
+        DialogBackgroundColor: chainLookupReturn(m.global.session, "user.settings.colorDialogBackground", ColorPalette.ELEMENTBACKGROUND),
+        DialogFocusColor: chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT),
+        DialogFocusItemColor: chainLookupReturn(m.global.session, "user.settings.colorDialogSelectedText", ColorPalette.WHITE),
+        DialogTextColor: chainLookupReturn(m.global.session, "user.settings.colorDialogText", ColorPalette.WHITE)
+    }
+    dialog.palette = dlgPalette
+    dialog.buttons = [tr("OK"), tr("Cancel")]
+
+    m.stringInputDialog = dialog
+    dialog.observeField("buttonSelected", "onStringInputDialogButton")
+    m.top.getScene().dialog = dialog
+end sub
+
+sub onStringInputDialogButton(event as object)
+    dialog = event.getRoSGNode()
+    buttonIndex = dialog.buttonSelected
+
+    if buttonIndex = 0 ' OK pressed
+        ' Save the value
+        newValue = dialog.text
+        if isValid(m.currentStringSetting)
+            set_user_setting(m.currentStringSetting.settingName, newValue)
+
+            ' Special handling for Jellyseerr settings - update registry directly
+            if InStr(m.currentStringSetting.settingName, "jellyseerr.") > 0
+                sec = CreateObject("roRegistrySection", "jellyseerr")
+                settingKey = Right(m.currentStringSetting.settingName, Len(m.currentStringSetting.settingName) - 11) ' Remove "jellyseerr." prefix
+                sec.Write(settingKey, newValue)
+                sec.Flush()
+
+                ' Auto-authenticate if Jellyfin password was entered
+                if m.currentStringSetting.settingName = "jellyseerr.jellyfinPassword" and newValue <> ""
+                    ' Close dialog first
+                    dialog.close = true
+                    m.settingsMenu.setFocus(true)
+                    m.currentStringSetting = invalid
+                    settingFocused()
+
+                    ' Trigger Jellyfin authentication
+                    testJellyseerrConnection("jellyfin")
+                    return
+                end if
+            end if
+        end if
+    end if
+
+    ' Close dialog and return focus
+    dialog.close = true
+    m.settingsMenu.setFocus(true)
+    m.currentStringSetting = invalid
+
+    ' Refresh the focused item to show new value
+    settingFocused()
+end sub
+
+sub testJellyseerrConnection(overrideAuthMethod = invalid as dynamic)
+    ' Get the server URL
+    serverUrl = m.global.session.user.settings["jellyseerr.url"]
+
+    if serverUrl = invalid or serverUrl = ""
+        ShowToast("Please enter Server URL first", "error")
+        return
+    end if
+
+    ' Determine auth method: use override if provided, otherwise detect from which setting triggered this
+    authMethod = invalid
+    if isValid(overrideAuthMethod) and overrideAuthMethod <> ""
+        authMethod = overrideAuthMethod
+    end if
+
+    if authMethod = "apikey" or authMethod = invalid
+        apiKey = m.global.session.user.settings["jellyseerr.apiKey"]
+
+        if apiKey = invalid or apiKey = ""
+            if authMethod = "apikey"
+                ShowToast("Please enter API Key first", "error")
+                return
+            end if
+            ' If no specific method and no API key, skip this method
+        else
+            ' Use API Key auth
+            authMethod = "apikey"
+
+            ' Save credentials to registry first so the API task can use them
+            sec = CreateObject("roRegistrySection", "jellyseerr")
+            sec.Write("serverUrl", serverUrl)
+            sec.Write("apiKey", apiKey)
+            sec.Write("authMethod", "apikey")
+            sec.Flush()
+
+            ' Create API task to test connection
+            testTask = CreateObject("roSGNode", "JellyseerrAPITask")
+            testTask.request = {
+                method: "GET",
+                endpoint: "/api/v1/user"
+            }
+            testTask.observeField("response", "onApiKeyTestResponse")
+            testTask.control = "RUN"
+            m.testConnectionTask = testTask
+            return
+        end if
+    end if
+
+    if authMethod = "jellyfin" or authMethod = invalid
+        ' Use the currently logged-in Jellyfin user's name
+        username = m.global.session.user.name
+        password = m.global.session.user.settings["jellyseerr.jellyfinPassword"]
+
+        if not isValidString(username)
+            if authMethod = "jellyfin"
+                ShowToast("Unable to get Jellyfin username", "error")
+                return
+            end if
+            ' If no specific method and no username, skip this method
+        else if password = invalid or not isValidString(password)
+            if authMethod = "jellyfin"
+                ShowToast("Please enter your Jellyfin password", "error")
+                return
+            end if
+            ' If no specific method and no password, skip this method
+        else
+            ' Use Jellyfin auth
+            authMethod = "jellyfin"
+
+            ' Create authentication task
+            authTask = CreateObject("roSGNode", "JellyseerrAuthTask")
+            authTask.serverUrl = serverUrl
+            authTask.authEndpoint = "/api/v1/auth/jellyfin"
+            authTask.authBody = JellyseerrFormatJson({
+                username: username,
+                password: password
+            })
+            authTask.observeField("response", "onJellyfinAuthResponse")
+            authTask.control = "RUN"
+            m.authTask = authTask
+            return
+        end if
+    end if
+
+    if authMethod = "local" or authMethod = invalid
+        email = m.global.session.user.settings["jellyseerr.localEmail"]
+        password = m.global.session.user.settings["jellyseerr.localPassword"]
+
+        if email = invalid or email = "" or password = invalid or password = ""
+            if authMethod = "local"
+                ShowToast("Please enter Jellyseerr email and password", "error")
+                return
+            end if
+            ' If no specific method provided, we've exhausted all options
+            ShowToast("Please configure one of the authentication methods", "error")
+            return
+        end if
+
+        ' Create authentication task
+        authTask = CreateObject("roSGNode", "JellyseerrAuthTask")
+        authTask.serverUrl = serverUrl
+        authTask.authEndpoint = "/api/v1/auth/local"
+        authTask.authBody = JellyseerrFormatJson({
+            email: email,
+            password: password
+        })
+        authTask.observeField("response", "onLocalAuthResponse")
+        authTask.control = "RUN"
+        m.authTask = authTask
+    end if
+end sub
+
+sub onApiKeyTestResponse(event as object)
+    response = event.getData()
+
+    ' Build detailed message for modal
+    dialogMessage = ""
+    if response.success
+        dialogMessage = "Connection successful! API key is valid."
+        if response.rawResponse <> invalid and response.rawResponse <> ""
+            dialogMessage = dialogMessage + Chr(10) + Chr(10) + "Server Response:" + Chr(10) + response.rawResponse
+        end if
+    else
+        dialogMessage = "Connection failed"
+        if response.error <> invalid and response.error <> ""
+            dialogMessage = dialogMessage + Chr(10) + Chr(10) + "Error: " + response.error
+        end if
+        if response.statusCode <> invalid
+            dialogMessage = dialogMessage + Chr(10) + "Status Code: " + response.statusCode.ToStr()
+        end if
+    end if
+
+    ' Show modal dialog using StandardMessageDialog
+    dialog = createObject("roSGNode", "StandardMessageDialog")
+    dialog.title = "API Key Test"
+    dialog.message = dialogMessage
+    dialog.buttons = ["OK"]
+    dialog.observeField("buttonSelected", "onAuthModalClosed")
+    m.top.getScene().dialog = dialog
+
+    ' Refresh the settings display to show updated auth status
+    if response.success then settingFocused()
+end sub
+
+sub onJellyfinAuthResponse(event as object)
+    response = event.getData()
+
+    dialogMessage = ""
+    dialogTitle = "Jellyseerr Authentication"
+
+    if response <> invalid and response.success
+        ' For Jellyfin auth, we need to save the session cookie, not an API key
+        if response.cookies <> invalid and response.cookies <> ""
+            ' Save cookies to registry
+            serverUrl = m.global.session.user.settings["jellyseerr.url"]
+            sec = CreateObject("roRegistrySection", "jellyseerr")
+            sec.Write("serverUrl", serverUrl)
+            sec.Write("authCookie", response.cookies)
+            sec.Write("authMethod", "jellyfin")
+            sec.Flush()
+
+            dialogTitle = "✓ Authentication Successful"
+            dialogMessage = "Jellyfin login successful!" + Chr(10) + Chr(10)
+            dialogMessage = dialogMessage + "Server: " + serverUrl + Chr(10)
+            dialogMessage = dialogMessage + "Status: Connected (Cookie-based)" + Chr(10)
+            dialogMessage = dialogMessage + "Session expires: ~30 days" + Chr(10) + Chr(10)
+            dialogMessage = dialogMessage + "You can now access Jellyseerr features."
+
+            ' Mark session as validated for this app session
+            if m.global <> invalid
+                m.global.addFields({ jellyseerrSessionValidated: true })
+            end if
+
+            ' Refresh the settings display to show updated auth status
+            settingFocused()
+        else
+            dialogTitle = "✓ Connected (No Cookie)"
+            dialogMessage = "Authentication succeeded but no session cookie was returned." + Chr(10) + Chr(10)
+            dialogMessage = dialogMessage + "Status Code: " + response.statusCode.ToStr() + Chr(10) + Chr(10)
+            dialogMessage = dialogMessage + "Please check your Jellyseerr server configuration."
+        end if
+    else
+        dialogTitle = "✗ Authentication Failed"
+        dialogMessage = "Jellyfin authentication failed" + Chr(10) + Chr(10)
+
+        if response <> invalid
+            dialogMessage = dialogMessage + "Status Code: " + response.statusCode.ToStr() + Chr(10)
+
+            if response.error <> invalid and response.error <> ""
+                dialogMessage = dialogMessage + "Error: " + response.error + Chr(10)
+            end if
+
+            if response.rawResponse <> invalid and response.rawResponse <> ""
+                ' Show first 200 chars of error response
+                errorPreview = response.rawResponse
+                if Len(errorPreview) > 200
+                    errorPreview = Left(errorPreview, 200) + "..."
+                end if
+                dialogMessage = dialogMessage + Chr(10) + "Response: " + errorPreview
+            end if
+        else
+            dialogMessage = dialogMessage + "No response received from server."
+        end if
+    end if
+
+    ' Show modal dialog using StandardMessageDialog
+    dialog = createObject("roSGNode", "StandardMessageDialog")
+    dialog.title = dialogTitle
+    dialog.message = dialogMessage
+    dialog.buttons = ["OK"]
+    dialog.observeField("buttonSelected", "onAuthModalClosed")
+    m.top.getScene().dialog = dialog
+end sub
+
+sub onLocalAuthResponse(event as object)
+    response = event.getData()
+
+    dialogMessage = ""
+    dialogTitle = "Jellyseerr Authentication"
+
+    if response <> invalid and response.success
+        ' Local auth can also use cookies like Jellyfin auth
+        if response.cookies <> invalid and response.cookies <> ""
+            ' Save cookies to registry
+            serverUrl = m.global.session.user.settings["jellyseerr.url"]
+            sec = CreateObject("roRegistrySection", "jellyseerr")
+            sec.Write("serverUrl", serverUrl)
+            sec.Write("authCookie", response.cookies)
+            sec.Write("authMethod", "local")
+            sec.Flush()
+
+            dialogTitle = "✓ Authentication Successful"
+            dialogMessage = "Jellyseerr login successful!" + Chr(10) + Chr(10)
+            dialogMessage = dialogMessage + "Server: " + serverUrl + Chr(10)
+            dialogMessage = dialogMessage + "Status: Connected (Cookie-based)" + Chr(10)
+            dialogMessage = dialogMessage + "Session expires: ~30 days" + Chr(10) + Chr(10)
+            dialogMessage = dialogMessage + "You can now access Jellyseerr features."
+
+            ' Mark session as validated for this app session
+            if m.global <> invalid
+                m.global.addFields({ jellyseerrSessionValidated: true })
+            end if
+
+            ' Refresh the settings display to show updated auth status
+            settingFocused()
+        else
+            dialogTitle = "✓ Connected (No Cookie)"
+            dialogMessage = "Authentication succeeded but no session cookie was returned." + Chr(10) + Chr(10)
+            dialogMessage = dialogMessage + "Status Code: " + response.statusCode.ToStr() + Chr(10) + Chr(10)
+            dialogMessage = dialogMessage + "Please check your Jellyseerr server configuration."
+        end if
+    else
+        dialogTitle = "✗ Authentication Failed"
+        dialogMessage = "Jellyseerr authentication failed" + Chr(10) + Chr(10)
+
+        if response <> invalid
+            dialogMessage = dialogMessage + "Status Code: " + response.statusCode.ToStr() + Chr(10)
+
+            if response.error <> invalid and response.error <> ""
+                dialogMessage = dialogMessage + "Error: " + response.error + Chr(10)
+            end if
+
+            if response.rawResponse <> invalid and response.rawResponse <> ""
+                ' Show first 200 chars of error response
+                errorPreview = response.rawResponse
+                if Len(errorPreview) > 200
+                    errorPreview = Left(errorPreview, 200) + "..."
+                end if
+                dialogMessage = dialogMessage + Chr(10) + "Response: " + errorPreview
+            end if
+        else
+            dialogMessage = dialogMessage + "No response received from server."
+        end if
+    end if
+
+    ' Show modal dialog using StandardMessageDialog
+    dialog = createObject("roSGNode", "StandardMessageDialog")
+    dialog.title = dialogTitle
+    dialog.message = dialogMessage
+    dialog.buttons = ["OK"]
+    dialog.observeField("buttonSelected", "onAuthModalClosed")
+    m.top.getScene().dialog = dialog
+end sub
+
+function ExtractApiKeyFromJellyseerrResponse(responseBody as dynamic) as string
+    ' Extract API key from JSON response
+    if responseBody = invalid or responseBody = "" then return ""
+
+    ' Try to parse using the utility function
+    apiKey = ExtractApiKeyFromResponse(responseBody)
+    return apiKey
+end function
+
+function GetJellyseerrAuthStatus() as string
+    ' Check current authentication status for Jellyseerr
+    serverUrl = m.global.session.user.settings["jellyseerr.url"]
+
+    if not isValidString(serverUrl)
+        return "Status: Not configured - Please enter Server URL"
+    end if
+
+    ' Check registry for saved authentication (indicates successful auth)
+    sec = CreateObject("roRegistrySection", "jellyseerr")
+    savedApiKey = sec.Read("apiKey")
+    savedAuthCookie = sec.Read("authCookie")
+    savedServerUrl = sec.Read("serverUrl")
+    savedAuthMethod = sec.Read("authMethod")
+
+    if savedServerUrl = serverUrl and (isValidString(savedApiKey) or isValidString(savedAuthCookie))
+        methodDisplay = "API Key"
+        if savedAuthMethod = "jellyfin"
+            methodDisplay = "Jellyfin SSO"
+        else if savedAuthMethod = "local"
+            methodDisplay = "Jellyseerr Login"
+        end if
+        return "Status: Authenticated (" + methodDisplay + ")"
+    end if
+
+    return "Status: Not authenticated - Configure one of the login methods below"
+end function
+
+' Helper function to check if a value is a valid non-empty string
+function isValidString(value as dynamic) as boolean
+    if value = invalid then return false
+    if type(value) <> "String" and type(value) <> "roString" then return false
+    return value <> ""
+end function
+
+sub ShowToast(message as string, _toastType = "" as string)
+    ' Create a simple toast notification using JFMessageDialog
+    toast = createObject("roSGNode", "JFMessageDialog")
+    toast.message = message
+    toast.options = ["OK"]
+    m.top.getScene().appendChild(toast)
+    toast.observeField("backPressed", "onToastClosed")
+    toast.setFocus(true)
+end sub
+
+' Handle toast dialog closed
+sub onToastClosed(obj as object)
+    dialog = obj.getRoSGNode()
+    m.top.getScene().removeChild(dialog)
+    m.settingsMenu.setFocus(true)
+end sub
+
+sub openJellyseerrAuthScreen()
+    ' Open the Jellyseerr authentication screen
+    authScreen = CreateObject("roSGNode", "JellyseerrAuthScreen")
+    m.top.getScene().appendChild(authScreen)
+    authScreen.setFocus(true)
+end sub
+
+sub RefreshCurrentMenu()
+    ' Reload the current menu level to apply visibility changes
+    currentSection = m.userLocation.peek()
+    m.userLocation.pop()
+    LoadMenu(currentSection, false)
+    m.userLocation.push(currentSection)
+end sub
+
 sub LoadMenu(configSection, appendPath = true as boolean)
     if configSection.children = invalid
         ' Load parent menu
@@ -177,14 +620,10 @@ sub LoadMenu(configSection, appendPath = true as boolean)
     result = CreateObject("roSGNode", "ContentNode")
     m.settingsMenu.content = result
 
-    useWebSectionArrangement = chainLookupReturn(m.global, "session.user.settings.`ui.home.useWebSectionArrangement`", true)
+    ' Create a mapping array to track which config items are visible
+    m.visibleItemsMap = []
 
     for each item in configSection.children
-        settingName = chainLookupReturn(item, "settingName", string.EMPTY)
-        if isStringEqual(left(settingName, 17), "homescreensection")
-            item.visible = not useWebSectionArrangement
-        end if
-
         if isValid(item.visible)
             if not item.visible
                 if not m.showSecretMenu
@@ -192,6 +631,9 @@ sub LoadMenu(configSection, appendPath = true as boolean)
                 end if
             end if
         end if
+
+        ' Add to visible items mapping
+        m.visibleItemsMap.push(item)
 
         listItem = result.CreateChild("ContentNode")
         listItem.title = tr(item.title)
@@ -214,9 +656,17 @@ end sub
 
 sub settingFocused()
 
-    selectedSetting = m.userLocation.peek().children[m.settingsMenu.itemFocused]
+    ' Use visibleItemsMap to get the correct item
+    if not isValid(m.visibleItemsMap) or m.settingsMenu.itemFocused >= m.visibleItemsMap.count()
+        selectedSetting = m.userLocation.peek().children[m.settingsMenu.itemFocused]
+    else
+        selectedSetting = m.visibleItemsMap[m.settingsMenu.itemFocused]
+    end if
+
+    ' Validate selectedSetting exists before using it
+    if not isValid(selectedSetting) then return
+
     m.settingDesc.text = tr(selectedSetting.Description)
-    m.top.overhangTitle = tr(selectedSetting.Title)
 
     ' Hide Settings
     m.boolSetting.visible = false
@@ -253,6 +703,12 @@ sub settingFocused()
             m.boolSetting.checkedItem = 1
         else
             m.boolSetting.checkedItem = 0
+        end if
+
+        ' Special handling for Jellyseerr test connection - show auth status
+        if isStringEqual(selectedSetting.settingName, "jellyseerr.testConnection")
+            authStatus = GetJellyseerrAuthStatus()
+            m.settingDesc.text = tr(selectedSetting.Description) + Chr(10) + Chr(10) + authStatus
         end if
 
         return
@@ -301,11 +757,49 @@ sub settingFocused()
         return
     end if
 
-    print `Unknown setting type ${selectedSetting.type}`
+    if isStringEqual(selectedSetting.type, "string")
+        ' String type - show current value in description
+        currentValue = get_user_setting(selectedSetting.settingName)
+        ' Only display if it's actually a valid string (not a boolean or other type)
+        if isValidString(currentValue)
+            ' Mask sensitive fields like API keys and passwords - don't show any value
+            if InStr(LCase(selectedSetting.settingName), "apikey") > 0 or InStr(LCase(selectedSetting.settingName), "password") > 0
+                m.settingDesc.text = tr(selectedSetting.Description) + Chr(10) + Chr(10) + "Current: ••••••••"
+            else
+                m.settingDesc.text = tr(selectedSetting.Description) + Chr(10) + Chr(10) + "Current: " + currentValue
+            end if
+        end if
+        return
+    end if
 end sub
 
 sub settingSelected()
-    selectedItem = m.userLocation.peek().children[m.settingsMenu.itemFocused]
+    ' Use visibleItemsMap to get the correct item
+    if not isValid(m.visibleItemsMap) or m.settingsMenu.itemFocused >= m.visibleItemsMap.count()
+        selectedItem = m.userLocation.peek().children[m.settingsMenu.itemFocused]
+    else
+        selectedItem = m.visibleItemsMap[m.settingsMenu.itemFocused]
+    end if
+
+    if not isValid(selectedItem) then return
+
+    ' Special handling for donation dialog
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "moonfin.showDonation"
+        showDonationDialog()
+        return
+    end if
+
+    ' Special handling for Jellyseerr local account connect button
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "jellyseerr.testConnectionLocal"
+        testJellyseerrConnection("local")
+        return
+    end if
+
+    ' Legacy test connection button (deprecated, keeping for backwards compatibility)
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "jellyseerr.testConnection"
+        testJellyseerrConnection()
+        return
+    end if
 
     if selectedItem.type <> invalid ' Show setting
         if isStringEqual(selectedItem.type, SettingType.BOOL)
@@ -323,6 +817,10 @@ sub settingSelected()
         if isStringEqual(selectedItem.type, SettingType.SLIDER)
             m.slider.setFocus(true)
         end if
+        if isStringEqual(selectedItem.type, SettingType.STRING)
+            ' Open keyboard dialog for string input
+            showStringInputDialog(selectedItem)
+        end if
     else if selectedItem.children <> invalid and selectedItem.children.Count() > 0 ' Show sub menu
         LoadMenu(selectedItem)
         m.settingsMenu.setFocus(true)
@@ -330,7 +828,10 @@ sub settingSelected()
         return
     end if
 
-    m.settingDesc.text = m.settingsMenu.content.GetChild(m.settingsMenu.itemFocused).Description
+    ' Use selectedItem directly instead of re-fetching from content
+    if isValid(selectedItem.Description)
+        m.settingDesc.text = selectedItem.Description
+    end if
 
 end sub
 
@@ -343,7 +844,8 @@ sub boolSettingChanged()
     if m.boolSetting.focusedChild = invalid then return
     selectedSetting = m.userLocation.peek().children[m.settingsMenu.itemFocused]
 
-    if m.boolSetting.checkedItem
+    ' checkedItem is 0 for "Disabled" (index 0) and 1 for "Enabled" (index 1)
+    if m.boolSetting.checkedItem = 1
         session.user.settings.Save(selectedSetting.settingName, "true")
         if Left(selectedSetting.settingName, 7) = "global."
             ' global user setting
@@ -374,16 +876,19 @@ sub boolSettingChanged()
             set_user_setting(selectedSetting.settingName, "false")
         end if
     end if
-
-    if isStringEqual(selectedSetting.settingName, "ui.home.useWebSectionArrangement")
-        refreshMenu()
-    end if
 end sub
 
 sub radioSettingChanged()
     if m.radioSetting.focusedChild = invalid then return
     selectedSetting = m.userLocation.peek().children[m.settingsMenu.itemFocused]
     set_user_setting(selectedSetting.settingName, m.radioSetting.content.getChild(m.radioSetting.checkedItem).id)
+
+    ' Notify components when overlay settings change
+    if isStringEqual(selectedSetting.settingName, "ui.overlayOpacity") or isStringEqual(selectedSetting.settingName, "ui.overlayColor")
+        if isValid(m.global)
+            m.global.overlaySettingsChanged = m.global.overlaySettingsChanged + 1
+        end if
+    end if
 
     if isStringEqual(selectedSetting.settingName, "imageBackground")
         scene = m.top.getScene()
@@ -409,6 +914,14 @@ sub radioSettingChanged()
         if isStringEqual(m.radioSetting.content.getChild(m.radioSetting.checkedItem).id, PlaybackMethod.PLAYNORMALLY)
             m.global.queueManager.callFunc("setForceTranscode", PlaybackMethod.PLAYNORMALLY)
         end if
+    end if
+end sub
+
+' JFScreen hook called when screen is shown
+sub OnScreenShown()
+    ' Restore focus to settings menu when returning to this screen
+    if isValid(m.settingsMenu)
+        m.settingsMenu.setFocus(true)
     end if
 end sub
 
@@ -475,7 +988,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if isStringEqual(key, KeyCode.DOWN)
             if m.settingsMenu.hasFocus()
                 m.version.setfocus(true)
-                m.version.text = `jellyfin ${m.global.app.version} - <b>${tr("What's New")}?</b>`
+                m.version.text = `${LCase(m.global.app.name)} ${m.global.app.version} - <b>${tr("What's New")}?</b>`
                 return true
             end if
         end if
@@ -483,7 +996,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if m.version.hasFocus()
             if isStringEqual(key, KeyCode.UP)
                 m.settingsMenu.setfocus(true)
-                m.version.text = `jellyfin ${m.global.app.version} - ${tr("What's New")}?`
+                m.version.text = `${LCase(m.global.app.name)} ${m.global.app.version} - ${tr("What's New")}?`
                 return true
             end if
 
@@ -501,3 +1014,33 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     return false
 end function
+
+' Handle authentication modal closed
+sub onAuthModalClosed(_obj as object)
+    ' Close the dialog
+    m.top.getScene().dialog.close = true
+    m.settingsMenu.setFocus(true)
+end sub
+
+' Show donation dialog
+sub showDonationDialog()
+    ' Create the donation dialog
+    dialog = createObject("roSGNode", "DonationDialog")
+    dialog.observeField("wasClosed", "onDonationDialogClosed")
+
+    ' Add dialog to the scene
+    m.top.getScene().appendChild(dialog)
+    m.donationDialog = dialog
+end sub
+
+' Handle donation dialog closed
+sub onDonationDialogClosed(_obj as object)
+    ' Remove the dialog from the scene
+    if isValid(m.donationDialog)
+        m.top.getScene().removeChild(m.donationDialog)
+        m.donationDialog = invalid
+    end if
+
+    ' Return focus to settings menu
+    m.settingsMenu.setFocus(true)
+end sub

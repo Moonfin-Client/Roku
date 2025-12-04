@@ -1,0 +1,1407 @@
+sub init()
+    m.backdrop = m.top.findNode("backdrop")
+    m.backdropPrev = m.top.findNode("backdropPrev")
+    m.poster = m.top.findNode("poster")
+    m.statusBadgeGroup = m.top.findNode("statusBadgeGroup")
+    m.statusBadge = m.top.findNode("statusBadge")
+    m.statusBadgeBg = m.top.findNode("statusBadgeBg")
+    m.titleLabel = m.top.findNode("titleLabel")
+    m.metadataLabel = m.top.findNode("metadataLabel")
+    m.taglineLabel = m.top.findNode("taglineLabel")
+    m.buttonsGroup = m.top.findNode("buttonsGroup")
+    m.overviewHeading = m.top.findNode("overviewHeading")
+    m.overviewText = m.top.findNode("overviewText")
+    m.metadataFactsGroup = m.top.findNode("metadataFactsGroup")
+    m.castHeading = m.top.findNode("castHeading")
+    m.castRow = m.top.findNode("castRow")
+    m.similarHeading = m.top.findNode("similarHeading")
+    m.similarRow = m.top.findNode("similarRow")
+    m.loadingLabel = m.top.findNode("loadingLabel")
+    m.errorLabel = m.top.findNode("errorLabel")
+
+    ' Scrolling viewport
+    m.scrollViewport = m.top.findNode("scrollViewport")
+    m.scrollContent = m.top.findNode("scrollContent")
+    m.scrollOffset = 0
+    m.scrollStep = 80
+
+    m.apiTask = CreateObject("roSGNode", "JellyseerrAPITask")
+    m.movieDetails = invalid
+    m.tvDetails = invalid
+    m.mediaInfo = invalid
+    m.focusedElement = invalid
+    m.previousFocusedElement = invalid
+    m.buttons = []
+
+    ' Setup observers
+    m.top.observeField("mediaItem", "onMediaItemSet")
+    m.similarRow.observeField("rowItemSelected", "onSimilarItemSelected")
+    m.castRow.observeField("itemSelected", "onCastItemSelected")
+    m.top.observeField("restoreFocus", "onRestoreFocus")
+    ' Smooth backdrop transitions
+    m.backdrop.observeField("loadStatus", "onBackdropLoadStatusChange")
+end sub
+
+sub onRestoreFocus()
+    m.top.setFocus(true)
+
+    ' Try to restore to previously focused element first
+    if m.previousFocusedElement <> invalid
+        m.focusedElement = m.previousFocusedElement
+        m.previousFocusedElement.setFocus(true)
+        m.previousFocusedElement = invalid
+    else if m.buttons.count() > 0
+        m.focusedElement = m.buttonsGroup
+        for each button in m.buttons
+            if button.focusable
+                button.setFocus(true)
+                exit for
+            end if
+        end for
+    else if m.castRow.visible
+        m.focusedElement = m.castRow
+        m.castRow.setFocus(true)
+    end if
+end sub
+
+sub onBackdropLoadStatusChange()
+    loadStatus = m.backdrop.loadStatus
+
+    if loadStatus = "ready"
+        m.backdropPrev.uri = m.backdrop.uri
+    end if
+end sub
+
+sub onMediaItemSet(event as object)
+    mediaItem = event.getData()
+
+    if mediaItem = invalid or mediaItem.tmdbId = invalid
+        ShowError("Invalid media item")
+        return
+    end if
+
+    m.mediaItem = mediaItem
+    ShowLoading()
+    UpdateBasicUI()
+    LoadFullDetails()
+end sub
+
+sub UpdateBasicUI()
+    item = m.mediaItem
+
+    title = item.title
+    if title = invalid then title = item.name
+    year = GetYearFromDate(item.releaseDate)
+    if year <> invalid
+        m.titleLabel.text = title + " (" + year + ")"
+    else
+        m.titleLabel.text = title
+    end if
+
+    if item.overview <> invalid
+        m.overviewText.text = item.overview
+    end if
+
+    if item.hdPosterUrl <> invalid
+        m.poster.uri = item.hdPosterUrl
+    end if
+    if item.backdropUrl <> invalid
+        m.backdrop.uri = item.backdropUrl
+    else if item.hdBackdropUrl <> invalid
+        m.backdrop.uri = item.hdBackdropUrl
+    end if
+
+    metaParts = []
+    if year <> invalid
+        metaParts.push(year)
+    end if
+
+    mediaType = "Movie"
+    if item.mediaType = "tv" then mediaType = "TV Series"
+    metaParts.push(mediaType)
+
+    if item.rating <> invalid and item.rating <> ""
+        metaParts.push("★ " + item.rating)
+    end if
+
+    m.metadataLabel.text = metaParts.join(" • ")
+end sub
+
+sub LoadFullDetails()
+    mediaType = m.mediaItem.mediaType
+    if mediaType = invalid then mediaType = "movie"
+
+    tmdbId = m.mediaItem.tmdbId
+    endpoint = "/api/v1/" + mediaType + "/" + tmdbId.toStr()
+
+    ' Credits are included by default in the response, no query parameter needed
+
+    m.apiTask.request = {
+        method: "GET",
+        endpoint: endpoint
+    }
+
+    m.apiTask.observeField("response", "onFullDetailsResponse")
+    m.apiTask.control = "RUN"
+end sub
+
+sub onFullDetailsResponse(event as object)
+    response = event.getData()
+
+    if not response.success
+        errorMsg = "Failed to load details"
+        if response.error <> invalid and type(response.error) = "roString"
+            errorMsg = response.error
+        end if
+        ShowError(errorMsg)
+        return
+    end if
+
+    data = response.data
+    if data = invalid
+        ShowError("Invalid response data")
+        return
+    end if
+    if m.mediaItem.mediaType = "tv"
+        m.tvDetails = data
+    else
+        m.movieDetails = data
+    end if
+
+    m.mediaInfo = data.mediaInfo
+
+    UpdateFullUI()
+    HideLoading()
+
+    ' Set focus to first enabled button
+    if m.buttons.count() > 0
+        for each button in m.buttons
+            if button.focusable
+                button.setFocus(true)
+                m.focusedElement = m.buttonsGroup
+                exit for
+            end if
+        end for
+    end if
+
+    LoadCastData()
+    LoadSimilarContent()
+end sub
+
+sub UpdateFullUI()
+    UpdateStatusBadge()
+    UpdateMetadata()
+    UpdateTagline()
+    CreateActionButtons()
+    CreateMetadataFacts()
+end sub
+
+sub UpdateStatusBadge()
+    ' Always show a status badge
+    status = invalid
+    status4k = invalid
+
+    if m.mediaInfo <> invalid
+        if m.mediaInfo.status <> invalid then status = m.mediaInfo.status
+        if m.mediaInfo.status4k <> invalid then status4k = m.mediaInfo.status4k
+    end if
+
+    ' Check for declined requests (status = 3 in request, not mediaInfo.status)
+    hdDeclined = false
+    fourKDeclined = false
+    if m.mediaInfo <> invalid and m.mediaInfo.requests <> invalid
+        for each request in m.mediaInfo.requests
+            if request.is4k = false and request.status = 3 then hdDeclined = true
+            if request.is4k = true and request.status = 3 then fourKDeclined = true
+        end for
+    end if
+
+    ' Status: 1=unknown, 2=pending, 3=processing, 4=partial, 5=available, 6=blacklisted
+    statusText = ""
+    bgColor = "#6B7280"
+
+    ' Determine badge text based on both HD and 4K statuses (matching Android logic)
+    if hdDeclined and fourKDeclined
+        statusText = "HD + 4K DECLINED"
+        bgColor = "#EF4444" ' red-500
+    else if fourKDeclined
+        statusText = "4K DECLINED"
+        bgColor = "#EF4444" ' red-500
+    else if hdDeclined
+        statusText = "HD DECLINED"
+        bgColor = "#EF4444" ' red-500
+    else if status = 6 and status4k = 6
+        statusText = "HD + 4K BLACKLISTED"
+        bgColor = "#DC2626" ' red-600
+    else if status4k = 6
+        statusText = "4K BLACKLISTED"
+        bgColor = "#DC2626" ' red-600
+    else if status = 6
+        statusText = "HD BLACKLISTED"
+        bgColor = "#DC2626" ' red-600
+    else if status = 5 and status4k = 5
+        statusText = "HD + 4K AVAILABLE"
+        bgColor = "#22C55E" ' green-500
+    else if status4k = 5
+        statusText = "4K AVAILABLE"
+        bgColor = "#22C55E" ' green-500
+    else if status = 5
+        statusText = "HD AVAILABLE"
+        bgColor = "#22C55E" ' green-500
+    else if status = 4 and status4k = 4
+        statusText = "HD + 4K PARTIAL"
+        bgColor = "#22C55E" ' green-500
+    else if status4k = 4
+        statusText = "4K PARTIAL"
+        bgColor = "#22C55E" ' green-500
+    else if status = 4
+        statusText = "HD PARTIAL"
+        bgColor = "#22C55E" ' green-500
+    else if status = 3 and status4k = 3
+        statusText = "HD + 4K PROCESSING"
+        bgColor = "#6366F1" ' indigo-500
+    else if status4k = 3
+        statusText = "4K PROCESSING"
+        bgColor = "#6366F1" ' indigo-500
+    else if status = 3
+        statusText = "HD PROCESSING"
+        bgColor = "#6366F1" ' indigo-500
+    else if status = 2 and status4k = 2
+        statusText = "HD + 4K PENDING"
+        bgColor = "#EAB308" ' yellow-500
+    else if status4k = 2
+        statusText = "4K PENDING"
+        bgColor = "#EAB308" ' yellow-500
+    else if status = 2
+        statusText = "HD PENDING"
+        bgColor = "#EAB308" ' yellow-500
+    else if status = 1 and status4k = 1
+        statusText = "HD + 4K UNKNOWN"
+        bgColor = "#9CA3AF" ' gray-400
+    else if status4k = 1
+        statusText = "4K UNKNOWN"
+        bgColor = "#9CA3AF" ' gray-400
+    else if status = 1
+        statusText = "HD UNKNOWN"
+        bgColor = "#9CA3AF" ' gray-400
+    else
+        ' No status - not requested yet
+        statusText = "NOT REQUESTED"
+        bgColor = "#6B7280" ' gray-500
+    end if
+
+    m.statusBadge.text = statusText
+    m.statusBadgeBg.blendColor = bgColor
+    m.statusBadgeGroup.visible = true
+end sub
+
+sub UpdateMetadata()
+    metaParts = []
+    if m.movieDetails <> invalid and m.movieDetails.runtime <> invalid
+        runtime = m.movieDetails.runtime
+        hours = int(runtime / 60)
+        minutes = runtime mod 60
+        if hours > 0 and minutes > 0
+            metaParts.push(hours.toStr() + "h " + minutes.toStr() + "m")
+        else if hours > 0
+            metaParts.push(hours.toStr() + "h")
+        else if minutes > 0
+            metaParts.push(minutes.toStr() + "m")
+        end if
+    end if
+
+    genreList = []
+    if m.movieDetails <> invalid and m.movieDetails.genres <> invalid
+        for each genre in m.movieDetails.genres
+            if genre.name <> invalid
+                genreList.push(genre.name)
+            end if
+        end for
+    else if m.tvDetails <> invalid and m.tvDetails.genres <> invalid
+        for each genre in m.tvDetails.genres
+            if genre.name <> invalid
+                genreList.push(genre.name)
+            end if
+        end for
+    end if
+
+    if genreList.count() > 0
+        allGenres = genreList.join(", ")
+        metaParts.push(allGenres)
+    end if
+
+    m.metadataLabel.text = metaParts.join(" • ")
+end sub
+
+sub UpdateGenres()
+    genres = []
+    if m.movieDetails <> invalid and m.movieDetails.genres <> invalid
+        for each genre in m.movieDetails.genres
+            if genre.name <> invalid
+                genres.push(genre.name)
+            end if
+        end for
+    else if m.tvDetails <> invalid and m.tvDetails.genres <> invalid
+        for each genre in m.tvDetails.genres
+            if genre.name <> invalid
+                genres.push(genre.name)
+            end if
+        end for
+    end if
+
+    if genres.count() > 0
+        m.genresLabel.text = genres.join(", ")
+        m.genresLabel.visible = true
+    else
+        m.genresLabel.visible = false
+    end if
+end sub
+
+sub UpdateTagline()
+    tagline = invalid
+    if m.movieDetails <> invalid
+        if m.movieDetails.tagline <> invalid and m.movieDetails.tagline <> ""
+            tagline = m.movieDetails.tagline
+        end if
+    else if m.tvDetails <> invalid
+        if m.tvDetails.tagline <> invalid and m.tvDetails.tagline <> ""
+            tagline = m.tvDetails.tagline
+        end if
+    end if
+
+    if tagline <> invalid
+        m.taglineLabel.text = tagline
+        m.taglineLabel.visible = true
+    else
+        m.taglineLabel.visible = false
+    end if
+end sub
+
+sub CreateActionButtons()
+    ' Clear existing buttons
+    m.buttonsGroup.removeChildrenIndex(m.buttonsGroup.getChildCount(), 0)
+    m.buttons = []
+
+    ' Determine button states based on status
+    hdStatus = invalid
+    status4k = invalid
+    if m.mediaInfo <> invalid
+        hdStatus = m.mediaInfo.status
+        status4k = m.mediaInfo.status4k
+    end if
+
+    ' Request HD button
+    if hdStatus <> invalid and hdStatus >= 2
+        if hdStatus = 2
+            addButton({ icon: "pkg:/images/icons/request_hd.png", label: "HD Pending", action: "none", enabled: false })
+        else if hdStatus = 3
+            addButton({ icon: "pkg:/images/icons/request_hd.png", label: "HD Processing", action: "none", enabled: false })
+        else if hdStatus >= 4
+            addButton({ icon: "pkg:/images/icons/request_hd.png", label: "HD Available", action: "none", enabled: false })
+        end if
+    else
+        addButton({ icon: "pkg:/images/icons/request_hd.png", label: "Request HD", action: "requestHD", enabled: true })
+    end if
+
+    ' Request 4K button
+    if status4k <> invalid and status4k >= 2
+        if status4k = 2
+            addButton({ icon: "pkg:/images/icons/request_4k.png", label: "4K Pending", action: "none", enabled: false })
+        else if status4k = 3
+            addButton({ icon: "pkg:/images/icons/request_4k.png", label: "4K Processing", action: "none", enabled: false })
+        else if status4k >= 4
+            addButton({ icon: "pkg:/images/icons/request_4k.png", label: "4K Available", action: "none", enabled: false })
+        end if
+    else
+        addButton({ icon: "pkg:/images/icons/request_4k.png", label: "Request 4K", action: "request4K", enabled: true })
+    end if
+
+    PositionButtons()
+end sub
+
+sub PositionButtons()
+    ' Calculate button position based on overview text height
+    ' overviewGroup is at Y=820
+    ' overviewHeading takes ~40px, overviewText starts at +50 (Y=870)
+
+    overviewGroupY = 820
+    overviewTextOffset = 50
+    textHeight = m.overviewText.boundingRect().height
+
+    ' Add some padding between overview and buttons (40px)
+    buttonY = overviewGroupY + overviewTextOffset + textHeight + 40
+
+    ' Ensure minimum Y position to avoid overlapping with poster area
+    if buttonY < 1040 then buttonY = 1040
+
+    m.buttonsGroup.translation = [80, buttonY]
+
+    ' Update cast section position to be below buttons (buttons are ~100px high)
+    castY = buttonY + 140
+    m.castHeading.getParent().translation = [80, castY]
+
+    ' Update similar section position to be below cast (cast is ~240px high when visible)
+    similarY = castY + 220
+    m.similarHeading.getParent().translation = [80, similarY]
+end sub
+
+sub addButton(config as object)
+    buttonGroup = CreateObject("roSGNode", "Group")
+    buttonGroup.focusable = config.enabled
+
+    layoutGroup = CreateObject("roSGNode", "LayoutGroup")
+    layoutGroup.layoutDirection = "vert"
+    layoutGroup.horizAlignment = "center"
+    layoutGroup.itemSpacings = [8]
+
+    iconContainer = CreateObject("roSGNode", "Group")
+
+    bgRect = CreateObject("roSGNode", "Poster")
+    bgRect.uri = "pkg:/images/icons/info-box-bg-white.png"
+    bgRect.loadDisplayMode = "scaleToFit"
+    bgRect.width = 144
+    bgRect.height = 72
+    bgRect.translation = [-48, -12]
+    bgRect.opacity = 0
+    iconContainer.appendChild(bgRect)
+
+    icon = CreateObject("roSGNode", "Poster")
+    icon.uri = config.icon
+    icon.width = 64
+    icon.height = 64
+    icon.translation = [-8, -8]
+    if not config.enabled
+        icon.opacity = 0.5
+    end if
+    iconContainer.appendChild(icon)
+
+    layoutGroup.appendChild(iconContainer)
+
+    label = CreateObject("roSGNode", "Label")
+    label.text = config.label
+    label.font = "font:SmallSystemFont"
+    label.horizAlign = "center"
+    if config.enabled
+        label.color = "#CCCCCC"
+    else
+        label.color = "#666666"
+    end if
+    layoutGroup.appendChild(label)
+
+    buttonGroup.appendChild(layoutGroup)
+
+    buttonGroup.addField("buttonAction", "string", false)
+    buttonGroup.buttonAction = config.action
+    buttonGroup.addField("buttonIndex", "integer", false)
+    buttonGroup.buttonIndex = m.buttons.count()
+    buttonGroup.addField("bgRect", "node", false)
+    buttonGroup.bgRect = bgRect
+    buttonGroup.addField("iconNode", "node", false)
+    buttonGroup.iconNode = icon
+    buttonGroup.addField("labelNode", "node", false)
+    buttonGroup.labelNode = label
+
+    if config.enabled
+        buttonGroup.observeField("focusedChild", "onButtonFocusChanged")
+    end if
+
+    m.buttonsGroup.appendChild(buttonGroup)
+    m.buttons.push(buttonGroup)
+end sub
+
+sub onButtonFocusChanged(event as object)
+    button = event.getRoSGNode()
+    if button <> invalid and button.hasFocus()
+        if button.bgRect <> invalid
+            button.bgRect.opacity = 1.0
+        end if
+        if button.iconNode <> invalid
+            button.iconNode.blendColor = "#666666"
+        end if
+        if button.labelNode <> invalid
+            button.labelNode.color = "#FFFFFF"
+        end if
+    else
+        if button.bgRect <> invalid
+            button.bgRect.opacity = 0
+        end if
+        if button.iconNode <> invalid
+            button.iconNode.blendColor = "#FFFFFF"
+        end if
+        if button.labelNode <> invalid
+            button.labelNode.color = "#CCCCCC"
+        end if
+    end if
+end sub
+
+sub CreateMetadataFacts()
+    m.metadataFactsGroup.removeChildrenIndex(m.metadataFactsGroup.getChildCount(), 0)
+
+    facts = []
+
+    if m.movieDetails <> invalid
+        ' Status field may be string or integer
+        if m.movieDetails.status <> invalid
+            statusValue = m.movieDetails.status
+            ' Convert to string if it's not already
+            if type(statusValue) = "roString" or type(statusValue) = "String"
+                if statusValue <> ""
+                    facts.push({ label: "Status", value: statusValue })
+                end if
+            else if type(statusValue) = "roInt" or type(statusValue) = "roInteger" or type(statusValue) = "Integer"
+                ' Skip numeric status codes
+            end if
+        end if
+
+        if m.movieDetails.releaseDate <> invalid and m.movieDetails.releaseDate <> ""
+            releaseDate = FormatReleaseDate(m.movieDetails.releaseDate)
+            facts.push({ label: "Release Date", value: releaseDate })
+        end if
+
+        if m.movieDetails.runtime <> invalid and m.movieDetails.runtime > 0
+            runtime = m.movieDetails.runtime
+            hours = int(runtime / 60)
+            minutes = runtime mod 60
+            runtimeStr = ""
+            if hours > 0 and minutes > 0
+                runtimeStr = hours.toStr() + "h " + minutes.toStr() + "m"
+            else if hours > 0
+                runtimeStr = hours.toStr() + "h"
+            else if minutes > 0
+                runtimeStr = minutes.toStr() + "m"
+            end if
+            if runtimeStr <> ""
+                facts.push({ label: "Runtime", value: runtimeStr })
+            end if
+        end if
+
+        if m.movieDetails.budget <> invalid and m.movieDetails.budget > 0
+            budgetStr = FormatCurrency(m.movieDetails.budget)
+            facts.push({ label: "Budget", value: budgetStr })
+        end if
+    end if
+
+    if m.tvDetails <> invalid
+        if m.tvDetails.voteAverage <> invalid
+            score = int(m.tvDetails.voteAverage * 10)
+            facts.push({ label: "TMDB Score", value: score.toStr() + "%" })
+        end if
+
+        if m.tvDetails.status <> invalid and type(m.tvDetails.status) = "roString" and m.tvDetails.status <> ""
+            facts.push({ label: "Status", value: m.tvDetails.status })
+        end if
+
+        if m.tvDetails.networks <> invalid and m.tvDetails.networks.count() > 0
+            networkNames = []
+            for each network in m.tvDetails.networks
+                if network.name <> invalid
+                    networkNames.push(network.name)
+                end if
+            end for
+            if networkNames.count() > 0
+                facts.push({ label: "Networks", value: networkNames.join(", ") })
+            end if
+        end if
+
+        if m.tvDetails.firstAirDate <> invalid and m.tvDetails.firstAirDate <> ""
+            firstAirDate = FormatReleaseDate(m.tvDetails.firstAirDate)
+            facts.push({ label: "First Air Date", value: firstAirDate })
+        end if
+
+        if m.tvDetails.lastAirDate <> invalid and m.tvDetails.lastAirDate <> ""
+            lastAirDate = FormatReleaseDate(m.tvDetails.lastAirDate)
+            facts.push({ label: "Last Air Date", value: lastAirDate })
+        end if
+
+        if m.tvDetails.numberOfSeasons <> invalid
+            facts.push({ label: "Seasons", value: m.tvDetails.numberOfSeasons.toStr() })
+        end if
+    end if
+
+    if facts.count() > 0
+        CreateMetadataGrid(facts)
+    end if
+end sub
+
+sub CreateMetadataGrid(facts as object)
+    ' Create a two-column grid container with rounded corners and borders
+    ' Column 1: Header (label) | Column 2: Data (value)
+    labelColumnWidth = 180
+    valueColumnWidth = 300
+    totalWidth = labelColumnWidth + valueColumnWidth
+    cellHeight = 65
+    borderColor = "#374151"
+    borderWidth = 2
+
+    ' Calculate grid dimensions
+    numRows = facts.count()
+
+    ' Create each row
+    for i = 0 to numRows - 1
+        fact = facts[i]
+        yPos = i * cellHeight
+
+        ' Create cell container
+        cellGroup = CreateObject("roSGNode", "Group")
+        cellGroup.translation = [0, yPos]
+
+        ' Draw border lines
+        ' Top border (only for first row)
+        if i = 0
+            topLine = CreateObject("roSGNode", "Rectangle")
+            topLine.translation = [0, 0]
+            topLine.width = totalWidth
+            topLine.height = borderWidth
+            topLine.color = borderColor
+            cellGroup.appendChild(topLine)
+        end if
+
+        ' Left border
+        ' Left border
+        leftLine = CreateObject("roSGNode", "Rectangle")
+        leftLine.translation = [0, 0]
+        leftLine.width = borderWidth
+        leftLine.height = cellHeight
+        leftLine.color = borderColor
+        cellGroup.appendChild(leftLine)
+
+        ' Right border
+        rightLine = CreateObject("roSGNode", "Rectangle")
+        rightLine.translation = [totalWidth - borderWidth, 0]
+        rightLine.width = borderWidth
+        rightLine.height = cellHeight
+        rightLine.color = borderColor
+        cellGroup.appendChild(rightLine)
+
+        ' Center divider between columns
+        dividerLine = CreateObject("roSGNode", "Rectangle")
+        dividerLine.translation = [labelColumnWidth, 0]
+        dividerLine.width = borderWidth
+        dividerLine.height = cellHeight
+        dividerLine.color = borderColor
+        cellGroup.appendChild(dividerLine)
+
+        ' Bottom border
+        if i = numRows - 1
+            bottomLine = CreateObject("roSGNode", "Rectangle")
+            bottomLine.translation = [0, cellHeight - borderWidth]
+            bottomLine.width = totalWidth
+            bottomLine.height = borderWidth
+            bottomLine.color = borderColor
+            cellGroup.appendChild(bottomLine)
+        else
+            ' Regular bottom border for non-last rows
+            bottomLine = CreateObject("roSGNode", "Rectangle")
+            bottomLine.translation = [0, cellHeight - borderWidth]
+            bottomLine.width = totalWidth
+            bottomLine.height = borderWidth
+            bottomLine.color = borderColor
+            cellGroup.appendChild(bottomLine)
+        end if
+
+        ' Header label (bold, left column)
+        headerLabel = CreateObject("roSGNode", "Label")
+        headerLabel.text = fact.label
+        headerLabel.translation = [16, 18]
+        headerLabel.font = "font:TinyBoldSystemFont"
+        headerLabel.color = "#D1D5DB"
+        headerLabel.width = labelColumnWidth - 32
+        headerLabel.height = cellHeight - 36
+        headerLabel.vertAlign = "center"
+        cellGroup.appendChild(headerLabel)
+
+        ' Value label (regular, right column)
+        valueLabel = CreateObject("roSGNode", "Label")
+        valueLabel.text = fact.value
+        valueLabel.translation = [labelColumnWidth + 16, 18]
+        valueLabel.font = "font:TinySystemFont"
+        valueLabel.color = "#9CA3AF"
+        valueLabel.width = valueColumnWidth - 32
+        valueLabel.height = cellHeight - 36
+        valueLabel.wrap = true
+        valueLabel.maxLines = 2
+        valueLabel.vertAlign = "center"
+        cellGroup.appendChild(valueLabel)
+
+        m.metadataFactsGroup.appendChild(cellGroup)
+    end for
+end sub
+
+sub LoadCastData()
+    if m.movieDetails = invalid and m.tvDetails = invalid
+        return
+    end if
+
+    ' Safety check for cast data
+    cast = []
+    if m.movieDetails <> invalid and m.movieDetails.DoesExist("credits") and m.movieDetails.credits <> invalid and m.movieDetails.credits.DoesExist("cast") and m.movieDetails.credits.cast <> invalid
+        cast = m.movieDetails.credits.cast
+    else if m.tvDetails <> invalid and m.tvDetails.DoesExist("credits") and m.tvDetails.credits <> invalid and m.tvDetails.credits.DoesExist("cast") and m.tvDetails.credits.cast <> invalid
+        cast = m.tvDetails.credits.cast
+    end if
+
+    if cast = invalid or cast.count() = 0
+        m.castHeading.visible = false
+        m.castRow.visible = false
+        return
+    end if
+
+    castToShow = []
+    maxCast = 20
+    if cast.count() < maxCast then maxCast = cast.count()
+
+    for i = 0 to maxCast - 1
+        castToShow.push(cast[i])
+    end for
+
+    ' Create content nodes for cast
+    castContent = CreateObject("roSGNode", "ContentNode")
+
+    for each member in castToShow
+        castNode = CreateObject("roSGNode", "ContentNode")
+        castNode.title = member.name
+        if member.character <> invalid
+            castNode.description = member.character
+        end if
+        if member.profilePath <> invalid
+            castNode.hdPosterUrl = "https://image.tmdb.org/t/p/w185" + member.profilePath
+        end if
+        ' Add person ID for details screen
+        if member.id <> invalid
+            castNode.addField("personId", "integer", false)
+            castNode.personId = member.id
+        end if
+        castContent.appendChild(castNode)
+    end for
+
+    ' Make visible first, then set content - ItemGrid doesn't need wrapper ContentNode
+    m.castHeading.visible = true
+    m.castRow.visible = true
+    m.castRow.content = castContent
+end sub
+
+sub LoadSimilarContent()
+    ' Load similar movies or TV shows
+    mediaType = m.mediaItem.mediaType
+    if mediaType = invalid then mediaType = "movie"
+
+    tmdbId = m.mediaItem.tmdbId
+    endpoint = "/api/v1/" + mediaType + "/" + tmdbId.toStr() + "/similar"
+
+    m.apiTask.request = {
+        method: "GET",
+        endpoint: endpoint,
+        queryParams: { page: "1" }
+    }
+
+    m.apiTask.observeField("response", "onSimilarContentResponse")
+    m.apiTask.control = "RUN"
+end sub
+
+sub onSimilarContentResponse(event as object)
+    response = event.getData()
+
+    if not response.success or response.data = invalid
+        m.similarHeading.visible = false
+        m.similarRow.visible = false
+        return
+    end if
+
+    results = response.data.results
+    if results = invalid or results.count() = 0
+        m.similarHeading.visible = false
+        m.similarRow.visible = false
+        return
+    end if
+
+    ' Take first 20 items
+    itemsToShow = []
+    maxItems = 20
+    if results.count() < maxItems then maxItems = results.count()
+
+    for i = 0 to maxItems - 1
+        itemsToShow.push(results[i])
+    end for
+
+    ' Create content nodes for similar items
+    similarContent = CreateObject("roSGNode", "ContentNode")
+    similarRowNode = CreateObject("roSGNode", "ContentNode")
+
+    for each item in itemsToShow
+        mediaNode = CreateMediaContentNode(item)
+        if mediaNode <> invalid
+            similarRowNode.appendChild(mediaNode)
+        end if
+    end for
+
+    similarContent.appendChild(similarRowNode)
+
+    ' Make visible first, then set content - order matters for RowList
+    m.similarHeading.visible = true
+    m.similarRow.visible = true
+    m.similarRow.content = similarContent
+
+    ' Force RowList to update by reassigning content (same as JellyseerrDiscoveryScreen)
+    m.similarRow.content = m.similarRow.content
+end sub
+
+sub onSimilarItemSelected(event as object)
+    selectedIndex = event.getData()
+    if selectedIndex.count() < 2 then return
+
+    itemIndex = selectedIndex[1]
+    row = m.similarRow.content.getChild(0)
+    if row = invalid then return
+
+    selectedItem = row.getChild(itemIndex)
+    if selectedItem = invalid then return
+
+    ' Navigate to details screen for this item
+    detailsScreen = CreateObject("roSGNode", "JellyseerrDetailsScreen")
+    detailsScreen.mediaItem = selectedItem
+    m.top.getScene().appendChild(detailsScreen)
+    detailsScreen.setFocus(true)
+end sub
+
+sub onCastItemSelected(event as object)
+    selectedIndex = event.getData()
+
+    ' MarkupGrid itemSelected returns integer index
+    if selectedIndex = invalid or selectedIndex < 0
+        return
+    end if
+
+    if m.castRow.content = invalid
+        return
+    end if
+
+    selectedCast = m.castRow.content.getChild(selectedIndex)
+    if selectedCast = invalid
+        return
+    end if
+
+    ' Get person ID from the cast item
+    personId = selectedCast.personId
+    personName = selectedCast.title
+
+    if personId = invalid or personId = 0
+        return
+    end if
+
+    ' Navigate to cast details screen
+    castDetailsScreen = CreateObject("roSGNode", "JellyseerrCastDetails")
+    castDetailsScreen.personId = personId
+    if personName <> invalid
+        castDetailsScreen.personName = personName
+    end if
+
+    ' Store the currently focused element so we can restore it when coming back
+    m.previousFocusedElement = m.focusedElement
+
+    ' Add to THIS screen, not the scene
+    m.top.appendChild(castDetailsScreen)
+    castDetailsScreen.setFocus(true)
+end sub
+
+sub onRequestHDPressed()
+    SubmitRequest(false)
+end sub
+
+sub onRequest4KPressed()
+    SubmitRequest(true)
+end sub
+
+sub SubmitRequest(is4k as boolean)
+    mediaType = m.mediaItem.mediaType
+    if mediaType = invalid then mediaType = "movie"
+
+    ' Check if it's a TV show with multiple seasons
+    if mediaType = "tv" and m.tvDetails <> invalid and m.tvDetails.numberOfSeasons <> invalid
+        numberOfSeasons = m.tvDetails.numberOfSeasons
+
+        ' If more than 1 season, show the dialog
+        if numberOfSeasons > 1
+            ShowSeasonDialog(is4k)
+            return
+        end if
+    end if
+
+    ' For movies or TV shows with 1 season, submit directly with all seasons
+    SubmitRequestWithSeasons(invalid, is4k)
+end sub
+
+sub ShowSeasonDialog(is4k as boolean)
+    ' Store is4k for later use
+    m.pendingRequestIs4k = is4k
+
+    ' Get show name
+    showName = ""
+    if m.tvDetails <> invalid
+        if m.tvDetails.name <> invalid and m.tvDetails.name <> ""
+            showName = m.tvDetails.name
+        else if m.tvDetails.title <> invalid and m.tvDetails.title <> ""
+            showName = m.tvDetails.title
+        end if
+    end if
+
+    if showName = ""
+        showName = m.mediaItem.title
+        if showName = invalid then showName = "Unknown Show"
+    end if
+
+    numberOfSeasons = m.tvDetails.numberOfSeasons
+
+    ' Create season dialog
+    m.seasonDialog = CreateObject("roSGNode", "JellyseerrSeasonDialog")
+    m.seasonDialog.showName = showName
+    m.seasonDialog.numberOfSeasons = numberOfSeasons
+    m.seasonDialog.is4k = is4k
+
+    ' Observe for response
+    m.seasonDialog.observeField("selectedSeasons", "onSeasonDialogResponse")
+    m.seasonDialog.observeField("wasCancelled", "onSeasonDialogCancelled")
+
+    ' Show dialog by adding to scene
+    m.top.getScene().appendChild(m.seasonDialog)
+
+    ' Explicitly set focus to the dialog
+    m.seasonDialog.setFocus(true)
+end sub
+
+sub onSeasonDialogResponse(event as object)
+    selectedSeasons = event.getData()
+
+    ' Unobserve and close dialog
+    if m.seasonDialog <> invalid
+        m.seasonDialog.unobserveField("selectedSeasons")
+        m.seasonDialog.unobserveField("wasCancelled")
+        m.top.getScene().removeChild(m.seasonDialog)
+        m.seasonDialog = invalid
+    end if
+
+    ' Submit request with selected seasons
+    SubmitRequestWithSeasons(selectedSeasons, m.pendingRequestIs4k)
+end sub
+
+sub onSeasonDialogCancelled(event as object)
+    wasCancelled = event.getData()
+    if wasCancelled
+        ' Unobserve and close dialog
+        if m.seasonDialog <> invalid
+            m.seasonDialog.unobserveField("selectedSeasons")
+            m.seasonDialog.unobserveField("wasCancelled")
+            m.top.getScene().removeChild(m.seasonDialog)
+            m.seasonDialog = invalid
+        end if
+
+        ' Restore focus to the details screen
+        m.top.setFocus(true)
+    end if
+end sub
+
+sub SubmitRequestWithSeasons(seasons as object, is4k as boolean)
+    ShowLoading()
+
+    ' Store is4k for error handling
+    m.lastRequestIs4k = is4k
+
+    mediaType = m.mediaItem.mediaType
+    if mediaType = invalid then mediaType = "movie"
+
+    ' Create request body with proper camelCase keys for API
+    ' Note: We must build the JSON string manually to preserve camelCase
+    requestBodyJson = "{"
+    requestBodyJson = requestBodyJson + """mediaType"":""" + mediaType + """"
+    requestBodyJson = requestBodyJson + ",""mediaId"":" + Str(m.mediaItem.tmdbId).Trim()
+    requestBodyJson = requestBodyJson + ",""is4k"":"
+    if is4k
+        requestBodyJson = requestBodyJson + "true"
+    else
+        requestBodyJson = requestBodyJson + "false"
+    end if
+
+    ' Handle seasons parameter for TV shows
+    if mediaType = "tv"
+        if seasons <> invalid and seasons.count() > 0
+            ' Use selected seasons array
+            requestBodyJson = requestBodyJson + ",""seasons"":["
+            for i = 0 to seasons.count() - 1
+                if i > 0 then requestBodyJson = requestBodyJson + ","
+                requestBodyJson = requestBodyJson + Str(seasons[i]).Trim()
+            end for
+            requestBodyJson = requestBodyJson + "]"
+        else
+            ' Request all seasons (empty array or invalid means "all")
+            requestBodyJson = requestBodyJson + ",""seasons"":""all"""
+        end if
+    end if
+
+    requestBodyJson = requestBodyJson + "}"
+
+    endpoint = "/api/v1/request"
+
+    ' Parse the JSON string back to an object for the API task
+    requestBody = ParseJson(requestBodyJson)
+
+    m.apiTask.request = {
+        method: "POST",
+        endpoint: endpoint,
+        body: requestBody
+    }
+
+    m.apiTask.observeField("response", "onRequestSubmitted")
+    m.apiTask.control = "RUN"
+end sub
+
+sub onRequestSubmitted(event as object)
+    response = event.getData()
+    HideLoading()
+
+    qualityLabel = "HD"
+    if m.lastRequestIs4k = true then qualityLabel = "4K"
+
+    if response.success
+        ShowMessage("Success", qualityLabel + " request submitted successfully!")
+        ' Reload details to update status
+        LoadFullDetails()
+    else
+        errorMsg = "Failed to submit " + qualityLabel + " request"
+        errorTitle = "Request Failed"
+
+        ' Check if response has error field (from API task)
+        if response.error <> invalid
+            errType = type(response.error)
+            if errType = "roString" or errType = "String"
+                if response.error <> ""
+                    errorMsg = response.error
+                end if
+            end if
+        end if
+
+        ' Handle specific error codes
+        if response.statusCode = 403
+            ' Simplified 403 permission error message (single line for better dialog display)
+            errorTitle = "Permission Denied"
+            errorMsg = "You don't have permission to request " + qualityLabel + " content. Contact your Jellyseerr administrator to adjust your permissions."
+        else if response.statusCode = 400
+            errorTitle = "Invalid Request"
+            errorMsg = "Invalid request. Please check your Jellyseerr configuration."
+        else
+            ' Parse the rawResponse for error message
+            if response.rawResponse <> invalid and response.rawResponse <> ""
+                jsonError = ParseJson(response.rawResponse)
+                if jsonError <> invalid
+                    ' Safely extract error message as string
+                    if jsonError.message <> invalid
+                        msgType = type(jsonError.message)
+                        if msgType = "roString" or msgType = "String"
+                            if jsonError.message <> ""
+                                errorMsg = errorMsg + ": " + jsonError.message
+                            end if
+                        end if
+                    else if jsonError.error <> invalid
+                        errType = type(jsonError.error)
+                        if errType = "roString" or errType = "String"
+                            if jsonError.error <> ""
+                                errorMsg = errorMsg + ": " + jsonError.error
+                            end if
+                        end if
+                    end if
+                end if
+            end if
+        end if
+
+        ShowMessage(errorTitle, errorMsg)
+    end if
+end sub
+
+sub ShowMessage(title as string, message as dynamic)
+    ' Initialize with a guaranteed string literal
+    defaultMsg = "An error occurred"
+    safeMessage = defaultMsg
+
+    ' Ensure title is a valid string
+    safeTitle = "Error"
+    if title <> invalid
+        titleType = type(title)
+        if titleType = "roString" or titleType = "String"
+            if title <> ""
+                safeTitle = title
+            end if
+        end if
+    end if
+
+    ' Try to convert message to string
+    if message <> invalid
+        msgType = type(message)
+        if msgType = "roString" or msgType = "String"
+            ' Already a string - use directly but ensure not empty
+            if message <> ""
+                safeMessage = message
+            end if
+        else if msgType = "roInt" or msgType = "roInteger" or msgType = "Integer"
+            ' Convert integer to string
+            tempStr = Str(message).Trim()
+            if tempStr <> ""
+                safeMessage = tempStr
+            end if
+        else if msgType = "roBoolean" or msgType = "Boolean"
+            ' Convert boolean to string
+            if message = true
+                safeMessage = "true"
+            else
+                safeMessage = "false"
+            end if
+        end if
+    end if
+
+    ' Create and show dialog with safe values
+    dialog = CreateObject("roSGNode", "StandardMessageDialog")
+    if dialog <> invalid
+        ' Set properties individually with explicit string values
+        dialog.title = safeTitle + "" ' Force string concatenation
+        dialog.message = safeMessage + "" ' Force string concatenation
+        dialog.buttons = ["OK"]
+
+        ' Set dialog on scene
+        scene = m.top.getScene()
+        if scene <> invalid
+            scene.dialog = dialog
+        end if
+    end if
+end sub
+
+sub ShowLoading()
+    m.loadingLabel.visible = true
+end sub
+
+sub HideLoading()
+    m.loadingLabel.visible = false
+end sub
+
+sub ShowError(message as string)
+    m.errorLabel.text = message
+    m.errorLabel.visible = true
+    m.loadingLabel.visible = false
+end sub
+
+function GetYearFromDate(dateString as dynamic) as dynamic
+    if dateString = invalid or dateString = "" then return invalid
+    ' Date format is typically YYYY-MM-DD
+    if len(dateString) >= 4
+        return Left(dateString, 4)
+    end if
+    return invalid
+end function
+
+function FormatReleaseDate(dateString as dynamic) as string
+    if dateString = invalid or dateString = "" then return ""
+    ' Date format is YYYY-MM-DD, convert to MMM DD, YYYY
+    parts = dateString.split("-")
+    if parts.count() = 3
+        year = parts[0]
+        month = parts[1].toInt()
+        day = parts[2].toInt()
+
+        monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        if month >= 1 and month <= 12
+            return monthNames[month - 1] + " " + day.toStr() + ", " + year
+        end if
+    end if
+    return dateString
+end function
+
+function FormatCurrency(amount as integer) as string
+    if amount = invalid then return ""
+    ' Format as $X,XXX,XXX
+    amountStr = amount.toStr()
+    formatted = "$"
+    length = len(amountStr)
+
+    for i = 0 to length - 1
+        formatted = formatted + amountStr.mid(i, 1)
+        remaining = length - i - 1
+        if remaining > 0 and remaining mod 3 = 0
+            formatted = formatted + ","
+        end if
+    end for
+
+    return formatted
+end function
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = "back"
+        parent = m.top.getParent()
+        if parent <> invalid
+            categoryRows = parent.findNode("categoryRows")
+            parent.removeChild(m.top)
+            if categoryRows <> invalid
+                categoryRows.setFocus(true)
+            else
+                parent.setFocus(true)
+            end if
+        end if
+        return true
+    end if
+
+    ' Handle button selection with OK key
+    if key = "OK" and m.focusedElement <> invalid and m.focusedElement.isSameNode(m.buttonsGroup)
+        for each button in m.buttons
+            if button.hasFocus() and button.buttonAction <> "none"
+                if button.buttonAction = "requestHD"
+                    onRequestHDPressed()
+                else if button.buttonAction = "request4K"
+                    onRequest4KPressed()
+                end if
+                return true
+            end if
+        end for
+    end if
+
+    ' Handle left/right navigation between buttons
+    if key = "left" and m.focusedElement <> invalid and m.focusedElement.isSameNode(m.buttonsGroup)
+        currentIndex = -1
+        for i = 0 to m.buttons.count() - 1
+            if m.buttons[i].hasFocus()
+                currentIndex = i
+                exit for
+            end if
+        end for
+
+        if currentIndex > 0
+            ' Move to previous button
+            for i = currentIndex - 1 to 0 step -1
+                if m.buttons[i].focusable
+                    m.buttons[i].setFocus(true)
+                    return true
+                end if
+            end for
+        end if
+        return true
+    else if key = "right" and m.focusedElement <> invalid and m.focusedElement.isSameNode(m.buttonsGroup)
+        currentIndex = -1
+        for i = 0 to m.buttons.count() - 1
+            if m.buttons[i].hasFocus()
+                currentIndex = i
+                exit for
+            end if
+        end for
+
+        if currentIndex >= 0 and currentIndex < m.buttons.count() - 1
+            ' Move to next button
+            for i = currentIndex + 1 to m.buttons.count() - 1
+                if m.buttons[i].focusable
+                    m.buttons[i].setFocus(true)
+                    return true
+                end if
+            end for
+        end if
+        return true
+    end if
+
+    ' Handle navigation with scrolling
+    if key = "down"
+        if m.focusedElement = invalid or m.focusedElement.isSameNode(m.buttonsGroup)
+            ' Move from buttons to cast row (if visible)
+            if m.castRow.visible
+                m.focusedElement = m.castRow
+                m.castRow.setFocus(true)
+                ensureFocusedNodeVisible()
+                return true
+            else if m.similarRow.visible
+                m.focusedElement = m.similarRow
+                m.similarRow.setFocus(true)
+                ensureFocusedNodeVisible()
+                return true
+            end if
+        else if m.focusedElement.isSameNode(m.castRow)
+            ' Move from cast to similar row (if visible)
+            if m.similarRow.visible
+                m.focusedElement = m.similarRow
+                m.similarRow.setFocus(true)
+                ensureFocusedNodeVisible()
+                return true
+            end if
+        end if
+    else if key = "up"
+        if m.focusedElement <> invalid
+            if m.focusedElement.isSameNode(m.similarRow)
+                ' Move from similar to cast (if visible) or buttons
+                if m.castRow.visible
+                    m.focusedElement = m.castRow
+                    m.castRow.setFocus(true)
+                    ensureFocusedNodeVisible()
+                else if m.buttons.count() > 0
+                    m.focusedElement = m.buttonsGroup
+                    for each button in m.buttons
+                        if button.focusable
+                            button.setFocus(true)
+                            exit for
+                        end if
+                    end for
+                    ensureFocusedNodeVisible()
+                end if
+                return true
+            else if m.focusedElement.isSameNode(m.castRow)
+                ' Move from cast to buttons
+                if m.buttons.count() > 0
+                    m.focusedElement = m.buttonsGroup
+                    for each button in m.buttons
+                        if button.focusable
+                            button.setFocus(true)
+                            exit for
+                        end if
+                    end for
+                    ensureFocusedNodeVisible()
+                end if
+                return true
+            end if
+        end if
+    end if
+
+    return false
+end function
+
+sub ensureFocusedNodeVisible()
+    ' Get the currently focused element's position dynamically
+    focusedY = 0
+    focusedHeight = 150
+
+    if m.focusedElement <> invalid
+        if m.focusedElement.isSameNode(m.buttonsGroup)
+            ' Get actual button position
+            focusedY = m.buttonsGroup.translation[1]
+            focusedHeight = 120
+        else if m.focusedElement.isSameNode(m.castRow)
+            ' Get actual cast section position
+            castSection = m.castHeading.getParent()
+            focusedY = castSection.translation[1]
+            focusedHeight = 350
+        else if m.focusedElement.isSameNode(m.similarRow)
+            ' Get actual similar section position
+            similarSection = m.similarHeading.getParent()
+            focusedY = similarSection.translation[1]
+            focusedHeight = 450
+        end if
+    end if
+
+    viewportHeight = 1080
+    currentOffset = m.scrollOffset
+
+    ' If focused item is below bottom edge, scroll down
+    if focusedY + focusedHeight - currentOffset > viewportHeight
+        delta = (focusedY + focusedHeight) - (currentOffset + viewportHeight)
+        m.scrollOffset = m.scrollOffset + delta + 50
+        ' If focused item is above top edge, scroll up
+    else if focusedY - currentOffset < 100
+        m.scrollOffset = focusedY - 100
+    end if
+
+    ' Clamp scrollOffset
+    if m.scrollOffset < 0 then m.scrollOffset = 0
+
+    ' Apply smooth scroll animation
+    m.scrollContent.translation = [0, -m.scrollOffset]
+end sub

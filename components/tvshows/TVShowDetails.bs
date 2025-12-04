@@ -1,304 +1,1034 @@
-import "pkg:/source/enums/ViewLoadStatus.bs"
+import "pkg:/source/api/Image.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
 
-sub init()
-    m.top.optionsAvailable = false
-    main = m.top.findNode("toplevel")
-    main.translation = [96, 175]
-    m.extrasSlider = m.top.findNode("tvSeasonExtras")
-    m.getShuffleEpisodesTask = createObject("roSGNode", "getShuffleEpisodesTask")
-    m.Shuffle = m.top.findNode("Shuffle")
-    m.extrasSlider.visible = true
-    m.seasons = m.top.findNode("seasons")
-    m.overview = m.top.findNode("overview")
-    m.playedIndicator = m.top.findNode("playedIndicator")
+import "pkg:/source/enums/AnimationControl.bs"
+import "pkg:/source/enums/AnimationState.bs"
+import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/enums/ImageType.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/enums/MediaStreamType.bs"
+import "pkg:/source/enums/PersonType.bs"
+import "pkg:/source/enums/PlaybackMethod.bs"
+import "pkg:/source/enums/String.bs"
+import "pkg:/source/enums/SubtitleSelection.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/enums/ViewLoadStatus.bs"
 
-    m.overview.ellipsisText = tr("... (Press * to read more)")
+sub init()
+    m.global.queueManager.callFunc("setForceTranscode", PlaybackMethod.PLAYNORMALLY)
+
+    m.container = m.top.findnode("container")
+    m.scrollableContent = m.top.findNode("scrollableContent")
+    m.extrasGrid = m.top.findNode("extrasGrid")
+    m.top.optionsAvailable = false
+
+    m.options = m.top.findNode("movieOptions")
+    m.audioSelector = m.top.findNode("audioSelector")
+    m.subtitleSelector = m.top.findNode("subtitleSelector")
+
+    ' Initialize task nodes for API calls
+    m.favoriteTask = m.top.findNode("favoriteTask")
+    m.playstateTask = m.top.findNode("playstateTask")
+
+    ' Get references to info grid rows for visibility management
+    m.genresRow = m.top.findNode("genresRow")
+    m.networksRow = m.top.findNode("networksRow")
+    m.premieredRow = m.top.findNode("premieredRow")
+    m.endedRow = m.top.findNode("endedRow")
+
+    ' Track favorite state for button visuals
+    m.itemIsFavorited = false
+
+    ' Initialize button rows
+    m.buttonRow = m.top.findNode("buttonRow")
+
+    m.currentButtonIndex = 0
+    m.buttonGroups = []
+    m.buttons = []
+    m.itemIsFavorited = false
+
     m.loadStatus = ViewLoadStatus.INIT
+
+    m.global.queueManager.callFunc("setLastKnownItemID", string.empty)
+
+    m.top.observeField("itemContent", "itemContentChanged")
+
+    ' Observe audio and subtitle selector changes
+    m.audioSelector.observeField("audioStreamIndex", "onAudioStreamIndexChanged")
+    m.subtitleSelector.observeField("subtitleStream", "onSubtitleStreamChanged")
+
+    ' Observe visibility to restore focus when selectors are closed
+    m.audioSelector.observeField("visible", "onAudioSelectorVisibleChanged")
+    m.subtitleSelector.observeField("visible", "onSubtitleSelectorVisibleChanged")
+
+    ' Observe scene manager return data for dialog responses
+    m.global.sceneManager.observeField("dataReturned", "onDialogDataReturned")
+
+    ' Observe season selection from extrasGrid
+    m.top.observeField("selectedItem", "onSelectedItemChanged")
+end sub' OnScreenShown: Callback function when view is presented on screen
+sub OnScreenShown()
+    ' set focus to button group
+    if m.extrasGrid <> invalid and m.extrasGrid.isInFocusChain()
+        m.top.lastFocus.setFocus(true)
+        group = m.global.sceneManager.callFunc("getActiveScene")
+        group.lastFocus = m.top.lastFocus
+    else if m.extrasGrid <> invalid and m.extrasGrid.isInFocusChain()
+        m.extrasGrid.setFocus(true)
+        group = m.global.sceneManager.callFunc("getActiveScene")
+        group.lastFocus = m.seasons
+    else
+        ' Focus on first visible button
+        firstVisibleIndex = 0
+        for i = 0 to m.buttonGroups.count() - 1
+            if m.buttonGroups[i].visible
+                firstVisibleIndex = i
+                exit for
+            end if
+        end for
+
+        if firstVisibleIndex < m.buttonGroups.count()
+            m.currentButtonIndex = firstVisibleIndex
+            m.buttonGroups[firstVisibleIndex].setFocus(true)
+            highlightButton(firstVisibleIndex)
+            group = m.global.sceneManager.callFunc("getActiveScene")
+            group.lastFocus = m.buttonGroups[firstVisibleIndex]
+        end if
+    end if
+
+    if m.loadStatus = ViewLoadStatus.INIT
+        m.loadStatus = ViewLoadStatus.FIRSTLOAD
+        return
+    end if
+
+    m.loadStatus = ViewLoadStatus.RELOAD
+
+    m.top.refreshTVShowDetailsData = not m.top.refreshTVShowDetailsData
+end sub
+
+' setBackdropImage: Set backdrop image for TV show
+sub setBackdropImage(itemData as object)
+    showBackgroundBlack = m.top.findNode("showBackgroundBlack")
+    showBackdrop = m.top.findNode("showBackdrop")
+    showBackdropTint = m.top.findNode("showBackdropTint")
+
+    if isValid(showBackdrop)
+        ' Determine which image to use - prefer backdrop, fall back to primary
+        backdropUri = invalid
+        if isValidAndNotEmpty(itemData.BackdropImageTags)
+            backdropUri = ImageURL(itemData.id, ImageType.BACKDROP, {
+                "maxWidth": 1920,
+                "maxHeight": 1080,
+                "quality": 90,
+                "blur": 10,
+                "Tag": itemData.BackdropImageTags[0]
+            })
+        else if isChainValid(itemData, "ImageTags.Primary")
+            backdropUri = ImageURL(itemData.id, ImageType.PRIMARY, {
+                "maxWidth": 1920,
+                "maxHeight": 1080,
+                "quality": 90,
+                "blur": 10,
+                "Tag": itemData.ImageTags.Primary
+            })
+        end if
+
+        if isValid(backdropUri)
+            showBackdrop.uri = backdropUri
+            if isValid(showBackgroundBlack) then showBackgroundBlack.visible = true
+            showBackdrop.visible = true
+            if isValid(showBackdropTint) then showBackdropTint.visible = true
+        else
+            if isValid(showBackgroundBlack) then showBackgroundBlack.visible = false
+            showBackdrop.visible = false
+            if isValid(showBackdropTint) then showBackdropTint.visible = false
+        end if
+    end if
 end sub
 
 sub itemContentChanged()
     ' Updates video metadata
     item = m.top.itemContent
+    if not isValid(item)
+        return
+    end if
     itemData = item.json
 
-    m.top.findNode("tvshowPoster").uri = m.top.itemContent.posterURL
-
-    m.playedIndicator.data = {
-        played: chainLookupReturn(item, "json.UserData.Played", false),
-        unplayedCount: chainLookupReturn(item, "json.UserData.UnplayedItemCount", 0)
-    }
-
-    m.top.overhangTitle = itemData.name
-
-    'Check production year, if invalid remove label
-    if isValid(itemData.productionYear)
-        setFieldText("releaseYear", itemData.productionYear)
+    ' Store favorite status
+    if isChainValid(itemData, "UserData.IsFavorite")
+        m.itemIsFavorited = itemData.UserData.IsFavorite
     else
-        m.top.findNode("main_group").removeChild(m.top.findNode("releaseYear"))
+        m.itemIsFavorited = false
     end if
 
-    'Check officialRating, if invalid remove label
-    if isValid(itemData.officialRating)
-        setFieldText("officialRating", itemData.officialRating)
-    else
-        m.top.findNode("main_group").removeChild(m.top.findNode("officialRating"))
+    ' Set backdrop/banner as background
+    setBackdropImage(itemData)
+
+    ' Set show title
+    showTitleNode = m.top.findNode("showTitle")
+    if isValid(showTitleNode) and isValid(itemData.name)
+        showTitleNode.text = itemData.name
     end if
 
-    'Check communityRating, if invalid remove label
-    if chainLookupReturn(m.global.session, "user.settings.`ui.itemdetail.showRatings`", true)
-        if isValid(itemData.communityRating)
-            m.top.findNode("star").visible = true
-            setFieldText("communityRating", int(itemData.communityRating * 10) / 10)
+    ' Set community rating (stars)
+    if chainLookupReturn(m.global.session, "user.settings.ui.itemdetail.showRatings", true)
+        starNode = m.top.findNode("star")
+        communityRatingNode = m.top.findNode("communityRating")
+        communityRatingGroup = m.top.findNode("communityRatingGroup")
+
+        if isValid(itemData.communityRating) and isValid(starNode) and isValid(communityRatingNode)
+            starNode.visible = true
+            communityRatingNode.text = str(int(itemData.communityRating * 10) / 10)
+            if isValid(communityRatingGroup) then communityRatingGroup.visible = true
         else
-            m.top.findNode("star").visible = false
+            if isValid(starNode) then starNode.visible = false
+            if isValid(communityRatingNode) then communityRatingNode.text = ""
+            if isValid(communityRatingGroup) then communityRatingGroup.visible = false
         end if
     else
-        m.top.findNode("main_group").removeChild(m.top.findNode("communityRating"))
-        m.top.findNode("main_group").removeChild(m.top.findNode("star"))
-        m.top.findNode("star").visible = false
+        starNode = m.top.findNode("star")
+        if isValid(starNode) then starNode.visible = false
+        communityRatingGroup = m.top.findNode("communityRatingGroup")
+        if isValid(communityRatingGroup) then communityRatingGroup.visible = false
     end if
 
-    setFieldText("overview", itemData.overview)
-
-    m.Shuffle.visible = true
-
-    if type(itemData.RunTimeTicks) = "LongInteger"
-        setFieldText("runtime", stri(getRuntime()) + " mins")
-    end if
-
-    'History feild is set via the function getHistory()
-    setFieldText("history", getHistory())
-
-    'Check genres, if invalid remove label
-    if itemData.genres.count() > 0
-        setFieldText("genres", itemData.genres.join(", "))
+    ' Set release year
+    releaseYearNode = m.top.findNode("releaseYear")
+    if isValid(releaseYearNode) and isValid(itemData.productionYear)
+        releaseYearNode.text = str(itemData.productionYear)
     else
-        m.top.findNode("main_group").removeChild(m.top.findNode("genres"))
+        if isValid(releaseYearNode) then releaseYearNode.text = ""
     end if
 
-    'We don't display Directors in the show page. Might want to remove this.
-    for each person in itemData.people
-        if person.type = "Director"
-            exit for
+    ' Set show status
+    showStatusNode = m.top.findNode("showStatus")
+    if isValid(showStatusNode) and isValid(itemData.status)
+        showStatusNode.text = itemData.status
+    else
+        if isValid(showStatusNode) then showStatusNode.text = ""
+    end if
+
+    ' Set official rating
+    officialRatingNode = m.top.findNode("officialRating")
+    if isValid(officialRatingNode) and isValid(itemData.officialRating)
+        officialRatingNode.text = itemData.officialRating
+    else
+        if isValid(officialRatingNode) then officialRatingNode.text = ""
+    end if
+
+    ' Update metadata dots visibility
+    updateMetadataDots()
+
+    ' Set tagline
+    taglineNode = m.top.findNode("tagline")
+    if isValid(taglineNode)
+        if isValidAndNotEmpty(itemData.taglines)
+            taglineNode.text = itemData.taglines[0]
+        else
+            taglineNode.text = ""
+        end if
+    end if
+
+    ' Set overview
+    overviewNode = m.top.findNode("overview")
+    if isValid(overviewNode)
+        overviewNode.text = itemData.overview
+    end if
+
+    ' Set show logo
+    showLogoNode = m.top.findNode("showLogo")
+    if isValid(showLogoNode) and isValid(itemData.id)
+        if isValidAndNotEmpty(itemData.ImageTags) and isValid(itemData.ImageTags.Logo)
+            showLogoNode.uri = ImageURL(itemData.id, "Logo", { "maxWidth": 400, "maxHeight": 200 })
+            showLogoNode.visible = true
+        else
+            showLogoNode.uri = ""
+            showLogoNode.visible = false
+        end if
+    end if
+
+    ' Set genres in info grid
+    genresTextNode = m.top.findNode("genres")
+    if isValid(genresTextNode)
+        if isValidAndNotEmpty(itemData.genres)
+            genresTextNode.text = itemData.genres.join(", ")
+            if isValid(m.genresRow) then m.genresRow.visible = true
+        else
+            if isValid(m.genresRow) then m.genresRow.visible = false
+        end if
+    end if
+
+    ' Set networks
+    networksTextNode = m.top.findNode("networks")
+    if isValid(networksTextNode)
+        if isValidAndNotEmpty(itemData.studios)
+            networksArray = []
+            for each studio in itemData.studios
+                networksArray.push(studio.name)
+            end for
+            networksTextNode.text = networksArray.join(", ")
+            if isValid(m.networksRow) then m.networksRow.visible = true
+        else
+            if isValid(m.networksRow) then m.networksRow.visible = false
+        end if
+    end if
+
+    ' Set premiered date
+    premieredTextNode = m.top.findNode("premiered")
+    if isValid(premieredTextNode) and isValid(itemData.PremiereDate)
+        airDate = CreateObject("roDateTime")
+        airDate.FromISO8601String(itemData.PremiereDate)
+        ' Format as "Month Day, Year" (e.g., "Dec 15, 2023")
+        premieredTextNode.text = airDate.AsDateString("short-month-no-weekday")
+        if isValid(m.premieredRow) then m.premieredRow.visible = true
+    else
+        if isValid(m.premieredRow) then m.premieredRow.visible = false
+    end if
+
+    ' Set ended date
+    endedTextNode = m.top.findNode("ended")
+    if isValid(endedTextNode)
+        if isValid(itemData.EndDate)
+            endDate = CreateObject("roDateTime")
+            endDate.FromISO8601String(itemData.EndDate)
+            ' Format as "Month Day, Year" (e.g., "Dec 15, 2023")
+            endedTextNode.text = endDate.AsDateString("short-month-no-weekday")
+            if isValid(m.endedRow) then m.endedRow.visible = true
+        else
+            if isValid(m.endedRow) then m.endedRow.visible = false
+        end if
+    end if
+
+    ' Set favorite state from item data
+    if isChainValid(itemData, "UserData.IsFavorite")
+        m.itemIsFavorited = itemData.UserData.IsFavorite
+    else
+        m.itemIsFavorited = false
+    end if
+
+    ' Extract video and audio codec information - removed, not shown in metadata row
+    ' Metadata row only shows: rating, year, status, official rating
+    if false and isValidAndNotEmpty(itemData.MediaSources)
+        videoCodec = ""
+        audioCodec = ""
+        videoQuality = ""
+        audioQuality = ""
+
+        firstSource = itemData.MediaSources[0]
+
+        if isValidAndNotEmpty(firstSource.MediaStreams)
+            for each stream in firstSource.MediaStreams
+                if stream.Type = "Video" and videoCodec = ""
+                    videoCodec = stream.Codec
+                    if isValid(stream.DisplayTitle)
+                        videoQuality = stream.DisplayTitle
+                    end if
+                else if stream.Type = "Audio" and audioCodec = ""
+                    audioCodec = stream.Codec
+                    if isValid(stream.DisplayTitle)
+                        audioQuality = stream.DisplayTitle
+                    end if
+                end if
+            end for
+        end if
+
+        ' Set video quality and codec
+        videoQualityNode = m.top.findNode("videoQuality")
+        videoCodecNode = m.top.findNode("videoCodec")
+        if isValid(videoQualityNode)
+            videoQualityNode.text = videoQuality
+        end if
+        if isValid(videoCodecNode)
+            videoCodecNode.text = UCase(videoCodec)
+        end if
+
+        ' Set audio quality and codec
+        audioQualityNode = m.top.findNode("audioQuality")
+        audioCodecNode = m.top.findNode("audioCodec")
+        if isValid(audioQualityNode)
+            audioQualityNode.text = audioQuality
+        end if
+        if isValid(audioCodecNode)
+            audioCodecNode.text = UCase(audioCodec)
+        end if
+    end if
+
+    ' Create dynamic buttons
+    createButtons(itemData)
+
+    ' Load season data and cast/crew via ExtrasRowList
+    if isvalid(m.extrasGrid)
+        m.extrasGrid.showID = itemData.id
+        m.extrasGrid.parentId = itemData.id
+    end if
+end sub
+
+' Update visibility of metadata row dots
+sub updateMetadataDots()
+    dots = [
+        { id: "dot0", prev: ["communityRatingGroup"], next: ["releaseYear"] },
+        { id: "dot1", prev: ["releaseYear"], next: ["showStatus"] },
+        { id: "dot2", prev: ["showStatus"], next: ["officialRating"] }
+    ]
+
+    for each dot in dots
+        dotNode = m.top.findNode(dot.id)
+        if isValid(dotNode)
+            hasVisiblePrev = false
+            for each prevId in dot.prev
+                prevNode = m.top.findNode(prevId)
+                if isValid(prevNode) and prevNode.visible and prevNode.text <> ""
+                    hasVisiblePrev = true
+                    exit for
+                end if
+            end for
+
+            hasVisibleNext = false
+            for each nextId in dot.next
+                nextNode = m.top.findNode(nextId)
+                if isValid(nextNode) and (nextNode.visible or nextNode.text <> "")
+                    hasVisibleNext = true
+                    exit for
+                end if
+            end for
+
+            dotNode.visible = (hasVisiblePrev and hasVisibleNext)
         end if
     end for
-    if itemData.taglines.count() > 0
-        setFieldText("tagline", itemData.taglines[0])
-    else
-        m.top.findNode("main_group").removeChild(m.top.findNode("tagline"))
-    end if
+end sub
 
-    if isStringEqual(m.loadStatus, ViewLoadStatus.INIT)
-        m.loadStatus = ViewLoadStatus.FIRSTLOAD
-        return
+' Create dynamic button row
+sub createButtons(itemData as object)
+    ' Clear existing buttons
+    m.buttonRow.removeChildrenIndex(m.buttonRow.getChildCount(), 0)
+    m.buttonGroups = []
+    m.buttons = []
+
+    ' Add buttons based on item type and conditions
+    addButtons(itemData)
+
+    ' Set focus to first button after a brief delay to ensure buttons are in scene tree
+    if m.buttonGroups.count() > 0
+        m.currentButtonIndex = 0
+        ' Small delay to ensure button is fully added to scene graph
+        timer = CreateObject("roSGNode", "Timer")
+        timer.duration = 0.05
+        timer.repeat = false
+        timer.observeField("fire", "focusFirstButton")
+        timer.control = "start"
+        m.focusTimer = timer
     end if
 end sub
 
-sub setFieldText(field, value)
-    node = m.top.findNode(field)
-    if node = invalid or value = invalid then return
-
-    ' Handle non strings... Which _shouldn't_ happen, but hey
-    if type(value) = "roInt" or type(value) = "Integer"
-        value = str(value).trim()
-    else if type(value) = "roFloat" or type(value) = "Float"
-        value = str(value).trim()
-    else if type(value) <> "roString" and type(value) <> "String"
-        value = ""
+sub focusFirstButton()
+    if m.buttonGroups.count() > 0
+        m.buttonGroups[0].setFocus(true)
+        highlightButton(0)
     end if
-
-    node.text = value
 end sub
 
-function getRuntime() as integer
-    itemData = m.top.itemContent.json
+sub addButtons(itemData as object)
+    ' Play button - always visible
+    addButton({
+        icon: "pkg:/images/icons/play.png",
+        label: "Play",
+        action: "play",
+        id: "playButton"
+    })
 
-    ' A tick is .1ms, so 1/10,000,000 for ticks to seconds,
-    ' then 1/60 for seconds to minutess... 1/600,000,000
-    return round(itemData.RunTimeTicks / 600000000.0)
-end function
+    ' Shuffle button - always visible for TV shows
+    addButton({
+        icon: "pkg:/images/icons/shuffle.png",
+        label: "Shuffle",
+        action: "shuffle",
+        id: "shuffleButton"
+    })
 
-function getEndTime() as string
-    itemData = m.top.itemContent.json
-
-    date = CreateObject("roDateTime")
-    duration_s = int(itemData.RunTimeTicks / 10000000.0)
-    date.fromSeconds(date.asSeconds() + duration_s)
-    date.toLocalTime()
-
-    return formatTime(date)
-end function
-
-function getHistory() as string
-    itemData = m.top.itemContent.json
-    ' Aired Fridays at 9:30 PM on ABC (US)
-
-    airwords = invalid
-    studio = invalid
-    if itemData.status = "Ended"
-        verb = "Aired"
-    else
-        verb = "Airs"
-    end if
-
-    airdays = itemData.airdays
-    airtime = itemData.airtime
-    if isValid(airtime) and airdays.count() = 1
-        airwords = airdays[0] + " at " + airtime
-    end if
-
-    if itemData.studios.count() > 0
-        studio = itemData.studios[0].name
-    end if
-
-    if studio = invalid and airwords = invalid
-        m.top.findNode("main_group").removeChild(m.top.findNode("history"))
-        return ""
-    end if
-
-    words = verb
-    if isValid(airwords)
-        words = words + " " + airwords
-    end if
-    if isValid(studio)
-        words = words + " on " + studio
-    end if
-
-    return words
-end function
-
-function round(f as float) as integer
-    ' BrightScript only has a "floor" round
-    ' This compares floor to floor + 1 to find which is closer
-    m = int(f)
-    n = m + 1
-    x = abs(f - m)
-    y = abs(f - n)
-    if y > x
-        return m
-    else
-        return n
-    end if
-end function
-
-sub OnScreenShown()
-    if isValid(m.top.lastFocus)
-        m.top.lastFocus.setFocus(true)
-        group = m.global.sceneManager.callFunc("getActiveScene")
-        group.lastFocus = m.top.lastFocus
-    else
-        m.top.findNode("seasons").setFocus(true)
-        group = m.global.sceneManager.callFunc("getActiveScene")
-        group.lastFocus = m.top.findNode("seasons")
-    end if
-
-    if isStringEqual(m.loadStatus, ViewLoadStatus.INIT)
-        return
-    end if
-
-    m.top.refreshSeasonDetailsData = not m.top.refreshSeasonDetailsData
-end sub
-
-function getFocusedItem() as object
-    if m.seasons.isInFocusChain()
-        itemFocused = m.seasons.rowItemFocused
-        return m.seasons.TVSeasonData.Items[itemFocused[1]]
-    end if
-
-    if m.extrasSlider.isInFocusChain()
-        extrasGrid = m.top.findNode("extrasGrid")
-        if isValid(extrasGrid.focusedItem)
-            return extrasGrid.focusedItem
+    ' Audio track button (conditional - only if multiple audio streams)
+    hasMultipleAudio = false
+    if isValid(itemData.MediaStreams)
+        audioCount = 0
+        for each stream in itemData.MediaStreams
+            if stream.Type = "Audio"
+                audioCount++
+            end if
+        end for
+        if audioCount > 1
+            hasMultipleAudio = true
         end if
     end if
 
-    return invalid
-end function
+    if hasMultipleAudio
+        addButton({
+            icon: "pkg:/images/icons/audio_track.png",
+            label: "Audio",
+            action: "audioTrack",
+            id: "audioTrackButton"
+        })
+    end if
 
-sub onShuffleEpisodeDataLoaded()
-    m.getShuffleEpisodesTask.unobserveField("data")
-    m.global.queueManager.callFunc("set", m.getShuffleEpisodesTask.data.items)
-    m.global.queueManager.callFunc("playQueue")
+    ' Subtitle button (conditional - only if subtitle streams available)
+    hasSubtitles = false
+    if isValid(itemData.MediaStreams)
+        for each stream in itemData.MediaStreams
+            if stream.Type = "Subtitle"
+                hasSubtitles = true
+                exit for
+            end if
+        end for
+    end if
+
+    if hasSubtitles
+        addButton({
+            icon: "pkg:/images/icons/closed_captions.png",
+            label: "Subtitles",
+            action: "subtitleTrack",
+            id: "subtitleButton"
+        })
+    end if
+
+    ' Watched button - always visible
+    addButton({
+        icon: "pkg:/images/icons/watched.png",
+        label: "Watched",
+        action: "watched",
+        id: "watchedButton"
+    })
+
+    ' Favorite button - always visible
+    addButton({
+        icon: "pkg:/images/icons/favorite.png",
+        label: "Favorite",
+        action: "favorite",
+        id: "favoriteButton"
+    })
 end sub
 
+sub addButton(config as object)
+    ' Create button group with icon and label
+    buttonGroup = CreateObject("roSGNode", "Group")
+    buttonGroup.id = config.id
+    buttonGroup.focusable = true
+
+    ' Create a focusable rectangle for keyboard navigation
+    focusRect = CreateObject("roSGNode", "Rectangle")
+    focusRect.width = 100
+    focusRect.height = 120
+    focusRect.translation = [-50, 0]
+    focusRect.color = "#00000000"
+    focusRect.opacity = 0
+    buttonGroup.appendChild(focusRect)
+
+    ' Create layout group for icon and label
+    layoutGroup = CreateObject("roSGNode", "LayoutGroup")
+    layoutGroup.layoutDirection = "vert"
+    layoutGroup.horizAlignment = "center"
+    layoutGroup.itemSpacings = [8]
+
+    ' Create icon container with background
+    iconContainer = CreateObject("roSGNode", "Group")
+    iconContainer.id = config.id + "IconContainer"
+
+    ' Create background image (initially invisible)
+    bgRect = CreateObject("roSGNode", "Poster")
+    bgRect.uri = "pkg:/images/icons/info-box-bg-white.png"
+    bgRect.loadDisplayMode = "scaleToFit"
+    bgRect.width = 144
+    bgRect.height = 72
+    bgRect.translation = [-48, -12]
+    bgRect.opacity = 0
+    bgRect.id = config.id + "Background"
+    iconContainer.appendChild(bgRect)
+
+    ' Create icon
+    icon = CreateObject("roSGNode", "Poster")
+    icon.uri = config.icon
+    icon.width = 48
+    icon.height = 48
+    icon.id = config.id + "Icon"
+    iconContainer.appendChild(icon)
+
+    layoutGroup.appendChild(iconContainer)
+
+    ' Create label
+    label = CreateObject("roSGNode", "Label")
+    label.text = config.label
+    label.font = "font:SmallSystemFont"
+    label.horizAlign = "center"
+    label.color = "#CCCCCC"
+    label.id = config.id + "Text"
+    layoutGroup.appendChild(label)
+
+    buttonGroup.appendChild(layoutGroup)
+
+    ' Store action data and index
+    buttonGroup.addField("buttonAction", "string", false)
+    buttonGroup.buttonAction = config.action
+    buttonGroup.addField("buttonIndex", "integer", false)
+    buttonGroup.buttonIndex = m.buttons.count()
+
+    ' Observe focus changes on the button itself
+    buttonGroup.observeField("focusedChild", "onButtonFocusChanged")
+
+    ' Add to button row
+    m.buttonRow.appendChild(buttonGroup)
+    m.buttons.push(buttonGroup)
+    m.buttonGroups.push(buttonGroup)
+end sub
+
+sub updateButtonVisualState(buttonIndex as integer)
+    ' Helper function to update button visual state without needing a focus event
+    for i = 0 to m.buttonGroups.count() - 1
+        btnGroup = m.buttonGroups[i]
+        bgRect = btnGroup.findNode(btnGroup.id + "Background")
+        icon = btnGroup.findNode(btnGroup.id + "Icon")
+        label = btnGroup.findNode(btnGroup.id + "Text")
+
+        isFavoriteButton = (btnGroup.id = "favoriteButton")
+        isFavorited = false
+        if isFavoriteButton
+            if isValid(m.itemIsFavorited)
+                isFavorited = m.itemIsFavorited
+            else if isValid(m.top.itemContent) and isChainValid(m.top.itemContent, "json.UserData.IsFavorite")
+                isFavorited = m.top.itemContent.json.UserData.IsFavorite
+            end if
+        end if
+
+        if i = buttonIndex
+            if bgRect <> invalid then bgRect.opacity = 1
+            if icon <> invalid
+                if isFavoriteButton and isFavorited
+                    icon.blendColor = ColorPalette.RED
+                else
+                    icon.blendColor = "#666666FF"
+                end if
+            end if
+            if label <> invalid and label.hasField("color") then label.color = "#FFFFFF"
+        else
+            if bgRect <> invalid then bgRect.opacity = 0
+            if icon <> invalid
+                if isFavoriteButton and isFavorited
+                    icon.blendColor = ColorPalette.RED
+                else
+                    icon.blendColor = "#FFFFFFFF"
+                end if
+            end if
+            if label <> invalid and label.hasField("color") then label.color = "#CCCCCC"
+        end if
+    end for
+end sub
+
+sub onButtonFocusChanged(event as object)
+    ' Update visual state when focus changes
+    ' Note: Do NOT update m.currentButtonIndex here as this observer fires for both
+    ' the button losing focus and gaining focus, causing the index to reset
+    button = event.getRoSGNode()
+    if button <> invalid and button.buttonIndex <> invalid
+        ' Only update visual state if this button actually has focus
+        if button.hasFocus() or button.isInFocusChain()
+            updateButtonVisualState(button.buttonIndex)
+        end if
+    end if
+end sub
+
+sub onButtonFocusChanged_OLD_BACKUP(event as object)
+    ' Update current button index and visual state when focus changes
+    button = event.getRoSGNode()
+    if button <> invalid and button.buttonIndex <> invalid
+        ' Update all buttons' visual state
+        for i = 0 to m.buttonGroups.count() - 1
+            btnGroup = m.buttonGroups[i]
+            bgRect = btnGroup.findNode(btnGroup.id + "Background")
+            icon = btnGroup.findNode(btnGroup.id + "Icon")
+            label = btnGroup.findNode(btnGroup.id + "Text")
+
+            ' Check if this is the favorite button and if item is favorited
+            isFavoriteButton = (btnGroup.id = "favoriteButton")
+
+            if btnGroup.isInFocusChain()
+                ' This button is focused - show white background and change icon to grey
+                if bgRect <> invalid then bgRect.opacity = 1
+                if icon <> invalid
+                    ' Keep favorite icon red if item is favorited, otherwise grey
+                    if isFavoriteButton and m.itemIsFavorited
+                        icon.blendColor = ColorPalette.RED
+                    else
+                        icon.blendColor = "#666666FF"
+                    end if
+                end if
+                if label <> invalid and label.hasField("color") then label.color = "#FFFFFF"
+                m.currentButtonIndex = i
+            else
+                ' This button is not focused - hide background and reset icon color
+                if bgRect <> invalid then bgRect.opacity = 0
+                if icon <> invalid
+                    ' Keep favorite icon red if item is favorited, otherwise white
+                    if isFavoriteButton and m.itemIsFavorited
+                        icon.blendColor = ColorPalette.RED
+                    else
+                        icon.blendColor = "#FFFFFFFF"
+                    end if
+                end if
+                if label <> invalid and label.hasField("color") then label.color = "#CCCCCC"
+            end if
+        end for
+    end if
+end sub
+
+' Highlight the button at the specified index (legacy compatibility)
+sub highlightButton(_index as integer)
+    ' Visual state is now handled by onButtonFocusChanged
+    ' This function kept for compatibility but does nothing
+end sub
+
+' Handle button selection
 function onKeyEvent(key as string, press as boolean) as boolean
-    if key = "OK" or key = "play"
-        if m.Shuffle.hasFocus()
-            m.getShuffleEpisodesTask.showID = m.top.itemContent.id
-            m.getShuffleEpisodesTask.observeField("data", "onShuffleEpisodeDataLoaded")
-            m.getShuffleEpisodesTask.control = "RUN"
-            return true
-        end if
-    end if
-
-    if not press then return false
-
-    if key = "options"
-        if m.overview.isTextEllipsized
-            if isAllValid([m.top.itemContent.json.name, m.top.itemContent.json.overview])
-                m.global.sceneManager.callFunc("standardDialog", m.top.itemContent.json.name, { data: ["<p>" + m.top.itemContent.json.overview + "</p>"] })
+    ' Handle navigation from extrasGrid back to buttons
+    if key = KeyCode.UP and m.extrasGrid <> invalid and m.extrasGrid.isInFocusChain()
+        if m.extrasGrid.itemFocused = 0
+            ' Return to button row
+            if m.buttonGroups.count() > 0
+                m.buttonGroups[m.currentButtonIndex].setFocus(true)
+                m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
+                group = m.global.sceneManager.callFunc("getActiveScene")
+                group.lastFocus = m.buttonGroups[m.currentButtonIndex]
+                ' Scroll back to top
+                m.scrollableContent.translation = [0, 0]
                 return true
             end if
         end if
         return false
     end if
 
-    topGrp = m.top.findNode("seasons")
-    bottomGrp = m.top.findNode("extrasGrid")
+    if not press then return false
 
-    if key = "down" and m.overview.hasFocus()
-        m.Shuffle.setFocus(true)
-        group = m.global.sceneManager.callFunc("getActiveScene")
-        group.lastFocus = m.Shuffle
-        return true
-    else if key = "down" and m.Shuffle.hasFocus()
-        topGrp.setFocus(true)
-        group = m.global.sceneManager.callFunc("getActiveScene")
-        group.lastFocus = topGrp
-        return true
-    else if key = "down" and topGrp.hasFocus()
-        bottomGrp.setFocus(true)
-        group = m.global.sceneManager.callFunc("getActiveScene")
-        group.lastFocus = bottomGrp
-        m.top.findNode("VertSlider").reverse = false
-        m.top.findNode("extrasFader").reverse = false
-        m.top.findNode("pplAnime").control = "start"
-        return true
-    else if key = "up" and bottomGrp.hasFocus()
-        if bottomGrp.itemFocused = 0
-            m.top.findNode("VertSlider").reverse = true
-            m.top.findNode("extrasFader").reverse = true
-            m.top.findNode("pplAnime").control = "start"
-            topGrp.setFocus(true)
-            group = m.global.sceneManager.callFunc("getActiveScene")
-            group.lastFocus = topGrp
+    ' Handle button row navigation - check if any button has focus
+    isButtonFocused = false
+    if m.buttonGroups.count() > 0
+        for each btn in m.buttonGroups
+            if btn.hasFocus() or btn.isInFocusChain()
+                isButtonFocused = true
+                exit for
+            end if
+        end for
+    end if
+
+    if isButtonFocused
+        if key = KeyCode.LEFT
+            ' Navigate to previous button
+            if m.currentButtonIndex > 0
+                m.currentButtonIndex = m.currentButtonIndex - 1
+                m.buttonGroups[m.currentButtonIndex].setFocus(true)
+                m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
+                return true
+            end if
+            return false
+        else if key = KeyCode.RIGHT
+            ' Navigate to next button
+            if m.currentButtonIndex < m.buttonGroups.count() - 1
+                m.currentButtonIndex = m.currentButtonIndex + 1
+                m.buttonGroups[m.currentButtonIndex].setFocus(true)
+                m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
+                return true
+            end if
+            return false
+        else if key = KeyCode.OK
+            handleButtonSelect()
+            return true
+        else if key = KeyCode.DOWN
+            ' Navigate down from buttons to extrasGrid (which now includes seasons)
+            if m.extrasGrid <> invalid and m.extrasGrid.content <> invalid
+                m.extrasGrid.setFocus(true)
+                m.top.lastFocus = m.extrasGrid
+                group = m.global.sceneManager.callFunc("getActiveScene")
+                group.lastFocus = m.extrasGrid
+                ' Scroll content up to show extras
+                if m.scrollableContent <> invalid
+                    m.scrollableContent.translation = [0, -550]
+                end if
+            end if
             return true
         end if
-    else if key = "up" and topGrp.hasFocus()
-        m.Shuffle.setFocus(true)
-        group = m.global.sceneManager.callFunc("getActiveScene")
-        group.lastFocus = m.Shuffle
-        return true
-    else if key = "up" and m.Shuffle.hasFocus()
-        m.overview.setFocus(true)
-        group = m.global.sceneManager.callFunc("getActiveScene")
-        group.lastFocus = m.overview
-        return true
-    else if key = "play" and m.seasons.hasFocus()
-        if isValid(m.seasons.TVSeasonData) and isValid(m.seasons.TVSeasonData.Items)
-            itemFocused = m.seasons.rowItemFocused
-            m.top.quickPlayNode = m.seasons.TVSeasonData.Items[itemFocused[1]]
-            return true
-        end if
-    else if key = "play" and m.extrasSlider.isInFocusChain()
-        extrasGrid = m.top.findNode("extrasGrid")
-        if extrasGrid.focusedItem <> invalid
-            m.top.quickPlayNode = extrasGrid.focusedItem
+    end if
+
+    if key = KeyCode.BACK
+        if m.extrasGrid <> invalid and m.extrasGrid.isInFocusChain()
+            ' Return to button row and scroll back up
+            if m.buttonGroups.count() > 0
+                m.buttonGroups[m.currentButtonIndex].setFocus(true)
+                m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
+                group = m.global.sceneManager.callFunc("getActiveScene")
+                group.lastFocus = m.buttonGroups[m.currentButtonIndex]
+                ' Scroll content back to top
+                if m.scrollableContent <> invalid
+                    m.scrollableContent.translation = [0, 0]
+                end if
+            end if
             return true
         end if
     end if
 
     return false
 end function
+
+sub handleButtonSelect()
+    ' Handle button selection based on current index
+    if m.currentButtonIndex < 0 or m.currentButtonIndex >= m.buttonGroups.count() then return
+
+    buttonGroup = m.buttonGroups[m.currentButtonIndex]
+    if buttonGroup = invalid then return
+
+    ' Get the action from the dynamic button
+    buttonAction = buttonGroup.buttonAction
+    if buttonAction = invalid then return
+
+    ' Map button actions
+    if buttonAction = "play"
+        ' Play the TV show
+        m.top.quickPlayNode = m.top.itemContent
+    else if buttonAction = "shuffle"
+        ' Shuffle episodes
+        m.top.quickPlayNode = m.top.itemContent
+        m.global.queueManager.callFunc("setShuffle", true)
+    else if buttonAction = "watched"
+        ' Toggle watched state
+        itemContent = m.top.itemContent
+        if itemContent <> invalid and isValid(itemContent.json)
+            itemData = itemContent.json
+            currentWatched = false
+            if isValid(itemData.UserData) and isValid(itemData.UserData.Played)
+                currentWatched = itemData.UserData.Played
+            end if
+
+            newWatchedState = not currentWatched
+
+            ' Call API to update server using Task
+            if newWatchedState
+                date = CreateObject("roDateTime")
+                dateStr = date.ToISOString()
+                m.playstateTask.status = "markPlayed"
+                m.playstateTask.itemId = itemData.id
+                m.playstateTask.params = { "DatePlayed": dateStr, "PlaybackPositionTicks": 0 }
+                m.playstateTask.control = TaskControl.RUN
+                itemData.UserData.PlaybackPositionTicks = 0
+            else
+                m.playstateTask.status = "unmarkPlayed"
+                m.playstateTask.itemId = itemData.id
+                m.playstateTask.control = TaskControl.RUN
+            end if
+
+            ' Update local state
+            itemData.UserData.Played = newWatchedState
+            itemContent.watched = newWatchedState
+
+            ' Update button visual state
+            if m.buttonGroups.count() > 0 and m.currentButtonIndex >= 0 and m.currentButtonIndex < m.buttonGroups.count()
+                updateButtonVisualState(m.currentButtonIndex)
+            end if
+        end if
+    else if buttonAction = "favorite"
+        ' Toggle favorite state
+        itemContent = m.top.itemContent
+        if itemContent <> invalid and isValid(itemContent.json)
+            itemData = itemContent.json
+            currentFavorite = false
+            if isValid(itemData.UserData) and isValid(itemData.UserData.IsFavorite)
+                currentFavorite = itemData.UserData.IsFavorite
+            end if
+
+            newFavoriteState = not currentFavorite
+
+            ' Call API to update server using Task
+            if newFavoriteState
+                m.favoriteTask.favTask = "favorite"
+            else
+                m.favoriteTask.favTask = "unfavorite"
+            end if
+            m.favoriteTask.itemId = itemData.id
+            m.favoriteTask.control = TaskControl.RUN
+
+            ' Update local state without triggering itemContent observers
+            if not isValid(itemData.UserData)
+                itemData.UserData = {}
+            end if
+            itemData.UserData.IsFavorite = newFavoriteState
+
+            ' Store favorite state in a member variable for button visual updates
+            m.itemIsFavorited = newFavoriteState
+
+            ' Update button visual state to show red/white icon
+            if m.buttonGroups.count() > 0 and m.currentButtonIndex >= 0 and m.currentButtonIndex < m.buttonGroups.count()
+                updateButtonVisualState(m.currentButtonIndex)
+            end if
+        end if
+    else if buttonAction = "audioTrack"
+        ' Show audio track selector
+        if m.audioSelector <> invalid
+            m.audioSelector.visible = true
+            m.audioSelector.setFocus(true)
+        end if
+    else if buttonAction = "subtitleTrack"
+        ' Show subtitle track selector
+        if m.subtitleSelector <> invalid
+            m.subtitleSelector.visible = true
+            m.subtitleSelector.setFocus(true)
+        end if
+    else if buttonAction = "more"
+        ' More options - show playback settings dialog
+        showPlaybackSettingsDialog()
+    end if
+end sub
+
+sub showPlaybackSettingsDialog()
+    ' Create radio dialog with playback options
+    dialogData = []
+
+    ' Get current setting
+    currentSetting = chainLookupReturn(m.global.session, "user.settings.`playback.media.forceTranscode`", PlaybackMethod.PLAYNORMALLY)
+
+    ' Build options
+    option1 = CreateObject("roSGNode", "ContentNode")
+    option1.title = tr("Direct Play")
+    option1.description = tr("Play files directly without transcoding")
+    option1.id = PlaybackMethod.PLAYNORMALLY
+    if isStringEqual(currentSetting, PlaybackMethod.PLAYNORMALLY)
+        option1.selected = true
+    end if
+    dialogData.push(option1)
+
+    option2 = CreateObject("roSGNode", "ContentNode")
+    option2.title = tr("Force Transcode (Allow Remux)")
+    option2.description = tr("Force transcoding, allow container remuxing")
+    option2.id = PlaybackMethod.FORCETRANSCODEALLOWREMUX
+    if isStringEqual(currentSetting, PlaybackMethod.FORCETRANSCODEALLOWREMUX)
+        option2.selected = true
+    end if
+    dialogData.push(option2)
+
+    option3 = CreateObject("roSGNode", "ContentNode")
+    option3.title = tr("Force Transcode (Disable Remux)")
+    option3.description = tr("Force full transcoding")
+    option3.id = PlaybackMethod.FORCETRANSCODEDISABLEREMUX
+    if isStringEqual(currentSetting, PlaybackMethod.FORCETRANSCODEDISABLEREMUX)
+        option3.selected = true
+    end if
+    dialogData.push(option3)
+
+    ' Show dialog
+    m.global.sceneManager.callFunc("radioDialog", tr("Playback Settings"), dialogData)
+end sub
+
+' Handle dialog responses from SceneManager
+sub onDialogDataReturned()
+    returnData = m.global.sceneManager.returnData
+    if not isValid(returnData) then return
+
+    ' Check if this is a playback settings selection from RadioDialog
+    if isValid(returnData.indexSelected) and returnData.indexSelected >= 0
+        ' Get the selected option
+        selectedIndex = returnData.indexSelected
+
+        ' Map index to playback method
+        if selectedIndex = 0
+            ' Direct Play
+            m.global.queueManager.callFunc("setForceTranscode", PlaybackMethod.PLAYNORMALLY)
+        else if selectedIndex = 1
+            ' Force Transcode (Allow Remux)
+            m.global.queueManager.callFunc("setForceTranscode", PlaybackMethod.FORCETRANSCODEALLOWREMUX, string.EMPTY)
+        else if selectedIndex = 2
+            ' Force Transcode (Disable Remux)
+            ' Get codec from current video if available
+            codec = string.EMPTY
+            if isValid(m.top.itemContent) and isChainValid(m.top.itemContent, "json.mediaSources")
+                if m.top.itemContent.json.mediaSources.count() > 0
+                    if isValidAndNotEmpty(m.top.itemContent.json.mediaSources[0].mediaStreams)
+                        for each stream in m.top.itemContent.json.mediaSources[0].mediaStreams
+                            if LCase(stream.Type) = MediaStreamType.VIDEO
+                                codec = chainLookupReturn(stream, "Codec", string.EMPTY)
+                                exit for
+                            end if
+                        end for
+                    end if
+                end if
+            end if
+            m.global.queueManager.callFunc("setForceTranscode", PlaybackMethod.FORCETRANSCODEDISABLEREMUX, codec)
+        end if
+    end if
+end sub
+
+sub onSelectedItemChanged()
+    ' Handle selection of items from extrasGrid (seasons, cast/crew, etc.)
+    selectedItem = m.top.selectedItem
+    if not isValid(selectedItem) then return
+
+    ' Check if this is a season being selected
+    if isValid(selectedItem) and isValid(selectedItem.json)
+        itemType = invalid
+
+        ' Type could be in selectedItem directly or in selectedItem.json
+        if isValid(selectedItem.Type)
+            itemType = selectedItem.Type
+        else if isValid(selectedItem.json.Type)
+            itemType = selectedItem.json.Type
+        else if isValid(selectedItem.json.LookupCI("Type"))
+            itemType = selectedItem.json.LookupCI("Type")
+        end if
+
+        if isValid(itemType) and itemType = "Season"
+            ' Season was selected - navigate to season episodes
+            seasonId = invalid
+            if isValid(selectedItem.json.id)
+                seasonId = selectedItem.json.id
+            else if isValid(selectedItem.json.LookupCI("Id"))
+                seasonId = selectedItem.json.LookupCI("Id")
+            end if
+
+            if isValid(seasonId) and isValid(m.top.itemContent) and isValid(m.top.itemContent.json)
+                showId = m.top.itemContent.json.id
+                ' Use the global scene manager to create and show the season details
+                m.global.sceneManager.callFunc("CreateSeasonDetailsGroupByID", showId, seasonId)
+            end if
+        end if
+    end if
+end sub
+
+' Handle audio stream index change from audio selector
+sub onAudioStreamIndexChanged()
+    if m.audioSelector.audioStreamIndex <> m.top.selectedAudioStreamIndex
+        m.top.selectedAudioStreamIndex = m.audioSelector.audioStreamIndex
+        m.global.queueManager.callFunc("setPreferredAudioTrackIndex", m.audioSelector.audioStreamIndex)
+        m.global.queueManager.callFunc("setPreferredAudioTrackName", m.audioSelector.audioStreamName)
+    end if
+end sub
+
+' Handle subtitle stream change from subtitle selector
+sub onSubtitleStreamChanged()
+    if isValid(m.subtitleSelector.subtitleStream)
+        m.global.queueManager.callFunc("setSubtitleTrack", m.subtitleSelector.subtitleStream)
+    end if
+end sub
+
+' Restore focus when audio selector is closed
+sub onAudioSelectorVisibleChanged()
+    if not m.audioSelector.visible
+        restoreFocusToButtons()
+    end if
+end sub
+
+' Restore focus when subtitle selector is closed
+sub onSubtitleSelectorVisibleChanged()
+    if not m.subtitleSelector.visible
+        restoreFocusToButtons()
+    end if
+end sub
+
+' Restore focus to the currently selected button
+sub restoreFocusToButtons()
+    if m.buttonGroups.count() > 0 and m.currentButtonIndex >= 0 and m.currentButtonIndex < m.buttonGroups.count()
+        m.buttonGroups[m.currentButtonIndex].setFocus(true)
+        m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
+        group = m.global.sceneManager.callFunc("getActiveScene")
+        group.lastFocus = m.buttonGroups[m.currentButtonIndex]
+    end if
+end sub

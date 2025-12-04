@@ -606,13 +606,53 @@ sub onRefreshMovieDetailsDataEvent()
     stopLoadingSpinner()
 end sub
 
+sub onRefreshEpisodeDetailsDataEvent()
+    ' Reuse the same logic as movie details
+    onRefreshMovieDetailsDataEvent()
+end sub
+
 sub onSelectedItemEvent(msg)
     ' If you select a library from ANYWHERE, follow this flow
     selectedItem = msg.getData()
+    ' Handle selected item navigation
+
+    ' First check: if message data is invalid, this is definitely a stale/clearing event
+    if not isValid(selectedItem)
+        return
+    end if
+
+    ' Debounce duplicate events - some components set then immediately clear selectedItem
+    ' which queues two events with the same data before we process either
+    itemId = ""
+    if selectedItem.doesExist("id")
+        itemId = selectedItem.id
+    end if
+
+    ' Check if this is the exact same item as the last processed one
+    if isValid(m.lastSelectedItemId) and itemId = m.lastSelectedItemId
+        return
+    end if
+
+    m.lastSelectedItemId = itemId
+
+    ' Get the actual scene with the field
+    activeScene = m.global.sceneManager.callFunc("getActiveScene")
+
+    ' For library scenes (OtherLibrary, VisualLibraryScene) that keep selectedItem set:
+    ' Check the ACTUAL current value to prevent stale message events after scene restoration
+    if isValid(activeScene) and activeScene.hasField("selectedItem")
+        actualSelectedItem = activeScene.selectedItem
+
+        ' If scene has a VALID selectedItem, use it (this is the current selection in libraries)
+        if isValid(actualSelectedItem)
+            selectedItem = actualSelectedItem
+        end if
+        ' Otherwise use message data (HomeRows/TVEpisodes that set then clear, or Home that never sets)
+    end if
+
     if isValid(selectedItem)
         startLoadingSpinner()
         selectedItemType = selectedItem.type
-
         if isValid(selectedItemType)
             ' If button selected is a string, lcase it
             if isStringEqual(type(selectedItemType), "rostring") then selectedItemType = LCase(selectedItemType)
@@ -653,8 +693,18 @@ sub onSelectedItemEvent(msg)
             group = CreateOtherLibrary(selectedItem)
             m.global.sceneManager.callFunc("pushScene", group)
         else if selectedItemType = "episode" or selectedItemType = "recording"
+            ' Store current focus before navigating
+            currentScene = m.global.sceneManager.callFunc("getActiveScene")
+            if isValid(currentScene) and isValid(currentScene.findNode("homeRows"))
+                currentScene.lastFocus = currentScene.findNode("homeRows")
+            end if
             group = CreateMovieDetailsGroup(selectedItem)
         else if selectedItemType = "series"
+            ' Store current focus before navigating
+            currentScene = m.global.sceneManager.callFunc("getActiveScene")
+            if isValid(currentScene) and isValid(currentScene.findNode("homeRows"))
+                currentScene.lastFocus = currentScene.findNode("homeRows")
+            end if
             group = CreateSeriesDetailsGroup(selectedItem.json.id)
         else if selectedItemType = "season"
             if isValid(selectedItem.json) and isValid(selectedItem.json.SeriesId) and isValid(selectedItem.id)
@@ -665,6 +715,11 @@ sub onSelectedItemEvent(msg)
             end if
         else if selectedItemType = "movie"
             ' open movie detail page
+            ' Store current focus before navigating
+            currentScene = m.global.sceneManager.callFunc("getActiveScene")
+            if isValid(currentScene) and isValid(currentScene.findNode("homeRows"))
+                currentScene.lastFocus = currentScene.findNode("homeRows")
+            end if
             group = CreateMovieDetailsGroup(selectedItem)
         else if selectedItemType = "person"
             CreatePersonView(selectedItem)
@@ -777,6 +832,11 @@ sub onSelectedItemEvent(msg)
             ' TODO - switch on more node types
             stopLoadingSpinner()
             message_dialog("This type is not yet supported: " + selectedItemType)
+        end if
+
+        ' Clear the selectedItem field to prevent re-triggering when scene regains focus
+        if isValid(activeScene) and activeScene.hasField("selectedItem")
+            activeScene.selectedItem = invalid
         end if
     end if
 end sub
@@ -1043,6 +1103,23 @@ sub onSearch_valueEvent(msg)
 end sub
 
 ' Search item selected
+sub onOverhangItemSelectedEvent(msg)
+    ' Handle navbar button selections from JFOverhang
+    selection = msg.getData()
+
+    if isStringEqual(selection, "search")
+        group = CreateSearchPage()
+        m.global.sceneManager.callFunc("pushScene", group)
+        group.findNode("SearchBox").findNode("search_Key").setFocus(true)
+        group = m.global.sceneManager.callFunc("getActiveScene")
+        group.lastFocus = group.findNode("SearchBox").findNode("search_Key")
+        group.findNode("SearchBox").findNode("search_Key").active = true
+    else if isStringEqual(selection, "home")
+        ' Handle home button - go back to home screen
+        m.global.sceneManager.callFunc("popToScene", 0)
+    end if
+end sub
+
 sub onItemSelectedEvent(msg)
     startLoadingSpinner()
     node = getMsgPicker(msg)
@@ -1120,6 +1197,12 @@ sub onButtonSelectedEvent(msg)
         return
     end if
 
+    ' User chose Play from beginning button
+    if isStringEqual(btn, "playFromBeginning-button")
+        MainAction.onPlayFromBeginningClicked(activeScene)
+        return
+    end if
+
     if isStringEqual(btn, "part-button")
         MainAction.onPartButtonClicked(activeScene)
         return
@@ -1131,9 +1214,27 @@ sub onButtonSelectedEvent(msg)
         return
     end if
 
+    ' User chose audio track selection
+    if isStringEqual(btn, "audioTrack-button")
+        ' Audio track selection is handled by the options overlay, which is already shown
+        return
+    end if
+
+    ' User chose subtitle track selection
+    if isStringEqual(btn, "subtitleTrack-button")
+        ' Subtitle track selection is handled by the options overlay, which is already shown
+        return
+    end if
+
     ' Toggle watched state
     if isStringEqual(btn, "watched-button")
         MainAction.onWatchedButtonClicked(activeScene)
+        return
+    end if
+
+    ' Go to series (from episode details)
+    if isStringEqual(btn, "goToSeries-button")
+        MainAction.onGoToSeriesClicked(activeScene)
         return
     end if
 
@@ -1222,12 +1323,10 @@ sub onRoDeviceInfoEvent(msg)
     end if
 
     if isValid(event.generalMemoryLevel)
-        print "event.generalMemoryLevel = ", event.generalMemoryLevel
         return
     end if
 
     if isValid(event.audioCodecCapabilityChanged)
-        print "event.audioCodecCapabilityChanged = ", event.audioCodecCapabilityChanged
 
         postTask = createObject("roSGNode", "PostTask")
         postTask.arrayData = getDeviceCapabilities()
@@ -1237,7 +1336,6 @@ sub onRoDeviceInfoEvent(msg)
     end if
 
     if isValid(event.videoCodecCapabilityChanged)
-        print "event.videoCodecCapabilityChanged = ", event.videoCodecCapabilityChanged
 
         postTask = createObject("roSGNode", "PostTask")
         postTask.arrayData = getDeviceCapabilities()
@@ -1608,7 +1706,7 @@ sub processLibraryItemPopup(selectedPopupButton as string, itemID as string, par
     end if
 
     ' Mark item as played
-    if isStringEqual(selectedPopupButton, tr("Mark As Played"))
+    if isStringEqual(selectedPopupButton, tr("Watched"))
         MainAction.setPlayed(itemID, true)
 
         group = m.global.sceneManager.callFunc("getActiveScene")

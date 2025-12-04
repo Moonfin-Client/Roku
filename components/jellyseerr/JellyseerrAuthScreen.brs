@@ -1,0 +1,436 @@
+sub init()
+    ' Find all UI elements
+    m.apiKeyMethodButton = m.top.findNode("apiKeyMethodButton")
+    m.jellyfinMethodButton = m.top.findNode("jellyfinMethodButton")
+    m.localMethodButton = m.top.findNode("localMethodButton")
+
+    m.apiKeyGroup = m.top.findNode("apiKeyGroup")
+    m.jellyfinGroup = m.top.findNode("jellyfinGroup")
+    m.localGroup = m.top.findNode("localGroup")
+
+    m.apiKeyInput = m.top.findNode("apiKeyInput")
+    m.connectApiButton = m.top.findNode("connectApiButton")
+
+    m.jellyfinUserInput = m.top.findNode("jellyfinUserInput")
+    m.jellyfinPassInput = m.top.findNode("jellyfinPassInput")
+    m.connectJellyfinButton = m.top.findNode("connectJellyfinButton")
+
+    m.localEmailInput = m.top.findNode("localEmailInput")
+    m.localPassInput = m.top.findNode("localPassInput")
+    m.connectLocalButton = m.top.findNode("connectLocalButton")
+
+    m.statusLabel = m.top.findNode("statusLabel")
+    m.backButton = m.top.findNode("backButton")
+
+    ' Set up observers
+    m.apiKeyMethodButton.observeField("buttonSelected", "onApiKeyMethodSelected")
+    m.jellyfinMethodButton.observeField("buttonSelected", "onJellyfinMethodSelected")
+    m.localMethodButton.observeField("buttonSelected", "onLocalMethodSelected")
+
+    m.apiKeyInput.observeField("buttonSelected", "onApiKeyInputPressed")
+    m.connectApiButton.observeField("buttonSelected", "onConnectApiPressed")
+
+    m.jellyfinUserInput.observeField("buttonSelected", "onJellyfinUserInputPressed")
+    m.jellyfinPassInput.observeField("buttonSelected", "onJellyfinPassInputPressed")
+    m.connectJellyfinButton.observeField("buttonSelected", "onConnectJellyfinPressed")
+
+    m.localEmailInput.observeField("buttonSelected", "onLocalEmailInputPressed")
+    m.localPassInput.observeField("buttonSelected", "onLocalPassInputPressed")
+    m.connectLocalButton.observeField("buttonSelected", "onConnectLocalPressed")
+
+    m.backButton.observeField("buttonSelected", "onBackPressed")
+
+    ' Initialize state
+    m.currentMethod = ""
+    m.currentField = ""
+    m.apiKey = ""
+    m.jellyfinPassword = ""
+    m.localEmail = ""
+    m.localPassword = ""
+
+    ' Initialize API task for testing connections
+    m.apiTask = CreateObject("roSGNode", "JellyseerrAPITask")
+
+    ' Initialize auth task for login operations (extracts cookies)
+    m.authTask = CreateObject("roSGNode", "JellyseerrAuthTask")
+
+    ' Set initial focus
+    m.apiKeyMethodButton.setFocus(true)
+end sub
+
+' ============================================
+' Auth Method Selection
+' ============================================
+
+sub onApiKeyMethodSelected()
+    m.currentMethod = "apikey"
+    showAuthFields()
+end sub
+
+sub onJellyfinMethodSelected()
+    m.currentMethod = "jellyfin"
+    showAuthFields()
+end sub
+
+sub onLocalMethodSelected()
+    m.currentMethod = "local"
+    showAuthFields()
+end sub
+
+sub showAuthFields()
+    ' Hide all groups first
+    m.apiKeyGroup.visible = false
+    m.jellyfinGroup.visible = false
+    m.localGroup.visible = false
+    m.statusLabel.visible = false
+
+    ' Show the appropriate group
+    if m.currentMethod = "apikey"
+        m.apiKeyGroup.visible = true
+        m.apiKeyInput.setFocus(true)
+    else if m.currentMethod = "jellyfin"
+        m.jellyfinGroup.visible = true
+        m.jellyfinPassInput.setFocus(true)
+    else if m.currentMethod = "local"
+        m.localGroup.visible = true
+        m.localEmailInput.setFocus(true)
+    end if
+end sub
+
+' ============================================
+' API Key Method
+' ============================================
+
+sub onApiKeyInputPressed()
+    m.currentField = "apiKey"
+    showKeyboard("Enter your Jellyseerr API Key")
+end sub
+
+sub onConnectApiPressed()
+    if m.apiKey = "" or m.apiKey = invalid
+        showStatus("Please enter an API key", "error")
+        return
+    end if
+
+    ' Get server URL from settings
+    serverUrl = ""
+    if m.global.session <> invalid and m.global.session.user <> invalid and m.global.session.user.settings <> invalid
+        serverUrl = m.global.session.user.settings["jellyseerr.url"]
+    end if
+
+    if serverUrl = invalid or serverUrl = ""
+        showStatus("Please set Server URL in Settings first", "error")
+        return
+    end if
+
+    ' Test the API key by making a request
+    showStatus("Testing connection...", "info")
+
+    ' Save temporarily to use in API task
+    sec = CreateObject("roRegistrySection", "jellyseerr")
+    sec.Write("serverUrl", serverUrl)
+    sec.Write("apiKey", m.apiKey)
+    sec.Flush()
+
+    m.apiTask.request = {
+        method: "GET",
+        endpoint: "/api/v1/auth/me"
+    }
+    m.apiTask.observeField("response", "onApiKeyTestResponse")
+    m.apiTask.control = "RUN"
+end sub
+
+sub onApiKeyTestResponse(event as object)
+    response = event.getData()
+
+    if response.success
+        ' Save the API key to settings
+        m.global.session.user.settings.Save("jellyseerr.apiKey", m.apiKey)
+        m.global.session.user.settings.Save("jellyseerr.authMethod", "apikey")
+        showStatus("Successfully connected with API Key!", "success")
+    else
+        showStatus("Connection failed: " + response.error, "error")
+    end if
+end sub
+
+' ============================================
+' Jellyfin Login Method
+' ============================================
+
+sub onJellyfinPassInputPressed()
+    m.currentField = "jellyfinPassword"
+    showKeyboard("Enter your Jellyfin password", true)
+end sub
+
+sub onConnectJellyfinPressed()
+    ' Use current logged-in Jellyfin user's name
+    jellyfinUsername = m.global.session.user.name
+
+    if jellyfinUsername = "" or jellyfinUsername = invalid
+        showStatus("Unable to get Jellyfin username", "error")
+        return
+    end if
+
+    if m.jellyfinPassword = "" or m.jellyfinPassword = invalid
+        showStatus("Please enter your Jellyfin password", "error")
+        return
+    end if
+
+    ' Get server URL from settings
+    serverUrl = ""
+    if m.global.session <> invalid and m.global.session.user <> invalid and m.global.session.user.settings <> invalid
+        serverUrl = m.global.session.user.settings["jellyseerr.url"]
+    end if
+
+    if serverUrl = invalid or serverUrl = ""
+        showStatus("Please set Server URL in Settings first", "error")
+        return
+    end if
+
+    showStatus("Authenticating as " + jellyfinUsername + "...", "info")
+
+    ' Create login request
+    loginRequest = {
+        username: jellyfinUsername,
+        password: m.jellyfinPassword
+    }
+
+    ' Use JellyseerrAuthTask which extracts cookies from response headers
+    m.authTask.serverUrl = serverUrl
+    m.authTask.authEndpoint = "/api/v1/auth/jellyfin"
+    m.authTask.authBody = JellyseerrFormatJson(loginRequest)
+    m.authTask.observeField("response", "onJellyfinAuthResponse")
+    m.authTask.control = "RUN"
+end sub
+
+sub onJellyfinAuthResponse(event as object)
+    response = event.getData()
+
+    if response.success
+        ' Extract API key from response if present
+        apiKey = ExtractApiKeyFromResponse(response.body)
+
+        sec = CreateObject("roRegistrySection", "jellyseerr")
+
+        if apiKey <> ""
+            ' API key auth (admin users)
+            sec.Write("apiKey", apiKey)
+            sec.Write("authMethod", "jellyfin-apikey")
+            sec.Flush()
+
+            m.global.session.user.settings.Save("jellyseerr.apiKey", apiKey)
+            m.global.session.user.settings.Save("jellyseerr.authMethod", "jellyfin-apikey")
+            showStatus("Successfully authenticated with Jellyfin! API key saved.", "success")
+        else if response.cookies <> invalid and response.cookies <> ""
+            ' Cookie-based auth (standard users)
+            sec.Write("authCookie", response.cookies)
+            sec.Write("authMethod", "jellyfin")
+            sec.Delete("apiKey") ' Clear any old API key
+            sec.Flush()
+
+            m.global.session.user.settings.Save("jellyseerr.authMethod", "jellyfin")
+            m.global.session.user.settings.Delete("jellyseerr.apiKey")
+            showStatus("Successfully authenticated with Jellyfin! Session cookie saved.", "success")
+        else
+            showStatus("Authentication succeeded but no API key or cookie returned", "error")
+        end if
+    else
+        showStatus("Jellyfin authentication failed: " + response.error, "error")
+    end if
+end sub
+
+' ============================================
+' Jellyseerr Login Method
+' ============================================
+
+sub onLocalEmailInputPressed()
+    m.currentField = "localEmail"
+    showKeyboard("Enter your Jellyseerr email")
+end sub
+
+sub onLocalPassInputPressed()
+    m.currentField = "localPassword"
+    showKeyboard("Enter your Jellyseerr password", true)
+end sub
+
+sub onConnectLocalPressed()
+    if m.localEmail = "" or m.localEmail = invalid
+        showStatus("Please enter your Jellyseerr email", "error")
+        return
+    end if
+
+    if m.localPassword = "" or m.localPassword = invalid
+        showStatus("Please enter your Jellyseerr password", "error")
+        return
+    end if
+
+    ' Get server URL from settings
+    serverUrl = ""
+    if m.global.session <> invalid and m.global.session.user <> invalid and m.global.session.user.settings <> invalid
+        serverUrl = m.global.session.user.settings["jellyseerr.url"]
+    end if
+
+    if serverUrl = invalid or serverUrl = ""
+        showStatus("Please set Server URL in Settings first", "error")
+        return
+    end if
+
+    showStatus("Logging in to Jellyseerr...", "info")
+
+    ' Create login request
+    loginRequest = {
+        email: m.localEmail,
+        password: m.localPassword
+    }
+
+    ' Use JellyseerrAuthTask which extracts cookies from response headers
+    m.authTask.serverUrl = serverUrl
+    m.authTask.authEndpoint = "/api/v1/auth/local"
+    m.authTask.authBody = JellyseerrFormatJson(loginRequest)
+    m.authTask.observeField("response", "onLocalAuthResponse")
+    m.authTask.control = "RUN"
+end sub
+
+sub onLocalAuthResponse(event as object)
+    response = event.getData()
+
+    if response.success
+        ' Extract API key from response
+        apiKey = ExtractApiKeyFromResponse(response.body)
+
+        sec = CreateObject("roRegistrySection", "jellyseerr")
+
+        if apiKey <> ""
+            ' API key auth
+            sec.Write("apiKey", apiKey)
+            sec.Write("authMethod", "local")
+            sec.Flush()
+
+            m.global.session.user.settings.Save("jellyseerr.apiKey", apiKey)
+            m.global.session.user.settings.Save("jellyseerr.authMethod", "local")
+            showStatus("Successfully logged in to Jellyseerr! API key saved.", "success")
+        else if response.cookies <> invalid and response.cookies <> ""
+            ' Cookie-based auth (fallback)
+            sec.Write("authCookie", response.cookies)
+            sec.Write("authMethod", "local")
+            sec.Delete("apiKey") ' Clear any old API key
+            sec.Flush()
+
+            m.global.session.user.settings.Save("jellyseerr.authMethod", "local")
+            m.global.session.user.settings.Delete("jellyseerr.apiKey")
+            showStatus("Successfully logged in to Jellyseerr! Session cookie saved.", "success")
+        else
+            showStatus("Login succeeded but no API key or cookie returned", "error")
+        end if
+    else
+        showStatus("Jellyseerr login failed: " + response.error, "error")
+    end if
+end sub
+
+' ============================================
+' Keyboard Handling
+' ============================================
+
+sub showKeyboard(prompt as string, isSecure = false as boolean)
+    dialog = createObject("roSGNode", "StandardKeyboardDialog")
+    dialog.title = "Enter " + prompt
+    dialog.text = ""
+
+    if isSecure
+        dialog.secure = true
+    end if
+
+    ' Set color palette
+    dialog.backgroundUri = ""
+    palette = createObject("roSGNode", "RSGPalette")
+    palette.colors = {
+        DialogBackgroundColor: "#202020",
+        DialogFocusColor: "#ff8800ff",
+        DialogFocusItemColor: "#ff8800ff",
+        DialogSecondaryTextColor: "#808080",
+        DialogSecondaryItemColor: "#808080",
+        DialogInputFieldColor: "#ffffff",
+        DialogKeyboardColor: "#ff8800ff",
+        DialogItemColor: "#c8c8c8ff",
+        DialogTextColor: "#d2d2d2ff"
+    }
+    dialog.palette = palette
+
+    dialog.observeField("text", "onKeyboardDialogText")
+    dialog.observeField("buttonSelected", "onKeyboardDialogButton")
+
+    m.keyboardDialog = dialog
+    m.top.getScene().dialog = dialog
+end sub
+
+sub onKeyboardDialogText()
+    ' Text is being entered
+end sub
+
+sub onKeyboardDialogButton()
+    text = m.keyboardDialog.text
+
+    ' Store the value based on current field
+    if m.currentField = "apiKey"
+        m.apiKey = text
+        if text.Len() > 8
+            m.apiKeyInput.text = "••••••••" + Right(text, 4)
+        else
+            m.apiKeyInput.text = "••••••••"
+        end if
+    else if m.currentField = "jellyfinPassword"
+        m.jellyfinPassword = text
+        m.jellyfinPassInput.text = "••••••••"
+    else if m.currentField = "localEmail"
+        m.localEmail = text
+        m.localEmailInput.text = text
+    else if m.currentField = "localPassword"
+        m.localPassword = text
+        m.localPassInput.text = "••••••••"
+    end if
+
+    ' Close dialog
+    m.top.getScene().dialog = invalid
+    m.keyboardDialog = invalid
+end sub
+
+' ============================================
+' UI Helpers
+' ============================================
+
+sub showStatus(message as string, statusType as string)
+    m.statusLabel.visible = true
+    m.statusLabel.text = message
+
+    ' Could add color coding based on statusType (success/error/info)
+    if statusType = "success"
+        m.statusLabel.color = "0x00FF00FF" ' Green
+    else if statusType = "error"
+        m.statusLabel.color = "0xFF0000FF" ' Red
+    else
+        m.statusLabel.color = "0xFFFFFFFF" ' White
+    end if
+end sub
+
+sub onBackPressed()
+    m.top.getScene().removeChild(m.top)
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = "back"
+        if m.keyboardDialog <> invalid
+            ' Close keyboard dialog
+            m.top.getScene().dialog = invalid
+            m.keyboardDialog = invalid
+            return true
+        else
+            ' Close the screen
+            m.top.getScene().removeChild(m.top)
+            return true
+        end if
+    end if
+
+    return false
+end function

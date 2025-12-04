@@ -33,7 +33,6 @@ namespace session
     sub Update(key as string, value = {} as object)
         ' validate parameters
         if key = "" or (key <> "user" and key <> "server") or value = invalid
-            print "Error in session.Update(): Invalid parameters provided"
             return
         end if
         ' make copy of global session array
@@ -172,12 +171,18 @@ namespace session
 
             ' update user session settings with values from registry
             userSettings = RegistryReadAll(tmpSession.user.id)
+
+            ' Batch load settings without triggering session updates for each one
+            tmpSettingArray = m.global.session.user.settings
             for each setting in userSettings
                 ' don't add auth token to user session
                 if setting <> "token"
-                    session.user.settings.Save(setting, userSettings[setting])
+                    tmpSettingArray[setting] = toBoolean(userSettings[setting])
                 end if
             end for
+
+            ' Update settings all at once (triggers session observer only once)
+            session.user.Update("settings", tmpSettingArray)
 
             set_user_setting("serverId", m.global.session.server.id)
 
@@ -238,27 +243,36 @@ namespace session
                 end if
 
                 session.user.SaveUserGuideSettings(jsonResponse.CustomPrefs)
-                session.user.SaveUserHomeSections(jsonResponse.CustomPrefs)
-            else
-                homeSection0 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection0", "smalllibrarytiles")
-                homeSection1 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection1", "resume")
-                homeSection2 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection2", "nextup")
-                homeSection3 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection3", "latestmedia")
-                homeSection4 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection4", "livetv")
-                homeSection5 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection5", "mylist")
-                homeSection6 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection6", "favorites")
-                homeSection7 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection7", "none")
 
+                ' Check if we need to migrate old home section values
+                needsMigration = false
+                originalPrefs = jsonResponse.CustomPrefs
+                if originalPrefs.doesExist("homesection0") and originalPrefs["homesection0"] = "smalllibrarytiles"
+                    needsMigration = true
+                end if
+                if originalPrefs.doesExist("homesection6") and originalPrefs["homesection6"] = "favorites"
+                    needsMigration = true
+                end if
+
+                session.user.SaveUserHomeSections(jsonResponse.CustomPrefs)
+
+                ' If migration occurred, save back to server
+                if needsMigration
+                    url = Substitute("DisplayPreferences/usersettings?userId={0}&client=emby", m.global.session.user.id)
+                    resp = APIRequest(url)
+                    PostJson(resp, FormatJson(jsonResponse.CustomPrefs))
+                end if
+            else
                 ' User has no custom prefs. Save default home section values.
                 session.user.SaveUserHomeSections({
-                    homesection0: homeSection0,
-                    homesection1: homeSection1,
-                    homesection2: homeSection2,
-                    homesection3: homeSection3,
-                    homesection4: homeSection4,
-                    homesection5: homeSection5,
-                    homesection6: homeSection6,
-                    homesection7: homeSection7
+                    homesection0: "featuredmedia",
+                    homesection1: "resume",
+                    homesection2: "latestmedia",
+                    homesection3: "none",
+                    homesection4: "none",
+                    homesection5: "none",
+                    homesection6: "none",
+                    homesection7: "none"
                 })
             end if
         end sub
@@ -298,35 +312,36 @@ namespace session
             userPreferences = customPrefs
             rowTypes = []
 
-            useWebSectionArrangement = m.global.session.user.settings["ui.home.useWebSectionArrangement"]
+            ' Define Moonfin's default home sections
+            defaultSections = {
+                homesection0: "featuredmedia",
+                homesection1: "resume",
+                homesection2: "latestmedia",
+                homesection3: "none",
+                homesection4: "none",
+                homesection5: "none",
+                homesection6: "none",
+                homesection7: "none"
+            }
 
-            if isValid(useWebSectionArrangement)
-                if not useWebSectionArrangement
-                    userPreferences.delete("homesection0")
+            ' Migrate existing users: If homesection0 is set to old default "smalllibrarytiles", change it to new default "featuredmedia"
+            ' This allows existing users to see Featured Media without reinstalling
+            if userPreferences.doesExist("homesection0")
+                if userPreferences["homesection0"] = "smalllibrarytiles"
+                    userPreferences["homesection0"] = "featuredmedia"
                 end if
             end if
 
-            homeSection0 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection0", "smalllibrarytiles")
-            homeSection1 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection1", "resume")
-            homeSection2 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection2", "nextup")
-            homeSection3 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection3", "latestmedia")
-            homeSection4 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection4", "livetv")
-            homeSection5 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection5", "mylist")
-            homeSection6 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection6", "favorites")
-            homeSection7 = chainLookupReturn(m.global, "session.user.settings.homeScreenSection7", "none")
+            ' Migrate existing users: If homesection6 is set to old default "favorites", change it to "none"
+            if userPreferences.doesExist("homesection6")
+                if userPreferences["homesection6"] = "favorites"
+                    userPreferences["homesection6"] = "none"
+                end if
+            end if
 
-            ' If user has no section preferences, use default settings
+            ' If user has no section preferences from server, use Moonfin defaults
             if not userPreferences.doesExist("homesection0")
-                userPreferences = {
-                    homesection0: homeSection0,
-                    homesection1: homeSection1,
-                    homesection2: homeSection2,
-                    homesection3: homeSection3,
-                    homesection4: homeSection4,
-                    homesection5: homeSection5,
-                    homesection6: homeSection6,
-                    homesection7: homeSection7
-                }
+                userPreferences = defaultSections
             end if
 
             for i = 0 to 7
@@ -403,27 +418,63 @@ namespace session
 
                 for each item in configTree
                     if item.default <> invalid and item.settingName <> invalid
-                        session.user.settings.Save(item.settingName, item.default)
-                    else if item.children <> invalid and item.children.Count() > 0
+                        ' Only save default if setting doesn't already exist
+                        if get_user_setting(item.settingName) = invalid
+                            session.user.settings.Save(item.settingName, item.default)
+                        end if
+                    end if
+                    if item.children <> invalid and item.children.Count() > 0
                         for each child in item.children
                             if child.default <> invalid and child.settingName <> invalid
-                                session.user.settings.Save(child.settingName, child.default)
-                            else if child.children <> invalid and child.children.Count() > 0
-                                for each child in child.children
-                                    if child.default <> invalid and child.settingName <> invalid
-                                        session.user.settings.Save(child.settingName, child.default)
-                                    else if child.children <> invalid and child.children.Count() > 0
-                                        for each child in child.children
-                                            if child.default <> invalid and child.settingName <> invalid
-                                                session.user.settings.Save(child.settingName, child.default)
-                                            else if child.children <> invalid and child.children.Count() > 0
-                                                for each child in child.children
-                                                    if child.default <> invalid and child.settingName <> invalid
-                                                        session.user.settings.Save(child.settingName, child.default)
-                                                    else if child.children <> invalid and child.children.Count() > 0
-                                                        for each child in child.children
-                                                            if child.default <> invalid and child.settingName <> invalid
-                                                                session.user.settings.Save(child.settingName, child.default)
+                                if get_user_setting(child.settingName) = invalid
+                                    session.user.settings.Save(child.settingName, child.default)
+                                end if
+                            end if
+                            if child.children <> invalid and child.children.Count() > 0
+                                for each child2 in child.children
+                                    if child2.default <> invalid and child2.settingName <> invalid
+                                        if get_user_setting(child2.settingName) = invalid
+                                            session.user.settings.Save(child2.settingName, child2.default)
+                                        end if
+                                    end if
+                                    if child2.children <> invalid and child2.children.Count() > 0
+                                        for each child3 in child2.children
+                                            if child3.default <> invalid and child3.settingName <> invalid
+                                                if get_user_setting(child3.settingName) = invalid
+                                                    session.user.settings.Save(child3.settingName, child3.default)
+                                                end if
+                                            end if
+                                            if child3.children <> invalid and child3.children.Count() > 0
+                                                for each child4 in child3.children
+                                                    if child4.default <> invalid and child4.settingName <> invalid
+                                                        if get_user_setting(child4.settingName) = invalid
+                                                            session.user.settings.Save(child4.settingName, child4.default)
+                                                        end if
+                                                    end if
+                                                    if child4.children <> invalid and child4.children.Count() > 0
+                                                        for each child5 in child4.children
+                                                            if child5.default <> invalid and child5.settingName <> invalid
+                                                                if get_user_setting(child5.settingName) = invalid
+                                                                    session.user.settings.Save(child5.settingName, child5.default)
+                                                                end if
+                                                            end if
+                                                            if child5.children <> invalid and child5.children.Count() > 0
+                                                                for each child6 in child5.children
+                                                                    if child6.default <> invalid and child6.settingName <> invalid
+                                                                        if get_user_setting(child6.settingName) = invalid
+                                                                            session.user.settings.Save(child6.settingName, child6.default)
+                                                                        end if
+                                                                    end if
+                                                                    if child6.children <> invalid and child6.children.Count() > 0
+                                                                        for each child7 in child6.children
+                                                                            if child7.default <> invalid and child7.settingName <> invalid
+                                                                                if get_user_setting(child7.settingName) = invalid
+                                                                                    session.user.settings.Save(child7.settingName, child7.default)
+                                                                                end if
+                                                                            end if
+                                                                        end for
+                                                                    end if
+                                                                end for
                                                             end if
                                                         end for
                                                     end if
@@ -443,6 +494,10 @@ namespace session
                 session.user.SetServerDeviceName()
             end sub
 
+            ' recursively save defaults from config tree
+            sub SaveDefaultsRecursive()
+            end sub
+
             ' Grab global vars from registry and overwrite defaults
             sub LoadGlobals()
                 ' search main registry block for all keys that start with "global."
@@ -450,6 +505,19 @@ namespace session
                 for each item in jfRegistry
                     if Left(item, 7) = "global."
                         session.user.settings.Save(item, get_setting(item))
+                    end if
+                end for
+            end sub
+
+            ' Load all user-specific settings from registry
+            sub LoadUserSettings()
+                if m.global.session.user.id = invalid then return
+                ' Read all settings from user-specific registry
+                userRegistry = RegistryReadAll(m.global.session.user.id)
+                for each key in userRegistry
+                    value = get_user_setting(key)
+                    if isValid(value)
+                        session.user.settings.Save(key, value)
                     end if
                 end for
             end sub

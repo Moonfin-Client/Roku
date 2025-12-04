@@ -1,0 +1,497 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/Image.bs"
+import "pkg:/source/constants/HomeRowItemSizes.bs"
+import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/enums/ItemType.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+
+sub init()
+    m.top.overhangTitle = ""
+    m.top.optionsAvailable = false
+
+    ' Get references to UI elements
+    m.favoritesRows = m.top.findNode("favoritesRows")
+    m.loadingGroup = m.top.findNode("loadingGroup")
+    m.emptyStateGroup = m.top.findNode("emptyStateGroup")
+
+    ' Detail section references
+    m.detailsSection = m.top.findNode("detailsSection")
+    m.itemTitle = m.top.findNode("itemTitle")
+    m.itemOverview = m.top.findNode("itemOverview")
+    m.metadataText = m.top.findNode("metadataText")
+    m.backdrop = m.top.findNode("backdrop")
+    m.backdropPrev = m.top.findNode("backdropPrev")
+    m.backdropTint = m.top.findNode("backdropTint")
+
+    ' Set up row list
+    m.favoritesRows.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+    m.favoritesRows.content = CreateObject("roSGNode", "ContentNode")
+
+    ' Configure row sizes for portrait posters (primary images)
+    m.favoritesRows.itemSize = [1703, 340]
+    m.favoritesRows.itemSpacing = [0, 70]
+    m.favoritesRows.rowItemSpacing = [20, 0]
+    m.favoritesRows.rowItemSize = homeRowItemSizes.MOVIE_POSTER
+
+    ' Observe events
+    m.backdrop.observeField("loadStatus", "onBackdropLoadStatusChange")
+    m.favoritesRows.observeField("rowItemFocused", "onItemFocusChanged")
+    m.favoritesRows.observeField("rowItemSelected", "onItemSelected")
+
+    ' Data storage
+    m.allFavorites = []
+    m.movieItems = []
+    m.seriesItems = []
+    m.episodeItems = []
+    m.isLoading = false
+
+    ' Create loading task
+    m.loadFavoritesTask = createObject("roSGNode", "LoadFavoritesTask")
+    m.loadFavoritesTask.observeField("results", "onFavoritesLoaded")
+    m.loadFavoritesTask.observeField("error", "onLoadError")
+end sub
+
+' JFScreen hook called when the screen is displayed
+sub OnScreenShown()
+    scene = m.top.getScene()
+    overhang = scene.findNode("overhang")
+    if isValid(overhang)
+        overhang.visible = true
+        overhang.title = ""
+    end if
+
+    ' Load favorites on first show
+    if m.allFavorites.Count() = 0
+        loadFavorites()
+    else
+        m.favoritesRows.setFocus(true)
+    end if
+end sub
+
+' JFScreen hook called when the screen is hidden
+sub OnScreenHidden()
+    scene = m.top.getScene()
+    overhang = scene.findNode("overhang")
+    if isValid(overhang)
+        overhang.title = ""
+    end if
+end sub
+
+sub loadFavorites()
+    if m.isLoading then return
+
+    m.isLoading = true
+    showLoading(true)
+    hideEmptyState()
+
+    m.loadFavoritesTask.control = TaskControl.RUN
+end sub
+
+sub onFavoritesLoaded(event as object)
+    items = event.getData()
+    m.isLoading = false
+    showLoading(false)
+
+    if not isValid(items) or items.Count() = 0
+        m.allFavorites = []
+        showEmptyState()
+        return
+    end if
+
+    m.allFavorites = items
+
+    ' Categorize items
+    m.movieItems = []
+    m.seriesItems = []
+    m.episodeItems = []
+
+    for each item in items
+        itemType = LCase(item.type)
+        if itemType = "movie"
+            m.movieItems.push(item)
+        else if itemType = "series"
+            m.seriesItems.push(item)
+        else if itemType = "episode"
+            m.episodeItems.push(item)
+        end if
+    end for
+
+    ' Build rows
+    buildRows()
+
+    ' Focus the rows
+    m.favoritesRows.setFocus(true)
+end sub
+
+sub onLoadError()
+    m.isLoading = false
+    showLoading(false)
+    showEmptyState()
+end sub
+
+sub buildRows()
+    m.favoritesRows.content.removeChildrenIndex(m.favoritesRows.content.getChildCount(), 0)
+
+    rowsAdded = 0
+    rowItemSizes = []
+
+    ' Add Movies row if there are movies
+    if m.movieItems.Count() > 0
+        addRow("Favorite Movies", m.movieItems, "movie")
+        rowItemSizes.push(homeRowItemSizes.MOVIE_POSTER)
+        rowsAdded++
+    end if
+
+    ' Add Series row if there are series
+    if m.seriesItems.Count() > 0
+        addRow("Favorite Shows", m.seriesItems, "series")
+        rowItemSizes.push(homeRowItemSizes.MOVIE_POSTER)
+        rowsAdded++
+    end if
+
+    ' Add Episodes row if there are episodes - use wide poster for screenshots
+    if m.episodeItems.Count() > 0
+        addRow("Favorite Episodes", m.episodeItems, "episode")
+        rowItemSizes.push(homeRowItemSizes.WIDE_POSTER)
+        rowsAdded++
+    end if
+
+    ' Set per-row item sizes
+    m.favoritesRows.rowItemSize = rowItemSizes
+
+    if rowsAdded = 0
+        showEmptyState()
+    end if
+end sub
+
+sub addRow(title as string, items as object, _rowType as string)
+    row = m.favoritesRows.content.createChild("ContentNode")
+    row.title = title
+
+    for each item in items
+        child = invalid
+        itemType = LCase(item.type)
+
+        if itemType = "movie"
+            child = row.createChild("HomeData")
+            child.json = item.json
+            child.id = item.id
+            child.title = item.json.name
+            child.type = "Movie"
+
+            ' Set poster images - portrait dimensions for primary
+            if isValid(item.json.ImageTags) and isValid(item.json.ImageTags.Primary)
+                imgParams = { "maxHeight": 270, "maxWidth": 180, "Tag": item.json.ImageTags.Primary }
+                child.posterURL = ImageURL(item.id, "Primary", imgParams)
+            end if
+            if isValid(item.json.BackdropImageTags) and item.json.BackdropImageTags.Count() > 0
+                imgParams = { "maxHeight": 270, "maxWidth": 480, "Tag": item.json.BackdropImageTags[0] }
+                child.thumbnailURL = ImageURL(item.id, "Backdrop", imgParams)
+                child.widePosterURL = child.thumbnailURL
+            else
+                child.widePosterURL = child.posterURL
+                child.thumbnailURL = child.posterURL
+            end if
+
+            ' Set image dimensions for poster item
+            child.imageWidth = 180
+
+        else if itemType = "series"
+            child = row.createChild("HomeData")
+            child.json = item.json
+            child.id = item.id
+            child.title = item.json.name
+            child.type = "Series"
+
+            ' Set poster images - portrait dimensions for primary
+            if isValid(item.json.ImageTags) and isValid(item.json.ImageTags.Primary)
+                imgParams = { "maxHeight": 270, "maxWidth": 180, "Tag": item.json.ImageTags.Primary }
+                child.posterURL = ImageURL(item.id, "Primary", imgParams)
+            end if
+            if isValid(item.json.BackdropImageTags) and item.json.BackdropImageTags.Count() > 0
+                imgParams = { "maxHeight": 270, "maxWidth": 480, "Tag": item.json.BackdropImageTags[0] }
+                child.thumbnailURL = ImageURL(item.id, "Backdrop", imgParams)
+                child.widePosterURL = child.thumbnailURL
+            else
+                child.widePosterURL = child.posterURL
+                child.thumbnailURL = child.posterURL
+            end if
+
+            child.imageWidth = 180
+
+        else if itemType = "episode"
+            child = row.createChild("HomeData")
+            child.json = item.json
+            child.id = item.id
+            child.title = item.json.name
+            child.type = "Episode"
+
+            ' For episodes, use episode screenshot as primary display (wide poster)
+            ' Use episode's Primary image (screenshot) for posterURL
+            if isValid(item.json.ImageTags) and isValid(item.json.ImageTags.Primary)
+                imgParams = { "maxHeight": 331, "maxWidth": 464, "Tag": item.json.ImageTags.Primary }
+                child.posterURL = ImageURL(item.id, "Primary", imgParams)
+                child.thumbnailURL = child.posterURL
+            end if
+
+            ' Fallback to series thumb if no episode image
+            seriesId = item.json.LookupCI("SeriesId")
+            if not isValidAndNotEmpty(child.posterURL) and isValid(seriesId)
+                if isValid(item.json.SeriesThumbImageTag)
+                    imgParams = { "maxHeight": 331, "maxWidth": 464, "Tag": item.json.SeriesThumbImageTag }
+                    child.posterURL = ImageURL(seriesId, "Thumb", imgParams)
+                    child.thumbnailURL = child.posterURL
+                else if isValid(item.json.SeriesPrimaryImageTag)
+                    imgParams = { "maxHeight": 331, "maxWidth": 464, "Tag": item.json.SeriesPrimaryImageTag }
+                    child.posterURL = ImageURL(seriesId, "Primary", imgParams)
+                    child.thumbnailURL = child.posterURL
+                end if
+            end if
+
+            ' Use backdrop from parent series for widePosterURL
+            if isValid(item.json.ParentBackdropImageTags) and item.json.ParentBackdropImageTags.Count() > 0
+                imgParams = { "maxHeight": 331, "maxWidth": 464, "Tag": item.json.ParentBackdropImageTags[0] }
+                child.widePosterURL = ImageURL(item.json.ParentBackdropItemId, "Backdrop", imgParams)
+            else
+                child.widePosterURL = child.posterURL
+            end if
+
+            child.imageWidth = 464
+        end if
+    end for
+end sub
+
+sub onItemFocusChanged(event as object)
+    focusedIndex = event.getData()
+    if not isValid(focusedIndex) or focusedIndex.Count() < 2 then return
+
+    rowIndex = focusedIndex[0]
+    itemIndex = focusedIndex[1]
+
+    row = m.favoritesRows.content.getChild(rowIndex)
+    if not isValid(row) then return
+
+    item = row.getChild(itemIndex)
+    if not isValid(item) then return
+
+    updateDetailsSection(item)
+    updateBackdrop(item)
+end sub
+
+sub updateDetailsSection(item as object)
+    if not isValid(item) or not isValid(item.json) then return
+
+    json = item.json
+    itemType = LCase(item.type)
+
+    ' Set title based on item type
+    if itemType = "episode"
+        seriesName = json.LookupCI("SeriesName")
+        if isValidAndNotEmpty(seriesName)
+            m.itemTitle.text = seriesName
+        else
+            m.itemTitle.text = json.name
+        end if
+    else
+        m.itemTitle.text = json.name
+    end if
+
+    ' Build metadata string with separator
+    metadataParts = []
+    separator = "  •  "
+
+    ' Community Rating (star rating)
+    if isValid(json.CommunityRating) and json.CommunityRating > 0
+        metadataParts.push("★ " + formatRating(json.CommunityRating))
+    end if
+
+    ' Critic Rating (Rotten Tomatoes)
+    if isValid(json.CriticRating) and json.CriticRating > 0
+        metadataParts.push(json.CriticRating.toStr() + "% RT")
+    end if
+
+    ' Episode Number (S01E01) - only for episodes
+    if itemType = "episode"
+        episodeInfo = ""
+        if isValid(json.ParentIndexNumber)
+            episodeInfo = "S" + formatNumber(json.ParentIndexNumber)
+        end if
+        if isValid(json.IndexNumber)
+            episodeInfo += "E" + formatNumber(json.IndexNumber)
+        end if
+        if episodeInfo <> ""
+            metadataParts.push(episodeInfo)
+        end if
+    end if
+
+    ' Release Year
+    if isValid(json.ProductionYear)
+        if itemType = "series"
+            yearText = json.ProductionYear.toStr()
+            if isValid(json.Status)
+                if LCase(json.Status) = "continuing"
+                    yearText += " - Present"
+                else if LCase(json.Status) = "ended" and isValid(json.EndDate)
+                    yearText += " - " + LEFT(json.EndDate, 4)
+                end if
+            end if
+            metadataParts.push(yearText)
+        else
+            metadataParts.push(json.ProductionYear.toStr())
+        end if
+    end if
+
+    ' Runtime
+    if isValid(json.RunTimeTicks) and json.RunTimeTicks > 0
+        runtimeMinutes = Int(json.RunTimeTicks / 600000000)
+        hours = Int(runtimeMinutes / 60)
+        minutes = runtimeMinutes mod 60
+        if hours > 0
+            metadataParts.push(hours.toStr() + "h " + minutes.toStr() + "m")
+        else
+            metadataParts.push(minutes.toStr() + "m")
+        end if
+    end if
+
+    ' Official Rating (PG-13, TV-MA, etc.)
+    if isValidAndNotEmpty(json.OfficialRating)
+        metadataParts.push(json.OfficialRating)
+    end if
+
+    ' Series Status - only for series
+    if itemType = "series" and isValid(json.Status)
+        status = LCase(json.Status)
+        if status = "continuing"
+            metadataParts.push("Continuing")
+        else if status = "ended"
+            metadataParts.push("Ended")
+        end if
+    end if
+
+    ' Join all metadata parts with separator
+    m.metadataText.text = metadataParts.Join(separator)
+
+    ' Set overview
+    if itemType = "episode"
+        ' For episodes, show episode name + overview
+        overviewText = ""
+        if isValidAndNotEmpty(json.name)
+            overviewText = json.name
+        end if
+        if isValidAndNotEmpty(json.Overview)
+            if overviewText <> ""
+                overviewText += chr(10) + chr(10) + json.Overview
+            else
+                overviewText = json.Overview
+            end if
+        end if
+        m.itemOverview.text = overviewText
+    else
+        if isValidAndNotEmpty(json.Overview)
+            m.itemOverview.text = json.Overview
+        else
+            m.itemOverview.text = ""
+        end if
+    end if
+end sub
+
+function formatRating(rating as float) as string
+    ' Format rating to one decimal place
+    return Left(rating.toStr(), 3)
+end function
+
+function formatNumber(num as integer) as string
+    ' Format number with leading zero if less than 10
+    if num < 10
+        return "0" + num.toStr()
+    end if
+    return num.toStr()
+end function
+
+sub updateBackdrop(item as object)
+    if not isValid(item) then return
+
+    backdropUrl = ""
+
+    ' Try to get higher quality backdrop from json with blur
+    if isValid(item.json)
+        json = item.json
+        if isValid(json.BackdropImageTags) and json.BackdropImageTags.Count() > 0
+            imgParams = { "maxHeight": 1080, "maxWidth": 1920, "quality": 90, "blur": 10, "Tag": json.BackdropImageTags[0] }
+            backdropUrl = ImageURL(item.id, "Backdrop", imgParams)
+        else if isValid(json.ParentBackdropImageTags) and json.ParentBackdropImageTags.Count() > 0
+            imgParams = { "maxHeight": 1080, "maxWidth": 1920, "quality": 90, "blur": 10, "Tag": json.ParentBackdropImageTags[0] }
+            backdropUrl = ImageURL(json.ParentBackdropItemId, "Backdrop", imgParams)
+        end if
+    end if
+
+    ' Fallback to lower quality images if no json backdrop
+    if backdropUrl = ""
+        if isValidAndNotEmpty(item.widePosterURL)
+            backdropUrl = item.widePosterURL
+        else if isValidAndNotEmpty(item.thumbnailURL)
+            backdropUrl = item.thumbnailURL
+        else if isValidAndNotEmpty(item.posterURL)
+            backdropUrl = item.posterURL
+        end if
+    end if
+
+    if isValidAndNotEmpty(backdropUrl) and m.backdrop.uri <> backdropUrl
+        m.backdrop.uri = backdropUrl
+    end if
+end sub
+
+sub onBackdropLoadStatusChange()
+    if isValid(m.backdrop) and m.backdrop.loadStatus = "ready" and isValidAndNotEmpty(m.backdrop.uri)
+        if isValid(m.backdropPrev)
+            m.backdropPrev.uri = m.backdrop.uri
+        end if
+    end if
+end sub
+
+sub onItemSelected(event as object)
+    selectedIndex = event.getData()
+    if not isValid(selectedIndex) or selectedIndex.Count() < 2 then return
+
+    rowIndex = selectedIndex[0]
+    itemIndex = selectedIndex[1]
+
+    row = m.favoritesRows.content.getChild(rowIndex)
+    if not isValid(row) then return
+
+    item = row.getChild(itemIndex)
+    if not isValid(item) then return
+
+    m.top.selectedItem = item
+end sub
+
+sub showLoading(visible as boolean)
+    m.loadingGroup.visible = visible
+    m.favoritesRows.visible = not visible
+    m.detailsSection.visible = not visible
+end sub
+
+sub showEmptyState()
+    m.emptyStateGroup.visible = true
+    m.favoritesRows.visible = false
+    m.detailsSection.visible = false
+end sub
+
+sub hideEmptyState()
+    m.emptyStateGroup.visible = false
+    m.favoritesRows.visible = true
+    m.detailsSection.visible = true
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = KeyCode.BACK
+        return false
+    end if
+
+    return false
+end function

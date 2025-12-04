@@ -129,7 +129,10 @@ function loadContinueWatching() as object
     }
     data = api.useritems.GetResumeItems(params)
 
-    if not isChainValid(data, "Items") then return results
+    if not isChainValid(data, "Items")
+        return results
+    end if
+
 
     for each item in data.Items
         tmp = CreateObject("roSGNode", "HomeData")
@@ -162,6 +165,103 @@ function loadContinueWatching() as object
         }
         results.push(tmp)
     end for
+
+    return results
+end function
+
+' Load merged Continue Watching and Next Up items
+function loadMergedContinueWatching() as object
+    results = []
+
+    ' Load Continue Watching items
+    resumeParams = {
+        recursive: true,
+        SortBy: "DatePlayed",
+        SortOrder: "Descending",
+        Filters: "IsResumable",
+        MediaTypes: ItemType.VIDEO,
+        excludeItemTypes: ItemType.BOOK,
+        EnableTotalRecordCount: false
+    }
+    resumeData = api.useritems.GetResumeItems(resumeParams)
+
+    ' Load Next Up items
+    nextUpParams = {
+        recursive: true,
+        SortBy: "DatePlayed",
+        SortOrder: "Descending",
+        ImageTypeLimit: 1,
+        UserId: m.global.session.user.id,
+        EnableRewatching: m.global.session.user.settings["ui.details.enablerewatchingnextup"],
+        DisableFirstEpisode: false,
+        limit: 25,
+        EnableTotalRecordCount: false
+    }
+
+    maxDaysInNextUp = m.global.session.user.settings["ui.details.maxdaysnextup"].ToInt()
+    if isValid(maxDaysInNextUp)
+        if maxDaysInNextUp > 0
+            dateToday = CreateObject("roDateTime")
+            dateCutoff = CreateObject("roDateTime")
+            dateCutoff.FromSeconds(dateToday.AsSeconds() - (maxDaysInNextUp * 86400))
+            nextUpParams.AddReplace("NextUpDateCutoff", dateCutoff.ToISOString())
+        end if
+    end if
+
+    nextUpData = api.shows.GetNextUp(nextUpParams)
+
+    ' Create a lookup map of resume item IDs for duplicate detection
+    resumeItemIds = {}
+
+    ' Add Continue Watching items first
+    if isChainValid(resumeData, "Items")
+        for each item in resumeData.Items
+            tmp = CreateObject("roSGNode", "HomeData")
+            tmp.Id = item.LookupCI("Id")
+            tmp.name = item.LookupCI("name")
+            tmp.type = item.LookupCI("Type")
+            tmp.json = {
+                Id: item.LookupCI("Id"),
+                name: item.LookupCI("name"),
+                Type: item.LookupCI("Type"),
+                SeriesName: item.LookupCI("SeriesName"),
+                SeriesId: item.LookupCI("SeriesId"),
+                SeasonId: item.LookupCI("SeasonId"),
+                ProductionYear: item.LookupCI("ProductionYear"),
+                Status: item.LookupCI("Status"),
+                EndDate: item.LookupCI("EndDate"),
+                ParentIndexNumber: item.LookupCI("ParentIndexNumber"),
+                IndexNumber: item.LookupCI("IndexNumber"),
+                IndexNumberEnd: item.LookupCI("IndexNumberEnd"),
+                OfficialRating: item.LookupCI("OfficialRating"),
+                CollectionType: item.LookupCI("CollectionType"),
+                ImageTags: item.LookupCI("ImageTags"),
+                UserData: item.LookupCI("UserData"),
+                ParentThumbItemId: item.LookupCI("ParentThumbItemId"),
+                ParentThumbImageTag: item.LookupCI("ParentThumbImageTag"),
+                ParentBackdropImageTags: item.LookupCI("ParentBackdropImageTags"),
+                ParentBackdropItemId: item.LookupCI("ParentBackdropItemId"),
+                SeriesPrimaryImageTag: item.LookupCI("SeriesPrimaryImageTag"),
+                BackdropImageTags: item.LookupCI("BackdropImageTags")
+            }
+            results.push(tmp)
+            ' Track this ID to avoid duplicates
+            resumeItemIds[item.LookupCI("Id")] = true
+        end for
+    end if
+
+    ' Add Next Up items that aren't already in Continue Watching
+    if isChainValid(nextUpData, "Items")
+        for each item in nextUpData.Items
+            itemId = item.LookupCI("Id")
+            ' Only add if not already in resume items
+            if not resumeItemIds.DoesExist(itemId)
+                tmp = CreateObject("roSGNode", "HomeData")
+                tmp.json = item
+                results.push(tmp)
+            end if
+        end for
+    end if
 
     return results
 end function
@@ -259,8 +359,8 @@ function loadMoreLikeThis() as object
         tmp = CreateObject("roSGNode", "ExtrasData")
         imgParms = {
             "Tags": item.PrimaryImageTag,
-            MaxWidth: 384,
-            MaxHeight: 196
+            MaxWidth: 468,
+            MaxHeight: 702
         }
         if isStringEqual(item.LookupCI("type"), ItemType.MUSICVIDEO)
             imgParms.MaxHeight = 330
@@ -352,6 +452,60 @@ function loadSpecialFeatures() as object
     return results
 end function
 
+function loadSeasons() as object
+    results = []
+
+    if not isValid(m.top.itemId) or m.top.itemId = "" then return results
+
+    params = {
+        userId: m.global.session.user.id,
+        ParentId: m.top.itemId,
+        Fields: "Overview,PrimaryImageAspectRatio,ChildCount,MediaSources",
+        enableTotalRecordCount: true
+    }
+
+    data = api.items.Get(params)
+
+    if not isChainValid(data, "Items") then return results
+
+    for each season in data.Items
+        tmp = CreateObject("roSGNode", "HomeData")
+        tmp.json = {
+            id: season.LookupCI("Id"),
+            name: season.LookupCI("Name"),
+            Type: season.LookupCI("Type"),
+            year: season.LookupCI("ProductionYear"),
+            overview: season.LookupCI("Overview"),
+            ImageTags: season.LookupCI("ImageTags"),
+            SeriesImageTags: season.LookupCI("SeriesImageTags"),
+            BackdropImageTags: season.LookupCI("BackdropImageTags"),
+            ParentBackdropImageTags: season.LookupCI("ParentBackdropImageTags"),
+            ParentBackdropItemId: season.LookupCI("ParentBackdropItemId"),
+            UserData: season.LookupCI("UserData")
+        }
+
+        ' Build poster URL - use lowercase posterUrl to match ExtrasItem expectations
+        seasonId = season.LookupCI("Id")
+        params = {
+            maxWidth: 300,
+            quality: 90
+        }
+        if isValid(season.ImageTags) and isValid(season.ImageTags.Primary)
+            params.Tag = season.ImageTags.Primary
+            tmp.posterUrl = ImageUrl(seasonId, "Primary", params)
+        else if isValid(season.SeriesImageTags) and isValid(season.SeriesImageTags.Primary)
+            params.Tag = season.SeriesImageTags.Primary
+            tmp.posterUrl = ImageUrl(seasonId, "Primary", params)
+        else
+            tmp.posterUrl = ""
+        end if
+
+        results.push(tmp)
+    end for
+
+    return results
+end function
+
 function loadLiveTVOnNow() as object
     results = []
 
@@ -402,6 +556,46 @@ function loadLiveTVOnNow() as object
         }
         results.push(tmp)
     end for
+
+    return results
+end function
+
+function loadNextUpForShow() as object
+    ' Load next up episodes for a specific TV show
+    results = []
+
+    if not isValid(m.top.itemId) or m.top.itemId = "" then return results
+
+    params = {
+        SeriesId: m.top.itemId,
+        UserId: m.global.session.user.id,
+        EnableRewatching: false,
+        limit: 10,
+        EnableTotalRecordCount: false
+    }
+
+    data = api.shows.GetNextUp(params)
+
+    if isChainValid(data, "Items")
+        for each item in data.Items
+            tmp = CreateObject("roSGNode", "HomeData")
+            tmp.json = item
+
+            ' Override imageWidth to 502 for wide episode display
+            tmp.imageWidth = 502
+
+            ' Set posterUrl to episode's wide thumbnail (overrides HomeData's series portrait)
+            if isValid(item.Id)
+                imgParams = { "maxHeight": 283, "maxWidth": 502 }
+                if isValid(item.ImageTags) and isValid(item.ImageTags.Primary)
+                    imgParams.Tag = item.ImageTags.Primary
+                end if
+                tmp.posterUrl = ImageURL(item.Id, "Primary", imgParams)
+            end if
+
+            results.push(tmp)
+        end for
+    end if
 
     return results
 end function
@@ -769,6 +963,11 @@ sub loadItems()
         return
     end if
 
+    if isStringEqual(m.top.itemsToLoad, "mergedContinueWatching")
+        m.top.content = loadMergedContinueWatching()
+        return
+    end if
+
     if isStringEqual(m.top.itemsToLoad, "nextUp")
         m.top.content = loadNextUp()
         return
@@ -777,7 +976,7 @@ sub loadItems()
     if isStringEqual(m.top.itemsToLoad, "seasonOfEpisodes")
         try
             m.top.content = loadSeasonOfEpisodes()
-        catch e
+        catch _e
             m.top.content = []
         end try
         return
@@ -823,6 +1022,11 @@ sub loadItems()
         return
     end if
 
+    if isStringEqual(m.top.itemsToLoad, "nextup")
+        m.top.content = loadNextUpForShow()
+        return
+    end if
+
     if isStringEqual(m.top.itemsToLoad, "personTVShows")
         m.top.content = loadItemsByPerson(ItemType.EPISODE, { MaxWidth: 502, MaxHeight: 300 })
         return
@@ -850,6 +1054,11 @@ sub loadItems()
 
     if isStringEqual(m.top.itemsToLoad, "specialfeatures")
         m.top.content = loadSpecialFeatures()
+        return
+    end if
+
+    if isStringEqual(m.top.itemsToLoad, "seasons")
+        m.top.content = loadSeasons()
         return
     end if
 

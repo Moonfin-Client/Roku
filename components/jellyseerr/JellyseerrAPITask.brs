@@ -1,0 +1,340 @@
+sub init()
+    m.top.functionName = "executeRequest"
+end sub
+
+sub executeRequest()
+    request = m.top.request
+
+    if request = invalid
+        m.top.response = {
+            success: false,
+            error: "Invalid request",
+            statusCode: 400
+        }
+        return
+    end if
+
+    config = GetJellyseerrConfig()
+
+    if not IsValidJellyseerrConfig(config)
+        m.top.response = {
+            success: false,
+            error: "Jellyseerr not configured",
+            statusCode: 0
+        }
+        return
+    end if
+
+    ' If this is an auto-login attempt and we don't have a cookie, try to authenticate first
+    isAutoLogin = (m.top.autoLogin <> invalid and m.top.autoLogin = true)
+    if isAutoLogin and not isValidStringValue(config.authCookie)
+        reAuthSuccess = AttemptSilentReAuth(config)
+        if reAuthSuccess
+            ' Reload config to get the new cookie
+            config = GetJellyseerrConfig()
+        else
+            m.top.response = {
+                success: false,
+                error: "Auto-login failed",
+                statusCode: 401
+            }
+            return
+        end if
+    end if
+
+    ' Validate cookie if using cookie authentication
+    if isValidStringValue(config.authCookie) and not isValidStringValue(config.apiKey)
+        if not ValidateJellyseerrCookie()
+            m.top.response = {
+                success: false,
+                error: "Session expired. Please re-authenticate in Settings.",
+                statusCode: 401
+            }
+            return
+        end if
+    end if
+
+    ' Build URL
+    url = config.serverUrl
+    if Left(url, 1) = "/" then url = Mid(url, 2)
+    if Right(url, 1) = "/" then url = Left(url, Len(url) - 1)
+
+    endpoint = request.endpoint
+    if Left(endpoint, 1) <> "/" then endpoint = "/" + endpoint
+
+    url = url + endpoint
+
+    if request.queryParams <> invalid
+        queryString = BuildQueryString(request.queryParams)
+        if queryString <> ""
+            url = url + "?" + queryString
+        end if
+    end if
+
+
+    ' Create HTTP request
+    urlTransfer = CreateObject("roUrlTransfer")
+    urlTransfer.SetUrl(url)
+    urlTransfer.SetCertificatesFile("common:/certs/ca-bundle.crt")
+    urlTransfer.InitClientCertificates()
+
+    ' Set headers - use either API key or cookie based on auth method
+    if config.apiKey <> invalid and config.apiKey <> ""
+        ' API Key authentication
+        urlTransfer.AddHeader("X-Api-Key", config.apiKey)
+    else if config.authCookie <> invalid and config.authCookie <> ""
+        ' Cookie-based authentication (Jellyfin/Local auth)
+        urlTransfer.AddHeader("Cookie", config.authCookie)
+    end if
+
+    urlTransfer.AddHeader("Content-Type", "application/json")
+    urlTransfer.AddHeader("User-Agent", "Moonfin/1.0")
+
+    ' Create message port for async request
+    port = CreateObject("roMessagePort")
+    urlTransfer.SetMessagePort(port)
+
+    ' Execute request based on method (async)
+    response = invalid
+    statusCode = 0
+    success = false
+
+    if request.method = "POST"
+        body = ""
+        if request.body <> invalid
+            body = JellyseerrFormatJson(request.body)
+        end if
+
+        ' POST request
+
+        success = urlTransfer.AsyncPostFromString(body)
+    else if request.method = "GET"
+        success = urlTransfer.AsyncGetToString()
+    else if request.method = "DELETE"
+        success = urlTransfer.AsyncDelete()
+    else if request.method = "PUT"
+        body = ""
+        if request.body <> invalid
+            body = JellyseerrFormatJson(request.body)
+        end if
+        ' PUT uses AsyncPostFromString with X-HTTP-Method-Override
+        urlTransfer.AddHeader("X-HTTP-Method-Override", "PUT")
+        success = urlTransfer.AsyncPostFromString(body)
+    end if
+
+    if not success
+        m.top.response = {
+            success: false,
+            error: "Failed to initiate request",
+            statusCode: 0
+        }
+        return
+    end if
+
+    ' Wait for response
+    event = wait(30000, port)
+
+    if type(event) = "roUrlEvent"
+        statusCode = event.GetResponseCode()
+        response = event.GetString()
+
+        ' Response received
+
+        ' Parse response
+        if response <> invalid and response <> ""
+            parsedData = ParseJson(response)
+            m.top.response = {
+                success: (statusCode >= 200 and statusCode < 300),
+                data: parsedData,
+                statusCode: statusCode,
+                rawResponse: response
+            }
+        else
+            m.top.response = {
+                success: false,
+                error: "Request failed or returned empty response",
+                statusCode: statusCode,
+                rawResponse: response
+            }
+        end if
+
+        ' If we get 401 (Unauthorized) with cookie auth, attempt silent re-authentication
+        ' Note: 403 (Forbidden) means authenticated but no permission - don't log out or re-auth
+        if statusCode = 401 and isValidStringValue(config.authCookie)
+            reAuthSuccess = AttemptSilentReAuth(config)
+            if reAuthSuccess
+                ' Retry the original request with new cookie
+                executeRequest()
+                return
+            else
+                ClearJellyseerrCookie()
+            end if
+        end if
+    else
+        ' Timeout or other error
+        m.top.response = {
+            success: false,
+            error: "Request timeout or connection error",
+            statusCode: 0
+        }
+    end if
+end sub
+
+' Attempt silent re-authentication when session expires (401)
+function AttemptSilentReAuth(config as object) as boolean
+    ' Check if we have stored credentials to re-authenticate
+    if config.authMethod = "jellyfin" and isValidStringValue(config.jellyfinPassword)
+        ' Re-authenticate using Jellyfin credentials
+        return ReAuthWithJellyfin(config)
+    else if config.authMethod = "local" and isValidStringValue(config.localEmail) and isValidStringValue(config.localPassword)
+        ' Re-authenticate using local credentials
+        return ReAuthWithLocal(config)
+    end if
+
+    ' No stored credentials available for re-auth
+    return false
+end function
+
+' Re-authenticate using stored Jellyfin password
+function ReAuthWithJellyfin(config as object) as boolean
+    serverUrl = config.serverUrl
+    if Right(serverUrl, 1) = "/" then serverUrl = Left(serverUrl, Len(serverUrl) - 1)
+
+    authUrl = serverUrl + "/api/v1/auth/jellyfin"
+
+    ' Get Jellyfin user info from global session
+    jellyfinUsername = ""
+    if m.global <> invalid and m.global.session <> invalid and m.global.session.user <> invalid
+        if m.global.session.user.name <> invalid
+            jellyfinUsername = m.global.session.user.name
+        end if
+    end if
+
+    if jellyfinUsername = "" or config.jellyfinPassword = ""
+        return false
+    end if
+
+    ' Build auth body
+    authBody = {
+        "username": jellyfinUsername,
+        "password": config.jellyfinPassword
+    }
+    bodyJson = JellyseerrFormatJson(authBody)
+
+    ' Execute auth request
+    urlTransfer = CreateObject("roUrlTransfer")
+    urlTransfer.SetUrl(authUrl)
+    urlTransfer.SetCertificatesFile("common:/certs/ca-bundle.crt")
+    urlTransfer.InitClientCertificates()
+    urlTransfer.AddHeader("Content-Type", "application/json")
+    urlTransfer.AddHeader("User-Agent", "Moonfin/1.0")
+
+    port = CreateObject("roMessagePort")
+    urlTransfer.SetMessagePort(port)
+    urlTransfer.AsyncPostFromString(bodyJson)
+
+    event = wait(15000, port)
+
+    if type(event) = "roUrlEvent"
+        statusCode = event.GetResponseCode()
+        if statusCode >= 200 and statusCode < 300
+            ' Extract cookies from response
+            cookies = ExtractSessionCookies(event)
+            if cookies <> ""
+                ' Save new cookie
+                sec = CreateObject("roRegistrySection", "jellyseerr")
+                sec.Write("authCookie", cookies)
+                sec.Flush()
+                return true
+            end if
+        end if
+    end if
+
+    return false
+end function
+
+' Re-authenticate using stored local credentials
+function ReAuthWithLocal(config as object) as boolean
+    serverUrl = config.serverUrl
+    if Right(serverUrl, 1) = "/" then serverUrl = Left(serverUrl, Len(serverUrl) - 1)
+
+    authUrl = serverUrl + "/api/v1/auth/local"
+
+    ' Build auth body
+    authBody = {
+        "email": config.localEmail,
+        "password": config.localPassword
+    }
+    bodyJson = JellyseerrFormatJson(authBody)
+
+    ' Execute auth request
+    urlTransfer = CreateObject("roUrlTransfer")
+    urlTransfer.SetUrl(authUrl)
+    urlTransfer.SetCertificatesFile("common:/certs/ca-bundle.crt")
+    urlTransfer.InitClientCertificates()
+    urlTransfer.AddHeader("Content-Type", "application/json")
+    urlTransfer.AddHeader("User-Agent", "Moonfin/1.0")
+
+    port = CreateObject("roMessagePort")
+    urlTransfer.SetMessagePort(port)
+    urlTransfer.AsyncPostFromString(bodyJson)
+
+    event = wait(15000, port)
+
+    if type(event) = "roUrlEvent"
+        statusCode = event.GetResponseCode()
+        if statusCode >= 200 and statusCode < 300
+            ' Extract cookies from response
+            cookies = ExtractSessionCookies(event)
+            if cookies <> ""
+                ' Save new cookie
+                sec = CreateObject("roRegistrySection", "jellyseerr")
+                sec.Write("authCookie", cookies)
+                sec.Flush()
+                return true
+            end if
+        end if
+    end if
+
+    return false
+end function
+
+' Extract session cookies from authentication response
+function ExtractSessionCookies(event as object) as string
+    cookies = ""
+    responseHeaders = event.GetResponseHeaders()
+    if responseHeaders <> invalid
+        for each header in responseHeaders
+            headerName = LCase(header)
+            if headerName = "set-cookie"
+                cookieValue = responseHeaders[header]
+
+                ' Extract cookie name=value part (before first semicolon)
+                semicolonPos = InStr(cookieValue, ";")
+                cookiePair = ""
+                if semicolonPos > 0
+                    cookiePair = Left(cookieValue, semicolonPos - 1)
+                else
+                    cookiePair = cookieValue
+                end if
+
+                ' Filter for relevant session cookies
+                cookieName = ""
+                equalsPos = InStr(cookiePair, "=")
+                if equalsPos > 0
+                    cookieName = LCase(Left(cookiePair, equalsPos - 1))
+                end if
+
+                ' Only include session-related cookies (connect.sid is primary)
+                if cookieName = "connect.sid" or cookieName = "sessionid" or cookieName = "session" or cookieName = "jellyseerr.sid"
+                    if cookies <> ""
+                        cookies = cookies + "; "
+                    end if
+                    cookies = cookies + cookiePair
+                end if
+            end if
+        end for
+    end if
+
+    return cookies
+end function

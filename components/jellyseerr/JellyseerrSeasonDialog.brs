@@ -1,0 +1,275 @@
+sub init()
+    ' Get UI elements - will be created when XML is loaded
+    m.title = invalid
+    m.subtitle = invalid
+    m.seasonList = invalid
+    m.okButton = invalid
+    m.cancelButton = invalid
+
+    ' Track checked state manually
+    m.checkedState = []
+    m.focusedElement = "list" ' "list", "ok", "cancel"
+
+    ' Observe field changes to build the list
+    m.top.observeField("numberOfSeasons", "onFieldsReady")
+    m.top.observeField("showName", "onFieldsReady")
+    m.top.observeField("is4k", "onFieldsReady")
+end sub
+
+sub onFieldsReady()
+    ' Lazy init UI elements
+    if m.title = invalid
+        m.title = m.top.findNode("title")
+        m.subtitle = m.top.findNode("subtitle")
+        m.seasonList = m.top.findNode("seasonList")
+        m.okButton = m.top.findNode("okButton")
+        m.cancelButton = m.top.findNode("cancelButton")
+
+        if m.okButton <> invalid
+            m.okButton.background = "#c8fafa"
+            m.okButton.color = "#101010"
+            m.okButton.focusBackground = chainLookupReturn(m.global.session, "user.settings.colorCursor", "0xff6867FF")
+            m.okButton.focusColor = "#ffffff"
+            m.okButton.observeField("buttonSelected", "onOkButtonSelected")
+        end if
+
+        if m.cancelButton <> invalid
+            m.cancelButton.background = "#c8fafa"
+            m.cancelButton.color = "#101010"
+            m.cancelButton.focusBackground = chainLookupReturn(m.global.session, "user.settings.colorCursor", "0xff6867FF")
+            m.cancelButton.focusColor = "#ffffff"
+            m.cancelButton.observeField("buttonSelected", "onCancelButtonSelected")
+        end if
+    end if
+
+    ' Update subtitle and build list when we have all data
+    if m.top.showName <> "" and m.top.numberOfSeasons > 0
+        updateSubtitle()
+        buildSeasonList()
+    end if
+end sub
+
+' Update the subtitle with show name and quality
+sub updateSubtitle()
+    if m.subtitle = invalid then return
+    if m.top.showName <> ""
+        quality = "HD"
+        if m.top.is4k then quality = "4K"
+        m.subtitle.text = m.top.showName + " (" + quality + ")"
+    end if
+end sub
+
+' Build the list of seasons with checkbox icons in titles
+sub buildSeasonList()
+    if m.seasonList = invalid then return
+
+    numSeasons = m.top.numberOfSeasons
+    if numSeasons = invalid or numSeasons <= 0 then return
+
+    ' Initialize all as checked
+    m.checkedState = []
+    for i = 0 to numSeasons
+        m.checkedState.push(true)
+    end for
+
+    ' Build list content with checkbox characters in title
+    updateListContent()
+
+    ' Set initial focus on the dialog itself, then the list
+    m.top.setFocus(true)
+    m.seasonList.setFocus(true)
+    m.focusedElement = "list"
+
+    ' Ensure buttons know they're not focused initially
+    if m.okButton <> invalid then m.okButton.focus = false
+    if m.cancelButton <> invalid then m.cancelButton.focus = false
+end sub
+
+' Update list content to reflect current checked state
+sub updateListContent()
+    if m.seasonList = invalid then return
+
+    numSeasons = m.top.numberOfSeasons
+    ' Save current focus position
+    currentIndex = 0
+    if m.seasonList.content <> invalid and m.seasonList.itemFocused <> invalid
+        currentIndex = m.seasonList.itemFocused
+    end if
+
+    content = CreateObject("roSGNode", "ContentNode")
+
+    ' Add "Select All" option first
+    selectAllNode = content.CreateChild("ContentNode")
+    checkmark = getCheckboxChar(m.checkedState[0])
+    selectAllNode.title = checkmark + "  Select All Seasons"
+
+    ' Add individual season options
+    for i = 1 to numSeasons
+        seasonNode = content.CreateChild("ContentNode")
+        checkmark = getCheckboxChar(m.checkedState[i])
+        seasonNode.title = checkmark + "  Season " + i.toStr()
+    end for
+
+    ' Set content first, then restore focus position
+    m.seasonList.content = content
+    m.seasonList.jumpToItem = currentIndex
+end sub
+
+' Get checkbox character based on state
+function getCheckboxChar(isChecked as boolean) as string
+    if isChecked
+        return "[X]"
+    else
+        return "[  ]"
+    end if
+end function
+
+' Toggle checkbox at given index
+sub toggleCheckbox(index as integer)
+    if index < 0 or index >= m.checkedState.Count() then return
+
+    ' Toggle the state
+    m.checkedState[index] = not m.checkedState[index]
+
+    ' If Select All was toggled, sync all seasons
+    if index = 0
+        for i = 1 to m.checkedState.Count() - 1
+            m.checkedState[i] = m.checkedState[0]
+        end for
+    end if
+
+    ' Update the display
+    updateListContent()
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = "back"
+        m.top.wasCancelled = true
+        return true
+    end if
+
+    if m.focusedElement = "list"
+        if key = "OK"
+            ' Toggle checkbox at current position
+            if m.seasonList <> invalid
+                toggleCheckbox(m.seasonList.itemFocused)
+            end if
+            return true
+        else if key = "down"
+            if m.seasonList <> invalid
+                itemFocused = m.seasonList.itemFocused
+                itemCount = m.seasonList.content.getChildCount()
+
+                if itemFocused < itemCount - 1
+                    m.seasonList.itemFocused = itemFocused + 1
+                else
+                    ' At bottom, move to OK button
+                    m.focusedElement = "ok"
+                    m.okButton.setFocus(true)
+                    m.okButton.focus = true
+                    m.cancelButton.focus = false
+                end if
+            end if
+            return true
+        else if key = "up"
+            if m.seasonList <> invalid
+                itemFocused = m.seasonList.itemFocused
+
+                if itemFocused > 0
+                    m.seasonList.itemFocused = itemFocused - 1
+                end if
+                ' At top - do nothing
+            end if
+            return true
+        end if
+    else if m.focusedElement = "ok"
+        if key = "OK"
+            submitSelection()
+            return true
+        else if key = "up"
+            ' Go back to list at last item
+            m.focusedElement = "list"
+            if m.seasonList <> invalid
+                itemCount = m.seasonList.content.getChildCount()
+                m.seasonList.itemFocused = itemCount - 1
+                m.seasonList.setFocus(true)
+            end if
+            m.okButton.focus = false
+            return true
+        else if key = "down"
+            ' Move to cancel
+            m.focusedElement = "cancel"
+            m.cancelButton.setFocus(true)
+            m.cancelButton.focus = true
+            m.okButton.focus = false
+            return true
+        else if key = "right"
+            m.focusedElement = "cancel"
+            m.cancelButton.setFocus(true)
+            m.cancelButton.focus = true
+            m.okButton.focus = false
+            return true
+        end if
+    else if m.focusedElement = "cancel"
+        if key = "OK"
+            m.top.wasCancelled = true
+            return true
+        else if key = "up"
+            ' Go back to list at last item
+            m.focusedElement = "list"
+            if m.seasonList <> invalid
+                itemCount = m.seasonList.content.getChildCount()
+                m.seasonList.itemFocused = itemCount - 1
+                m.seasonList.setFocus(true)
+            end if
+            m.cancelButton.focus = false
+            return true
+        else if key = "left"
+            m.focusedElement = "ok"
+            m.okButton.setFocus(true)
+            m.okButton.focus = true
+            m.cancelButton.focus = false
+            return true
+        end if
+    end if
+
+    return true
+end function
+
+sub submitSelection()
+    numSeasons = m.top.numberOfSeasons
+
+    ' Build array of selected season numbers
+    selectedSeasons = []
+
+    ' Check if "Select All" is checked
+    if m.checkedState[0] = true
+        ' All seasons selected - return empty array to signal "all seasons"
+        m.top.selectedSeasons = []
+    else
+        ' Check indices 1-N for seasons 1-N
+        for i = 1 to numSeasons
+            if i < m.checkedState.Count() and m.checkedState[i] = true
+                selectedSeasons.push(i)
+            end if
+        end for
+
+        if selectedSeasons.Count() = 0
+            ' Nothing selected, cancel
+            m.top.wasCancelled = true
+            return
+        end if
+
+        m.top.selectedSeasons = selectedSeasons
+    end if
+end sub
+
+sub onOkButtonSelected()
+    submitSelection()
+end sub
+
+sub onCancelButtonSelected()
+    m.top.wasCancelled = true
+end sub

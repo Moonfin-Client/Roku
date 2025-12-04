@@ -5,6 +5,69 @@ import "pkg:/source/utils/misc.bs"
 
 const LOADING_WAIT_TIME = 2
 
+' Helper function to get poster size based on user preference
+function getPosterSize(preferWide = true as boolean) as object
+    preferThumbnails = chainLookupReturn(m.global.session, "user.settings.ui.home.preferThumbnails", false)
+
+    ' Debug: Print the actual value and type
+
+    ' Convert to boolean if it's a string
+    if type(preferThumbnails) = "String" or type(preferThumbnails) = "roString"
+        preferThumbnails = (LCase(preferThumbnails) = "true")
+    end if
+
+
+    if preferThumbnails
+        ' When prefer thumbnails is enabled, always use wide posters
+        return homeRowItemSizes.WIDE_POSTER
+    else
+        ' When prefer thumbnails is disabled, use the preferWide parameter
+        if preferWide
+            return homeRowItemSizes.WIDE_POSTER
+        else
+            return homeRowItemSizes.MOVIE_POSTER
+        end if
+    end if
+end function
+
+' Helper function to check if Featured Media is enabled in any home section
+function isFeaturedMediaEnabled() as boolean
+    ' Get global and session user for settings
+    if not isValid(m.global) then return false
+    if not isValid(m.global.session) then return false
+
+    sessionUser = m.global.session.user
+    if not isValid(sessionUser) then return false
+
+    ' Check if we should use server config or local app settings
+    useServerConfig = chainLookupReturn(m.global.session, "user.settings.homeRows.useServerConfig", true)
+    if type(useServerConfig) = "String" or type(useServerConfig) = "roString"
+        useServerConfig = (LCase(useServerConfig) = "true")
+    end if
+
+    ' Check all 8 home sections (0-7) for "featuredmedia"
+    for i = 0 to 7
+        if useServerConfig
+            if isValid(sessionUser.settings)
+                userSection = sessionUser.settings["homesection" + i.toStr()]
+            else
+                userSection = invalid
+            end if
+        else
+            userSection = get_user_setting("homeScreenSection" + i.toStr())
+        end if
+
+        if isValid(userSection)
+            sectionName = LCase(userSection)
+            if sectionName = "featuredmedia"
+                return true
+            end if
+        end if
+    end for
+
+    return false
+end function
+
 sub init()
     m.scene = m.top.getScene()
 
@@ -17,6 +80,10 @@ sub init()
     m.top.showRowCounter = [false]
 
     m.top.content = CreateObject("roSGNode", "ContentNode")
+
+    ' Initialize libraryData to prevent access before loading
+    m.libraryData = []
+    m.filteredLatest = []
 
     m.loadingTimer = createObject("roSGNode", "Timer")
     m.loadingTimer.duration = LOADING_WAIT_TIME
@@ -35,6 +102,9 @@ sub init()
     ' set up task nodes for other rows
     m.LoadContinueWatchingTask = createObject("roSGNode", "LoadItemsTask")
     m.LoadContinueWatchingTask.itemsToLoad = "continue"
+
+    m.LoadMergedContinueWatchingTask = createObject("roSGNode", "LoadItemsTask")
+    m.LoadMergedContinueWatchingTask.itemsToLoad = "mergedContinueWatching"
 
     m.LoadContinueListeningTask = createObject("roSGNode", "LoadItemsTask")
     m.LoadContinueListeningTask.itemsToLoad = "continueListening"
@@ -57,20 +127,20 @@ sub loadLibraries()
 end sub
 
 sub updateSize()
-    m.top.translation = [111, 180]
+    ' Translation is set in Home.xml, don't override it here
     itemHeight = 330
 
     'Set width of Rows to cut off at edge of Safe Zone
     m.top.itemSize = [1703, itemHeight]
 
-    ' spacing between rows
-    m.top.itemSpacing = [0, 105]
+    ' spacing between rows (increased to prevent bottom text from being cut off)
+    m.top.itemSpacing = [0, 90]
 
     ' spacing between items in a row
     m.top.rowItemSpacing = [20, 0]
 
-    ' Default size to wide poster, the most used size
-    m.top.rowItemSize = homeRowItemSizes.WIDE_POSTER
+    ' Default size to movie poster (portrait primary images)
+    m.top.rowItemSize = homeRowItemSizes.MOVIE_POSTER
 
     m.top.visible = true
 end sub
@@ -83,15 +153,36 @@ sub processUserSections()
 
     sessionUser = m.global.session.user
 
+    ' Check if we should use server config or local settings
+    m.useServerConfig = chainLookupReturn(m.global.session, "user.settings.homeRows.useServerConfig", true)
+    if type(m.useServerConfig) = "String" or type(m.useServerConfig) = "roString"
+        m.useServerConfig = (LCase(m.useServerConfig) = "true")
+    end if
+
     ' calculate expected row count by processing homesections
     for i = 0 to 7
-        userSection = sessionUser.settings["homesection" + i.toStr()]
+        ' Get section name from either server settings or local app settings
+        if m.useServerConfig
+            userSection = sessionUser.settings["homesection" + i.toStr()]
+        else
+            userSection = get_user_setting("homeScreenSection" + i.toStr())
+        end if
         sectionName = userSection ?? "none"
         sectionName = LCase(sectionName)
 
         if sectionName = "latestmedia"
             ' expect 1 row per filtered media library
-            m.filteredLatest = filterNodeArray(m.libraryData, "id", sessionUser.configuration.LatestItemsExcludes)
+            excludeList = []
+            if isValid(sessionUser.configuration) and isValid(sessionUser.configuration.LatestItemsExcludes)
+                excludeList = sessionUser.configuration.LatestItemsExcludes
+            end if
+
+            ' Ensure libraryData is valid before accessing it
+            if not isValid(m.libraryData)
+                continue for
+            end if
+
+            m.filteredLatest = filterNodeArray(m.libraryData, "id", excludeList)
             for each latestLibrary in m.filteredLatest
                 if latestLibrary.collectionType <> "boxsets" and latestLibrary.collectionType <> "livetv" and latestLibrary.json.CollectionType <> "Program"
                     m.expectedRowCount++
@@ -105,9 +196,15 @@ sub processUserSections()
     ' Add home sections in order based on user settings
     loadedSections = 0
     for i = 0 to 7
-        userSection = sessionUser.settings["homesection" + i.toStr()]
+        ' Get section name from either server settings or local app settings
+        if m.useServerConfig
+            userSection = sessionUser.settings["homesection" + i.toStr()]
+        else
+            userSection = get_user_setting("homeScreenSection" + i.toStr())
+        end if
         sectionName = userSection ?? "none"
         sectionName = LCase(sectionName)
+
 
         sectionLoaded = false
         if sectionName <> "none"
@@ -126,16 +223,7 @@ sub processUserSections()
         end if
     end for
 
-    ' Favorites and My List aren't options in web settings. So if user has useWebSectionArrangement setting checked, add the sections to the bottom
-    useWebSectionArrangement = chainLookupReturn(m.global, "session.user.settings.`ui.home.useWebSectionArrangement`", true)
-    if useWebSectionArrangement
-        addHomeSection("mylist")
-        addHomeSection("favorites")
-        loadedSections += 2
-    end if
-
     if loadedSections = 0
-        m.overhang.callFunc("highlightUser")
         m.overhang.setfocus(true)
     end if
 
@@ -168,7 +256,12 @@ function getOriginalSectionIndex(sectionName as string) as integer
     sessionUser = m.global.session.user
 
     for i = 0 to 7
-        userSection = sessionUser.settings["homesection" + i.toStr()]
+        ' Get section name from either server settings or local app settings
+        if m.useServerConfig
+            userSection = sessionUser.settings["homesection" + i.toStr()]
+        else
+            userSection = get_user_setting("homeScreenSection" + i.toStr())
+        end if
         settingSectionName = userSection ?? "none"
         settingSectionName = LCase(settingSectionName)
 
@@ -220,7 +313,7 @@ sub setRowItemSize()
     newSizeArray = CreateObject("roArray", homeSections.count(), false)
 
     for i = 0 to homeSections.count() - 1
-        newSizeArray[i] = isValid(homeSections[i].cursorSize) ? homeSections[i].cursorSize : homeRowItemSizes.WIDE_POSTER
+        newSizeArray[i] = isValid(homeSections[i].cursorSize) ? homeSections[i].cursorSize : homeRowItemSizes.MOVIE_POSTER
     end for
     m.top.rowItemSize = newSizeArray
 
@@ -238,13 +331,58 @@ sub loadingTimerComplete()
         ' Show the row counter to prevent flicker
         m.top.showRowCounter = [true]
     end if
+
+    ' Signal that content has been loaded
+    m.top.contentLoaded = true
 end sub
 
-' addHomeSection: Adds a new home section to the home rows.
+' onPreferThumbnailsChanged: Event handler for when the "Prefer Thumbnails" toggle is changed
+' NOTE: This is not currently called via observer since observeField() doesn't work on associative array fields.
+' The toggle change is handled each time rows are created/updated by reading the current setting value.
+'
+sub onPreferThumbnailsChanged()
+    ' Update all row sizes to reflect the new thumbnail preference
+    if isValid(m.top.content)
+        homeSections = m.top.content.getChildren(-1, 0)
+        newSizeArray = CreateObject("roArray", homeSections.count(), false)
+
+        for i = 0 to homeSections.count() - 1
+            row = homeSections[i]
+
+            ' Determine if this row should use portrait or wide based on content type
+            ' Rows with children to inspect
+            if isValid(row.cursorSize)
+                currentSize = row.cursorSize
+                isWide = currentSize[0] > 200 ' Wide posters are 464px, portrait are 180px
+            else
+                isWide = false
+            end if
+
+            ' Apply thumbnail preference based on row type
+            if isWide
+                ' Rows that normally show wide content (On Now, Live TV, etc.)
+                row.cursorSize = getPosterSize(true)
+                row.imageWidth = getPosterSize(true)[0]
+            else
+                ' Rows that normally show portrait content (My Media, Favorites, My List, etc.)
+                row.cursorSize = getPosterSize(false)
+                row.imageWidth = getPosterSize(false)[0]
+            end if
+
+            newSizeArray[i] = row.cursorSize
+        end for
+
+        m.top.rowItemSize = newSizeArray
+    end if
+end sub' addHomeSection: Adds a new home section to the home rows.
 '
 ' @param {string} sectionType - Type of section to add
 ' @return {boolean} indicating if the section was handled
 function addHomeSection(sectionType as string) as boolean
+    ' Check if merge setting is enabled
+    mergeSetting = get_user_setting("ui.home.mergeContinueWatchingNextUp")
+    mergeContinueWatching = (mergeSetting = "true")
+
     ' Poster size library items
     if sectionType = "livetv"
         createLiveTVRow()
@@ -257,9 +395,17 @@ function addHomeSection(sectionType as string) as boolean
         return true
     end if
 
-    ' Continue Watching items
+    ' Continue Watching items - handle merge logic
     if sectionType = "resume"
-        createContinueWatchingRow()
+        if mergeContinueWatching
+            ' Create merged row if not already created
+            if not sectionExists(tr("Continue Watching"))
+                createMergedContinueWatchingRow()
+            end if
+        else
+            ' Create separate Continue Watching row
+            createContinueWatchingRow()
+        end if
         return true
     end if
 
@@ -269,9 +415,17 @@ function addHomeSection(sectionType as string) as boolean
         return true
     end if
 
-    ' Next Up items
+    ' Next Up items - skip if merged with Continue Watching
     if sectionType = "nextup"
-        createNextUpRow()
+        if mergeContinueWatching
+            ' If merged row doesn't exist yet, create it now
+            if not sectionExists(tr("Continue Watching"))
+                createMergedContinueWatchingRow()
+            end if
+        else
+            ' Create separate Next Up row
+            createNextUpRow()
+        end if
         return true
     end if
 
@@ -290,6 +444,12 @@ function addHomeSection(sectionType as string) as boolean
     ' My List Items
     if sectionType = "mylist"
         createMyListRow()
+        return true
+    end if
+
+    ' Featured Media Carousel
+    if sectionType = "featuredmedia"
+        createFeaturedMediaRow()
         return true
     end if
 
@@ -315,10 +475,14 @@ sub createLibraryRow()
 
     row = CreateObject("roSGNode", "HomeRow")
     row.title = sectionName
-    row.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-    row.cursorSize = homeRowItemSizes.WIDE_POSTER
+    row.imageWidth = getPosterSize(true)[0]
+    row.cursorSize = getPosterSize(true)
 
-    filteredMedia = filterNodeArray(m.libraryData, "id", m.global.session.user.configuration.MyMediaExcludes)
+    excludeList = []
+    if isValid(m.global.session.user.configuration) and isValid(m.global.session.user.configuration.MyMediaExcludes)
+        excludeList = m.global.session.user.configuration.MyMediaExcludes
+    end if
+    filteredMedia = filterNodeArray(m.libraryData, "id", excludeList)
     for each item in filteredMedia
         row.appendChild(item)
     end for
@@ -339,18 +503,22 @@ end sub
 '
 sub createLatestInRows()
     ' Ensure we have data
-    if not isValidAndNotEmpty(m.libraryData) then return
+    if not isValidAndNotEmpty(m.libraryData)
+        return
+    end if
+
 
     ' create a Recently Added in row for each library
     for each lib in m.filteredLatest
         if not isStringEqual(lib.collectionType, "boxsets") and not isStringEqual(lib.collectionType, "livetv") and not isStringEqual(lib.json.CollectionType, "Program")
             sectionName = `${tr("Recently Added in")} ${lib.name}`
 
-            imagesize = homeRowItemSizes.WIDE_POSTER
+            ' Determine poster size based on content type and user preference
+            imagesize = getPosterSize(false) ' Default to portrait, but respect thumbnail toggle
 
             if isValid(lib.json.CollectionType)
                 if isStringEqual(lib.json.CollectionType, "movies")
-                    imagesize = homeRowItemSizes.MOVIE_POSTER
+                    imagesize = getPosterSize(false) ' Movies use portrait, or wide if thumbnails enabled
                 else if isStringEqual(lib.json.CollectionType, "music")
                     imagesize = homeRowItemSizes.MUSIC_ALBUM
                 end if
@@ -437,8 +605,8 @@ sub createLiveTVRow()
     if not sectionExists(sectionName)
         nextUpRow = m.top.content.CreateChild("HomeRow")
         nextUpRow.title = sectionName
-        nextUpRow.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-        nextUpRow.cursorSize = homeRowItemSizes.WIDE_POSTER
+        nextUpRow.imageWidth = getPosterSize(false)[0]
+        nextUpRow.cursorSize = getPosterSize(false)
     end if
 
     m.LoadOnNowTask.observeField("content", "updateOnNowItems")
@@ -453,13 +621,30 @@ sub createContinueWatchingRow()
     if not sectionExists(sectionName)
         nextUpRow = m.top.content.CreateChild("HomeRow")
         nextUpRow.title = sectionName
-        nextUpRow.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-        nextUpRow.cursorSize = homeRowItemSizes.WIDE_POSTER
+        nextUpRow.imageWidth = getPosterSize(true)[0]
+        nextUpRow.cursorSize = getPosterSize(true)
     end if
 
     ' Load the Continue Watching Data
     m.LoadContinueWatchingTask.observeField("content", "updateContinueWatchingItems")
     m.LoadContinueWatchingTask.control = "RUN"
+end sub
+
+' createMergedContinueWatchingRow: Creates a row displaying merged Continue Watching and Next Up items
+'
+sub createMergedContinueWatchingRow()
+    sectionName = tr("Continue Watching")
+
+    if not sectionExists(sectionName)
+        nextUpRow = m.top.content.CreateChild("HomeRow")
+        nextUpRow.title = sectionName
+        nextUpRow.imageWidth = getPosterSize(true)[0]
+        nextUpRow.cursorSize = getPosterSize(true)
+    end if
+
+    ' Load the Merged Continue Watching Data
+    m.LoadMergedContinueWatchingTask.observeField("content", "updateMergedContinueWatchingItems")
+    m.LoadMergedContinueWatchingTask.control = "RUN"
 end sub
 
 ' createContinueListeningRow: Creates a row displaying items the user can continue listening
@@ -470,8 +655,8 @@ sub createContinueListeningRow()
     if not sectionExists(sectionName)
         nextUpRow = m.top.content.CreateChild("HomeRow")
         nextUpRow.title = sectionName
-        nextUpRow.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-        nextUpRow.cursorSize = homeRowItemSizes.WIDE_POSTER
+        nextUpRow.imageWidth = getPosterSize(false)[0]
+        nextUpRow.cursorSize = getPosterSize(false)
     end if
 
     ' Load the Continue Listening Data
@@ -487,8 +672,8 @@ sub createNextUpRow()
     if not sectionExists(sectionName)
         nextUpRow = m.top.content.CreateChild("HomeRow")
         nextUpRow.title = sectionName
-        nextUpRow.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-        nextUpRow.cursorSize = homeRowItemSizes.WIDE_POSTER
+        nextUpRow.imageWidth = getPosterSize(false)[0]
+        nextUpRow.cursorSize = getPosterSize(false)
     end if
 
     ' Load the Next Up Data
@@ -504,8 +689,8 @@ sub createMyListRow()
     if not sectionExists(sectionName)
         nextUpRow = m.top.content.CreateChild("HomeRow")
         nextUpRow.title = sectionName
-        nextUpRow.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-        nextUpRow.cursorSize = homeRowItemSizes.WIDE_POSTER
+        nextUpRow.imageWidth = getPosterSize(false)[0]
+        nextUpRow.cursorSize = getPosterSize(false)
     end if
 
     ' Load the My List Data
@@ -521,8 +706,8 @@ sub createFavoritesRow()
     if not sectionExists(sectionName)
         nextUpRow = m.top.content.CreateChild("HomeRow")
         nextUpRow.title = sectionName
-        nextUpRow.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-        nextUpRow.cursorSize = homeRowItemSizes.WIDE_POSTER
+        nextUpRow.imageWidth = getPosterSize(false)[0]
+        nextUpRow.cursorSize = getPosterSize(false)
     end if
 
     ' Load the Favorites Data
@@ -556,8 +741,8 @@ sub updateFavoritesItems()
     ' remake row using the new data
     row = CreateObject("roSGNode", "HomeRow")
     row.title = sectionName
-    row.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-    row.cursorSize = homeRowItemSizes.WIDE_POSTER
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
 
     for each item in itemData
         usePoster = true
@@ -599,8 +784,8 @@ sub updateMyListItems()
     ' remake row using the new data
     row = CreateObject("roSGNode", "HomeRow")
     row.title = sectionName
-    row.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-    row.cursorSize = homeRowItemSizes.WIDE_POSTER
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
 
     for each item in itemData
         usePoster = true
@@ -642,8 +827,73 @@ sub updateContinueWatchingItems()
     ' remake row using the new data
     row = CreateObject("roSGNode", "HomeRow")
     row.title = sectionName
-    row.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-    row.cursorSize = homeRowItemSizes.WIDE_POSTER
+
+    ' Determine whether to use posters or thumbnails based on preference
+    preferThumbnails = chainLookupReturn(m.global.session, "user.settings.ui.home.preferThumbnails", false)
+    row.usePoster = not preferThumbnails ' Use thumbnails when prefer thumbnails is enabled
+
+    ' Set sizes: wide if thumbnails, portrait if posters
+    if preferThumbnails
+        row.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
+        row.cursorSize = homeRowItemSizes.WIDE_POSTER
+    else
+        row.imageWidth = homeRowItemSizes.MOVIE_POSTER[0]
+        row.cursorSize = homeRowItemSizes.MOVIE_POSTER
+    end if
+
+    for each item in itemData
+        if isChainValid(item, "json.UserData.PlayedPercentage")
+            item.PlayedPercentage = item.json.UserData.PlayedPercentage
+        end if
+
+        item.usePoster = row.usePoster
+        item.imageWidth = row.imageWidth
+        row.appendChild(item)
+    end for
+
+    ' Row already exists, replace it with new content
+    if sectionExists(sectionName)
+        m.top.content.replaceChild(row, getSectionIndex(sectionName))
+        setRowItemSize()
+        return
+    end if
+
+    ' Row does not exist, insert it into the home view
+    m.top.content.insertChild(row, getOriginalSectionIndex("resume"))
+    setRowItemSize()
+end sub
+
+' updateMergedContinueWatchingItems: Processes LoadMergedContinueWatchingTask content. Removes, Creates, or Updates merged continue watching + next up row as needed
+'
+sub updateMergedContinueWatchingItems()
+    m.processedRowCount++
+    itemData = m.LoadMergedContinueWatchingTask.content
+    m.LoadMergedContinueWatchingTask.unobserveField("content")
+    m.LoadMergedContinueWatchingTask.content = []
+
+    sectionName = tr("Continue Watching")
+
+    if not isValidAndNotEmpty(itemData)
+        removeHomeSection(sectionName)
+        return
+    end if
+
+    ' remake row using the new data
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+
+    ' Determine whether to use posters or thumbnails based on preference
+    preferThumbnails = chainLookupReturn(m.global.session, "user.settings.ui.home.preferThumbnails", false)
+    row.usePoster = not preferThumbnails ' Use thumbnails when prefer thumbnails is enabled
+
+    ' Set sizes: wide if thumbnails, portrait if posters
+    if preferThumbnails
+        row.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
+        row.cursorSize = homeRowItemSizes.WIDE_POSTER
+    else
+        row.imageWidth = homeRowItemSizes.MOVIE_POSTER[0]
+        row.cursorSize = homeRowItemSizes.MOVIE_POSTER
+    end if
 
     for each item in itemData
         if isChainValid(item, "json.UserData.PlayedPercentage")
@@ -685,8 +935,8 @@ sub updateContinueListeningItems()
     ' remake row using the new data
     row = CreateObject("roSGNode", "HomeRow")
     row.title = sectionName
-    row.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-    row.cursorSize = homeRowItemSizes.WIDE_POSTER
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
 
     for each item in itemData
         if isValid(item.json) and isValid(item.json.UserData) and isValid(item.json.UserData.PlayedPercentage)
@@ -729,8 +979,9 @@ sub updateNextUpItems()
     ' remake row using the new data
     row = CreateObject("roSGNode", "HomeRow")
     row.title = tr("Next Up")
-    row.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-    row.cursorSize = homeRowItemSizes.WIDE_POSTER
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+    row.usePoster = true ' Show series/movie posters
 
     for each item in itemData
         item.usePoster = row.usePoster
@@ -768,11 +1019,11 @@ sub updateLatestItems(msg)
         return
     end if
 
-    imagesize = homeRowItemSizes.WIDE_POSTER
+    imagesize = getPosterSize(false)
 
     if isValid(node.metadata.contentType)
         if LCase(node.metadata.contentType) = "movies"
-            imagesize = homeRowItemSizes.MOVIE_POSTER
+            imagesize = getPosterSize(false)
         else if LCase(node.metadata.contentType) = "music"
             imagesize = homeRowItemSizes.MUSIC_ALBUM
         end if
@@ -820,8 +1071,8 @@ sub updateOnNowItems()
     ' remake row using the new data
     row = CreateObject("roSGNode", "HomeRow")
     row.title = tr("On Now")
-    row.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-    row.cursorSize = homeRowItemSizes.WIDE_POSTER
+    row.imageWidth = getPosterSize(true)[0]
+    row.cursorSize = getPosterSize(true)
 
     for each item in itemData
         row.usePoster = false
@@ -829,8 +1080,8 @@ sub updateOnNowItems()
         if (not isValid(item.thumbnailURL) or item.thumbnailURL = "") and isValid(item.json) and isValid(item.json.imageURL)
             item.thumbnailURL = item.json.imageURL
             row.usePoster = true
-            row.imageWidth = homeRowItemSizes.MOVIE_POSTER[0]
-            row.cursorSize = homeRowItemSizes.MOVIE_POSTER
+            row.imageWidth = getPosterSize(true)[0]
+            row.cursorSize = getPosterSize(true)
         end if
 
         item.usePoster = row.usePoster
@@ -869,15 +1120,31 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
         if key = KeyCode.UP
             if m.top.rowItemFocused[0] = 0
-                m.overhang.callFunc("highlightUser")
-                m.overhang.setfocus(true)
-
-                group = m.global.sceneManager.callFunc("getActiveScene")
-                if isValid(group)
-                    group.lastFocus = m.overhang
+                ' Check if Featured Media is the first section
+                sessionUser = m.global.session.user
+                isFeaturedMediaFirst = false
+                if isValid(sessionUser) and isChainValid(sessionUser, "settings.homesection0")
+                    firstSection = sessionUser.settings.homesection0
+                    if LCase(firstSection) = "featuredmedia"
+                        isFeaturedMediaFirst = true
+                    end if
                 end if
 
-                return true
+                ' If Featured Media is first, let the Home component handle the UP key
+                ' Otherwise, go to overhang as normal
+                if not isFeaturedMediaFirst
+                    m.overhang.setfocus(true)
+
+                    group = m.global.sceneManager.callFunc("getActiveScene")
+                    if isValid(group)
+                        group.lastFocus = m.overhang
+                    end if
+
+                    return true
+                else
+                    ' Return false to let parent (Home) handle the key event
+                    return false
+                end if
             end if
         end if
 
@@ -907,3 +1174,13 @@ function filterNodeArray(nodeArray as object, nodeKey as string, excludeArray as
     end for
     return newNodeArray
 end function
+
+' createFeaturedMediaRow: Creates a Featured Media row marker (no actual row, just tracking)
+'
+sub createFeaturedMediaRow()
+    m.processedRowCount++
+
+    ' Don't create a placeholder row - just signal that Featured Media section exists
+    ' The MediaBar component will handle the display in the Home screen
+    ' We increment processedRowCount to maintain proper row counting
+end sub

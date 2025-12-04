@@ -1,0 +1,629 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/sdk.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+
+sub init()
+    m.logoImage = m.top.findNode("logoImage")
+    m.titleText = m.top.findNode("titleText")
+    m.yearLabel = m.top.findNode("yearLabel")
+    m.ratingLabel = m.top.findNode("ratingLabel")
+    m.runtimeLabel = m.top.findNode("runtimeLabel")
+    m.starLabel = m.top.findNode("starLabel")
+    m.communityRatingLabel = m.top.findNode("communityRatingLabel")
+    m.genresLabel = m.top.findNode("genresLabel")
+    m.overviewLabel = m.top.findNode("overviewLabel")
+    m.leftArrow = m.top.findNode("leftArrow")
+    m.rightArrow = m.top.findNode("rightArrow")
+    m.indicatorDots = m.top.findNode("indicatorDots")
+    m.pauseIndicator = m.top.findNode("pauseIndicator")
+    m.infoOverlayContent = m.top.findNode("infoOverlayContent")
+    m.infoBackground = m.top.findNode("infoBackground")
+    m.dotsBackground = m.top.findNode("dotsBackground")
+
+    ' Arrow background elements
+    m.leftArrowBg = m.top.findNode("leftArrowBg")
+    m.rightArrowBg = m.top.findNode("rightArrowBg")
+
+    ' Separator dots for metadata
+    m.separatorDot1 = m.top.findNode("separatorDot1")
+    m.separatorDot2 = m.top.findNode("separatorDot2")
+    m.separatorDot3 = m.top.findNode("separatorDot3")
+
+    ' Initialize state
+    m.mediaBarItems = []
+    m.currentIndex = 0
+    m.isPaused = false
+    m.isTransitioning = false
+
+    ' Make component focusable
+    m.top.focusable = true
+
+    ' Observe visibility changes to refresh display when shown
+    m.top.observeField("visible", "onVisibilityChanged")
+
+    ' Observe focus changes to ensure backdrop is set on initial focus
+    m.top.observeField("hasFocus", "onFocusChanged")
+
+    ' Observe overlay settings changes
+    if isValid(m.global)
+        m.global.observeField("overlaySettingsChanged", "onOverlaySettingsChanged")
+    end if
+
+    ' Apply UI overlay settings
+    applyOverlaySettings()
+
+    ' Load media items
+    loadMediaBarItems()
+end sub
+
+' Handle focus changes - ensure backdrop is set when component gets focus
+sub onFocusChanged(event as object)
+    hasFocus = event.getData()
+
+    if hasFocus and m.mediaBarItems.count() > 0
+        ' Immediately refresh display when focus is gained
+        displayMediaBarItem(m.currentIndex)
+        ' Resume auto-advance timer
+        if isValid(m.autoAdvanceTimer)
+            m.autoAdvanceTimer.control = "start"
+        end if
+    else
+        ' Stop auto-advance timer when losing focus (e.g., navigating to navbar)
+        if isValid(m.autoAdvanceTimer)
+            m.autoAdvanceTimer.control = "stop"
+        end if
+    end if
+end sub
+
+' Handle visibility changes - refresh display when component becomes visible
+sub onVisibilityChanged(event as object)
+    isVisible = event.getData()
+
+    if isVisible and m.mediaBarItems.count() > 0
+        ' Refresh the current item display when component becomes visible
+        displayMediaBarItem(m.currentIndex)
+    end if
+end sub
+
+' Handle overlay settings changes
+sub onOverlaySettingsChanged(_event as object)
+    applyOverlaySettings()
+end sub
+
+' Apply opacity and color settings to overlay elements
+sub applyOverlaySettings()
+    ' Safety check - return if session not available
+    if not isValid(m.global) or not isValid(m.global.session)
+        return
+    end if
+
+    ' Get opacity setting (default 0.5)
+    opacity = 0.5
+    if isValid(m.global.session.user) and isValid(m.global.session.user.settings)
+        opacitySetting = m.global.session.user.settings["ui.overlayOpacity"]
+        if isValid(opacitySetting)
+            opacity = opacitySetting.toFloat()
+        end if
+    end if
+
+    ' Get color setting (default 0x475569)
+    color = "0x475569FF"
+    if isValid(m.global.session.user) and isValid(m.global.session.user.settings)
+        colorSetting = m.global.session.user.settings["ui.overlayColor"]
+        if isValid(colorSetting) and colorSetting <> ""
+            ' Color format is 0xRRGGBB (8 chars) - add FF for full alpha
+            color = colorSetting + "FF"
+        end if
+    end if
+
+    ' Apply to info background
+    if isValid(m.infoBackground)
+        m.infoBackground.opacity = opacity
+        m.infoBackground.blendColor = color
+    end if
+
+    ' Apply to dots background
+    if isValid(m.dotsBackground)
+        m.dotsBackground.opacity = opacity
+        m.dotsBackground.blendColor = color
+    end if
+
+    ' Apply to arrow backgrounds
+    if isValid(m.leftArrowBg)
+        m.leftArrowBg.opacity = opacity
+        m.leftArrowBg.blendColor = color
+    end if
+    if isValid(m.rightArrowBg)
+        m.rightArrowBg.opacity = opacity
+        m.rightArrowBg.blendColor = color
+    end if
+end sub
+
+' Fetch and prepare media items
+sub loadMediaBarItems()
+    ' Create and configure task to fetch data from API
+    m.mediaBarTask = createObject("roSGNode", "MediaBarTask")
+    m.mediaBarTask.userId = m.global.session.user.id
+    m.mediaBarTask.observeField("mediaBarData", "onMediaBarDataLoaded")
+    m.mediaBarTask.control = "RUN"
+end sub
+
+' Handle data loaded from task
+sub onMediaBarDataLoaded(event as object)
+    data = event.getData()
+    if not isValid(data)
+        return
+    end if
+
+    moviesData = data.movies
+    showsData = data.shows
+
+    ' Combine and filter items with backdrops
+    allItems = []
+    if isValid(moviesData) and isChainValid(moviesData, "items")
+        allItems.append(moviesData.items)
+    end if
+    if isValid(showsData) and isChainValid(showsData, "items")
+        allItems.append(showsData.items)
+    end if
+
+    ' Filter items that have backdrop images
+    itemsWithBackdrops = []
+    for each item in allItems
+        if isChainValid(item, "backdropImageTags") and item.backdropImageTags.count() > 0
+            itemsWithBackdrops.push(processItem(item))
+        end if
+    end for
+
+    ' Get user setting for carousel item count (default to 15)
+    carouselItemCount = 15
+    if isValid(m.global.session) and isChainValid(m.global.session, "user.settings.ui.home.featuredMediaItems")
+        settingValue = m.global.session.user.settings["ui.home.featuredMediaItems"]
+        if isValid(settingValue)
+            carouselItemCount = settingValue.toInt()
+        end if
+    end if
+
+    ' Shuffle and take configured number of items
+    shuffled = shuffleArray(itemsWithBackdrops)
+    if shuffled.count() > carouselItemCount
+        m.mediaBarItems = shuffled.slice(0, carouselItemCount)
+    else
+        m.mediaBarItems = shuffled
+    end if
+
+    ' Initialize display if we have items
+    if m.mediaBarItems.count() > 0
+        createIndicatorDots()
+        if m.mediaBarItems.count() > 1
+            m.leftArrow.visible = true
+            m.rightArrow.visible = true
+            startAutoAdvanceTimer()
+        end if
+        ' Display first item and immediately set backdrop to trigger loading
+        displayMediaBarItem(0)
+        ' Force immediate backdrop update by setting it twice to ensure it triggers
+        ' This happens even if component is initially hidden (visible=false in XML)
+        if m.mediaBarItems[0].backdropUrl <> ""
+            m.top.currentBackdrop = ""
+            m.top.currentBackdrop = m.mediaBarItems[0].backdropUrl
+        end if
+    end if
+end sub
+
+' Process item data into display format
+function processItem(item as object) as object
+    processed = {
+        id: item.id,
+        title: item.name,
+        itemType: item.type,
+        overview: invalid,
+        year: invalid,
+        rating: invalid,
+        runtime: invalid,
+        communityRating: invalid,
+        genres: [],
+        backdropUrl: "",
+        logoUrl: ""
+    }
+
+    ' Build backdrop URL with maximum quality for full screen display
+    if isChainValid(item, "backdropImageTags") and item.backdropImageTags.count() > 0
+        processed.backdropUrl = buildImageUrl(item.id, "Backdrop", {
+            maxHeight: 1080,
+            maxWidth: 1920,
+            quality: 100,
+            tag: item.backdropImageTags[0]
+        })
+    end if
+
+    ' Build logo URL with higher quality
+    if isChainValid(item, "imageTags.Logo")
+        processed.logoUrl = buildImageUrl(item.id, "Logo", {
+            maxHeight: 150,
+            maxWidth: 500,
+            quality: 100
+        })
+    end if
+
+    ' Extract metadata
+    if isValid(item.overview)
+        processed.overview = item.overview
+    end if
+
+    if isValid(item.productionYear)
+        processed.year = item.productionYear
+    end if
+
+    if isValid(item.officialRating)
+        processed.rating = item.officialRating
+    end if
+
+    if isValid(item.runTimeTicks)
+        minutes = int(item.runTimeTicks / 600000000)
+        if minutes >= 60
+            hours = int(minutes / 60)
+            mins = minutes mod 60
+            processed.runtime = hours.toStr() + "h " + mins.toStr() + "m"
+        else
+            processed.runtime = minutes.toStr() + " min"
+        end if
+    end if
+
+    if isValid(item.communityRating)
+        processed.communityRating = item.communityRating
+    end if
+
+    if isChainValid(item, "genres") and item.genres.count() > 0
+        processed.genres = item.genres
+    end if
+
+    return processed
+end function
+
+' Build image URL
+function buildImageUrl(itemId as string, imageType as string, params as object) as string
+    baseUrl = m.global.session.server.url
+    url = baseUrl + "/Items/" + itemId + "/Images/" + imageType
+
+    queryParams = []
+    if isValid(params.maxWidth)
+        queryParams.push("maxWidth=" + params.maxWidth.toStr())
+    end if
+    if isValid(params.maxHeight)
+        queryParams.push("maxHeight=" + params.maxHeight.toStr())
+    end if
+    if isValid(params.quality)
+        queryParams.push("quality=" + params.quality.toStr())
+    end if
+    if isValid(params.tag)
+        queryParams.push("Tag=" + params.tag)
+    end if
+
+    if queryParams.count() > 0
+        url = url + "?" + queryParams.join("&")
+    end if
+
+    return url
+end function
+
+' Create indicator dots for slides
+sub createIndicatorDots()
+    ' Clear existing dots
+    m.indicatorDots.removeChildrenIndex(m.indicatorDots.getChildCount(), 0)
+
+    totalItems = m.mediaBarItems.count()
+
+    ' Show one dot for each item
+    numDots = totalItems
+
+    ' Create dot for each visible indicator
+    for i = 0 to numDots - 1
+        dot = createObject("roSGNode", "Poster")
+        dot.uri = "pkg:/images/icons/circle.png"
+        dot.width = 12
+        dot.height = 12
+        dot.loadDisplayMode = "scaleToFit"
+        if i = 0
+            ' Active dot is white
+            dot.blendColor = "0xFFFFFFFF"
+        else
+            ' Inactive dot is gray
+            dot.blendColor = "0xCECECEFF"
+        end if
+        dot.opacity = 1.0
+        m.indicatorDots.appendChild(dot)
+    end for
+
+    ' Update dots background size
+    updateDotsBackgroundSize()
+end sub
+
+' Update the background size for indicator dots
+sub updateDotsBackgroundSize()
+    if not isValid(m.indicatorDots) or not isValid(m.dotsBackground) then return
+
+    numDots = m.indicatorDots.getChildCount()
+    if numDots = 0 then return
+
+    ' Calculate actual width based on dot sizes and spacing
+    ' All dots are now 12px, spacing is 10px between dots
+    ' Add padding: 20px on each side = 40px total
+
+    dotSize = 12
+    spacing = 10
+    padding = 40
+
+    totalDotsWidth = numDots * dotSize
+    totalSpacingWidth = (numDots - 1) * spacing
+
+    calculatedWidth = totalDotsWidth + totalSpacingWidth + padding
+    m.dotsBackground.width = calculatedWidth
+
+    ' Center the background and dots on screen
+    ' Screen width is 1920, so center point is 960
+    screenCenter = 960
+    m.indicatorDots.translation = [screenCenter - (totalDotsWidth + totalSpacingWidth) / 2, 670]
+    m.dotsBackground.translation = [screenCenter - calculatedWidth / 2, 662]
+end sub
+
+' Update indicator dots to show current slide
+sub updateIndicatorDots()
+    numDots = m.indicatorDots.getChildCount()
+    if numDots = 0 then return
+
+    ' Direct mapping - one dot per item
+    activeDotIndex = m.currentIndex
+
+    for i = 0 to numDots - 1
+        dot = m.indicatorDots.getChild(i)
+        if i = activeDotIndex
+            ' Active dot - white
+            dot.blendColor = "0xFFFFFFFF"
+        else
+            ' Inactive dot - gray
+            dot.blendColor = "0xCECECEFF"
+        end if
+    end for
+
+    ' Update dots background size when active dot changes
+    updateDotsBackgroundSize()
+end sub
+
+' Display media bar item
+sub displayMediaBarItem(index as integer)
+    if index < 0 or index >= m.mediaBarItems.count() then return
+
+    item = m.mediaBarItems[index]
+
+    ' Force backdrop update by clearing first, then setting
+    ' This ensures the image loads even if URL is same
+    m.top.currentBackdrop = ""
+    m.top.currentBackdrop = item.backdropUrl
+
+    ' Show logo OR title
+    if item.logoUrl <> ""
+        m.logoImage.uri = item.logoUrl
+        m.logoImage.visible = true
+        m.titleText.visible = false
+    else
+        m.titleText.text = item.title
+        m.titleText.visible = true
+        m.logoImage.visible = false
+    end if
+
+    ' Populate metadata with separators
+    hasYear = false
+    hasRating = false
+    hasRuntime = false
+    hasStarRating = false
+
+    if item.year <> invalid
+        m.yearLabel.text = item.year.toStr()
+        hasYear = true
+    else
+        m.yearLabel.text = ""
+    end if
+
+    if item.rating <> invalid
+        m.ratingLabel.text = item.rating
+        hasRating = true
+    else
+        m.ratingLabel.text = ""
+    end if
+
+    if item.runtime <> invalid
+        m.runtimeLabel.text = item.runtime
+        hasRuntime = true
+    else
+        m.runtimeLabel.text = ""
+    end if
+
+    ' Community rating with star
+    if item.communityRating <> invalid
+        ratingStr = formatFloat(item.communityRating, 1)
+        m.starLabel.visible = true
+        m.communityRatingLabel.text = ratingStr
+        hasStarRating = true
+    else
+        m.starLabel.visible = false
+        m.communityRatingLabel.text = ""
+    end if
+
+    ' Show/hide separator dots based on what metadata exists
+    m.separatorDot1.visible = (hasYear and hasRating)
+    m.separatorDot2.visible = (hasRating and hasRuntime)
+    m.separatorDot3.visible = (hasRuntime and hasStarRating)
+
+    ' Genres (join with bullet separator, take first 3)
+    if item.genres.count() > 0
+        displayGenres = item.genres
+        if displayGenres.count() > 3
+            displayGenres = [displayGenres[0], displayGenres[1], displayGenres[2]]
+        end if
+        genresText = displayGenres.join(" • ")
+        m.genresLabel.text = genresText
+    else
+        m.genresLabel.text = ""
+    end if
+
+    ' Overview (full text, no line limit)
+    if item.overview <> invalid
+        m.overviewLabel.text = item.overview
+    else
+        m.overviewLabel.text = ""
+    end if
+
+    ' Update indicator dots
+    updateIndicatorDots()
+
+    ' Update background size dynamically
+    updateInfoBackgroundSize()
+end sub
+
+' Update info background to match content height
+sub updateInfoBackgroundSize()
+    if not isValid(m.infoOverlayContent) or not isValid(m.infoBackground) then return
+
+    ' Wait a frame for text to render and get actual height
+    m.top.observeFieldScoped("height", "onContentHeightChanged")
+
+    ' Get the bounding rect of the content
+    contentHeight = m.infoOverlayContent.boundingRect().height
+
+    if contentHeight > 0
+        ' Add padding (15px top + 15px bottom = 30px total)
+        m.infoBackground.height = contentHeight + 30
+    end if
+end sub
+
+' Format float to string with decimals
+function formatFloat(value as float, decimals as integer) as string
+    multiplier = 10 ^ decimals
+    rounded = int(value * multiplier + 0.5)
+    intPart = int(rounded / multiplier)
+    decPart = rounded mod multiplier
+
+    result = intPart.toStr()
+    if decimals > 0
+        result = result + "." + decPart.toStr()
+    end if
+
+    return result
+end function
+
+' Start auto-advance timer
+sub startAutoAdvanceTimer()
+    if isValid(m.autoAdvanceTimer)
+        m.autoAdvanceTimer.control = "stop"
+        m.autoAdvanceTimer = invalid
+    end if
+
+    m.autoAdvanceTimer = createObject("roSGNode", "Timer")
+    m.autoAdvanceTimer.duration = 7
+    m.autoAdvanceTimer.repeat = true
+    m.autoAdvanceTimer.observeField("fire", "onAutoAdvance")
+    m.autoAdvanceTimer.control = "start"
+end sub
+
+' Auto-advance handler
+sub onAutoAdvance()
+    if not m.isPaused and not m.isTransitioning and m.mediaBarItems.count() > 1
+        nextSlide()
+    end if
+end sub
+
+' Navigate to next slide
+sub nextSlide()
+    if m.isTransitioning or m.mediaBarItems.count() <= 1 then return
+
+    m.isTransitioning = true
+    m.currentIndex = (m.currentIndex + 1) mod m.mediaBarItems.count()
+
+    ' Display new item (parent handles backdrop fade)
+    displayMediaBarItem(m.currentIndex)
+    m.isTransitioning = false
+end sub
+
+' Navigate to previous slide
+sub previousSlide()
+    if m.isTransitioning or m.mediaBarItems.count() <= 1 then return
+
+    m.isTransitioning = true
+    if m.currentIndex = 0
+        m.currentIndex = m.mediaBarItems.count() - 1
+    else
+        m.currentIndex = m.currentIndex - 1
+    end if
+
+    ' Display new item (parent handles backdrop fade)
+    displayMediaBarItem(m.currentIndex)
+    m.isTransitioning = false
+end sub
+
+' Handle key events
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = KeyCode.UP
+        ' Signal parent to navigate to overhang (navbar)
+        return false ' Let parent handle navigation to overhang
+    else if key = KeyCode.DOWN
+        ' Navigate down to home rows
+        return false ' Let parent handle
+    else if key = KeyCode.LEFT
+        previousSlide()
+        ' Reset auto-advance timer
+        if isValid(m.autoAdvanceTimer)
+            m.autoAdvanceTimer.control = "stop"
+            m.autoAdvanceTimer.control = "start"
+        end if
+        return true
+    else if key = KeyCode.RIGHT
+        nextSlide()
+        ' Reset auto-advance timer
+        if isValid(m.autoAdvanceTimer)
+            m.autoAdvanceTimer.control = "stop"
+            m.autoAdvanceTimer.control = "start"
+        end if
+        return true
+    else if key = KeyCode.OK
+        ' Navigate to item details
+        if m.mediaBarItems.count() > 0 and m.currentIndex >= 0 and m.currentIndex < m.mediaBarItems.count()
+            currentItem = m.mediaBarItems[m.currentIndex]
+            if isValid(currentItem) and isValid(currentItem.id) and isValid(currentItem.itemType)
+                itemNode = createObject("roSGNode", "ContentNode")
+                itemNode.id = currentItem.id
+                itemNode.title = currentItem.title
+                itemNode.addFields({ type: currentItem.itemType })
+                m.top.itemSelected = itemNode
+            end if
+        end if
+        return true
+    else if key = KeyCode.PLAY or key = "pause"
+        ' Toggle pause/play
+        m.isPaused = not m.isPaused
+        m.pauseIndicator.visible = m.isPaused
+
+        ' Stop/start auto-advance timer
+        if isValid(m.autoAdvanceTimer)
+            if m.isPaused
+                m.autoAdvanceTimer.control = "stop"
+            else
+                m.autoAdvanceTimer.control = "start"
+            end if
+        end if
+        return true
+    end if
+
+    return false
+end function
+
+' Public function to refresh the current display from parent
+sub refreshCurrentDisplay()
+    if m.mediaBarItems.count() > 0
+        displayMediaBarItem(m.currentIndex)
+    end if
+end sub

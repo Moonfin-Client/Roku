@@ -1,0 +1,781 @@
+import "pkg:/source/api/Image.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+
+import "pkg:/source/enums/AnimationControl.bs"
+import "pkg:/source/enums/AnimationState.bs"
+import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/enums/ImageType.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/enums/MediaStreamType.bs"
+import "pkg:/source/enums/PersonType.bs"
+import "pkg:/source/enums/PlaybackMethod.bs"
+import "pkg:/source/enums/String.bs"
+import "pkg:/source/enums/SubtitleSelection.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/enums/ViewLoadStatus.bs"
+
+sub init()
+    m.global.queueManager.callFunc("setForceTranscode", PlaybackMethod.PLAYNORMALLY)
+
+    m.container = m.top.findnode("container")
+    m.scrollableContent = m.top.findNode("scrollableContent")
+    m.extrasGrid = m.top.findNode("extrasGrid")
+    m.seasons = m.top.findNode("seasons")
+    m.top.optionsAvailable = false
+
+    m.options = m.top.findNode("movieOptions")
+    m.audioSelector = m.top.findNode("audioSelector")
+    m.subtitleSelector = m.top.findNode("subtitleSelector")
+
+    ' Initialize task nodes for API calls
+    m.favoriteTask = m.top.findNode("favoriteTask")
+    m.playstateTask = m.top.findNode("playstateTask")
+
+    ' Get references to info grid rows for visibility management
+    m.genresRow = m.top.findNode("genresRow")
+    m.networksRow = m.top.findNode("networksRow")
+    m.runtimeRow = m.top.findNode("runtimeRow")
+    m.premieredRow = m.top.findNode("premieredRow")
+    m.endedRow = m.top.findNode("endedRow")
+
+    ' Initialize button rows
+    m.buttonRow = m.top.findNode("buttonRow")
+
+    m.currentButtonIndex = 0
+    m.buttonGroups = []
+    m.buttons = []
+    m.itemIsFavorited = false
+
+    m.loadStatus = ViewLoadStatus.INIT
+
+    m.global.queueManager.callFunc("setLastKnownItemID", string.empty)
+
+    m.top.observeField("itemContent", "itemContentChanged")
+
+    ' Observe audio and subtitle selector changes
+    m.audioSelector.observeField("audioStreamIndex", "onAudioStreamIndexChanged")
+    m.subtitleSelector.observeField("subtitleStream", "onSubtitleStreamChanged")
+end sub
+
+' OnScreenShown: Callback function when view is presented on screen
+sub OnScreenShown()
+    ' set focus to button group
+    if m.extrasGrid <> invalid and m.extrasGrid.isInFocusChain()
+        m.top.lastFocus.setFocus(true)
+        group = m.global.sceneManager.callFunc("getActiveScene")
+        group.lastFocus = m.top.lastFocus
+    else if m.seasons <> invalid and m.seasons.isInFocusChain()
+        m.seasons.setFocus(true)
+        group = m.global.sceneManager.callFunc("getActiveScene")
+        group.lastFocus = m.seasons
+    else
+        ' Focus on first visible button
+        firstVisibleIndex = 0
+        for i = 0 to m.buttonGroups.count() - 1
+            if m.buttonGroups[i].visible
+                firstVisibleIndex = i
+                exit for
+            end if
+        end for
+
+        if firstVisibleIndex < m.buttonGroups.count()
+            m.currentButtonIndex = firstVisibleIndex
+            m.buttonGroups[firstVisibleIndex].setFocus(true)
+            highlightButton(firstVisibleIndex)
+            group = m.global.sceneManager.callFunc("getActiveScene")
+            group.lastFocus = m.buttonGroups[firstVisibleIndex]
+        end if
+    end if
+
+    if m.loadStatus = ViewLoadStatus.INIT
+        m.loadStatus = ViewLoadStatus.FIRSTLOAD
+        return
+    end if
+
+    m.loadStatus = ViewLoadStatus.RELOAD
+
+    m.top.refreshTVShowDetailsData = not m.top.refreshTVShowDetailsData
+end sub
+
+' setBackdropImage: Set backdrop image for TV show
+sub setBackdropImage(itemData as object)
+    showBackgroundBlack = m.top.findNode("showBackgroundBlack")
+    showBackdrop = m.top.findNode("showBackdrop")
+    showBackdropTint = m.top.findNode("showBackdropTint")
+
+    if isValid(showBackdrop)
+        ' Determine which image to use - prefer backdrop, fall back to primary
+        backdropUri = invalid
+        if isValidAndNotEmpty(itemData.BackdropImageTags)
+            backdropUri = ImageURL(itemData.id, ImageType.BACKDROP, {
+                "maxWidth": 1920,
+                "maxHeight": 1080,
+                "quality": 90,
+                "blur": 10,
+                "Tag": itemData.BackdropImageTags[0]
+            })
+        else if isChainValid(itemData, "ImageTags.Primary")
+            backdropUri = ImageURL(itemData.id, ImageType.PRIMARY, {
+                "maxWidth": 1920,
+                "maxHeight": 1080,
+                "quality": 90,
+                "blur": 10,
+                "Tag": itemData.ImageTags.Primary
+            })
+        end if
+
+        if isValid(backdropUri)
+            showBackdrop.uri = backdropUri
+            if isValid(showBackgroundBlack) then showBackgroundBlack.visible = true
+            showBackdrop.visible = true
+            if isValid(showBackdropTint) then showBackdropTint.visible = true
+        else
+            if isValid(showBackgroundBlack) then showBackgroundBlack.visible = false
+            showBackdrop.visible = false
+            if isValid(showBackdropTint) then showBackdropTint.visible = false
+        end if
+    end if
+end sub
+
+sub itemContentChanged()
+    ' Updates video metadata
+    item = m.top.itemContent
+    itemData = item.json
+
+    ' Store favorite status
+    if isChainValid(itemData, "UserData.IsFavorite")
+        m.itemIsFavorited = itemData.UserData.IsFavorite
+    else
+        m.itemIsFavorited = false
+    end if
+
+    ' Set backdrop/banner as background
+    setBackdropImage(itemData)
+
+    ' Set show title
+    showTitleNode = m.top.findNode("showTitle")
+    if isValid(showTitleNode) and isValid(itemData.name)
+        showTitleNode.text = itemData.name
+    end if
+
+    ' Set community rating (stars)
+    if chainLookupReturn(m.global.session, "user.settings.ui.itemdetail.showRatings", true)
+        starNode = m.top.findNode("star")
+        communityRatingNode = m.top.findNode("communityRating")
+        communityRatingGroup = m.top.findNode("communityRatingGroup")
+        
+        if isValid(itemData.communityRating) and isValid(starNode) and isValid(communityRatingNode)
+            starNode.visible = true
+            communityRatingNode.text = str(int(itemData.communityRating * 10) / 10)
+            if isValid(communityRatingGroup) then communityRatingGroup.visible = true
+        else
+            if isValid(starNode) then starNode.visible = false
+            if isValid(communityRatingNode) then communityRatingNode.text = ""
+            if isValid(communityRatingGroup) then communityRatingGroup.visible = false
+        end if
+    else
+        starNode = m.top.findNode("star")
+        if isValid(starNode) then starNode.visible = false
+        communityRatingGroup = m.top.findNode("communityRatingGroup")
+        if isValid(communityRatingGroup) then communityRatingGroup.visible = false
+    end if
+
+    ' Set critic rating (Rotten Tomatoes)
+    criticRatingLabelNode = m.top.findNode("criticRatingLabel")
+    criticRatingIcon = m.top.findNode("criticRatingIcon")
+    if isValid(criticRatingLabelNode) and isValid(criticRatingIcon)
+        if isValid(itemData.CriticRating)
+            criticScore = itemData.CriticRating
+            if criticScore >= 60
+                criticRatingIcon.uri = "pkg:/images/fresh.png"
+            else
+                criticRatingIcon.uri = "pkg:/images/rotten.png"
+            end if
+            criticRatingLabelNode.text = str(criticScore) + "%"
+            criticRatingIcon.visible = true
+            criticRatingLabelNode.visible = true
+        else
+            criticRatingIcon.visible = false
+            criticRatingLabelNode.visible = false
+            criticRatingLabelNode.text = ""
+        end if
+    end if
+
+    ' Set release year
+    releaseYearNode = m.top.findNode("releaseYear")
+    if isValid(releaseYearNode) and isValid(itemData.productionYear)
+        releaseYearNode.text = str(itemData.productionYear)
+    else
+        if isValid(releaseYearNode) then releaseYearNode.text = ""
+    end if
+
+    ' Set show status
+    showStatusNode = m.top.findNode("showStatus")
+    if isValid(showStatusNode) and isValid(itemData.status)
+        showStatusNode.text = itemData.status
+    else
+        if isValid(showStatusNode) then showStatusNode.text = ""
+    end if
+
+    ' Set official rating
+    officialRatingNode = m.top.findNode("officialRating")
+    if isValid(officialRatingNode) and isValid(itemData.officialRating)
+        officialRatingNode.text = itemData.officialRating
+    else
+        if isValid(officialRatingNode) then officialRatingNode.text = ""
+    end if
+
+    ' Update metadata dots visibility
+    updateMetadataDots()
+
+    ' Set tagline
+    taglineNode = m.top.findNode("tagline")
+    if isValid(taglineNode)
+        if isValidAndNotEmpty(itemData.taglines)
+            taglineNode.text = itemData.taglines[0]
+        else
+            taglineNode.text = ""
+        end if
+    end if
+
+    ' Set overview
+    overviewNode = m.top.findNode("overview")
+    if isValid(overviewNode)
+        overviewNode.text = itemData.overview
+    end if
+
+    ' Set show logo
+    showLogoNode = m.top.findNode("showLogo")
+    if isValid(showLogoNode) and isValid(itemData.id)
+        if isValidAndNotEmpty(itemData.ImageTags) and isValid(itemData.ImageTags.Logo)
+            showLogoNode.uri = ImageURL(itemData.id, "Logo", { "maxWidth": 400, "maxHeight": 200 })
+            showLogoNode.visible = true
+        else
+            showLogoNode.uri = ""
+            showLogoNode.visible = false
+        end if
+    end if
+
+    ' Set genres in info grid
+    genresTextNode = m.top.findNode("genres")
+    if isValid(genresTextNode)
+        if isValidAndNotEmpty(itemData.genres)
+            genresTextNode.text = itemData.genres.join(", ")
+            if isValid(m.genresRow) then m.genresRow.visible = true
+        else
+            if isValid(m.genresRow) then m.genresRow.visible = false
+        end if
+    end if
+
+    ' Set networks
+    networksTextNode = m.top.findNode("networks")
+    if isValid(networksTextNode)
+        if isValidAndNotEmpty(itemData.studios)
+            networksArray = []
+            for each studio in itemData.studios
+                networksArray.push(studio.name)
+            end for
+            networksTextNode.text = networksArray.join(", ")
+            if isValid(m.networksRow) then m.networksRow.visible = true
+        else
+            if isValid(m.networksRow) then m.networksRow.visible = false
+        end if
+    end if
+
+    ' Set episode runtime
+    runtimeTextNode = m.top.findNode("runtime")
+    if isValid(runtimeTextNode) and isValid(itemData.RunTimeTicks)
+        runTime = int(itemData.RunTimeTicks / 600000000.0)
+        if runTime > 0
+            runtimeTextNode.text = str(runTime) + " mins"
+            if isValid(m.runtimeRow) then m.runtimeRow.visible = true
+        else
+            if isValid(m.runtimeRow) then m.runtimeRow.visible = false
+        end if
+    else
+        if isValid(m.runtimeRow) then m.runtimeRow.visible = false
+    end if
+
+    ' Set premiered date
+    premieredTextNode = m.top.findNode("premiered")
+    if isValid(premieredTextNode) and isValid(itemData.PremiereDate)
+        airDate = CreateObject("roDateTime")
+        airDate.FromISO8601String(itemData.PremiereDate)
+        fullDateStr = airDate.AsDateString("long-month")
+        parts = fullDateStr.split(",")
+        if parts.count() >= 3
+            monthDayPart = parts[1].trim()
+            monthOnly = ""
+            spaceIndex = monthDayPart.inStr(" ")
+            if spaceIndex > 0
+                monthOnly = monthDayPart.left(spaceIndex)
+            else
+                monthOnly = monthDayPart
+            end if
+            year = parts[2].trim()
+            premieredTextNode.text = monthOnly + " " + year
+        else
+            premieredTextNode.text = fullDateStr
+        end if
+        if isValid(m.premieredRow) then m.premieredRow.visible = true
+    else
+        if isValid(m.premieredRow) then m.premieredRow.visible = false
+    end if
+
+    ' Set ended date
+    endedTextNode = m.top.findNode("ended")
+    if isValid(endedTextNode)
+        if isValid(itemData.EndDate)
+            endDate = CreateObject("roDateTime")
+            endDate.FromISO8601String(itemData.EndDate)
+            fullDateStr = endDate.AsDateString("long-month")
+            parts = fullDateStr.split(",")
+            if parts.count() >= 3
+                monthDayPart = parts[1].trim()
+                monthOnly = ""
+                spaceIndex = monthDayPart.inStr(" ")
+                if spaceIndex > 0
+                    monthOnly = monthDayPart.left(spaceIndex)
+                else
+                    monthOnly = monthDayPart
+                end if
+                year = parts[2].trim()
+                endedTextNode.text = monthOnly + " " + year
+            else
+                endedTextNode.text = fullDateStr
+            end if
+            if isValid(m.endedRow) then m.endedRow.visible = true
+        else
+            if isValid(m.endedRow) then m.endedRow.visible = false
+        end if
+    end if
+
+    ' Extract video and audio codec information
+    if isValidAndNotEmpty(itemData.MediaSources)
+        videoCodec = ""
+        audioCodec = ""
+        videoQuality = ""
+        audioQuality = ""
+
+        firstSource = itemData.MediaSources[0]
+        
+        if isValidAndNotEmpty(firstSource.MediaStreams)
+            for each stream in firstSource.MediaStreams
+                if stream.Type = "Video" and videoCodec = ""
+                    videoCodec = stream.Codec
+                    if isValid(stream.DisplayTitle)
+                        videoQuality = stream.DisplayTitle
+                    end if
+                else if stream.Type = "Audio" and audioCodec = ""
+                    audioCodec = stream.Codec
+                    if isValid(stream.DisplayTitle)
+                        audioQuality = stream.DisplayTitle
+                    end if
+                end if
+            end for
+        end if
+
+        ' Set video quality and codec
+        videoQualityNode = m.top.findNode("videoQuality")
+        videoCodecNode = m.top.findNode("videoCodec")
+        if isValid(videoQualityNode)
+            videoQualityNode.text = videoQuality
+        end if
+        if isValid(videoCodecNode)
+            videoCodecNode.text = UCase(videoCodec)
+        end if
+
+        ' Set audio quality and codec
+        audioQualityNode = m.top.findNode("audioQuality")
+        audioCodecNode = m.top.findNode("audioCodec")
+        if isValid(audioQualityNode)
+            audioQualityNode.text = audioQuality
+        end if
+        if isValid(audioCodecNode)
+            audioCodecNode.text = UCase(audioCodec)
+        end if
+    end if
+
+    ' Create dynamic buttons
+    createButtons(itemData)
+
+    ' Populate season data
+    if isValid(m.seasons)
+        m.top.seasonData = {
+            seasonData: itemData,
+            showId: itemData.id
+        }
+    end if
+
+    ' Populate extras (cast, crew, similar items)
+    populateExtras(itemData)
+end sub
+
+' Update visibility of metadata row dots
+sub updateMetadataDots()
+    dots = [
+        { id: "dot1", prev: ["communityRatingGroup"], next: ["criticRatingLabel"] },
+        { id: "dot2", prev: ["criticRatingLabel"], next: ["releaseYear"] },
+        { id: "dot3", prev: ["releaseYear"], next: ["showStatus"] },
+        { id: "dot4", prev: ["showStatus"], next: ["officialRating"] },
+        { id: "dot5", prev: ["officialRating"], next: ["videoQuality"] },
+        { id: "dot6", prev: ["videoQuality"], next: ["videoCodec"] },
+        { id: "dot7", prev: ["videoCodec"], next: ["audioQuality"] },
+        { id: "dot8", prev: ["audioQuality"], next: ["audioCodec"] }
+    ]
+
+    for each dot in dots
+        dotNode = m.top.findNode(dot.id)
+        if isValid(dotNode)
+            hasVisiblePrev = false
+            for each prevId in dot.prev
+                prevNode = m.top.findNode(prevId)
+                if isValid(prevNode) and prevNode.visible and prevNode.text <> ""
+                    hasVisiblePrev = true
+                    exit for
+                end if
+            end for
+
+            hasVisibleNext = false
+            for each nextId in dot.next
+                nextNode = m.top.findNode(nextId)
+                if isValid(nextNode) and (nextNode.visible or nextNode.text <> "")
+                    hasVisibleNext = true
+                    exit for
+                end if
+            end for
+
+            dotNode.visible = (hasVisiblePrev and hasVisibleNext)
+        end if
+    end for
+end sub
+
+' Create dynamic button row
+sub createButtons(itemData as object)
+    ' Clear existing buttons
+    m.buttonRow.removeChildrenIndex(m.buttonRow.getChildCount(), 0)
+    m.buttonGroups = []
+    m.buttons = []
+
+    hasProgress = false
+    if isChainValid(itemData, "UserData.PlayedPercentage")
+        if itemData.UserData.PlayedPercentage > 0 and itemData.UserData.PlayedPercentage < 95
+            hasProgress = true
+        end if
+    end if
+
+    ' Define button configurations
+    buttonConfigs = []
+    
+    ' Play button (always visible)
+    buttonConfigs.push({
+        id: "play",
+        icon: "pkg:/images/icons/play.png",
+        iconFocused: "pkg:/images/icons/play.png",
+        text: "Play",
+        visible: true
+    })
+
+    ' Shuffle button
+    buttonConfigs.push({
+        id: "shuffle",
+        icon: "pkg:/images/icons/shuffle.png",
+        iconFocused: "pkg:/images/icons/shuffle.png",
+        text: "Shuffle",
+        visible: true
+    })
+
+    ' Watched/Unwatched button
+    isWatched = false
+    if isChainValid(itemData, "UserData.Played")
+        isWatched = itemData.UserData.Played
+    end if
+
+    buttonConfigs.push({
+        id: "watched",
+        icon: isWatched ? "pkg:/images/icons/watched.png" : "pkg:/images/icons/unwatched.png",
+        iconFocused: isWatched ? "pkg:/images/icons/watched.png" : "pkg:/images/icons/unwatched.png",
+        text: isWatched ? "Watched" : "Unwatched",
+        visible: true
+    })
+
+    ' Favorite button
+    buttonConfigs.push({
+        id: "favorite",
+        icon: m.itemIsFavorited ? "pkg:/images/icons/favorite_selected.png" : "pkg:/images/icons/favorite.png",
+        iconFocused: m.itemIsFavorited ? "pkg:/images/icons/favorite_selected.png" : "pkg:/images/icons/favorite.png",
+        text: "Favorite",
+        visible: true
+    })
+
+    ' Create buttons from configs
+    for i = 0 to buttonConfigs.count() - 1
+        config = buttonConfigs[i]
+        if config.visible
+            buttonGroup = createButtonGroup(config, i)
+            m.buttonRow.appendChild(buttonGroup)
+            m.buttonGroups.push(buttonGroup)
+            m.buttons.push(config)
+        end if
+    end for
+
+    ' Set focus on first button
+    if m.buttonGroups.count() > 0
+        m.currentButtonIndex = 0
+        m.buttonGroups[0].setFocus(true)
+        highlightButton(0)
+    end if
+end sub
+
+' Create a button group with background and icon
+function createButtonGroup(config as object, index as integer) as object
+    group = CreateObject("roSGNode", "Group")
+    group.id = config.id + "ButtonGroup"
+
+    ' Background rectangle (white, invisible by default, visible on focus)
+    bg = CreateObject("roSGNode", "Rectangle")
+    bg.id = "background"
+    bg.width = 144
+    bg.height = 72
+    bg.color = "#FFFFFF"
+    bg.opacity = 0
+    bg.translation = [0, 0]
+    group.appendChild(bg)
+
+    ' Icon poster (centered in background)
+    icon = CreateObject("roSGNode", "Poster")
+    icon.id = "icon"
+    icon.uri = config.icon
+    icon.width = 48
+    icon.height = 48
+    icon.loadDisplayMode = "scaleToFit"
+    icon.blendColor = "#FFFFFFFF"
+    icon.translation = [48, 12] ' Center in 144x72 bg
+    group.appendChild(icon)
+
+    group.focusable = true
+    return group
+end function
+
+' Highlight the button at the specified index
+sub highlightButton(index as integer)
+    for i = 0 to m.buttonGroups.count() - 1
+        buttonGroup = m.buttonGroups[i]
+        bg = buttonGroup.findNode("background")
+        icon = buttonGroup.findNode("icon")
+
+        if i = index
+            ' Focused button: white background, dark icon
+            if isValid(bg)
+                bg.opacity = 1.0
+            end if
+            if isValid(icon)
+                icon.blendColor = "#666666FF"
+            end if
+        else
+            ' Unfocused button: no background, white icon
+            if isValid(bg)
+                bg.opacity = 0
+            end if
+            if isValid(icon)
+                ' Keep favorite icon red if favorited
+                if m.buttons[i].id = "favorite" and m.itemIsFavorited
+                    icon.blendColor = "#FF0000FF"
+                else
+                    icon.blendColor = "#FFFFFFFF"
+                end if
+            end if
+        end if
+    end for
+end sub
+
+' Populate extras grid with cast, crew, and similar items
+sub populateExtras(itemData as object)
+    if not isValid(m.extrasGrid) then return
+
+    content = CreateObject("roSGNode", "ContentNode")
+
+    ' Add cast row
+    if isValidAndNotEmpty(itemData.People)
+        castRow = content.createChild("ContentNode")
+        castRow.title = "Cast & Crew"
+
+        for each person in itemData.People
+            personNode = castRow.createChild("PersonData")
+            personNode.id = person.id
+            personNode.title = person.name
+            personNode.role = person.role
+            personNode.image = PersonImage(person.id)
+            personNode.json = person
+        end for
+    end if
+
+    m.extrasGrid.content = content
+end sub
+
+' Handle button selection
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    ' Handle navigation between buttons
+    if m.buttonRow.isInFocusChain()
+        if key = KeyCode.LEFT
+            if m.currentButtonIndex > 0
+                m.currentButtonIndex--
+                m.buttonGroups[m.currentButtonIndex].setFocus(true)
+                highlightButton(m.currentButtonIndex)
+                return true
+            end if
+        else if key = KeyCode.RIGHT
+            if m.currentButtonIndex < m.buttonGroups.count() - 1
+                m.currentButtonIndex++
+                m.buttonGroups[m.currentButtonIndex].setFocus(true)
+                highlightButton(m.currentButtonIndex)
+                return true
+            end if
+        else if key = KeyCode.DOWN
+            ' Move to seasons row
+            if isValid(m.seasons) and m.seasons.visible
+                m.seasons.setFocus(true)
+                group = m.global.sceneManager.callFunc("getActiveScene")
+                group.lastFocus = m.seasons
+                return true
+            else if isValid(m.extrasGrid) and m.extrasGrid.visible
+                m.extrasGrid.setFocus(true)
+                group = m.global.sceneManager.callFunc("getActiveScene")
+                group.lastFocus = m.extrasGrid
+                return true
+            end if
+        else if key = KeyCode.OK
+            handleButtonPress()
+            return true
+        end if
+    else if m.seasons.isInFocusChain()
+        if key = KeyCode.UP
+            ' Move back to buttons
+            m.buttonGroups[m.currentButtonIndex].setFocus(true)
+            highlightButton(m.currentButtonIndex)
+            return true
+        else if key = KeyCode.DOWN
+            ' Move to extras
+            if isValid(m.extrasGrid) and m.extrasGrid.visible
+                m.extrasGrid.setFocus(true)
+                group = m.global.sceneManager.callFunc("getActiveScene")
+                group.lastFocus = m.extrasGrid
+                return true
+            end if
+        end if
+    else if m.extrasGrid.isInFocusChain()
+        if key = KeyCode.UP
+            ' Move back to seasons or buttons
+            if isValid(m.seasons) and m.seasons.visible
+                m.seasons.setFocus(true)
+                group = m.global.sceneManager.callFunc("getActiveScene")
+                group.lastFocus = m.seasons
+                return true
+            else
+                m.buttonGroups[m.currentButtonIndex].setFocus(true)
+                highlightButton(m.currentButtonIndex)
+                return true
+            end if
+        end if
+    end if
+
+    return false
+end function
+
+' Handle button press actions
+sub handleButtonPress()
+    if m.currentButtonIndex >= m.buttons.count() then return
+
+    button = m.buttons[m.currentButtonIndex]
+    itemData = m.top.itemContent.json
+
+    if button.id = "play"
+        ' Play the show
+        m.top.quickPlayNode = m.top.itemContent
+    else if button.id = "shuffle"
+        ' Shuffle episodes
+        m.top.quickPlayNode = m.top.itemContent
+        m.global.queueManager.callFunc("setShuffle", true)
+    else if button.id = "watched"
+        ' Toggle watched status
+        isWatched = false
+        if isChainValid(itemData, "UserData.Played")
+            isWatched = itemData.UserData.Played
+        end if
+
+        if isValid(m.playstateTask)
+            m.playstateTask.itemId = itemData.id
+            m.playstateTask.watched = not isWatched
+            m.playstateTask.observeField("state", "onPlaystateTaskStateChanged")
+            m.playstateTask.control = TaskControl.RUN
+        end if
+    else if button.id = "favorite"
+        ' Toggle favorite status
+        if isValid(m.favoriteTask)
+            m.favoriteTask.itemId = itemData.id
+            m.favoriteTask.favorite = not m.itemIsFavorited
+            m.favoriteTask.observeField("state", "onFavoriteTaskStateChanged")
+            m.favoriteTask.control = TaskControl.RUN
+        end if
+    end if
+end sub
+
+' Handle favorite task completion
+sub onFavoriteTaskStateChanged()
+    if m.favoriteTask.state = "stop"
+        m.favoriteTask.unobserveField("state")
+
+        ' Toggle local favorite state
+        m.itemIsFavorited = not m.itemIsFavorited
+
+        ' Update favorite button icon
+        for i = 0 to m.buttons.count() - 1
+            if m.buttons[i].id = "favorite"
+                buttonGroup = m.buttonGroups[i]
+                icon = buttonGroup.findNode("icon")
+                if isValid(icon)
+                    icon.uri = m.itemIsFavorited ? "pkg:/images/icons/favorite_selected.png" : "pkg:/images/icons/favorite.png"
+                    ' Keep icon red if favorited and not focused
+                    if m.itemIsFavorited and i <> m.currentButtonIndex
+                        icon.blendColor = "#FF0000FF"
+                    end if
+                end if
+                exit for
+            end if
+        end for
+    end if
+end sub
+
+' Handle playstate task completion
+sub onPlaystateTaskStateChanged()
+    if m.playstateTask.state = "stop"
+        m.playstateTask.unobserveField("state")
+
+        ' Update watched button
+        itemData = m.top.itemContent.json
+        isWatched = m.playstateTask.watched
+
+        for i = 0 to m.buttons.count() - 1
+            if m.buttons[i].id = "watched"
+                buttonGroup = m.buttonGroups[i]
+                icon = buttonGroup.findNode("icon")
+                if isValid(icon)
+                    icon.uri = isWatched ? "pkg:/images/icons/watched.png" : "pkg:/images/icons/unwatched.png"
+                end if
+                m.buttons[i].text = isWatched ? "Watched" : "Unwatched"
+                exit for
+            end if
+        end for
+    end if
+end sub
+
+sub onAudioStreamIndexChanged()
+    ' Handle audio stream change
+end sub
+
+sub onSubtitleStreamChanged()
+    ' Handle subtitle stream change
+end sub

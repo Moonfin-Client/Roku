@@ -1,0 +1,346 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/Image.bs"
+import "pkg:/source/api/Items.bs"
+import "pkg:/source/api/sdk.bs"
+import "pkg:/source/enums/ItemType.bs"
+import "pkg:/source/utils/deviceCapabilities.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Fast parallel loading task for TV show details
+' Loads seasons, next up, people, and similar items simultaneously
+sub init()
+    m.top.functionName = "loadAllExtras"
+end sub
+
+' Main function that loads all extras data in parallel
+sub loadAllExtras()
+    ' Create ContentNode to hold all results
+    resultsNode = CreateObject("roSGNode", "ContentNode")
+
+    if not isValid(m.top.itemId) or m.top.itemId = ""
+        m.top.content = resultsNode
+        return
+    end if
+
+    ' Check if this is person mode
+    if isValid(m.top.isPersonMode) and m.top.isPersonMode = true
+        ' Load person videos (movies and TV shows)
+        personVideosData = loadPersonVideos()
+        for each item in personVideosData
+            resultsNode.appendChild(item)
+        end for
+        m.top.content = resultsNode
+        return
+    end if
+
+    ' Check what type of content we're loading
+    isTVShow = isValid(m.top.isTVShow) and m.top.isTVShow = true ' Create child nodes for each data type
+    seasonsNode = resultsNode.createChild("ContentNode")
+    seasonsNode.title = "seasons"
+
+    nextupNode = resultsNode.createChild("ContentNode")
+    nextupNode.title = "nextup"
+
+    peopleNode = resultsNode.createChild("ContentNode")
+    peopleNode.title = "people"
+
+    similarNode = resultsNode.createChild("ContentNode")
+    similarNode.title = "similar"
+
+    specialsNode = resultsNode.createChild("ContentNode")
+    specialsNode.title = "specials"
+
+    ' Launch all API calls - BrightScript will execute them as fast as possible
+    if isTVShow
+        seasonData = loadSeasons()
+        for each item in seasonData
+            seasonsNode.appendChild(item)
+        end for
+
+        nextupData = loadNextUp()
+        for each item in nextupData
+            nextupNode.appendChild(item)
+        end for
+    end if
+
+    peopleData = loadPeople()
+    for each item in peopleData
+        peopleNode.appendChild(item)
+    end for
+
+    similarData = loadSimilar()
+    for each item in similarData
+        similarNode.appendChild(item)
+    end for
+
+    specialsData = loadSpecials()
+    for each item in specialsData
+        specialsNode.appendChild(item)
+    end for
+
+    m.top.content = resultsNode
+end sub
+
+function loadSeasons() as object
+    seasons = []
+
+    params = {
+        userId: m.global.session.user.id,
+        ParentId: m.top.itemId,
+        Fields: "Overview,PrimaryImageAspectRatio,ChildCount,MediaSources",
+        enableTotalRecordCount: true
+    }
+
+    data = api.items.Get(params)
+
+    if not isChainValid(data, "Items") then return seasons
+
+    for each item in data.Items
+        tmp = CreateObject("roSGNode", "HomeData")
+        tmp.json = item
+
+        ' Set image dimensions for portrait posters
+        tmp.imageWidth = 200
+        imgParams = { "maxHeight": 400, "maxWidth": 200 }
+
+        if isValid(item.ImageTags) and isValid(item.ImageTags.Primary)
+            imgParams.Tag = item.ImageTags.Primary
+        end if
+
+        tmp.posterUrl = ImageURL(item.Id, "Primary", imgParams)
+        seasons.push(tmp)
+    end for
+
+    return seasons
+end function
+
+' Load movies and TV shows for a person
+function loadPersonVideos() as object
+    videos = []
+
+    params = {
+        "userid": m.global.session.user.id,
+        "PersonIds": m.top.itemId,
+        "Recursive": true,
+        "SortBy": "SortName",
+        "SortOrder": "Ascending",
+        "IncludeItemTypes": "Movie,Series",
+        "ImageTypeLimit": 1,
+        "EnableImageTypes": "Primary,Backdrop,Thumb",
+        "Limit": 100
+    }
+
+    data = api.items.Get(params)
+
+    if not isChainValid(data, "Items") then return videos
+
+    for each item in data.Items
+        tmp = invalid
+        if item.Type = "Movie"
+            tmp = CreateObject("roSGNode", "MovieData")
+        else if item.Type = "Series"
+            tmp = CreateObject("roSGNode", "SeriesData")
+        end if
+
+        if tmp <> invalid
+            tmp.json = item
+
+            ' Add custom fields
+            tmp.addField("imageWidth", "integer", false)
+            tmp.addField("labelText", "string", false)
+
+            tmp.imageWidth = 234
+
+            ' Set poster URL
+            imgParams = { "maxHeight": 351, "maxWidth": 234 }
+            if isValid(item.ImageTags) and isValid(item.ImageTags.Primary)
+                imgParams.Tag = item.ImageTags.Primary
+            end if
+            tmp.posterUrl = ImageURL(item.Id, "Primary", imgParams)
+
+            ' Set label text
+            tmp.labelText = item.Name
+
+            ' Set subtitle with year or date range
+            if item.Type = "Series"
+                if isValid(item.PremiereDate)
+                    premiereDate = CreateObject("roDateTime")
+                    premiereDate.FromISO8601String(item.PremiereDate)
+                    premieredText = premiereDate.AsDateString("short-month-no-weekday")
+                    tmp.subTitle = premieredText
+
+                    if isValid(item.EndDate) and item.Status = "Ended"
+                        endedDate = CreateObject("roDateTime")
+                        endedDate.FromISO8601String(item.EndDate)
+                        endedText = endedDate.AsDateString("short-month-no-weekday")
+                        tmp.subTitle = premieredText + " - " + endedText
+                    end if
+                end if
+            else if isValid(item.ProductionYear)
+                tmp.subTitle = item.ProductionYear.ToStr()
+            end if
+
+            videos.push(tmp)
+        end if
+    end for
+
+    return videos
+end function
+
+function loadNextUp() as object
+    episodes = []
+
+    ' First, get the next up episode using GetNextUp API (like Android TV does)
+    nextUpParams = {
+        SeriesId: m.top.itemId,
+        UserId: m.global.session.user.id,
+        EnableRewatching: false,
+        limit: 1,
+        Fields: "PrimaryImageAspectRatio,Overview",
+        EnableTotalRecordCount: false
+    }
+
+    nextUpData = api.shows.GetNextUp(nextUpParams)
+
+    if not isChainValid(nextUpData, "Items") or nextUpData.Items.count() = 0
+        return episodes
+    end if
+
+    firstEpisode = nextUpData.Items[0]
+
+    ' If we have a season ID and episode index, get all episodes from that season starting from this episode
+    if isValid(firstEpisode.SeasonId) and isValid(firstEpisode.IndexNumber)
+        ' Get episodes from the season starting at this episode's index
+        seasonParams = {
+            ParentId: firstEpisode.SeasonId,
+            UserId: m.global.session.user.id,
+            StartIndex: firstEpisode.IndexNumber - 1, ' Convert to 0-based index
+            limit: 10,
+            SortBy: "IndexNumber",
+            SortOrder: "Ascending",
+            Filters: "IsNotFolder",
+            Fields: "PrimaryImageAspectRatio,Overview",
+            EnableTotalRecordCount: false
+        }
+
+        seasonData = api.items.Get(seasonParams)
+
+        if isChainValid(seasonData, "Items")
+            for each item in seasonData.Items
+                tmp = CreateObject("roSGNode", "HomeData")
+                tmp.json = item
+
+                ' Set wide thumbnail for episodes
+                tmp.imageWidth = 502
+                imgParams = { "maxHeight": 283, "maxWidth": 502 }
+
+                if isValid(item.ImageTags) and isValid(item.ImageTags.Primary)
+                    imgParams.Tag = item.ImageTags.Primary
+                end if
+
+                tmp.posterUrl = ImageURL(item.Id, "Primary", imgParams)
+                episodes.push(tmp)
+            end for
+        end if
+    else
+        ' Fallback: just use the single next up episode
+        tmp = CreateObject("roSGNode", "HomeData")
+        tmp.json = firstEpisode
+
+        tmp.imageWidth = 502
+        imgParams = { "maxHeight": 283, "maxWidth": 502 }
+
+        if isValid(firstEpisode.ImageTags) and isValid(firstEpisode.ImageTags.Primary)
+            imgParams.Tag = firstEpisode.ImageTags.Primary
+        end if
+
+        tmp.posterUrl = ImageURL(firstEpisode.Id, "Primary", imgParams)
+        episodes.push(tmp)
+    end if
+
+    return episodes
+end function
+
+function loadPeople() as object
+    people = []
+
+    ' First get the item details to access the People array
+    itemDetails = api.users.GetItem(m.global.session.user.id, m.top.itemId)
+
+    if not isChainValid(itemDetails, "People") then return people
+
+    for each person in itemDetails.People
+        tmp = CreateObject("roSGNode", "HomeData")
+        tmp.json = person
+
+        ' Set person image dimensions
+        imgParams = { "maxHeight": 331, "maxWidth": 250 }
+        tmp.posterUrl = ImageURL(person.Id, "Primary", imgParams)
+
+        people.push(tmp)
+    end for
+
+    return people
+end function
+
+function loadSimilar() as object
+    similar = []
+
+    params = {
+        userId: m.global.session.user.id,
+        limit: 25,
+        Fields: "PrimaryImageAspectRatio,MediaSources"
+    }
+
+    data = api.items.GetSimilar(m.top.itemId, params)
+
+    if not isChainValid(data, "Items") then return similar
+
+    for each item in data.Items
+        tmp = CreateObject("roSGNode", "HomeData")
+        tmp.json = item
+
+        ' Use standard poster dimensions
+        tmp.imageWidth = 180
+        imgParams = { "maxHeight": 270, "maxWidth": 180 }
+
+        if isValid(item.ImageTags) and isValid(item.ImageTags.Primary)
+            imgParams.Tag = item.ImageTags.Primary
+        end if
+
+        tmp.posterUrl = ImageURL(item.Id, "Primary", imgParams)
+        similar.push(tmp)
+    end for
+
+    return similar
+end function
+
+function loadSpecials() as object
+    specials = []
+
+    params = {
+        userId: m.global.session.user.id,
+        SpecialFeatureTypes: "Trailer,AdditionalPart,BehindTheScenes,DeletedScene,Clip,Interview,Scene"
+    }
+
+    data = api.items.GetSpecialFeatures(m.top.itemId, params)
+
+    if not isValidAndNotEmpty(data) then return specials
+
+    for each item in data
+        tmp = CreateObject("roSGNode", "HomeData")
+        tmp.json = item
+
+        tmp.imageWidth = 180
+        imgParams = { "maxHeight": 270, "maxWidth": 180 }
+
+        if isValid(item.ImageTags) and isValid(item.ImageTags.Primary)
+            imgParams.Tag = item.ImageTags.Primary
+        end if
+
+        tmp.posterUrl = ImageURL(item.Id, "Primary", imgParams)
+        specials.push(tmp)
+    end for
+
+    return specials
+end function

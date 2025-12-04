@@ -1,0 +1,132 @@
+sub init()
+    m.keyboard = m.top.findNode("keyboard")
+    m.resultsRowList = m.top.findNode("resultsRowList")
+    m.noResultsLabel = m.top.findNode("noResultsLabel")
+    m.loadingLabel = m.top.findNode("loadingLabel")
+
+    m.apiTask = CreateObject("roSGNode", "JellyseerrAPITask")
+    m.searchTimer = invalid
+    m.lastSearchQuery = ""
+
+    m.keyboard.observeField("text", "onSearchTextChanged")
+    m.resultsRowList.observeField("rowItemSelected", "onResultSelected")
+
+    m.resultsRowList.setFocus(false)
+    m.keyboard.setFocus(true)
+end sub
+
+sub onSearchTextChanged(event as object)
+    searchText = event.getData()
+
+    if searchText.Len() >= 2
+        ' Debounce search with 500ms delay
+        if m.searchTimer <> invalid
+            m.searchTimer.control = "stop"
+        end if
+
+        m.searchTimer = CreateObject("roSGNode", "Timer")
+        m.searchTimer.duration = 0.5
+        m.searchTimer.observeField("fire", "onSearchTimerFired")
+        m.searchTimer.control = "start"
+        m.lastSearchQuery = searchText
+    else if searchText = ""
+        ' Clear results
+        m.resultsRowList.content = invalid
+        m.noResultsLabel.visible = false
+    end if
+end sub
+
+sub onSearchTimerFired(_event as object)
+    if m.lastSearchQuery <> ""
+        PerformSearch(m.lastSearchQuery)
+    end if
+end sub
+
+sub PerformSearch(query as string)
+    ShowLoading()
+
+    m.apiTask.request = {
+        method: "GET",
+        endpoint: "/api/v1/search",
+        queryParams: {
+            query: query,
+            page: "1",
+            language: "en"
+        }
+    }
+    m.apiTask.observeField("response", "onSearchResponse")
+    m.apiTask.control = "RUN"
+end sub
+
+sub onSearchResponse(event as object)
+    response = event.getData()
+    HideLoading()
+
+    if response.success and response.data <> invalid
+        results = response.data.results
+
+        if results <> invalid and type(results) = "roArray" and results.Count() > 0
+            contentNode = CreateObject("roSGNode", "ContentNode")
+            rowNode = CreateObject("roSGNode", "ContentNode")
+            rowNode.title = "Results"
+
+            for each item in results
+                if item.mediaType = "movie" or item.mediaType = "tv"
+                    mediaNode = CreateMediaContentNode(item)
+                    rowNode.appendChild(mediaNode)
+                end if
+            end for
+
+            if rowNode.getChildCount() > 0
+                contentNode.appendChild(rowNode)
+                m.resultsRowList.content = contentNode
+                m.noResultsLabel.visible = false
+                m.resultsRowList.setFocus(true)
+            else
+                m.noResultsLabel.visible = true
+                m.resultsRowList.content = invalid
+            end if
+        else
+            m.noResultsLabel.visible = true
+            m.resultsRowList.content = invalid
+        end if
+    else
+        m.noResultsLabel.visible = true
+        m.resultsRowList.content = invalid
+    end if
+end sub
+
+sub onResultSelected(event as object)
+    selectedIndex = event.getData()
+    if selectedIndex.length() > 1
+        itemIndex = selectedIndex[1]
+        rowIndex = selectedIndex[0]
+        row = m.resultsRowList.content.getChild(rowIndex)
+
+        if row <> invalid and itemIndex >= 0 and itemIndex < row.getChildCount()
+            selectedItem = row.getChild(itemIndex)
+
+            if selectedItem <> invalid
+                ShowMediaDetails(selectedItem)
+            end if
+        end if
+    end if
+end sub
+
+sub ShowMediaDetails(mediaItem as object)
+    detailsScreen = CreateObject("roSGNode", "JellyseerrDetailsScreen")
+    detailsScreen.mediaItem = mediaItem
+    m.top.getScene().appendChild(detailsScreen)
+    detailsScreen.setFocus(true)
+end sub
+
+sub ShowLoading()
+    m.loadingLabel.visible = true
+    m.noResultsLabel.visible = false
+    m.resultsRowList.visible = false
+end sub
+
+sub HideLoading()
+    m.loadingLabel.visible = false
+    m.resultsRowList.visible = true
+end sub

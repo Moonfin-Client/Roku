@@ -1,4 +1,7 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/sdk.bs"
 import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/PosterLoadStatus.bs"
 import "pkg:/source/utils/config.bs"
@@ -7,14 +10,33 @@ sub init()
     m.top.id = "overhang"
     m.top.translation = [54, 0]
 
-    m.leftGroup = m.top.findNode("overlayLeftGroup")
-    m.rightGroup = m.top.findNode("overlayRightGroup")
-
     ' save node references
     m.title = m.top.findNode("overlayTitle")
-    m.overlayRightGroup = m.top.findNode("overlayRightGroup")
+    m.centerNavContainer = m.top.findNode("centerNavContainer")
+    m.navbarBackground = m.top.findNode("navbarBackground")
+    m.navGroup = m.top.findNode("navGroup")
+    m.navClipRect = m.top.findNode("navClipRect")
+    m.homeIcon = m.top.findNode("homeIcon")
+    m.searchIcon = m.top.findNode("searchIcon")
+    m.shuffleIcon = m.top.findNode("shuffleIcon")
+    m.favoritesIcon = m.top.findNode("favoritesIcon")
+    m.genresIcon = m.top.findNode("genresIcon")
+    m.jellyseerrIcon = m.top.findNode("jellyseerrIcon")
+    m.settingsIcon = m.top.findNode("settingsIcon")
+    m.libraryLabelsGroup = m.top.findNode("libraryLabelsGroup")
+    m.clock = m.top.findNode("overlayClock")
     m.slideDownAnimation = m.top.findNode("slideDown")
     m.slideUpAnimation = m.top.findNode("slideUp")
+    m.navScrollAnim = m.top.findNode("navScrollAnim")
+    m.navScrollInterp = m.top.findNode("navScrollInterp")
+
+    ' Store original indices for dynamic removal/addition
+    m.shuffleIconIndex = 2
+    m.favoritesIconIndex = 3
+    m.genresIconIndex = 4
+    m.jellyseerrIconIndex = 5
+    m.scrollLeftIndicator = m.top.findNode("scrollLeftIndicator")
+    m.scrollRightIndicator = m.top.findNode("scrollRightIndicator")
 
     m.profileImage = m.top.findNode("overlayCurrentUserProfileImage")
 
@@ -26,12 +48,562 @@ sub init()
     m.overlayCurrentUserSelection = m.top.findNode("overlayCurrentUserSelection")
     if isValid(m.overlayCurrentUserSelection)
         m.overlayCurrentUserSelection.blendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+        m.overlayCurrentUserSelection.visible = false ' Explicitly hide on init
     end if
+
+    ' Library data storage
+    m.libraryData = []
+    m.libraryLabels = []
+
+    ' Navigation tracking
+    ' Avatar is now separate and focusable independently
+    ' Home and Search are always present (indices 0 and 1)
+    ' Shuffle, Favorites, Genres, Jellyseerr are conditional
+    ' Libraries come after all static items
+    ' Settings is always last (outside navGroup)
+    m.selectedIndex = 0 ' Default to Home icon
+    m.avatarSelected = false ' Track if avatar is selected
+    m.navScrollX = 0 ' Current scroll position
+    m.clipWidth = 907 ' Pill/clip width
+    m.navBaseX = 20 ' Base X translation for navGroup
+
+    ' Track last loaded navbar settings to avoid redundant reloads
+    m.lastNavbarSettings = {
+        shuffle: invalid,
+        favorites: invalid,
+        genres: invalid,
+        libraries: invalid,
+        jellyseerr: invalid
+    }
+
+    ' Load navbar settings
+    loadNavbarSettings()
+
+    ' Observe session changes to reload navbar visibility when user logs in
+    m.global.observeField("session", "onSessionChanged")
+
+    ' Observe overlay settings changes
+    m.global.observeField("overlaySettingsChanged", "onOverlaySettingsChanged")
+
+    updateNavbarItemVisibility()
+    updateJellyseerrVisibility()
+    m.top.observeField("focusedChild", "onOverhangFocusChange")
+
+    ' Apply UI overlay settings to navbar background
+    applyOverlaySettings()
+
+    ' Set initial pill size
+    updatePillSize()
+    updateIconOpacity()
+end sub
+
+' Reload navbar settings when session changes (e.g., after login)
+sub onSessionChanged()
+    ' Check if navbar settings actually changed before reloading
+    currentSettings = {
+        shuffle: m.global.session.user.settings["navbar.show_shuffle"],
+        favorites: m.global.session.user.settings["navbar.show_favorites"],
+        genres: m.global.session.user.settings["navbar.show_genres"],
+        libraries: m.global.session.user.settings["navbar.show_libraries"],
+        jellyseerr: m.global.session.user.settings["jellyseerr.enabled"]
+    }
+
+    ' Only reload if settings changed
+    if currentSettings.shuffle <> m.lastNavbarSettings.shuffle or currentSettings.favorites <> m.lastNavbarSettings.favorites or currentSettings.genres <> m.lastNavbarSettings.genres or currentSettings.libraries <> m.lastNavbarSettings.libraries or currentSettings.jellyseerr <> m.lastNavbarSettings.jellyseerr
+        loadNavbarSettings()
+        updateNavbarItemVisibility()
+        updatePillSize()
+    end if
+
+    applyOverlaySettings()
+end sub
+
+' Handle overlay settings changes
+sub onOverlaySettingsChanged(_event as object)
+    applyOverlaySettings()
+end sub
+
+' Load navbar visibility settings from session
+sub loadNavbarSettings()
+    ' Default to false for disabled items (note: settings should persist from user choices)
+    shuffleSetting = m.global.session.user.settings["navbar.show_shuffle"]
+    if not isValid(shuffleSetting)
+        shuffleSetting = m.global.session.user.settings["show_shuffle_button"]
+    end if
+    if not isValid(shuffleSetting) then shuffleSetting = false ' Default to hidden unless explicitly set
+    if type(shuffleSetting) = "String" or type(shuffleSetting) = "roString"
+        m.shuffleButtonEnabled = (LCase(shuffleSetting) = "true")
+    else if type(shuffleSetting) = "Integer" or type(shuffleSetting) = "roInt"
+        m.shuffleButtonEnabled = (shuffleSetting = 1)
+    else
+        m.shuffleButtonEnabled = (shuffleSetting = true)
+    end if
+
+    favoritesSetting = m.global.session.user.settings["navbar.show_favorites"]
+    if not isValid(favoritesSetting) then favoritesSetting = false
+    if type(favoritesSetting) = "String" or type(favoritesSetting) = "roString"
+        m.favoritesButtonEnabled = (LCase(favoritesSetting) = "true")
+    else if type(favoritesSetting) = "Integer" or type(favoritesSetting) = "roInt"
+        m.favoritesButtonEnabled = (favoritesSetting = 1)
+    else
+        m.favoritesButtonEnabled = (favoritesSetting = true)
+    end if
+
+    genresSetting = m.global.session.user.settings["navbar.show_genres"]
+    if not isValid(genresSetting) then genresSetting = false
+    if type(genresSetting) = "String" or type(genresSetting) = "roString"
+        m.genresButtonEnabled = (LCase(genresSetting) = "true")
+    else if type(genresSetting) = "Integer" or type(genresSetting) = "roInt"
+        m.genresButtonEnabled = (genresSetting = 1)
+    else
+        m.genresButtonEnabled = (genresSetting = true)
+    end if
+
+    librariesSetting = m.global.session.user.settings["navbar.show_libraries"]
+    if not isValid(librariesSetting) then librariesSetting = false
+    if type(librariesSetting) = "String" or type(librariesSetting) = "roString"
+        m.librariesEnabled = (LCase(librariesSetting) = "true")
+    else if type(librariesSetting) = "Integer" or type(librariesSetting) = "roInt"
+        m.librariesEnabled = (librariesSetting = 1)
+    else
+        m.librariesEnabled = (librariesSetting = true)
+    end if
+
+    ' Update last loaded settings for change detection
+    m.lastNavbarSettings = {
+        shuffle: shuffleSetting,
+        favorites: favoritesSetting,
+        genres: genresSetting,
+        libraries: librariesSetting,
+        jellyseerr: m.global.session.user.settings["jellyseerr.enabled"]
+    }
+end sub
+
+' Apply opacity and color settings to navbar background
+sub applyOverlaySettings()
+    ' Safety check - return if session not available
+    if not isValid(m.global) or not isValid(m.global.session)
+        return
+    end if
+
+    ' Get opacity setting (default 0.5)
+    opacity = 0.5
+    if isValid(m.global.session.user) and isValid(m.global.session.user.settings)
+        opacitySetting = m.global.session.user.settings["ui.overlayOpacity"]
+        if isValid(opacitySetting)
+            opacity = opacitySetting.toFloat()
+        end if
+    end if
+
+    ' Get color setting (default 0x475569)
+    color = "0x475569FF"
+    if isValid(m.global.session.user) and isValid(m.global.session.user.settings)
+        colorSetting = m.global.session.user.settings["ui.overlayColor"]
+        if isValid(colorSetting) and colorSetting <> ""
+            ' Color format is 0xRRGGBB (8 chars) - add FF for full alpha
+            color = colorSetting + "FF"
+        end if
+    end if
+
+    ' Apply to navbar background
+    if isValid(m.navbarBackground)
+        m.navbarBackground.opacity = opacity
+        m.navbarBackground.blendColor = color
+    end if
+end sub
+
+sub onOverhangFocusChange()
+    ' When overhang receives focus, ensure navGroup gets it
+    if m.top.hasFocus() and isValid(m.navGroup)
+        m.navGroup.setFocus(true)
+    end if
+end sub
+
+' Load user libraries and create nav icons for them
+sub loadLibraries()
+    data = api.GetUserViews({ "userId": m.global.session.user.id })
+
+    if not isChainValid(data, "items") then return
+
+    m.libraryData = []
+    m.libraryLabels = []
+
+    ' Clear existing library labels
+    m.libraryLabelsGroup.removeChildrenIndex(m.libraryLabelsGroup.getChildCount(), 0)
+
+    for each item in data.LookupCI("items")
+        libraryItem = {
+            id: item.LookupCI("Id"),
+            name: item.LookupCI("name"),
+            type: item.LookupCI("Type"),
+            collectionType: item.LookupCI("CollectionType")
+        }
+        m.libraryData.push(libraryItem)
+
+        ' Create text label for this library
+        label = createObject("roSGNode", "Label")
+        label.text = libraryItem.name
+        label.font = "font:SmallBoldSystemFont"
+        label.color = "#FFFFFF"
+        label.opacity = 0.5
+        label.height = 50
+        label.vertAlign = "center"
+
+        m.libraryLabelsGroup.appendChild(label)
+        m.libraryLabels.push(label)
+    end for
+
+    ' Apply visibility setting to libraries
+    if not m.librariesEnabled
+        for each libLabel in m.libraryLabels
+            libLabel.visible = false
+        end for
+    end if
+
+    ' Update pill size based on content
+    updatePillSize()
+    updateScrollIndicators()
+end sub
+
+' Get the maximum navigation index (including libraries and settings)
+function getMaxIndex() as integer
+    ' Count actual children in navGroup + libraries inside group + settings (outside navGroup)
+    navGroupChildren = m.navGroup.getChildCount()
+    ' Settings is outside navGroup, so max index is navGroup children + library count
+    return navGroupChildren + m.libraryData.count()
+end function
+
+' Update icon opacity based on current selection
+sub updateIconOpacity()
+    maxIndex = getMaxIndex()
+
+    ' Reset all static icons to dim
+    if isValid(m.homeIcon) then m.homeIcon.opacity = 0.5
+    if isValid(m.searchIcon) then m.searchIcon.opacity = 0.5
+    if isValid(m.shuffleIcon) then m.shuffleIcon.opacity = 0.5
+    if isValid(m.favoritesIcon) then m.favoritesIcon.opacity = 0.5
+    if isValid(m.genresIcon) then m.genresIcon.opacity = 0.5
+    if isValid(m.jellyseerrIcon) then m.jellyseerrIcon.opacity = 0.5
+    if isValid(m.settingsIcon) then m.settingsIcon.opacity = 0.5
+    dehighlightUser()
+
+    ' Reset all library labels to dim
+    for each libLabel in m.libraryLabels
+        libLabel.opacity = 0.5
+    end for
+
+    if m.avatarSelected
+        ' Avatar focused - show circle around avatar
+        highlightUser()
+    else if m.selectedIndex >= 0 and m.selectedIndex < m.navGroup.getChildCount()
+        ' Highlight the actual child in navGroup
+        child = m.navGroup.getChild(m.selectedIndex)
+        if isValid(child)
+            if child.isSameNode(m.homeIcon)
+                m.homeIcon.opacity = 1.0
+            else if child.isSameNode(m.searchIcon)
+                m.searchIcon.opacity = 1.0
+            else if child.isSameNode(m.shuffleIcon)
+                m.shuffleIcon.opacity = 1.0
+            else if child.isSameNode(m.favoritesIcon)
+                m.favoritesIcon.opacity = 1.0
+            else if child.isSameNode(m.genresIcon)
+                m.genresIcon.opacity = 1.0
+            else if child.isSameNode(m.jellyseerrIcon)
+                m.jellyseerrIcon.opacity = 1.0
+            else if child.isSameNode(m.libraryLabelsGroup)
+                ' This is the library labels group - need to determine which library
+                ' This shouldn't happen as libraries are inside the group
+            end if
+        end if
+    else if m.selectedIndex = maxIndex
+        ' Settings focused (always last, outside navGroup)
+        if isValid(m.settingsIcon) then m.settingsIcon.opacity = 1.0
+    else
+        ' Library label focused (indices beyond navGroup children)
+        libraryIndex = m.selectedIndex - m.navGroup.getChildCount()
+        if libraryIndex >= 0 and libraryIndex < m.libraryLabels.count()
+            m.libraryLabels[libraryIndex].opacity = 1.0
+        end if
+    end if
+
+    ' Update scroll position to keep focused item visible
+    if not m.avatarSelected
+        updateScrollPosition()
+    end if
+end sub
+
+' Calculate and update scroll position to keep focused item in view
+sub updateScrollPosition()
+    if not isValid(m.navGroup) then return
+
+    ' Check if scrolling is even necessary
+    maxScroll = getMaxScrollX()
+    if maxScroll <= 0
+        ' Content fits without scrolling, keep centered at base position
+        ' Don't animate, just snap to centered position
+        if m.navGroup.translation[0] <> m.navBaseX
+            m.navGroup.translation = [m.navBaseX, 10]
+            m.navScrollX = m.navBaseX
+        end if
+        updateScrollIndicators()
+        return
+    end if
+
+    ' Calculate the X position of the currently focused item
+    itemX = getItemXPosition(m.selectedIndex)
+    itemWidth = 50 ' Icon width
+
+    ' Add some padding for better visibility
+    padding = 100
+
+    ' Calculate visible area bounds, accounting for base translation
+    ' When navGroup translation is at [40, 10], the content starts at x=40
+    ' When scrolled, navGroup translation becomes [targetScrollX, 10]
+    currentTranslation = m.navGroup.translation[0]
+    visibleLeft = -currentTranslation + m.navBaseX + padding
+    visibleRight = visibleLeft + m.clipWidth - (padding * 2)
+
+    ' Check if item is outside visible area and scroll if needed
+    targetScrollX = currentTranslation
+
+    if itemX < visibleLeft
+        ' Item is too far left, scroll left to show it
+        targetScrollX = m.navBaseX - itemX + padding
+        if targetScrollX > m.navBaseX then targetScrollX = m.navBaseX
+    else if itemX + itemWidth > visibleRight
+        ' Item is too far right, scroll right to show it
+        targetScrollX = m.navBaseX - (itemX + itemWidth - m.clipWidth + (padding * 2))
+    end if
+
+    ' Clamp scroll to valid range
+    minScrollX = m.navBaseX - maxScroll
+    if targetScrollX < minScrollX then targetScrollX = minScrollX
+    if targetScrollX > m.navBaseX then targetScrollX = m.navBaseX
+
+    ' Animate to new scroll position
+    if targetScrollX <> currentTranslation
+        m.navScrollX = targetScrollX
+        animateNavScroll(targetScrollX)
+    end if
+
+    updateScrollIndicators()
+end sub
+
+' Calculate total width of all navbar content (icons + libraries), local to navGroup
+function calculateTotalNavWidth() as integer
+    iconWidth = 50
+    iconSpacing = 43
+    labelSpacing = 43
+
+    totalWidth = 0
+
+    ' Count visible static icons (Home and Search are always visible)
+    visibleStaticCount = 2 ' Home + Search
+    if m.shuffleButtonEnabled then visibleStaticCount = visibleStaticCount + 1
+    if m.favoritesButtonEnabled then visibleStaticCount = visibleStaticCount + 1
+    if m.genresButtonEnabled then visibleStaticCount = visibleStaticCount + 1
+
+    jellyseerrEnabled = m.global.session.user.settings["jellyseerr.enabled"]
+    if jellyseerrEnabled = true
+        visibleStaticCount = visibleStaticCount + 1
+    end if
+
+    ' Width of icon row: [icon][space][icon]...[icon]
+    if visibleStaticCount > 0
+        totalWidth = visibleStaticCount * iconWidth
+        ' spaces between icons
+        if visibleStaticCount > 1
+            totalWidth = totalWidth + (visibleStaticCount - 1) * iconSpacing
+        end if
+    end if
+
+    ' Add width for library labels (only if libraries are enabled)
+    if m.librariesEnabled and m.libraryLabels.count() > 0
+        ' Space between last icon and first label
+        totalWidth = totalWidth + iconSpacing
+
+        for i = 0 to m.libraryLabels.count() - 1
+            labelWidth = m.libraryLabels[i].boundingRect().width
+            totalWidth = totalWidth + labelWidth
+
+            ' spacing between labels
+            if i < m.libraryLabels.count() - 1
+                totalWidth = totalWidth + labelSpacing
+            end if
+        end for
+    end if
+
+
+    return totalWidth
+end function
+
+' Update pill background size and clipping rect
+sub updatePillSize()
+    contentWidth = calculateTotalNavWidth()
+
+    ' This is just the visible viewport for scrolling
+    clipWidth = 907
+    m.clipWidth = clipWidth
+
+    ' X where the whole navbar "block" starts in scene coordinates (centered on 1920px screen)
+    navStartX = 506
+
+    ' --- Center the content inside the clip area ---
+    ' Calculate center position based on content width
+    if contentWidth < clipWidth
+        ' If content is smaller than clip, center it
+        baseX = (clipWidth - contentWidth) / 2
+    else
+        ' If content is larger, keep left-aligned with padding for scrolling
+        baseX = 20
+    end if
+
+    m.navBaseX = baseX
+
+    ' Only reset navGroup translation when layout changes (this function is called
+    ' on init / visibility change / libs change, not during scroll animations)
+    if isValid(m.navGroup)
+        m.navGroup.translation = [baseX, 10]
+    end if
+
+    ' --- Compute pill size purely from content width ---
+    if isValid(m.navbarMask) and isValid(m.navbarBackground)
+        pillPadding = 60 ' horizontal padding on each side of the items
+        pillHeight = 80
+        pillY = 40
+
+        ' Left edge of the first icon/label in scene coordinates
+        contentLeftSceneX = navStartX + baseX
+
+        pillX = contentLeftSceneX - pillPadding
+        pillWidth = contentWidth + (pillPadding * 2)
+
+        ' Position the mask in scene coordinates
+        m.navbarMask.translation = [pillX, pillY]
+        m.navbarMask.maskSize = [pillWidth, pillHeight]
+
+        ' Rectangle lives inside the mask’s local space
+        m.navbarBackground.translation = [0, 0]
+        m.navbarBackground.width = pillWidth
+        m.navbarBackground.height = pillHeight
+    end if
+
+    ' --- Clip rect for scrolling stays fixed ---
+    navClipGroup = m.top.findNode("navClipGroup")
+    if isValid(navClipGroup)
+        navClipGroup.clippingRect = [0, 0, 907, 70]
+    end if
+
+    ' The scrollable content container stays anchored here
+    if isValid(m.centerNavContainer)
+        m.centerNavContainer.translation = [navStartX, 46]
+    end if
+
+    ' Scroll indicators just live at the clip edges
+    if isValid(m.scrollLeftIndicator)
+        m.scrollLeftIndicator.translation = [navStartX - 20, 60]
+    end if
+    if isValid(m.scrollRightIndicator)
+        m.scrollRightIndicator.translation = [navStartX + clipWidth + 20, 60]
+    end if
+end sub
+
+' Get X position of an item in the nav bar
+function getItemXPosition(index as integer) as integer
+    iconSpacing = 90 ' 50px icon + 40px spacing
+    labelSpacing = 40 ' spacing between items
+
+    ' navGroup starts at x=0 relative to navClipRect
+    xPos = 0
+
+    ' Add positions for each static item before the target
+    for i = 0 to index - 1
+        if i = 2 and not m.shuffleButtonEnabled
+            ' Skip shuffle if disabled (index 2 in navGroup)
+            continue for
+        end if
+
+        if i < m.navGroup.getChildCount()
+            ' Nav icon items (50px wide)
+            xPos = xPos + iconSpacing
+        else if i < m.navGroup.getChildCount() + m.libraryData.count()
+            ' Library label - get actual width
+            libIndex = i - m.navGroup.getChildCount()
+            if libIndex >= 0 and libIndex < m.libraryLabels.count()
+                labelWidth = m.libraryLabels[libIndex].boundingRect().width
+                xPos = xPos + labelWidth + labelSpacing
+            end if
+        end if
+    end for
+
+    ' Account for disabled shuffle
+    if index > 2 and not m.shuffleButtonEnabled
+        xPos = xPos - iconSpacing
+    end if
+
+    return xPos
+end function
+
+' Get maximum scroll distance
+function getMaxScrollX() as integer
+    ' Calculate actual content width
+    contentWidth = calculateTotalNavWidth()
+
+    ' If content fits within the clipping rect, no scrolling needed
+    if contentWidth <= m.clipWidth
+        return 0
+    end if
+
+    ' Add extra padding at the end so the last item isn't cut off
+    endPadding = 40
+
+    ' Otherwise, max scroll is the difference between content and visible area
+    maxScroll = contentWidth - m.clipWidth + endPadding
+    if maxScroll < 0 then maxScroll = 0
+
+    return maxScroll
+end function
+
+' Animate nav group scroll
+sub animateNavScroll(targetX as integer)
+    ' Check if scrolling is necessary
+    maxScroll = getMaxScrollX()
+
+    ' If content fits without scrolling, just set position without animation
+    if maxScroll <= 0
+        m.navGroup.translation = [targetX, 10]
+        return
+    end if
+
+    ' Otherwise, animate the scroll
+    if isValid(m.navScrollInterp) and isValid(m.navScrollAnim)
+        currentPos = m.navGroup.translation
+        m.navScrollInterp.keyValue = [[currentPos[0], currentPos[1]], [targetX, 10]]
+        m.navScrollAnim.control = "start"
+    end if
+end sub
+
+' Update scroll indicator visibility
+sub updateScrollIndicators()
+    if not isValid(m.scrollLeftIndicator) or not isValid(m.scrollRightIndicator) then return
+
+    maxScroll = getMaxScrollX()
+    currentTranslation = m.navGroup.translation[0]
+
+    ' Show left indicator if scrolled from base position
+    m.scrollLeftIndicator.visible = (currentTranslation < m.navBaseX)
+
+    ' Show right indicator if more content to the right
+    minScrollX = m.navBaseX - maxScroll
+    m.scrollRightIndicator.visible = (currentTranslation > minScrollX)
 end sub
 
 sub highlightUser()
     selectUser = m.top.findNode("overlayCurrentUserSelection")
     if isValid(selectUser)
+        ' Avatar is at static position [100, 53], no scroll adjustment needed
+        selectUser.translation = [100, 53]
         selectUser.visible = true
     end if
 end sub
@@ -40,6 +612,154 @@ sub dehighlightUser()
     selectUser = m.top.findNode("overlayCurrentUserSelection")
     if isValid(selectUser)
         selectUser.visible = false
+    end if
+end sub
+
+' Check if a navbar item at the given index is visible
+function isNavItemVisible(index as integer) as boolean
+    if index < 0 then return false
+    if index = 0 then return true ' Home always visible
+    if index = 1 then return true ' Search always visible
+    if index = 2 then return m.shuffleButtonEnabled
+    if index = 3 then return m.favoritesButtonEnabled
+    if index = 4 then return m.genresButtonEnabled
+    if index = 5
+        ' Jellyseerr icon
+        jellyseerrEnabled = m.global.session.user.settings["jellyseerr.enabled"]
+        return jellyseerrEnabled = true
+    end if
+
+    maxIdx = getMaxIndex()
+    if index = maxIdx then return true ' Settings always visible at maxIndex
+
+    if index >= m.navGroup.getChildCount() and index < maxIdx
+        ' Library item (between nav icons and settings)
+        if not m.librariesEnabled then return false
+        libraryIndex = index - m.navGroup.getChildCount()
+        return libraryIndex < m.libraryData.count()
+    end if
+
+    return false
+end function
+
+' Handle auth dialog closed
+sub onAuthDialogClosed(_obj as object)
+    m.top.getScene().dialog = invalid
+end sub
+' Find next visible item to the left
+function getNextVisibleLeft(currentIndex as integer) as integer
+    if currentIndex <= 0 then return -1 ' Can't go further left
+
+    newIndex = currentIndex - 1
+    while newIndex >= 0
+        if isNavItemVisible(newIndex) then return newIndex
+        newIndex = newIndex - 1
+    end while
+
+    return -1 ' Nothing visible to the left
+end function
+
+' Find next visible item to the right
+function getNextVisibleRight(currentIndex as integer) as integer
+    maxIdx = getMaxIndex()
+    if currentIndex >= maxIdx then return -1 ' Already at rightmost
+
+    newIndex = currentIndex + 1
+    while newIndex <= maxIdx
+        if isNavItemVisible(newIndex) then return newIndex
+        newIndex = newIndex + 1
+    end while
+
+    return -1 ' Nothing visible to the right
+end function
+
+sub updateNavbarItemVisibility()
+    ' Rebuild the navbar layout dynamically based on enabled items
+    ' Remove all dynamic icons first
+    if isValid(m.shuffleIcon) and m.shuffleIcon.getParent() <> invalid
+        m.navGroup.removeChild(m.shuffleIcon)
+    end if
+    if isValid(m.favoritesIcon) and m.favoritesIcon.getParent() <> invalid
+        m.navGroup.removeChild(m.favoritesIcon)
+    end if
+    if isValid(m.genresIcon) and m.genresIcon.getParent() <> invalid
+        m.navGroup.removeChild(m.genresIcon)
+    end if
+    if isValid(m.jellyseerrIcon) and m.jellyseerrIcon.getParent() <> invalid
+        m.navGroup.removeChild(m.jellyseerrIcon)
+    end if
+    if isValid(m.libraryLabelsGroup) and m.libraryLabelsGroup.getParent() <> invalid
+        m.navGroup.removeChild(m.libraryLabelsGroup)
+    end if
+
+    ' Add icons back in order based on what's enabled
+    ' Home (index 0) and Search (index 1) are always visible
+    currentIndex = 2 ' Start after search
+
+    if m.shuffleButtonEnabled and isValid(m.shuffleIcon)
+        m.navGroup.insertChild(m.shuffleIcon, currentIndex)
+        currentIndex++
+    end if
+
+    if m.favoritesButtonEnabled and isValid(m.favoritesIcon)
+        m.navGroup.insertChild(m.favoritesIcon, currentIndex)
+        currentIndex++
+    end if
+
+    if m.genresButtonEnabled and isValid(m.genresIcon)
+        m.navGroup.insertChild(m.genresIcon, currentIndex)
+        currentIndex++
+    end if
+
+    ' Jellyseerr only visible if enabled in settings
+    jellyseerrEnabled = m.global.session.user.settings["jellyseerr.enabled"]
+    if jellyseerrEnabled = true and isValid(m.jellyseerrIcon)
+        m.jellyseerrIcon.visible = true
+        m.navGroup.insertChild(m.jellyseerrIcon, currentIndex)
+        currentIndex++
+    else
+    end if
+
+    ' Libraries at the end
+    if m.librariesEnabled and isValid(m.libraryLabelsGroup)
+        m.navGroup.appendChild(m.libraryLabelsGroup)
+        for each libLabel in m.libraryLabels
+            libLabel.visible = true
+        end for
+    else
+    end if
+
+    ' Update pill size when visibility changes
+    updatePillSize()
+
+    ' Debug: Print current navGroup children
+    for i = 0 to m.navGroup.getChildCount() - 1
+        child = m.navGroup.getChild(i)
+        if child.isSameNode(m.homeIcon)
+        else if child.isSameNode(m.searchIcon)
+        else if child.isSameNode(m.shuffleIcon)
+        else if child.isSameNode(m.favoritesIcon)
+        else if child.isSameNode(m.genresIcon)
+        else if child.isSameNode(m.jellyseerrIcon)
+        else if child.isSameNode(m.libraryLabelsGroup)
+        end if
+    end for
+end sub
+
+sub updateShuffleButtonVisibility()
+    if isValid(m.shuffleIcon)
+        m.shuffleIcon.visible = m.shuffleButtonEnabled
+    end if
+
+    ' Update pill size when shuffle visibility changes
+    updatePillSize()
+end sub
+
+sub updateJellyseerrVisibility()
+    if isValid(m.jellyseerrIcon)
+        ' Show Jellyseerr icon only if enabled in settings
+        jellyseerrEnabled = m.global.session.user.settings["jellyseerr.enabled"]
+        m.jellyseerrIcon.visible = (jellyseerrEnabled = true)
     end if
 end sub
 
@@ -91,34 +811,170 @@ end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if press
-        if key = KeyCode.DOWN
-            homeRows = m.top.getscene().findNode("homeRows")
+        maxIndex = getMaxIndex()
+
+        if key = KeyCode.LEFT
+            if m.avatarSelected
+                ' Already at leftmost position
+                return true
+            else if m.selectedIndex = 0
+                ' Move from Home to Avatar
+                m.avatarSelected = true
+                m.selectedIndex = -1
+                updateIconOpacity()
+                return true
+            else
+                ' Navigate left through nav items, skipping hidden ones
+                nextIndex = getNextVisibleLeft(m.selectedIndex)
+                if nextIndex >= 0
+                    m.selectedIndex = nextIndex
+                    updateIconOpacity()
+                else
+                    ' No visible items to the left, go to avatar
+                    m.avatarSelected = true
+                    m.selectedIndex = -1
+                    updateIconOpacity()
+                end if
+                return true
+            end if
+        else if key = KeyCode.RIGHT
+            if m.avatarSelected
+                ' Move from Avatar to Home (first visible item)
+                m.avatarSelected = false
+                m.selectedIndex = 0
+                updateIconOpacity()
+                return true
+            else if m.selectedIndex < maxIndex
+                ' Navigate right through nav items, skipping hidden ones
+                nextIndex = getNextVisibleRight(m.selectedIndex)
+                if nextIndex >= 0 and nextIndex <= maxIndex
+                    m.selectedIndex = nextIndex
+                    updateIconOpacity()
+                    return true
+                end if
+            end if
+        else if key = KeyCode.DOWN
+            scene = m.top.getScene()
+            homeRows = scene.findNode("homeRows")
+            mediaBar = scene.findNode("mediaBar")
+
+            ' Try to focus MediaBar first if it exists and should be shown
+            if isValid(mediaBar) and isValid(homeRows)
+                ' Check if Featured Media is enabled in any section
+                featuredMediaCheck = homeRows.callFunc("isFeaturedMediaEnabled")
+                isFeaturedMediaEnabled = false
+                if isValid(featuredMediaCheck) and type(featuredMediaCheck) = "roBoolean"
+                    isFeaturedMediaEnabled = featuredMediaCheck
+                end if
+
+                ' Check if Featured Media is the first section
+                sessionUser = m.global.session.user
+                isFeaturedMediaFirst = false
+                if isValid(sessionUser) and isChainValid(sessionUser, "settings.homesection0")
+                    firstSection = LCase(sessionUser.settings.homesection0)
+                    if firstSection = "featuredmedia"
+                        isFeaturedMediaFirst = true
+                    end if
+                end if
+
+                if isFeaturedMediaEnabled and isFeaturedMediaFirst
+                    ' Show MediaBar
+                    mediaBar.visible = true
+                    mediaBar.hasFocus = true
+                    mediaBar.setFocus(true)
+
+                    ' Hide homeRows
+                    if isValid(homeRows)
+                        homeRows.visible = false
+                    end if
+
+                    ' Call refresh to ensure backdrop loads
+                    mediaBar.callFunc("refreshCurrentDisplay")
+                    return true
+                end if
+            end if
+
+            ' If Featured Media is not enabled or no MediaBar, focus homeRows
             if isValid(homeRows)
                 if homeRows.content.getChildCount() = 0 then return false
 
                 dehighlightUser()
                 homeRows.setfocus(true)
+                ' Only set lastFocus if it's not already pointing to homeRows
+                ' This preserves the focused position when returning from other screens
                 group = m.global.sceneManager.callFunc("getActiveScene")
-                group.lastFocus = homeRows
+                if not isValid(group.lastFocus) or not group.lastFocus.isSameNode(homeRows)
+                    group.lastFocus = homeRows
+                end if
                 return true
             end if
         end if
 
         if key = KeyCode.OK
-            group = m.global.sceneManager.callFunc("getActiveScene")
-            panel = group.findNode("options")
-            panel.visible = true
-            panel.findNode("panelList").setFocus(true)
+            ' Handle OK press based on selected index
+            if m.avatarSelected
+                ' Avatar selected - open user options
+                group = m.global.sceneManager.callFunc("getActiveScene")
+                panel = group.findNode("options")
+                panel.visible = true
+                panel.findNode("panelList").setFocus(true)
 
-            homeRows = m.top.getscene().findNode("homeRows")
-            if isValid(homeRows)
-                if homeRows.content.getChildCount() = 0
-                    group.lastFocus = m.top
+                homeRows = m.top.getscene().findNode("homeRows")
+                if isValid(homeRows)
+                    if homeRows.content.getChildCount() = 0
+                        group.lastFocus = m.top
+                    end if
+                end if
+
+                dehighlightUser()
+                return true
+            else if m.selectedIndex = 0
+                ' Home selected - trigger home action
+                m.top.itemSelected = "home"
+                return true
+            else if m.selectedIndex = 1
+                ' Search selected - trigger search action
+                m.top.itemSelected = "search"
+                return true
+            else if m.selectedIndex = 2 and m.shuffleButtonEnabled
+                ' Shuffle selected - trigger shuffle action
+                m.top.shufflePressed = not m.top.shufflePressed
+                return true
+            else if m.selectedIndex = 3 and m.favoritesButtonEnabled
+                ' Favorites selected - trigger favorites action
+                m.top.favoritesPressed = not m.top.favoritesPressed
+                return true
+            else if m.selectedIndex = 4 and m.genresButtonEnabled
+                ' Genres selected - trigger genres action
+                m.top.genresPressed = not m.top.genresPressed
+                return true
+            else if m.selectedIndex = 5
+                ' Jellyseerr selected - open discovery screen
+                ' Authentication check will be handled by the screen itself
+                jellyseerrDiscovery = CreateObject("roSGNode", "JellyseerrDiscoveryScreen")
+                m.global.sceneManager.callFunc("pushScene", jellyseerrDiscovery)
+                return true
+            else if m.selectedIndex = getMaxIndex()
+                ' Settings selected (always last) - open settings screen
+                m.global.sceneManager.callFunc("settings")
+                return true
+            else
+                ' Library selected (only if libraries are enabled)
+                if m.librariesEnabled
+                    libraryIndex = m.selectedIndex - m.navGroup.getChildCount()
+                    if libraryIndex >= 0 and libraryIndex < m.libraryData.count()
+                        ' Create a node with library data to pass to handler
+                        libraryNode = createObject("roSGNode", "ContentNode")
+                        libraryNode.addFields({
+                            libraryId: m.libraryData[libraryIndex].id,
+                            name: m.libraryData[libraryIndex].name,
+                            collectionType: m.libraryData[libraryIndex].collectionType
+                        })
+                        m.top.librarySelected = libraryNode
+                        return true
+                    end if
                 end if
             end if
-
-            dehighlightUser()
-            return true
         end if
     end if
 

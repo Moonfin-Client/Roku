@@ -1,0 +1,455 @@
+sub init()
+    m.profileImage = m.top.findNode("profileImage")
+    m.personName = m.top.findNode("personName")
+    m.birthInfo = m.top.findNode("birthInfo")
+    m.biography = m.top.findNode("biography")
+    m.filmographyHeading = m.top.findNode("filmographyHeading")
+    m.filmographyGrid = m.top.findNode("filmographyGrid")
+    m.knownForHeading = m.top.findNode("knownForHeading")
+    m.knownForRow = m.top.findNode("knownForRow")
+    m.loadingLabel = m.top.findNode("loadingLabel")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.filmographySection = m.top.findNode("filmographySection")
+    m.knownForSection = m.top.findNode("knownForSection")
+    m.focusHolder = m.top.findNode("focusHolder")
+    m.content = m.top.findNode("content")
+
+    m.apiTask = CreateObject("roSGNode", "JellyseerrAPITask")
+    m.personDetails = invalid
+    m.scrollY = 0
+
+    m.top.observeField("personId", "onPersonIdSet")
+    m.filmographyGrid.observeField("itemSelected", "onFilmographyItemSelected")
+    m.filmographyGrid.observeField("itemFocused", "onFilmographyItemFocused")
+    m.knownForRow.observeField("rowItemSelected", "onKnownForItemSelected")
+
+    m.focusHolder.setFocus(true)
+end sub
+
+sub onPersonIdSet(event as object)
+    personId = event.getData()
+    if personId = invalid or personId = 0
+        ShowError("Invalid person ID")
+        return
+    end if
+
+    ShowLoading()
+    LoadPersonDetails()
+end sub
+
+sub LoadPersonDetails()
+    config = GetJellyseerrConfig()
+    if not IsValidJellyseerrConfig(config)
+        ShowError("Jellyseerr not configured")
+        return
+    end if
+
+    endpoint = "/api/v1/person/" + m.top.personId.toStr()
+
+    m.apiTask.request = {
+        method: "GET",
+        endpoint: endpoint,
+        queryParams: {}
+    }
+
+    m.apiTask.observeField("response", "onPersonDetailsResponse")
+    m.apiTask.control = "RUN"
+end sub
+
+sub onPersonDetailsResponse(event as object)
+    response = event.getData()
+    m.apiTask.unobserveField("response")
+
+    if not response.success or response.data = invalid
+        ShowError("Failed to load person details")
+        return
+    end if
+
+    m.personDetails = response.data
+
+    UpdateUI()
+    LoadCombinedCredits()
+end sub
+
+sub LoadCombinedCredits()
+    config = GetJellyseerrConfig()
+    if not IsValidJellyseerrConfig(config)
+        ShowError("Jellyseerr not configured")
+        return
+    end if
+
+    endpoint = "/api/v1/person/" + m.top.personId.toStr() + "/combined_credits"
+
+    m.creditsTask = CreateObject("roSGNode", "JellyseerrAPITask")
+    m.creditsTask.request = {
+        method: "GET",
+        endpoint: endpoint,
+        queryParams: {}
+    }
+
+    m.creditsTask.observeField("response", "onCombinedCreditsResponse")
+    m.creditsTask.control = "RUN"
+end sub
+
+sub onCombinedCreditsResponse(event as object)
+    response = event.getData()
+    m.creditsTask.unobserveField("response")
+
+    if not response.success or response.data = invalid
+        m.filmographySection.visible = false
+        m.knownForSection.visible = false
+        HideLoading()
+        return
+    end if
+
+    m.combinedCredits = response.data
+
+    LoadFilmography()
+    LoadKnownFor()
+    HideLoading()
+end sub
+
+sub UpdateUI()
+    if m.personDetails = invalid then return
+
+    ' Set person name
+    if m.personDetails.name <> invalid
+        m.personName.text = m.personDetails.name
+    else if m.top.personName <> invalid and m.top.personName <> ""
+        m.personName.text = m.top.personName
+    end if
+
+    ' Set profile image
+    if m.personDetails.profilePath <> invalid and m.personDetails.profilePath <> ""
+        profileUrl = "https://image.tmdb.org/t/p/w500" + m.personDetails.profilePath
+        m.profileImage.uri = profileUrl
+    end if
+
+    ' Set birth info
+    birthParts = []
+    if m.personDetails.birthday <> invalid and m.personDetails.birthday <> ""
+        birthParts.push("Born: " + FormatDate(m.personDetails.birthday))
+    end if
+    if m.personDetails.placeOfBirth <> invalid and m.personDetails.placeOfBirth <> ""
+        birthParts.push(m.personDetails.placeOfBirth)
+    end if
+    if birthParts.count() > 0
+        m.birthInfo.text = birthParts.join(" • ")
+    end if
+
+    ' Set biography
+    if m.personDetails.biography <> invalid and m.personDetails.biography <> ""
+        m.biography.text = m.personDetails.biography
+    else
+        m.biography.text = "No biography available."
+    end if
+
+    ' Calculate dynamic position for filmography section
+    ' Position below whichever is lower: profile image or biography
+
+    ' Profile ends at: 120 (top) + 525 (height) = 645
+    profileBottom = 120 + 525
+
+    ' Biography ends at: 120 (top) + 70 (birthInfo) + 140 (bio offset) + bio height
+    biographyLines = Int(Len(m.biography.text) / 80) + 1
+    biographyHeight = biographyLines * 22
+    biographyBottom = 120 + 70 + 140 + biographyHeight
+
+    ' Use whichever is lower, plus padding
+    if profileBottom > biographyBottom
+        filmographyY = profileBottom + 60
+    else
+        filmographyY = biographyBottom + 60
+    end if
+
+    m.filmographySection.translation = [80, filmographyY]
+    ' Known For section needs more space - 3 rows × 340px + heading = ~1100px
+    m.knownForSection.translation = [80, filmographyY + 1150]
+end sub
+
+sub LoadFilmography()
+    if m.combinedCredits = invalid
+        m.filmographySection.visible = false
+        return
+    end if
+
+    if m.combinedCredits.cast = invalid
+        m.filmographySection.visible = false
+        return
+    end if
+
+    castItems = m.combinedCredits.cast
+
+    filteredItems = []
+    for each item in castItems
+        if item.posterPath <> invalid and item.posterPath <> ""
+            filteredItems.push(item)
+        end if
+    end for
+
+    if filteredItems.count() = 0
+        m.filmographySection.visible = false
+        return
+    end if
+
+    ' Sort by release date (most recent first)
+    sortedCredits = []
+    for i = 0 to filteredItems.count() - 1
+        inserted = false
+        releaseDate1 = GetReleaseDate(filteredItems[i])
+
+        for j = 0 to sortedCredits.count() - 1
+            releaseDate2 = GetReleaseDate(sortedCredits[j])
+
+            if releaseDate1 > releaseDate2
+                ' Insert at position j by creating new array with item inserted
+                newArray = []
+                for k = 0 to j - 1
+                    newArray.push(sortedCredits[k])
+                end for
+                newArray.push(filteredItems[i])
+                for k = j to sortedCredits.count() - 1
+                    newArray.push(sortedCredits[k])
+                end for
+                sortedCredits = newArray
+                inserted = true
+                exit for
+            end if
+        end for
+
+        if not inserted
+            sortedCredits.push(filteredItems[i])
+        end if
+    end for
+
+    ' Create content nodes for grid
+    filmographyContent = CreateObject("roSGNode", "ContentNode")
+
+    maxItems = 27 ' 9 columns x 3 rows
+    itemCount = 0
+    for i = 0 to sortedCredits.count() - 1
+        if itemCount >= maxItems then exit for
+
+        item = sortedCredits[i]
+        mediaNode = CreateMediaContentNode(item)
+        if mediaNode <> invalid
+            filmographyContent.appendChild(mediaNode)
+            itemCount = itemCount + 1
+        end if
+    end for
+
+    if itemCount > 0
+        m.filmographyGrid.content = filmographyContent
+        m.filmographyHeading.visible = true
+        m.filmographyGrid.visible = true
+        m.filmographySection.visible = true
+        m.focusHolder.focusable = false
+        m.filmographyGrid.setFocus(true)
+        m.filmographyGrid.jumpToItem = 0
+    else
+        m.filmographySection.visible = false
+    end if
+end sub
+
+function GetReleaseDate(credit as object) as string
+    ' Get release date from either release_date or first_air_date
+    if credit.release_date <> invalid and credit.release_date <> ""
+        return credit.release_date
+    else if credit.first_air_date <> invalid and credit.first_air_date <> ""
+        return credit.first_air_date
+    end if
+    return "0000-00-00"
+end function
+
+sub LoadKnownFor()
+    if m.combinedCredits = invalid then return
+
+    ' Get cast credits with popularity
+    knownForItems = []
+    if m.combinedCredits.cast <> invalid and m.combinedCredits.cast.count() > 0
+        for each credit in m.combinedCredits.cast
+            if credit.popularity <> invalid and credit.posterPath <> invalid and credit.posterPath <> ""
+                knownForItems.push(credit)
+            end if
+        end for
+    end if
+
+    if knownForItems.count() = 0
+        m.knownForSection.visible = false
+        return
+    end if
+
+    ' Sort by popularity
+    sortedItems = []
+    for i = 0 to knownForItems.count() - 1
+        inserted = false
+        for j = 0 to sortedItems.count() - 1
+            if knownForItems[i].popularity > sortedItems[j].popularity
+                ' Insert at position j by creating new array with item inserted
+                newArray = []
+                for k = 0 to j - 1
+                    newArray.push(sortedItems[k])
+                end for
+                newArray.push(knownForItems[i])
+                for k = j to sortedItems.count() - 1
+                    newArray.push(sortedItems[k])
+                end for
+                sortedItems = newArray
+                inserted = true
+                exit for
+            end if
+        end for
+        if not inserted
+            sortedItems.push(knownForItems[i])
+        end if
+    end for
+
+    ' Take top 20
+    maxItems = 20
+    if sortedItems.count() < maxItems then maxItems = sortedItems.count()
+
+    ' Create content nodes
+    knownForContent = CreateObject("roSGNode", "ContentNode")
+    knownForRowNode = CreateObject("roSGNode", "ContentNode")
+
+    for i = 0 to maxItems - 1
+        item = sortedItems[i]
+        mediaNode = CreateMediaContentNode(item)
+        if mediaNode <> invalid
+            knownForRowNode.appendChild(mediaNode)
+        end if
+    end for
+
+    if knownForRowNode.getChildCount() > 0
+        knownForContent.appendChild(knownForRowNode)
+        m.knownForRow.content = knownForContent
+        m.knownForHeading.visible = true
+        m.knownForRow.visible = true
+        m.knownForSection.visible = true
+    else
+        m.knownForSection.visible = false
+    end if
+end sub
+
+sub onFilmographyItemFocused(event as object)
+    focusedIndex = event.getData()
+    ' Calculate which row the focused item is in (9 columns)
+    focusedRow = Int(focusedIndex / 9)
+
+    ' Get the filmography section position
+    sectionY = m.filmographySection.translation[1]
+    ' Each row is approximately 340px (316 poster + 24 spacing)
+    rowY = sectionY + 50 + (focusedRow * 340) ' 50 is heading offset
+
+    ' Scroll if the row would be cut off at bottom
+    viewportHeight = 1080
+    rowBottom = rowY + 316 ' poster height
+
+    if rowBottom - m.scrollY > viewportHeight - 50
+        ' Scroll down to show this row
+        m.scrollY = rowBottom - viewportHeight + 100
+    else if rowY - m.scrollY < 0
+        ' Scroll up to show this row
+        m.scrollY = rowY - 100
+    end if
+
+    ' Keep scroll in bounds
+    if m.scrollY < 0 then m.scrollY = 0
+
+    ' Apply scroll
+    m.content.translation = [0, -m.scrollY]
+end sub
+
+sub onFilmographyItemSelected(event as object)
+    selectedIndex = event.getData()
+    if selectedIndex >= 0
+        selectedItem = m.filmographyGrid.content.getChild(selectedIndex)
+        if selectedItem <> invalid
+            ShowMediaDetails(selectedItem)
+        end if
+    end if
+end sub
+
+sub onKnownForItemSelected(event as object)
+    selectedIndex = event.getData()
+    if selectedIndex.count() > 0
+        itemIndex = selectedIndex[1]
+        rowIndex = selectedIndex[0]
+        row = m.knownForRow.content.getChild(rowIndex)
+        selectedItem = row.getChild(itemIndex)
+
+        if selectedItem <> invalid
+            ShowMediaDetails(selectedItem)
+        end if
+    end if
+end sub
+
+sub ShowMediaDetails(mediaItem as object)
+    m.mediaDetailsScreen = CreateObject("roSGNode", "JellyseerrDetailsScreen")
+    m.mediaDetailsScreen.mediaItem = mediaItem
+    m.top.appendChild(m.mediaDetailsScreen)
+    m.mediaDetailsScreen.setFocus(true)
+    m.top.observeField("focusedChild", "onChildFocusChange")
+end sub
+
+sub onChildFocusChange()
+    if m.top.hasFocus() or m.top.isInFocusChain()
+        if m.filmographyGrid.visible and m.filmographyGrid.content <> invalid
+            m.filmographyGrid.setFocus(true)
+        else if m.focusHolder <> invalid
+            m.focusHolder.setFocus(true)
+        end if
+    end if
+end sub
+
+sub ShowLoading()
+    m.loadingLabel.visible = true
+    m.errorLabel.visible = false
+end sub
+
+sub HideLoading()
+    m.loadingLabel.visible = false
+end sub
+
+sub ShowError(message as string)
+    m.errorLabel.text = message
+    m.errorLabel.visible = true
+    m.loadingLabel.visible = false
+end sub
+
+function FormatDate(dateString as string) as string
+    if dateString = invalid or dateString = "" then return ""
+    ' Date format is YYYY-MM-DD, convert to MMM DD, YYYY
+    parts = dateString.split("-")
+    if parts.count() = 3
+        year = parts[0]
+        month = parts[1].toInt()
+        day = parts[2].toInt()
+
+        monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        if month >= 1 and month <= 12
+            return monthNames[month - 1] + " " + day.toStr() + ", " + year
+        end if
+    end if
+    return dateString
+end function
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = "back"
+        parent = m.top.getParent()
+        if parent <> invalid
+            parent.removeChild(m.top)
+            hasRestoreFocus = parent.hasField("restoreFocus")
+            if hasRestoreFocus
+                parent.restoreFocus = true
+            else
+                parent.setFocus(true)
+            end if
+        end if
+        return true
+    end if
+
+    return false
+end function

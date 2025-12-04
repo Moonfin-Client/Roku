@@ -1,0 +1,816 @@
+' Jellyseerr API Configuration and Utilities
+
+sub SetJellyseerrConfig(serverUrl as string, apiKey as string, authMethod as string)
+    sec = CreateObject("roRegistrySection", "jellyseerr")
+    sec.Write("serverUrl", serverUrl)
+    sec.Write("apiKey", apiKey)
+    sec.Write("enabled", "true")
+
+    if authMethod <> ""
+        sec.Write("authMethod", authMethod)
+    end if
+
+    sec.Flush()
+end sub
+
+function GetJellyseerrConfig() as object
+    ' Priority: user settings → registry
+    serverUrl = ""
+    apiKey = ""
+    authCookie = ""
+    authMethod = "apikey"
+    jellyfinPassword = ""
+    localEmail = ""
+    localPassword = ""
+    blockNsfw = true
+
+    if m.global <> invalid and m.global.session <> invalid and m.global.session.user <> invalid and m.global.session.user.settings <> invalid
+        serverUrl = m.global.session.user.settings["jellyseerr.url"]
+        apiKey = m.global.session.user.settings["jellyseerr.apiKey"]
+        authMethod = m.global.session.user.settings["jellyseerr.authMethod"]
+        jellyfinPassword = m.global.session.user.settings["jellyseerr.jellyfinPassword"]
+        localEmail = m.global.session.user.settings["jellyseerr.localEmail"]
+        localPassword = m.global.session.user.settings["jellyseerr.localPassword"]
+
+        blockNsfwSetting = m.global.session.user.settings["jellyseerr.blockNsfw"]
+        if blockNsfwSetting <> invalid
+            blockNsfw = blockNsfwSetting
+        end if
+    end if
+
+    sec = CreateObject("roRegistrySection", "jellyseerr")
+
+    if serverUrl = invalid or serverUrl = ""
+        serverUrl = sec.Read("serverUrl")
+    end if
+
+    if apiKey = invalid or apiKey = ""
+        apiKey = sec.Read("apiKey")
+    end if
+
+    authCookie = sec.Read("authCookie")
+
+    if authMethod = invalid or authMethod = ""
+        authMethod = sec.Read("authMethod")
+        if authMethod = invalid or authMethod = "" then authMethod = "apikey"
+    end if
+
+    blockNsfwRegistry = sec.Read("blockNsfw")
+    if blockNsfwRegistry <> invalid and blockNsfwRegistry <> ""
+        blockNsfw = (blockNsfwRegistry = "true")
+    end if
+
+    if serverUrl = invalid or serverUrl = ""
+        serverUrl = sec.Read("url")
+    end if
+
+    ' Validate config based on auth method
+    isConfigured = false
+    if serverUrl <> "" and serverUrl <> invalid
+        if authMethod = "apikey" and isValidStringValue(apiKey)
+            isConfigured = true
+        else if authMethod = "jellyfin" and (isValidStringValue(authCookie) or isValidStringValue(jellyfinPassword))
+            isConfigured = true
+        else if authMethod = "local" and (isValidStringValue(authCookie) or (isValidStringValue(localEmail) and isValidStringValue(localPassword)))
+            isConfigured = true
+        end if
+    end if
+
+    return {
+        serverUrl: serverUrl,
+        apiKey: apiKey,
+        authCookie: authCookie,
+        authMethod: authMethod,
+        jellyfinPassword: jellyfinPassword,
+        localEmail: localEmail,
+        localPassword: localPassword,
+        blockNsfw: blockNsfw,
+        enabled: isConfigured
+    }
+end function
+
+sub DisableJellyseerr()
+    sec = CreateObject("roRegistrySection", "jellyseerr")
+    sec.Delete("serverUrl")
+    sec.Delete("apiKey")
+    sec.Delete("enabled")
+    sec.Flush()
+end sub
+
+sub SetJellyseerrBlockNsfw(enabled as boolean)
+    sec = CreateObject("roRegistrySection", "jellyseerr")
+    if enabled
+        sec.Write("blockNsfw", "true")
+    else
+        sec.Write("blockNsfw", "false")
+    end if
+    sec.Flush()
+
+    if m.global <> invalid and m.global.session <> invalid and m.global.session.user <> invalid and m.global.session.user.settings <> invalid
+        m.global.session.user.settings["jellyseerr.blockNsfw"] = enabled
+    end if
+end sub
+
+function BuildQueryString(params as object) as string
+    if params = invalid
+        return ""
+    end if
+
+    query = ""
+    for each key in params
+        if query <> ""
+            query = query + "&"
+        end if
+        value = params[key]
+
+        if type(value) = "String" or type(value) = "roString"
+            query = query + key + "=" + UrlEncode(value)
+        else
+            query = query + key + "=" + value.ToStr()
+        end if
+    end for
+
+    return query
+end function
+
+function UrlEncode(str as string) as string
+    encoded = ""
+    for i = 0 to str.Len() - 1
+        char = str.Mid(i, 1)
+        if char = " "
+            encoded = encoded + "%20"
+        else if char = "&"
+            encoded = encoded + "%26"
+        else if char = "="
+            encoded = encoded + "%3D"
+        else if char = "/"
+            encoded = encoded + "%2F"
+        else
+            encoded = encoded + char
+        end if
+    end for
+    return encoded
+end function
+
+function JellyseerrFormatJson(obj as object) as string
+    if obj = invalid
+        return "{}"
+    end if
+
+    json = "{"
+    isFirst = true
+
+    for each key in obj
+        if not isFirst
+            json = json + ","
+        end if
+        isFirst = false
+
+        json = json + """" + key + """:"
+        value = obj[key]
+        json = json + JellyseerrFormatJsonValue(value)
+    end for
+
+    json = json + "}"
+    return json
+end function
+
+function JellyseerrFormatJsonValue(value as object) as string
+    if value = invalid
+        return "null"
+    else if type(value) = "String" or type(value) = "roString"
+        return """" + value + """"
+    else if type(value) = "Integer" or type(value) = "roInt"
+        return value.ToStr()
+    else if type(value) = "Boolean" or type(value) = "roBoolean"
+        if value
+            return "true"
+        else
+            return "false"
+        end if
+    else if type(value) = "roArray"
+        json = "["
+        for i = 0 to value.Count() - 1
+            if i > 0
+                json = json + ","
+            end if
+            json = json + JellyseerrFormatJsonValue(value[i])
+        end for
+        return json + "]"
+    else if type(value) = "roAssociativeArray"
+        return JellyseerrFormatJson(value)
+    end if
+
+    return """" + value.ToStr() + """"
+end function
+
+function JellyseerrParseJson(jsonString as string) as object
+    result = {}
+
+    if jsonString = invalid or jsonString = ""
+        return result
+    end if
+
+    if InStr(jsonString, """results""") > 0
+        result.results = []
+    end if
+
+    if InStr(jsonString, """data""") > 0
+        result.data = {}
+    end if
+
+    if InStr(jsonString, """id""") > 0
+        result.id = ExtractJsonNumber(jsonString, "id")
+    end if
+
+    if InStr(jsonString, """title""") > 0
+        result.title = ExtractJsonString(jsonString, "title")
+    end if
+
+    if InStr(jsonString, """name""") > 0
+        result.name = ExtractJsonString(jsonString, "name")
+    end if
+
+    return result
+end function
+
+function ExtractJsonString(jsonString as string, fieldName as string) as string
+    searchStr = """" + fieldName + """:"""
+    startIdx = InStr(jsonString, searchStr)
+
+    if startIdx = 0
+        return ""
+    end if
+
+    startIdx = startIdx + searchStr.Len()
+    endIdx = InStr(startIdx, jsonString, """")
+
+    if endIdx = 0
+        return ""
+    end if
+
+    return jsonString.Mid(startIdx, endIdx - startIdx)
+end function
+
+function ExtractJsonNumber(jsonString as string, fieldName as string) as integer
+    searchStr = """" + fieldName + """:"
+    startIdx = InStr(jsonString, searchStr)
+
+    if startIdx = 0
+        return 0
+    end if
+
+    startIdx = startIdx + searchStr.Len()
+    endIdx = startIdx
+
+    while endIdx <= jsonString.Len() and InStr(1, "0123456789", jsonString.Mid(endIdx, 1)) > 0
+        endIdx = endIdx + 1
+    end while
+
+    numStr = jsonString.Mid(startIdx, endIdx - startIdx)
+    return numStr.ToInt()
+end function
+
+function CreateMediaContentNode(item as object) as object
+    node = CreateObject("roSGNode", "ContentNode")
+
+    if item.title <> invalid
+        node.title = item.title
+    else if item.name <> invalid
+        node.title = item.name
+    else
+        node.title = "Unknown"
+    end if
+
+    if item.overview <> invalid
+        node.description = item.overview
+        node.shortDescriptionLine1 = item.overview
+    end if
+
+    posterPath = invalid
+    if item.posterPath <> invalid and item.posterPath <> ""
+        posterPath = item.posterPath
+    else if item.poster_path <> invalid and item.poster_path <> ""
+        posterPath = item.poster_path
+    end if
+
+    if posterPath <> invalid and posterPath <> ""
+        posterUrl = "https://image.tmdb.org/t/p/w500" + posterPath
+        ' Set multiple poster fields for component compatibility
+        node.hdPosterUrl = posterUrl
+        node.sdPosterUrl = "https://image.tmdb.org/t/p/w342" + posterPath
+        node.HDGRIDPOSTERURL = posterUrl
+        node.SDGRIDPOSTERURL = "https://image.tmdb.org/t/p/w342" + posterPath
+        node.HDPosterUrl = posterUrl
+        node.SDPosterUrl = "https://image.tmdb.org/t/p/w342" + posterPath
+        node.addField("posterUrl", "string", false)
+        node.posterUrl = posterUrl
+        node.addField("PosterUrl", "string", false)
+        node.PosterUrl = posterUrl
+        node.addField("posterURL", "string", false)
+        node.posterURL = posterUrl
+        node.url = posterUrl
+    end if
+
+    backdropPath = invalid
+    if item.backdropPath <> invalid and item.backdropPath <> ""
+        backdropPath = item.backdropPath
+    else if item.backdrop_path <> invalid and item.backdrop_path <> ""
+        backdropPath = item.backdrop_path
+    end if
+
+    if backdropPath <> invalid and backdropPath <> ""
+        backdropUrl = "https://image.tmdb.org/t/p/w1280" + backdropPath
+        node.hdBackgroundImageUrl = backdropUrl
+        node.sdBackgroundImageUrl = "https://image.tmdb.org/t/p/w780" + backdropPath
+    end if
+
+    releaseYear = ""
+    if item.releaseDate <> invalid and item.releaseDate <> ""
+        releaseYear = Left(item.releaseDate, 4)
+    else if item.release_date <> invalid and item.release_date <> ""
+        releaseYear = Left(item.release_date, 4)
+    else if item.firstAirDate <> invalid and item.firstAirDate <> ""
+        releaseYear = Left(item.firstAirDate, 4)
+    else if item.first_air_date <> invalid and item.first_air_date <> ""
+        releaseYear = Left(item.first_air_date, 4)
+    end if
+
+    rating = ""
+    voteAvg = invalid
+    if item.voteAverage <> invalid
+        voteAvg = item.voteAverage
+    else if item.vote_average <> invalid
+        voteAvg = item.vote_average
+    end if
+
+    if voteAvg <> invalid
+        rating = FormatFloat(voteAvg, 1)
+    end if
+
+    adultFlag = false
+    if item.adult <> invalid
+        adultFlag = item.adult
+    end if
+
+    ' Status: 1=unknown, 2=pending, 3=processing, 4=partial, 5=available, 6=blacklisted
+    mediaInfoStatus = 0
+    if item.mediaInfo <> invalid and item.mediaInfo.status <> invalid
+        mediaInfoStatus = item.mediaInfo.status
+    end if
+
+    ' Add custom fields including backdrop URL
+    fieldsToAdd = {
+        tmdbId: item.id,
+        mediaType: item.mediaType,
+        releaseDate: item.releaseDate,
+        voteAverage: voteAvg,
+        releaseYear: releaseYear,
+        rating: rating,
+        overview: item.overview,
+        adult: adultFlag,
+        mediaInfoStatus: mediaInfoStatus,
+        originalData: item,
+        ' Minimal .json structure for Jellyfin grid compatibility
+        json: {
+            Type: item.mediaType,
+            UserData: {
+                Played: false,
+                UnplayedItemCount: 0
+            }
+        }
+    }
+
+    if backdropPath <> invalid and backdropPath <> ""
+        fieldsToAdd.backdropUrl = "https://image.tmdb.org/t/p/w1280" + backdropPath
+    end if
+
+    node.addFields(fieldsToAdd)
+
+    return node
+end function
+
+function CreateMediaContentNodeFromRequest(request as object) as object
+    ' This function is no longer used since we now enrich requests with full TMDB details
+    ' Kept for backwards compatibility
+
+    if request.media = invalid
+        return invalid
+    end if
+
+    media = request.media
+    mediaType = request.type
+
+    ' Create a minimal node with just what we have
+    item = {
+        id: media.tmdbId,
+        title: "Request #" + media.tmdbId.toStr(),
+        name: "Request #" + media.tmdbId.toStr(),
+        mediaType: mediaType,
+        tmdbId: media.tmdbId,
+        mediaInfo: media
+    }
+
+    return CreateMediaContentNode(item)
+end function
+
+function FormatFloat(value as dynamic, decimals as integer) as string
+    if value = invalid then return ""
+    strVal = value.ToStr()
+    dotPos = InStr(1, strVal, ".")
+    if dotPos > 0 and decimals >= 0
+        return Left(strVal, dotPos + decimals)
+    end if
+    return strVal
+end function
+
+function GetRequestStatusText(status as integer) as string
+    if status = 1
+        return "Unknown"
+    else if status = 2
+        return "Pending"
+    else if status = 3
+        return "Processing"
+    else if status = 4
+        return "Partially Available"
+    else if status = 5
+        return "Available"
+    end if
+    return "Unknown"
+end function
+
+' ============================================
+' Validation
+' ============================================
+
+function isValidStringValue(value as dynamic) as boolean
+    ' Helper to check if a value is a valid non-empty string (handles type mismatches)
+    if value = invalid then return false
+    if type(value) <> "String" and type(value) <> "roString" then return false
+    return value <> ""
+end function
+
+function IsValidJellyseerrConfig(config as object) as boolean
+    if config = invalid
+        return false
+    end if
+    if config.serverUrl = invalid or config.serverUrl = ""
+        return false
+    end if
+
+    hasApiKey = isValidStringValue(config.apiKey)
+    hasCookie = isValidStringValue(config.authCookie)
+    hasJellyfinCredentials = isValidStringValue(config.jellyfinPassword)
+    hasLocalCredentials = isValidStringValue(config.localEmail) and isValidStringValue(config.localPassword)
+
+    ' Valid if we have: API key, OR cookie, OR stored credentials that can be used for auth
+    if not hasApiKey and not hasCookie and not hasJellyfinCredentials and not hasLocalCredentials
+        return false
+    end if
+
+    return true
+end function
+
+function IsValidServerUrl(url as string) as boolean
+    if url = invalid or url = ""
+        return false
+    end if
+    if InStr(url, "http://") = 0 and InStr(url, "https://") = 0
+        return false
+    end if
+    return true
+end function
+
+function IsItemAvailable(item as object) as boolean
+    ' Status 4=partial, 5=available
+    if item = invalid then return false
+    if item.mediaInfo <> invalid and item.mediaInfo.status <> invalid
+        status = item.mediaInfo.status
+        return status = 4 or status = 5
+    end if
+
+    if item.mediaInfoStatus <> invalid
+        return item.mediaInfoStatus = 4 or item.mediaInfoStatus = 5
+    end if
+
+    return false
+end function
+
+function IsItemBlacklisted(item as object) as boolean
+    ' Status 6=blacklisted
+    if item = invalid then return false
+
+    if item.mediaInfo <> invalid and item.mediaInfo.status <> invalid
+        return item.mediaInfo.status = 6
+    end if
+
+    if item.mediaInfoStatus <> invalid
+        return item.mediaInfoStatus = 6
+    end if
+
+    return false
+end function
+
+function IsItemNsfw(item as object) as boolean
+    ' Check adult flag and keyword detection
+    if item = invalid then return false
+
+    if item.adult <> invalid and item.adult = true
+        return true
+    end if
+
+    ' NSFW keyword detection
+    nsfwKeywords = [
+        "sex", "sexual", "porn", "erotic", "nude", "nudity", "xxx",
+        "adult film", "prostitute", "stripper", "escort", "seduction",
+        "affair", "threesome", "orgy", "kinky", "fetish", "bdsm", "dominatrix"
+    ]
+
+    searchText = ""
+
+    if item.title <> invalid and item.title <> ""
+        searchText = LCase(item.title)
+    else if item.name <> invalid and item.name <> ""
+        searchText = LCase(item.name)
+    end if
+
+    if item.overview <> invalid and item.overview <> ""
+        searchText = searchText + " " + LCase(item.overview)
+    end if
+
+    if searchText = "" then return false
+
+    ' Word boundary check for keyword matches
+    for each keyword in nsfwKeywords
+        if InStr(1, searchText, keyword) > 0
+            keywordPos = InStr(1, searchText, keyword)
+            keywordLen = Len(keyword)
+
+            validStart = true
+            if keywordPos > 1
+                charBefore = Mid(searchText, keywordPos - 1, 1)
+                if charBefore <> " " and charBefore <> "," and charBefore <> "." and charBefore <> "!" and charBefore <> "?" and charBefore <> ":" and charBefore <> ";"
+                    validStart = false
+                end if
+            end if
+
+            validEnd = true
+            if keywordPos + keywordLen <= Len(searchText)
+                charAfter = Mid(searchText, keywordPos + keywordLen, 1)
+                if charAfter <> " " and charAfter <> "," and charAfter <> "." and charAfter <> "!" and charAfter <> "?" and charAfter <> ":" and charAfter <> ";"
+                    validEnd = false
+                end if
+            end if
+
+            if validStart and validEnd
+                return true
+            end if
+        end if
+    end for
+
+    return false
+end function
+
+function CreateJellyseerrLoginRequest(username as string, password as string, jellyfinUrl as string) as object
+    return {
+        username: username,
+        password: password,
+        hostname: jellyfinUrl
+    }
+end function
+
+function CreateJellyseerrLocalLoginRequest(email as string, password as string) as object
+    return {
+        email: email,
+        password: password
+    }
+end function
+
+function ExtractApiKeyFromResponse(responseBody as string) as string
+    ' Parse apiKey/token/key from JSON response (multiple field locations)
+    if responseBody = invalid or responseBody = "" then return ""
+    jsonResponse = ParseJson(responseBody)
+    if jsonResponse <> invalid
+        ' Try direct fields first
+        if jsonResponse.apiKey <> invalid and jsonResponse.apiKey <> ""
+            return jsonResponse.apiKey
+        end if
+
+        if jsonResponse.token <> invalid and jsonResponse.token <> ""
+            return jsonResponse.token
+        end if
+
+        if jsonResponse.key <> invalid and jsonResponse.key <> ""
+            return jsonResponse.key
+        end if
+
+        if jsonResponse.user <> invalid
+            if jsonResponse.user.apiKey <> invalid and jsonResponse.user.apiKey <> ""
+                return jsonResponse.user.apiKey
+            end if
+
+            if jsonResponse.user.token <> invalid and jsonResponse.user.token <> ""
+                return jsonResponse.user.token
+            end if
+        end if
+    end if
+
+
+    ' Fallback to string parsing for "apiKey":"xxxxx" pattern
+    startIdx = InStr(responseBody, """apiKey"":")
+    if startIdx = 0
+        ' Try "token" field
+        startIdx = InStr(responseBody, """token"":")
+        if startIdx = 0
+            return ""
+        end if
+        startIdx = startIdx + 9 ' Length of "token":
+    else
+        startIdx = startIdx + 11 ' Length of "apiKey":
+    end if
+
+    ' Skip to opening quote
+    quoteIdx = InStr(responseBody, """", startIdx)
+    if quoteIdx = 0
+        return ""
+    end if
+
+    startIdx = quoteIdx + 1
+    endIdx = InStr(responseBody, """", startIdx)
+
+    if endIdx = 0
+        return ""
+    end if
+
+    extractedKey = responseBody.Mid(startIdx, endIdx - startIdx)
+    return extractedKey
+end function
+
+sub StoreAuthMethod(authMethod as string)
+    config = GetJellyseerrConfig()
+    SetJellyseerrConfig(config.serverUrl, config.apiKey, authMethod)
+end sub
+
+' ============================================
+' Cookie Validation
+' ============================================
+
+function ValidateJellyseerrCookie() as boolean
+    ' Quick check if cookie exists - actual validation happens in JellyseerrAPITask
+    ' Returns true if cookie exists, false if not
+    ' The API task will handle async validation and clearing expired cookies
+
+    config = GetJellyseerrConfig()
+
+    ' Check if we have a cookie
+    if not isValidStringValue(config.authCookie)
+        return false
+    end if
+
+    if not isValidStringValue(config.serverUrl)
+        return false
+    end if
+
+    ' Return true - the actual validation will happen when API calls are made
+    ' If the cookie is expired, the API task will get a 401/403 and clear it
+    return true
+end function
+
+sub ClearJellyseerrCookie()
+    ' Remove expired/invalid cookie from registry
+    sec = CreateObject("roRegistrySection", "jellyseerr")
+    sec.Delete("authCookie")
+    sec.Flush()
+
+    ' Clear validation flag so user can re-authenticate
+    if m.global <> invalid
+        m.global.jellyseerrSessionValidated = false
+    end if
+end sub
+
+' ============================================
+' Search API
+' ============================================
+
+function SearchJellyseerr(query as string) as object
+    ' Search Jellyseerr for movies and TV shows
+    ' Returns array of search results in standardized format
+    ' NOTE: Does NOT filter out items already in library (per user request)
+
+    if query = invalid or query = "" then return []
+
+    config = GetJellyseerrConfig()
+    if not IsValidJellyseerrConfig(config) then return []
+
+    ' Create API task for search
+    searchTask = CreateObject("roSGNode", "JellyseerrAPITask")
+    searchTask.request = {
+        method: "GET",
+        endpoint: "/api/v1/search",
+        queryParams: {
+            query: query,
+            page: "1",
+            language: "en"
+        }
+    }
+
+    ' Run synchronously and wait for response
+    searchTask.control = "RUN"
+
+    ' Wait for response (with timeout)
+    timeout = 5000 ' 5 seconds
+    startTime = CreateObject("roTimespan")
+    response = invalid
+
+    while startTime.TotalMilliseconds() < timeout
+        if searchTask.response <> invalid
+            response = searchTask.response
+            exit while
+        end if
+        sleep(50) ' Check every 50ms
+    end while
+
+    if response = invalid or not response.success then return []
+    if response.data = invalid or response.data.results = invalid then return []
+
+    ' Convert Jellyseerr results to standard format
+    results = []
+    for each item in response.data.results
+        ' Create content node for this result
+        contentNode = CreateMediaContentNode(item)
+        if contentNode <> invalid
+            ' Add Jellyseerr-specific fields for identification
+            contentNode.addFields({
+                isJellyseerrResult: true,
+                jellyseerrItem: item
+            })
+            results.push(contentNode)
+        end if
+    end for
+
+    return results
+end function
+
+' ============================================
+' Auto-Login on App Start
+' ============================================
+
+sub AttemptJellyseerrAutoLogin()
+    ' Attempt to automatically log into Jellyseerr on app startup
+    ' Only runs if:
+    ' 1. Jellyseerr is configured
+    ' 2. User has saved credentials (Jellyfin password or local email/password)
+    ' 3. No valid session cookie exists yet
+
+    config = GetJellyseerrConfig()
+
+    ' Check if Jellyseerr is configured
+    if not config.enabled or not isValidStringValue(config.serverUrl)
+        return
+    end if
+
+    ' If we already have a valid cookie, skip auto-login
+    if isValidStringValue(config.authCookie)
+        return
+    end if
+
+    ' Check if we have credentials to attempt auto-login
+    hasCredentials = false
+    if config.authMethod = "jellyfin" and isValidStringValue(config.jellyfinPassword)
+        hasCredentials = true
+    else if config.authMethod = "local" and isValidStringValue(config.localEmail) and isValidStringValue(config.localPassword)
+        hasCredentials = true
+    end if
+
+    if not hasCredentials
+        return
+    end if
+
+    ' Attempt silent authentication
+    authTask = CreateObject("roSGNode", "JellyseerrAPITask")
+    authTask.autoLogin = true ' Signal this is an auto-login attempt
+
+    ' Create a dummy request to trigger authentication
+    authTask.request = {
+        method: "GET",
+        endpoint: "/api/v1/auth/me"
+    }
+
+    ' Run task to trigger authentication
+    authTask.control = "RUN"
+
+    ' Wait briefly for authentication (don't block app startup)
+    timeout = 3000 ' 3 seconds max
+    startTime = CreateObject("roTimespan")
+
+    while startTime.TotalMilliseconds() < timeout
+        if authTask.response <> invalid
+            ' Authentication completed (success or failure)
+            exit while
+        end if
+        sleep(50)
+    end while
+
+    ' Don't check response - if it worked, cookie is saved
+    ' If it failed, user can manually authenticate later
+end sub

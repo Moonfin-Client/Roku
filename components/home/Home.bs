@@ -6,10 +6,32 @@ import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
+import "pkg:/source/utils/JellyseerrUtils.bs"
 import "pkg:/source/utils/misc.bs"
 
 sub init()
-    m.isFirstRun = true
+    ' Check if this is truly the first run (ever, not just this session)
+    ' Use registry to persist this across app restarts
+    firstRunKey = "home.hasRunBefore"
+    hasRunBefore = get_setting(firstRunKey)
+    m.isFirstRun = (hasRunBefore = invalid or hasRunBefore = "false")
+
+    ' Track if we should focus media bar on initial load of this screen
+    ' Set to true initially - will be set to false after first focus is set
+    m.shouldFocusMediaBarOnLoad = true
+
+    ' Track if Featured Media is enabled as first section
+    m.isFeaturedMediaFirst = false
+
+    ' Check immediately if Featured Media is enabled as the first section
+    sessionUser = m.global.session.user
+    if isValid(sessionUser) and isChainValid(sessionUser, "settings.homesection0")
+        firstSection = LCase(sessionUser.settings.homesection0)
+        if firstSection = "featuredmedia"
+            m.isFeaturedMediaFirst = true
+        end if
+    end if
+
     m.top.overhangTitle = ""
     m.top.optionsAvailable = false
     m.postTask = createObject("roSGNode", "PostTask")
@@ -24,8 +46,418 @@ sub init()
     m.loadMetaDataTask.itemsToLoad = "metaData"
     m.loadMetaDataTask.observeField("content", "onMetaDataLoaded")
 
+    ' Task to load full item details for display
+    m.loadItemDetailsTask = CreateObject("roSGNode", "LoadItemsTask")
+    m.loadItemDetailsTask.itemsToLoad = "metaData"
+    m.loadItemDetailsTask.observeField("content", "onItemDetailsLoaded")
+
+    ' Shuffle task
+    m.shuffleTask = CreateObject("roSGNode", "ShuffleTask")
+    m.shuffleTask.observeField("selectedItem", "onShuffleComplete")
+
     m.homeRows = m.top.findNode("homeRows")
     m.homeRows.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+
+    ' Get references to detail fields
+    m.detailsSection = m.top.findNode("detailsSection")
+    m.itemTitle = m.top.findNode("itemTitle")
+    m.itemOverview = m.top.findNode("itemOverview")
+
+    ' Movie metadata row fields
+    m.movieMetadataRow = m.top.findNode("movieMetadataRow")
+    m.communityRatingGroup = m.top.findNode("communityRatingGroup")
+    m.star = m.top.findNode("star")
+    m.communityRating = m.top.findNode("communityRating")
+    m.criticRatingIcon = m.top.findNode("criticRatingIcon")
+    m.criticRatingLabel = m.top.findNode("criticRatingLabel")
+    m.releaseYear = m.top.findNode("releaseYear")
+    m.officialRating = m.top.findNode("officialRating")
+    m.runtime = m.top.findNode("runtime")
+    m.dot1 = m.top.findNode("dot1")
+    m.dot2 = m.top.findNode("dot2")
+    m.dot3 = m.top.findNode("dot3")
+    m.dot4 = m.top.findNode("dot4")
+
+    ' TV Show metadata row fields
+    m.showMetadataRow = m.top.findNode("showMetadataRow")
+    m.showCommunityRatingGroup = m.top.findNode("showCommunityRatingGroup")
+    m.showStar = m.top.findNode("showStar")
+    m.showCommunityRating = m.top.findNode("showCommunityRating")
+    m.showReleaseYear = m.top.findNode("showReleaseYear")
+    m.showStatus = m.top.findNode("showStatus")
+    m.showOfficialRating = m.top.findNode("showOfficialRating")
+    m.showRuntime = m.top.findNode("showRuntime")
+    m.showDot1 = m.top.findNode("showDot1")
+    m.showDot2 = m.top.findNode("showDot2")
+    m.showDot3 = m.top.findNode("showDot3")
+    m.showDot4 = m.top.findNode("showDot4")
+
+    ' Episode metadata row fields
+    m.episodeMetadataRow = m.top.findNode("episodeMetadataRow")
+    m.episodeAirDate = m.top.findNode("episodeAirDate")
+    m.episodeRuntime = m.top.findNode("episodeRuntime")
+    m.episodeNumber = m.top.findNode("episodeNumber")
+    m.episodeDot1 = m.top.findNode("episodeDot1")
+    m.episodeDot2 = m.top.findNode("episodeDot2")
+
+    m.backdrop = m.top.findNode("backdrop")
+    m.backdropPrev = m.top.findNode("backdropPrev")
+    m.backdropTint = m.top.findNode("backdropTint")
+
+    ' Observe backdrop load status to know when new backdrop is ready
+    m.backdrop.observeField("loadStatus", "onBackdropLoadStatusChange")
+
+    ' Observe when focused item changes
+    m.homeRows.observeField("rowItemFocused", "onItemFocusChanged")
+
+    ' Observe when home rows content is loaded to check if Featured Media is first section
+    m.homeRows.observeField("contentLoaded", "onHomeRowsContentLoaded")
+
+    ' Setup media bar
+    m.mediaBar = m.top.findNode("mediaBar")
+    if isValid(m.mediaBar)
+        m.mediaBar.observeField("itemSelected", "onMediaBarItemSelected")
+        m.mediaBar.observeField("currentBackdrop", "onMediaBarBackdropChanged")
+
+        ' Show MediaBar if Featured Media is the first section
+        ' (We'll verify it's actually enabled when content loads)
+        if m.isFeaturedMediaFirst
+            m.mediaBar.visible = true
+            m.homeRows.visible = false
+            ' Set focus to MediaBar
+            m.mediaBar.hasFocus = true
+            m.mediaBar.setFocus(true)
+            m.homeRows.setFocus(false)
+            ' Hide home rows and details when showing media bar
+            if isValid(m.detailsSection)
+                m.detailsSection.visible = false
+            end if
+            if isValid(m.backdropTint)
+                m.backdropTint.opacity = 0
+            end if
+            if isValid(m.backdrop)
+                m.backdrop.opacity = 1.0
+            end if
+        else
+            ' Make sure media bar is hidden if not first section
+            m.mediaBar.visible = false
+            ' Make sure home rows are visible if media bar is not shown
+            m.homeRows.visible = true
+        end if
+    end if
+
+    ' Initialize overhang navigation observer
+    scene = m.top.getScene()
+    overhang = scene.findNode("overhang")
+    if isValid(overhang)
+        overhang.observeField("itemSelected", "onNavItemSelected")
+        overhang.observeField("shufflePressed", "onShufflePressed")
+        overhang.observeField("favoritesPressed", "onFavoritesPressed")
+        overhang.observeField("genresPressed", "onGenresPressed")
+        overhang.observeField("librarySelected", "onLibrarySelected")
+        ' Load libraries into the overhang navbar
+        overhang.callFunc("loadLibraries")
+    end if
+end sub
+
+' Handle navigation item selection from overhang
+sub onNavItemSelected(event as object)
+    selectedItem = event.getData()
+
+    if selectedItem = "home"
+        ' Already on home, just refresh
+        m.homeRows.callFunc("updateHomeRows")
+    else if selectedItem = "search"
+        ' Navigate to search
+        searchPage = CreateObject("roSGNode", "searchResults")
+        searchPage.observeField("quickPlayNode", m.port)
+        ' Clear lastFocus so SearchBox gets focused by default
+        searchPage.lastFocus = invalid
+        m.global.sceneManager.callFunc("pushScene", searchPage)
+    end if
+end sub
+
+' Handle shuffle button press from overhang
+sub onShufflePressed(_event as object)
+    handleShuffle()
+end sub
+
+' Handle favorites button press from overhang
+sub onFavoritesPressed(_event as object)
+    handleFavorites()
+end sub
+
+' Handle genres button press from overhang
+sub onGenresPressed(_event as object)
+    handleGenres()
+end sub
+
+' Handle library selection from overhang
+sub onLibrarySelected(event as object)
+    libraryNode = event.getData()
+    if not isValid(libraryNode) then return
+
+    handleLibraryNavigation(libraryNode)
+end sub
+
+' Handle media bar backdrop changes
+sub onMediaBarBackdropChanged(event as object)
+    backdropUrl = event.getData()
+    if not isValid(backdropUrl) or backdropUrl = ""
+        return
+    end if
+
+    ' Only update if MediaBar has focus
+    if isValid(m.mediaBar) and m.mediaBar.hasFocus and m.mediaBar.visible
+        if isValid(m.backdrop)
+            ' Use previous backdrop as current while new one loads
+            if isValid(m.backdropPrev) and m.backdrop.uri <> ""
+                m.backdropPrev.uri = m.backdrop.uri
+            end if
+            ' Set new backdrop
+            m.backdrop.uri = backdropUrl
+        end if
+    end if
+end sub
+
+' Check if Featured Media should be shown when content loads
+sub onHomeRowsContentLoaded()
+    if not isValid(m.mediaBar) or not isValid(m.homeRows)
+        return
+    end if
+
+    ' Check if Featured Media is configured as the first home section (homesection0)
+    sessionUser = m.global.session.user
+    m.isFeaturedMediaFirst = false
+    if isValid(sessionUser) and isChainValid(sessionUser, "settings.homesection0")
+        firstSection = LCase(sessionUser.settings.homesection0)
+        if firstSection = "featuredmedia"
+            m.isFeaturedMediaFirst = true
+        end if
+    end if
+
+    ' Check if Featured Media is enabled in ANY section
+    m.isFeaturedMediaEnabled = false
+    if isValid(m.homeRows)
+        featuredMediaCheck = m.homeRows.callFunc("isFeaturedMediaEnabled")
+        if isValid(featuredMediaCheck) and type(featuredMediaCheck) = "roBoolean"
+            m.isFeaturedMediaEnabled = featuredMediaCheck
+        end if
+    end if ' Only show/focus Featured Media if it's enabled AND is the first section
+    if m.isFeaturedMediaEnabled and m.isFeaturedMediaFirst
+        ' On first run only, set focus to media bar
+        ' DON'T set focus if we're returning from another screen (OnScreenShown handles focus restoration)
+        if m.shouldFocusMediaBarOnLoad = true and isValid(m.mediaBar)
+            ' Show MediaBar and hide HomeRows only when setting initial focus
+            m.mediaBar.visible = true
+            m.homeRows.visible = false
+            m.mediaBar.hasFocus = true
+            m.mediaBar.setFocus(true)
+
+            ' Update backdrop for media bar
+            if isValid(m.detailsSection)
+                m.detailsSection.visible = false
+            end if
+            if isValid(m.backdropTint)
+                m.backdropTint.opacity = 0
+            end if
+            if isValid(m.backdrop)
+                m.backdrop.opacity = 1.0
+            end if
+
+            ' Store focus state
+            group = m.global.sceneManager.callFunc("getActiveScene")
+            if isValid(group) then group.lastFocus = m.mediaBar
+
+            ' Only set to false after successfully setting focus
+            m.shouldFocusMediaBarOnLoad = false
+        end if
+    else
+        ' Make sure media bar is hidden if Featured Media is not enabled
+        m.mediaBar.visible = false
+        m.homeRows.visible = true
+    end if
+end sub
+
+' Handle media bar item selection
+sub onMediaBarItemSelected(event as object)
+    selectedItem = event.getData()
+    if not isValid(selectedItem) then return
+
+    itemType = LCase(selectedItem.type)
+    if itemType = "movie"
+        ' Navigate to movie details using the same approach as Main.bs
+        m.top.selectedItem = selectedItem
+    else if itemType = "series" or itemType = "episode"
+        ' Navigate to series details
+        m.top.selectedItem = selectedItem
+    end if
+end sub
+
+' Navigate to the selected library
+sub handleLibraryNavigation(libraryNode as object)
+    if not isValid(libraryNode) then return
+
+    libraryId = libraryNode.libraryId
+    libraryName = libraryNode.name
+    collectionType = LCase(libraryNode.collectionType)
+
+
+    ' Create a ContentNode for the library item (required by library scenes)
+    libraryItem = CreateObject("roSGNode", "ContentNode")
+    libraryItem.addFields({
+        "libraryId": libraryId,
+        "Name": libraryName,
+        "Type": "CollectionFolder",
+        "CollectionType": collectionType
+    })
+
+    group = invalid
+
+    if collectionType = "movies" or collectionType = "tvshows" or collectionType = "homevideos"
+        ' Use OtherLibrary for movies, TV shows, home videos
+        group = CreateObject("roSGNode", "OtherLibrary")
+        group.parentItem = libraryItem
+        group.optionsAvailable = true
+    else if collectionType = "music"
+        ' Use MusicLibraryView for music
+        group = CreateObject("roSGNode", "MusicLibraryView")
+        group.parentItem = libraryItem
+        group.optionsAvailable = true
+        group.observeField("quickPlayNode", m.port)
+    else if collectionType = "livetv"
+        ' Use LiveTVLibraryView for live TV
+        group = CreateObject("roSGNode", "LiveTVLibraryView")
+        group.parentItem = libraryItem
+        group.optionsAvailable = true
+        group.observeField("quickPlayNode", m.port)
+    else if collectionType = "photos"
+        ' Use OtherLibrary for photos
+        group = CreateObject("roSGNode", "OtherLibrary")
+        group.parentItem = libraryItem
+        group.optionsAvailable = true
+    else if collectionType = "boxsets"
+        ' Use OtherLibrary for collections/box sets
+        group = CreateObject("roSGNode", "OtherLibrary")
+        group.parentItem = libraryItem
+        group.optionsAvailable = true
+    else if collectionType = "playlists"
+        ' Use OtherLibrary for playlists
+        group = CreateObject("roSGNode", "OtherLibrary")
+        group.parentItem = libraryItem
+        group.optionsAvailable = true
+    else if collectionType = "mylist"
+        ' Use VisualLibraryScene for My List
+        group = CreateObject("roSGNode", "VisualLibraryScene")
+        group.mediaType = "MyList"
+        group.parentItem = libraryItem
+        group.observeField("quickPlayNode", m.port)
+    else if collectionType = "books"
+        ' Use AudioBookLibraryView for books
+        group = CreateObject("roSGNode", "AudioBookLibraryView")
+        group.parentItem = libraryItem
+        group.optionsAvailable = true
+        group.observeField("quickPlayNode", m.port)
+    else
+        ' Default: Use OtherLibrary
+        group = CreateObject("roSGNode", "OtherLibrary")
+        group.parentItem = libraryItem
+        group.optionsAvailable = true
+        group.observeField("quickPlayNode", m.port)
+    end if
+
+    if isValid(group)
+        ' Observe selectedItem before pushing so events can bubble to Main.bs
+        if group.isSubType("OtherLibrary")
+            group.observeField("selectedItem", "onLibraryItemSelected")
+        end if
+        m.global.sceneManager.callFunc("pushScene", group)
+    end if
+end sub
+
+' Handle item selection from library screens
+sub onLibraryItemSelected(event as object)
+    selectedItem = event.getData()
+    if isValid(selectedItem)
+        ' Relay the selection up through Home's selectedItem field which Main.bs observes
+        m.top.selectedItem = selectedItem
+    end if
+end sub
+
+' Navigate to genres screen
+sub handleGenres()
+    genresScreen = CreateObject("roSGNode", "GenresScreen")
+    genresScreen.observeField("selectedItem", "onGenresItemSelected")
+    m.global.sceneManager.callFunc("pushScene", genresScreen)
+end sub
+
+' Handle item selection from genres screen
+sub onGenresItemSelected(event as object)
+    selectedItem = event.getData()
+    if not isValid(selectedItem) then return
+
+    itemType = LCase(selectedItem.type)
+    if itemType = "movie"
+        ' Navigate to movie details
+        m.global.sceneManager.callFunc("pushScene", CreateObject("roSGNode", "MovieDetails"))
+        m.global.sceneManager.callFunc("getActiveScene").id = selectedItem.id
+        m.global.sceneManager.callFunc("getActiveScene").observeField("quickPlayNode", m.port)
+    else if itemType = "series"
+        ' Navigate to series details
+        m.global.sceneManager.callFunc("pushScene", CreateObject("roSGNode", "TVShowDetails"))
+        m.global.sceneManager.callFunc("getActiveScene").id = selectedItem.id
+        m.global.sceneManager.callFunc("getActiveScene").observeField("quickPlayNode", m.port)
+    end if
+end sub
+
+' Navigate to favorites screen
+sub handleFavorites()
+    favoritesScreen = CreateObject("roSGNode", "FavoritesScreen")
+    favoritesScreen.observeField("selectedItem", "onFavoritesItemSelected")
+    m.global.sceneManager.callFunc("pushScene", favoritesScreen)
+end sub
+
+' Handle item selection from favorites screen
+sub onFavoritesItemSelected(event as object)
+    selectedItem = event.getData()
+    if isValid(selectedItem)
+        m.top.shuffleSelectedItem = selectedItem
+    end if
+end sub
+
+' Execute shuffle action
+sub handleShuffle()
+    if not isValid(m.shuffleTask) then return
+
+    ' Get shuffle content type preference
+    contentType = chainLookupReturn(m.global.session, "user.settings.shuffle_content_type", "both")
+
+    ' Start shuffle task
+    m.shuffleTask.contentType = contentType
+    m.shuffleTask.control = "RUN"
+end sub
+
+' Handle shuffle completion
+sub onShuffleComplete(event as object)
+    selectedItem = event.getData()
+
+    if selectedItem = invalid
+        ' Shuffle failed - no items available
+        return
+    end if
+
+    ' Emit via shuffleSelectedItem which triggers onSelectedItemEvent in Main
+    m.top.shuffleSelectedItem = selectedItem
+end sub
+
+' Handle backdrop load status - when new backdrop finishes loading, copy it to prev
+sub onBackdropLoadStatusChange()
+    if isValid(m.backdrop) and m.backdrop.loadStatus = "ready" and isValidAndNotEmpty(m.backdrop.uri)
+        ' New backdrop has loaded, copy it to the previous backdrop for next transition
+        if isValid(m.backdropPrev)
+            m.backdropPrev.uri = m.backdrop.uri
+        end if
+    end if
 end sub
 
 sub refresh()
@@ -44,21 +476,120 @@ sub OnScreenShown()
     scene = m.top.getScene()
     overhang = scene.findNode("overhang")
     if isValid(overhang)
-        overhang.visible = true
+        overhang.visible = true ' Keep overhang visible
         overhang.title = ""
         overhang.currentUserProfileImage = UserImageURL(m.global.session.user.id)
         overhang.currentUser = m.global.session.user.name
     end if
 
+    ' Restore focus to the last focused element
+    ' SceneManager saves the deepest focused child in m.top.lastFocus
+    ' We need to determine if that was within homeRows or mediaBar
+    focusRestored = false
+
+    ' Get this scene's stored lastFocus from SceneManager
+    scenePreviousFocus = invalid
     if isValid(m.top.lastFocus)
-        if LCase(m.top.lastFocus.id) = "overhang"
-            overhang.callFunc("highlightUser")
+        scenePreviousFocus = m.top.lastFocus
+    end if
+
+    ' Priority 1: Restore based on what was focused before
+    if isValid(scenePreviousFocus)
+        ' Check if the saved focus was homeRows itself or a child of homeRows
+        if scenePreviousFocus.isSameNode(m.homeRows) or isChildOf(scenePreviousFocus, m.homeRows)
+            m.homeRows.setFocus(true)
+            focusRestored = true
+
+            ' Hide MediaBar and show HomeRows content when restoring to HomeRows
+            if isValid(m.mediaBar)
+                m.mediaBar.visible = false
+            end if
+            if isValid(m.homeRows)
+                m.homeRows.visible = true
+            end if
+            if isValid(m.detailsSection)
+                m.detailsSection.visible = true
+            end if
+            ' Check if the saved focus was mediaBar itself or a child of mediaBar
+        else if isValid(m.mediaBar) and (scenePreviousFocus.isSameNode(m.mediaBar) or isChildOf(scenePreviousFocus, m.mediaBar))
+            m.mediaBar.hasFocus = true
+            m.mediaBar.setFocus(true)
+            focusRestored = true
+
+            ' Show MediaBar and hide HomeRows when restoring to MediaBar
+            if isValid(m.mediaBar)
+                m.mediaBar.visible = true
+            end if
+            if isValid(m.homeRows)
+                m.homeRows.visible = false
+            end if
+            if isValid(m.detailsSection)
+                m.detailsSection.visible = false
+            end if
         end if
-        m.top.lastFocus.setFocus(true)
-    else
-        m.top.setFocus(true)
-        group = m.global.sceneManager.callFunc("getActiveScene")
-        group.lastFocus = m.top
+    end if
+
+    ' Priority 2: If no stored focus, check current focus state
+    if not focusRestored
+        if isValid(m.homeRows) and m.homeRows.hasFocus()
+            ' Home rows already have focus, keep it there
+            m.homeRows.setFocus(true)
+            focusRestored = true
+        else if isValid(m.mediaBar) and m.mediaBar.visible and m.mediaBar.hasFocus()
+            ' Media bar already has focus, keep it there
+            m.mediaBar.hasFocus = true
+            m.mediaBar.setFocus(true)
+            focusRestored = true
+        end if
+    end if
+
+    ' Priority 3: If focus wasn't restored (first time or returning), default based on settings
+    if not focusRestored
+        ' Check if Featured Media is enabled in any section
+        shouldShowMediaBar = false
+        if isValid(m.mediaBar) and isValid(m.homeRows)
+            ' Use the helper function to check all sections
+            featuredMediaCheck = m.homeRows.callFunc("isFeaturedMediaEnabled")
+            isFeaturedMediaEnabled = false
+            if isValid(featuredMediaCheck) and type(featuredMediaCheck) = "roBoolean"
+                isFeaturedMediaEnabled = featuredMediaCheck
+            end if
+
+            sessionUser = m.global.session.user
+            if isFeaturedMediaEnabled and isValid(sessionUser) and isChainValid(sessionUser, "settings.homesection0")
+                firstSection = LCase(sessionUser.settings.homesection0)
+                if firstSection = "featuredmedia"
+                    shouldShowMediaBar = true
+                end if
+            end if
+        end if
+
+        if shouldShowMediaBar
+            ' Focus media bar if it's the first section
+            m.mediaBar.visible = true
+            m.mediaBar.hasFocus = true
+            m.mediaBar.setFocus(true)
+            m.top.lastFocus = m.mediaBar
+            ' Hide details section and show full brightness backdrop for media bar
+            if isValid(m.detailsSection)
+                m.detailsSection.visible = false
+            end if
+            if isValid(m.backdropTint)
+                m.backdropTint.opacity = 0
+            end if
+            if isValid(m.backdrop)
+                m.backdrop.opacity = 1.0
+            end if
+        else
+            ' Default to home rows
+            if isValid(m.homeRows)
+                m.homeRows.setFocus(true)
+                m.top.lastFocus = m.homeRows
+            else
+                m.top.setFocus(true)
+                m.top.lastFocus = m.top
+            end if
+        end if
     end if
 
     if not m.isFirstRun
@@ -68,6 +599,8 @@ sub OnScreenShown()
     ' post the device profile the first time this screen is loaded
     if m.isFirstRun
         m.isFirstRun = false
+        ' Persist that we've run at least once
+        set_setting("home.hasRunBefore", "true")
         m.postTask.arrayData = getDeviceCapabilities()
         m.postTask.apiUrl = "/Sessions/Capabilities/Full"
         m.postTask.control = "RUN"
@@ -77,6 +610,11 @@ end sub
 
 ' JFScreen hook called when the screen is hidden by the screen manager
 sub OnScreenHidden()
+    ' Don't try to save focus here - SceneManager already did it before calling this
+    ' The SceneManager.pushScene() saves currentGroup.lastFocus before removing focus
+    ' If we try to check hasFocus() here, it will always be false because
+    ' pushScene() calls currentGroup.setFocus(false) before calling OnScreenHidden()
+
     scene = m.top.getScene()
     overhang = scene.findNode("overhang")
     if isValid(overhang)
@@ -131,13 +669,13 @@ sub onMyListLoaded()
 
         if showBothOptions
             dialogData.push(tr("Mark As Unplayed"))
-            dialogData.push(tr("Mark As Played"))
+            dialogData.push(tr("Watched"))
         else
             if isChainValid(focusedItem, "isWatched")
                 if focusedItem.isWatched
                     dialogData.push(tr("Mark As Unplayed"))
                 else
-                    dialogData.push(tr("Mark As Played"))
+                    dialogData.push(tr("Watched"))
                 end if
             end if
         end if
@@ -163,12 +701,119 @@ end sub
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
+    ' Handle navigation between MediaBar and HomeRows
+    if isStringEqual(key, KeyCode.DOWN)
+        if isValid(m.mediaBar) and m.mediaBar.hasFocus and m.mediaBar.visible
+            ' Move focus from MediaBar to first row in HomeRows
+            m.mediaBar.visible = false
+            m.mediaBar.hasFocus = false
+            m.homeRows.visible = true
+
+            ' Jump to first row (no placeholder to skip)
+            if m.homeRows.content.getChildCount() > 0
+                m.homeRows.jumpToRowItem = [0, 0]
+            end if
+
+            m.homeRows.setFocus(true)
+
+            ' Restore details section and normal backdrop
+            if isValid(m.detailsSection)
+                m.detailsSection.visible = true
+            end if
+            if isValid(m.backdropTint)
+                m.backdropTint.opacity = 1.0
+            end if
+            if isValid(m.backdrop)
+                m.backdrop.opacity = 0.3
+            end if
+            return true
+        end if
+    end if
+
+    ' Handle UP key to go to MediaBar or overhang from MediaBar
+    if isStringEqual(key, KeyCode.UP)
+        if isValid(m.mediaBar) and m.mediaBar.hasFocus and m.mediaBar.visible
+            ' Move from MediaBar to overhang (navbar)
+            scene = m.top.getScene()
+            overhang = scene.findNode("overhang")
+            if isValid(overhang)
+                m.mediaBar.hasFocus = false
+                overhang.setFocus(true)
+                return true
+            end if
+        else if m.homeRows.hasFocus()
+            ' Check if on first row and Featured Media is enabled
+            ' Use rowItemFocused instead of rowFocused to get the actual position
+            focusedItem = m.homeRows.rowItemFocused
+            currentRowIndex = invalid
+            if isValid(focusedItem) and focusedItem.count() > 0
+                currentRowIndex = focusedItem[0]
+            end if
+
+            ' Always check the setting in real-time to be sure
+            sessionUser = m.global.session.user
+            isFeaturedMediaEnabled = false
+            if isValid(m.homeRows)
+                featuredMediaCheck = m.homeRows.callFunc("isFeaturedMediaEnabled")
+                if isValid(featuredMediaCheck) and type(featuredMediaCheck) = "roBoolean"
+                    isFeaturedMediaEnabled = featuredMediaCheck
+                end if
+            end if
+
+            ' Also check if it's the first section
+            isFeaturedMediaFirst = false
+            if isValid(sessionUser) and isChainValid(sessionUser, "settings.homesection0")
+                firstSection = sessionUser.settings.homesection0
+                if LCase(firstSection) = "featuredmedia"
+                    isFeaturedMediaFirst = true
+                end if
+            end if
+
+            if isValid(currentRowIndex) and currentRowIndex = 0 and isFeaturedMediaEnabled and isFeaturedMediaFirst and isValid(m.mediaBar)
+                ' Show MediaBar when navigating up from first row
+                m.homeRows.visible = false
+                m.homeRows.setFocus(false)
+                m.mediaBar.visible = true
+                m.mediaBar.hasFocus = true
+                m.mediaBar.setFocus(true)
+
+                ' Reset the flag so we don't auto-focus again
+                m.shouldFocusMediaBarOnLoad = false
+
+                ' Force MediaBar to refresh and update backdrop
+                m.mediaBar.callFunc("refreshCurrentDisplay")
+
+                ' Hide details and show full brightness backdrop
+                if isValid(m.detailsSection)
+                    m.detailsSection.visible = false
+                end if
+                if isValid(m.backdropTint)
+                    m.backdropTint.opacity = 0
+                end if
+                if isValid(m.backdrop)
+                    m.backdrop.opacity = 1.0
+                end if
+                return true
+            end if
+
+            ' Otherwise move focus to overhang navigation group
+            scene = m.top.getScene()
+            overhang = scene.findNode("overhang")
+            if isValid(overhang)
+                overhang.setFocus(true)
+                return true
+            end if
+        end if
+    end if
+
     ' If the user hit back and is not on the first item of the row,
     ' assume they want to go to the first item of the row.
     ' Otherwise, they are exiting the app.
-    if isStringEqual(key, KeyCode.Back) and m.homeRows.currFocusColumn > 0
-        m.homeRows.jumpToRowItem = [m.homeRows.currFocusRow, 0]
-        return true
+    if isStringEqual(key, KeyCode.Back)
+        if m.homeRows.currFocusColumn > 0
+            m.homeRows.jumpToRowItem = [m.homeRows.currFocusRow, 0]
+            return true
+        end if
     end if
 
     if isStringEqual(key, KeyCode.OPTIONS)
@@ -178,6 +823,16 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
             m.loadMetaDataTask.itemId = focusedItem.LookupCI("id")
             m.loadMetaDataTask.control = TaskControl.RUN
+            return true
+        end if
+    end if
+
+    ' Jellyseerr - Open with * key
+    if isStringEqual(key, "*")
+        config = GetJellyseerrConfig()
+        if config.enabled
+            jellyseerrHub = CreateObject("roSGNode", "JellyseerrHubScreen")
+            m.global.sceneManager.callFunc("pushScene", jellyseerrHub)
             return true
         end if
     end if
@@ -195,3 +850,545 @@ sub onMetaDataLoaded()
     m.loadItemsTask1.itemId = focusedItem.LookupCI("id")
     m.loadItemsTask1.control = TaskControl.RUN
 end sub
+
+' Update details section when focus changes
+sub onItemFocusChanged()
+    if not isValid(m.homeRows.content) then return
+    if m.homeRows.rowItemFocused[0] < 0 or m.homeRows.rowItemFocused[1] < 0 then return
+
+    focusedItem = m.homeRows.content.getChild(m.homeRows.rowItemFocused[0]).getChild(m.homeRows.rowItemFocused[1])
+    if not isValid(focusedItem) then return
+
+    ' Update title immediately
+    if isValid(m.itemTitle)
+        m.itemTitle.text = focusedItem.title ?? ""
+    end if
+
+    ' Update backdrop immediately if available
+    if isValid(m.backdrop) and isValidAndNotEmpty(focusedItem.backdropURL)
+        m.backdrop.uri = focusedItem.backdropURL
+    end if
+
+    ' Load full item details to get metadata and overview
+    itemId = focusedItem.id
+    if isValidAndNotEmpty(itemId)
+        m.loadItemDetailsTask.itemId = itemId
+        m.loadItemDetailsTask.control = TaskControl.RUN
+    end if
+end sub
+
+' Handle loaded item details
+sub onItemDetailsLoaded()
+    itemData = m.loadItemDetailsTask.content
+    if not isValid(itemData) or itemData.count() = 0 then return
+
+    item = itemData[0]
+    if not isValid(item) then return
+
+    json = item.json
+    if not isValid(json) then return
+
+    ' Check if this is an episode
+    isEpisode = isValid(json.Type) and json.Type = "Episode"
+
+    ' Update backdrop from full item details with blur effect
+    if isValid(m.backdrop)
+        backdropUri = ""
+
+        ' For episodes, try to get the series backdrop instead
+        if isEpisode and isValidAndNotEmpty(json.SeriesId)
+            if isValidAndNotEmpty(json.ParentBackdropImageTags)
+                ' Use series backdrop from parent with blur
+                backdropUri = getBlurredImageURL(json.SeriesId, "Backdrop", json.ParentBackdropImageTags[0])
+            end if
+        end if
+
+        ' If no series backdrop or not an episode, use item's own backdrop
+        if backdropUri = ""
+            if isValidAndNotEmpty(json.BackdropImageTags)
+                ' Apply blur to backdrop
+                backdropUri = getBlurredImageURL(json.Id, "Backdrop", json.BackdropImageTags[0])
+            else if isValidAndNotEmpty(json.ImageTags) and isValidAndNotEmpty(json.ImageTags.Primary)
+                ' Fallback to primary image if no backdrop (with blur)
+                backdropUri = getBlurredImageURL(json.Id, "Primary", json.ImageTags.Primary)
+            end if
+        end if
+
+        if isValidAndNotEmpty(backdropUri)
+            applyBackdropWithEffect(backdropUri)
+        end if
+    end if
+
+    ' Build metadata text - single row with bullet separators
+
+    ' Clear all metadata fields first
+    setFieldText("communityRating", "")
+    setFieldText("criticRatingLabel", "")
+    setFieldText("episodeNumber", "")
+    setFieldText("airDate", "")
+    setFieldText("releaseYear", "")
+    setFieldText("showStatus", "")
+    setFieldText("officialRating", "")
+    setFieldText("runtime", "")
+
+    ' Hide all nodes by default
+    setFieldVisibility("communityRating", false)
+    setFieldVisibility("criticRatingLabel", false)
+    setFieldVisibility("episodeNumber", false)
+    setFieldVisibility("airDate", false)
+    setFieldVisibility("releaseYear", false)
+    setFieldVisibility("showStatus", false)
+    setFieldVisibility("officialRating", false)
+    setFieldVisibility("runtime", false)
+    setFieldVisibility("communityRatingGroup", false)
+    if isValid(m.star)
+        m.star.visible = false
+        m.star.width = 0
+        m.star.height = 0
+    end if
+    if isValid(m.criticRatingIcon)
+        m.criticRatingIcon.uri = ""
+        m.criticRatingIcon.visible = false
+        m.criticRatingIcon.width = 0
+        m.criticRatingIcon.height = 0
+    end if
+
+    ' Handle metadata based on content type
+    if isValid(json.Type)
+        if json.Type = "Episode"
+            ' EPISODE: Air Date • Runtime • S##E##
+            populateEpisodeMetadata(json, item)
+        else if json.Type = "Series"
+            ' TV SHOW: ★ Rating • Year • Status • Official Rating • Runtime
+            populateSeriesMetadata(json, item)
+        else
+            ' MOVIE: ★ Rating • 🍅 Critic% • Year • Official Rating • Runtime
+            populateMovieMetadata(json, item)
+        end if
+    end if
+
+    ' Update overview/description
+    if isValid(m.itemOverview)
+        overview = ""
+        if isValidAndNotEmpty(item.overview)
+            overview = item.overview
+        else if isValidAndNotEmpty(json.Overview)
+            overview = json.Overview
+        end if
+        m.itemOverview.text = overview
+    end if
+end sub
+
+' Populate metadata for episodes
+sub populateEpisodeMetadata(json as object, item as object)
+    ' Hide other metadata rows
+    if isValid(m.movieMetadataRow) then m.movieMetadataRow.visible = false
+    if isValid(m.showMetadataRow) then m.showMetadataRow.visible = false
+    if isValid(m.episodeMetadataRow) then m.episodeMetadataRow.visible = true
+
+    ' Air date
+    if isValid(json.PremiereDate)
+        airDateObj = CreateObject("roDateTime")
+        airDateObj.FromISO8601String(json.PremiereDate)
+        if isValid(m.episodeAirDate)
+            ' Format as "Month Day, Year" (e.g., "December 15, 2023")
+            ' long-date format is typically "Weekday, Month Day, Year" (e.g. "Friday, December 15, 2023")
+            ' We want to remove the weekday.
+            dateStr = airDateObj.AsDateString("long-date")
+            firstComma = dateStr.Instr(",")
+            if firstComma > -1
+                m.episodeAirDate.text = dateStr.Mid(firstComma + 2).Trim()
+            else
+                m.episodeAirDate.text = dateStr
+            end if
+            m.episodeAirDate.visible = true
+        end if
+    end if
+
+    ' Runtime
+    runTimeTicks = invalid
+    if type(item.RunTimeTicks) = "LongInteger"
+        runTimeTicks = item.RunTimeTicks
+    else if type(json.RunTimeTicks) = "LongInteger"
+        runTimeTicks = json.RunTimeTicks
+    end if
+
+    if isValid(runTimeTicks)
+        runTimeSeconds = int(runTimeTicks / 10000000&)
+        runTimeMinutes = int(runTimeSeconds / 60)
+        if runTimeMinutes > 0
+            hours = int(runTimeMinutes / 60)
+            mins = runTimeMinutes mod 60
+            if hours > 0
+                if mins > 0
+                    episodeRuntimeText = stri(hours).trim() + "h " + stri(mins).trim() + "m"
+                else
+                    episodeRuntimeText = stri(hours).trim() + "h"
+                end if
+            else
+                episodeRuntimeText = stri(mins).trim() + "m"
+            end if
+            if isValid(m.episodeRuntime) then m.episodeRuntime.text = episodeRuntimeText
+            if isValid(m.episodeRuntime) then m.episodeRuntime.visible = true
+        end if
+    end if
+
+    ' Episode number
+    if isValid(json.ParentIndexNumber) and isValid(json.IndexNumber)
+        if isValid(m.episodeNumber)
+            m.episodeNumber.text = "S" + formatNumber(json.ParentIndexNumber) + "E" + formatNumber(json.IndexNumber)
+            m.episodeNumber.visible = true
+        end if
+    end if
+
+    ' Update episode dot visibility
+    if isValid(m.episodeDot1)
+        m.episodeDot1.visible = textNodeHasContent(m.episodeAirDate) and textNodeHasContent(m.episodeRuntime)
+    end if
+    if isValid(m.episodeDot2)
+        m.episodeDot2.visible = textNodeHasContent(m.episodeRuntime) and textNodeHasContent(m.episodeNumber)
+    end if
+end sub
+
+' Populate metadata for TV series
+sub populateSeriesMetadata(json as object, item as object)
+    ' Hide other metadata rows
+    if isValid(m.movieMetadataRow) then m.movieMetadataRow.visible = false
+    if isValid(m.episodeMetadataRow) then m.episodeMetadataRow.visible = false
+    if isValid(m.showMetadataRow) then m.showMetadataRow.visible = true
+
+    ' Community rating with star
+    if isValid(json.CommunityRating) and json.CommunityRating > 0
+        if isValid(m.showStar)
+            m.showStar.width = 28
+            m.showStar.height = 28
+            m.showStar.visible = true
+        end if
+        if isValid(m.showCommunityRating)
+            m.showCommunityRating.text = formatRating(json.CommunityRating)
+            m.showCommunityRating.visible = true
+        end if
+        if isValid(m.showCommunityRatingGroup)
+            m.showCommunityRatingGroup.visible = true
+        end if
+    else
+        if isValid(m.showCommunityRatingGroup)
+            m.showCommunityRatingGroup.visible = false
+        end if
+    end if
+
+    ' Release year
+    if isValid(json.ProductionYear) and json.ProductionYear > 0
+        if isValid(m.showReleaseYear)
+            m.showReleaseYear.text = stri(json.ProductionYear).trim()
+            m.showReleaseYear.visible = true
+        end if
+    end if
+
+    ' Show status
+    if isValidAndNotEmpty(json.status)
+        if isValid(m.showStatus)
+            m.showStatus.text = json.status
+            m.showStatus.visible = true
+        end if
+    end if
+
+    ' Official rating
+    if isValidAndNotEmpty(json.OfficialRating)
+        if isValid(m.showOfficialRating)
+            m.showOfficialRating.text = json.OfficialRating
+            m.showOfficialRating.visible = true
+        end if
+    end if
+
+    ' Runtime
+    runTimeTicks = invalid
+    if type(item.RunTimeTicks) = "LongInteger"
+        runTimeTicks = item.RunTimeTicks
+    else if type(json.RunTimeTicks) = "LongInteger"
+        runTimeTicks = json.RunTimeTicks
+    end if
+
+    if isValid(runTimeTicks)
+        runTimeSeconds = int(runTimeTicks / 10000000&)
+        runTimeMinutes = int(runTimeSeconds / 60)
+        if runTimeMinutes > 0
+            hours = int(runTimeMinutes / 60)
+            mins = runTimeMinutes mod 60
+            if hours > 0
+                if mins > 0
+                    showRuntimeText = stri(hours).trim() + "h " + stri(mins).trim() + "m"
+                else
+                    showRuntimeText = stri(hours).trim() + "h"
+                end if
+            else
+                showRuntimeText = stri(mins).trim() + "m"
+            end if
+            if isValid(m.showRuntime) then m.showRuntime.text = showRuntimeText
+            if isValid(m.showRuntime) then m.showRuntime.visible = true
+        end if
+    end if
+
+    ' Update show dot visibility
+    if isValid(m.showDot1)
+        m.showDot1.visible = textNodeHasContent(m.showCommunityRating) and textNodeHasContent(m.showReleaseYear)
+    end if
+    if isValid(m.showDot2)
+        m.showDot2.visible = textNodeHasContent(m.showReleaseYear) and textNodeHasContent(m.showStatus)
+    end if
+    if isValid(m.showDot3)
+        m.showDot3.visible = textNodeHasContent(m.showStatus) and textNodeHasContent(m.showOfficialRating)
+    end if
+    if isValid(m.showDot4)
+        m.showDot4.visible = textNodeHasContent(m.showOfficialRating) and textNodeHasContent(m.showRuntime)
+    end if
+end sub
+
+' Populate metadata for movies
+sub populateMovieMetadata(json as object, item as object)
+    ' Hide other metadata rows
+    if isValid(m.showMetadataRow) then m.showMetadataRow.visible = false
+    if isValid(m.episodeMetadataRow) then m.episodeMetadataRow.visible = false
+    if isValid(m.movieMetadataRow) then m.movieMetadataRow.visible = true
+
+    ' Community rating with star
+    if isValid(json.CommunityRating) and json.CommunityRating > 0
+        if isValid(m.star)
+            m.star.width = 28
+            m.star.height = 28
+            m.star.visible = true
+        end if
+        if isValid(m.communityRating)
+            m.communityRating.text = formatRating(json.CommunityRating)
+            m.communityRating.visible = true
+        end if
+        if isValid(m.communityRatingGroup)
+            m.communityRatingGroup.visible = true
+        end if
+    else
+        if isValid(m.communityRatingGroup)
+            m.communityRatingGroup.visible = false
+        end if
+    end if
+
+    ' Critic rating with tomato icon
+    if isValid(json.CriticRating)
+        if isValid(m.criticRatingLabel)
+            m.criticRatingLabel.text = stri(json.CriticRating).trim() + "%"
+            m.criticRatingLabel.visible = true
+        end if
+        if isValid(m.criticRatingIcon)
+            if json.CriticRating > 60
+                m.criticRatingIcon.uri = "pkg:/images/fresh.png"
+            else
+                m.criticRatingIcon.uri = "pkg:/images/rotten.png"
+            end if
+            m.criticRatingIcon.width = 28
+            m.criticRatingIcon.height = 28
+            m.criticRatingIcon.visible = true
+        end if
+    else
+        if isValid(m.criticRatingIcon)
+            m.criticRatingIcon.uri = ""
+            m.criticRatingIcon.width = 0
+            m.criticRatingIcon.height = 0
+            m.criticRatingIcon.visible = false
+        end if
+    end if
+
+    ' Release year
+    if isValid(json.ProductionYear) and json.ProductionYear > 0
+        if isValid(m.releaseYear)
+            m.releaseYear.text = stri(json.ProductionYear).trim()
+            m.releaseYear.visible = true
+        end if
+    end if
+
+    ' Official rating
+    if isValidAndNotEmpty(json.OfficialRating)
+        if isValid(m.officialRating)
+            m.officialRating.text = json.OfficialRating
+            m.officialRating.visible = true
+        end if
+    end if
+
+    ' Runtime
+    runTimeTicks = invalid
+    if type(item.RunTimeTicks) = "LongInteger"
+        runTimeTicks = item.RunTimeTicks
+    else if type(json.RunTimeTicks) = "LongInteger"
+        runTimeTicks = json.RunTimeTicks
+    end if
+
+    if isValid(runTimeTicks)
+        runTimeSeconds = int(runTimeTicks / 10000000&)
+        runTimeMinutes = int(runTimeSeconds / 60)
+        if runTimeMinutes > 0
+            hours = int(runTimeMinutes / 60)
+            mins = runTimeMinutes mod 60
+            if hours > 0
+                if mins > 0
+                    movieRuntimeText = stri(hours).trim() + "h " + stri(mins).trim() + "m"
+                else
+                    movieRuntimeText = stri(hours).trim() + "h"
+                end if
+            else
+                movieRuntimeText = stri(mins).trim() + "m"
+            end if
+            if isValid(m.runtime) then m.runtime.text = movieRuntimeText
+            if isValid(m.runtime) then m.runtime.visible = true
+        end if
+    end if
+
+    ' Update movie dot visibility
+    if isValid(m.dot1)
+        m.dot1.visible = textNodeHasContent(m.communityRating) and textNodeHasContent(m.criticRatingLabel)
+    end if
+    if isValid(m.dot2)
+        m.dot2.visible = textNodeHasContent(m.criticRatingLabel) and textNodeHasContent(m.releaseYear)
+    end if
+    if isValid(m.dot3)
+        m.dot3.visible = textNodeHasContent(m.releaseYear) and textNodeHasContent(m.officialRating)
+    end if
+    if isValid(m.dot4)
+        m.dot4.visible = textNodeHasContent(m.officialRating) and textNodeHasContent(m.runtime)
+    end if
+end sub
+
+function formatRating(rating as float) as string
+    ' Format rating to one decimal place
+    return Left(rating.toStr(), 3)
+end function
+
+function formatNumber(num as integer) as string
+    ' Format number with leading zero if less than 10
+    if num < 10
+        return "0" + num.toStr()
+    end if
+    return num.toStr()
+end function
+
+' Helper function to set text on a field node
+sub setFieldText(fieldName as string, value as string)
+    fieldNode = m.top.findNode(fieldName)
+    if isValid(fieldNode)
+        fieldNode.text = value
+    end if
+end sub
+
+' Helper function to set visibility on a field node
+sub setFieldVisibility(fieldName as string, isVisible as boolean)
+    fieldNode = m.top.findNode(fieldName)
+    if isValid(fieldNode)
+        fieldNode.visible = isVisible
+    end if
+end sub
+
+' Helper function to check if a text node has content
+function textNodeHasContent(node as object) as boolean
+    return isValid(node) and isValid(node.text) and node.text <> ""
+end function
+
+' Update metadata dot visibility based on content
+sub updateMetadataDots()
+    ' Helper to check if node has content
+    hasContent = function(node as object) as boolean
+        return isValid(node) and node.text <> ""
+    end function
+
+    ' Get all metadata nodes
+    communityRatingNode = m.top.findNode("communityRating")
+    criticRatingLabelNode = m.top.findNode("criticRatingLabel")
+    episodeNumberNode = m.top.findNode("episodeNumber")
+    airDateNode = m.top.findNode("airDate")
+    releaseYearNode = m.top.findNode("releaseYear")
+    showStatusNode = m.top.findNode("showStatus")
+    officialRatingNode = m.top.findNode("officialRating")
+    runtimeNode = m.top.findNode("runtime")
+
+    ' dot1: between communityRating and criticRating (or next available)
+    dot1 = m.top.findNode("dot1")
+    if isValid(dot1)
+        dot1.visible = hasContent(communityRatingNode) and (hasContent(criticRatingLabelNode) or hasContent(episodeNumberNode) or hasContent(releaseYearNode))
+    end if
+
+    ' dot2: between criticRating and episodeNumber/releaseYear
+    dot2 = m.top.findNode("dot2")
+    if isValid(dot2)
+        dot2.visible = hasContent(criticRatingLabelNode) and (hasContent(episodeNumberNode) or hasContent(releaseYearNode))
+    end if
+
+    ' dot2b: between airDate and runtime
+    dot2b = m.top.findNode("dot2b")
+    if isValid(dot2b)
+        dot2b.visible = hasContent(airDateNode) and hasContent(runtimeNode)
+    end if
+
+    ' dot2c: between runtime and episodeNumber (episodes only)
+    dot2c = m.top.findNode("dot2c")
+    if isValid(dot2c)
+        episodeNumberNode = m.top.findNode("episodeNumber")
+        dot2c.visible = hasContent(runtimeNode) and hasContent(episodeNumberNode)
+    end if
+
+    ' dot3: between officialRating and episodeNumber (episodes) or releaseYear (movies/shows)
+    dot3 = m.top.findNode("dot3")
+    if isValid(dot3)
+        episodeNumberNode = m.top.findNode("episodeNumber")
+        dot3.visible = hasContent(officialRatingNode) and (hasContent(episodeNumberNode) or hasContent(releaseYearNode) or hasContent(showStatusNode))
+    end if
+
+    ' dot4: between episodeNumber/releaseYear and showStatus
+    dot4 = m.top.findNode("dot4")
+    if isValid(dot4)
+        episodeNumberNode = m.top.findNode("episodeNumber")
+        dot4.visible = (hasContent(episodeNumberNode) or hasContent(releaseYearNode)) and hasContent(showStatusNode)
+    end if
+
+    ' dot5: between showStatus and next field (if any)
+    dot5 = m.top.findNode("dot5")
+    if isValid(dot5)
+        dot5.visible = hasContent(showStatusNode)
+    end if
+end sub
+
+' Helper function to build blurred image URL
+' Applies a 10px blur to backdrop images for frosted glass effect
+function getBlurredImageURL(itemId as string, imageType as string, imageTag as string) as string
+    params = {
+        "maxHeight": 1080,
+        "maxWidth": 1920,
+        "quality": 90,
+        "blur": 10,
+        "Tag": imageTag
+    }
+    return ImageURL(itemId, imageType, params)
+end function
+
+' Apply backdrop with blur and tint effect
+' Old backdrop stays visible until new backdrop loads
+sub applyBackdropWithEffect(backdropUri as string)
+    if isValid(m.backdrop) and isValidAndNotEmpty(backdropUri)
+        ' Set new backdrop URI - old one (backdropPrev) will stay visible until this loads
+        m.backdrop.uri = backdropUri
+    end if
+
+    ' Ensure tint overlay is visible
+    if isValid(m.backdropTint)
+        m.backdropTint.visible = true
+    end if
+end sub
+
+' Helper function to check if a node is a child/descendant of a parent node
+' Walks up the parent chain to see if we find the target parent
+function isChildOf(node as object, parent as object) as boolean
+    if not isValid(node) or not isValid(parent) then return false
+
+    current = node
+    while isValid(current)
+        if current.isSameNode(parent) then return true
+        current = current.getParent()
+    end while
+
+    return false
+end function

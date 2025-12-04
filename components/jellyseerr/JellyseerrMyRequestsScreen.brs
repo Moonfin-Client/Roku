@@ -1,0 +1,144 @@
+sub init()
+    m.requestsRowList = m.top.findNode("requestsRowList")
+    m.noRequestsLabel = m.top.findNode("noRequestsLabel")
+    m.loadingLabel = m.top.findNode("loadingLabel")
+
+    m.apiTask = CreateObject("roSGNode", "JellyseerrAPITask")
+    m.requestsList = []
+
+    m.requestsRowList.observeField("rowItemSelected", "onRequestSelected")
+
+    LoadUserRequests()
+end sub
+
+sub LoadUserRequests()
+    ShowLoading()
+
+    m.apiTask.request = {
+        method: "GET",
+        endpoint: "/api/v1/request",
+        queryParams: {
+            take: "50",
+            skip: "0",
+            sort: "modified"
+        }
+    }
+    m.apiTask.observeField("response", "onRequestsLoaded")
+    m.apiTask.control = "RUN"
+end sub
+
+sub onRequestsLoaded(event as object)
+    response = event.getData()
+    HideLoading()
+
+    if response.success and response.data <> invalid
+        results = response.data.results
+
+        if results <> invalid and type(results) = "roArray" and results.Count() > 0
+            m.requestsList = results
+            contentNode = CreateObject("roSGNode", "ContentNode")
+
+            ' Group by status
+            groupedRequests = {}
+
+            for each request in results
+                mediaStatus = request.media.status
+                statusText = GetRequestStatusText(mediaStatus)
+
+                if not groupedRequests.DoesExist(statusText)
+                    groupedRequests[statusText] = []
+                end if
+                groupedRequests[statusText].Push(request)
+            end for
+
+            ' Create rows for each status
+            for each statusKey in groupedRequests
+                rowNode = CreateObject("roSGNode", "ContentNode")
+                rowNode.title = statusKey
+
+                statusRequests = groupedRequests[statusKey]
+                for each request in statusRequests
+                    requestNode = CreateRequestNode(request)
+                    rowNode.appendChild(requestNode)
+                end for
+
+                contentNode.appendChild(rowNode)
+            end for
+
+            m.requestsRowList.content = contentNode
+            m.noRequestsLabel.visible = false
+        else
+            m.noRequestsLabel.visible = true
+            m.requestsRowList.content = invalid
+        end if
+    else
+        m.noRequestsLabel.visible = true
+        m.requestsRowList.content = invalid
+    end if
+end sub
+
+function CreateRequestNode(request as object) as object
+    node = CreateObject("roSGNode", "ContentNode")
+
+    ' Set title
+    if request.media.mediaType = "movie"
+        node.title = request.media.tmdbData.title
+    else
+        node.title = request.media.tmdbData.name
+    end if
+
+    ' Set description with status and requested date
+    statusText = GetRequestStatusText(request.media.status)
+    dateStr = "Unknown"
+    if request.createdAt <> invalid
+        dateStr = request.createdAt
+    end if
+
+    node.description = "Status: " + statusText + " | Requested: " + dateStr
+
+    ' Store metadata
+    node.addFields({
+        requestId: request.id,
+        mediaType: request.media.mediaType,
+        status: request.media.status,
+        requestData: request
+    })
+
+    return node
+end function
+
+sub onRequestSelected(event as object)
+    selectedIndex = event.getData()
+    if selectedIndex.length() > 1
+        itemIndex = selectedIndex[1]
+        rowIndex = selectedIndex[0]
+
+        if rowIndex >= 0 and rowIndex < m.requestsRowList.content.getChildCount()
+            row = m.requestsRowList.content.getChild(rowIndex)
+
+            if itemIndex >= 0 and itemIndex < row.getChildCount()
+                selectedRequest = row.getChild(itemIndex)
+
+                if selectedRequest <> invalid
+                    ShowRequestDetails(selectedRequest)
+                end if
+            end if
+        end if
+    end if
+end sub
+
+sub showRequestDetails(_requestNode as object)
+    ' Could show more details or options for request
+    ' For now, just close
+end sub
+
+sub ShowLoading()
+    m.loadingLabel.visible = true
+    m.noRequestsLabel.visible = false
+    m.requestsRowList.visible = false
+end sub
+
+sub HideLoading()
+    m.loadingLabel.visible = false
+    m.requestsRowList.visible = true
+end sub

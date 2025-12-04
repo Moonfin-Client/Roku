@@ -1,0 +1,491 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/Image.bs"
+import "pkg:/source/constants/HomeRowItemSizes.bs"
+import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/enums/ItemType.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+
+sub init()
+    m.top.overhangTitle = ""
+    m.top.optionsAvailable = false
+
+    ' Get references to UI elements
+    m.genresRows = m.top.findNode("genresRows")
+    m.loadingGroup = m.top.findNode("loadingGroup")
+    m.emptyStateGroup = m.top.findNode("emptyStateGroup")
+
+    ' Detail section references
+    m.detailsSection = m.top.findNode("detailsSection")
+    m.itemTitle = m.top.findNode("itemTitle")
+    m.itemOverview = m.top.findNode("itemOverview")
+    m.metadataText = m.top.findNode("metadataText")
+    m.backdrop = m.top.findNode("backdrop")
+    m.backdropPrev = m.top.findNode("backdropPrev")
+    m.backdropTint = m.top.findNode("backdropTint")
+
+    ' Set up row list
+    m.genresRows.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+    m.genresRows.content = CreateObject("roSGNode", "ContentNode")
+
+    ' Configure row sizes for portrait posters (primary images)
+    m.genresRows.itemSize = [1703, 340]
+    m.genresRows.itemSpacing = [0, 70]
+    m.genresRows.rowItemSpacing = [20, 0]
+    m.genresRows.rowItemSize = homeRowItemSizes.MOVIE_POSTER
+
+    ' Observe events
+    m.backdrop.observeField("loadStatus", "onBackdropLoadStatusChange")
+    m.genresRows.observeField("rowItemFocused", "onItemFocusChanged")
+    m.genresRows.observeField("rowItemSelected", "onItemSelected")
+
+    ' Data storage
+    m.allItems = []
+    m.genreMap = {} ' Maps genre name to array of items
+    m.isLoading = false
+
+    ' Create loading task
+    m.loadGenresTask = createObject("roSGNode", "LoadGenresTask")
+    m.loadGenresTask.observeField("results", "onGenresLoaded")
+    m.loadGenresTask.observeField("error", "onLoadError")
+end sub
+
+' JFScreen hook called when the screen is displayed
+sub OnScreenShown()
+    scene = m.top.getScene()
+    overhang = scene.findNode("overhang")
+    if isValid(overhang)
+        overhang.visible = true
+        overhang.title = ""
+    end if
+
+    ' Load genres on first show
+    if m.allItems.Count() = 0
+        loadGenres()
+    else
+        m.genresRows.setFocus(true)
+    end if
+end sub
+
+' JFScreen hook called when the screen is hidden
+sub OnScreenHidden()
+    scene = m.top.getScene()
+    overhang = scene.findNode("overhang")
+    if isValid(overhang)
+        overhang.title = ""
+    end if
+end sub
+
+sub loadGenres()
+    if m.isLoading then return
+
+    m.isLoading = true
+    showLoading(true)
+    hideEmptyState()
+
+    m.loadGenresTask.control = TaskControl.RUN
+end sub
+
+sub onGenresLoaded(event as object)
+    items = event.getData()
+    m.isLoading = false
+    showLoading(false)
+
+    if not isValid(items) or items.Count() = 0
+        m.allItems = []
+        showEmptyState()
+        return
+    end if
+
+    m.allItems = items
+
+    ' Categorize items by genre - only movies and series (no episodes)
+    m.genreMap = {}
+
+    for each item in items
+        itemType = LCase(item.type)
+
+        ' Skip episodes - only include movies and series
+        if itemType = "episode" then continue for
+
+        ' Get genres from the item
+        if isValid(item.json) and isValid(item.json.Genres)
+            for each genre in item.json.Genres
+                if not isValidAndNotEmpty(genre) then continue for
+
+                ' Initialize genre array if it doesn't exist
+                if not m.genreMap.DoesExist(genre)
+                    m.genreMap[genre] = []
+                end if
+
+                ' Add item to genre - shows and movies first
+                m.genreMap[genre].push(item)
+            end for
+        end if
+    end for
+
+    ' Build rows
+    buildRows()
+
+    ' Focus the rows
+    m.genresRows.setFocus(true)
+end sub
+
+sub onLoadError()
+    m.isLoading = false
+    showLoading(false)
+    showEmptyState()
+end sub
+
+sub buildRows()
+    m.genresRows.content.removeChildrenIndex(m.genresRows.content.getChildCount(), 0)
+
+    rowsAdded = 0
+    rowItemSizes = []
+
+    ' Sort genres alphabetically
+    genreNames = m.genreMap.Keys()
+    sortedGenres = sortArray(genreNames)
+
+    ' Add a row for each genre that has items
+    for each genre in sortedGenres
+        genreItems = m.genreMap[genre]
+        if genreItems.Count() > 0
+            ' Sort items: Series first, then Movies, then by name
+            sortedItems = sortGenreItems(genreItems)
+            addRow(genre, sortedItems)
+            rowItemSizes.push(homeRowItemSizes.MOVIE_POSTER)
+            rowsAdded++
+        end if
+    end for
+
+    ' Set per-row item sizes
+    m.genresRows.rowItemSize = rowItemSizes
+
+    if rowsAdded = 0
+        showEmptyState()
+    end if
+end sub
+
+' Sort items within a genre: Series first, then Movies, alphabetically within each type
+function sortGenreItems(items as object) as object
+    seriesItems = []
+    movieItems = []
+
+    for each item in items
+        itemType = LCase(item.type)
+        if itemType = "series"
+            seriesItems.push(item)
+        else if itemType = "movie"
+            movieItems.push(item)
+        end if
+    end for
+
+    ' Sort each array by title
+    sortedSeries = sortItemsByTitle(seriesItems)
+    sortedMovies = sortItemsByTitle(movieItems)
+
+    ' Combine: series first, then movies
+    result = []
+    for each item in sortedSeries
+        result.push(item)
+    end for
+    for each item in sortedMovies
+        result.push(item)
+    end for
+
+    return result
+end function
+
+' Simple bubble sort for items by title
+function sortItemsByTitle(items as object) as object
+    if items.Count() <= 1 then return items
+
+    result = []
+    for each item in items
+        result.push(item)
+    end for
+
+    n = result.Count()
+    for i = 0 to n - 2
+        for j = 0 to n - 2 - i
+            title1 = LCase(result[j].title)
+            title2 = LCase(result[j + 1].title)
+            if title1 > title2
+                temp = result[j]
+                result[j] = result[j + 1]
+                result[j + 1] = temp
+            end if
+        end for
+    end for
+
+    return result
+end function
+
+' Simple bubble sort for string array
+function sortArray(arr as object) as object
+    if arr.Count() <= 1 then return arr
+
+    result = []
+    for each item in arr
+        result.push(item)
+    end for
+
+    n = result.Count()
+    for i = 0 to n - 2
+        for j = 0 to n - 2 - i
+            if LCase(result[j]) > LCase(result[j + 1])
+                temp = result[j]
+                result[j] = result[j + 1]
+                result[j + 1] = temp
+            end if
+        end for
+    end for
+
+    return result
+end function
+
+sub addRow(title as string, items as object)
+    row = m.genresRows.content.createChild("ContentNode")
+    row.title = title
+
+    for each item in items
+        child = invalid
+        itemType = LCase(item.type)
+
+        if itemType = "movie"
+            child = row.createChild("HomeData")
+            child.json = item.json
+            child.id = item.id
+            child.title = item.json.name
+            child.type = "Movie"
+
+            ' Set poster images - portrait dimensions for primary
+            if isValid(item.json.ImageTags) and isValid(item.json.ImageTags.Primary)
+                imgParams = { "maxHeight": 270, "maxWidth": 180, "Tag": item.json.ImageTags.Primary }
+                child.posterURL = ImageURL(item.id, "Primary", imgParams)
+            end if
+            if isValid(item.json.BackdropImageTags) and item.json.BackdropImageTags.Count() > 0
+                imgParams = { "maxHeight": 270, "maxWidth": 480, "Tag": item.json.BackdropImageTags[0] }
+                child.thumbnailURL = ImageURL(item.id, "Backdrop", imgParams)
+                child.widePosterURL = child.thumbnailURL
+            else
+                child.widePosterURL = child.posterURL
+                child.thumbnailURL = child.posterURL
+            end if
+
+            ' Set image dimensions for poster item
+            child.imageWidth = 180
+
+        else if itemType = "series"
+            child = row.createChild("HomeData")
+            child.json = item.json
+            child.id = item.id
+            child.title = item.json.name
+            child.type = "Series"
+
+            ' Set poster images - portrait dimensions for primary
+            if isValid(item.json.ImageTags) and isValid(item.json.ImageTags.Primary)
+                imgParams = { "maxHeight": 270, "maxWidth": 180, "Tag": item.json.ImageTags.Primary }
+                child.posterURL = ImageURL(item.id, "Primary", imgParams)
+            end if
+            if isValid(item.json.BackdropImageTags) and item.json.BackdropImageTags.Count() > 0
+                imgParams = { "maxHeight": 270, "maxWidth": 480, "Tag": item.json.BackdropImageTags[0] }
+                child.thumbnailURL = ImageURL(item.id, "Backdrop", imgParams)
+                child.widePosterURL = child.thumbnailURL
+            else
+                child.widePosterURL = child.posterURL
+                child.thumbnailURL = child.posterURL
+            end if
+
+            child.imageWidth = 180
+        end if
+    end for
+end sub
+
+sub onItemFocusChanged(event as object)
+    focusedIndex = event.getData()
+    if not isValid(focusedIndex) or focusedIndex.Count() < 2 then return
+
+    rowIndex = focusedIndex[0]
+    itemIndex = focusedIndex[1]
+
+    row = m.genresRows.content.getChild(rowIndex)
+    if not isValid(row) then return
+
+    item = row.getChild(itemIndex)
+    if not isValid(item) then return
+
+    updateDetailsSection(item)
+    updateBackdrop(item)
+end sub
+
+sub updateDetailsSection(item as object)
+    if not isValid(item) or not isValid(item.json) then return
+
+    json = item.json
+    itemType = LCase(item.type)
+
+    ' Set title
+    m.itemTitle.text = json.name
+
+    ' Build metadata string with separator
+    metadataParts = []
+    separator = "  •  "
+
+    ' Community Rating (star rating)
+    if isValid(json.CommunityRating) and json.CommunityRating > 0
+        metadataParts.push("★ " + formatRating(json.CommunityRating))
+    end if
+
+    ' Critic Rating (Rotten Tomatoes)
+    if isValid(json.CriticRating) and json.CriticRating > 0
+        metadataParts.push(json.CriticRating.toStr() + "% RT")
+    end if
+
+    ' Release Year
+    if isValid(json.ProductionYear)
+        if itemType = "series"
+            yearText = json.ProductionYear.toStr()
+            if isValid(json.Status)
+                if LCase(json.Status) = "continuing"
+                    yearText += " - Present"
+                else if LCase(json.Status) = "ended" and isValid(json.EndDate)
+                    yearText += " - " + LEFT(json.EndDate, 4)
+                end if
+            end if
+            metadataParts.push(yearText)
+        else
+            metadataParts.push(json.ProductionYear.toStr())
+        end if
+    end if
+
+    ' Runtime
+    if isValid(json.RunTimeTicks) and json.RunTimeTicks > 0
+        runtimeMinutes = Int(json.RunTimeTicks / 600000000)
+        hours = Int(runtimeMinutes / 60)
+        minutes = runtimeMinutes mod 60
+        if hours > 0
+            metadataParts.push(hours.toStr() + "h " + minutes.toStr() + "m")
+        else
+            metadataParts.push(minutes.toStr() + "m")
+        end if
+    end if
+
+    ' Official Rating (PG-13, TV-MA, etc.)
+    if isValidAndNotEmpty(json.OfficialRating)
+        metadataParts.push(json.OfficialRating)
+    end if
+
+    ' Series Status - only for series
+    if itemType = "series" and isValid(json.Status)
+        status = LCase(json.Status)
+        if status = "continuing"
+            metadataParts.push("Continuing")
+        else if status = "ended"
+            metadataParts.push("Ended")
+        end if
+    end if
+
+    ' Join all metadata parts with separator
+    m.metadataText.text = metadataParts.Join(separator)
+
+    ' Set overview
+    if isValidAndNotEmpty(json.Overview)
+        m.itemOverview.text = json.Overview
+    else
+        m.itemOverview.text = ""
+    end if
+end sub
+
+function formatRating(rating as float) as string
+    ' Format rating to one decimal place
+    return Left(rating.toStr(), 3)
+end function
+
+sub updateBackdrop(item as object)
+    if not isValid(item) then return
+
+    backdropUrl = ""
+
+    ' Try to get higher quality backdrop from json with blur
+    if isValid(item.json)
+        json = item.json
+        if isValid(json.BackdropImageTags) and json.BackdropImageTags.Count() > 0
+            imgParams = { "maxHeight": 1080, "maxWidth": 1920, "quality": 90, "blur": 10, "Tag": json.BackdropImageTags[0] }
+            backdropUrl = ImageURL(item.id, "Backdrop", imgParams)
+        else if isValid(json.ParentBackdropImageTags) and json.ParentBackdropImageTags.Count() > 0
+            imgParams = { "maxHeight": 1080, "maxWidth": 1920, "quality": 90, "blur": 10, "Tag": json.ParentBackdropImageTags[0] }
+            backdropUrl = ImageURL(json.ParentBackdropItemId, "Backdrop", imgParams)
+        end if
+    end if
+
+    ' Fallback to lower quality images if no json backdrop
+    if backdropUrl = ""
+        if isValidAndNotEmpty(item.widePosterURL)
+            backdropUrl = item.widePosterURL
+        else if isValidAndNotEmpty(item.thumbnailURL)
+            backdropUrl = item.thumbnailURL
+        else if isValidAndNotEmpty(item.posterURL)
+            backdropUrl = item.posterURL
+        end if
+    end if
+
+    if isValidAndNotEmpty(backdropUrl) and m.backdrop.uri <> backdropUrl
+        m.backdrop.uri = backdropUrl
+    end if
+end sub
+
+sub onBackdropLoadStatusChange()
+    if isValid(m.backdrop) and m.backdrop.loadStatus = "ready" and isValidAndNotEmpty(m.backdrop.uri)
+        if isValid(m.backdropPrev)
+            m.backdropPrev.uri = m.backdrop.uri
+        end if
+    end if
+end sub
+
+sub onItemSelected(event as object)
+    selectedIndex = event.getData()
+    if not isValid(selectedIndex) or selectedIndex.Count() < 2 then return
+
+    rowIndex = selectedIndex[0]
+    itemIndex = selectedIndex[1]
+
+    row = m.genresRows.content.getChild(rowIndex)
+    if not isValid(row) then return
+
+    item = row.getChild(itemIndex)
+    if not isValid(item) then return
+
+    m.top.selectedItem = item
+end sub
+
+sub showLoading(visible as boolean)
+    m.loadingGroup.visible = visible
+    m.genresRows.visible = not visible
+    m.detailsSection.visible = not visible
+end sub
+
+sub showEmptyState()
+    m.emptyStateGroup.visible = true
+    m.genresRows.visible = false
+    m.detailsSection.visible = false
+end sub
+
+sub hideEmptyState()
+    m.emptyStateGroup.visible = false
+    m.genresRows.visible = true
+    m.detailsSection.visible = true
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = KeyCode.BACK
+        return false
+    end if
+
+    return false
+end function
