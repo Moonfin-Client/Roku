@@ -80,9 +80,9 @@ sub RestoreSession()
     end if
 
     ' Validate the cookie
-    isValid = ValidateJellyseerrCookie()
+    cookieIsValid = ValidateJellyseerrCookie()
 
-    if isValid
+    if cookieIsValid
         m.statusLabel.text = "Connected to: " + config.serverUrl + " (Session Active)"
 
         ' Mark as validated for this app session
