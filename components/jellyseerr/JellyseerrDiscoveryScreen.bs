@@ -15,6 +15,21 @@ sub init()
     m.categoryData = []
     m.rowsLoading = {}
     m.apiTasks = {}
+    m.rowPages = {} ' Track current page for each row
+    m.rowHasMore = {} ' Track if row has more pages
+    m.isLoadingMore = {} ' Track if currently loading more for a row
+
+    ' Cache frequently accessed data
+    m.configCache = GetJellyseerrConfig()
+    m.blockNsfwCache = true
+    if m.configCache <> invalid and m.configCache.blockNsfw <> invalid
+        m.blockNsfwCache = m.configCache.blockNsfw
+    end if
+
+    ' Cache TMDB image base URLs
+    m.tmdbPosterBaseUrl = "https://image.tmdb.org/t/p/w342"
+    m.tmdbBackdropBaseUrl = "https://image.tmdb.org/t/p/w1280"
+
     m.categoryRows.visible = true
     m.categoryRows.itemSize = [1703, 330]
     m.categoryRows.itemSpacing = [0, 150]
@@ -98,28 +113,51 @@ sub LoadDiscoveryCategories()
     end for
 end sub
 
-sub LoadRowContent(rowIndex as integer)
+sub LoadRowContent(rowIndex as integer, isLoadingMore = false as boolean)
     if rowIndex < 0 or rowIndex >= m.categoryRows.content.getChildCount()
         return
     end if
 
     row = m.categoryRows.content.getChild(rowIndex)
 
-    if row.getChildCount() > 0
+    ' Skip if already has content and not loading more
+    if not isLoadingMore and row.getChildCount() > 0
         HideLoading()
         return
     end if
 
     rowKey = "row_" + rowIndex.toStr()
-    if m.rowsLoading[rowKey] = true
+
+    ' Prevent loading more if row has no more pages
+    if isLoadingMore and m.rowHasMore[rowKey] = false
+        return
+    end if
+
+    ' Prevent concurrent requests for same row
+    if m.isLoadingMore[rowKey] = true
         return
     end if
 
     m.rowsLoading[rowKey] = true
+    m.isLoadingMore[rowKey] = true
 
-    config = GetJellyseerrConfig()
+    ' Initialize pagination tracking for this row
+    if not m.rowPages.doesExist(rowKey)
+        m.rowPages[rowKey] = 1
+        ' Check if this row supports pagination (has page parameter)
+        if row.queryParams.doesExist("page")
+            m.rowHasMore[rowKey] = true
+        else
+            ' Rows without page parameter (e.g., upcoming) don't support pagination
+            m.rowHasMore[rowKey] = false
+        end if
+    else if isLoadingMore
+        ' Increment page for loading more
+        m.rowPages[rowKey] = m.rowPages[rowKey] + 1
+    end if
 
-    if not IsValidJellyseerrConfig(config)
+    ' Use cached config
+    if not IsValidJellyseerrConfig(m.configCache)
         ShowError("Jellyseerr not configured")
         return
     end if
@@ -131,13 +169,25 @@ sub LoadRowContent(rowIndex as integer)
     end if
 
     apiTask = CreateObject("roSGNode", "JellyseerrAPITask")
-    apiTask.addFields({ rowIndex: rowIndex })
+    apiTask.addFields({ rowIndex: rowIndex, isLoadingMore: isLoadingMore })
     m.apiTasks[rowKey] = apiTask
+
+    ' Build query params with current page number
+    queryParams = {}
+    for each key in row.queryParams
+        queryParams[key] = row.queryParams[key]
+    end for
+
+    ' Update page parameter
+    currentPage = m.rowPages[rowKey]
+    if queryParams.doesExist("page")
+        queryParams["page"] = currentPage.toStr()
+    end if
 
     apiTask.request = {
         method: "GET",
         endpoint: endpoint,
-        queryParams: row.queryParams
+        queryParams: queryParams
     }
 
     apiTask.observeField("response", "onDiscoveryResponse")
@@ -159,9 +209,17 @@ sub onRowItemFocused(event as object)
         if focusedIndex.count() > 1
             itemIndex = focusedIndex[1]
 
+            ' Check if user is near end of row - load more if available
             if row <> invalid and itemIndex < row.getChildCount()
                 focusedItem = row.getChild(itemIndex)
                 UpdateDetailsSection(focusedItem)
+
+                ' Trigger load more when within 5 items of the end
+                itemsFromEnd = row.getChildCount() - itemIndex
+                rowKey = "row_" + rowIndex.toStr()
+                if itemsFromEnd <= 5 and m.rowHasMore[rowKey] = true and m.isLoadingMore[rowKey] <> true
+                    LoadRowContent(rowIndex, true) ' isLoadingMore = true
+                end if
             end if
         end if
     end if
@@ -212,18 +270,34 @@ sub onRowItemSelected(event as object)
     end if
 end sub
 
+sub OnScreenHidden()
+    ' Cleanup observers to prevent memory leaks
+    CleanupObservers()
+end sub
+
+' Helper to clean up all API task observers
+sub CleanupObservers()
+    if isValid(m.apiTasks)
+        for each key in m.apiTasks
+            task = m.apiTasks[key]
+            if isValid(task)
+                task.unobserveField("response")
+            end if
+        end for
+    end if
+end sub
+
 sub onDiscoveryResponse(event as object)
     response = event.getData()
     apiTask = event.getRoSGNode()
     rowIndex = apiTask.rowIndex
 
     row = m.categoryRows.content.getChild(rowIndex)
-    if row.getChildCount() > 0
-        return
-    end if
-
     rowKey = "row_" + rowIndex.toStr()
+
+    ' Clear loading states
     m.rowsLoading.delete(rowKey)
+    m.isLoadingMore[rowKey] = false
     m.apiTasks.delete(rowKey)
 
     if m.rowsLoading.count() = 0
@@ -236,6 +310,9 @@ sub onDiscoveryResponse(event as object)
 
         ' Check if this is the requests row
         if categoryData <> invalid and categoryData.isRequestsRow = true
+            ' Mark requests row as having no more pages (single load only)
+            m.rowHasMore[rowKey] = false
+
             ' The /api/v1/request endpoint returns minimal data, so we need to enrich each request
             results = response.data.results
             if results <> invalid and type(results) = "roArray"
@@ -266,11 +343,8 @@ sub onDiscoveryResponse(event as object)
             results = response.data.results
 
             if results <> invalid and type(results) = "roArray"
-                config = GetJellyseerrConfig()
-                blockNsfw = true
-                if config <> invalid and config.blockNsfw <> invalid
-                    blockNsfw = config.blockNsfw
-                end if
+                ' Use cached NSFW setting
+                blockNsfw = m.blockNsfwCache
 
                 ' Three-stage filter: library availability, blacklist, NSFW
                 filteredResults = []
@@ -301,6 +375,11 @@ sub onDiscoveryResponse(event as object)
                 results = filteredResults
                 row = m.categoryRows.content.getChild(rowIndex)
 
+                ' Check if there are more pages (typically 20 results per page)
+                if results.Count() < 20
+                    m.rowHasMore[rowKey] = false
+                end if
+
                 itemsAdded = 0
                 for i = 0 to results.Count() - 1
                     item = results[i]
@@ -312,9 +391,8 @@ sub onDiscoveryResponse(event as object)
                     end if
                 end for
 
-                m.categoryRows.content = m.categoryRows.content
-
-                if rowIndex = 0 and not m.categoryRows.hasFocus()
+                ' Only set focus on first load, not when loading more pages
+                if rowIndex = 0 and not m.categoryRows.hasFocus() and not apiTask.isLoadingMore
                     m.categoryRows.setFocus(true)
                     m.categoryRows.jumpToRowItem = [0, 0]
                 end if
@@ -383,7 +461,7 @@ sub EnrichNextRequest()
         for each item in m.enrichedRequestItems
             row.appendChild(item)
         end for
-        m.categoryRows.content = m.categoryRows.content
+        ' Content is already updated via appendChild, no need to reassign
         return
     end if
 

@@ -41,14 +41,14 @@ sub init()
     m.top.focusable = true
 
     ' Observe visibility changes to refresh display when shown
-    m.top.observeField("visible", "onVisibilityChanged")
+    m.top.observeFieldScoped("visible", "onVisibilityChanged")
 
     ' Observe focus changes to ensure backdrop is set on initial focus
-    m.top.observeField("hasFocus", "onFocusChanged")
+    m.top.observeFieldScoped("hasFocus", "onFocusChanged")
 
     ' Observe overlay settings changes
     if isValid(m.global)
-        m.global.observeField("overlaySettingsChanged", "onOverlaySettingsChanged")
+        m.global.observeFieldScoped("overlaySettingsChanged", "onOverlaySettingsChanged")
     end if
 
     ' Apply UI overlay settings
@@ -56,6 +56,31 @@ sub init()
 
     ' Load media items
     loadMediaBarItems()
+end sub
+
+' Cleanup function called when component is destroyed
+sub OnComponentDestroy()
+    ' Stop and clean up auto-advance timer
+    if isValid(m.autoAdvanceTimer)
+        m.autoAdvanceTimer.control = "stop"
+        m.autoAdvanceTimer.unobserveField("fire")
+        m.autoAdvanceTimer = invalid
+    end if
+
+    ' Clean up MediaBarTask observer
+    if isValid(m.mediaBarTask)
+        m.mediaBarTask.unobserveField("mediaBarData")
+        m.mediaBarTask = invalid
+    end if
+
+    ' Unobserve global fields
+    if isValid(m.global)
+        m.global.unobserveFieldScoped("overlaySettingsChanged")
+    end if
+
+    ' Unobserve component fields
+    m.top.unobserveFieldScoped("visible")
+    m.top.unobserveFieldScoped("hasFocus")
 end sub
 
 ' Handle focus changes - ensure backdrop is set when component gets focus
@@ -146,7 +171,7 @@ sub loadMediaBarItems()
     ' Create and configure task to fetch data from API
     m.mediaBarTask = createObject("roSGNode", "MediaBarTask")
     m.mediaBarTask.userId = m.global.session.user.id
-    m.mediaBarTask.observeField("mediaBarData", "onMediaBarDataLoaded")
+    m.mediaBarTask.observeFieldScoped("mediaBarData", "onMediaBarDataLoaded")
     m.mediaBarTask.control = "RUN"
 end sub
 
@@ -155,6 +180,11 @@ sub onMediaBarDataLoaded(event as object)
     data = event.getData()
     if not isValid(data)
         return
+    end if
+
+    ' Clean up task observer now that we have the data
+    if isValid(m.mediaBarTask)
+        m.mediaBarTask.unobserveFieldScoped("mediaBarData")
     end if
 
     moviesData = data.movies
@@ -202,14 +232,8 @@ sub onMediaBarDataLoaded(event as object)
             m.rightArrow.visible = true
             startAutoAdvanceTimer()
         end if
-        ' Display first item and immediately set backdrop to trigger loading
+        ' Display first item (single backdrop update)
         displayMediaBarItem(0)
-        ' Force immediate backdrop update by setting it twice to ensure it triggers
-        ' This happens even if component is initially hidden (visible=false in XML)
-        if m.mediaBarItems[0].backdropUrl <> ""
-            m.top.currentBackdrop = ""
-            m.top.currentBackdrop = m.mediaBarItems[0].backdropUrl
-        end if
     end if
 end sub
 
@@ -223,8 +247,11 @@ function processItem(item as object) as object
         year: invalid,
         rating: invalid,
         runtime: invalid,
+        runtimeDisplay: "",
         communityRating: invalid,
+        communityRatingDisplay: "",
         genres: [],
+        genresDisplay: "",
         backdropUrl: "",
         logoUrl: ""
     }
@@ -263,21 +290,29 @@ function processItem(item as object) as object
 
     if isValid(item.runTimeTicks)
         minutes = int(item.runTimeTicks / 600000000)
+        processed.runtime = minutes
         if minutes >= 60
             hours = int(minutes / 60)
             mins = minutes mod 60
-            processed.runtime = hours.toStr() + "h " + mins.toStr() + "m"
+            processed.runtimeDisplay = hours.toStr() + "h " + mins.toStr() + "m"
         else
-            processed.runtime = minutes.toStr() + " min"
+            processed.runtimeDisplay = minutes.toStr() + " min"
         end if
     end if
 
     if isValid(item.communityRating)
         processed.communityRating = item.communityRating
+        processed.communityRatingDisplay = formatFloat(item.communityRating, 1)
     end if
 
     if isChainValid(item, "genres") and item.genres.count() > 0
         processed.genres = item.genres
+        ' Cache genres display string (first 3 genres joined)
+        displayGenres = item.genres
+        if displayGenres.count() > 3
+            displayGenres = [displayGenres[0], displayGenres[1], displayGenres[2]]
+        end if
+        processed.genresDisplay = displayGenres.join(" • ")
     end if
 
     return processed
@@ -398,10 +433,10 @@ sub displayMediaBarItem(index as integer)
 
     item = m.mediaBarItems[index]
 
-    ' Force backdrop update by clearing first, then setting
-    ' This ensures the image loads even if URL is same
-    m.top.currentBackdrop = ""
-    m.top.currentBackdrop = item.backdropUrl
+    ' Update backdrop (single set, parent handles transitions)
+    if item.backdropUrl <> ""
+        m.top.currentBackdrop = item.backdropUrl
+    end if
 
     ' Show logo OR title
     if item.logoUrl <> ""
@@ -434,18 +469,17 @@ sub displayMediaBarItem(index as integer)
         m.ratingLabel.text = ""
     end if
 
-    if item.runtime <> invalid
-        m.runtimeLabel.text = item.runtime
+    if item.runtimeDisplay <> ""
+        m.runtimeLabel.text = item.runtimeDisplay
         hasRuntime = true
     else
         m.runtimeLabel.text = ""
     end if
 
     ' Community rating with star
-    if item.communityRating <> invalid
-        ratingStr = formatFloat(item.communityRating, 1)
+    if item.communityRatingDisplay <> ""
         m.starLabel.visible = true
-        m.communityRatingLabel.text = ratingStr
+        m.communityRatingLabel.text = item.communityRatingDisplay
         hasStarRating = true
     else
         m.starLabel.visible = false
@@ -457,17 +491,8 @@ sub displayMediaBarItem(index as integer)
     m.separatorDot2.visible = (hasRating and hasRuntime)
     m.separatorDot3.visible = (hasRuntime and hasStarRating)
 
-    ' Genres (join with bullet separator, take first 3)
-    if item.genres.count() > 0
-        displayGenres = item.genres
-        if displayGenres.count() > 3
-            displayGenres = [displayGenres[0], displayGenres[1], displayGenres[2]]
-        end if
-        genresText = displayGenres.join(" • ")
-        m.genresLabel.text = genresText
-    else
-        m.genresLabel.text = ""
-    end if
+    ' Genres (use cached display string)
+    m.genresLabel.text = item.genresDisplay
 
     ' Overview (full text, no line limit)
     if item.overview <> invalid
@@ -486,9 +511,6 @@ end sub
 ' Update info background to match content height
 sub updateInfoBackgroundSize()
     if not isValid(m.infoOverlayContent) or not isValid(m.infoBackground) then return
-
-    ' Wait a frame for text to render and get actual height
-    m.top.observeFieldScoped("height", "onContentHeightChanged")
 
     ' Get the bounding rect of the content
     contentHeight = m.infoOverlayContent.boundingRect().height
@@ -524,7 +546,7 @@ sub startAutoAdvanceTimer()
     m.autoAdvanceTimer = createObject("roSGNode", "Timer")
     m.autoAdvanceTimer.duration = 7
     m.autoAdvanceTimer.repeat = true
-    m.autoAdvanceTimer.observeField("fire", "onAutoAdvance")
+    m.autoAdvanceTimer.observeFieldScoped("fire", "onAutoAdvance")
     m.autoAdvanceTimer.control = "start"
 end sub
 
