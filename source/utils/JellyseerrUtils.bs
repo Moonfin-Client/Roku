@@ -1,5 +1,183 @@
 ' Jellyseerr API Configuration and Utilities
 
+' ============================================
+' User ID Management
+' ============================================
+
+' Get the current logged-in Jellyfin user ID
+' Returns empty string if no user is logged in
+function GetCurrentJellyfinUserId() as string
+    if m.global <> invalid and m.global.session <> invalid and m.global.session.user <> invalid and m.global.session.user.id <> invalid
+        return m.global.session.user.id
+    end if
+    return ""
+end function
+
+' Get the last Jellyfin user ID that used Jellyseerr
+' Returns empty string if never set
+function GetLastJellyseerrUserId() as string
+    sec = CreateObject("roRegistrySection", "jellyseerr_global")
+    lastUserId = sec.Read("lastJellyfinUserId")
+    if lastUserId = invalid
+        return ""
+    end if
+    return lastUserId
+end function
+
+' Store the last Jellyfin user ID that used Jellyseerr
+' @param userId - Jellyfin user ID to store
+sub SetLastJellyseerrUserId(userId as string)
+    if userId = ""
+        return
+    end if
+
+    sec = CreateObject("roRegistrySection", "jellyseerr_global")
+    sec.Write("lastJellyfinUserId", userId)
+    sec.Flush()
+end sub
+
+' Get the registry section name for a specific user's Jellyseerr settings
+' @param userId - Jellyfin user ID
+' @returns Registry section name like "jellyseerr_user_abc123"
+function GetJellyseerrUserRegistry(userId as string) as string
+    if userId = ""
+        return ""
+    end if
+    return "jellyseerr_user_" + userId
+end function
+
+' ============================================
+' Global & Per-User Config Helpers
+' ============================================
+
+' Get global Jellyseerr settings (shared across all users)
+' @returns Object with serverUrl and blockNsfw
+function GetJellyseerrGlobalConfig() as object
+    sec = CreateObject("roRegistrySection", "jellyseerr_global")
+
+    serverUrl = sec.Read("serverUrl")
+    if serverUrl = invalid then serverUrl = ""
+
+    blockNsfwStr = sec.Read("blockNsfw")
+    blockNsfw = true ' Default to enabled
+    if blockNsfwStr <> invalid and blockNsfwStr <> ""
+        blockNsfw = (blockNsfwStr = "true")
+    end if
+
+    return {
+        serverUrl: serverUrl,
+        blockNsfw: blockNsfw
+    }
+end function
+
+' Set global Jellyseerr settings (shared across all users)
+' @param serverUrl - Jellyseerr server URL
+' @param blockNsfw - Whether to block NSFW content
+sub SetJellyseerrGlobalConfig(serverUrl as string, blockNsfw as boolean)
+    sec = CreateObject("roRegistrySection", "jellyseerr_global")
+
+    if serverUrl <> ""
+        sec.Write("serverUrl", serverUrl)
+    end if
+
+    if blockNsfw
+        sec.Write("blockNsfw", "true")
+    else
+        sec.Write("blockNsfw", "false")
+    end if
+
+    sec.Flush()
+end sub
+
+' Get user-specific Jellyseerr settings
+' @param userId - Jellyfin user ID
+' @returns Object with authCookie, authMethod, credentials
+function GetJellyseerrUserConfig(userId as string) as object
+    if userId = ""
+        return {
+            authCookie: "",
+            authMethod: "jellyfin",
+            jellyfinPassword: "",
+            localEmail: "",
+            localPassword: ""
+        }
+    end if
+
+    registryName = GetJellyseerrUserRegistry(userId)
+    sec = CreateObject("roRegistrySection", registryName)
+
+    authCookie = sec.Read("authCookie")
+    if authCookie = invalid then authCookie = ""
+
+    authMethod = sec.Read("authMethod")
+    if authMethod = invalid or authMethod = "" then authMethod = "jellyfin"
+
+    jellyfinPassword = sec.Read("jellyfinPassword")
+    if jellyfinPassword = invalid then jellyfinPassword = ""
+
+    localEmail = sec.Read("localEmail")
+    if localEmail = invalid then localEmail = ""
+
+    localPassword = sec.Read("localPassword")
+    if localPassword = invalid then localPassword = ""
+
+    return {
+        authCookie: authCookie,
+        authMethod: authMethod,
+        jellyfinPassword: jellyfinPassword,
+        localEmail: localEmail,
+        localPassword: localPassword
+    }
+end function
+
+' Set user-specific Jellyseerr settings
+' @param userId - Jellyfin user ID
+' @param authCookie - Session cookie
+' @param authMethod - Authentication method ("jellyfin" or "local")
+' @param jellyfinPassword - Jellyfin password (optional, for auto-login)
+' @param localEmail - Local account email (optional)
+' @param localPassword - Local account password (optional)
+sub SetJellyseerrUserConfig(userId as string, authCookie as string, authMethod as string, jellyfinPassword = "" as string, localEmail = "" as string, localPassword = "" as string)
+    if userId = ""
+        return
+    end if
+
+    registryName = GetJellyseerrUserRegistry(userId)
+    sec = CreateObject("roRegistrySection", registryName)
+
+    if authCookie <> ""
+        sec.Write("authCookie", authCookie)
+    end if
+
+    if authMethod <> ""
+        sec.Write("authMethod", authMethod)
+    end if
+
+    if jellyfinPassword <> ""
+        sec.Write("jellyfinPassword", jellyfinPassword)
+    else
+        sec.Delete("jellyfinPassword")
+    end if
+
+    if localEmail <> ""
+        sec.Write("localEmail", localEmail)
+    else
+        sec.Delete("localEmail")
+    end if
+
+    if localPassword <> ""
+        sec.Write("localPassword", localPassword)
+    else
+        sec.Delete("localPassword")
+    end if
+
+    sec.Flush()
+end sub
+
+' ============================================
+' TMDB Image URLs
+' ============================================
+
 ' TMDB Image Base URLs (cached to avoid repeated concatenation)
 function GetTmdbImageBaseUrls() as object
     return {
@@ -10,76 +188,54 @@ function GetTmdbImageBaseUrls() as object
     }
 end function
 
-sub SetJellyseerrConfig(serverUrl as string, apiKey as string, authMethod as string)
-    sec = CreateObject("roRegistrySection", "jellyseerr")
-    sec.Write("serverUrl", serverUrl)
-    sec.Write("apiKey", apiKey)
-    sec.Write("enabled", "true")
+' Set Jellyseerr configuration (combines global and user-specific settings)
+' NOTE: This maintains backward compatibility but internally uses separated storage
+' @param serverUrl - Jellyseerr server URL (stored globally)
+' @param _apiKey - DEPRECATED - API keys no longer used, kept for compatibility
+' @param authMethod - Authentication method (stored per-user)
+sub SetJellyseerrConfig(serverUrl as string, _apiKey as string, authMethod as string)
+    ' Get current user ID
+    userId = GetCurrentJellyfinUserId()
 
-    if authMethod <> ""
-        sec.Write("authMethod", authMethod)
+    ' Store global settings (serverUrl)
+    if serverUrl <> ""
+        globalConfig = GetJellyseerrGlobalConfig()
+        SetJellyseerrGlobalConfig(serverUrl, globalConfig.blockNsfw)
     end if
 
-    sec.Flush()
+    ' Store user-specific settings (authMethod)
+    if userId <> "" and authMethod <> ""
+        userConfig = GetJellyseerrUserConfig(userId)
+        SetJellyseerrUserConfig(userId, userConfig.authCookie, authMethod, userConfig.jellyfinPassword, userConfig.localEmail, userConfig.localPassword)
+    end if
 end sub
 
+' Get complete Jellyseerr configuration (combines global and user-specific settings)
+' NOTE: Now uses separated registry sections for global vs per-user data
+' @returns Object with all Jellyseerr settings
 function GetJellyseerrConfig() as object
-    ' Priority: user settings → registry
-    serverUrl = ""
-    apiKey = ""
-    authCookie = ""
-    authMethod = "apikey"
-    jellyfinPassword = ""
-    localEmail = ""
-    localPassword = ""
-    blockNsfw = true
+    ' Get current user ID
+    userId = GetCurrentJellyfinUserId()
 
-    if m.global <> invalid and m.global.session <> invalid and m.global.session.user <> invalid and m.global.session.user.settings <> invalid
-        serverUrl = m.global.session.user.settings["jellyseerr.url"]
-        apiKey = m.global.session.user.settings["jellyseerr.apiKey"]
-        authMethod = m.global.session.user.settings["jellyseerr.authMethod"]
-        jellyfinPassword = m.global.session.user.settings["jellyseerr.jellyfinPassword"]
-        localEmail = m.global.session.user.settings["jellyseerr.localEmail"]
-        localPassword = m.global.session.user.settings["jellyseerr.localPassword"]
+    ' Get global settings (serverUrl, blockNsfw)
+    globalConfig = GetJellyseerrGlobalConfig()
 
-        blockNsfwSetting = m.global.session.user.settings["jellyseerr.blockNsfw"]
-        if blockNsfwSetting <> invalid
-            blockNsfw = blockNsfwSetting
-        end if
-    end if
+    ' Get user-specific settings (authCookie, authMethod, credentials)
+    userConfig = GetJellyseerrUserConfig(userId)
 
-    sec = CreateObject("roRegistrySection", "jellyseerr")
-
-    if serverUrl = invalid or serverUrl = ""
-        serverUrl = sec.Read("serverUrl")
-    end if
-
-    if apiKey = invalid or apiKey = ""
-        apiKey = sec.Read("apiKey")
-    end if
-
-    authCookie = sec.Read("authCookie")
-
-    if authMethod = invalid or authMethod = ""
-        authMethod = sec.Read("authMethod")
-        if authMethod = invalid or authMethod = "" then authMethod = "apikey"
-    end if
-
-    blockNsfwRegistry = sec.Read("blockNsfw")
-    if blockNsfwRegistry <> invalid and blockNsfwRegistry <> ""
-        blockNsfw = (blockNsfwRegistry = "true")
-    end if
-
-    if serverUrl = invalid or serverUrl = ""
-        serverUrl = sec.Read("url")
-    end if
+    ' Combine into single config object for backward compatibility
+    serverUrl = globalConfig.serverUrl
+    blockNsfw = globalConfig.blockNsfw
+    authCookie = userConfig.authCookie
+    authMethod = userConfig.authMethod
+    jellyfinPassword = userConfig.jellyfinPassword
+    localEmail = userConfig.localEmail
+    localPassword = userConfig.localPassword
 
     ' Validate config based on auth method
     isConfigured = false
     if serverUrl <> "" and serverUrl <> invalid
-        if authMethod = "apikey" and isValidStringValue(apiKey)
-            isConfigured = true
-        else if authMethod = "jellyfin" and (isValidStringValue(authCookie) or isValidStringValue(jellyfinPassword))
+        if authMethod = "jellyfin" and (isValidStringValue(authCookie) or isValidStringValue(jellyfinPassword))
             isConfigured = true
         else if authMethod = "local" and (isValidStringValue(authCookie) or (isValidStringValue(localEmail) and isValidStringValue(localPassword)))
             isConfigured = true
@@ -88,7 +244,7 @@ function GetJellyseerrConfig() as object
 
     return {
         serverUrl: serverUrl,
-        apiKey: apiKey,
+        apiKey: "",
         authCookie: authCookie,
         authMethod: authMethod,
         jellyfinPassword: jellyfinPassword,
@@ -99,26 +255,34 @@ function GetJellyseerrConfig() as object
     }
 end function
 
+' Disable Jellyseerr and clear all configuration
+' Clears both global settings and current user's settings
 sub DisableJellyseerr()
-    sec = CreateObject("roRegistrySection", "jellyseerr")
-    sec.Delete("serverUrl")
-    sec.Delete("apiKey")
-    sec.Delete("enabled")
-    sec.Flush()
+    ' Clear global settings
+    globalSec = CreateObject("roRegistrySection", "jellyseerr_global")
+    globalSec.Delete("serverUrl")
+    globalSec.Delete("blockNsfw")
+    globalSec.Flush()
+
+    ' Clear current user's settings
+    userId = GetCurrentJellyfinUserId()
+    if userId <> ""
+        userRegistry = GetJellyseerrUserRegistry(userId)
+        userSec = CreateObject("roRegistrySection", userRegistry)
+        userSec.Delete("authCookie")
+        userSec.Delete("authMethod")
+        userSec.Delete("jellyfinPassword")
+        userSec.Delete("localEmail")
+        userSec.Delete("localPassword")
+        userSec.Flush()
+    end if
 end sub
 
+' Set NSFW filtering preference (global setting shared across all users)
+' @param enabled - True to block NSFW content, false to allow
 sub SetJellyseerrBlockNsfw(enabled as boolean)
-    sec = CreateObject("roRegistrySection", "jellyseerr")
-    if enabled
-        sec.Write("blockNsfw", "true")
-    else
-        sec.Write("blockNsfw", "false")
-    end if
-    sec.Flush()
-
-    if m.global <> invalid and m.global.session <> invalid and m.global.session.user <> invalid and m.global.session.user.settings <> invalid
-        m.global.session.user.settings["jellyseerr.blockNsfw"] = enabled
-    end if
+    globalConfig = GetJellyseerrGlobalConfig()
+    SetJellyseerrGlobalConfig(globalConfig.serverUrl, enabled)
 end sub
 
 function BuildQueryString(params as object) as string
@@ -689,9 +853,17 @@ function ValidateJellyseerrCookie() as boolean
     return true
 end function
 
+' Clear authentication cookie for current user
+' Used when session expires or authentication fails
 sub ClearJellyseerrCookie()
-    ' Remove expired/invalid cookie from registry
-    sec = CreateObject("roRegistrySection", "jellyseerr")
+    userId = GetCurrentJellyfinUserId()
+    if userId = ""
+        return
+    end if
+
+    ' Remove cookie from user-specific registry
+    userRegistry = GetJellyseerrUserRegistry(userId)
+    sec = CreateObject("roRegistrySection", userRegistry)
     sec.Delete("authCookie")
     sec.Flush()
 
