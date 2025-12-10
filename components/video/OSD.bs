@@ -2,7 +2,6 @@ import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/utils/misc.bs"
 
 const LOGO_RIGHT_PADDING = 30
-const OPTIONCONTROLS_TOP_PADDING = 50
 
 sub init()
     m.videoControls = m.top.findNode("videoControls")
@@ -12,13 +11,18 @@ sub init()
     m.videoInfo = m.top.findNode("videoInfo")
     m.itemTitle = m.top.findNode("itemTitle")
     m.videoPlayPause = m.top.findNode("videoPlayPause")
-    m.videoPositionTime = m.top.findNode("videoPositionTime")
     m.videoRemainingTime = m.top.findNode("videoRemainingTime")
     m.videoEndingTime = m.top.findNode("videoEndingTime")
     m.progressBar = m.top.findNode("progressBar")
     m.progressBarBackground = m.top.findNode("progressBarBackground")
+    m.progressIndicator = m.top.findNode("progressIndicator")
+    m.seekbarGroup = m.top.findNode("seekbarGroup")
     m.nextItem = m.top.FindNode("nextItem")
     m.previousItem = m.top.FindNode("previousItem")
+
+    ' Track if user is seeking
+    m.isSeeking = false
+    m.seekPercentage = 0
 
     m.top.observeField("visible", "onVisibleChanged")
     m.top.observeField("hasFocus", "onFocusChanged")
@@ -38,27 +42,29 @@ sub init()
     m.top.observeField("nextItemIcon", "onNextItemIconChanged")
     m.top.observeField("nextItemTitleText", "onNextItemTitleTextChanged")
 
-    m.defaultButtonIndex = 2
-    m.focusedButtonIndex = 2
-    m.optionControlsMoved = false
+    ' Default focus on play/pause button (index 0 in primary row)
+    m.defaultButtonIndex = 0
+    m.focusedButtonIndex = 0
+    m.currentButtonGroup = "video"
+    m.logoMoved = false
 
     m.videoControls.buttonFocused = m.defaultButtonIndex
-    m.optionControls.buttonFocused = m.optionControls.getChildCount() - 1
-
+    m.optionControls.buttonFocused = 0
     m.videoControls.getChild(m.defaultButtonIndex).focus = true
     m.deviceInfo = CreateObject("roDeviceInfo")
 
     m.progressBarBackground.color = ColorPalette.BLACK77
     m.progressBar.color = "#00a4dc"
 
-    optionButtons = m.optionControls.getChildren(-1, 0)
-    for each button in optionButtons
+    ' Style all buttons in both control rows
+    videoButtons = m.videoControls.getChildren(-1, 0)
+    for each button in videoButtons
         button.background = ColorPalette.DARKGREY
         button.focusBackground = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
     end for
 
-    videoButtons = m.videoControls.getChildren(-1, 0)
-    for each button in videoButtons
+    optionButtons = m.optionControls.getChildren(-1, 0)
+    for each button in optionButtons
         button.background = ColorPalette.DARKGREY
         button.focusBackground = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
     end for
@@ -67,13 +73,17 @@ end sub
 ' onProgressPercentageChanged: Handler for changes to m.top.progressPercentage param
 '
 sub onProgressPercentageChanged()
-    m.videoPositionTime.text = secondsToHuman(m.top.positionTime, true)
-    m.videoRemainingTime.text = secondsToHuman(m.top.remainingPositionTime, true)
+    totalTime = m.top.positionTime + m.top.remainingPositionTime
+    m.videoRemainingTime.text = secondsToHuman(m.top.positionTime, true) + " / " + secondsToHuman(totalTime, true)
     m.progressBar.width = m.progressBarBackground.width * m.top.progressPercentage
+
+    ' Update circle indicator position (centered on progress, offset by circle radius)
+    indicatorX = 103 + (m.progressBarBackground.width * m.top.progressPercentage) - 10
+    m.progressIndicator.translation = [indicatorX, 912]
 end sub
 
 sub setVideoEndingTime()
-    m.videoEndingTime.text = m.top.videoEndingTime
+    m.videoEndingTime.text = "Ends at " + m.top.videoEndingTime
 end sub
 
 
@@ -98,12 +108,6 @@ sub onItemSubtitleTextChanged()
     itemSeason = m.top.findNode("itemSeason")
     itemSeason.font.size = 32
     itemSeason.text = m.top.itemSubtitleText
-
-    ' Move the option controls down to give room for season number
-    if not m.optionControlsMoved
-        moveOptionControls(0, OPTIONCONTROLS_TOP_PADDING)
-        m.optionControlsMoved = true
-    end if
 end sub
 
 ' onSeasonNumberChanged: Handler for changes to m.top.seasonNumber param.
@@ -113,12 +117,6 @@ sub onSeasonNumberChanged()
     itemSeason = m.top.findNode("itemSeason")
     itemSeason.font.size = 32
     itemSeason.text = `S${m.top.seasonNumber}`
-
-    ' Move the option controls down to give room for season number
-    if not m.optionControlsMoved
-        moveOptionControls(0, OPTIONCONTROLS_TOP_PADDING)
-        m.optionControlsMoved = true
-    end if
 end sub
 
 ' onEpisodeNumberChanged: Handler for changes to m.top.episodeNumber param.
@@ -128,12 +126,6 @@ sub onEpisodeNumberChanged()
     itemEpisode = m.top.findNode("itemEpisode")
     itemEpisode.font.size = 32
     itemEpisode.text = `E${m.top.episodeNumber}`
-
-    ' Move the option controls down to give room for episode number
-    if not m.optionControlsMoved
-        moveOptionControls(0, OPTIONCONTROLS_TOP_PADDING)
-        m.optionControlsMoved = true
-    end if
 end sub
 
 ' onEpisodeNumberEndChanged: Handler for changes to m.top.episodeNumberEnd param.
@@ -143,20 +135,6 @@ sub onEpisodeNumberEndChanged()
     itemEpisodeEnd = m.top.findNode("itemEpisodeEnd")
     itemEpisodeEnd.font.size = 32
     itemEpisodeEnd.text = `-${m.top.episodeNumberEnd}`
-
-    ' Move the option controls down to give room for episode number
-    if not m.optionControlsMoved
-        moveOptionControls(0, OPTIONCONTROLS_TOP_PADDING)
-        m.optionControlsMoved = true
-    end if
-end sub
-
-' moveOptionControls: Moves option controls node based on passed pixel values
-'
-' @param {integer} horizontalPixels - Number of horizontal pixels to move option controls
-' @param {integer} verticalPixels - Number of vertical pixels to move option controls
-sub moveOptionControls(horizontalPixels as integer, verticalPixels as integer)
-    m.optionControls.translation = `[${m.optionControls.translation[0] + horizontalPixels}, ${m.optionControls.translation[1] + verticalPixels}]`
 end sub
 
 ' onLogoLoadStatusChanged: Handler for changes to logo image's status.
@@ -167,14 +145,10 @@ sub onLogoLoadStatusChanged(event)
         logoImage = event.getRoSGNode()
         logoImage.unobserveField("loadStatus")
 
-        ' Move video info to the right based on the logo width
-        m.videoInfo.translation = `[${m.videoInfo.translation[0] + logoImage.bitmapWidth + LOGO_RIGHT_PADDING}, ${m.videoInfo.translation[1]}]`
-        m.itemTitle.maxWidth = m.itemTitle.maxWidth - (logoImage.bitmapWidth + LOGO_RIGHT_PADDING)
-
-        ' Move the option controls down based on the logo height
-        if not m.optionControlsMoved
-            moveOptionControls(0, OPTIONCONTROLS_TOP_PADDING)
-            m.optionControlsMoved = true
+        ' Move video info below the logo based on the logo height if not already moved
+        if not m.logoMoved
+            m.videoInfo.translation = `[${m.videoInfo.translation[0]}, ${m.videoInfo.translation[1] + logoImage.bitmapHeight + LOGO_RIGHT_PADDING}]`
+            m.logoMoved = true
         end if
     end if
 end sub
@@ -219,7 +193,7 @@ end sub
 ' resetFocusToDefaultButton: Reset focus back to the default button
 '
 sub resetFocusToDefaultButton()
-    ' Remove focus from previously selected button
+    ' Remove focus from all buttons
     for each child in m.videoControls.getChildren(-1, 0)
         if isValid(child.focus)
             child.focus = false
@@ -232,14 +206,13 @@ sub resetFocusToDefaultButton()
         end if
     end for
 
-    m.optionControls.setFocus(false)
-
-    ' Set focus back to the default button
+    ' Set focus back to the default button (play/pause)
     m.videoControls.setFocus(true)
+    m.optionControls.setFocus(false)
+    m.currentButtonGroup = "video"
     m.focusedButtonIndex = m.defaultButtonIndex
     m.videoControls.getChild(m.defaultButtonIndex).focus = true
     m.videoControls.buttonFocused = m.defaultButtonIndex
-    m.optionControls.buttonFocused = m.optionControls.getChildCount() - 1
 end sub
 
 ' onVisibleChanged: Handler for changes to the visibility of this menu.
@@ -254,19 +227,15 @@ sub onVisibleChanged()
 
     m.inactivityTimer.unobserveField("fire")
     m.inactivityTimer.control = "stop"
-end sub
-
-' onFocusChanged: Handler for changes to the focus of this menu.
+end sub' onFocusChanged: Handler for changes to the focus of this menu.
 '
 sub onFocusChanged()
     if m.top.hasfocus
-        focusedButton = m.optionControls.getChild(m.focusedButtonIndex)
-        if focusedButton.focus
+        if m.currentButtonGroup = "option"
             m.optionControls.setFocus(true)
-            return
+        else
+            m.videoControls.setFocus(true)
         end if
-
-        m.videoControls.setFocus(true)
     end if
 end sub
 
@@ -275,6 +244,11 @@ end sub
 sub inactiveCheck()
     ' If user is currently seeing a dialog box, ignore inactive check
     if m.global.sceneManager.callFunc("isDialogOpen")
+        return
+    end if
+
+    ' If inactiveTimeout is 0, keep OSD visible (don't auto-hide)
+    if m.top.inactiveTimeout = 0
         return
     end if
 
@@ -287,13 +261,11 @@ end sub
 ' onButtonSelected: Handler for selection of buttons from the menu.
 '
 sub onButtonSelected()
-    if m.optionControls.isInFocusChain()
-        buttonGroup = m.optionControls
+    if m.currentButtonGroup = "option"
+        selectedButton = m.optionControls.getChild(m.focusedButtonIndex)
     else
-        buttonGroup = m.videoControls
+        selectedButton = m.videoControls.getChild(m.focusedButtonIndex)
     end if
-
-    selectedButton = buttonGroup.getChild(m.focusedButtonIndex)
 
     if LCase(selectedButton.id) = "chapterlist"
         m.top.showChapterList = not m.top.showChapterList
@@ -306,7 +278,7 @@ end sub
 
 ' checkDisplaySiblingItem: Determine visible state for both previous and next item popups
 '
-sub checkDisplaySiblingItem(selectedButtonID)
+sub checkDisplaySiblingItem(selectedButtonID as string)
     if not isValidAndNotEmpty(selectedButtonID) then selectedButtonID = ""
 
     selectedButtonID = LCase(selectedButtonID)
@@ -352,12 +324,40 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if key = "right"
-        if m.optionControls.isInFocusChain()
+        ' Handle seeking if on seekbar
+        if m.currentButtonGroup = "seekbar"
+            totalTime = m.top.positionTime + m.top.remainingPositionTime
+
+            ' If just entered seeking mode, initialize with current position
+            if not m.isSeeking
+                m.isSeeking = true
+                m.seekPercentage = m.top.progressPercentage
+            end if
+
+            ' Increment by 1% of total video
+            m.seekPercentage = m.seekPercentage + 0.01
+            if m.seekPercentage > 1.0 then m.seekPercentage = 1.0
+
+            newPosition = totalTime * m.seekPercentage
+
+            ' Update visual position immediately
+            m.progressBar.width = m.progressBarBackground.width * m.seekPercentage
+            indicatorX = 103 + (m.progressBarBackground.width * m.seekPercentage) - 10
+            m.progressIndicator.translation = [indicatorX, 912]
+
+            ' Send seek action
+            m.top.action = "seek," + newPosition.ToStr()
+            return true
+        end if
+
+        ' Get current button group
+        if m.currentButtonGroup = "option"
             buttonGroup = m.optionControls
         else
             buttonGroup = m.videoControls
         end if
 
+        ' Navigate right in current row
         if m.focusedButtonIndex + 1 >= buttonGroup.getChildCount()
             return true
         end if
@@ -374,8 +374,10 @@ function onKeyEvent(key as string, press as boolean) as boolean
                 buttonGroup.buttonFocused = m.focusedButtonIndex
                 focusedButton.focus = true
 
-                focusedButtonID = m.videoControls.isInFocusChain() ? focusedButton.id : ""
-                checkDisplaySiblingItem(focusedButtonID)
+                ' Check if we should display sibling item info (only for video controls)
+                if m.currentButtonGroup = "video"
+                    checkDisplaySiblingItem(focusedButton.id)
+                end if
                 exit for
             end if
         end for
@@ -384,11 +386,39 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if key = "left"
+        ' Handle seeking if on seekbar
+        if m.currentButtonGroup = "seekbar"
+            totalTime = m.top.positionTime + m.top.remainingPositionTime
+
+            ' If just entered seeking mode, initialize with current position
+            if not m.isSeeking
+                m.isSeeking = true
+                m.seekPercentage = m.top.progressPercentage
+            end if
+
+            ' Decrement by 1% of total video
+            m.seekPercentage = m.seekPercentage - 0.01
+            if m.seekPercentage < 0 then m.seekPercentage = 0
+
+            newPosition = totalTime * m.seekPercentage
+
+            ' Update visual position immediately
+            m.progressBar.width = m.progressBarBackground.width * m.seekPercentage
+            indicatorX = 103 + (m.progressBarBackground.width * m.seekPercentage) - 10
+            m.progressIndicator.translation = [indicatorX, 912]
+
+            ' Send seek action
+            m.top.action = "seek," + newPosition.ToStr()
+            return true
+        end if
+
+        ' Navigate left in current row
         if m.focusedButtonIndex = 0
             return true
         end if
 
-        if m.optionControls.isInFocusChain()
+        ' Get current button group
+        if m.currentButtonGroup = "option"
             buttonGroup = m.optionControls
         else
             buttonGroup = m.videoControls
@@ -406,8 +436,10 @@ function onKeyEvent(key as string, press as boolean) as boolean
                 buttonGroup.buttonFocused = m.focusedButtonIndex
                 focusedButton.focus = true
 
-                focusedButtonID = m.videoControls.isInFocusChain() ? focusedButton.id : ""
-                checkDisplaySiblingItem(focusedButtonID)
+                ' Check if we should display sibling item info (only for video controls)
+                if m.currentButtonGroup = "video"
+                    checkDisplaySiblingItem(focusedButton.id)
+                end if
                 exit for
             end if
         end for
@@ -415,35 +447,61 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return true
     end if
 
-    if key = "up"
-        if m.videoControls.isInFocusChain()
+    if key = "down"
+        ' Move from video controls to seekbar, or seekbar to option controls
+        if m.currentButtonGroup = "video"
             focusedButton = m.videoControls.getChild(m.focusedButtonIndex)
             focusedButton.focus = false
             m.videoControls.setFocus(false)
 
-            m.focusedButtonIndex = m.optionControls.buttonFocused
+            ' Switch to seekbar
+            m.currentButtonGroup = "seekbar"
+            m.seekbarGroup.setFocus(true)
+            m.progressIndicator.blendColor = "0xFFFFFFFF"
+            checkDisplaySiblingItem("")
+        else if m.currentButtonGroup = "seekbar"
+            ' Switch to option controls
+            m.seekbarGroup.setFocus(false)
+            m.progressIndicator.blendColor = "0xFFFFFFFF"
+            m.isSeeking = false
+            m.currentButtonGroup = "option"
+
+            m.focusedButtonIndex = 0
             focusedButton = m.optionControls.getChild(m.focusedButtonIndex)
             focusedButton.focus = true
             m.optionControls.setFocus(true)
-
-            checkDisplaySiblingItem("")
+            m.optionControls.buttonFocused = m.focusedButtonIndex
         end if
 
         return true
     end if
 
-    if key = "down"
-        if m.optionControls.isInFocusChain()
+    if key = "up"
+        ' Move from seekbar to video controls, or option controls to seekbar
+        if m.currentButtonGroup = "seekbar"
+            ' Switch to video controls
+            m.seekbarGroup.setFocus(false)
+            m.progressIndicator.blendColor = "0xFFFFFFFF"
+            m.isSeeking = false
+            m.currentButtonGroup = "video"
+
+            m.focusedButtonIndex = m.defaultButtonIndex
+            focusedButton = m.videoControls.getChild(m.focusedButtonIndex)
+            focusedButton.focus = true
+            m.videoControls.setFocus(true)
+            m.videoControls.buttonFocused = m.focusedButtonIndex
+
+            focusedButtonID = focusedButton.id
+            checkDisplaySiblingItem(focusedButtonID)
+        else if m.currentButtonGroup = "option"
             focusedButton = m.optionControls.getChild(m.focusedButtonIndex)
             focusedButton.focus = false
             m.optionControls.setFocus(false)
 
-            m.focusedButtonIndex = m.videoControls.buttonFocused
-            focusedButton = m.videoControls.getChild(m.focusedButtonIndex)
-            focusedButton.focus = true
-            m.videoControls.setFocus(true)
-
-            checkDisplaySiblingItem(focusedButton.id)
+            ' Switch to seekbar
+            m.currentButtonGroup = "seekbar"
+            m.seekbarGroup.setFocus(true)
+            m.progressIndicator.blendColor = "0xFFFFFFFF"
         end if
 
         return true
