@@ -172,6 +172,85 @@ sub MigrateJellyseerrConfig()
 end sub
 
 ' ============================================
+' User Switch Detection & Cleanup
+' ============================================
+
+' Handle Jellyfin user switch - clears previous user's session data
+' Called after successful user login to detect and handle user changes
+' @returns True if user switch was detected and handled, false if same user
+function HandleJellyseerrUserSwitch() as boolean
+    currentUserId = GetCurrentJellyfinUserId()
+    if currentUserId = ""
+        ' No user logged in, nothing to do
+        return false
+    end if
+
+    lastUserId = GetLastJellyseerrUserId()
+
+    ' Check if this is a different user
+    if lastUserId <> "" and lastUserId <> currentUserId
+        print "[Jellyseerr] User switch detected: " + lastUserId + " → " + currentUserId
+
+        ' Just update the last user ID - each user keeps their own session
+        SetLastJellyseerrUserId(currentUserId)
+
+        return true
+    else if lastUserId = ""
+        ' First time using Jellyseerr, just set the user ID
+        SetLastJellyseerrUserId(currentUserId)
+        return false
+    end if
+
+    ' Same user, no switch
+    return false
+end function
+
+' Clear session data for a specific user (cookies and validation flags)
+' Keeps saved credentials (passwords) if user has "remember me" enabled
+' @param userId - Jellyfin user ID to clear session for
+sub ClearJellyseerrUserSession(userId as string)
+    if userId = ""
+        return
+    end if
+
+    print "[Jellyseerr] Clearing session data for user: " + userId
+
+    userRegistry = GetJellyseerrUserRegistry(userId)
+    sec = CreateObject("roRegistrySection", userRegistry)
+
+    ' Clear authentication cookie (forces re-authentication)
+    sec.Delete("authCookie")
+    sec.Flush()
+
+    ' Clear global session validation flag
+    if m.global <> invalid
+        m.global.jellyseerrSessionValidated = false
+    end if
+end sub
+
+' Clear all Jellyseerr data for a specific user
+' Used when completely removing a user's Jellyseerr configuration
+' @param userId - Jellyfin user ID to clear all data for
+sub ClearJellyseerrUserData(userId as string)
+    if userId = ""
+        return
+    end if
+
+    print "[Jellyseerr] Clearing all data for user: " + userId
+
+    userRegistry = GetJellyseerrUserRegistry(userId)
+    sec = CreateObject("roRegistrySection", userRegistry)
+
+    ' Delete all user-specific data
+    sec.Delete("authCookie")
+    sec.Delete("authMethod")
+    sec.Delete("jellyfinPassword")
+    sec.Delete("localEmail")
+    sec.Delete("localPassword")
+    sec.Flush()
+end sub
+
+' ============================================
 ' Global & Per-User Config Helpers
 ' ============================================
 
@@ -264,22 +343,31 @@ end function
 ' @param localPassword - Local account password (optional)
 sub SetJellyseerrUserConfig(userId as string, authCookie as string, authMethod as string, jellyfinPassword = "" as string, localEmail = "" as string, localPassword = "" as string)
     if userId = ""
+        print "[Jellyseerr] SetJellyseerrUserConfig: userId is empty!"
         return
     end if
 
     registryName = GetJellyseerrUserRegistry(userId)
+    print "[Jellyseerr] SetJellyseerrUserConfig for user: " + userId
+    print "[Jellyseerr] Registry name: " + registryName
+    print "[Jellyseerr] authCookie length: " ; Len(authCookie)
+    print "[Jellyseerr] authMethod: " + authMethod
+
     sec = CreateObject("roRegistrySection", registryName)
 
     if authCookie <> ""
         sec.Write("authCookie", authCookie)
+        print "[Jellyseerr] Wrote authCookie"
     end if
 
     if authMethod <> ""
         sec.Write("authMethod", authMethod)
+        print "[Jellyseerr] Wrote authMethod: " + authMethod
     end if
 
     if jellyfinPassword <> ""
         sec.Write("jellyfinPassword", jellyfinPassword)
+        print "[Jellyseerr] Wrote jellyfinPassword"
     else
         sec.Delete("jellyfinPassword")
     end if
@@ -297,6 +385,7 @@ sub SetJellyseerrUserConfig(userId as string, authCookie as string, authMethod a
     end if
 
     sec.Flush()
+    print "[Jellyseerr] Registry flushed"
 end sub
 
 ' ============================================
@@ -503,6 +592,20 @@ function JellyseerrFormatJsonValue(value as object) as string
     return """" + value.ToStr() + """"
 end function
 
+' Format a float value to a specific number of decimal places (Jellyseerr-specific)
+' @param value - Float or dynamic value to format
+' @param decimals - Number of decimal places
+' @returns Formatted string representation
+function JellyseerrFormatFloat(value as dynamic, decimals as integer) as string
+    if value = invalid then return ""
+    strVal = value.ToStr()
+    dotPos = InStr(1, strVal, ".")
+    if dotPos > 0 and decimals >= 0
+        return Left(strVal, dotPos + decimals)
+    end if
+    return strVal
+end function
+
 function JellyseerrParseJson(jsonString as string) as object
     result = {}
 
@@ -646,7 +749,7 @@ function CreateMediaContentNode(item as object) as object
     end if
 
     if voteAvg <> invalid
-        rating = FormatFloat(voteAvg, 1)
+        rating = JellyseerrFormatFloat(voteAvg, 1)
     end if
 
     adultFlag = false
@@ -716,16 +819,6 @@ function CreateMediaContentNodeFromRequest(request as object) as object
     return CreateMediaContentNode(item)
 end function
 
-function FormatFloat(value as dynamic, decimals as integer) as string
-    if value = invalid then return ""
-    strVal = value.ToStr()
-    dotPos = InStr(1, strVal, ".")
-    if dotPos > 0 and decimals >= 0
-        return Left(strVal, dotPos + decimals)
-    end if
-    return strVal
-end function
-
 function GetRequestStatusText(status as integer) as string
     if status = 1
         return "Unknown"
@@ -760,13 +853,12 @@ function IsValidJellyseerrConfig(config as object) as boolean
         return false
     end if
 
-    hasApiKey = isValidStringValue(config.apiKey)
     hasCookie = isValidStringValue(config.authCookie)
     hasJellyfinCredentials = isValidStringValue(config.jellyfinPassword)
     hasLocalCredentials = isValidStringValue(config.localEmail) and isValidStringValue(config.localPassword)
 
-    ' Valid if we have: API key, OR cookie, OR stored credentials that can be used for auth
-    if not hasApiKey and not hasCookie and not hasJellyfinCredentials and not hasLocalCredentials
+    ' Valid if we have: cookie OR stored credentials that can be used for auth
+    if not hasCookie and not hasJellyfinCredentials and not hasLocalCredentials
         return false
     end if
 
@@ -888,69 +980,10 @@ function CreateJellyseerrLocalLoginRequest(email as string, password as string) 
     }
 end function
 
-function ExtractApiKeyFromResponse(responseBody as string) as string
-    ' Parse apiKey/token/key from JSON response (multiple field locations)
-    if responseBody = invalid or responseBody = "" then return ""
-    jsonResponse = ParseJson(responseBody)
-    if jsonResponse <> invalid
-        ' Try direct fields first
-        if jsonResponse.apiKey <> invalid and jsonResponse.apiKey <> ""
-            return jsonResponse.apiKey
-        end if
-
-        if jsonResponse.token <> invalid and jsonResponse.token <> ""
-            return jsonResponse.token
-        end if
-
-        if jsonResponse.key <> invalid and jsonResponse.key <> ""
-            return jsonResponse.key
-        end if
-
-        if jsonResponse.user <> invalid
-            if jsonResponse.user.apiKey <> invalid and jsonResponse.user.apiKey <> ""
-                return jsonResponse.user.apiKey
-            end if
-
-            if jsonResponse.user.token <> invalid and jsonResponse.user.token <> ""
-                return jsonResponse.user.token
-            end if
-        end if
-    end if
-
-
-    ' Fallback to string parsing for "apiKey":"xxxxx" pattern
-    startIdx = InStr(responseBody, """apiKey"":")
-    if startIdx = 0
-        ' Try "token" field
-        startIdx = InStr(responseBody, """token"":")
-        if startIdx = 0
-            return ""
-        end if
-        startIdx = startIdx + 9 ' Length of "token":
-    else
-        startIdx = startIdx + 11 ' Length of "apiKey":
-    end if
-
-    ' Skip to opening quote
-    quoteIdx = InStr(responseBody, """", startIdx)
-    if quoteIdx = 0
-        return ""
-    end if
-
-    startIdx = quoteIdx + 1
-    endIdx = InStr(responseBody, """", startIdx)
-
-    if endIdx = 0
-        return ""
-    end if
-
-    extractedKey = responseBody.Mid(startIdx, endIdx - startIdx)
-    return extractedKey
-end function
 
 sub StoreAuthMethod(authMethod as string)
     config = GetJellyseerrConfig()
-    SetJellyseerrConfig(config.serverUrl, config.apiKey, authMethod)
+    SetJellyseerrConfig(config.serverUrl, "", authMethod)
 end sub
 
 ' ============================================
@@ -1134,3 +1167,85 @@ sub ShowJellyseerrDetails(mediaItem as object)
     detailsScreen.mediaItem = mediaItem
     m.global.sceneManager.callFunc("pushScene", detailsScreen)
 end sub
+
+' ============================================
+' Error Formatting
+' ============================================
+
+' Convert technical error messages to user-friendly messages
+' @param errorMessage - Raw error message from API or internal error
+' @return User-friendly error message
+function FormatJellyseerrError(errorMessage as string) as string
+    if errorMessage = invalid or errorMessage = ""
+        return "An unknown error occurred. Please try again."
+    end if
+
+    errorLower = LCase(errorMessage)
+
+    ' Connection errors
+    if InStr(errorLower, "timeout") > 0
+        return "Connection timed out. Please check your network and server status."
+    end if
+
+    if InStr(errorLower, "connection") > 0 or InStr(errorLower, "connect") > 0
+        return "Unable to connect to Jellyseerr server. Please verify the server URL and network connection."
+    end if
+
+    if InStr(errorLower, "network") > 0 or InStr(errorLower, "dns") > 0
+        return "Network error. Please check your internet connection."
+    end if
+
+    ' Authentication errors
+    if InStr(errorLower, "unauthorized") > 0 or InStr(errorLower, "401") > 0
+        return "Authentication failed. Please check your credentials and try logging in again."
+    end if
+
+    if InStr(errorLower, "forbidden") > 0 or InStr(errorLower, "403") > 0
+        return "Access denied. You may not have permission for this action."
+    end if
+
+    if InStr(errorLower, "invalid credentials") > 0 or InStr(errorLower, "invalid password") > 0
+        return "Invalid username or password. Please try again."
+    end if
+
+    if InStr(errorLower, "session") > 0 or InStr(errorLower, "cookie") > 0
+        return "Your session has expired. Please log in again."
+    end if
+
+    ' Resource errors
+    if InStr(errorLower, "not found") > 0 or InStr(errorLower, "404") > 0
+        return "The requested item was not found. It may have been removed or is unavailable."
+    end if
+
+    ' Server errors
+    if InStr(errorLower, "server error") > 0 or InStr(errorLower, "500") > 0 or InStr(errorLower, "502") > 0 or InStr(errorLower, "503") > 0
+        return "Jellyseerr server error. The server may be temporarily unavailable. Please try again later."
+    end if
+
+    ' Rate limiting
+    if InStr(errorLower, "rate limit") > 0 or InStr(errorLower, "too many") > 0 or InStr(errorLower, "429") > 0
+        return "Too many requests. Please wait a moment and try again."
+    end if
+
+    ' Configuration errors
+    if InStr(errorLower, "not configured") > 0
+        return "Jellyseerr is not configured. Please set up your server connection in settings."
+    end if
+
+    if InStr(errorLower, "invalid url") > 0
+        return "Invalid server URL. Please check the URL format (http:// or https://)."
+    end if
+
+    ' Parsing errors
+    if InStr(errorLower, "parse") > 0 or InStr(errorLower, "json") > 0
+        return "Unable to process server response. The server may be experiencing issues."
+    end if
+
+    ' Default: return original message if it's short and readable, otherwise generic message
+    if Len(errorMessage) < 100 and InStr(errorMessage, "{") = 0 and InStr(errorMessage, "<") = 0
+        return errorMessage
+    end if
+
+    return "An error occurred: " + errorMessage
+end function
+
