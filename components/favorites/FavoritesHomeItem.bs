@@ -12,6 +12,14 @@ sub init()
     findNodes()
     m.itemPoster.observeField("loadStatus", "onPosterLoadStatusChanged")
     setColors()
+
+    ' Track focus change timing to detect and prevent oscillations
+    m.lastFocusChangeTime = 0
+    m.focusChangeCount = 0
+    m.isInOscillation = false
+    m.lastStableFocusState = false
+    m.initTime = UpTime(0)
+    m.initCooldownPeriod = 0.5 ' Block animations for 500ms after creation
 end sub
 
 sub setColors()
@@ -31,6 +39,7 @@ sub setColors()
 end sub
 
 sub findNodes()
+    initItemText()
     initItemPoster()
     initBackdrop()
     initItemIcon()
@@ -39,6 +48,9 @@ sub findNodes()
     m.playedIndicator = m.top.findNode("playedIndicator")
     m.showProgressBarAnimation = m.top.findNode("showProgressBar")
     m.showProgressBarField = m.top.findNode("showProgressBarField")
+    m.scaleGroup = m.top.findNode("scaleGroup")
+    m.focusAnimation = m.top.findNode("focusAnimation")
+    m.unfocusAnimation = m.top.findNode("unfocusAnimation")
 end sub
 
 sub initItemPoster()
@@ -54,6 +66,13 @@ sub initItemIcon()
     if not isValid(m.itemIcon) then return
 
     m.itemIcon.blendcolor = chainLookupReturn(m.global.session, "user.settings.colorHomeMyListIcon", ColorPalette.WHITE)
+end sub
+
+sub initItemText()
+    m.itemText = m.top.findNode("itemText")
+    if isValid(m.itemText)
+        m.itemText.color = chainLookupReturn(m.global.session, "user.settings.colorHomeRowItemTitle", ColorPalette.WHITE)
+    end if
 end sub
 
 sub itemContentChanged()
@@ -79,12 +98,14 @@ sub itemContentChanged()
     m.itemPoster.width = itemData.imageWidth
     m.backdrop.width = itemData.imageWidth
 
+    if isValid(m.itemText)
+        m.itemText.text = itemData.LookupCI("Title")
+        m.itemText.maxWidth = itemData.imageWidth
+    end if
+
     if isAllValid([m.itemIcon, itemData.iconUrl])
         m.itemIcon.uri = itemData.iconUrl
     end if
-
-    playedIndicatorLeftPosition = m.itemPoster.width - 60
-    m.playedIndicator.translation = [playedIndicatorLeftPosition, 0]
 
     if itemData.LookupCI("PlayedPercentage") > 0
         drawProgressBar(itemData)
@@ -111,7 +132,65 @@ sub drawProgressBar(itemData)
     m.showProgressBarAnimation.control = AnimationControl.START
 end sub
 
-'Hide backdrop and icon when poster loaded
+sub focusChanged()
+    currentTime = UpTime(0)
+
+    ' Block ALL animations during initialization cooldown
+    timeSinceInit = currentTime - m.initTime
+    if timeSinceInit < m.initCooldownPeriod
+        ' Still in cooldown - just update text scrolling and exit
+        if isValid(m.itemText)
+            m.itemText.repeatCount = m.top.itemHasFocus ? - 1 : 0
+        end if
+        return
+    end if
+
+    timeSinceLastChange = currentTime - m.lastFocusChangeTime
+
+    ' Detect rapid focus oscillation (multiple changes within 200ms)
+    if timeSinceLastChange < 0.2
+        m.focusChangeCount++
+        if m.focusChangeCount >= 2
+            m.isInOscillation = true
+        end if
+    else
+        ' Reset counter if enough time has passed
+        m.focusChangeCount = 0
+        if m.isInOscillation
+            ' Exiting oscillation - save the stable state
+            m.lastStableFocusState = m.top.itemHasFocus
+        end if
+        m.isInOscillation = false
+    end if
+
+    m.lastFocusChangeTime = currentTime
+
+    ' Always update text scrolling
+    if isValid(m.itemText)
+        m.itemText.repeatCount = m.top.itemHasFocus ? - 1 : 0
+    end if
+
+    ' Only animate if NOT in oscillation
+    if not m.isInOscillation
+        ' Save stable state before animating
+        m.lastStableFocusState = m.top.itemHasFocus
+
+        ' Handle focus/unfocus animations
+        if m.top.itemHasFocus
+            if isValid(m.focusAnimation)
+                m.unfocusAnimation.control = "stop"
+                m.focusAnimation.control = "start"
+            end if
+        else
+            if isValid(m.unfocusAnimation)
+                m.focusAnimation.control = "stop"
+                m.unfocusAnimation.control = "start"
+            end if
+        end if
+    end if
+    ' During oscillation, do nothing - keep whatever scale we had from last stable state
+    ' This prevents the visual bounce
+end sub'Hide backdrop and icon when poster loaded
 sub onPosterLoadStatusChanged()
     if m.itemPoster.loadStatus = PosterLoadStatus.FAILED
         ' Primary poster failed to load, try thumbnail

@@ -264,18 +264,16 @@ sub loadLibraries()
     updateScrollIndicators()
 end sub
 
-' Get the maximum navigation index (including libraries and settings)
+' Get the maximum navigation index (including virtual library indices)
 function getMaxIndex() as integer
-    ' Count actual children in navGroup + libraries inside group + settings (outside navGroup)
-    navGroupChildren = m.navGroup.getChildCount()
-    ' Settings is outside navGroup, so max index is navGroup children + library count
-    return navGroupChildren + m.libraryData.count()
+    ' navGroup contains: Home, Search, [Shuffle], [Favorites], [Genres], [Jellyseerr], Settings, libraryLabelsGroup
+    ' But individual libraries use virtual indices beyond navGroup.getChildCount()
+    ' So max index = navGroup children + library count - 1 (since libraryLabelsGroup is not selectable, but its children are)
+    return m.navGroup.getChildCount() + m.libraryData.count() - 1
 end function
 
 ' Update icon opacity based on current selection
 sub updateIconOpacity()
-    maxIndex = getMaxIndex()
-
     ' Reset all static icons to dim
     if isValid(m.homeIcon) then m.homeIcon.opacity = 0.5
     if isValid(m.searchIcon) then m.searchIcon.opacity = 0.5
@@ -310,14 +308,13 @@ sub updateIconOpacity()
                 m.genresIcon.opacity = 1.0
             else if child.isSameNode(m.jellyseerrIcon)
                 m.jellyseerrIcon.opacity = 1.0
+            else if child.isSameNode(m.settingsIcon)
+                m.settingsIcon.opacity = 1.0
             else if child.isSameNode(m.libraryLabelsGroup)
                 ' This is the library labels group - need to determine which library
                 ' This shouldn't happen as libraries are inside the group
             end if
         end if
-    else if m.selectedIndex = maxIndex
-        ' Settings focused (always last, outside navGroup)
-        if isValid(m.settingsIcon) then m.settingsIcon.opacity = 1.0
     else
         ' Library label focused (indices beyond navGroup children)
         libraryIndex = m.selectedIndex - m.navGroup.getChildCount()
@@ -351,7 +348,16 @@ sub updateScrollPosition()
 
     ' Calculate the X position of the currently focused item
     itemX = getItemXPosition(m.selectedIndex)
-    itemWidth = 50 ' Icon width
+
+    ' Determine item width - icons are 50px, library labels vary
+    itemWidth = 50 ' Default icon width
+    if m.selectedIndex >= m.navGroup.getChildCount()
+        ' This is a library label (virtual index)
+        libraryIndex = m.selectedIndex - m.navGroup.getChildCount()
+        if libraryIndex >= 0 and libraryIndex < m.libraryLabels.count()
+            itemWidth = m.libraryLabels[libraryIndex].boundingRect().width
+        end if
+    end if
 
     ' Add some padding for better visibility
     padding = 100
@@ -397,8 +403,8 @@ function calculateTotalNavWidth() as integer
 
     totalWidth = 0
 
-    ' Count visible static icons (Home and Search are always visible)
-    visibleStaticCount = 2 ' Home + Search
+    ' Count visible static icons (Home and Search are always visible, Settings always visible)
+    visibleStaticCount = 3 ' Home + Search + Settings
     if m.shuffleButtonEnabled then visibleStaticCount = visibleStaticCount + 1
     if m.favoritesButtonEnabled then visibleStaticCount = visibleStaticCount + 1
     if m.genresButtonEnabled then visibleStaticCount = visibleStaticCount + 1
@@ -511,35 +517,33 @@ end sub
 ' Get X position of an item in the nav bar
 function getItemXPosition(index as integer) as integer
     iconSpacing = 90 ' 50px icon + 40px spacing
-    labelSpacing = 40 ' spacing between items
-
-    ' navGroup starts at x=0 relative to navClipRect
+    labelSpacing = 40 ' spacing between library labels
     xPos = 0
+    navChildCount = m.navGroup.getChildCount()
 
-    ' Add positions for each static item before the target
-    for i = 0 to index - 1
-        if i = 2 and not m.shuffleButtonEnabled
-            ' Skip shuffle if disabled (index 2 in navGroup)
-            continue for
-        end if
+    ' Virtual library index (beyond navGroup children)
+    if index >= navChildCount
+        ' Add width of all icon children (excluding libraryLabelsGroup)
+        iconCount = navChildCount - (m.librariesEnabled ? 1 : 0)
+        xPos = iconCount * iconSpacing
 
-        if i < m.navGroup.getChildCount()
-            ' Nav icon items (50px wide)
-            xPos = xPos + iconSpacing
-        else if i < m.navGroup.getChildCount() + m.libraryData.count()
-            ' Library label - get actual width
-            libIndex = i - m.navGroup.getChildCount()
-            if libIndex >= 0 and libIndex < m.libraryLabels.count()
-                labelWidth = m.libraryLabels[libIndex].boundingRect().width
-                xPos = xPos + labelWidth + labelSpacing
+        ' Add width of library labels up to target index
+        libraryIndex = index - navChildCount
+        for i = 0 to libraryIndex - 1
+            if i < m.libraryLabels.count()
+                xPos = xPos + m.libraryLabels[i].boundingRect().width + labelSpacing
             end if
+        end for
+        return xPos
+    end if
+
+    ' navGroup icon index - count icons before target (skip libraryLabelsGroup)
+    for i = 0 to index - 1
+        child = m.navGroup.getChild(i)
+        if isValid(child) and not child.isSameNode(m.libraryLabelsGroup)
+            xPos = xPos + iconSpacing
         end if
     end for
-
-    ' Account for disabled shuffle
-    if index > 2 and not m.shuffleButtonEnabled
-        xPos = xPos - iconSpacing
-    end if
 
     return xPos
 end function
@@ -555,7 +559,17 @@ function getMaxScrollX() as integer
     end if
 
     ' Add extra padding at the end so the last item isn't cut off
-    endPadding = 40
+    ' If libraries are enabled, use the width of the last library label
+    ' Otherwise use a default padding
+    endPadding = 100 ' default padding
+    if m.librariesEnabled and m.libraryLabels.count() > 0
+        lastLabelIndex = m.libraryLabels.count() - 1
+        lastLabel = m.libraryLabels[lastLabelIndex]
+        if isValid(lastLabel)
+            lastLabelWidth = lastLabel.boundingRect().width
+            endPadding = lastLabelWidth + 60 ' label width + extra breathing room
+        end if
+    end if
 
     ' Otherwise, max scroll is the difference between content and visible area
     maxScroll = contentWidth - m.clipWidth + endPadding
@@ -617,25 +631,28 @@ end sub
 ' Check if a navbar item at the given index is visible
 function isNavItemVisible(index as integer) as boolean
     if index < 0 then return false
-    if index = 0 then return true ' Home always visible
-    if index = 1 then return true ' Search always visible
-    if index = 2 then return m.shuffleButtonEnabled
-    if index = 3 then return m.favoritesButtonEnabled
-    if index = 4 then return m.genresButtonEnabled
-    if index = 5
-        ' Jellyseerr icon
-        jellyseerrEnabled = m.global.session.user.settings["jellyseerr.enabled"]
-        return jellyseerrEnabled = true
-    end if
 
     maxIdx = getMaxIndex()
-    if index = maxIdx then return true ' Settings always visible at maxIndex
+    if index > maxIdx then return false
 
-    if index >= m.navGroup.getChildCount() and index < maxIdx
-        ' Library item (between nav icons and settings)
-        if not m.librariesEnabled then return false
+    ' Check if index is within navGroup (direct children)
+    if index < m.navGroup.getChildCount()
+        child = m.navGroup.getChild(index)
+        if not isValid(child) then return false
+
+        ' All actual children in navGroup are visible (they're only added if enabled)
+        ' Exception: libraryLabelsGroup itself is not directly selectable
+        if child.isSameNode(m.libraryLabelsGroup)
+            return false ' The group itself is not selectable, only its children
+        end if
+
+        return true ' All other navGroup children are visible
+    end if
+
+    ' Index is beyond navGroup children - must be a library (virtual index)
+    if m.librariesEnabled
         libraryIndex = index - m.navGroup.getChildCount()
-        return libraryIndex < m.libraryData.count()
+        return libraryIndex >= 0 and libraryIndex < m.libraryData.count()
     end if
 
     return false
@@ -687,6 +704,9 @@ sub updateNavbarItemVisibility()
     if isValid(m.jellyseerrIcon) and m.jellyseerrIcon.getParent() <> invalid
         m.navGroup.removeChild(m.jellyseerrIcon)
     end if
+    if isValid(m.settingsIcon) and m.settingsIcon.getParent() <> invalid
+        m.navGroup.removeChild(m.settingsIcon)
+    end if
     if isValid(m.libraryLabelsGroup) and m.libraryLabelsGroup.getParent() <> invalid
         m.navGroup.removeChild(m.libraryLabelsGroup)
     end if
@@ -719,6 +739,12 @@ sub updateNavbarItemVisibility()
     else
     end if
 
+    ' Settings always visible, comes after Jellyseerr
+    if isValid(m.settingsIcon)
+        m.navGroup.insertChild(m.settingsIcon, currentIndex)
+        currentIndex++
+    end if
+
     ' Libraries at the end
     if m.librariesEnabled and isValid(m.libraryLabelsGroup)
         m.navGroup.appendChild(m.libraryLabelsGroup)
@@ -740,6 +766,7 @@ sub updateNavbarItemVisibility()
         else if child.isSameNode(m.favoritesIcon)
         else if child.isSameNode(m.genresIcon)
         else if child.isSameNode(m.jellyseerrIcon)
+        else if child.isSameNode(m.settingsIcon)
         else if child.isSameNode(m.libraryLabelsGroup)
         end if
     end for
@@ -933,38 +960,49 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
                 dehighlightUser()
                 return true
-            else if m.selectedIndex = 0
-                ' Home selected - trigger home action
-                m.top.itemSelected = "home"
-                return true
-            else if m.selectedIndex = 1
-                ' Search selected - trigger search action
-                m.top.itemSelected = "search"
-                return true
-            else if m.selectedIndex = 2 and m.shuffleButtonEnabled
-                ' Shuffle selected - trigger shuffle action
-                m.top.shufflePressed = not m.top.shufflePressed
-                return true
-            else if m.selectedIndex = 3 and m.favoritesButtonEnabled
-                ' Favorites selected - trigger favorites action
-                m.top.favoritesPressed = not m.top.favoritesPressed
-                return true
-            else if m.selectedIndex = 4 and m.genresButtonEnabled
-                ' Genres selected - trigger genres action
-                m.top.genresPressed = not m.top.genresPressed
-                return true
-            else if m.selectedIndex = 5
-                ' Jellyseerr selected - open discovery screen
-                ' Authentication check will be handled by the screen itself
-                jellyseerrDiscovery = CreateObject("roSGNode", "JellyseerrDiscoveryScreen")
-                m.global.sceneManager.callFunc("pushScene", jellyseerrDiscovery)
-                return true
-            else if m.selectedIndex = getMaxIndex()
-                ' Settings selected (always last) - open settings screen
-                m.global.sceneManager.callFunc("settings")
-                return true
+            else if m.selectedIndex >= 0 and m.selectedIndex < m.navGroup.getChildCount()
+                ' Determine which icon is selected by checking the actual child
+                child = m.navGroup.getChild(m.selectedIndex)
+                if isValid(child)
+                    if child.isSameNode(m.homeIcon)
+                        ' Home selected - pop all scenes until we're back at home (scene count = 1)
+                        while m.global.sceneManager.callFunc("getSceneCount") > 1
+                            m.global.sceneManager.callFunc("popScene")
+                        end while
+                        m.top.itemSelected = "home"
+                        return true
+                    else if child.isSameNode(m.searchIcon)
+                        ' Search selected
+                        m.top.itemSelected = "search"
+                        return true
+                    else if child.isSameNode(m.shuffleIcon)
+                        ' Shuffle selected
+                        m.top.shufflePressed = not m.top.shufflePressed
+                        return true
+                    else if child.isSameNode(m.favoritesIcon)
+                        ' Favorites selected
+                        m.top.favoritesPressed = not m.top.favoritesPressed
+                        return true
+                    else if child.isSameNode(m.genresIcon)
+                        ' Genres selected
+                        m.top.genresPressed = not m.top.genresPressed
+                        return true
+                    else if child.isSameNode(m.jellyseerrIcon)
+                        ' Jellyseerr selected - open discovery screen
+                        jellyseerrDiscovery = CreateObject("roSGNode", "JellyseerrDiscoveryScreen")
+                        m.global.sceneManager.callFunc("pushScene", jellyseerrDiscovery)
+                        return true
+                    else if child.isSameNode(m.settingsIcon)
+                        ' Settings selected - open settings screen
+                        m.global.sceneManager.callFunc("settings")
+                        return true
+                    else if child.isSameNode(m.libraryLabelsGroup)
+                        ' This shouldn't be directly selected, libraries are inside
+                        return false
+                    end if
+                end if
             else
-                ' Library selected (only if libraries are enabled)
+                ' Library selected (virtual indices beyond navGroup children)
                 if m.librariesEnabled
                     libraryIndex = m.selectedIndex - m.navGroup.getChildCount()
                     if libraryIndex >= 0 and libraryIndex < m.libraryData.count()
