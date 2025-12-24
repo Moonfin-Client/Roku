@@ -7,6 +7,7 @@ import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/multiserver.bs"
 
 sub init()
     m.top.optionsAvailable = false
@@ -48,7 +49,7 @@ sub init()
 
     ' Create loading task
     m.loadGenresTask = createObject("roSGNode", "LoadGenresTask")
-    m.loadGenresTask.observeField("results", "onGenresLoaded")
+    m.loadGenresTask.observeField("genreResults", "onGenresLoaded")
     m.loadGenresTask.observeField("error", "onLoadError")
 end sub
 
@@ -87,44 +88,20 @@ sub loadGenres()
 end sub
 
 sub onGenresLoaded(event as object)
-    items = event.getData()
+    genreMap = event.getData()
     m.isLoading = false
     showLoading(false)
 
-    if not isValid(items) or items.Count() = 0
-        m.allItems = []
+    if not isValid(genreMap) or genreMap.Count() = 0
+        m.genreMap = {}
         showEmptyState()
         return
     end if
 
-    m.allItems = items
+    ' Store the genre map directly - already aggregated by LoadGenresTask
+    m.genreMap = genreMap
 
-    ' Categorize items by genre - only movies and series (no episodes)
-    m.genreMap = {}
-
-    for each item in items
-        itemType = LCase(item.type)
-
-        ' Skip episodes - only include movies and series
-        if itemType = "episode" then continue for
-
-        ' Get genres from the item
-        if isValid(item.json) and isValid(item.json.Genres)
-            for each genre in item.json.Genres
-                if not isValidAndNotEmpty(genre) then continue for
-
-                ' Initialize genre array if it doesn't exist
-                if not m.genreMap.DoesExist(genre)
-                    m.genreMap[genre] = []
-                end if
-
-                ' Add item to genre - shows and movies first
-                m.genreMap[genre].push(item)
-            end for
-        end if
-    end for
-
-    ' Build rows
+    ' Build rows from aggregated genres
     buildRows()
 
     ' Focus the rows
@@ -143,17 +120,20 @@ sub buildRows()
     rowsAdded = 0
     rowItemSizes = []
 
-    ' Sort genres alphabetically
-    genreNames = m.genreMap.Keys()
-    sortedGenres = sortArray(genreNames)
+    ' Sort genres alphabetically by display name
+    genreKeys = m.genreMap.Keys()
+    sortedGenreKeys = sortArray(genreKeys)
 
     ' Add a row for each genre that has items
-    for each genre in sortedGenres
-        genreItems = m.genreMap[genre]
+    for each genreKey in sortedGenreKeys
+        genreData = m.genreMap[genreKey]
+        if not isValid(genreData) or not isValid(genreData.items) then continue for
+
+        genreItems = genreData.items
         if genreItems.Count() > 0
             ' Sort items: Series first, then Movies, then by name
             sortedItems = sortGenreItems(genreItems)
-            addRow(genre, sortedItems)
+            addRow(genreData.displayName, sortedItems)
             rowItemSizes.push(homeRowItemSizes.MOVIE_POSTER)
             rowsAdded++
         end if
@@ -253,6 +233,14 @@ sub addRow(title as string, items as object)
         child = invalid
         itemType = LCase(item.type)
 
+        ' Determine server URL for multi-server image support
+        serverUrl = ""
+        if isValidAndNotEmpty(item.serverUrl)
+            serverUrl = item.serverUrl
+        else if isValid(item.json) and isValidAndNotEmpty(item.json._serverUrl)
+            serverUrl = item.json._serverUrl
+        end if
+
         if itemType = "movie"
             child = row.createChild("HomeData")
             child.json = item.json
@@ -263,11 +251,19 @@ sub addRow(title as string, items as object)
             ' Set poster images - portrait dimensions for primary
             if isValid(item.json.ImageTags) and isValid(item.json.ImageTags.Primary)
                 imgParams = { "maxHeight": 270, "maxWidth": 180, "Tag": item.json.ImageTags.Primary }
-                child.posterURL = ImageURL(item.id, "Primary", imgParams)
+                if isValidAndNotEmpty(serverUrl)
+                    child.posterURL = buildImageURLForServer(serverUrl, item.id, "Primary", imgParams)
+                else
+                    child.posterURL = ImageURL(item.id, "Primary", imgParams)
+                end if
             end if
             if isValid(item.json.BackdropImageTags) and item.json.BackdropImageTags.Count() > 0
                 imgParams = { "maxHeight": 270, "maxWidth": 480, "Tag": item.json.BackdropImageTags[0] }
-                child.thumbnailURL = ImageURL(item.id, "Backdrop", imgParams)
+                if isValidAndNotEmpty(serverUrl)
+                    child.thumbnailURL = buildImageURLForServer(serverUrl, item.id, "Backdrop", imgParams)
+                else
+                    child.thumbnailURL = ImageURL(item.id, "Backdrop", imgParams)
+                end if
                 child.widePosterURL = child.thumbnailURL
             else
                 child.widePosterURL = child.posterURL
@@ -287,11 +283,19 @@ sub addRow(title as string, items as object)
             ' Set poster images - portrait dimensions for primary
             if hasImageTagPrimary(item.json)
                 imgParams = { "maxHeight": 270, "maxWidth": 180, "Tag": item.json.ImageTags.Primary }
-                child.posterURL = ImageURL(item.id, "Primary", imgParams)
+                if isValidAndNotEmpty(serverUrl)
+                    child.posterURL = buildImageURLForServer(serverUrl, item.id, "Primary", imgParams)
+                else
+                    child.posterURL = ImageURL(item.id, "Primary", imgParams)
+                end if
             end if
             if isValid(item.json.BackdropImageTags) and item.json.BackdropImageTags.Count() > 0
                 imgParams = { "maxHeight": 270, "maxWidth": 480, "Tag": item.json.BackdropImageTags[0] }
-                child.thumbnailURL = ImageURL(item.id, "Backdrop", imgParams)
+                if isValidAndNotEmpty(serverUrl)
+                    child.thumbnailURL = buildImageURLForServer(serverUrl, item.id, "Backdrop", imgParams)
+                else
+                    child.thumbnailURL = ImageURL(item.id, "Backdrop", imgParams)
+                end if
                 child.widePosterURL = child.thumbnailURL
             else
                 child.widePosterURL = child.posterURL
@@ -408,15 +412,29 @@ sub updateBackdrop(item as object)
 
     backdropUrl = ""
 
+    ' Determine server URL for multi-server image support
+    serverUrl = ""
+    if isValid(item.json) and isValidAndNotEmpty(item.json._serverUrl)
+        serverUrl = item.json._serverUrl
+    end if
+
     ' Try to get higher quality backdrop from json with blur
     if isValid(item.json)
         json = item.json
         if isValid(json.BackdropImageTags) and json.BackdropImageTags.Count() > 0
             imgParams = { "maxHeight": 1080, "maxWidth": 1920, "quality": 90, "blur": getHomeBackdropBlurAmount(), "Tag": json.BackdropImageTags[0] }
-            backdropUrl = ImageURL(item.id, "Backdrop", imgParams)
+            if isValidAndNotEmpty(serverUrl)
+                backdropUrl = buildImageURLForServer(serverUrl, item.id, "Backdrop", imgParams)
+            else
+                backdropUrl = ImageURL(item.id, "Backdrop", imgParams)
+            end if
         else if isValid(json.ParentBackdropImageTags) and json.ParentBackdropImageTags.Count() > 0
             imgParams = { "maxHeight": 1080, "maxWidth": 1920, "quality": 90, "blur": getHomeBackdropBlurAmount(), "Tag": json.ParentBackdropImageTags[0] }
-            backdropUrl = ImageURL(json.ParentBackdropItemId, "Backdrop", imgParams)
+            if isValidAndNotEmpty(serverUrl)
+                backdropUrl = buildImageURLForServer(serverUrl, json.ParentBackdropItemId, "Backdrop", imgParams)
+            else
+                backdropUrl = ImageURL(json.ParentBackdropItemId, "Backdrop", imgParams)
+            end if
         end if
     end if
 

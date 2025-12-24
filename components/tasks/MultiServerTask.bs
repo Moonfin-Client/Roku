@@ -1,0 +1,259 @@
+' MultiServerTask: Execute API calls across multiple Jellyfin servers
+'
+' This task enables multi-server content aggregation by making parallel API calls
+' to all logged-in servers and aggregating the results.
+'
+' Each result item is augmented with server metadata:
+'   - _serverId: The server this item came from
+'   - _serverName: Display name of the server
+'   - _serverUrl: Base URL of the server
+'
+' This allows the UI to:
+'   1. Display "(ServerName)" suffix when multiple servers are logged in
+'   2. Route playback requests to the correct server
+'   3. Show server-specific images using the correct base URL
+
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/multiserver.bs"
+
+sub init()
+    m.top.functionName = "executeMultiServerRequests"
+end sub
+
+' Main task function: Execute API requests to all sessions and aggregate results
+sub executeMultiServerRequests()
+    sessions = m.top.sessions
+    endpoint = m.top.endpoint
+    params = m.top.params
+    requestType = m.top.requestType
+    requestBody = m.top.requestBody
+    timeoutMs = m.top.timeoutSeconds * 1000
+
+    allResults = []
+    allErrors = []
+
+    ' Validate inputs
+    if not isValidAndNotEmpty(sessions)
+        m.top.errors = [{ error: "No sessions provided", serverId: "" }]
+        m.top.isComplete = true
+        return
+    end if
+
+    if endpoint = ""
+        m.top.errors = [{ error: "No endpoint provided", serverId: "" }]
+        m.top.isComplete = true
+        return
+    end if
+
+    ' Create message port for async requests
+    port = CreateObject("roMessagePort")
+
+    ' Track pending requests
+    pendingRequests = {}
+
+    ' Start all requests in parallel
+    for each userSession in sessions
+        ' Build the URL with userId substitution
+        finalEndpoint = substituteEndpoint(endpoint, userSession)
+        url = buildURLForSession(userSession, finalEndpoint, params)
+
+        if url = ""
+            allErrors.push({
+                error: "Failed to build URL",
+                serverId: userSession.serverId,
+                serverName: userSession.serverName
+            })
+            continue for
+        end if
+
+        ' Create and configure the request
+        request = CreateObject("roUrlTransfer")
+        request.SetUrl(url)
+        request.SetMessagePort(port)
+        request.SetCertificatesFile("common:/certs/ca-bundle.crt")
+        request.InitClientCertificates()
+
+        ' Add auth header
+        authHeader = buildAuthHeaderForSession(userSession)
+        if authHeader <> ""
+            request.AddHeader("Authorization", authHeader)
+        end if
+        request.AddHeader("Content-Type", "application/json")
+        request.AddHeader("Accept", "application/json")
+
+        ' Start async request
+        requestStarted = false
+        if requestType = "POST"
+            bodyJson = FormatJson(requestBody)
+            requestStarted = request.AsyncPostFromString(bodyJson)
+        else
+            requestStarted = request.AsyncGetToString()
+        end if
+
+        if requestStarted
+            pendingRequests[request.GetIdentity().ToStr()] = {
+                request: request,
+                userSession: userSession
+            }
+        else
+            allErrors.push({
+                error: "Failed to start request",
+                serverId: userSession.serverId,
+                serverName: userSession.serverName
+            })
+        end if
+    end for
+
+    ' Wait for all responses
+    pendingCount = pendingRequests.Count()
+    while pendingCount > 0
+        msg = wait(timeoutMs, port)
+
+        if msg = invalid
+            ' Timeout - cancel remaining requests and report errors
+            for each key in pendingRequests
+                reqInfo = pendingRequests[key]
+                reqInfo.request.AsyncCancel()
+                allErrors.push({
+                    error: "Request timeout",
+                    serverId: reqInfo.userSession.serverId,
+                    serverName: reqInfo.userSession.serverName
+                })
+            end for
+            exit while
+        end if
+
+        ' Process the response
+        if type(msg) = "roUrlEvent"
+            identity = msg.GetSourceIdentity().ToStr()
+
+            if pendingRequests.DoesExist(identity)
+                reqInfo = pendingRequests[identity]
+                pendingRequests.Delete(identity)
+                pendingCount = pendingCount - 1
+
+                responseCode = msg.GetResponseCode()
+                if responseCode >= 200 and responseCode < 300
+                    ' Success - parse and augment results
+                    responseStr = msg.GetString()
+                    if isValidAndNotEmpty(responseStr)
+                        parsedData = ParseJson(responseStr)
+                        if isValid(parsedData)
+                            ' Handle both array responses and object responses with Items array
+                            itemsArray = getItemsFromResponse(parsedData)
+                            augmentedItems = augmentItemsWithServerInfo(itemsArray, reqInfo.userSession)
+                            for each item in augmentedItems
+                                allResults.push(item)
+                            end for
+                        end if
+                    end if
+                else
+                    ' Error response
+                    failureReason = msg.GetFailureReason()
+                    allErrors.push({
+                        error: `HTTP ${responseCode}: ${failureReason}`,
+                        serverId: reqInfo.userSession.serverId,
+                        serverName: reqInfo.userSession.serverName
+                    })
+                end if
+            end if
+        end if
+    end while
+
+    ' Set outputs
+    m.top.results = allResults
+    m.top.errors = allErrors
+    m.top.isComplete = true
+end sub
+
+' substituteEndpoint: Replace placeholders in endpoint with session values
+'
+' Supported placeholders:
+'   {userId} - Replaced with session's userId
+'   {serverId} - Replaced with session's serverId
+'
+' @param {string} endpoint - Endpoint with optional placeholders
+' @param {object} userSession - ServerUserSession object
+' @return {string} Endpoint with placeholders replaced
+function substituteEndpoint(endpoint as string, userSession as object) as string
+    result = endpoint
+
+    if result.Instr("{userId}") >= 0
+        result = result.Replace("{userId}", userSession.userId)
+    end if
+
+    if result.Instr("{serverId}") >= 0
+        result = result.Replace("{serverId}", userSession.serverId)
+    end if
+
+    return result
+end function
+
+' getItemsFromResponse: Extract items array from various response formats
+'
+' Jellyfin API returns data in different formats:
+'   - Array directly: [item1, item2, ...]
+'   - Object with Items: { "Items": [...], "TotalRecordCount": n }
+'
+' @param {dynamic} response - Parsed JSON response
+' @return {array} Array of items
+function getItemsFromResponse(response as dynamic) as object
+    if type(response) = "roArray"
+        return response
+    end if
+
+    if type(response) = "roAssociativeArray"
+        ' Check for Items array (common Jellyfin response format)
+        if response.DoesExist("Items") and type(response.Items) = "roArray"
+            return response.Items
+        end if
+        if response.DoesExist("items") and type(response.items) = "roArray"
+            return response.items
+        end if
+
+        ' Single item response - wrap in array
+        return [response]
+    end if
+
+    return []
+end function
+
+' augmentItemsWithServerInfo: Add server metadata to each item
+'
+' This allows the UI to:
+'   1. Know which server each item came from
+'   2. Build correct image URLs
+'   3. Route playback to the correct server
+'
+' @param {array} items - Array of item objects
+' @param {object} userSession - ServerUserSession for this server
+' @return {array} Items with server metadata added
+function augmentItemsWithServerInfo(items as object, userSession as object) as object
+    augmented = []
+
+    for each item in items
+        if type(item) = "roAssociativeArray"
+            ' Add server metadata fields
+            item["_serverId"] = userSession.serverId
+            item["_serverName"] = userSession.serverName
+            item["_serverUrl"] = userSession.serverUrl
+            item["_userId"] = userSession.userId
+            item["_authToken"] = userSession.authToken
+            augmented.push(item)
+        end if
+    end for
+
+    return augmented
+end function
+
+' reset: Clear task state for reuse
+sub reset()
+    m.top.sessions = []
+    m.top.endpoint = ""
+    m.top.params = {}
+    m.top.requestType = "GET"
+    m.top.requestBody = {}
+    m.top.results = []
+    m.top.errors = []
+    m.top.isComplete = false
+end sub

@@ -18,6 +18,26 @@ sub init()
     m.top.functionName = "loadItems"
 end sub
 
+' Helper function to get playback info using appropriate server
+function getPlaybackInfo(id as string, mediaSourceId = "" as string, audioTrackIndex = -1 as integer, subtitleTrackIndex = SubtitleSelection.NONE as integer, startTimeTicks = 0 as longinteger, options = {} as object) as object
+    serverUrl = m.top.serverUrl
+    serverUserId = m.top.serverUserId
+    serverAuthToken = m.top.serverAuthToken
+
+    useMultiServer = isValidAndNotEmpty(serverUrl) and isValidAndNotEmpty(serverUserId) and isValidAndNotEmpty(serverAuthToken)
+
+    if useMultiServer
+        serverData = {
+            serverUrl: serverUrl,
+            userId: serverUserId,
+            authToken: serverAuthToken
+        }
+        return ItemPostPlaybackInfoForServer(serverData, id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
+    else
+        return ItemPostPlaybackInfo(id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
+    end if
+end function
+
 sub loadItems()
     ' Reset intro tracker in case task gets reused
     m.top.isIntro = false
@@ -71,7 +91,24 @@ end function
 
 sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_stream_idx = 1 as integer)
 
-    meta = ItemMetaData(video.id)
+    ' Check if we have multi-server info
+    serverUrl = m.top.serverUrl
+    serverUserId = m.top.serverUserId
+    serverAuthToken = m.top.serverAuthToken
+
+    useMultiServer = isValidAndNotEmpty(serverUrl) and isValidAndNotEmpty(serverUserId) and isValidAndNotEmpty(serverAuthToken)
+
+
+    if useMultiServer
+        serverData = {
+            serverUrl: serverUrl,
+            userId: serverUserId,
+            authToken: serverAuthToken
+        }
+        meta = ItemMetaDataForServer(serverData, video.id)
+    else
+        meta = ItemMetaData(video.id)
+    end if
 
     subtitle_idx = m.top.selectedSubtitleIndex
 
@@ -232,7 +269,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     if not isValid(mediaSourceId) then mediaSourceId = video.id
     if meta.live then mediaSourceId = ""
 
-    m.playbackInfo = ItemPostPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, subtitle_idx, playbackPosition)
+    m.playbackInfo = getPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, subtitle_idx, playbackPosition)
     if not isValid(m.playbackInfo)
         video.errorMsg = "Error loading playback info"
         video.content = invalid
@@ -249,7 +286,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
                 end if
             end for
 
-            m.playbackInfo = ItemPostPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, subtitle_idx, playbackPosition)
+            m.playbackInfo = getPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, subtitle_idx, playbackPosition)
             if not isValid(m.playbackInfo)
                 video.errorMsg = "Error loading playback info"
                 video.content = invalid
@@ -268,7 +305,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
             video.SelectedSubtitle = defaultSubtitleIndex
             subtitle_idx = defaultSubtitleIndex
 
-            m.playbackInfo = ItemPostPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, subtitle_idx, playbackPosition)
+            m.playbackInfo = getPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, subtitle_idx, playbackPosition)
             if not isValid(m.playbackInfo)
                 video.errorMsg = "Error loading playback info"
                 video.content = invalid
@@ -346,21 +383,41 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
 
         ' If transcoding and burnInSubtitlesIfTrancoding is enabled, zero out SubtitleProfiles
         if chainLookupReturn(m.global, "session.user.settings.`playback.subs.burnin`", true)
-            m.playbackInfo = ItemPostPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, subtitle_idx, playbackPosition, {
+            m.playbackInfo = getPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, subtitle_idx, playbackPosition, {
                 emptySubtitleProfiles: true
             })
         end if
 
         ' Get transcoding reason
         video.transcodeReasons = getTranscodeReasons(m.playbackInfo.MediaSources[0].TranscodingUrl)
-        video.content.url = buildURL(m.playbackInfo.MediaSources[0].TranscodingUrl)
+        ' Build URL using correct server for multi-server items
+        serverUrl = m.top.serverUrl
+        if isValidAndNotEmpty(serverUrl)
+            video.content.url = buildURLForServer(serverUrl, m.playbackInfo.MediaSources[0].TranscodingUrl)
+        else
+            video.content.url = buildURL(m.playbackInfo.MediaSources[0].TranscodingUrl)
+        end if
         video.isTranscoded = true
     end if
 
     setCertificateAuthority(video.content)
 
     if not fully_external
-        video.content = authRequest(video.content)
+        ' Use multi-server auth if applicable
+        serverUrl = m.top.serverUrl
+        serverUserId = m.top.serverUserId
+        serverAuthToken = m.top.serverAuthToken
+
+        if isValidAndNotEmpty(serverUrl) and isValidAndNotEmpty(serverAuthToken)
+            serverData = {
+                serverUrl: serverUrl,
+                userId: serverUserId,
+                authToken: serverAuthToken
+            }
+            video.content = authRequestForServer(video.content, serverData)
+        else
+            video.content = authRequest(video.content)
+        end if
     end if
 end sub
 
@@ -467,6 +524,10 @@ function defaultSubtitleTrack(sortedSubtitles, selectedAudioLanguage as string, 
 end function
 
 sub addVideoContentURL(video, mediaSourceId, audio_stream_idx, _fully_external)
+    ' Get multi-server info if available
+    serverUrl = m.top.serverUrl
+    useMultiServer = isValidAndNotEmpty(serverUrl)
+
     protocol = LCase(m.playbackInfo.MediaSources[0].Protocol)
     if protocol <> "file"
         uri = ParsedUrl(m.playbackInfo.MediaSources[0].Path)
@@ -474,7 +535,11 @@ sub addVideoContentURL(video, mediaSourceId, audio_stream_idx, _fully_external)
             ' if the domain of the URI is local to the server,
             ' create a new URI by appending the received path to the server URL
             ' later we will substitute the users provided URL for this case
-            video.content.url = buildURL(uri.path)
+            if useMultiServer
+                video.content.url = buildURLForServer(serverUrl, uri.path)
+            else
+                video.content.url = buildURL(uri.path)
+            end if
         else
             video.content.url = m.playbackInfo.MediaSources[0].Path
         end if
@@ -490,7 +555,11 @@ sub addVideoContentURL(video, mediaSourceId, audio_stream_idx, _fully_external)
             params.MediaSourceId = mediaSourceId
         end if
 
-        video.content.url = buildURL(Substitute("Videos/{0}/stream", video.id), params)
+        if useMultiServer
+            video.content.url = buildURLForServer(serverUrl, Substitute("Videos/{0}/stream", video.id), params)
+        else
+            video.content.url = buildURL(Substitute("Videos/{0}/stream", video.id), params)
+        end if
     end if
 end sub
 

@@ -60,6 +60,49 @@ function ItemPostPlaybackInfo(id as string, mediaSourceId = "" as string, audioT
     return postJson(req, FormatJson(body))
 end function
 
+function ItemPostPlaybackInfoForServer(serverData as object, id as string, mediaSourceId = "" as string, audioTrackIndex = -1 as integer, subtitleTrackIndex = SubtitleSelection.NONE as integer, startTimeTicks = 0 as longinteger, options = {} as object)
+    if not isValid(serverData) then return invalid
+
+    transcodeCodec = string.EMPTY
+
+    if isStringEqual(m.global.queueManager.callFunc("getForceTranscode"), PlaybackMethod.FORCETRANSCODEDISABLEREMUX)
+        transcodeCodec = m.global.queueManager.callFunc("getTranscodeCodec")
+    end if
+
+    burnInSubtitles = chainLookupReturn(m.global, "session.user.settings.`playback.subs.burnin`", true)
+    body = {
+        "DeviceProfile": getDeviceProfile(transcodeCodec),
+        "AlwaysBurnInSubtitleWhenTranscoding": burnInSubtitles
+    }
+    params = {
+        "UserId": serverData.userId,
+        "StartTimeTicks": startTimeTicks,
+        "IsPlayback": true,
+        "AutoOpenLiveStream": true,
+        "MaxStreamingBitrate": "140000000",
+        "MaxStaticBitrate": "140000000",
+        "SubtitleStreamIndex": subtitleTrackIndex
+    }
+
+    if chainLookupReturn(options, "emptySubtitleProfiles", false)
+        body.DeviceProfile.SubtitleProfiles = []
+    end if
+
+    if mediaSourceId <> ""
+        params.MediaSourceId = mediaSourceId
+    else
+        params.EnableDirectPlay = false
+    end if
+
+    if audioTrackIndex > -1 then params.AudioStreamIndex = audioTrackIndex
+
+    req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, Substitute("Items/{0}/PlaybackInfo", id), params)
+    if not isValid(req) then return invalid
+
+    req.SetRequest("POST")
+    return postJson(req, FormatJson(body))
+end function
+
 ' Search across all libraries
 function searchMedia(query as string)
     if query <> ""
@@ -274,6 +317,100 @@ function ItemMetaData(id as string)
         ' Return json if we don't know what it is
         return data
     end if
+end function
+
+function ItemMetaDataForServer(serverData as object, id as string)
+    if not isValid(serverData) then return invalid
+    if not isValid(serverData.serverUrl) then return invalid
+    if not isValid(serverData.userId) then return invalid
+    if not isValid(serverData.authToken) then return invalid
+
+    url = Substitute("Users/{0}/Items/{1}", serverData.userId, id)
+    req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, { "fields": "Chapters,Trickplay,Taglines" })
+    if not isValid(req) then return invalid
+
+    data = getJson(req)
+    if data = invalid then return invalid
+
+    data._serverUrl = serverData.serverUrl
+    data._userId = serverData.userId
+    data._authToken = serverData.authToken
+    if isValid(serverData.serverId) then data._serverId = serverData.serverId
+    if isValid(serverData.serverName) then data._serverName = serverData.serverName
+
+    imgParams = {}
+    if data.type <> "Audio"
+        if data.UserData <> invalid and data.UserData.PlayedPercentage <> invalid
+            param = { "PercentPlayed": data.UserData.PlayedPercentage }
+            imgParams.Append(param)
+        end if
+    end if
+
+    baseUrl = serverData.serverUrl
+    if baseUrl.right(1) = "/"
+        baseUrl = baseUrl.left(baseUrl.len() - 1)
+    end if
+
+    if data.type = "Movie" or data.type = "MusicVideo"
+        tmp = CreateObject("roSGNode", "MovieData")
+        tmp.image = PosterImageForServer(baseUrl, data.id, imgParams)
+        tmp.json = data
+        return tmp
+    else if data.type = "Series"
+        tmp = CreateObject("roSGNode", "SeriesData")
+        tmp.image = PosterImageForServer(baseUrl, data.id, {})
+        tmp.json = data
+        return tmp
+    else if data.type = "Episode"
+        tmp = CreateObject("roSGNode", "TVEpisodeData")
+        tmp.image = PosterImageForServer(baseUrl, data.id, imgParams)
+        tmp.json = data
+        return tmp
+    else if data.type = "Recording"
+        tmp = CreateObject("roSGNode", "RecordingData")
+        tmp.image = PosterImageForServer(baseUrl, data.id, imgParams)
+        tmp.json = data
+        return tmp
+    else if data.type = "BoxSet" or data.type = "Playlist"
+        tmp = CreateObject("roSGNode", "CollectionData")
+        tmp.image = PosterImageForServer(baseUrl, data.id, imgParams)
+        tmp.json = data
+        return tmp
+    else if data.type = "Season"
+        tmp = CreateObject("roSGNode", "TVSeasonData")
+        tmp.image = PosterImageForServer(baseUrl, data.id, {})
+        tmp.json = data
+        return tmp
+    else if data.type = "Video"
+        tmp = CreateObject("roSGNode", "VideoData")
+        tmp.image = PosterImageForServer(baseUrl, data.id, {})
+        tmp.json = data
+        return tmp
+    else if data.type = "Person"
+        tmp = CreateObject("roSGNode", "PersonData")
+        tmp.image = PosterImageForServer(baseUrl, data.id, { "MaxWidth": "300", "MaxHeight": "450" })
+        tmp.json = data
+        return tmp
+    else
+        ' Return json if we don't know what it is
+        return data
+    end if
+end function
+
+function PosterImageForServer(serverBaseUrl as string, id as string, params = {} as object) as dynamic
+    if not isValidAndNotEmpty(id) then return invalid
+
+    imgUrl = serverBaseUrl + "/Items/" + id + "/Images/Primary"
+    paramString = "?maxWidth=400&quality=90"
+
+    for each key in params
+        paramString = paramString + "&" + key + "=" + params[key].toStr()
+    end for
+
+    tmp = CreateObject("roSGNode", "ImageData")
+    tmp.imagetype = "Primary"
+    tmp.url = imgUrl + paramString
+    return tmp
 end function
 
 ' Music Artist Data
@@ -635,6 +772,56 @@ function TVEpisodes(showId as string, seasonId as string) as dynamic
         tmpMetaData = ItemMetaData(item.id)
 
         ' validate meta data
+        if isValid(tmpMetaData) and isValid(tmpMetaData.overview)
+            tmp.overview = tmpMetaData.overview
+        end if
+        results.push(tmp)
+    end for
+    data.Items = results
+    return data
+end function
+
+function TVEpisodesForServer(serverData as object, showId as string, seasonId as string) as dynamic
+    if not isValid(serverData) then return invalid
+    if not isValid(serverData.serverUrl) then return invalid
+    if not isValid(serverData.userId) then return invalid
+    if not isValid(serverData.authToken) then return invalid
+
+    url = Substitute("Shows/{0}/Episodes", showId)
+    params = {
+        "seasonId": seasonId,
+        "UserId": serverData.userId,
+        "fields": "MediaStreams,MediaSources"
+    }
+
+    req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, params)
+    if not isValid(req) then return invalid
+
+    data = getJson(req)
+    if data = invalid or data.Items = invalid then return invalid
+
+    baseUrl = serverData.serverUrl
+    if baseUrl.right(1) = "/"
+        baseUrl = baseUrl.left(baseUrl.len() - 1)
+    end if
+
+    results = []
+    for each item in data.Items
+        tmp = CreateObject("roSGNode", "TVEpisodeData")
+        tmp.image = PosterImageForServer(baseUrl, item.id, { "maxWidth": 400, "maxheight": 250 })
+        if isValid(tmp.image)
+            tmp.image.posterDisplayMode = "scaleToZoom"
+        end if
+
+        item._serverUrl = serverData.serverUrl
+        item._userId = serverData.userId
+        item._authToken = serverData.authToken
+        if isValid(serverData.serverId) then item._serverId = serverData.serverId
+        if isValid(serverData.serverName) then item._serverName = serverData.serverName
+
+        tmp.json = item
+
+        tmpMetaData = ItemMetaDataForServer(serverData, item.id)
         if isValid(tmpMetaData) and isValid(tmpMetaData.overview)
             tmp.overview = tmpMetaData.overview
         end if

@@ -4,32 +4,36 @@ import "pkg:/source/api/Items.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/JellyseerrUtils.bs"
+import "pkg:/source/utils/multiserver.bs"
 
 sub init()
     m.top.functionName = "search"
 end sub
 
 sub search()
-    if m.top.query <> invalid and m.top.query <> ""
-        ' Get Jellyfin library search results
+    if m.top.query = invalid or m.top.query = ""
+        return
+    end if
+
+    ' Get all server sessions if multi-server is enabled
+    allSessions = []
+
+    if m.top.enableMultiServer
+        allSessions = getAllServerSessions()
+    end if
+
+    ' If no sessions found or multi-server disabled, fall back to single server search
+    if allSessions.Count() = 0
         results = searchMedia(m.top.query)
 
         ' Try to get Jellyseerr results if enabled
         config = GetJellyseerrConfig()
         if config <> invalid and config.enabled = true
             jellyseerrResults = SearchJellyseerr(m.top.query)
-
-            ' Add Jellyseerr results to the items array if we got any
             if jellyseerrResults <> invalid and jellyseerrResults.Count() > 0
                 if results = invalid or results.Items = invalid
-                    ' Initialize results if needed
-                    results = {
-                        Items: [],
-                        TotalRecordCount: 0
-                    }
+                    results = { Items: [], TotalRecordCount: 0 }
                 end if
-
-                ' Append Jellyseerr results
                 for each jellyseerrItem in jellyseerrResults
                     results.Items.push(jellyseerrItem)
                 end for
@@ -37,5 +41,168 @@ sub search()
         end if
 
         m.top.results = results
+        return
     end if
+
+    port = CreateObject("roMessagePort")
+    activeRequests = {}
+    requestObjects = {}
+    allItems = []
+    totalCount = 0
+
+    for each userSession in allSessions
+        ' Items request
+        itemsInfo = startSearchRequest(userSession, port, "items")
+        if isValid(itemsInfo)
+            activeRequests[itemsInfo.id] = { session: userSession, type: "items" }
+            requestObjects[itemsInfo.id] = itemsInfo.request
+        end if
+
+        ' Persons request
+        personsInfo = startSearchRequest(userSession, port, "persons")
+        if isValid(personsInfo)
+            activeRequests[personsInfo.id] = { session: userSession, type: "persons" }
+            requestObjects[personsInfo.id] = personsInfo.request
+        end if
+    end for
+
+    startTime = CreateObject("roDateTime").AsSeconds()
+
+    while activeRequests.Count() > 0
+        msg = wait(500, port)
+
+        ' Check timeout
+        currentTime = CreateObject("roDateTime").AsSeconds()
+        if currentTime - startTime > 10
+            exit while
+        end if
+
+        if msg = invalid then continue while
+
+        if type(msg) = "roUrlEvent"
+            requestId = msg.GetSourceIdentity().ToStr()
+            requestInfo = activeRequests[requestId]
+
+            if isValid(requestInfo)
+                activeRequests.Delete(requestId)
+                requestObjects.Delete(requestId)
+
+                userSession = requestInfo.session
+                responseCode = msg.GetResponseCode()
+
+                if responseCode = 200
+                    responseBody = msg.GetString()
+                    data = ParseJson(responseBody)
+
+                    if isValid(data) and isChainValid(data, "Items")
+                        ' Transform items to SearchData nodes
+                        for each item in data.Items
+                            searchNode = transformToSearchData(item, userSession)
+                            if isValid(searchNode)
+                                allItems.push(searchNode)
+                                totalCount++
+                            end if
+                        end for
+                    end if
+                end if
+            end if
+        end if
+    end while
+
+    config = GetJellyseerrConfig()
+    if config <> invalid and config.enabled = true
+        jellyseerrResults = SearchJellyseerr(m.top.query)
+        if jellyseerrResults <> invalid and jellyseerrResults.Count() > 0
+            for each jellyseerrItem in jellyseerrResults
+                allItems.push(jellyseerrItem)
+            end for
+        end if
+    end if
+
+    m.top.results = {
+        Items: allItems,
+        TotalRecordCount: totalCount
+    }
 end sub
+
+function startSearchRequest(userSession as object, port as object, searchType as string) as object
+    url = ""
+
+    if searchType = "items"
+        url = buildURLForSession(userSession, "/Users/" + userSession.userId + "/Items", {
+            searchTerm: m.top.query,
+            fields: "ChildCount,ItemCounts,Genres,RecursiveItemCount,ImageTags,BackdropImageTags",
+            IncludeItemTypes: "LiveTvChannel,Movie,BoxSet,Series,Episode,Video,Audio,MusicAlbum,MusicArtist,Playlist",
+            EnableTotalRecordCount: false,
+            ImageTypeLimit: 1,
+            Recursive: true,
+            limit: 100
+        })
+    else if searchType = "persons"
+        url = buildURLForSession(userSession, "/Persons", {
+            userId: userSession.userId,
+            searchTerm: m.top.query,
+            EnableTotalRecordCount: false,
+            ImageTypeLimit: 1,
+            limit: 100
+        })
+    end if
+
+    if url = "" then return invalid
+
+    authHeader = buildAuthHeaderForSession(userSession)
+
+    request = CreateObject("roUrlTransfer")
+    request.SetUrl(url)
+    request.AddHeader("Authorization", authHeader)
+    request.AddHeader("Content-Type", "application/json")
+    request.SetCertificatesFile("common:/certs/ca-bundle.crt")
+    request.InitClientCertificates()
+    request.SetMessagePort(port)
+    request.EnableEncodings(true)
+
+    if request.AsyncGetToString()
+        return {
+            id: request.GetIdentity().ToStr(),
+            request: request
+        }
+    end if
+
+    return invalid
+end function
+
+function transformToSearchData(item as object, userSession as object) as object
+    if not isValid(item) then return invalid
+
+    tmp = CreateObject("roSGNode", "SearchData")
+
+    item._serverUrl = userSession.serverUrl
+    item._userId = userSession.userId
+    item._authToken = userSession.authToken
+    item._serverName = userSession.serverName
+
+    imgParams = { maxWidth: 300, quality: 90 }
+    if isValid(item.ImageTags) and isValid(item.ImageTags.Primary)
+        imgParams.Tag = item.ImageTags.Primary
+    end if
+    posterUrl = buildImageURLForServer(userSession.serverUrl, item.Id, "Primary", imgParams)
+
+    tmp.image = posterUrl
+    tmp.id = item.LookupCI("Id")
+    tmp.title = item.LookupCI("Name")
+    tmp.AlbumArtist = item.LookupCI("AlbumArtist")
+    tmp.album = item.LookupCI("Album")
+    tmp.type = item.LookupCI("Type")
+    tmp.RunTimeTicks = item.LookupCI("RunTimeTicks")
+    tmp.ProductionYear = item.LookupCI("ProductionYear")
+    tmp.EndDate = item.LookupCI("EndDate")
+    tmp.OfficialRating = item.LookupCI("OfficialRating")
+    tmp.IndexNumber = item.LookupCI("IndexNumber")
+    tmp.seriesname = item.LookupCI("SeriesName")
+    tmp.SeasonName = item.LookupCI("SeasonName")
+    tmp.IndexNumberEnd = item.LookupCI("IndexNumberEnd")
+    tmp.ParentIndexNumber = item.LookupCI("ParentIndexNumber")
+    tmp.json = item
+
+    return tmp
+end function

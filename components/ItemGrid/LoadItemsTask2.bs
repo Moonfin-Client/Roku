@@ -7,6 +7,109 @@ import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/misc.bs"
 
+' Helper functions for multi-server API calls
+
+' Check if we're using a different server than the current session
+function isUsingRemoteServer() as boolean
+    return isValidAndNotEmpty(m.top.serverUrl)
+end function
+
+' Get the user ID to use for API calls
+function getTargetUserId() as string
+    if isUsingRemoteServer() and isValidAndNotEmpty(m.top.serverUserId)
+        return m.top.serverUserId
+    end if
+    return m.global.session.user.id
+end function
+
+' Get the server URL to use for API calls
+function getTargetServerUrl() as string
+    if isUsingRemoteServer()
+        return m.top.serverUrl
+    end if
+    return m.global.session.server.url
+end function
+
+' Build authorization header for the target server
+function buildTargetAuthHeader() as string
+    if isUsingRemoteServer() and isValidAndNotEmpty(m.top.serverAuthToken)
+        ' Build auth header for remote server - must match format used by other API calls
+        QUOTE = Chr(34)
+        auth = "MediaBrowser" + " Client=" + QUOTE + m.global.app.name + " Roku" + QUOTE
+        auth = auth + ", Device=" + QUOTE + m.global.device.name + " (" + m.global.device.model + ")" + QUOTE
+        auth = auth + ", Version=" + QUOTE + m.global.app.version + QUOTE
+        auth = auth + ", DeviceId=" + QUOTE + m.global.device.serverDeviceName + QUOTE
+        auth = auth + ", Token=" + QUOTE + m.top.serverAuthToken + QUOTE
+        return auth
+    end if
+    return buildAuthHeader()
+end function
+
+' Make an API request to the target server
+function targetAPIRequest(path as string, params = {} as object) as object
+    if isUsingRemoteServer()
+        ' Build URL for remote server
+        serverUrl = getTargetServerUrl()
+        if serverUrl.right(1) = "/"
+            serverUrl = serverUrl.left(serverUrl.len() - 1)
+        end if
+        if path.left(1) <> "/"
+            path = "/" + path
+        end if
+        fullUrl = serverUrl + path
+
+        ' Build query string
+        paramArray = []
+        for each key in params
+            paramArray.push(key + "=" + params[key].toStr().encodeUriComponent())
+        end for
+        if paramArray.count() > 0
+            fullUrl = fullUrl + "?" + paramArray.join("&")
+        end if
+
+        ' Create request
+        req = CreateObject("roUrlTransfer")
+        req.setUrl(fullUrl)
+        req.setCertificatesFile("common:/certs/ca-bundle.crt")
+        req.initClientCertificates()
+        req.RetainBodyOnError(true)
+        req.EnableEncodings(true)
+        req.addHeader("Content-Type", "application/json")
+        req.addHeader("Authorization", buildTargetAuthHeader())
+
+        return req
+    end if
+
+    ' Use standard API request for current server
+    return APIRequest(path, params)
+end function
+
+' Get image URL for the target server
+function getTargetImageURL(itemId as string, imageType = "Primary" as string, imageIndex = 0 as integer, params = {} as object) as string
+    serverUrl = getTargetServerUrl()
+    if serverUrl.right(1) = "/"
+        serverUrl = serverUrl.left(serverUrl.len() - 1)
+    end if
+
+    ' Build image URL
+    targetImgUrl = serverUrl + "/Items/" + itemId + "/Images/" + imageType
+
+    if imageIndex > 0
+        targetImgUrl = targetImgUrl + "/" + imageIndex.toStr()
+    end if
+
+    ' Add quality params
+    paramArray = []
+    for each key in params
+        paramArray.push(key + "=" + params[key].toStr().encodeUriComponent())
+    end for
+    if paramArray.count() > 0
+        targetImgUrl = targetImgUrl + "?" + paramArray.join("&")
+    end if
+
+    return targetImgUrl
+end function
+
 sub init()
     m.top.filter = "All"
     m.top.sortField = "SortName"
@@ -136,30 +239,30 @@ sub loadItems()
 
     if m.top.ItemType = "LiveTV"
         url = "LiveTv/Channels"
-        params.append({ UserId: m.global.session.user.id })
+        params.append({ UserId: getTargetUserId() })
     else if m.top.view = "Networks"
         url = "Studios"
-        params.append({ UserId: m.global.session.user.id })
+        params.append({ UserId: getTargetUserId() })
     else if isStringEqual(m.top.view, "Genres")
         url = "Genres"
-        params.append({ UserId: m.global.session.user.id, includeItemTypes: m.top.itemType })
+        params.append({ UserId: getTargetUserId(), includeItemTypes: m.top.itemType })
     else if m.top.ItemType = "MusicArtist"
         url = "Artists"
         params.append({
-            UserId: m.global.session.user.id,
+            UserId: getTargetUserId(),
             Fields: "Genres"
         })
         params.IncludeItemTypes = "MusicAlbum,Audio"
     else if m.top.ItemType = "AlbumArtists"
         url = "Artists/AlbumArtists"
         params.append({
-            UserId: m.global.session.user.id,
+            UserId: getTargetUserId(),
             Fields: "Genres"
         })
         params.IncludeItemTypes = "MusicAlbum,Audio"
     else if m.top.ItemType = "MusicAlbum" or m.top.ItemType = "Audio" or m.top.ItemType.Instr("MusicAlbum,") >= 0
         ' Handle single music types and AllMusic view (MusicAlbum,MusicArtist,Audio)
-        url = Substitute("Users/{0}/Items/", m.global.session.user.id)
+        url = Substitute("Users/{0}/Items/", getTargetUserId())
         params.append({ ImageTypeLimit: 1 })
         params.append({ EnableImageTypes: "Primary,Backdrop,Banner,Thumb" })
 
@@ -171,14 +274,19 @@ sub loadItems()
         params.append({ mediaTypes: "Audio" })
         params.append({ Filters: "IsNotFolder" })
         params.append({ EnableImageTypes: "Primary,Backdrop,Banner,Thumb" })
-        url = Substitute("Users/{0}/Items/", m.global.session.user.id)
+        url = Substitute("Users/{0}/Items/", getTargetUserId())
     else if LCase(m.top.ItemType) = "nextup"
         url = "Shows/NextUp"
         params.limit = 100 ' If you have more than 100 in your Next Up queue, maybe go outside a bit more.
         params.append({ ImageTypeLimit: 1 })
         params.append({ EnableImageTypes: "Primary,Backdrop,Banner,Thumb" })
     else if isStringEqual(m.top.ItemType, "mylist")
-        data = api.GetUserViews({ "userId": m.global.session.user.id })
+        ' mylist is not supported for remote servers currently
+        if isUsingRemoteServer()
+            m.top.content = []
+            return
+        end if
+        data = api.GetUserViews({ "userId": getTargetUserId() })
         if not isChainValid(data, "Items") then return
 
         myListPlaylist = invalid
@@ -186,7 +294,7 @@ sub loadItems()
         for each item in data.LookupCI("items")
             if isStringEqual(item.LookupCI("CollectionType"), "playlists")
                 myListPlaylist = api.items.Get({
-                    "userid": m.global.session.user.id,
+                    "userid": getTargetUserId(),
                     "includeItemTypes": "Playlist",
                     "nameStartsWith": "|My List|",
                     "parentId": item.LookupCI("id")
@@ -204,7 +312,7 @@ sub loadItems()
         url = "/items/"
 
         params.append({
-            UserId: m.global.session.user.id,
+            UserId: getTargetUserId(),
             ImageTypeLimit: 1,
             EnableImageTypes: `${ImageType.PRIMARY}, ${ImageType.BACKDROP}, ${ImageType.THUMB}`,
             Limit: 50,
@@ -212,11 +320,11 @@ sub loadItems()
             ParentId: playlistID
         })
     else
-        url = Substitute("Users/{0}/Items/", m.global.session.user.id)
+        url = Substitute("Users/{0}/Items/", getTargetUserId())
     end if
 
     ' Make API request with timeout handling
-    resp = APIRequest(url, params)
+    resp = targetAPIRequest(url, params)
 
     ' Add timeout by checking if request is valid
     if not isValid(resp)
@@ -226,7 +334,17 @@ sub loadItems()
         return
     end if
 
-    data = getJson(resp)
+    ' Get response - handle remote server separately since we need GetToString
+    if isUsingRemoteServer()
+        responseBody = resp.GetToString()
+        if responseBody <> invalid and responseBody <> ""
+            data = ParseJson(responseBody)
+        else
+            data = invalid
+        end if
+    else
+        data = getJson(resp)
+    end if
 
     ' Check if API call timed out or failed
     if not isValid(data)
@@ -244,7 +362,7 @@ sub loadItems()
             params.NameStartsWithOrGreater = "z"
 
             ' Perform 2nd API lookup for items starting with Z or greater
-            startsWithZAndGreaterResp = APIRequest(url, params)
+            startsWithZAndGreaterResp = targetAPIRequest(url, params)
             startsWithZAndGreaterData = getJson(startsWithZAndGreaterResp)
 
             if isValidAndNotEmpty(startsWithZAndGreaterData)
@@ -274,7 +392,11 @@ sub loadItems()
             if m.top.ItemType = "audiobooks"
                 if item.Type = "AudioBook"
                     tmp = CreateObject("roSGNode", "MusicSongData")
-                    tmp.posterUrl = api.items.GetImageURL(item.id, "primary", 0, { "maxHeight": 280, "maxWidth": 280, "quality": "90" })
+                    if isUsingRemoteServer()
+                        tmp.posterUrl = getTargetImageURL(item.id, "primary", 0, { "maxHeight": 280, "maxWidth": 280, "quality": "90" })
+                    else
+                        tmp.posterUrl = api.items.GetImageURL(item.id, "primary", 0, { "maxHeight": 280, "maxWidth": 280, "quality": "90" })
+                    end if
                     tmp.type = "audiobook"
                     tmp.json = item
                     tmp.title = item.name
@@ -323,20 +445,26 @@ sub loadItems()
                     tmp = CreateObject("roSGNode", "ContentNode")
                     tmp.title = item.name
 
-                    genreData = api.items.Get({
-                        UserId: m.global.session.user.id,
-                        SortBy: "Random",
-                        SortOrder: "Ascending",
-                        IncludeItemTypes: m.top.itemType,
-                        Recursive: true,
-                        Fields: "PrimaryImageAspectRatio,MediaSourceCount,BasicSyncInfo",
-                        ImageTypeLimit: 1,
-                        EnableImageTypes: "Primary",
-                        Limit: itemLimit,
-                        GenreIds: item.id,
-                        EnableTotalRecordCount: false,
-                        ParentId: m.top.itemId
-                    })
+                    ' For remote servers, just create the genre node without sub-items
+                    ' (genre preview requires more complex multi-server support)
+                    if isUsingRemoteServer()
+                        genreData = { Items: [] }
+                    else
+                        genreData = api.items.Get({
+                            UserId: getTargetUserId(),
+                            SortBy: "Random",
+                            SortOrder: "Ascending",
+                            IncludeItemTypes: m.top.itemType,
+                            Recursive: true,
+                            Fields: "PrimaryImageAspectRatio,MediaSourceCount,BasicSyncInfo",
+                            ImageTypeLimit: 1,
+                            EnableImageTypes: "Primary",
+                            Limit: itemLimit,
+                            GenreIds: item.id,
+                            EnableTotalRecordCount: false,
+                            ParentId: m.top.itemId
+                        })
+                    end if
 
                     if genreData.Items.Count() > (itemLimit - 2)
                         ' Add View All item to the start of the row
@@ -391,7 +519,10 @@ sub loadItems()
                 else if item.Type = "MusicAlbum"
                     tmp = CreateObject("roSGNode", "MusicAlbumData")
                     tmp.type = "MusicAlbum"
-                    if api.items.HeadImageURLByName(item.id, "primary")
+                    if isUsingRemoteServer()
+                        ' For remote server, use direct image URL
+                        tmp.posterUrl = getTargetImageURL(item.id, "Primary")
+                    else if api.items.HeadImageURLByName(item.id, "primary")
                         tmp.posterUrl = ImageURL(item.id, "Primary")
                     else if api.items.HeadImageURLByName(item.id, "backdrop")
                         tmp.posterUrl = ImageURL(item.id, "backdrop")
@@ -403,7 +534,11 @@ sub loadItems()
                 else if item.Type = "Audio"
                     tmp = CreateObject("roSGNode", "MusicSongData")
                     tmp.type = "audio"
-                    songImageURL = api.items.GetImageURL(item.id, "primary", 0, { "maxHeight": 280, "maxWidth": 280, "quality": "90" })
+                    if isUsingRemoteServer()
+                        songImageURL = getTargetImageURL(item.id, "primary", 0, { "maxHeight": 280, "maxWidth": 280, "quality": "90" })
+                    else
+                        songImageURL = api.items.GetImageURL(item.id, "primary", 0, { "maxHeight": 280, "maxWidth": 280, "quality": "90" })
+                    end if
                     if isValid(songImageURL) and songImageURL <> ""
                         tmp.posterUrl = songImageURL
                     else
@@ -415,12 +550,25 @@ sub loadItems()
                     tmp.parentFolder = m.top.itemId
                     tmp.json = item
                     tmp.type = "Folder"
-                    tmp.posterUrl = api.items.GetImageURL(item.id, "primary", 0, { "maxHeight": 270, "maxWidth": 270, "quality": "90" })
+                    if isUsingRemoteServer()
+                        tmp.posterUrl = getTargetImageURL(item.id, "primary", 0, { "maxHeight": 270, "maxWidth": 270, "quality": "90" })
+                    else
+                        tmp.posterUrl = api.items.GetImageURL(item.id, "primary", 0, { "maxHeight": 270, "maxWidth": 270, "quality": "90" })
+                    end if
                 else
                 end if
             end if
 
             if tmp <> invalid
+                ' Add multi-server metadata if using remote server
+                if isUsingRemoteServer()
+                    item.AddReplace("_serverUrl", m.top.serverUrl)
+                    item.AddReplace("_userId", m.top.serverUserId)
+                    item.AddReplace("_authToken", m.top.serverAuthToken)
+                    item.AddReplace("_serverId", m.top.serverId)
+                    item.AddReplace("_serverName", m.top.serverName)
+                end if
+
                 item.AddReplace("passedData", m.top.passToItem)
                 if not isStringEqual(item.Type, "genre") and LCase(item.Type) <> "musicgenre"
                     tmp.parentFolder = m.top.itemId

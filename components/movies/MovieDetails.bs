@@ -1,6 +1,7 @@
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/multiserver.bs"
 
 import "pkg:/source/enums/AnimationControl.bs"
 import "pkg:/source/enums/AnimationState.bs"
@@ -136,6 +137,15 @@ end sub
 '
 ' @param {object} itemData - meta data for current item
 sub setBackdropImage(itemData as object)
+
+    serverBaseUrl = invalid
+    if isChainValid(itemData, "_serverUrl")
+        serverBaseUrl = itemData._serverUrl
+        if serverBaseUrl.right(1) = "/"
+            serverBaseUrl = serverBaseUrl.left(serverBaseUrl.len() - 1)
+        end if
+    end if
+
     ' For episodes, show the episode's backdrop behind everything
     if LCase(itemData.Type) = VideoType.EPISODE
         episodeBackgroundBlack = m.top.findNode("episodeBackgroundBlack")
@@ -147,22 +157,42 @@ sub setBackdropImage(itemData as object)
             backdropUri = invalid
             if isValidAndNotEmpty(itemData.BackdropImageTags)
                 ' Use backdrop image with blur
-                backdropUri = ImageURL(itemData.id, ImageType.BACKDROP, {
-                    "maxWidth": 1920,
-                    "maxHeight": 1080,
-                    "quality": 90,
-                    "blur": getBackdropBlurAmount(),
-                    "Tag": itemData.BackdropImageTags[0]
-                })
+                if isValid(serverBaseUrl)
+                    backdropUri = buildImageURLForServer(serverBaseUrl, itemData.id, ImageType.BACKDROP, {
+                        "maxWidth": 1920,
+                        "maxHeight": 1080,
+                        "quality": 90,
+                        "blur": getBackdropBlurAmount(),
+                        "Tag": itemData.BackdropImageTags[0]
+                    })
+                else
+                    backdropUri = ImageURL(itemData.id, ImageType.BACKDROP, {
+                        "maxWidth": 1920,
+                        "maxHeight": 1080,
+                        "quality": 90,
+                        "blur": getBackdropBlurAmount(),
+                        "Tag": itemData.BackdropImageTags[0]
+                    })
+                end if
             else if isChainValid(itemData, "ImageTags.Primary")
                 ' Use primary image (screenshot) with blur as fallback
-                backdropUri = ImageURL(itemData.id, ImageType.PRIMARY, {
-                    "maxWidth": 1920,
-                    "maxHeight": 1080,
-                    "quality": 90,
-                    "blur": getBackdropBlurAmount(),
-                    "Tag": itemData.ImageTags.Primary
-                })
+                if isValid(serverBaseUrl)
+                    backdropUri = buildImageURLForServer(serverBaseUrl, itemData.id, ImageType.PRIMARY, {
+                        "maxWidth": 1920,
+                        "maxHeight": 1080,
+                        "quality": 90,
+                        "blur": getBackdropBlurAmount(),
+                        "Tag": itemData.ImageTags.Primary
+                    })
+                else
+                    backdropUri = ImageURL(itemData.id, ImageType.PRIMARY, {
+                        "maxWidth": 1920,
+                        "maxHeight": 1080,
+                        "quality": 90,
+                        "blur": getBackdropBlurAmount(),
+                        "Tag": itemData.ImageTags.Primary
+                    })
+                end if
             end if
 
             if isValid(backdropUri)
@@ -175,6 +205,7 @@ sub setBackdropImage(itemData as object)
                     episodeBackdropTint.visible = true
                 end if
                 episodeBackdrop.uri = backdropUri
+            else
             end if
         end if
         return
@@ -197,7 +228,9 @@ sub setBackdropImage(itemData as object)
     end if
 
     ' Return if no image available
-    if not isValid(imageTag) then return
+    if not isValid(imageTag)
+        return
+    end if
 
     ' Create a blank background so the user's background image doesn't bleed over
     movieBackground = m.top.findNode("movieBackground")
@@ -223,13 +256,24 @@ sub setBackdropImage(itemData as object)
     movieBackdrop.height = "1080"
     movieBackdrop.opacity = .3
 
-    backdropUrl = ImageURL(backdropItemId, imageVersion, {
-        "maxWidth": 1920,
-        "maxHeight": 1080,
-        "quality": 90,
-        "blur": getBackdropBlurAmount(),
-        "Tag": imageTag
-    })
+    ' Build backdrop URL using server-specific URL if multi-server item
+    if isValid(serverBaseUrl)
+        backdropUrl = buildImageURLForServer(serverBaseUrl, backdropItemId, imageVersion, {
+            "maxWidth": 1920,
+            "maxHeight": 1080,
+            "quality": 90,
+            "blur": getBackdropBlurAmount(),
+            "Tag": imageTag
+        })
+    else
+        backdropUrl = ImageURL(backdropItemId, imageVersion, {
+            "maxWidth": 1920,
+            "maxHeight": 1080,
+            "quality": 90,
+            "blur": getBackdropBlurAmount(),
+            "Tag": imageTag
+        })
+    end if
     movieBackdrop.uri = backdropUrl
 
     if not isValid(m.top.findNode("movieBackdrop"))
@@ -393,6 +437,7 @@ sub itemContentChanged()
     end if
 
     itemData = item.json
+
     m.top.id = itemData.id
 
     ' Start theme music if enabled
@@ -951,6 +996,7 @@ sub updateButtonVisibility(itemData as object)
 
     ' Add buttons based on item type and conditions
     addButtons(itemData)
+    centerButtonRow()
 
     ' Set focus to first button
     if m.buttonGroups.count() > 0
@@ -960,18 +1006,24 @@ sub updateButtonVisibility(itemData as object)
     end if
 end sub
 
+sub centerButtonRow()
+    centerButtonRowInContainer(m.buttonRow, m.buttons.count(), 168, 40, 100)
+end sub
+
 sub addButtons(itemData as object)
     ' Resume / Play from beginning buttons (conditional - if playback started)
     hasProgress = false
+    playbackPositionTicks = 0&
     if isValid(itemData.UserData) and itemData.UserData.PlaybackPositionTicks > 0
         hasProgress = true
+        playbackPositionTicks = itemData.UserData.PlaybackPositionTicks
     end if
 
     if hasProgress
-        ' Show resume button
+        resumeLabel = "Resume from " + ticksToHuman(playbackPositionTicks)
         addButton({
             icon: "pkg:/images/icons/resume.png",
-            label: "Resume",
+            label: resumeLabel,
             action: "resume",
             id: "resumeButton"
         })
@@ -1089,9 +1141,9 @@ sub addButton(config as object)
 
     ' Create a focusable rectangle for keyboard navigation
     focusRect = CreateObject("roSGNode", "Rectangle")
-    focusRect.width = 100
-    focusRect.height = 120
-    focusRect.translation = [-50, 0]
+    focusRect.width = 120
+    focusRect.height = 140
+    focusRect.translation = [-60, 0]
     focusRect.color = "#00000000"
     focusRect.opacity = 0
     buttonGroup.appendChild(focusRect)
@@ -1100,7 +1152,7 @@ sub addButton(config as object)
     layoutGroup = CreateObject("roSGNode", "LayoutGroup")
     layoutGroup.layoutDirection = "vert"
     layoutGroup.horizAlignment = "center"
-    layoutGroup.itemSpacings = [8]
+    layoutGroup.itemSpacings = [10]
 
     ' Create icon container with background
     iconContainer = CreateObject("roSGNode", "Group")
@@ -1110,9 +1162,9 @@ sub addButton(config as object)
     bgRect = CreateObject("roSGNode", "Poster")
     bgRect.uri = "pkg:/images/icons/info-box-bg-white.png"
     bgRect.loadDisplayMode = "scaleToFit"
-    bgRect.width = 144
-    bgRect.height = 72
-    bgRect.translation = [-48, -12]
+    bgRect.width = 168
+    bgRect.height = 88
+    bgRect.translation = [-52, -12]
     bgRect.opacity = 0
     bgRect.id = config.id + "Background"
     iconContainer.appendChild(bgRect)
@@ -1120,18 +1172,21 @@ sub addButton(config as object)
     ' Create icon
     icon = CreateObject("roSGNode", "Poster")
     icon.uri = config.icon
-    icon.width = 48
-    icon.height = 48
+    icon.width = 64
+    icon.height = 64
     icon.id = config.id + "Icon"
     iconContainer.appendChild(icon)
 
     layoutGroup.appendChild(iconContainer)
 
     ' Create label
-    label = CreateObject("roSGNode", "Text")
+    label = CreateObject("roSGNode", "Label")
     label.text = config.label
     label.font = "font:SmallSystemFont"
     label.horizAlign = "center"
+    label.vertAlign = "top"
+    label.width = 168
+    label.wrap = true
     label.color = "#CCCCCC"
     label.id = config.id + "Text"
     layoutGroup.appendChild(label)
@@ -1268,6 +1323,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
             if btn.hasFocus() or btn.isInFocusChain()
                 ' Save current button focus before navigating
                 m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
+                ' Unhighlight all buttons when focus moves away
+                unhighlightAllButtons()
                 return FocusOverhang(m.top)
             end if
         end for
@@ -1510,18 +1567,39 @@ sub handleButtonSelect()
 
             newWatchedState = not currentWatched
 
+            ' Build serverData for multi-server items
+            itemServerInfo = getServerInfoFromItem(itemContent)
+            taskParams = {}
+
             ' Call API to update server using Task
             if newWatchedState
                 date = CreateObject("roDateTime")
                 dateStr = date.ToISOString()
+                taskParams["DatePlayed"] = dateStr
+                taskParams["PlaybackPositionTicks"] = 0
+                if isValidAndNotEmpty(itemServerInfo.serverUrl)
+                    taskParams["serverData"] = {
+                        serverUrl: itemServerInfo.serverUrl,
+                        userId: itemServerInfo.userId,
+                        authToken: itemServerInfo.authToken
+                    }
+                end if
                 m.playstateTask.status = "markPlayed"
                 m.playstateTask.itemId = itemData.id
-                m.playstateTask.params = { "DatePlayed": dateStr, "PlaybackPositionTicks": 0 }
+                m.playstateTask.params = taskParams
                 m.playstateTask.control = TaskControl.RUN
                 itemData.UserData.PlaybackPositionTicks = 0
             else
+                if isValidAndNotEmpty(itemServerInfo.serverUrl)
+                    taskParams["serverData"] = {
+                        serverUrl: itemServerInfo.serverUrl,
+                        userId: itemServerInfo.userId,
+                        authToken: itemServerInfo.authToken
+                    }
+                end if
                 m.playstateTask.status = "unmarkPlayed"
                 m.playstateTask.itemId = itemData.id
+                m.playstateTask.params = taskParams
                 m.playstateTask.control = TaskControl.RUN
             end if
 
@@ -1548,6 +1626,18 @@ sub handleButtonSelect()
             end if
 
             newFavoriteState = not currentFavorite
+
+            ' Build serverData for multi-server items
+            itemServerInfo = getServerInfoFromItem(itemContent)
+            if isValidAndNotEmpty(itemServerInfo.serverUrl)
+                m.favoriteTask.serverData = {
+                    serverUrl: itemServerInfo.serverUrl,
+                    userId: itemServerInfo.userId,
+                    authToken: itemServerInfo.authToken
+                }
+            else
+                m.favoriteTask.serverData = invalid
+            end if
 
             ' Call API to update server using Task
             if newFavoriteState

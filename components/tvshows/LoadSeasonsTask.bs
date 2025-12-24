@@ -4,10 +4,38 @@ import "pkg:/source/api/sdk.bs"
 import "pkg:/source/enums/ImageType.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/multiserver.bs"
 
 sub init()
     m.top.functionName = "loadSeasons"
 end sub
+
+function isUsingRemoteServer() as boolean
+    return isValidAndNotEmpty(m.top.serverUrl)
+end function
+
+function getTargetUserId() as string
+    if isUsingRemoteServer() and isValidAndNotEmpty(m.top.serverUserId)
+        return m.top.serverUserId
+    end if
+    return m.global.session.user.id
+end function
+
+function getServerData() as object
+    if not isUsingRemoteServer() then return invalid
+    return {
+        serverUrl: m.top.serverUrl,
+        userId: m.top.serverUserId,
+        authToken: m.top.serverAuthToken
+    }
+end function
+
+function targetAPIRequest(path as string, params = {} as object) as object
+    if isUsingRemoteServer()
+        return APIRequestForServer(m.top.serverUrl, m.top.serverUserId, m.top.serverAuthToken, path, params)
+    end if
+    return APIRequest(path, params)
+end function
 
 sub loadSeasons()
     results = []
@@ -19,16 +47,26 @@ sub loadSeasons()
         return
     end if
 
-    ' Build parameters for getting seasons
     params = {
-        userId: m.global.session.user.id,
+        userId: getTargetUserId(),
         ParentId: seriesId,
         Fields: "Overview,PrimaryImageAspectRatio,ChildCount,MediaSources",
         enableTotalRecordCount: true
     }
 
-    ' Fetch seasons from API
-    data = api.items.Get(params)
+    data = invalid
+    if isUsingRemoteServer()
+        url = `Users/${getTargetUserId()}/Items/`
+        resp = targetAPIRequest(url, params)
+        if isValid(resp)
+            responseBody = resp.GetToString()
+            if responseBody <> invalid and responseBody <> ""
+                data = ParseJson(responseBody)
+            end if
+        end if
+    else
+        data = api.items.Get(params)
+    end if
 
     if not isValid(data) or not isChainValid(data, "Items")
         m.top.error = "Failed to load seasons"
@@ -38,6 +76,14 @@ sub loadSeasons()
     m.top.totalCount = isValid(data.TotalRecordCount) ? data.TotalRecordCount : data.Items.Count()
 
     for each season in data.Items
+        if isUsingRemoteServer()
+            season.AddReplace("_serverUrl", m.top.serverUrl)
+            season.AddReplace("_userId", m.top.serverUserId)
+            season.AddReplace("_authToken", m.top.serverAuthToken)
+            season.AddReplace("_serverId", m.top.serverId)
+            season.AddReplace("_serverName", m.top.serverName)
+        end if
+
         transformed = transformSeason(season)
         if isValid(transformed)
             results.push(transformed)
@@ -81,6 +127,10 @@ function buildPosterUrl(season as object) as string
         params.Tag = season.SeriesImageTags.Primary
     end if
 
+    if isValidAndNotEmpty(season._serverUrl)
+        return buildImageURLForServer(season._serverUrl, season.Id, "Primary", params)
+    end if
+
     return ImageURL(season.Id, "Primary", params)
 end function
 
@@ -92,15 +142,25 @@ function buildBackdropUrl(season as object) as string
         quality: 80
     }
 
-    ' Try season's own backdrop first
+    isRemoteServer = isValidAndNotEmpty(season._serverUrl)
+    serverUrl = ""
+    if isRemoteServer
+        serverUrl = season._serverUrl
+    end if
+
     if isValid(season.BackdropImageTags) and season.BackdropImageTags.Count() > 0
         params.Tag = season.BackdropImageTags[0]
+        if isRemoteServer
+            return buildImageURLForServer(serverUrl, season.Id, "Backdrop", params)
+        end if
         return ImageURL(season.Id, "Backdrop", params)
     end if
 
-    ' Fall back to parent backdrop
     if isValid(season.ParentBackdropItemId) and isValid(season.ParentBackdropImageTags) and season.ParentBackdropImageTags.Count() > 0
         params.Tag = season.ParentBackdropImageTags[0]
+        if isRemoteServer
+            return buildImageURLForServer(serverUrl, season.ParentBackdropItemId, "Backdrop", params)
+        end if
         return ImageURL(season.ParentBackdropItemId, "Backdrop", params)
     end if
 

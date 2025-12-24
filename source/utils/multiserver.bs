@@ -1,0 +1,247 @@
+' Multi-Server Support Utilities
+' Enables aggregating content from all logged-in Jellyfin servers
+'
+' This module provides:
+' - ServerUserSession: Data model for server/user/auth info
+' - getLoggedInServerUsers(): Get all users with valid tokens across servers
+' - buildAuthHeaderForSession(): Wrapper for buildAuthHeaderForServer in baserequest.bs
+' - buildURLForSession(): Wrapper for buildURLForServer in baserequest.bs
+' - get_user_setting_for_user(): Read settings for specific user
+
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/Image.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+
+function createServerUserSession(serverId as string, serverUrl as string, serverName as string, userId as string, userName as string, authToken as string) as object
+    return {
+        serverId: serverId,
+        serverUrl: serverUrl,
+        serverName: serverName,
+        userId: userId,
+        userName: userName,
+        authToken: authToken
+    }
+end function
+
+function getLoggedInServerUsers() as object
+    sessionsArray = []
+
+    savedServersJson = get_setting("saved_servers")
+    if not isValid(savedServersJson) or savedServersJson = ""
+        return sessionsArray
+    end if
+
+    savedServers = ParseJson(savedServersJson)
+    if not isValid(savedServers) or not isValid(savedServers.serverList)
+        return sessionsArray
+    end if
+
+    registrySections = getRegistrySections()
+
+    serverLookup = {}
+    for each server in savedServers.serverList
+        if isValid(server.baseUrl) and server.baseUrl <> ""
+            serverLookup[LCase(server.baseUrl)] = server
+        end if
+    end for
+
+    for each sectionName in registrySections
+        lowerSection = LCase(sectionName)
+        if lowerSection = "jellyfin" then continue for
+        if lowerSection.left(11) = "jellyseerr_" then continue for
+
+        token = registry_read("token", sectionName)
+        storedServerId = registry_read("serverId", sectionName)
+        storedUserName = registry_read("username", sectionName)
+
+        if not isValidAndNotEmpty(token) then continue for
+        if not isValidAndNotEmpty(storedServerId) then continue for
+
+        storedServerUrl = invalid
+        storedServerName = ""
+
+        userServerUrl = registry_read("serverUrl", sectionName)
+        if isValidAndNotEmpty(userServerUrl)
+            storedServerUrl = userServerUrl
+            foundServerDetails = serverLookup[LCase(userServerUrl)]
+            if isValid(foundServerDetails)
+                if isValid(foundServerDetails.name)
+                    storedServerName = foundServerDetails.name
+                else
+                    storedServerName = userServerUrl
+                end if
+            else
+                storedServerName = userServerUrl
+            end if
+        else
+            for each server in savedServers.serverList
+                if isValid(server.baseUrl)
+                    storedServerUrl = server.baseUrl
+                    if isValid(server.name)
+                        storedServerName = server.name
+                    else
+                        storedServerName = server.baseUrl
+                    end if
+                    exit for
+                end if
+            end for
+        end if
+
+        if not isValidAndNotEmpty(storedServerUrl) then continue for
+
+        displayUserName = "Unknown"
+        if isValidAndNotEmpty(storedUserName)
+            displayUserName = storedUserName
+        end if
+
+        userSession = createServerUserSession(
+        storedServerId,
+        storedServerUrl,
+        storedServerName,
+        sectionName,
+        displayUserName,
+        token
+        )
+        sessionsArray.push(userSession)
+    end for
+
+    return sessionsArray
+end function
+
+function getLoggedInServerUsersExcludingCurrent() as object
+    allSessions = getLoggedInServerUsers()
+    currentServerId = ""
+
+    if isChainValid(m.global, "session.server.id")
+        currentServerId = m.global.session.server.id
+    end if
+
+    if currentServerId = ""
+        return allSessions
+    end if
+
+    filteredSessions = []
+    for each userSession in allSessions
+        if userSession.serverId <> currentServerId
+            filteredSessions.push(userSession)
+        end if
+    end for
+
+    return filteredSessions
+end function
+
+function getCurrentServerSession() as object
+    if not isChainValid(m.global, "session.server.id") then return invalid
+    if not isChainValid(m.global, "session.user.id") then return invalid
+    if not isChainValid(m.global, "session.user.authToken") then return invalid
+
+    globalSession = m.global.session
+
+    displayServerName = globalSession.server.url
+    if isValid(globalSession.server.name)
+        displayServerName = globalSession.server.name
+    end if
+
+    displayUserName = "Unknown"
+    if isValid(globalSession.user.name)
+        displayUserName = globalSession.user.name
+    end if
+
+    return createServerUserSession(
+    globalSession.server.id,
+    globalSession.server.url,
+    displayServerName,
+    globalSession.user.id,
+    displayUserName,
+    globalSession.user.authToken
+    )
+end function
+
+function getAllServerSessions() as object
+    sessionsArray = []
+
+    currentSession = getCurrentServerSession()
+    if isValid(currentSession)
+        sessionsArray.push(currentSession)
+    end if
+
+    otherSessions = getLoggedInServerUsersExcludingCurrent()
+    for each userSession in otherSessions
+        sessionsArray.push(userSession)
+    end for
+
+    return sessionsArray
+end function
+
+function buildURLForSession(userSession as object, path as string, params = {} as object) as string
+    if not isValid(userSession) or not isValid(userSession.serverUrl) then return ""
+    return buildURLForServer(userSession.serverUrl, path, params)
+end function
+
+function buildAuthHeaderForSession(userSession as object) as string
+    if not isValid(userSession) then return ""
+    return buildAuthHeaderForServer(userSession)
+end function
+
+function get_user_setting_for_user(key as string, userId as string) as dynamic
+    if key = "" or userId = "" then return invalid
+    return registry_read(key, userId)
+end function
+
+function isMultiServerEnabled() as boolean
+    setting = get_user_setting("ui.home.enableMultiServer")
+
+    if not isValid(setting)
+        return false
+    end if
+
+    if type(setting) = "String" or type(setting) = "roString"
+        return (LCase(setting) = "true")
+    end if
+
+    return (setting = true)
+end function
+
+function hasMultipleLoggedInServers() as boolean
+    sessionsArray = getAllServerSessions()
+    return sessionsArray.count() > 1
+end function
+
+sub saveUserServerUrl(userId as string, serverUrl as string)
+    if userId = "" or serverUrl = "" then return
+    registry_write("serverUrl", LCase(serverUrl), userId)
+end sub
+
+function buildImageURLForServer(serverBaseUrl as string, itemId as string, imageType = "Primary" as string, params = {} as object) as string
+    if serverBaseUrl = "" or itemId = "" then return ""
+
+    if serverBaseUrl.right(1) = "/"
+        serverBaseUrl = serverBaseUrl.left(serverBaseUrl.len() - 1)
+    end if
+
+    resultImageUrl = serverBaseUrl + "/Items/" + itemId + "/Images/" + imageType
+
+    paramArray = []
+    for each key in params
+        if isValid(params[key])
+            paramArray.push(key + "=" + params[key].toStr().encodeUriComponent())
+        end if
+    end for
+
+    if paramArray.count() > 0
+        resultImageUrl = resultImageUrl + "?" + paramArray.join("&")
+    end if
+
+    return resultImageUrl
+end function
+
+function getImageURL(itemId as string, imageType as string, params = {} as object, serverData = invalid as object) as dynamic
+    if not isValidAndNotEmpty(itemId) then return invalid
+
+    if isValid(serverData) and isValidAndNotEmpty(serverData.serverUrl)
+        return buildImageURLForServer(serverData.serverUrl, itemId, imageType, params)
+    else
+        return ImageURL(itemId, imageType, params)
+    end if
+end function

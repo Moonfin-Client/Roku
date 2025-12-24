@@ -18,9 +18,17 @@ namespace quickplay
 
     ' A single video file.
     sub video(itemNode as object)
-        if not isValid(itemNode) or not isValid(itemNode.id) or not isValid(itemNode.json) then return
+        if not isValid(itemNode)
+            return
+        end if
+        if not isValid(itemNode.id)
+            return
+        end if
+        if not isValid(itemNode.json)
+            return
+        end if
 
-        ' attempt to play video file. resume if possible
+
         if isValidAndNotEmpty(itemNode.selectedVideoStreamId)
             itemNode.id = itemNode.selectedVideoStreamId
         end if
@@ -181,7 +189,21 @@ namespace quickplay
     ' Play the first unwatched episode.
     ' If none, shuffle play the whole series.
     sub series(itemNode as object)
-        if not isValid(itemNode) or not isValid(itemNode.id) then return
+        if not isValid(itemNode) or not isValid(itemNode.id)
+            return
+        end if
+
+        serverData = getServerInfoFromItem(itemNode)
+        isItemFromOtherServer = isValid(serverData)
+
+        if isItemFromOtherServer
+            quickplay.seriesForServer(itemNode, serverData)
+        else
+            quickplay.seriesLocal(itemNode)
+        end if
+    end sub
+
+    sub seriesLocal(itemNode as object)
 
         data = api.shows.GetNextUp({
             "seriesId": itemNode.id,
@@ -229,6 +251,89 @@ namespace quickplay
 
                 if isValid(data) and isValidAndNotEmpty(data.Items)
                     ' add all episodes found to a playlist
+                    quickplay.pushToQueue(data.Items)
+                else
+                    stopLoadingSpinner()
+                end if
+            end if
+        end if
+    end sub
+
+    sub seriesForServer(itemNode as object, serverData as object)
+
+        injectServerMetadata = sub(items as object, sData as object)
+            if isValid(items)
+                for each item in items
+                    item._serverUrl = sData.serverUrl
+                    item._userId = sData.userId
+                    item._authToken = sData.authToken
+                end for
+            end if
+        end sub
+
+        nextUpUrl = Substitute("Shows/{0}/NextUp", itemNode.id)
+        nextUpParams = {
+            "UserId": serverData.userId,
+            "SeriesId": itemNode.id,
+            "recursive": "true",
+            "SortBy": "DatePlayed",
+            "SortOrder": "Descending",
+            "ImageTypeLimit": "1",
+            "EnableRewatching": m.global.session.user.settings["ui.details.enablerewatchingnextup"],
+            "DisableFirstEpisode": "false",
+            "EnableTotalRecordCount": "false"
+        }
+
+        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, nextUpUrl, nextUpParams)
+        data = invalid
+        if isValid(req)
+            data = getJson(req)
+        end if
+
+        if isValid(data) and isValidAndNotEmpty(data.Items)
+            injectServerMetadata(data.Items, serverData)
+            m.global.queueManager.callFunc("push", data.Items[0])
+        else
+            resumeUrl = Substitute("Users/{0}/Items/Resume", serverData.userId)
+            resumeParams = {
+                "parentId": itemNode.id,
+                "SortBy": "DatePlayed",
+                "recursive": "true",
+                "SortOrder": "Descending",
+                "Filters": "IsResumable",
+                "EnableTotalRecordCount": "false"
+            }
+
+            req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, resumeUrl, resumeParams)
+            data = invalid
+            if isValid(req)
+                data = getJson(req)
+            end if
+
+            if isValid(data) and isValidAndNotEmpty(data.Items)
+                injectServerMetadata(data.Items, serverData)
+                if isValid(data.Items[0].UserData) and isValid(data.Items[0].UserData.PlaybackPositionTicks)
+                    data.Items[0].startingPoint = data.Items[0].userdata.PlaybackPositionTicks
+                end if
+                m.global.queueManager.callFunc("push", data.Items[0])
+            else
+                episodesUrl = Substitute("Shows/{0}/Episodes", itemNode.id)
+                episodesParams = {
+                    "UserId": serverData.userId,
+                    "SortBy": "Random",
+                    "Limit": "2000",
+                    "EnableTotalRecordCount": "false",
+                    "IsMissing": "false"
+                }
+
+                req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, episodesUrl, episodesParams)
+                data = invalid
+                if isValid(req)
+                    data = getJson(req)
+                end if
+
+                if isValid(data) and isValidAndNotEmpty(data.Items)
+                    injectServerMetadata(data.Items, serverData)
                     quickplay.pushToQueue(data.Items)
                 else
                     stopLoadingSpinner()
@@ -414,8 +519,10 @@ namespace quickplay
     ' Quick Play A Person.
     ' Shuffle play all videos found
     sub person(itemNode as object)
-        if not isValid(itemNode) or not isValid(itemNode.id) then return
-        ' get movies and videos by the person
+        if not isValid(itemNode) or not isValid(itemNode.id)
+            return
+        end if
+
         personMovies = api.items.Get({
             "userid": m.global.session.user.id,
             "personIds": itemNode.id,

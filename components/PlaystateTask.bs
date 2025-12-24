@@ -7,6 +7,14 @@ sub init()
 end sub
 
 sub PlaystateUpdate()
+
+    ' Extract server data if present
+    serverData = invalid
+    if isValid(m.top.params) and isValid(m.top.params.serverData)
+        serverData = m.top.params.serverData
+    else
+    end if
+
     if m.top.status = "start"
         url = "Sessions/Playing"
     else if m.top.status = "stop"
@@ -16,21 +24,42 @@ sub PlaystateUpdate()
     else if m.top.status = "markPlayed"
         ' Mark item as played
         if isValidAndNotEmpty(m.top.itemId)
-            api.users.MarkPlayed(m.global.session.user.id, m.top.itemId, m.top.params)
+            if isValid(serverData)
+                ' Multi-server: Use server-specific request
+                markPlayedMultiServer(m.top.itemId, serverData)
+            else
+                ' Single-server: Use default API
+                api.users.MarkPlayed(m.global.session.user.id, m.top.itemId, m.top.params)
+            end if
         end if
         return
     else if m.top.status = "unmarkPlayed"
         ' Unmark item as played
         if isValidAndNotEmpty(m.top.itemId)
-            api.users.UnmarkPlayed(m.global.session.user.id, m.top.itemId)
+            if isValid(serverData)
+                ' Multi-server: Use server-specific request
+                unmarkPlayedMultiServer(m.top.itemId, serverData)
+            else
+                ' Single-server: Use default API
+                api.users.UnmarkPlayed(m.global.session.user.id, m.top.itemId)
+            end if
         end if
         return
     else
         ' Unknown State
         return
     end if
+
     params = PlaystateDefaults(m.top.params)
-    resp = APIRequest(url)
+
+    if isValid(serverData)
+        ' Multi-server: Make request to specific server
+        resp = createPlaystateRequest(url, serverData)
+    else
+        ' Single-server: Use default API
+        resp = APIRequest(url)
+    end if
+
     postJson(resp, params)
 end sub
 
@@ -61,7 +90,63 @@ function PlaystateDefaults(params = {} as object)
     paramsArray = params.items()
     for i = 0 to paramsArray.count() - 1
         item = paramsArray[i]
-        new_params[item.key] = item.value
+        ' Skip serverData - it's not part of the API request body
+        if item.key <> "serverData"
+            new_params[item.key] = item.value
+        end if
     end for
     return FormatJson(new_params)
+end function
+
+' createPlaystateRequest: Create API request for playstate updates
+function createPlaystateRequest(endpoint as string, serverData as object) as object
+    normalizedUrl = normalizeServerUrl(serverData.serverUrl)
+    fullUrl = normalizedUrl + "/" + endpoint
+
+    req = createObject("roUrlTransfer")
+    req.SetCertificatesFile("common:/certs/ca-bundle.crt")
+    req.InitClientCertificates()
+    req.SetUrl(fullUrl)
+    req.AddHeader("X-Emby-Authorization", buildAuthHeaderForServer(serverData))
+    req.AddHeader("Content-Type", "application/json")
+
+    return req
+end function
+
+' markPlayedMultiServer: Mark item as played on specific server
+sub markPlayedMultiServer(itemId as string, serverData as object)
+    normalizedUrl = normalizeServerUrl(serverData.serverUrl)
+    url = normalizedUrl + "/Users/" + serverData.userId + "/PlayedItems/" + itemId
+
+    req = createObject("roUrlTransfer")
+    req.SetCertificatesFile("common:/certs/ca-bundle.crt")
+    req.InitClientCertificates()
+    req.SetUrl(url)
+    req.AddHeader("X-Emby-Authorization", buildAuthHeaderForServer(serverData))
+    req.AddHeader("Content-Type", "application/json")
+
+    req.PostFromString("")
+end sub
+
+' unmarkPlayedMultiServer: Unmark item as played on specific server
+sub unmarkPlayedMultiServer(itemId as string, serverData as object)
+    normalizedUrl = normalizeServerUrl(serverData.serverUrl)
+    url = normalizedUrl + "/Users/" + serverData.userId + "/PlayedItems/" + itemId
+
+    req = createObject("roUrlTransfer")
+    req.SetCertificatesFile("common:/certs/ca-bundle.crt")
+    req.InitClientCertificates()
+    req.SetUrl(url)
+    req.AddHeader("X-Emby-Authorization", buildAuthHeaderForServer(serverData))
+    req.AddHeader("Content-Type", "application/json")
+
+    req.Delete()
+end sub
+
+' normalizeServerUrl: Ensure server URL doesn't have trailing slash
+function normalizeServerUrl(url as string) as string
+    if url.right(1) = "/"
+        return url.left(url.len() - 1)
+    end if
+    return url
 end function

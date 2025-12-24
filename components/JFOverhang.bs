@@ -5,6 +5,7 @@ import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/PosterLoadStatus.bs"
 import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/multiserver.bs"
 
 sub init()
     m.top.id = "overhang"
@@ -53,6 +54,9 @@ sub init()
     ' Library data storage
     m.libraryData = []
     m.libraryLabels = []
+
+    ' Task storage for multi-server operations
+    m.multiServerTask = invalid
 
     ' Navigation tracking
     ' Avatar is now separate and focusable independently
@@ -220,15 +224,25 @@ end sub
 
 ' Load user libraries and create nav icons for them
 sub loadLibraries()
-    data = api.GetUserViews({ "userId": m.global.session.user.id })
-
-    if not isChainValid(data, "items") then return
-
     m.libraryData = []
     m.libraryLabels = []
 
     ' Clear existing library labels
     m.libraryLabelsGroup.removeChildrenIndex(m.libraryLabelsGroup.getChildCount(), 0)
+
+    ' Check if multi-server is enabled
+    if isMultiServerEnabled()
+        sessions = getAllServerSessions()
+        if sessions.count() > 0
+            loadMultiServerLibraries(sessions)
+            return
+        end if
+    end if
+
+    ' Single server mode - load libraries from current session
+    data = api.GetUserViews({ "userId": m.global.session.user.id })
+
+    if not isChainValid(data, "items") then return
 
     for each item in data.LookupCI("items")
         libraryItem = {
@@ -263,6 +277,143 @@ sub loadLibraries()
     updatePillSize()
     updateScrollIndicators()
 end sub
+
+' Load libraries from all logged-in servers
+sub loadMultiServerLibraries(sessions as object)
+    ' Use MultiServerTask to fetch libraries asynchronously
+    if not isValid(m.multiServerTask)
+        m.multiServerTask = CreateObject("roSGNode", "MultiServerTask")
+    else
+        m.multiServerTask.callFunc("reset")
+    end if
+
+    ' Configure task to fetch user views (libraries)
+    m.multiServerTask.sessions = sessions
+    m.multiServerTask.endpoint = "/Users/{userId}/Views"
+    m.multiServerTask.params = {}
+
+    ' Store whether we have multiple servers for later use
+    m.multiServerTask.addFields({
+        metadata: {
+            multipleServers: (sessions.count() > 1)
+        }
+    })
+
+    m.multiServerTask.observeField("isComplete", "onMultiServerLibrariesLoaded")
+    m.multiServerTask.control = "RUN"
+end sub
+
+' Handler for multi-server libraries loaded
+sub onMultiServerLibrariesLoaded(msg as object)
+    node = msg.getRoSGNode()
+    if not isValid(node) then return
+
+    node.unobserveField("isComplete")
+
+    results = node.results
+    if not isValidAndNotEmpty(results) then return
+
+    ' Determine if we have multiple servers by checking unique server IDs
+    uniqueServers = {}
+    for each item in results
+        if isValidAndNotEmpty(item._serverId)
+            uniqueServers[item._serverId] = true
+        end if
+    end for
+    multipleServers = (uniqueServers.count() > 1)
+
+    ' Collect all library items (for sorting)
+    allLibraryItems = []
+
+    ' MultiServerTask returns a flat array where each item has server metadata
+    ' embedded as _serverId, _serverName, _serverUrl, etc.
+    for each item in results
+        ' Verify this is a valid library item
+        if not isValidAndNotEmpty(item.Id) then continue for
+        if not isValidAndNotEmpty(item.Name) then continue for
+
+        ' Determine server name suffix
+        serverSuffix = ""
+        if multipleServers and isValidAndNotEmpty(item._serverName)
+            serverSuffix = " (" + item._serverName + ")"
+        end if
+
+        libraryItem = {
+            id: item.Id,
+            name: item.Name,
+            type: item.LookupCI("Type"),
+            collectionType: item.LookupCI("CollectionType"),
+            serverUrl: item._serverUrl,
+            userId: item._userId,
+            authToken: item._authToken,
+            serverId: item._serverId,
+            serverName: item._serverName,
+            serverSuffix: serverSuffix
+        }
+        allLibraryItems.push(libraryItem)
+    end for
+
+    ' Sort library items alphabetically by display name (including server suffix)
+    sortedLibraries = sortLibrariesAlphabetically(allLibraryItems)
+
+    ' Now add sorted libraries to the UI
+    for each libraryItem in sortedLibraries
+        m.libraryData.push(libraryItem)
+
+        ' Create text label with server suffix
+        displayName = libraryItem.name
+        if not isValidAndNotEmpty(displayName) then displayName = "Library"
+        displayName = displayName + libraryItem.serverSuffix
+
+        label = createObject("roSGNode", "Label")
+        label.text = displayName
+        label.font = "font:SmallBoldSystemFont"
+        label.color = "#FFFFFF"
+        label.opacity = 0.5
+        label.height = 50
+        label.vertAlign = "center"
+
+        m.libraryLabelsGroup.appendChild(label)
+        m.libraryLabels.push(label)
+    end for
+
+    ' Apply visibility setting to libraries
+    if not m.librariesEnabled
+        for each libLabel in m.libraryLabels
+            libLabel.visible = false
+        end for
+    end if
+
+    ' Update pill size based on content
+    updatePillSize()
+    updateScrollIndicators()
+end sub
+
+' Sort libraries alphabetically by display name (name + serverSuffix)
+function sortLibrariesAlphabetically(libraries as object) as object
+    if libraries.count() <= 1 then return libraries
+
+    ' Simple bubble sort (good enough for small arrays)
+    sorted = []
+    for each lib in libraries
+        sorted.push(lib)
+    end for
+
+    for i = 0 to sorted.count() - 2
+        for j = 0 to sorted.count() - i - 2
+            name1 = LCase(sorted[j].name + sorted[j].serverSuffix)
+            name2 = LCase(sorted[j + 1].name + sorted[j + 1].serverSuffix)
+            if name1 > name2
+                ' Swap
+                temp = sorted[j]
+                sorted[j] = sorted[j + 1]
+                sorted[j + 1] = temp
+            end if
+        end for
+    end for
+
+    return sorted
+end function
 
 ' Get the maximum navigation index (including virtual library indices)
 function getMaxIndex() as integer
@@ -447,12 +598,47 @@ end function
 sub updatePillSize()
     contentWidth = calculateTotalNavWidth()
 
-    ' This is just the visible viewport for scrolling
-    clipWidth = 907
+    ' Define boundaries to avoid overlapping avatar and clock
+    ' Avatar section: starts at X=100, 64px wide, plus 15px spacing = ~179px right edge
+    ' Add padding for visual breathing room
+    avatarRightEdge = 200 ' Safe right edge of avatar area
+
+    ' Clock starts at X=1630 in screen coords, but overhang has translation of [54, 0]
+    ' So in overhang-local coords, clock is at 1630 - 54 = 1576
+    ' Account for overhang translation (54px) when calculating positions
+    clockLeftEdge = 1560 ' Safe left edge before clock (with padding)
+
+    ' Available width for navbar
+    maxNavbarWidth = clockLeftEdge - avatarRightEdge - 40 ' Extra padding on each side
+
+    ' Calculate pill dimensions based on content
+    pillPadding = 40 ' horizontal padding on each side of the items
+    pillHeight = 80
+    pillY = 40
+
+    ' The pill width should fit the content, but not exceed available space
+    desiredPillWidth = contentWidth + (pillPadding * 2)
+
+    ' Clip width is the scrollable viewport - content visible at once
+    ' If content fits, use content width; otherwise use max available
+    if desiredPillWidth <= maxNavbarWidth
+        ' Content fits - no scrolling needed, pill wraps content
+        clipWidth = contentWidth + 20 ' Small internal padding
+        pillWidth = desiredPillWidth
+    else
+        ' Content doesn't fit - use max available, enable scrolling
+        clipWidth = maxNavbarWidth - (pillPadding * 2)
+        pillWidth = maxNavbarWidth
+    end if
+
     m.clipWidth = clipWidth
 
-    ' X where the whole navbar "block" starts in scene coordinates (centered on 1920px screen)
-    navStartX = 506
+    ' Center the navbar pill between avatar and clock
+    navCenterX = avatarRightEdge + (maxNavbarWidth / 2)
+    navStartX = navCenterX - (pillWidth / 2) + pillPadding
+
+    ' Store for use in other functions
+    m.navStartX = navStartX
 
     ' --- Center the content inside the clip area ---
     ' Calculate center position based on content width
@@ -472,40 +658,34 @@ sub updatePillSize()
         m.navGroup.translation = [baseX, 10]
     end if
 
-    ' --- Compute pill size purely from content width ---
-    if isValid(m.navbarMask) and isValid(m.navbarBackground)
-        pillPadding = 60 ' horizontal padding on each side of the items
-        pillHeight = 80
-        pillY = 40
-
-        ' Left edge of the first icon/label in scene coordinates
-        contentLeftSceneX = navStartX + baseX
-
-        pillX = contentLeftSceneX - pillPadding
-        pillWidth = contentWidth + (pillPadding * 2)
-
-        ' Position the mask in scene coordinates
-        m.navbarMask.translation = [pillX, pillY]
-        m.navbarMask.maskSize = [pillWidth, pillHeight]
-
-        ' Rectangle lives inside the mask’s local space
-        m.navbarBackground.translation = [0, 0]
+    ' --- Update pill background ---
+    if isValid(m.navbarBackground)
+        ' Position the pill centered between avatar and clock
+        pillX = navCenterX - (pillWidth / 2)
+        m.navbarBackground.translation = [pillX, pillY]
         m.navbarBackground.width = pillWidth
         m.navbarBackground.height = pillHeight
     end if
 
-    ' --- Clip rect for scrolling stays fixed ---
-    navClipGroup = m.top.findNode("navClipGroup")
-    if isValid(navClipGroup)
-        navClipGroup.clippingRect = [0, 0, 907, 70]
+    ' Also update mask if present
+    if isValid(m.navbarMask)
+        pillX = navCenterX - (pillWidth / 2)
+        m.navbarMask.translation = [pillX, pillY]
+        m.navbarMask.maskSize = [pillWidth, pillHeight]
     end if
 
-    ' The scrollable content container stays anchored here
+    ' --- Clip rect for scrolling ---
+    navClipGroup = m.top.findNode("navClipGroup")
+    if isValid(navClipGroup)
+        navClipGroup.clippingRect = [0, 0, clipWidth, 70]
+    end if
+
+    ' The scrollable content container
     if isValid(m.centerNavContainer)
         m.centerNavContainer.translation = [navStartX, 46]
     end if
 
-    ' Scroll indicators just live at the clip edges
+    ' Scroll indicators at clip edges
     if isValid(m.scrollLeftIndicator)
         m.scrollLeftIndicator.translation = [navStartX - 20, 60]
     end if
@@ -1006,13 +1186,23 @@ function onKeyEvent(key as string, press as boolean) as boolean
                 if m.librariesEnabled
                     libraryIndex = m.selectedIndex - m.navGroup.getChildCount()
                     if libraryIndex >= 0 and libraryIndex < m.libraryData.count()
-                        ' Create a node with library data to pass to handler
-                        libraryNode = createObject("roSGNode", "ContentNode")
-                        libraryNode.addFields({
-                            libraryId: m.libraryData[libraryIndex].id,
-                            name: m.libraryData[libraryIndex].name,
-                            collectionType: m.libraryData[libraryIndex].collectionType
-                        })
+                        libraryInfo = m.libraryData[libraryIndex]
+                        ' Create a node with library data including server metadata
+                        libraryNode = createObject("roSGNode", "LibraryData")
+                        libraryNode.id = libraryInfo.id
+                        libraryNode.libraryId = libraryInfo.id
+                        libraryNode.title = libraryInfo.name
+                        libraryNode.collectionType = libraryInfo.collectionType
+
+                        ' Add server metadata for multi-server libraries
+                        if isValidAndNotEmpty(libraryInfo.serverUrl)
+                            libraryNode.serverUrl = libraryInfo.serverUrl
+                            libraryNode.userId = libraryInfo.userId
+                            libraryNode.authToken = libraryInfo.authToken
+                            libraryNode.serverId = libraryInfo.serverId
+                            libraryNode.serverName = libraryInfo.serverName
+                        end if
+
                         m.top.librarySelected = libraryNode
                         return true
                     end if

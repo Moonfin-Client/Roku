@@ -5,51 +5,196 @@ import "pkg:/source/enums/ImageType.bs"
 import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/multiserver.bs"
 
 sub init()
     m.top.functionName = "loadGenreItems"
 end sub
 
 sub loadGenreItems()
-    results = []
+    ' Get all server sessions if multi-server is enabled
+    allSessions = []
 
-    ' Load all movies and series (no episodes) with genre information
+    if m.top.enableMultiServer
+        allSessions = getAllServerSessions()
+    end if
+
+    ' If no sessions found or multi-server disabled, fall back to current server only
+    if allSessions.Count() = 0
+        currentSession = getCurrentServerSession()
+        if isValid(currentSession)
+            allSessions.push(currentSession)
+        end if
+    end if
+
+    if allSessions.Count() = 0
+        m.top.error = "No server sessions available"
+        return
+    end if
+
+    ' Load genres from all servers in parallel using port
+    port = CreateObject("roMessagePort")
+    activeRequests = {}
+    requestObjects = {} ' Keep request objects alive
+    genreMap = {} ' Maps genre name to array of items (aggregated across servers)
+    totalItemCount = 0
+
+    ' Start requests for all servers
+    for each userSession in allSessions
+        requestInfo = startGenreRequest(userSession, port)
+        if isValid(requestInfo)
+            activeRequests[requestInfo.id] = userSession
+            requestObjects[requestInfo.id] = requestInfo.request ' Keep alive
+        end if
+    end for
+
+    ' Wait for all responses (15 second timeout)
+    startTime = CreateObject("roDateTime").AsSeconds()
+
+    while activeRequests.Count() > 0
+        msg = wait(1000, port)
+
+        ' Check timeout
+        currentTime = CreateObject("roDateTime").AsSeconds()
+        if currentTime - startTime > 15
+            print "[GenresTask] Timeout waiting for server responses"
+            exit while
+        end if
+
+        if msg = invalid then continue while
+
+        if type(msg) = "roUrlEvent"
+            requestId = msg.GetSourceIdentity().ToStr()
+            userSession = activeRequests[requestId]
+
+            if isValid(userSession)
+                activeRequests.Delete(requestId)
+                requestObjects.Delete(requestId) ' Clean up
+
+                responseCode = msg.GetResponseCode()
+                if responseCode = 200
+                    responseBody = msg.GetString()
+                    data = ParseJson(responseBody)
+
+                    if isValid(data) and isChainValid(data, "Items")
+                        ' Process items and add to genre map
+                        itemCount = processServerItems(data.Items, userSession, genreMap)
+                        totalItemCount += itemCount
+                        print "[GenresTask] Server "; userSession.serverUrl; " returned "; data.Items.Count(); " items"
+                    end if
+                else
+                    print "[GenresTask] Server "; userSession.serverUrl; " returned "; responseCode
+                end if
+            end if
+        end if
+    end while
+
+    ' Set results
+    m.top.totalCount = totalItemCount
+    m.top.genreResults = genreMap
+
+    ' Also set legacy results array for compatibility
+    results = []
+    for each genreName in genreMap.Keys()
+        for each item in genreMap[genreName].items
+            results.push(item)
+        end for
+    end for
+    m.top.results = results
+end sub
+
+' Start an async request to load genres from a server
+function startGenreRequest(userSession as object, port as object) as object
     params = {
-        userid: m.global.session.user.id,
+        userid: userSession.userId,
         IncludeItemTypes: "Movie,Series",
         Limit: m.top.limit,
         StartIndex: m.top.startIndex,
         Recursive: true,
         SortBy: "SortName",
         SortOrder: "Ascending",
-        Fields: "Overview,PrimaryImageAspectRatio,ProductionYear,OfficialRating,CommunityRating,CriticRating,RunTimeTicks,UserData,BackdropImageTags,Genres,Status,EndDate,MediaSources",
+        Fields: "Overview,PrimaryImageAspectRatio,ProductionYear,OfficialRating,CommunityRating,CriticRating,RunTimeTicks,UserData,BackdropImageTags,Genres,Status,EndDate,MediaSources,ImageTags",
         EnableTotalRecordCount: true
     }
 
-    data = api.items.Get(params)
+    url = buildURLForSession(userSession, "/Users/" + userSession.userId + "/Items", params)
+    authHeader = buildAuthHeaderForSession(userSession)
 
-    if not isValid(data) or not isChainValid(data, "Items")
-        m.top.error = "Failed to load items"
-        return
+    print "[GenresTask] Starting request to "; userSession.serverUrl
+
+    request = CreateObject("roUrlTransfer")
+    request.SetUrl(url)
+    request.AddHeader("Authorization", authHeader)
+    request.AddHeader("Content-Type", "application/json")
+    request.SetCertificatesFile("common:/certs/ca-bundle.crt")
+    request.InitClientCertificates()
+    request.SetMessagePort(port)
+    request.EnableEncodings(true)
+
+    if request.AsyncGetToString()
+        return {
+            id: request.GetIdentity().ToStr(),
+            request: request
+        }
     end if
 
-    m.top.totalCount = isValid(data.TotalRecordCount) ? data.TotalRecordCount : data.Items.Count()
+    return invalid
+end function
 
-    for each item in data.Items
+' Process items from a server and add to genre map
+function processServerItems(items as object, userSession as object, genreMap as object) as integer
+    if not isValid(items) then return 0
+
+    itemCount = 0
+
+    for each item in items
         ' Only include movies and series
         itemType = LCase(item.type)
         if itemType <> "movie" and itemType <> "series" then continue for
 
-        transformed = transformItem(item)
-        if isValid(transformed)
-            results.push(transformed)
-        end if
+        ' Get genres from the item
+        if not isValid(item.Genres) or item.Genres.Count() = 0 then continue for
+
+        ' Transform item with server info embedded
+        transformed = transformItemWithServer(item, userSession)
+        if not isValid(transformed) then continue for
+
+        itemCount++
+
+        ' Add to each genre this item belongs to
+        for each genre in item.Genres
+            if not isValidAndNotEmpty(genre) then continue for
+
+            genreLower = LCase(genre)
+
+            ' Initialize genre array if it doesn't exist
+            if not genreMap.DoesExist(genreLower)
+                genreMap[genreLower] = {
+                    displayName: genre,
+                    items: []
+                }
+            end if
+
+            ' Check if this item already exists (by ID) to avoid duplicates from same server
+            isDuplicate = false
+            for each existingItem in genreMap[genreLower].items
+                if existingItem.id = transformed.id and existingItem.serverUrl = transformed.serverUrl
+                    isDuplicate = true
+                    exit for
+                end if
+            end for
+
+            if not isDuplicate
+                genreMap[genreLower].items.push(transformed)
+            end if
+        end for
     end for
 
-    m.top.results = results
-end sub
+    return itemCount
+end function
 
-function transformItem(item as object) as object
+' Transform item with server info for multi-server support
+function transformItemWithServer(item as object, userSession as object) as object
     if not isValid(item) then return invalid
 
     result = {
@@ -59,17 +204,27 @@ function transformItem(item as object) as object
         year: isValid(item.ProductionYear) ? item.ProductionYear.toStr() : "",
         rating: isValid(item.CommunityRating) ? item.CommunityRating.toStr() : "",
         officialRating: isValid(item.OfficialRating) ? item.OfficialRating : "",
-        runtime: formatRuntime(item.RunTimeTicks),
+        runtime: formatRuntimeTicks(item.RunTimeTicks),
         overview: isValid(item.Overview) ? item.Overview : "",
-        posterUrl: buildPosterUrl(item),
-        backdropUrl: buildBackdropUrl(item),
+        posterUrl: buildPosterUrlForServer(item, userSession),
+        backdropUrl: buildBackdropUrlForServer(item, userSession),
+        serverUrl: userSession.serverUrl,
+        serverName: userSession.serverName,
+        userId: userSession.userId,
+        authToken: userSession.authToken,
         json: item
     }
+
+    ' Add server info to json for downstream use
+    result.json._serverUrl = userSession.serverUrl
+    result.json._userId = userSession.userId
+    result.json._authToken = userSession.authToken
+    result.json._serverName = userSession.serverName
 
     return result
 end function
 
-function buildPosterUrl(item as object) as string
+function buildPosterUrlForServer(item as object, userSession as object) as string
     if not isValid(item) or not isValid(item.Id) then return ""
 
     params = {
@@ -81,10 +236,11 @@ function buildPosterUrl(item as object) as string
         params.Tag = item.ImageTags.Primary
     end if
 
-    return ImageURL(item.Id, "Primary", params)
+    ' Use multi-server image URL builder
+    return buildImageURLForServer(userSession.serverUrl, item.Id, "Primary", params)
 end function
 
-function buildBackdropUrl(item as object) as string
+function buildBackdropUrlForServer(item as object, userSession as object) as string
     if not isValid(item) or not isValid(item.Id) then return ""
 
     params = {
@@ -95,19 +251,19 @@ function buildBackdropUrl(item as object) as string
     ' Try item's own backdrop first
     if isValid(item.BackdropImageTags) and item.BackdropImageTags.Count() > 0
         params.Tag = item.BackdropImageTags[0]
-        return ImageURL(item.Id, "Backdrop", params)
+        return buildImageURLForServer(userSession.serverUrl, item.Id, "Backdrop", params)
     end if
 
     ' Fall back to parent backdrop
     if isValid(item.ParentBackdropItemId) and isValid(item.ParentBackdropImageTags) and item.ParentBackdropImageTags.Count() > 0
         params.Tag = item.ParentBackdropImageTags[0]
-        return ImageURL(item.ParentBackdropItemId, "Backdrop", params)
+        return buildImageURLForServer(userSession.serverUrl, item.ParentBackdropItemId, "Backdrop", params)
     end if
 
     return ""
 end function
 
-function formatRuntime(ticks as dynamic) as string
+function formatRuntimeTicks(ticks as dynamic) as string
     if not isValid(ticks) or ticks = 0 then return ""
 
     ' Convert 100-nanosecond ticks to minutes

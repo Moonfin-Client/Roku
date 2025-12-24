@@ -2,6 +2,7 @@ import "pkg:/source/constants/HomeRowItemSizes.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/multiserver.bs"
 
 const LOADING_WAIT_TIME = 2
 
@@ -79,6 +80,7 @@ sub init()
 
     ' Initialize task storage - tasks will be created on-demand
     m.contentTasks = {}
+    m.multiServerTasks = {}
 end sub
 
 sub loadLibraries()
@@ -170,7 +172,16 @@ sub processUserSections()
         sectionName = LCase(sectionName)
 
         if sectionName = "latestmedia"
-            ' expect 1 row per filtered media library
+            ' Check if multi-server is enabled - if so, we estimate rows based on libraries per server
+            if isMultiServerEnabled()
+                sessions = getAllServerSessions()
+                if sessions.count() > 0
+                    m.expectedRowCount = m.expectedRowCount + (sessions.count() * 5)
+                    continue for
+                end if
+            end if
+
+            ' Single-server mode: expect 1 row per filtered media library
             excludeList = []
             if isValid(sessionUser.configuration) and isValid(sessionUser.configuration.LatestItemsExcludes)
                 excludeList = sessionUser.configuration.LatestItemsExcludes
@@ -446,6 +457,13 @@ function addHomeSection(sectionType as string) as boolean
 
     ' Favorite Items
     if sectionType = "favorites"
+        if isMultiServerEnabled()
+            sessions = getAllServerSessions()
+            if sessions.count() > 0
+                createMultiServerFavoritesRow(sessions)
+                return true
+            end if
+        end if
         createFavoritesRow()
         return true
     end if
@@ -512,6 +530,18 @@ end sub
 ' createLatestInRows: Creates a row displaying latest items in each of the user's libraries
 '
 sub createLatestInRows()
+    multiServerEnabled = isMultiServerEnabled()
+
+    if multiServerEnabled
+        sessions = getAllServerSessions()
+
+        if sessions.count() > 0
+            createMultiServerLatestRows(sessions)
+            return
+        else
+        end if
+    end if
+
     ' Ensure we have data
     if not isValidAndNotEmpty(m.libraryData)
         return
@@ -637,10 +667,110 @@ sub createContinueWatchingRow()
         nextUpRow.cursorSize = getPosterSize(true)
     end if
 
+    if isMultiServerEnabled() and hasMultipleLoggedInServers()
+        createMultiServerContinueWatchingRow()
+        return
+    end if
+
     ' Load the Continue Watching Data (lazy task creation)
     task = getOrCreateTask("continue")
     task.observeField("content", "updateContinueWatchingItems")
     task.control = "RUN"
+end sub
+
+' createMultiServerContinueWatchingRow: Creates a row with continue watching from all servers
+'
+sub createMultiServerContinueWatchingRow()
+    sessions = getAllServerSessions()
+    if sessions.count() = 0
+        task = getOrCreateTask("continue")
+        task.observeField("content", "updateContinueWatchingItems")
+        task.control = "RUN"
+        return
+    end if
+
+    taskKey = "multiServerContinue"
+    if not m.multiServerTasks.DoesExist(taskKey)
+        task = CreateObject("roSGNode", "MultiServerTask")
+        m.multiServerTasks[taskKey] = task
+    else
+        task = m.multiServerTasks[taskKey]
+        task.callFunc("reset")
+    end if
+
+    task.sessions = sessions
+    task.endpoint = "/Users/{userId}/Items/Resume"
+    task.params = {
+        Recursive: "true",
+        SortBy: "DatePlayed",
+        SortOrder: "Descending",
+        Filters: "IsResumable",
+        MediaTypes: "Video",
+        EnableTotalRecordCount: "false",
+        Limit: "25",
+        EnableImageTypes: "Primary,Backdrop,Thumb",
+        ImageTypeLimit: "1"
+    }
+    task.observeField("isComplete", "onMultiServerContinueWatchingComplete")
+    task.control = "RUN"
+end sub
+
+' onMultiServerContinueWatchingComplete: Handler for multi-server continue watching results
+'
+sub onMultiServerContinueWatchingComplete()
+    m.processedRowCount++
+    taskKey = "multiServerContinue"
+    if not m.multiServerTasks.DoesExist(taskKey) then return
+
+    task = m.multiServerTasks[taskKey]
+    task.unobserveField("isComplete")
+
+    sectionName = tr("Continue Watching")
+    results = task.results
+
+    if not isValidAndNotEmpty(results)
+        removeHomeSection(sectionName)
+        return
+    end if
+
+    ' Sort by DatePlayed across all servers
+    sortedResults = sortMultiServerResultsByDate(results, "UserData.LastPlayedDate")
+
+    ' Create HomeData nodes from aggregated results
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+    preferThumbnails = chainLookupReturn(m.global.session, "user.settings.ui.home.preferThumbnails", false)
+    row.usePoster = not preferThumbnails
+
+    if preferThumbnails
+        row.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
+        row.cursorSize = homeRowItemSizes.WIDE_POSTER
+    else
+        row.imageWidth = homeRowItemSizes.MOVIE_POSTER[0]
+        row.cursorSize = homeRowItemSizes.MOVIE_POSTER
+    end if
+
+    showServerName = hasMultipleLoggedInServers()
+
+    for each item in sortedResults
+        tmp = createHomeDataFromMultiServerItem(item, showServerName)
+        if isValid(tmp)
+            if isChainValid(item, "UserData.PlayedPercentage")
+                tmp.PlayedPercentage = item.UserData.PlayedPercentage
+            end if
+            tmp.usePoster = row.usePoster
+            tmp.imageWidth = row.imageWidth
+            row.appendChild(tmp)
+        end if
+    end for
+
+    ' Insert or replace row
+    if sectionExists(sectionName)
+        m.top.content.replaceChild(row, getSectionIndex(sectionName))
+    else
+        m.top.content.insertChild(row, getOriginalSectionIndex("resume"))
+    end if
+    setRowItemSize()
 end sub
 
 ' createMergedContinueWatchingRow: Creates a row displaying merged Continue Watching and Next Up items
@@ -691,10 +821,492 @@ sub createNextUpRow()
         nextUpRow.cursorSize = getPosterSize(false)
     end if
 
-    ' Load the Next Up Data (lazy task creation)
+    if isMultiServerEnabled() and hasMultipleLoggedInServers()
+        createMultiServerNextUpRow()
+        return
+    end if
+
     task = getOrCreateTask("nextUp")
     task.observeField("content", "updateNextUpItems")
     task.control = "RUN"
+end sub
+
+' createMultiServerNextUpRow: Creates a row with next up episodes from all servers
+'
+sub createMultiServerNextUpRow()
+    sessions = getAllServerSessions()
+    if sessions.count() = 0
+        task = getOrCreateTask("nextUp")
+        task.observeField("content", "updateNextUpItems")
+        task.control = "RUN"
+        return
+    end if
+
+    taskKey = "multiServerNextUp"
+    if not m.multiServerTasks.DoesExist(taskKey)
+        task = CreateObject("roSGNode", "MultiServerTask")
+        m.multiServerTasks[taskKey] = task
+    else
+        task = m.multiServerTasks[taskKey]
+        task.callFunc("reset")
+    end if
+
+    ' Configure task for Next Up endpoint
+    task.sessions = sessions
+    task.endpoint = "/Shows/NextUp"
+    task.params = {
+        Recursive: "true",
+        SortBy: "DatePlayed",
+        SortOrder: "Descending",
+        ImageTypeLimit: "1",
+        UserId: "{userId}",
+        DisableFirstEpisode: "false",
+        Limit: "25",
+        EnableTotalRecordCount: "false",
+        EnableImageTypes: "Primary,Backdrop,Thumb"
+    }
+    task.observeField("isComplete", "onMultiServerNextUpComplete")
+    task.control = "RUN"
+end sub
+
+' onMultiServerNextUpComplete: Handler for multi-server next up results
+'
+sub onMultiServerNextUpComplete()
+    m.processedRowCount++
+    taskKey = "multiServerNextUp"
+    if not m.multiServerTasks.DoesExist(taskKey) then return
+
+    task = m.multiServerTasks[taskKey]
+    task.unobserveField("isComplete")
+
+    sectionName = tr("Next Up")
+    results = task.results
+
+    if not isValidAndNotEmpty(results)
+        removeHomeSection(sectionName)
+        return
+    end if
+
+    ' Sort by DatePlayed across all servers
+    sortedResults = sortMultiServerResultsByDate(results, "UserData.LastPlayedDate")
+
+    ' Create HomeData nodes from aggregated results
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+    row.usePoster = true
+
+    ' Check if we should show server names
+    showServerName = hasMultipleLoggedInServers()
+
+    for each item in sortedResults
+        tmp = createHomeDataFromMultiServerItem(item, showServerName)
+        if isValid(tmp)
+            tmp.usePoster = row.usePoster
+            tmp.imageWidth = row.imageWidth
+            row.appendChild(tmp)
+        end if
+    end for
+
+    ' Insert or replace row
+    if sectionExists(sectionName)
+        m.top.content.replaceChild(row, getSectionIndex(sectionName))
+    else
+        m.top.content.insertChild(row, getSectionIndex(sectionName))
+    end if
+    setRowItemSize()
+end sub
+
+' createMultiServerLatestRows: Creates "Recently Added in {Library} ({Server})" rows for each library on each server
+'
+' @param {array} sessions - Array of ServerUserSession objects
+sub createMultiServerLatestRows(sessions as object)
+
+    ' Use MultiServerTask to fetch libraries from all servers
+    ' This must be done in a Task node, not directly in component code
+    for each userSession in sessions
+        ' Create a task to fetch libraries for this server
+        taskKey = "multiServerLibraries_" + userSession.serverId
+        if not m.multiServerTasks.DoesExist(taskKey)
+            task = CreateObject("roSGNode", "MultiServerTask")
+            m.multiServerTasks[taskKey] = task
+        else
+            task = m.multiServerTasks[taskKey]
+            task.callFunc("reset")
+        end if
+
+        ' Configure task to fetch user views (libraries)
+        task.sessions = [userSession]
+        task.endpoint = "/Users/{userId}/Views"
+        task.params = {}
+
+        ' Store metadata for callback
+        task.addFields({
+            metadata: {
+                userSession: userSession
+            }
+        })
+
+        task.observeField("isComplete", "onMultiServerLibrariesLoaded")
+        task.control = "RUN"
+    end for
+
+end sub
+
+' onMultiServerLibrariesLoaded: Handler for library list loaded from a server
+'
+sub onMultiServerLibrariesLoaded(msg as object)
+    node = msg.getRoSGNode()
+    if not isValid(node)
+        return
+    end if
+
+    if not isChainValid(node, "metadata.userSession")
+        return
+    end if
+
+    userSession = node.metadata.userSession
+
+    node.unobserveField("isComplete")
+
+    results = node.results
+
+    if not isValidAndNotEmpty(results)
+        return
+    end if
+
+    ' Determine server name suffix
+    serverSuffix = ""
+    if hasMultipleLoggedInServers() and isValidAndNotEmpty(userSession.serverName)
+        serverSuffix = " (" + userSession.serverName + ")"
+    end if
+
+
+    ' Create a row for each library
+    libraryCount = 0
+    for each item in results
+        collectionType = ""
+        if isValid(item.CollectionType) then collectionType = LCase(item.CollectionType)
+
+        ' Skip boxsets, livetv, and programs
+        if collectionType = "boxsets" or collectionType = "livetv" or collectionType = "program"
+            continue for
+        end if
+
+        libraryName = item.Name
+        if not isValidAndNotEmpty(libraryName) then libraryName = "Library"
+
+        sectionName = tr("Recently Added in") + " " + libraryName + serverSuffix
+
+        ' Determine poster size based on content type
+        imagesize = getPosterSize(false)
+        if collectionType = "music"
+            imagesize = homeRowItemSizes.MUSIC_ALBUM
+        end if
+
+        ' Create placeholder row
+        if not sectionExists(sectionName)
+            latestRow = m.top.content.CreateChild("HomeRow")
+            latestRow.title = sectionName
+            latestRow.imageWidth = imagesize[0]
+            latestRow.cursorSize = imagesize
+        else
+        end if
+
+        ' Create task to load latest items for this library
+        taskKey = "multiServerLatest_" + userSession.serverId + "_" + item.Id
+        if not m.multiServerTasks.DoesExist(taskKey)
+            task = CreateObject("roSGNode", "MultiServerTask")
+            m.multiServerTasks[taskKey] = task
+        else
+            task = m.multiServerTasks[taskKey]
+            task.callFunc("reset")
+        end if
+
+
+        ' Configure task for Latest Items endpoint with parentId filter
+        task.sessions = [userSession]
+        task.endpoint = "/Items/Latest"
+        task.params = {
+            Limit: "25",
+            ParentId: item.Id,
+            EnableImageTypes: "Primary,Backdrop,Thumb",
+            ImageTypeLimit: "1",
+            EnableTotalRecordCount: "false"
+        }
+
+        libraryCount++
+
+        ' Store metadata for the callback
+        task.addFields({
+            metadata: {
+                sectionName: sectionName,
+                collectionType: collectionType,
+                serverName: userSession.serverName
+            }
+        })
+
+        task.observeField("isComplete", "onMultiServerLatestPerLibraryComplete")
+        task.control = "RUN"
+    end for
+
+end sub
+
+' onMultiServerLatestPerLibraryComplete: Handler for per-library per-server latest items
+'
+sub onMultiServerLatestPerLibraryComplete(msg as object)
+    node = msg.getRoSGNode()
+    if not isValid(node)
+        return
+    end if
+
+    ' Get metadata
+    if not isChainValid(node, "metadata")
+        return
+    end if
+    metadata = node.metadata
+
+    m.processedRowCount++
+    node.unobserveField("isComplete")
+
+    sectionName = metadata.sectionName
+    results = node.results
+
+
+    if not isValidAndNotEmpty(results)
+        removeHomeSection(sectionName)
+        return
+    end if
+
+    ' Sort by DateCreated
+    sortedResults = sortMultiServerResultsByDate(results, "DateCreated")
+
+    ' Create the row
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+    row.usePoster = true
+
+    ' Set image size based on content type
+    if metadata.collectionType = "music"
+        row.imageWidth = homeRowItemSizes.MUSIC_ALBUM[0]
+        row.cursorSize = homeRowItemSizes.MUSIC_ALBUM
+    else
+        posterSize = getPosterSize(false)
+        row.imageWidth = posterSize[0]
+        row.cursorSize = posterSize
+    end if
+
+    ' Don't show server name on individual items since it's in the row title
+    itemCount = 0
+    for each item in sortedResults
+        tmp = createHomeDataFromMultiServerItem(item, false)
+        if isValid(tmp)
+            tmp.usePoster = row.usePoster
+            tmp.imageWidth = row.imageWidth
+            row.appendChild(tmp)
+            itemCount++
+        end if
+    end for
+
+
+    ' Insert or replace row
+    if sectionExists(sectionName)
+        m.top.content.replaceChild(row, getSectionIndex(sectionName))
+    else
+        m.top.content.insertChild(row, getOriginalSectionIndex("latestmedia"))
+    end if
+    setRowItemSize()
+end sub
+
+' DEPRECATED: Old merged content type approach - keeping for reference
+' createMultiServerLatestRowForType: Creates a multi-server latest row for a specific content type
+'
+' @param {array} sessions - Array of ServerUserSession objects
+' @param {object} contentType - Object with typeKey, title, itemTypes, imageSize
+sub createMultiServerLatestRowForType(sessions as object, contentType as object)
+    taskKey = "multiServerLatest_" + contentType.typeKey
+    if not m.multiServerTasks.DoesExist(taskKey)
+        task = CreateObject("roSGNode", "MultiServerTask")
+        m.multiServerTasks[taskKey] = task
+    else
+        task = m.multiServerTasks[taskKey]
+        task.callFunc("reset")
+    end if
+
+    ' Configure task for Latest Items endpoint
+    task.sessions = sessions
+    task.endpoint = "/Items/Latest"
+    task.params = {
+        Limit: "25",
+        IncludeItemTypes: contentType.itemTypes,
+        EnableImageTypes: "Primary,Backdrop,Thumb",
+        ImageTypeLimit: "1",
+        EnableTotalRecordCount: "false"
+    }
+
+    ' Store metadata for the callback
+    task.addFields({ metadata: contentType })
+
+    ' Use a single callback that handles all types
+    task.observeField("isComplete", "onMultiServerLatestComplete")
+    task.control = "RUN"
+end sub
+
+' onMultiServerLatestComplete: Handler for multi-server latest items results
+'
+sub onMultiServerLatestComplete(msg as object)
+    node = msg.getRoSGNode()
+    if not isValid(node) then return
+
+    ' Find which task completed by checking our stored tasks
+    taskKey = ""
+    contentType = invalid
+    for each key in m.multiServerTasks
+        if m.multiServerTasks[key].isSameNode(node)
+            taskKey = key
+            if isChainValid(node, "metadata")
+                contentType = node.metadata
+            end if
+            exit for
+        end if
+    end for
+
+    if taskKey = "" or not isValid(contentType) then return
+
+    m.processedRowCount++
+    node.unobserveField("isComplete")
+
+    sectionName = contentType.title
+    results = node.results
+
+    if not isValidAndNotEmpty(results)
+        removeHomeSection(sectionName)
+        return
+    end if
+
+    ' Sort by DateCreated (when added to library)
+    sortedResults = sortMultiServerResultsByDate(results, "DateCreated")
+
+    ' Create the row
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+    row.usePoster = true
+
+    ' Set image size based on content type
+    if contentType.imageSize = "album"
+        row.imageWidth = homeRowItemSizes.MUSIC_ALBUM[0]
+        row.cursorSize = homeRowItemSizes.MUSIC_ALBUM
+    else
+        ' Use poster size (respects thumbnail toggle)
+        posterSize = getPosterSize(false)
+        row.imageWidth = posterSize[0]
+        row.cursorSize = posterSize
+    end if
+
+    ' Check if we should show server names
+    showServerName = hasMultipleLoggedInServers()
+
+    for each item in sortedResults
+        tmp = createHomeDataFromMultiServerItem(item, showServerName)
+        if isValid(tmp)
+            tmp.usePoster = row.usePoster
+            tmp.imageWidth = row.imageWidth
+            row.appendChild(tmp)
+        end if
+    end for
+
+    ' Insert or replace row
+    if sectionExists(sectionName)
+        m.top.content.replaceChild(row, getSectionIndex(sectionName))
+    else
+        m.top.content.insertChild(row, getOriginalSectionIndex("latestmedia"))
+    end if
+    setRowItemSize()
+end sub
+
+' createMultiServerFavoritesRow: Creates an aggregated Favorites row from all servers
+'
+' @param {array} sessions - Array of ServerUserSession objects
+sub createMultiServerFavoritesRow(sessions as object)
+    taskKey = "multiServerFavorites"
+    if not m.multiServerTasks.DoesExist(taskKey)
+        task = CreateObject("roSGNode", "MultiServerTask")
+        m.multiServerTasks[taskKey] = task
+    else
+        task = m.multiServerTasks[taskKey]
+        task.callFunc("reset")
+    end if
+
+    ' Configure task for Favorites endpoint
+    task.sessions = sessions
+    task.endpoint = "/Users/{userId}/Items"
+    task.params = {
+        Filters: "IsFavorite",
+        Recursive: "true",
+        SortBy: "SortName",
+        SortOrder: "Ascending",
+        EnableTotalRecordCount: "false",
+        Limit: "25",
+        EnableImageTypes: "Primary,Backdrop,Thumb",
+        ImageTypeLimit: "1"
+    }
+    task.observeField("isComplete", "onMultiServerFavoritesComplete")
+    task.control = "RUN"
+end sub
+
+' onMultiServerFavoritesComplete: Handler for multi-server favorites results
+'
+sub onMultiServerFavoritesComplete()
+    m.processedRowCount++
+    taskKey = "multiServerFavorites"
+    if not m.multiServerTasks.DoesExist(taskKey) then return
+
+    task = m.multiServerTasks[taskKey]
+    task.unobserveField("isComplete")
+
+    sectionName = tr("Favorites")
+    results = task.results
+
+    if not isValidAndNotEmpty(results)
+        removeHomeSection(sectionName)
+        return
+    end if
+
+    ' Create the row
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+
+    ' Check if we should show server names
+    showServerName = hasMultipleLoggedInServers()
+
+    for each item in results
+        ' Skip books and audio
+        itemType = ""
+        if isValid(item.Type) then itemType = LCase(item.Type)
+        if itemType = "book" or itemType = "audio" then continue for
+
+        tmp = createHomeDataFromMultiServerItem(item, showServerName)
+        if isValid(tmp)
+            usePoster = true
+            if itemType = "episode" or itemType = "musicartist"
+                usePoster = false
+            end if
+            tmp.usePoster = usePoster
+            tmp.imageWidth = row.imageWidth
+            row.appendChild(tmp)
+        end if
+    end for
+
+    ' Insert or replace row
+    if sectionExists(sectionName)
+        m.top.content.replaceChild(row, getSectionIndex(sectionName))
+    else
+        m.top.content.insertChild(row, getOriginalSectionIndex("favorites"))
+    end if
+    setRowItemSize()
 end sub
 
 ' createMyListRow: Creates a row displaying items from the user's personal list
@@ -1184,3 +1796,180 @@ sub createFeaturedMediaRow()
     ' The MediaBar component will handle the display in the Home screen
     ' We increment processedRowCount to maintain proper row counting
 end sub
+' ============================================
+' Multi-Server Helper Functions
+' ============================================
+
+' createHomeDataFromMultiServerItem: Creates a HomeData node from a multi-server API result
+'
+' @param {object} item - Raw API result with _serverId, _serverName, _serverUrl metadata
+' @param {boolean} showServerName - Whether to append "(ServerName)" to the item name
+' @return {object} HomeData node or invalid
+function createHomeDataFromMultiServerItem(item as object, showServerName = false as boolean) as object
+    if not isValid(item) then return invalid
+
+    tmp = createSGNode("HomeData")
+
+    ' Store the item ID
+    itemId = ""
+    if isValid(item.Id)
+        itemId = item.Id
+    else if isValid(item.id)
+        itemId = item.id
+    end if
+    tmp.Id = itemId
+
+    ' Store item name with optional server suffix
+    itemName = ""
+    if isValid(item.Name)
+        itemName = item.Name
+    else if isValid(item.name)
+        itemName = item.name
+    end if
+
+    if showServerName and isValid(item._serverName)
+        itemName = itemName + " (" + item._serverName + ")"
+    end if
+    tmp.name = itemName
+
+    ' Store type
+    if isValid(item.Type)
+        tmp.type = item.Type
+    else if isValid(item.type)
+        tmp.type = item.type
+    end if
+
+    ' Build the JSON object with server metadata included
+    jsonData = {
+        Id: itemId,
+        name: itemName,
+        Type: item.Type,
+        _serverId: item._serverId,
+        _serverName: item._serverName,
+        _serverUrl: item._serverUrl,
+        _userId: item._userId,
+        _authToken: item._authToken,
+        SeriesName: item.SeriesName,
+        SeriesId: item.SeriesId,
+        SeasonId: item.SeasonId,
+        ProductionYear: item.ProductionYear,
+        Status: item.Status,
+        EndDate: item.EndDate,
+        ParentIndexNumber: item.ParentIndexNumber,
+        IndexNumber: item.IndexNumber,
+        IndexNumberEnd: item.IndexNumberEnd,
+        OfficialRating: item.OfficialRating,
+        CollectionType: item.CollectionType,
+        ImageTags: item.ImageTags,
+        UserData: item.UserData,
+        ParentThumbItemId: item.ParentThumbItemId,
+        ParentThumbImageTag: item.ParentThumbImageTag,
+        ParentBackdropImageTags: item.ParentBackdropImageTags,
+        ParentBackdropItemId: item.ParentBackdropItemId,
+        SeriesPrimaryImageTag: item.SeriesPrimaryImageTag,
+        BackdropImageTags: item.BackdropImageTags
+    }
+    tmp.json = jsonData
+
+    ' Build image URLs using the item's server URL
+    if isValidAndNotEmpty(item._serverUrl) and isValidAndNotEmpty(itemId)
+        baseUrl = item._serverUrl
+        if baseUrl.right(1) = "/"
+            baseUrl = baseUrl.left(baseUrl.len() - 1)
+        end if
+
+        ' Build poster URL
+        if isValid(item.ImageTags) and isValid(item.ImageTags.Primary)
+            tmp.posterURL = baseUrl + "/Items/" + itemId + "/Images/Primary?tag=" + item.ImageTags.Primary + "&maxWidth=400"
+        end if
+
+        ' Build thumbnail URL (for episodes, use parent thumb if available)
+        if isValid(item.ParentThumbItemId) and isValid(item.ParentThumbImageTag)
+            tmp.thumbnailURL = baseUrl + "/Items/" + item.ParentThumbItemId + "/Images/Thumb?tag=" + item.ParentThumbImageTag + "&maxWidth=600"
+        else if isValid(item.ImageTags) and isValid(item.ImageTags.Thumb)
+            tmp.thumbnailURL = baseUrl + "/Items/" + itemId + "/Images/Thumb?tag=" + item.ImageTags.Thumb + "&maxWidth=600"
+        else if isValid(item.ImageTags) and isValid(item.ImageTags.Primary)
+            tmp.thumbnailURL = baseUrl + "/Items/" + itemId + "/Images/Primary?tag=" + item.ImageTags.Primary + "&maxWidth=600"
+        end if
+
+        ' Wide poster URL and backdrop URL (for full-screen backdrop)
+        if isValid(item.BackdropImageTags) and item.BackdropImageTags.count() > 0
+            tmp.widePosterURL = baseUrl + "/Items/" + itemId + "/Images/Backdrop?tag=" + item.BackdropImageTags[0] + "&maxWidth=600"
+            tmp.backdropURL = baseUrl + "/Items/" + itemId + "/Images/Backdrop?tag=" + item.BackdropImageTags[0] + "&maxWidth=1920&maxHeight=1080&quality=90"
+        else if isValid(item.ParentBackdropItemId) and isValid(item.ParentBackdropImageTags) and item.ParentBackdropImageTags.count() > 0
+            tmp.widePosterURL = baseUrl + "/Items/" + item.ParentBackdropItemId + "/Images/Backdrop?tag=" + item.ParentBackdropImageTags[0] + "&maxWidth=600"
+            tmp.backdropURL = baseUrl + "/Items/" + item.ParentBackdropItemId + "/Images/Backdrop?tag=" + item.ParentBackdropImageTags[0] + "&maxWidth=1920&maxHeight=1080&quality=90"
+        end if
+    end if
+
+    return tmp
+end function
+
+' sortMultiServerResultsByDate: Sorts multi-server results by a date field (descending)
+'
+' @param {array} results - Array of items from multiple servers
+' @param {string} dateField - Dot-notation path to date field (e.g., "UserData.LastPlayedDate")
+' @return {array} Sorted array
+function sortMultiServerResultsByDate(results as object, dateField as string) as object
+    if not isValidAndNotEmpty(results) then return []
+
+    ' Convert to array with sortable date values
+    sortableItems = []
+    for each item in results
+        dateValue = getNestedValue(item, dateField)
+        sortableItems.push({
+            item: item,
+            sortDate: dateValue
+        })
+    end for
+
+    ' Simple bubble sort (sufficient for small arrays)
+    n = sortableItems.count()
+    for i = 0 to n - 2
+        for j = 0 to n - i - 2
+            ' Compare dates (ISO strings compare correctly alphabetically for descending)
+            date1 = sortableItems[j].sortDate
+            date2 = sortableItems[j + 1].sortDate
+
+            ' Handle invalid dates
+            if not isValid(date1) then date1 = ""
+            if not isValid(date2) then date2 = ""
+
+            ' Swap if date1 < date2 (we want descending order)
+            if date1 < date2
+                temp = sortableItems[j]
+                sortableItems[j] = sortableItems[j + 1]
+                sortableItems[j + 1] = temp
+            end if
+        end for
+    end for
+
+    ' Extract sorted items
+    sortedResults = []
+    for each sortable in sortableItems
+        sortedResults.push(sortable.item)
+    end for
+
+    return sortedResults
+end function
+
+' getNestedValue: Gets a value from a nested object using dot notation
+'
+' @param {object} obj - Object to search
+' @param {string} path - Dot-notation path (e.g., "UserData.LastPlayedDate")
+' @return {dynamic} Value at path or invalid
+function getNestedValue(obj as object, path as string) as dynamic
+    if not isValid(obj) or path = "" then return invalid
+
+    parts = path.split(".")
+    current = obj
+
+    for each part in parts
+        if not isValid(current) then return invalid
+        if type(current) <> "roAssociativeArray" then return invalid
+        if not current.DoesExist(part) then return invalid
+        current = current[part]
+    end for
+
+    return current
+end function

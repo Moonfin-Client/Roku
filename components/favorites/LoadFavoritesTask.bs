@@ -5,16 +5,107 @@ import "pkg:/source/enums/ImageType.bs"
 import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/multiserver.bs"
 
 sub init()
     m.top.functionName = "loadFavorites"
 end sub
 
 sub loadFavorites()
-    results = []
+    ' Get all server sessions if multi-server is enabled
+    allSessions = []
 
+    if m.top.enableMultiServer
+        allSessions = getAllServerSessions()
+    end if
+
+    ' If no sessions found or multi-server disabled, fall back to current server only
+    if allSessions.Count() = 0
+        currentSession = getCurrentServerSession()
+        if isValid(currentSession)
+            allSessions.push(currentSession)
+        end if
+    end if
+
+    if allSessions.Count() = 0
+        m.top.error = "No server sessions available"
+        return
+    end if
+
+    ' Load favorites from all servers in parallel using port
+    port = CreateObject("roMessagePort")
+    activeRequests = {}
+    requestObjects = {} ' Keep request objects alive
+    results = []
+    totalItemCount = 0
+
+    ' Start requests for all servers
+    for each userSession in allSessions
+        requestInfo = startFavoritesRequest(userSession, port)
+        if isValid(requestInfo)
+            activeRequests[requestInfo.id] = userSession
+            requestObjects[requestInfo.id] = requestInfo.request ' Keep alive
+        end if
+    end for
+
+    ' Wait for all responses (15 second timeout)
+    startTime = CreateObject("roDateTime").AsSeconds()
+
+    while activeRequests.Count() > 0
+        msg = wait(1000, port)
+
+        ' Check timeout
+        currentTime = CreateObject("roDateTime").AsSeconds()
+        if currentTime - startTime > 15
+            print "[FavoritesTask] Timeout waiting for server responses"
+            exit while
+        end if
+
+        if msg = invalid then continue while
+
+        if type(msg) = "roUrlEvent"
+            requestId = msg.GetSourceIdentity().ToStr()
+            userSession = activeRequests[requestId]
+
+            if isValid(userSession)
+                activeRequests.Delete(requestId)
+                requestObjects.Delete(requestId) ' Clean up
+
+                responseCode = msg.GetResponseCode()
+                if responseCode = 200
+                    responseBody = msg.GetString()
+                    data = ParseJson(responseBody)
+
+                    if isValid(data) and isChainValid(data, "Items")
+                        ' Process items from this server
+                        for each item in data.Items
+                            ' Skip certain item types
+                            if inArray([ItemType.BOOK, ItemType.AUDIO, ItemType.FOLDER], LCase(item.type)) then continue for
+
+                            transformed = transformItemWithServer(item, userSession)
+                            if isValid(transformed)
+                                results.push(transformed)
+                                totalItemCount++
+                            end if
+                        end for
+                        print "[FavoritesTask] Server "; userSession.serverUrl; " returned "; data.Items.Count(); " favorites"
+                    end if
+                else
+                    print "[FavoritesTask] Server "; userSession.serverUrl; " returned "; responseCode
+                end if
+            end if
+        end if
+    end while
+
+    ' Set results
+    m.top.totalCount = totalItemCount
+    m.top.results = results
+end sub
+
+' Start an async request to load favorites from a server
+function startFavoritesRequest(userSession as object, port as object) as object
     params = {
-        userid: m.global.session.user.id,
+        userid: userSession.userId,
         Filters: "IsFavorite",
         IncludeItemTypes: "Movie,Series,Episode,Video,MusicVideo,BoxSet",
         Limit: m.top.limit,
@@ -22,33 +113,36 @@ sub loadFavorites()
         Recursive: true,
         SortBy: "SortName",
         SortOrder: "Ascending",
-        Fields: "Overview,PrimaryImageAspectRatio,ProductionYear,OfficialRating,CommunityRating,RunTimeTicks,UserData,BackdropImageTags,ParentBackdropImageTags,SeriesId,SeriesPrimaryImageTag,SeasonName,IndexNumber",
+        Fields: "Overview,PrimaryImageAspectRatio,ProductionYear,OfficialRating,CommunityRating,RunTimeTicks,UserData,BackdropImageTags,ParentBackdropImageTags,SeriesId,SeriesPrimaryImageTag,SeasonName,IndexNumber,ImageTags",
         EnableTotalRecordCount: true
     }
 
-    data = api.items.Get(params)
+    url = buildURLForSession(userSession, "/Users/" + userSession.userId + "/Items", params)
+    authHeader = buildAuthHeaderForSession(userSession)
 
-    if not isValid(data) or not isChainValid(data, "Items")
-        m.top.error = "Failed to load favorites"
-        return
+    print "[FavoritesTask] Starting request to "; userSession.serverUrl
+
+    request = CreateObject("roUrlTransfer")
+    request.SetUrl(url)
+    request.AddHeader("Authorization", authHeader)
+    request.AddHeader("Content-Type", "application/json")
+    request.SetCertificatesFile("common:/certs/ca-bundle.crt")
+    request.InitClientCertificates()
+    request.SetMessagePort(port)
+    request.EnableEncodings(true)
+
+    if request.AsyncGetToString()
+        return {
+            id: request.GetIdentity().ToStr(),
+            request: request
+        }
     end if
 
-    m.top.totalCount = isValid(data.TotalRecordCount) ? data.TotalRecordCount : data.Items.Count()
+    return invalid
+end function
 
-    for each item in data.Items
-        ' Skip certain item types that don't make sense for a favorites list
-        if inArray([ItemType.BOOK, ItemType.AUDIO, ItemType.FOLDER], LCase(item.type)) then continue for
-
-        transformed = transformItem(item)
-        if isValid(transformed)
-            results.push(transformed)
-        end if
-    end for
-
-    m.top.results = results
-end sub
-
-function transformItem(item as object) as object
+' Transform item with server info for multi-server support
+function transformItemWithServer(item as object, userSession as object) as object
     if not isValid(item) then return invalid
 
     result = {
@@ -58,17 +152,27 @@ function transformItem(item as object) as object
         year: isValid(item.ProductionYear) ? item.ProductionYear.toStr() : "",
         rating: isValid(item.CommunityRating) ? item.CommunityRating.toStr() : "",
         officialRating: isValid(item.OfficialRating) ? item.OfficialRating : "",
-        runtime: formatRuntime(item.RunTimeTicks),
+        runtime: formatRuntimeTicks(item.RunTimeTicks),
         overview: isValid(item.Overview) ? item.Overview : "",
-        posterUrl: buildPosterUrl(item),
-        backdropUrl: buildBackdropUrl(item),
+        posterUrl: buildPosterUrlForServer(item, userSession),
+        backdropUrl: buildBackdropUrlForServer(item, userSession),
+        serverUrl: userSession.serverUrl,
+        serverName: userSession.serverName,
+        userId: userSession.userId,
+        authToken: userSession.authToken,
         json: item
     }
+
+    ' Add server info to json for downstream use
+    result.json._serverUrl = userSession.serverUrl
+    result.json._userId = userSession.userId
+    result.json._authToken = userSession.authToken
+    result.json._serverName = userSession.serverName
 
     return result
 end function
 
-function buildPosterUrl(item as object) as string
+function buildPosterUrlForServer(item as object, userSession as object) as string
     if not isValid(item) or not isValid(item.Id) then return ""
 
     params = {
@@ -80,10 +184,10 @@ function buildPosterUrl(item as object) as string
         params.Tag = item.ImageTags.Primary
     end if
 
-    return ImageURL(item.Id, "Primary", params)
+    return buildImageURLForServer(userSession.serverUrl, item.Id, "Primary", params)
 end function
 
-function buildBackdropUrl(item as object) as string
+function buildBackdropUrlForServer(item as object, userSession as object) as string
     if not isValid(item) or not isValid(item.Id) then return ""
 
     params = {
@@ -94,19 +198,19 @@ function buildBackdropUrl(item as object) as string
     ' Try item's own backdrop first
     if isValid(item.BackdropImageTags) and item.BackdropImageTags.Count() > 0
         params.Tag = item.BackdropImageTags[0]
-        return ImageURL(item.Id, "Backdrop", params)
+        return buildImageURLForServer(userSession.serverUrl, item.Id, "Backdrop", params)
     end if
 
     ' Fall back to parent backdrop
     if isValid(item.ParentBackdropItemId) and isValid(item.ParentBackdropImageTags) and item.ParentBackdropImageTags.Count() > 0
         params.Tag = item.ParentBackdropImageTags[0]
-        return ImageURL(item.ParentBackdropItemId, "Backdrop", params)
+        return buildImageURLForServer(userSession.serverUrl, item.ParentBackdropItemId, "Backdrop", params)
     end if
 
     return ""
 end function
 
-function formatRuntime(ticks as dynamic) as string
+function formatRuntimeTicks(ticks as dynamic) as string
     if not isValid(ticks) or ticks = 0 then return ""
 
     ' Convert 100-nanosecond ticks to minutes

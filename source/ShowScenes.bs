@@ -1,3 +1,4 @@
+import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/enums/ImageType.bs"
 import "pkg:/source/utils/misc.bs"
 
@@ -249,27 +250,44 @@ sub SaveServerList()
     if isValid(server)
         server = LCase(server)'Saved server data is always lowercase
     end if
+
+    serverDisplayName = m.serverSelection
+    if isChainValid(m.global, "session.server.name") and isValidAndNotEmpty(m.global.session.server.name)
+        serverDisplayName = m.global.session.server.name
+    end if
+
     entryCount = 0
     addNewEntry = true
+    updateExistingName = false
+    existingItemIndex = -1
     savedServers = { serverList: [] }
     if isValid(saved)
         savedServers = ParseJson(saved)
         entryCount = savedServers.serverList.Count()
         if isValid(savedServers.serverList) and entryCount > 0
-            for each item in savedServers.serverList
+            for i = 0 to savedServers.serverList.Count() - 1
+                item = savedServers.serverList[i]
                 if item.baseUrl = server
                     addNewEntry = false
+                    ' Check if we need to update the name (e.g., was "Saved")
+                    if item.name = "Saved" and serverDisplayName <> "Saved"
+                        updateExistingName = true
+                        existingItemIndex = i
+                    end if
                     exit for
                 end if
             end for
         end if
     end if
 
-    if addNewEntry
+    if updateExistingName and existingItemIndex >= 0
+        savedServers.serverList[existingItemIndex].name = serverDisplayName
+        set_setting("saved_servers", FormatJson(savedServers))
+    else if addNewEntry
         if entryCount = 0
-            set_setting("saved_servers", FormatJson({ serverList: [{ name: m.serverSelection, baseUrl: server, iconUrl: "pkg:/images/logo-icon120.jpg", iconWidth: 120, iconHeight: 120 }] }))
+            set_setting("saved_servers", FormatJson({ serverList: [{ name: serverDisplayName, baseUrl: server, iconUrl: "pkg:/images/logo-icon120.jpg", iconWidth: 120, iconHeight: 120 }] }))
         else
-            savedServers.serverList.Push({ name: m.serverSelection, baseUrl: server, iconUrl: "pkg:/images/logo-icon120.jpg", iconWidth: 120, iconHeight: 120 })
+            savedServers.serverList.Push({ name: serverDisplayName, baseUrl: server, iconUrl: "pkg:/images/logo-icon120.jpg", iconWidth: 120, iconHeight: 120 })
             set_setting("saved_servers", FormatJson(savedServers))
         end if
     end if
@@ -371,9 +389,9 @@ function CreateServerGroup() as string
                     else
                         screen.visible = false
                         if isValid(serverInfoResult.serverName)
-                            return serverInfoResult.ServerName + " (Saved)"
+                            return serverInfoResult.ServerName
                         else
-                            return "Saved"
+                            return "Connected"
                         end if
                     end if
                 end if
@@ -666,13 +684,21 @@ function CreateMovieDetailsGroup(movie as object) as dynamic
     if not isValid(movie) or not isValid(movie.id) then return invalid
 
     startLoadingSpinner()
-    ' get movie meta data
-    movieMetaData = ItemMetaData(movie.id)
+
+    movieServerData = getServerInfoFromItem(movie)
+
+    if isValid(movieServerData)
+        movieMetaData = ItemMetaDataForServer(movieServerData, movie.id)
+    else
+        movieMetaData = ItemMetaData(movie.id)
+    end if
+
     ' validate movie meta data
     if not isValid(movieMetaData)
         stopLoadingSpinner()
         return invalid
     end if
+
 
     ' Use EpisodeDetails for episodes, MovieDetails for movies
     if LCase(movieMetaData.json.type) = "episode"
@@ -698,8 +724,10 @@ function CreateMovieDetailsGroup(movie as object) as dynamic
         group.observeField("refreshMovieDetailsData", m.port)
     end if
 
-    ' local trailers
-    trailerData = api.users.GetLocalTrailers(m.global.session.user.id, movie.id)
+    ' local trailers - use appropriate user ID for multi-server
+    trailersUserId = m.global.session.user.id
+    if isValid(movieServerData) then trailersUserId = movieServerData.userId
+    trailerData = api.users.GetLocalTrailers(trailersUserId, movie.id)
     group.trailerAvailable = isValidAndNotEmpty(trailerData)
 
     group.additionalParts = {
@@ -729,14 +757,18 @@ function CreateMovieDetailsGroup(movie as object) as dynamic
     return group
 end function
 
-function CreateSeriesDetailsGroup(seriesID as string) as dynamic
+function CreateSeriesDetailsGroup(seriesID as string, seriesServerData = invalid as object) as dynamic
     ' validate series node
     if not isValid(seriesID) or seriesID = "" then return invalid
 
     startLoadingSpinner()
-    ' get series meta data
-    seriesMetaData = ItemMetaData(seriesID)
-    ' validate series meta data
+
+    if isValid(seriesServerData)
+        seriesMetaData = ItemMetaDataForServer(seriesServerData, seriesID)
+    else
+        seriesMetaData = ItemMetaData(seriesID)
+    end if
+
     if not isValid(seriesMetaData)
         stopLoadingSpinner()
         return invalid
@@ -891,14 +923,15 @@ function CreateSeasonDetailsGroup(series as object, season as object) as dynamic
     return group
 end function
 
-function CreateSeasonDetailsGroupByID(seriesID as string, seasonID as string) as dynamic
-    ' validate parameters
+function CreateSeasonDetailsGroupByID(seriesID as string, seasonID as string, serverData = invalid as dynamic) as dynamic
     if seriesID = "" or seasonID = "" then return invalid
 
     startLoadingSpinner()
-    ' get season meta data
-    seasonMetaData = ItemMetaData(seasonID)
-    ' validate season meta data
+    if isValid(serverData)
+        seasonMetaData = ItemMetaDataForServer(serverData, seasonID)
+    else
+        seasonMetaData = ItemMetaData(seasonID)
+    end if
     if not isValid(seasonMetaData)
         stopLoadingSpinner()
         return invalid
@@ -908,7 +941,12 @@ function CreateSeasonDetailsGroupByID(seriesID as string, seasonID as string) as
     group.optionsAvailable = false
     ' push scene asap (to prevent extra button presses when retriving series/movie info)
     group.seasonData = seasonMetaData.json
-    group.objects = TVEpisodes(seriesID, seasonID)
+
+    if isValid(serverData)
+        group.objects = TVEpisodesForServer(serverData, seriesID, seasonID)
+    else
+        group.objects = TVEpisodes(seriesID, seasonID)
+    end if
     group.episodeObjects = group.objects
 
     group.observeField("refreshSeasonDetailsData", m.port)
@@ -995,16 +1033,34 @@ end function
 
 function CreatePersonView(personData as object) as dynamic
     ' validate personData node
-    if not isValid(personData) or not isValid(personData.id) then return invalid
+    if not isValid(personData) or not isValid(personData.id)
+        return invalid
+    end if
+
+    if isValid(personData.json)
+    else
+    end if
 
     startLoadingSpinner()
-    ' get person meta data
-    personMetaData = ItemMetaData(personData.id)
-    ' validate season meta data
+
+    personServerData = getServerInfoFromItem(personData)
+
+    if isValid(personServerData)
+        personMetaData = ItemMetaDataForServer(personServerData, personData.id)
+    else
+        personMetaData = ItemMetaData(personData.id)
+    end if
+
     if not isValid(personMetaData)
         stopLoadingSpinner()
         return invalid
     end if
+
+    if isChainValid(personMetaData, "json._serverUrl")
+    else if isChainValid(personMetaData, "_serverUrl")
+    else
+    end if
+
     ' start building Person View
     person = CreateObject("roSGNode", "PersonDetails")
     ' push scene asap (to prevent extra button presses when retriving series/movie info)

@@ -12,8 +12,60 @@ sub init()
     m.top.functionName = "loadAllExtras"
 end sub
 
+' Helper function to check if we should use multi-server API calls
+function isMultiServer() as boolean
+    return isValidAndNotEmpty(m.top.serverUrl) and isValidAndNotEmpty(m.top.serverUserId) and isValidAndNotEmpty(m.top.serverAuthToken)
+end function
+
+' Helper function to get server data object
+function getServerData() as object
+    return {
+        serverUrl: m.top.serverUrl,
+        userId: m.top.serverUserId,
+        authToken: m.top.serverAuthToken
+    }
+end function
+
+' Helper function to make API request using appropriate server
+function apiItemsGet(params as object) as object
+    if isMultiServer()
+        serverData = getServerData()
+        url = Substitute("Users/{0}/Items", serverData.userId)
+        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, params)
+        if not isValid(req) then return invalid
+        return getJson(req)
+    else
+        return api.items.Get(params)
+    end if
+end function
+
+' Helper function to get similar items using appropriate server
+function apiItemsGetSimilar(itemId as string, params as object) as object
+    if isMultiServer()
+        serverData = getServerData()
+        url = Substitute("Items/{0}/Similar", itemId)
+        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, params)
+        if not isValid(req) then return invalid
+        return getJson(req)
+    else
+        return api.items.GetSimilar(itemId, params)
+    end if
+end function
+
+' Helper function to get user ID for API calls
+function getUserId() as string
+    if isMultiServer()
+        return m.top.serverUserId
+    else
+        return m.global.session.user.id
+    end if
+end function
+
 ' Main function that loads all extras data in parallel
 sub loadAllExtras()
+    if isMultiServer()
+    end if
+
     ' Create ContentNode to hold all results
     resultsNode = CreateObject("roSGNode", "ContentNode")
 
@@ -34,7 +86,9 @@ sub loadAllExtras()
     end if
 
     ' Check what type of content we're loading
-    isTVShow = isValid(m.top.isTVShow) and m.top.isTVShow = true ' Create child nodes for each data type
+    isTVShow = isValid(m.top.isTVShow) and m.top.isTVShow = true
+
+    ' Create child nodes for each data type
     seasonsNode = resultsNode.createChild("ContentNode")
     seasonsNode.title = "seasons"
 
@@ -84,19 +138,36 @@ end sub
 function loadSeasons() as object
     seasons = []
 
+    ' Normalize server URL once if multi-server
+    normalizedServerUrl = ""
+    if isMultiServer()
+        normalizedServerUrl = m.top.serverUrl
+        if normalizedServerUrl.right(1) = "/"
+            normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
+        end if
+    end if
+
     params = {
-        userId: m.global.session.user.id,
+        userId: getUserId(),
         ParentId: m.top.itemId,
         Fields: "Overview,PrimaryImageAspectRatio,ChildCount,MediaSources",
         enableTotalRecordCount: true
     }
 
-    data = api.items.Get(params)
+    data = apiItemsGet(params)
 
     if not isChainValid(data, "Items") then return seasons
 
     for each item in data.Items
         tmp = createSGNode("HomeData")
+
+        ' Add server metadata to item for multi-server navigation
+        if isMultiServer()
+            item._serverUrl = m.top.serverUrl
+            item._userId = m.top.serverUserId
+            item._authToken = m.top.serverAuthToken
+        end if
+
         tmp.json = item
 
         ' Set image dimensions for portrait posters
@@ -107,7 +178,15 @@ function loadSeasons() as object
             imgParams.Tag = item.ImageTags.Primary
         end if
 
-        tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+        ' Build image URL using correct server for multi-server items
+        if isMultiServer()
+            tmp.posterURL = normalizedServerUrl + "/Items/" + item.Id + "/Images/Primary?maxWidth=200&maxHeight=400&quality=90"
+            if hasImageTagPrimary(item)
+                tmp.posterURL = tmp.posterURL + "&tag=" + item.ImageTags.Primary
+            end if
+        else
+            tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+        end if
         seasons.push(tmp)
     end for
 
@@ -118,8 +197,17 @@ end function
 function loadPersonVideos() as object
     videos = []
 
+    ' Normalize server URL once if multi-server
+    normalizedServerUrl = ""
+    if isMultiServer()
+        normalizedServerUrl = m.top.serverUrl
+        if normalizedServerUrl.right(1) = "/"
+            normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
+        end if
+    end if
+
     params = {
-        "userid": m.global.session.user.id,
+        "userid": getUserId(),
         "PersonIds": m.top.itemId,
         "Recursive": true,
         "SortBy": "SortName",
@@ -130,7 +218,7 @@ function loadPersonVideos() as object
         "Limit": 100
     }
 
-    data = api.items.Get(params)
+    data = apiItemsGet(params)
 
     if not isChainValid(data, "Items") then return videos
 
@@ -143,6 +231,13 @@ function loadPersonVideos() as object
         end if
 
         if tmp <> invalid
+            ' Add server metadata to item JSON for multi-server navigation
+            if isMultiServer()
+                item._serverUrl = m.top.serverUrl
+                item._userId = m.top.serverUserId
+                item._authToken = m.top.serverAuthToken
+            end if
+
             tmp.json = item
 
             ' Add custom fields
@@ -151,12 +246,20 @@ function loadPersonVideos() as object
 
             tmp.imageWidth = 234
 
-            ' Set poster URL
+            ' Set poster URL - use correct server for multi-server items
             imgParams = { "maxHeight": 351, "maxWidth": 234 }
             if hasImageTagPrimary(item)
                 imgParams.Tag = item.ImageTags.Primary
             end if
-            tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+
+            if isMultiServer()
+                tmp.posterURL = normalizedServerUrl + "/Items/" + item.Id + "/Images/Primary?maxWidth=234&maxHeight=351&quality=90"
+                if hasImageTagPrimary(item)
+                    tmp.posterURL = tmp.posterURL + "&tag=" + item.ImageTags.Primary
+                end if
+            else
+                tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+            end if
 
             ' Set label text
             tmp.labelText = item.Name
@@ -193,12 +296,17 @@ function loadNextUp() as object
     ' First, get the next up episode using GetNextUp API
     nextUpParams = {
         SeriesId: m.top.itemId,
-        UserId: m.global.session.user.id,
+        UserId: getUserId(),
         EnableRewatching: false,
         limit: 1,
         Fields: "PrimaryImageAspectRatio,Overview",
         EnableTotalRecordCount: false
     }
+
+    ' Note: GetNextUp doesn't have a multi-server version yet, skip for now if multi-server
+    if isMultiServer()
+        return episodes
+    end if
 
     nextUpData = api.shows.GetNextUp(nextUpParams)
 
@@ -213,7 +321,7 @@ function loadNextUp() as object
         ' Get episodes from the season starting at this episode's index
         seasonParams = {
             ParentId: firstEpisode.SeasonId,
-            UserId: m.global.session.user.id,
+            UserId: getUserId(),
             StartIndex: firstEpisode.IndexNumber - 1, ' Convert to 0-based index
             limit: 10,
             SortBy: "IndexNumber",
@@ -223,7 +331,7 @@ function loadNextUp() as object
             EnableTotalRecordCount: false
         }
 
-        seasonData = api.items.Get(seasonParams)
+        seasonData = apiItemsGet(seasonParams)
 
         if isChainValid(seasonData, "Items")
             for each item in seasonData.Items
@@ -264,19 +372,65 @@ end function
 function loadPeople() as object
     people = []
 
-    ' First get the item details to access the People array
-    itemDetails = api.users.GetItem(m.global.session.user.id, m.top.itemId)
 
-    if not isChainValid(itemDetails, "People") then return people
+    ' Normalize server URL once if multi-server
+    normalizedServerUrl = ""
+    if isMultiServer()
+        normalizedServerUrl = m.top.serverUrl
+        if normalizedServerUrl.right(1) = "/"
+            normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
+        end if
+    end if
+
+    ' First get the item details to access the People array
+    ' Use multi-server API if needed
+    itemDetails = invalid
+    if isMultiServer()
+        serverData = getServerData()
+        url = Substitute("Users/{0}/Items/{1}", serverData.userId, m.top.itemId)
+        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, { "fields": "People" })
+        if isValid(req)
+            itemDetails = getJson(req)
+        end if
+    else
+        itemDetails = api.users.GetItem(m.global.session.user.id, m.top.itemId)
+    end if
+
+    if not isChainValid(itemDetails, "People")
+        return people
+    end if
+
 
     for each person in itemDetails.People
         tmp = createSGNode("HomeData")
+
+        ' Add server metadata to person item for multi-server navigation
+        if isMultiServer()
+            person._serverUrl = m.top.serverUrl
+            person._userId = m.top.serverUserId
+            person._authToken = m.top.serverAuthToken
+        end if
+
         tmp.json = person
 
         ' Set person image dimensions
         tmp.imageWidth = 250
         imgParams = { "maxHeight": 331, "maxWidth": 250 }
-        tmp.posterURL = ImageURL(person.Id, "Primary", imgParams)
+
+        ' Add image tag if available for cache busting
+        if isValid(person.PrimaryImageTag) and person.PrimaryImageTag <> ""
+            imgParams.Tag = person.PrimaryImageTag
+        end if
+
+        ' Build image URL using correct server for multi-server items
+        if isMultiServer()
+            tmp.posterURL = normalizedServerUrl + "/Items/" + person.Id + "/Images/Primary?maxWidth=250&maxHeight=331&quality=90"
+            if isValid(person.PrimaryImageTag) and person.PrimaryImageTag <> ""
+                tmp.posterURL = tmp.posterURL + "&tag=" + person.PrimaryImageTag
+            end if
+        else
+            tmp.posterURL = ImageURL(person.Id, "Primary", imgParams)
+        end if
 
         ' Set display fields
         tmp.labelText = person.Name
@@ -300,18 +454,35 @@ end function
 function loadSimilar() as object
     similar = []
 
+    ' Normalize server URL once if multi-server
+    normalizedServerUrl = ""
+    if isMultiServer()
+        normalizedServerUrl = m.top.serverUrl
+        if normalizedServerUrl.right(1) = "/"
+            normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
+        end if
+    end if
+
     params = {
-        userId: m.global.session.user.id,
+        userId: getUserId(),
         limit: 25,
         Fields: "PrimaryImageAspectRatio,MediaSources"
     }
 
-    data = api.items.GetSimilar(m.top.itemId, params)
+    data = apiItemsGetSimilar(m.top.itemId, params)
 
     if not isChainValid(data, "Items") then return similar
 
     for each item in data.Items
         tmp = createSGNode("HomeData")
+
+        ' Add server metadata to item JSON for multi-server navigation
+        if isMultiServer()
+            item._serverUrl = m.top.serverUrl
+            item._userId = m.top.serverUserId
+            item._authToken = m.top.serverAuthToken
+        end if
+
         tmp.json = item
 
         ' Use standard poster dimensions
@@ -322,7 +493,15 @@ function loadSimilar() as object
             imgParams.Tag = item.ImageTags.Primary
         end if
 
-        tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+        ' Build image URL using correct server for multi-server items
+        if isMultiServer()
+            tmp.posterURL = normalizedServerUrl + "/Items/" + item.Id + "/Images/Primary?maxWidth=180&maxHeight=270&quality=90"
+            if hasImageTagPrimary(item)
+                tmp.posterURL = tmp.posterURL + "&tag=" + item.ImageTags.Primary
+            end if
+        else
+            tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+        end if
 
         ' Set display fields
         tmp.labelText = item.Name
@@ -346,8 +525,11 @@ end function
 function loadSpecials() as object
     specials = []
 
+    ' Skip specials for multi-server items (requires server-specific API)
+    if isMultiServer() then return specials
+
     params = {
-        userId: m.global.session.user.id,
+        userId: getUserId(),
         SpecialFeatureTypes: "Trailer,AdditionalPart,BehindTheScenes,DeletedScene,Clip,Interview,Scene"
     }
 
