@@ -165,6 +165,42 @@ sub onMediaItemSet(event as object)
     ShowLoading()
     UpdateBasicUI()
     LoadFullDetails()
+
+    ' Refresh permissions if they're not set (for users who authenticated before permission tracking was added)
+    RefreshPermissionsIfNeeded()
+end sub
+
+' Fetch permissions from Jellyseerr if they're currently 0
+sub RefreshPermissionsIfNeeded()
+    userPermissions = GetCurrentUserJellyseerrPermissions()
+
+    if userPermissions = 0
+        ' Permissions not set, fetch them from /auth/me
+        m.permissionsTask = CreateObject("roSGNode", "JellyseerrAPITask")
+        m.permissionsTask.request = {
+            method: "GET",
+            endpoint: "/api/v1/auth/me"
+        }
+        m.permissionsTask.observeField("response", "onPermissionsRefreshResponse")
+        m.permissionsTask.control = "RUN"
+    end if
+end sub
+
+sub onPermissionsRefreshResponse(event as object)
+    response = event.getData()
+
+    if response.success and response.data <> invalid
+        permissions = 0
+        if response.data.permissions <> invalid
+            permissions = response.data.permissions
+        end if
+
+        userId = GetCurrentJellyfinUserId()
+        if userId <> ""
+            SetJellyseerrUserPermissions(userId, permissions)
+        end if
+    else
+    end if
 end sub
 
 sub UpdateBasicUI()
@@ -1366,11 +1402,29 @@ sub onCastItemSelected(event as object)
 end sub
 
 sub onRequestHDPressed()
-    SubmitRequest(false)
+    ' Check if user has advanced request permission
+    userPermissions = GetCurrentUserJellyseerrPermissions()
+    hasAdvancedPerm = HasAdvancedRequestPermission(userPermissions)
+
+    if hasAdvancedPerm
+        m.pendingQualitySelection = "hd"
+        ShowAdvancedDialog("hd")
+    else
+        SubmitRequest(false)
+    end if
 end sub
 
 sub onRequest4KPressed()
-    SubmitRequest(true)
+    ' Check if user has advanced request permission
+    userPermissions = GetCurrentUserJellyseerrPermissions()
+    hasAdvancedPerm = HasAdvancedRequestPermission(userPermissions)
+
+    if hasAdvancedPerm
+        m.pendingQualitySelection = "4k"
+        ShowAdvancedDialog("4k")
+    else
+        SubmitRequest(true)
+    end if
 end sub
 
 sub onRequestQualityPressed()
@@ -1422,6 +1476,7 @@ end sub
 sub onQualityDialogResponse(event as object)
     selectedQuality = event.getData()
 
+
     ' Ignore empty selection (initial state)
     if selectedQuality = "" then return
 
@@ -1433,16 +1488,135 @@ sub onQualityDialogResponse(event as object)
         m.qualityDialog = invalid
     end if
 
-    ' Process selection
+    ' Check if user has advanced request permission
+    userPermissions = GetCurrentUserJellyseerrPermissions()
+    hasAdvancedPerm = HasAdvancedRequestPermission(userPermissions)
+
+
+    if hasAdvancedPerm
+        ' Store the selected quality for later and show advanced dialog
+        m.pendingQualitySelection = selectedQuality
+        ShowAdvancedDialog(selectedQuality)
+    else
+        ' No advanced permission, submit directly with defaults
+        if selectedQuality = "hd"
+            SubmitRequest(false)
+        else if selectedQuality = "4k"
+            SubmitRequest(true)
+        else if selectedQuality = "both"
+            ' Submit both HD and 4K requests
+            SubmitRequest(false)
+            SubmitRequest(true)
+        end if
+    end if
+end sub
+
+sub ShowAdvancedDialog(selectedQuality as string)
+    mediaType = "movie"
+    if m.mediaItem <> invalid and m.mediaItem.mediaType <> invalid
+        mediaType = m.mediaItem.mediaType
+    end if
+
+    is4k = (selectedQuality = "4k")
+
+
+    m.advancedDialog = CreateObject("roSGNode", "JellyseerrAdvancedDialog")
+    m.advancedDialog.mediaType = mediaType
+    m.advancedDialog.is4k = is4k
+
+    m.advancedDialog.observeField("wasSubmitted", "onAdvancedDialogSubmitted")
+    m.advancedDialog.observeField("wasCancelled", "onAdvancedDialogCancelled")
+
+    m.top.getScene().appendChild(m.advancedDialog)
+    m.advancedDialog.setFocus(true)
+end sub
+
+sub onAdvancedDialogSubmitted(event as object)
+    wasSubmitted = event.getData()
+    if not wasSubmitted then return
+
+    ' Get the selected options
+    serverId = m.advancedDialog.selectedServerId
+    profileId = m.advancedDialog.selectedProfileId
+    rootFolderPath = m.advancedDialog.selectedRootFolderPath
+
+
+    ' Store advanced options for the request
+    m.advancedOptions = {
+        serverId: serverId,
+        profileId: profileId,
+        rootFolder: rootFolderPath
+    }
+
+    ' Close dialog
+    if m.advancedDialog <> invalid
+        m.advancedDialog.unobserveField("wasSubmitted")
+        m.advancedDialog.unobserveField("wasCancelled")
+        m.top.getScene().removeChild(m.advancedDialog)
+        m.advancedDialog = invalid
+    end if
+
+    ' Restore focus to this screen
+    m.top.setFocus(true)
+
+    ' Now submit the request based on original quality selection
+    selectedQuality = m.pendingQualitySelection
     if selectedQuality = "hd"
-        SubmitRequest(false)
+        SubmitRequestWithAdvancedOptions(false)
     else if selectedQuality = "4k"
-        SubmitRequest(true)
+        SubmitRequestWithAdvancedOptions(true)
     else if selectedQuality = "both"
-        ' Submit both HD and 4K requests
-        SubmitRequest(false)
+        ' For "both", we need to show advanced dialog twice or submit with same options
+        ' For simplicity, use the same options for both requests
+        SubmitRequestWithAdvancedOptions(false)
+        ' Note: For 4K, we'd need to fetch 4K server options separately
+        ' For now, submit 4K with defaults
         SubmitRequest(true)
     end if
+end sub
+
+sub onAdvancedDialogCancelled(event as object)
+    wasCancelled = event.getData()
+    if not wasCancelled then return
+
+    ' Close dialog
+    if m.advancedDialog <> invalid
+        m.advancedDialog.unobserveField("wasSubmitted")
+        m.advancedDialog.unobserveField("wasCancelled")
+        m.top.getScene().removeChild(m.advancedDialog)
+        m.advancedDialog = invalid
+    end if
+
+    ' Restore focus to this screen and button row
+    m.top.setFocus(true)
+    if m.buttons.count() > 0
+        for each button in m.buttons
+            if button.focusable
+                button.setFocus(true)
+                exit for
+            end if
+        end for
+    end if
+end sub
+
+sub SubmitRequestWithAdvancedOptions(is4k as boolean)
+    mediaType = m.mediaItem.mediaType
+    if mediaType = invalid then mediaType = "movie"
+
+    ' Check if it's a TV show with multiple seasons
+    if mediaType = "tv" and m.tvDetails <> invalid and m.tvDetails.numberOfSeasons <> invalid
+        numberOfSeasons = m.tvDetails.numberOfSeasons
+        if numberOfSeasons > 1
+            ' Store is4k and show season dialog
+            m.pendingRequestIs4k = is4k
+            m.useAdvancedOptions = true
+            ShowSeasonDialog(is4k)
+            return
+        end if
+    end if
+
+    ' For movies or TV shows with 1 season, submit with advanced options
+    SubmitRequestWithSeasonsAndOptions(invalid, is4k, m.advancedOptions)
 end sub
 
 sub onQualityDialogCancelled(event as object)
@@ -1676,16 +1850,6 @@ end function
 sub onSeasonDialogResponse(event as object)
     selectedSeasons = event.getData()
 
-    print "=== onSeasonDialogResponse DEBUG ==="
-    print "selectedSeasons type: "; Type(selectedSeasons)
-    if selectedSeasons <> invalid and GetInterface(selectedSeasons, "ifArray") <> invalid
-        print "selectedSeasons.count(): "; selectedSeasons.count()
-        for i = 0 to selectedSeasons.count() - 1
-            print "  seasons["; i; "] type: "; Type(selectedSeasons[i]); " value: "; selectedSeasons[i]
-        end for
-    end if
-    print "==================================="
-
     ' Ignore if we don't have a valid dialog or if selectedSeasons is not a valid array
     if m.seasonDialog = invalid then return
     if selectedSeasons = invalid or GetInterface(selectedSeasons, "ifArray") = invalid then return
@@ -1712,8 +1876,17 @@ sub onSeasonDialogResponse(event as object)
         m.seasonDialog = invalid
     end if
 
+    ' Restore focus to this screen
+    m.top.setFocus(true)
+
     ' Submit request with selected seasons
-    SubmitRequestWithSeasons(selectedSeasons, m.pendingRequestIs4k)
+    ' Check if we should use advanced options
+    if m.useAdvancedOptions = true and m.advancedOptions <> invalid
+        SubmitRequestWithSeasonsAndOptions(selectedSeasons, m.pendingRequestIs4k, m.advancedOptions)
+        m.useAdvancedOptions = false
+    else
+        SubmitRequestWithSeasons(selectedSeasons, m.pendingRequestIs4k)
+    end if
 end sub
 
 sub onSeasonDialogCancelled(event as object)
@@ -1776,6 +1949,76 @@ sub SubmitRequestWithSeasons(seasons as object, is4k as boolean)
     endpoint = "/api/v1/request"
 
     ' Parse the JSON string back to an object for the API task
+    requestBody = ParseJson(requestBodyJson)
+
+    m.apiTask.request = {
+        method: "POST",
+        endpoint: endpoint,
+        body: requestBody
+    }
+
+    m.apiTask.unobserveField("response")
+    m.apiTask.observeField("response", "onRequestSubmitted")
+    m.apiTask.control = "RUN"
+end sub
+
+' Submit request with advanced options (server, profile, root folder)
+sub SubmitRequestWithSeasonsAndOptions(seasons as object, is4k as boolean, options as object)
+    if options <> invalid
+    else
+    end if
+
+    ShowLoading()
+
+    ' Store is4k for error handling
+    m.lastRequestIs4k = is4k
+
+    mediaType = m.mediaItem.mediaType
+    if mediaType = invalid then mediaType = "movie"
+
+    ' Create request body with proper camelCase keys for API
+    requestBodyJson = "{"
+    requestBodyJson = requestBodyJson + """mediaType"":""" + mediaType + """"
+    requestBodyJson = requestBodyJson + ",""mediaId"":" + m.mediaItem.tmdbId.toStr()
+    requestBodyJson = requestBodyJson + ",""is4k"":"
+    if is4k
+        requestBodyJson = requestBodyJson + "true"
+    else
+        requestBodyJson = requestBodyJson + "false"
+    end if
+
+    ' Add advanced options if provided
+    if options <> invalid
+        if options.serverId <> invalid and options.serverId >= 0
+            requestBodyJson = requestBodyJson + ",""serverId"":" + options.serverId.toStr()
+        end if
+        if options.profileId <> invalid and options.profileId > 0
+            requestBodyJson = requestBodyJson + ",""profileId"":" + options.profileId.toStr()
+        end if
+        if options.rootFolder <> invalid and options.rootFolder <> ""
+            requestBodyJson = requestBodyJson + ",""rootFolder"":""" + options.rootFolder + """"
+        end if
+    end if
+
+    ' Handle seasons parameter for TV shows
+    if mediaType = "tv"
+        if seasons <> invalid and seasons.count() > 0
+            requestBodyJson = requestBodyJson + ",""seasons"":["
+            for i = 0 to seasons.count() - 1
+                if i > 0 then requestBodyJson = requestBodyJson + ","
+                seasonNum = seasons[i]
+                requestBodyJson = requestBodyJson + seasonNum.toStr()
+            end for
+            requestBodyJson = requestBodyJson + "]"
+        else
+            requestBodyJson = requestBodyJson + ",""seasons"":""all"""
+        end if
+    end if
+
+    requestBodyJson = requestBodyJson + "}"
+
+
+    endpoint = "/api/v1/request"
     requestBody = ParseJson(requestBodyJson)
 
     m.apiTask.request = {
@@ -1933,6 +2176,17 @@ sub onSuccessDialogClosed(_event as object)
     if m.successDialog <> invalid
         m.successDialog.unobserveField("buttonSelected")
         m.successDialog = invalid
+    end if
+
+    ' Restore focus to this screen and buttons
+    m.top.setFocus(true)
+    if m.buttons.count() > 0
+        for each button in m.buttons
+            if button.focusable
+                button.setFocus(true)
+                exit for
+            end if
+        end for
     end if
 
     ' Now reload details to update status and buttons
