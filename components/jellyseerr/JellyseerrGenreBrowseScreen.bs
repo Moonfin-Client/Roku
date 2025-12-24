@@ -1,0 +1,545 @@
+import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/utils/JellyseerrUtils.bs"
+
+sub init()
+    m.genreNameLabel = m.top.findNode("genreNameLabel")
+    m.mediaGrid = m.top.findNode("mediaGrid")
+    m.backdrop = m.top.findNode("backdrop")
+    m.loadingLabel = m.top.findNode("loadingLabel")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.noResultsLabel = m.top.findNode("noResultsLabel")
+
+    ' Info section elements
+    m.itemTitle = m.top.findNode("itemTitle")
+    m.metaYear = m.top.findNode("metaYear")
+    m.metaType = m.top.findNode("metaType")
+    m.metaRating = m.top.findNode("metaRating")
+    m.starIcon = m.top.findNode("starIcon")
+    m.metaOverview = m.top.findNode("metaOverview")
+
+    ' Sort/Filter buttons
+    m.sortButton = m.top.findNode("sortButton")
+    m.filterButton = m.top.findNode("filterButton")
+
+    ' Observe interface fields
+    m.top.observeField("genreId", "onGenreIdChanged")
+    m.top.observeField("genreName", "onGenreNameChanged")
+    m.top.observeField("mediaType", "onMediaTypeChanged")
+
+    ' Observe grid selection
+    m.mediaGrid.observeField("itemSelected", "onItemSelected")
+    m.mediaGrid.observeField("itemFocused", "onItemFocused")
+
+    ' Observe button selections and escape events
+    if m.sortButton <> invalid
+        m.sortButton.observeField("buttonSelected", "onSortButtonSelected")
+        m.sortButton.observeField("escape", "onSortButtonEscape")
+    end if
+    if m.filterButton <> invalid
+        m.filterButton.observeField("buttonSelected", "onFilterButtonSelected")
+        m.filterButton.observeField("escape", "onFilterButtonEscape")
+    end if
+
+    ' Configure grid focus
+    m.mediaGrid.focusBitmapUri = "pkg:/images/hd_focus.9.png"
+    m.mediaGrid.focusBitmapBlendColor = ColorPalette.WHITE
+    m.mediaGrid.focusFootprintBitmapUri = ""
+    m.mediaGrid.focusFootprintBlendColor = ColorPalette.TRANSPARENT
+    m.mediaGrid.drawFocusFeedback = true
+
+    ' State management
+    m.currentPage = 1
+    m.isLoading = false
+    m.hasMorePages = true
+    m.loadedItems = []
+    m.currentFocus = "grid" ' Track focus: "grid", "sortButton", "filterButton"
+
+    ' Sort/filter options
+    m.currentSortBy = "popularity.desc"
+    m.sortOptions = [
+        { label: "Popularity", value: "popularity.desc" },
+        { label: "Rating", value: "vote_average.desc" },
+        { label: "Release Date", value: "release_date.desc" },
+        { label: "Title", value: "original_title.asc" }
+    ]
+
+    ' Filter options: show items based on request/availability status
+    m.currentFilter = "not_requested" ' Default to not requested
+    m.filterOptions = [
+        { label: "All Items", value: "all" },
+        { label: "Not Requested", value: "not_requested" },
+        { label: "Available Only", value: "available" }
+    ]
+
+    ' Create content node for the grid
+    m.mediaGrid.content = CreateObject("roSGNode", "ContentNode")
+
+    ' API task for requests
+    m.apiTask = invalid
+
+    ' Cache frequently accessed data
+    m.configCache = GetJellyseerrConfig()
+    m.blockNsfwCache = true
+    if m.configCache <> invalid and m.configCache.blockNsfw <> invalid
+        m.blockNsfwCache = m.configCache.blockNsfw
+    end if
+end sub
+
+sub onGenreIdChanged()
+    if m.top.genreId > 0 and m.top.mediaType <> ""
+        LoadContent()
+    end if
+end sub
+
+sub onGenreNameChanged()
+    if m.top.genreName <> ""
+        m.genreNameLabel.text = m.top.genreName
+    end if
+end sub
+
+sub onMediaTypeChanged()
+    if m.top.genreId > 0 and m.top.mediaType <> ""
+        LoadContent()
+    end if
+end sub
+
+sub LoadContent()
+    if m.isLoading then return
+
+    m.isLoading = true
+    ShowLoading()
+
+    browseType = m.top.browseType
+    if browseType = invalid or browseType = "" then browseType = "genre"
+
+    ' Build endpoint and query params based on browse type
+    ' Using discover endpoint with filter params (not /genre/{id} or /studio/{id})
+    sortBy = m.currentSortBy
+    if sortBy = invalid or sortBy = "" then sortBy = "popularity.desc"
+
+    queryParams = {
+        "page": m.currentPage.toStr(),
+        "language": "en",
+        "sortBy": sortBy
+    }
+
+    if browseType = "genre"
+        if m.top.mediaType = "movie"
+            endpoint = "/api/v1/discover/movies"
+            queryParams["genre"] = m.top.genreId.toStr()
+        else
+            endpoint = "/api/v1/discover/tv"
+            queryParams["genre"] = m.top.genreId.toStr()
+        end if
+    else if browseType = "network"
+        endpoint = "/api/v1/discover/tv"
+        queryParams["network"] = m.top.genreId.toStr()
+    else if browseType = "studio"
+        endpoint = "/api/v1/discover/movies"
+        queryParams["studio"] = m.top.genreId.toStr()
+    else if browseType = "keyword"
+        if m.top.mediaType = "movie"
+            endpoint = "/api/v1/discover/movies"
+            queryParams["keywords"] = m.top.genreId.toStr()
+        else
+            endpoint = "/api/v1/discover/tv"
+            queryParams["keywords"] = m.top.genreId.toStr()
+        end if
+    else
+        ' Default to genre
+        if m.top.mediaType = "movie"
+            endpoint = "/api/v1/discover/movies"
+            queryParams["genre"] = m.top.genreId.toStr()
+        else
+            endpoint = "/api/v1/discover/tv"
+            queryParams["genre"] = m.top.genreId.toStr()
+        end if
+    end if
+
+    m.apiTask = CreateObject("roSGNode", "JellyseerrAPITask")
+    m.apiTask.addFields({ page: m.currentPage })
+
+    m.apiTask.request = {
+        method: "GET",
+        endpoint: endpoint,
+        queryParams: queryParams
+    }
+
+    m.apiTask.observeField("response", "onContentResponse")
+    m.apiTask.control = "RUN"
+end sub
+
+sub onContentResponse(event as object)
+    response = event.getData()
+    m.isLoading = false
+    HideLoading()
+
+    if response.success and response.data <> invalid
+        results = response.data.results
+        totalPages = 0
+        if response.data.totalPages <> invalid
+            totalPages = response.data.totalPages
+        end if
+
+        if results <> invalid and type(results) = "roArray"
+            ' Filter results based on current filter setting
+            blockNsfw = m.blockNsfwCache
+            filteredResults = []
+
+            for i = 0 to results.Count() - 1
+                item = results[i]
+                includeItem = true
+
+                ' Always filter NSFW if setting is enabled
+                if blockNsfw and IsItemNsfw(item)
+                    includeItem = false
+                end if
+
+                ' Apply filter based on current filter setting
+                if includeItem
+                    isAvailable = IsItemAvailable(item)
+                    isRequested = IsItemRequested(item)
+
+                    if m.currentFilter = "not_requested"
+                        ' Show only items that are NOT available and NOT requested
+                        if isAvailable or isRequested
+                            includeItem = false
+                        end if
+                    else if m.currentFilter = "available"
+                        ' Show only items that ARE available
+                        if not isAvailable
+                            includeItem = false
+                        end if
+                    end if
+                    ' "all" filter shows everything (minus NSFW if blocked)
+                end if
+
+                if includeItem
+                    filteredResults.push(item)
+                end if
+            end for
+
+            ' Check if there are more pages
+            totalPages = response.data.totalPages
+            if totalPages <> invalid
+                m.hasMorePages = m.currentPage < totalPages
+            else
+                m.hasMorePages = results.Count() >= 20
+            end if
+
+            ' Add items to grid
+            for i = 0 to filteredResults.Count() - 1
+                item = filteredResults[i]
+                mediaNode = CreateMediaContentNode(item)
+                if mediaNode <> invalid
+                    m.mediaGrid.content.appendChild(mediaNode)
+                    m.loadedItems.push(item)
+                end if
+            end for
+
+            ' Show no results message if empty
+            if m.mediaGrid.content.getChildCount() = 0
+                m.noResultsLabel.visible = true
+            else
+                m.noResultsLabel.visible = false
+                m.mediaGrid.setFocus(true)
+            end if
+        else
+            ShowError("No results found")
+        end if
+    else
+        errorMsg = "Failed to load content"
+        if response.error <> invalid
+            errorMsg = errorMsg + ": " + response.error
+        end if
+        ShowError(errorMsg)
+    end if
+end sub
+
+sub onItemFocused(event as object)
+    focusedIndex = event.getData()
+
+    if focusedIndex >= 0 and focusedIndex < m.mediaGrid.content.getChildCount()
+        focusedItem = m.mediaGrid.content.getChild(focusedIndex)
+
+        ' Update backdrop
+        if focusedItem <> invalid and focusedItem.hdBackgroundImageUrl <> invalid and focusedItem.hdBackgroundImageUrl <> ""
+            m.backdrop.uri = focusedItem.hdBackgroundImageUrl
+        end if
+
+        ' Update info section
+        UpdateInfoSection(focusedItem)
+
+        ' Load more when near end
+        itemsFromEnd = m.mediaGrid.content.getChildCount() - focusedIndex
+        if itemsFromEnd <= 8 and m.hasMorePages and not m.isLoading
+            m.currentPage = m.currentPage + 1
+            LoadContent()
+        end if
+    end if
+end sub
+
+sub UpdateInfoSection(item as object)
+    if item = invalid then return
+
+    ' Update item title
+    if item.title <> invalid and item.title <> ""
+        m.itemTitle.text = item.title
+    else if item.name <> invalid and item.name <> ""
+        m.itemTitle.text = item.name
+    else
+        m.itemTitle.text = ""
+    end if
+
+    ' Update year
+    if item.releaseYear <> invalid and item.releaseYear <> ""
+        m.metaYear.text = item.releaseYear
+    else
+        m.metaYear.text = ""
+    end if
+
+    ' Update type
+    if item.mediaType <> invalid and item.mediaType <> ""
+        if item.mediaType = "movie"
+            m.metaType.text = "Movie"
+        else if item.mediaType = "tv"
+            m.metaType.text = "TV Series"
+        else
+            m.metaType.text = item.mediaType
+        end if
+    else
+        m.metaType.text = ""
+    end if
+
+    ' Update rating
+    if item.rating <> invalid and item.rating <> ""
+        m.metaRating.text = item.rating
+        m.starIcon.visible = true
+    else
+        m.metaRating.text = ""
+        m.starIcon.visible = false
+    end if
+
+    ' Update overview
+    if item.overview <> invalid and item.overview <> ""
+        m.metaOverview.text = item.overview
+    else if item.description <> invalid and item.description <> ""
+        m.metaOverview.text = item.description
+    else
+        m.metaOverview.text = ""
+    end if
+end sub
+
+sub onItemSelected(event as object)
+    selectedIndex = event.getData()
+
+    if selectedIndex >= 0 and selectedIndex < m.mediaGrid.content.getChildCount()
+        selectedItem = m.mediaGrid.content.getChild(selectedIndex)
+        if selectedItem <> invalid
+            ShowJellyseerrDetails(selectedItem)
+        end if
+    end if
+end sub
+
+sub ShowLoading()
+    m.loadingLabel.visible = true
+    m.errorLabel.visible = false
+    m.noResultsLabel.visible = false
+end sub
+
+sub HideLoading()
+    m.loadingLabel.visible = false
+end sub
+
+sub ShowError(message as string)
+    m.errorLabel.text = message
+    m.errorLabel.visible = true
+    m.loadingLabel.visible = false
+end sub
+
+sub onSortButtonSelected()
+    ' Show sort dialog
+    ShowSortDialog()
+end sub
+
+sub onFilterButtonSelected()
+    ' Show filter dialog
+    ShowFilterDialog()
+end sub
+
+sub ShowFilterDialog()
+    ' Build filter data in RadioDialog format
+    filterData = { data: [] }
+    for i = 0 to m.filterOptions.count() - 1
+        item = {
+            Title: m.filterOptions[i].label,
+            Name: m.filterOptions[i].value,
+            Track: { description: m.filterOptions[i].label }
+        }
+        if m.filterOptions[i].value = m.currentFilter
+            item.selected = true
+        end if
+        filterData.data.push(item)
+    end for
+
+    m.global.sceneManager.callFunc("radioDialog", "Filter", filterData)
+    m.global.sceneManager.observeFieldScoped("returnData", "onFilterDialogResult")
+end sub
+
+sub onFilterDialogResult()
+    m.global.sceneManager.unobserveFieldScoped("returnData")
+    returnData = m.global.sceneManager.returnData
+    if returnData <> invalid and returnData.Name <> invalid
+        newFilter = returnData.Name
+        if newFilter <> m.currentFilter
+            m.currentFilter = newFilter
+            ' Reset state and create fresh content node
+            m.currentPage = 1
+            m.loadedItems = []
+            m.hasMorePages = true
+            ' Create fresh content node to force grid reset
+            m.mediaGrid.content = CreateObject("roSGNode", "ContentNode")
+            LoadContent()
+        end if
+    end if
+
+    ' Restore focus to filter button
+    if m.filterButton <> invalid
+        m.filterButton.setFocus(true)
+    end if
+end sub
+
+sub onSortButtonEscape()
+    escapeDir = m.sortButton.escape
+    if escapeDir = "right"
+        ' Move to filter button
+        if m.filterButton <> invalid
+            m.filterButton.setFocus(true)
+            m.currentFocus = "filterButton"
+        end if
+    else if escapeDir = "left"
+        ' Move back to grid
+        if m.mediaGrid <> invalid
+            m.mediaGrid.setFocus(true)
+            m.currentFocus = "grid"
+        end if
+    end if
+end sub
+
+sub onFilterButtonEscape()
+    escapeDir = m.filterButton.escape
+    if escapeDir = "left"
+        ' Move to sort button
+        if m.sortButton <> invalid
+            m.sortButton.setFocus(true)
+            m.currentFocus = "sortButton"
+        end if
+    end if
+end sub
+
+sub ShowSortDialog()
+    ' Build sort data in RadioDialog format
+    sortData = { data: [] }
+    for i = 0 to m.sortOptions.count() - 1
+        item = {
+            Title: m.sortOptions[i].label,
+            Name: m.sortOptions[i].value,
+            Track: { description: m.sortOptions[i].label }
+        }
+        if m.sortOptions[i].value = m.currentSortBy
+            item.selected = true
+        end if
+        sortData.data.push(item)
+    end for
+
+    m.global.sceneManager.callFunc("radioDialog", "Sort By", sortData)
+    m.global.sceneManager.observeFieldScoped("returnData", "onSortDialogResult")
+end sub
+
+sub onSortDialogResult()
+    m.global.sceneManager.unobserveFieldScoped("returnData")
+    returnData = m.global.sceneManager.returnData
+    if returnData <> invalid and returnData.Name <> invalid
+        newSortBy = returnData.Name
+        if newSortBy <> m.currentSortBy
+            m.currentSortBy = newSortBy
+            ' Reset state and create fresh content node
+            m.currentPage = 1
+            m.loadedItems = []
+            m.hasMorePages = true
+            ' Create fresh content node to force grid reset
+            m.mediaGrid.content = CreateObject("roSGNode", "ContentNode")
+            LoadContent()
+        end if
+    end if
+
+    ' Restore focus to sort button
+    if m.sortButton <> invalid
+        m.sortButton.setFocus(true)
+    end if
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    ' Handle navigation from grid to buttons (right from rightmost column)
+    if key = "right"
+        if m.currentFocus = "grid" and isValid(m.mediaGrid) and m.mediaGrid.hasFocus()
+            ' Check if at rightmost column
+            focusedIndex = m.mediaGrid.itemFocused
+            numColumns = m.mediaGrid.numColumns
+            columnIndex = focusedIndex mod numColumns
+            if columnIndex = numColumns - 1
+                ' Move focus to sort button
+                if m.sortButton <> invalid
+                    m.sortButton.setFocus(true)
+                    m.currentFocus = "sortButton"
+                    return true
+                end if
+            end if
+        end if
+        ' Note: button-to-button navigation handled by escape observers
+    end if
+
+    ' Handle down from buttons to grid
+    if key = "down"
+        if m.currentFocus = "sortButton" or m.currentFocus = "filterButton"
+            ' Move focus to grid
+            if m.mediaGrid <> invalid
+                m.mediaGrid.setFocus(true)
+                m.currentFocus = "grid"
+                return true
+            end if
+        end if
+    end if
+
+    ' Navigate to buttons with UP key from top row, or overhang from buttons
+    if key = "up" or key = "Up"
+        if m.currentFocus = "sortButton" or m.currentFocus = "filterButton"
+            m.top.lastFocus = m.currentFocus = "sortButton" ? m.sortButton : m.filterButton
+            return FocusOverhang(m.top)
+        end if
+
+        if isValid(m.mediaGrid) and m.mediaGrid.hasFocus()
+            ' Check if we're on the top row
+            focusedIndex = m.mediaGrid.itemFocused
+            numColumns = m.mediaGrid.numColumns
+            if focusedIndex < numColumns
+                ' Move to sort/filter buttons instead of overhang
+                if m.sortButton <> invalid
+                    m.sortButton.setFocus(true)
+                    m.currentFocus = "sortButton"
+                    return true
+                end if
+            end if
+        end if
+    end if
+
+    ' Handle back button
+    if key = "back"
+        m.global.sceneManager.callFunc("popScene")
+        return true
+    end if
+
+    return false
+end function

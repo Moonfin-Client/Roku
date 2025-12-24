@@ -1,6 +1,53 @@
 ' Jellyseerr API Configuration and Utilities
 
 ' ============================================
+' Permission Constants (from Jellyseerr/Overseerr)
+' ============================================
+' Permission bits from https://github.com/sct/overseerr/blob/develop/server/lib/permissions.ts
+const JELLYSEERR_PERMISSION_ADMIN = 2
+const JELLYSEERR_PERMISSION_REQUEST = 32
+const JELLYSEERR_PERMISSION_REQUEST_4K = 1024
+const JELLYSEERR_PERMISSION_REQUEST_4K_MOVIE = 2048
+const JELLYSEERR_PERMISSION_REQUEST_4K_TV = 4096
+
+' Check if user has a specific Jellyseerr permission
+' @param permissions - User's permission bitmask
+' @param permission - Permission constant to check
+' @returns True if user has the permission (or is admin)
+function HasJellyseerrPermission(permissions as integer, permission as integer) as boolean
+    ' Admin has all permissions
+    if (permissions and JELLYSEERR_PERMISSION_ADMIN) <> 0
+        return true
+    end if
+    return (permissions and permission) <> 0
+end function
+
+' Check if user can request 4K content for a specific media type
+' @param permissions - User's permission bitmask
+' @param mediaType - "movie" or "tv"
+' @returns True if user can request 4K for this media type
+function CanRequest4K(permissions as integer, mediaType as string) as boolean
+    ' Admin can request anything
+    if (permissions and JELLYSEERR_PERMISSION_ADMIN) <> 0
+        return true
+    end if
+
+    ' Check general 4K permission first
+    if (permissions and JELLYSEERR_PERMISSION_REQUEST_4K) <> 0
+        return true
+    end if
+
+    ' Check specific media type permission
+    if mediaType = "movie"
+        return (permissions and JELLYSEERR_PERMISSION_REQUEST_4K_MOVIE) <> 0
+    else if mediaType = "tv"
+        return (permissions and JELLYSEERR_PERMISSION_REQUEST_4K_TV) <> 0
+    end if
+
+    return false
+end function
+
+' ============================================
 ' User ID Management
 ' ============================================
 
@@ -284,7 +331,8 @@ function GetJellyseerrUserConfig(userId as string) as object
             authMethod: "jellyfin",
             jellyfinPassword: "",
             localEmail: "",
-            localPassword: ""
+            localPassword: "",
+            permissions: 0
         }
     end if
 
@@ -306,12 +354,19 @@ function GetJellyseerrUserConfig(userId as string) as object
     localPassword = sec.Read("localPassword")
     if localPassword = invalid then localPassword = ""
 
+    permissionsStr = sec.Read("permissions")
+    permissions = 0
+    if permissionsStr <> invalid and permissionsStr <> ""
+        permissions = permissionsStr.toInt()
+    end if
+
     return {
         authCookie: authCookie,
         authMethod: authMethod,
         jellyfinPassword: jellyfinPassword,
         localEmail: localEmail,
-        localPassword: localPassword
+        localPassword: localPassword,
+        permissions: permissions
     }
 end function
 
@@ -359,6 +414,32 @@ sub SetJellyseerrUserConfig(userId as string, authCookie as string, authMethod a
 
     sec.Flush()
 end sub
+
+' Save Jellyseerr user permissions
+' @param userId - Jellyfin user ID
+' @param permissions - Permission bitmask from /auth/me response
+sub SetJellyseerrUserPermissions(userId as string, permissions as integer)
+    if userId = ""
+        return
+    end if
+
+    registryName = GetJellyseerrUserRegistry(userId)
+    sec = CreateObject("roRegistrySection", registryName)
+    sec.Write("permissions", permissions.toStr())
+    sec.Flush()
+end sub
+
+' Get current user's Jellyseerr permissions
+' @returns Permission bitmask (0 if not set)
+function GetCurrentUserJellyseerrPermissions() as integer
+    userId = GetCurrentJellyfinUserId()
+    if userId = ""
+        return 0
+    end if
+
+    config = GetJellyseerrUserConfig(userId)
+    return config.permissions
+end function
 
 ' ============================================
 ' TMDB Image URLs
@@ -645,6 +726,55 @@ function ExtractJsonNumber(jsonString as string, fieldName as string) as integer
     return numStr.ToInt()
 end function
 
+' Create a content node for a Jellyseerr genre item
+' Genre items have id, name, and backdrops (array of TMDB backdrop paths)
+function CreateGenreContentNode(genre as object, mediaType as string) as object
+    if genre = invalid then return invalid
+    if genre.id = invalid or genre.name = invalid then return invalid
+
+    node = CreateObject("roSGNode", "ContentNode")
+
+    node.title = genre.name
+
+    ' Store genre ID and media type for navigation
+    node.addField("genreId", "integer", false)
+    node.genreId = genre.id
+
+    node.addField("mediaType", "string", false)
+    node.mediaType = mediaType
+
+    node.addField("isGenre", "boolean", false)
+    node.isGenre = true
+
+    ' Use a random backdrop from the list if available
+    backdrops = genre.backdrops
+    if type(backdrops) = "roArray" and backdrops.count() > 0
+        tmdbUrls = GetTmdbImageBaseUrls()
+
+        ' Pick random backdrop for variety
+        randomIdx = Rnd(backdrops.count()) - 1
+        backdropPath = backdrops[randomIdx]
+
+        if backdropPath <> invalid and backdropPath <> ""
+            ' Use backdrop as poster for genre cards (landscape style)
+            backdropUrl = tmdbUrls.backdropW780 + backdropPath
+            node.hdPosterUrl = backdropUrl
+            node.sdPosterUrl = backdropUrl
+            node.HDGRIDPOSTERURL = backdropUrl
+            node.SDGRIDPOSTERURL = backdropUrl
+            node.addField("posterUrl", "string", false)
+            node.posterUrl = backdropUrl
+            node.url = backdropUrl
+
+            ' Also set as background
+            node.hdBackgroundImageUrl = tmdbUrls.backdropW1280 + backdropPath
+            node.sdBackgroundImageUrl = tmdbUrls.backdropW780 + backdropPath
+        end if
+    end if
+
+    return node
+end function
+
 function CreateMediaContentNode(item as object) as object
     node = CreateObject("roSGNode", "ContentNode")
 
@@ -857,6 +987,21 @@ function IsItemAvailable(item as object) as boolean
 
     if item.mediaInfoStatus <> invalid
         return item.mediaInfoStatus = 4 or item.mediaInfoStatus = 5
+    end if
+
+    return false
+end function
+
+function IsItemRequested(item as object) as boolean
+    ' Status 2=pending, 3=processing - these indicate a request has been made
+    if item = invalid then return false
+    if item.mediaInfo <> invalid and item.mediaInfo.status <> invalid
+        status = item.mediaInfo.status
+        return status = 2 or status = 3
+    end if
+
+    if item.mediaInfoStatus <> invalid
+        return item.mediaInfoStatus = 2 or item.mediaInfoStatus = 3
     end if
 
     return false

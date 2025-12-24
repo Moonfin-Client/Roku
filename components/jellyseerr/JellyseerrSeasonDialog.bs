@@ -70,10 +70,38 @@ sub buildSeasonList()
     numSeasons = m.top.numberOfSeasons
     if numSeasons = invalid or numSeasons <= 0 then return
 
-    ' Initialize all as checked
+    ' Get unavailable seasons array
+    unavailableSeasons = m.top.unavailableSeasons
+    if unavailableSeasons = invalid then unavailableSeasons = []
+
+    ' Build set of unavailable season numbers for fast lookup
+    m.unavailableSeasonsSet = {}
+    for each seasonNum in unavailableSeasons
+        if seasonNum <> invalid and GetInterface(seasonNum, "ifInt") <> invalid
+            m.unavailableSeasonsSet[seasonNum.toStr()] = true
+        end if
+    end for
+
+    ' Initialize checked state: unchecked for unavailable, checked for available
     m.checkedState = []
-    for i = 0 to numSeasons
-        m.checkedState.push(true)
+    ' Index 0 is for "Select All" - only check if there are any available seasons
+    hasAvailable = false
+    for i = 1 to numSeasons
+        if not isSeasonUnavailable(i)
+            hasAvailable = true
+            exit for
+        end if
+    end for
+    m.checkedState.push(hasAvailable)
+
+    ' Index 1 to numSeasons for individual seasons
+    for i = 1 to numSeasons
+        ' Unavailable seasons are unchecked and disabled
+        if isSeasonUnavailable(i)
+            m.checkedState.push(false)
+        else
+            m.checkedState.push(true)
+        end if
     end for
 
     ' Build list content with checkbox characters in title
@@ -84,6 +112,12 @@ sub buildSeasonList()
     m.seasonList.setFocus(true)
     m.focusedElement = "list"
 end sub
+
+' Check if a season is unavailable (already requested/available)
+function isSeasonUnavailable(seasonNumber as integer) as boolean
+    if m.unavailableSeasonsSet = invalid then return false
+    return m.unavailableSeasonsSet[seasonNumber.toStr()] = true
+end function
 
 ' Update button focus styling
 sub updateButtonFocus()
@@ -112,7 +146,9 @@ sub updateButtonFocus()
             m.cancelButtonBg.blendColor = "0x4B5563FF"
         end if
     end if
-end sub' Update list content to reflect current checked state with better styling
+end sub
+
+' Update list content to reflect current checked state with better styling
 sub updateListContent()
     if m.seasonList = invalid then return
 
@@ -125,16 +161,46 @@ sub updateListContent()
 
     content = CreateObject("roSGNode", "ContentNode")
 
-    ' Add "Select All" option first
+    ' Check if there are any available seasons
+    hasAvailable = false
+    for i = 1 to numSeasons
+        if not isSeasonUnavailable(i)
+            hasAvailable = true
+            exit for
+        end if
+    end for
+
+    ' Add "Select All" option first (only if there are available seasons)
     selectAllNode = content.CreateChild("ContentNode")
-    checkmark = getCheckboxChar(m.checkedState[0])
-    selectAllNode.title = checkmark + "  Select All Seasons"
+    if hasAvailable
+        checkmark = getCheckboxChar(m.checkedState[0])
+        ' Determine if all unavailable or some available
+        allUnavailable = true
+        for i = 1 to numSeasons
+            if not isSeasonUnavailable(i)
+                allUnavailable = false
+                exit for
+            end if
+        end for
+        if allUnavailable
+            selectAllNode.title = "    All Seasons Requested"
+        else
+            selectAllNode.title = checkmark + "  Select All Available"
+        end if
+    else
+        selectAllNode.title = "    All Seasons Already Requested"
+    end if
 
     ' Add individual season options with cleaner formatting
     for i = 1 to numSeasons
         seasonNode = content.CreateChild("ContentNode")
-        checkmark = getCheckboxChar(m.checkedState[i])
-        seasonNode.title = checkmark + "   Season " + i.toStr()
+        if isSeasonUnavailable(i)
+            ' Show as unavailable (no checkbox, grayed appearance via title)
+            seasonNode.title = "    Season " + i.toStr() + "  (Already Requested)"
+        else
+            checkmark = getCheckboxChar(m.checkedState[i])
+            seasonNode.title = checkmark + "   Season " + i.toStr()
+        end if
     end for
 
     ' Set content first, then restore focus position
@@ -155,18 +221,62 @@ end function
 sub toggleCheckbox(index as integer)
     if index < 0 or index >= m.checkedState.Count() then return
 
-    ' Toggle the state
-    m.checkedState[index] = not m.checkedState[index]
+    numSeasons = m.top.numberOfSeasons
 
-    ' If Select All was toggled, sync all seasons
+    ' If Select All was toggled (index 0), only toggle available seasons
     if index = 0
-        for i = 1 to m.checkedState.Count() - 1
-            m.checkedState[i] = m.checkedState[0]
+        ' Check if there are any available seasons
+        hasAvailable = false
+        for i = 1 to numSeasons
+            if not isSeasonUnavailable(i)
+                hasAvailable = true
+                exit for
+            end if
         end for
+        if not hasAvailable then return ' Nothing to toggle
+
+        ' Toggle the Select All state
+        m.checkedState[index] = not m.checkedState[index]
+
+        ' Sync all available seasons to Select All state
+        for i = 1 to numSeasons
+            if not isSeasonUnavailable(i)
+                m.checkedState[i] = m.checkedState[0]
+            end if
+        end for
+    else
+        ' Individual season - check if it's unavailable
+        if isSeasonUnavailable(index)
+            ' Don't toggle unavailable seasons
+            return
+        end if
+
+        ' Toggle the state
+        m.checkedState[index] = not m.checkedState[index]
+
+        ' Update Select All checkbox to reflect current state
+        updateSelectAllState()
     end if
 
     ' Update the display
     updateListContent()
+end sub
+
+' Update the Select All checkbox state based on available seasons
+sub updateSelectAllState()
+    numSeasons = m.top.numberOfSeasons
+    allAvailableChecked = true
+
+    for i = 1 to numSeasons
+        if not isSeasonUnavailable(i)
+            if not m.checkedState[i]
+                allAvailableChecked = false
+                exit for
+            end if
+        end if
+    end for
+
+    m.checkedState[0] = allAvailableChecked
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
@@ -264,27 +374,41 @@ end function
 sub submitSelection()
     numSeasons = m.top.numberOfSeasons
 
-    ' Build array of selected season numbers
+    ' Build array of selected season numbers (only from available seasons)
     selectedSeasons = []
 
-    ' Check if "Select All" is checked
-    if m.checkedState[0] = true
-        ' All seasons selected - return empty array to signal "all seasons"
+    ' Count how many seasons are available
+    availableCount = 0
+    for i = 1 to numSeasons
+        if not isSeasonUnavailable(i)
+            availableCount = availableCount + 1
+        end if
+    end for
+
+    ' If no seasons are available, cancel
+    if availableCount = 0
+        m.top.wasCancelled = true
+        return
+    end if
+
+    ' Check indices 1-N for seasons 1-N (only available ones)
+    for i = 1 to numSeasons
+        if not isSeasonUnavailable(i) and i < m.checkedState.Count() and m.checkedState[i] = true
+            selectedSeasons.push(i)
+        end if
+    end for
+
+    if selectedSeasons.Count() = 0
+        ' Nothing selected, cancel
+        m.top.wasCancelled = true
+        return
+    end if
+
+    ' If all available seasons are selected and Select All is checked,
+    ' return empty array to signal "all available seasons"
+    if m.checkedState[0] = true and selectedSeasons.Count() = availableCount
         m.top.selectedSeasons = []
     else
-        ' Check indices 1-N for seasons 1-N
-        for i = 1 to numSeasons
-            if i < m.checkedState.Count() and m.checkedState[i] = true
-                selectedSeasons.push(i)
-            end if
-        end for
-
-        if selectedSeasons.Count() = 0
-            ' Nothing selected, cancel
-            m.top.wasCancelled = true
-            return
-        end if
-
         m.top.selectedSeasons = selectedSeasons
     end if
 end sub

@@ -24,6 +24,14 @@ sub init()
     m.metadataFactsGroup = m.top.findNode("metadataFactsGroup")
     m.castHeading = m.top.findNode("castHeading")
     m.castRow = m.top.findNode("castRow")
+    m.keywordsSection = m.top.findNode("keywordsSection")
+    m.keywordsHeading = m.top.findNode("keywordsHeading")
+    m.keywordsContainer = m.top.findNode("keywordsContainer")
+    m.keywordButtons = []
+    m.focusedKeywordIndex = 0
+    m.keywordRows = [] ' Array of arrays, each inner array is a row of keyword indices
+    m.recommendationsHeading = m.top.findNode("recommendationsHeading")
+    m.recommendationsRow = m.top.findNode("recommendationsRow")
     m.similarHeading = m.top.findNode("similarHeading")
     m.similarRow = m.top.findNode("similarRow")
     m.loadingLabel = m.top.findNode("loadingLabel")
@@ -43,8 +51,26 @@ sub init()
     m.previousFocusedElement = invalid
     m.buttons = []
 
+    ' Configure RowList item sizes for recommendations and similar rows
+    m.recommendationsRow.rowItemSize = [180, 270]
+    m.recommendationsRow.rowItemSpacing = [20, 0]
+    m.recommendationsRow.focusBitmapUri = "pkg:/images/hd_focus.9.png"
+    m.recommendationsRow.focusBitmapBlendColor = ColorPalette.WHITE
+    m.recommendationsRow.focusFootprintBitmapUri = ""
+    m.recommendationsRow.focusFootprintBlendColor = ColorPalette.TRANSPARENT
+    m.recommendationsRow.drawFocusFeedback = true
+
+    m.similarRow.rowItemSize = [180, 270]
+    m.similarRow.rowItemSpacing = [20, 0]
+    m.similarRow.focusBitmapUri = "pkg:/images/hd_focus.9.png"
+    m.similarRow.focusBitmapBlendColor = ColorPalette.WHITE
+    m.similarRow.focusFootprintBitmapUri = ""
+    m.similarRow.focusFootprintBlendColor = ColorPalette.TRANSPARENT
+    m.similarRow.drawFocusFeedback = true
+
     ' Setup observers
     m.top.observeFieldScoped("mediaItem", "onMediaItemSet")
+    m.recommendationsRow.observeFieldScoped("rowItemSelected", "onRecommendationsItemSelected")
     m.similarRow.observeFieldScoped("rowItemSelected", "onSimilarItemSelected")
     m.castRow.observeFieldScoped("itemSelected", "onCastItemSelected")
     m.top.observeFieldScoped("restoreFocus", "onRestoreFocus")
@@ -72,6 +98,51 @@ sub onRestoreFocus()
         m.focusedElement = m.castRow
         m.castRow.setFocus(true)
     end if
+end sub
+
+' Cleanup observers and tasks when screen is hidden/popped
+' Prevents memory leaks and orphaned callbacks
+sub OnScreenHidden()
+    if m.apiTask <> invalid
+        m.apiTask.unobserveField("response")
+        m.apiTask = invalid
+    end if
+
+    if m.similarApiTask <> invalid
+        m.similarApiTask.unobserveField("response")
+        m.similarApiTask = invalid
+    end if
+
+    if m.recommendationsApiTask <> invalid
+        m.recommendationsApiTask.unobserveField("response")
+        m.recommendationsApiTask = invalid
+    end if
+
+    if m.qualityDialog <> invalid
+        m.qualityDialog.unobserveField("selectedQuality")
+        m.qualityDialog.unobserveField("wasCancelled")
+        m.qualityDialog = invalid
+    end if
+
+    if m.seasonDialog <> invalid
+        m.seasonDialog.unobserveField("selectedSeasons")
+        m.seasonDialog.unobserveField("wasCancelled")
+        m.seasonDialog = invalid
+    end if
+
+    if m.successDialog <> invalid
+        m.successDialog.unobserveField("buttonSelected")
+        m.successDialog = invalid
+    end if
+
+    if m.cancelConfirmDialog <> invalid
+        m.cancelConfirmDialog.unobserveField("buttonSelected")
+        m.cancelConfirmDialog = invalid
+    end if
+
+    m.buttons = []
+    m.keywordButtons = []
+    m.keywordRows = []
 end sub
 
 sub onBackdropLoadStatusChange()
@@ -151,6 +222,7 @@ sub LoadFullDetails()
         endpoint: endpoint
     }
 
+    m.apiTask.unobserveField("response")
     m.apiTask.observeField("response", "onFullDetailsResponse")
     m.apiTask.control = "RUN"
 end sub
@@ -195,6 +267,7 @@ sub onFullDetailsResponse(event as object)
     end if
 
     LoadCastData()
+    LoadRecommendationsContent()
     LoadSimilarContent()
 end sub
 
@@ -202,12 +275,12 @@ sub UpdateFullUI()
     UpdateStatusBadge()
     UpdateMetadata()
     UpdateTagline()
+    CreateKeywordsTags()
     CreateActionButtons()
     CreateMetadataFacts()
 end sub
 
 sub UpdateStatusBadge()
-    ' Always show a status badge
     status = invalid
     status4k = invalid
 
@@ -216,7 +289,6 @@ sub UpdateStatusBadge()
         if m.mediaInfo.status4k <> invalid then status4k = m.mediaInfo.status4k
     end if
 
-    ' Check for declined requests (status = 3 in request, not mediaInfo.status)
     hdDeclined = false
     fourKDeclined = false
     if m.mediaInfo <> invalid and m.mediaInfo.requests <> invalid
@@ -295,7 +367,6 @@ sub UpdateStatusBadge()
         statusText = "HD UNKNOWN"
         bgColor = "#9CA3AF" ' gray-400
     else
-        ' No status - not requested yet
         statusText = "NOT REQUESTED"
         bgColor = "#6B7280" ' gray-500
     end if
@@ -400,40 +471,81 @@ sub CreateActionButtons()
         status4k = m.mediaInfo.status4k
     end if
 
-    ' Request HD button
-    ' Disable if pending (2), processing (3), or fully available (5)
-    ' Allow re-request if not requested (null/1), or partially available (4) so users can request missing episodes
-    if hdStatus <> invalid and hdStatus >= 2 and hdStatus <> 4
-        if hdStatus = 2
-            addButton({ icon: "pkg:/images/icons/request_hd.png", label: "HD Pending", action: "none", enabled: false })
-        else if hdStatus = 3
-            addButton({ icon: "pkg:/images/icons/request_hd.png", label: "HD Processing", action: "none", enabled: false })
-        else if hdStatus >= 5
-            addButton({ icon: "pkg:/images/icons/request_hd.png", label: "HD Available", action: "none", enabled: false })
-        end if
-    else
-        ' Show "Request More" label if partially available (status 4)
-        buttonLabel = "Request HD"
-        if hdStatus = 4 then buttonLabel = "Request More (HD)"
-        addButton({ icon: "pkg:/images/icons/request_hd.png", label: buttonLabel, action: "requestHD", enabled: true })
+    ' Check for pending requests that can be cancelled
+    pendingRequests = []
+    if m.mediaInfo <> invalid and m.mediaInfo.requests <> invalid
+        for each request in m.mediaInfo.requests
+            ' Status 1 = pending (can be cancelled by user who created it)
+            if request.status = 1
+                pendingRequests.push(request)
+            end if
+        end for
     end if
 
-    ' Request 4K button
-    ' Disable if pending (2), processing (3), or fully available (5)
-    ' Allow re-request if not requested (null/1), or partially available (4) so users can request missing episodes
-    if status4k <> invalid and status4k >= 2 and status4k <> 4
-        if status4k = 2
-            addButton({ icon: "pkg:/images/icons/request_4k.png", label: "4K Pending", action: "none", enabled: false })
-        else if status4k = 3
-            addButton({ icon: "pkg:/images/icons/request_4k.png", label: "4K Processing", action: "none", enabled: false })
-        else if status4k >= 5
-            addButton({ icon: "pkg:/images/icons/request_4k.png", label: "4K Available", action: "none", enabled: false })
-        end if
+    ' Get user's Jellyseerr permissions
+    userPermissions = GetCurrentUserJellyseerrPermissions()
+    mediaType = "movie"
+    if m.mediaItem <> invalid and m.mediaItem.mediaType <> invalid
+        mediaType = m.mediaItem.mediaType
+    end if
+
+    ' Check if user has 4K permission
+    has4kPermission = CanRequest4K(userPermissions, mediaType)
+
+    ' Determine if HD and 4K can be requested based on status
+    ' Can request if status is null/1 (unknown), or 4 (partial)
+    canRequestHDByStatus = (hdStatus = invalid or hdStatus = 1 or hdStatus = 4)
+    canRequest4KByStatus = (status4k = invalid or status4k = 1 or status4k = 4)
+
+    ' Combine status with permission
+    userCanRequestHD = canRequestHDByStatus ' HD doesn't require special permission
+    userCanRequest4K = canRequest4KByStatus and has4kPermission
+
+    ' If both HD and 4K are requestable, show a single "Request" button that opens quality dialog
+    if userCanRequestHD and userCanRequest4K
+        addButton({ icon: "pkg:/images/icons/request_hd.png", label: "Request", action: "requestQuality", enabled: true })
     else
-        ' Show "Request More" label if partially available (status 4)
-        buttonLabel = "Request 4K"
-        if status4k = 4 then buttonLabel = "Request More (4K)"
-        addButton({ icon: "pkg:/images/icons/request_4k.png", label: buttonLabel, action: "request4K", enabled: true })
+        ' Otherwise show individual buttons
+
+        ' Request HD button
+        ' Disable if pending (2), processing (3), or fully available (5)
+        if hdStatus <> invalid and hdStatus >= 2 and hdStatus <> 4
+            if hdStatus = 2
+                addButton({ icon: "pkg:/images/icons/request_hd.png", label: "HD Pending", action: "none", enabled: false })
+            else if hdStatus = 3
+                addButton({ icon: "pkg:/images/icons/request_hd.png", label: "HD Processing", action: "none", enabled: false })
+            else if hdStatus >= 5
+                addButton({ icon: "pkg:/images/icons/request_hd.png", label: "HD Available", action: "none", enabled: false })
+            end if
+        else if userCanRequestHD
+            ' Show "Request More" label if partially available (status 4)
+            buttonLabel = "Request HD"
+            if hdStatus = 4 then buttonLabel = "Request More (HD)"
+            addButton({ icon: "pkg:/images/icons/request_hd.png", label: buttonLabel, action: "requestHD", enabled: true })
+        end if
+
+        ' Request 4K button
+        ' Disable if pending (2), processing (3), or fully available (5)
+        if status4k <> invalid and status4k >= 2 and status4k <> 4
+            if status4k = 2
+                addButton({ icon: "pkg:/images/icons/request_4k.png", label: "4K Pending", action: "none", enabled: false })
+            else if status4k = 3
+                addButton({ icon: "pkg:/images/icons/request_4k.png", label: "4K Processing", action: "none", enabled: false })
+            else if status4k >= 5
+                addButton({ icon: "pkg:/images/icons/request_4k.png", label: "4K Available", action: "none", enabled: false })
+            end if
+        else if userCanRequest4K
+            ' Show "Request More" label if partially available (status 4)
+            buttonLabel = "Request 4K"
+            if status4k = 4 then buttonLabel = "Request More (4K)"
+            addButton({ icon: "pkg:/images/icons/request_4k.png", label: buttonLabel, action: "request4K", enabled: true })
+        end if
+    end if
+
+    ' Add Cancel Request button if there are pending requests
+    if pendingRequests.count() > 0
+        m.pendingRequests = pendingRequests
+        addButton({ icon: "pkg:/images/icons/cancel.png", label: "Cancel Request", action: "cancelRequest", enabled: true })
     end if
 
     PositionButtons()
@@ -460,9 +572,17 @@ sub PositionButtons()
     castY = buttonY + 140
     m.castHeading.getParent().translation = [80, castY]
 
-    ' Update similar section position to be below cast (cast is ~420px high with animations + extra scroll space)
-    similarY = castY + 550
+    ' Update recommendations section position to be below cast (cast is ~450px high)
+    recommendationsY = castY + 500
+    m.recommendationsHeading.getParent().translation = [80, recommendationsY]
+
+    ' Update similar section position to be below recommendations (recommendations row is ~450px high)
+    similarY = recommendationsY + 500
     m.similarHeading.getParent().translation = [80, similarY]
+
+    ' Update keywords section position to be below similar (similar row is ~450px high)
+    keywordsY = similarY + 500
+    m.keywordsSection.translation = [80, keywordsY]
 end sub
 
 sub addButton(config as object)
@@ -553,6 +673,242 @@ sub onButtonFocusChanged(event as object)
         end if
     end if
 end sub
+
+' Create keyword tags from movie or TV details
+sub CreateKeywordsTags()
+    ' Clear existing keyword buttons
+    m.keywordsContainer.removeChildrenIndex(m.keywordsContainer.getChildCount(), 0)
+    m.keywordButtons = []
+    m.keywordRows = []
+    m.focusedKeywordIndex = 0
+
+    ' Get keywords from movie or TV details
+    keywords = invalid
+    mediaType = "movie"
+
+    if m.movieDetails <> invalid and m.movieDetails.keywords <> invalid
+        keywords = m.movieDetails.keywords
+        mediaType = "movie"
+    else if m.tvDetails <> invalid and m.tvDetails.keywords <> invalid
+        keywords = m.tvDetails.keywords
+        mediaType = "tv"
+    end if
+
+    ' Hide section if no keywords
+    if keywords = invalid or type(keywords) <> "roArray" or keywords.count() = 0
+        m.keywordsSection.visible = false
+        return
+    end if
+
+    m.keywordsSection.visible = true
+    m.keywordsHeading.visible = true
+
+    ' Store media type for keyword selection
+    m.keywordsMediaType = mediaType
+
+    ' Layout configuration
+    maxWidth = 1700 ' Maximum width before wrapping
+    horizontalSpacing = 15 ' Space between keywords
+    verticalSpacing = 12 ' Space between rows
+    buttonHeight = 40
+    paddingH = 20 ' Horizontal padding inside button
+
+    currentX = 0
+    currentY = 0
+    currentRowIndices = []
+
+    ' Create a temporary label to measure text width
+    measureLabel = CreateObject("roSGNode", "Label")
+    measureLabel.font = "font:SmallSystemFont"
+
+    for i = 0 to keywords.count() - 1
+        keyword = keywords[i]
+        if keyword.id = invalid or keyword.name = invalid then continue for
+
+        ' Measure text width
+        measureLabel.text = keyword.name
+        textBounds = measureLabel.boundingRect()
+        buttonWidth = textBounds.width + (paddingH * 2)
+
+        ' Check if we need to wrap to next row
+        if currentX > 0 and currentX + buttonWidth > maxWidth
+            ' Store current row and start new row
+            if currentRowIndices.count() > 0
+                m.keywordRows.push(currentRowIndices)
+            end if
+            currentRowIndices = []
+            currentX = 0
+            currentY = currentY + buttonHeight + verticalSpacing
+        end if
+
+        ' Create keyword button group
+        buttonGroup = CreateObject("roSGNode", "Group")
+        buttonGroup.translation = [currentX, currentY]
+        buttonGroup.focusable = true
+
+        ' Focus highlight (9-patch for proper scaling) - hidden by default
+        focusPoster = CreateObject("roSGNode", "Poster")
+        focusPoster.uri = "pkg:/images/hd_focus.9.png"
+        focusPoster.width = buttonWidth
+        focusPoster.height = buttonHeight
+        focusPoster.blendColor = ColorPalette.WHITE
+        focusPoster.visible = false
+        focusPoster.opacity = 0
+        buttonGroup.appendChild(focusPoster)
+
+        ' Text label
+        label = CreateObject("roSGNode", "Label")
+        label.text = keyword.name
+        label.font = "font:SmallSystemFont"
+        label.color = "#D1D5DB" ' gray-300
+        label.width = buttonWidth
+        label.height = buttonHeight
+        label.horizAlign = "center"
+        label.vertAlign = "center"
+        buttonGroup.appendChild(label)
+
+        ' Store references for focus handling
+        buttonGroup.addField("keywordId", "integer", false)
+        buttonGroup.keywordId = keyword.id
+        buttonGroup.addField("keywordName", "string", false)
+        buttonGroup.keywordName = keyword.name
+        buttonGroup.addField("buttonIndex", "integer", false)
+        buttonGroup.buttonIndex = m.keywordButtons.count()
+        buttonGroup.addField("focusPoster", "node", false)
+        buttonGroup.focusPoster = focusPoster
+        buttonGroup.addField("labelNode", "node", false)
+        buttonGroup.labelNode = label
+
+        m.keywordsContainer.appendChild(buttonGroup)
+        m.keywordButtons.push(buttonGroup)
+        currentRowIndices.push(m.keywordButtons.count() - 1)
+
+        currentX = currentX + buttonWidth + horizontalSpacing
+    end for
+
+    ' Store final row
+    if currentRowIndices.count() > 0
+        m.keywordRows.push(currentRowIndices)
+    end if
+end sub
+
+' Update keyword button focus visuals
+sub updateKeywordFocus(index as integer, hasFocus as boolean)
+    if index < 0 or index >= m.keywordButtons.count() then return
+
+    button = m.keywordButtons[index]
+    if button = invalid then return
+
+    if hasFocus
+        if button.focusPoster <> invalid
+            button.focusPoster.visible = true
+            button.focusPoster.opacity = 1.0
+        end if
+        if button.labelNode <> invalid then button.labelNode.color = "#FFFFFF"
+    else
+        if button.focusPoster <> invalid
+            button.focusPoster.visible = false
+            button.focusPoster.opacity = 0
+        end if
+        if button.labelNode <> invalid then button.labelNode.color = "#D1D5DB"
+    end if
+end sub
+
+' Handle keyboard navigation within keywords section
+function handleKeywordNavigation(key as string) as boolean
+    if m.keywordButtons.count() = 0 then return false
+
+    oldIndex = m.focusedKeywordIndex
+
+    if key = "left"
+        if m.focusedKeywordIndex > 0
+            m.focusedKeywordIndex = m.focusedKeywordIndex - 1
+            updateKeywordFocus(oldIndex, false)
+            updateKeywordFocus(m.focusedKeywordIndex, true)
+        end if
+        return true
+    else if key = "right"
+        if m.focusedKeywordIndex < m.keywordButtons.count() - 1
+            m.focusedKeywordIndex = m.focusedKeywordIndex + 1
+            updateKeywordFocus(oldIndex, false)
+            updateKeywordFocus(m.focusedKeywordIndex, true)
+        end if
+        return true
+    else if key = "up"
+        ' Find which row the current keyword is in
+        currentRow = -1
+        positionInRow = -1
+        for rowIdx = 0 to m.keywordRows.count() - 1
+            for colIdx = 0 to m.keywordRows[rowIdx].count() - 1
+                if m.keywordRows[rowIdx][colIdx] = m.focusedKeywordIndex
+                    currentRow = rowIdx
+                    positionInRow = colIdx
+                    exit for
+                end if
+            end for
+            if currentRow >= 0 then exit for
+        end for
+
+        if currentRow > 0
+            ' Move to previous row, try to maintain similar position
+            prevRow = m.keywordRows[currentRow - 1]
+            newPos = positionInRow
+            if newPos >= prevRow.count() then newPos = prevRow.count() - 1
+            m.focusedKeywordIndex = prevRow[newPos]
+            updateKeywordFocus(oldIndex, false)
+            updateKeywordFocus(m.focusedKeywordIndex, true)
+            return true
+        else
+            ' At top row - let navigation escape to previous section
+            return false
+        end if
+    else if key = "down"
+        ' Find which row the current keyword is in
+        currentRow = -1
+        positionInRow = -1
+        for rowIdx = 0 to m.keywordRows.count() - 1
+            for colIdx = 0 to m.keywordRows[rowIdx].count() - 1
+                if m.keywordRows[rowIdx][colIdx] = m.focusedKeywordIndex
+                    currentRow = rowIdx
+                    positionInRow = colIdx
+                    exit for
+                end if
+            end for
+            if currentRow >= 0 then exit for
+        end for
+
+        if currentRow >= 0 and currentRow < m.keywordRows.count() - 1
+            ' Move to next row, try to maintain similar position
+            nextRow = m.keywordRows[currentRow + 1]
+            newPos = positionInRow
+            if newPos >= nextRow.count() then newPos = nextRow.count() - 1
+            m.focusedKeywordIndex = nextRow[newPos]
+            updateKeywordFocus(oldIndex, false)
+            updateKeywordFocus(m.focusedKeywordIndex, true)
+            return true
+        else
+            ' At bottom row - no more rows, stay here
+            return true
+        end if
+    else if key = "OK"
+        ' Select the current keyword
+        if m.focusedKeywordIndex >= 0 and m.focusedKeywordIndex < m.keywordButtons.count()
+            button = m.keywordButtons[m.focusedKeywordIndex]
+            if button <> invalid
+                ' Navigate to browse by screen with keyword filter
+                screen = CreateObject("roSGNode", "JellyseerrGenreBrowseScreen")
+                screen.browseType = "keyword"
+                screen.genreName = button.keywordName
+                screen.mediaType = m.keywordsMediaType
+                screen.genreId = button.keywordId
+                m.global.sceneManager.callFunc("pushScene", screen)
+                return true
+            end if
+        end if
+    end if
+
+    return false
+end function
 
 sub CreateMetadataFacts()
     m.metadataFactsGroup.removeChildrenIndex(m.metadataFactsGroup.getChildCount(), 0)
@@ -808,14 +1164,97 @@ sub LoadSimilarContent()
     tmdbId = m.mediaItem.tmdbId
     endpoint = "/api/v1/" + mediaType + "/" + tmdbId.toStr() + "/similar"
 
-    m.apiTask.request = {
+    m.similarApiTask = CreateObject("roSGNode", "JellyseerrAPITask")
+    m.similarApiTask.request = {
         method: "GET",
         endpoint: endpoint,
         queryParams: { page: "1" }
     }
 
-    m.apiTask.observeField("response", "onSimilarContentResponse")
-    m.apiTask.control = "RUN"
+    m.similarApiTask.observeField("response", "onSimilarContentResponse")
+    m.similarApiTask.control = "RUN"
+end sub
+
+sub LoadRecommendationsContent()
+    ' Load recommended movies or TV shows
+    mediaType = m.mediaItem.mediaType
+    if mediaType = invalid then mediaType = "movie"
+
+    tmdbId = m.mediaItem.tmdbId
+    endpoint = "/api/v1/" + mediaType + "/" + tmdbId.toStr() + "/recommendations"
+
+    m.recommendationsApiTask = CreateObject("roSGNode", "JellyseerrAPITask")
+    m.recommendationsApiTask.request = {
+        method: "GET",
+        endpoint: endpoint,
+        queryParams: { page: "1" }
+    }
+
+    m.recommendationsApiTask.observeField("response", "onRecommendationsContentResponse")
+    m.recommendationsApiTask.control = "RUN"
+end sub
+
+sub onRecommendationsContentResponse(event as object)
+    response = event.getData()
+
+    if not response.success or response.data = invalid
+        m.recommendationsHeading.visible = false
+        m.recommendationsRow.visible = false
+        return
+    end if
+
+    results = response.data.results
+    if results = invalid or results.count() = 0
+        m.recommendationsHeading.visible = false
+        m.recommendationsRow.visible = false
+        return
+    end if
+
+    ' Take first 20 items
+    itemsToShow = []
+    maxItems = 20
+    if results.count() < maxItems then maxItems = results.count()
+
+    for i = 0 to maxItems - 1
+        itemsToShow.push(results[i])
+    end for
+
+    ' Create content nodes for recommendations items
+    recommendationsContent = CreateObject("roSGNode", "ContentNode")
+    recommendationsRowNode = CreateObject("roSGNode", "ContentNode")
+
+    for each item in itemsToShow
+        mediaNode = CreateMediaContentNode(item)
+        if mediaNode <> invalid
+            recommendationsRowNode.appendChild(mediaNode)
+        end if
+    end for
+
+    recommendationsContent.appendChild(recommendationsRowNode)
+
+    ' Make visible first, then set content
+    m.recommendationsHeading.text = "Recommendations"
+    m.recommendationsHeading.visible = true
+    m.recommendationsRow.visible = true
+    m.recommendationsRow.content = recommendationsContent
+
+    ' Force RowList to update
+    m.recommendationsRow.content = m.recommendationsRow.content
+end sub
+
+sub onRecommendationsItemSelected(event as object)
+    selectedIndex = event.getData()
+    if selectedIndex.count() < 2 then return
+
+    itemIndex = selectedIndex[1]
+    row = m.recommendationsRow.content.getChild(0)
+    if row = invalid then return
+
+    selectedItem = row.getChild(itemIndex)
+    if selectedItem = invalid then return
+
+    ' Navigate to details screen for this item
+    ShowJellyseerrDetails(selectedItem)
 end sub
 
 sub onSimilarContentResponse(event as object)
@@ -857,6 +1296,12 @@ sub onSimilarContentResponse(event as object)
     similarContent.appendChild(similarRowNode)
 
     ' Make visible first, then set content - order matters for RowList
+    ' Update heading text based on media type
+    if m.mediaItem.mediaType = "tv"
+        m.similarHeading.text = "Similar Series"
+    else
+        m.similarHeading.text = "Similar Movies"
+    end if
     m.similarHeading.visible = true
     m.similarRow.visible = true
     m.similarRow.content = similarContent
@@ -928,6 +1373,211 @@ sub onRequest4KPressed()
     SubmitRequest(true)
 end sub
 
+sub onRequestQualityPressed()
+    ' Show quality selection dialog
+    m.qualityDialog = CreateObject("roSGNode", "JellyseerrQualityDialog")
+
+    ' Get current status values
+    hdStatus = invalid
+    status4k = invalid
+    if m.mediaInfo <> invalid
+        hdStatus = m.mediaInfo.status
+        status4k = m.mediaInfo.status4k
+    end if
+
+    ' Pass status values for label/enabled state updates
+    if hdStatus <> invalid
+        m.qualityDialog.hdStatus = hdStatus
+    end if
+    if status4k <> invalid
+        m.qualityDialog.status4k = status4k
+    end if
+
+    ' Get user's Jellyseerr permissions
+    userPermissions = GetCurrentUserJellyseerrPermissions()
+    mediaType = "movie"
+    if m.mediaItem <> invalid and m.mediaItem.mediaType <> invalid
+        mediaType = m.mediaItem.mediaType
+    end if
+    has4kPermission = CanRequest4K(userPermissions, mediaType)
+
+    ' Calculate permission based on status AND user permission
+    ' Can request if status is null/1 (unknown), or 4 (partial)
+    userCanRequestHD = (hdStatus = invalid or hdStatus = 1 or hdStatus = 4)
+    userCanRequest4K = (status4k = invalid or status4k = 1 or status4k = 4) and has4kPermission
+
+    ' Pass permission values to dialog
+    m.qualityDialog.canRequestHD = userCanRequestHD
+    m.qualityDialog.canRequest4K = userCanRequest4K
+
+    ' Observe for selection
+    m.qualityDialog.observeField("selectedQuality", "onQualityDialogResponse")
+    m.qualityDialog.observeField("wasCancelled", "onQualityDialogCancelled")
+
+    ' Add to scene and focus
+    m.top.getScene().appendChild(m.qualityDialog)
+    m.qualityDialog.setFocus(true)
+end sub
+
+sub onQualityDialogResponse(event as object)
+    selectedQuality = event.getData()
+
+    ' Ignore empty selection (initial state)
+    if selectedQuality = "" then return
+
+    ' Close dialog
+    if m.qualityDialog <> invalid
+        m.qualityDialog.unobserveField("selectedQuality")
+        m.qualityDialog.unobserveField("wasCancelled")
+        m.top.getScene().removeChild(m.qualityDialog)
+        m.qualityDialog = invalid
+    end if
+
+    ' Process selection
+    if selectedQuality = "hd"
+        SubmitRequest(false)
+    else if selectedQuality = "4k"
+        SubmitRequest(true)
+    else if selectedQuality = "both"
+        ' Submit both HD and 4K requests
+        SubmitRequest(false)
+        SubmitRequest(true)
+    end if
+end sub
+
+sub onQualityDialogCancelled(event as object)
+    wasCancelled = event.getData()
+    if wasCancelled
+        ' Close dialog
+        if m.qualityDialog <> invalid
+            m.qualityDialog.unobserveField("selectedQuality")
+            m.qualityDialog.unobserveField("wasCancelled")
+            m.top.getScene().removeChild(m.qualityDialog)
+            m.qualityDialog = invalid
+        end if
+
+        ' Restore focus to button row
+        if m.buttons.count() > 0
+            for each button in m.buttons
+                if button.focusable and button.buttonAction = "requestQuality"
+                    button.setFocus(true)
+                    exit for
+                end if
+            end for
+        end if
+    end if
+end sub
+
+sub onCancelRequestPressed()
+    ' Show confirmation dialog before cancelling
+    if m.pendingRequests = invalid or m.pendingRequests.count() = 0
+        ShowMessage("No Requests", "There are no pending requests to cancel.")
+        return
+    end if
+
+    ' Build description of what will be cancelled
+    description = ""
+    if m.pendingRequests.count() = 1
+        request = m.pendingRequests[0]
+        qualityType = "HD"
+        if request.is4k = true then qualityType = "4K"
+        description = "Cancel your pending " + qualityType + " request?"
+    else
+        description = "Cancel all " + m.pendingRequests.count().toStr() + " pending requests?"
+    end if
+
+    ' Create confirmation dialog
+    dialog = CreateObject("roSGNode", "StandardMessageDialog")
+    dialog.title = "Cancel Request"
+    dialog.message = [description]
+    dialog.buttons = ["Cancel Request", "Keep Request"]
+
+    m.cancelConfirmDialog = dialog
+    dialog.observeField("buttonSelected", "onCancelConfirmDialogResponse")
+    m.top.getScene().dialog = dialog
+end sub
+
+sub onCancelConfirmDialogResponse(event as object)
+    buttonIndex = event.getData()
+
+    ' Close the dialog
+    m.top.getScene().dialog = invalid
+    m.cancelConfirmDialog.unobserveField("buttonSelected")
+    m.cancelConfirmDialog = invalid
+
+    ' Button 0 = "Cancel Request" (confirm), Button 1 = "Keep Request" (cancel)
+    if buttonIndex = 0
+        ' User confirmed - cancel all pending requests
+        CancelPendingRequests()
+    end if
+end sub
+
+sub CancelPendingRequests()
+    if m.pendingRequests = invalid or m.pendingRequests.count() = 0
+        return
+    end if
+
+    ShowLoading()
+
+    ' Store pending requests count for status messages
+    m.cancelRequestsRemaining = m.pendingRequests.count()
+    m.cancelRequestsSuccess = 0
+    m.cancelRequestsFailed = 0
+
+    ' Cancel each pending request
+    for each request in m.pendingRequests
+        CancelSingleRequest(request.id)
+    end for
+end sub
+
+sub CancelSingleRequest(requestId as integer)
+    endpoint = "/api/v1/request/" + requestId.toStr()
+
+    cancelTask = CreateObject("roSGNode", "JellyseerrAPITask")
+    cancelTask.addField("requestId", "integer", false)
+    cancelTask.requestId = requestId
+
+    cancelTask.request = {
+        method: "DELETE",
+        endpoint: endpoint
+    }
+
+    cancelTask.observeField("response", "onCancelRequestResponse")
+    cancelTask.control = "RUN"
+end sub
+
+sub onCancelRequestResponse(event as object)
+    response = event.getData()
+    ' Note: event.getRoSGNode() available if needed for request ID tracking
+
+    m.cancelRequestsRemaining = m.cancelRequestsRemaining - 1
+
+    if response.success
+        m.cancelRequestsSuccess = m.cancelRequestsSuccess + 1
+    else
+        m.cancelRequestsFailed = m.cancelRequestsFailed + 1
+    end if
+
+    ' Check if all requests have been processed
+    if m.cancelRequestsRemaining = 0
+        HideLoading()
+
+        ' Show result message and reload after dialog is dismissed
+        if m.cancelRequestsFailed = 0
+            if m.cancelRequestsSuccess = 1
+                ShowSuccessAndReload("Request cancelled successfully.")
+            else
+                ShowSuccessAndReload(m.cancelRequestsSuccess.toStr() + " requests cancelled.")
+            end if
+        else if m.cancelRequestsSuccess = 0
+            ShowMessage("Failed", "Failed to cancel request. You may not have permission.")
+        else
+            ' Partial success - still reload after dialog
+            ShowSuccessAndReload(m.cancelRequestsSuccess.toStr() + " cancelled, " + m.cancelRequestsFailed.toStr() + " failed.")
+        end if
+    end if
+end sub
+
 sub SubmitRequest(is4k as boolean)
     mediaType = m.mediaItem.mediaType
     if mediaType = invalid then mediaType = "movie"
@@ -968,11 +1618,15 @@ sub ShowSeasonDialog(is4k as boolean)
 
     numberOfSeasons = m.tvDetails.numberOfSeasons
 
+    ' Get unavailable seasons (already requested/available for this quality)
+    unavailableSeasons = GetUnavailableSeasons(is4k)
+
     ' Create season dialog
     m.seasonDialog = CreateObject("roSGNode", "JellyseerrSeasonDialog")
     m.seasonDialog.showName = showName
     m.seasonDialog.numberOfSeasons = numberOfSeasons
     m.seasonDialog.is4k = is4k
+    m.seasonDialog.unavailableSeasons = unavailableSeasons
 
     ' Observe for response BEFORE setting any array fields
     m.seasonDialog.observeField("selectedSeasons", "onSeasonDialogResponse")
@@ -984,6 +1638,40 @@ sub ShowSeasonDialog(is4k as boolean)
     ' Explicitly set focus to the dialog
     m.seasonDialog.setFocus(true)
 end sub
+
+' Get set of season numbers that are already requested or available
+' for the specified quality (HD or 4K)
+function GetUnavailableSeasons(is4k as boolean) as object
+    unavailableSeasons = []
+
+    ' Check if we have mediaInfo with requests
+    if m.mediaInfo = invalid then return unavailableSeasons
+    if m.mediaInfo.requests = invalid then return unavailableSeasons
+
+    ' Check existing requests for this quality
+    for each request in m.mediaInfo.requests
+        ' Only consider requests matching the quality (HD or 4K)
+        requestIs4k = false
+        if request.is4k <> invalid then requestIs4k = request.is4k
+        if requestIs4k = is4k
+            ' Only consider non-declined requests (status != 3)
+            requestStatus = 0
+            if request.status <> invalid then requestStatus = request.status
+            if requestStatus <> 3
+                ' Add all seasons from this request
+                if request.seasons <> invalid and GetInterface(request.seasons, "ifArray") <> invalid
+                    for each seasonRequest in request.seasons
+                        if seasonRequest <> invalid and seasonRequest.seasonNumber <> invalid
+                            unavailableSeasons.push(seasonRequest.seasonNumber)
+                        end if
+                    end for
+                end if
+            end if
+        end if
+    end for
+
+    return unavailableSeasons
+end function
 
 sub onSeasonDialogResponse(event as object)
     selectedSeasons = event.getData()
@@ -1096,6 +1784,7 @@ sub SubmitRequestWithSeasons(seasons as object, is4k as boolean)
         body: requestBody
     }
 
+    m.apiTask.unobserveField("response")
     m.apiTask.observeField("response", "onRequestSubmitted")
     m.apiTask.control = "RUN"
 end sub
@@ -1108,9 +1797,8 @@ sub onRequestSubmitted(event as object)
     if m.lastRequestIs4k = true then qualityLabel = "4K"
 
     if response.success
-        ShowMessage("Success", qualityLabel + " request submitted successfully!")
-        ' Reload details to update status
-        LoadFullDetails()
+        ' Show success message and reload after dialog is dismissed
+        ShowSuccessAndReload(qualityLabel + " request submitted successfully!")
     else
         errorMsg = "Failed to submit " + qualityLabel + " request"
         errorTitle = "Request Failed"
@@ -1207,7 +1895,7 @@ sub ShowMessage(title as string, message as dynamic)
     if dialog <> invalid
         ' Set properties individually with explicit string values
         dialog.title = safeTitle + "" ' Force string concatenation
-        dialog.message = safeMessage + "" ' Force string concatenation
+        dialog.message = [safeMessage + ""] ' StandardMessageDialog expects an array of strings
         dialog.buttons = ["OK"]
 
         ' Set dialog on scene
@@ -1216,6 +1904,39 @@ sub ShowMessage(title as string, message as dynamic)
             scene.dialog = dialog
         end if
     end if
+end sub
+
+' Show success message and reload details after dialog is dismissed
+sub ShowSuccessAndReload(message as string)
+    dialog = CreateObject("roSGNode", "StandardMessageDialog")
+    if dialog <> invalid
+        dialog.title = "Success"
+        dialog.message = [message]
+        dialog.buttons = ["OK"]
+        dialog.observeField("buttonSelected", "onSuccessDialogClosed")
+
+        scene = m.top.getScene()
+        if scene <> invalid
+            m.successDialog = dialog
+            scene.dialog = dialog
+        end if
+    end if
+end sub
+
+sub onSuccessDialogClosed(_event as object)
+    ' Close the dialog
+    scene = m.top.getScene()
+    if scene <> invalid
+        scene.dialog = invalid
+    end if
+
+    if m.successDialog <> invalid
+        m.successDialog.unobserveField("buttonSelected")
+        m.successDialog = invalid
+    end if
+
+    ' Now reload details to update status and buttons
+    LoadFullDetails()
 end sub
 
 sub ShowLoading()
@@ -1288,7 +2009,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     ' Handle UP key to navigate to overhang when at button row
     if key = "up" and m.focusedElement <> invalid and m.focusedElement.isSameNode(m.buttonsGroup)
-        ' Allow going to overhang from any button
         return FocusOverhang(m.top)
     end if
 
@@ -1305,6 +2025,10 @@ function onKeyEvent(key as string, press as boolean) as boolean
                     onRequestHDPressed()
                 else if button.buttonAction = "request4K"
                     onRequest4KPressed()
+                else if button.buttonAction = "requestQuality"
+                    onRequestQualityPressed()
+                else if button.buttonAction = "cancelRequest"
+                    onCancelRequestPressed()
                 end if
                 return true
             end if
@@ -1312,108 +2036,178 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     ' Handle left/right navigation between buttons
-    if key = "left" and m.focusedElement <> invalid and m.focusedElement.isSameNode(m.buttonsGroup)
-        currentIndex = -1
-        for i = 0 to m.buttons.count() - 1
-            if m.buttons[i].hasFocus()
-                currentIndex = i
-                exit for
-            end if
-        end for
-
-        if currentIndex > 0
-            ' Move to previous button
-            for i = currentIndex - 1 to 0 step -1
-                if m.buttons[i].focusable
-                    m.buttons[i].setFocus(true)
-                    return true
-                end if
-            end for
+    if m.focusedElement <> invalid and m.focusedElement.isSameNode(m.buttonsGroup)
+        if key = "left" or key = "right"
+            return navigateButtons(key)
         end if
-        return true
-    else if key = "right" and m.focusedElement <> invalid and m.focusedElement.isSameNode(m.buttonsGroup)
-        currentIndex = -1
-        for i = 0 to m.buttons.count() - 1
-            if m.buttons[i].hasFocus()
-                currentIndex = i
-                exit for
-            end if
-        end for
-
-        if currentIndex >= 0 and currentIndex < m.buttons.count() - 1
-            ' Move to next button
-            for i = currentIndex + 1 to m.buttons.count() - 1
-                if m.buttons[i].focusable
-                    m.buttons[i].setFocus(true)
-                    return true
-                end if
-            end for
-        end if
-        return true
     end if
 
-    ' Handle navigation with scrolling
+    ' Handle left/right/OK in keywords section
+    if m.focusedElement <> invalid and m.focusedElement.isSameNode(m.keywordsContainer)
+        if key = "left" or key = "right" or key = "OK"
+            if handleKeywordNavigation(key)
+                return true
+            end if
+        end if
+    end if
+
+    ' Handle vertical navigation
     if key = "down"
-        if m.focusedElement = invalid or m.focusedElement.isSameNode(m.buttonsGroup)
-            ' Move from buttons to cast row (if visible)
-            if m.castRow.visible
-                m.focusedElement = m.castRow
-                m.castRow.setFocus(true)
-                ensureFocusedNodeVisible()
-                return true
-            else if m.similarRow.visible
-                m.focusedElement = m.similarRow
-                m.similarRow.setFocus(true)
-                ensureFocusedNodeVisible()
-                return true
-            end if
-        else if m.focusedElement.isSameNode(m.castRow)
-            ' Move from cast to similar row (if visible)
-            if m.similarRow.visible
-                m.focusedElement = m.similarRow
-                m.similarRow.setFocus(true)
-                ensureFocusedNodeVisible()
-                return true
-            end if
-        end if
+        return navigateDown()
     else if key = "up"
-        if m.focusedElement <> invalid
-            if m.focusedElement.isSameNode(m.similarRow)
-                ' Move from similar to cast (if visible) or buttons
-                if m.castRow.visible
-                    m.focusedElement = m.castRow
-                    m.castRow.setFocus(true)
-                    ensureFocusedNodeVisible()
-                else if m.buttons.count() > 0
-                    m.focusedElement = m.buttonsGroup
-                    for each button in m.buttons
-                        if button.focusable
-                            button.setFocus(true)
-                            exit for
-                        end if
-                    end for
-                    ensureFocusedNodeVisible()
-                end if
-                return true
-            else if m.focusedElement.isSameNode(m.castRow)
-                ' Move from cast to buttons
-                if m.buttons.count() > 0
-                    m.focusedElement = m.buttonsGroup
-                    for each button in m.buttons
-                        if button.focusable
-                            button.setFocus(true)
-                            exit for
-                        end if
-                    end for
-                    ensureFocusedNodeVisible()
-                end if
-                return true
-            end if
-        end if
+        return navigateUp()
     end if
 
     return false
 end function
+
+' Navigate left/right between action buttons
+function navigateButtons(key as string) as boolean
+    currentIndex = -1
+    for i = 0 to m.buttons.count() - 1
+        if m.buttons[i].hasFocus()
+            currentIndex = i
+            exit for
+        end if
+    end for
+
+    if key = "left" and currentIndex > 0
+        for i = currentIndex - 1 to 0 step -1
+            if m.buttons[i].focusable
+                m.buttons[i].setFocus(true)
+                return true
+            end if
+        end for
+    else if key = "right" and currentIndex >= 0 and currentIndex < m.buttons.count() - 1
+        for i = currentIndex + 1 to m.buttons.count() - 1
+            if m.buttons[i].focusable
+                m.buttons[i].setFocus(true)
+                return true
+            end if
+        end for
+    end if
+
+    return true
+end function
+
+' Navigate down through sections
+function navigateDown() as boolean
+    ' Get navigation order based on current position
+    if m.focusedElement = invalid or m.focusedElement.isSameNode(m.buttonsGroup)
+        return focusNextVisibleSection([m.castRow, m.recommendationsRow, m.similarRow, "keywords"])
+    else if m.focusedElement.isSameNode(m.castRow)
+        return focusNextVisibleSection([m.recommendationsRow, m.similarRow, "keywords"])
+    else if m.focusedElement.isSameNode(m.recommendationsRow)
+        return focusNextVisibleSection([m.similarRow, "keywords"])
+    else if m.focusedElement.isSameNode(m.similarRow)
+        return focusNextVisibleSection(["keywords"])
+    else if m.focusedElement.isSameNode(m.keywordsContainer)
+        return handleKeywordNavigation("down")
+    end if
+
+    return false
+end function
+
+' Navigate up through sections
+function navigateUp() as boolean
+    if m.focusedElement = invalid then return false
+
+    if m.focusedElement.isSameNode(m.keywordsContainer)
+        ' Try to navigate within keywords first
+        if not handleKeywordNavigation("up")
+            ' At top row - escape to previous section
+            updateKeywordFocus(m.focusedKeywordIndex, false)
+            return focusPreviousVisibleSection([m.similarRow, m.recommendationsRow, m.castRow, "buttons"])
+        end if
+        return true
+    else if m.focusedElement.isSameNode(m.similarRow)
+        return focusPreviousVisibleSection([m.recommendationsRow, m.castRow, "buttons"])
+    else if m.focusedElement.isSameNode(m.recommendationsRow)
+        return focusPreviousVisibleSection([m.castRow, "buttons"])
+    else if m.focusedElement.isSameNode(m.castRow)
+        return focusPreviousVisibleSection(["buttons"])
+    end if
+
+    return false
+end function
+
+' Focus the first visible section from the list (navigating down)
+function focusNextVisibleSection(sections as object) as boolean
+    for each section in sections
+        if type(section) = "roString" or type(section) = "String"
+            if section = "keywords" and m.keywordsSection.visible and m.keywordButtons.count() > 0
+                return focusKeywordsSection()
+            end if
+        else if section <> invalid and section.visible
+            return focusSection(section)
+        end if
+    end for
+    return false
+end function
+
+' Focus the first visible section from the list (navigating up)
+function focusPreviousVisibleSection(sections as object) as boolean
+    for each section in sections
+        if type(section) = "roString" or type(section) = "String"
+            if section = "buttons" and m.buttons.count() > 0
+                return focusButtonsSection()
+            end if
+        else if section <> invalid and section.visible
+            return focusSection(section)
+        end if
+    end for
+    return false
+end function
+
+' Focus a RowList section
+function focusSection(section as object) as boolean
+    ' Restore focus feedback on all RowLists when focusing a RowList
+    setRowListFocusFeedback(true)
+    m.focusedElement = section
+    section.setFocus(true)
+    ensureFocusedNodeVisible()
+    return true
+end function
+
+' Focus the buttons section
+function focusButtonsSection() as boolean
+    ' Restore focus feedback on all RowLists
+    setRowListFocusFeedback(true)
+    m.focusedElement = m.buttonsGroup
+    for each button in m.buttons
+        if button.focusable
+            button.setFocus(true)
+            exit for
+        end if
+    end for
+    ensureFocusedNodeVisible()
+    return true
+end function
+
+' Focus the keywords section
+function focusKeywordsSection() as boolean
+    ' Clear focus from all RowLists first
+    m.castRow.setFocus(false)
+    m.recommendationsRow.setFocus(false)
+    m.similarRow.setFocus(false)
+    
+    ' Hide focus feedback on all RowLists to prevent dual focus appearance
+    setRowListFocusFeedback(false)
+    
+    m.focusedElement = m.keywordsContainer
+    m.keywordsContainer.setFocus(true)
+    m.focusedKeywordIndex = 0
+    updateKeywordFocus(m.focusedKeywordIndex, true)
+    ensureFocusedNodeVisible()
+    return true
+end function
+
+' Enable or disable focus feedback on all RowLists
+sub setRowListFocusFeedback(enabled as boolean)
+    if m.castRow <> invalid then m.castRow.drawFocusFeedback = enabled
+    if m.recommendationsRow <> invalid then m.recommendationsRow.drawFocusFeedback = enabled
+    if m.similarRow <> invalid then m.similarRow.drawFocusFeedback = enabled
+end sub
 
 sub ensureFocusedNodeVisible()
     ' Get the currently focused element's position dynamically
@@ -1430,11 +2224,20 @@ sub ensureFocusedNodeVisible()
             castSection = m.castHeading.getParent()
             focusedY = castSection.translation[1]
             focusedHeight = 450
+        else if m.focusedElement.isSameNode(m.recommendationsRow)
+            ' Get actual recommendations section position
+            recommendationsSection = m.recommendationsHeading.getParent()
+            focusedY = recommendationsSection.translation[1]
+            focusedHeight = 450
         else if m.focusedElement.isSameNode(m.similarRow)
             ' Get actual similar section position
             similarSection = m.similarHeading.getParent()
             focusedY = similarSection.translation[1]
             focusedHeight = 450
+        else if m.focusedElement.isSameNode(m.keywordsContainer)
+            ' Get actual keywords section position
+            focusedY = m.keywordsSection.translation[1]
+            focusedHeight = 200
         end if
     end if
 
