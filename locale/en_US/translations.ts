@@ -125,6 +125,10 @@
             <translation>Recently Added in</translation>
         </message>
         <message>
+            <source>Recently Released</source>
+            <translation>Recently Released</translation>
+        </message>
+        <message>
             <source>On Now</source>
             <translation>On Now</translation>
         </message>

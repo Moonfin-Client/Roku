@@ -150,8 +150,10 @@ sub processUserSections()
     sessionUser = m.global.session.user
 
     ' Check if we should use server config or local settings
-    m.useServerConfig = chainLookupReturn(m.global.session, "user.settings.homeRows.useServerConfig", true)
-    if type(m.useServerConfig) = "String" or type(m.useServerConfig) = "roString"
+    m.useServerConfig = get_user_setting("homeRows.useServerConfig")
+    if not isValid(m.useServerConfig)
+        m.useServerConfig = false
+    else if type(m.useServerConfig) = "String" or type(m.useServerConfig) = "roString"
         m.useServerConfig = (LCase(m.useServerConfig) = "true")
     end if
 
@@ -166,6 +168,18 @@ sub processUserSections()
             if isValid(userSection) and LCase(userSection) = "featuredmedia"
                 set_user_setting("homeScreenSection" + i.toStr(), "none")
                 userSection = "none"
+            end if
+            ' Apply defaults if setting doesn't exist
+            if not isValid(userSection)
+                if i = 0
+                    userSection = "resume"
+                else if i = 1
+                    userSection = "recentlyreleased"
+                else if i = 2
+                    userSection = "latestmedia"
+                else
+                    userSection = "none"
+                end if
             end if
         end if
         sectionName = userSection ?? "none"
@@ -215,6 +229,18 @@ sub processUserSections()
             if isValid(userSection) and LCase(userSection) = "featuredmedia"
                 set_user_setting("homeScreenSection" + i.toStr(), "none")
                 userSection = "none"
+            end if
+            ' Apply defaults if setting doesn't exist
+            if not isValid(userSection)
+                if i = 0
+                    userSection = "resume"
+                else if i = 1
+                    userSection = "recentlyreleased"
+                else if i = 2
+                    userSection = "latestmedia"
+                else
+                    userSection = "none"
+                end if
             end if
         end if
         sectionName = userSection ?? "none"
@@ -280,6 +306,18 @@ function getOriginalSectionIndex(sectionName as string) as integer
             if isValid(userSection) and LCase(userSection) = "featuredmedia"
                 set_user_setting("homeScreenSection" + i.toStr(), "none")
                 userSection = "none"
+            end if
+            ' Apply defaults if setting doesn't exist
+            if not isValid(userSection)
+                if i = 0
+                    userSection = "resume"
+                else if i = 1
+                    userSection = "recentlyreleased"
+                else if i = 2
+                    userSection = "latestmedia"
+                else
+                    userSection = "none"
+                end if
             end if
         end if
         settingSectionName = userSection ?? "none"
@@ -455,6 +493,19 @@ function addHomeSection(sectionType as string) as boolean
         return true
     end if
 
+    ' Recently Released items
+    if sectionType = "recentlyreleased"
+        if isMultiServerEnabled()
+            sessions = getAllServerSessions()
+            if sessions.count() > 0
+                createMultiServerRecentlyReleasedRow(sessions)
+                return true
+            end if
+        end if
+        createRecentlyReleasedRow()
+        return true
+    end if
+
     ' Favorite Items
     if sectionType = "favorites"
         if isMultiServerEnabled()
@@ -588,6 +639,24 @@ sub createLatestInRows()
             end try
         end if
     end for
+end sub
+
+' createRecentlyReleasedRow: Creates a row displaying recently released items sorted by premiere date
+'
+sub createRecentlyReleasedRow()
+    sectionName = tr("Recently Released")
+
+    if not sectionExists(sectionName)
+        recentlyReleasedRow = m.top.content.CreateChild("HomeRow")
+        recentlyReleasedRow.title = sectionName
+        recentlyReleasedRow.imageWidth = getPosterSize(false)[0]
+        recentlyReleasedRow.cursorSize = getPosterSize(false)
+    end if
+
+    ' Load the Recently Released Data (lazy task creation)
+    task = getOrCreateTask("recentlyReleased")
+    task.observeField("content", "updateRecentlyReleasedItems")
+    task.control = "RUN"
 end sub
 
 ' sectionExists: Checks if passed section exists in home row content
@@ -1220,6 +1289,82 @@ sub onMultiServerLatestComplete(msg as object)
     setRowItemSize()
 end sub
 
+' createMultiServerRecentlyReleasedRow: Creates an aggregated Recently Released row from all servers
+'
+' @param {array} sessions - Array of ServerUserSession objects
+sub createMultiServerRecentlyReleasedRow(sessions as object)
+    taskKey = "multiServerRecentlyReleased"
+    if not m.multiServerTasks.DoesExist(taskKey)
+        task = CreateObject("roSGNode", "MultiServerTask")
+        m.multiServerTasks[taskKey] = task
+    else
+        task = m.multiServerTasks[taskKey]
+        task.callFunc("reset")
+    end if
+
+    ' Configure task for Recently Released endpoint
+    task.sessions = sessions
+    task.endpoint = "/Users/{userId}/Items"
+    task.params = {
+        Recursive: "true",
+        SortBy: "PremiereDate,ProductionYear,SortName",
+        SortOrder: "Descending",
+        IncludeItemTypes: "Movie,Series",
+        Limit: "50",
+        Fields: "PrimaryImageAspectRatio,Genres,Overview",
+        EnableImageTypes: "Primary,Backdrop,Thumb",
+        ImageTypeLimit: "1",
+        EnableTotalRecordCount: "false"
+    }
+    task.observeField("isComplete", "onMultiServerRecentlyReleasedComplete")
+    task.control = "RUN"
+end sub
+
+' onMultiServerRecentlyReleasedComplete: Handler for multi-server recently released results
+'
+sub onMultiServerRecentlyReleasedComplete()
+    m.processedRowCount++
+    taskKey = "multiServerRecentlyReleased"
+    if not m.multiServerTasks.DoesExist(taskKey) then return
+
+    task = m.multiServerTasks[taskKey]
+    task.unobserveField("isComplete")
+
+    sectionName = tr("Recently Released")
+    results = task.results
+
+    if not isValidAndNotEmpty(results)
+        removeHomeSection(sectionName)
+        return
+    end if
+
+    ' Create the row
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+
+    ' Check if we should show server names
+    showServerName = hasMultipleLoggedInServers()
+
+    for each item in results
+        tmp = createHomeDataFromMultiServerItem(item, showServerName)
+        if isValid(tmp)
+            tmp.usePoster = true
+            tmp.imageWidth = row.imageWidth
+            row.appendChild(tmp)
+        end if
+    end for
+
+    ' Insert or replace row
+    if sectionExists(sectionName)
+        m.top.content.replaceChild(row, getSectionIndex(sectionName))
+    else
+        m.top.content.insertChild(row, getOriginalSectionIndex("recentlyreleased"))
+    end if
+    setRowItemSize()
+end sub
+
 ' createMultiServerFavoritesRow: Creates an aggregated Favorites row from all servers
 '
 ' @param {array} sessions - Array of ServerUserSession objects
@@ -1665,6 +1810,44 @@ sub updateLatestItems(msg)
         return
     end if
 
+    m.top.content.insertChild(row, getOriginalSectionIndex("latestmedia"))
+    setRowItemSize()
+end sub
+
+' updateRecentlyReleasedItems: Processes LoadItemsTask content for recently released items
+'
+sub updateRecentlyReleasedItems()
+    m.processedRowCount++
+    itemData = getTaskContentAndCleanup("recentlyReleased")
+
+    sectionName = tr("Recently Released")
+
+    if not isValidAndNotEmpty(itemData)
+        removeHomeSection(sectionName)
+        return
+    end if
+
+    ' Create row using the new data
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+    row.usePoster = true
+
+    for each item in itemData
+        item.usePoster = row.usePoster
+        item.imageWidth = row.imageWidth
+        row.appendChild(item)
+    end for
+
+    ' Row already exists, replace it with new content
+    if sectionExists(sectionName)
+        m.top.content.replaceChild(row, getSectionIndex(sectionName))
+        setRowItemSize()
+        return
+    end if
+
+    ' Row does not exist, insert it after latest media
     m.top.content.insertChild(row, getOriginalSectionIndex("latestmedia"))
     setRowItemSize()
 end sub
