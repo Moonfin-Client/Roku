@@ -9,7 +9,8 @@
 
 [![License](https://img.shields.io/github/license/Moonfin-Client/Roku)](LICENSE) 
 [![Release](https://img.shields.io/github/v/release/Moonfin-Client/Roku)](https://github.com/Moonfin-Client/Roku/releases)
-<a href="https://www.buymeacoffee.com/moonfin" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 30px !important;width: 108 !important;" ></a>
+
+<a href="https://www.buymeacoffee.com/moonfin" target="_blank"><img src="https://github.com/user-attachments/assets/fe26eaec-147f-496f-8e95-4ebe19f57131" alt="Buy Me A Coffee" ></a>
 
 > [← Back to main Moonfin project](https://github.com/Moonfin-Client)
 
@@ -23,11 +24,16 @@ Moonfin builds on the official Jellyfin client with new features, navigation, an
 
 ---
 
-### 🎬 Jellyseerr Integration (Beta)
+### Cross-Server Content Playback
+- **Unified Library Support** - Seamless playback from multiple Jellyfin servers
+- Seamless switching between servers for content playback
+- Improved server selection logic
+
+### Jellyseerr Integration (Beta)
 
 Moonfin is the first Roku client with native Jellyseerr support.
 
-- Browse trending, popular, and recommended movies/shows  
+- Browse trending, popular, and recommended movies/shows and filter content by Series/Movie Genres, Studio, Network, and keywords
 - Request content in HD or 4K directly from your Roku  
 - **NSFW Content Filtering** (optional) using Jellyseerr/TMDB metadata  
 - Smart season selection when requesting TV shows  
@@ -38,7 +44,7 @@ Moonfin is the first Roku client with native Jellyseerr support.
 
 ---
 
-### 🛠️ Customizable Toolbar
+### Customizable Toolbar
 
 - Show/hide Shuffle, Genres, and Favorites buttons  
 - Optionally hide the entire library row for a cleaner home screen  
@@ -48,7 +54,7 @@ Moonfin is the first Roku client with native Jellyseerr support.
 
 ---
 
-### 🎬 Featured Media Bar
+### Featured Media Bar
 
 - Rotating selection of featured movies and TV shows on the home screen  
 - Automatically refreshes when switching profiles to keep content kid-safe  
@@ -58,7 +64,7 @@ Moonfin is the first Roku client with native Jellyseerr support.
 
 ---
 
-### 🧭 Enhanced Navigation
+### Enhanced Navigation
 
 - Quick-access Home and Search buttons  
 - One-tap shuffle for instant discovery  
@@ -68,7 +74,7 @@ Moonfin is the first Roku client with native Jellyseerr support.
 
 ---
 
-### 🎵 Playback & Media Control
+### Playback & Media Control
 
 - **Pre-Playback Track Selection**: Choose audio/subtitle tracks before playback starts  
 - **Updated OSD & Player Styling**:  
