@@ -2297,5 +2297,13 @@
             <source>Skip Intro</source>
             <translation>Skip Intro</translation>
         </message>
+        <message>
+            <source>Go To Genre</source>
+            <translation>Go To Genre</translation>
+        </message>
+        <message>
+            <source>Play Instant Mix</source>
+            <translation>Play Instant Mix</translation>
+        </message>
     </context>
 </TS>
