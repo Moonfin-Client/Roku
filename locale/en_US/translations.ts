@@ -810,8 +810,8 @@
             <extracomment>Option Title in user setting screen</extracomment>
         </message>
         <message>
-            <source>Set the maximum amount of days a show should stay in the 'Next Up' list without watching it.</source>
-            <translation>Set the maximum amount of days a show should stay in the 'Next Up' list without watching it.</translation>
+            <source>Set the maximum amount of days a show should stay in the 'Next Up' list without watching it. Maximum value is 1000 days.</source>
+            <translation>Set the maximum amount of days a show should stay in the 'Next Up' list without watching it. Maximum value is 1000 days.</translation>
             <extracomment>Settings Menu - Description for option</extracomment>
         </message>
         <message>
@@ -2304,6 +2304,58 @@
         <message>
             <source>Play Instant Mix</source>
             <translation>Play Instant Mix</translation>
+        </message>
+        <message>
+            <source>Show Next Episode Details After Finish</source>
+            <translation>Show Next Episode Details After Finish</translation>
+        </message>
+        <message>
+            <source>If auto play next episode is disabled, display the next episode's detail screen after an episode finishes playing. If no next up episode is found, return to the just-played episode's page.</source>
+            <translation>If auto play next episode is disabled, display the next episode's detail screen after an episode finishes playing. If no next up episode is found, return to the just-played episode's page.</translation>
+        </message>
+        <message>
+            <source>Favorites Row</source>
+            <translation>Favorites Row</translation>
+        </message>
+        <message>
+            <source>Settings relating to the favorites row on the home screen.</source>
+            <translation>Settings relating to the favorites row on the home screen.</translation>
+        </message>
+        <message>
+            <source>Sort By Field</source>
+            <translation>Sort By Field</translation>
+        </message>
+        <message>
+            <source>Field to sort the row by.</source>
+            <translation>Field to sort the row by.</translation>
+        </message>
+        <message>
+            <source>Date Created</source>
+            <translation>Date Created</translation>
+        </message>
+        <message>
+            <source>Is Unplayed</source>
+            <translation>Is Unplayed</translation>
+        </message>
+        <message>
+            <source>Sort Order for the row - Ascending,Descending.</source>
+            <translation>Sort Order for the row - Ascending,Descending.</translation>
+        </message>
+        <message>
+            <source>Current Offset</source>
+            <translation>Current Offset</translation>
+        </message>
+        <message>
+            <source>Adjust Subtitle Timing</source>
+            <translation>Adjust Subtitle Timing</translation>
+        </message>
+        <message>
+            <source>Display Episodes In Two Columns</source>
+            <translation>Display Episodes In Two Columns</translation>
+        </message>
+        <message>
+            <source>Screen Settings</source>
+            <translation>Screen Settings</translation>
         </message>
     </context>
 </TS>

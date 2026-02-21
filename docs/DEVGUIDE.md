@@ -12,6 +12,7 @@ Authors: [frothedoatmilk](https://github.com/frothedoatmilk), [cewert](https://g
     - [Install VSCode](#install-vscode)
     - [Usage](#usage)
     - [Hardcoding Roku Information](#hardcoding-roku-information)
+  - [Testing a PR](#testing-a-pr)
   - [Bug/Crash Reports](#bugcrash-reports)
   - [Committing](#committing)
   - [Adding a User Setting](#adding-a-user-setting)
@@ -78,7 +79,28 @@ Out of the box, the BrightScript extension will prompt you to pick a Roku device
 ```
 
 Example:
+
 ![image](https://user-images.githubusercontent.com/2544493/170485209-0dbe6787-8026-47e7-9095-1df96cda8a0a.png)
+
+### Testing Builds
+
+If you want help with testing a Release Candidate or test a Pull Request to see if it fixes an issue for you, you can sideload the build artifact.
+
+1. Obtain the build artifact zip file.
+   - Release Candidate build artifacts will be provided by a Jellyfin Roku team member.
+   - For testing a specific Pull Request, click on the "Checks" tab on the PR page and then "Build". The artifact download link is available on this page for signed-in users.
+
+2. Put the Roku in Developer Mode as mentioned [above](#developer-mode). This only needs to be done once.
+
+3. Navigate to the Roku device in a web browser, typically by IP address.
+
+4. Use the ‘Upload’ button to upload the build artifact file.
+
+5. Click ‘Replace with zip’.
+
+The main screen for Jellyfin should appear on the device. You are now testing the build artifact!
+
+The Jellyfin install from the Roku app store is a separate app on the device and unaffected by sideloading.
 
 ### Bug/Crash Reports
 
