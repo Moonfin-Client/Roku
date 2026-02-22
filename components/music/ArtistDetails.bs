@@ -1,11 +1,9 @@
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
-import "pkg:/source/api/sdk.bs"
 import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/enums/ViewLoadStatus.bs"
-import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/detailButtons.bs"
 import "pkg:/source/utils/misc.bs"
 
@@ -15,25 +13,36 @@ sub init()
     m.top.overhangVisible = false
 
     m.backdrop = m.top.findNode("backdrop")
-    m.playlistCover = m.top.findNode("playlistCover")
-    m.playlistLabel = m.top.findNode("playlistLabel")
-    m.playlistTitle = m.top.findNode("playlistTitle")
-    m.playlistMeta = m.top.findNode("playlistMeta")
-    m.playlistOverview = m.top.findNode("playlistOverview")
+    m.backdropPrev = m.top.findNode("backdropPrev")
+    m.backdropFadeIn = m.top.findNode("backdropFadeIn")
+    m.backdropPrevFadeOut = m.top.findNode("backdropPrevFadeOut")
+    m.backdropFadeInInterp = m.top.findNode("backdropFadeInInterp")
+    m.backdropPrevFadeOutInterp = m.top.findNode("backdropPrevFadeOutInterp")
+    m.backdropCrossfading = false
+
+    if isValid(m.backdrop)
+        m.backdrop.observeField("loadStatus", "onBackdropLoadStatusChange")
+    end if
+
+    m.artistImage = m.top.findNode("artistImage")
+    m.artistName = m.top.findNode("artistName")
+    m.artistMeta = m.top.findNode("artistMeta")
+    m.artistOverview = m.top.findNode("artistOverview")
+    m.albumsLabel = m.top.findNode("albumsLabel")
+    m.albumCount = m.top.findNode("albumCount")
     m.buttonRow = m.top.findNode("buttonRow")
-    m.itemList = m.top.findNode("itemList")
-    m.itemsLabel = m.top.findNode("itemsLabel")
-    m.itemCount = m.top.findNode("itemCount")
+    m.albumGrid = m.top.findNode("albumGrid")
     m.scrollableContent = m.top.findNode("scrollableContent")
 
     m.buttonGroups = []
     m.currentButtonIndex = 0
 
-    m.itemList.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+    m.albumGrid.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
 
-    m.getPlaylistDataTask = createObject("roSGNode", "GetPlaylistDataTask")
+    m.favoriteTask = createObject("roSGNode", "FavoriteItemsTask")
 
-    m.isFirstRun = true
+    m.LoadBackdropImageTask = CreateObject("roSGNode", "LoadItemsTask")
+    m.LoadBackdropImageTask.itemsToLoad = "backdropImage"
 end sub
 
 ' ============================================
@@ -41,30 +50,16 @@ end sub
 ' ============================================
 
 sub OnScreenShown(_isReturning = false as boolean)
-    m.top.shufflePlay = false
-
-    scene = m.top.getScene()
-    if isValid(scene)
-        overhang = scene.findNode("overhang")
-        if chainLookupReturn(overhang, "isVisible", false)
-            overhang.isVisible = false
-        end if
-    end if
-
     if isValid(m.top.lastFocus)
         m.top.lastFocus.setFocus(true)
-        group = m.global.sceneManager.callFunc("getActiveScene")
-        if isValid(group) then group.lastFocus = m.top.lastFocus
+        setLastFocus(m.top.lastFocus)
     else if m.buttonGroups.count() > 0
         m.buttonGroups[0].setFocus(true)
         m.top.lastFocus = m.buttonGroups[0]
         highlightButton(0)
     end if
 
-    if m.isFirstRun
-        m.isFirstRun = false
-        return
-    end if
+    stopLoadingSpinner()
 end sub
 
 sub OnScreenHidden()
@@ -78,73 +73,85 @@ sub onPageContentChanged()
     pageContent = m.top.pageContent
     if not isValid(pageContent) then return
 
-    startLoadingSpinner()
-
     json = pageContent.json
     if not isValid(json) then return
 
-    imgParams = { "maxHeight": 420, "maxWidth": 420 }
-    m.playlistCover.uri = ImageURL(json.Id, "Primary", imgParams)
-
-    m.backdrop.uri = ImageURL(json.Id, "Backdrop", { "maxWidth": 1920 })
-
-    m.playlistTitle.text = isValid(json.name) ? json.name : ""
-
-    overview = json.LookupCI("Overview")
-    if isValidAndNotEmpty(overview)
-        m.playlistOverview.text = overview
-        m.playlistOverview.visible = true
+    if isValidAndNotEmpty(pageContent.posterURL)
+        m.artistImage.uri = pageContent.posterURL
     else
-        m.playlistOverview.visible = false
+        m.artistImage.uri = "pkg:/images/missingArtist.png"
+    end if
+
+    m.artistName.text = isValid(json.name) ? json.name : ""
+
+    overview = ""
+    if isValidAndNotEmpty(m.top.artistOverviewText)
+        overview = m.top.artistOverviewText
+    else if isValidAndNotEmpty(json.LookupCI("Overview"))
+        overview = json.LookupCI("Overview")
+    end if
+
+    if isValidAndNotEmpty(overview)
+        m.artistOverview.text = overview
+        m.artistOverview.visible = true
+    else
+        m.artistOverview.visible = false
     end if
 
     metaParts = []
-    if isValid(json.ChildCount)
-        count = json.ChildCount
-        metaParts.push(count = 1 ? "1 Item" : `${stri(count).trim()} Items`)
+    if isValid(json.Genres) and json.Genres.count() > 0
+        metaParts.push(json.Genres.join(", "))
     end if
-    if isValid(json.RunTimeTicks)
-        if type(json.RunTimeTicks) = "roInt" or type(json.RunTimeTicks) = "LongInteger"
-            totalMins = int(json.RunTimeTicks / 600000000.0)
-            if totalMins >= 60
-                hours = int(totalMins / 60)
-                mins = totalMins mod 60
-                if mins > 0
-                    metaParts.push(`${stri(hours).trim()} hr ${stri(mins).trim()} min`)
-                else
-                    metaParts.push(`${stri(hours).trim()} hr`)
-                end if
-            else if totalMins > 0
-                metaParts.push(`${stri(totalMins).trim()} min`)
-            end if
-        end if
-    end if
-    if isValid(json.ProductionYear)
-        metaParts.push(stri(json.ProductionYear).trim())
-    end if
-    m.playlistMeta.text = metaParts.join(" · ")
+    m.artistMeta.text = metaParts.join(" · ")
+
+    m.LoadBackdropImageTask.itemId = json.id
+    m.LoadBackdropImageTask.observeField("content", "onBackdropImageLoaded")
+    m.LoadBackdropImageTask.control = TaskControl.RUN
 
     buildButtons()
 end sub
 
-sub onListDataChanged()
-    listData = m.top.listData
-    if not isValid(listData) then return
+sub onBackdropImageLoaded()
+    m.LoadBackdropImageTask.control = TaskControl.STOP
+    data = m.LoadBackdropImageTask.content[0]
+    m.LoadBackdropImageTask.unobserveField("content")
+
+    if isValidAndNotEmpty(data)
+        setBackdrop(data)
+    end if
+end sub
+
+sub onAlbumDataChanged()
+    albumData = m.top.albumData
+    if not isValid(albumData) then return
 
     content = CreateObject("roSGNode", "ContentNode")
-    children = listData.getChildren(-1, 0)
+    children = albumData.getChildren(-1, 0)
     for each item in children
         content.appendChild(item)
     end for
-    m.itemList.content = content
+    m.albumGrid.content = content
 
     totalCount = children.count()
-    m.itemCount.text = stri(totalCount).trim()
+    m.albumCount.text = stri(totalCount).trim()
+    m.albumsLabel.text = totalCount = 1 ? "1 Album" : `${stri(totalCount).trim()} Albums`
 
     stopLoadingSpinner()
     m.loadStatus = ViewLoadStatus.LOADED
 
-    ' Set initial focus to first button
+    ' Also append appears on data if present
+    if isValid(m.top.appearsOnData)
+        appearsOnChildren = m.top.appearsOnData.getChildren(-1, 0)
+        if appearsOnChildren.count() > 0
+            for each item in appearsOnChildren
+                content.appendChild(item)
+            end for
+            totalCount = content.getChildCount()
+            m.albumCount.text = stri(totalCount).trim()
+            m.albumsLabel.text = totalCount = 1 ? "1 Album" : `${stri(totalCount).trim()} Albums`
+        end if
+    end if
+
     if m.buttonGroups.count() > 0
         m.buttonGroups[0].setFocus(true)
         m.top.lastFocus = m.buttonGroups[0]
@@ -163,16 +170,16 @@ sub buildButtons()
 
     addButton({
         icon: "pkg:/images/icons/play.png",
-        label: "Play All",
-        action: "playAll",
-        id: "playAllButton"
+        label: "Play",
+        action: "play",
+        id: "playButton"
     })
 
     addButton({
-        icon: "pkg:/images/icons/shuffle.png",
-        label: "Shuffle",
-        action: "shuffle",
-        id: "shuffleButton"
+        icon: "pkg:/images/icons/instantMix.png",
+        label: "Instant Mix",
+        action: "instantMix",
+        id: "instantMixButton"
     })
 
     addButton({
@@ -220,10 +227,10 @@ sub handleButtonSelect()
 
     action = button.buttonAction
 
-    if action = "playAll"
-        m.top.playAll = true
-    else if action = "shuffle"
-        m.top.shufflePlay = true
+    if action = "play"
+        m.top.playArtistSelected = true
+    else if action = "instantMix"
+        m.top.instantMixSelected = true
     else if action = "favorite"
         toggleFavorite()
     end if
@@ -233,30 +240,66 @@ sub toggleFavorite()
     pageContent = m.top.pageContent
     if not isChainValid(pageContent, "json") then return
 
-    isFavorite = chainLookupReturn(pageContent, "json.UserData.IsFavorite", false)
+    isFavorite = chainLookupReturn(pageContent.json, "UserData.IsFavorite", false)
+    newStatus = not isFavorite
 
-    if isFavorite
-        api.users.UnmarkFavorite(pageContent.json.Id, { UserId: m.global.session.user.id })
+    m.favoriteTask.itemId = pageContent.json.id
+    m.favoriteTask.favTask = newStatus ? "favorite" : "unfavorite"
+    m.favoriteTask.control = "RUN"
+
+    if not isChainValid(pageContent.json, "UserData")
+        pageContent.json.UserData = { "IsFavorite": newStatus }
     else
-        api.users.MarkFavorite(pageContent.json.Id, { UserId: m.global.session.user.id })
+        pageContent.json.UserData.IsFavorite = newStatus
     end if
-
-    m.top.refreshPlaylistData = not m.top.refreshPlaylistData
 end sub
 
 ' ============================================
-' Item list helpers
+' Backdrop Management
 ' ============================================
 
-function getFocusedItem() as dynamic
-    if m.itemList.isInFocusChain()
-        itemFocused = m.itemList.itemFocused
-        if isValid(m.itemList.content)
-            return m.itemList.content.getChild(itemFocused)
+sub setBackdrop(url as string)
+    if not isValid(m.backdrop) or not isValidAndNotEmpty(url) then return
+    if m.backdrop.uri = url then return
+
+    if isValid(m.backdropFadeIn) then m.backdropFadeIn.control = "stop"
+    if isValid(m.backdropPrevFadeOut) then m.backdropPrevFadeOut.control = "stop"
+
+    if isValid(m.backdropPrev) and m.backdrop.uri <> ""
+        m.backdropPrev.uri = m.backdrop.uri
+        m.backdropPrev.opacity = m.backdrop.opacity
+    end if
+
+    m.backdrop.opacity = 0.0
+    m.backdrop.uri = url
+    m.backdropCrossfading = true
+end sub
+
+sub onBackdropLoadStatusChange()
+    if not isValid(m.backdrop) then return
+    if m.backdrop.loadStatus <> "ready" then return
+    if not isValidAndNotEmpty(m.backdrop.uri) then return
+
+    if m.backdropCrossfading
+        targetOpacity = 0.4
+
+        if isValid(m.backdropFadeInInterp)
+            m.backdropFadeInInterp.keyValue = [0.0, targetOpacity]
+        end if
+        if isValid(m.backdropPrevFadeOutInterp)
+            m.backdropPrevFadeOutInterp.keyValue = [targetOpacity, 0.0]
+        end if
+
+        if isValid(m.backdropFadeIn) then m.backdropFadeIn.control = "start"
+        if isValid(m.backdropPrevFadeOut) then m.backdropPrevFadeOut.control = "start"
+
+        m.backdropCrossfading = false
+    else
+        if isValid(m.backdropPrev)
+            m.backdropPrev.uri = m.backdrop.uri
         end if
     end if
-    return invalid
-end function
+end sub
 
 ' ============================================
 ' Scrolling
@@ -275,8 +318,6 @@ end sub
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
-    ' Determine what's focused
-    ' Determine what's focused
     isButtonFocused = false
     if m.buttonGroups.count() > 0
         for each btn in m.buttonGroups
@@ -287,7 +328,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end for
     end if
 
-    isItemListFocused = m.itemList.isInFocusChain()
+    isGridFocused = m.albumGrid.isInFocusChain()
 
     if isButtonFocused
         if key = KeyCode.LEFT
@@ -317,11 +358,13 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
 
         else if key = KeyCode.DOWN
-            m.itemList.setFocus(true)
-            m.top.lastFocus = m.itemList
-            setLastFocus(m.itemList)
-            unhighlightAllButtons()
-            scrollContentTo(-420)
+            if isValid(m.albumGrid.content) and m.albumGrid.content.getChildCount() > 0
+                m.albumGrid.setFocus(true)
+                m.top.lastFocus = m.albumGrid
+                setLastFocus(m.albumGrid)
+                unhighlightAllButtons()
+                scrollContentTo(-400)
+            end if
             return true
 
         else if key = KeyCode.UP
@@ -330,9 +373,13 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
     end if
 
-    if isItemListFocused
+    if isGridFocused
         if key = KeyCode.UP
-            if m.itemList.itemFocused = 0
+            ' Check if on first row
+            focusedIndex = m.albumGrid.itemFocused
+            numColumns = m.albumGrid.numColumns
+            if focusedIndex < numColumns
+                ' First row — go back to buttons
                 if m.buttonGroups.count() > 0
                     m.buttonGroups[m.currentButtonIndex].setFocus(true)
                     m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
@@ -345,21 +392,18 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return false
 
         else if key = KeyCode.OK
-            m.top.playlistItemSelected = m.itemList.itemFocused
-            return true
-
-        else if key = KeyCode.PLAY
-            m.top.playlistItemSelected = m.itemList.itemFocused
-            return true
-
-        else if key = KeyCode.OPTIONS
-            handleOptionsMenu()
+            if isValid(m.albumGrid.content)
+                selectedNode = m.albumGrid.content.getChild(m.albumGrid.itemFocused)
+                if isValid(selectedNode)
+                    m.top.selectedAlbum = selectedNode
+                end if
+            end if
             return true
         end if
     end if
 
     if key = KeyCode.BACK
-        if isItemListFocused
+        if isGridFocused
             if m.buttonGroups.count() > 0
                 m.buttonGroups[m.currentButtonIndex].setFocus(true)
                 m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
@@ -375,39 +419,3 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     return false
 end function
-
-' ============================================
-' Options menu (remove from playlist)
-' ============================================
-
-sub handleOptionsMenu()
-    focusedItem = getFocusedItem()
-    if not isValid(focusedItem) then return
-
-    pageContent = m.top.pageContent
-    if not isChainValid(pageContent, "id") then return
-
-    confirmPlaylistAccess(pageContent.id, focusedItem.id, focusedItem.title)
-end sub
-
-sub confirmPlaylistAccess(playlistID as string, selectedItemID as string, selectedItemTitle as string)
-    m.getPlaylistDataTask.observeFieldScoped("playlistData", "onPlaylistDataLoaded")
-    m.getPlaylistDataTask.playlistID = playlistID
-    m.getPlaylistDataTask.selectedItemID = selectedItemID
-    m.getPlaylistDataTask.selectedItemTitle = selectedItemTitle
-    m.getPlaylistDataTask.control = TaskControl.RUN
-end sub
-
-sub onPlaylistDataLoaded()
-    m.getPlaylistDataTask.unobserveFieldScoped("playlistData")
-
-    ' Confirm data is valid
-    if not isValidAndNotEmpty(m.getPlaylistDataTask.playlistData) then return
-    if not isChainValid(m.getPlaylistDataTask.playlistData, "canedit") then return
-
-    ' Confirm user has edit permissions
-    if not chainLookup(m.getPlaylistDataTask.playlistData, "canedit") then return
-
-    popupData = [tr("Remove From Playlist")]
-    m.global.sceneManager.callFunc("optionDialog", "playlist", m.getPlaylistDataTask.LookupCI("selectedItemTitle"), [], popupData, { id: m.getPlaylistDataTask.LookupCI("selectedItemID") })
-end sub

@@ -1,80 +1,38 @@
-import "pkg:/source/api/baserequest.bs"
-import "pkg:/source/api/Image.bs"
-import "pkg:/source/constants/HomeRowItemSizes.bs"
 import "pkg:/source/enums/ColorPalette.bs"
-import "pkg:/source/enums/ItemType.bs"
-import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/TaskControl.bs"
-import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
-import "pkg:/source/utils/multiserver.bs"
 
 sub init()
     m.top.optionsAvailable = false
+    m.top.overhangVisible = false
 
-    ' Get references to UI elements
-    m.genresRows = m.top.findNode("genresRows")
+    m.pageTitle = m.top.findNode("pageTitle")
+    m.genreGrid = m.top.findNode("genreGrid")
     m.loadingGroup = m.top.findNode("loadingGroup")
     m.emptyStateGroup = m.top.findNode("emptyStateGroup")
 
-    ' Detail section references
-    m.detailsSection = m.top.findNode("detailsSection")
-    m.itemTitle = m.top.findNode("itemTitle")
-    m.itemOverview = m.top.findNode("itemOverview")
-    m.metadataText = m.top.findNode("metadataText")
-    m.backdrop = m.top.findNode("backdrop")
-    m.backdropPrev = m.top.findNode("backdropPrev")
-    m.backdropTint = m.top.findNode("backdropTint")
+    m.genreGrid.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+    m.genreGrid.content = createSGNode("ContentNode")
+    m.genreGrid.observeFieldScoped("itemSelected", "onGenreCardSelected")
 
-    ' Set up row list
-    m.genresRows.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
-    m.genresRows.content = createSGNode("ContentNode")
-
-    ' Configure row sizes for portrait posters (primary images)
-    m.genresRows.itemSize = [1703, 380]
-    m.genresRows.itemSpacing = [0, 110]
-    m.genresRows.rowItemSpacing = [20, 0]
-    m.genresRows.rowItemSize = homeRowItemSizes.MOVIE_POSTER
-    m.genresRows.focusBitmapBlendColor = ColorPalette.WHITE
-
-    ' Observe events
-    m.backdrop.observeField("loadStatus", "onBackdropLoadStatusChange")
-    m.genresRows.observeField("rowItemFocused", "onItemFocusChanged")
-    m.genresRows.observeField("rowItemSelected", "onItemSelected")
-
-    ' Data storage
-    m.allItems = []
-    m.genreMap = {} ' Maps genre name to array of items
+    m.genreMap = {}
     m.isLoading = false
+    m.pageTitle.text = tr("Genres")
 
-    ' Create loading task
     m.loadGenresTask = createObject("roSGNode", "LoadGenresTask")
     m.loadGenresTask.observeField("genreResults", "onGenresLoaded")
     m.loadGenresTask.observeField("error", "onLoadError")
 end sub
 
-' JFScreen hook called when the screen is displayed
 sub OnScreenShown(_isReturning = false as boolean)
-    scene = m.top.getScene()
-    overhang = scene.findNode("overhang")
-    if isValid(overhang)
-        overhang.visible = true
-    end if
-
-    ' Load genres on first show
-    if m.allItems.Count() = 0
+    if m.genreMap.Count() = 0
         loadGenres()
     else
-        m.genresRows.setFocus(true)
+        m.genreGrid.setFocus(true)
     end if
 end sub
 
-' JFScreen hook called when the screen is hidden
 sub OnScreenHidden()
-    scene = m.top.getScene()
-    overhang = scene.findNode("overhang")
-    if isValid(overhang)
-    end if
 end sub
 
 sub loadGenres()
@@ -98,14 +56,9 @@ sub onGenresLoaded(event as object)
         return
     end if
 
-    ' Store the genre map directly - already aggregated by LoadGenresTask
     m.genreMap = genreMap
-
-    ' Build rows from aggregated genres
-    buildRows()
-
-    ' Focus the rows
-    m.genresRows.setFocus(true)
+    buildGenreCards()
+    m.genreGrid.setFocus(true)
 end sub
 
 sub onLoadError()
@@ -114,95 +67,101 @@ sub onLoadError()
     showEmptyState()
 end sub
 
-sub buildRows()
-    m.genresRows.content.removeChildrenIndex(m.genresRows.content.getChildCount(), 0)
+' Build genre card content nodes from the genre map
+sub buildGenreCards()
+    content = createSGNode("ContentNode")
 
-    rowsAdded = 0
-    rowItemSizes = []
-
-    ' Sort genres alphabetically by display name
+    ' Sort genres alphabetically
     genreKeys = m.genreMap.Keys()
-    sortedGenreKeys = sortArray(genreKeys)
+    sortedKeys = sortArray(genreKeys)
 
-    ' Add a row for each genre that has items
-    for each genreKey in sortedGenreKeys
+    for each genreKey in sortedKeys
         genreData = m.genreMap[genreKey]
         if not isValid(genreData) or not isValid(genreData.items) then continue for
+        if genreData.items.Count() = 0 then continue for
 
-        genreItems = genreData.items
-        if genreItems.Count() > 0
-            ' Sort items: Series first, then Movies, then by name
-            sortedItems = sortGenreItems(genreItems)
-            addRow(genreData.displayName, sortedItems)
-            rowItemSizes.push(homeRowItemSizes.MOVIE_POSTER)
-            rowsAdded++
-        end if
+        card = createSGNode("ContentNode")
+        card.addField("json", "assocarray", false)
+        card.title = genreData.displayName
+
+        ' Find a backdrop image from this genre's items
+        backdropUrl = ""
+        for each item in genreData.items
+            if isValidAndNotEmpty(item.backdropUrl)
+                backdropUrl = item.backdropUrl
+                exit for
+            end if
+        end for
+
+        card.json = {
+            itemCount: genreData.items.Count(),
+            backdropUrl: backdropUrl,
+            genreKey: genreKey
+        }
+
+        content.appendChild(card)
     end for
 
-    ' Set per-row item sizes
-    m.genresRows.rowItemSize = rowItemSizes
+    m.genreGrid.content = content
+end sub
 
-    if rowsAdded = 0
-        showEmptyState()
+' Handle genre card selection — push VisualLibraryScene filtered to this genre
+sub onGenreCardSelected()
+    selectedIndex = m.genreGrid.itemSelected
+    selectedCard = m.genreGrid.content.getChild(selectedIndex)
+    if not isValid(selectedCard) or not isValid(selectedCard.json) then return
+
+    genreKey = selectedCard.json.genreKey
+    if not m.genreMap.DoesExist(genreKey) then return
+
+    genreData = m.genreMap[genreKey]
+    genreName = genreData.displayName
+
+    ' Create a parent item node for the genre browse scene
+    genreBrowseItem = createSGNode("ContentNode")
+    genreBrowseItem.addField("id", "string", false)
+    genreBrowseItem.addField("name", "string", false)
+    genreBrowseItem.addField("type", "string", false)
+    genreBrowseItem.addField("collectionType", "string", false)
+
+    genreBrowseItem.id = ""
+    genreBrowseItem.name = genreName
+    genreBrowseItem.type = "movies"
+    genreBrowseItem.collectionType = "movies"
+
+    ' Create a VisualLibraryScene filtered to this genre by name
+    group = createObject("roSGNode", "VisualLibraryScene")
+    group.mediaType = "Movie"
+    group.genreFilter = {
+        genreId: "",
+        genreName: genreName,
+        libraryId: "",
+        parentFolder: "",
+        itemType: "Movie,Series"
+    }
+    group.parentItem = genreBrowseItem
+    group.observeField("selectedItem", "onVisualLibraryItemSelected")
+    group.observeField("quickPlayNode", "onVisualLibraryQuickPlay")
+
+    m.global.sceneManager.callFunc("pushScene", group)
+end sub
+
+' Relay item selection from VisualLibraryScene to GenresScreen's selectedItem
+sub onVisualLibraryItemSelected(event as object)
+    selectedItem = event.getData()
+    if isValid(selectedItem)
+        m.top.selectedItem = selectedItem
     end if
 end sub
 
-' Sort items within a genre: Series first, then Movies, alphabetically within each type
-function sortGenreItems(items as object) as object
-    seriesItems = []
-    movieItems = []
+' Relay quick play from VisualLibraryScene to GenresScreen's quickPlayNode
+sub onVisualLibraryQuickPlay(event as object)
+    quickPlayNode = event.getData()
+    if isValid(quickPlayNode)
+        m.top.quickPlayNode = quickPlayNode
+    end if
+end sub
 
-    for each item in items
-        itemType = LCase(item.type)
-        if itemType = "series"
-            seriesItems.push(item)
-        else if itemType = "movie"
-            movieItems.push(item)
-        end if
-    end for
-
-    ' Sort each array by title
-    sortedSeries = sortItemsByTitle(seriesItems)
-    sortedMovies = sortItemsByTitle(movieItems)
-
-    ' Combine: series first, then movies
-    result = []
-    for each item in sortedSeries
-        result.push(item)
-    end for
-    for each item in sortedMovies
-        result.push(item)
-    end for
-
-    return result
-end function
-
-' Simple bubble sort for items by title
-function sortItemsByTitle(items as object) as object
-    if items.Count() <= 1 then return items
-
-    result = []
-    for each item in items
-        result.push(item)
-    end for
-
-    n = result.Count()
-    for i = 0 to n - 2
-        for j = 0 to n - 2 - i
-            title1 = LCase(result[j].title)
-            title2 = LCase(result[j + 1].title)
-            if title1 > title2
-                temp = result[j]
-                result[j] = result[j + 1]
-                result[j + 1] = temp
-            end if
-        end for
-    end for
-
-    return result
-end function
-
-' Simple bubble sort for string array
 function sortArray(arr as object) as object
     if arr.Count() <= 1 then return arr
 
@@ -225,292 +184,23 @@ function sortArray(arr as object) as object
     return result
 end function
 
-sub addRow(title as string, items as object)
-    row = m.genresRows.content.createChild("ContentNode")
-    row.title = title
-
-    for each item in items
-        child = invalid
-        itemType = LCase(item.type)
-
-        ' Determine server URL for multi-server image support
-        serverUrl = ""
-        if isValidAndNotEmpty(item.serverUrl)
-            serverUrl = item.serverUrl
-        else if isValid(item.json) and isValidAndNotEmpty(item.json._serverUrl)
-            serverUrl = item.json._serverUrl
-        end if
-
-        if itemType = "movie"
-            child = row.createChild("HomeData")
-            child.json = item.json
-            child.id = item.id
-            child.title = item.json.name
-            child.type = "Movie"
-
-            ' Set poster images - portrait dimensions for primary
-            if isValid(item.json.ImageTags) and isValid(item.json.ImageTags.Primary)
-                imgParams = { "maxHeight": 270, "maxWidth": 180, "Tag": item.json.ImageTags.Primary }
-                if isValidAndNotEmpty(serverUrl)
-                    child.posterURL = buildImageURLForServer(serverUrl, item.id, "Primary", imgParams)
-                else
-                    child.posterURL = ImageURL(item.id, "Primary", imgParams)
-                end if
-            end if
-            if isValid(item.json.BackdropImageTags) and item.json.BackdropImageTags.Count() > 0
-                imgParams = { "maxHeight": 270, "maxWidth": 480, "Tag": item.json.BackdropImageTags[0] }
-                if isValidAndNotEmpty(serverUrl)
-                    child.thumbnailURL = buildImageURLForServer(serverUrl, item.id, "Backdrop", imgParams)
-                else
-                    child.thumbnailURL = ImageURL(item.id, "Backdrop", imgParams)
-                end if
-                child.widePosterURL = child.thumbnailURL
-            else
-                child.widePosterURL = child.posterURL
-                child.thumbnailURL = child.posterURL
-            end if
-
-            ' Set image dimensions for poster item
-            child.imageWidth = 180
-
-        else if itemType = "series"
-            child = row.createChild("HomeData")
-            child.json = item.json
-            child.id = item.id
-            child.title = item.json.name
-            child.type = "Series"
-
-            ' Set poster images - portrait dimensions for primary
-            if hasImageTagPrimary(item.json)
-                imgParams = { "maxHeight": 270, "maxWidth": 180, "Tag": item.json.ImageTags.Primary }
-                if isValidAndNotEmpty(serverUrl)
-                    child.posterURL = buildImageURLForServer(serverUrl, item.id, "Primary", imgParams)
-                else
-                    child.posterURL = ImageURL(item.id, "Primary", imgParams)
-                end if
-            end if
-            if isValid(item.json.BackdropImageTags) and item.json.BackdropImageTags.Count() > 0
-                imgParams = { "maxHeight": 270, "maxWidth": 480, "Tag": item.json.BackdropImageTags[0] }
-                if isValidAndNotEmpty(serverUrl)
-                    child.thumbnailURL = buildImageURLForServer(serverUrl, item.id, "Backdrop", imgParams)
-                else
-                    child.thumbnailURL = ImageURL(item.id, "Backdrop", imgParams)
-                end if
-                child.widePosterURL = child.thumbnailURL
-            else
-                child.widePosterURL = child.posterURL
-                child.thumbnailURL = child.posterURL
-            end if
-
-            child.imageWidth = 180
-        end if
-    end for
-end sub
-
-sub onItemFocusChanged(event as object)
-    focusedIndex = event.getData()
-    if not isValid(focusedIndex) or focusedIndex.Count() < 2 then return
-
-    rowIndex = focusedIndex[0]
-    itemIndex = focusedIndex[1]
-
-    row = m.genresRows.content.getChild(rowIndex)
-    if not isValid(row) then return
-
-    item = row.getChild(itemIndex)
-    if not isValid(item) then return
-
-    updateDetailsSection(item)
-    updateBackdrop(item)
-end sub
-
-sub updateDetailsSection(item as object)
-    if not isValid(item) or not isValid(item.json) then return
-
-    json = item.json
-    itemType = LCase(item.type)
-
-    ' Set title
-    m.itemTitle.text = json.name
-
-    ' Build metadata string with separator
-    metadataParts = []
-    separator = "  •  "
-
-    ' Community Rating (star rating)
-    if isValid(json.CommunityRating) and json.CommunityRating > 0
-        metadataParts.push("★ " + formatRating(json.CommunityRating))
-    end if
-
-    ' Critic Rating (Rotten Tomatoes)
-    if isValid(json.CriticRating) and json.CriticRating > 0
-        metadataParts.push(json.CriticRating.toStr() + "% RT")
-    end if
-
-    ' Release Year
-    if isValid(json.ProductionYear)
-        if itemType = "series"
-            yearText = json.ProductionYear.toStr()
-            if isValid(json.Status)
-                if LCase(json.Status) = "continuing"
-                    yearText += " - Present"
-                else if LCase(json.Status) = "ended" and isValid(json.EndDate)
-                    yearText += " - " + LEFT(json.EndDate, 4)
-                end if
-            end if
-            metadataParts.push(yearText)
-        else
-            metadataParts.push(json.ProductionYear.toStr())
-        end if
-    end if
-
-    ' Runtime
-    if isValid(json.RunTimeTicks) and json.RunTimeTicks > 0
-        runtimeMinutes = Int(json.RunTimeTicks / 600000000)
-        hours = Int(runtimeMinutes / 60)
-        minutes = runtimeMinutes mod 60
-        if hours > 0
-            metadataParts.push(hours.toStr() + "h " + minutes.toStr() + "m")
-        else
-            metadataParts.push(minutes.toStr() + "m")
-        end if
-    end if
-
-    ' Official Rating (PG-13, TV-MA, etc.)
-    if isValidAndNotEmpty(json.OfficialRating)
-        metadataParts.push(json.OfficialRating)
-    end if
-
-    ' Series Status - only for series
-    if itemType = "series" and isValid(json.Status)
-        status = LCase(json.Status)
-        if status = "continuing"
-            metadataParts.push("Continuing")
-        else if status = "ended"
-            metadataParts.push("Ended")
-        end if
-    end if
-
-    ' Join all metadata parts with separator
-    m.metadataText.text = metadataParts.Join(separator)
-
-    ' Set overview
-    if isValidAndNotEmpty(json.Overview)
-        m.itemOverview.text = json.Overview
-    else
-        m.itemOverview.text = ""
-    end if
-end sub
-
-function formatRating(rating as float) as string
-    ' Format rating to one decimal place
-    return Left(rating.toStr(), 3)
-end function
-
-sub updateBackdrop(item as object)
-    if not isValid(item) then return
-
-    backdropUrl = ""
-
-    ' Determine server URL for multi-server image support
-    serverUrl = ""
-    if isValid(item.json) and isValidAndNotEmpty(item.json._serverUrl)
-        serverUrl = item.json._serverUrl
-    end if
-
-    ' Try to get higher quality backdrop from json with blur
-    if isValid(item.json)
-        json = item.json
-        if isValid(json.BackdropImageTags) and json.BackdropImageTags.Count() > 0
-            imgParams = { "maxHeight": 1080, "maxWidth": 1920, "quality": 90, "blur": getHomeBackdropBlurAmount(), "Tag": json.BackdropImageTags[0] }
-            if isValidAndNotEmpty(serverUrl)
-                backdropUrl = buildImageURLForServer(serverUrl, item.id, "Backdrop", imgParams)
-            else
-                backdropUrl = ImageURL(item.id, "Backdrop", imgParams)
-            end if
-        else if isValid(json.ParentBackdropImageTags) and json.ParentBackdropImageTags.Count() > 0
-            imgParams = { "maxHeight": 1080, "maxWidth": 1920, "quality": 90, "blur": getHomeBackdropBlurAmount(), "Tag": json.ParentBackdropImageTags[0] }
-            if isValidAndNotEmpty(serverUrl)
-                backdropUrl = buildImageURLForServer(serverUrl, json.ParentBackdropItemId, "Backdrop", imgParams)
-            else
-                backdropUrl = ImageURL(json.ParentBackdropItemId, "Backdrop", imgParams)
-            end if
-        end if
-    end if
-
-    ' Fallback to lower quality images if no json backdrop
-    if backdropUrl = ""
-        if isValidAndNotEmpty(item.widePosterURL)
-            backdropUrl = item.widePosterURL
-        else if isValidAndNotEmpty(item.thumbnailURL)
-            backdropUrl = item.thumbnailURL
-        else if isValidAndNotEmpty(item.posterURL)
-            backdropUrl = item.posterURL
-        end if
-    end if
-
-    if isValidAndNotEmpty(backdropUrl) and m.backdrop.uri <> backdropUrl
-        m.backdrop.uri = backdropUrl
-    end if
-end sub
-
-sub onBackdropLoadStatusChange()
-    if isValid(m.backdrop) and m.backdrop.loadStatus = "ready" and isValidAndNotEmpty(m.backdrop.uri)
-        if isValid(m.backdropPrev)
-            m.backdropPrev.uri = m.backdrop.uri
-        end if
-    end if
-end sub
-
-sub onItemSelected(event as object)
-    selectedIndex = event.getData()
-    if not isValid(selectedIndex) or selectedIndex.Count() < 2 then return
-
-    rowIndex = selectedIndex[0]
-    itemIndex = selectedIndex[1]
-
-    row = m.genresRows.content.getChild(rowIndex)
-    if not isValid(row) then return
-
-    item = row.getChild(itemIndex)
-    if not isValid(item) then return
-
-    m.top.selectedItem = item
-end sub
-
+' Loading / Empty state helpers
 sub showLoading(visible as boolean)
     m.loadingGroup.visible = visible
-    m.genresRows.visible = not visible
-    m.detailsSection.visible = not visible
+    m.genreGrid.visible = not visible
 end sub
 
 sub showEmptyState()
     m.emptyStateGroup.visible = true
-    m.genresRows.visible = false
-    m.detailsSection.visible = false
+    m.genreGrid.visible = false
 end sub
 
 sub hideEmptyState()
     m.emptyStateGroup.visible = false
-    m.genresRows.visible = true
-    m.detailsSection.visible = true
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
-
-    ' Navigate to overhang with UP key from top row
-    if key = KeyCode.UP and isValid(m.genresRows) and m.genresRows.hasFocus()
-        rowIndex = m.genresRows.rowItemFocused[0]
-        if rowIndex = 0
-            m.top.lastFocus = m.genresRows
-            return FocusOverhang(m.top)
-        end if
-    end if
-
-    if key = KeyCode.BACK
-        return false
-    end if
 
     return false
 end function

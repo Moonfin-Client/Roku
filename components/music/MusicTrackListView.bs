@@ -1,11 +1,10 @@
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
-import "pkg:/source/api/sdk.bs"
 import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/enums/ViewLoadStatus.bs"
-import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/detailButtons.bs"
 import "pkg:/source/utils/misc.bs"
 
@@ -15,25 +14,34 @@ sub init()
     m.top.overhangVisible = false
 
     m.backdrop = m.top.findNode("backdrop")
-    m.playlistCover = m.top.findNode("playlistCover")
-    m.playlistLabel = m.top.findNode("playlistLabel")
-    m.playlistTitle = m.top.findNode("playlistTitle")
-    m.playlistMeta = m.top.findNode("playlistMeta")
-    m.playlistOverview = m.top.findNode("playlistOverview")
+    m.libraryCover = m.top.findNode("libraryCover")
+    m.libraryLabel = m.top.findNode("libraryLabel")
+    m.libraryTitle = m.top.findNode("libraryTitle")
+    m.libraryMeta = m.top.findNode("libraryMeta")
     m.buttonRow = m.top.findNode("buttonRow")
     m.itemList = m.top.findNode("itemList")
     m.itemsLabel = m.top.findNode("itemsLabel")
     m.itemCount = m.top.findNode("itemCount")
     m.scrollableContent = m.top.findNode("scrollableContent")
+    m.emptyText = m.top.findNode("emptyText")
 
     m.buttonGroups = []
     m.currentButtonIndex = 0
 
     m.itemList.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
 
-    m.getPlaylistDataTask = createObject("roSGNode", "GetPlaylistDataTask")
+    m.loadItemsTask = createObject("roSGNode", "LoadItemsTask2")
 
-    m.isFirstRun = true
+    m.data = CreateObject("roSGNode", "ContentNode")
+    m.itemList.content = m.data
+    m.top.listData = m.data
+
+    m.isFirstLoad = true
+    m.totalRecordCount = 0
+    m.loadedCount = 0
+    m.isLoading = false
+
+    m.itemList.observeField("itemFocused", "onItemFocused")
 end sub
 
 ' ============================================
@@ -41,16 +49,6 @@ end sub
 ' ============================================
 
 sub OnScreenShown(_isReturning = false as boolean)
-    m.top.shufflePlay = false
-
-    scene = m.top.getScene()
-    if isValid(scene)
-        overhang = scene.findNode("overhang")
-        if chainLookupReturn(overhang, "isVisible", false)
-            overhang.isVisible = false
-        end if
-    end if
-
     if isValid(m.top.lastFocus)
         m.top.lastFocus.setFocus(true)
         group = m.global.sceneManager.callFunc("getActiveScene")
@@ -59,11 +57,6 @@ sub OnScreenShown(_isReturning = false as boolean)
         m.buttonGroups[0].setFocus(true)
         m.top.lastFocus = m.buttonGroups[0]
         highlightButton(0)
-    end if
-
-    if m.isFirstRun
-        m.isFirstRun = false
-        return
     end if
 end sub
 
@@ -74,81 +67,130 @@ end sub
 ' Data loading
 ' ============================================
 
-sub onPageContentChanged()
-    pageContent = m.top.pageContent
-    if not isValid(pageContent) then return
+sub onParentItemChanged()
+    parentItem = m.top.parentItem
+    if not isValid(parentItem) then return
 
     startLoadingSpinner()
 
-    json = pageContent.json
-    if not isValid(json) then return
+    libraryId = parentItem.id
+    if isValid(parentItem.libraryId) and parentItem.libraryId <> ""
+        libraryId = parentItem.libraryId
+    end if
+
+    m.libraryTitle.text = isValid(parentItem.title) ? parentItem.title : "Music"
 
     imgParams = { "maxHeight": 420, "maxWidth": 420 }
-    m.playlistCover.uri = ImageURL(json.Id, "Primary", imgParams)
+    m.libraryCover.uri = ImageURL(libraryId, "Primary", imgParams)
 
-    m.backdrop.uri = ImageURL(json.Id, "Backdrop", { "maxWidth": 1920 })
-
-    m.playlistTitle.text = isValid(json.name) ? json.name : ""
-
-    overview = json.LookupCI("Overview")
-    if isValidAndNotEmpty(overview)
-        m.playlistOverview.text = overview
-        m.playlistOverview.visible = true
-    else
-        m.playlistOverview.visible = false
-    end if
-
-    metaParts = []
-    if isValid(json.ChildCount)
-        count = json.ChildCount
-        metaParts.push(count = 1 ? "1 Item" : `${stri(count).trim()} Items`)
-    end if
-    if isValid(json.RunTimeTicks)
-        if type(json.RunTimeTicks) = "roInt" or type(json.RunTimeTicks) = "LongInteger"
-            totalMins = int(json.RunTimeTicks / 600000000.0)
-            if totalMins >= 60
-                hours = int(totalMins / 60)
-                mins = totalMins mod 60
-                if mins > 0
-                    metaParts.push(`${stri(hours).trim()} hr ${stri(mins).trim()} min`)
-                else
-                    metaParts.push(`${stri(hours).trim()} hr`)
-                end if
-            else if totalMins > 0
-                metaParts.push(`${stri(totalMins).trim()} min`)
-            end if
-        end if
-    end if
-    if isValid(json.ProductionYear)
-        metaParts.push(stri(json.ProductionYear).trim())
-    end if
-    m.playlistMeta.text = metaParts.join(" · ")
+    m.backdrop.uri = ImageURL(libraryId, "Backdrop", { "maxWidth": 1920 })
 
     buildButtons()
+
+    ' Load all songs recursively
+    m.loadItemsTask.itemId = libraryId
+    m.loadItemsTask.itemType = ItemType.AUDIO
+    m.loadItemsTask.recursive = true
+    m.loadItemsTask.sortField = "SortName"
+    m.loadItemsTask.sortAscending = true
+    m.loadItemsTask.startIndex = 0
+    m.loadItemsTask.limit = 100
+    m.loadItemsTask.observeField("content", "onItemsLoaded")
+    m.loadItemsTask.control = TaskControl.RUN
 end sub
 
-sub onListDataChanged()
-    listData = m.top.listData
-    if not isValid(listData) then return
+sub onItemsLoaded(event as object)
+    itemData = event.getData()
+    m.loadItemsTask.unobserveField("content")
+    m.isLoading = false
 
-    content = CreateObject("roSGNode", "ContentNode")
-    children = listData.getChildren(-1, 0)
-    for each item in children
-        content.appendChild(item)
+    if not isValid(itemData) or not isValid(itemData[0])
+        if m.isFirstLoad
+            m.emptyText.visible = true
+            stopLoadingSpinner()
+            m.loadStatus = ViewLoadStatus.LOADED
+        end if
+        return
+    end if
+
+    ' Convert loaded data to PlaylistItemData nodes
+    results = []
+    for each item in itemData
+        if not isValid(item) then continue for
+
+        tmp = CreateObject("roSGNode", "PlaylistItemData")
+        tmp.id = chainLookupReturn(item, "id", "")
+        tmp.title = chainLookupReturn(item, "title", "")
+        tmp.type = ItemType.AUDIO
+
+        ' Extract artists from json data
+        json = item.json
+        if isValid(json)
+            if isValid(json.LookupCI("artists"))
+                tmp.artists = json.artists
+            end if
+            if isValid(json.LookupCI("album"))
+                tmp.album = json.album
+            end if
+            if isValid(json.LookupCI("RunTimeTicks"))
+                tmp.RunTimeTicks = json.RunTimeTicks
+            end if
+            if isValid(json.LookupCI("IndexNumber"))
+                tmp.IndexNumber = json.IndexNumber
+            end if
+            if isValid(json.LookupCI("ProductionYear"))
+                tmp.ProductionYear = json.ProductionYear
+            end if
+            tmp.played = chainLookupReturn(json, "UserData.Played", false)
+        end if
+
+        results.push(tmp)
     end for
-    m.itemList.content = content
 
-    totalCount = children.count()
-    m.itemCount.text = stri(totalCount).trim()
+    m.data.appendChildren(results)
+    m.loadedCount += results.count()
 
-    stopLoadingSpinner()
-    m.loadStatus = ViewLoadStatus.LOADED
+    m.totalRecordCount = m.loadItemsTask.totalRecordCount
 
-    ' Set initial focus to first button
-    if m.buttonGroups.count() > 0
-        m.buttonGroups[0].setFocus(true)
-        m.top.lastFocus = m.buttonGroups[0]
-        highlightButton(0)
+    ' Update count display with total from server if available
+    displayCount = m.totalRecordCount > 0 ? m.totalRecordCount : m.loadedCount
+    m.itemCount.text = stri(displayCount).trim()
+    m.libraryMeta.text = displayCount = 1 ? "1 Song" : `${stri(displayCount).trim()} Songs`
+
+    m.emptyText.visible = false
+
+    if m.isFirstLoad
+        m.isFirstLoad = false
+        stopLoadingSpinner()
+        m.loadStatus = ViewLoadStatus.LOADED
+
+        if m.buttonGroups.count() > 0
+            m.buttonGroups[0].setFocus(true)
+            m.top.lastFocus = m.buttonGroups[0]
+            highlightButton(0)
+        end if
+    end if
+end sub
+
+' Load more items when user scrolls near the end
+sub loadMoreItems()
+    if m.isLoading then return
+    if m.totalRecordCount > 0 and m.loadedCount >= m.totalRecordCount then return
+
+    m.isLoading = true
+    m.loadItemsTask.startIndex = m.loadedCount
+    m.loadItemsTask.observeField("content", "onItemsLoaded")
+    m.loadItemsTask.control = TaskControl.RUN
+end sub
+
+' Triggered when user scrolls to a new item
+sub onItemFocused(event as object)
+    focusedIndex = event.getData()
+    if not isValid(focusedIndex) then return
+
+    ' Load more when within 10 items of the end
+    if m.loadedCount > 0 and focusedIndex >= m.loadedCount - 10
+        loadMoreItems()
     end if
 end sub
 
@@ -173,13 +215,6 @@ sub buildButtons()
         label: "Shuffle",
         action: "shuffle",
         id: "shuffleButton"
-    })
-
-    addButton({
-        icon: "pkg:/images/icons/favorite.png",
-        label: "Favorite",
-        action: "favorite",
-        id: "favoriteButton"
     })
 end sub
 
@@ -224,24 +259,7 @@ sub handleButtonSelect()
         m.top.playAll = true
     else if action = "shuffle"
         m.top.shufflePlay = true
-    else if action = "favorite"
-        toggleFavorite()
     end if
-end sub
-
-sub toggleFavorite()
-    pageContent = m.top.pageContent
-    if not isChainValid(pageContent, "json") then return
-
-    isFavorite = chainLookupReturn(pageContent, "json.UserData.IsFavorite", false)
-
-    if isFavorite
-        api.users.UnmarkFavorite(pageContent.json.Id, { UserId: m.global.session.user.id })
-    else
-        api.users.MarkFavorite(pageContent.json.Id, { UserId: m.global.session.user.id })
-    end if
-
-    m.top.refreshPlaylistData = not m.top.refreshPlaylistData
 end sub
 
 ' ============================================
@@ -275,8 +293,6 @@ end sub
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
-    ' Determine what's focused
-    ' Determine what's focused
     isButtonFocused = false
     if m.buttonGroups.count() > 0
         for each btn in m.buttonGroups
@@ -325,7 +341,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
 
         else if key = KeyCode.UP
-            ' No overhang on this screen — consume the key
             return true
         end if
     end if
@@ -345,15 +360,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return false
 
         else if key = KeyCode.OK
-            m.top.playlistItemSelected = m.itemList.itemFocused
+            m.top.trackSelected = m.itemList.itemFocused
             return true
 
         else if key = KeyCode.PLAY
-            m.top.playlistItemSelected = m.itemList.itemFocused
-            return true
-
-        else if key = KeyCode.OPTIONS
-            handleOptionsMenu()
+            m.top.trackSelected = m.itemList.itemFocused
             return true
         end if
     end if
@@ -375,39 +386,3 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     return false
 end function
-
-' ============================================
-' Options menu (remove from playlist)
-' ============================================
-
-sub handleOptionsMenu()
-    focusedItem = getFocusedItem()
-    if not isValid(focusedItem) then return
-
-    pageContent = m.top.pageContent
-    if not isChainValid(pageContent, "id") then return
-
-    confirmPlaylistAccess(pageContent.id, focusedItem.id, focusedItem.title)
-end sub
-
-sub confirmPlaylistAccess(playlistID as string, selectedItemID as string, selectedItemTitle as string)
-    m.getPlaylistDataTask.observeFieldScoped("playlistData", "onPlaylistDataLoaded")
-    m.getPlaylistDataTask.playlistID = playlistID
-    m.getPlaylistDataTask.selectedItemID = selectedItemID
-    m.getPlaylistDataTask.selectedItemTitle = selectedItemTitle
-    m.getPlaylistDataTask.control = TaskControl.RUN
-end sub
-
-sub onPlaylistDataLoaded()
-    m.getPlaylistDataTask.unobserveFieldScoped("playlistData")
-
-    ' Confirm data is valid
-    if not isValidAndNotEmpty(m.getPlaylistDataTask.playlistData) then return
-    if not isChainValid(m.getPlaylistDataTask.playlistData, "canedit") then return
-
-    ' Confirm user has edit permissions
-    if not chainLookup(m.getPlaylistDataTask.playlistData, "canedit") then return
-
-    popupData = [tr("Remove From Playlist")]
-    m.global.sceneManager.callFunc("optionDialog", "playlist", m.getPlaylistDataTask.LookupCI("selectedItemTitle"), [], popupData, { id: m.getPlaylistDataTask.LookupCI("selectedItemID") })
-end sub
