@@ -1,0 +1,412 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/Image.bs"
+import "pkg:/source/api/sdk.bs"
+import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/enums/ViewLoadStatus.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/detailButtons.bs"
+import "pkg:/source/utils/misc.bs"
+
+sub init()
+    m.loadStatus = ViewLoadStatus.INIT
+    m.top.optionsAvailable = false
+
+    m.backdrop = m.top.findNode("backdrop")
+    m.playlistCover = m.top.findNode("playlistCover")
+    m.playlistLabel = m.top.findNode("playlistLabel")
+    m.playlistTitle = m.top.findNode("playlistTitle")
+    m.playlistMeta = m.top.findNode("playlistMeta")
+    m.playlistOverview = m.top.findNode("playlistOverview")
+    m.buttonRow = m.top.findNode("buttonRow")
+    m.itemList = m.top.findNode("itemList")
+    m.itemsLabel = m.top.findNode("itemsLabel")
+    m.itemCount = m.top.findNode("itemCount")
+    m.scrollableContent = m.top.findNode("scrollableContent")
+
+    m.buttonGroups = []
+    m.currentButtonIndex = 0
+
+    m.itemList.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+
+    m.getPlaylistDataTask = createObject("roSGNode", "GetPlaylistDataTask")
+
+    m.isFirstRun = true
+end sub
+
+' ============================================
+' Screen lifecycle
+' ============================================
+
+sub OnScreenShown(_isReturning = false as boolean)
+    m.top.shufflePlay = false
+
+    scene = m.top.getScene()
+    if isValid(scene)
+        overhang = scene.findNode("overhang")
+        if chainLookupReturn(overhang, "isVisible", false)
+            overhang.isVisible = false
+        end if
+    end if
+
+    if isValid(m.top.lastFocus)
+        m.top.lastFocus.setFocus(true)
+        group = m.global.sceneManager.callFunc("getActiveScene")
+        if isValid(group) then group.lastFocus = m.top.lastFocus
+    else if m.buttonGroups.count() > 0
+        m.buttonGroups[0].setFocus(true)
+        m.top.lastFocus = m.buttonGroups[0]
+        highlightButton(0)
+    end if
+
+    if m.isFirstRun
+        m.isFirstRun = false
+        return
+    end if
+end sub
+
+sub OnScreenHidden()
+end sub
+
+' ============================================
+' Data loading
+' ============================================
+
+sub onPageContentChanged()
+    pageContent = m.top.pageContent
+    if not isValid(pageContent) then return
+
+    startLoadingSpinner()
+
+    json = pageContent.json
+    if not isValid(json) then return
+
+    imgParams = { "maxHeight": 420, "maxWidth": 420 }
+    m.playlistCover.uri = ImageURL(json.Id, "Primary", imgParams)
+
+    m.backdrop.uri = ImageURL(json.Id, "Backdrop", { "maxWidth": 1920 })
+
+    m.playlistTitle.text = isValid(json.name) ? json.name : ""
+
+    overview = json.LookupCI("Overview")
+    if isValidAndNotEmpty(overview)
+        m.playlistOverview.text = overview
+        m.playlistOverview.visible = true
+    else
+        m.playlistOverview.visible = false
+    end if
+
+    metaParts = []
+    if isValid(json.ChildCount)
+        count = json.ChildCount
+        metaParts.push(count = 1 ? "1 Item" : `${stri(count).trim()} Items`)
+    end if
+    if isValid(json.RunTimeTicks)
+        if type(json.RunTimeTicks) = "roInt" or type(json.RunTimeTicks) = "LongInteger"
+            totalMins = int(json.RunTimeTicks / 600000000.0)
+            if totalMins >= 60
+                hours = int(totalMins / 60)
+                mins = totalMins mod 60
+                if mins > 0
+                    metaParts.push(`${stri(hours).trim()} hr ${stri(mins).trim()} min`)
+                else
+                    metaParts.push(`${stri(hours).trim()} hr`)
+                end if
+            else if totalMins > 0
+                metaParts.push(`${stri(totalMins).trim()} min`)
+            end if
+        end if
+    end if
+    if isValid(json.ProductionYear)
+        metaParts.push(stri(json.ProductionYear).trim())
+    end if
+    m.playlistMeta.text = metaParts.join(" · ")
+
+    buildButtons()
+end sub
+
+sub onListDataChanged()
+    listData = m.top.listData
+    if not isValid(listData) then return
+
+    content = CreateObject("roSGNode", "ContentNode")
+    children = listData.getChildren(-1, 0)
+    for each item in children
+        content.appendChild(item)
+    end for
+    m.itemList.content = content
+
+    totalCount = children.count()
+    m.itemCount.text = stri(totalCount).trim()
+
+    stopLoadingSpinner()
+    m.loadStatus = ViewLoadStatus.LOADED
+
+    ' Set initial focus to first button
+    if m.buttonGroups.count() > 0
+        m.buttonGroups[0].setFocus(true)
+        m.top.lastFocus = m.buttonGroups[0]
+        highlightButton(0)
+    end if
+end sub
+
+' ============================================
+' Buttons
+' ============================================
+
+sub buildButtons()
+    m.buttonRow.removeChildrenIndex(m.buttonRow.getChildCount(), 0)
+    m.buttonGroups = []
+    m.currentButtonIndex = 0
+
+    addButton({
+        icon: "pkg:/images/icons/play.png",
+        label: "Play All",
+        action: "playAll",
+        id: "playAllButton"
+    })
+
+    addButton({
+        icon: "pkg:/images/icons/shuffle.png",
+        label: "Shuffle",
+        action: "shuffle",
+        id: "shuffleButton"
+    })
+
+    addButton({
+        icon: "pkg:/images/icons/favorite.png",
+        label: "Favorite",
+        action: "favorite",
+        id: "favoriteButton"
+    })
+end sub
+
+sub addButton(config as object)
+    buttonGroup = detailButtons.createButton(config, m.buttonGroups.count())
+    buttonGroup.observeField("focusedChild", "onButtonFocusChanged")
+    m.buttonRow.appendChild(buttonGroup)
+    m.buttonGroups.push(buttonGroup)
+end sub
+
+sub highlightButton(index as integer)
+    detailButtons.highlight(index, m.buttonGroups)
+end sub
+
+sub unhighlightAllButtons()
+    detailButtons.unhighlightAll(m.buttonGroups)
+end sub
+
+sub onButtonFocusChanged(event as object)
+    button = event.getRoSGNode()
+    if button <> invalid and button.buttonIndex <> invalid
+        if button.hasFocus() or button.isInFocusChain()
+            m.currentButtonIndex = button.buttonIndex
+            highlightButton(m.currentButtonIndex)
+        end if
+    end if
+end sub
+
+' ============================================
+' Button actions
+' ============================================
+
+sub handleButtonSelect()
+    if m.currentButtonIndex < 0 or m.currentButtonIndex >= m.buttonGroups.count() then return
+
+    button = m.buttonGroups[m.currentButtonIndex]
+    if not isValid(button) then return
+
+    action = button.buttonAction
+
+    if action = "playAll"
+        m.top.playAll = true
+    else if action = "shuffle"
+        m.top.shufflePlay = true
+    else if action = "favorite"
+        toggleFavorite()
+    end if
+end sub
+
+sub toggleFavorite()
+    pageContent = m.top.pageContent
+    if not isChainValid(pageContent, "json") then return
+
+    isFavorite = chainLookupReturn(pageContent, "json.UserData.IsFavorite", false)
+
+    if isFavorite
+        api.users.UnmarkFavorite(pageContent.json.Id, { UserId: m.global.session.user.id })
+    else
+        api.users.MarkFavorite(pageContent.json.Id, { UserId: m.global.session.user.id })
+    end if
+
+    m.top.refreshPlaylistData = not m.top.refreshPlaylistData
+end sub
+
+' ============================================
+' Item list helpers
+' ============================================
+
+function getFocusedItem() as dynamic
+    if m.itemList.isInFocusChain()
+        itemFocused = m.itemList.itemFocused
+        if isValid(m.itemList.content)
+            return m.itemList.content.getChild(itemFocused)
+        end if
+    end if
+    return invalid
+end function
+
+' ============================================
+' Scrolling
+' ============================================
+
+sub scrollContentTo(yOffset as integer)
+    if isValid(m.scrollableContent)
+        m.scrollableContent.translation = [0, yOffset]
+    end if
+end sub
+
+' ============================================
+' Key handling
+' ============================================
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    ' Determine what's focused
+    ' Determine what's focused
+    isButtonFocused = false
+    if m.buttonGroups.count() > 0
+        for each btn in m.buttonGroups
+            if btn.hasFocus() or btn.isInFocusChain()
+                isButtonFocused = true
+                exit for
+            end if
+        end for
+    end if
+
+    isItemListFocused = m.itemList.isInFocusChain()
+
+    if isButtonFocused
+        if key = KeyCode.LEFT
+            if m.currentButtonIndex > 0
+                newIndex = m.currentButtonIndex - 1
+                m.buttonGroups[newIndex].setFocus(true)
+                m.top.lastFocus = m.buttonGroups[newIndex]
+                m.currentButtonIndex = newIndex
+                highlightButton(newIndex)
+                setLastFocus(m.buttonGroups[newIndex])
+            end if
+            return true
+
+        else if key = KeyCode.RIGHT
+            if m.currentButtonIndex < m.buttonGroups.count() - 1
+                newIndex = m.currentButtonIndex + 1
+                m.buttonGroups[newIndex].setFocus(true)
+                m.top.lastFocus = m.buttonGroups[newIndex]
+                m.currentButtonIndex = newIndex
+                highlightButton(newIndex)
+                setLastFocus(m.buttonGroups[newIndex])
+            end if
+            return true
+
+        else if key = KeyCode.OK
+            handleButtonSelect()
+            return true
+
+        else if key = KeyCode.DOWN
+            m.itemList.setFocus(true)
+            m.top.lastFocus = m.itemList
+            setLastFocus(m.itemList)
+            unhighlightAllButtons()
+            scrollContentTo(-420)
+            return true
+
+        else if key = KeyCode.UP
+            m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
+            return FocusOverhang(m.top)
+        end if
+    end if
+
+    if isItemListFocused
+        if key = KeyCode.UP
+            if m.itemList.itemFocused = 0
+                if m.buttonGroups.count() > 0
+                    m.buttonGroups[m.currentButtonIndex].setFocus(true)
+                    m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
+                    highlightButton(m.currentButtonIndex)
+                    setLastFocus(m.buttonGroups[m.currentButtonIndex])
+                    scrollContentTo(0)
+                    return true
+                end if
+            end if
+            return false
+
+        else if key = KeyCode.OK
+            m.top.playlistItemSelected = m.itemList.itemFocused
+            return true
+
+        else if key = KeyCode.PLAY
+            m.top.playlistItemSelected = m.itemList.itemFocused
+            return true
+
+        else if key = KeyCode.OPTIONS
+            handleOptionsMenu()
+            return true
+        end if
+    end if
+
+    if key = KeyCode.BACK
+        if isItemListFocused
+            if m.buttonGroups.count() > 0
+                m.buttonGroups[m.currentButtonIndex].setFocus(true)
+                m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
+                highlightButton(m.currentButtonIndex)
+                setLastFocus(m.buttonGroups[m.currentButtonIndex])
+            end if
+            scrollContentTo(0)
+            return true
+        end if
+
+        return false
+    end if
+
+    return false
+end function
+
+' ============================================
+' Options menu (remove from playlist)
+' ============================================
+
+sub handleOptionsMenu()
+    focusedItem = getFocusedItem()
+    if not isValid(focusedItem) then return
+
+    pageContent = m.top.pageContent
+    if not isChainValid(pageContent, "id") then return
+
+    confirmPlaylistAccess(pageContent.id, focusedItem.id, focusedItem.title)
+end sub
+
+sub confirmPlaylistAccess(playlistID as string, selectedItemID as string, selectedItemTitle as string)
+    m.getPlaylistDataTask.observeFieldScoped("playlistData", "onPlaylistDataLoaded")
+    m.getPlaylistDataTask.playlistID = playlistID
+    m.getPlaylistDataTask.selectedItemID = selectedItemID
+    m.getPlaylistDataTask.selectedItemTitle = selectedItemTitle
+    m.getPlaylistDataTask.control = TaskControl.RUN
+end sub
+
+sub onPlaylistDataLoaded()
+    m.getPlaylistDataTask.unobserveFieldScoped("playlistData")
+
+    ' Confirm data is valid
+    if not isValidAndNotEmpty(m.getPlaylistDataTask.playlistData) then return
+    if not isChainValid(m.getPlaylistDataTask.playlistData, "canedit") then return
+
+    ' Confirm user has edit permissions
+    if not chainLookup(m.getPlaylistDataTask.playlistData, "canedit") then return
+
+    popupData = [tr("Remove From Playlist")]
+    m.global.sceneManager.callFunc("optionDialog", "playlist", m.getPlaylistDataTask.LookupCI("selectedItemTitle"), [], popupData, { id: m.getPlaylistDataTask.LookupCI("selectedItemID") })
+end sub

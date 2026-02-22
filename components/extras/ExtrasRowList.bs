@@ -116,13 +116,15 @@ sub loadParts(data as object)
 
     ' Determine if this is a TV show (but not an Episode)
     isTVShow = false
+    isEpisodeMode = false
     if isValid(data.Type)
         if data.Type = "Series"
             isTVShow = true
             m.top.showID = data.id
         else if data.Type = "Episode"
-            ' Episodes should not show seasons
+            ' Episodes should not show seasons, but should show same-season episodes
             isTVShow = false
+            isEpisodeMode = true
         else if isValid(m.top.showID) and m.top.showID <> ""
             ' Season or other TV content
             isTVShow = true
@@ -134,7 +136,13 @@ sub loadParts(data as object)
     ' Launch unified task to load all data in parallel
     m.LoadExtrasTask.itemId = data.id
     m.LoadExtrasTask.isTVShow = isTVShow
+    m.LoadExtrasTask.isEpisode = isEpisodeMode
 
+    ' Pass episode-specific data for same-season episode loading
+    if isEpisodeMode
+        m.LoadExtrasTask.showID = m.top.showID
+        m.LoadExtrasTask.seasonID = m.top.seasonID
+    end if
 
     ' Pass multi-server info if available
     if isValid(data._serverUrl) and isValidAndNotEmpty(data._serverUrl)
@@ -160,6 +168,7 @@ sub onExtrasLoaded()
     ' Extract data from content nodes
     seasonsNode = invalid
     nextupNode = invalid
+    episodesNode = invalid
     peopleNode = invalid
     similarNode = invalid
     specialsNode = invalid
@@ -169,13 +178,94 @@ sub onExtrasLoaded()
         if isValid(child) and isValid(child.title)
             if child.title = "seasons" then seasonsNode = child
             if child.title = "nextup" then nextupNode = child
+            if child.title = "episodes" then episodesNode = child
             if child.title = "people" then peopleNode = child
             if child.title = "similar" then similarNode = child
             if child.title = "specials" then specialsNode = child
         end if
     end for
 
-    ' Add rows in the desired order: Seasons → Next Episode → Cast & Crew → More Like This
+    ' Add rows in the desired order: Season Episodes → Seasons → Next Episode → Cast & Crew → More Like This
+
+    ' 0. Same-season episodes (for episode detail views)
+    if isValid(episodesNode) and episodesNode.getChildCount() > 0
+        ' Filter out the current episode and build the row
+        allEpisodes = episodesNode.getChildren(-1, 0)
+        currentEpId = m.top.episodeID
+        filteredEpisodes = []
+
+        ' Find current episode position and reorder: current+1 onward first, then wrap
+        currentIndex = -1
+        for i = 0 to allEpisodes.count() - 1
+            ep = allEpisodes[i]
+            if isValid(ep) and isValid(ep.json)
+                epId = ep.json.LookupCI("Id")
+                if isValidAndNotEmpty(currentEpId) and isStringEqual(currentEpId, epId)
+                    currentIndex = i
+                    exit for
+                end if
+            end if
+        end for
+
+        ' Add episodes after current first, then episodes before current
+        if currentIndex >= 0
+            for i = currentIndex + 1 to allEpisodes.count() - 1
+                filteredEpisodes.push(allEpisodes[i])
+            end for
+            for i = 0 to currentIndex - 1
+                filteredEpisodes.push(allEpisodes[i])
+            end for
+        else
+            ' Current not found, show all
+            for each ep in allEpisodes
+                filteredEpisodes.push(ep)
+            end for
+        end if
+
+        if filteredEpisodes.count() > 0
+            if not m.top.hasItems then m.top.hasItems = true
+
+            ' Determine season number for row title
+            seasonNum = invalid
+            firstEp = filteredEpisodes[0]
+            if isValid(firstEp) and isValid(firstEp.json)
+                seasonNum = firstEp.json.LookupCI("ParentIndexNumber")
+            end if
+            if isValid(seasonNum)
+                row = m.top.content.createChild("ContentNode")
+                row.Title = `${tr("Season")} ${seasonNum} ${tr("Episodes")}`
+            else
+                row = m.top.content.createChild("ContentNode")
+                row.Title = tr("Episodes")
+            end if
+
+            for each episode in filteredEpisodes
+                if not isValid(episode) or not isValid(episode.json) then continue for
+
+                episode.Id = episode.json.LookupCI("Id")
+                episode.Type = episode.json.LookupCI("Type")
+
+                ' Set label to just the episode name
+                epName = episode.json.LookupCI("Name")
+                if isValid(epName)
+                    episode.labelText = epName
+                else
+                    episode.labelText = ""
+                end if
+
+                ' Duration is read from json in ExtrasItem renderer
+                episode.subTitle = ""
+
+                ' Set landscape card width for ExtrasItem rendering
+                episode.imageWidth = 400
+
+                row.appendChild(episode)
+            end for
+
+            ' Landscape card size for episode thumbnails (16:9)
+            addRowSize([400, 280])
+        end if
+    end if
 
     ' 1. Seasons (for TV shows only)
     if isValid(seasonsNode) and seasonsNode.getChildCount() > 0
@@ -241,11 +331,11 @@ sub onExtrasLoaded()
         addRowSize([502, 283])
     end if
 
-    ' 3. Cast & Crew
+    ' 3. Cast
     if isValid(peopleNode) and peopleNode.getChildCount() > 0
         if not m.top.hasItems then m.top.hasItems = true
         row = m.top.content.createChild("ContentNode")
-        row.Title = tr("Cast & Crew")
+        row.Title = tr("Cast")
 
         ' Get all people at once
         allPeople = peopleNode.getChildren(-1, 0)

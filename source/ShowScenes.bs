@@ -707,30 +707,20 @@ function CreateMovieDetailsGroup(movie as object) as dynamic
         return invalid
     end if
 
-
-    ' Use EpisodeDetails for episodes, MovieDetails for movies
-    if LCase(movieMetaData.json.type) = "episode"
-        group = CreateObject("roSGNode", "EpisodeDetails")
-    else
-        group = CreateObject("roSGNode", "MovieDetails")
-    end if
+    ' Unified detail screen for both movies and episodes
+    group = CreateObject("roSGNode", "ItemDetails")
+    itemType = LCase(movieMetaData.json.type)
+    group.itemType = itemType
     group.observeField("quickPlayNode", m.port)
 
-    ' Don't show overhang title for episodes (title is already in the content area)
-    if LCase(movieMetaData.json.type) <> "episode"
-    end if
-
     group.optionsAvailable = false
-    ' push scene asap (to prevent extra button presses when retriving series/movie info)
+    ' push scene asap (to prevent extra button presses when retrieving series/movie info)
     m.global.sceneManager.callFunc("pushScene", group)
     group.itemContent = movieMetaData
 
-    ' Observe the appropriate refresh field based on component type
-    if LCase(movieMetaData.json.type) = "episode"
-        group.observeField("refreshEpisodeDetailsData", m.port)
-    else
-        group.observeField("refreshMovieDetailsData", m.port)
-    end if
+    ' Observe refresh fields — both are present on the unified component
+    group.observeField("refreshEpisodeDetailsData", m.port)
+    group.observeField("refreshMovieDetailsData", m.port)
 
     ' local trailers
     trailerData = api.items.GetLocalTrailers(movie.id, { userId: m.global.session.user.id })
@@ -741,24 +731,26 @@ function CreateMovieDetailsGroup(movie as object) as dynamic
         parts: api.videos.GetAdditionalParts(movie.id)
     }
 
-
-    if LCase(movieMetaData.json.type) = "episode" or LCase(movieMetaData.json.type) = "series"
+    ' Load logo image
+    if itemType = "episode" or itemType = "series"
         if isValid(movieMetaData.json.SeriesID)
             logoImageExists = api.items.HeadImageURLByName(movieMetaData.json.SeriesID, ImageType.LOGO)
             if logoImageExists
                 group.logoImageURI = api.items.GetImageURL(movieMetaData.json.SeriesID, ImageType.LOGO, 0, { "format": "Png", "maxHeight": 250, "maxWidth": 500, "quality": "90" })
             end if
         end if
+    else
+        logoImageExists = api.items.HeadImageURLByName(movie.id, ImageType.LOGO)
+        if logoImageExists
+            group.logoImageURI = api.items.GetImageURL(movie.id, ImageType.LOGO, 0, { "format": "Png", "maxHeight": 250, "maxWidth": 500, "quality": "90" })
+        end if
     end if
-
-    ' Note: buttonSelected observation is now handled by SceneManager.pushScene()
-    ' which observes and relays the event through sceneManager.buttonSelected
 
     ' setup and load movie extras
     extras = group.findNode("extrasGrid")
     extras.observeFieldScoped("selectedItem", m.port)
     extras.callFunc("loadParts", movieMetaData.json)
-    ' done building MovieDetails view
+
     stopLoadingSpinner()
     return group
 end function
@@ -858,52 +850,55 @@ function CreateSeriesDetailsGroup(seriesID as string, seriesServerData = invalid
     end for
 
     if isValid(seriesServerData)
-        apiSeriesData = ItemMetaDataForServer(seriesServerData, seriesID)
+        seriesMetaData = ItemMetaDataForServer(seriesServerData, seriesID)
     else
-        apiSeriesData = api.items.GetByID(seriesID, {
-            userId: m.global.session.user.id,
-            enableImageTypes: `${ImageType.PRIMARY}, ${ImageType.BACKDROP}, ${ImageType.THUMB}`,
-            imageTypeLimit: 1,
-            enableTotalRecordCount: false
-        })
+        seriesMetaData = ItemMetaData(seriesID)
     end if
 
-    seriesData = CreateObject("roSGNode", "SeriesData")
-    seriesData.json = apiSeriesData
-
     ' validate series meta data
-    if not isValid(seriesData)
+    if not isValid(seriesMetaData)
         stopLoadingSpinner()
         return invalid
     end if
 
-    ' start building SeriesDetails view
-    group = CreateObject("roSGNode", "TVSeriesDetails")
+    ' Build unified ItemDetails view for series
+    group = CreateObject("roSGNode", "ItemDetails")
+    group.itemType = "series"
+    group.observeField("quickPlayNode", m.port)
 
+    ' Determine if the resume button needs to be shown
     displayResumeButton = hasResummableEpisode(seriesID)
     if not displayResumeButton
         displayResumeButton = hasNextUpEpisode(seriesID)
     end if
-    group.displayResumeButton = displayResumeButton
 
     group.optionsAvailable = false
 
-    ' push scene asap (to prevent extra button presses when retriving series/movie info)
+    ' push scene asap (to prevent extra button presses when retrieving series info)
     m.global.sceneManager.callFunc("pushScene", group)
 
-    group.itemContent = seriesData
+    group.displayResumeButton = displayResumeButton
+    group.itemContent = seriesMetaData
     group.seasonData = seasonData
 
-    ' watch for button presses
+    ' Watch for series-specific button events
     group.observeField("playSeriesFromStart", m.port)
-    group.observeField("seasonSelected", m.port)
-    group.observeField("quickPlayNode", m.port)
-    group.observeField("refreshSeasonDetailsData", m.port)
+    group.observeField("refreshSeriesDetailsData", m.port)
 
-    ' setup and load series extras
+    ' Load logo image for series
+    logoImageExists = api.items.HeadImageURLByName(seriesID, ImageType.LOGO)
+    if logoImageExists
+        group.logoImageURI = api.items.GetImageURL(seriesID, ImageType.LOGO, 0, { "format": "Png", "maxHeight": 250, "maxWidth": 500, "quality": "90" })
+    end if
+
+    ' Local trailers
+    trailerData = api.items.GetLocalTrailers(seriesID, { userId: m.global.session.user.id })
+    group.trailerAvailable = isValidAndNotEmpty(trailerData)
+
+    ' Setup and load series extras
     extras = group.findNode("extrasGrid")
     extras.observeFieldScoped("selectedItem", m.port)
-    extras.callFunc("loadParts", seriesData.json)
+    extras.callFunc("loadParts", seriesMetaData.json)
 
     ' done building SeriesDetails view
     stopLoadingSpinner()
@@ -997,7 +992,9 @@ sub CreatePlaylistView(playlist as object)
     ' validate playlist node
     if not isValid(playlist) or not isValid(playlist.id) then return
 
-    group = CreateObject("roSGNode", "PlaylistView")
+    startLoadingSpinner()
+
+    group = CreateObject("roSGNode", "PlaylistDetails")
     m.global.sceneManager.callFunc("pushScene", group)
 
     group.pageContent = ItemMetaData(playlist.id)
@@ -1005,6 +1002,10 @@ sub CreatePlaylistView(playlist as object)
 
     ' Watch for user clicking on an item
     group.observeField("playlistItemSelected", m.port)
+    group.observeField("playAll", m.port)
+    group.observeField("shufflePlay", m.port)
+
+    stopLoadingSpinner()
 end sub
 
 function CreateSeasonDetailsGroup(series as object, season as object) as dynamic
@@ -1021,7 +1022,7 @@ function CreateSeasonDetailsGroup(series as object, season as object) as dynamic
         return invalid
     end if
     ' start building SeasonDetails view
-    group = CreateObject("roSGNode", "TVSeasonDetails")
+    group = CreateObject("roSGNode", "SeasonDetails")
 
     displayResumeButton = hasResummableEpisode(season.id)
     if not displayResumeButton
@@ -1060,7 +1061,7 @@ function CreateSeasonDetailsGroupByID(seriesID as string, seasonID as string, se
         return invalid
     end if
     ' start building SeasonDetails view
-    group = CreateObject("roSGNode", "TVSeasonDetails")
+    group = CreateObject("roSGNode", "SeasonDetails")
 
     displayResumeButton = hasResummableEpisode(seasonID)
     if not displayResumeButton

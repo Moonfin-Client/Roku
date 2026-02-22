@@ -1,0 +1,434 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/Image.bs"
+import "pkg:/source/api/sdk.bs"
+import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/enums/ImageType.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/enums/ViewLoadStatus.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/detailButtons.bs"
+import "pkg:/source/utils/misc.bs"
+
+sub init()
+    m.loadStatus = ViewLoadStatus.INIT
+    m.top.optionsAvailable = false
+
+    m.backdrop = m.top.findNode("backdrop")
+    m.seasonPoster = m.top.findNode("seasonPoster")
+    m.playedIndicator = m.top.findNode("playedIndicator")
+    m.seriesName = m.top.findNode("seriesName")
+    m.seasonTitle = m.top.findNode("seasonTitle")
+    m.seasonMeta = m.top.findNode("seasonMeta")
+    m.buttonRow = m.top.findNode("buttonRow")
+    m.episodeList = m.top.findNode("episodeList")
+    m.episodesLabel = m.top.findNode("episodesLabel")
+    m.episodeCount = m.top.findNode("episodeCount")
+    m.scrollableContent = m.top.findNode("scrollableContent")
+
+    m.buttonGroups = []
+    m.currentButtonIndex = 0
+
+    m.episodeList.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+
+    m.tvExtrasTask = createObject("roSGNode", "TVExtrasTask")
+    m.tvExtrasTask.observeField("results", "onExtrasDataLoaded")
+
+    m.isFirstRun = true
+end sub
+
+' ============================================
+' Screen lifecycle
+' ============================================
+
+sub OnScreenShown(_isReturning = false as boolean)
+    m.top.shufflePlay = false
+
+    scene = m.top.getScene()
+    if isValid(scene)
+        overhang = scene.findNode("overhang")
+        if chainLookupReturn(overhang, "isVisible", false)
+            overhang.isVisible = false
+        end if
+    end if
+
+    if isValid(m.top.lastFocus)
+        m.top.lastFocus.setFocus(true)
+        group = m.global.sceneManager.callFunc("getActiveScene")
+        if isValid(group) then group.lastFocus = m.top.lastFocus
+    else if m.buttonGroups.count() > 0
+        m.buttonGroups[0].setFocus(true)
+        m.top.lastFocus = m.buttonGroups[0]
+        highlightButton(0)
+    end if
+
+    if m.isFirstRun
+        m.isFirstRun = false
+        return
+    end if
+
+    m.top.refreshSeasonDetailsData = not m.top.refreshSeasonDetailsData
+end sub
+
+sub OnScreenHidden()
+end sub
+
+' ============================================
+' Data loading
+' ============================================
+
+sub onSeasonDataChanged()
+    startLoadingSpinner()
+end sub
+
+sub onEpisodeObjectsChanged()
+    objects = m.top.objects
+    if not isValid(objects) or not isValid(objects.Items) then return
+
+    content = CreateObject("roSGNode", "ContentNode")
+    for each item in objects.Items
+        content.appendChild(item)
+    end for
+    m.episodeList.content = content
+
+    totalCount = objects.Items.count()
+    m.episodeCount.text = stri(totalCount).trim()
+
+    ' Jump to first unwatched if setting enabled
+    if chainLookupReturn(m.global.session, "user.settings.`ui.tvshows.startListFromUnwatched`", false)
+        firstUnwatched = 0
+        for i = 0 to objects.Items.count() - 1
+            item = objects.Items[i]
+            if isChainValid(item, "json.UserData.Played") and not item.json.UserData.Played
+                firstUnwatched = i
+                exit for
+            end if
+        end for
+        m.episodeList.jumpToItem = firstUnwatched
+    end if
+
+    updateSeason()
+end sub
+
+sub updateSeason()
+    seasonData = m.top.seasonData
+    if not isValid(seasonData) or not isChainValid(seasonData, "json") then return
+
+    json = seasonData.json
+
+    m.playedIndicator.data = {
+        played: chainLookupReturn(json, "UserData.Played", false),
+        unplayedCount: chainLookupReturn(json, "UserData.UnplayedItemCount", 0)
+    }
+
+    imgParams = { "maxHeight": 495, "maxWidth": 330 }
+    m.seasonPoster.uri = ImageURL(json.Id, "Primary", imgParams)
+
+    backdropId = isValidAndNotEmpty(json.SeriesId) ? json.SeriesId : json.Id
+    m.backdrop.uri = ImageURL(backdropId, "Backdrop", { "maxWidth": 1920 })
+
+    seriesNameText = json.LookupCI("SeriesName")
+    if isValidAndNotEmpty(seriesNameText)
+        m.seriesName.text = seriesNameText
+    end if
+
+    m.seasonTitle.text = isValid(json.name) ? json.name : ""
+
+    metaParts = []
+    if isChainValid(json, "RecursiveItemCount")
+        count = json.RecursiveItemCount
+        metaParts.push(count = 1 ? "1 Episode" : `${stri(count).trim()} Episodes`)
+    end if
+    if isValid(json.productionYear)
+        metaParts.push(stri(json.productionYear).trim())
+    end if
+    officialRating = json.LookupCI("OfficialRating")
+    if isValidAndNotEmpty(officialRating)
+        metaParts.push(officialRating)
+    end if
+    m.seasonMeta.text = metaParts.join(" · ")
+
+    buildButtons()
+
+    m.tvExtrasTask.seasonID = json.Id
+    m.tvExtrasTask.control = TaskControl.RUN
+
+    stopLoadingSpinner()
+    m.loadStatus = ViewLoadStatus.LOADED
+
+    ' Set initial focus to first button
+    if m.buttonGroups.count() > 0
+        m.buttonGroups[0].setFocus(true)
+        m.top.lastFocus = m.buttonGroups[0]
+        highlightButton(0)
+    end if
+end sub
+
+sub onExtrasDataLoaded()
+    m.top.extrasObjects = m.tvExtrasTask.results
+end sub
+
+' ============================================
+' Buttons
+' ============================================
+
+sub buildButtons()
+    m.buttonRow.removeChildrenIndex(m.buttonRow.getChildCount(), 0)
+    m.buttonGroups = []
+    m.currentButtonIndex = 0
+
+    if m.top.displayResumeButton
+        addButton({
+            icon: "pkg:/images/icons/resume.png",
+            label: "Resume",
+            action: "resume",
+            id: "resumeButton"
+        })
+    end if
+
+    addButton({
+        icon: "pkg:/images/icons/play.png",
+        label: "Play",
+        action: "play",
+        id: "playButton"
+    })
+
+    addButton({
+        icon: "pkg:/images/icons/shuffle.png",
+        label: "Shuffle",
+        action: "shuffle",
+        id: "shuffleButton"
+    })
+
+    addButton({
+        icon: "pkg:/images/icons/watched.png",
+        label: "Watched",
+        action: "watched",
+        id: "watchedButton"
+    })
+
+    addButton({
+        icon: "pkg:/images/icons/favorite.png",
+        label: "Favorite",
+        action: "favorite",
+        id: "favoriteButton"
+    })
+end sub
+
+sub addButton(config as object)
+    buttonGroup = detailButtons.createButton(config, m.buttonGroups.count())
+    buttonGroup.observeField("focusedChild", "onButtonFocusChanged")
+    m.buttonRow.appendChild(buttonGroup)
+    m.buttonGroups.push(buttonGroup)
+end sub
+
+sub highlightButton(index as integer)
+    detailButtons.highlight(index, m.buttonGroups)
+end sub
+
+sub unhighlightAllButtons()
+    detailButtons.unhighlightAll(m.buttonGroups)
+end sub
+
+sub onButtonFocusChanged(event as object)
+    button = event.getRoSGNode()
+    if button <> invalid and button.buttonIndex <> invalid
+        if button.hasFocus() or button.isInFocusChain()
+            m.currentButtonIndex = button.buttonIndex
+            highlightButton(m.currentButtonIndex)
+        end if
+    end if
+end sub
+
+' ============================================
+' Button actions
+' ============================================
+
+sub handleButtonSelect()
+    if m.currentButtonIndex < 0 or m.currentButtonIndex >= m.buttonGroups.count() then return
+
+    button = m.buttonGroups[m.currentButtonIndex]
+    if not isValid(button) then return
+
+    action = button.buttonAction
+
+    if action = "resume" or action = "play"
+        m.top.playSeasonFromStart = true
+    else if action = "shuffle"
+        m.top.shufflePlay = true
+        m.top.playSeasonFromStart = true
+    else if action = "watched"
+        toggleWatched()
+    else if action = "favorite"
+        toggleFavorite()
+    end if
+end sub
+
+sub toggleWatched()
+    seasonData = m.top.seasonData
+    if not isChainValid(seasonData, "json") then return
+
+    isPlayed = chainLookupReturn(seasonData, "json.UserData.Played", false)
+
+    if isPlayed
+        api.users.UnmarkPlayed(seasonData.json.Id, { UserId: m.global.session.user.id })
+    else
+        api.users.MarkPlayed(seasonData.json.Id, { UserId: m.global.session.user.id })
+    end if
+
+    m.top.refreshSeasonDetailsData = not m.top.refreshSeasonDetailsData
+end sub
+
+sub toggleFavorite()
+    seasonData = m.top.seasonData
+    if not isChainValid(seasonData, "json") then return
+
+    isFavorite = chainLookupReturn(seasonData, "json.UserData.IsFavorite", false)
+
+    if isFavorite
+        api.users.UnmarkFavorite(seasonData.json.Id, { UserId: m.global.session.user.id })
+    else
+        api.users.MarkFavorite(seasonData.json.Id, { UserId: m.global.session.user.id })
+    end if
+
+    m.top.refreshSeasonDetailsData = not m.top.refreshSeasonDetailsData
+end sub
+
+' ============================================
+' Episode list helpers
+' ============================================
+
+function getFocusedItem() as dynamic
+    if m.episodeList.isInFocusChain()
+        itemFocused = m.episodeList.itemFocused
+        if isValid(m.episodeList.content)
+            return m.episodeList.content.getChild(itemFocused)
+        end if
+    end if
+    return invalid
+end function
+
+sub updateObjects()
+    if isValid(m.top.episodeObjects)
+        onEpisodeObjectsChanged()
+    end if
+end sub
+
+' ============================================
+' Scrolling
+' ============================================
+
+sub scrollContentTo(yOffset as integer)
+    if isValid(m.scrollableContent)
+        m.scrollableContent.translation = [0, yOffset]
+    end if
+end sub
+
+' ============================================
+' Key handling
+' ============================================
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    ' Determine what's focused
+    isButtonFocused = false
+    if m.buttonGroups.count() > 0
+        for each btn in m.buttonGroups
+            if btn.hasFocus() or btn.isInFocusChain()
+                isButtonFocused = true
+                exit for
+            end if
+        end for
+    end if
+
+    isEpisodeListFocused = m.episodeList.isInFocusChain()
+
+    if isButtonFocused
+        if key = KeyCode.LEFT
+            if m.currentButtonIndex > 0
+                newIndex = m.currentButtonIndex - 1
+                m.buttonGroups[newIndex].setFocus(true)
+                m.top.lastFocus = m.buttonGroups[newIndex]
+                m.currentButtonIndex = newIndex
+                highlightButton(newIndex)
+                setLastFocus(m.buttonGroups[newIndex])
+            end if
+            return true
+
+        else if key = KeyCode.RIGHT
+            if m.currentButtonIndex < m.buttonGroups.count() - 1
+                newIndex = m.currentButtonIndex + 1
+                m.buttonGroups[newIndex].setFocus(true)
+                m.top.lastFocus = m.buttonGroups[newIndex]
+                m.currentButtonIndex = newIndex
+                highlightButton(newIndex)
+                setLastFocus(m.buttonGroups[newIndex])
+            end if
+            return true
+
+        else if key = KeyCode.OK
+            handleButtonSelect()
+            return true
+
+        else if key = KeyCode.DOWN
+            m.episodeList.setFocus(true)
+            m.top.lastFocus = m.episodeList
+            setLastFocus(m.episodeList)
+            unhighlightAllButtons()
+            scrollContentTo(-460)
+            return true
+
+        else if key = KeyCode.UP
+            m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
+            return FocusOverhang(m.top)
+        end if
+    end if
+
+    if isEpisodeListFocused
+        if key = KeyCode.UP
+            if m.episodeList.itemFocused = 0
+                if m.buttonGroups.count() > 0
+                    m.buttonGroups[m.currentButtonIndex].setFocus(true)
+                    m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
+                    highlightButton(m.currentButtonIndex)
+                    setLastFocus(m.buttonGroups[m.currentButtonIndex])
+                    scrollContentTo(0)
+                    return true
+                end if
+            end if
+            return false
+
+        else if key = KeyCode.OK
+            focusedItem = getFocusedItem()
+            if isValid(focusedItem)
+                m.top.selectedItem = focusedItem
+            end if
+            return true
+
+        else if key = KeyCode.PLAY
+            focusedItem = getFocusedItem()
+            if isValid(focusedItem)
+                m.top.quickPlayNode = focusedItem
+            end if
+            return true
+        end if
+    end if
+
+    if key = KeyCode.BACK
+        if isEpisodeListFocused
+            if m.buttonGroups.count() > 0
+                m.buttonGroups[m.currentButtonIndex].setFocus(true)
+                m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
+                highlightButton(m.currentButtonIndex)
+                setLastFocus(m.buttonGroups[m.currentButtonIndex])
+            end if
+            scrollContentTo(0)
+            return true
+        end if
+
+        return false
+    end if
+
+    return false
+end function
