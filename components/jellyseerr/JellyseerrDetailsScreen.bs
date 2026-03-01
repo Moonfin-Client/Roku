@@ -50,6 +50,8 @@ sub init()
     m.focusedElement = invalid
     m.previousFocusedElement = invalid
     m.buttons = []
+    m.pending4kAfterHD = false
+    m.pending4kUseAdvancedOptions = false
 
     ' Configure RowList item sizes for recommendations and similar rows
     m.recommendationsRow.rowItemSize = [180, 270]
@@ -87,13 +89,23 @@ sub onRestoreFocus()
         m.previousFocusedElement.setFocus(true)
         m.previousFocusedElement = invalid
     else if m.buttons.count() > 0
+        focusSet = false
         m.focusedElement = m.buttonsGroup
         for each button in m.buttons
             if button.focusable
                 button.setFocus(true)
+                focusSet = true
                 exit for
             end if
         end for
+        if not focusSet
+            if m.castRow.visible
+                m.focusedElement = m.castRow
+                m.castRow.setFocus(true)
+            else
+                m.buttonsGroup.setFocus(true)
+            end if
+        end if
     else if m.castRow.visible
         m.focusedElement = m.castRow
         m.castRow.setFocus(true)
@@ -291,15 +303,32 @@ sub onFullDetailsResponse(event as object)
     UpdateFullUI()
     HideLoading()
 
-    ' Set focus to first enabled button
+    focusSet = false
     if m.buttons.count() > 0
         for each button in m.buttons
             if button.focusable
                 button.setFocus(true)
                 m.focusedElement = m.buttonsGroup
+                focusSet = true
                 exit for
             end if
         end for
+    end if
+
+    if not focusSet
+        if m.castRow.visible
+            m.focusedElement = m.castRow
+            m.castRow.setFocus(true)
+        else if m.recommendationsRow.visible
+            m.focusedElement = m.recommendationsRow
+            m.recommendationsRow.setFocus(true)
+        else if m.similarRow.visible
+            m.focusedElement = m.similarRow
+            m.similarRow.setFocus(true)
+        else
+            m.focusedElement = m.buttonsGroup
+            m.buttonsGroup.setFocus(true)
+        end if
     end if
 
     LoadCastData()
@@ -1504,9 +1533,9 @@ sub onQualityDialogResponse(event as object)
         else if selectedQuality = "4k"
             SubmitRequest(true)
         else if selectedQuality = "both"
-            ' Submit both HD and 4K requests
+            ' Submit HD first, then 4K after HD completes
+            m.pending4kAfterHD = true
             SubmitRequest(false)
-            SubmitRequest(true)
         end if
     end if
 end sub
@@ -1566,12 +1595,10 @@ sub onAdvancedDialogSubmitted(event as object)
     else if selectedQuality = "4k"
         SubmitRequestWithAdvancedOptions(true)
     else if selectedQuality = "both"
-        ' For "both", we need to show advanced dialog twice or submit with same options
-        ' For simplicity, use the same options for both requests
+        ' Submit HD first with advanced options, then 4K after HD completes
+        m.pending4kAfterHD = true
+        m.pending4kUseAdvancedOptions = true
         SubmitRequestWithAdvancedOptions(false)
-        ' Note: For 4K, we'd need to fetch 4K server options separately
-        ' For now, submit 4K with defaults
-        SubmitRequest(true)
     end if
 end sub
 
@@ -2040,9 +2067,23 @@ sub onRequestSubmitted(event as object)
     if m.lastRequestIs4k = true then qualityLabel = "4K"
 
     if response.success
+        if m.pending4kAfterHD = true
+            m.pending4kAfterHD = false
+            if m.pending4kUseAdvancedOptions = true
+                m.pending4kUseAdvancedOptions = false
+                SubmitRequestWithAdvancedOptions(true)
+            else
+                SubmitRequest(true)
+            end if
+            return
+        end if
+
         ' Show success message and reload after dialog is dismissed
         ShowSuccessAndReload(qualityLabel + " request submitted successfully!")
     else
+        m.pending4kAfterHD = false
+        m.pending4kUseAdvancedOptions = false
+
         errorMsg = "Failed to submit " + qualityLabel + " request"
         errorTitle = "Request Failed"
 
@@ -2140,12 +2181,25 @@ sub ShowMessage(title as string, message as dynamic)
         dialog.title = safeTitle + "" ' Force string concatenation
         dialog.message = [safeMessage + ""] ' StandardMessageDialog expects an array of strings
         dialog.buttons = ["OK"]
+        dialog.observeField("buttonSelected", "onMessageDialogClosed")
 
-        ' Set dialog on scene
         scene = m.top.getScene()
         if scene <> invalid
+            m.messageDialog = dialog
             scene.dialog = dialog
         end if
+    end if
+end sub
+
+sub onMessageDialogClosed(_event as object)
+    scene = m.top.getScene()
+    if scene <> invalid
+        scene.dialog = invalid
+    end if
+
+    if m.messageDialog <> invalid
+        m.messageDialog.unobserveField("buttonSelected")
+        m.messageDialog = invalid
     end if
 end sub
 
@@ -2167,7 +2221,6 @@ sub ShowSuccessAndReload(message as string)
 end sub
 
 sub onSuccessDialogClosed(_event as object)
-    ' Close the dialog
     scene = m.top.getScene()
     if scene <> invalid
         scene.dialog = invalid
@@ -2178,18 +2231,7 @@ sub onSuccessDialogClosed(_event as object)
         m.successDialog = invalid
     end if
 
-    ' Restore focus to this screen and buttons
-    m.top.setFocus(true)
-    if m.buttons.count() > 0
-        for each button in m.buttons
-            if button.focusable
-                button.setFocus(true)
-                exit for
-            end if
-        end for
-    end if
-
-    ' Now reload details to update status and buttons
+    ' Focus will be set by onFullDetailsResponse after reload completes
     LoadFullDetails()
 end sub
 
@@ -2444,10 +2486,10 @@ function focusKeywordsSection() as boolean
     m.castRow.setFocus(false)
     m.recommendationsRow.setFocus(false)
     m.similarRow.setFocus(false)
-    
+
     ' Hide focus feedback on all RowLists to prevent dual focus appearance
     setRowListFocusFeedback(false)
-    
+
     m.focusedElement = m.keywordsContainer
     m.keywordsContainer.setFocus(true)
     m.focusedKeywordIndex = 0
