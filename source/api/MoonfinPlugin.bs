@@ -1,0 +1,223 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+
+namespace moonfinPlugin
+
+    function Ping() as object
+        req = APIRequest("/Moonfin/Ping")
+        if not isValid(req) then return invalid
+
+        result = getJson(req)
+        if not isValid(result) then return invalid
+
+        return normalizeKeys(result)
+    end function
+
+    function FetchRatings(contentType as string, tmdbId as string) as object
+        if not isValidAndNotEmpty(contentType) or not isValidAndNotEmpty(tmdbId) then return []
+
+        req = APIRequest("/Moonfin/MdbList/Ratings", {
+            type: contentType,
+            tmdbId: tmdbId
+        })
+        if not isValid(req) then return []
+
+        result = getJson(req)
+        if not isValid(result) then return []
+
+        result = normalizeKeys(result)
+        if (result.success ?? true) = false then return []
+
+        ratingsArr = result.ratings
+        if not isValidAndNotEmpty(ratingsArr) then return []
+
+        ratings = []
+        for each r in ratingsArr
+            r = normalizeKeys(r)
+            ratings.push({
+                source: r.source ?? "",
+                value: r.value,
+                score: r.score,
+                votes: r.votes,
+                url: r.url
+            })
+        end for
+
+        return ratings
+    end function
+
+    function GetIconPath(source as string, rating = invalid as object) as string
+        score = invalid
+        if isValid(rating) then score = rating.score
+
+        if source = "tomatoes" and isValid(score) and score > 0
+            if score >= 75 then return "pkg:/images/icons/ratings/rt-certified.png"
+            if score < 60 then return "pkg:/images/icons/ratings/rt-rotten.png"
+        end if
+
+        if source = "popcorn" and isValid(score) and score > 0
+            if score >= 90 then return "pkg:/images/icons/ratings/rt-verified.png"
+            if score < 60 then return "pkg:/images/icons/ratings/rt-audience-down.png"
+        end if
+
+        if source = "metacritic" and isValid(score) and score >= 81
+            return "pkg:/images/icons/ratings/metacritic-score.png"
+        end if
+
+        iconFile = moonfinPlugin.GetIconFilename(source)
+        if iconFile = "" then return ""
+
+        return `pkg:/images/icons/ratings/${iconFile}`
+    end function
+
+    function GetIconFilename(source as string) as string
+        if source = "imdb" then return "imdb.png"
+        if source = "tmdb" then return "tmdb.png"
+        if source = "trakt" then return "trakt.png"
+        if source = "tomatoes" then return "rt-fresh.png"
+        if source = "popcorn" then return "rt-audience-up.png"
+        if source = "metacritic" then return "metacritic.png"
+        if source = "metacriticuser" then return "metacritic-user.png"
+        if source = "letterboxd" then return "letterboxd.png"
+        if source = "rogerebert" then return "rogerebert.png"
+        if source = "myanimelist" then return "mal.png"
+        if source = "anilist" then return "anilist.png"
+        return ""
+    end function
+
+    function FormatRating(rating as object) as string
+        if not isValid(rating) or not isValid(rating.source) then return ""
+
+        source = LCase(rating.source)
+        value = rating.value
+        score = rating.score
+
+        if not isValid(value) and not isValid(score) then return ""
+
+        if source = "imdb"
+            if isValid(value) then return formatDecimal(value, 1)
+            if isValid(score) then return formatDecimal(score / 10, 1)
+        else if source = "tmdb"
+            if isValid(value) then return `${formatDecimal(value, 0)}%`
+            if isValid(score) then return `${formatDecimal(score, 0)}%`
+        else if source = "trakt"
+            if isValid(score) then return `${formatDecimal(score, 0)}%`
+        else if source = "tomatoes" or source = "popcorn" or source = "metacritic" or source = "metacriticuser"
+            if isValid(score) then return `${formatDecimal(score, 0)}%`
+            if isValid(value) then return `${formatDecimal(value, 0)}%`
+        else if source = "letterboxd"
+            if isValid(value) then return formatDecimal(value, 1)
+            if isValid(score) then return formatDecimal(score / 20, 1)
+        else if source = "rogerebert"
+            if isValid(value)
+                ' Show half-star precision only when needed (3.5/4 not 4.0/4)
+                if value = int(value)
+                    return `${formatDecimal(value, 0)}/4`
+                else
+                    return `${formatDecimal(value, 1)}/4`
+                end if
+            end if
+            if isValid(score) then return `${formatDecimal(score, 0)}%`
+        else if source = "myanimelist"
+            if isValid(value) then return formatDecimal(value, 1)
+            if isValid(score) then return formatDecimal(score / 10, 1)
+        else if source = "anilist"
+            if isValid(score) then return `${formatDecimal(score, 0)}%`
+        else
+            if isValid(score) then return `${formatDecimal(score, 0)}%`
+            if isValid(value) then return value.toStr()
+        end if
+
+        return ""
+    end function
+
+    function GetContentType(itemType as string) as string
+        if isStringEqual(itemType, "Movie") then return "movie"
+        if isStringEqual(itemType, "Series") then return "show"
+        if isStringEqual(itemType, "Episode") then return "show"
+        if isStringEqual(itemType, "Season") then return "show"
+        return ""
+    end function
+
+    function GetTmdbId(providerIds as object) as string
+        if not isValid(providerIds) then return ""
+        return providerIds.Tmdb ?? providerIds.tmdb ?? ""
+    end function
+
+    function IsEnabled() as boolean
+        return toBoolean(chainLookupReturn(m.global.session, "user.settings.`plugin.enabled`", false))
+    end function
+
+    function IsRatingsEnabled() as boolean
+        if not moonfinPlugin.IsEnabled() then return false
+        return toBoolean(chainLookupReturn(m.global.session, "user.settings.`plugin.mdblist.enabled`", true))
+    end function
+
+    function BuildDisplayRatings(ratings as object) as object
+        if not isValidAndNotEmpty(ratings) then return []
+
+        result = []
+
+        for each rating in ratings
+            source = LCase(rating.source ?? "")
+            if source = "" then continue for
+
+            formatted = moonfinPlugin.FormatRating(rating)
+            if formatted = "" then continue for
+
+            result.push({
+                source: source,
+                name: moonfinPlugin.GetSourceName(source),
+                formatted: formatted,
+                iconPath: moonfinPlugin.GetIconPath(source, rating),
+                score: rating.score,
+                value: rating.value
+            })
+        end for
+
+        return result
+    end function
+
+    function GetSourceName(source as string) as string
+        if source = "imdb" then return "IMDb"
+        if source = "tmdb" then return "TMDb"
+        if source = "trakt" then return "Trakt"
+        if source = "tomatoes" then return "Rotten Tomatoes"
+        if source = "popcorn" then return "RT Audience"
+        if source = "metacritic" then return "Metacritic"
+        if source = "metacriticuser" then return "Metacritic User"
+        if source = "letterboxd" then return "Letterboxd"
+        if source = "rogerebert" then return "Roger Ebert"
+        if source = "myanimelist" then return "MyAnimeList"
+        if source = "anilist" then return "AniList"
+        return source
+    end function
+
+    function formatDecimal(num as dynamic, places as integer) as string
+        if not isValid(num) then return ""
+        if places = 0
+            return int(num).toStr()
+        end if
+        multiplier = 10 ^ places
+        rounded = int(num * multiplier + 0.5) / multiplier
+        intPart = int(rounded)
+        fracPart = int((rounded - intPart) * multiplier + 0.5)
+        fracStr = fracPart.toStr()
+        while fracStr.len() < places
+            fracStr = "0" + fracStr
+        end while
+        return `${intPart}.${fracStr}`
+    end function
+
+    function normalizeKeys(obj as object) as object
+        if not isValid(obj) then return invalid
+        result = {}
+        for each key in obj
+            normalized = LCase(key.left(1)) + key.mid(1)
+            result[normalized] = obj[key]
+        end for
+        return result
+    end function
+
+end namespace
