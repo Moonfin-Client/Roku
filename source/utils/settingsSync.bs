@@ -1,0 +1,168 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/MoonfinPlugin.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+
+namespace settingsSync
+
+    function GetMappings() as object
+        return [
+            { pluginKey: "navbarPosition", rokuKey: "navbar.position", type: "direct" },
+            { pluginKey: "showFavoritesButton", rokuKey: "navbar.show_favorites", type: "bool" },
+            { pluginKey: "showGenresButton", rokuKey: "navbar.show_genres", type: "bool" },
+            { pluginKey: "showLibrariesInToolbar", rokuKey: "navbar.show_libraries", type: "bool" },
+            { pluginKey: "showShuffleButton", rokuKey: "navbar.show_shuffle", type: "bool" },
+            { pluginKey: "mergeContinueWatchingNextUp", rokuKey: "ui.home.mergeContinueWatchingNextUp", type: "bool" },
+            { pluginKey: "enableMultiServerLibraries", rokuKey: "ui.home.enableMultiServer", type: "bool" },
+            { pluginKey: "mediaBarEnabled", rokuKey: "ui.home.mediaBarEnabled", type: "bool" },
+            { pluginKey: "mediaBarItemCount", rokuKey: "ui.home.featuredMediaItems", type: "intToStr" },
+            { pluginKey: "mediaBarOpacity", rokuKey: "ui.overlayOpacity", type: "opacityToPercent" },
+            { pluginKey: "mediaBarOverlayColor", rokuKey: "ui.overlayColor", type: "colorHex" },
+            { pluginKey: "shuffleContentType", rokuKey: "shuffle_content_type", type: "shuffleType" },
+            { pluginKey: "detailsScreenBlur", rokuKey: "ui.backdrop.detailBlurAmount", type: "direct" },
+            { pluginKey: "browsingBlur", rokuKey: "ui.backdrop.homeBlurAmount", type: "direct" },
+            { pluginKey: "themeMusicEnabled", rokuKey: "playback.thememusic.enabled", type: "bool" },
+            { pluginKey: "mdblistEnabled", rokuKey: "plugin.mdblist.enabled", type: "bool" },
+            { pluginKey: "tmdbEpisodeRatingsEnabled", rokuKey: "plugin.tmdb.episodeRatings", type: "bool" },
+            { pluginKey: "jellyseerrEnabled", rokuKey: "jellyseerr.enabled", type: "bool" }
+        ]
+    end function
+
+    function IsSyncEnabled() as boolean
+        if not moonfinPlugin.IsEnabled() then return false
+        pluginInfo = m.global.session.pluginInfo
+        if not isValid(pluginInfo) or not pluginInfo.installed then return false
+        if not (pluginInfo.settingsSyncEnabled ?? false) then return false
+        return toBoolean(chainLookupReturn(m.global.session, "user.settings.`plugin.settingsSync`", true))
+    end function
+
+    sub PullFromServer()
+        if not settingsSync.IsSyncEnabled() then return
+
+        profile = settingsSync.FetchResolvedProfile("tv")
+        if not isValid(profile) then return
+
+        tmpSettings = m.global.session.user.settings
+        mappings = settingsSync.GetMappings()
+
+        for each mapping in mappings
+            pluginValue = profile[mapping.pluginKey]
+            if not isValid(pluginValue) then continue for
+
+            rokuValue = settingsSync.PluginToRoku(pluginValue, mapping.type)
+            if not isValid(rokuValue) then continue for
+
+            tmpSettings[mapping.rokuKey] = toBoolean(rokuValue)
+            registry_write(mapping.rokuKey, rokuValue, m.global.session.user.id)
+        end for
+
+        session.user.Update("settings", tmpSettings)
+    end sub
+
+    sub PushToServer(rokuKey as string, rokuValue as dynamic)
+        if not settingsSync.IsSyncEnabled() then return
+
+        mapping = settingsSync.FindMappingByRokuKey(rokuKey)
+        if not isValid(mapping) then return
+
+        pluginValue = settingsSync.RokuToPlugin(rokuValue, mapping.type)
+        if not isValid(pluginValue) then return
+
+        profileData = {}
+        profileData[mapping.pluginKey] = pluginValue
+
+        settingsSync.SaveProfile("tv", profileData)
+    end sub
+
+    function FindMappingByRokuKey(rokuKey as string) as object
+        mappings = settingsSync.GetMappings()
+        for each mapping in mappings
+            if mapping.rokuKey = rokuKey then return mapping
+        end for
+        return invalid
+    end function
+
+    function PluginToRoku(pluginValue as dynamic, conversionType as string) as dynamic
+        if conversionType = "direct"
+            return pluginValue.toStr()
+        else if conversionType = "bool"
+            if type(pluginValue) = "Boolean" or type(pluginValue) = "roBoolean"
+                return pluginValue ? "true" : "false"
+            end if
+            return LCase(pluginValue.toStr())
+        else if conversionType = "intToStr"
+            return pluginValue.toStr()
+        else if conversionType = "opacityToPercent"
+            percent = 50
+            if type(pluginValue) = "Integer" or type(pluginValue) = "roInt" or type(pluginValue) = "roInteger"
+                percent = pluginValue
+            else if type(pluginValue) = "Float" or type(pluginValue) = "roFloat" or type(pluginValue) = "Double" or type(pluginValue) = "roDouble"
+                percent = int(pluginValue)
+            end if
+            if percent < 0 then percent = 0
+            if percent > 100 then percent = 100
+            rokuFloat = percent / 100.0
+            rounded = int(rokuFloat * 10 + 0.5) / 10.0
+            if rounded = 0 then return "0.1"
+            if rounded >= 1 then return "1.0"
+            return rounded.toStr()
+        else if conversionType = "colorHex"
+            colorStr = pluginValue.toStr()
+            if colorStr.left(1) = "#"
+                colorStr = "0x" + colorStr.mid(1)
+            end if
+            return colorStr
+        else if conversionType = "shuffleType"
+            pluginStr = LCase(pluginValue.toStr())
+            if pluginStr = "movies" then return "movies_only"
+            if pluginStr = "tv" then return "tv_only"
+            return "both"
+        end if
+        return invalid
+    end function
+
+    function RokuToPlugin(rokuValue as dynamic, conversionType as string) as dynamic
+        rokuStr = rokuValue.toStr()
+
+        if conversionType = "direct"
+            return rokuStr
+        else if conversionType = "bool"
+            return (LCase(rokuStr) = "true")
+        else if conversionType = "intToStr"
+            return val(rokuStr)
+        else if conversionType = "opacityToPercent"
+            rokuFloat = val(rokuStr)
+            return int(rokuFloat * 100 + 0.5)
+        else if conversionType = "colorHex"
+            return rokuStr
+        else if conversionType = "shuffleType"
+            if rokuStr = "movies_only" then return "movies"
+            if rokuStr = "tv_only" then return "tv"
+            return "both"
+        end if
+        return invalid
+    end function
+
+    function FetchResolvedProfile(profile as string) as object
+        req = APIRequest(`/Moonfin/Settings/Resolved/${profile}`)
+        if not isValid(req) then return invalid
+
+        result = getJson(req)
+        if not isValid(result) then return invalid
+
+        return moonfinPlugin.normalizeKeys(result)
+    end function
+
+    sub SaveProfile(profile as string, profileData as object)
+        req = APIRequest(`/Moonfin/Settings/Profile/${profile}`)
+        if not isValid(req) then return
+
+        body = FormatJson({
+            profile: profileData,
+            clientId: "roku"
+        })
+
+        postVoid(req, body)
+    end sub
+
+end namespace
