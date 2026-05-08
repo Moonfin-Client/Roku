@@ -24,9 +24,6 @@ sub init()
     m.settingsMenu.focusFootprintBlendColor = ColorPalette.TRANSPARENT
     m.settingsMenu.focusedColor = ColorPalette.WHITE
 
-    testRectangle = m.top.findNode("testRectangle")
-    testRectangle.blendColor = ColorPalette.ELEMENTBACKGROUND
-
     m.settingDesc = m.top.findNode("settingDesc")
     m.path = m.top.findNode("path")
 
@@ -76,17 +73,130 @@ sub init()
     m.keypressTimer = m.top.findNode("keypressTimer")
     m.keypressTimer.observeField("fire", "onKeypressTimerFire")
 
-    ' String input dialog tracking
     m.currentStringSetting = invalid
     m.stringInputDialog = invalid
 
-    ' Load Configuration Tree
-    m.configTree = GetConfigTree()
+    m.configTree = reorderSettingsForFlutter(GetConfigTree())
     LoadMenu({ children: m.configTree })
 end sub
 
 sub onKeypressTimerFire()
     m.keypresses.clear()
+end sub
+
+sub hideEditingControls()
+    m.settingDesc.visible = false
+    m.boolSetting.visible = false
+    m.integerSetting.visible = false
+    m.radioSetting.visible = false
+    m.colorgrid.visible = false
+    m.slider.visible = false
+end sub
+
+function getFocusedSetting() as dynamic
+    focusIndex = m.settingsMenu.itemFocused
+    if focusIndex < 0 then return invalid
+
+    if isValid(m.visibleItemsMap) and focusIndex < m.visibleItemsMap.Count()
+        return m.visibleItemsMap[focusIndex]
+    end if
+
+    if m.userLocation.Count() > 0 and isValid(m.userLocation.peek().children) and focusIndex < m.userLocation.peek().children.Count()
+        return m.userLocation.peek().children[focusIndex]
+    end if
+
+    return invalid
+end function
+
+function dynamicToDisplayString(value as dynamic) as string
+    if not isValid(value) then return ""
+
+    valueType = type(value)
+    if isStringEqual(valueType, "Boolean") or isStringEqual(valueType, "roBoolean")
+        if value then return "true"
+        return "false"
+    end if
+
+    return value.ToStr()
+end function
+
+function getSettingCurrentValueLabel(settingItem as dynamic) as string
+    if not isValid(settingItem) then return ""
+    if not isValid(settingItem.type) then return ""
+    if not isValid(settingItem.settingName) then return ""
+
+    currentValue = get_user_setting(settingItem.settingName)
+    if not isValid(currentValue) and isValid(m.global.session.user.settings[settingItem.settingName])
+        currentValue = m.global.session.user.settings[settingItem.settingName]
+    end if
+
+    if isStringEqual(settingItem.type, SettingType.BOOL)
+        valueString = LCase(dynamicToDisplayString(currentValue))
+        if isStringEqual(valueString, "true")
+            return tr("Enabled")
+        end if
+        return tr("Disabled")
+    end if
+
+    if isStringEqual(settingItem.type, SettingType.RADIO)
+        selectedValue = dynamicToDisplayString(currentValue)
+        for each option in settingItem.options
+            optionId = dynamicToDisplayString(option.id)
+            if isStringEqual(optionId, selectedValue)
+                return tr(chainLookupReturn(option, "title", optionId))
+            end if
+        end for
+        return selectedValue
+    end if
+
+    if isStringEqual(settingItem.type, SettingType.SLIDER)
+        selectedValue = dynamicToDisplayString(currentValue)
+        for each option in settingItem.options
+            optionValue = dynamicToDisplayString(option.value)
+            if isStringEqual(optionValue, selectedValue)
+                optionTitle = chainLookupReturn(option, "title", optionValue)
+                if isValidAndNotEmpty(optionTitle)
+                    return tr(optionTitle)
+                end if
+                return optionValue
+            end if
+        end for
+        return selectedValue
+    end if
+
+    if isStringEqual(settingItem.type, SettingType.integer)
+        return dynamicToDisplayString(currentValue)
+    end if
+
+    if isStringEqual(settingItem.type, SettingType.COLORGRID)
+        return UCase(dynamicToDisplayString(currentValue))
+    end if
+
+    if isStringEqual(settingItem.type, SettingType.string)
+        settingKeyLower = LCase(chainLookupReturn(settingItem, "settingName", ""))
+        if InStr(settingKeyLower, "apikey") > 0 or InStr(settingKeyLower, "password") > 0
+            return "********"
+        end if
+        return dynamicToDisplayString(currentValue)
+    end if
+
+    return ""
+end function
+
+sub refreshCurrentItemValue(settingItem = invalid as dynamic)
+    if not isValid(settingItem)
+        settingItem = getFocusedSetting()
+    end if
+    if not isValid(settingItem) then return
+    if not isValid(m.settingsMenu) or not isValid(m.settingsMenu.content) then return
+
+    focusIndex = m.settingsMenu.itemFocused
+    if focusIndex < 0 then return
+
+    contentItem = m.settingsMenu.content.getChild(focusIndex)
+    if not isValid(contentItem) then return
+
+    contentItem.currentValue = getSettingCurrentValueLabel(settingItem)
 end sub
 
 ' Sync a setting to the server via PostTask (render-thread safe).
@@ -101,9 +211,12 @@ sub syncSettingToServer(rokuKey as string, rokuValue as dynamic)
 end sub
 
 sub onSliderSelected()
+    if not m.slider.hasFocus() then return
+
     if not isValid(m.slider.value) then return
 
-    selectedSetting = m.userLocation.peek().children[m.settingsMenu.itemFocused]
+    selectedSetting = getFocusedSetting()
+    if not isValid(selectedSetting) then return
 
     for each option in selectedSetting.options
         if not isValid(option.data) then continue for
@@ -116,6 +229,8 @@ sub onSliderSelected()
 
     set_user_setting(selectedSetting.settingName, m.slider.value)
     syncSettingToServer(selectedSetting.settingName, m.slider.value)
+    refreshCurrentItemValue(selectedSetting)
+    hideEditingControls()
     m.settingsMenu.setFocus(true)
 end sub
 
@@ -123,21 +238,18 @@ sub onColorSelected()
     selectedColor = m.colorgrid.content.getChild(m.colorgrid.itemSelected).colorCode
     m.colorgrid.selectedColor = selectedColor
 
-    selectedSetting = m.userLocation.peek().children[m.settingsMenu.itemFocused]
+    selectedSetting = getFocusedSetting()
+    if not isValid(selectedSetting) then return
+
     set_user_setting(selectedSetting.settingName, selectedColor ?? ColorPalette.VIEWBACKGROUND)
 
-    ' Apply settings to items already loaded so user doesn't need to close the channel to see the changes
+    scene = m.top.getScene()
 
-    ' Apply global background color
-    if isStringEqual(selectedSetting.settingName, "colorBackground")
-        scene = m.top.getScene()
+    if isStringEqual(selectedSetting.settingName, "colorBackground") and isValid(scene)
         scene.backgroundColor = selectedColor ?? ColorPalette.VIEWBACKGROUND
     end if
 
-    ' Apply cursor color
-    if isStringEqual(selectedSetting.settingName, "colorCursor")
-        ' Update cursor around user avatar
-        scene = m.top.getScene()
+    if isStringEqual(selectedSetting.settingName, "colorCursor") and isValid(scene)
         activeNav = getActiveNav(scene)
         if isValid(activeNav)
             overlayCurrentUserSelection = activeNav.findNode("overlayCurrentUserSelection")
@@ -146,14 +258,10 @@ sub onColorSelected()
             end if
         end if
 
-        ' Update setting menu colors
         m.settingsMenu.focusBitmapBlendColor = selectedColor ?? ColorPalette.HIGHLIGHT
     end if
 
-    ' Apply cursor color
-    if isStringEqual(selectedSetting.settingName, "colorHomeUsername")
-        ' Update cursor around user avatar
-        scene = m.top.getScene()
+    if isStringEqual(selectedSetting.settingName, "colorHomeUsername") and isValid(scene)
         activeNav = getActiveNav(scene)
         if isValid(activeNav)
             overlayCurrentUser = activeNav.findNode("overlayCurrentUser")
@@ -162,21 +270,30 @@ sub onColorSelected()
             end if
         end if
     end if
+
+    refreshCurrentItemValue(selectedSetting)
+    hideEditingControls()
+    m.settingsMenu.setFocus(true)
 end sub
 
 sub onKeyGridSubmit()
-    selectedSetting = m.userLocation.peek().children[m.settingsMenu.itemFocused]
+    selectedSetting = getFocusedSetting()
+    if not isValid(selectedSetting) then return
+
     if isValid(selectedSetting.max) and m.integerSetting.text.ToInt() > selectedSetting.max.ToInt()
         m.integerSetting.text = selectedSetting.max
         return
     end if
     set_user_setting(selectedSetting.settingName, m.integerSetting.text)
     syncSettingToServer(selectedSetting.settingName, m.integerSetting.text)
+    refreshCurrentItemValue(selectedSetting)
+    hideEditingControls()
     m.settingsMenu.setFocus(true)
 end sub
 
 sub onKeyGridEscape()
     if m.integerSetting.escape = "left" or m.integerSetting.escape = "back"
+        hideEditingControls()
         m.settingsMenu.setFocus(true)
     end if
 end sub
@@ -220,6 +337,7 @@ end sub
 sub onStringInputDialogButton(event as object)
     dialog = event.getRoSGNode()
     buttonIndex = dialog.buttonSelected
+    updatedSetting = m.currentStringSetting
 
     if buttonIndex = 0 ' OK pressed
         ' Save the value
@@ -240,7 +358,7 @@ sub onStringInputDialogButton(event as object)
                     dialog.close = true
                     m.settingsMenu.setFocus(true)
                     m.currentStringSetting = invalid
-                    settingFocused()
+                    refreshCurrentItemValue(updatedSetting)
 
                     ' Trigger Jellyfin authentication
                     testJellyseerrConnection("jellyfin")
@@ -254,9 +372,7 @@ sub onStringInputDialogButton(event as object)
     dialog.close = true
     m.settingsMenu.setFocus(true)
     m.currentStringSetting = invalid
-
-    ' Refresh the focused item to show new value
-    settingFocused()
+    refreshCurrentItemValue(updatedSetting)
 end sub
 
 sub testJellyseerrConnection(overrideAuthMethod = invalid as dynamic)
@@ -667,6 +783,195 @@ sub RefreshCurrentMenu()
     m.userLocation.push(currentSection)
 end sub
 
+sub dismissPanel()
+    scene = m.top.getScene()
+
+    OnScreenHidden()
+
+    if isValid(scene)
+        scene.removeChild(m.top)
+
+        audioMiniPlayer = scene.findNode("audioMiniPlayer")
+        shouldRestoreMiniPlayer = (m.top.restoreMiniPlayerOnClose = true)
+        if isValid(audioMiniPlayer) and shouldRestoreMiniPlayer and m.global.audioPlayer.state <> "stopped"
+            audioMiniPlayer.callFunc("setVisible", true)
+        end if
+
+        activeNav = getActiveNav(scene)
+        if isValid(activeNav) and activeNav.visible
+            activeNav.setFocus(true)
+            return
+        end if
+    end if
+
+    activeScene = m.global.sceneManager.callFunc("getActiveScene")
+    if isValid(activeScene)
+        if isValid(activeScene.lastFocus)
+            activeScene.lastFocus.setFocus(true)
+        else
+            activeScene.setFocus(true)
+        end if
+    end if
+end sub
+
+function findSettingsSectionByTitle(sections as object, title as string) as dynamic
+    if not isValid(sections) then return invalid
+
+    for each item in sections
+        if isStringEqual(chainLookupReturn(item, "title", ""), title)
+            return item
+        end if
+    end for
+
+    return invalid
+end function
+
+function findSettingsChildByTitle(section as object, title as string) as dynamic
+    if not isValid(section) then return invalid
+    if not isValid(section.children) then return invalid
+
+    for each item in section.children
+        if isStringEqual(chainLookupReturn(item, "title", ""), title)
+            return item
+        end if
+    end for
+
+    return invalid
+end function
+
+sub pushSettingIfValid(items as object, item as dynamic)
+    if isValid(item)
+        items.push(item)
+    end if
+end sub
+
+function reorderSettingsForFlutter(configTree as object) as object
+    if not isValid(configTree) then return configTree
+
+    moonfinSettings = findSettingsSectionByTitle(configTree, "Moonfin Settings")
+    pluginRootSection = findSettingsSectionByTitle(configTree, "Moonfin Plugin")
+    playback = findSettingsSectionByTitle(configTree, "Playback")
+    rememberMe = findSettingsSectionByTitle(configTree, "Remember Me?")
+    userInterface = findSettingsSectionByTitle(configTree, "User Interface")
+    secret = findSettingsSectionByTitle(configTree, "Secret")
+
+    navigationBar = findSettingsChildByTitle(moonfinSettings, "Navigation Bar")
+    homeScreen = findSettingsChildByTitle(moonfinSettings, "Home Screen")
+    featuredMediaBar = findSettingsChildByTitle(moonfinSettings, "Featured Media Bar")
+    themeMusic = findSettingsChildByTitle(moonfinSettings, "Theme Music")
+    shuffle = findSettingsChildByTitle(moonfinSettings, "Shuffle")
+    visualEffects = findSettingsChildByTitle(moonfinSettings, "Visual Effects")
+    supportMoonfin = findSettingsChildByTitle(moonfinSettings, "Support Moonfin")
+
+    colors = findSettingsChildByTitle(userInterface, "Colors")
+    general = findSettingsChildByTitle(userInterface, "General")
+    homeRows = findSettingsChildByTitle(userInterface, "Home Rows")
+
+    enablePlugin = findSettingsChildByTitle(pluginRootSection, "Enable Plugin")
+    pluginSettingsSync = findSettingsChildByTitle(pluginRootSection, "Settings Sync")
+    mdblist = findSettingsChildByTitle(pluginRootSection, "MDBList Ratings")
+    tmdb = findSettingsChildByTitle(pluginRootSection, "TMDB")
+    jellyseerr = findSettingsChildByTitle(pluginRootSection, "Jellyseerr")
+
+    reordered = []
+
+    accountChildren = []
+    if isValid(rememberMe)
+        rememberMe.title = "Auto Sign In"
+        rememberMe.description = "Automatically sign in with the last logged-in user on app start."
+        accountChildren.push(rememberMe)
+    end if
+    if accountChildren.count() > 0
+        reordered.push({
+            title: "Account & Security",
+            description: "Automatic sign-in preferences.",
+            children: accountChildren
+        })
+    end if
+
+    personalizationChildren = []
+    pushSettingIfValid(personalizationChildren, navigationBar)
+    pushSettingIfValid(personalizationChildren, homeScreen)
+    pushSettingIfValid(personalizationChildren, colors)
+    pushSettingIfValid(personalizationChildren, general)
+    pushSettingIfValid(personalizationChildren, homeRows)
+    if personalizationChildren.count() > 0
+        reordered.push({
+            title: "Personalization",
+            description: "Navigation, home screen, colors, and interface preferences.",
+            children: personalizationChildren
+        })
+    end if
+
+    dynamicChildren = []
+    pushSettingIfValid(dynamicChildren, featuredMediaBar)
+    pushSettingIfValid(dynamicChildren, visualEffects)
+    if dynamicChildren.count() > 0
+        reordered.push({
+            title: "Dynamic Content",
+            description: "Media Bar and visual overlays",
+            children: dynamicChildren
+        })
+    end if
+
+    if isValid(playback)
+        playback.title = "Playback"
+        playback.description = "Audio/video playback, subtitles, bitrate, and compatibility controls."
+        reordered.push(playback)
+    end if
+
+    pluginChildren = []
+    pushSettingIfValid(pluginChildren, enablePlugin)
+    pushSettingIfValid(pluginChildren, pluginSettingsSync)
+
+    integrationsChildren = []
+    if pluginChildren.count() > 0
+        integrationsChildren.push({
+            title: "Plugin",
+            description: "Plugin connectivity and settings sync.",
+            children: pluginChildren
+        })
+    end if
+    pushSettingIfValid(integrationsChildren, mdblist)
+    pushSettingIfValid(integrationsChildren, tmdb)
+    pushSettingIfValid(integrationsChildren, jellyseerr)
+    if integrationsChildren.count() > 0
+        reordered.push({
+            title: "Integrations",
+            description: "Plugin, Seerr, and ratings integrations.",
+            children: integrationsChildren
+        })
+    end if
+
+    aboutChildren = []
+    pushSettingIfValid(aboutChildren, supportMoonfin)
+    if aboutChildren.count() > 0
+        reordered.push({
+            title: "About",
+            description: "Support Moonfin and project information.",
+            children: aboutChildren
+        })
+    end if
+
+    advancedChildren = []
+    pushSettingIfValid(advancedChildren, themeMusic)
+    pushSettingIfValid(advancedChildren, shuffle)
+    pushSettingIfValid(advancedChildren, secret)
+    if advancedChildren.count() > 0
+        reordered.push({
+            title: "Advanced",
+            description: "Theme music, shuffle, and advanced Roku options.",
+            children: advancedChildren
+        })
+    end if
+
+    if reordered.count() = 0
+        return configTree
+    end if
+
+    return reordered
+end function
+
 sub LoadMenu(configSection, appendPath = true as boolean)
     if configSection.children = invalid
         ' Load parent menu
@@ -708,6 +1013,7 @@ sub LoadMenu(configSection, appendPath = true as boolean)
         listItem = result.CreateChild("ContentNode")
         listItem.title = tr(item.title)
         listItem.Description = tr(item.description)
+        listItem.currentValue = getSettingCurrentValueLabel(item)
         listItem.id = item.id
     end for
 
@@ -725,171 +1031,143 @@ sub LoadMenu(configSection, appendPath = true as boolean)
 end sub
 
 sub settingFocused()
-
-    ' Use visibleItemsMap to get the correct item
-    if not isValid(m.visibleItemsMap) or m.settingsMenu.itemFocused >= m.visibleItemsMap.count()
-        selectedSetting = m.userLocation.peek().children[m.settingsMenu.itemFocused]
-    else
-        selectedSetting = m.visibleItemsMap[m.settingsMenu.itemFocused]
-    end if
-
-    ' Validate selectedSetting exists before using it
+    selectedSetting = getFocusedSetting()
     if not isValid(selectedSetting) then return
 
-    m.settingDesc.text = tr(selectedSetting.Description)
-
-    ' Hide Settings
-    m.boolSetting.visible = false
-    m.integerSetting.visible = false
-    m.radioSetting.visible = false
-    m.colorgrid.visible = false
-    m.slider.visible = false
-
-    if not isValid(selectedSetting.type) then return
-
-    if isStringEqual(selectedSetting.type, "colorgrid")
-        m.colorgrid.setting = selectedSetting
-        m.colorgrid.visible = true
-        return
+    if isValid(selectedSetting.Description)
+        m.settingDesc.text = tr(selectedSetting.Description)
+    else
+        m.settingDesc.text = ""
     end if
 
-    if isStringEqual(selectedSetting.type, SettingType.SLIDER)
-        m.slider.value = m.global.session.user.settings[selectedSetting.settingName]
-
-        sliderOptions = []
-        for each item in m.userLocation.peek().children[m.settingsMenu.itemFocused].options
-            sliderOptions.push(item.value)
-        end for
-
-        m.slider.options = sliderOptions
-        m.slider.visible = true
-        return
-    end if
-
-    if isStringEqual(selectedSetting.type, "bool")
-        m.boolSetting.visible = true
-
-        if m.global.session.user.settings[selectedSetting.settingName] = true
-            m.boolSetting.checkedItem = 1
-        else
-            m.boolSetting.checkedItem = 0
-        end if
-
-        ' Special handling for Jellyseerr test connection - show auth status
-        if isStringEqual(selectedSetting.settingName, "jellyseerr.testConnection")
-            authStatus = GetJellyseerrAuthStatus()
-            m.settingDesc.text = tr(selectedSetting.Description) + Chr(10) + Chr(10) + authStatus
-        end if
-
-        return
-    end if
-
-    if isStringEqual(selectedSetting.type, "integer")
-        integerValue = m.global.session.user.settings[selectedSetting.settingName].ToStr()
-        if isValid(integerValue)
-            m.integerSetting.text = integerValue
-        end if
-        m.integerSetting.visible = true
-
-        return
-    end if
-
-    if isStringEqual(selectedSetting.type, "radio")
-        ' Translate user's old setting value to the new value so it doesn't get reset
-        if isStringEqual(selectedSetting.settingName, "playback.media.forceTranscode")
-            originalSelectedValue = m.global.session.user.settings[selectedSetting.settingName]
-
-            if isStringEqual(type(originalSelectedValue), "roBoolean") or isStringEqual(type(originalSelectedValue), "Boolean")
-                convertedValue = originalSelectedValue ? PlaybackMethod.FORCETRANSCODEALLOWREMUX : m.userLocation.peek().children[m.settingsMenu.itemFocused].default
-                set_user_setting(selectedSetting.settingName, convertedValue)
-            end if
-        end if
-
-        selectedValue = m.global.session.user.settings[selectedSetting.settingName]
-
-        radioContent = CreateObject("roSGNode", "ContentNode")
-
-        itemIndex = 0
-        for each item in m.userLocation.peek().children[m.settingsMenu.itemFocused].options
-            listItem = radioContent.CreateChild("ContentNode")
-            listItem.title = tr(item.title)
-            listItem.id = item.id
-            if selectedValue = item.id
-                m.radioSetting.checkedItem = itemIndex
-            end if
-            itemIndex++
-        end for
-
-        m.radioSetting.content = radioContent
-
-        m.radioSetting.visible = true
-
-        return
-    end if
-
-    if isStringEqual(selectedSetting.type, "string")
-        ' String type - show current value in description
-        currentValue = get_user_setting(selectedSetting.settingName)
-        ' Only display if it's actually a valid string (not a boolean or other type)
-        if isValidString(currentValue)
-            ' Mask sensitive fields like API keys and passwords - don't show any value
-            if InStr(LCase(selectedSetting.settingName), "apikey") > 0 or InStr(LCase(selectedSetting.settingName), "password") > 0
-                m.settingDesc.text = tr(selectedSetting.Description) + Chr(10) + Chr(10) + "Current: ••••••••"
-            else
-                m.settingDesc.text = tr(selectedSetting.Description) + Chr(10) + Chr(10) + "Current: " + currentValue
-            end if
-        end if
-        return
-    end if
+    hideEditingControls()
 end sub
 
 sub settingSelected()
-    ' Use visibleItemsMap to get the correct item
-    if not isValid(m.visibleItemsMap) or m.settingsMenu.itemFocused >= m.visibleItemsMap.count()
-        selectedItem = m.userLocation.peek().children[m.settingsMenu.itemFocused]
-    else
-        selectedItem = m.visibleItemsMap[m.settingsMenu.itemFocused]
-    end if
+    selectedItem = getFocusedSetting()
 
     if not isValid(selectedItem) then return
 
-    ' Special handling for donation dialog
+    hideEditingControls()
+
     if isValid(selectedItem.settingName) and selectedItem.settingName = "moonfin.showDonation"
         showDonationDialog()
         return
     end if
 
-    ' Special handling for Jellyseerr local account connect button
     if isValid(selectedItem.settingName) and selectedItem.settingName = "jellyseerr.testConnectionLocal"
         testJellyseerrConnection("local")
         return
     end if
 
-    ' Legacy test connection button (deprecated, keeping for backwards compatibility)
     if isValid(selectedItem.settingName) and selectedItem.settingName = "jellyseerr.testConnection"
         testJellyseerrConnection()
         return
     end if
 
-    if selectedItem.type <> invalid ' Show setting
+    if selectedItem.type <> invalid
+        if isValid(selectedItem.Description)
+            m.settingDesc.text = tr(selectedItem.Description)
+        else
+            m.settingDesc.text = ""
+        end if
+
+        if isStringEqual(selectedItem.settingName, "jellyseerr.testConnection")
+            authStatus = GetJellyseerrAuthStatus()
+            m.settingDesc.text = tr(selectedItem.Description) + Chr(10) + Chr(10) + authStatus
+        end if
+
+        m.settingDesc.visible = true
+
         if isStringEqual(selectedItem.type, SettingType.BOOL)
+            m.boolSetting.visible = true
+
+            selectedValue = get_user_setting(selectedItem.settingName)
+            if not isValid(selectedValue) and isValid(m.global.session.user.settings[selectedItem.settingName])
+                selectedValue = m.global.session.user.settings[selectedItem.settingName]
+            end if
+
+            valueString = LCase(dynamicToDisplayString(selectedValue))
+            if isStringEqual(valueString, "true")
+                m.boolSetting.checkedItem = 1
+            else
+                m.boolSetting.checkedItem = 0
+            end if
+
             m.boolSetting.setFocus(true)
+            return
         end if
+
         if isStringEqual(selectedItem.type, SettingType.COLORGRID)
+            m.colorgrid.setting = selectedItem
+            m.colorgrid.visible = true
             m.colorgrid.setFocus(true)
+            return
         end if
+
         if isStringEqual(selectedItem.type, SettingType.integer)
+            integerValue = dynamicToDisplayString(get_user_setting(selectedItem.settingName))
+            if not isValidAndNotEmpty(integerValue)
+                integerValue = dynamicToDisplayString(m.global.session.user.settings[selectedItem.settingName])
+            end if
+            if isValidAndNotEmpty(integerValue)
+                m.integerSetting.text = integerValue
+            end if
+
+            m.integerSetting.visible = true
             m.integerSetting.setFocus(true)
+            return
         end if
+
         if isStringEqual(selectedItem.type, SettingType.RADIO)
+            if isStringEqual(selectedItem.settingName, "playback.media.forceTranscode")
+                originalSelectedValue = m.global.session.user.settings[selectedItem.settingName]
+
+                if isStringEqual(type(originalSelectedValue), "roBoolean") or isStringEqual(type(originalSelectedValue), "Boolean")
+                    convertedValue = originalSelectedValue ? PlaybackMethod.FORCETRANSCODEALLOWREMUX : selectedItem.default
+                    set_user_setting(selectedItem.settingName, convertedValue)
+                end if
+            end if
+
+            selectedValue = m.global.session.user.settings[selectedItem.settingName]
+            radioContent = CreateObject("roSGNode", "ContentNode")
+
+            selectedIndex = 0
+            itemIndex = 0
+            for each item in selectedItem.options
+                listItem = radioContent.CreateChild("ContentNode")
+                listItem.title = tr(item.title)
+                listItem.id = item.id
+                if selectedValue = item.id
+                    selectedIndex = itemIndex
+                end if
+                itemIndex++
+            end for
+
+            m.radioSetting.content = radioContent
+            m.radioSetting.visible = true
+            m.radioSetting.checkedItem = selectedIndex
             m.radioSetting.setFocus(true)
+            return
         end if
+
         if isStringEqual(selectedItem.type, SettingType.SLIDER)
+            sliderOptions = []
+            for each item in selectedItem.options
+                sliderOptions.push(item.value)
+            end for
+
+            m.slider.options = sliderOptions
+            m.slider.value = m.global.session.user.settings[selectedItem.settingName]
+            m.slider.visible = true
             m.slider.setFocus(true)
+            return
         end if
+
         if isStringEqual(selectedItem.type, SettingType.STRING)
-            ' Open keyboard dialog for string input
+            m.settingDesc.visible = false
             showStringInputDialog(selectedItem)
+            return
         end if
     else if selectedItem.children <> invalid and selectedItem.children.Count() > 0 ' Show sub menu
         LoadMenu(selectedItem)
@@ -897,12 +1175,6 @@ sub settingSelected()
     else
         return
     end if
-
-    ' Use selectedItem directly instead of re-fetching from content
-    if isValid(selectedItem.Description)
-        m.settingDesc.text = selectedItem.Description
-    end if
-
 end sub
 
 sub refreshMenu()
@@ -912,9 +1184,9 @@ end sub
 
 sub boolSettingChanged()
     if m.boolSetting.focusedChild = invalid then return
-    selectedSetting = m.userLocation.peek().children[m.settingsMenu.itemFocused]
+    selectedSetting = getFocusedSetting()
+    if not isValid(selectedSetting) then return
 
-    ' checkedItem is 0 for "Disabled" (index 0) and 1 for "Enabled" (index 1)
     if m.boolSetting.checkedItem = 1
         session.user.settings.Save(selectedSetting.settingName, "true")
         if Left(selectedSetting.settingName, 7) = "global."
@@ -957,11 +1229,17 @@ sub boolSettingChanged()
         end if
         syncSettingToServer(selectedSetting.settingName, "false")
     end if
+
+    refreshCurrentItemValue(selectedSetting)
+    hideEditingControls()
+    m.settingsMenu.setFocus(true)
 end sub
 
 sub radioSettingChanged()
     if m.radioSetting.focusedChild = invalid then return
-    selectedSetting = m.userLocation.peek().children[m.settingsMenu.itemFocused]
+    selectedSetting = getFocusedSetting()
+    if not isValid(selectedSetting) then return
+
     selectedValue = m.radioSetting.content.getChild(m.radioSetting.checkedItem).id
     set_user_setting(selectedSetting.settingName, selectedValue)
 
@@ -1007,6 +1285,9 @@ sub radioSettingChanged()
     end if
 
     syncSettingToServer(selectedSetting.settingName, selectedValue)
+    refreshCurrentItemValue(selectedSetting)
+    hideEditingControls()
+    m.settingsMenu.setFocus(true)
 end sub
 
 ' JFScreen hook called when screen is shown
@@ -1071,16 +1352,31 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
     end if
 
-    if (key = "back" or key = "left") and m.settingsMenu.focusedChild <> invalid and m.userLocation.Count() > 1
-        LoadMenu({})
-        return true
-    else if (key = "back" or key = "left") and isFormInFocus()
-        m.settingsMenu.setFocus(true)
-        return true
+    if key = "back" or key = "left"
+        if m.settingsMenu.focusedChild <> invalid and m.userLocation.Count() > 1
+            LoadMenu({})
+            return true
+        end if
+
+        if isFormInFocus()
+            hideEditingControls()
+            m.settingsMenu.setFocus(true)
+            return true
+        end if
+
+        if m.settingsMenu.focusedChild <> invalid
+            dismissPanel()
+            return true
+        end if
+
+        if isValid(m.version) and m.version.hasFocus()
+            dismissPanel()
+            return true
+        end if
     end if
 
     if key = "options"
-        m.global.sceneManager.callFunc("popScene")
+        dismissPanel()
         return true
     end if
 
