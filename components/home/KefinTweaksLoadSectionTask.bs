@@ -1,0 +1,339 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/misc.bs"
+
+const DEFAULT_SECTION_LIMIT = 15
+
+sub init()
+    m.top.functionName = "loadKefinSection"
+end sub
+
+sub loadKefinSection()
+    results = []
+
+    sectionKind = m.top.sectionKind
+    if not isValidAndNotEmpty(sectionKind)
+        m.top.content = results
+        return
+    end if
+
+    userId = chainLookupReturn(m.global, "session.user.id", "")
+    if not isValidAndNotEmpty(userId)
+        m.top.content = results
+        return
+    end if
+
+    spec = m.top.spec
+    if not isAssociativeArrayValue(spec)
+        spec = {}
+    end if
+
+    if isStringEqual(sectionKind, "recentlyAddedInLibrary")
+        itemsPayload = loadRecentlyAddedInLibrary(spec)
+    else
+        response = runKefinSpec(sectionKind, spec, userId)
+        itemsPayload = getItemsPayload(response)
+    end if
+
+    for each item in itemsPayload
+        homeData = createSGNode("HomeData")
+        homeData.json = item
+        results.push(homeData)
+    end for
+
+    m.top.content = results
+end sub
+
+function runKefinSpec(sectionKind as string, spec as object, userId as string) as dynamic
+    sectionName = LCase(sectionKind ?? "")
+    limit = normalizeLimit(chainLookupReturn(spec, "limit", DEFAULT_SECTION_LIMIT), DEFAULT_SECTION_LIMIT)
+
+    if sectionName = "recentlyreleasedmovies"
+        params = getBaseItemsParams(limit)
+        params.IncludeItemTypes = "Movie"
+        params.SortBy = "PremiereDate"
+        params.SortOrder = "Descending"
+        params.MinPremiereDate = getCutoffDateIso(7)
+        return requestItems(userId, params)
+    end if
+
+    if sectionName = "recentlyreleasedepisodes"
+        params = getBaseItemsParams(limit)
+        params.IncludeItemTypes = "Episode"
+        params.SortBy = "PremiereDate"
+        params.SortOrder = "Descending"
+        params.MinPremiereDate = getCutoffDateIso(7)
+        return requestItems(userId, params)
+    end if
+
+    if sectionName = "watchagain"
+        params = getBaseItemsParams(limit)
+        params.IncludeItemTypes = "Movie,Series"
+        params.Filters = "IsPlayed"
+        params.SortBy = "DatePlayed"
+        params.SortOrder = "Descending"
+        return requestItems(userId, params)
+    end if
+
+    if sectionName = "custom"
+        return runCustomSpec(spec, userId, limit)
+    end if
+
+    return invalid
+end function
+
+function runCustomSpec(spec as object, userId as string, limit as integer) as dynamic
+    sourceValue = chainLookupReturn(spec, "source", "")
+    if not isValidAndNotEmpty(sourceValue)
+        return invalid
+    end if
+
+    customType = LCase(chainLookupReturn(spec, "type", ""))
+
+    params = getBaseItemsParams(limit)
+    params.SortBy = mapKefinSortBy(chainLookupReturn(spec, "sortBy", "Random"))
+    params.SortOrder = mapKefinSortOrder(chainLookupReturn(spec, "sortOrderDirection", "Ascending"))
+    params.IncludeItemTypes = getIncludeItemTypesValue(chainLookupReturn(spec, "includeItemTypes", invalid), "Movie,Series")
+
+    if customType = "tag"
+        params.Tags = sourceValue
+    else if customType = "genre"
+        params.Genres = sourceValue
+    else if customType = "parent" or customType = "collection" or customType = "playlist"
+        params.ParentId = sourceValue
+    else
+        return invalid
+    end if
+
+    return requestItems(userId, params)
+end function
+
+function loadRecentlyAddedInLibrary(spec as object) as object
+    libraryIds = getStringArray(chainLookupReturn(spec, "libraryIds", []), [])
+    limit = normalizeLimit(chainLookupReturn(spec, "limit", DEFAULT_SECTION_LIMIT), DEFAULT_SECTION_LIMIT)
+
+    if not isValidAndNotEmpty(libraryIds)
+        return []
+    end if
+
+    allItems = []
+
+    for each libraryId in libraryIds
+        if not isValidAndNotEmpty(libraryId)
+            continue for
+        end if
+
+        request = APIRequest("/Items/Latest", {
+            ParentId: libraryId,
+            Limit: limit,
+            EnableImageTypes: "Primary,Backdrop,Thumb",
+            ImageTypeLimit: 1,
+            EnableTotalRecordCount: false
+        })
+
+        if not isValid(request)
+            continue for
+        end if
+
+        response = getJson(request)
+        items = getItemsPayload(response)
+        if not isValidAndNotEmpty(items)
+            continue for
+        end if
+
+        for each item in items
+            allItems.push(item)
+        end for
+    end for
+
+    if allItems.Count() <= limit
+        return allItems
+    end if
+
+    trimmed = []
+    for i = 0 to limit - 1
+        trimmed.push(allItems[i])
+    end for
+
+    return trimmed
+end function
+
+function getBaseItemsParams(limit as integer) as object
+    return {
+        Recursive: true,
+        Limit: limit,
+        EnableImageTypes: "Primary,Backdrop,Thumb",
+        ImageTypeLimit: 1,
+        EnableTotalRecordCount: false
+    }
+end function
+
+function requestItems(userId as string, params as object) as dynamic
+    if not isValidAndNotEmpty(userId)
+        return invalid
+    end if
+
+    request = APIRequest("/Users/" + userId.EncodeUriComponent() + "/Items", params)
+    if not isValid(request)
+        return invalid
+    end if
+
+    return getJson(request)
+end function
+
+function getCutoffDateIso(days as integer) as string
+    nowDate = CreateObject("roDateTime")
+    cutoffDate = CreateObject("roDateTime")
+    cutoffDate.FromSeconds(nowDate.AsSeconds() - (days * 86400))
+    return cutoffDate.ToISOString()
+end function
+
+function mapKefinSortBy(value as dynamic) as string
+    if not isValidAndNotEmpty(value)
+        return "Random"
+    end if
+
+    normalized = LCase(value.ToStr().Replace(" ", ""))
+
+    if normalized = "releasedate" or normalized = "premieredate"
+        return "PremiereDate"
+    end if
+
+    if normalized = "dateadded" or normalized = "datecreated"
+        return "DateCreated"
+    end if
+
+    if normalized = "name" or normalized = "sortname"
+        return "SortName"
+    end if
+
+    if normalized = "communityrating"
+        return "CommunityRating"
+    end if
+
+    if normalized = "datelastcontentadded"
+        return "DateLastContentAdded"
+    end if
+
+    if normalized = "random"
+        return "Random"
+    end if
+
+    return value.ToStr()
+end function
+
+function mapKefinSortOrder(value as dynamic) as string
+    if not isValidAndNotEmpty(value)
+        return "Ascending"
+    end if
+
+    normalized = LCase(value.ToStr())
+    if normalized = "descending"
+        return "Descending"
+    end if
+
+    return "Ascending"
+end function
+
+function getIncludeItemTypesValue(value as dynamic, defaultValue as string) as string
+    includeTypes = getStringArray(value, [])
+    if isValidAndNotEmpty(includeTypes)
+        return includeTypes.Join(",")
+    end if
+
+    return defaultValue
+end function
+
+function getStringArray(value as dynamic, defaultValues as object) as object
+    output = []
+
+    if isArrayValue(value)
+        for each item in value
+            if not isValid(item)
+                continue for
+            end if
+            itemString = item.ToStr().Trim()
+            if isValidAndNotEmpty(itemString)
+                output.push(itemString)
+            end if
+        end for
+    else if type(value) = "String" or type(value) = "roString"
+        for each item in value.Split(",")
+            itemString = item.Trim()
+            if isValidAndNotEmpty(itemString)
+                output.push(itemString)
+            end if
+        end for
+    end if
+
+    if isValidAndNotEmpty(output)
+        return output
+    end if
+
+    fallback = []
+    if isArrayValue(defaultValues)
+        for each item in defaultValues
+            if not isValid(item)
+                continue for
+            end if
+            itemString = item.ToStr().Trim()
+            if isValidAndNotEmpty(itemString)
+                fallback.push(itemString)
+            end if
+        end for
+    end if
+    return fallback
+end function
+
+function normalizeLimit(value as dynamic, defaultValue as integer) as integer
+    if not isValid(value)
+        return defaultValue
+    end if
+
+    parsed = defaultValue
+    valueType = type(value)
+
+    if valueType = "Integer" or valueType = "LongInteger" or valueType = "roInteger" or valueType = "roInt"
+        parsed = value
+    else if valueType = "Float" or valueType = "roFloat"
+        parsed = Int(value)
+    else if valueType = "String" or valueType = "roString"
+        parsed = Int(Val(value))
+    end if
+
+    if parsed <= 0
+        return defaultValue
+    end if
+
+    if parsed > 100
+        return 100
+    end if
+
+    return parsed
+end function
+
+function getItemsPayload(response as dynamic) as object
+    if not isValid(response)
+        return []
+    end if
+
+    responseType = type(response)
+    if responseType = "Array" or responseType = "roArray"
+        return response
+    end if
+
+    if isChainValid(response, "Items")
+        return response.Items
+    end if
+
+    return []
+end function
+
+function isArrayValue(value as dynamic) as boolean
+    valueType = type(value)
+    return valueType = "Array" or valueType = "roArray"
+end function
+
+function isAssociativeArrayValue(value as dynamic) as boolean
+    valueType = type(value)
+    return valueType = "AssociativeArray" or valueType = "roAssociativeArray"
+end function

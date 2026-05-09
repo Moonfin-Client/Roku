@@ -88,6 +88,12 @@ sub init()
     m.hssSectionTasks = {}
     m.hssRowTitleByKey = {}
     m.hssRowTitles = []
+    m.ktProbeTask = invalid
+    m.ktSections = []
+    m.ktSectionTasks = {}
+    m.ktRowTitleByKey = {}
+    m.ktRowTitles = []
+    m.pendingProbeCount = 0
 end sub
 
 sub loadLibraries()
@@ -176,6 +182,10 @@ function isHssEnabled() as boolean
     return normalizeBooleanValue(get_user_setting("plugin.hss.enabled"), false)
 end function
 
+function isKtEnabled() as boolean
+    return normalizeBooleanValue(get_user_setting("plugin.kefintweaks.enabled"), false)
+end function
+
 function getResolvedSectionNameForMode(index as integer, useServerConfig as boolean) as string
     if useServerConfig
         userSection = m.global.session.user.settings["homesection" + index.toStr()]
@@ -210,6 +220,22 @@ function shouldLoadHss() as boolean
     return false
 end function
 
+function shouldLoadKt() as boolean
+    if not isKtEnabled()
+        return false
+    end if
+
+    useServerConfig = shouldUseServerConfig()
+    for i = 0 to 7
+        sectionName = getResolvedSectionNameForMode(i, useServerConfig)
+        if sectionName = "kt_all"
+            return true
+        end if
+    end for
+
+    return false
+end function
+
 function isSectionSuppressedByHss(sectionName as string) as boolean
     if not isValid(m.hssSuppressedBuiltins)
         return false
@@ -220,6 +246,10 @@ end function
 
 function getHssSectionKey(sectionType as string, additionalData = "" as string, sectionIndex = 0 as integer) as string
     return LCase(sectionType ?? "") + "|" + LCase(additionalData ?? "") + "|" + sectionIndex.toStr()
+end function
+
+function getKtSectionKey(sectionType as string, sectionIndex = 0 as integer) as string
+    return LCase(sectionType ?? "") + "|" + sectionIndex.toStr()
 end function
 
 function getUniqueHssSectionTitle(baseTitle as string, usedTitles as object) as string
@@ -299,12 +329,64 @@ sub removeTrackedHssRows()
     end if
 end sub
 
+sub cleanupKtTasks()
+    if not isValid(m.ktSectionTasks)
+        m.ktSectionTasks = {}
+        return
+    end if
+
+    for each taskKey in m.ktSectionTasks
+        task = m.ktSectionTasks[taskKey]
+        if isValid(task)
+            task.unobserveField("content")
+            task.control = "STOP"
+        end if
+    end for
+
+    m.ktSectionTasks = {}
+end sub
+
+sub resetKtRowTracking()
+    m.ktRowTitleByKey = {}
+    m.ktRowTitles = []
+end sub
+
+sub removeTrackedKtRows()
+    if not isValid(m.ktRowTitles)
+        m.ktRowTitles = []
+        return
+    end if
+
+    didRemoveRow = false
+
+    for each rowTitle in m.ktRowTitles
+        while sectionExists(rowTitle)
+            sectionIndex = getSectionIndex(rowTitle)
+            if sectionIndex < 0
+                exit while
+            end if
+
+            m.top.content.removeChildIndex(sectionIndex)
+            didRemoveRow = true
+        end while
+    end for
+
+    if didRemoveRow
+        setRowItemSize()
+    end if
+end sub
+
 sub startHomeRowsLoading()
     cleanupHssTasks()
+    cleanupKtTasks()
     removeTrackedHssRows()
+    removeTrackedKtRows()
     resetHssRowTracking()
+    resetKtRowTracking()
     m.hssSections = []
     m.hssSuppressedBuiltins = {}
+    m.ktSections = []
+    m.pendingProbeCount = 0
 
     if isValid(m.hssProbeTask)
         m.hssProbeTask.unobserveField("result")
@@ -312,10 +394,27 @@ sub startHomeRowsLoading()
         m.hssProbeTask = invalid
     end if
 
+    if isValid(m.ktProbeTask)
+        m.ktProbeTask.unobserveField("result")
+        m.ktProbeTask.control = "STOP"
+        m.ktProbeTask = invalid
+    end if
+
     if shouldLoadHss()
         m.hssProbeTask = CreateObject("roSGNode", "HSSProbeTask")
         m.hssProbeTask.observeField("result", "onHSSProbeComplete")
+        m.pendingProbeCount++
         m.hssProbeTask.control = "RUN"
+    end if
+
+    if shouldLoadKt()
+        m.ktProbeTask = CreateObject("roSGNode", "KefinTweaksProbeTask")
+        m.ktProbeTask.observeField("result", "onKTProbeComplete")
+        m.pendingProbeCount++
+        m.ktProbeTask.control = "RUN"
+    end if
+
+    if m.pendingProbeCount > 0
         return
     end if
 
@@ -323,34 +422,63 @@ sub startHomeRowsLoading()
 end sub
 
 sub onHSSProbeComplete()
-    if not isValid(m.hssProbeTask)
-        processUserSections()
-        return
-    end if
+    if isValid(m.hssProbeTask)
+        result = m.hssProbeTask.result
 
-    result = m.hssProbeTask.result
+        m.hssProbeTask.unobserveField("result")
+        m.hssProbeTask = invalid
 
-    m.hssProbeTask.unobserveField("result")
-    m.hssProbeTask = invalid
+        m.hssSections = []
+        m.hssSuppressedBuiltins = {}
 
-    m.hssSections = []
-    m.hssSuppressedBuiltins = {}
+        if isValid(result) and normalizeBooleanValue(result.enabled, false)
+            sections = chainLookupReturn(result, "sections", [])
+            if isValidAndNotEmpty(sections)
+                m.hssSections = sections
 
-    if isValid(result) and normalizeBooleanValue(result.enabled, false)
-        sections = chainLookupReturn(result, "sections", [])
-        if isValidAndNotEmpty(sections)
-            m.hssSections = sections
-
-            for each hssSection in m.hssSections
-                builtinSection = getHssBuiltinEquivalent(chainLookupReturn(hssSection, "section", ""))
-                if isValidAndNotEmpty(builtinSection)
-                    m.hssSuppressedBuiltins[builtinSection] = true
-                end if
-            end for
+                for each hssSection in m.hssSections
+                    builtinSection = getHssBuiltinEquivalent(chainLookupReturn(hssSection, "section", ""))
+                    if isValidAndNotEmpty(builtinSection)
+                        m.hssSuppressedBuiltins[builtinSection] = true
+                    end if
+                end for
+            end if
         end if
     end if
 
-    processUserSections()
+    if m.pendingProbeCount > 0
+        m.pendingProbeCount = m.pendingProbeCount - 1
+    end if
+
+    if m.pendingProbeCount = 0
+        processUserSections()
+    end if
+end sub
+
+sub onKTProbeComplete()
+    if isValid(m.ktProbeTask)
+        result = m.ktProbeTask.result
+
+        m.ktProbeTask.unobserveField("result")
+        m.ktProbeTask = invalid
+
+        m.ktSections = []
+
+        if isValid(result) and normalizeBooleanValue(result.enabled, false)
+            sections = chainLookupReturn(result, "sections", [])
+            if isValidAndNotEmpty(sections)
+                m.ktSections = sections
+            end if
+        end if
+    end if
+
+    if m.pendingProbeCount > 0
+        m.pendingProbeCount = m.pendingProbeCount - 1
+    end if
+
+    if m.pendingProbeCount = 0
+        processUserSections()
+    end if
 end sub
 
 ' processUserSections: Loop through user's chosen home section settings and generate the content for each row
@@ -383,6 +511,10 @@ sub processUserSections()
         if sectionName = "hss_all"
             if isValidAndNotEmpty(m.hssSections)
                 m.expectedRowCount = m.expectedRowCount + m.hssSections.count()
+            end if
+        else if sectionName = "kt_all"
+            if isValidAndNotEmpty(m.ktSections)
+                m.expectedRowCount = m.expectedRowCount + m.ktSections.count()
             end if
         else if sectionName = "latestmedia"
             ' Check if multi-server is enabled - if so, we estimate rows based on libraries per server
@@ -645,6 +777,11 @@ function addHomeSection(sectionType as string) as boolean
         return isValidAndNotEmpty(m.hssSections)
     end if
 
+    if sectionType = "kt_all"
+        createKtRows()
+        return isValidAndNotEmpty(m.ktSections)
+    end if
+
     ' Featured Media Carousel - now handled by separate toggle in Moonfin settings
     ' Skip creating a row for it, as it's controlled by ui.home.mediaBarEnabled
     if sectionType = "featuredmedia"
@@ -704,6 +841,58 @@ sub createHssRows()
         task.sectionKey = sectionKey
         task.observeField("content", "onHssSectionLoaded")
         m.hssSectionTasks[sectionKey] = task
+        task.control = "RUN"
+
+        sectionIndex++
+    end for
+end sub
+
+sub createKtRows()
+    if not isValidAndNotEmpty(m.ktSections)
+        return
+    end if
+
+    if not isValid(m.ktSectionTasks)
+        m.ktSectionTasks = {}
+    end if
+
+    usedTitles = {}
+
+    sectionIndex = 0
+    for each ktSection in m.ktSections
+        sectionType = chainLookupReturn(ktSection, "kind", "")
+        if not isValidAndNotEmpty(sectionType)
+            m.processedRowCount++
+            sectionIndex++
+            continue for
+        end if
+
+        sectionTitle = chainLookupReturn(ktSection, "displayText", "")
+        if not isValidAndNotEmpty(sectionTitle)
+            sectionTitle = sectionType
+        end if
+        sectionTitle = getUniqueHssSectionTitle(sectionTitle, usedTitles)
+
+        sectionSpec = chainLookupReturn(ktSection, "spec", {})
+        sectionKey = getKtSectionKey(sectionType, sectionIndex)
+
+        m.ktRowTitleByKey[sectionKey] = sectionTitle
+        m.ktRowTitles.push(sectionTitle)
+
+        if not sectionExists(sectionTitle)
+            row = m.top.content.CreateChild("HomeRow")
+            row.title = sectionTitle
+            row.imageWidth = getPosterSize(false)[0]
+            row.cursorSize = getPosterSize(false)
+        end if
+
+        task = CreateObject("roSGNode", "KefinTweaksLoadSectionTask")
+        task.sectionKind = sectionType
+        task.spec = sectionSpec
+        task.displayText = sectionTitle
+        task.sectionKey = sectionKey
+        task.observeField("content", "onKtSectionLoaded")
+        m.ktSectionTasks[sectionKey] = task
         task.control = "RUN"
 
         sectionIndex++
@@ -1924,6 +2113,66 @@ sub onHssSectionLoaded(msg as object)
     end if
 
     m.top.content.insertChild(row, getOriginalSectionIndex("hss_all"))
+    setRowItemSize()
+end sub
+
+sub onKtSectionLoaded(msg as object)
+    m.processedRowCount++
+
+    node = msg.getRoSGNode()
+    if not isValid(node)
+        setRowItemSize()
+        return
+    end if
+
+    itemData = msg.getData()
+
+    node.unobserveField("content")
+    node.content = []
+
+    sectionKey = node.sectionKey
+    if isValidAndNotEmpty(sectionKey) and isValid(m.ktSectionTasks) and m.ktSectionTasks.DoesExist(sectionKey)
+        m.ktSectionTasks.Delete(sectionKey)
+    end if
+
+    sectionTitle = ""
+    if isValidAndNotEmpty(sectionKey) and isValid(m.ktRowTitleByKey) and m.ktRowTitleByKey.DoesExist(sectionKey)
+        sectionTitle = m.ktRowTitleByKey[sectionKey]
+    end if
+
+    if not isValidAndNotEmpty(sectionTitle)
+        sectionTitle = node.displayText
+    end if
+
+    if not isValidAndNotEmpty(sectionTitle)
+        setRowItemSize()
+        return
+    end if
+
+    if not isValidAndNotEmpty(itemData)
+        removeHomeSection(sectionTitle)
+        return
+    end if
+
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionTitle
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+    row.usePoster = true
+
+    for each item in itemData
+        item.usePoster = row.usePoster
+        item.imageWidth = row.imageWidth
+        row.appendChild(item)
+    end for
+
+    if sectionExists(sectionTitle)
+        m.top.content.replaceChild(row, getSectionIndex(sectionTitle))
+        setRowItemSize()
+        return
+    end if
+
+    m.top.content.insertChild(row, getOriginalSectionIndex("kt_all"))
     setRowItemSize()
 end sub
 

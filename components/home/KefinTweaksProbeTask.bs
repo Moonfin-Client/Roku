@@ -1,0 +1,452 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/misc.bs"
+
+const DEFAULT_SECTION_LIMIT = 15
+
+sub init()
+    m.top.functionName = "probeKefinTweaks"
+end sub
+
+sub probeKefinTweaks()
+    result = {
+        enabled: false,
+        sections: []
+    }
+
+    source = getKefinConfigSource()
+    if not isValidAndNotEmpty(source)
+        m.top.result = result
+        return
+    end if
+
+    configJson = extractKefinConfigJson(source)
+    if not isValidAndNotEmpty(configJson)
+        m.top.result = result
+        return
+    end if
+
+    config = ParseJson(configJson)
+    if not isValid(config)
+        m.top.result = result
+        return
+    end if
+
+    homeScreen = chainLookupReturn(config, "homeScreen", invalid)
+    if not isValid(homeScreen)
+        m.top.result = result
+        return
+    end if
+
+    if not normalizeEnabled(chainLookupReturn(homeScreen, "enabled", true), true)
+        m.top.result = result
+        return
+    end if
+
+    result.enabled = true
+    result.sections = buildKefinSections(homeScreen)
+
+    m.top.result = result
+end sub
+
+function getKefinConfigSource() as string
+    endpoints = [
+        "/JavaScriptInjector/private.js",
+        "/JavaScriptInjector/public.js"
+    ]
+
+    for each endpoint in endpoints
+        req = APIRequest(endpoint)
+        if not isValid(req)
+            continue for
+        end if
+
+        source = req.GetToString()
+        if isValidAndNotEmpty(source)
+            return source
+        end if
+    end for
+
+    return ""
+end function
+
+function extractKefinConfigJson(source as string) as string
+    strictRegex = CreateObject("roRegex", "window\\.KefinTweaksConfig\\s*=\\s*(\\{[\\s\\S]*?\\});", "m")
+    strictMatch = strictRegex.Match(source)
+    if isValid(strictMatch) and strictMatch.Count() > 1
+        return strictMatch[1]
+    end if
+
+    fallbackRegex = CreateObject("roRegex", "window\\.KefinTweaksConfig\\s*=\\s*(\\{[\\s\\S]*?\\})\\s*(?:;|$)", "m")
+    fallbackMatch = fallbackRegex.Match(source)
+    if isValid(fallbackMatch) and fallbackMatch.Count() > 1
+        return fallbackMatch[1]
+    end if
+
+    return ""
+end function
+
+function buildKefinSections(homeScreen as dynamic) as object
+    defaultLimit = normalizeLimit(chainLookupReturn(homeScreen, "defaultItemLimit", DEFAULT_SECTION_LIMIT), DEFAULT_SECTION_LIMIT)
+    sections = []
+
+    recentlyReleased = chainLookupReturn(homeScreen, "recentlyReleased", invalid)
+    if normalizeEnabled(chainLookupReturn(recentlyReleased, "enabled", true), true)
+        rrMovies = chainLookupReturn(recentlyReleased, "movies", invalid)
+        if normalizeEnabled(chainLookupReturn(rrMovies, "enabled", true), true)
+            moviesLimit = normalizeLimit(chainLookupReturn(rrMovies, "itemLimit", defaultLimit), defaultLimit)
+            moviesOrder = normalizeOrder(chainLookupReturn(rrMovies, "order", 21), 21)
+            moviesTitle = chainLookupReturn(rrMovies, "name", "Recently Released Movies")
+            sections.push(buildSectionDescriptor("recentlyReleasedMovies", moviesTitle, moviesOrder, {
+                kind: "recentlyReleasedMovies",
+                limit: moviesLimit
+            }))
+        end if
+
+        rrEpisodes = chainLookupReturn(recentlyReleased, "episodes", invalid)
+        if normalizeEnabled(chainLookupReturn(rrEpisodes, "enabled", true), true)
+            episodesLimit = normalizeLimit(chainLookupReturn(rrEpisodes, "itemLimit", defaultLimit), defaultLimit)
+            episodesOrder = normalizeOrder(chainLookupReturn(rrEpisodes, "order", 22), 22)
+            episodesTitle = chainLookupReturn(rrEpisodes, "name", "Recently Released Episodes")
+            sections.push(buildSectionDescriptor("recentlyReleasedEpisodes", episodesTitle, episodesOrder, {
+                kind: "recentlyReleasedEpisodes",
+                limit: episodesLimit
+            }))
+        end if
+    end if
+
+    watchAgain = chainLookupReturn(homeScreen, "watchAgain", invalid)
+    if normalizeEnabled(chainLookupReturn(watchAgain, "enabled", true), true)
+        watchAgainLimit = normalizeLimit(chainLookupReturn(watchAgain, "itemLimit", defaultLimit), defaultLimit)
+        watchAgainOrder = normalizeOrder(chainLookupReturn(watchAgain, "order", 50), 50)
+        watchAgainTitle = chainLookupReturn(watchAgain, "name", "Watch Again")
+        sections.push(buildSectionDescriptor("watchAgain", watchAgainTitle, watchAgainOrder, {
+            kind: "watchAgain",
+            limit: watchAgainLimit
+        }))
+    end if
+
+    recentlyAddedInLibrary = chainLookupReturn(homeScreen, "recentlyAddedInLibrary", invalid)
+    if isAssociativeArrayValue(recentlyAddedInLibrary)
+        libraryIds = []
+        for each libraryId in recentlyAddedInLibrary
+            entry = recentlyAddedInLibrary[libraryId]
+            if not normalizeEnabled(chainLookupReturn(entry, "enabled", true), true)
+                continue for
+            end if
+            if not isValidAndNotEmpty(libraryId)
+                continue for
+            end if
+            libraryIds.push(libraryId)
+        end for
+
+        if isValidAndNotEmpty(libraryIds)
+            sections.push(buildSectionDescriptor("recentlyAddedInLibrary", "Recently Added", 90, {
+                kind: "recentlyAddedInLibrary",
+                libraryIds: libraryIds,
+                limit: defaultLimit
+            }))
+        end if
+    end if
+
+    seasonal = chainLookupReturn(homeScreen, "seasonal", invalid)
+    if isAssociativeArrayValue(seasonal)
+        for each seasonalKey in seasonal
+            entry = seasonal[seasonalKey]
+            if not isAssociativeArrayValue(entry)
+                continue for
+            end if
+
+            if not normalizeEnabled(chainLookupReturn(entry, "enabled", true), true)
+                continue for
+            end if
+
+            startDate = chainLookupReturn(entry, "startDate", "")
+            endDate = chainLookupReturn(entry, "endDate", "")
+            if not isValidAndNotEmpty(startDate) or not isValidAndNotEmpty(endDate)
+                continue for
+            end if
+
+            if not isSeasonalActive(startDate, endDate)
+                continue for
+            end if
+
+            spec = buildCustomSectionSpec(entry, defaultLimit, ["Movie"])
+            if not isValidAndNotEmpty(chainLookupReturn(spec, "source", ""))
+                continue for
+            end if
+
+            sectionTitle = chainLookupReturn(entry, "name", seasonalKey)
+            sectionOrder = normalizeOrder(chainLookupReturn(entry, "order", 60), 60)
+            sections.push(buildSectionDescriptor("custom", sectionTitle, sectionOrder, spec))
+        end for
+    end if
+
+    customSections = chainLookupReturn(homeScreen, "customSections", [])
+    if isArrayValue(customSections)
+        for i = 0 to customSections.Count() - 1
+            entry = customSections[i]
+            if not isAssociativeArrayValue(entry)
+                continue for
+            end if
+
+            if not normalizeEnabled(chainLookupReturn(entry, "enabled", true), true)
+                continue for
+            end if
+
+            spec = buildCustomSectionSpec(entry, defaultLimit, ["Movie", "Series"])
+            if not isValidAndNotEmpty(chainLookupReturn(spec, "source", ""))
+                continue for
+            end if
+
+            sectionTitle = chainLookupReturn(entry, "name", "Custom")
+            sectionOrder = normalizeOrder(chainLookupReturn(entry, "order", 100 + i), 100 + i)
+            sections.push(buildSectionDescriptor("custom", sectionTitle, sectionOrder, spec))
+        end for
+    end if
+
+    sortedSections = sortSectionsByOrder(sections)
+
+    normalized = []
+    for each sectionData in sortedSections
+        kind = chainLookupReturn(sectionData, "kind", "")
+        if not isValidAndNotEmpty(kind)
+            continue for
+        end if
+
+        displayText = chainLookupReturn(sectionData, "displayText", kind)
+        if not isValidAndNotEmpty(displayText)
+            displayText = kind
+        end if
+
+        sectionSpec = chainLookupReturn(sectionData, "spec", {})
+        normalized.push({
+            kind: kind,
+            displayText: displayText,
+            spec: sectionSpec
+        })
+    end for
+
+    return normalized
+end function
+
+function buildSectionDescriptor(kind as string, displayText as string, sectionOrder as integer, spec as object) as object
+    if not isValidAndNotEmpty(displayText)
+        displayText = kind
+    end if
+
+    return {
+        kind: kind,
+        displayText: displayText,
+        order: sectionOrder,
+        spec: spec
+    }
+end function
+
+function buildCustomSectionSpec(entry as dynamic, defaultLimit as integer, defaultIncludeTypes as object) as object
+    return {
+        kind: "custom",
+        type: chainLookupReturn(entry, "type", "genre"),
+        source: chainLookupReturn(entry, "source", ""),
+        sortBy: chainLookupReturn(entry, "sortOrder", "Random"),
+        sortOrderDirection: chainLookupReturn(entry, "sortOrderDirection", "Ascending"),
+        includeItemTypes: getStringArray(chainLookupReturn(entry, "includeItemTypes", invalid), defaultIncludeTypes),
+        limit: normalizeLimit(chainLookupReturn(entry, "limit", chainLookupReturn(entry, "itemLimit", defaultLimit)), defaultLimit)
+    }
+end function
+
+function sortSectionsByOrder(sections as object) as object
+    if not isArrayValue(sections)
+        return []
+    end if
+
+    for i = 0 to sections.Count() - 2
+        for j = i + 1 to sections.Count() - 1
+            leftOrder = normalizeOrder(chainLookupReturn(sections[i], "order", i), i)
+            rightOrder = normalizeOrder(chainLookupReturn(sections[j], "order", j), j)
+
+            if rightOrder < leftOrder
+                tmp = sections[i]
+                sections[i] = sections[j]
+                sections[j] = tmp
+            end if
+        end for
+    end for
+
+    return sections
+end function
+
+function getStringArray(value as dynamic, defaultValues as object) as object
+    output = []
+
+    if isArrayValue(value)
+        for each item in value
+            if not isValid(item)
+                continue for
+            end if
+            itemString = item.ToStr().Trim()
+            if isValidAndNotEmpty(itemString)
+                output.push(itemString)
+            end if
+        end for
+    else if type(value) = "String" or type(value) = "roString"
+        for each item in value.Split(",")
+            itemString = item.Trim()
+            if isValidAndNotEmpty(itemString)
+                output.push(itemString)
+            end if
+        end for
+    end if
+
+    if isValidAndNotEmpty(output)
+        return output
+    end if
+
+    fallback = []
+    if isArrayValue(defaultValues)
+        for each item in defaultValues
+            if not isValid(item)
+                continue for
+            end if
+            itemString = item.ToStr().Trim()
+            if isValidAndNotEmpty(itemString)
+                fallback.push(itemString)
+            end if
+        end for
+    end if
+    return fallback
+end function
+
+function normalizeOrder(value as dynamic, defaultValue as integer) as integer
+    if not isValid(value)
+        return defaultValue
+    end if
+
+    parsed = defaultValue
+    valueType = type(value)
+
+    if valueType = "Integer" or valueType = "LongInteger" or valueType = "roInteger" or valueType = "roInt"
+        parsed = value
+    else if valueType = "Float" or valueType = "roFloat"
+        parsed = Int(value)
+    else if valueType = "String" or valueType = "roString"
+        parsed = Int(Val(value))
+    end if
+
+    if parsed < 0
+        return defaultValue
+    end if
+
+    return parsed
+end function
+
+function normalizeEnabled(value as dynamic, defaultValue as boolean) as boolean
+    if not isValid(value)
+        return defaultValue
+    end if
+
+    valueType = type(value)
+    if valueType = "Boolean" or valueType = "roBoolean"
+        return value
+    end if
+
+    if valueType = "String" or valueType = "roString"
+        normalized = LCase(value.Trim())
+        if normalized = "true" or normalized = "1" or normalized = "yes" or normalized = "on"
+            return true
+        end if
+        if normalized = "false" or normalized = "0" or normalized = "no" or normalized = "off"
+            return false
+        end if
+        return defaultValue
+    end if
+
+    return value <> 0
+end function
+
+function normalizeLimit(value as dynamic, defaultValue as integer) as integer
+    if not isValid(value)
+        return defaultValue
+    end if
+
+    parsed = defaultValue
+    valueType = type(value)
+
+    if valueType = "Integer" or valueType = "LongInteger" or valueType = "roInteger" or valueType = "roInt"
+        parsed = value
+    else if valueType = "Float" or valueType = "roFloat"
+        parsed = Int(value)
+    else if valueType = "String" or valueType = "roString"
+        parsed = Int(Val(value))
+    end if
+
+    if parsed <= 0
+        return defaultValue
+    end if
+
+    if parsed > 100
+        return 100
+    end if
+
+    return parsed
+end function
+
+function isSeasonalActive(startMmDd as string, endMmDd as string) as boolean
+    startPair = parseMonthDay(startMmDd)
+    endPair = parseMonthDay(endMmDd)
+
+    if not isArrayValue(startPair) or not isArrayValue(endPair)
+        return false
+    end if
+
+    now = CreateObject("roDateTime")
+    todayMonth = now.GetMonth()
+    todayDay = now.GetDayOfMonth()
+
+    startKey = (startPair[0] * 100) + startPair[1]
+    endKey = (endPair[0] * 100) + endPair[1]
+    todayKey = (todayMonth * 100) + todayDay
+
+    if startKey <= endKey
+        return todayKey >= startKey and todayKey <= endKey
+    end if
+
+    return todayKey >= startKey or todayKey <= endKey
+end function
+
+function parseMonthDay(value as dynamic) as dynamic
+    if not isValidAndNotEmpty(value)
+        return invalid
+    end if
+
+    if not (type(value) = "String" or type(value) = "roString")
+        return invalid
+    end if
+
+    parts = value.Split("-")
+    if parts.Count() < 2
+        return invalid
+    end if
+
+    month = Int(Val(parts[0]))
+    day = Int(Val(parts[1]))
+
+    if month < 1 or month > 12
+        return invalid
+    end if
+
+    if day < 1 or day > 31
+        return invalid
+    end if
+
+    return [month, day]
+end function
+
+function isArrayValue(value as dynamic) as boolean
+    valueType = type(value)
+    return valueType = "Array" or valueType = "roArray"
+end function
+
+function isAssociativeArrayValue(value as dynamic) as boolean
+    valueType = type(value)
+    return valueType = "AssociativeArray" or valueType = "roAssociativeArray"
+end function
