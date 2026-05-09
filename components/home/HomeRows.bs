@@ -81,6 +81,13 @@ sub init()
     ' Initialize task storage - tasks will be created on-demand
     m.contentTasks = {}
     m.multiServerTasks = {}
+    m.useServerConfig = false
+    m.hssProbeTask = invalid
+    m.hssSections = []
+    m.hssSuppressedBuiltins = {}
+    m.hssSectionTasks = {}
+    m.hssRowTitleByKey = {}
+    m.hssRowTitles = []
 end sub
 
 sub loadLibraries()
@@ -149,8 +156,28 @@ function getDefaultSection(index as integer) as string
     return "none"
 end function
 
-function getResolvedSectionName(index as integer) as string
-    if m.useServerConfig
+function normalizeBooleanValue(value as dynamic, defaultValue = false as boolean) as boolean
+    if not isValid(value)
+        return defaultValue
+    end if
+
+    if type(value) = "String" or type(value) = "roString"
+        return LCase(value) = "true"
+    end if
+
+    return value = true
+end function
+
+function shouldUseServerConfig() as boolean
+    return normalizeBooleanValue(get_user_setting("homeRows.useServerConfig"), false)
+end function
+
+function isHssEnabled() as boolean
+    return normalizeBooleanValue(get_user_setting("plugin.hss.enabled"), false)
+end function
+
+function getResolvedSectionNameForMode(index as integer, useServerConfig as boolean) as string
+    if useServerConfig
         userSection = m.global.session.user.settings["homesection" + index.toStr()]
     else
         userSection = get_user_setting("homeScreenSection" + index.toStr())
@@ -163,6 +190,169 @@ function getResolvedSectionName(index as integer) as string
     return LCase(userSection ?? "none")
 end function
 
+function getResolvedSectionName(index as integer) as string
+    return getResolvedSectionNameForMode(index, m.useServerConfig)
+end function
+
+function shouldLoadHss() as boolean
+    if not isHssEnabled()
+        return false
+    end if
+
+    useServerConfig = shouldUseServerConfig()
+    for i = 0 to 7
+        sectionName = getResolvedSectionNameForMode(i, useServerConfig)
+        if sectionName = "hss_all"
+            return true
+        end if
+    end for
+
+    return false
+end function
+
+function isSectionSuppressedByHss(sectionName as string) as boolean
+    if not isValid(m.hssSuppressedBuiltins)
+        return false
+    end if
+
+    return m.hssSuppressedBuiltins.DoesExist(sectionName)
+end function
+
+function getHssSectionKey(sectionType as string, additionalData = "" as string, sectionIndex = 0 as integer) as string
+    return LCase(sectionType ?? "") + "|" + LCase(additionalData ?? "") + "|" + sectionIndex.toStr()
+end function
+
+function getUniqueHssSectionTitle(baseTitle as string, usedTitles as object) as string
+    if not isValidAndNotEmpty(baseTitle)
+        baseTitle = "Home"
+    end if
+
+    candidate = baseTitle
+    suffix = 2
+
+    while sectionExists(candidate) or usedTitles.DoesExist(LCase(candidate))
+        candidate = baseTitle + " (" + suffix.toStr() + ")"
+        suffix++
+    end while
+
+    usedTitles[LCase(candidate)] = true
+    return candidate
+end function
+
+function getHssBuiltinEquivalent(section as string) as string
+    sectionName = LCase(section ?? "").Replace(" ", "")
+
+    if sectionName = "continuewatching" then return "resume"
+    if sectionName = "continuelistening" or sectionName = "resumeaudio" then return "resumeaudio"
+    if sectionName = "nextup" then return "nextup"
+    if sectionName = "latestmedia" then return "latestmedia"
+    if sectionName = "recentlyreleased" then return "recentlyreleased"
+    if sectionName = "favorites" then return "favorites"
+
+    return ""
+end function
+
+sub cleanupHssTasks()
+    if not isValid(m.hssSectionTasks)
+        m.hssSectionTasks = {}
+        return
+    end if
+
+    for each taskKey in m.hssSectionTasks
+        task = m.hssSectionTasks[taskKey]
+        if isValid(task)
+            task.unobserveField("content")
+            task.control = "STOP"
+        end if
+    end for
+
+    m.hssSectionTasks = {}
+end sub
+
+sub resetHssRowTracking()
+    m.hssRowTitleByKey = {}
+    m.hssRowTitles = []
+end sub
+
+sub removeTrackedHssRows()
+    if not isValid(m.hssRowTitles)
+        m.hssRowTitles = []
+        return
+    end if
+
+    didRemoveRow = false
+
+    for each rowTitle in m.hssRowTitles
+        while sectionExists(rowTitle)
+            sectionIndex = getSectionIndex(rowTitle)
+            if sectionIndex < 0
+                exit while
+            end if
+
+            m.top.content.removeChildIndex(sectionIndex)
+            didRemoveRow = true
+        end while
+    end for
+
+    if didRemoveRow
+        setRowItemSize()
+    end if
+end sub
+
+sub startHomeRowsLoading()
+    cleanupHssTasks()
+    removeTrackedHssRows()
+    resetHssRowTracking()
+    m.hssSections = []
+    m.hssSuppressedBuiltins = {}
+
+    if isValid(m.hssProbeTask)
+        m.hssProbeTask.unobserveField("result")
+        m.hssProbeTask.control = "STOP"
+        m.hssProbeTask = invalid
+    end if
+
+    if shouldLoadHss()
+        m.hssProbeTask = CreateObject("roSGNode", "HSSProbeTask")
+        m.hssProbeTask.observeField("result", "onHSSProbeComplete")
+        m.hssProbeTask.control = "RUN"
+        return
+    end if
+
+    processUserSections()
+end sub
+
+sub onHSSProbeComplete()
+    if not isValid(m.hssProbeTask)
+        processUserSections()
+        return
+    end if
+
+    result = m.hssProbeTask.result
+
+    m.hssProbeTask.unobserveField("result")
+    m.hssProbeTask = invalid
+
+    m.hssSections = []
+    m.hssSuppressedBuiltins = {}
+
+    if isValid(result) and normalizeBooleanValue(result.enabled, false)
+        sections = chainLookupReturn(result, "sections", [])
+        if isValidAndNotEmpty(sections)
+            m.hssSections = sections
+
+            for each hssSection in m.hssSections
+                builtinSection = getHssBuiltinEquivalent(chainLookupReturn(hssSection, "section", ""))
+                if isValidAndNotEmpty(builtinSection)
+                    m.hssSuppressedBuiltins[builtinSection] = true
+                end if
+            end for
+        end if
+    end if
+
+    processUserSections()
+end sub
+
 ' processUserSections: Loop through user's chosen home section settings and generate the content for each row
 '
 sub processUserSections()
@@ -171,12 +361,7 @@ sub processUserSections()
 
     sessionUser = m.global.session.user
 
-    m.useServerConfig = get_user_setting("homeRows.useServerConfig")
-    if not isValid(m.useServerConfig)
-        m.useServerConfig = false
-    else if type(m.useServerConfig) = "String" or type(m.useServerConfig) = "roString"
-        m.useServerConfig = (LCase(m.useServerConfig) = "true")
-    end if
+    m.useServerConfig = shouldUseServerConfig()
 
     ' Migration: Remove featuredmedia from local settings if present (run once)
     if not m.useServerConfig
@@ -191,7 +376,15 @@ sub processUserSections()
     for i = 0 to 7
         sectionName = getResolvedSectionName(i)
 
-        if sectionName = "latestmedia"
+        if isSectionSuppressedByHss(sectionName)
+            sectionName = "none"
+        end if
+
+        if sectionName = "hss_all"
+            if isValidAndNotEmpty(m.hssSections)
+                m.expectedRowCount = m.expectedRowCount + m.hssSections.count()
+            end if
+        else if sectionName = "latestmedia"
             ' Check if multi-server is enabled - if so, we estimate rows based on libraries per server
             if isMultiServerEnabled()
                 sessions = getAllServerSessions()
@@ -228,6 +421,10 @@ sub processUserSections()
     for i = 0 to 7
         sectionName = getResolvedSectionName(i)
 
+        if isSectionSuppressedByHss(sectionName)
+            sectionName = "none"
+        end if
+
         sectionLoaded = false
         if sectionName <> "none"
             sectionLoaded = addHomeSection(sectionName)
@@ -261,7 +458,7 @@ sub onLibrariesLoaded()
     m.LoadLibrariesTask.unobserveField("content")
     m.LoadLibrariesTask.content = []
 
-    processUserSections()
+    startHomeRowsLoading()
 end sub
 
 ' getOriginalSectionIndex: Gets the index of a section from user settings and adds count of currently known latest media sections
@@ -443,6 +640,11 @@ function addHomeSection(sectionType as string) as boolean
         return true
     end if
 
+    if sectionType = "hss_all"
+        createHssRows()
+        return isValidAndNotEmpty(m.hssSections)
+    end if
+
     ' Featured Media Carousel - now handled by separate toggle in Moonfin settings
     ' Skip creating a row for it, as it's controlled by ui.home.mediaBarEnabled
     if sectionType = "featuredmedia"
@@ -455,6 +657,58 @@ function addHomeSection(sectionType as string) as boolean
     m.processedRowCount++
     return false
 end function
+
+sub createHssRows()
+    if not isValidAndNotEmpty(m.hssSections)
+        return
+    end if
+
+    if not isValid(m.hssSectionTasks)
+        m.hssSectionTasks = {}
+    end if
+
+    usedTitles = {}
+
+    sectionIndex = 0
+    for each hssSection in m.hssSections
+        sectionType = chainLookupReturn(hssSection, "section", "")
+        if not isValidAndNotEmpty(sectionType)
+            m.processedRowCount++
+            sectionIndex++
+            continue for
+        end if
+
+        sectionTitle = chainLookupReturn(hssSection, "displayText", "")
+        if not isValidAndNotEmpty(sectionTitle)
+            sectionTitle = sectionType
+        end if
+        sectionTitle = getUniqueHssSectionTitle(sectionTitle, usedTitles)
+
+        additionalData = chainLookupReturn(hssSection, "additionalData", "")
+        sectionKey = getHssSectionKey(sectionType, additionalData, sectionIndex)
+
+        m.hssRowTitleByKey[sectionKey] = sectionTitle
+        m.hssRowTitles.push(sectionTitle)
+
+        if not sectionExists(sectionTitle)
+            row = m.top.content.CreateChild("HomeRow")
+            row.title = sectionTitle
+            row.imageWidth = getPosterSize(false)[0]
+            row.cursorSize = getPosterSize(false)
+        end if
+
+        task = CreateObject("roSGNode", "HSSLoadSectionTask")
+        task.sectionType = sectionType
+        task.additionalData = additionalData
+        task.displayText = sectionTitle
+        task.sectionKey = sectionKey
+        task.observeField("content", "onHssSectionLoaded")
+        m.hssSectionTasks[sectionKey] = task
+        task.control = "RUN"
+
+        sectionIndex++
+    end for
+end sub
 
 ' createLibraryRow: Creates a row displaying the user's libraries
 '
@@ -1299,7 +1553,7 @@ end sub
 sub updateHomeRows()
     ' Hide the row counter to prevent flicker. We'll show it once loading timer fires
     m.top.showRowCounter = [false]
-    processUserSections()
+    startHomeRowsLoading()
 end sub
 
 ' updateFavoritesItems: Processes LoadFavoritesTask content. Removes, Creates, or Updates favorites row as needed
@@ -1610,6 +1864,66 @@ sub updateRecentlyReleasedItems()
 
     ' Row does not exist, insert it after latest media
     m.top.content.insertChild(row, getOriginalSectionIndex("latestmedia"))
+    setRowItemSize()
+end sub
+
+sub onHssSectionLoaded(msg as object)
+    m.processedRowCount++
+
+    node = msg.getRoSGNode()
+    if not isValid(node)
+        setRowItemSize()
+        return
+    end if
+
+    itemData = msg.getData()
+
+    node.unobserveField("content")
+    node.content = []
+
+    sectionKey = node.sectionKey
+    if isValidAndNotEmpty(sectionKey) and isValid(m.hssSectionTasks) and m.hssSectionTasks.DoesExist(sectionKey)
+        m.hssSectionTasks.Delete(sectionKey)
+    end if
+
+    sectionTitle = ""
+    if isValidAndNotEmpty(sectionKey) and isValid(m.hssRowTitleByKey) and m.hssRowTitleByKey.DoesExist(sectionKey)
+        sectionTitle = m.hssRowTitleByKey[sectionKey]
+    end if
+
+    if not isValidAndNotEmpty(sectionTitle)
+        sectionTitle = node.displayText
+    end if
+
+    if not isValidAndNotEmpty(sectionTitle)
+        setRowItemSize()
+        return
+    end if
+
+    if not isValidAndNotEmpty(itemData)
+        removeHomeSection(sectionTitle)
+        return
+    end if
+
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionTitle
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+    row.usePoster = true
+
+    for each item in itemData
+        item.usePoster = row.usePoster
+        item.imageWidth = row.imageWidth
+        row.appendChild(item)
+    end for
+
+    if sectionExists(sectionTitle)
+        m.top.content.replaceChild(row, getSectionIndex(sectionTitle))
+        setRowItemSize()
+        return
+    end if
+
+    m.top.content.insertChild(row, getOriginalSectionIndex("hss_all"))
     setRowItemSize()
 end sub
 

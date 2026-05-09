@@ -75,9 +75,13 @@ sub init()
 
     m.currentStringSetting = invalid
     m.stringInputDialog = invalid
+    m.hssDetected = invalid
+    m.hssProbeTask = invalid
 
     m.configTree = reorderSettingsForFlutter(GetConfigTree())
+    updateHssSettingGate()
     LoadMenu({ children: m.configTree })
+    refreshHssPluginDetection()
 end sub
 
 sub onKeypressTimerFire()
@@ -501,6 +505,9 @@ sub onPluginPingComplete()
     if not isValid(m.pluginPingTask) then return
 
     result = m.pluginPingTask.result
+    m.pluginPingTask.unobserveField("result")
+    m.pluginPingTask = invalid
+
     if isValid(result) and (result.success ?? false)
         pluginInfo = {
             installed: true,
@@ -519,6 +526,11 @@ sub onPluginPingComplete()
         ShowToast("Could not connect to Moonfin Plugin. Ensure the plugin is installed on your Jellyfin server.", "error")
         set_user_setting("plugin.enabled", "false")
         session.user.settings.Save("plugin.enabled", "false")
+    end if
+
+    updateHssSettingGate()
+    if m.userLocation.Count() > 0
+        RefreshCurrentMenu()
     end if
 end sub
 
@@ -845,6 +857,91 @@ sub pushSettingIfValid(items as object, item as dynamic)
     end if
 end sub
 
+function normalizeBoolSettingValue(value as dynamic) as boolean
+    if not isValid(value)
+        return false
+    end if
+
+    if type(value) = "Boolean" or type(value) = "roBoolean"
+        return value
+    end if
+
+    if type(value) = "String" or type(value) = "roString"
+        return LCase(value) = "true"
+    end if
+
+    return false
+end function
+
+sub setUserBoolSetting(settingName as string, enabled as boolean, syncToServer = false as boolean)
+    value = enabled ? "true" : "false"
+    session.user.settings.Save(settingName, value)
+    set_user_setting(settingName, value)
+
+    if syncToServer
+        syncSettingToServer(settingName, value)
+    end if
+end sub
+
+function isHssPluginDetected() as boolean
+    if not isValid(m.hssDetected)
+        return true
+    end if
+
+    return m.hssDetected
+end function
+
+sub setSettingVisibilityByName(items as object, settingName as string, isVisible as boolean)
+    if not isValid(items)
+        return
+    end if
+
+    for each item in items
+        if isValid(item.settingName) and isStringEqual(item.settingName, settingName)
+            item.visible = isVisible
+        end if
+
+        if isValid(item.children)
+            setSettingVisibilityByName(item.children, settingName, isVisible)
+        end if
+    end for
+end sub
+
+sub refreshHssPluginDetection()
+    if isValid(m.hssProbeTask)
+        m.hssProbeTask.unobserveField("result")
+        m.hssProbeTask.control = "STOP"
+    end if
+
+    m.hssProbeTask = createObject("roSGNode", "HSSProbeTask")
+    m.hssProbeTask.observeField("result", "onHssPluginProbeComplete")
+    m.hssProbeTask.control = "RUN"
+end sub
+
+sub onHssPluginProbeComplete()
+    if not isValid(m.hssProbeTask) then return
+
+    result = m.hssProbeTask.result
+    m.hssProbeTask.unobserveField("result")
+    m.hssProbeTask = invalid
+
+    m.hssDetected = normalizeBoolSettingValue(chainLookupReturn(result, "enabled", false))
+    updateHssSettingGate()
+
+    if m.userLocation.Count() > 0
+        RefreshCurrentMenu()
+    end if
+end sub
+
+sub updateHssSettingGate()
+    if not isValid(m.configTree)
+        return
+    end if
+
+    pluginDetected = isHssPluginDetected()
+    setSettingVisibilityByName(m.configTree, "plugin.hss.enabled", pluginDetected)
+end sub
+
 function reorderSettingsForFlutter(configTree as object) as object
     if not isValid(configTree) then return configTree
 
@@ -869,6 +966,7 @@ function reorderSettingsForFlutter(configTree as object) as object
 
     enablePlugin = findSettingsChildByTitle(pluginRootSection, "Enable Plugin")
     pluginSettingsSync = findSettingsChildByTitle(pluginRootSection, "Settings Sync")
+    pluginHss = findSettingsChildByTitle(pluginRootSection, "Home Screen Sections")
     mdblist = findSettingsChildByTitle(pluginRootSection, "MDBList Ratings")
     tmdb = findSettingsChildByTitle(pluginRootSection, "TMDB")
     jellyseerr = findSettingsChildByTitle(pluginRootSection, "Jellyseerr")
@@ -923,6 +1021,7 @@ function reorderSettingsForFlutter(configTree as object) as object
     pluginChildren = []
     pushSettingIfValid(pluginChildren, enablePlugin)
     pushSettingIfValid(pluginChildren, pluginSettingsSync)
+    pushSettingIfValid(pluginChildren, pluginHss)
 
     integrationsChildren = []
     if pluginChildren.count() > 0
@@ -973,6 +1072,8 @@ function reorderSettingsForFlutter(configTree as object) as object
 end function
 
 sub LoadMenu(configSection, appendPath = true as boolean)
+    updateHssSettingGate()
+
     if configSection.children = invalid
         ' Load parent menu
         m.userLocation.pop()
@@ -1130,11 +1231,24 @@ sub settingSelected()
             end if
 
             selectedValue = m.global.session.user.settings[selectedItem.settingName]
+            radioOptions = selectedItem.options
+
+            if Left(chainLookupReturn(selectedItem, "settingName", ""), 17) = "homeScreenSection" and not isHssPluginDetected()
+                filteredOptions = []
+                for each option in selectedItem.options
+                    if isStringEqual(chainLookupReturn(option, "id", ""), "hss_all")
+                        continue for
+                    end if
+                    filteredOptions.push(option)
+                end for
+                radioOptions = filteredOptions
+            end if
+
             radioContent = CreateObject("roSGNode", "ContentNode")
 
             selectedIndex = 0
             itemIndex = 0
-            for each item in selectedItem.options
+            for each item in radioOptions
                 listItem = radioContent.CreateChild("ContentNode")
                 listItem.title = tr(item.title)
                 listItem.id = item.id
@@ -1187,6 +1301,15 @@ sub boolSettingChanged()
     selectedSetting = getFocusedSetting()
     if not isValid(selectedSetting) then return
 
+    if selectedSetting.settingName = "plugin.hss.enabled" and m.boolSetting.checkedItem = 1 and not isHssPluginDetected()
+        ShowToast("Home Screen Sections plugin was not detected on this server.", "error")
+        setUserBoolSetting("plugin.hss.enabled", false)
+        refreshCurrentItemValue(selectedSetting)
+        hideEditingControls()
+        m.settingsMenu.setFocus(true)
+        return
+    end if
+
     if m.boolSetting.checkedItem = 1
         session.user.settings.Save(selectedSetting.settingName, "true")
         if Left(selectedSetting.settingName, 7) = "global."
@@ -1233,6 +1356,13 @@ sub boolSettingChanged()
     refreshCurrentItemValue(selectedSetting)
     hideEditingControls()
     m.settingsMenu.setFocus(true)
+
+    if selectedSetting.settingName = "plugin.enabled"
+        refreshHssPluginDetection()
+        if m.userLocation.Count() > 0
+            RefreshCurrentMenu()
+        end if
+    end if
 end sub
 
 sub radioSettingChanged()
