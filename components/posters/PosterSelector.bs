@@ -1,9 +1,7 @@
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/enums/KeyCode.bs"
-import "pkg:/source/enums/ColorPalette.bs"
 
 sub init()
-    m.posterList = m.top.findNode("posterList")
     m.loadingGroup = m.top.findNode("loadingGroup")
     m.applyingText = m.top.findNode("applyingText")
     m.emptyText = m.top.findNode("emptyText")
@@ -11,22 +9,37 @@ sub init()
     m.titleText = m.top.findNode("titleText")
     m.fetchTask = m.top.findNode("fetchTask")
     m.downloadTask = m.top.findNode("downloadTask")
-
-    m.posterList.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
-    m.posterList.observeField("rowItemFocused", "onRowItemFocused")
-    m.posterList.observeField("itemSelected", "onPosterItemSelected")
+    m.subtitleText = m.top.findNode("subtitleText")
+    m.posterArea = m.top.findNode("posterArea")
 
     m.fetchTask.observeField("images", "onImagesLoaded")
     m.downloadTask.observeField("result", "onDownloadResult")
-
     m.top.observeField("visible", "onVisibleChanged")
 
     m.currentItemIndex = 0
+    m.windowStart = 0
     m.imageItems = []
+    m.posterNodes = []
+    m.focusRect = invalid
+
+    ' Layout: 200x300 posters, 7 visible at once (7*225=1575px in 1640px wide area)
+    m.itemWidth = 200
+    m.itemHeight = 300
+    m.itemStride = 225
+    m.visibleWidth = 1640
+    m.maxVisible = 7
 end sub
 
 sub onVisibleChanged()
-    if not m.top.visible
+    if m.top.visible
+        if isValidAndNotEmpty(m.top.itemId)
+            showLoadingState()
+            m.fetchTask.control = "STOP"
+            m.fetchTask.itemId = m.top.itemId
+            m.fetchTask.imageType = "Primary"
+            m.fetchTask.control = "RUN"
+        end if
+    else
         resetState()
     end if
 end sub
@@ -38,12 +51,6 @@ sub onItemTitleChanged()
 end sub
 
 sub onItemIdChanged()
-    if not isValidAndNotEmpty(m.top.itemId) then return
-
-    showLoadingState()
-    m.fetchTask.itemId = m.top.itemId
-    m.fetchTask.imageType = "Primary"
-    m.fetchTask.control = "RUN"
 end sub
 
 sub onImagesLoaded()
@@ -56,69 +63,133 @@ sub onImagesLoaded()
     end if
 
     m.imageItems = result.items
-    populatePosterList(result.items)
+    buildPosterSlots()
+    refreshPosterWindow()
+    updateFocusAndCounter()
     showListState()
 end sub
 
-sub populatePosterList(images as object)
-    rootContent = CreateObject("roSGNode", "ContentNode")
-    rowContent = rootContent.CreateChild("ContentNode")
-
-    for each image in images
-        item = rowContent.CreateChild("PosterItemData")
-
-        thumbnailUrl = ""
-        if isValidAndNotEmpty(image.ThumbnailUrl)
-            thumbnailUrl = image.ThumbnailUrl
-        else if isValidAndNotEmpty(image.Url)
-            thumbnailUrl = image.Url
-        end if
-        item.thumbnailUrl = thumbnailUrl
-
-        providerName = ""
-        if isValidAndNotEmpty(image.ProviderName)
-            providerName = image.ProviderName
-        end if
-        item.providerName = providerName
-
-        imageUrl = ""
-        if isValidAndNotEmpty(image.Url)
-            imageUrl = image.Url
-        end if
-        item.imageUrl = imageUrl
-    end for
-
-    m.posterList.content = rootContent
-    m.posterList.jumpToItem = 0
-    m.currentItemIndex = 0
-end sub
-
-sub onRowItemFocused()
-    focusedInfo = m.posterList.rowItemFocused
-    if isValid(focusedInfo) and focusedInfo.count() >= 2
-        m.currentItemIndex = focusedInfo[1]
+function getThumbnailUrl(image as object) as string
+    if isValidAndNotEmpty(image.ThumbnailUrl)
+        return image.ThumbnailUrl
     end if
+    if isValidAndNotEmpty(image.Url)
+        return image.Url
+    end if
+    return ""
+end function
+
+sub buildPosterSlots()
+    while m.posterArea.getChildCount() > 0
+        m.posterArea.removeChildIndex(0)
+    end while
+
+    m.posterNodes = []
+    m.windowStart = 0
+    m.currentItemIndex = 0
+
+    slotCount = m.maxVisible
+    if m.imageItems.count() < slotCount then slotCount = m.imageItems.count()
+
+    ' Center the poster area horizontally within the dialog (dialog is 1720px wide)
+    gap = m.itemStride - m.itemWidth
+    totalWidth = slotCount * m.itemStride - gap
+    centeredX = int((1720 - totalWidth) / 2)
+    m.posterArea.translation = [centeredX, 130]
+
+    ' Focus rect first so it renders behind posters
+    m.focusRect = CreateObject("roSGNode", "Rectangle")
+    m.focusRect.width = m.itemWidth + 8
+    m.focusRect.height = m.itemHeight + 8
+    m.focusRect.color = "#FFFFFF"
+    m.focusRect.translation = [-4, -4]
+    m.posterArea.appendChild(m.focusRect)
+
+    for i = 0 to slotCount - 1
+        xPos = i * m.itemStride
+
+        backdrop = CreateObject("roSGNode", "Rectangle")
+        backdrop.width = m.itemWidth
+        backdrop.height = m.itemHeight
+        backdrop.color = "#222222"
+        backdrop.translation = [xPos, 0]
+        m.posterArea.appendChild(backdrop)
+
+        poster = CreateObject("roSGNode", "Poster")
+        poster.width = m.itemWidth
+        poster.height = m.itemHeight
+        poster.loadWidth = m.itemWidth
+        poster.loadHeight = m.itemHeight
+        poster.loadDisplayMode = "scaleToZoom"
+        poster.translation = [xPos, 0]
+        m.posterArea.appendChild(poster)
+        m.posterNodes.push(poster)
+    end for
 end sub
 
-sub onPosterItemSelected()
-    selectedIndex = m.posterList.itemSelected
-    row = m.posterList.content.getChild(0)
-    if row = invalid then return
-
-    item = row.getChild(selectedIndex)
-    if item = invalid then return
-    if not isValidAndNotEmpty(item.imageUrl) then return
-
-    applyPoster(item.imageUrl)
+sub refreshPosterWindow()
+    for i = 0 to m.posterNodes.count() - 1
+        imageIdx = m.windowStart + i
+        poster = m.posterNodes[i]
+        if imageIdx < m.imageItems.count()
+            poster.uri = getThumbnailUrl(m.imageItems[imageIdx])
+        else
+            poster.uri = ""
+        end if
+    end for
 end sub
 
-sub applyPoster(imageUrl as string)
-    showApplyingState()
+sub updateFocusAndCounter()
+    slotIndex = m.currentItemIndex - m.windowStart
+    m.focusRect.translation = [slotIndex * m.itemStride - 4, -4]
+    m.subtitleText.text = (m.currentItemIndex + 1).toStr() + " of " + m.imageItems.count().toStr()
+end sub
 
-    m.downloadTask.itemId = m.top.itemId
-    m.downloadTask.imageType = "Primary"
-    m.downloadTask.imageUrl = imageUrl
-    m.downloadTask.control = "RUN"
+sub showLoadingState()
+    m.posterArea.visible = false
+    m.loadingGroup.visible = true
+    m.applyingText.visible = false
+    m.emptyText.visible = false
+    m.hintText.visible = false
+end sub
+
+sub showListState()
+    m.posterArea.visible = true
+    m.loadingGroup.visible = false
+    m.applyingText.visible = false
+    m.emptyText.visible = false
+    m.hintText.visible = true
+    m.top.setFocus(true)
+end sub
+
+sub showEmptyState()
+    m.posterArea.visible = false
+    m.loadingGroup.visible = false
+    m.applyingText.visible = false
+    m.emptyText.visible = true
+    m.hintText.visible = false
+end sub
+
+sub showApplyingState()
+    m.applyingText.text = "Setting poster..."
+    m.posterArea.visible = false
+    m.loadingGroup.visible = false
+    m.applyingText.visible = true
+    m.emptyText.visible = false
+    m.hintText.visible = false
+    m.top.setFocus(true)
+end sub
+
+sub resetState()
+    m.imageItems = []
+    m.currentItemIndex = 0
+    m.windowStart = 0
+    m.posterNodes = []
+    m.focusRect = invalid
+    while m.posterArea.getChildCount() > 0
+        m.posterArea.removeChildIndex(0)
+    end while
+    showLoadingState()
 end sub
 
 sub onDownloadResult()
@@ -127,49 +198,19 @@ sub onDownloadResult()
 
     if result.success
         m.top.posterChanged = true
+        m.top.visible = false
+    else
+        m.applyingText.text = "Failed to set poster. Press Back to close."
     end if
-
-    m.top.visible = false
 end sub
 
-sub showLoadingState()
-    m.posterList.visible = false
-    m.loadingGroup.visible = true
-    m.applyingText.visible = false
-    m.emptyText.visible = false
-    m.hintText.visible = false
-end sub
-
-sub showListState()
-    m.posterList.visible = true
-    m.loadingGroup.visible = false
-    m.applyingText.visible = false
-    m.emptyText.visible = false
-    m.hintText.visible = true
-    m.posterList.setFocus(true)
-end sub
-
-sub showEmptyState()
-    m.posterList.visible = false
-    m.loadingGroup.visible = false
-    m.applyingText.visible = false
-    m.emptyText.visible = true
-    m.hintText.visible = false
-end sub
-
-sub showApplyingState()
-    m.posterList.visible = false
-    m.loadingGroup.visible = false
-    m.applyingText.visible = true
-    m.emptyText.visible = false
-    m.hintText.visible = false
-end sub
-
-sub resetState()
-    m.imageItems = []
-    m.currentItemIndex = 0
-    m.posterList.content = invalid
-    showLoadingState()
+sub applyPoster(imageUrl as string)
+    showApplyingState()
+    m.downloadTask.control = "STOP"
+    m.downloadTask.itemId = m.top.itemId
+    m.downloadTask.imageType = "Primary"
+    m.downloadTask.imageUrl = imageUrl
+    m.downloadTask.control = "RUN"
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
@@ -180,9 +221,38 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return true
     end if
 
-    if key = KeyCode.LEFT or key = KeyCode.RIGHT or key = KeyCode.UP or key = KeyCode.DOWN
-        if m.posterList.visible and not m.posterList.isInFocusChain()
-            m.posterList.setFocus(true)
+    if m.posterArea.visible and m.imageItems.count() > 0
+        if key = KeyCode.LEFT
+            if m.currentItemIndex > 0
+                m.currentItemIndex--
+                if m.currentItemIndex < m.windowStart
+                    m.windowStart = m.currentItemIndex
+                    refreshPosterWindow()
+                end if
+                updateFocusAndCounter()
+            end if
+            return true
+        end if
+
+        if key = KeyCode.RIGHT
+            if m.currentItemIndex < m.imageItems.count() - 1
+                m.currentItemIndex++
+                if m.currentItemIndex >= m.windowStart + m.posterNodes.count()
+                    m.windowStart = m.currentItemIndex - m.posterNodes.count() + 1
+                    refreshPosterWindow()
+                end if
+                updateFocusAndCounter()
+            end if
+            return true
+        end if
+
+        if key = KeyCode.OK
+            image = m.imageItems[m.currentItemIndex]
+            url = image.Url
+            if isValidAndNotEmpty(url)
+                applyPoster(url)
+            end if
+            return true
         end if
     end if
 
