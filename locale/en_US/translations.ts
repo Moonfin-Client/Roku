@@ -1458,6 +1458,31 @@
             <extracomment>User Setting - Options</extracomment>
         </message>
         <message>
+            <source>Skip Intro</source>
+            <translation>Skip Intro</translation>
+            <extracomment>Button label shown during playback to skip an intro segment</extracomment>
+        </message>
+        <message>
+            <source>Skip Outro</source>
+            <translation>Skip Outro</translation>
+            <extracomment>Button label shown during playback to skip an outro segment</extracomment>
+        </message>
+        <message>
+            <source>Skip Commercial</source>
+            <translation>Skip Commercial</translation>
+            <extracomment>Button label shown during playback to skip a commercial segment</extracomment>
+        </message>
+        <message>
+            <source>Skip Preview</source>
+            <translation>Skip Preview</translation>
+            <extracomment>Button label shown during playback to skip a preview segment</extracomment>
+        </message>
+        <message>
+            <source>Skip Recap</source>
+            <translation>Skip Recap</translation>
+            <extracomment>Button label shown during playback to skip a recap segment</extracomment>
+        </message>
+        <message>
             <source>No Chapter Data Found</source>
             <translation>No Chapter Data Found</translation>
             <extracomment>Message shown in OSD when no chapter data is returned by the API</extracomment>
