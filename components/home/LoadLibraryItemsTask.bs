@@ -1,0 +1,260 @@
+import "pkg:/source/api/Image.bs"
+import "pkg:/source/api/sdk.bs"
+import "pkg:/source/enums/ImageType.bs"
+import "pkg:/source/enums/ItemType.bs"
+import "pkg:/source/utils/misc.bs"
+
+sub init()
+    m.top.functionName = "loadItems"
+end sub
+
+sub loadItems()
+    mediaType = m.top.mediaType
+    itemsToLoad = m.top.itemsToLoad
+
+    if itemsToLoad = "continue"
+        m.top.content = loadContinueWatching(mediaType)
+    else if itemsToLoad = "mergedcontinue"
+        m.top.content = loadMergedContinue(mediaType)
+    else if itemsToLoad = "latest"
+        m.top.content = loadLatest(mediaType)
+    else if itemsToLoad = "genres"
+        m.top.content = loadGenres(mediaType)
+    else if itemsToLoad = "genreitems"
+        m.top.content = loadGenreItems(mediaType, m.top.genreId)
+    end if
+end sub
+
+const BACKDROP_FIELDS = "BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId,RunTimeTicks,CommunityRating,CriticRating,Overview"
+
+function loadContinueWatching(mediaType as string) as object
+    results = []
+
+    includeTypes = ItemType.MOVIE
+    if mediaType = "shows"
+        includeTypes = ItemType.EPISODE
+    end if
+
+    params = {
+        recursive: true,
+        SortBy: "DatePlayed",
+        SortOrder: "Descending",
+        Filters: "IsResumable",
+        IncludeItemTypes: includeTypes,
+        EnableTotalRecordCount: false,
+        Fields: BACKDROP_FIELDS,
+        limit: 20
+    }
+    data = api.useritems.GetResumeItems(params)
+
+    if not isChainValid(data, "Items") then return results
+
+    for each item in data.Items
+        tmp = makeHomeData(item, false)
+        if isValid(tmp) then results.push(tmp)
+    end for
+
+    return results
+end function
+
+function loadMergedContinue(mediaType as string) as object
+    results = []
+    seenIds = {}
+
+    includeTypes = ItemType.MOVIE
+    if mediaType = "shows"
+        includeTypes = ItemType.EPISODE
+    end if
+
+    resumeParams = {
+        recursive: true,
+        SortBy: "DatePlayed",
+        SortOrder: "Descending",
+        Filters: "IsResumable",
+        IncludeItemTypes: includeTypes,
+        EnableTotalRecordCount: false,
+        Fields: BACKDROP_FIELDS,
+        limit: 20
+    }
+    resumeData = api.useritems.GetResumeItems(resumeParams)
+
+    if isChainValid(resumeData, "Items")
+        for each item in resumeData.Items
+            tmp = makeHomeData(item, true)
+            if isValid(tmp)
+                results.push(tmp)
+                seenIds[item.LookupCI("Id")] = true
+            end if
+        end for
+    end if
+
+    if mediaType = "shows"
+        nextUpParams = {
+            userId: m.global.session.user.id,
+            DisableFirstEpisode: false,
+            limit: 25,
+            EnableTotalRecordCount: false,
+            Fields: BACKDROP_FIELDS
+        }
+        nextUpData = api.shows.GetNextUp(nextUpParams)
+
+        if isChainValid(nextUpData, "Items")
+            for each item in nextUpData.Items
+                itemId = item.LookupCI("Id")
+                if not seenIds.DoesExist(itemId)
+                    tmp = makeHomeData(item, true)
+                    if isValid(tmp) then results.push(tmp)
+                end if
+            end for
+        end if
+    end if
+
+    return results
+end function
+
+function loadLatest(mediaType as string) as object
+    results = []
+
+    includeTypes = ItemType.MOVIE
+    if mediaType = "shows"
+        includeTypes = ItemType.SERIES
+    end if
+
+    params = {
+        userId: m.global.session.user.id,
+        limit: 25,
+        includeItemTypes: includeTypes,
+        enableImageTypes: `${ImageType.PRIMARY}, ${ImageType.BACKDROP}, ${ImageType.THUMB}`,
+        imageTypeLimit: 1,
+        enableTotalRecordCount: false,
+        fields: BACKDROP_FIELDS
+    }
+
+    data = api.items.GetLatest(params)
+
+    if not isValidAndNotEmpty(data) then return results
+
+    for each item in data
+        tmp = makeHomeData(item, true)
+        if isValid(tmp) then results.push(tmp)
+    end for
+
+    return results
+end function
+
+function loadGenres(mediaType as string) as object
+    results = []
+
+    includeTypes = ItemType.MOVIE
+    if mediaType = "shows"
+        includeTypes = ItemType.SERIES
+    end if
+
+    params = {
+        userId: m.global.session.user.id,
+        includeItemTypes: includeTypes,
+        sortBy: "SortName",
+        limit: 4
+    }
+
+    data = api.genres.Get(params)
+
+    if not isChainValid(data, "Items") then return results
+
+    for each genre in data.Items
+        tmp = createSGNode("ContentNode")
+        tmp.id = genre.LookupCI("Id")
+        tmp.title = genre.LookupCI("Name")
+        results.push(tmp)
+    end for
+
+    return results
+end function
+
+function loadGenreItems(mediaType as string, genreId as string) as object
+    results = []
+
+    if not isValidAndNotEmpty(genreId) then return results
+
+    includeTypes = ItemType.MOVIE
+    if mediaType = "shows"
+        includeTypes = ItemType.SERIES
+    end if
+
+    params = {
+        userId: m.global.session.user.id,
+        includeItemTypes: includeTypes,
+        genreIds: genreId,
+        recursive: true,
+        sortBy: "SortName",
+        limit: 20,
+        enableImageTypes: `${ImageType.PRIMARY}, ${ImageType.BACKDROP}, ${ImageType.THUMB}`,
+        imageTypeLimit: 1,
+        enableTotalRecordCount: false,
+        fields: BACKDROP_FIELDS
+    }
+
+    data = api.items.Get(params)
+
+    if not isChainValid(data, "Items") then return results
+
+    for each item in data.Items
+        tmp = makeHomeData(item, true)
+        if isValid(tmp) then results.push(tmp)
+    end for
+
+    return results
+end function
+
+function makeHomeData(item as object, usePoster = false as boolean) as object
+    if not isValid(item) then return invalid
+
+    tmp = createSGNode("HomeData")
+    tmp.Id = item.LookupCI("Id")
+    tmp.name = item.LookupCI("Name")
+    tmp.type = item.LookupCI("Type")
+    tmp.imageWidth = 230
+    tmp.imageHeight = 345
+    tmp.usePoster = usePoster
+
+    backdropTags = item.LookupCI("BackdropImageTags")
+    parentBackdropTags = item.LookupCI("ParentBackdropImageTags")
+    parentBackdropId = item.LookupCI("ParentBackdropItemId")
+    itemId = item.LookupCI("Id")
+
+    if isValidAndNotEmpty(backdropTags) and backdropTags.count() > 0
+        tmp.backdropURL = ImageURL(itemId, "Backdrop", { Tag: backdropTags[0], maxWidth: 1920, maxHeight: 1080, quality: 90 })
+    else if isValidAndNotEmpty(parentBackdropTags) and isValidAndNotEmpty(parentBackdropId) and parentBackdropTags.count() > 0
+        tmp.backdropURL = ImageURL(parentBackdropId, "Backdrop", { Tag: parentBackdropTags[0], maxWidth: 1920, maxHeight: 1080, quality: 90 })
+    end if
+
+    tmp.json = {
+        id: item.LookupCI("Id"),
+        name: item.LookupCI("Name"),
+        Type: item.LookupCI("Type"),
+        ProductionYear: item.LookupCI("ProductionYear"),
+        OfficialRating: item.LookupCI("OfficialRating"),
+        RunTimeTicks: item.LookupCI("RunTimeTicks"),
+        CommunityRating: item.LookupCI("CommunityRating"),
+        CriticRating: item.LookupCI("CriticRating"),
+        Overview: item.LookupCI("Overview"),
+        Status: item.LookupCI("Status"),
+        SeriesName: item.LookupCI("SeriesName"),
+        SeriesId: item.LookupCI("SeriesId"),
+        SeasonId: item.LookupCI("SeasonId"),
+        ParentIndexNumber: item.LookupCI("ParentIndexNumber"),
+        IndexNumber: item.LookupCI("IndexNumber"),
+        IndexNumberEnd: item.LookupCI("IndexNumberEnd"),
+        EndDate: item.LookupCI("EndDate"),
+        ImageTags: item.LookupCI("ImageTags"),
+        UserData: item.LookupCI("UserData"),
+        ParentThumbItemId: item.LookupCI("ParentThumbItemId"),
+        ParentThumbImageTag: item.LookupCI("ParentThumbImageTag"),
+        ParentBackdropImageTags: parentBackdropTags,
+        ParentBackdropItemId: parentBackdropId,
+        SeriesPrimaryImageTag: item.LookupCI("SeriesPrimaryImageTag"),
+        BackdropImageTags: backdropTags
+    }
+
+    return tmp
+end function
