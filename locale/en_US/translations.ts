@@ -1739,6 +1739,10 @@
             <translation>Add To Playlist</translation>
         </message>
         <message>
+            <source>Add To Collection</source>
+            <translation>Add To Collection</translation>
+        </message>
+        <message>
             <source>Remove From My List</source>
             <translation>Remove From My List</translation>
         </message>
