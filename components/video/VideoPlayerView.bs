@@ -106,6 +106,21 @@ sub init()
 
     m.videoEndingTime = m.top.findNode("videoEndingTime")
 
+    ' Scrubbing
+    m.scrubActive = false
+    m.scrubDirection = 0
+    m.scrubSpeedIndex = 3
+    m.scrubSpeeds = [-168, -50, -10, 10, 50, 168]
+    m.scrubPosition = 0
+    m.scrubPositionStart = 0
+
+    m.scrubTimer = m.top.findNode("scrubTimer")
+    m.scrubTimer.observeField("fire", "onScrubTimer")
+
+    m.scrubTime = m.top.findNode("scrubTimeDisplay")
+    m.progressBar = m.top.findNode("scrubProgressBar")
+    m.scrubSpeed = m.top.findNode("scrubSpeedDisplay")
+
     m.subtitleSyncValue = m.top.findNode("subtitleSyncValue")
     m.subtitleSyncValue.font.size = 26
     m.subtitleSyncValue.text = `${tr("Current Offset")}: 0 ms`
@@ -284,26 +299,106 @@ sub handleItemSkipAction(action as string)
     end if
 end sub
 
-' handleRewindAction: Handles user command to rewind video by 10 seconds
+' handleRewindAction: Handles user command to start rewinding scrub
 '
 sub handleRewindAction()
-    newPosition = m.top.position - 10
-    if newPosition < 0 then newPosition = 0
+    if m.scrubActive
+        if m.scrubDirection = -1
+            if m.scrubSpeedIndex > 0
+                m.scrubSpeedIndex = m.scrubSpeedIndex - 1
+            end if
+        else
+            m.scrubDirection = -1
+            m.scrubSpeedIndex = 2
+        end if
+        return
+    end if
 
-    m.top.seek = newPosition
-    setVideoEndingTime(newPosition)
-    m.positionText.text = secondsToHuman(newPosition, true)
+    startScrubbing(-1)
 end sub
 
-' handleFastForwardAction: Handles user command to fast forward video by 10 seconds
+' handleFastForwardAction: Handles user command to start fast forward scrub
 '
 sub handleFastForwardAction()
-    newPosition = m.top.position + 10
-    if newPosition > m.top.duration then newPosition = m.top.duration
+    if m.scrubActive
+        if m.scrubDirection = 1
+            if m.scrubSpeedIndex < m.scrubSpeeds.count() - 1
+                m.scrubSpeedIndex = m.scrubSpeedIndex + 1
+            end if
+        else
+            m.scrubDirection = 1
+            m.scrubSpeedIndex = 3
+        end if
+        return
+    end if
 
-    m.top.seek = newPosition
-    setVideoEndingTime(newPosition)
-    m.positionText.text = secondsToHuman(newPosition, true)
+    startScrubbing(1)
+end sub
+
+sub startScrubbing(direction as integer)
+    if m.scrubActive then return
+
+    m.scrubActive = true
+    m.scrubDirection = direction
+    m.scrubSpeedIndex = direction = 1 ? 3 : 2
+    m.scrubPositionStart = m.top.position
+    m.scrubPosition = m.top.position
+
+    m.top.control = VideoControl.PAUSE
+
+    m.pauseOverlay.visible = true
+    m.scrubInfo = m.top.findNode("scrubInfo")
+    m.scrubInfo.visible = true
+
+    m.scrubTimer.control = "start"
+end sub
+
+sub stopScrubbing()
+    m.scrubTimer.control = "stop"
+    m.scrubActive = false
+    m.scrubDirection = 0
+
+    m.top.seek = m.scrubPosition
+
+    m.scrubInfo = m.top.findNode("scrubInfo")
+    if isValid(m.scrubInfo)
+        m.scrubInfo.visible = false
+    end if
+
+    m.top.control = VideoControl.RESUME
+    m.pauseOverlay.visible = false
+    hideSegmentSkipButton()
+end sub
+
+sub onScrubTimer()
+    if not m.scrubActive then return
+
+    speed = m.scrubSpeeds[m.scrubSpeedIndex]
+    m.scrubPosition = m.scrubPosition + speed * m.scrubTimer.duration
+
+    if m.scrubPosition < 0 then m.scrubPosition = 0
+    if m.scrubPosition > m.top.duration then m.scrubPosition = m.top.duration
+
+    
+    if isValid(m.scrubTime)
+        m.scrubTime.text = secondsToHuman(m.scrubPosition, true) + " / " + secondsToHuman(m.top.duration, true)
+    end if
+
+    if isValid(m.progressBar) and m.top.duration > 0
+        scrubPct = m.scrubPosition / m.top.duration
+        m.progressBar.width = 1714 * scrubPct
+    end if
+
+    if m.scrubSpeedIndex = 3 or m.scrubSpeedIndex = 2
+        m.scrubSpeed.text = tr("3x")
+    else if m.scrubSpeedIndex = 4 or m.scrubSpeedIndex = 1
+        m.scrubSpeed.text = tr("15x")
+    else if m.scrubSpeedIndex = 5 or m.scrubSpeedIndex = 0
+        m.scrubSpeed.text = tr("50x")
+    end if
+
+    m.positionText.text = secondsToHuman(m.scrubPosition, true)
+    setVideoEndingTime(m.scrubPosition)
 end sub
 
 ' handleHideAction: Handles action to hide OSD menu
@@ -1171,8 +1266,10 @@ sub onState()
     ' Handle OSD visibility based on playback state
     if isStringEqual(m.top.state, MediaPlaybackState.PAUSED)
         ' Keep OSD visible when paused
-        if not m.osd.visible
-            showOSD()
+        if not m.scrubActive
+            if not m.osd.visible
+                showOSD()
+            end if
         end if
         ' Disable auto-hide timer when paused
         m.osd.inactiveTimeout = 0
@@ -1749,6 +1846,36 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     if not press then return false
 
+    if m.scrubActive
+        if key = KeyCode.OK or key = KeyCode.PLAY
+            stopScrubbing()
+            return true
+        end if
+
+        if key = KeyCode.LEFT or key = KeyCode.RIGHT
+            stopScrubbing()
+            return true
+        end if
+
+        if key = KeyCode.REWIND
+            if m.scrubDirection = 1
+                stopScrubbing()
+            else
+                handleRewindAction()
+            end if
+            return true
+        end if
+
+        if key = KeyCode.FASTFORWRD
+            if m.scrubDirection = -1
+                stopScrubbing()
+            else
+                handleFastForwardAction()
+            end if
+            return true
+        end if
+    end if
+
     ' Handle rewind/fast forward/replay remote buttons
     if key = KeyCode.REWIND or key = KeyCode.FASTFORWRD or key = KeyCode.REPLAY
         if not m.top.trickPlayBar.visible
@@ -1769,11 +1896,16 @@ function onKeyEvent(key as string, press as boolean) as boolean
             if not stateAllowsOSD() then return true
 
             if key = KeyCode.RIGHT
-                handleFastForwardAction()
+                newPosition = m.top.position + 10
+                if newPosition > m.top.duration then newPosition = m.top.duration
             else
-                handleRewindAction()
+                newPosition = m.top.position - 10
+                if newPosition < 0 then newPosition = 0
             end if
 
+            m.top.seek = newPosition
+            setVideoEndingTime(newPosition)
+            m.positionText.text = secondsToHuman(newPosition, true)
             return true
         end if
     end if
@@ -1825,6 +1957,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if key = KeyCode.BACK
+        if m.scrubActive
+            stopScrubbing()
+            return true
+        end if
+
         if m.skipSegmentButton.visible
             if isValid(m.currentSegmentType)
                 m.mediaSegmentDismissed[m.currentSegmentType] = true
