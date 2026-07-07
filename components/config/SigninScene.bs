@@ -1,8 +1,7 @@
-import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/enums/KeyCode.bs"
-import "pkg:/source/enums/PosterLoadStatus.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/api/userauth.bs"
 
 sub init()
     m.top.setFocus(true)
@@ -12,6 +11,12 @@ sub init()
 
     m.submit = m.top.findNode("submit")
     m.quickConnect = m.top.findNode("quickConnect")
+    m.passwordTab = m.top.findNode("passwordTab")
+    m.passwordTab.observeField("buttonSelected", "hideQuickConnect")
+    m.back = m.top.findNode("back")
+    m.back.observeField("buttonSelected", "onBackPressed")
+    m.passwordTab.background = "0x00A4DCFF"
+    m.quickConnect.background = "0x2a2e40FF"
 
     m.errorContainer = m.top.findNode("errorContainer")
     m.errorContainer.color = "#CC0000"
@@ -50,7 +55,19 @@ sub init()
     saveCredentials.uncheckedIconUri = "pkg:/images/icons/checkboxUnchecked.png"
     saveCredentials.focusedUncheckedIconUri = "pkg:/images/icons/checkboxUnchecked.png"
 
+    m.quickConnectGroup = m.top.findNode("quickConnectGroup")
+    m.quickConnectCode = m.top.findNode("quickConnectCode")
+    m.quickConnectStatus = m.top.findNode("quickConnectStatus")
+    m.quickConnectBack = m.top.findNode("quickConnectBack")
+
+    m.quickConnectTimer = m.top.findNode("quickConnectTimer")
+    m.quickConnectTimer.observeField("fire", "quickConnectStatus")
+
+    m.quickConnectGroup.visible = false
+    m.quickConnectBack.observeField("buttonSelected", "onBackPressed")
+
     initServerName()
+    checkQuickConnectEnabled()
 end sub
 
 sub initServerName()
@@ -72,6 +89,18 @@ sub initServerName()
     end if
 
     m.connectingTo.text = tr("Connecting to ") + serverName
+end sub
+
+sub checkQuickConnectEnabled()
+    resp = APIRequest("QuickConnect/Enabled")
+    result = getString(resp)
+    if isValidAndNotEmpty(result) and result = "true"
+        json = initQuickConnect()
+        if isValid(json)
+            m.top.quickConnectJson = json
+            showQuickConnect()
+        end if
+    end if
 end sub
 
 sub onAlertChange()
@@ -96,9 +125,108 @@ sub onUserChange()
     end if
 end sub
 
+sub showQuickConnect()
+    m.top.findNode("signInFormContainer").visible = false
+    m.quickConnectGroup.visible = true
+
+    m.config.setFocus(false)
+    m.config.jumpToItem = -1
+
+    m.quickConnect.background = "0x00A4DCFF"
+    m.passwordTab.background = "0x2a2e40FF"
+
+    json = m.top.quickConnectJson
+    if not isValid(json)
+        m.top.alert = tr("Quick Connect not available.")
+        hideQuickConnect()
+        return
+    end if
+
+    m.quickConnectCode.text = json.Code
+
+    m.quickConnectTimer.control = "start"
+
+    m.top.lastFocus = m.quickConnectBack
+end sub
+
+sub hideQuickConnect()
+    if isValid(m.quickConnectTimer)
+        m.quickConnectTimer.control = "stop"
+    end if
+    if isValid(m.checkTask)
+        m.checkTask.control = "stop"
+        m.checkTask.unobserveField("authenticated")
+        m.checkTask = invalid
+    end if
+
+    m.top.showQuickConnect = false
+    m.quickConnectGroup.visible = false
+    m.top.findNode("signInFormContainer").visible = true
+
+    m.passwordTab.background = "0x00A4DCFF"
+    m.quickConnect.background = "0x2a2e40FF"
+    
+    m.submit.setFocus(true)
+end sub
+
+sub onQuickConnectAuthenticated()
+    authenticated = m.checkTask.authenticated
+    if authenticated > 0
+        currentUser = AboutMe()
+        session.user.Login(currentUser, m.top.findNode("saveCredentials").checkedState[0])
+        session.user.LoadUserPreferences()
+        LoadUserAbilities()
+        
+        m.top.quickConnectAuthenticated = true
+    else if authenticated < 0
+        m.quickConnectTimer.control = "start"
+    end if
+end sub
+
+sub quickConnectStatus()
+    m.quickConnectTimer.control = "stop"
+    m.checkTask = CreateObject("roSGNode", "QuickConnect")
+    m.checkTask.secret = m.top.quickConnectJson.secret
+    m.checkTask.saveCredentials = m.top.findNode("saveCredentials").checkedState[0]
+    m.checkTask.observeField("authenticated", "onQuickConnectAuthenticated")
+    m.checkTask.control = "run"
+end sub
+
+sub onShowQuickConnect()
+    showQuickConnect()
+end sub
+
+sub onBackPressed()
+    m.top.backPressed = true
+end sub
+
 function onKeyEvent(key as string, press as boolean) as boolean
     ' Returns true if user navigates to a new focusable element
     if not press then return false
+
+    if m.quickConnectGroup.visible
+        if key = KeyCode.BACK
+            m.top.backPressed = true
+            return true
+        end if
+
+        if key = KeyCode.UP and m.quickConnectBack.hasFocus()
+            m.quickConnectBack.focus = false
+            m.quickConnect.setFocus(true)
+            m.quickConnect.focus = true
+            setLastFocus(m.quickConnect)
+            return true
+        end if
+
+        if key = KeyCode.DOWN and (m.quickConnect.hasFocus() or m.passwordTab.hasFocus())
+            if m.quickConnect.hasFocus() then m.quickConnect.focus = false
+            if m.passwordTab.hasFocus() then m.passwordTab.focus = false
+            m.quickConnectBack.setFocus(true)
+            m.quickConnectBack.focus = true
+            setLastFocus(m.quickConnectBack)
+            return true
+        end if
+    end if
 
     list = m.top.findNode("configOptions")
     saveCredentials = m.top.findNode("saveCredentials")
@@ -110,7 +238,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     if key = KeyCode.DOWN and list.isInFocusChain()
         limit = list.content.getChildren(-1, 0).count() - 1
-
         if limit = list.itemFocused
             saveCredentials.setFocus(true)
             setLastFocus(saveCredentials)
@@ -122,22 +249,12 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if key = KeyCode.DOWN and saveCredentials.isInFocusChain()
         m.submit.setFocus(true)
         m.submit.focus = true
-
         setLastFocus(m.submit)
         return true
     end if
 
     if key = KeyCode.UP and m.submit.hasFocus()
         m.submit.focus = false
-
-        saveCredentials.setFocus(true)
-        setLastFocus(saveCredentials)
-        return true
-    end if
-
-    if key = KeyCode.UP and m.quickConnect.hasFocus()
-        m.quickConnect.focus = false
-
         saveCredentials.setFocus(true)
         setLastFocus(saveCredentials)
         return true
@@ -149,22 +266,55 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return true
     end if
 
-    if key = KeyCode.RIGHT and m.submit.hasFocus()
-        m.submit.focus = false
-
+    if key = KeyCode.UP and list.isInFocusChain()
         m.quickConnect.setFocus(true)
         m.quickConnect.focus = true
-
         setLastFocus(m.quickConnect)
         return true
     end if
 
-    if key = KeyCode.LEFT and m.quickConnect.hasFocus()
+    if key = KeyCode.DOWN and m.quickConnect.hasFocus()
         m.quickConnect.focus = false
+        list.setFocus(true)
+        setLastFocus(list)
+        return true
+    end if
 
+    if key = KeyCode.DOWN and m.passwordTab.hasFocus()
+        m.passwordTab.focus = false
+        list.setFocus(true)
+        setLastFocus(list)
+        return true
+    end if
+
+    if key = KeyCode.RIGHT and m.quickConnect.hasFocus()
+        m.quickConnect.focus = false
+        m.passwordTab.setFocus(true)
+        m.passwordTab.focus = true
+        setLastFocus(m.passwordTab)
+        return true
+    end if
+
+    if key = KeyCode.LEFT and m.passwordTab.hasFocus()
+        m.passwordTab.focus = false
+        m.quickConnect.setFocus(true)
+        m.quickConnect.focus = true
+        setLastFocus(m.quickConnect)
+        return true
+    end if
+
+    if key = KeyCode.LEFT and m.submit.hasFocus()
+        m.submit.focus = false
+        m.back.setFocus(true)
+        m.back.focus = true
+        setLastFocus(m.back)
+        return true
+    end if
+
+    if key = KeyCode.RIGHT and m.back.hasFocus()
+        m.back.focus = false
         m.submit.setFocus(true)
         m.submit.focus = true
-
         setLastFocus(m.submit)
         return true
     end if
