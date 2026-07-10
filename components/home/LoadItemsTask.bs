@@ -179,6 +179,52 @@ function loadRecentlyReleased() as object
     return results
 end function
 
+' Reads a synced hidden-items map from settings. Keys are item or series ids,
+' values are the ISO time each was hidden.
+function getHiddenItemsMap(settingKey as string) as object
+    raw = m.global.session.user.settings[settingKey]
+    if not isValid(raw) or raw = "" then return {}
+    parsed = ParseJson(raw)
+    if not isValid(parsed) or Type(parsed) <> "roAssociativeArray" then return {}
+    return parsed
+end function
+
+' True when an item is hidden and has not been played since it was hidden.
+' seriesOnly keys on the series id only, otherwise it falls back to the item id.
+function isHiddenByMap(itemJson as object, hiddenMap as object, seriesOnly as boolean) as boolean
+    if hiddenMap.Count() = 0 or not isValid(itemJson) then return false
+
+    seriesId = itemJson.SeriesId
+    key = invalid
+    if isValid(seriesId) and seriesId <> ""
+        key = seriesId
+    else if not seriesOnly
+        key = itemJson.Id
+    end if
+    if not isValid(key) or key = "" then return false
+
+    hideTime = hiddenMap[key]
+    if not isValid(hideTime) then return false
+
+    userData = itemJson.UserData
+    if isValid(userData)
+        lastPlayed = userData.LastPlayedDate
+        if isValid(lastPlayed) and lastPlayed <> "" and lastPlayed > hideTime then return false
+    end if
+    return true
+end function
+
+function filterHiddenResults(results as object, hiddenMap as object, seriesOnly as boolean) as object
+    if hiddenMap.Count() = 0 then return results
+    filtered = []
+    for each entry in results
+        if not isHiddenByMap(entry.json, hiddenMap, seriesOnly)
+            filtered.push(entry)
+        end if
+    end for
+    return filtered
+end function
+
 function loadContinueWatching() as object
     results = []
 
@@ -230,12 +276,15 @@ function loadContinueWatching() as object
         results.push(tmp)
     end for
 
-    return results
+    return filterHiddenResults(results, getHiddenItemsMap("ui.home.hiddenContinueWatchingItems"), false)
 end function
 
 ' Load merged Continue Watching and Next Up items
 function loadMergedContinueWatching() as object
     results = []
+
+    hiddenCW = getHiddenItemsMap("ui.home.hiddenContinueWatchingItems")
+    hiddenNU = getHiddenItemsMap("ui.home.hiddenNextUpSeries")
 
     ' Load Continue Watching items
     resumeParams = {
@@ -280,6 +329,7 @@ function loadMergedContinueWatching() as object
     ' Add Continue Watching items first
     if isChainValid(resumeData, "Items")
         for each item in resumeData.Items
+            if isHiddenByMap(item, hiddenCW, false) then continue for
             tmp = createSGNode("HomeData")
             tmp.Id = item.LookupCI("Id")
             tmp.name = item.LookupCI("name")
@@ -347,6 +397,7 @@ function loadMergedContinueWatching() as object
             if userData["LastPlayedDate"] = invalid and isValid(seriesId)
                 userData["LastPlayedDate"] = seriesLastPlayedMap[seriesId]
             end if
+            if isHiddenByMap(item, hiddenNU, true) then continue for
             ' Only add if not already in resume items
             if not resumeItemIds.DoesExist(itemId)
                 tmp = createSGNode("HomeData")
@@ -770,6 +821,8 @@ end function
 function loadNextUp() as object
     results = []
 
+    hiddenNU = getHiddenItemsMap("ui.home.hiddenNextUpSeries")
+
     params = {
         recursive: true,
         SortBy: "DatePlayed",
@@ -800,6 +853,7 @@ function loadNextUp() as object
 
     if isChainValid(data, "Items")
         for each item in data.Items
+            if isHiddenByMap(item, hiddenNU, true) then continue for
             tmp = createSGNode("HomeData")
             tmp.json = item
             results.push(tmp)
