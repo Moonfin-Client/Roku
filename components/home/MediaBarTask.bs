@@ -1,5 +1,6 @@
 import "pkg:/source/api/sdk.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/api/baserequest.bs"
 
 sub init()
     m.top.functionName = "getMediaBarData"
@@ -34,28 +35,89 @@ sub getMediaBarData()
         return
     end if
 
-    allItems = []
+    fetchLimit = m.top.featuredCount + 5
+    port = CreateObject("roMessagePort")
+    requests = []
     for each parentId in parentIds
-        data = api.items.Get({
+        req = APIRequest("/Items/", {
             userId: m.top.userId,
             parentId: parentId,
             includeItemTypes: includeTypes,
+            excludeItemTypes: "BoxSet,CollectionFolder",
             recursive: true,
             sortBy: "Random",
             hasBackdrop: true,
-            limit: 50,
+            imageTypes: "Backdrop",
+            limit: fetchLimit,
             fields: "Overview,Genres,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks,ProviderIds"
         })
-
-        items = isChainValid(data, "items") ? data.items : []
-        if excludedGenreNames.count() > 0
-            items = filterItemsByExcludedGenres(items, excludedGenreNames)
+        if req <> invalid
+            req.setMessagePort(port)
+            if req.AsyncGetToString()
+                requests.push(req)
+            end if
         end if
-        allItems.append(items)
     end for
+
+    ' Parallelize
+    allItems = []
+    completed = 0
+    totalRequests = requests.count()
+    while completed < totalRequests
+        msg = wait(30000, port)
+        if type(msg) <> "roUrlEvent" then exit while
+
+        if msg.GetResponseCode() = 200
+            json = ParseJson(msg.GetString())
+            items = isChainValid(json, "items") ? json.items : []
+            if excludedGenreNames.count() > 0
+                items = filterItemsByExcludedGenres(items, excludedGenreNames)
+            end if
+            allItems.append(items)
+        end if
+        completed++
+    end while
+
+    filteredItems = filterAndDedupeItems(allItems)
+    shuffled = shuffleArray(filteredItems)
+    featuredCount = m.top.featuredCount
+    if shuffled.count() > featuredCount
+        allItems = shuffled.slice(0, featuredCount)
+    else
+        allItems = shuffled
+    end if
 
     m.top.mediaBarData = { items: allItems }
 end sub
+
+function filterAndDedupeItems(items as object) as object
+    result = []
+    seen = {}
+    for each item in items
+        itemType = LCase(item.LookupCI("Type") ?? "")
+
+        tmdbId = ""
+        if isChainValid(item, "providerIds")
+            tmdbId = moonfinPlugin.GetTmdbId(item.providerIds)
+        end if
+
+        if isValidAndNotEmpty(tmdbId)
+            dedupeKey = `${itemType}|tmdb|${LCase(tmdbId)}`
+        else if isValidAndNotEmpty(item.id)
+            dedupeKey = `${itemType}|id|${item.id}`
+        else
+            nameKey = LCase(item.LookupCI("Name") ?? "")
+            yearKey = isValid(item.LookupCI("ProductionYear")) ? item.LookupCI("ProductionYear").toStr() : ""
+            dedupeKey = `${itemType}|name|${nameKey}|${yearKey}`
+        end if
+
+        if not seen.DoesExist(dedupeKey)
+            seen[dedupeKey] = true
+            result.push(item)
+        end if
+    end for
+    return result
+end function
 
 function getAllowedCollectionTypes() as object
     contentType = m.top.contentType
