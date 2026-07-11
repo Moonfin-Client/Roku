@@ -1,0 +1,215 @@
+import "pkg:/source/utils/SeerrUtils.bs"
+
+sub init()
+    m.top.functionName = "executeRequest"
+end sub
+
+sub executeRequest()
+    request = m.top.request
+
+    if request = invalid
+        m.top.response = {
+            success: false,
+            error: "Invalid request",
+            statusCode: 400
+        }
+        return
+    end if
+
+    config = GetSeerrConfig()
+
+    if not IsValidSeerrConfig(config)
+        m.top.response = {
+            success: false,
+            error: "Seerr not configured",
+            statusCode: 0
+        }
+        return
+    end if
+
+    ' Seerr always routes through the Moonfin server plugin proxy. The client never
+    ' connects to Seerr directly.
+    executePluginProxyRequest(config, request)
+end sub
+
+' Execute a Seerr request through the Moonfin plugin proxy.
+' Requests route to {jellyfinServerUrl}/Moonfin/Seerr/Api/{path}
+' with Jellyfin auth. Responses are wrapped in a { FileContents: base64 } envelope.
+sub executePluginProxyRequest(config as object, request as object)
+    serverUrl = config.serverUrl
+    if Right(serverUrl, 1) = "/" then serverUrl = Left(serverUrl, Len(serverUrl) - 1)
+
+    endpoint = request.endpoint
+    usePluginRoot = (request.usePluginRoot <> invalid and request.usePluginRoot = true)
+
+    if endpoint = invalid or endpoint = ""
+        m.top.response = {
+            success: false,
+            error: "Invalid plugin endpoint",
+            statusCode: 400
+        }
+        return
+    end if
+
+    if Left(endpoint, 1) <> "/" then endpoint = "/" + endpoint
+
+    if usePluginRoot
+        url = serverUrl + endpoint
+    else
+        if Left(endpoint, 7) = "/api/v1"
+            endpoint = Mid(endpoint, 8)
+        end if
+        if Left(endpoint, 1) <> "/" then endpoint = "/" + endpoint
+        url = serverUrl + "/Moonfin/Seerr/Api" + endpoint
+    end if
+
+    if request.queryParams <> invalid
+        queryString = BuildQueryString(request.queryParams)
+        if queryString <> ""
+            url = url + "?" + queryString
+        end if
+    end if
+
+    urlTransfer = CreateObject("roUrlTransfer")
+    urlTransfer.SetUrl(url)
+    urlTransfer.SetCertificatesFile("common:/certs/ca-bundle.crt")
+    urlTransfer.InitClientCertificates()
+
+    ' Jellyfin auth - plugin handles Seerr auth server-side
+    QUOTE = Chr(34)
+    authToken = ""
+    if m.global <> invalid and m.global.session <> invalid and m.global.session.user <> invalid and m.global.session.user.authToken <> invalid
+        authToken = m.global.session.user.authToken
+    end if
+    urlTransfer.AddHeader("Authorization", "MediaBrowser Token=" + QUOTE + authToken + QUOTE)
+    urlTransfer.AddHeader("Content-Type", "application/json")
+    urlTransfer.AddHeader("Accept", "application/json")
+    urlTransfer.AddHeader("User-Agent", "Moonfin/1.0")
+
+    port = CreateObject("roMessagePort")
+    urlTransfer.SetMessagePort(port)
+
+    success = false
+
+    if request.method = "POST"
+        body = ""
+        if request.body <> invalid
+            body = SeerrFormatJson(request.body)
+        end if
+        success = urlTransfer.AsyncPostFromString(body)
+    else if request.method = "GET"
+        success = urlTransfer.AsyncGetToString()
+    else if request.method = "DELETE"
+        urlTransfer.SetRequest("DELETE")
+        success = urlTransfer.AsyncPostFromString("")
+    else if request.method = "PUT"
+        body = ""
+        if request.body <> invalid
+            body = SeerrFormatJson(request.body)
+        end if
+        urlTransfer.SetRequest("PUT")
+        success = urlTransfer.AsyncPostFromString(body)
+    end if
+
+    if not success
+        m.top.response = {
+            success: false,
+            error: "Failed to initiate plugin proxy request",
+            statusCode: 0
+        }
+        return
+    end if
+
+    event = wait(30000, port)
+
+    if type(event) = "roUrlEvent"
+        statusCode = event.GetResponseCode()
+        rawResponse = event.GetString()
+
+        if statusCode >= 200 and statusCode < 300
+            parsedData = invalid
+            if rawResponse <> invalid and rawResponse <> ""
+                if usePluginRoot
+                    parsedData = ParseJson(rawResponse)
+                else
+                    parsedData = UnwrapPluginProxyResponse(rawResponse)
+                end if
+            end if
+            m.top.response = {
+                success: true,
+                data: parsedData,
+                statusCode: statusCode,
+                rawResponse: rawResponse
+            }
+        else
+            errorMessage = "Plugin request failed"
+            if rawResponse <> invalid and rawResponse <> ""
+                parsed = ParseJson(rawResponse)
+                if parsed <> invalid and type(parsed) = "roAssociativeArray"
+                    if not usePluginRoot and isValidStringValue(parsed.FileContents)
+                        decoded = DecodeBase64String(parsed.FileContents)
+                        decodedJson = ParseJson(decoded)
+                        if decodedJson <> invalid and type(decodedJson) = "roAssociativeArray"
+                            if decodedJson.message <> invalid
+                                errorMessage = decodedJson.message
+                            else if decodedJson.error <> invalid
+                                errorMessage = decodedJson.error
+                            end if
+                        end if
+                    else if parsed.message <> invalid
+                        errorMessage = parsed.message
+                    else if parsed.error <> invalid
+                        errorMessage = parsed.error
+                    end if
+                end if
+            end if
+
+            m.top.response = {
+                success: false,
+                error: errorMessage,
+                statusCode: statusCode,
+                rawResponse: rawResponse
+            }
+        end if
+    else
+        m.top.response = {
+            success: false,
+            error: "Plugin proxy request timeout or connection error",
+            statusCode: 0
+        }
+    end if
+end sub
+
+' Unwrap the plugin proxy response envelope.
+' The plugin wraps responses as { FileContents: base64encodedJsonString }.
+function UnwrapPluginProxyResponse(rawResponse as string) as object
+    if rawResponse = invalid or rawResponse = ""
+        return invalid
+    end if
+
+    parsed = ParseJson(rawResponse)
+    if parsed = invalid
+        return invalid
+    end if
+
+    if parsed <> invalid and type(parsed) = "roAssociativeArray" and isValidStringValue(parsed.FileContents)
+        decoded = DecodeBase64String(parsed.FileContents)
+        if decoded = ""
+            return invalid
+        end if
+        unwrapped = ParseJson(decoded)
+        return unwrapped
+    end if
+
+    return parsed
+end function
+
+function DecodeBase64String(base64String as string) as string
+    if base64String = invalid or base64String = ""
+        return ""
+    end if
+
+    ba = CreateObject("roByteArray")
+    ba.FromBase64String(base64String)
+    return ba.ToAsciiString()
+end function
