@@ -7,7 +7,9 @@ import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
+import "pkg:/source/utils/HomeRecommendations.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
 
 sub init()
     m.top.itemsToLoad = "libraries"
@@ -176,6 +178,681 @@ function loadRecentlyReleased() as object
         results.push(tmp)
     end for
 
+    return results
+end function
+
+' Wraps a Jellyfin item in a HomeData node using the standard home row fields.
+function makeHomeItem(item as object) as object
+    tmp = createSGNode("HomeData")
+    tmp.json = {
+        Id: item.LookupCI("Id"),
+        name: item.LookupCI("name"),
+        Type: item.LookupCI("Type"),
+        CollectionType: item.LookupCI("CollectionType"),
+        OfficialRating: item.LookupCI("OfficialRating"),
+        ProductionYear: item.LookupCI("ProductionYear"),
+        PremiereDate: item.LookupCI("PremiereDate"),
+        SeriesName: item.LookupCI("SeriesName"),
+        SeriesId: item.LookupCI("SeriesId"),
+        SeasonId: item.LookupCI("SeasonId"),
+        ParentIndexNumber: item.LookupCI("ParentIndexNumber"),
+        IndexNumber: item.LookupCI("IndexNumber"),
+        IndexNumberEnd: item.LookupCI("IndexNumberEnd"),
+        ImageTags: item.LookupCI("ImageTags"),
+        UserData: item.LookupCI("UserData"),
+        ParentThumbItemId: item.LookupCI("ParentThumbItemId"),
+        ParentThumbImageTag: item.LookupCI("ParentThumbImageTag"),
+        ParentBackdropImageTags: item.LookupCI("ParentBackdropImageTags"),
+        ParentBackdropItemId: item.LookupCI("ParentBackdropItemId"),
+        SeriesPrimaryImageTag: item.LookupCI("SeriesPrimaryImageTag"),
+        BackdropImageTags: item.LookupCI("BackdropImageTags")
+    }
+    return tmp
+end function
+
+function getBoolSetting(settings as object, key as string, defaultValue as boolean) as boolean
+    if not isValid(settings) then return defaultValue
+    value = settings[key]
+    if not isValid(value) then return defaultValue
+    if type(value) = "String" or type(value) = "roString" then return LCase(value) = "true"
+    return value = true
+end function
+
+function getStringSetting(settings as object, key as string, defaultValue as string) as string
+    if not isValid(settings) then return defaultValue
+    value = settings[key]
+    if isValidAndNotEmpty(value) then return value.toStr()
+    return defaultValue
+end function
+
+function joinArray(items as object, separator as string) as string
+    result = ""
+    first = true
+    for each value in items
+        if not isValid(value) then continue for
+        if first
+            result = value.toStr()
+            first = false
+        else
+            result = result + separator + value.toStr()
+        end if
+    end for
+    return result
+end function
+
+function isItemPlayed(item as object) as boolean
+    userData = item.LookupCI("UserData")
+    if isValid(userData) then return userData.Played = true
+    return false
+end function
+
+function seedItemTypes(sourceItem as string, sourceType as string) as string
+    contentType = LCase(sourceType)
+    if LCase(sourceItem) = "recentlywatched"
+        if contentType = "movies" then return "Movie"
+        if contentType = "shows" then return "Episode"
+        return "Movie,Episode"
+    end if
+    if contentType = "movies" then return "Movie"
+    if contentType = "shows" then return "Series"
+    return "Movie,Series"
+end function
+
+function candidateTypesFor(sourceType as string) as string
+    contentType = LCase(sourceType)
+    if contentType = "movies" then return "Movie"
+    if contentType = "shows" then return "Series"
+    return "Movie,Series"
+end function
+
+' Fetches parent series for any watched episodes so a seed represents a show.
+function fetchSeriesForEpisodes(rawItems as object) as object
+    seriesById = {}
+    seriesIds = []
+    seen = {}
+
+    for each item in rawItems
+        if item.LookupCI("Type") = "Episode"
+            sId = item.LookupCI("SeriesId")
+            if isValidAndNotEmpty(sId) and not seen.DoesExist(sId)
+                seen[sId] = true
+                seriesIds.Push(sId)
+            end if
+        end if
+    end for
+    if seriesIds.Count() = 0 then return seriesById
+
+    data = api.items.Get({
+        UserId: m.global.session.user.id,
+        Ids: joinArray(seriesIds, ","),
+        fields: "Genres,Tags,People,Studios,ProductionYear,ProviderIds,PremiereDate,ImageTags,OfficialRating,CommunityRating,UserData"
+    })
+    if not isChainValid(data, "Items") then return seriesById
+
+    for each series in data.Items
+        sId = series.LookupCI("Id")
+        if isValidAndNotEmpty(sId) then seriesById[sId] = series
+    end for
+    return seriesById
+end function
+
+function loadSinceYouWatchedSeeds(sourceItem as string, sourceType as string) as object
+    params = {
+        UserId: m.global.session.user.id,
+        recursive: true,
+        includeItemTypes: seedItemTypes(sourceItem, sourceType),
+        limit: 30,
+        fields: "Genres,Tags,People,Studios,ProductionYear,SeriesId,UserData,ProviderIds,PremiereDate,ImageTags,OfficialRating,CommunityRating",
+        EnableTotalRecordCount: false
+    }
+
+    if LCase(sourceItem) = "favorites"
+        params.filters = "IsPlayed,IsFavorite"
+    else if LCase(sourceItem) = "random"
+        params.filters = "IsPlayed"
+        params.sortBy = "Random"
+    else
+        params.filters = "IsPlayed"
+        params.sortBy = "DatePlayed"
+        params.sortOrder = "Descending"
+    end if
+
+    data = api.items.Get(params)
+    if not isChainValid(data, "Items") then return []
+
+    if LCase(sourceItem) = "recentlywatched"
+        seriesById = fetchSeriesForEpisodes(data.Items)
+        return HomeRecommendations.resolveSeedEpisodes(data.Items, seriesById)
+    end if
+
+    return data.Items
+end function
+
+sub addRecommendationCandidates(candidates as object, data as object)
+    if not isChainValid(data, "Items") then return
+    for each item in data.Items
+        id = item.LookupCI("Id")
+        if isValidAndNotEmpty(id) then candidates[id] = item
+    end for
+end sub
+
+function scoredEntryComesAfter(a as object, b as object) as boolean
+    if a.score <> b.score then return a.score < b.score
+    return getPremiereDate(a.item) < getPremiereDate(b.item)
+end function
+
+function getPremiereDate(item as object) as string
+    value = item.LookupCI("PremiereDate")
+    if isValidAndNotEmpty(value) then return value.toStr()
+    return ""
+end function
+
+sub sortScoredCandidates(scored as object)
+    total = scored.Count()
+    for i = 1 to total - 1
+        current = scored[i]
+        j = i - 1
+        while j >= 0 and scoredEntryComesAfter(scored[j], current)
+            scored[j + 1] = scored[j]
+            j = j - 1
+        end while
+        scored[j + 1] = current
+    end for
+end sub
+
+' Local recommender. Pulls candidates sharing the seeds genres, tags, or people,
+' scores them, and returns the best matches.
+function loadSinceYouWatchedLocal(seed as object, sourceType as string, includeWatched as boolean) as object
+    ctx = HomeRecommendations.buildContext(seed)
+    candidateTypes = candidateTypesFor(sourceType)
+    baseId = seed.LookupCI("Id")
+    if not isValid(baseId) then baseId = ""
+
+    candidateFields = "Genres,Tags,People,UserData,OfficialRating,ProductionYear,CommunityRating,Studios,PremiereDate,ImageTags,SeriesPrimaryImageTag,BackdropImageTags"
+    candidates = {}
+
+    if ctx.genres.Count() > 0
+        addRecommendationCandidates(candidates, api.items.Get({
+            UserId: m.global.session.user.id,
+            includeItemTypes: candidateTypes,
+            genres: joinArray(ctx.genres, "|"),
+            recursive: true,
+            limit: 40,
+            fields: candidateFields,
+            EnableTotalRecordCount: false
+        }))
+    end if
+
+    if ctx.tags.Count() > 0
+        addRecommendationCandidates(candidates, api.items.Get({
+            UserId: m.global.session.user.id,
+            includeItemTypes: candidateTypes,
+            tags: joinArray(ctx.tags, "|"),
+            recursive: true,
+            limit: 40,
+            fields: candidateFields,
+            EnableTotalRecordCount: false
+        }))
+    end if
+
+    personIds = []
+    for each pid in ctx.directorIds : personIds.Push(pid) : end for
+    for each pid in ctx.writerIds : personIds.Push(pid) : end for
+    actorCount = 0
+    for each pid in ctx.actorIds
+        if actorCount >= 10 then exit for
+        personIds.Push(pid)
+        actorCount = actorCount + 1
+    end for
+    if personIds.Count() > 0
+        addRecommendationCandidates(candidates, api.items.Get({
+            UserId: m.global.session.user.id,
+            includeItemTypes: candidateTypes,
+            personIds: joinArray(personIds, ","),
+            recursive: true,
+            limit: 40,
+            fields: candidateFields,
+            EnableTotalRecordCount: false
+        }))
+    end if
+
+    scored = []
+    for each id in candidates
+        candidate = candidates[id]
+        if id = baseId then continue for
+        if not includeWatched and isItemPlayed(candidate) then continue for
+        scored.Push({ item: candidate, score: HomeRecommendations.scoreCandidate(candidate, ctx) })
+    end for
+
+    ' Not enough matches, so pull recent titles in the same genres as filler.
+    if scored.Count() < 15
+        fillerParams = {
+            UserId: m.global.session.user.id,
+            includeItemTypes: candidateTypes,
+            recursive: true,
+            limit: 30,
+            sortBy: "ProductionYear,SortName",
+            sortOrder: "Descending",
+            fields: candidateFields,
+            EnableTotalRecordCount: false
+        }
+        if ctx.genres.Count() > 0 then fillerParams.genres = joinArray(ctx.genres, "|")
+        fillerData = api.items.Get(fillerParams)
+        if isChainValid(fillerData, "Items")
+            for each fillerItem in fillerData.Items
+                fillerId = fillerItem.LookupCI("Id")
+                if not isValidAndNotEmpty(fillerId) or candidates.DoesExist(fillerId) or fillerId = baseId then continue for
+                if not includeWatched and isItemPlayed(fillerItem) then continue for
+                candidates[fillerId] = fillerItem
+                scored.Push({ item: fillerItem, score: HomeRecommendations.scoreCandidate(fillerItem, ctx) })
+                if scored.Count() >= 30 then exit for
+            end for
+        end if
+    end if
+
+    sortScoredCandidates(scored)
+
+    results = []
+    count = 0
+    for each entry in scored
+        if count >= 15 then exit for
+        results.Push(makeHomeItem(entry.item))
+        count = count + 1
+    end for
+    return results
+end function
+
+function getSeedTmdbId(seed as object) as string
+    providerIds = seed.LookupCI("ProviderIds")
+    if isValid(providerIds)
+        raw = providerIds.LookupCI("Tmdb")
+        if isValid(raw) then return raw.toStr()
+    end if
+
+    seedId = seed.LookupCI("Id")
+    if not isValidAndNotEmpty(seedId) then return ""
+
+    detail = api.items.GetByID(seedId, { UserId: m.global.session.user.id, fields: "ProviderIds" })
+    if isValid(detail)
+        providerIds = detail.LookupCI("ProviderIds")
+        if isValid(providerIds)
+            raw = providerIds.LookupCI("Tmdb")
+            if isValid(raw) then return raw.toStr()
+        end if
+    end if
+    return ""
+end function
+
+' Builds a HomeData node for a recommendation result. The raw item is kept on the
+' node so selecting it can open the Seerr detail screen. Results may use TMDB
+' snake_case or Seerr camelCase, so both are handled.
+function makeSeerrHomeItem(res as object, defaultMediaType as string) as object
+    if not isValid(res) then return invalid
+    tmdbId = res.LookupCI("id")
+    if not isValid(tmdbId) then return invalid
+
+    mediaType = res.LookupCI("mediaType")
+    if not isValidAndNotEmpty(mediaType) then mediaType = res.LookupCI("media_type")
+    if not isValidAndNotEmpty(mediaType) then mediaType = defaultMediaType
+
+    title = res.LookupCI("title")
+    if not isValidAndNotEmpty(title) then title = res.LookupCI("name")
+    if not isValidAndNotEmpty(title) then title = "Unknown"
+
+    posterPath = res.LookupCI("posterPath")
+    if not isValidAndNotEmpty(posterPath) then posterPath = res.LookupCI("poster_path")
+
+    posterUrl = ""
+    if isValidAndNotEmpty(posterPath)
+        tmdbUrls = GetTmdbImageBaseUrls()
+        posterUrl = tmdbUrls.posterW342 + posterPath
+    end if
+
+    ' Keep the raw item for the detail screen and make sure it carries a media type.
+    res.mediaType = mediaType
+
+    tmp = createSGNode("HomeData")
+    tmp.json = {
+        Id: tmdbId.toStr(),
+        name: title,
+        Type: (mediaType = "tv") ? "Series" : "Movie",
+        SeerrTmdbId: tmdbId.toStr(),
+        SeerrMediaType: mediaType,
+        SeerrPosterURL: posterUrl,
+        SeerrItem: res
+    }
+    return tmp
+end function
+
+' Recommendations from TMDB, using the key the plugin syncs to the client.
+function fetchTmdbRecommendations(tmdbId as string, mediaType as string) as object
+    apiKey = getStringSetting(m.global.session.user.settings, "plugin.tmdb.apiKey", "")
+    if apiKey = "" then return []
+
+    url = "https://api.themoviedb.org/3/" + mediaType + "/" + tmdbId + "/recommendations?language=en-US&page=1"
+    transfer = CreateObject("roUrlTransfer")
+    transfer.SetCertificatesFile("common:/certs/ca-bundle.crt")
+    transfer.InitClientCertificates()
+    transfer.AddHeader("Accept", "application/json")
+    transfer.AddHeader("User-Agent", "Moonfin/1.0")
+
+    ' v4 tokens go in the Authorization header, v3 keys go in the query string.
+    if Left(apiKey, 3) = "eyJ"
+        transfer.AddHeader("Authorization", "Bearer " + apiKey)
+    else
+        url = url + "&api_key=" + apiKey
+    end if
+
+    transfer.SetUrl(url)
+    body = transfer.GetToString()
+    if not isValidAndNotEmpty(body) then return []
+    data = ParseJson(body)
+    if not isChainValid(data, "results") then return []
+    return data.results
+end function
+
+' Recommendations from the Seerr proxy, used when TMDB has no key or no result.
+function fetchSeerrRecommendations(tmdbId as string, mediaType as string) as object
+    req = APIRequest("/Moonfin/Seerr/Api/" + mediaType + "/" + tmdbId + "/recommendations", {})
+    if not isValid(req) then return []
+    data = getJson(req)
+    if not isChainValid(data, "results") then return []
+    return data.results
+end function
+
+' Online recommendations are gated on Seerr being available because tapping a
+' card opens the Seerr detail screen. The row itself is sourced from TMDB first,
+' falling back to Seerr recommendations.
+function loadSinceYouWatchedOnline(seed as object) as object
+    config = GetSeerrConfig()
+    if not isValid(config) or config.enabled <> true then return []
+
+    tmdbId = getSeedTmdbId(seed)
+    if tmdbId = "" then return []
+
+    mediaType = "movie"
+    if seed.LookupCI("Type") = "Series" then mediaType = "tv"
+
+    recommendations = fetchTmdbRecommendations(tmdbId, mediaType)
+    if not isValidAndNotEmpty(recommendations) then recommendations = fetchSeerrRecommendations(tmdbId, mediaType)
+    if not isValidAndNotEmpty(recommendations) then return []
+
+    results = []
+    count = 0
+    for each res in recommendations
+        if count >= 15 then exit for
+        node = makeSeerrHomeItem(res, mediaType)
+        if isValid(node)
+            results.Push(node)
+            count = count + 1
+        end if
+    end for
+    return results
+end function
+
+' Builds one Since You Watched row seeded from the Nth recently watched item.
+function loadSinceYouWatched() as object
+    settings = m.global.session.user.settings
+
+    rowIndex = 1
+    if isValid(m.top.metadata) and isValid(m.top.metadata.rowIndex) then rowIndex = m.top.metadata.rowIndex
+
+    sourceMode = getStringSetting(settings, "ui.home.sinceYouWatchedSource", "local")
+    sourceItem = getStringSetting(settings, "ui.home.sinceYouWatchedSourceItem", "recentlyWatched")
+    sourceType = getStringSetting(settings, "ui.home.sinceYouWatchedSourceType", "movies")
+    includeWatched = getBoolSetting(settings, "ui.home.sinceYouWatchedIncludeWatched", false)
+
+    seeds = loadSinceYouWatchedSeeds(sourceItem, sourceType)
+    if seeds.Count() < rowIndex then return []
+    seed = seeds[rowIndex - 1]
+    if not isValid(seed) then return []
+
+    ' Expose the seed name so the row can be titled after it.
+    meta = m.top.metadata
+    if not isValid(meta) then meta = {}
+    meta.seedName = seed.LookupCI("Name")
+    m.top.metadata = meta
+
+    if LCase(sourceMode) = "online"
+        onlineItems = loadSinceYouWatchedOnline(seed)
+        if isValidAndNotEmpty(onlineItems) then return onlineItems
+    end if
+
+    return loadSinceYouWatchedLocal(seed, sourceType, includeWatched)
+end function
+
+function isFullyWatchedSeries(series as object, userId as string) as boolean
+    userData = series.LookupCI("UserData")
+    played = false
+    unplayed = 0
+    if isValid(userData)
+        if userData.Played = true then played = true
+        unplayedCount = userData.LookupCI("UnplayedItemCount")
+        if isValid(unplayedCount) then unplayed = unplayedCount
+    end if
+    topUnplayed = series.LookupCI("UnplayedItemCount")
+    if isValid(topUnplayed) then unplayed = topUnplayed
+    if not played or unplayed > 0 then return false
+
+    seriesId = series.LookupCI("Id")
+    if not isValidAndNotEmpty(seriesId) then return true
+
+    check = api.items.Get({
+        UserId: userId,
+        ParentId: seriesId,
+        includeItemTypes: "Episode",
+        recursive: true,
+        filters: "IsUnplayed",
+        limit: 1
+    })
+    if not isValid(check) then return true
+    total = check.LookupCI("TotalRecordCount")
+    if isValid(total) then return total = 0
+    if isChainValid(check, "Items") then return check.Items.Count() = 0
+    return true
+end function
+
+sub addRewatchShows(watchedItems as object, seriesLastPlayed as object, userId as string, seriesFields as string)
+    epData = api.items.Get({
+        UserId: userId,
+        includeItemTypes: "Episode",
+        filters: "IsPlayed",
+        sortBy: "DatePlayed",
+        sortOrder: "Descending",
+        recursive: true,
+        limit: 100,
+        fields: "SeriesId,UserData",
+        EnableTotalRecordCount: false
+    })
+    if not isChainValid(epData, "Items") then return
+
+    seriesIds = []
+    seen = {}
+    for each ep in epData.Items
+        sId = ep.LookupCI("SeriesId")
+        if not isValidAndNotEmpty(sId) then continue for
+        userData = ep.LookupCI("UserData")
+        if isValid(userData)
+            lastPlayed = userData.LookupCI("LastPlayedDate")
+            if isValidAndNotEmpty(lastPlayed)
+                existing = seriesLastPlayed[sId]
+                if not isValid(existing) or lastPlayed > existing then seriesLastPlayed[sId] = lastPlayed
+            end if
+        end if
+        if not seen.DoesExist(sId)
+            seen[sId] = true
+            seriesIds.Push(sId)
+        end if
+    end for
+    if seriesIds.Count() = 0 then return
+
+    seriesData = api.items.Get({
+        UserId: userId,
+        Ids: joinArray(seriesIds, ","),
+        fields: seriesFields
+    })
+    if not isChainValid(seriesData, "Items") then return
+
+    for each series in seriesData.Items
+        if isFullyWatchedSeries(series, userId) then watchedItems.Push(series)
+    end for
+end sub
+
+sub addRewatchCollections(watchedItems as object, collectionLastPlayed as object, userId as string)
+    boxData = api.items.Get({
+        UserId: userId,
+        includeItemTypes: "BoxSet",
+        recursive: true,
+        limit: 50,
+        fields: "ImageTags,UserData,ProductionYear",
+        EnableTotalRecordCount: false
+    })
+    if not isChainValid(boxData, "Items") then return
+
+    for each col in boxData.Items
+        colId = col.LookupCI("Id")
+        if not isValidAndNotEmpty(colId) then continue for
+
+        childData = api.items.Get({
+            UserId: userId,
+            ParentId: colId,
+            recursive: true,
+            fields: "UserData"
+        })
+        if not isChainValid(childData, "Items") then continue for
+        if childData.Items.Count() = 0 then continue for
+
+        allPlayed = true
+        maxLastPlayed = ""
+        for each child in childData.Items
+            childUserData = child.LookupCI("UserData")
+            if not isValid(childUserData) or childUserData.Played <> true
+                allPlayed = false
+                exit for
+            end if
+            lastPlayed = childUserData.LookupCI("LastPlayedDate")
+            if isValidAndNotEmpty(lastPlayed) and lastPlayed > maxLastPlayed then maxLastPlayed = lastPlayed
+        end for
+
+        if allPlayed
+            watchedItems.Push(col)
+            collectionLastPlayed[colId] = maxLastPlayed
+        end if
+    end for
+end sub
+
+function rewatchLastPlayed(item as object, seriesLastPlayed as object, collectionLastPlayed as object) as string
+    itemId = item.LookupCI("Id")
+    itemType = item.LookupCI("Type")
+    if itemType = "BoxSet" and isValid(collectionLastPlayed[itemId]) then return collectionLastPlayed[itemId]
+    if itemType = "Series" and isValid(seriesLastPlayed[itemId]) then return seriesLastPlayed[itemId]
+    userData = item.LookupCI("UserData")
+    if isValid(userData)
+        lastPlayed = userData.LookupCI("LastPlayedDate")
+        if isValidAndNotEmpty(lastPlayed) then return lastPlayed
+    end if
+    return ""
+end function
+
+sub shuffleRewatchItems(items as object)
+    total = items.Count()
+    for i = total - 1 to 1 step -1
+        j = Rnd(i + 1) - 1
+        temp = items[i]
+        items[i] = items[j]
+        items[j] = temp
+    end for
+end sub
+
+sub sortRewatchItems(items as object, sortBy as string, seriesLastPlayed as object, collectionLastPlayed as object)
+    if LCase(sortBy) = "random"
+        shuffleRewatchItems(items)
+        return
+    end if
+
+    total = items.Count()
+    for i = 1 to total - 1
+        current = items[i]
+        currentLastPlayed = rewatchLastPlayed(current, seriesLastPlayed, collectionLastPlayed)
+        j = i - 1
+        while j >= 0 and rewatchLastPlayed(items[j], seriesLastPlayed, collectionLastPlayed) < currentLastPlayed
+            items[j + 1] = items[j]
+            j = j - 1
+        end while
+        items[j + 1] = current
+    end for
+end sub
+
+' A series card should open its first episode when selected.
+function resolveRewatchItem(item as object, userId as string) as object
+    if item.LookupCI("Type") = "Series"
+        seriesId = item.LookupCI("Id")
+        if isValidAndNotEmpty(seriesId)
+            epData = api.items.Get({
+                UserId: userId,
+                ParentId: seriesId,
+                includeItemTypes: "Episode",
+                recursive: true,
+                sortBy: "SortName,ProductionYear",
+                sortOrder: "Ascending",
+                limit: 1,
+                fields: "ImageTags,UserData,SeriesId,SeriesName,ParentIndexNumber,IndexNumber,SeriesPrimaryImageTag,ParentThumbItemId,ParentThumbImageTag,ParentBackdropImageTags,ParentBackdropItemId,BackdropImageTags"
+            })
+            if isChainValid(epData, "Items") and epData.Items.Count() > 0 then return epData.Items[0]
+        end if
+    end if
+    return item
+end function
+
+' Gathers movies, series, and collections the user has fully watched.
+function loadRewatch() as object
+    settings = m.global.session.user.settings
+    includeMovies = getBoolSetting(settings, "ui.home.rewatchIncludeMovies", true)
+    includeShows = getBoolSetting(settings, "ui.home.rewatchIncludeShows", true)
+    includeCollections = getBoolSetting(settings, "ui.home.rewatchIncludeCollections", true)
+    sortBy = getStringSetting(settings, "ui.home.rewatchSortBy", "recentlyWatched")
+
+    userId = m.global.session.user.id
+    itemFields = "Genres,ProductionYear,PremiereDate,ImageTags,UserData,BackdropImageTags,SeriesPrimaryImageTag"
+
+    watchedItems = []
+    seriesLastPlayed = {}
+    collectionLastPlayed = {}
+
+    if includeMovies
+        movieData = api.items.Get({
+            UserId: userId,
+            includeItemTypes: "Movie",
+            filters: "IsPlayed",
+            sortBy: "DatePlayed",
+            sortOrder: "Descending",
+            recursive: true,
+            limit: 50,
+            fields: itemFields,
+            EnableTotalRecordCount: false
+        })
+        if isChainValid(movieData, "Items")
+            for each movie in movieData.Items : watchedItems.Push(movie) : end for
+        end if
+    end if
+
+    if includeShows then addRewatchShows(watchedItems, seriesLastPlayed, userId, itemFields)
+    if includeCollections then addRewatchCollections(watchedItems, collectionLastPlayed, userId)
+
+    if watchedItems.Count() = 0 then return []
+
+    sortRewatchItems(watchedItems, sortBy, seriesLastPlayed, collectionLastPlayed)
+
+    results = []
+    count = 0
+    for each item in watchedItems
+        if count >= 15 then exit for
+        resolved = resolveRewatchItem(item, userId)
+        if isValid(resolved)
+            results.Push(makeHomeItem(resolved))
+            count = count + 1
+        end if
+    end for
     return results
 end function
 
@@ -1178,6 +1855,16 @@ sub loadItems()
 
     if isStringEqual(m.top.itemsToLoad, "recentlyReleased")
         m.top.content = loadRecentlyReleased()
+        return
+    end if
+
+    if isStringEqual(m.top.itemsToLoad, "sinceYouWatched")
+        m.top.content = loadSinceYouWatched()
+        return
+    end if
+
+    if isStringEqual(m.top.itemsToLoad, "rewatch")
+        m.top.content = loadRewatch()
         return
     end if
 

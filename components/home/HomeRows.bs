@@ -30,6 +30,16 @@ function getPosterSize(preferWide = true as boolean) as object
     end if
 end function
 
+' Number of Since You Watched rows the user wants, clamped to a sane range.
+function getSinceYouWatchedNumRows() as integer
+    raw = get_user_setting("ui.home.sinceYouWatchedNumRows")
+    numRows = 1
+    if isValidAndNotEmpty(raw) then numRows = raw.ToInt()
+    if numRows < 1 then numRows = 1
+    if numRows > 5 then numRows = 5
+    return numRows
+end function
+
 ' Helper function to check if Featured Media is enabled via toggle (not home sections)
 function isFeaturedMediaEnabled() as boolean
     ' Check the media bar enabled toggle in Moonfin settings
@@ -656,6 +666,10 @@ function getExpectedRowContribution(sectionName as string) as integer
         return rowCount
     end if
 
+    if sectionName = "sinceyouwatched"
+        return getSinceYouWatchedNumRows()
+    end if
+
     return 1
 end function
 
@@ -700,6 +714,8 @@ function mapBuiltinSectionFromServerRow(row as object) as string
         if token = "mylist" or token = "playlists" then return "mylist"
         if token = "smalllibrarytiles" or token = "librarytilessmall" or token = "librarybuttons" or token = "mymedia" then return "smalllibrarytiles"
         if token = "featuredmedia" or token = "mediabar" then return "featuredmedia"
+        if token = "sinceyouwatched" then return "sinceyouwatched"
+        if token = "rewatch" then return "rewatch"
         if token = "none" then return "none"
     end for
 
@@ -1019,6 +1035,18 @@ function addHomeSection(sectionType as string) as boolean
         return true
     end if
 
+    ' Since You Watched recommendation rows
+    if sectionType = "sinceyouwatched"
+        createSinceYouWatchedRows()
+        return true
+    end if
+
+    ' Rewatch items the user has finished
+    if sectionType = "rewatch"
+        createRewatchRow()
+        return true
+    end if
+
 
     ' Featured Media Carousel - now handled by separate toggle in Moonfin settings
     ' Skip creating a row for it, as it's controlled by ui.home.mediaBarEnabled
@@ -1147,6 +1175,142 @@ sub createRecentlyReleasedRow()
     task = getOrCreateTask("recentlyReleased")
     task.observeField("content", "updateRecentlyReleasedItems")
     task.control = "RUN"
+end sub
+
+' createSinceYouWatchedRows: Fires one task per requested Since You Watched row.
+' Each row is seeded from a different recently watched item.
+sub createSinceYouWatchedRows()
+    removeSinceYouWatchedRows()
+
+    numRows = getSinceYouWatchedNumRows()
+    for rowIndex = 1 to numRows
+        task = createObject("roSGNode", "LoadItemsTask")
+        task.itemsToLoad = "sinceYouWatched"
+        task.metadata = { rowIndex: rowIndex }
+        task.observeField("content", "updateSinceYouWatchedItems")
+        task.control = TaskControl.RUN
+    end for
+end sub
+
+' removeSinceYouWatchedRows: Drops any existing Since You Watched rows so a
+' refresh doesnt leave stale seeds behind.
+sub removeSinceYouWatchedRows()
+    if not isValid(m.top.content) then return
+
+    prefix = LCase(tr("Since you watched")).Replace(" ", "")
+    removedAny = false
+
+    for i = m.top.content.getChildCount() - 1 to 0 step -1
+        section = m.top.content.getChild(i)
+        if isValid(section) and isValid(section.title)
+            title = LCase(section.title).Replace(" ", "")
+            if Left(title, Len(prefix)) = prefix
+                m.top.content.removeChildIndex(i)
+                removedAny = true
+            end if
+        end if
+    end for
+
+    if removedAny then setRowItemSize()
+end sub
+
+' updateSinceYouWatchedItems: Builds a single Since You Watched row from its task
+'
+' @param {dynamic} msg - LoadItemsTask
+sub updateSinceYouWatchedItems(msg)
+    m.processedRowCount++
+
+    node = msg.getRoSGNode()
+    itemData = node.content
+    node.unobserveField("content")
+    node.content = []
+
+    if not isValidAndNotEmpty(itemData)
+        setRowItemSize()
+        return
+    end if
+
+    seedName = ""
+    if isValid(node.metadata) and isValid(node.metadata.seedName) then seedName = node.metadata.seedName
+    if not isValidAndNotEmpty(seedName)
+        setRowItemSize()
+        return
+    end if
+
+    sectionName = tr("Since you watched") + " " + Chr(34) + seedName + Chr(34)
+
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+    row.usePoster = true
+
+    for each item in itemData
+        item.usePoster = row.usePoster
+        item.imageWidth = row.imageWidth
+        row.appendChild(item)
+    end for
+
+    if sectionExists(sectionName)
+        m.top.content.replaceChild(row, getSectionIndex(sectionName))
+        setRowItemSize()
+        return
+    end if
+
+    m.top.content.insertChild(row, getOriginalSectionIndex("sinceyouwatched"))
+    setRowItemSize()
+end sub
+
+' createRewatchRow: Creates a row of movies, shows, and collections the user has finished
+'
+sub createRewatchRow()
+    sectionName = tr("Rewatch")
+
+    if not sectionExists(sectionName)
+        row = m.top.content.CreateChild("HomeRow")
+        row.title = sectionName
+        row.imageWidth = getPosterSize(false)[0]
+        row.cursorSize = getPosterSize(false)
+    end if
+
+    task = getOrCreateTask("rewatch")
+    task.observeField("content", "updateRewatchItems")
+    task.control = "RUN"
+end sub
+
+' updateRewatchItems: Processes LoadItemsTask content for the Rewatch row
+'
+sub updateRewatchItems()
+    m.processedRowCount++
+    itemData = getTaskContentAndCleanup("rewatch")
+
+    sectionName = tr("Rewatch")
+
+    if not isValidAndNotEmpty(itemData)
+        removeHomeSection(sectionName)
+        return
+    end if
+
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+    row.usePoster = true
+
+    for each item in itemData
+        item.usePoster = row.usePoster
+        item.imageWidth = row.imageWidth
+        row.appendChild(item)
+    end for
+
+    if sectionExists(sectionName)
+        m.top.content.replaceChild(row, getSectionIndex(sectionName))
+        setRowItemSize()
+        return
+    end if
+
+    m.top.content.insertChild(row, getOriginalSectionIndex("rewatch"))
+    setRowItemSize()
 end sub
 
 ' sectionExists: Checks if passed section exists in home row content
@@ -2249,6 +2413,10 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if press
         if key = KeyCode.PLAY
             itemToPlay = m.top.content.getChild(m.top.rowItemFocused[0]).getChild(m.top.rowItemFocused[1])
+            ' Online recommendation cards arent local items, so they cant quick play
+            if isValid(itemToPlay) and isValid(itemToPlay.json) and isValid(itemToPlay.json.SeerrItem)
+                return true
+            end if
             if isValid(itemToPlay)
                 m.top.quickPlayNode = itemToPlay
             end if

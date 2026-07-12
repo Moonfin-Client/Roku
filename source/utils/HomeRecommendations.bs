@@ -1,0 +1,225 @@
+import "pkg:/source/utils/misc.bs"
+
+' Local recommendation scoring and seed helpers shared by the home rows.
+namespace HomeRecommendations
+
+    function sequelStopWords() as object
+        return {
+            "the": true, "and": true, "with": true, "from": true,
+            "under": true, "over": true, "about": true, "chapter": true,
+            "part": true, "movie": true, "film": true
+        }
+    end function
+
+    function keyWords(title as dynamic) as object
+        result = []
+        if not isValid(title) or title = "" then return result
+
+        stops = sequelStopWords()
+        cleanRegex = CreateObject("roRegex", "[^0-9a-zA-Z\s]", "")
+        cleaned = cleanRegex.ReplaceAll(LCase(title), " ")
+        splitRegex = CreateObject("roRegex", "\s+", "")
+        words = splitRegex.Split(cleaned)
+
+        for each word in words
+            if Len(word) >= 4 and not stops.DoesExist(word)
+                result.Push(word)
+            end if
+        end for
+        return result
+    end function
+
+    ' True when two titles share their meaningful words, so sequels and franchise
+    ' entries score higher without matching something unrelated.
+    function isSequelOrSimilarTitle(titleA as dynamic, titleB as dynamic) as boolean
+        a = keyWords(titleA)
+        b = keyWords(titleB)
+        if a.Count() = 0 or b.Count() = 0 then return false
+
+        setA = toStringSet(a)
+        setB = toStringSet(b)
+        if setContainsAll(setA, b) or setContainsAll(setB, a) then return true
+
+        if setA.Count() = 1 and setB.Count() = 1
+            if Len(a[0]) <= Len(b[0])
+                shortWord = a[0]
+                longWord = b[0]
+            else
+                shortWord = b[0]
+                longWord = a[0]
+            end if
+            return Left(longWord, Len(shortWord)) = shortWord and (Len(longWord) - Len(shortWord)) <= 2
+        end if
+        return false
+    end function
+
+    ' Builds the scoring context from the seed item once so candidates can be
+    ' compared against it.
+    function buildContext(seed as object) as object
+        people = readItemArray(seed, "People")
+        return {
+            genres: readItemArray(seed, "Genres"),
+            tags: readItemArray(seed, "Tags"),
+            baseStudios: studioNameList(readItemArray(seed, "Studios")),
+            baseYear: seed.ProductionYear,
+            baseName: readItemString(seed, "Name"),
+            actorNames: namesList(people, "Actor"),
+            directorNames: namesList(people, "Director"),
+            writerNames: namesList(people, "Writer"),
+            actorIds: idsList(people, "Actor"),
+            directorIds: idsList(people, "Director"),
+            writerIds: idsList(people, "Writer")
+        }
+    end function
+
+    function scoreCandidate(candidate as object, ctx as object) as float
+        score = 0.0
+
+        cGenres = toStringSet(readItemArray(candidate, "Genres"))
+        for each g in ctx.genres
+            if cGenres.DoesExist(g) then score = score + 3.0
+        end for
+
+        cTags = toStringSet(readItemArray(candidate, "Tags"))
+        for each t in ctx.tags
+            if cTags.DoesExist(t) then score = score + 3.0
+        end for
+
+        people = readItemArray(candidate, "People")
+        cActors = namesSet(people, "Actor")
+        cDirectors = namesSet(people, "Director")
+        cWriters = namesSet(people, "Writer")
+        for each a in ctx.actorNames
+            if cActors.DoesExist(a) then score = score + 5.0
+        end for
+        for each d in ctx.directorNames
+            if cDirectors.DoesExist(d) then score = score + 6.0
+        end for
+        for each w in ctx.writerNames
+            if cWriters.DoesExist(w) then score = score + 6.0
+        end for
+
+        cStudios = toStringSet(studioNameList(readItemArray(candidate, "Studios")))
+        for each s in ctx.baseStudios
+            if cStudios.DoesExist(s) then score = score + 3.0
+        end for
+
+        candYear = candidate.ProductionYear
+        if isNumber(candYear) and isNumber(ctx.baseYear)
+            if candYear = ctx.baseYear
+                score = score + 2.0
+            else if Abs(candYear - ctx.baseYear) <= 3
+                score = score + 1.0
+            end if
+        end if
+
+        if isSequelOrSimilarTitle(ctx.baseName, readItemString(candidate, "Name"))
+            score = score + 10.0
+        end if
+
+        comm = candidate.CommunityRating
+        if isNumber(comm) then score = score + comm / 10.0
+
+        return score
+    end function
+
+    ' Watched episodes are replaced by their parent series so a seed represents a
+    ' show, not a single episode. Movies and series keep their order.
+    function resolveSeedEpisodes(rawItems as object, seriesById as object) as object
+        finalItems = []
+        added = {}
+        for each item in rawItems
+            itype = readItemString(item, "Type")
+            if itype = "Movie"
+                finalItems.Push(item)
+            else if itype = "Episode"
+                sId = readItemString(item, "SeriesId")
+                if sId <> "" and seriesById.DoesExist(sId) and not added.DoesExist(sId)
+                    added[sId] = true
+                    finalItems.Push(seriesById[sId])
+                end if
+            else if itype = "Series"
+                sId = readItemString(item, "Id")
+                if sId <> "" and not added.DoesExist(sId)
+                    added[sId] = true
+                    finalItems.Push(item)
+                end if
+            end if
+        end for
+        return finalItems
+    end function
+
+    function readItemArray(item as object, key as string) as object
+        if not isValid(item) then return []
+        v = item[key]
+        if isValid(v) and type(v) = "roArray" then return v
+        return []
+    end function
+
+    function readItemString(item as object, key as string) as string
+        if not isValid(item) then return ""
+        v = item[key]
+        if isValid(v) then return v.toStr()
+        return ""
+    end function
+
+    function toStringSet(items as object) as object
+        result = {}
+        for each v in items
+            if isValid(v) and v <> "" then result[v.toStr()] = true
+        end for
+        return result
+    end function
+
+    function namesList(people as object, ptype as string) as object
+        result = []
+        for each p in people
+            if isValid(p) and readItemString(p, "Type") = ptype
+                nm = readItemString(p, "Name")
+                if nm <> "" then result.Push(nm)
+            end if
+        end for
+        return result
+    end function
+
+    function namesSet(people as object, ptype as string) as object
+        return toStringSet(namesList(people, ptype))
+    end function
+
+    function idsList(people as object, ptype as string) as object
+        result = []
+        for each p in people
+            if isValid(p) and readItemString(p, "Type") = ptype
+                pid = readItemString(p, "Id")
+                if pid <> "" then result.Push(pid)
+            end if
+        end for
+        return result
+    end function
+
+    function studioNameList(studios as object) as object
+        result = []
+        for each s in studios
+            if type(s) = "roAssociativeArray"
+                nm = readItemString(s, "Name")
+                if nm <> "" then result.Push(nm)
+            else if isValid(s) and s <> ""
+                result.Push(s.toStr())
+            end if
+        end for
+        return result
+    end function
+
+    function isNumber(v as dynamic) as boolean
+        t = type(v)
+        return t = "Integer" or t = "roInt" or t = "roInteger" or t = "Float" or t = "roFloat" or t = "Double" or t = "roDouble" or t = "LongInteger" or t = "roLongInteger"
+    end function
+
+    function setContainsAll(bigSet as object, smallList as object) as boolean
+        for each w in smallList
+            if not bigSet.DoesExist(w) then return false
+        end for
+        return true
+    end function
+
+end namespace
