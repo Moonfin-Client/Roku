@@ -6,9 +6,11 @@ import "pkg:/source/enums/SettingType.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
-import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/settingsSync.bs"
+import "pkg:/source/utils/themeApply.bs"
+import "pkg:/source/utils/themeRegistry.bs"
 
 
 sub init()
@@ -93,6 +95,11 @@ sub init()
     m.seerrAccountSection = invalid
     m.seerrAuthTask = invalid
     m.seerrLogoutTask = invalid
+
+    m.themeListTask = invalid
+    m.themeResolveTask = invalid
+    m.pendingThemeSettingItem = invalid
+    m.themeOptions = []
 
     m.configTree = reorderSettingsForFlutter(GetConfigTree())
     LoadMenu({ children: m.configTree })
@@ -256,6 +263,169 @@ sub clearMediaBarPickerTask(clearPending = true as boolean)
     if clearPending
         m.pendingMediaBarSettingItem = invalid
     end if
+end sub
+
+sub loadThemePickerOptions(settingItem as object)
+    if not isValid(settingItem) then return
+
+    clearThemeTasks()
+    m.pendingThemeSettingItem = settingItem
+    m.themeListTask = createObject("roSGNode", "ThemeListTask")
+    m.themeListTask.observeFieldScoped("themes", "onThemeListLoaded")
+    m.themeListTask.observeFieldScoped("errorMessage", "onThemeListError")
+    m.themeListTask.control = "RUN"
+end sub
+
+sub onThemeListLoaded(event as object)
+    themes = event.getData()
+    settingItem = m.pendingThemeSettingItem
+    clearThemeTasks(false)
+
+    if not isValid(settingItem)
+        m.pendingThemeSettingItem = invalid
+        m.settingsMenu.setFocus(true)
+        return
+    end if
+
+    if not isValidAndNotEmpty(themes)
+        m.pendingThemeSettingItem = invalid
+        ShowToast(tr("No themes available."), "error")
+        m.settingsMenu.setFocus(true)
+        return
+    end if
+
+    showThemePicker(settingItem, themes)
+end sub
+
+sub onThemeListError(event as object)
+    err = dynamicToDisplayString(event.getData())
+    clearThemeTasks()
+    if isValidAndNotEmpty(err)
+        ShowToast(err, "error")
+    end if
+    m.settingsMenu.setFocus(true)
+end sub
+
+sub showThemePicker(settingItem as object, themes as object)
+    if not isValid(settingItem) then return
+
+    m.themeOptions = themes
+
+    currentId = get_user_setting("ui.theme.customThemeId")
+    if not isValidAndNotEmpty(currentId) then currentId = "moonfin"
+
+    radioContent = CreateObject("roSGNode", "ContentNode")
+    selectedIndex = 0
+    itemIndex = 0
+    for each theme in themes
+        listItem = radioContent.CreateChild("ContentNode")
+        listItem.title = getThemeOptionTitle(theme)
+        listItem.id = theme.id
+        if isStringEqual(theme.id, currentId) then selectedIndex = itemIndex
+        itemIndex++
+    end for
+
+    if isValid(settingItem.Description)
+        m.settingDesc.text = tr(settingItem.Description)
+        m.settingDesc.visible = true
+    end if
+
+    m.radioSetting.content = radioContent
+    m.radioSetting.visible = true
+    m.radioSetting.checkedItem = selectedIndex
+    m.radioSetting.setFocus(true)
+end sub
+
+function getThemeOptionTitle(theme as object) as string
+    title = chainLookupReturn(theme, "displayName", chainLookupReturn(theme, "id", ""))
+    source = LCase(chainLookupReturn(theme, "source", ""))
+    if source = "server"
+        return `${title} (${tr("Server")})`
+    else if source = "store"
+        return `${title} (${tr("Community")})`
+    end if
+    return title
+end function
+
+sub applySelectedTheme(settingItem as object)
+    idx = m.radioSetting.checkedItem
+    if idx < 0 or idx >= m.themeOptions.count() then return
+
+    chosen = m.themeOptions[idx]
+    if not isValid(chosen) or not isValidAndNotEmpty(chosen.id) then return
+
+    if themeRegistry.IsBuiltIn(chosen.id)
+        theme = themeRegistry.ReadBundledTheme(chosen.id)
+        finishThemeApply(theme, settingItem)
+        return
+    end if
+
+    clearThemeTasks(false)
+    m.pendingThemeSettingItem = settingItem
+    m.themeResolveTask = createObject("roSGNode", "ThemeResolveTask")
+    m.themeResolveTask.themeId = chosen.id
+    m.themeResolveTask.observeFieldScoped("theme", "onThemeResolved")
+    m.themeResolveTask.observeFieldScoped("errorMessage", "onThemeResolveError")
+    m.themeResolveTask.control = "RUN"
+end sub
+
+sub onThemeResolved(event as object)
+    theme = event.getData()
+    settingItem = m.pendingThemeSettingItem
+    clearThemeTasks(false)
+    finishThemeApply(theme, settingItem)
+end sub
+
+sub onThemeResolveError(event as object)
+    err = dynamicToDisplayString(event.getData())
+    clearThemeTasks()
+    if isValidAndNotEmpty(err)
+        ShowToast(err, "error")
+    end if
+    hideEditingControls()
+    m.settingsMenu.setFocus(true)
+end sub
+
+sub finishThemeApply(theme as dynamic, settingItem as dynamic)
+    if not isValid(theme)
+        m.pendingThemeSettingItem = invalid
+        ShowToast(tr("Could not apply theme."), "error")
+        hideEditingControls()
+        m.settingsMenu.setFocus(true)
+        return
+    end if
+
+    themeApply.ApplyTheme(theme, m.top.getScene())
+    syncSettingToServer("ui.theme.customThemeId", theme.id)
+
+    ShowToast(`${theme.displayName}`, "success")
+
+    if isValid(settingItem) then refreshCurrentItemValue(settingItem)
+    m.pendingThemeSettingItem = invalid
+    hideEditingControls()
+    m.settingsMenu.setFocus(true)
+end sub
+
+function getThemeDisplayName(id as dynamic) as string
+    if not isValidAndNotEmpty(id) then return "Moonfin"
+    if isStringEqual(id, "moonfin") then return "Moonfin"
+    if isStringEqual(id, "neon_pulse") then return "Neon Pulse"
+    if isStringEqual(id, "8bit_hero") then return "8-bit Hero"
+    return id
+end function
+
+sub clearThemeTasks(clearPending = true as boolean)
+    if isValid(m.themeListTask)
+        m.themeListTask.unobserveFieldScoped("themes")
+        m.themeListTask.unobserveFieldScoped("errorMessage")
+        m.themeListTask = invalid
+    end if
+    if isValid(m.themeResolveTask)
+        m.themeResolveTask.unobserveFieldScoped("theme")
+        m.themeResolveTask.unobserveFieldScoped("errorMessage")
+        m.themeResolveTask = invalid
+    end if
+    if clearPending then m.pendingThemeSettingItem = invalid
 end sub
 
 sub showMediaBarSelectorDialog(settingItem as object, options as object)
@@ -582,6 +752,10 @@ function getSettingCurrentValueLabel(settingItem as dynamic) as string
             return tr("Enabled")
         end if
         return tr("Disabled")
+    end if
+
+    if isStringEqual(settingItem.settingName, "ui.theme.picker")
+        return getThemeDisplayName(get_user_setting("ui.theme.customThemeId"))
     end if
 
     currentValue = get_user_setting(settingItem.settingName)
@@ -1480,6 +1654,7 @@ function reorderSettingsForFlutter(configTree as object) as object
     supportMoonfin = findSettingsChildByTitle(moonfinSettings, "Support Moonfin")
 
     colors = findSettingsChildByTitle(userInterface, "Colors")
+    theme = findSettingsChildByTitle(userInterface, "Theme")
     general = findSettingsChildByTitle(userInterface, "General")
     libraries = findSettingsChildByTitle(userInterface, "Libraries")
 
@@ -1510,6 +1685,7 @@ function reorderSettingsForFlutter(configTree as object) as object
     end if
 
     personalizationChildren = []
+    pushSettingIfValid(personalizationChildren, theme)
     pushSettingIfValid(personalizationChildren, colors)
     pushSettingIfValid(personalizationChildren, general)
     'MISSING FROM CORE: DETAILS SCREEN
@@ -1551,7 +1727,7 @@ function reorderSettingsForFlutter(configTree as object) as object
 
     pushSettingIfValid(integrationsChildren, ratings)
     pushSettingIfValid(integrationsChildren, seerr)
-    
+
     if integrationsChildren.count() > 0
         reordered.push({
             title: "Integrations",
@@ -1733,6 +1909,12 @@ sub settingSelected()
 
     if isValid(selectedItem.settingName) and selectedItem.settingName = "seerr.accountStatus"
         return ' read-only status row
+    end if
+
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "ui.theme.picker"
+        m.settingDesc.visible = false
+        loadThemePickerOptions(selectedItem)
+        return
     end if
 
     if isValid(selectedItem.settingName) and isMediaBarMultiSelectSetting(selectedItem.settingName)
@@ -1923,6 +2105,11 @@ sub radioSettingChanged()
     if m.radioSetting.focusedChild = invalid then return
     selectedSetting = getFocusedSetting()
     if not isValid(selectedSetting) then return
+
+    if isStringEqual(selectedSetting.settingName, "ui.theme.picker")
+        applySelectedTheme(selectedSetting)
+        return
+    end if
 
     selectedValue = m.radioSetting.content.getChild(m.radioSetting.checkedItem).id
     set_user_setting(selectedSetting.settingName, selectedValue)
