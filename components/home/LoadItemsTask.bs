@@ -1839,8 +1839,8 @@ sub loadItems()
         return
     end if
 
-    if m.top.itemsToLoad.startsWith("imdb_")
-        m.top.content = loadImdbList(m.top.itemsToLoad)
+    if m.top.itemsToLoad.startsWith("imdb_") or m.top.itemsToLoad.startsWith("tmdb_") or m.top.itemsToLoad.startsWith("seerr_") or m.top.itemsToLoad.startsWith("pluginDynamic:")
+        m.top.content = loadCustomDynamicList(m.top.itemsToLoad, m.top.additionalData)
         return
     end if
 
@@ -1999,47 +1999,291 @@ sub loadItems()
     m.top.content = []
 end sub
 
-function loadImdbList(listName as string) as object
+function decodeSeerrBase64(base64String as string) as string
+    if base64String = invalid or base64String = ""
+        return ""
+    end if
+    ba = CreateObject("roByteArray")
+    ba.FromBase64String(base64String)
+    return ba.ToAsciiString()
+end function
+
+function unwrapSeerrProxyResponse(data as object) as object
+    if not isValid(data) or type(data) <> "roAssociativeArray"
+        return invalid
+    end if
+    if isValidStringValue(data.FileContents)
+        decoded = decodeSeerrBase64(data.FileContents)
+        if decoded <> ""
+            return ParseJson(decoded)
+        end if
+    end if
+    return data
+end function
+
+function toNormalizedString(val as dynamic) as string
+    if not isValid(val) then return ""
+    valType = type(val)
+    if valType = "String" or valType = "roString"
+        return val
+    end if
+    if valType = "Integer" or valType = "roInt" or valType = "roInteger" or valType = "Float" or valType = "roFloat" or valType = "Double" or valType = "LongInteger"
+        return val.toStr()
+    end if
+    return ""
+end function
+
+function loadCustomDynamicList(listName as string, additionalData as dynamic) as object
     results = []
 
-    ' The server rejects the request with 400 unless params is a non-empty
-    ' JSON string, so send a minimal payload echoing the source and chart type.
-    requestParams = FormatJson({ source: "imdb", type: listName })
+    source = "imdb"
+    chartType = listName
+    paramsJson = ""
 
-    data = getJson(APIRequest("/Moonfin/CustomRows/Items", {
-        source: "imdb",
-        type: listName,
-        params: requestParams
-    }))
+    ' Try to parse the parameters
+    rowConfig = {}
+    if isValid(additionalData)
+        if type(additionalData) = "String" or type(additionalData) = "roString"
+            rowConfig = ParseJson(additionalData)
+        else if type(additionalData) = "roAssociativeArray" or type(additionalData) = "AssociativeArray"
+            rowConfig = additionalData
+        end if
+    end if
 
-    ' External list responses report success plus a lowercase items array.
-    if not isValid(data) or chainLookupReturn(data, "success", false) <> true then return results
-    if not isChainValid(data, "items") then return results
+    if listName.startsWith("pluginDynamic:")
+        source = chainLookupReturn(rowConfig, "source", "imdb")
+        chartType = chainLookupReturn(rowConfig, "type", "")
+        paramsMap = chainLookupReturn(rowConfig, "params", {})
+        paramsJson = FormatJson(paramsMap)
+    else if listName.startsWith("tmdb_")
+        source = "tmdb_chart"
+        chartType = listName
+        if listName = "tmdb_popular_movies" then chartType = "movie/popular"
+        if listName = "tmdb_top_rated_movies" then chartType = "movie/top_rated"
+        if listName = "tmdb_now_playing_movies" then chartType = "movie/now_playing"
+        if listName = "tmdb_upcoming_movies" then chartType = "movie/upcoming"
+        if listName = "tmdb_popular_tv" then chartType = "tv/popular"
+        if listName = "tmdb_top_rated_tv" then chartType = "tv/top_rated"
+        if listName = "tmdb_airing_today_tv" then chartType = "tv/airing_today"
+        if listName = "tmdb_on_the_air_tv" then chartType = "tv/on_the_air"
+        if listName = "tmdb_trending_movie_daily" then chartType = "trending/movie/day"
+        if listName = "tmdb_trending_movie_weekly" then chartType = "trending/movie/week"
+        if listName = "tmdb_trending_tv_daily" then chartType = "trending/tv/day"
+        if listName = "tmdb_trending_tv_weekly" then chartType = "trending/tv/week"
+        if listName = "tmdb_trending_all_weekly" then chartType = "trending/all/week"
 
-    for each item in data.LookupCI("items")
-        if not isValid(item) then continue for
+        paramsJson = FormatJson({ source: source, type: chartType })
+    else if listName.startsWith("seerr_")
+        source = "seerr"
+        chartType = listName
+    end if
 
-        ' These are external IMDb entries with no matching Jellyfin item, so we
-        ' set the display fields directly and skip the json/setData image
-        ' pipeline. posterUrl/backdropUrl are absolute external URLs, used as-is.
-        tmp = createSGNode("HomeData")
-        ' These sit in a poster row, so show the poster art first.
-        tmp.usePoster = true
+    if source = "seerr"
+        ' Map Seerr chart types to endpoints and parameters
+        endpoint = ""
+        queryParams = {}
+        isRequests = false
 
-        name = item.LookupCI("name")
-        if isValidAndNotEmpty(name) then tmp.name = name
+        if chartType = "seerr_recent_requests" or chartType = "recentrequests" or chartType = "recentRequests"
+            endpoint = "/api/v1/request"
+            queryParams = { take: "20", skip: "0", sort: "modified", filter: "all" }
+            isRequests = true
+        else if chartType = "seerr_recently_added" or chartType = "recentlyadded" or chartType = "recentlyAdded"
+            endpoint = "/api/v1/media"
+            queryParams = { filter: "allavailable", sort: "mediaAdded", take: "20" }
+        else if chartType = "seerr_trending" or chartType = "trending"
+            endpoint = "/api/v1/discover/trending"
+            queryParams = { page: "1", language: "en" }
+        else if chartType = "seerr_popular_movies" or chartType = "popularmovies" or chartType = "popularMovies"
+            endpoint = "/api/v1/discover/movies"
+            queryParams = { page: "1", language: "en" }
+        else if chartType = "seerr_upcoming_movies" or chartType = "upcomingmovies" or chartType = "upcomingMovies"
+            endpoint = "/api/v1/discover/movies/upcoming"
+            queryParams = { language: "en" }
+        else if chartType = "seerr_popular_series" or chartType = "popularseries" or chartType = "popularSeries"
+            endpoint = "/api/v1/discover/tv"
+            queryParams = { page: "1", language: "en" }
+        else if chartType = "seerr_upcoming_series" or chartType = "upcomingseries" or chartType = "upcomingSeries"
+            endpoint = "/api/v1/discover/tv/upcoming"
+            queryParams = { language: "en" }
+        end if
 
-        itemType = item.LookupCI("type")
-        if isValidAndNotEmpty(itemType) then tmp.type = itemType
+        if endpoint <> ""
+            if Left(endpoint, 7) = "/api/v1"
+                proxyPath = Mid(endpoint, 8)
+            else
+                proxyPath = endpoint
+            end if
+            if Left(proxyPath, 1) <> "/" then proxyPath = "/" + proxyPath
 
-        posterUrl = item.LookupCI("posterUrl")
-        if isValidAndNotEmpty(posterUrl) then tmp.posterURL = posterUrl
+            req = APIRequest("/Moonfin/Seerr/Api" + proxyPath, queryParams)
+            response = unwrapSeerrProxyResponse(getJson(req))
 
-        backdropUrl = item.LookupCI("backdropUrl")
-        if isValidAndNotEmpty(backdropUrl) then tmp.backdropURL = backdropUrl
+            if response <> invalid and isChainValid(response, "results")
+                resultsArray = response.results
+                for each item in resultsArray
+                    if not isValid(item) then continue for
 
-        results.push(tmp)
-    end for
+                    resItem = item
+                    if isRequests
+                        if item.media <> invalid
+                            resItem = item.media
+                            resItem.mediaType = item.type
+                        else
+                            continue for
+                        end if
+                    end if
+
+                    mediaType = resItem.LookupCI("mediaType")
+                    if not isValidAndNotEmpty(mediaType) then mediaType = resItem.LookupCI("media_type")
+                    if not isValidAndNotEmpty(mediaType) then mediaType = (resItem.type = "Series" or resItem.type = "tv") ? "tv" : "movie"
+
+                    tmdbId = resItem.LookupCI("tmdbId")
+                    if not isValid(tmdbId) then tmdbId = resItem.LookupCI("id")
+                    if not isValid(tmdbId) then continue for
+
+                    title = resItem.LookupCI("title")
+                    if not isValidAndNotEmpty(title) then title = resItem.LookupCI("name")
+                    title = toNormalizedString(title)
+                    if title = "" then title = "Unknown"
+
+                    posterPath = resItem.LookupCI("posterPath")
+                    if not isValidAndNotEmpty(posterPath) then posterPath = resItem.LookupCI("poster_path")
+
+                    posterUrl = ""
+                    if isValidAndNotEmpty(posterPath)
+                        if posterPath.startsWith("http")
+                            posterUrl = posterPath
+                        else
+                            tmdbUrls = GetTmdbImageBaseUrls()
+                            posterUrl = tmdbUrls.posterW342 + posterPath
+                        end if
+                    end if
+
+                    backdropPath = resItem.LookupCI("backdropPath")
+                    if not isValidAndNotEmpty(backdropPath) then backdropPath = resItem.LookupCI("backdrop_path")
+
+                    backdropUrl = ""
+                    if isValidAndNotEmpty(backdropPath)
+                        if backdropPath.startsWith("http")
+                            backdropUrl = backdropPath
+                        else
+                            tmdbUrls = GetTmdbImageBaseUrls()
+                            backdropUrl = tmdbUrls.backdropW1280 + backdropPath
+                        end if
+                    end if
+
+                    resItem.mediaType = mediaType
+
+                    tmp = createSGNode("HomeData")
+                    tmp.name = title
+                    tmp.type = (mediaType = "tv") ? "Series" : "Movie"
+                    tmp.usePoster = true
+                    if posterUrl <> "" then tmp.posterURL = posterUrl
+                    if backdropUrl <> "" then tmp.backdropURL = backdropUrl
+
+                    tmp.json = {
+                        Id: toNormalizedString(tmdbId),
+                        name: title,
+                        Type: tmp.type,
+                        SeerrTmdbId: toNormalizedString(tmdbId),
+                        SeerrMediaType: mediaType,
+                        SeerrPosterURL: posterUrl,
+                        SeerrItem: resItem
+                    }
+                    results.push(tmp)
+                end for
+            end if
+        end if
+    else
+        data = getJson(APIRequest("/Moonfin/CustomRows/Items", {
+            source: source,
+            type: chartType,
+            params: paramsJson
+        }))
+
+        if data <> invalid and chainLookupReturn(data, "success", false) = true and isChainValid(data, "items")
+            for each item in data.items
+                if not isValid(item) then continue for
+
+                tmdbId = item.LookupCI("tmdbId")
+                if not isValidAndNotEmpty(tmdbId) then tmdbId = item.LookupCI("id")
+
+                imdbId = ""
+                providerIds = item.LookupCI("providerIds")
+                if isValid(providerIds)
+                    imdbId = providerIds.LookupCI("imdb")
+                    if not isValidAndNotEmpty(tmdbId) then tmdbId = providerIds.LookupCI("tmdb")
+                end if
+
+                if not isValidAndNotEmpty(tmdbId) and not isValidAndNotEmpty(imdbId)
+                    continue for
+                end if
+
+                title = item.LookupCI("name")
+                if not isValidAndNotEmpty(title) then title = item.LookupCI("title")
+                title = toNormalizedString(title)
+                if title = "" then title = "Unknown"
+
+                itemType = item.LookupCI("type")
+                if not isValidAndNotEmpty(itemType) then itemType = "Movie"
+
+                posterPath = item.LookupCI("posterUrl")
+                if not isValidAndNotEmpty(posterPath) then posterPath = item.LookupCI("poster_path")
+
+                posterUrl = ""
+                if isValidAndNotEmpty(posterPath)
+                    if posterPath.startsWith("http")
+                        posterUrl = posterPath
+                    else
+                        tmdbUrls = GetTmdbImageBaseUrls()
+                        posterUrl = tmdbUrls.posterW342 + posterPath
+                    end if
+                end if
+
+                backdropPath = item.LookupCI("backdropUrl")
+                if not isValidAndNotEmpty(backdropPath) then backdropPath = item.LookupCI("backdrop_path")
+
+                backdropUrl = ""
+                if isValidAndNotEmpty(backdropPath)
+                    if backdropPath.startsWith("http")
+                        backdropUrl = backdropPath
+                    else
+                        tmdbUrls = GetTmdbImageBaseUrls()
+                        backdropUrl = tmdbUrls.backdropW1280 + backdropPath
+                    end if
+                end if
+
+                seerrItem = {
+                    id: tmdbId,
+                    title: title,
+                    type: (itemType = "Series") ? "tv" : "movie",
+                    mediaType: (itemType = "Series") ? "tv" : "movie",
+                    posterPath: posterPath,
+                    backdropPath: backdropPath,
+                    productionYear: item.LookupCI("productionYear")
+                }
+
+                tmp = createSGNode("HomeData")
+                tmp.name = title
+                tmp.type = (itemType = "Series") ? "Series" : "Movie"
+                tmp.usePoster = true
+                if posterUrl <> "" then tmp.posterURL = posterUrl
+                if backdropUrl <> "" then tmp.backdropURL = backdropUrl
+
+                tmp.json = {
+                    Id: toNormalizedString(tmdbId),
+                    name: title,
+                    Type: tmp.type,
+                    SeerrTmdbId: toNormalizedString(tmdbId),
+                    SeerrMediaType: seerrItem.mediaType,
+                    SeerrPosterURL: posterUrl,
+                    SeerrItem: seerrItem
+                }
+                results.push(tmp)
+            end for
+        end if
+    end if
 
     return results
 end function
