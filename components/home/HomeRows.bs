@@ -594,16 +594,18 @@ end function
 
 function getResolvedSectionNameForMode(index as integer, useServerConfig as boolean) as string
     if useServerConfig
-        userSection = m.global.session.user.settings["homesection" + index.toStr()]
+        serverRowOrder = m.serverLegacyRowOrder
+        if not isArrayValue(serverRowOrder)
+            serverRowOrder = parseHomeRowOrderSetting()
+        end if
 
-        if not isValid(userSection)
-            serverRowOrder = m.serverLegacyRowOrder
-            if not isArrayValue(serverRowOrder)
-                serverRowOrder = parseHomeRowOrderSetting()
-            end if
+        userSection = invalid
+        if isArrayValue(serverRowOrder) and serverRowOrder.Count() > 0
             if index >= 0 and index < serverRowOrder.Count()
                 userSection = serverRowOrder[index]
             end if
+        else
+            userSection = m.global.session.user.settings["homesection" + index.toStr()]
         end if
     else
         userSection = get_user_setting("homeScreenSection" + index.toStr())
@@ -737,13 +739,15 @@ end function
 
 
 function addServerHomeRow(row as object) as boolean
-
-
     sectionType = mapBuiltinSectionFromServerRow(row)
     if not isValidAndNotEmpty(sectionType) or sectionType = "none"
         rowId = chainLookupReturn(row, "id", "")
-        if isValidAndNotEmpty(rowId) and rowId.startsWith("imdb_")
-            return createImdbRow(rowId, chainLookupReturn(row, "title", rowId))
+        rowSource = chainLookupReturn(row, "source", "")
+
+        isCustomRow = (isValidAndNotEmpty(rowId) and (rowId.startsWith("imdb_") or rowId.startsWith("tmdb_") or rowId.startsWith("seerr_") or rowId.startsWith("pluginDynamic:"))) or (rowSource = "custom" or rowSource = "seerr" or rowSource = "tmdb" or rowSource = "letterboxd" or rowSource = "mdblist")
+
+        if isCustomRow
+            return createCustomDynamicRow(row)
         end if
 
         m.processedRowCount++
@@ -900,6 +904,124 @@ function getOriginalSectionIndex(sectionName as string) as integer
     end if
 
     return sectionIndex
+end function
+
+' addOrUpdateHomeRow: Sets the row ID, inserts or replaces it in the home view, and sorts the home rows
+'
+' @param {object} row - The HomeRow node we're adding or updating
+' @param {string} sectionName - The localized title of the row
+' @param {string} originalSectionKey - The setting key associated with the section
+sub addOrUpdateHomeRow(row as object, sectionName as string, originalSectionKey as string)
+    row.id = originalSectionKey
+    if sectionExists(sectionName)
+        m.top.content.replaceChild(row, getSectionIndex(sectionName))
+    else
+        m.top.content.insertChild(row, getOriginalSectionIndex(originalSectionKey))
+    end if
+    sortHomeRows()
+    setRowItemSize()
+end sub
+
+' sortHomeRows: Sorts all home rows based on their settings-configured order
+'
+sub sortHomeRows()
+    if not isValid(m.top.content) then return
+
+    children = m.top.content.getChildren(-1, 0)
+    numChildren = children.count()
+    if numChildren <= 1 then return
+
+    ' Stable insertion sort based on settings index
+    for i = 1 to numChildren - 1
+        keyNode = children[i]
+        keyIndex = getOriginalSettingIndexForNode(keyNode)
+        j = i - 1
+        while j >= 0
+            compareNode = children[j]
+            compareIndex = getOriginalSettingIndexForNode(compareNode)
+            if compareIndex > keyIndex
+                children[j + 1] = children[j]
+                j = j - 1
+            else
+                exit while
+            end if
+        end while
+        children[j + 1] = keyNode
+    end for
+
+    m.top.content.removeChildren(children)
+    m.top.content.appendChildren(children)
+end sub
+
+' getOriginalSettingIndexForNode: Helper function to get the user configuration index of a row
+'
+' @param {object} node - The HomeRow node we're checking
+' @return {integer} index of the row setting (0 to 7) or 99 if not found
+function getOriginalSettingIndexForNode(node as object) as integer
+    if node = invalid then return 99
+
+    nodeId = LCase(node.id).Replace(" ", "")
+    nodeTitle = LCase(node.title).Replace(" ", "")
+
+    for i = 0 to 7
+        settingSectionName = getResolvedSectionName(i)
+
+        ' Direct ID matches
+        if settingSectionName = nodeId
+            return i
+        end if
+
+        ' Localized title matches for standard sections
+        if settingSectionName = "collections" and (nodeId = "collections" or nodeTitle = LCase(tr("Collections")).Replace(" ", ""))
+            return i
+        end if
+        if settingSectionName = "genres" and (nodeId = "genres" or nodeTitle = LCase(tr("Genres")).Replace(" ", ""))
+            return i
+        end if
+        if settingSectionName = "playlists" and (nodeId = "playlists" or nodeTitle = LCase(tr("Playlists")).Replace(" ", ""))
+            return i
+        end if
+        if settingSectionName = "audio" and (nodeId = "audio" or nodeTitle = LCase(tr("Audio")).Replace(" ", ""))
+            return i
+        end if
+        if settingSectionName = "favorites" and (nodeId = "favorites" or nodeTitle = LCase(tr("Favorites")).Replace(" ", ""))
+            return i
+        end if
+        if settingSectionName = "mylist" and (nodeId = "mylist" or nodeTitle = LCase(tr("My List")).Replace(" ", ""))
+            return i
+        end if
+        if settingSectionName = "nextup" and (nodeId = "nextup" or nodeTitle = LCase(tr("Next Up")).Replace(" ", ""))
+            return i
+        end if
+        if settingSectionName = "resume" and (nodeId = "resume" or nodeTitle = LCase(tr("Continue Watching")).Replace(" ", ""))
+            return i
+        end if
+        if settingSectionName = "resumeaudio" and (nodeId = "resumeaudio" or nodeTitle = LCase(tr("Continue Listening")).Replace(" ", ""))
+            return i
+        end if
+        if settingSectionName = "livetv" and (nodeId = "livetv" or nodeTitle = LCase(tr("On Now")).Replace(" ", ""))
+            return i
+        end if
+        if settingSectionName = "smalllibrarytiles" and (nodeId = "smalllibrarytiles" or nodeTitle = LCase(tr("My Media")).Replace(" ", ""))
+            return i
+        end if
+
+        ' Prefix checks for dynamic library rows
+        if settingSectionName = "latestmedia"
+            prefix = LCase(tr("Recently Added in")).Replace(" ", "")
+            if nodeId = "latestmedia" or Left(nodeTitle, prefix.Len()) = prefix
+                return i
+            end if
+        end if
+        if settingSectionName = "recentlyreleased"
+            prefix = LCase(tr("Recently Released in")).Replace(" ", "")
+            if nodeId = "recentlyreleased" or Left(nodeTitle, prefix.Len()) = prefix
+                return i
+            end if
+        end if
+    end for
+
+    return 99
 end function
 
 ' removeHomeSection: Removes a home section from the home rows
@@ -1067,6 +1189,30 @@ function addHomeSection(sectionType as string) as boolean
         return true
     end if
 
+    ' Collections Items
+    if sectionType = "collections"
+        createCollectionsRow()
+        return true
+    end if
+
+    ' Genres Items
+    if sectionType = "genres"
+        createGenresRow()
+        return true
+    end if
+
+    ' Playlists Items
+    if sectionType = "playlists"
+        createPlaylistsRow()
+        return true
+    end if
+
+    ' Audio Items
+    if sectionType = "audio"
+        createAudioRow()
+        return true
+    end if
+
     ' Since You Watched recommendation rows
     if sectionType = "sinceyouwatched"
         createSinceYouWatchedRows()
@@ -1079,6 +1225,44 @@ function addHomeSection(sectionType as string) as boolean
         return true
     end if
 
+    ' Custom / dynamic home row configuration
+    isCustomRow = (sectionType.startsWith("imdb_") or sectionType.startsWith("tmdb_") or sectionType.startsWith("seerr_") or sectionType.startsWith("plugindynamic:"))
+    if isCustomRow
+        fakeRow = {
+            id: sectionType,
+            title: sectionType,
+            source: "custom"
+        }
+        
+        if sectionType.startsWith("imdb_")
+            fakeRow.source = "imdb"
+            fakeRow.title = imdbSectionName(sectionType)
+        else if sectionType.startsWith("tmdb_")
+            fakeRow.source = "tmdb"
+            if sectionType = "tmdb_popular_movies" then fakeRow.title = tr("TMDb Popular Movies")
+            if sectionType = "tmdb_top_rated_movies" then fakeRow.title = tr("TMDb Top Rated Movies")
+            if sectionType = "tmdb_now_playing_movies" then fakeRow.title = tr("TMDb Now Playing Movies")
+            if sectionType = "tmdb_upcoming_movies" then fakeRow.title = tr("TMDb Upcoming Movies")
+            if sectionType = "tmdb_popular_tv" then fakeRow.title = tr("TMDb Popular TV Shows")
+            if sectionType = "tmdb_top_rated_tv" then fakeRow.title = tr("TMDb Top Rated TV Shows")
+            if sectionType = "tmdb_airing_today_tv" then fakeRow.title = tr("TMDb Airing Today TV Shows")
+            if sectionType = "tmdb_on_the_air_tv" then fakeRow.title = tr("TMDb On The Air TV Shows")
+            if sectionType = "tmdb_trending_movie_daily" then fakeRow.title = tr("TMDb Trending Movies Daily")
+            if sectionType = "tmdb_trending_movie_weekly" then fakeRow.title = tr("TMDb Trending Movies Weekly")
+            if sectionType = "tmdb_trending_tv_daily" then fakeRow.title = tr("TMDb Trending TV Daily")
+            if sectionType = "tmdb_trending_tv_weekly" then fakeRow.title = tr("TMDb Trending TV Weekly")
+            if sectionType = "tmdb_trending_all_weekly" then fakeRow.title = tr("TMDb Trending All Weekly")
+        else if sectionType.startsWith("seerr_")
+            fakeRow.source = "seerr"
+            if sectionType = "seerr_trending" then fakeRow.title = tr("Seerr Trending")
+            if sectionType = "seerr_popular_movies" then fakeRow.title = tr("Seerr Popular Movies")
+            if sectionType = "seerr_popular_series" then fakeRow.title = tr("Seerr Popular TV Shows")
+            if sectionType = "seerr_upcoming_movies" then fakeRow.title = tr("Seerr Upcoming Movies")
+            if sectionType = "seerr_upcoming_series" then fakeRow.title = tr("Seerr Upcoming TV Shows")
+        end if
+
+        return createCustomDynamicRow(fakeRow)
+    end if
 
     ' Featured Media Carousel - now handled by separate toggle in Moonfin settings
     ' Skip creating a row for it, as it's controlled by ui.home.mediaBarEnabled
@@ -1117,16 +1301,7 @@ sub createLibraryRow()
         row.appendChild(item)
     end for
 
-    ' Row already exists, replace it with new content
-    if sectionExists(sectionName)
-        m.top.content.replaceChild(row, getSectionIndex(sectionName))
-        setRowItemSize()
-        return
-    end if
-
-    ' Row does not exist, insert it into the home view
-    m.top.content.insertChild(row, getOriginalSectionIndex("smalllibrarytiles"))
-    setRowItemSize()
+    addOrUpdateHomeRow(row, sectionName, "smalllibrarytiles")
 end sub
 
 ' createLatestInRows: Creates a row displaying latest items in each of the user's libraries
@@ -1695,7 +1870,7 @@ sub onMultiServerNextUpComplete()
     if sectionExists(sectionName)
         m.top.content.replaceChild(row, getSectionIndex(sectionName))
     else
-        m.top.content.insertChild(row, getSectionIndex(sectionName))
+        m.top.content.insertChild(row, getOriginalSectionIndex("favorites"))
     end if
     setRowItemSize()
 end sub
@@ -2134,14 +2309,7 @@ sub updateFavoritesItems()
         row.appendChild(item)
     end for
 
-    if sectionExists(sectionName)
-        m.top.content.replaceChild(row, getSectionIndex(sectionName))
-        setRowItemSize()
-        return
-    end if
-
-    m.top.content.insertChild(row, getSectionIndex(sectionName))
-    setRowItemSize()
+    addOrUpdateHomeRow(row, sectionName, "favorites")
 end sub
 
 ' updateMyListItems: Processes LoadMyListTask content. Removes, Creates, or Updates My List row as needed
@@ -2175,14 +2343,7 @@ sub updateMyListItems()
         row.appendChild(item)
     end for
 
-    if sectionExists(sectionName)
-        m.top.content.replaceChild(row, getSectionIndex(sectionName))
-        setRowItemSize()
-        return
-    end if
-
-    m.top.content.insertChild(row, getSectionIndex(sectionName))
-    setRowItemSize()
+    addOrUpdateHomeRow(row, sectionName, "mylist")
 end sub
 
 sub buildContinueWatchingRow(taskKey as string)
@@ -2223,14 +2384,7 @@ sub buildContinueWatchingRow(taskKey as string)
         row.appendChild(item)
     end for
 
-    if sectionExists(sectionName)
-        m.top.content.replaceChild(row, getSectionIndex(sectionName))
-        setRowItemSize()
-        return
-    end if
-
-    m.top.content.insertChild(row, getOriginalSectionIndex("resume"))
-    setRowItemSize()
+    addOrUpdateHomeRow(row, sectionName, "resume")
 end sub
 
 sub updateContinueWatchingItems()
@@ -2270,16 +2424,7 @@ sub updateContinueListeningItems()
         row.appendChild(item)
     end for
 
-    ' Row already exists, replace it with new content
-    if sectionExists(sectionName)
-        m.top.content.replaceChild(row, getSectionIndex(sectionName))
-        setRowItemSize()
-        return
-    end if
-
-    ' Row does not exist, insert it into the home view
-    m.top.content.insertChild(row, getOriginalSectionIndex("resumeaudio"))
-    setRowItemSize()
+    addOrUpdateHomeRow(row, sectionName, "resumeaudio")
 end sub
 
 ' updateNextUpItems: Processes LoadNextUpTask content. Removes, Creates, or Updates next up row as needed
@@ -2312,16 +2457,7 @@ sub updateNextUpItems()
         row.appendChild(item)
     end for
 
-    ' Row already exists, replace it with new content
-    if sectionExists(sectionName)
-        m.top.content.replaceChild(row, getSectionIndex(sectionName))
-        setRowItemSize()
-        return
-    end if
-
-    ' Row does not exist, insert it into the home view
-    m.top.content.insertChild(row, getSectionIndex(sectionName))
-    setRowItemSize()
+    addOrUpdateHomeRow(row, sectionName, "nextup")
 end sub
 
 ' updateLatestItems: Processes LoadItemsTask content. Removes, Creates, or Updates Recently Added in {library} row as needed
@@ -2365,15 +2501,7 @@ sub updateLatestItems(msg)
         row.appendChild(item)
     end for
 
-    if sectionExists(sectionName)
-        ' Row already exists, replace it with new content
-        m.top.content.replaceChild(row, getSectionIndex(sectionName))
-        setRowItemSize()
-        return
-    end if
-
-    m.top.content.insertChild(row, getOriginalSectionIndex("latestmedia"))
-    setRowItemSize()
+    addOrUpdateHomeRow(row, sectionName, "latestmedia")
 end sub
 
 ' updateRecentlyReleasedItems: Processes LoadItemsTask content for recently released items
@@ -2417,15 +2545,7 @@ sub updateRecentlyReleasedItems(msg)
         row.appendChild(item)
     end for
 
-    if sectionExists(sectionName)
-        ' Row already exists, replace it with new content
-        m.top.content.replaceChild(row, getSectionIndex(sectionName))
-        setRowItemSize()
-        return
-    end if
-
-    m.top.content.insertChild(row, getOriginalSectionIndex("recentlyreleased"))
-    setRowItemSize()
+    addOrUpdateHomeRow(row, sectionName, "recentlyreleased")
 end sub
 
 
@@ -2775,4 +2895,239 @@ sub updateImdbRowItems(event as object)
 
     m.top.content.appendChild(row)
     setRowItemSize()
+end sub
+
+function createCustomDynamicRow(row as object) as boolean
+    rowId = chainLookupReturn(row, "id", "")
+    sectionName = chainLookupReturn(row, "title", rowId)
+
+    if not isValidAndNotEmpty(sectionName) or sectionName.startsWith("imdb_")
+        mappedName = imdbSectionName(rowId)
+        if isValidAndNotEmpty(mappedName) then sectionName = mappedName
+    end if
+
+    if not sectionExists(sectionName)
+        customRow = m.top.content.CreateChild("HomeRow")
+        customRow.title = sectionName
+        customRow.imageWidth = getPosterSize(false)[0]
+        customRow.cursorSize = getPosterSize(false)
+        customRow.usePoster = true
+    end if
+
+    task = getOrCreateTask(rowId)
+    
+    additionalDataVal = row.additionalData
+    if type(additionalDataVal) = "String" or type(additionalDataVal) = "roString"
+        additionalDataVal = ParseJson(additionalDataVal)
+    end if
+    if isValid(additionalDataVal) and type(additionalDataVal) = "roAssociativeArray"
+        task.additionalData = additionalDataVal
+    end if
+
+    task.observeField("content", "updateCustomDynamicRowItems")
+    task.control = "RUN"
+    return true
+end function
+
+sub updateCustomDynamicRowItems(event as object)
+    m.processedRowCount++
+
+    task = event.getRoSGNode()
+    rowId = task.itemsToLoad
+    itemData = getTaskContentAndCleanup(rowId)
+
+    sectionName = ""
+    for each r in m.serverHomeRows
+        if r.id = rowId
+            sectionName = r.title
+            exit for
+        end if
+    end for
+
+    if not isValidAndNotEmpty(sectionName)
+        if rowId.startsWith("imdb_")
+            sectionName = imdbSectionName(rowId)
+        else if rowId.startsWith("tmdb_")
+            if rowId = "tmdb_popular_movies" then sectionName = tr("TMDb Popular Movies")
+            if rowId = "tmdb_top_rated_movies" then sectionName = tr("TMDb Top Rated Movies")
+            if rowId = "tmdb_now_playing_movies" then sectionName = tr("TMDb Now Playing Movies")
+            if rowId = "tmdb_upcoming_movies" then sectionName = tr("TMDb Upcoming Movies")
+            if rowId = "tmdb_popular_tv" then sectionName = tr("TMDb Popular TV Shows")
+            if rowId = "tmdb_top_rated_tv" then sectionName = tr("TMDb Top Rated TV Shows")
+            if rowId = "tmdb_airing_today_tv" then sectionName = tr("TMDb Airing Today TV Shows")
+            if rowId = "tmdb_on_the_air_tv" then sectionName = tr("TMDb On The Air TV Shows")
+            if rowId = "tmdb_trending_movie_daily" then sectionName = tr("TMDb Trending Movies Daily")
+            if rowId = "tmdb_trending_movie_weekly" then sectionName = tr("TMDb Trending Movies Weekly")
+            if rowId = "tmdb_trending_tv_daily" then sectionName = tr("TMDb Trending TV Daily")
+            if rowId = "tmdb_trending_tv_weekly" then sectionName = tr("TMDb Trending TV Weekly")
+            if rowId = "tmdb_trending_all_weekly" then sectionName = tr("TMDb Trending All Weekly")
+        else if rowId.startsWith("seerr_")
+            if rowId = "seerr_trending" then sectionName = tr("Seerr Trending")
+            if rowId = "seerr_popular_movies" then sectionName = tr("Seerr Popular Movies")
+            if rowId = "seerr_popular_series" then sectionName = tr("Seerr Popular TV Shows")
+            if rowId = "seerr_upcoming_movies" then sectionName = tr("Seerr Upcoming Movies")
+            if rowId = "seerr_upcoming_series" then sectionName = tr("Seerr Upcoming TV Shows")
+        else
+            sectionName = rowId
+        end if
+    end if
+
+    if not isValidAndNotEmpty(itemData)
+        removeHomeSection(sectionName)
+        return
+    end if
+
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+    row.usePoster = true
+
+    for each item in itemData
+        item.usePoster = row.usePoster
+        item.imageWidth = row.imageWidth
+        row.appendChild(item)
+    end for
+
+    addOrUpdateHomeRow(row, sectionName, rowId)
+end sub
+
+sub createCollectionsRow()
+    sectionName = tr("Collections")
+    if not sectionExists(sectionName)
+        row = m.top.content.CreateChild("HomeRow")
+        row.title = sectionName
+        row.id = "collections"
+        row.imageWidth = getPosterSize(false)[0]
+        row.cursorSize = getPosterSize(false)
+    end if
+    task = getOrCreateTask("collections")
+    task.observeField("content", "updateCollectionsItems")
+    task.control = "RUN"
+end sub
+
+sub updateCollectionsItems()
+    m.processedRowCount++
+    itemData = getTaskContentAndCleanup("collections")
+    sectionName = tr("Collections")
+    if not isValidAndNotEmpty(itemData)
+        removeHomeSection(sectionName)
+        return
+    end if
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+    row.usePoster = true
+    for each item in itemData
+        item.usePoster = row.usePoster
+        item.imageWidth = row.imageWidth
+        row.appendChild(item)
+    end for
+    addOrUpdateHomeRow(row, sectionName, "collections")
+end sub
+
+sub createGenresRow()
+    sectionName = tr("Genres")
+    if not sectionExists(sectionName)
+        row = m.top.content.CreateChild("HomeRow")
+        row.title = sectionName
+        row.id = "genres"
+        row.imageWidth = getPosterSize(false)[0]
+        row.cursorSize = getPosterSize(false)
+    end if
+    task = getOrCreateTask("genres")
+    task.observeField("content", "updateGenresItems")
+    task.control = "RUN"
+end sub
+
+sub updateGenresItems()
+    m.processedRowCount++
+    itemData = getTaskContentAndCleanup("genres")
+    sectionName = tr("Genres")
+    if not isValidAndNotEmpty(itemData)
+        removeHomeSection(sectionName)
+        return
+    end if
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+    row.usePoster = true
+    for each item in itemData
+        item.usePoster = row.usePoster
+        item.imageWidth = row.imageWidth
+        row.appendChild(item)
+    end for
+    addOrUpdateHomeRow(row, sectionName, "genres")
+end sub
+
+sub createPlaylistsRow()
+    sectionName = tr("Playlists")
+    if not sectionExists(sectionName)
+        row = m.top.content.CreateChild("HomeRow")
+        row.title = sectionName
+        row.id = "playlists"
+        row.imageWidth = getPosterSize(false)[0]
+        row.cursorSize = getPosterSize(false)
+    end if
+    task = getOrCreateTask("playlists")
+    task.observeField("content", "updatePlaylistsItems")
+    task.control = "RUN"
+end sub
+
+sub updatePlaylistsItems()
+    m.processedRowCount++
+    itemData = getTaskContentAndCleanup("playlists")
+    sectionName = tr("Playlists")
+    if not isValidAndNotEmpty(itemData)
+        removeHomeSection(sectionName)
+        return
+    end if
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+    row.usePoster = true
+    for each item in itemData
+        item.usePoster = row.usePoster
+        item.imageWidth = row.imageWidth
+        row.appendChild(item)
+    end for
+    addOrUpdateHomeRow(row, sectionName, "playlists")
+end sub
+
+sub createAudioRow()
+    sectionName = tr("Audio")
+    if not sectionExists(sectionName)
+        row = m.top.content.CreateChild("HomeRow")
+        row.title = sectionName
+        row.id = "audio"
+        row.imageWidth = getPosterSize(false)[0]
+        row.cursorSize = getPosterSize(false)
+    end if
+    task = getOrCreateTask("audio")
+    task.observeField("content", "updateAudioItems")
+    task.control = "RUN"
+end sub
+
+sub updateAudioItems()
+    m.processedRowCount++
+    itemData = getTaskContentAndCleanup("audio")
+    sectionName = tr("Audio")
+    if not isValidAndNotEmpty(itemData)
+        removeHomeSection(sectionName)
+        return
+    end if
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = sectionName
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+    row.usePoster = false ' music albums are square/landscape ratio
+    for each item in itemData
+        item.usePoster = row.usePoster
+        item.imageWidth = row.imageWidth
+        row.appendChild(item)
+    end for
+    addOrUpdateHomeRow(row, sectionName, "audio")
 end sub
