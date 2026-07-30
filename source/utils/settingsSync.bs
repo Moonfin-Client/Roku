@@ -135,10 +135,6 @@ namespace settingsSync
             end if
         end for
 
-        if type(profile.homeRowOrder) = "roArray" or type(profile.homeRowOrder) = "Array"
-            settingsSync.SyncTogglesFromRowOrder(profile.homeRowOrder)
-        end if
-
         if isValid(profile.seerrRows)
             ' The server can omit individual flags, so leave those settings at their current value
             for each rowMapping in settingsSync.GetSeerrRowMappings()
@@ -153,6 +149,7 @@ namespace settingsSync
             end for
         end if
 
+        resolvedRows = []
         shouldFetchResolvedRows = toBoolean(chainLookupReturn(tmpSettings, "homeRows.useServerConfig", false))
         if shouldFetchResolvedRows
             resolvedHomeRows = settingsSync.FetchResolvedHomeRows("tv")
@@ -169,6 +166,9 @@ namespace settingsSync
                 tmpSettings["ui.home.rowsV2"] = FormatJson(resolvedRows)
             end if
         end if
+
+        ' Runs last so it can use the pushed layout, which says whether each row is on
+        settingsSync.SyncTogglesFromServerRows(tmpSettings, resolvedRows, profile.homeRowOrder)
 
         session.user.Update("settings", tmpSettings)
     end sub
@@ -434,66 +434,110 @@ namespace settingsSync
         postVoid(req, body)
     end sub
 
-    sub SyncTogglesFromRowOrder(rowOrder as object)
-        if type(rowOrder) <> "roArray" and type(rowOrder) <> "Array" then return
+    ' Optional rows the server can turn on or off, keyed by the row id it uses in a pushed
+    ' layout. A row maps to more than one setting where the picker offers them as one entry.
+    function GetRowToggleMappings() as object
+        return {
+            imdb_top_250_movies: "imdb.top250movies",
+            imdb_top_250_tv_shows: "imdb.top250tvshows",
+            imdb_most_popular_movies: "imdb.mostpopularmovies",
+            imdb_most_popular_tv_shows: "imdb.mostpopulartvshows",
+            imdb_lowest_rated_movies: "imdb.lowestratedmovies",
+            imdb_top_english_movies: "imdb.topenglishmovies",
 
-        tmpSettings = m.global.session.user.settings
+            tmdb_popular_movies: "tmdb.popularmovies",
+            tmdb_top_rated_movies: "tmdb.topratedmovies",
+            tmdb_now_playing_movies: "tmdb.nowplayingmovies",
+            tmdb_upcoming_movies: "tmdb.upcomingmovies",
+            tmdb_popular_tv: "tmdb.populartv",
+            tmdb_top_rated_tv: "tmdb.topratedtv",
+            tmdb_airing_today_tv: "tmdb.airingtodaytv",
+            tmdb_on_the_air_tv: "tmdb.ontheairtv",
+            tmdb_trending_movie_daily: "tmdb.trendingmoviedaily",
+            tmdb_trending_movie_weekly: "tmdb.trendingmovieweekly",
+            tmdb_trending_tv_daily: "tmdb.trendingtvdaily",
+            tmdb_trending_tv_weekly: "tmdb.trendingtvweekly",
+            tmdb_trending_all_weekly: "tmdb.trendingallweekly",
+
+            ' One Seerr endpoint serves both, so the single row drives both settings
+            seerr_trending: ["seerr.row.trending_movies", "seerr.row.trending_tv"],
+            seerr_popular_movies: "seerr.row.popular_movies",
+            seerr_popular_series: "seerr.row.popular_tv",
+            seerr_upcoming_movies: "seerr.row.upcoming_movies",
+            seerr_upcoming_series: "seerr.row.upcoming_tv",
+
+            favorites: "ui.home.displayFavoritesRows",
+            collections: "ui.home.displayCollectionsRows",
+            genres: "ui.home.displayGenresRows",
+            playlists: "ui.home.displayPlaylistsRows",
+            audio: "ui.home.displayAudioRows"
+        }
+    end function
+
+    ' CollectRowStates: Reads how the server wants each row set. Resolved rows carry an
+    ' explicit enabled flag so they win over the ordered id list, which can only say a row
+    ' is present.
+    '
+    ' @param {object} rows - Resolved rows, each with an id and an enabled flag
+    ' @param {object} rowOrder - Ordered row ids, used when no resolved rows arrived
+    ' @return {object} row id to enabled state, holding only the rows the server mentioned
+    function CollectRowStates(rows as object, rowOrder as object) as object
+        states = {}
+
+        if type(rows) = "roArray" or type(rows) = "Array"
+            for each row in rows
+                rowId = chainLookupReturn(row, "id", "")
+                if type(rowId) <> "String" and type(rowId) <> "roString" then continue for
+                if rowId = "" then continue for
+
+                rowId = LCase(rowId)
+
+                states[rowId] = settingsSync.ToBooleanValue(chainLookupReturn(row, "enabled", true), true)
+            end for
+        end if
+
+        if states.Count() > 0 then return states
+
+        if type(rowOrder) = "roArray" or type(rowOrder) = "Array"
+            for each rowId in rowOrder
+                if type(rowId) <> "String" and type(rowId) <> "roString" then continue for
+                if rowId = "" then continue for
+                states[LCase(rowId)] = true
+            end for
+        end if
+
+        return states
+    end function
+
+    ' SyncTogglesFromServerRows: Applies the state the server pushed for each row it names.
+    ' Rows the layout leaves out keep whatever the user chose on this device.
+    '
+    ' @param {object} tmpSettings - Settings map the caller commits once it finishes
+    ' @param {object} rows - Resolved rows from the server
+    ' @param {object} rowOrder - Ordered row ids from the server
+    sub SyncTogglesFromServerRows(tmpSettings as object, rows as object, rowOrder as object)
+        if not isValid(tmpSettings) then return
+
+        states = settingsSync.CollectRowStates(rows, rowOrder)
+        if states.Count() = 0 then return
+
+        toggles = settingsSync.GetRowToggleMappings()
         userId = m.global.session.user.id
 
-        ' Create a lookup set of the row IDs in the order array
-        rowSet = {}
-        for each rowId in rowOrder
-            if type(rowId) = "roString" or type(rowId) = "String"
-                rowSet[LCase(rowId)] = true
+        for each rowId in toggles
+            if not states.DoesExist(rowId) then continue for
+
+            value = states[rowId] ? "true" : "false"
+
+            toggleKeys = toggles[rowId]
+            if type(toggleKeys) = "String" or type(toggleKeys) = "roString"
+                toggleKeys = [toggleKeys]
             end if
-        end for
 
-        toggleMap = {
-            "imdb_top_250_movies": "imdb.top250movies",
-            "imdb_top_250_tv_shows": "imdb.top250tvshows",
-            "imdb_most_popular_movies": "imdb.mostpopularmovies",
-            "imdb_most_popular_tv_shows": "imdb.mostpopulartvshows",
-            "imdb_lowest_rated_movies": "imdb.lowestratedmovies",
-            "imdb_top_english_movies": "imdb.topenglishmovies",
-
-            "tmdb_popular_movies": "tmdb.popularmovies",
-            "tmdb_top_rated_movies": "tmdb.topratedmovies",
-            "tmdb_now_playing_movies": "tmdb.nowplayingmovies",
-            "tmdb_upcoming_movies": "tmdb.upcomingmovies",
-            "tmdb_popular_tv": "tmdb.populartv",
-            "tmdb_top_rated_tv": "tmdb.topratedtv",
-            "tmdb_airing_today_tv": "tmdb.airingtodaytv",
-            "tmdb_on_the_air_tv": "tmdb.ontheairtv",
-            "tmdb_trending_movie_daily": "tmdb.trendingmoviedaily",
-            "tmdb_trending_movie_weekly": "tmdb.trendingmovieweekly",
-            "tmdb_trending_tv_daily": "tmdb.trendingtvdaily",
-            "tmdb_trending_tv_weekly": "tmdb.trendingtvweekly",
-            "tmdb_trending_all_weekly": "tmdb.trendingallweekly",
-
-            "seerr_trending": "seerr.row.trending_movies",
-            "seerr_popular_movies": "seerr.row.popular_movies",
-            "seerr_popular_series": "seerr.row.popular_series",
-            "seerr_upcoming_movies": "seerr.row.upcoming_movies",
-            "seerr_upcoming_series": "seerr.row.upcoming_series",
-
-            "collections": "ui.home.displayCollectionsRows",
-            "genres": "ui.home.displayGenresRows",
-            "playlists": "ui.home.displayPlaylistsRows",
-            "audio": "ui.home.displayAudioRows",
-            "favorites": "ui.home.displayFavoritesRows",
-
-            "calendar_radarr": "calendar.radarr.enabled",
-            "calendar_sonarr": "calendar.sonarr.enabled",
-            "calendar_merged": "calendar.merge"
-        }
-
-        for each rowId in toggleMap
-            toggleKey = toggleMap[rowId]
-            isEnabled = rowSet.DoesExist(rowId)
-
-            ' Set the toggle value in tmpSettings and registry
-            tmpSettings[toggleKey] = isEnabled ? "true" : "false"
-            registry_write(toggleKey, tmpSettings[toggleKey], userId)
+            for each toggleKey in toggleKeys
+                tmpSettings[toggleKey] = value
+                registry_write(toggleKey, value, userId)
+            end for
         end for
     end sub
 
