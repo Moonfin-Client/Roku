@@ -27,8 +27,18 @@ sub init()
     m.itemBackButton = m.top.findNode("itemBack")
     m.itemNextButton = m.top.findNode("itemNext")
 
+    ' Scrub / seek-preview state
     m.isSeeking = false
-    m.seekPercentage = 0
+    m.isRamping = false
+    m.previewPos = 0
+    ' seconds advanced per ramp tick for each speed level (negative = rewind)
+    m.seekSpeeds = [-180, -60, -30, -10, 10, 30, 60, 180]
+    m.rewindBaseIndex = (m.seekSpeeds.count() / 2) - 1 ' index of -10 (slowest rewind)
+    m.forwardBaseIndex = m.seekSpeeds.count() / 2 ' index of +10 (slowest forward)
+    m.seekSpeedIndex = m.forwardBaseIndex
+    m.seekTimer = m.top.findNode("seekTimer")
+    m.seekTimer.observeField("fire", "onSeekTick")
+    m.seekSpeedLabel = m.top.findNode("seekSpeedLabel")
 
     m.top.observeField("visible", "onVisibleChanged")
     m.top.observeField("hasFocus", "onFocusChanged")
@@ -99,15 +109,194 @@ sub setVideoEndingTime()
     m.videoEndingTime.text = "Ends at " + m.top.videoEndingTime
 end sub
 
-sub updateSeekPreview(totalTime as float)
-    newPosition = totalTime * m.seekPercentage
-    m.progressBar.width = m.progressBarBackground.width * m.seekPercentage
+' ---- Scrub / seek-preview controls --------------------------------------
+' The OSD owns the seekbar and focus, so all seek interaction lives here. While
+' scrubbing the video is paused (VideoPlayerView reacts to the "seekbegin" action)
+' and we only move a *preview* position. The actual seek is committed on OK/Play.
 
-    indicatorX = 103 + (m.progressBarBackground.width * m.seekPercentage) - 10
-    m.progressIndicator.translation = [indicatorX, 812]
-    m.videoRemainingTime.text = secondsToHuman(newPosition, true) + " / " + secondsToHuman(totalTime, true)
-    m.top.action = "seek," + newPosition.ToStr()
+' startSeek: Enter scrub mode. Called locally from the seekbar, or via callFunc from
+' VideoPlayerView when a remote FF/RW/arrow press happens while the OSD is hidden.
+'
+' @param {string} key - the key that started the seek (fastforward/rewind/right/left)
+sub startSeek(key as string)
+    if not m.isSeeking
+        m.isSeeking = true
+        m.previewPos = m.top.positionTime
+        ' Ask VideoPlayerView to pause so the preview frame is stable
+        m.top.action = "seekbegin"
+    end if
+
+    if key = "fastforward"
+        rampSeek(1)
+    else if key = "rewind"
+        rampSeek(-1)
+    else if key = "right"
+        stepSeek(1)
+    else if key = "left"
+        stepSeek(-1)
+    else
+        updateScrubDisplay()
+    end if
 end sub
+
+' stepSeek: Single 10 second jump in the given direction (no auto-ramp).
+'
+' @param {integer} direction - 1 for forward, -1 for back
+sub stepSeek(direction as integer)
+    stopRamp()
+    m.previewPos = clampPreview(m.previewPos + (direction * 10))
+    updateScrubDisplay()
+end sub
+
+' rampSeek: Increase the auto-advance speed in the given direction, or stop if the
+' user reverses direction mid-ramp.
+'
+' @param {integer} direction - 1 for forward, -1 for back
+sub rampSeek(direction as integer)
+    if direction > 0
+        ' Pressing FF while rewinding cancels the ramp and holds the position
+        if m.isRamping and m.seekSpeedIndex < m.forwardBaseIndex
+            stopRamp()
+            updateScrubDisplay()
+            return
+        end if
+
+        if not m.isRamping or m.seekSpeedIndex < m.forwardBaseIndex
+            m.seekSpeedIndex = m.forwardBaseIndex
+        else if m.seekSpeedIndex < m.seekSpeeds.count() - 1
+            m.seekSpeedIndex++
+        end if
+    else
+        ' Pressing RW while fast-forwarding cancels the ramp and holds the position
+        if m.isRamping and m.seekSpeedIndex > m.rewindBaseIndex
+            stopRamp()
+            updateScrubDisplay()
+            return
+        end if
+
+        if not m.isRamping or m.seekSpeedIndex > m.rewindBaseIndex
+            m.seekSpeedIndex = m.rewindBaseIndex
+        else if m.seekSpeedIndex > 0
+            m.seekSpeedIndex--
+        end if
+    end if
+
+    startRamp()
+    updateScrubDisplay()
+end sub
+
+sub startRamp()
+    m.isRamping = true
+    m.seekTimer.control = "stop"
+    m.seekTimer.control = "start"
+end sub
+
+sub stopRamp()
+    m.isRamping = false
+    m.seekTimer.control = "stop"
+end sub
+
+' onSeekTick: advance the preview position once per timer tick while ramping
+sub onSeekTick()
+    if not m.isSeeking or not m.isRamping then return
+
+    delta = m.seekSpeeds[m.seekSpeedIndex]
+    newPos = clampPreview(m.previewPos + delta)
+    m.previewPos = newPos
+    updateScrubDisplay()
+
+    ' Stop auto-ramp at the bounds of the video
+    totalTime = m.top.positionTime + m.top.remainingPositionTime
+    if m.previewPos <= 0 or (totalTime > 0 and m.previewPos >= totalTime)
+        stopRamp()
+    end if
+end sub
+
+function clampPreview(seconds as float) as float
+    totalTime = m.top.positionTime + m.top.remainingPositionTime
+    if seconds < 0 then seconds = 0
+    if totalTime > 0 and seconds > totalTime then seconds = totalTime
+    return seconds
+end function
+
+' updateScrubDisplay: redraw the seekbar/indicator/time for the preview position and
+' tell VideoPlayerView where to draw the trickplay thumbnail.
+sub updateScrubDisplay()
+    totalTime = m.top.positionTime + m.top.remainingPositionTime
+    if totalTime <= 0 then return
+
+    pct = m.previewPos / totalTime
+    if pct < 0 then pct = 0
+    if pct > 1 then pct = 1
+
+    m.progressBar.width = m.progressBarBackground.width * pct
+    indicatorX = 103 + (m.progressBarBackground.width * pct) - 10
+    m.progressIndicator.translation = [indicatorX, 812]
+    m.videoRemainingTime.text = secondsToHuman(m.previewPos, true) + " / " + secondsToHuman(totalTime, true)
+
+    updateSeekSpeedLabel()
+
+    ' "seekpreview,<seconds>,<indicatorCenterX>" - VideoPlayerView renders the thumbnail
+    m.top.action = "seekpreview," + Int(m.previewPos).toStr() + "," + Int(indicatorX + 10).toStr()
+end sub
+
+sub updateSeekSpeedLabel()
+    if not m.isSeeking or not m.isRamping
+        m.seekSpeedLabel.visible = false
+        return
+    end if
+
+    if m.seekSpeedIndex >= m.forwardBaseIndex
+        level = m.seekSpeedIndex - m.forwardBaseIndex + 1
+        m.seekSpeedLabel.text = "▶▶ " + level.toStr() + "x"
+    else
+        level = m.rewindBaseIndex - m.seekSpeedIndex + 1
+        m.seekSpeedLabel.text = "◀◀ " + level.toStr() + "x"
+    end if
+    m.seekSpeedLabel.visible = true
+end sub
+
+' commitSeek: finalize the scrub - VideoPlayerView seeks to the preview position
+sub commitSeek()
+    commitPos = Int(m.previewPos)
+    endSeek()
+    m.top.action = "seekcommit," + commitPos.toStr()
+end sub
+
+' cancelSeek: abandon the scrub - VideoPlayerView resumes at the original position
+sub cancelSeek()
+    endSeek()
+    m.top.action = "seekcancel"
+end sub
+
+sub endSeek()
+    m.isSeeking = false
+    stopRamp()
+    m.seekSpeedLabel.visible = false
+end sub
+
+' handleSeekKey: owns all input while a scrub is in progress
+function handleSeekKey(key as string) as boolean
+    if key = "fastforward"
+        rampSeek(1)
+    else if key = "rewind"
+        rampSeek(-1)
+    else if key = "right"
+        stepSeek(1)
+    else if key = "left"
+        stepSeek(-1)
+    else if key = "OK" or key = "play"
+        commitSeek()
+    else if key = "back"
+        cancelSeek()
+    else if key = "up" or key = "down"
+        ' Halt the auto-ramp but stay in scrub so nothing commits by accident
+        stopRamp()
+        updateSeekSpeedLabel()
+    end if
+
+    return true
+end function
 
 
 ' onPlaybackStateChanged: Handler for changes to m.top.playbackState param
@@ -493,6 +682,18 @@ end sub
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
+    ' While scrubbing, the seek controls own all input
+    if m.isSeeking
+        return handleSeekKey(key)
+    end if
+
+    ' Fast-forward / rewind start a multi-speed scrub from anywhere in the OSD
+    if key = "fastforward" or key = "rewind"
+        if m.currentButtonGroup <> "seekbar" then focusOnSeekbar()
+        startSeek(key)
+        return true
+    end if
+
     if key = "OK"
         onButtonSelected()
         return true
@@ -505,20 +706,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if key = "right"
-        ' Handle seeking if on seekbar
+        ' Start a scrub when on the seekbar
         if m.currentButtonGroup = "seekbar"
-            totalTime = m.top.positionTime + m.top.remainingPositionTime
-
-            ' If just entered seeking mode, initialize with current position
-            if not m.isSeeking
-                m.isSeeking = true
-                m.seekPercentage = m.top.progressPercentage
-            end if
-
-            m.seekPercentage = m.seekPercentage + 0.01
-            if m.seekPercentage > 1.0 then m.seekPercentage = 1.0
-
-            updateSeekPreview(totalTime)
+            startSeek("right")
             return true
         end if
 
@@ -540,20 +730,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if key = "left"
-        ' Handle seeking if on seekbar
+        ' Start a scrub when on the seekbar
         if m.currentButtonGroup = "seekbar"
-            totalTime = m.top.positionTime + m.top.remainingPositionTime
-
-            ' If just entered seeking mode, initialize with current position
-            if not m.isSeeking
-                m.isSeeking = true
-                m.seekPercentage = m.top.progressPercentage
-            end if
-
-            m.seekPercentage = m.seekPercentage - 0.01
-            if m.seekPercentage < 0 then m.seekPercentage = 0
-
-            updateSeekPreview(totalTime)
+            startSeek("left")
             return true
         end if
 

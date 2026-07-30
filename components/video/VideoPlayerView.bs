@@ -325,6 +325,12 @@ sub handleHideAction(resume as boolean)
     if resume
         m.top.control = VideoControl.RESUME
     end if
+
+    ' Hide any trickplay thumbnail shown during OSD seekbar scrubbing
+    if not m.top.trickPlayBar.visible
+        trickplayImage = m.top.findNode("trickplayImage")
+        if isValid(trickplayImage) then trickplayImage.visible = false
+    end if
 end sub
 
 sub handleChapterListAction()
@@ -396,6 +402,14 @@ end sub
 sub handleShowSpeedMenuAction()
     if m.speedDialogActive then return
 
+    ' Variable playback speed is a Roku OS 13+ Video node capability (the playbackSpeed
+    ' field). On older devices the field has no effect, so tell the user instead of
+    ' silently doing nothing.
+    if not deviceSupportsPlaybackSpeed()
+        m.global.sceneManager.callFunc("userMessage", tr("Playback Speed"), tr("Playback speed control requires Roku OS 13 or newer."))
+        return
+    end if
+
     speedOptions = [
         { value: "0.5", label: "0.5x" },
         { value: "0.75", label: "0.75x" },
@@ -426,26 +440,32 @@ sub handleShowSpeedMenuAction()
 end sub
 
 sub applyPlaybackSpeed(speed as float)
-    if m.top.hasField("playbackRate")
-        m.top.playbackRate = speed
-        m.playbackSpeed = speed
+    if not deviceSupportsPlaybackSpeed()
+        m.global.sceneManager.callFunc("userMessage", tr("Playback Speed"), tr("Playback speed control requires Roku OS 13 or newer."))
         return
     end if
 
-    if m.top.hasField("rate")
-        m.top.rate = speed
-        m.playbackSpeed = speed
-        return
-    end if
+    ' playbackSpeed is the Roku Video node field for variable-speed playback (Roku OS 13+).
+    ' The earlier attempt used "rate", which is not a Video field and silently did nothing.
+    ' The new speed only takes effect after a pause/resume cycle.
+    m.top.playbackSpeed = speed
+    m.playbackSpeed = speed
 
-    if m.top.hasField("playbackSpeed")
-        m.top.playbackSpeed = speed
-        m.playbackSpeed = speed
-        return
+    if isStringEqual(m.top.state, MediaPlaybackState.PLAYING)
+        m.top.control = VideoControl.PAUSE
+        m.top.control = VideoControl.RESUME
     end if
-
-    m.global.sceneManager.callFunc("userMessage", tr("Playback speed is not supported on this Roku model"))
 end sub
+
+' deviceSupportsPlaybackSpeed: Variable playback speed via the Video node's playbackSpeed
+' field was introduced in Roku OS 13. Older devices ignore the field.
+'
+' @return {boolean} true if the device runs Roku OS 13 or newer
+function deviceSupportsPlaybackSpeed() as boolean
+    osVersion = chainLookupReturn(m.global, "device.osVersion", invalid)
+    if not isValid(osVersion) or not isValid(osVersion.major) then return false
+    return osVersion.major.toInt() >= 13
+end function
 
 sub onSpeedDialogResult()
     if not m.speedDialogActive then return
@@ -484,10 +504,48 @@ sub onOSDAction()
         return
     end if
 
-    ' Handle seek action with position
-    if action.Left(5) = "seek,"
-        seekPosition = action.Mid(5).ToFloat()
+    ' Scrub started in the OSD - pause so the preview frame is stable
+    if action = "seekbegin"
+        if isStringEqual(m.top.state, MediaPlaybackState.PLAYING)
+            m.top.control = VideoControl.PAUSE
+        end if
+        return
+    end if
+
+    ' Scrub preview moved - render the trickplay thumbnail above the seekbar.
+    ' Format: "seekpreview,<seconds>,<indicatorCenterX>"
+    if action.Left(12) = "seekpreview,"
+        ' Guarantee the video is paused while scrubbing even if the earlier "seekbegin"
+        ' action was coalesced away by rapid field updates
+        if isStringEqual(m.top.state, MediaPlaybackState.PLAYING)
+            m.top.control = VideoControl.PAUSE
+        end if
+
+        previewParts = action.Mid(12).Split(",")
+        if previewParts.count() >= 2
+            previewPos = previewParts[0].ToInt()
+            centerX = previewParts[1].ToInt()
+            showSeekTrickplay(previewPos, centerX)
+            setVideoEndingTime(previewPos)
+        end if
+        return
+    end if
+
+    ' Scrub committed - seek to the preview position and resume
+    if action.Left(11) = "seekcommit,"
+        seekPosition = action.Mid(11).ToFloat()
+        hideTrickplayPreview()
         m.top.seek = seekPosition
+        setVideoEndingTime(seekPosition)
+        m.positionText.text = secondsToHuman(seekPosition, true)
+        handleHideAction(true)
+        return
+    end if
+
+    ' Scrub cancelled - resume at the original position
+    if action = "seekcancel"
+        hideTrickplayPreview()
+        handleHideAction(true)
         return
     end if
 
@@ -903,7 +961,30 @@ sub onVideoContentLoaded()
     m.top.control = VideoControl.PLAY
 end sub
 
-sub displayTrickplayImage(trickPosition as integer)
+' showSeekTrickplay: Render the trickplay thumbnail centered on the OSD seekbar
+' indicator, sitting just above the seekbar.
+'
+' @param {integer} previewPos - preview position in seconds
+' @param {integer} indicatorCenterX - screen X of the seekbar indicator center
+sub showSeekTrickplay(previewPos as integer, indicatorCenterX as integer)
+    if not isValid(m.trickplayDataFinal) then return
+
+    leftX = indicatorCenterX - Int(m.trickplayDataFinal.Width / 2)
+    if leftX < 0 then leftX = 0
+
+    ' Seekbar indicator sits at y=812; place the thumbnail above it
+    topY = 812 - m.trickplayDataFinal.Height - 20
+    if topY < 0 then topY = 0
+
+    displayTrickplayImage(previewPos, leftX, topY)
+end sub
+
+sub hideTrickplayPreview()
+    trickplayImage = m.top.findNode("trickplayImage")
+    if isValid(trickplayImage) then trickplayImage.visible = false
+end sub
+
+sub displayTrickplayImage(trickPosition as integer, hintOffsetHoriz = -1 as integer, hintOffsetVert = -1 as integer)
     if not isValid(m.trickplayDataFinal) then return
 
     ' Index of trickplay image that matches seek timestamp - out of all trickplay images
@@ -925,8 +1006,15 @@ sub displayTrickplayImage(trickPosition as integer)
     offsetHoriz = 100
     offsetVert = 900 - m.trickplayDataFinal.Height
 
-    ' If we can get translation data for the trickplaybar's thumb icon, use it so the trickplay images can move left/right with seeking
-    if isValid(m.positionTranslation)
+    ' Caller (e.g. OSD seekbar) can place the thumbnail above the seekbar instead of
+    ' at the native trickplay-bar position near the bottom of the screen
+    if hintOffsetVert >= 0 then offsetVert = hintOffsetVert
+
+    if hintOffsetHoriz >= 0
+        ' Caller (e.g. OSD seekbar) supplied the thumb's screen X directly
+        offsetHoriz = hintOffsetHoriz
+    else if isValid(m.positionTranslation)
+        ' Use the native trickPlayBar's thumb position so the preview tracks it
         if m.positionTranslation.translation[0] = 0 then return
         offsetHoriz = m.positionTranslation.translation[0] - 50
     end if
@@ -963,6 +1051,7 @@ sub displayTrickplayImage(trickPosition as integer)
     ' Move clippingRect to next trickplay image within tileset - offsetting translation by an equal amount so it doesn't move
     trickplayImage.translation = `[${offsetHoriz - (iconColumn * m.trickplayDataFinal.Width)},  ${offsetVert - (iconRow * m.trickplayDataFinal.Height)}]`
     trickplayImage.clippingRect = `[${iconColumn * m.trickplayDataFinal.Width}, ${iconRow * m.trickplayDataFinal.Height}, ${m.trickplayDataFinal.Width}, ${m.trickplayDataFinal.Height}]`
+    trickplayImage.visible = true
 end sub
 
 ' populateChapterMenu: ' Parse chapter data from API and appeand to chapter list menu
@@ -1751,31 +1840,38 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     if not press then return false
 
-    ' Handle rewind/fast forward/replay remote buttons
-    if key = KeyCode.REWIND or key = KeyCode.FASTFORWRD or key = KeyCode.REPLAY
-        if not m.top.trickPlayBar.visible
-            if not stateAllowsOSD() then return true
-
-            if key = KeyCode.FASTFORWRD
-                handleFastForwardAction()
-            else
-                handleRewindAction()
-            end if
-
-            return true
+    ' REPLAY jumps back 10 seconds instantly (no scrub)
+    if key = KeyCode.REPLAY
+        if not m.LoadMetaDataTask.isIntro and stateAllowsOSD()
+            handleRewindAction()
         end if
+        return true
     end if
 
+    ' Fast-forward / rewind enter the custom multi-speed scrub. The OSD owns the
+    ' seekbar and focus, so we show it focused on the seekbar and hand off to its
+    ' startSeek - subsequent presses go straight to the OSD's onKeyEvent.
+    if key = KeyCode.FASTFORWRD or key = KeyCode.REWIND
+        if m.LoadMetaDataTask.isIntro then return true
+        if not stateAllowsOSD() then return true
+
+        if not m.osd.visible
+            prepareOSD()
+            showOSD("seekbar")
+        end if
+        m.osd.callFunc("startSeek", key)
+        return true
+    end if
+
+    ' Left/right while the OSD is hidden also start a scrub (single 10s step)
     if key = KeyCode.LEFT or key = KeyCode.RIGHT
-        if not m.osd.visible and not m.top.trickPlayBar.visible
+        if not m.osd.visible
+            if m.LoadMetaDataTask.isIntro then return true
             if not stateAllowsOSD() then return true
 
-            if key = KeyCode.RIGHT
-                handleFastForwardAction()
-            else
-                handleRewindAction()
-            end if
-
+            prepareOSD()
+            showOSD("seekbar")
+            m.osd.callFunc("startSeek", key)
             return true
         end if
     end if
