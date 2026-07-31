@@ -37,9 +37,6 @@ sub init()
     m.loadItemDetailsTask.itemsToLoad = "metaData"
     m.loadItemDetailsTask.observeField("content", "onItemDetailsLoaded")
 
-    ' Shuffle task
-    m.shuffleTask = CreateObject("roSGNode", "ShuffleTask")
-    m.shuffleTask.observeField("selectedItem", "onShuffleComplete")
 
     m.homeRows = m.top.findNode("homeRows")
 
@@ -144,7 +141,7 @@ sub init()
     activeNav = getActiveNav(scene)
     if isValid(activeNav)
         activeNav.observeField("itemSelected", "onNavItemSelected")
-        activeNav.observeField("shufflePressed", "onShufflePressed")
+        activeNav.observeField("showShuffleDialog", "onShowShuffleDialog")
         activeNav.observeField("favoritesPressed", "onFavoritesPressed")
         activeNav.observeField("genresPressed", "onGenresPressed")
         activeNav.observeField("librarySelected", "onLibrarySelected")
@@ -169,9 +166,47 @@ sub onNavItemSelected(event as object)
     end if
 end sub
 
-' Handle shuffle button press from overhang
-sub onShufflePressed(_event as object)
-    handleShuffle()
+sub onShowShuffleDialog(_event as object)
+    showShuffleDialog()
+end sub
+
+sub showShuffleDialog()
+    dialog = CreateObject("roSGNode", "ShuffleDialog")
+    dialog.observeField("selectedItem", "onShuffleItemSelected")
+    dialog.observeField("shuffleDialogClosed", "onShuffleDialogClosed")
+
+    contentType = chainLookupReturn(m.global.session, "user.settings.shuffle_content_type", "both")
+    dialog.contentType = contentType
+    m.shuffleDialogNode = dialog
+
+    scene = m.top.getScene()
+    scene.appendChild(dialog)
+    dialog.setFocus(true)
+end sub
+
+sub onShuffleItemSelected(event as object)
+    selectedItem = event.getData()
+    if not isValid(selectedItem) then return
+
+    removeShuffleDialog()
+    m.top.shuffleSelectedItem = selectedItem
+end sub
+
+sub onShuffleDialogClosed()
+    removeShuffleDialog()
+end sub
+
+sub removeShuffleDialog()
+    scene = m.top.getScene()
+
+    if isValid(m.shuffleDialogNode)
+        scene.removeChild(m.shuffleDialogNode)
+        m.shuffleDialogNode = invalid
+    end if
+
+    if not FocusOverhang(m.top)
+        FocusSidebar(m.top)
+    end if
 end sub
 
 ' Handle favorites button press from overhang
@@ -458,31 +493,6 @@ sub onFavoritesItemSelected(event as object)
     if isValid(selectedItem)
         m.top.shuffleSelectedItem = selectedItem
     end if
-end sub
-
-' Execute shuffle action
-sub handleShuffle()
-    if not isValid(m.shuffleTask) then return
-
-    ' Get shuffle content type preference
-    contentType = chainLookupReturn(m.global.session, "user.settings.shuffle_content_type", "both")
-
-    ' Start shuffle task
-    m.shuffleTask.contentType = contentType
-    m.shuffleTask.control = "RUN"
-end sub
-
-' Handle shuffle completion
-sub onShuffleComplete(event as object)
-    selectedItem = event.getData()
-
-    if selectedItem = invalid
-        ' Shuffle failed - no items available
-        return
-    end if
-
-    ' Emit via shuffleSelectedItem which triggers onSelectedItemEvent in Main
-    m.top.shuffleSelectedItem = selectedItem
 end sub
 
 ' Handle backdrop load status - when new backdrop finishes loading, crossfade it in
@@ -1553,7 +1563,7 @@ sub populateMovieMetadata(json as object, item as object)
         end if
     end if
 
-    if isValid(json.CommunityRating) and json.CommunityRating > 0
+    if isValid(json.CommunityRating) and json.CommunityRating > 0 and moonfinPlugin.IsRatingSourceEnabled("stars")
         if isValid(m.star)
             m.star.width = 28
             m.star.height = 28
@@ -1568,7 +1578,9 @@ sub populateMovieMetadata(json as object, item as object)
         end if
     end if
 
-    if isValid(json.CriticRating) and json.CriticRating > 0 and not moonfinPlugin.IsRatingsEnabled()
+    ' Show the native critic rating up front. It's hidden again only once
+    ' plugin display ratings actually arrive (see onHomeRatingsLoaded)
+    if isValid(json.CriticRating) and json.CriticRating > 0
         if isValid(m.criticRatingLabel)
             m.criticRatingLabel.text = stri(json.CriticRating).trim() + "%"
             m.criticRatingLabel.visible = true
@@ -1645,6 +1657,11 @@ sub clearPluginRatings()
         m.showPluginRatings.ratingsData = invalid
     end if
 
+    if isValid(m.homeRatingsDebounce)
+        m.homeRatingsDebounce.control = "stop"
+    end if
+    m.pendingHomeRatingsJson = invalid
+
     if isValid(m.homeRatingsTask)
         m.homeRatingsTask.unobserveFieldScoped("ratings")
         m.homeRatingsTask = invalid
@@ -1658,16 +1675,24 @@ sub fetchHomeRatings(json as object, contentType as string)
     itemType = json.Type ?? ""
     if itemType = "" then return
 
+    ' Debounce so rapid row scrolling doesn't fire a request per focus change
+    m.pendingHomeRatingsJson = json
+    m.pendingHomeRatingsType = contentType
+    m.homeRatingsDebounce = moonfinPlugin.StartRatingsDebounce(m.homeRatingsDebounce, "onHomeRatingsDebounceFired")
+end sub
+
+sub onHomeRatingsDebounceFired()
+    json = m.pendingHomeRatingsJson
+    if not isValid(json) then return
+    m.pendingHomeRatingsJson = invalid
+
     if isValid(m.homeRatingsTask)
         m.homeRatingsTask.unobserveFieldScoped("ratings")
         m.homeRatingsTask = invalid
     end if
 
-    m.pendingHomeRatingsType = contentType
-
     m.homeRatingsTask = createObject("roSGNode", "FetchRatingsTask")
-    m.homeRatingsTask.itemType = itemType
-    m.homeRatingsTask.tmdbId = tmdbId
+    m.homeRatingsTask.itemData = json
     m.homeRatingsTask.observeFieldScoped("ratings", "onHomeRatingsLoaded")
     m.homeRatingsTask.control = "RUN"
 end sub
@@ -1678,6 +1703,11 @@ sub onHomeRatingsLoaded(event as object)
 
     displayRatings = result.data
     if not isValidAndNotEmpty(displayRatings) then return
+
+    ' Plugin ratings arrived, now hide the native critic rating
+    if isValid(m.criticRatingLabel) then m.criticRatingLabel.visible = false
+    if isValid(m.criticRatingIcon) then m.criticRatingIcon.visible = false
+    if isValid(m.criticRatingGroup) then m.criticRatingGroup.visible = false
 
     ratingsContainer = invalid
     metadataRow = invalid

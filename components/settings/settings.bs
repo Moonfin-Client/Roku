@@ -6,9 +6,11 @@ import "pkg:/source/enums/SettingType.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
-import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/settingsSync.bs"
+import "pkg:/source/utils/themeApply.bs"
+import "pkg:/source/utils/themeRegistry.bs"
 
 
 sub init()
@@ -91,6 +93,11 @@ sub init()
     m.seerrAccountSection = invalid
     m.seerrAuthTask = invalid
     m.seerrLogoutTask = invalid
+
+    m.themeListTask = invalid
+    m.themeResolveTask = invalid
+    m.pendingThemeSettingItem = invalid
+    m.themeOptions = []
 
     m.configTree = reorderSettingsForFlutter(GetConfigTree())
     LoadMenu({ children: m.configTree })
@@ -253,6 +260,169 @@ sub clearMediaBarPickerTask(clearPending = true as boolean)
     if clearPending
         m.pendingMediaBarSettingItem = invalid
     end if
+end sub
+
+sub loadThemePickerOptions(settingItem as object)
+    if not isValid(settingItem) then return
+
+    clearThemeTasks()
+    m.pendingThemeSettingItem = settingItem
+    m.themeListTask = createObject("roSGNode", "ThemeListTask")
+    m.themeListTask.observeFieldScoped("themes", "onThemeListLoaded")
+    m.themeListTask.observeFieldScoped("errorMessage", "onThemeListError")
+    m.themeListTask.control = "RUN"
+end sub
+
+sub onThemeListLoaded(event as object)
+    themes = event.getData()
+    settingItem = m.pendingThemeSettingItem
+    clearThemeTasks(false)
+
+    if not isValid(settingItem)
+        m.pendingThemeSettingItem = invalid
+        m.settingsMenu.setFocus(true)
+        return
+    end if
+
+    if not isValidAndNotEmpty(themes)
+        m.pendingThemeSettingItem = invalid
+        ShowToast(tr("No themes available."), "error")
+        m.settingsMenu.setFocus(true)
+        return
+    end if
+
+    showThemePicker(settingItem, themes)
+end sub
+
+sub onThemeListError(event as object)
+    err = dynamicToDisplayString(event.getData())
+    clearThemeTasks()
+    if isValidAndNotEmpty(err)
+        ShowToast(err, "error")
+    end if
+    m.settingsMenu.setFocus(true)
+end sub
+
+sub showThemePicker(settingItem as object, themes as object)
+    if not isValid(settingItem) then return
+
+    m.themeOptions = themes
+
+    currentId = get_user_setting("ui.theme.customThemeId")
+    if not isValidAndNotEmpty(currentId) then currentId = "moonfin"
+
+    radioContent = CreateObject("roSGNode", "ContentNode")
+    selectedIndex = 0
+    itemIndex = 0
+    for each theme in themes
+        listItem = radioContent.CreateChild("ContentNode")
+        listItem.title = getThemeOptionTitle(theme)
+        listItem.id = theme.id
+        if isStringEqual(theme.id, currentId) then selectedIndex = itemIndex
+        itemIndex++
+    end for
+
+    if isValid(settingItem.Description)
+        m.settingDesc.text = tr(settingItem.Description)
+        m.settingDesc.visible = true
+    end if
+
+    m.radioSetting.content = radioContent
+    m.radioSetting.visible = true
+    m.radioSetting.checkedItem = selectedIndex
+    m.radioSetting.setFocus(true)
+end sub
+
+function getThemeOptionTitle(theme as object) as string
+    title = chainLookupReturn(theme, "displayName", chainLookupReturn(theme, "id", ""))
+    source = LCase(chainLookupReturn(theme, "source", ""))
+    if source = "server"
+        return `${title} (${tr("Server")})`
+    else if source = "store"
+        return `${title} (${tr("Community")})`
+    end if
+    return title
+end function
+
+sub applySelectedTheme(settingItem as object)
+    idx = m.radioSetting.checkedItem
+    if idx < 0 or idx >= m.themeOptions.count() then return
+
+    chosen = m.themeOptions[idx]
+    if not isValid(chosen) or not isValidAndNotEmpty(chosen.id) then return
+
+    if themeRegistry.IsBuiltIn(chosen.id)
+        theme = themeRegistry.ReadBundledTheme(chosen.id)
+        finishThemeApply(theme, settingItem)
+        return
+    end if
+
+    clearThemeTasks(false)
+    m.pendingThemeSettingItem = settingItem
+    m.themeResolveTask = createObject("roSGNode", "ThemeResolveTask")
+    m.themeResolveTask.themeId = chosen.id
+    m.themeResolveTask.observeFieldScoped("theme", "onThemeResolved")
+    m.themeResolveTask.observeFieldScoped("errorMessage", "onThemeResolveError")
+    m.themeResolveTask.control = "RUN"
+end sub
+
+sub onThemeResolved(event as object)
+    theme = event.getData()
+    settingItem = m.pendingThemeSettingItem
+    clearThemeTasks(false)
+    finishThemeApply(theme, settingItem)
+end sub
+
+sub onThemeResolveError(event as object)
+    err = dynamicToDisplayString(event.getData())
+    clearThemeTasks()
+    if isValidAndNotEmpty(err)
+        ShowToast(err, "error")
+    end if
+    hideEditingControls()
+    m.settingsMenu.setFocus(true)
+end sub
+
+sub finishThemeApply(theme as dynamic, settingItem as dynamic)
+    if not isValid(theme)
+        m.pendingThemeSettingItem = invalid
+        ShowToast(tr("Could not apply theme."), "error")
+        hideEditingControls()
+        m.settingsMenu.setFocus(true)
+        return
+    end if
+
+    themeApply.ApplyTheme(theme, m.top.getScene())
+    syncSettingToServer("ui.theme.customThemeId", theme.id)
+
+    ShowToast(`${theme.displayName}`, "success")
+
+    if isValid(settingItem) then refreshCurrentItemValue(settingItem)
+    m.pendingThemeSettingItem = invalid
+    hideEditingControls()
+    m.settingsMenu.setFocus(true)
+end sub
+
+function getThemeDisplayName(id as dynamic) as string
+    if not isValidAndNotEmpty(id) then return "Moonfin"
+    if isStringEqual(id, "moonfin") then return "Moonfin"
+    if isStringEqual(id, "neon_pulse") then return "Neon Pulse"
+    if isStringEqual(id, "8bit_hero") then return "8-bit Hero"
+    return id
+end function
+
+sub clearThemeTasks(clearPending = true as boolean)
+    if isValid(m.themeListTask)
+        m.themeListTask.unobserveFieldScoped("themes")
+        m.themeListTask.unobserveFieldScoped("errorMessage")
+        m.themeListTask = invalid
+    end if
+    if isValid(m.themeResolveTask)
+        m.themeResolveTask.unobserveFieldScoped("theme")
+        m.themeResolveTask.unobserveFieldScoped("errorMessage")
+        m.themeResolveTask = invalid
+    end if
+    if clearPending then m.pendingThemeSettingItem = invalid
 end sub
 
 sub showMediaBarSelectorDialog(settingItem as object, options as object)
@@ -581,6 +751,10 @@ function getSettingCurrentValueLabel(settingItem as dynamic) as string
         return tr("Disabled")
     end if
 
+    if isStringEqual(settingItem.settingName, "ui.theme.picker")
+        return getThemeDisplayName(get_user_setting("ui.theme.customThemeId"))
+    end if
+
     currentValue = get_user_setting(settingItem.settingName)
     if not isValid(currentValue) and isValid(m.global.session.user.settings[settingItem.settingName])
         currentValue = m.global.session.user.settings[settingItem.settingName]
@@ -679,6 +853,43 @@ sub syncSettingToServer(rokuKey as string, rokuValue as dynamic)
     m.settingsSyncTask.apiUrl = pushData.url
     m.settingsSyncTask.stringData = pushData.body
     m.settingsSyncTask.control = "RUN"
+end sub
+
+sub syncSettingToUserConfig(rokuKey as string, rokuValue as dynamic)
+    currentConfig = m.global.session.user.Configuration
+    if not isValid(currentConfig) then return
+
+    if isStringEqual(rokuKey, "playback.subs.mode")
+        settingName = "SubtitleMode"
+    else if isStringEqual(rokuKey, "playback.subs.language")
+        settingName = "SubtitleLanguagePreference"
+    else if isStringEqual(rokuKey, "playback.audioPreferredLanguage")
+        settingName = "AudioLanguagePreference"
+    else if isStringEqual(rokuKey, "playback.playDefaultAudioTrack")
+        settingName = "PlayDefaultAudioTrack"
+        rokuValue = toBoolean(rokuValue)
+    else
+        return
+    end if
+
+    currentConfig.AddReplace(settingName, rokuValue)
+
+    ' The client stores "anyLanguage" but the server expects an empty string
+    if isStringEqual(currentConfig.SubtitleLanguagePreference, "anyLanguage")
+        currentConfig.AddReplace("SubtitleLanguagePreference", "")
+    end if
+
+    if isStringEqual(currentConfig.AudioLanguagePreference, "anyLanguage")
+        currentConfig.AddReplace("AudioLanguagePreference", "")
+    end if
+
+    session.user.Update("Configuration", currentConfig)
+
+    ' Post the full configuration back so fields this client doesn't manage are preserved
+    m.settingSyncTask = createObject("roSGNode", "PostTask")
+    m.settingSyncTask.apiUrl = "/Users/Configuration"
+    m.settingSyncTask.stringData = FormatJson(currentConfig)
+    m.settingSyncTask.control = "RUN"
 end sub
 
 function getUserSettingValue(settingName as string, defaultValue = invalid as dynamic) as dynamic
@@ -1473,20 +1684,19 @@ function reorderSettingsForFlutter(configTree as object) as object
     featuredMediaBar = findSettingsChildByTitle(moonfinSettings, "Media Bar")
     themeMusic = findSettingsChildByTitle(moonfinSettings, "Theme Music")
     shuffle = findSettingsChildByTitle(moonfinSettings, "Shuffle")
-    visualEffects = findSettingsChildByTitle(moonfinSettings, "Visual Effects")
     supportMoonfin = findSettingsChildByTitle(moonfinSettings, "Support Moonfin")
 
     colors = findSettingsChildByTitle(userInterface, "Colors")
+    theme = findSettingsChildByTitle(userInterface, "Theme")
     general = findSettingsChildByTitle(userInterface, "General")
     libraries = findSettingsChildByTitle(userInterface, "Libraries")
+    detailsScreen = findSettingsChildByTitle(userInterface, "Details Screen")
 
     enablePlugin = findSettingsChildByTitle(pluginRootSection, "Enable Plugin")
     pluginSettingsSync = findSettingsChildByTitle(pluginRootSection, "Settings Sync")
     ratings = findSettingsChildByTitle(pluginRootSection, "Metadata & Ratings")
     seerr = findSettingsChildByTitle(pluginRootSection, "Seerr")
-    if not isValid(seerr)
-        seerr = findSettingsChildByTitle(pluginRootSection, "Seerr")
-    end if
+    externalLists = findSettingsChildByTitle(pluginRootSection, "External Lists")
 
     reordered = []
 
@@ -1507,14 +1717,14 @@ function reorderSettingsForFlutter(configTree as object) as object
     end if
 
     personalizationChildren = []
+    pushSettingIfValid(personalizationChildren, theme)
     pushSettingIfValid(personalizationChildren, colors)
     pushSettingIfValid(personalizationChildren, general)
-    'MISSING FROM CORE: DETAILS SCREEN
+    pushSettingIfValid(personalizationChildren, detailsScreen)
     pushSettingIfValid(personalizationChildren, navigationBar)
     pushSettingIfValid(personalizationChildren, homeScreen)
     pushSettingIfValid(personalizationChildren, libraries)
     pushSettingIfValid(personalizationChildren, featuredMediaBar)
-    pushSettingIfValid(personalizationChildren, visualEffects)
     pushSettingIfValid(personalizationChildren, themeMusic)
     pushSettingIfValid(personalizationChildren, shuffle)
     if personalizationChildren.count() > 0
@@ -1548,6 +1758,7 @@ function reorderSettingsForFlutter(configTree as object) as object
 
     pushSettingIfValid(integrationsChildren, ratings)
     pushSettingIfValid(integrationsChildren, seerr)
+    pushSettingIfValid(integrationsChildren, externalLists)
     
     if integrationsChildren.count() > 0
         reordered.push({
@@ -1571,13 +1782,13 @@ function reorderSettingsForFlutter(configTree as object) as object
 
     additionalChildren = []
 
-    moonfinMappedTitles = ["Navigation", "Home Screen", "Libraries", "Media Bar", "Theme Music", "Shuffle", "Visual Effects", "Support Moonfin"]
+    moonfinMappedTitles = ["Navigation", "Home Screen", "Libraries", "Media Bar", "Theme Music", "Shuffle", "Support Moonfin"]
     pushUnmappedChildrenByTitle(additionalChildren, moonfinSettings, moonfinMappedTitles)
 
-    pluginMappedTitles = ["Enable Plugin", "Settings Sync", "Metadata & Ratings", "Seerr"]
+    pluginMappedTitles = ["Enable Plugin", "Settings Sync", "Metadata & Ratings", "Seerr", "External Lists"]
     pushUnmappedChildrenByTitle(additionalChildren, pluginRootSection, pluginMappedTitles)
 
-    userInterfaceMappedTitles = ["Colors", "General", "Libraries"]
+    userInterfaceMappedTitles = ["Colors", "General", "Libraries", "Details Screen"]
     pushUnmappedChildrenByTitle(additionalChildren, userInterface, userInterfaceMappedTitles)
 
     if additionalChildren.count() > 0
@@ -1613,6 +1824,7 @@ sub LoadMenu(configSection, appendPath = true as boolean)
         settingsArray = []
 
         for each item in configSection.children
+            adjustDetailsBackdropBlurItem(item)
             settingsArray.push(item)
         end for
 
@@ -1732,6 +1944,12 @@ sub settingSelected()
         return ' read-only status row
     end if
 
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "ui.theme.picker"
+        m.settingDesc.visible = false
+        loadThemePickerOptions(selectedItem)
+        return
+    end if
+
     if isValid(selectedItem.settingName) and isMediaBarMultiSelectSetting(selectedItem.settingName)
         m.settingDesc.visible = false
         loadMediaBarPickerOptions(selectedItem)
@@ -1789,9 +2007,57 @@ sub settingSelected()
 
             if Left(chainLookupReturn(selectedItem, "settingName", ""), 17) = "homeScreenSection"
                 filteredOptions = []
+                showFavorites = normalizeBoolSettingValue(getUserSettingValue("ui.home.displayFavoritesRows", false))
                 for each option in selectedItem.options
-                    filteredOptions.push(option)
+                    if option.id = "favorites"
+                        if showFavorites then filteredOptions.push(option)
+                    else
+                        filteredOptions.push(option)
+                    end if
                 end for
+
+                ' Each entry pairs the setting that enables a row with the option shown in the picker
+                optInRowOptions = [
+                    { settingName: "ui.home.displayCollectionsRows", title: "Collections", id: "collections" },
+                    { settingName: "ui.home.displayGenresRows", title: "Genres", id: "genres" },
+                    { settingName: "ui.home.displayPlaylistsRows", title: "Playlists", id: "playlists" },
+                    { settingName: "ui.home.displayAudioRows", title: "Audio", id: "audio" },
+                    { settingName: "imdb.top250movies", title: "IMDb Top 250 Movies", id: "imdb_top_250_movies" },
+                    { settingName: "imdb.top250tvshows", title: "IMDb Top 250 TV Shows", id: "imdb_top_250_tv_shows" },
+                    { settingName: "imdb.mostpopularmovies", title: "IMDb Most Popular Movies", id: "imdb_most_popular_movies" },
+                    { settingName: "imdb.mostpopulartvshows", title: "IMDb Most Popular TV Shows", id: "imdb_most_popular_tv_shows" },
+                    { settingName: "imdb.lowestratedmovies", title: "IMDb Lowest Rated Movies", id: "imdb_lowest_rated_movies" },
+                    { settingName: "imdb.topenglishmovies", title: "IMDb Top Rated English Movies", id: "imdb_top_english_movies" },
+                    { settingName: "tmdb.popularmovies", title: "TMDb Popular Movies", id: "tmdb_popular_movies" },
+                    { settingName: "tmdb.topratedmovies", title: "TMDb Top Rated Movies", id: "tmdb_top_rated_movies" },
+                    { settingName: "tmdb.nowplayingmovies", title: "TMDb Now Playing Movies", id: "tmdb_now_playing_movies" },
+                    { settingName: "tmdb.upcomingmovies", title: "TMDb Upcoming Movies", id: "tmdb_upcoming_movies" },
+                    { settingName: "tmdb.populartv", title: "TMDb Popular TV Shows", id: "tmdb_popular_tv" },
+                    { settingName: "tmdb.topratedtv", title: "TMDb Top Rated TV Shows", id: "tmdb_top_rated_tv" },
+                    { settingName: "tmdb.airingtodaytv", title: "TMDb Airing Today TV Shows", id: "tmdb_airing_today_tv" },
+                    { settingName: "tmdb.ontheairtv", title: "TMDb On The Air TV Shows", id: "tmdb_on_the_air_tv" },
+                    { settingName: "tmdb.trendingmoviedaily", title: "TMDb Trending Movies Daily", id: "tmdb_trending_movie_daily" },
+                    { settingName: "tmdb.trendingmovieweekly", title: "TMDb Trending Movies Weekly", id: "tmdb_trending_movie_weekly" },
+                    { settingName: "tmdb.trendingtvdaily", title: "TMDb Trending TV Daily", id: "tmdb_trending_tv_daily" },
+                    { settingName: "tmdb.trendingtvweekly", title: "TMDb Trending TV Weekly", id: "tmdb_trending_tv_weekly" },
+                    { settingName: "tmdb.trendingallweekly", title: "TMDb Trending All Weekly", id: "tmdb_trending_all_weekly" },
+                    { settingName: "seerr.row.popular_movies", title: "Seerr Popular Movies", id: "seerr_popular_movies" },
+                    { settingName: "seerr.row.popular_tv", title: "Seerr Popular TV Shows", id: "seerr_popular_series" },
+                    { settingName: "seerr.row.upcoming_movies", title: "Seerr Upcoming Movies", id: "seerr_upcoming_movies" },
+                    { settingName: "seerr.row.upcoming_tv", title: "Seerr Upcoming TV Shows", id: "seerr_upcoming_series" }
+                ]
+
+                for each optInRow in optInRowOptions
+                    if normalizeBoolSettingValue(getUserSettingValue(optInRow.settingName, false))
+                        filteredOptions.push({ title: optInRow.title, id: optInRow.id })
+                    end if
+                end for
+
+                ' Seerr serves movie and TV trending from one endpoint, so either flag offers the row
+                if normalizeBoolSettingValue(getUserSettingValue("seerr.row.trending_movies", false)) or normalizeBoolSettingValue(getUserSettingValue("seerr.row.trending_tv", false))
+                    filteredOptions.push({ title: "Seerr Trending", id: "seerr_trending" })
+                end if
+
                 radioOptions = filteredOptions
             end if
 
@@ -1873,6 +2139,10 @@ sub boolSettingChanged(selectedSetting as object)
                 unset_setting("active_user")
             end if
         end if
+        if isStringEqual(selectedSetting.settingName, "playback.playDefaultAudioTrack")
+            syncSettingToUserConfig(selectedSetting.settingName, "true")
+        end if
+        syncSettingToServer(selectedSetting.settingName, "true")
     else
         set_user_setting(selectedSetting.settingName, newValue)
         if selectedSetting.settingName = "seerr.blockNsfw"
@@ -1881,6 +2151,10 @@ sub boolSettingChanged(selectedSetting as object)
         if selectedSetting.settingName = "plugin.enabled"
             testPluginConnection()
         end if
+        if isStringEqual(selectedSetting.settingName, "playback.playDefaultAudioTrack")
+            syncSettingToUserConfig(selectedSetting.settingName, "false")
+        end if
+        syncSettingToServer(selectedSetting.settingName, "false")
     end if
     syncSettingToServer(selectedSetting.settingName, newValue)
 
@@ -1893,6 +2167,11 @@ sub radioSettingChanged()
     if m.radioSetting.focusedChild = invalid then return
     selectedSetting = getFocusedSetting()
     if not isValid(selectedSetting) then return
+
+    if isStringEqual(selectedSetting.settingName, "ui.theme.picker")
+        applySelectedTheme(selectedSetting)
+        return
+    end if
 
     selectedValue = m.radioSetting.content.getChild(m.radioSetting.checkedItem).id
     set_user_setting(selectedSetting.settingName, selectedValue)
@@ -1942,6 +2221,10 @@ sub radioSettingChanged()
         if isStringEqual(m.radioSetting.content.getChild(m.radioSetting.checkedItem).id, PlaybackMethod.PLAYNORMALLY)
             m.global.queueManager.callFunc("setForceTranscode", PlaybackMethod.PLAYNORMALLY)
         end if
+    end if
+
+    if isStringEqual(selectedSetting.settingName, "playback.subs.mode") or isStringEqual(selectedSetting.settingName, "playback.subs.language") or isStringEqual(selectedSetting.settingName, "playback.audioPreferredLanguage")  or isStringEqual(selectedSetting.settingName, "playback.playDefaultAudioTrack")
+        syncSettingToUserConfig(selectedSetting.settingName, selectedValue)
     end if
 
     syncSettingToServer(selectedSetting.settingName, selectedValue)
@@ -2096,4 +2379,39 @@ sub onDonationDialogClosed(_obj as object)
 
     ' Return focus to settings menu
     m.settingsMenu.setFocus(true)
+end sub
+
+' Classic reads ui.backdrop.detailBlurAmount as a blur radius and modern reads it as backdrop
+' scrim strength, so the menu entry is retitled to suit whichever screen the user picked.
+sub adjustDetailsBackdropBlurItem(item as dynamic)
+    if not isValid(item) or not isStringEqual(chainLookupReturn(item, "settingName", ""), "ui.backdrop.detailBlurAmount")
+        return
+    end if
+
+    ' Remember what settings.json shipped so the classic wording can be restored
+    if not isValid(m.detailBlurItemDefaults)
+        m.detailBlurItemDefaults = {
+            title: item.title,
+            description: item.description,
+            options: item.options
+        }
+    end if
+
+    if not isStringEqual(dynamicToDisplayString(getUserSettingValue("ui.itemdetail.style", "modern")), "modern")
+        item.title = m.detailBlurItemDefaults.title
+        item.description = m.detailBlurItemDefaults.description
+        item.options = m.detailBlurItemDefaults.options
+        return
+    end if
+
+    item.title = "Details Background Opacity"
+    item.description = "Control how strongly the backdrop is dimmed on modern detail screens. Higher values darken the backdrop and strengthen the edge gradients."
+    item.options = [
+        { title: "Minimum (0)", id: "0" },
+        { title: "Light (5)", id: "5" },
+        { title: "Medium (10)", id: "10" },
+        { title: "Strong (15)", id: "15" },
+        { title: "Heavy (20)", id: "20" },
+        { title: "Maximum (25)", id: "25" }
+    ]
 end sub
