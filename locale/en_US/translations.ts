@@ -2357,5 +2357,53 @@
             <source>Screen Settings</source>
             <translation>Screen Settings</translation>
         </message>
+        <message>
+            <source>Collections Row Sorting</source>
+            <translation>Collections Row Sorting</translation>
+        </message>
+        <message>
+            <source>Choose sorting for Collections home row</source>
+            <translation>Choose sorting for Collections home row</translation>
+        </message>
+        <message>
+            <source>Genres Row Sorting</source>
+            <translation>Genres Row Sorting</translation>
+        </message>
+        <message>
+            <source>Choose sorting for Genres home row</source>
+            <translation>Choose sorting for Genres home row</translation>
+        </message>
+        <message>
+            <source>Genres Row Items</source>
+            <translation>Genres Row Items</translation>
+        </message>
+        <message>
+            <source>Choose which media types are included in Genres home row</source>
+            <translation>Choose which media types are included in Genres home row</translation>
+        </message>
+        <message>
+            <source>Movies &amp; TV Shows</source>
+            <translation>Movies &amp; TV Shows</translation>
+        </message>
+        <message>
+            <source>Movies Only</source>
+            <translation>Movies Only</translation>
+        </message>
+        <message>
+            <source>TV Shows Only</source>
+            <translation>TV Shows Only</translation>
+        </message>
+        <message>
+            <source>Name</source>
+            <translation>Name</translation>
+        </message>
+        <message>
+            <source>Random</source>
+            <translation>Random</translation>
+        </message>
+        <message>
+            <source>Date Added</source>
+            <translation>Date Added</translation>
+        </message>
     </context>
 </TS>
