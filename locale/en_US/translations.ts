@@ -2394,14 +2394,6 @@
             <translation>TV Shows Only</translation>
         </message>
         <message>
-            <source>Name</source>
-            <translation>Name</translation>
-        </message>
-        <message>
-            <source>Random</source>
-            <translation>Random</translation>
-        </message>
-        <message>
             <source>Date Added</source>
             <translation>Date Added</translation>
         </message>
