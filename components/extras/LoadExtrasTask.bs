@@ -5,6 +5,7 @@ import "pkg:/source/api/sdk.bs"
 import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/HomeRecommendations.bs"
 
 ' Fast parallel loading task for TV show details
 ' Loads seasons, next up, people, and similar items simultaneously
@@ -543,9 +544,143 @@ function loadPeople() as object
 end function
 
 function loadSimilar() as object
+    settings = chainLookupReturn(m.global.session, "user.settings", {})
+    recSource = chainLookupReturn(settings, "ui.home.recommendationSource", "")
+    if recSource = ""
+        recSource = chainLookupReturn(settings, "ui.home.sinceYouWatchedSource", "local")
+    end if
+
+    if LCase(recSource) = "online"
+        onlineItems = loadOnlineSimilar()
+        if isValidAndNotEmpty(onlineItems) then return onlineItems
+    else if LCase(recSource) = "local"
+        localItems = loadLocalSimilar()
+        if isValidAndNotEmpty(localItems) then return localItems
+    end if
+
+    return loadJellyfinSimilar()
+end function
+
+function loadOnlineSimilar() as object
+    baseItem = invalid
+    if isMultiServer()
+        serverData = getServerData()
+        url = Substitute("Items/{0}", m.top.itemId)
+        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, { "userId": serverData.userId, "fields": "ProviderIds" })
+        if isValid(req) then baseItem = getJson(req)
+    else
+        baseItem = api.items.GetByID(m.top.itemId, { userId: getUserId(), fields: "ProviderIds" })
+    end if
+
+    if not isChainValid(baseItem, "ProviderIds.Tmdb") then return []
+    tmdbId = baseItem.ProviderIds.Tmdb.ToStr()
+    if tmdbId = "" then return []
+
+    mediaType = "movie"
+    if isChainValid(baseItem, "Type") and baseItem.Type = "Series" then mediaType = "tv"
+
+    config = GetSeerrConfig()
+    if not isValid(config) or config.enabled <> true then return []
+
+    req = APIRequest("/Moonfin/Seerr/Api/" + mediaType + "/" + tmdbId + "/recommendations", {})
+    if not isValid(req) then return []
+    data = getJson(req)
+    if not isChainValid(data, "results") then return []
+
+    results = []
+    count = 0
+    for each res in data.results
+        if count >= 25 then exit for
+        tmp = createSGNode("HomeData")
+        tmp.json = res
+        tmp.imageWidth = 180
+        tmp.labelText = isChainValid(res, "title") ? res.title : res.name
+        tmp.type = mediaType = "movie" ? "Movie" : "Series"
+        if isChainValid(res, "posterPath") and isValidAndNotEmpty(res.posterPath)
+            tmp.posterURL = "https://image.tmdb.org/t/p/w300" + res.posterPath
+        end if
+        results.push(tmp)
+        count = count + 1
+    end for
+    return results
+end function
+
+function loadLocalSimilar() as object
+    baseItem = invalid
+    if isMultiServer()
+        serverData = getServerData()
+        url = Substitute("Items/{0}", m.top.itemId)
+        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, { "userId": serverData.userId, "fields": "Genres,Tags,People,Studios,OfficialRating,ProductionYear" })
+        if isValid(req) then baseItem = getJson(req)
+    else
+        baseItem = api.items.GetByID(m.top.itemId, { userId: getUserId(), fields: "Genres,Tags,People,Studios,OfficialRating,ProductionYear" })
+    end if
+
+    if not isValid(baseItem) then return []
+    ctx = HomeRecommendations.buildContext(baseItem)
+
+    candidateTypes = "Movie,Series"
+    candidateFields = "Genres,Tags,People,UserData,OfficialRating,ProductionYear,CommunityRating,Studios,PremiereDate,ImageTags"
+
+    data = apiItemsGet({
+        userId: getUserId(),
+        includeItemTypes: candidateTypes,
+        genres: ctx.genres.Join("|"),
+        recursive: true,
+        limit: 40,
+        fields: candidateFields,
+        EnableTotalRecordCount: false
+    })
+
+    candidates = {}
+    if isChainValid(data, "Items")
+        for each item in data.Items
+            if isValid(item.Id) and item.Id <> m.top.itemId then candidates[item.Id] = item
+        end for
+    end if
+
+    scored = []
+    for each key in candidates
+        cand = candidates[key]
+        score = HomeRecommendations.scoreCandidate(cand, ctx)
+        if score > 0 then scored.push({ item: cand, score: score })
+    end for
+
+    if scored.count() = 0 then return []
+
+    results = []
+    count = 0
+    for each entry in scored
+        if count >= 25 then exit for
+        item = entry.item
+        tmp = createSGNode("HomeData")
+        if isMultiServer()
+            item._serverUrl = m.top.serverUrl
+            item._userId = m.top.serverUserId
+            item._authToken = m.top.serverAuthToken
+        end if
+        tmp.json = item
+        tmp.imageWidth = 180
+        imgParams = { "maxHeight": 270, "maxWidth": 180 }
+        if hasImageTagPrimary(item) then imgParams.Tag = item.ImageTags.Primary
+        if isMultiServer()
+            normalizedServerUrl = m.top.serverUrl
+            if normalizedServerUrl.right(1) = "/" then normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
+            tmp.posterURL = normalizedServerUrl + "/Items/" + item.Id + "/Images/Primary?maxWidth=180&maxHeight=270&quality=90"
+        else
+            tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+        end if
+        tmp.labelText = item.Name
+        tmp.type = item.Type
+        results.push(tmp)
+        count = count + 1
+    end for
+    return results
+end function
+
+function loadJellyfinSimilar() as object
     similar = []
 
-    ' Normalize server URL once if multi-server
     normalizedServerUrl = ""
     if isMultiServer()
         normalizedServerUrl = m.top.serverUrl
@@ -567,7 +702,6 @@ function loadSimilar() as object
     for each item in data.Items
         tmp = createSGNode("HomeData")
 
-        ' Add server metadata to item JSON for multi-server navigation
         if isMultiServer()
             item._serverUrl = m.top.serverUrl
             item._userId = m.top.serverUserId
@@ -576,7 +710,6 @@ function loadSimilar() as object
 
         tmp.json = item
 
-        ' Use standard poster dimensions
         tmp.imageWidth = 180
         imgParams = { "maxHeight": 270, "maxWidth": 180 }
 
@@ -584,7 +717,6 @@ function loadSimilar() as object
             imgParams.Tag = item.ImageTags.Primary
         end if
 
-        ' Build image URL using correct server for multi-server items
         if isMultiServer()
             tmp.posterURL = normalizedServerUrl + "/Items/" + item.Id + "/Images/Primary?maxWidth=180&maxHeight=270&quality=90"
             if hasImageTagPrimary(item)
@@ -594,11 +726,9 @@ function loadSimilar() as object
             tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
         end if
 
-        ' Set display fields
         tmp.labelText = item.Name
         tmp.type = item.Type
 
-        ' Set year as subtitle
         if isValid(item.ProductionYear)
             tmp.subTitle = stri(item.ProductionYear)
         else if isValid(item.PremiereDate)
