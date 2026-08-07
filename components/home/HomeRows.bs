@@ -148,10 +148,30 @@ sub updateSize()
     'Set width of Rows to cut off at edge of Safe Zone
     m.top.itemSize = [1703, itemHeight]
 
-    modernRows = isModernHomeRows()
-
     ' spacing between rows (modern reserves space for the focused card info block)
-    m.top.itemSpacing = modernRows ? [0, 210] : [0, 60]
+    if isModernHomeRows()
+        paddingKey = "ui.home.modernRowsPadding"
+        compactSpacing = 360
+        spaciousSpacing = 560
+        defaultSpacing = 460
+    else
+        paddingKey = "ui.home.classicRowsPadding"
+        compactSpacing = 10
+        spaciousSpacing = 90
+        defaultSpacing = 30
+    end if
+
+    ' Padding arrives as either a pixel value or a named preset
+    padding = m.global.session.user.settings[paddingKey]
+    paddingStr = isValid(padding) ? padding.ToStr() : ""
+    verticalSpacing = Val(paddingStr)
+    if verticalSpacing <= 0
+        if isStringEqual(paddingStr, "compact") then verticalSpacing = compactSpacing
+        if isStringEqual(paddingStr, "spacious") then verticalSpacing = spaciousSpacing
+        if verticalSpacing <= 0 then verticalSpacing = defaultSpacing
+    end if
+
+    m.top.itemSpacing = [0, verticalSpacing]
 
     ' spacing between items in a row. Modern keeps cards tight, the focused card
     ' makes its own room by sliding the following cells aside (reflow).
@@ -666,10 +686,22 @@ function getExpectedRowContribution(sectionName as string) as integer
         end if
 
         m.filteredLatest = filterNodeArray(m.libraryData, "id", excludeList)
+
+        ' When merging, libraries sharing a collection type collapse into a single row
+        mergeByType = get_user_setting_bool("ui.home.mergeRecentRowsByType", false)
+        seenTypes = {}
         rowCount = 0
         for each latestLibrary in m.filteredLatest
             if latestLibrary.collectionType <> "boxsets" and latestLibrary.collectionType <> "livetv" and latestLibrary.json.CollectionType <> "Program"
-                rowCount++
+                if not mergeByType
+                    rowCount++
+                else
+                    colType = LCase(toNormalizedString(latestLibrary.json.CollectionType ?? latestLibrary.collectionType ?? "other"))
+                    if not seenTypes.DoesExist(colType)
+                        seenTypes[colType] = true
+                        rowCount++
+                    end if
+                end if
             end if
         end for
 
@@ -1306,7 +1338,75 @@ sub createLatestInRows()
     end if
 
 
-    ' create a Recently Added in row for each library
+    ' create a Recently Added row for each library (or merged by type)
+    if get_user_setting_bool("ui.home.mergeRecentRowsByType", false)
+        groupedLibs = {}
+        groupKeys = []
+        for each lib in m.filteredLatest
+            if not isStringEqual(lib.collectionType, "boxsets") and not isStringEqual(lib.collectionType, "livetv") and not isStringEqual(lib.json.CollectionType, "Program")
+                colType = LCase(toNormalizedString(lib.json.CollectionType ?? lib.collectionType ?? "other"))
+                if not groupedLibs.DoesExist(colType)
+                    groupedLibs[colType] = []
+                    groupKeys.push(colType)
+                end if
+                groupedLibs[colType].push(lib)
+            end if
+        end for
+
+        for each colType in groupKeys
+            libsInGroup = groupedLibs[colType]
+            libIds = []
+            for each lib in libsInGroup
+                libIds.push(lib.id)
+            end for
+
+            firstLib = libsInGroup[0]
+            sectionName = ""
+            if colType = "movies"
+                sectionName = `${tr("Recently Added")} ${tr("Movies")}`
+            else if colType = "tvshows"
+                sectionName = `${tr("Recently Added")} ${tr("TV Shows")}`
+            else if colType = "music"
+                sectionName = `${tr("Recently Added")} ${tr("Music")}`
+            else if libsInGroup.Count() = 1
+                sectionName = `${tr("Recently Added in")} ${firstLib.name}`
+            else
+                sectionName = `${tr("Recently Added")} ${colType}`
+            end if
+
+            imagesize = getPosterSize(false)
+            if colType = "movies"
+                imagesize = getPosterSize(false)
+            else if colType = "music"
+                imagesize = homeRowItemSizes.MUSIC_ALBUM
+            end if
+
+            if not sectionExists(sectionName)
+                row = m.top.content.CreateChild("HomeRow")
+                row.title = sectionName
+                row.imageWidth = imagesize[0]
+                row.cursorSize = imagesize
+            end if
+
+            try
+                loadLatest = createObject("roSGNode", "LoadItemsTask")
+                loadLatest.itemsToLoad = "latest"
+                loadLatest.itemIds = libIds
+                loadLatest.itemId = firstLib.id
+
+                metadata = { "title": firstLib.name, "contentType": colType, "sectionName": sectionName }
+                loadLatest.metadata = metadata
+
+                loadLatest.observeField("content", "updateLatestItems")
+                loadLatest.control = TaskControl.RUN
+            catch e
+                removeHomeSection(sectionName)
+                m.global.sceneManager.callFunc("standardDialog", `Error creating Recently Added rows`, { data: ["<p>" + `Error Message: ${e.message}` + "</p>"] })
+            end try
+        end for
+        return
+    end if
+
     for each lib in m.filteredLatest
         if not isStringEqual(lib.collectionType, "boxsets") and not isStringEqual(lib.collectionType, "livetv") and not isStringEqual(lib.json.CollectionType, "Program")
             sectionName = `${tr("Recently Added in")} ${lib.name}`
@@ -1335,7 +1435,7 @@ sub createLatestInRows()
                 loadLatest.itemId = lib.id
 
                 metadata = { "title": lib.name }
-                metadata.Append({ "contentType": lib.json.CollectionType })
+                metadata.Append({ "contentType": lib.json.CollectionType, "sectionName": sectionName })
                 loadLatest.metadata = metadata
 
                 loadLatest.observeField("content", "updateLatestItems")
@@ -2453,7 +2553,7 @@ sub updateLatestItems(msg)
     node.unobserveField("content")
     node.content = []
 
-    sectionName = tr("Recently Added in") + " " + node.metadata.title
+    sectionName = node.metadata.sectionName ?? (tr("Recently Added in") + " " + node.metadata.title)
 
     if not isValidAndNotEmpty(itemData)
         removeHomeSection(sectionName)

@@ -11,6 +11,9 @@ import "pkg:/source/utils/HomeRecommendations.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 
+' Items a "Recently Added" row holds, both per library and after libraries are merged
+const LATEST_MEDIA_LIMIT = 25
+
 sub init()
     m.top.itemsToLoad = "libraries"
     m.top.functionName = "loadItems"
@@ -57,18 +60,53 @@ end function
 
 function loadLatestMedia() as object
     results = []
+    data = []
 
-    params = {
-        userId: m.global.session.user.id,
-        limit: 25,
-        parentId: m.top.itemId,
-        enableImageTypes: `${ImageType.PRIMARY}, ${ImageType.BACKDROP}, ${ImageType.THUMB}`,
-        imageTypeLimit: 1,
-        enableTotalRecordCount: false,
-        fields: "Genres"
-    }
+    targetParentIds = []
+    if isValidAndNotEmpty(m.top.itemIds)
+        targetParentIds = m.top.itemIds
+    else if isValidAndNotEmpty(m.top.itemId)
+        targetParentIds = [m.top.itemId]
+    end if
 
-    data = api.items.GetLatest(params)
+    if targetParentIds.Count() > 0
+        seenIds = {}
+        for each pId in targetParentIds
+            params = {
+                userId: m.global.session.user.id,
+                limit: LATEST_MEDIA_LIMIT,
+                parentId: pId,
+                enableImageTypes: `${ImageType.PRIMARY}, ${ImageType.BACKDROP}, ${ImageType.THUMB}`,
+                imageTypeLimit: 1,
+                enableTotalRecordCount: false,
+                fields: "Genres,DateCreated"
+            }
+            libData = api.items.GetLatest(params)
+            if isValidAndNotEmpty(libData)
+                for each rawItem in libData
+                    itemIdStr = LCase(toNormalizedString(rawItem.LookupCI("Id")))
+                    if isValidAndNotEmpty(itemIdStr) and not seenIds.DoesExist(itemIdStr)
+                        seenIds[itemIdStr] = true
+                        data.push(rawItem)
+                    end if
+                end for
+            end if
+        end for
+
+        ' Each library returns its own newest-first page, so a merged row arrives grouped by
+        ' library. Without this an old item from the first library outranks a new one from the
+        ' second, and the row ends up holding a page per library instead of a single page.
+        if targetParentIds.Count() > 1
+            data = sortByDateCreatedDescending(data)
+            if data.Count() > LATEST_MEDIA_LIMIT
+                trimmed = []
+                for i = 0 to LATEST_MEDIA_LIMIT - 1
+                    trimmed.push(data[i])
+                end for
+                data = trimmed
+            end if
+        end if
+    end if
 
     if not isValidAndNotEmpty(data) then return results
 
@@ -598,7 +636,8 @@ function loadSinceYouWatched() as object
     rowIndex = 1
     if isValid(m.top.metadata) and isValid(m.top.metadata.rowIndex) then rowIndex = m.top.metadata.rowIndex
 
-    sourceMode = getStringSetting(settings, "ui.home.sinceYouWatchedSource", "local")
+    recSource = getStringSetting(settings, "ui.home.recommendationSource", "")
+    sourceMode = recSource <> "" ? recSource : getStringSetting(settings, "ui.home.sinceYouWatchedSource", "local")
     sourceItem = getStringSetting(settings, "ui.home.sinceYouWatchedSourceItem", "recentlyWatched")
     sourceType = getStringSetting(settings, "ui.home.sinceYouWatchedSourceType", "movies")
     includeWatched = getBoolSetting(settings, "ui.home.sinceYouWatchedIncludeWatched", false)
@@ -2054,6 +2093,35 @@ function toNormalizedString(val as dynamic) as string
         return val.toStr()
     end if
     return ""
+end function
+
+' Orders raw API items newest first. DateCreated is ISO 8601, so comparing the strings gives
+' chronological order, and items missing the field settle at the end instead of the front.
+' roArray.SortBy() matches the field name case-sensitively, so it can't be used here.
+function sortByDateCreatedDescending(items as object) as object
+    sorted = []
+    dates = []
+
+    for each item in items
+        itemDate = toNormalizedString(item.LookupCI("DateCreated"))
+        placed = false
+
+        for i = 0 to sorted.Count() - 1
+            if itemDate > dates[i]
+                sorted.Insert(i, item)
+                dates.Insert(i, itemDate)
+                placed = true
+                exit for
+            end if
+        end for
+
+        if not placed
+            sorted.push(item)
+            dates.push(itemDate)
+        end if
+    end for
+
+    return sorted
 end function
 
 function loadCustomDynamicList(listName as string, additionalData as dynamic) as object
