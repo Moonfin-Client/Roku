@@ -1,0 +1,289 @@
+'import "pkg:/source/enums/ItemType.bs"
+'import "pkg:/source/enums/PersonType.bs"
+'import "pkg:/source/utils/misc.bs"
+'import "pkg:/source/utils/themeApply.bs"
+
+sub init()
+    m.extrasType = {
+        BEHINDTHESCENES: "Behind the Scenes"
+        CLIP: "Clip"
+        DELETEDSCENE: "Deleted Scene"
+        FEATURETTE: "Featurette"
+        INTERVIEW: "Interview"
+        SAMPLE: "Sample"
+        SCENE: "Scene"
+        SHORT: "Short"
+        THEMESONG: "ThemeSong"
+        THEMEVIDEO: "ThemeVideo"
+        TRAILER: "Trailer"
+        UNKNOWN: "Extra"
+    }
+    initPosterImg()
+    initName()
+    initRole()
+    ' Initialize nodes for both circular and rectangular posters
+    m.photoCircle = m.top.findNode("photoCircle")
+    m.posterImgRect = m.top.findNode("posterImgRect")
+    m.playedIndicator = m.top.findNode("playedIndicator")
+    m.scaleGroup = m.top.findNode("scaleGroup")
+    m.rectFocusBorder = m.top.findNode("rectFocusBorder")
+    m.epNumber = m.top.findNode("epNumber")
+    m.epDuration = m.top.findNode("epDuration")
+    m.name.height = 34
+    m.name.font.size = 25
+    m.name.horizAlign = "left"
+    m.name.vertAlign = "bottom"
+    m.role.font.size = 22
+    useFallbackFont = chainLookupReturn(m.global.session, "user.settings.useFallbackFont", false) and isValidAndNotEmpty(m.global.fallbackFont)
+    if useFallbackFont
+        m.name.font.uri = m.global.fallbackFont
+        m.role.font.uri = m.global.fallbackFont
+    end if
+    if isValid(m.epNumber)
+        m.epNumber.font.size = 25
+        m.epNumber.height = 34
+        m.epNumber.vertAlign = "bottom"
+        if useFallbackFont
+            m.epNumber.font.uri = m.global.fallbackFont
+        end if
+    end if
+    if isValid(m.epDuration)
+        m.epDuration.font.size = 25
+        m.epDuration.height = 34
+        m.epDuration.vertAlign = "bottom"
+        if useFallbackFont
+            m.epDuration.font.uri = m.global.fallbackFont
+        end if
+    end if
+    themeApply_ApplyToItem(m.top)
+end sub
+
+sub initPosterImg()
+    m.posterImg = m.top.findNode("posterImg")
+end sub
+
+sub initName()
+    m.name = m.top.findNode("pLabel")
+end sub
+
+sub initRole()
+    m.role = m.top.findNode("subTitle")
+end sub
+
+sub showContent()
+    ' validate nodes to prevent crash
+    if not isValid(m.posterImg) then
+        initPosterImg()
+    end if
+    if not isValid(m.name) then
+        initName()
+    end if
+    if not isValid(m.role) then
+        initRole()
+    end if
+    if isValid(m.top.itemContent)
+        cont = m.top.itemContent
+        m.name.text = cont.labelText
+        m.name.maxWidth = cont.imageWidth
+        ' Determine if this is a person (circular) or movie/show (rectangular)
+        isPerson = isStringEqual(cont.LookupCI("type"), "person")
+        if isPerson
+            ' Show circular poster for cast/crew
+            m.photoCircle.visible = true
+            m.posterImgRect.visible = false
+            m.posterImg.uri = cont.posterURL
+            ' MaskGroup handles circular cropping, no need for oversizing
+            imageSize = 250
+            m.posterImg.width = imageSize
+            m.posterImg.height = imageSize
+            ' Position text below circular image (adjusted for translation)
+            m.name.translation = [
+                0
+                281
+            ]
+            m.role.translation = [
+                0
+                321
+            ]
+            m.role.visible = true
+            if isValid(m.epNumber) then
+                m.epNumber.visible = false
+            end if
+            if isValid(m.epDuration) then
+                m.epDuration.visible = false
+            end if
+        else
+            ' Show rectangular poster for movies/shows/episodes
+            m.photoCircle.visible = false
+            m.posterImgRect.visible = true
+            m.posterImgRect.uri = cont.posterURL
+            ' Determine display mode based on content type
+            ' Use scaleToFit for movies, series, and seasons to show full poster
+            ' Use scaleToZoom for episodes to crop screenshot
+            isMovie = isValid(cont.Type) and (cont.Type = "Movie" or cont.Type = "Series" or cont.Type = "Season")
+            isNextEpisode = isValid(cont.json) and isValid(cont.json.NextEpisode) and cont.json.NextEpisode
+            if isMovie or isNextEpisode
+                m.posterImgRect.loadDisplayMode = "scaleToFit"
+            else
+                m.posterImgRect.loadDisplayMode = "scaleToZoom"
+            end if
+            if isValid(m.playedIndicator)
+                showWatchedCheckmark = true
+                if isChainValid(cont, "json.passedData.libraryID")
+                    showWatchedCheckmark = chainLookupReturn(m.global.session, ("user.settings." + bslib_toString(cont.json.passedData.libraryID) + "-showWatchedCheckmark"), true)
+                end if
+                m.playedIndicator.data = {
+                    showWatchedCheckmark: showWatchedCheckmark
+                    played: chainLookupReturn(cont, "json.UserData.Played", false)
+                    unplayedCount: chainLookupReturn(cont, "json.UserData.UnplayedItemCount", 0)
+                }
+            end if
+            ' Dynamically set poster size based on imageWidth
+            if isValid(cont.imageWidth)
+                posterWidth = cont.imageWidth
+                ' Calculate height based on aspect ratio
+                ' For wide episodes (16:9): 450x253
+                ' For portrait (2:3): 234x351
+                if posterWidth >= 400
+                    ' Wide format (16:9 ratio)
+                    posterHeight = int(posterWidth * 0.5625)
+                else
+                    ' Portrait format (2:3 ratio)
+                    posterHeight = int(posterWidth * 1.5)
+                end if
+                m.posterImgRect.width = posterWidth
+                m.posterImgRect.height = posterHeight
+                ' Update focus border size to match poster
+                if isValid(m.rectFocusBorder)
+                    m.rectFocusBorder.width = posterWidth
+                    m.rectFocusBorder.height = posterHeight
+                end if
+                ' Position text below poster (poster height + 23px spacing to match scaleGroup offset)
+                labelY = posterHeight + 31
+                ' Check if this is an episode (wide card with IndexNumber)
+                isEpisodeCard = posterWidth >= 400 and isChainValid(cont, "json.IndexNumber")
+                if isEpisodeCard
+                    ' Episode layout: "E1" grey | "Episode Name" white | "45 min" grey right-aligned
+                    epIdx = cont.json.LookupCI("IndexNumber")
+                    epPrefix = ("E" + bslib_toString(epIdx))
+                    if isValid(m.epNumber)
+                        m.epNumber.text = epPrefix
+                        m.epNumber.translation = [
+                            0
+                            labelY
+                        ]
+                        m.epNumber.visible = true
+                    end if
+                    ' Offset the episode name after the "E##" prefix
+                    ' Approximate width: ~18px per character for font size 25
+                    prefixWidth = epPrefix.len() * 18 + 8
+                    m.name.translation = [
+                        prefixWidth
+                        labelY
+                    ]
+                    m.name.maxWidth = posterWidth - prefixWidth - 80
+                    ' Duration on the right
+                    if isValid(m.epDuration)
+                        runTicks = cont.json.LookupCI("RunTimeTicks")
+                        if isValid(runTicks) and type(runTicks) = "LongInteger"
+                            minutes = int(runTicks / 600000000)
+                            m.epDuration.text = (bslib_toString(minutes) + " min")
+                        else
+                            m.epDuration.text = ""
+                        end if
+                        m.epDuration.width = posterWidth
+                        m.epDuration.translation = [
+                            0
+                            labelY
+                        ]
+                        m.epDuration.visible = true
+                    end if
+                    ' Hide subtitle row for episodes (duration is inline now)
+                    m.role.visible = false
+                else
+                    ' Non-episode: standard layout
+                    m.name.translation = [
+                        0
+                        labelY
+                    ]
+                    m.role.translation = [
+                        0
+                        posterHeight + 71
+                    ]
+                    m.role.visible = true
+                    if isValid(m.epNumber) then
+                        m.epNumber.visible = false
+                    end if
+                    if isValid(m.epDuration) then
+                        m.epDuration.visible = false
+                    end if
+                end if
+                ' Adjust played indicator position
+                m.playedIndicator.translation = [
+                    posterWidth - 50
+                    10
+                ]
+            else
+                ' Default to portrait poster size
+                m.posterImgRect.width = 234
+                m.posterImgRect.height = 351
+                ' Update focus border size to match default poster
+                if isValid(m.rectFocusBorder)
+                    m.rectFocusBorder.width = 234
+                    m.rectFocusBorder.height = 351
+                end if
+                m.name.translation = [
+                    0
+                    382
+                ]
+                m.role.translation = [
+                    0
+                    422
+                ]
+                m.role.visible = true
+                m.playedIndicator.translation = [
+                    130
+                    10
+                ]
+                if isValid(m.epNumber) then
+                    m.epNumber.visible = false
+                end if
+                if isValid(m.epDuration) then
+                    m.epDuration.visible = false
+                end if
+            end if
+            ' Handle music videos differently
+            if isStringEqual(cont.LookupCI("type"), "musicvideo")
+                m.name.maxWidth = 400
+                m.role.maxWidth = 400
+            end if
+        end if
+        if isChainValid(cont, "json.ExtraType")
+            if cont.json.ExtraType <> ""
+                cont.subTitle = m.extrasType[UCase(cont.json.ExtraType)]
+            end if
+        end if
+        m.role.Text = cont.subTitle.trim()
+    else
+        m.role.text = tr("Unknown")
+        m.posterImg.uri = "pkg:/images/baseline_person_white_48dp.png"
+    end if
+end sub
+
+sub focusChanged()
+    ' Enable text scrolling on focus
+    if m.top.itemHasFocus then
+        m.name.repeatCount = - 1
+    else
+        m.name.repeatCount = 0
+    end if
+    ' Focus border is handled natively by the RowList's focusBitmapUri
+    ' (smooth animated transition like home rows)
+    if isValid(m.global) and isValid(m.global.device) and m.global.device.isAudioGuideEnabled = true
+        txt2Speech = CreateObject("roTextToSpeech")
+        txt2Speech.Flush()
+        txt2Speech.Say(m.name.text)
+        txt2Speech.Say(m.role.text)
+    end if
+end sub
+'//# sourceMappingURL=./ExtrasItem.brs.map
