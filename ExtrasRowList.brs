@@ -1,0 +1,544 @@
+'import "pkg:/source/api/Image.bs"
+'import "pkg:/source/enums/ColorPalette.bs"
+'import "pkg:/source/enums/ItemType.bs"
+'import "pkg:/source/enums/PersonType.bs"
+'import "pkg:/source/enums/TaskControl.bs"
+'import "pkg:/source/enums/VideoType.bs"
+'import "pkg:/source/utils/misc.bs"
+
+sub init()
+    m.top.visible = true
+    m.top.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", "#ffffff")
+    updateSize()
+    m.top.observeField("rowItemSelected", "onRowItemSelected")
+    m.top.observeField("rowItemFocused", "onRowItemFocused")
+    ' Create single unified task for all extras data
+    m.LoadExtrasTask = CreateObject("roSGNode", "LoadExtrasTask")
+    m.LoadExtrasTask.observeField("content", "onExtrasLoaded")
+end sub
+
+sub updateSize()
+    itemHeight = 425
+    m.top.itemSize = [
+        1710
+        itemHeight
+    ]
+    m.top.rowItemSpacing = [
+        36
+        36
+    ]
+    ' Initialize rowItemSize as empty array - will be populated by addRowSize calls
+    m.top.rowItemSize = []
+end sub
+
+sub onParentIdChanged()
+    ' Note: loadParts is called explicitly from MovieDetails/ShowScenes with full data
+    ' including multi-server metadata. Don't auto-load here as it would use incomplete data.
+    ' Just ensure content node exists.
+    if not isValid(m.top.content)
+        m.top.content = CreateObject("roSGNode", "ContentNode")
+    end if
+end sub
+
+sub onShowIDChanged()
+    ' This is called when showID is set, but we handle loading in loadParts instead
+    ' Just validate that content exists
+    if not isValid(m.top.content)
+        m.top.content = CreateObject("roSGNode", "ContentNode")
+    end if
+end sub
+
+sub onSeasonOfEpisodesLoaded()
+    data = m.LoadEpisodesTask.content
+    m.LoadEpisodesTask.unobserveField("content")
+    if not isValidAndNotEmpty(data) then
+        return
+    end if
+    if not m.top.hasItems then
+        m.top.hasItems = true
+    end if
+    ' Find current episode position
+    shiftAmount = 0
+    if isValidAndNotEmpty(m.top.episodeID)
+        for each episode in data
+            if isStringEqual(m.top.episodeID, episode.json.LookupCI("id")) then
+                exit for
+            end if
+            shiftAmount++
+        end for
+    end if
+    ' Shift episodes array so the current episode is first, then following episodes
+    if shiftAmount > 0
+        for i = 0 to shiftAmount - 1
+            itemToMove = data.Shift()
+            data.push(itemToMove)
+        end for
+    end if
+    ' Remove the current episode (first item) so we only show "next" episodes
+    if data.count() > 0
+        data.shift()
+    end if
+    ' Only create row if there are episodes to show
+    if data.count() > 0
+        row = m.top.content.createChild("ContentNode")
+        row.Title = "Next Episode"
+        for each episode in data
+            ' Use wide episode poster (screenshot)
+            episode.Id = episode.json.LookupCI("Id")
+            episode.Type = episode.json.LookupCI("Type")
+            ' Add custom fields
+            episode.addField("labelText", "string", false)
+            episode.addField("imageWidth", "integer", false)
+            ' Set label as "S#:E#" format
+            if isValid(episode.json.ParentIndexNumber) and isValid(episode.json.IndexNumber)
+                episode.labelText = ("S" + bslib_toString(episode.json.ParentIndexNumber) + ":E" + bslib_toString(episode.json.IndexNumber))
+            else
+                episode.labelText = ""
+            end if
+            ' Set subtitle as episode name
+            episode.subTitle = episode.json.LookupCI("Name")
+            ' Use portrait image width to match other poster rows
+            episode.imageWidth = 234
+            row.appendChild(episode)
+        end for
+        ' Portrait poster size to match movies/shows: 234 width, 351 height
+        addRowSize([
+            234
+            351
+        ])
+    end if
+end sub
+
+sub loadParts(data as object)
+    m.top.content = CreateObject("roSGNode", "ContentNode")
+    m.top.parentId = data.id
+    ' Determine if this is a TV show (but not an Episode)
+    isTVShow = false
+    isEpisodeMode = false
+    if isValid(data.Type)
+        if data.Type = "Series"
+            isTVShow = true
+            m.top.showID = data.id
+        else if data.Type = "Episode"
+            ' Episodes should not show seasons, but should show same-season episodes
+            isTVShow = false
+            isEpisodeMode = true
+        else if isValid(m.top.showID) and m.top.showID <> ""
+            ' Season or other TV content
+            isTVShow = true
+        end if
+    else if isValid(m.top.showID) and m.top.showID <> ""
+        isTVShow = true
+    end if
+    ' Launch unified task to load all data in parallel
+    m.LoadExtrasTask.itemId = data.id
+    m.LoadExtrasTask.isTVShow = isTVShow
+    m.LoadExtrasTask.isEpisode = isEpisodeMode
+    ' Pass episode-specific data for same-season episode loading
+    if isEpisodeMode
+        m.LoadExtrasTask.showID = m.top.showID
+        m.LoadExtrasTask.seasonID = m.top.seasonID
+    end if
+    ' Pass multi-server info if available
+    if isValid(data._serverUrl) and isValidAndNotEmpty(data._serverUrl)
+        m.LoadExtrasTask.serverUrl = data._serverUrl
+        m.LoadExtrasTask.serverUserId = data._userId
+        m.LoadExtrasTask.serverAuthToken = data._authToken
+    else
+    end if
+    m.LoadExtrasTask.control = "RUN"
+end sub
+
+' Process all loaded data at once
+sub onExtrasLoaded()
+    extrasData = m.LoadExtrasTask.content
+    m.LoadExtrasTask.unobserveField("content")
+    if not isValid(extrasData)
+        return
+    end if
+    ' Extract data from content nodes
+    seasonsNode = invalid
+    nextupNode = invalid
+    episodesNode = invalid
+    peopleNode = invalid
+    similarNode = invalid
+    specialsNode = invalid
+    for i = 0 to extrasData.getChildCount() - 1
+        child = extrasData.getChild(i)
+        if isValid(child) and isValid(child.title)
+            if child.title = "seasons" then
+                seasonsNode = child
+            end if
+            if child.title = "nextup" then
+                nextupNode = child
+            end if
+            if child.title = "episodes" then
+                episodesNode = child
+            end if
+            if child.title = "people" then
+                peopleNode = child
+            end if
+            if child.title = "similar" then
+                similarNode = child
+            end if
+            if child.title = "specials" then
+                specialsNode = child
+            end if
+        end if
+    end for
+    ' Add rows in the desired order: Season Episodes → Seasons → Next Episode → Cast & Crew → More Like This
+    ' 0. Same-season episodes (for episode detail views)
+    if isValid(episodesNode) and episodesNode.getChildCount() > 0
+        ' Filter out the current episode and build the row
+        allEpisodes = episodesNode.getChildren(-1, 0)
+        currentEpId = m.top.episodeID
+        filteredEpisodes = []
+        ' Find current episode position and reorder: current+1 onward first, then wrap
+        currentIndex = -1
+        for i = 0 to allEpisodes.count() - 1
+            ep = allEpisodes[i]
+            if isValid(ep) and isValid(ep.json)
+                epId = ep.json.LookupCI("Id")
+                if isValidAndNotEmpty(currentEpId) and isStringEqual(currentEpId, epId)
+                    currentIndex = i
+                    exit for
+                end if
+            end if
+        end for
+        ' Add episodes after current first, then episodes before current
+        if currentIndex >= 0
+            for i = currentIndex + 1 to allEpisodes.count() - 1
+                filteredEpisodes.push(allEpisodes[i])
+            end for
+            for i = 0 to currentIndex - 1
+                filteredEpisodes.push(allEpisodes[i])
+            end for
+        else
+            ' Current not found, show all
+            for each ep in allEpisodes
+                filteredEpisodes.push(ep)
+            end for
+        end if
+        if filteredEpisodes.count() > 0
+            if not m.top.hasItems then
+                m.top.hasItems = true
+            end if
+            ' Determine season number for row title
+            seasonNum = invalid
+            firstEp = filteredEpisodes[0]
+            if isValid(firstEp) and isValid(firstEp.json)
+                seasonNum = firstEp.json.LookupCI("ParentIndexNumber")
+            end if
+            if isValid(seasonNum)
+                row = m.top.content.createChild("ContentNode")
+                row.Title = (bslib_toString(tr("Season")) + " " + bslib_toString(seasonNum) + " " + bslib_toString(tr("Episodes")))
+            else
+                row = m.top.content.createChild("ContentNode")
+                row.Title = tr("Episodes")
+            end if
+            for each episode in filteredEpisodes
+                if not isValid(episode) or not isValid(episode.json) then
+                    continue for
+                end if
+                episode.Id = episode.json.LookupCI("Id")
+                episode.Type = episode.json.LookupCI("Type")
+                ' Set label to just the episode name
+                epName = episode.json.LookupCI("Name")
+                if isValid(epName)
+                    episode.labelText = epName
+                else
+                    episode.labelText = ""
+                end if
+                ' Duration is read from json in ExtrasItem renderer
+                episode.subTitle = ""
+                ' Set landscape card width for ExtrasItem rendering
+                episode.imageWidth = 400
+                row.appendChild(episode)
+            end for
+            ' Landscape card size for episode thumbnails (16:9)
+            addRowSize([
+                400
+                280
+            ])
+        end if
+    end if
+    ' 1. Seasons (for TV shows only)
+    if isValid(seasonsNode) and seasonsNode.getChildCount() > 0
+        if not m.top.hasItems then
+            m.top.hasItems = true
+        end if
+        row = m.top.content.createChild("ContentNode")
+        row.Title = tr("Seasons")
+        ' Get all children at once using getChildren(-1, 0) which returns all children
+        allSeasons = seasonsNode.getChildren(-1, 0)
+        for each season in allSeasons
+            if isValid(season) and isValid(season.json)
+                season.Id = season.json.LookupCI("Id")
+                season.Type = season.json.LookupCI("Type")
+                if isValid(season.json.IndexNumber)
+                    season.labelText = (bslib_toString(tr("Season")) + " " + bslib_toString(season.json.IndexNumber))
+                else
+                    season.labelText = season.json.LookupCI("Name")
+                end if
+                if isValid(season.json.ChildCount)
+                    season.subTitle = (bslib_toString(season.json.ChildCount) + " " + bslib_toString(tr("episodes")))
+                end if
+                row.appendChild(season)
+            end if
+        end for
+        addRowSize([
+            200
+            300
+        ])
+    end if
+    ' 2. Next Episode (for TV shows only)
+    if isValid(nextupNode) and nextupNode.getChildCount() > 0
+        if not m.top.hasItems then
+            m.top.hasItems = true
+        end if
+        row = m.top.content.createChild("ContentNode")
+        row.Title = tr("Next Episode")
+        ' Get all episodes at once
+        allEpisodes = nextupNode.getChildren(-1, 0)
+        for each episode in allEpisodes
+            if not isValid(episode) or not isValid(episode.json)
+                continue for
+            end if
+            episode.Id = episode.json.LookupCI("Id")
+            episode.Type = episode.json.LookupCI("Type")
+            ' Set label as "S#:E# - Episode Name"
+            labelParts = []
+            if isValid(episode.json.ParentIndexNumber) and isValid(episode.json.IndexNumber)
+                labelParts.push(("S" + bslib_toString(episode.json.ParentIndexNumber) + ":E" + bslib_toString(episode.json.IndexNumber)))
+            end if
+            if isValid(episode.json.Name)
+                labelParts.push(episode.json.Name)
+            end if
+            episode.labelText = labelParts.join(" - ")
+            ' Set subtitle as series name
+            if isValid(episode.json.SeriesName)
+                episode.subTitle = episode.json.SeriesName
+            else
+                episode.subTitle = ""
+            end if
+            row.appendChild(episode)
+        end for
+        addRowSize([
+            502
+            283
+        ])
+    end if
+    ' 3. Cast
+    if isValid(peopleNode) and peopleNode.getChildCount() > 0
+        if not m.top.hasItems then
+            m.top.hasItems = true
+        end if
+        row = m.top.content.createChild("ContentNode")
+        row.Title = tr("Cast")
+        ' Get all people at once
+        allPeople = peopleNode.getChildren(-1, 0)
+        for each person in allPeople
+            if not isValid(person) or not isValid(person.json) then
+                continue for
+            end if
+            personType = person.json.LookupCI("type")
+            personRole = person.json.LookupCI("Role")
+            personName = person.json.LookupCI("Name")
+            ' Set the actor/crew member's name as the main label
+            if isValid(personName)
+                person.labelText = personName
+            end if
+            ' Format subtitle: "as [Role]" for actors with roles, otherwise just the person type
+            if LCase(personType) = "actor" and isValid(personRole) and personRole.ToStr().Trim() <> ""
+                person.subTitle = "as " + personRole
+            else
+                person.subTitle = personType
+            end if
+            person.Type = "Person"
+            row.appendChild(person)
+        end for
+        addRowSize([
+            250
+            330
+        ])
+    end if
+    ' 4. More Like This
+    if isValid(similarNode) and similarNode.getChildCount() > 0
+        if not m.top.hasItems then
+            m.top.hasItems = true
+        end if
+        row = m.top.content.createChild("ContentNode")
+        row.Title = tr("More Like This")
+        ' Get all similar items at once
+        allSimilar = similarNode.getChildren(-1, 0)
+        for each item in allSimilar
+            if not isValid(item) or not isValid(item.json) then
+                continue for
+            end if
+            item.Id = item.json.LookupCI("Id")
+            item.Type = item.json.LookupCI("Type")
+            item.labelText = item.json.LookupCI("Name")
+            item.shortDescriptionLine1 = item.json.LookupCI("Name")
+            ' Set year as subtitle
+            if isValid(item.json.LookupCI("ProductionYear"))
+                item.subTitle = stri(item.json.LookupCI("ProductionYear"))
+            else if isValid(item.json.LookupCI("PremiereDate"))
+                premierYear = CreateObject("roDateTime")
+                premierYear.FromISO8601String(item.json.LookupCI("PremiereDate"))
+                item.subTitle = stri(premierYear.GetYear())
+            end if
+            row.appendChild(item)
+        end for
+        addRowSize([
+            180
+            270
+        ])
+    end if
+    ' 5. Special Features
+    if isValid(specialsNode) and specialsNode.getChildCount() > 0
+        if not m.top.hasItems then
+            m.top.hasItems = true
+        end if
+        row = m.top.content.createChild("ContentNode")
+        row.Title = tr("Special Features")
+        ' Get all specials at once
+        allSpecials = specialsNode.getChildren(-1, 0)
+        for each special in allSpecials
+            if not isValid(special) or not isValid(special.json) then
+                continue for
+            end if
+            special.Id = special.json.LookupCI("Id")
+            special.Type = special.json.LookupCI("Type")
+            row.appendChild(special)
+        end for
+        addRowSize([
+            180
+            270
+        ])
+    end if
+end sub
+
+' Update content with pre-loaded data from task
+sub updateContent(loadedContent as object)
+    if not isValid(loadedContent) or loadedContent.getChildCount() = 0 then
+        return
+    end if
+    m.top.content = CreateObject("roSGNode", "ContentNode")
+    m.top.hasItems = true
+    ' Separate movies and shows
+    movies = []
+    shows = []
+    for i = 0 to loadedContent.getChildCount() - 1
+        item = loadedContent.getChild(i)
+        if item.subtype() = "MovieData"
+            movies.push(item)
+        else if item.subtype() = "SeriesData"
+            shows.push(item)
+        end if
+    end for
+    ' Add Movies row if there are any
+    if movies.count() > 0
+        row = buildRow("Movies", movies, 180)
+        addRowSize([
+            180
+            270
+        ])
+        m.top.content.appendChild(row)
+    end if
+    ' Add TV Shows row if there are any
+    if shows.count() > 0
+        row = buildRow("TV Shows", shows, 180)
+        addRowSize([
+            180
+            270
+        ])
+        m.top.content.appendChild(row)
+    end if
+end sub
+
+sub onSeriesLoaded()
+    data = m.LoadSeriesTask.content
+    m.LoadSeriesTask.unobserveField("content")
+    if isValidAndNotEmpty(data)
+        if not m.top.hasItems then
+            m.top.hasItems = true
+        end if
+        row = buildRow("Series", data)
+        addRowSize([
+            230
+            405
+        ])
+        m.top.content.appendChild(row)
+    end if
+    m.top.visible = true
+end sub
+
+function buildRow(rowTitle as string, items, imgWdth = 0)
+    row = CreateObject("roSGNode", "ContentNode")
+    row.Title = tr(rowTitle)
+    for each mov in items
+        ' Add custom fields
+        mov.addField("labelText", "string", false)
+        mov.addField("imageWidth", "integer", false)
+        if LCase(mov.json.type) = "episode"
+            if isAllValid([
+                mov.json.SeriesName
+                mov.json.ParentIndexNumber
+                mov.json.IndexNumber
+                mov.json.Name
+            ])
+                mov.labelText = mov.json.SeriesName
+                endingEpisode = ""
+                if isValid(mov.json.LookupCI("indexNumberEnd"))
+                    endingEpisode = ("-" + bslib_toString(mov.json.LookupCI("indexNumberEnd")))
+                end if
+                mov.subTitle = ("S" + bslib_toString(mov.json.ParentIndexNumber) + ":E" + bslib_toString(mov.json.IndexNumber) + bslib_toString(endingEpisode) + " - " + bslib_toString(mov.json.Name))
+            else
+                mov.labelText = mov.json.Name
+                mov.subTitle = mov.json.ProductionYear
+            end if
+        else
+            mov.labelText = mov.json.Name
+            mov.subTitle = mov.json.ProductionYear
+            if isValid(mov.json.EndDate)
+                mov.subTitle += (" - " + bslib_toString(LEFT(mov.json.EndDate, 4)))
+            end if
+        end if
+        mov.Id = mov.json.Id
+        mov.Type = mov.json.Type
+        if imgWdth > 0
+            mov.imageWidth = imgWdth
+        end if
+        row.appendChild(mov)
+    end for
+    return row
+end function
+
+sub addRowSize(newRow)
+    sizeArray = m.top.rowItemSize
+    newSizeArray = []
+    for each size in sizeArray
+        newSizeArray.push(size)
+    end for
+    newSizeArray.push(newRow)
+    m.top.rowItemSize = newSizeArray
+end sub
+
+sub onRowItemSelected()
+    selectedItem = m.top.content.getChild(m.top.rowItemSelected[0]).getChild(m.top.rowItemSelected[1])
+    if isValid(selectedItem)
+        if isValid(selectedItem.json)
+            if isChainValid(selectedItem, "json._serverUrl")
+            else
+            end if
+        end if
+    end if
+    m.top.selectedItem = selectedItem
+    m.top.selectedItem = invalid
+end sub
+
+sub onRowItemFocused()
+    focusedItem = m.top.content.getChild(m.top.rowItemFocused[0]).getChild(m.top.rowItemFocused[1])
+    m.top.focusedItem = focusedItem
+end sub
+'//# sourceMappingURL=./ExtrasRowList.brs.map

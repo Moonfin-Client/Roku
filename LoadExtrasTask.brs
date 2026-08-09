@@ -1,0 +1,587 @@
+'import "pkg:/source/api/baserequest.bs"
+'import "pkg:/source/api/Image.bs"
+'import "pkg:/source/api/Items.bs"
+'import "pkg:/source/api/sdk.bs"
+'import "pkg:/source/enums/ItemType.bs"
+'import "pkg:/source/utils/deviceCapabilities.bs"
+'import "pkg:/source/utils/misc.bs"
+
+' Fast parallel loading task for TV show details
+' Loads seasons, next up, people, and similar items simultaneously
+sub init()
+    m.top.functionName = "loadAllExtras"
+end sub
+
+' Helper function to check if we should use multi-server API calls
+function isMultiServer() as boolean
+    return isValidAndNotEmpty(m.top.serverUrl) and isValidAndNotEmpty(m.top.serverUserId) and isValidAndNotEmpty(m.top.serverAuthToken)
+end function
+
+' Helper function to get server data object
+function getServerData() as object
+    return {
+        serverUrl: m.top.serverUrl
+        userId: m.top.serverUserId
+        authToken: m.top.serverAuthToken
+    }
+end function
+
+' Helper function to make API request using appropriate server
+function apiItemsGet(params as object) as object
+    if isMultiServer()
+        serverData = getServerData()
+        url = Substitute("Users/{0}/Items", serverData.userId)
+        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, params)
+        if not isValid(req) then
+            return invalid
+        end if
+        return getJson(req)
+    else
+        return api_items_Get(params)
+    end if
+end function
+
+' Helper function to get similar items using appropriate server
+function apiItemsGetSimilar(itemId as string, params as object) as object
+    if isMultiServer()
+        serverData = getServerData()
+        url = Substitute("Items/{0}/Similar", itemId)
+        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, params)
+        if not isValid(req) then
+            return invalid
+        end if
+        return getJson(req)
+    else
+        return api_items_GetSimilar(itemId, params)
+    end if
+end function
+
+' Helper function to get user ID for API calls
+function getUserId() as string
+    if isMultiServer()
+        return m.top.serverUserId
+    else
+        return m.global.session.user.id
+    end if
+end function
+
+' Main function that loads all extras data in parallel
+sub loadAllExtras()
+    if isMultiServer()
+    end if
+    ' Create ContentNode to hold all results
+    resultsNode = CreateObject("roSGNode", "ContentNode")
+    if not isValid(m.top.itemId) or m.top.itemId = ""
+        m.top.content = resultsNode
+        return
+    end if
+    ' Check if this is person mode
+    if isValid(m.top.isPersonMode) and m.top.isPersonMode = true
+        ' Load person videos (movies and TV shows)
+        personVideosData = loadPersonVideos()
+        for each item in personVideosData
+            resultsNode.appendChild(item)
+        end for
+        m.top.content = resultsNode
+        return
+    end if
+    ' Check what type of content we're loading
+    isTVShow = isValid(m.top.isTVShow) and m.top.isTVShow = true
+    isEpisodeMode = isValid(m.top.isEpisode) and m.top.isEpisode = true
+    ' Create child nodes for each data type
+    seasonsNode = resultsNode.createChild("ContentNode")
+    seasonsNode.title = "seasons"
+    nextupNode = resultsNode.createChild("ContentNode")
+    nextupNode.title = "nextup"
+    episodesNode = resultsNode.createChild("ContentNode")
+    episodesNode.title = "episodes"
+    peopleNode = resultsNode.createChild("ContentNode")
+    peopleNode.title = "people"
+    similarNode = resultsNode.createChild("ContentNode")
+    similarNode.title = "similar"
+    specialsNode = resultsNode.createChild("ContentNode")
+    specialsNode.title = "specials"
+    ' Launch all API calls - BrightScript will execute them as fast as possible
+    if isTVShow
+        seasonData = loadSeasons()
+        for each item in seasonData
+            seasonsNode.appendChild(item)
+        end for
+        nextupData = loadNextUp()
+        for each item in nextupData
+            nextupNode.appendChild(item)
+        end for
+    end if
+    ' Load same-season episodes for episode detail views
+    if isEpisodeMode and isValidAndNotEmpty(m.top.showID) and isValidAndNotEmpty(m.top.seasonID)
+        episodeData = loadSeasonEpisodes()
+        for each item in episodeData
+            episodesNode.appendChild(item)
+        end for
+    end if
+    peopleData = loadPeople()
+    for each item in peopleData
+        peopleNode.appendChild(item)
+    end for
+    similarData = loadSimilar()
+    for each item in similarData
+        similarNode.appendChild(item)
+    end for
+    specialsData = loadSpecials()
+    for each item in specialsData
+        specialsNode.appendChild(item)
+    end for
+    m.top.content = resultsNode
+end sub
+
+function loadSeasons() as object
+    seasons = []
+    ' Normalize server URL once if multi-server
+    normalizedServerUrl = ""
+    if isMultiServer()
+        normalizedServerUrl = m.top.serverUrl
+        if normalizedServerUrl.right(1) = "/"
+            normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
+        end if
+    end if
+    params = {
+        userId: getUserId()
+        ParentId: m.top.itemId
+        Fields: "Overview,PrimaryImageAspectRatio,ChildCount,MediaSources"
+        enableTotalRecordCount: true
+    }
+    data = apiItemsGet(params)
+    if not isChainValid(data, "Items") then
+        return seasons
+    end if
+    for each item in data.Items
+        tmp = createSGNode("HomeData")
+        ' Add server metadata to item for multi-server navigation
+        if isMultiServer()
+            item._serverUrl = m.top.serverUrl
+            item._userId = m.top.serverUserId
+            item._authToken = m.top.serverAuthToken
+        end if
+        tmp.json = item
+        ' Set image dimensions for portrait posters
+        tmp.imageWidth = 200
+        imgParams = {
+            "maxHeight": 400
+            "maxWidth": 200
+        }
+        if hasImageTagPrimary(item)
+            imgParams.Tag = item.ImageTags.Primary
+        end if
+        ' Build image URL using correct server for multi-server items
+        if isMultiServer()
+            tmp.posterURL = normalizedServerUrl + "/Items/" + item.Id + "/Images/Primary?maxWidth=200&maxHeight=400&quality=90"
+            if hasImageTagPrimary(item)
+                tmp.posterURL = tmp.posterURL + "&tag=" + item.ImageTags.Primary
+            end if
+        else
+            tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+        end if
+        seasons.push(tmp)
+    end for
+    return seasons
+end function
+
+' Load all episodes from the same season (for episode detail views)
+function loadSeasonEpisodes() as object
+    episodes = []
+    normalizedServerUrl = ""
+    if isMultiServer()
+        normalizedServerUrl = m.top.serverUrl
+        if normalizedServerUrl.right(1) = "/"
+            normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
+        end if
+    end if
+    params = {
+        userId: getUserId()
+        seasonId: m.top.seasonID
+        Fields: "Overview,PrimaryImageAspectRatio,MediaSources,MediaStreams"
+        enableTotalRecordCount: false
+    }
+    data = invalid
+    if isMultiServer()
+        serverData = getServerData()
+        url = Substitute("Shows/{0}/Episodes", m.top.showID)
+        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, params)
+        if isValid(req) then
+            data = getJson(req)
+        end if
+    else
+        data = api_shows_GetEpisodes(m.top.showID, params)
+    end if
+    if not isChainValid(data, "Items") then
+        return episodes
+    end if
+    for each item in data.Items
+        tmp = createSGNode("HomeData")
+        if isMultiServer()
+            item._serverUrl = m.top.serverUrl
+            item._userId = m.top.serverUserId
+            item._authToken = m.top.serverAuthToken
+        end if
+        tmp.json = item
+        ' Use landscape thumbnail for episode cards
+        imgParams = {
+            "maxWidth": 480
+            "maxHeight": 270
+        }
+        if isValid(item.ImageTags) and isValid(item.ImageTags.Thumb)
+            imgParams.Tag = item.ImageTags.Thumb
+            if isMultiServer()
+                tmp.posterURL = normalizedServerUrl + "/Items/" + item.Id + "/Images/Thumb?maxWidth=480&maxHeight=270&quality=90&tag=" + item.ImageTags.Thumb
+            else
+                tmp.posterURL = ImageURL(item.Id, "Thumb", imgParams)
+            end if
+        else if hasImageTagPrimary(item)
+            imgParams.Tag = item.ImageTags.Primary
+            if isMultiServer()
+                tmp.posterURL = normalizedServerUrl + "/Items/" + item.Id + "/Images/Primary?maxWidth=480&maxHeight=270&quality=90&tag=" + item.ImageTags.Primary
+            else
+                tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+            end if
+        end if
+        episodes.push(tmp)
+    end for
+    return episodes
+end function
+
+' Load movies and TV shows for a person
+function loadPersonVideos() as object
+    videos = []
+    ' Normalize server URL once if multi-server
+    normalizedServerUrl = ""
+    if isMultiServer()
+        normalizedServerUrl = m.top.serverUrl
+        if normalizedServerUrl.right(1) = "/"
+            normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
+        end if
+    end if
+    params = {
+        "userid": getUserId()
+        "PersonIds": m.top.itemId
+        "Recursive": true
+        "SortBy": "PremiereDate"
+        "SortOrder": "Ascending"
+        "IncludeItemTypes": "Movie,Series"
+        "ImageTypeLimit": 1
+        "EnableImageTypes": "Primary,Backdrop,Thumb"
+        "Limit": 100
+    }
+    data = apiItemsGet(params)
+    if not isChainValid(data, "Items") then
+        return videos
+    end if
+    for each item in data.Items
+        tmp = invalid
+        if item.Type = "Movie"
+            tmp = CreateObject("roSGNode", "MovieData")
+        else if item.Type = "Series"
+            tmp = CreateObject("roSGNode", "SeriesData")
+        end if
+        if tmp <> invalid
+            ' Add server metadata to item JSON for multi-server navigation
+            if isMultiServer()
+                item._serverUrl = m.top.serverUrl
+                item._userId = m.top.serverUserId
+                item._authToken = m.top.serverAuthToken
+            end if
+            tmp.json = item
+            ' Add custom fields
+            tmp.addField("imageWidth", "integer", false)
+            tmp.addField("labelText", "string", false)
+            tmp.imageWidth = 234
+            ' Set poster URL - use correct server for multi-server items
+            imgParams = {
+                "maxHeight": 351
+                "maxWidth": 234
+            }
+            if hasImageTagPrimary(item)
+                imgParams.Tag = item.ImageTags.Primary
+            end if
+            if isMultiServer()
+                tmp.posterURL = normalizedServerUrl + "/Items/" + item.Id + "/Images/Primary?maxWidth=234&maxHeight=351&quality=90"
+                if hasImageTagPrimary(item)
+                    tmp.posterURL = tmp.posterURL + "&tag=" + item.ImageTags.Primary
+                end if
+            else
+                tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+            end if
+            ' Set label text
+            tmp.labelText = item.Name
+            ' Set subtitle with year or date range
+            if item.Type = "Series"
+                if isValid(item.PremiereDate)
+                    premiereDate = CreateObject("roDateTime")
+                    premiereDate.FromISO8601String(item.PremiereDate)
+                    premieredText = premiereDate.AsDateString("short-month-no-weekday")
+                    tmp.subTitle = premieredText
+                    if isValid(item.EndDate) and item.Status = "Ended"
+                        endedDate = CreateObject("roDateTime")
+                        endedDate.FromISO8601String(item.EndDate)
+                        endedText = endedDate.AsDateString("short-month-no-weekday")
+                        tmp.subTitle = premieredText + " - " + endedText
+                    end if
+                end if
+            else if isValid(item.ProductionYear)
+                tmp.subTitle = item.ProductionYear.ToStr()
+            end if
+            videos.push(tmp)
+        end if
+    end for
+    return videos
+end function
+
+function loadNextUp() as object
+    episodes = []
+    ' First, get the next up episode using GetNextUp API
+    nextUpParams = {
+        SeriesId: m.top.itemId
+        UserId: getUserId()
+        EnableRewatching: false
+        limit: 1
+        Fields: "PrimaryImageAspectRatio,Overview"
+        EnableTotalRecordCount: false
+    }
+    ' Note: GetNextUp doesn't have a multi-server version yet, skip for now if multi-server
+    if isMultiServer()
+        return episodes
+    end if
+    nextUpData = api_shows_GetNextUp(nextUpParams)
+    if not isChainValid(nextUpData, "Items") or nextUpData.Items.count() = 0
+        return episodes
+    end if
+    firstEpisode = nextUpData.Items[0]
+    ' If we have a season ID and episode index, get all episodes from that season starting from this episode
+    if isValid(firstEpisode.SeasonId) and isValid(firstEpisode.IndexNumber)
+        ' Get episodes from the season starting at this episode's index
+        seasonParams = {
+            ParentId: firstEpisode.SeasonId
+            UserId: getUserId()
+            StartIndex: firstEpisode.IndexNumber - 1 ' Convert to 0-based index
+            limit: 10
+            SortBy: "IndexNumber"
+            SortOrder: "Ascending"
+            Filters: "IsNotFolder"
+            Fields: "PrimaryImageAspectRatio,Overview"
+            EnableTotalRecordCount: false
+        }
+        seasonData = apiItemsGet(seasonParams)
+        if isChainValid(seasonData, "Items")
+            for each item in seasonData.Items
+                tmp = createSGNode("HomeData")
+                tmp.json = item
+                ' Set wide thumbnail for episodes
+                tmp.imageWidth = 502
+                imgParams = {
+                    "maxHeight": 283
+                    "maxWidth": 502
+                }
+                if hasImageTagPrimary(item)
+                    imgParams.Tag = item.ImageTags.Primary
+                end if
+                tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+                episodes.push(tmp)
+            end for
+        end if
+    else
+        ' Fallback: just use the single next up episode
+        tmp = createSGNode("HomeData")
+        tmp.json = firstEpisode
+        tmp.imageWidth = 502
+        imgParams = {
+            "maxHeight": 283
+            "maxWidth": 502
+        }
+        if hasImageTagPrimary(firstEpisode)
+            imgParams.Tag = firstEpisode.ImageTags.Primary
+        end if
+        tmp.posterURL = ImageURL(firstEpisode.Id, "Primary", imgParams)
+        episodes.push(tmp)
+    end if
+    return episodes
+end function
+
+function loadPeople() as object
+    people = []
+    ' Normalize server URL once if multi-server
+    normalizedServerUrl = ""
+    if isMultiServer()
+        normalizedServerUrl = m.top.serverUrl
+        if normalizedServerUrl.right(1) = "/"
+            normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
+        end if
+    end if
+    ' First get the item details to access the People array
+    ' Use multi-server API if needed
+    itemDetails = invalid
+    if isMultiServer()
+        serverData = getServerData()
+        url = Substitute("Items/{0}", m.top.itemId)
+        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, {
+            "fields": "People"
+            "userId": serverData.userId
+        })
+        if isValid(req)
+            itemDetails = getJson(req)
+        end if
+    else
+        itemDetails = api_items_GetByID(m.top.itemId, {
+            userId: m.global.session.user.id
+            fields: "People"
+        })
+    end if
+    if not isChainValid(itemDetails, "People")
+        return people
+    end if
+    orderedPeople = []
+    trailingPeople = []
+    for each person in itemDetails.People
+        personType = LCase(person.Type)
+        if personType <> "director" and personType <> "writer"
+            orderedPeople.push(person)
+        else
+            trailingPeople.push(person)
+        end if
+    end for
+    orderedPeople.append(trailingPeople)
+    for each person in orderedPeople
+        tmp = createSGNode("HomeData")
+        ' Add server metadata to person item for multi-server navigation
+        if isMultiServer()
+            person._serverUrl = m.top.serverUrl
+            person._userId = m.top.serverUserId
+            person._authToken = m.top.serverAuthToken
+        end if
+        tmp.json = person
+        ' Set person image dimensions
+        tmp.imageWidth = 250
+        imgParams = {
+            "maxHeight": 331
+            "maxWidth": 250
+        }
+        ' Add image tag if available for cache busting
+        if isValid(person.PrimaryImageTag) and person.PrimaryImageTag <> ""
+            imgParams.Tag = person.PrimaryImageTag
+        end if
+        ' Build image URL using correct server for multi-server items
+        if isMultiServer()
+            tmp.posterURL = normalizedServerUrl + "/Items/" + person.Id + "/Images/Primary?maxWidth=250&maxHeight=331&quality=90"
+            if isValid(person.PrimaryImageTag) and person.PrimaryImageTag <> ""
+                tmp.posterURL = tmp.posterURL + "&tag=" + person.PrimaryImageTag
+            end if
+        else
+            tmp.posterURL = ImageURL(person.Id, "Primary", imgParams)
+        end if
+        ' Set display fields
+        tmp.labelText = person.Name
+        tmp.type = "Person"
+        ' Format subtitle: "as [Role]" for actors with roles, otherwise just the person type
+        personType = person.Type
+        personRole = person.Role
+        if LCase(personType) = "actor" and isValid(personRole) and personRole.ToStr().Trim() <> ""
+            tmp.subTitle = "as " + personRole
+        else
+            tmp.subTitle = personType
+        end if
+        people.push(tmp)
+    end for
+    return people
+end function
+
+function loadSimilar() as object
+    similar = []
+    ' Normalize server URL once if multi-server
+    normalizedServerUrl = ""
+    if isMultiServer()
+        normalizedServerUrl = m.top.serverUrl
+        if normalizedServerUrl.right(1) = "/"
+            normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
+        end if
+    end if
+    params = {
+        userId: getUserId()
+        limit: 25
+        Fields: "PrimaryImageAspectRatio,MediaSources"
+    }
+    data = apiItemsGetSimilar(m.top.itemId, params)
+    if not isChainValid(data, "Items") then
+        return similar
+    end if
+    for each item in data.Items
+        tmp = createSGNode("HomeData")
+        ' Add server metadata to item JSON for multi-server navigation
+        if isMultiServer()
+            item._serverUrl = m.top.serverUrl
+            item._userId = m.top.serverUserId
+            item._authToken = m.top.serverAuthToken
+        end if
+        tmp.json = item
+        ' Use standard poster dimensions
+        tmp.imageWidth = 180
+        imgParams = {
+            "maxHeight": 270
+            "maxWidth": 180
+        }
+        if hasImageTagPrimary(item)
+            imgParams.Tag = item.ImageTags.Primary
+        end if
+        ' Build image URL using correct server for multi-server items
+        if isMultiServer()
+            tmp.posterURL = normalizedServerUrl + "/Items/" + item.Id + "/Images/Primary?maxWidth=180&maxHeight=270&quality=90"
+            if hasImageTagPrimary(item)
+                tmp.posterURL = tmp.posterURL + "&tag=" + item.ImageTags.Primary
+            end if
+        else
+            tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+        end if
+        ' Set display fields
+        tmp.labelText = item.Name
+        tmp.type = item.Type
+        ' Set year as subtitle
+        if isValid(item.ProductionYear)
+            tmp.subTitle = stri(item.ProductionYear)
+        else if isValid(item.PremiereDate)
+            premierYear = CreateObject("roDateTime")
+            premierYear.FromISO8601String(item.PremiereDate)
+            tmp.subTitle = stri(premierYear.GetYear())
+        end if
+        similar.push(tmp)
+    end for
+    return similar
+end function
+
+function loadSpecials() as object
+    specials = []
+    ' Skip specials for multi-server items (requires server-specific API)
+    if isMultiServer() then
+        return specials
+    end if
+    params = {
+        userId: getUserId()
+        SpecialFeatureTypes: "Trailer,AdditionalPart,BehindTheScenes,DeletedScene,Clip,Interview,Scene"
+    }
+    data = api_items_GetSpecialFeatures(m.top.itemId, params)
+    if not isValidAndNotEmpty(data) then
+        return specials
+    end if
+    for each item in data
+        tmp = createSGNode("HomeData")
+        tmp.json = item
+        tmp.imageWidth = 180
+        imgParams = {
+            "maxHeight": 270
+            "maxWidth": 180
+        }
+        if hasImageTagPrimary(item)
+            imgParams.Tag = item.ImageTags.Primary
+        end if
+        tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+        specials.push(tmp)
+    end for
+    return specials
+end function
+'//# sourceMappingURL=./LoadExtrasTask.brs.map
