@@ -1488,7 +1488,7 @@
     </message>
     <message>
         <source>Ratings for how good a movie is</source>
-        <translation>来自烂番茄的社区评分和影评评分。</translation>
+        <translation>来自烂番茄的社区评分和影评评分</translation>
         <extracomment>User Setting - Setting description</extracomment>
     </message>
     <message>
