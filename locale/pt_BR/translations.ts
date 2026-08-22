@@ -4262,7 +4262,7 @@
     </message>
     <message>
         <source>Enter the server name or ip address</source>
-        <translation>Digite o nome do servidor ou endereço IP</translation>
+        <translation>Colocar o nome do servidor ou endereço ip</translation>
         <extracomment>Title of KeyboardDialog when manually entering a server URL</extracomment>
     </message>
     <message>
@@ -5314,7 +5314,7 @@
     </message>
     <message>
         <source>Connecting to Server</source>
-        <translation>Conectando ao Servidor</translation>
+        <translation>Conectando no servidor</translation>
         <extracomment>Message to display to user while client is attempting to connect to the server</extracomment>
     </message>
     <message>
@@ -5471,7 +5471,7 @@
     </message>
     <message>
         <source>Record Series</source>
-        <translation>Gravar Séries</translation>
+        <translation>Gravar Série</translation>
     </message>
     <message>
         <source>Cancel Series Recording</source>
@@ -5512,7 +5512,7 @@
     </message>
     <message>
         <source>Disabled</source>
-        <translation>Desativado</translation>
+        <translation>Desabilitado</translation>
     </message>
     <message>
         <source>User Interface</source>
@@ -5525,7 +5525,7 @@
     </message>
     <message>
         <source>Here is your Quick Connect code:</source>
-        <translation>Aqui está o seu código Quick Connect:</translation>
+        <translation>Aqui está o seu código do Quick Connect:</translation>
     </message>
     <message>
         <source>Return to Top</source>
@@ -5576,7 +5576,7 @@
     </message>
     <message>
         <source>Years</source>
-        <translation></translation>
+        <translation>Years</translation>
         <extracomment>Used in Filter menu</extracomment>
     </message>
     <message>
@@ -5606,32 +5606,32 @@
     </message>
     <message>
         <source>Ends at</source>
-        <translation>Termina às</translation>
+        <translation>Termina</translation>
         <extracomment>(Past Tense) For defining a day and time when a program ended (e.g. Ended Wednesday, 08:00) </extracomment>
     </message>
     <message>
         <source>TV Guide</source>
-        <translation>Guia da TV</translation>
+        <translation>Guia de TV</translation>
         <extracomment>Menu option for showing Live TV Guide / Schedule</extracomment>
     </message>
     <message>
         <source>The requested content does not exist on the server</source>
-        <translation>O conteúdo solicitado não existe no servidor</translation>
+        <translation>O conteúdo requisitado não existe no servidor</translation>
         <extracomment>Content of message box when the requested content is not found on the server</extracomment>
     </message>
     <message>
         <source>Pick a Jellyfin server from the local network</source>
-        <translation>Escolha um servidor Jellyfin da sua rede local:</translation>
+        <translation>Selecionar um servidor Jellyfin da rede local</translation>
         <extracomment>Instructions on initial app launch when the user is asked to pick a server from a list</extracomment>
     </message>
     <message>
         <source>...or enter server URL manually:</source>
-        <translation>Se nenhum servidor está listado acima, você também pode inserir a URL do servidor manualmente:</translation>
+        <translation>...ou entre na URL do servidor manualmente:</translation>
         <extracomment>Instructions on initial app launch when the user is asked to manually enter a server URL</extracomment>
     </message>
     <message>
         <source>Error Getting Playback Information</source>
-        <translation>Erro ao Obter Informação de Playback</translation>
+        <translation>Erro ao obter informação do playback</translation>
         <extracomment>Dialog Title: Received error from server when trying to get information about the selected item for playback</extracomment>
     </message>
     <message>
@@ -5651,7 +5651,7 @@
     </message>
     <message>
         <source>Set Favorite</source>
-        <translation>Adicionar Favorito</translation>
+        <translation>Salvar Favorito</translation>
         <extracomment>Button Text - When pressed, sets item as Favorite</extracomment>
     </message>
     <message>
@@ -5661,7 +5661,7 @@
     </message>
     <message>
         <source>Enabled</source>
-        <translation>Ativado</translation>
+        <translation>Habilitado</translation>
     </message>
     <message>
         <source>Playback</source>
@@ -5679,7 +5679,7 @@
     </message>
     <message>
         <source>(Dialog will close automatically)</source>
-        <translation>(Janela fechará automaticamente)</translation>
+        <translation>(Tela vai fechar automaticamente)</translation>
     </message>
     <message>
         <source>Enable or disable Direct Play for optional codecs</source>
@@ -5688,7 +5688,7 @@
     </message>
     <message>
         <source>There was an error authenticating via Quick Connect.</source>
-        <translation>Houve um erro ao autenticar via Quick Connect.</translation>
+        <translation>Houve um erro ao conectar usando o Quick Connect.</translation>
     </message>
     <message>
         <source>%1 of %2</source>
@@ -5852,11 +5852,11 @@
     </message>
     <message>
         <source>IMDB_RATING</source>
-        <translation>Avaliação IMDb</translation>
+        <translation>Avaliação do IMDb</translation>
     </message>
     <message>
         <source>RUNTIME</source>
-        <translation>Duração</translation>
+        <translation>Tempo de Execução</translation>
     </message>
     <message>
         <source>PLAY_COUNT</source>
@@ -5864,7 +5864,7 @@
     </message>
     <message>
         <source>More Like This</source>
-        <translation>Mais iguais a este</translation>
+        <translation>Mais Como Este</translation>
     </message>
     <message>
         <source>yesterday</source>
@@ -5885,16 +5885,16 @@
     </message>
     <message>
         <source>Error loading Channel Data</source>
-        <translation>Erro ao Carregar Informações do Canal</translation>
+        <translation>Erro ao carregar dados do canal</translation>
     </message>
     <message>
         <source>Wednesday</source>
-        <translation>Quarta-Feira</translation>
+        <translation>Quarta feira</translation>
         <extracomment>Day of Week</extracomment>
     </message>
     <message>
         <source>Friday</source>
-        <translation>Sexta-Feira</translation>
+        <translation>Sexta feira</translation>
         <extracomment>Day of Week</extracomment>
     </message>
     <message>
@@ -5915,20 +5915,20 @@
     <message>
         <comment>Title of Tab for options to sort library content</comment>
         <source>TAB_SORT</source>
-        <translation>Ordenar</translation>
+        <translation>Ordenação</translation>
     </message>
     <message>
         <comment>Title of Tab for options to filter library content</comment>
         <source>TAB_FILTER</source>
-        <translation>Filtrar</translation>
+        <translation>Filtro</translation>
     </message>
     <message>
         <source>Press &apos;OK&apos; to Close</source>
-        <translation>Clique em &apos;OK&apos; para fechar</translation>
+        <translation>Pressione &apos;OK&apos; para Fechar</translation>
     </message>
     <message>
         <source>Died</source>
-        <translation>Falecimento</translation>
+        <translation>Morte</translation>
     </message>
     <message>
         <source>Special Features</source>
@@ -5945,12 +5945,12 @@
     </message>
     <message>
         <source>Thursday</source>
-        <translation>Quinta-Feira</translation>
+        <translation>Quinta feira</translation>
         <extracomment>Day of Week</extracomment>
     </message>
     <message>
         <source>Change Server</source>
-        <translation>Mudar Servidor</translation>
+        <translation>Mudar servidor</translation>
     </message>
     <message>
         <source>Sign Out</source>
@@ -5958,48 +5958,48 @@
     </message>
     <message>
         <source>Save Credentials?</source>
-        <translation>Salvar crededenciais?</translation>
+        <translation>Salvar credenciais?</translation>
     </message>
     <message>
         <source>On Now</source>
-        <translation>Em Exibição</translation>
+        <translation>Ligado agora</translation>
     </message>
     <message>
         <source>Delete Saved</source>
-        <translation>Deletar Salvos</translation>
+        <translation>Remover salvo</translation>
     </message>
     <message>
         <source>Error Retrieving Content</source>
-        <translation>Erro ao Buscar Conteúdo</translation>
+        <translation>Erro ao recuperar conteúdo</translation>
         <extracomment>Dialog title when unable to load Content from Server</extracomment>
     </message>
     <message>
         <source>Error During Playback</source>
-        <translation>Erro Durante Exibição</translation>
+        <translation>Erro durante reprodução</translation>
         <extracomment>Dialog title when error occurs during playback</extracomment>
     </message>
     <message>
         <source>There was an error retrieving the data for this item from the server.</source>
-        <translation>Houve um erro ao buscar dados deste item do servidor.</translation>
+        <translation>Ocorreu um erro ao recuperar os dados deste item do servidor.</translation>
         <extracomment>Dialog detail when unable to load Content from Server</extracomment>
     </message>
     <message>
         <source>An error was encountered while playing this item.</source>
-        <translation>Um erro ocorreu durante a exibição deste item.</translation>
+        <translation>Um erro foi encontrado durante a reprodução deste item.</translation>
         <extracomment>Dialog detail when error occurs during playback</extracomment>
     </message>
     <message>
         <source>Loading Channel Data</source>
-        <translation>Carregando Informações do Canal</translation>
+        <translation>Carregando dados do canal</translation>
     </message>
     <message>
         <source>Unable to load Channel Data from the server</source>
-        <translation>Incapaz de carregar Dados dos Canais do servidor</translation>
+        <translation>Não foi possível carregar dados do canal do servidor</translation>
     </message>
     <message>
         <comment>Message displayed in Item Grid when no item to display. %1 is container type (e.g. Boxset, Collection, Folder, etc)</comment>
         <source>NO_ITEMS</source>
-        <translation>Esse %1 não possui nenhum item</translation>
+        <translation>%1 não contém itens</translation>
     </message>
     <message>
         <comment>Name or Title field of media item</comment>
@@ -6008,15 +6008,15 @@
     </message>
     <message>
         <source>CRITIC_RATING</source>
-        <translation>Avaliação da Crítica</translation>
+        <translation>Avaliação da crítica</translation>
     </message>
     <message>
         <source>DATE_PLAYED</source>
-        <translation>Data de Reprodução</translation>
+        <translation>Data da Ultima Reprodução</translation>
     </message>
     <message>
         <source>OFFICIAL_RATING</source>
-        <translation>Classificação Etária</translation>
+        <translation>Avaliação dos pais</translation>
     </message>
     <message>
         <source>RELEASE_DATE</source>
@@ -6037,7 +6037,7 @@
     </message>
     <message>
         <source>TV Shows</source>
-        <translation>Séries de TV</translation>
+        <translation>Shows de TV</translation>
     </message>
     <message>
         <source>today</source>
@@ -6051,12 +6051,12 @@
     </message>
     <message>
         <source>Monday</source>
-        <translation>Segunda-Feira</translation>
+        <translation>Segunda feira</translation>
         <extracomment>Day of Week</extracomment>
     </message>
     <message>
         <source>Tuesday</source>
-        <translation>Terça-Feira</translation>
+        <translation>Terça feira</translation>
         <extracomment>Day of Week</extracomment>
     </message>
     <message>
@@ -6081,11 +6081,11 @@
     </message>
     <message>
         <source>Cast &amp; Crew</source>
-        <translation>Elenco &amp; Equipe</translation>
+        <translation>Elenco e equipe</translation>
     </message>
     <message>
         <source>Live</source>
-        <translation>Ao vivo</translation>
+        <translation>Ao Vivo</translation>
         <extracomment>If TV Show is being broadcast live (not pre-recorded)</extracomment>
     </message>
     <message>
