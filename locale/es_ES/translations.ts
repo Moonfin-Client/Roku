@@ -174,11 +174,11 @@
     </message>
     <message>
         <source>Enter a username</source>
-        <translation>Ingresar nombre de usuario</translation>
+        <translation>Ingres nombre de usuario</translation>
     </message>
     <message>
         <source>Enter a password</source>
-        <translation>Ingresar la contraseña</translation>
+        <translation>Ingres la contraseña</translation>
     </message>
     <message>
         <source>Enter a value...</source>
@@ -186,51 +186,51 @@
     </message>
     <message>
         <source>Sort Field</source>
-        <translation>Ordenar por</translation>
+        <translation>Sort Field</translation>
     </message>
     <message>
         <source>Date Added</source>
-        <translation>Añadido el</translation>
+        <translation>Date Added</translation>
     </message>
     <message>
         <source>Release Date</source>
-        <translation>Fecha de lanzamiento</translation>
+        <translation>Release Date</translation>
     </message>
     <message>
         <source>Name</source>
-        <translation>Nombre</translation>
+        <translation>Name</translation>
     </message>
     <message>
         <source>Sort Order</source>
-        <translation>Orden de Clasificación</translation>
+        <translation>Sort Order</translation>
     </message>
     <message>
         <source>Descending</source>
-        <translation>Descendente</translation>
+        <translation>Descending</translation>
     </message>
     <message>
         <source>Ascending</source>
-        <translation>Ascendente</translation>
+        <translation>Ascending</translation>
     </message>
     <message>
         <source>Password</source>
-        <translation>Contraseña</translation>
+        <translation>Password</translation>
     </message>
     <message>
         <source>Username</source>
-        <translation>Usuario</translation>
+        <translation>Username</translation>
     </message>
     <message>
         <source>Genres</source>
-        <translation>Géneros</translation>
+        <translation>Genres</translation>
     </message>
     <message>
         <source>Director</source>
-        <translation>Dirigido por</translation>
+        <translation>Director</translation>
     </message>
     <message>
         <source>Video</source>
-        <translation>Vídeo</translation>
+        <translation>Video</translation>
     </message>
     <message>
         <source>Audio</source>
@@ -3574,12 +3574,12 @@
     </message>
     <message>
         <source>Support direct play of MPEG 2 content (e.g. Live TV). This will prevent transcoding of MPEG 2 content, but uses significantly more bandwidth</source>
-        <translation>Admite reproducción directa de contenido MPEG 2 (por ejemplo, TV en vivo). Esto evitará la transcodificación de contenido MPEG 2, pero utiliza mucho más ancho de banda</translation>
+        <translation type="unfinished">Soportar reproducción directa de contenido MPEG 2 (p. ej. televisión en directo). Esto prevendrá la transcodificación de contenido MPEG 2, pero consumirá más ancho de banda</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
         <source>MPEG 2 Support</source>
-        <translation>Soporte de MPEG 2</translation>
+        <translation type="unfinished">Soporte de MPEG 2</translation>
         <extracomment>Settings Menu - Title for option</extracomment>
     </message>
     <message>
@@ -3613,7 +3613,7 @@
     </message>
     <message>
         <source>Enter the server name or ip address</source>
-        <translation>Introduce el nombre del servidor o la dirección IP</translation>
+        <translation>Introduce la dirección IP o nombre del servidor</translation>
         <extracomment>Title of KeyboardDialog when manually entering a server URL</extracomment>
     </message>
     <message>
@@ -7998,11 +7998,11 @@
     </message>
     <message>
         <source>Settings relating to the appearance of the Home screen and the program in general.</source>
-        <translation>Configuraciones relacionada a la apariencia de la pantalla de Inicio y el programa en general.</translation>
+        <translation>Configuración relacionada a la apariencia de la pantalla principal y el programa en general.</translation>
     </message>
     <message>
         <source>Settings that apply when Grid views are enabled.</source>
-        <translation>Configuraciones que aplican cuando el modo de Cuadrícula es habilitado.</translation>
+        <translation>Configuración que aplica cuando el modo de Grilla es habilitado.</translation>
     </message>
     <message>
         <source>Support Direct Play of MPEG-4 content. This may need to be disabled for playback of DIVX encoded video files.</source>
@@ -8025,17 +8025,17 @@
     </message>
     <message>
         <source>Show item count in the library and index of selected item.</source>
-        <translation>Mostrar cantidad de elementos en la biblioteca y el índice del elemento seleccionado.</translation>
+        <translation>Mostrar el conteo de elementos en la biblioteca y en el índice del elemento seleccionado.</translation>
         <extracomment>Description for option in Setting Screen</extracomment>
     </message>
     <message>
         <source>Go to series</source>
-        <translation>Ir a series</translation>
+        <translation>Ir a Series</translation>
         <extracomment>Continue Watching Popup Menu - Navigate to the Series Detail Page</extracomment>
     </message>
     <message>
         <source>Quick Connect</source>
-        <translation>Conexión Rápida</translation>
+        <translation>Conexión rápida</translation>
     </message>
     <message>
         <source>Return to Top</source>
@@ -8044,7 +8044,7 @@
     </message>
     <message>
         <source>Use the replay button to slowly animate to the first item in the folder. (If disabled, the folder will reset to the first item immediately).</source>
-        <translation>Usa el botón de reproducción para animar lentamente al primer elemento de la carpeta. (Si está deshabilitado, la carpeta se restablecerá al primer elemento inmediatamente).</translation>
+        <translation>Use el botón de reproducción para animar lentamente al primer elemento de la carpeta. (Si está deshabilitado, la carpeta se restablecerá al primer elemento inmediatamente).</translation>
         <extracomment>Description for option in Setting Screen</extracomment>
     </message>
     <message>
@@ -8054,7 +8054,7 @@
     </message>
     <message>
         <source>Go directly to the episode list if a TV series has only one season.</source>
-        <translation>Ir directamente a lista de episodios si la serie de TV tiene solo una temporada.</translation>
+        <translation>Ir directo a la lista de episodios si la serie solo tiene una temporada.</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
@@ -8200,7 +8200,7 @@
     </message>
     <message>
         <source>Settings relating to the appearance of pages in TV Libraries.</source>
-        <translation>Configuraciones relacionadas a la apariencia de las páginas en las Bibliotecas de TV.</translation>
+        <translation>Configuración relacionada a la apariencia de las Librerías de TV.</translation>
     </message>
     <message>
         <source>General</source>
@@ -8212,7 +8212,7 @@
     </message>
     <message>
         <source>Settings relating to the appearance of pages in Movie Libraries.</source>
-        <translation>Configuraciones relacionadas a la apariencia de las páginas en las Bibliotecas de Películas.</translation>
+        <translation>Configuración relacionada a la apariencia de las Librerías de Películas.</translation>
     </message>
     <message>
         <source>Presentation</source>
@@ -8304,7 +8304,7 @@
     </message>
     <message>
         <source>Settings relating to the appearance of Library pages</source>
-        <translation>Configuraciones relacionadas con la apariencia de las páginas de la Biblioteca</translation>
+        <translation>Configuración relacionada a la apariencia de las Librerías</translation>
     </message>
     <message>
         <source>More Like This</source>
@@ -8312,7 +8312,7 @@
     </message>
     <message>
         <source>Blur Unwatched Episodes</source>
-        <translation>Desenfocar Episodios No Vistos</translation>
+        <translation>Ofuscar episodios sin ver</translation>
         <extracomment>Option Title in user setting screen</extracomment>
     </message>
     <message>
@@ -8322,7 +8322,7 @@
     </message>
     <message>
         <source>Hide Clock</source>
-        <translation>Ocultar Reloj</translation>
+        <translation>Ocultar reloj</translation>
         <extracomment>Option Title in user setting screen</extracomment>
     </message>
     <message>
@@ -8358,12 +8358,12 @@
     </message>
     <message>
         <source>Go to season</source>
-        <translation>Ir a temporada</translation>
+        <translation>Ir a la temporada</translation>
         <extracomment>Continue Watching Popup Menu - Navigate to the Season Page</extracomment>
     </message>
     <message>
         <source>Go to episode</source>
-        <translation>Ir a episodio</translation>
+        <translation>Ir al episodio</translation>
         <extracomment>Continue Watching Popup Menu - Navigate to the Episode Detail Page</extracomment>
     </message>
     <message>
@@ -8378,7 +8378,7 @@
     </message>
     <message>
         <source>(Dialog will close automatically)</source>
-        <translation>(El Diálogo se cerrará automáticamente)</translation>
+        <translation>(El diálogo se cerrará automáticamente)</translation>
     </message>
     <message>
         <source>Hides tagline text on details pages.</source>
@@ -8607,11 +8607,11 @@
     </message>
     <message>
         <source>Here is your Quick Connect code:</source>
-        <translation>Este es tu código de Conexión Rápida:</translation>
+        <translation>Aquí está su código de conexión rápida:</translation>
     </message>
     <message>
         <source>There was an error authenticating via Quick Connect.</source>
-        <translation>Hubo un error autenticando por medio de Conexión Rápida.</translation>
+        <translation>Hubo un error al autenticarse a través de Quick Connect.</translation>
     </message>
     <message>
         <source>Networks</source>
@@ -8623,11 +8623,11 @@
     </message>
     <message>
         <source>Shows</source>
-        <translation>Series</translation>
+        <translation>espectáculos</translation>
     </message>
     <message>
         <source>You can search for Titles, People, Live TV Channels and more</source>
-        <translation>Puedes buscar por Títulos, Personas, Canales en vivo y más</translation>
+        <translation>Puede buscar títulos, personas, canales de TV en vivo y más</translation>
         <extracomment>Help text in search results</extracomment>
     </message>
     <message>
@@ -8646,7 +8646,7 @@
     </message>
     <message>
         <source>Disabled</source>
-        <translation>Deshabilitado</translation>
+        <translation type="unfinished">Deshabilitado</translation>
     </message>
     <message>
         <source>Movies (Presentation)</source>
@@ -8684,12 +8684,12 @@
     </message>
     <message>
         <source>** EXPERIMENTAL** Support Direct Play of AV1 content if this Roku device supports it.</source>
-        <translation>**EXPERIMENTAL** Soporte de Reproducción Directa para contenido AV1 si este dispositivo Roku es compatible.</translation>
+        <translation>**EXPERIMENTAL** Soporte de reproducción directa para contenido AV1 si este dispositivo Roku es compatible.</translation>
         <extracomment>Description of a setting - should we try to direct play experimental av1 codec</extracomment>
     </message>
     <message>
         <source>Use voice remote to search</source>
-        <translation>Utilizar la búsqueda por voz</translation>
+        <translation>Utilizar la búsqueda remota por voz</translation>
         <extracomment>Help text in search voice text box</extracomment>
     </message>
     <message>
@@ -8811,7 +8811,7 @@
     </message>
     <message>
         <source>Return to Top</source>
-        <translation>Volver Arriba</translation>
+        <translation>Vuelva a la parte superior</translation>
         <extracomment>UI -&gt; Media Grid -&gt; Item Title in user setting screen.</extracomment>
     </message>
     <message>
@@ -8925,7 +8925,7 @@
     </message>
     <message>
         <source>Media Grid options.</source>
-        <translation>Opciones de la Cuadrícula Multimedia.</translation>
+        <translation>Opciones de la cuadrícula de medios.</translation>
     </message>
     <message>
         <source>yesterday</source>
@@ -8982,7 +8982,7 @@
     </message>
     <message>
         <source>Enabled</source>
-        <translation>Habilitado</translation>
+        <translation type="unfinished">Habilitado</translation>
     </message>
     <message>
         <source>DATE_ADDED</source>
@@ -9094,12 +9094,12 @@
     </message>
     <message>
         <source>Support Direct Play of MPEG-4 content. This may need to be disabled for playback of DIVX encoded video files.</source>
-        <translation>Soporte de Reproducción Directa para contenido MPEG-4. Esto podría requerir ser deshabilitado para poder reproducir los archivos de video con encodificación DIVX.</translation>
+        <translation>Soporte de reproducción directa para contenido MPEG-4. Esto podría requerir ser deshabilitado para poder reproducir los archivos de video con encodificación DIVX.</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
         <source>Media Grid</source>
-        <translation>Cuadrícula de Multimedia</translation>
+        <translation>Cuadrícula de Medios</translation>
         <extracomment>UI -&gt; Media Grid section in user setting screen.</extracomment>
     </message>
     <message>
@@ -9112,7 +9112,7 @@
     </message>
     <message>
         <source>Item Count</source>
-        <translation>Cantidad de Elementos</translation>
+        <translation>Conteo de elementos</translation>
         <extracomment>UI -&gt; Media Grid -&gt; Item Count in user setting screen.</extracomment>
     </message>
     <message>
@@ -9144,7 +9144,7 @@
     </message>
     <message>
         <source>Codec Support</source>
-        <translation>Soporte de Codificador</translation>
+        <translation>Soporte de Codec</translation>
         <extracomment>Settings Menu - Title for settings group related to codec support</extracomment>
     </message>
     <message>
@@ -9258,7 +9258,7 @@
     </message>
     <message>
         <source>Enable or disable Direct Play for optional codecs</source>
-        <translation>Habilita o deshabilita la Reproducción Directa para codificadores opcionales</translation>
+        <translation>Habilitar o desactivar la reproducción directa para codecs opcionales</translation>
         <extracomment>Settings Menu - Title for settings group related to codec support</extracomment>
     </message>
     <message>
@@ -9275,7 +9275,7 @@
     </message>
     <message>
         <source>Container</source>
-        <translation>Envase</translation>
+        <translation>Contenedor</translation>
         <extracomment>Video streaming container</extracomment>
     </message>
     <message>
@@ -9305,34 +9305,34 @@
     </message>
     <message>
         <source>Save Credentials?</source>
-        <translation>¿Guardar credenciales?</translation>
+        <translation>Guardar credenciales?</translation>
     </message>
     <message>
         <source>An error was encountered while playing this item.</source>
-        <translation>Se ha producido un error reproduciendo este ítem</translation>
+        <translation>Hubo un error al reproducir este ítem.</translation>
         <extracomment>Dialog detail when error occurs during playback</extracomment>
     </message>
     <message>
         <source>Change Server</source>
-        <translation>Cambiar servidor</translation>
+        <translation>Modificar Servidor</translation>
     </message>
     <message>
         <source>Error Retrieving Content</source>
-        <translation>Error recuperando contenido</translation>
+        <translation>Error al cargar contenido</translation>
         <extracomment>Dialog title when unable to load Content from Server</extracomment>
     </message>
     <message>
         <source>Error During Playback</source>
-        <translation>Error al reproducir</translation>
+        <translation>Error de reproducción</translation>
         <extracomment>Dialog title when error occurs during playback</extracomment>
     </message>
     <message>
         <source>Sign Out</source>
-        <translation>Cerrar sesión</translation>
+        <translation>Salir</translation>
     </message>
     <message>
         <source>Loading Channel Data</source>
-        <translation>Cargando Datos del Canal</translation>
+        <translation>Cargando datos del canal</translation>
     </message>
     <message>
         <source>RUNTIME</source>
@@ -9340,7 +9340,7 @@
     </message>
     <message>
         <source>Born</source>
-        <translation>Nacido en</translation>
+        <translation>Nacimiento</translation>
     </message>
     <message>
         <source>Extras</source>
@@ -9348,7 +9348,7 @@
     </message>
     <message>
         <source>DATE_ADDED</source>
-        <translation>Añadido en</translation>
+        <translation>Fecha añadido</translation>
     </message>
     <message>
         <source>Age</source>
@@ -9356,68 +9356,68 @@
     </message>
     <message>
         <source>Cast &amp; Crew</source>
-        <translation>Elenco y Equipo</translation>
+        <translation>Reparto y equipo</translation>
     </message>
     <message>
         <source>Additional Parts</source>
-        <translation>Partes Adicionales</translation>
+        <translation>Partes adicionales</translation>
         <extracomment>Additional parts of a video</extracomment>
     </message>
     <message>
         <comment>Title of Tab for switching &quot;views&quot; when looking at a library</comment>
         <source>TAB_VIEW</source>
-        <translation>Visualizaciones</translation>
+        <translation>Vista</translation>
     </message>
     <message>
         <comment>Title of Tab for options to sort library content</comment>
         <source>TAB_SORT</source>
-        <translation>Ordenar</translation>
+        <translation>Organizar</translation>
     </message>
     <message>
         <source>More Like This</source>
-        <translation>Más como esto</translation>
+        <translation>Contenido similar</translation>
     </message>
     <message>
         <source>Press &apos;OK&apos; to Close</source>
-        <translation>Presiona &apos;OK&apos; para Cerrar</translation>
+        <translation>Presiona &apos;Aceptar&apos; para cerrar</translation>
     </message>
     <message>
         <source>Special Features</source>
-        <translation>Características Especiales</translation>
+        <translation>Contenido Adicional</translation>
     </message>
     <message>
         <source>Movies</source>
-        <translation>Peliculas</translation>
+        <translation>Películas</translation>
     </message>
     <message>
         <source>Error loading Channel Data</source>
-        <translation>Error cargando datos del canal</translation>
+        <translation>Error al cargar datos del canal</translation>
     </message>
     <message>
         <source>PLAY_COUNT</source>
-        <translation>Número de reproducciones</translation>
+        <translation>Nº de reproducciones</translation>
     </message>
     <message>
         <source>CRITIC_RATING</source>
-        <translation>Calificación de los críticos</translation>
+        <translation>Valoración de críticos</translation>
     </message>
     <message>
         <source>DATE_PLAYED</source>
-        <translation>Reproducido en</translation>
+        <translation>Fecha reproducido</translation>
     </message>
     <message>
         <comment>Title of Tab for options to filter library content</comment>
         <source>TAB_FILTER</source>
-        <translation>Filtrar</translation>
+        <translation>Filtro</translation>
     </message>
     <message>
         <source>RELEASE_DATE</source>
-        <translation>Fecha de lanzamiento</translation>
+        <translation>Fecha de estreno</translation>
     </message>
     <message>
         <comment>Message displayed in Item Grid when no item to display. %1 is container type (e.g. Boxset, Collection, Folder, etc)</comment>
         <source>NO_ITEMS</source>
-        <translation>Este 1% no contiene ítems</translation>
+        <translation>Este %1 no contiene ítems</translation>
     </message>
     <message>
         <comment>Name or Title field of media item</comment>
@@ -9426,11 +9426,11 @@
     </message>
     <message>
         <source>IMDB_RATING</source>
-        <translation>Valoración IMDB</translation>
+        <translation>Valoración IMDb</translation>
     </message>
     <message>
         <source>OFFICIAL_RATING</source>
-        <translation>Clasificación parental</translation>
+        <translation>Calificación por edades</translation>
     </message>
     <message>
         <source>Died</source>
@@ -9438,72 +9438,72 @@
     </message>
     <message>
         <source>On Now</source>
-        <translation>Ahora</translation>
+        <translation type="unfinished">Ahora</translation>
     </message>
     <message>
         <source>There was an error retrieving the data for this item from the server.</source>
-        <translation>Ha habido un error obteniendo los datos de este ítem del servidor.</translation>
+        <translation>Hubo un error al cargar los datos de este ítem del servidor.</translation>
         <extracomment>Dialog detail when unable to load Content from Server</extracomment>
     </message>
     <message>
         <source>Delete Saved</source>
-        <translation>Eliminar guardado</translation>
+        <translation type="unfinished">Borrar guardado</translation>
     </message>
     <message>
         <source>Unable to load Channel Data from the server</source>
-        <translation>No se pudieron cargar los datos del canal del servidor</translation>
+        <translation>No fue posible cargar datos del canal desde el servidor</translation>
     </message>
     <message>
         <source>Movies (Presentation)</source>
-        <translation>Películas (Presentación)</translation>
+        <translation>Películas (presentación)</translation>
         <extracomment>Movie library view option</extracomment>
     </message>
     <message>
         <source>View Channel</source>
-        <translation>Ver canal</translation>
+        <translation type="unfinished">Ver canal</translation>
     </message>
     <message>
         <source>Pick a Jellyfin server from the local network</source>
-        <translation>Seleccione un servidor Jellyfin disponible en su red local:</translation>
+        <translation>Escoge un servidor de Jellyfin de la red local</translation>
         <extracomment>Instructions on initial app launch when the user is asked to pick a server from a list</extracomment>
     </message>
     <message>
         <source>An error was encountered while playing this item. Server did not provide required transcoding data.</source>
-        <translation>Ha habido un error al reproducir este ítem. El servidor no ha proporcionado los datos de transcodificación requeridos.</translation>
+        <translation type="unfinished">Hubo un error al reproducir este contenido. El servidor no proporcionó información de transcodificación</translation>
         <extracomment>Content of message box when trying to play an item which requires transcoding, and the server did not provide transcode url</extracomment>
     </message>
     <message>
         <source>Wednesday</source>
-        <translation>miércoles</translation>
+        <translation>Miércoles</translation>
         <extracomment>Day of Week</extracomment>
     </message>
     <message>
         <source>Saturday</source>
-        <translation>sábado</translation>
+        <translation>Sábado</translation>
         <extracomment>Day of Week</extracomment>
     </message>
     <message>
         <source>The requested content does not exist on the server</source>
-        <translation>El contenido solicitado no existe en el servidor</translation>
+        <translation>El contenido no existe en el servidor</translation>
         <extracomment>Content of message box when the requested content is not found on the server</extracomment>
     </message>
     <message>
         <source>TV Shows</source>
-        <translation>Series de TV</translation>
+        <translation>Series de televisión</translation>
     </message>
     <message>
         <source>Starts at</source>
-        <translation>Comienza a las</translation>
+        <translation>Inicia en</translation>
         <extracomment>(Future Tense) For defining time when a program will start today (e.g. Starts at 08:00) </extracomment>
     </message>
     <message>
         <source>Live</source>
-        <translation>En directo</translation>
+        <translation>Directo</translation>
         <extracomment>If TV Show is being broadcast live (not pre-recorded)</extracomment>
     </message>
     <message>
         <source>Connecting to Server</source>
-        <translation>Conectando con el servidor</translation>
+        <translation>Conectando al servidor</translation>
         <extracomment>Message to display to user while client is attempting to connect to the server</extracomment>
     </message>
     <message>
@@ -9513,17 +9513,17 @@
     </message>
     <message>
         <source>Sunday</source>
-        <translation>domingo</translation>
+        <translation>Domingo</translation>
         <extracomment>Day of Week</extracomment>
     </message>
     <message>
         <source>Tuesday</source>
-        <translation>martes</translation>
+        <translation>Martes</translation>
         <extracomment>Day of Week</extracomment>
     </message>
     <message>
         <source>Starts</source>
-        <translation>Comienza el</translation>
+        <translation>Inicia</translation>
         <extracomment>(Future Tense) For defining a day and time when a program will start (e.g. Starts Wednesday, 08:00) </extracomment>
     </message>
     <message>
@@ -9533,12 +9533,12 @@
     </message>
     <message>
         <source>TV Guide</source>
-        <translation>Guía de TV</translation>
+        <translation>Guía TV</translation>
         <extracomment>Menu option for showing Live TV Guide / Schedule</extracomment>
     </message>
     <message>
         <source>Movies (Grid)</source>
-        <translation>Películas (Tabla)</translation>
+        <translation>Películas (cuadrícula)</translation>
         <extracomment>Movie library view option</extracomment>
     </message>
     <message>
@@ -9553,25 +9553,25 @@
     </message>
     <message>
         <source>Friday</source>
-        <translation>viernes</translation>
+        <translation>Viernes</translation>
         <extracomment>Day of Week</extracomment>
     </message>
     <message>
         <source>Record Series</source>
-        <translation>Grabar serie</translation>
+        <translation type="unfinished">Grabar episodios</translation>
     </message>
     <message>
         <source>Cancel Series Recording</source>
-        <translation>Cancelar grabación de serie</translation>
+        <translation type="unfinished">Cancelar grabación de episodios</translation>
     </message>
     <message>
         <source>Ends at</source>
-        <translation>Termina a las</translation>
+        <translation>Finaliza en</translation>
         <extracomment>(Past Tense) For defining a day and time when a program ended (e.g. Ended Wednesday, 08:00) </extracomment>
     </message>
     <message>
         <source>Record</source>
-        <translation>Grabar</translation>
+        <translation type="unfinished">Grabar</translation>
     </message>
     <message>
         <source>Version</source>
@@ -9589,27 +9589,27 @@
     </message>
     <message>
         <source>Thursday</source>
-        <translation>jueves</translation>
+        <translation>Jueves</translation>
         <extracomment>Day of Week</extracomment>
     </message>
     <message>
         <source>Repeat</source>
-        <translation>Repetición</translation>
+        <translation>Repetir</translation>
         <extracomment>If TV Shows has previously been broadcasted</extracomment>
     </message>
     <message>
         <source>Monday</source>
-        <translation>lunes</translation>
+        <translation>Lunes</translation>
         <extracomment>Day of Week</extracomment>
     </message>
     <message>
         <source>Started at</source>
-        <translation>Comenzó a las</translation>
+        <translation>Iniciado a</translation>
         <extracomment>(Past Tense) For defining time when a program started today (e.g. Started at 08:00) </extracomment>
     </message>
     <message>
         <source>Started</source>
-        <translation>Comenzó el</translation>
+        <translation>Iniciado</translation>
         <extracomment>(Past Tense) For defining a day and time when a program started (e.g. Started Wednesday, 08:00) </extracomment>
     </message>
     <message>
@@ -9627,7 +9627,7 @@
     </message>
     <message>
         <source>...or enter server URL manually:</source>
-        <translation>Si no hay ningún servidor en la lista, también puede introducir la URL manualmente:</translation>
+        <translation>... o introduce la URL manualmente:</translation>
         <extracomment>Instructions on initial app launch when the user is asked to manually enter a server URL</extracomment>
     </message>
     <message>
@@ -9637,12 +9637,12 @@
     </message>
     <message>
         <source>Enter the server name or IP address</source>
-        <translation>Introduzca el nombre o la dirección IP del servidor</translation>
+        <translation>Agregar el nombre del servidor o direccion de IP</translation>
         <extracomment>Title of KeyboardDialog when manually entering a server URL</extracomment>
     </message>
     <message>
         <source>Error Getting Playback Information</source>
-        <translation>Error obteniendo información de reproducción</translation>
+        <translation type="unfinished">Error obteniendo la información de reproducción</translation>
         <extracomment>Dialog Title: Received error from server when trying to get information about the selected item for playback</extracomment>
     </message>
 </context>
