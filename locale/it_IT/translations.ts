@@ -4085,7 +4085,7 @@
     </message>
     <message>
         <source>Save Credentials?</source>
-        <translation>Salva credenziali?</translation>
+        <translation>Salvare credenziali?</translation>
     </message>
     <message>
         <source>On Now</source>
@@ -4097,30 +4097,30 @@
     </message>
     <message>
         <source>Error During Playback</source>
-        <translation>Errore durante la riproduzione</translation>
+        <translation>Errore Durante la Riproduzione</translation>
         <extracomment>Dialog title when error occurs during playback</extracomment>
     </message>
     <message>
         <source>There was an error retrieving the data for this item from the server.</source>
-        <translation>C&apos;è stato un errore nel recupero dei dati per questo elemento dal server.</translation>
+        <translation>Si è verificato un errore durante il recupero dei dati per questo elemento dal server.</translation>
         <extracomment>Dialog detail when unable to load Content from Server</extracomment>
     </message>
     <message>
         <comment>Message displayed in Item Grid when no item to display. %1 is container type (e.g. Boxset, Collection, Folder, etc)</comment>
         <source>NO_ITEMS</source>
-        <translation>Non ci sono elementi da visualizzare</translation>
+        <translation>Questo %1 non contiene elementi</translation>
     </message>
     <message>
         <source>OFFICIAL_RATING</source>
-        <translation>Classificazione Parentale</translation>
+        <translation>Valutazione parentale</translation>
     </message>
     <message>
         <source>PLAY_COUNT</source>
-        <translation>Numero di Riproduzioni</translation>
+        <translation>Numero di riproduzioni</translation>
     </message>
     <message>
         <source>RUNTIME</source>
-        <translation>Durata</translation>
+        <translation>Tempo trascorso</translation>
     </message>
     <message>
         <comment>Title of Tab for options to sort library content</comment>
@@ -4147,22 +4147,22 @@
     </message>
     <message>
         <source>Starts at</source>
-        <translation>Inizia a</translation>
+        <translation>Inizierà alle</translation>
         <extracomment>(Future Tense) For defining time when a program will start today (e.g. Starts at 08:00) </extracomment>
     </message>
     <message>
         <source>Starts</source>
-        <translation>Inizia</translation>
+        <translation>Inizierà</translation>
         <extracomment>(Future Tense) For defining a day and time when a program will start (e.g. Starts Wednesday, 08:00) </extracomment>
     </message>
     <message>
         <source>Ends at</source>
-        <translation>Termina alle</translation>
+        <translation>Terminato</translation>
         <extracomment>(Past Tense) For defining a day and time when a program ended (e.g. Ended Wednesday, 08:00) </extracomment>
     </message>
     <message>
         <source>Live</source>
-        <translation>In Diretta</translation>
+        <translation>Dal vivo</translation>
         <extracomment>If TV Show is being broadcast live (not pre-recorded)</extracomment>
     </message>
     <message>
@@ -4172,7 +4172,7 @@
     </message>
     <message>
         <source>Cancel Recording</source>
-        <translation>Annulla Registrazione</translation>
+        <translation>Interrompi Registrazione</translation>
     </message>
     <message>
         <source>Not found</source>
@@ -4191,7 +4191,7 @@
     </message>
     <message>
         <source>Delete Saved</source>
-        <translation>Cancella salvati</translation>
+        <translation>Elimina salvati</translation>
     </message>
     <message>
         <comment>Title of Tab for options to filter library content</comment>
@@ -4204,11 +4204,11 @@
     </message>
     <message>
         <source>Cast &amp; Crew</source>
-        <translation>Cast &amp; Troupe</translation>
+        <translation>Cast &amp; Crew</translation>
     </message>
     <message>
         <source>More Like This</source>
-        <translation>Simile a questo</translation>
+        <translation>Altro simile a questo</translation>
     </message>
     <message>
         <source>today</source>
@@ -4242,11 +4242,11 @@
     </message>
     <message>
         <source>View Channel</source>
-        <translation>Guarda il Canale</translation>
+        <translation>Visione del Canale</translation>
     </message>
     <message>
         <source>IMDB_RATING</source>
-        <translation>Valutazione di IMDb</translation>
+        <translation>Valutazione IMDb</translation>
     </message>
     <message>
         <comment>Name or Title field of media item</comment>
@@ -4260,7 +4260,7 @@
     <message>
         <comment>Title of Tab for switching &quot;views&quot; when looking at a library</comment>
         <source>TAB_VIEW</source>
-        <translation>Visualizzazione</translation>
+        <translation>Vista</translation>
     </message>
     <message>
         <source>Record Series</source>
@@ -4268,15 +4268,15 @@
     </message>
     <message>
         <source>Loading Channel Data</source>
-        <translation>Caricamento dati del canale</translation>
+        <translation>Caricamento Dei Dati Del Canale</translation>
     </message>
     <message>
         <source>Error loading Channel Data</source>
-        <translation>Errore nel caricamento dei dati del canale</translation>
+        <translation>Errore durante il caricamento dei dati del canale</translation>
     </message>
     <message>
         <source>CRITIC_RATING</source>
-        <translation>Valutazione della critica</translation>
+        <translation>Valutazione critica</translation>
     </message>
     <message>
         <source>DATE_ADDED</source>
@@ -4284,15 +4284,15 @@
     </message>
     <message>
         <source>DATE_PLAYED</source>
-        <translation>Visto il</translation>
+        <translation>Data di riproduzione</translation>
     </message>
     <message>
         <source>Press &apos;OK&apos; to Close</source>
-        <translation>Premi &apos;OK&apos; per chiudere</translation>
+        <translation>Premi &quot;OK&quot; per Chiudere</translation>
     </message>
     <message>
         <source>Additional Parts</source>
-        <translation>Parti Aggiuntive</translation>
+        <translation>Parti addizionali</translation>
         <extracomment>Additional parts of a video</extracomment>
     </message>
     <message>
@@ -4354,7 +4354,7 @@
     </message>
     <message>
         <source>Enable or disable Direct Play for optional codecs</source>
-        <translation>Abilita o disabilita la riproduzione diretta per i codec opzionali</translation>
+        <translation>Abilita o disabilita Riproduzione diretta per i codec opzionali</translation>
         <extracomment>Settings Menu - Title for settings group related to codec support</extracomment>
     </message>
     <message>
@@ -4364,16 +4364,16 @@
     </message>
     <message>
         <source>An error was encountered while playing this item.</source>
-        <translation>È stato riscontrato un errore durante la riproduzione di questo elemento.</translation>
+        <translation>Si è verificato un errore durante la riproduzione dell&apos;elemento.</translation>
         <extracomment>Dialog detail when error occurs during playback</extracomment>
     </message>
     <message>
         <source>RELEASE_DATE</source>
-        <translation>Data di Rilascio</translation>
+        <translation>Data di rilascio</translation>
     </message>
     <message>
         <source>Special Features</source>
-        <translation>Contenuti Speciali</translation>
+        <translation>Caratteristiche particolari</translation>
     </message>
     <message>
         <source>Movies</source>
@@ -4395,12 +4395,12 @@
     </message>
     <message>
         <source>Started at</source>
-        <translation>Iniziato a</translation>
+        <translation>Iniziato alle</translation>
         <extracomment>(Past Tense) For defining time when a program started today (e.g. Started at 08:00) </extracomment>
     </message>
     <message>
         <source>Cancel Series Recording</source>
-        <translation>Annulla Registrazione della Serie</translation>
+        <translation>Interrompi Registrazione Seria</translation>
     </message>
     <message>
         <source>Close</source>
@@ -4418,17 +4418,17 @@
     </message>
     <message>
         <source>Pick a Jellyfin server from the local network</source>
-        <translation>Scegli un server Jellyfin dalla rete locale:</translation>
+        <translation>Scegli un server Jellyfin dalla rete locale</translation>
         <extracomment>Instructions on initial app launch when the user is asked to pick a server from a list</extracomment>
     </message>
     <message>
         <source>...or enter server URL manually:</source>
-        <translation>Se il server non è nella lista, puoi inserire l&apos;URL manualmente:</translation>
+        <translation>...o inserisci l&apos;URL del server:</translation>
         <extracomment>Instructions on initial app launch when the user is asked to manually enter a server URL</extracomment>
     </message>
     <message>
         <source>An error was encountered while playing this item. Server did not provide required transcoding data.</source>
-        <translation>È stato riscontrato un errore durante la riproduzione. Il server non ha restituito i dati della transcodifica.</translation>
+        <translation>Si è verificato un errore nella riproduzione. Il server non ha fornito le informazioni necessarie di transcodifica.</translation>
         <extracomment>Content of message box when trying to play an item which requires transcoding, and the server did not provide transcode url</extracomment>
     </message>
     <message>
@@ -4457,15 +4457,15 @@
     </message>
     <message>
         <source>Sign Out</source>
-        <translation>Esci</translation>
+        <translation>Disconnetti</translation>
     </message>
     <message>
         <source>Unable to load Channel Data from the server</source>
-        <translation>Impossibile recuperare i dati del canale dal server</translation>
+        <translation>Impossibile caricare i dati del canale dal server</translation>
     </message>
     <message>
         <source>Error Retrieving Content</source>
-        <translation>Errore nel recupero del contenuto</translation>
+        <translation>Errore Durante il Recupero</translation>
         <extracomment>Dialog title when unable to load Content from Server</extracomment>
     </message>
     <message>
@@ -4537,7 +4537,7 @@
     </message>
     <message>
         <source>Blur images of unwatched episodes.</source>
-        <translation>Oscura le immagini degli episodi da vedere.</translation>
+        <translation>Immagini sfocate per gli episodi non visti.</translation>
     </message>
     <message>
         <source>Media Grid options.</source>
@@ -4555,7 +4555,7 @@
     </message>
     <message>
         <source>%1 of %2</source>
-        <translation>%1 del %2</translation>
+        <translation>%1 di %2</translation>
         <extracomment>Item position and count. %1 = current item. %2 = total number of items</extracomment>
     </message>
     <message>
@@ -4643,7 +4643,7 @@
     </message>
     <message>
         <source>Attempt Direct Play for HEVC media with unsupported profile levels before falling back to transcoding if it fails.</source>
-        <translation>Prova la riproduzione diretta di contenuti HEVC con profili non supportati prima di transcodificarli</translation>
+        <translation>Provare la riproduzione diretta per i media con codifica HEVC e profili non supportati, prima di transcodificarli nel caso in cui non vi si riesca.</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
@@ -4705,7 +4705,7 @@
     </message>
     <message>
         <source>Bitrate Limit</source>
-        <translation>Limite Bitrate</translation>
+        <translation>Limite Bitrare</translation>
     </message>
     <message>
         <source>Settings relating to the appearance of Library pages</source>
@@ -4756,7 +4756,7 @@
     </message>
     <message>
         <source>Always Show</source>
-        <translation>Visualizza sempre</translation>
+        <translation>Sempre visibile</translation>
     </message>
     <message>
         <source>Hide the star and community rating for episodes of a TV show. This is to prevent spoilers of an upcoming good/bad episode.</source>
@@ -4806,7 +4806,7 @@
     </message>
     <message>
         <source>Attempt Direct Play for H.264 media with unsupported profile levels before falling back to transcoding if it fails.</source>
-        <translation>Prova la riproduzioni diretta di contenuti H.264 con profili non supportati prima di transcodificarli</translation>
+        <translation>Provare la riproduzione diretta per i media con codifica H.264 e profili non supportati, prima di transcodificarli nel caso in cui non vi si riesca.</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
@@ -4901,7 +4901,7 @@
     </message>
     <message>
         <source>Bit Rate</source>
-        <translation>Bitrate</translation>
+        <translation>Bit Rate</translation>
         <extracomment>Video streaming bit rate</extracomment>
     </message>
     <message>
@@ -4988,7 +4988,7 @@
     </message>
     <message>
         <source>Aired</source>
-        <translation>Visualizzato</translation>
+        <translation>In onda</translation>
         <extracomment>Aired date label</extracomment>
     </message>
     <message>
@@ -5130,15 +5130,15 @@
     </message>
     <message>
         <source>Album Artists (Grid)</source>
-        <translation>Artisti dell&apos;album (griglia)</translation>
+        <translation>Artista album (griglia)</translation>
     </message>
     <message>
         <source>Albums</source>
-        <translation>Album</translation>
+        <translation>Tutti gli album</translation>
     </message>
     <message>
         <source>Always Hide</source>
-        <translation>Nascondi sempre</translation>
+        <translation>Sempre nascosto</translation>
     </message>
     <message>
         <source>Codec Tag</source>
@@ -5166,7 +5166,7 @@
     </message>
     <message>
         <source>Biographical information for this person is not currently available.</source>
-        <translation>Informazioni biografiche per questa persona attualmente non disponibili.</translation>
+        <translation>La biografia per questa persona non è al momento disponibile.</translation>
     </message>
 </context>
 </TS>
