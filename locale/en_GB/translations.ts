@@ -520,7 +520,7 @@
     </message>
     <message>
         <source>Pick a Jellyfin server from the local network</source>
-        <translation>Select an available Jellyfin server from your local network:</translation>
+        <translation>Pick a Jellyfin server from the local network</translation>
         <extracomment>Instructions on initial app launch when the user is asked to pick a server from a list</extracomment>
     </message>
     <message>
@@ -807,7 +807,7 @@
     </message>
     <message>
         <source>Set how many seconds before the end of an episode the Next Episode button should appear. Set to 0 to disable.</source>
-        <translation type="unfinished">Set how many seconds before the end of an episode the Next Episode button should appear. Set to 0 to disable.</translation>
+        <translation>Set how many seconds before the end of an episode the Next Episode button should appear. Set to 0 to disable.</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
@@ -1117,7 +1117,7 @@
     </message>
     <message>
         <source>Remember the currently logged in user and try to log them in again next time you start the Jellyfin app.</source>
-        <translation type="unfinished">Remember the currently logged in user and try to log them in again next time you start the Jellyfin app.</translation>
+        <translation>Remember the currently logged in user and try to log them in again next time you start the Jellyfin app.</translation>
         <extracomment>User Setting - Setting description</extracomment>
     </message>
     <message>
@@ -1261,7 +1261,7 @@
     </message>
     <message>
         <source>Ratings for how good a movie is</source>
-        <translation>Community and critic review ratings from Rotten Tomatoes.</translation>
+        <translation>Ratings for how good a movie is</translation>
         <extracomment>User Setting - Setting description</extracomment>
     </message>
     <message>
@@ -6683,7 +6683,7 @@
     </message>
     <message>
         <source>Pick a Jellyfin server from the local network</source>
-        <translation>Select an available Jellyfin server from your local network:</translation>
+        <translation>Pick a Jellyfin server from the local network</translation>
         <extracomment>Instructions on initial app launch when the user is asked to pick a server from a list</extracomment>
     </message>
     <message>
