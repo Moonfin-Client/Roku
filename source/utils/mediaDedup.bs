@@ -1,0 +1,117 @@
+' Media Item Deduplication Utilities
+' Collapses duplicate copies of the same title across libraries or servers into a single item.
+
+import "pkg:/source/utils/misc.bs"
+
+' Helper to safely convert any value to string
+function safeToStr(val as dynamic) as string
+    if not isValid(val) then return ""
+    if type(val) = "roString" or type(val) = "String" then return val
+    if type(val) = "roInt" or type(val) = "roInteger" or type(val) = "Integer" or type(val) = "roFloat" or type(val) = "Float" or type(val) = "roDouble" or type(val) = "Double" or type(val) = "roLongInteger"
+        return stri(val).trim()
+    end if
+    if type(val) = "roBoolean" or type(val) = "Boolean"
+        return val ? "true" : "false"
+    end if
+    return ""
+end function
+
+' Helper to safely trim a string
+function safeTrim(val as dynamic) as string
+    s = safeToStr(val)
+    return s.trim()
+end function
+
+' Generate deduplication key for an item based on canonical provider IDs
+function getDeduplicationKey(item as object) as string
+    if not isValid(item) then return ""
+
+    providerIds = chainLookup(item, "ProviderIds") ?? chainLookup(item, "json.ProviderIds")
+    if isValid(providerIds) and type(providerIds) = "roAssociativeArray"
+        providers = ["imdb", "tmdb", "tvdb"]
+        for each p in providers
+            for each k in providerIds
+                if LCase(safeTrim(k)) = p
+                    val = LCase(safeTrim(providerIds[k]))
+                    if val <> ""
+                        return p + ":" + val
+                    end if
+                end if
+            end for
+        end for
+    end if
+
+    serverId = safeToStr(chainLookup(item, "_serverId") ?? chainLookup(item, "json._serverId") ?? "")
+    itemId = safeToStr(chainLookup(item, "Id") ?? chainLookup(item, "json.Id") ?? chainLookup(item, "id") ?? "")
+    return "item:" + serverId + ":" + itemId
+end function
+
+' Returns true if candidate is a better representative item than incumbent
+function isBetterRepresentative(candidate as object, incumbent as object) as boolean
+    cPos = chainLookupReturn(candidate, "UserData.PlaybackPositionTicks", 0)
+    if cPos = 0 then cPos = chainLookupReturn(candidate, "json.UserData.PlaybackPositionTicks", 0)
+
+    iPos = chainLookupReturn(incumbent, "UserData.PlaybackPositionTicks", 0)
+    if iPos = 0 then iPos = chainLookupReturn(incumbent, "json.UserData.PlaybackPositionTicks", 0)
+
+    if cPos <> iPos then return cPos > iPos
+
+    cPlayed = chainLookupReturn(candidate, "UserData.Played", false)
+    if not cPlayed then cPlayed = chainLookupReturn(candidate, "json.UserData.Played", false)
+
+    iPlayed = chainLookupReturn(incumbent, "UserData.Played", false)
+    if not iPlayed then iPlayed = chainLookupReturn(incumbent, "json.UserData.Played", false)
+
+    if cPlayed <> iPlayed then return cPlayed
+
+    cFav = chainLookupReturn(candidate, "UserData.IsFavorite", false)
+    if not cFav then cFav = chainLookupReturn(candidate, "json.UserData.IsFavorite", false)
+
+    iFav = chainLookupReturn(incumbent, "UserData.IsFavorite", false)
+    if not iFav then iFav = chainLookupReturn(incumbent, "json.UserData.IsFavorite", false)
+
+    if cFav <> iFav then return cFav
+
+    cId = safeToStr(chainLookup(candidate, "Id") ?? chainLookup(candidate, "id") ?? "")
+    iId = safeToStr(chainLookup(incumbent, "Id") ?? chainLookup(incumbent, "id") ?? "")
+    return cId < iId
+end function
+
+' Deduplicate an array of media items while maintaining order
+function deduplicateMediaItems(items as object) as object
+    if not isValid(items) or type(items) <> "roArray" or items.count() < 2 then return items
+
+    byKey = {}
+    orderedKeys = []
+
+    for each item in items
+        if isValid(item)
+            key = getDeduplicationKey(item)
+            if not byKey.DoesExist(key)
+                byKey[key] = item
+                orderedKeys.push(key)
+            else if isBetterRepresentative(item, byKey[key])
+                byKey[key] = item
+            end if
+        end if
+    end for
+
+    if orderedKeys.count() = items.count() then return items
+
+    deduped = []
+    for each k in orderedKeys
+        deduped.push(byKey[k])
+    end for
+
+    return deduped
+end function
+
+' Formats version option label as '[Library Name] - [Version Name]' conditionally
+function formatVersionLabel(versionName as string, libraryName as string, hasMultipleLibraries as boolean) as string
+    rawName = isValidAndNotEmpty(versionName) ? versionName : ""
+    trimmedLib = safeTrim(libraryName)
+    if hasMultipleLibraries and trimmedLib <> ""
+        return "[" + trimmedLib + "] - " + rawName
+    end if
+    return rawName
+end function
