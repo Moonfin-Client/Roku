@@ -613,8 +613,9 @@ function getContainerType(meta as object) as string
     return container
 end function
 
-' Add next episodes to the playback queue
 sub addNextEpisodesToQueue(showID, additionalPartsCount as integer, queueLimit as integer)
+    ' Cap next episodes limit to 15 to conserve memory on Roku devices
+    if queueLimit > 15 then queueLimit = 15
     ' Don't queue next episodes if we already have a playback queue
     maxQueueCount = additionalPartsCount + 1
 
@@ -642,18 +643,54 @@ sub addNextEpisodesToQueue(showID, additionalPartsCount as integer, queueLimit a
     end if
 
     url = Substitute("Shows/{0}/Episodes", showID)
-    urlParams = { "UserId": m.global.session.user.id }
-    urlParams.Append({ "StartItemId": videoID })
-    urlParams.Append({ "Limit": queueLimit + 1 })
-    urlParams.Append({ "isMissing": false })
+    urlParams = {
+        "UserId": m.global.session.user.id,
+        "isMissing": false,
+        "Fields": "PrimaryImageAspectRatio,BasicSyncInfo"
+    }
     resp = APIRequest(url, urlParams)
     data = getJson(resp)
 
-    if isValid(data) and data.Items.Count() > 1
-        for i = 1 to data.Items.Count() - 1
-            m.global.queueManager.callFunc("push", data.Items[i])
-        end for
+    if not isChainValid(data, "Items") or data.Items.Count() = 0 then return
+    episodes = data.Items
+
+    targetIndex = -1
+    for i = 0 to episodes.Count() - 1
+        ep = episodes[i]
+        epId = ep.id ?? ep.Id
+        if not isValidAndNotEmpty(epId) and isValid(ep.json)
+            epId = ep.json.id ?? ep.json.Id
+        end if
+        if isStringEqual(LCase(epId), LCase(videoID))
+            targetIndex = i
+            exit for
+        end if
+    end for
+
+    if targetIndex < 0 then return
+
+    ' Calculate queue window (up to 5 previous episodes and up to queueLimit next episodes)
+    startIndex = targetIndex - 5
+    if startIndex < 0 then startIndex = 0
+
+    endIndex = targetIndex + queueLimit
+    if endIndex >= episodes.Count() then endIndex = episodes.Count() - 1
+
+    windowQueue = []
+    if m.top.isIntro
+        introItem = m.global.queueManager.callFunc("getItemByIndex", 0)
+        if isValid(introItem) then windowQueue.push(introItem)
     end if
+
+    for i = startIndex to endIndex
+        windowQueue.push(episodes[i])
+    end for
+
+    m.global.queueManager.callFunc("set", windowQueue)
+
+    newPosition = targetIndex - startIndex
+    if m.top.isIntro then newPosition = newPosition + 1
+    m.global.queueManager.callFunc("setPosition", newPosition)
 end sub
 
 ' Add episode to show at finish of current episode
