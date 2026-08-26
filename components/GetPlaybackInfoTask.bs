@@ -4,7 +4,6 @@ import "pkg:/source/enums/PlaybackMethod.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/misc.bs"
-import "pkg:/source/utils/multiserver.bs"
 
 sub init()
     m.top.functionName = "getPlaybackInfoTask"
@@ -67,29 +66,53 @@ end function
 ' Returns an array of playback info to be displayed during playback.
 ' In the future, with a custom playback info view, we can return an associated array.
 sub getPlaybackInfoTask()
-    sessions = getAllServerSessions()
-
     m.playbackInfo = ItemPostPlaybackInfo(m.top.videoID)
 
-    if isValid(sessions) and sessions.Count() > 0
-        m.top.data = { playbackInfo: GetTranscodingStats(sessions[0]) }
-    else
-        m.top.data = { playbackInfo: { data: ["<b>" + tr("Unable to get playback information" + "</b>")] } }
-    end if
+    m.top.data = { playbackInfo: GetTranscodingStats(findPlaybackSession()) }
 end sub
+
+' Asking the server for our session by device id comes back empty, because task
+' threads send a different device id than the main thread does. What we are
+' watching is what actually identifies us
+function findPlaybackSession() as dynamic
+    sessions = api.sessions.Get({})
+    if not isValidAndNotEmpty(sessions) then return invalid
+
+    client = getAuthHeaderContext().appName + " Roku"
+    match = invalid
+
+    for each candidate in sessions
+        if not isStringEqual(chainLookupReturn(candidate, "NowPlayingItem.Id", ""), m.top.videoID) then continue for
+        if not isStringEqual(candidate.Client, client) then continue for
+
+        ' Other clients can sit on the same item, so hold this one but keep
+        ' looking for the session carrying the transcode details
+        match = candidate
+        if isValidAndNotEmpty(candidate.TranscodingInfo) then return candidate
+    end for
+
+    return match
+end function
 
 function GetTranscodingStats(deviceSession)
     sessionStats = { data: [] }
 
+    transcodingInfo = invalid
+    if isValid(deviceSession) then transcodingInfo = deviceSession.TranscodingInfo
+    isTranscoding = isValidAndNotEmpty(transcodingInfo)
+
     ' Section 1: Playback Method
     sessionStats.data.push("<header>" + tr("Playback Method") + "</header>")
 
-    if isValid(deviceSession.TranscodingInfo) and deviceSession.TranscodingInfo.Count() > 0
+    if not isValid(deviceSession)
+        ' Without the server's session there is no way to tell direct play from transcoding
+        sessionStats.data.push("<b>" + tr("Method") + ":</b> " + tr("Unavailable"))
+    else if isTranscoding
         ' Transcoding is active
         sessionStats.data.push("<b>" + tr("Method") + ":</b> " + tr("Transcoding"))
 
         ' Show transcoding reasons
-        transcodingReasons = deviceSession.TranscodingInfo.TranscodeReasons
+        transcodingReasons = transcodingInfo.TranscodeReasons
         if not isStringEqual(PlaybackMethod.PLAYNORMALLY, m.global.session.user.settings["playback.media.forceTranscode"])
             sessionStats.data.push("<b>" + tr("Reason") + ":</b> " + tr("Force Transcoding setting is enabled"))
         else if not isStringEqual(PlaybackMethod.PLAYNORMALLY, m.global.queueManager.callFunc("getForceTranscode"))
@@ -153,11 +176,11 @@ function GetTranscodingStats(deviceSession)
                 videoCodecDisplay = UCase(videoStream.Codec)
 
                 ' Show if video is direct or transcoded
-                if isValid(deviceSession.TranscodingInfo) and deviceSession.TranscodingInfo.Count() > 0
-                    if deviceSession.TranscodingInfo.IsVideoDirect
+                if isTranscoding
+                    if transcodingInfo.IsVideoDirect
                         videoCodecDisplay = videoCodecDisplay + " (" + tr("Direct") + ")"
-                    else if isValid(deviceSession.TranscodingInfo.VideoCodec)
-                        videoCodecDisplay = UCase(deviceSession.TranscodingInfo.VideoCodec) + " (" + tr("Transcoded from") + " " + UCase(videoStream.Codec) + ")"
+                    else if isValid(transcodingInfo.VideoCodec)
+                        videoCodecDisplay = UCase(transcodingInfo.VideoCodec) + " (" + tr("Transcoded from") + " " + UCase(videoStream.Codec) + ")"
                     end if
                 end if
 
@@ -209,11 +232,11 @@ function GetTranscodingStats(deviceSession)
                 audioCodecDisplay = UCase(audioStream.Codec)
 
                 ' Show if audio is direct or transcoded
-                if isValid(deviceSession.TranscodingInfo) and deviceSession.TranscodingInfo.Count() > 0
-                    if deviceSession.TranscodingInfo.IsAudioDirect
+                if isTranscoding
+                    if transcodingInfo.IsAudioDirect
                         audioCodecDisplay = audioCodecDisplay + " (" + tr("Direct") + ")"
-                    else if isValid(deviceSession.TranscodingInfo.AudioCodec)
-                        audioCodecDisplay = UCase(deviceSession.TranscodingInfo.AudioCodec) + " (" + tr("Transcoded from") + " " + UCase(audioStream.Codec) + ")"
+                    else if isValid(transcodingInfo.AudioCodec)
+                        audioCodecDisplay = UCase(transcodingInfo.AudioCodec) + " (" + tr("Transcoded from") + " " + UCase(audioStream.Codec) + ")"
                     end if
                 end if
 
