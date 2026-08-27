@@ -1,0 +1,166 @@
+import "pkg:/source/utils/misc.bs"
+
+' How the details action row is arranged. The arrangement follows the user
+' between devices through the plugin, so the ids here have to match the ones the
+' other clients write. Renaming an id drops whatever the user had arranged.
+const DETAIL_ORDER_SETTING = "ui.itemdetail.buttonOrder"
+const DETAIL_HIDDEN_SETTING = "ui.itemdetail.hiddenButtons"
+
+namespace buttonLayout
+
+    ' Play, Resume and Restart are absent on purpose. They are one button wearing
+    ' different labels, it always leads the row, and it anchors the focus the
+    ' screen hands out. Declaration order matches the other clients, which is
+    ' what decides where a button nobody placed ends up.
+    function DetailButtons() as object
+        return [
+            { id: "shuffle", label: "Shuffle" },
+            { id: "version", label: "Version" },
+            { id: "audio", label: "Audio" },
+            { id: "subtitles", label: "Subtitle" },
+            { id: "trailer", label: "Trailer" },
+            { id: "watched", label: "Mark Watched" },
+            { id: "favorite", label: "Favorite" },
+            { id: "goToSeries", label: "Series" }
+        ]
+    end function
+
+    ' The plugin sends an array, this app stores JSON, and Core stores a comma
+    ' joined string, so all three are accepted.
+    function ToIds(stored as dynamic) as object
+        ids = []
+        if not isValidAndNotEmpty(stored) then return ids
+
+        storedType = LCase(type(stored))
+        if storedType = "roarray" or storedType = "array"
+            for each entry in stored
+                if not isValid(entry) then continue for
+                text = entry.ToStr().Trim()
+                if text <> "" then ids.push(text)
+            end for
+            return ids
+        end if
+
+        if storedType <> "rostring" and storedType <> "string" then return ids
+
+        parsed = ParseJson(stored)
+        if isValid(parsed) and LCase(type(parsed)) = "roarray" then return buttonLayout.ToIds(parsed)
+
+        for each part in stored.Split(",")
+            text = part.Trim()
+            if text <> "" then ids.push(text)
+        end for
+
+        return ids
+    end function
+
+    ' `all` rearranged into the order the user put the row in. Anything they
+    ' never placed follows the placed button it was declared after, so a button
+    ' added since they last touched this lands where it belongs.
+    function Ordered(all as object, stored as dynamic) as object
+        ids = buttonLayout.ToIds(stored)
+        if ids.count() = 0 then return all
+
+        placed = {}
+        for i = 0 to ids.count() - 1
+            placed[ids[i]] = i
+        end for
+
+        ' One bucket per placed id, plus a leading one for whatever was declared
+        ' before the first id the user placed
+        buckets = []
+        for i = 0 to ids.count()
+            buckets.push([])
+        end for
+
+        carried = 0
+        for each item in all
+            rank = placed[item.id]
+            if isValid(rank) then carried = rank + 1
+            buckets[carried].push(item)
+        end for
+
+        arranged = []
+        for each bucket in buckets
+            for each item in bucket
+                arranged.push(item)
+            end for
+        end for
+
+        return arranged
+    end function
+
+    ' Holds the buttons switched off rather than the ones left on, so a button
+    ' the app starts offering later shows up for people who already have a list.
+    function HiddenLookup(stored as dynamic) as object
+        off = {}
+        for each id in buttonLayout.ToIds(stored)
+            off[id] = true
+        end for
+
+        return off
+    end function
+
+    function Arrange(all as object, order as dynamic, hidden as dynamic) as object
+        off = buttonLayout.HiddenLookup(hidden)
+
+        visible = []
+        for each item in buttonLayout.Ordered(all, order)
+            if not isValid(off[item.id]) then visible.push(item)
+        end for
+
+        return visible
+    end function
+
+    ' A save from here has to carry through the ids this app has no button for.
+    ' The other clients offer buttons it doesn't and everyone shares these two
+    ' settings, so writing back only what is in the catalogue would erase what
+    ' those clients arranged. Each carried id goes behind the id it was stored
+    ' after, the same way Ordered places a button nobody arranged.
+    function WithUnknownIds(catalogue as object, savedOrder as object, savedHidden as object, storedOrder as dynamic, storedHidden as dynamic) as object
+        known = {}
+        for each item in catalogue
+            known[item.id] = true
+        end for
+
+        leading = []
+        trailing = {}
+        anchor = ""
+        for each id in buttonLayout.ToIds(storedOrder)
+            if isValid(known[id])
+                anchor = id
+            else if anchor = ""
+                leading.push(id)
+            else
+                if not isValid(trailing[anchor]) then trailing[anchor] = []
+                trailing[anchor].push(id)
+            end if
+        end for
+
+        order = []
+        for each id in leading
+            order.push(id)
+        end for
+
+        for each id in savedOrder
+            order.push(id)
+            behind = trailing[id]
+            if isValid(behind)
+                for each carried in behind
+                    order.push(carried)
+                end for
+            end if
+        end for
+
+        hidden = []
+        for each id in savedHidden
+            hidden.push(id)
+        end for
+        for each id in buttonLayout.ToIds(storedHidden)
+            if not isValid(known[id]) then hidden.push(id)
+        end for
+
+        return { order: order, hidden: hidden }
+    end function
+
+end namespace

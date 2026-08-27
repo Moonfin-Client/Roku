@@ -4,6 +4,7 @@ import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/PlaybackMethod.bs"
 import "pkg:/source/enums/SettingType.bs"
 import "pkg:/source/enums/String.bs"
+import "pkg:/source/utils/buttonLayout.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/misc.bs"
@@ -844,15 +845,111 @@ sub refreshCurrentItemValue(settingItem = invalid as dynamic)
     end if
 end sub
 
+' The details action row, arranged the way the other clients arrange it
+sub showDetailButtonLayoutDialog(settingItem as object)
+    storedOrder = get_user_setting(DETAIL_ORDER_SETTING)
+    off = buttonLayout.HiddenLookup(get_user_setting(DETAIL_HIDDEN_SETTING))
+
+    dialog = createObject("roSGNode", "MediaBarChecklistDialog")
+    dlgPalette = createObject("roSGNode", "RSGPalette")
+    dlgPalette.colors = {
+        DialogBackgroundColor: chainLookupReturn(m.global.session, "user.settings.colorDialogBackground", ColorPalette.ELEMENTBACKGROUND),
+        DialogFocusColor: chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT),
+        DialogFocusItemColor: chainLookupReturn(m.global.session, "user.settings.colorDialogSelectedText", ColorPalette.WHITE),
+        DialogTextColor: chainLookupReturn(m.global.session, "user.settings.colorDialogText", ColorPalette.WHITE)
+    }
+    dialog.palette = dlgPalette
+    dialog.title = tr(settingItem.title)
+    dialog.allowReorder = true
+    dialog.buttons = [tr("Save"), tr("Reset"), tr("Cancel")]
+    dialog.observeField("buttonSelected", "onDetailButtonLayoutDialogButton")
+
+    checklist = dialog.findNode("checklist")
+    ' A title and the dialog's own buttons leave room for fewer rows than the
+    ' list defaults to, and the rest scroll
+    checklist.numRows = 7
+    checklistContent = createObject("roSGNode", "ContentNode")
+    checkedState = []
+
+    for each button in buttonLayout.Ordered(buttonLayout.DetailButtons(), storedOrder)
+        listItem = checklistContent.CreateChild("ContentNode")
+        listItem.id = button.id
+        listItem.title = tr(button.label)
+        checkedState.push(not isValid(off[button.id]))
+    end for
+
+    checklist.content = checklistContent
+    checklist.checkedState = checkedState
+
+    m.top.getScene().dialog = dialog
+end sub
+
+sub onDetailButtonLayoutDialogButton(event as object)
+    dialog = event.getRoSGNode()
+    buttonIndex = dialog.buttonSelected
+
+    if buttonIndex = 1
+        ' Reset clears both lists, which puts every button back in the order the
+        ' app declares them
+        saveDetailButtonLayout([], [])
+    else if buttonIndex = 0
+        checklist = dialog.findNode("checklist")
+        checklistContent = invalid
+        checkedState = []
+        if isValid(checklist)
+            checklistContent = checklist.content
+            checkedState = checklist.checkedState
+        end if
+
+        order = []
+        hidden = []
+        if isValid(checklistContent)
+            for i = 0 to checklistContent.getChildCount() - 1
+                buttonId = checklistContent.getChild(i).id
+                if not isValidAndNotEmpty(buttonId) then continue for
+
+                order.push(buttonId)
+                if i >= checkedState.count() or not checkedState[i] then hidden.push(buttonId)
+            end for
+        end if
+
+        merged = buttonLayout.WithUnknownIds(buttonLayout.DetailButtons(), order, hidden, get_user_setting(DETAIL_ORDER_SETTING), get_user_setting(DETAIL_HIDDEN_SETTING))
+        saveDetailButtonLayout(merged.order, merged.hidden)
+    end if
+
+    dialog.close = true
+    hideEditingControls()
+    m.settingsMenu.setFocus(true)
+end sub
+
+sub saveDetailButtonLayout(order as object, hidden as object)
+    for each entry in [{ key: DETAIL_ORDER_SETTING, value: order }, { key: DETAIL_HIDDEN_SETTING, value: hidden }]
+        serialized = FormatJson(entry.value)
+        set_user_setting(entry.key, serialized)
+        syncSettingToServer(entry.key, serialized)
+    end for
+end sub
+
 ' Sync a setting to the server via PostTask (render-thread safe).
 sub syncSettingToServer(rokuKey as string, rokuValue as dynamic)
     pushData = settingsSync.PreparePush(rokuKey, rokuValue)
     if not isValid(pushData) then return
 
-    m.settingsSyncTask = createObject("roSGNode", "PostTask")
-    m.settingsSyncTask.apiUrl = pushData.url
-    m.settingsSyncTask.stringData = pushData.body
-    m.settingsSyncTask.control = "RUN"
+    ' Held until they finish, since two settings can be pushed back to back and a
+    ' task with nothing referencing it can be collected mid flight
+    if not isValid(m.settingsSyncTasks) then m.settingsSyncTasks = []
+    running = []
+    for each pending in m.settingsSyncTasks
+        if isStringEqual(pending.state, "run") then running.push(pending)
+    end for
+
+    task = createObject("roSGNode", "PostTask")
+    task.apiUrl = pushData.url
+    task.stringData = pushData.body
+    task.control = "RUN"
+
+    running.push(task)
+    m.settingsSyncTasks = running
 end sub
 
 sub syncSettingToUserConfig(rokuKey as string, rokuValue as dynamic)
@@ -1943,6 +2040,12 @@ sub settingSelected()
     if isValid(selectedItem.settingName) and selectedItem.settingName = "ui.theme.picker"
         m.settingDesc.visible = false
         loadThemePickerOptions(selectedItem)
+        return
+    end if
+
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "ui.itemdetail.buttonLayout"
+        m.settingDesc.visible = false
+        showDetailButtonLayoutDialog(selectedItem)
         return
     end if
 

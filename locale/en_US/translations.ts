@@ -9,8 +9,16 @@
         <translation>192.168.1.100:8096 or https://example.com/jellyfin</translation>
     </message>
     <message>
+        <source>Action Buttons</source>
+        <translation>Action Buttons</translation>
+    </message>
+    <message>
         <source>Cancel</source>
         <translation>Cancel</translation>
+    </message>
+    <message>
+        <source>Choose which buttons appear on the details screen action row and what order they run in. Press OK to show or hide a button, and Left or Right to move it. Play, Resume and Restart always lead the row.</source>
+        <translation>Choose which buttons appear on the details screen action row and what order they run in. Press OK to show or hide a button, and Left or Right to move it. Play, Resume and Restart always lead the row.</translation>
     </message>
     <message>
         <source>Connect to Server</source>
@@ -45,6 +53,10 @@
         <translation>Login attempt failed.</translation>
     </message>
     <message>
+        <source>Mark Watched</source>
+        <translation>Mark Watched</translation>
+    </message>
+    <message>
         <source>OK</source>
         <translation>OK</translation>
     </message>
@@ -65,12 +77,20 @@
         <translation>Please sign in</translation>
     </message>
     <message>
+        <source>Reset</source>
+        <translation>Reset</translation>
+    </message>
+    <message>
         <source>Restart</source>
         <translation>Restart</translation>
     </message>
     <message>
         <source>Resume</source>
         <translation>Resume</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Save</translation>
     </message>
     <message>
         <source>Search</source>
