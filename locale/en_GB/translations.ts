@@ -1398,9 +1398,6 @@
         <source>No items found. Try adjusting your selected filters.</source>
         <translation>No items found. Try adjusting your selected filters.</translation>
     </message>
-</context>
-<context>
-    <name></name>
     <message>
         <source>...or enter server URL manually:</source>
         <translation>...or enter server URL manually:</translation>

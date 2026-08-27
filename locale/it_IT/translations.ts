@@ -1212,9 +1212,6 @@
         <source>No items found. Try adjusting your selected filters.</source>
         <translation>Nessun elemento trovato. Prova a modificare i filtri.</translation>
     </message>
-</context>
-<context>
-    <name></name>
     <message>
         <source>Sign Out</source>
         <translation>Disconnetti</translation>

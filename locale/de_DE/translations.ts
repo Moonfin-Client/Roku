@@ -1764,9 +1764,6 @@
         <source>Set the maximum amount of days a show should stay in the &apos;Next Up&apos; list without watching it. Maximum value is 1000 days.</source>
         <translation>Lege die maximale Anzahl an Tagen fest, die eine Serie in &quot;Als Nächstes&quot; ungesehen verbleiben kann. Maximaler Wert ist 1000 Tage.</translation>
     </message>
-</context>
-<context>
-    <name></name>
     <message>
         <source>Unable to load Channel Data from the server</source>
         <translation>Nicht in der Lage Kanaldaten vom Server zu laden</translation>

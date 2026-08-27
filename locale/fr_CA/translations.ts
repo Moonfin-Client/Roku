@@ -1992,9 +1992,6 @@
         <source>Screen Settings</source>
         <translation>Ecran de configuration</translation>
     </message>
-</context>
-<context>
-    <name></name>
     <message>
         <comment>Message displayed in Item Grid when no item to display. %1 is container type (e.g. Boxset, Collection, Folder, etc)</comment>
         <source>NO_ITEMS</source>

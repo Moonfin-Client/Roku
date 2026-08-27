@@ -2101,9 +2101,6 @@
         <source>Screen Settings</source>
         <translation>Configurações de Tela</translation>
     </message>
-</context>
-<context>
-    <name></name>
     <message>
         <source>There was an error retrieving the data for this item from the server.</source>
         <translation>Ocorreu um erro ao recuperar os dados deste item do servidor.</translation>

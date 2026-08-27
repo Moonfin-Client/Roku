@@ -1767,9 +1767,6 @@
         <source>Set the maximum amount of days a show should stay in the &apos;Next Up&apos; list without watching it. Maximum value is 1000 days.</source>
         <translation>Establece los días que un elemento aparecerá en la sección “A Continuación” si no se visualiza. El valor máximo es 1000 días.</translation>
     </message>
-</context>
-<context>
-    <name></name>
     <message>
         <source>Unable to load Channel Data from the server</source>
         <translation>No fue posible cargar datos del canal desde el servidor</translation>
