@@ -15,8 +15,17 @@ import "pkg:/source/enums/TimerControl.bs"
 import "pkg:/source/enums/VideoControl.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/playbackOverlay.bs"
 
 const REPLAY_RETRIES = 3
+
+' The other clients pin these overlays 24 in from the right and 120 up from the
+' bottom, scaled by 1.45 onto our 1920x1080
+const OVERLAY_EDGE = 35
+const OVERLAY_BOTTOM = 174
+const NEXT_UP_TICK_MS = 100
+const NEXT_UP_PLAY = 0
+const NEXT_UP_DISMISS = 1
 
 sub init()
     m.top.observeField("availableAudioTracks", "onAvailableAudioTracksChanged")
@@ -164,13 +173,25 @@ sub init()
     m.subtitleSyncReset.focusColor = ColorPalette.WHITE
 
     m.nextUp = m.top.findNode("nextUp")
-    m.nextUpInfoLoaded = false
 
     m.skipSegmentButton = m.top.findNode("skipSegment")
-    m.skipSegmentButton.background = ColorPalette.LIGHTBLUE
-    m.skipSegmentButton.color = ColorPalette.DARKGREY
-    m.skipSegmentButton.focusBackground = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
-    m.skipSegmentButton.focusColor = ColorPalette.WHITE
+
+    palette = playbackOverlay.Palette()
+    m.skipSegmentButton.palette = palette
+    m.nextUp.palette = palette
+
+    ' Both overlays size themselves around their text, so they report back and we
+    ' pin them to the corner
+    m.skipSegmentButton.observeField("overlayWidth", "onSkipSegmentResized")
+    m.nextUp.observeField("overlayWidth", "onNextUpResized")
+    m.nextUp.observeField("overlayHeight", "onNextUpResized")
+
+    applyOverlayCountdownPreference()
+
+    m.nextUpTimer = m.top.findNode("nextUpTimer")
+    m.nextUpTimer.observeField("fire", "onNextUpTick")
+    m.nextUpDismissed = false
+    m.nextUpElapsedMs = 0
 
     'Play Next Episode button
     m.nextupbuttonseconds = (m.global.session.user.settings["playback.nextupbuttonseconds"] ?? "30").ToInt()
@@ -908,6 +929,12 @@ sub onVideoContentLoaded()
     m.top.showID = videoContent[0].showID
     m.mediaSegments = videoContent[0].mediaSegments
 
+    ' A new item gets its own prompts, so an earlier dismissal doesn't carry over
+    m.mediaSegmentDismissed = {}
+    m.nextUpDismissed = false
+    hideNextItem()
+    hideSegmentSkipButton()
+
     m.osd.itemTitleText = m.top.content.title
 
     m.trickplayDataFinal = invalid
@@ -1191,11 +1218,30 @@ end sub
 
 sub hideSegmentSkipButton()
     m.currentSegmentEndTicks = 0
+    m.currentSegmentStartTicks = 0
     m.currentSegmentType = invalid
     m.skipSegmentButton.visible = false
-    m.skipSegmentButton.text = string.EMPTY
-    m.skipSegmentButton.focus = false
-    hideNextItem()
+end sub
+
+sub onSkipSegmentResized()
+    m.skipSegmentButton.translation = [1920 - OVERLAY_EDGE - m.skipSegmentButton.overlayWidth, 1080 - OVERLAY_BOTTOM - m.skipSegmentButton.overlayHeight]
+end sub
+
+sub onNextUpResized()
+    m.nextUp.translation = [1920 - OVERLAY_EDGE - m.nextUp.overlayWidth, 1080 - OVERLAY_BOTTOM - m.nextUp.overlayHeight]
+end sub
+
+' One setting drives the ring and the timer on both overlays
+sub applyOverlayCountdownPreference()
+    mode = m.global.session.user.settings["playback.mediasegments.countdown"] ?? "both"
+
+    showRing = isStringEqual(mode, "progressbar") or isStringEqual(mode, "both")
+    showTimer = isStringEqual(mode, "timer") or isStringEqual(mode, "both")
+
+    m.skipSegmentButton.showRing = showRing
+    m.skipSegmentButton.showTimer = showTimer
+    m.nextUp.showRing = showRing
+    m.nextUp.showTimer = showTimer
 end sub
 
 sub displaySegmentSkipButton(segmentType as string, endticks as double)
@@ -1218,68 +1264,145 @@ sub displaySegmentSkipButton(segmentType as string, endticks as double)
         end if
     end if
 
-    ' Check if button is already showing
-    if isStringEqual(m.skipSegmentButton.text, tr(`Skip ${segmentType}`)) then return
-
     if m.osd.visible then return ' Don't show if OSD is visible
 
+    ' The end of an episode can be handed to the Up Next card instead of offering
+    ' a skip that lands in the same place
     if isStringEqual(segmentType, MediaSegmentType.OUTRO)
-        if m.nextupbuttonseconds = 0 then return ' is the button disabled?
-        displayNextItem()
+        if toBoolean(m.global.session.user.settings["playback.replaceskipoutrowithnextup"] ?? false)
+            if displayNextItem() then return
+        end if
     end if
 
+    m.skipSegmentButton.segmentType = segmentType
     m.skipSegmentButton.visible = true
-    m.skipSegmentButton.text = tr(`Skip ${segmentType}`)
-    m.skipSegmentButton.focus = true
 end sub
 
 sub hideNextItem()
     m.nextUp.visible = false
+    m.nextUpTimer.control = TimerControl.STOP
 end sub
 
-sub displayNextItem()
+' Returns whether the card is up, so the caller can fall back to a skip button
+function displayNextItem() as boolean
+    if m.nextUp.visible then return true
+    if m.nextUpDismissed then return false
+    if isStringEqual(nextUpBehaviour(), "disabled") then return false
+
     ' Disable for mixed playlists
-    if m.global.queueManager.callFunc("getQueueUniqueTypes").count() <> 1 then return
+    if m.global.queueManager.callFunc("getQueueUniqueTypes").count() <> 1 then return false
 
     ' Disable if we're at the end of the queue
-    if m.global.queueManager.callFunc("getPosition") >= m.global.queueManager.callFunc("getCount") - 1 then return
+    if m.global.queueManager.callFunc("getPosition") >= m.global.queueManager.callFunc("getCount") - 1 then return false
 
     ' Only show if next in queue is an episode
     currentQueuePosition = m.global.queueManager.callFunc("getPosition")
     nextItem = m.global.queueManager.callFunc("getItemByIndex", currentQueuePosition + 1)
-    if not isValid(nextItem) then return
-    if not isStringEqual(nextItem.lookupCI("Type"), ItemType.EPISODE) then return
+    if not isValid(nextItem) then return false
+    if not isStringEqual(nextItem.lookupCI("Type"), ItemType.EPISODE) then return false
 
-    if m.nextUpInfoLoaded
-        m.nextUp.visible = true
+    isMinimal = isStringEqual(nextUpBehaviour(), "minimal")
+    m.nextUp.isMinimal = isMinimal
+
+    thumbUri = string.EMPTY
+    if not isMinimal
+        imageTags = nextItem.lookupCI("ImageTags")
+        primaryTag = chainLookupReturn(imageTags, ImageType.PRIMARY, invalid)
+        if isValid(primaryTag)
+            thumbUri = ImageURL(nextItem.lookupCI("id"), ImageType.PRIMARY, { "maxWidth": 400, "Tag": primaryTag })
+        end if
+    end if
+    m.nextUp.thumbUri = thumbUri
+
+    m.nextUp.seriesTitle = nextItem.lookupCI("SeriesName") ?? string.EMPTY
+    m.nextUp.episodeTitle = nextItem.lookupCI("name") ?? string.EMPTY
+    m.nextUp.episodeLabel = episodeLabelFor(nextItem)
+
+    m.nextUp.focusedButton = NEXT_UP_PLAY
+    m.nextUpElapsedMs = 0
+    m.nextUp.progress = 1.0
+    m.nextUp.secondsRemaining = Int(nextUpTimeoutMs() / 1000)
+
+    m.nextUp.visible = true
+
+    if nextUpTimeoutMs() > 0
+        m.nextUpTimer.control = TimerControl.START
+    end if
+
+    return true
+end function
+
+function episodeLabelFor(item as object) as string
+    episodeNumber = item.lookupCI("IndexNumber")
+    if not isValid(episodeNumber) then return string.EMPTY
+
+    seasonNumber = item.lookupCI("ParentIndexNumber")
+    season = isValid(seasonNumber) ? seasonNumber.toStr() : "?"
+
+    return `S${season}:E${episodeNumber}`
+end function
+
+function nextUpBehaviour() as string
+    return m.global.session.user.settings["playback.nextupbehavior"] ?? "extended"
+end function
+
+function nextUpTimeoutMs() as integer
+    return (m.global.session.user.settings["playback.nextuptimeout"] ?? "7000").ToInt()
+end function
+
+' Runs the card's countdown, then acts on whatever the user asked for
+sub onNextUpTick()
+    if not m.nextUp.visible then return
+
+    total = nextUpTimeoutMs()
+    if total <= 0 then return
+
+    m.nextUpElapsedMs += NEXT_UP_TICK_MS
+
+    remaining = total - m.nextUpElapsedMs
+    if remaining < 0 then remaining = 0
+
+    m.nextUp.progress = remaining / total
+    m.nextUp.secondsRemaining = Int((remaining + 999) / 1000)
+
+    if remaining > 0 then return
+
+    hideNextItem()
+    if toBoolean(m.global.session.user.settings["playback.showNextUpAfterFinish"] ?? false)
+        playNextUpItem()
+    else
+        cancelNextItem()
+    end if
+end sub
+
+sub playNextUpItem()
+    hideNextItem()
+    hideSegmentSkipButton()
+    handleItemSkipAction("itemnext")
+end sub
+
+' Dismissing keeps the card down for the rest of the episode
+sub cancelNextItem()
+    m.nextUpDismissed = true
+    hideNextItem()
+end sub
+
+sub updateSegmentCountdown(currentPositionTicks as longinteger)
+    if not m.skipSegmentButton.visible then return
+
+    m.skipSegmentButton.secondsRemaining = Int((m.currentSegmentEndTicks - currentPositionTicks) / 10000000&)
+
+    span = m.currentSegmentEndTicks - m.currentSegmentStartTicks
+    if span <= 0
+        m.skipSegmentButton.progress = 0
         return
     end if
 
-    imageTags = nextItem.lookupCI("ImageTags")
-    nextItemPoster = m.top.findNode("nextItemPoster")
-    if isValid(nextItemPoster)
-        nextItemPoster.uri = ImageURL(nextItem.lookupCI("id"), ImageType.PRIMARY, { "maxHeight": 124, "maxWidth": 150, "Tag": chainLookupReturn(imageTags, ImageType.PRIMARY, `cacheBuster${rnd(99999)}`) })
-    end if
+    progress = (m.currentSegmentEndTicks - currentPositionTicks) / span
+    if progress < 0 then progress = 0
+    if progress > 1 then progress = 1
 
-    nextItemSeriesTitle = m.top.findNode("nextItemSeriesTitle")
-    if isValid(nextItemSeriesTitle)
-        nextItemSeriesTitle.font.size = 25
-        nextItemSeriesTitle.text = nextItem.lookupCI("SeriesName")
-    end if
-
-    nextItemEpisodeTitle = m.top.findNode("nextItemEpisodeTitle")
-    if isValid(nextItemEpisodeTitle)
-        seasonName = nextItem.lookupCI("SeasonName") ?? string.EMPTY
-        seasonName = seasonName.Replace("Season ", "S")
-
-        episodeNumber = isValid(nextItem.lookupCI("IndexNumber")) ? `E${nextItem.lookupCI("IndexNumber")}` : string.EMPTY
-
-        nextItemEpisodeTitle.font.size = 22
-        nextItemEpisodeTitle.text = `${seasonName}${episodeNumber} - ${nextItem.lookupCI("name")}`
-    end if
-
-    m.nextUp.visible = true
-    m.nextUpInfoLoaded = true
+    m.skipSegmentButton.progress = progress
 end sub
 
 sub checkSegmentSkipButton()
@@ -1298,6 +1421,8 @@ sub checkSegmentSkipButton()
 
         ' Current position is between media segment's start and end ticks. Display a skip button
         displaySegmentSkipButton(mediaSegment.type, mediaSegment.EndTicks)
+        m.currentSegmentStartTicks = mediaSegment.StartTicks
+        updateSegmentCountdown(currentPositionTicks)
 
         matchFound = true
 
@@ -1341,8 +1466,24 @@ sub onPositionChanged()
         ' Do not show Next Episode button for intro videos
         if not m.LoadMetaDataTask.isIntro
             checkSegmentSkipButton()
+            checkNextUp()
         end if
     end if
+end sub
+
+' The card comes up as the item runs out
+sub checkNextUp()
+    if m.nextUp.visible then return
+    if m.top.duration <= 0 then return
+    if m.osd.visible then return
+    if m.top.trickPlayBar.visible then return
+
+    remaining = m.top.duration - m.top.position
+    threshold = isStringEqual(nextUpBehaviour(), "extended") ? 1 : 0.5
+
+    if remaining > threshold then return
+
+    if displayNextItem() then hideSegmentSkipButton()
 end sub
 
 '
@@ -1557,6 +1698,7 @@ sub onTrickPlayBarTextChange()
     m.nextupbuttonseconds = (m.global.session.user.settings["playback.nextupbuttonseconds"] ?? "30").ToInt()
     m.currentSegmentType = invalid
     m.mediaSegmentDismissed = {}
+    m.nextUpDismissed = false
 
     setVideoEndingTime(0)
 
@@ -1939,6 +2081,31 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return true
     end if
 
+    ' The Up Next card owns the remote while it is up, the same two buttons Core
+    ' offers and left and right between them
+    if m.nextUp.visible and not m.top.trickPlayBar.visible
+        if not press then return false
+
+        if key = KeyCode.LEFT
+            m.nextUp.focusedButton = NEXT_UP_PLAY
+            return true
+        end if
+
+        if key = KeyCode.RIGHT
+            m.nextUp.focusedButton = 1
+            return true
+        end if
+
+        if key = KeyCode.OK
+            if m.nextUp.focusedButton = NEXT_UP_PLAY
+                playNextUpItem()
+            else
+                cancelNextItem()
+            end if
+            return true
+        end if
+    end if
+
     if m.skipSegmentButton.visible and not m.top.trickPlayBar.visible
         if key = KeyCode.OK and press
             skipCurrentSegment()
@@ -2067,6 +2234,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if key = KeyCode.BACK
         if m.scrubActive
             stopScrubbing()
+            return true
+        end if
+
+        if m.nextUp.visible
+            cancelNextItem()
             return true
         end if
 
