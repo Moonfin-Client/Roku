@@ -1679,10 +1679,6 @@
         <translation>What&apos;s New</translation>
     </message>
     <message>
-        <source>Skip</source>
-        <translation>Skip</translation>
-    </message>
-    <message>
         <source>Sort by</source>
         <translation>Sort by</translation>
     </message>
@@ -1809,10 +1805,6 @@
     <message>
         <source>Manual Login</source>
         <translation>Manual Login</translation>
-    </message>
-    <message>
-        <source>Unhide Users</source>
-        <translation>Unhide Users</translation>
     </message>
     <message>
         <source>Unhide Users</source>
@@ -2222,18 +2214,9 @@
         <extracomment>Donation Dialog - Thanks message</extracomment>
     </message>
     <message>
-        <source>Close</source>
-        <translation>Close</translation>
-    </message>
-    <message>
         <source>Update Available</source>
         <translation>Update Available</translation>
         <extracomment>Update Dialog - Title</extracomment>
-    </message>
-    <message>
-        <source>Version</source>
-        <translation>Version</translation>
-        <extracomment>Update Dialog - Version label</extracomment>
     </message>
     <message>
         <source>is now available</source>

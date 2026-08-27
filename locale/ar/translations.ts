@@ -1675,10 +1675,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Skip</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Sort by</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1804,10 +1800,6 @@
     </message>
     <message>
         <source>Manual Login</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Unhide Users</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

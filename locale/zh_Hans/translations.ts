@@ -1427,11 +1427,6 @@
         <extracomment>User Setting - Options</extracomment>
     </message>
     <message>
-        <source>Skip</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Options</extracomment>
-    </message>
-    <message>
         <source>None</source>
         <translation>无</translation>
         <extracomment>User Setting - Options</extracomment>
@@ -1795,10 +1790,6 @@
     <message>
         <source>Manual Login</source>
         <translation>手动登录</translation>
-    </message>
-    <message>
-        <source>Unhide Users</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Unhide Users</source>
