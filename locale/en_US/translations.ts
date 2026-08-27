@@ -29,6 +29,14 @@
         <translation>Favorite</translation>
     </message>
     <message>
+        <source>Go to Series</source>
+        <translation>Go to Series</translation>
+    </message>
+    <message>
+        <source>Instant Mix</source>
+        <translation>Instant Mix</translation>
+    </message>
+    <message>
         <source>Loading...</source>
         <translation>Loading…</translation>
     </message>
@@ -49,8 +57,20 @@
         <translation>Play</translation>
     </message>
     <message>
+        <source>Play All</source>
+        <translation>Play All</translation>
+    </message>
+    <message>
         <source>Please sign in</source>
         <translation>Please sign in</translation>
+    </message>
+    <message>
+        <source>Restart</source>
+        <translation>Restart</translation>
+    </message>
+    <message>
+        <source>Resume</source>
+        <translation>Resume</translation>
     </message>
     <message>
         <source>Search</source>
@@ -71,6 +91,22 @@
     <message>
         <source>Submit</source>
         <translation>Submit</translation>
+    </message>
+    <message>
+        <source>Subtitle</source>
+        <translation>Subtitle</translation>
+    </message>
+    <message>
+        <source>Trailer</source>
+        <translation>Trailer</translation>
+    </message>
+    <message>
+        <source>Unwatched</source>
+        <translation>Unwatched</translation>
+    </message>
+    <message>
+        <source>Versions</source>
+        <translation>Versions</translation>
     </message>
     <message>
         <source>Watched</source>
