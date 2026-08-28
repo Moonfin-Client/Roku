@@ -319,7 +319,7 @@
     </message>
     <message>
         <source>Press &apos;OK&apos; to Close</source>
-        <translation>Kapatmak için &apos;Tamam&apos; düğmesine basın.</translation>
+        <translation>Kapatmak için &apos;Tamam&apos; düğmesine basın</translation>
     </message>
     <message>
         <source>Special Features</source>
@@ -499,7 +499,7 @@
     </message>
     <message>
         <source>Pick a Jellyfin server from the local network</source>
-        <translation>Yerel ağda bulunan bir Jellyfin sunucusunu seçin:</translation>
+        <translation>Yerel ağda bulunan bir Jellyfin sunucusunu seçin</translation>
         <extracomment>Instructions on initial app launch when the user is asked to pick a server from a list</extracomment>
     </message>
     <message>
@@ -650,7 +650,7 @@
     </message>
     <message>
         <source>%1 of %2</source>
-        <translation type="unfinished">%2’nin %1’i</translation>
+        <translation>%2’nin %1’i</translation>
         <extracomment>Item position and count. %1 = current item. %2 = total number of items</extracomment>
     </message>
     <message>
@@ -688,7 +688,7 @@
     </message>
     <message>
         <source>Use the replay button to slowly animate to the first item in the folder. (If disabled, the folder will reset to the first item immediately).</source>
-        <translation type="unfinished">Klasördeki ilk öğeye yavaşça geçiş yapmak için tekrar oynat düğmesini kullanın. (Devre dışı bırakılırsa, klasör anında ilk öğeye sıfırlanır.)</translation>
+        <translation>Klasördeki ilk öğeye yavaşça geçiş yapmak için tekrar oynat düğmesini kullanın. (Devre dışı bırakılırsa, klasör anında ilk öğeye sıfırlanır).</translation>
         <extracomment>Description for option in Setting Screen</extracomment>
     </message>
     <message>
