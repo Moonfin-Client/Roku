@@ -52,13 +52,11 @@ const HERO_WIDTH_WITH_UP_NEXT = 960
 const OVERVIEW_WIDTH = 1160
 const UP_NEXT_WIDTH = 594
 const UP_NEXT_TOP_GAP = 14
-const OVERVIEW_MAX_LINES = 4
 ' The hero's small copy. Bigger than the other clients ask for, because the Roku
 ' system font draws smaller than a browser does at the same size.
 const HERO_TEXT_SIZE = 24
 const HERO_BADGE_TEXT_SIZE = 19
 const OVERVIEW_TEXT_SIZE = 26
-const OVERVIEW_LINE_HEIGHT = 1.45
 ' The other clients show this many people per tab at most
 const PEOPLE_LIMIT = 20
 const BUTTON_ROW_HEIGHT = 75
@@ -109,13 +107,14 @@ sub init()
     m.logoShadow = m.top.findNode("logoShadow")
     m.titleNode = m.top.findNode("title")
     m.overview = m.top.findNode("overview")
-    m.overviewMeasure = m.top.findNode("overviewMeasure")
+    ' Opening the overview changes how much room it takes, so the rest of the
+    ' hero moves down to make way for it
+    m.overview.observeField("boxHeight", "onOverviewHeightChanged")
 
     m.buttonRow = m.top.findNode("buttonRow")
     m.buttonRowContainer = m.top.findNode("buttonRowContainer")
     m.currentButtonIndex = 0
     m.buttonGroups = []
-    m.overviewIsScrollable = false
 
     m.loadStatus = ViewLoadStatus.INIT
     m.global.queueManager.callFunc("setLastKnownItemID", string.empty)
@@ -202,8 +201,7 @@ sub sizeHeroFonts()
 
     m.top.findNode("statusBadgeText").font.size = badgeSize
     m.top.findNode("techChipFont").font.size = badgeSize
-    m.overview.font.size = overviewSize
-    m.top.findNode("overviewMeasure").font.size = overviewSize
+    m.overview.fontSize = overviewSize
     m.top.findNode("techSeparator").text = fontApply.ThemeSeparator()
 
     ' The title is already large enough to read whatever font it is drawn in
@@ -427,10 +425,24 @@ sub onUpNextEscape()
     dir = m.upNextCard.escape
     if dir = "up"
         m.top.lastFocus = m.upNextCard
-        FocusOverhang(m.top)
+        FocusNav(m.top)
+    else if dir = "left" and overviewCanScroll()
+        focusOverview()
     else
         focusButtonsFromTabs()
     end if
+end sub
+
+sub focusOverview()
+    m.overview.setFocus(true)
+    m.top.lastFocus = m.overview
+    setLastFocus(m.overview)
+end sub
+
+sub focusUpNext()
+    m.upNextCard.setFocus(true)
+    m.top.lastFocus = m.upNextCard
+    setLastFocus(m.upNextCard)
 end sub
 
 ' Collects the Jellyfin studios (names carry the logo lookup), then the TMDB
@@ -1841,7 +1853,16 @@ end sub
 ' The hero stacks the way the other clients stack it. The title block runs on a
 ' tight rhythm and the tagline, overview and buttons each take a wider gap of
 ' their own, which is why every row asks for the space above it.
+' Laying out sets the overview's width, which can settle it at a new height and
+' ask for the layout again, so the second pass is left to the first one
+sub onOverviewHeightChanged()
+    if m.layingOut = true then return
+
+    layoutContainer()
+end sub
+
 sub layoutContainer()
+    m.layingOut = true
     m.heroY = 0
     m.heroPlaced = false
 
@@ -1852,7 +1873,7 @@ sub layoutContainer()
     m.titleNode.width = titleWidth
     m.top.findNode("episodeHeader").width = titleWidth
     m.top.findNode("tagline").width = hasUpNext ? HERO_WIDTH_WITH_UP_NEXT : HERO_WIDTH
-    sizeOverview(hasUpNext ? HERO_WIDTH_WITH_UP_NEXT : OVERVIEW_WIDTH)
+    m.overview.maxWidth = hasUpNext ? HERO_WIDTH_WITH_UP_NEXT : OVERVIEW_WIDTH
 
     header = m.top.findNode("episodeHeader")
     if header.visible then placeHeroRow(header, header.boundingRect().height, HERO_GAP)
@@ -1873,7 +1894,7 @@ sub layoutContainer()
     if tagline.visible then placeHeroRow(tagline, tagline.boundingRect().height, HERO_TAGLINE_GAP)
 
     overview = m.top.findNode("overview")
-    if overview.visible then placeHeroRow(overview, overview.height, HERO_OVERVIEW_GAP)
+    if overview.visible then placeHeroRow(overview, overview.boxHeight, HERO_OVERVIEW_GAP)
 
     ' The technical row already pushes the hero down, so the buttons close the
     ' gap rather than letting the column run long
@@ -1887,29 +1908,8 @@ sub layoutContainer()
         grid = m.top.findNode(id)
         if isValid(grid) then grid.translation = [0, contentY]
     end for
-end sub
 
-' The overview runs to four lines and no further, and only takes focus when
-' there is more text below the fold to scroll to
-sub sizeOverview(width as float)
-    m.overview.width = width
-    m.overviewMeasure.width = width
-
-    m.overviewMeasure.text = "M"
-    lineHeight = m.overviewMeasure.boundingRect().height
-    m.overviewMeasure.text = m.overview.text
-    fullHeight = m.overviewMeasure.boundingRect().height
-
-    lines = 1
-    if lineHeight > 0 then lines = Int((fullHeight + lineHeight - 1) / lineHeight)
-    if lines < 1 then lines = 1
-
-    m.overviewIsScrollable = m.overview.visible and lines > OVERVIEW_MAX_LINES
-    if lines > OVERVIEW_MAX_LINES then lines = OVERVIEW_MAX_LINES
-
-    ' Sized in whole lines at the leading the other clients set, since the box
-    ' draws its lines taller than the label used to measure them reports
-    m.overview.height = lines * Int(m.overview.font.size * OVERVIEW_LINE_HEIGHT + 0.5)
+    m.layingOut = false
 end sub
 
 ' Places one hero row under the last, leaving the gap it asked for
@@ -2770,7 +2770,7 @@ end sub
 ' ============================================
 
 function overviewCanScroll() as boolean
-    return m.overviewIsScrollable = true and isValid(m.overview) and m.overview.visible
+    return isValid(m.overview) and m.overview.visible and m.overview.canToggle
 end function
 
 ' ============================================
@@ -2821,7 +2821,14 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if key = KeyCode.UP and isValid(m.overview) and m.overview.isInFocusChain()
         m.top.lastFocus = m.overview
         setLastFocus(m.overview)
-        return FocusOverhang(m.top)
+        return FocusNav(m.top)
+    end if
+
+    if key = KeyCode.RIGHT and isValid(m.overview) and m.overview.isInFocusChain()
+        if isValid(m.upNextCard) and m.upNextCard.visible
+            focusUpNext()
+            return true
+        end if
     end if
 
     if key = KeyCode.DOWN and isValid(m.overview) and m.overview.isInFocusChain()
@@ -2838,17 +2845,13 @@ function onKeyEvent(key as string, press as boolean) as boolean
         for each btn in m.buttonGroups
             if btn.hasFocus() or btn.isInFocusChain()
                 unhighlightAllButtons()
-                if isValid(m.upNextCard) and m.upNextCard.visible
-                    m.upNextCard.setFocus(true)
-                    m.top.lastFocus = m.upNextCard
-                    setLastFocus(m.upNextCard)
-                else if overviewCanScroll()
-                    m.overview.setFocus(true)
-                    m.top.lastFocus = m.overview
-                    setLastFocus(m.overview)
+                if overviewCanScroll()
+                    focusOverview()
+                else if isValid(m.upNextCard) and m.upNextCard.visible
+                    focusUpNext()
                 else
                     m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
-                    return FocusOverhang(m.top)
+                    return FocusNav(m.top)
                 end if
                 return true
             end if

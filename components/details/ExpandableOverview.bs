@@ -1,0 +1,183 @@
+import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/themeChrome.bs"
+
+' The overview with a read more toggle, sized the way the other clients size
+' theirs. Text short enough for its four line clamp is drawn plain. Longer text
+' gets a box that opens in place, capped at a height the remote scrolls through.
+const COLLAPSED_LINES = 4
+const LINE_HEIGHT = 1.45
+const EXPANDED_MAX_HEIGHT = 319
+const BOX_PAD = 17
+const READ_MORE_GAP = 12
+const READ_MORE_SIZE = 22
+' Paged two lines at a time, so the text lands on a line rather than part way
+' through one
+const SCROLL_LINES = 2
+
+sub init()
+    m.boxFill = m.top.findNode("boxFill")
+    m.boxBorder = m.top.findNode("boxBorder")
+    m.boxFocus = m.top.findNode("boxFocus")
+    m.textClip = m.top.findNode("textClip")
+    m.overviewText = m.top.findNode("overviewText")
+    m.scrollTop = 0
+    m.lastText = ""
+    m.readMore = m.top.findNode("readMore")
+
+    m.readMore.font.size = READ_MORE_SIZE
+    m.readMore.color = themeChrome.IsActive() ? themeChrome.Accent() : formatSceneGraphColor(chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT), ColorPalette.HIGHLIGHT)
+
+    m.top.observeField("focusedChild", "onFocusChanged")
+end sub
+
+sub onContentChanged()
+    if not isValidAndNotEmpty(m.top.text) or m.top.maxWidth <= 0 then return
+
+    ' A different item starts closed, while laying the same one out again leaves
+    ' it however the viewer left it
+    if not isStringEqual(m.lastText, m.top.text)
+        m.lastText = m.top.text
+        m.top.expanded = false
+    end if
+
+    m.overviewText.font.size = m.top.fontSize
+    m.overviewText.lineSpacing = Int(m.top.fontSize * (LINE_HEIGHT - 1) + 0.5)
+    m.overviewText.text = m.top.text
+
+    ' Whether the box is needed is judged on the width the text has without one
+    m.top.canToggle = measureText(m.top.maxWidth) > COLLAPSED_LINES * lineHeight()
+
+    layout()
+end sub
+
+function lineHeight() as integer
+    return Int(m.top.fontSize * LINE_HEIGHT + 0.5)
+end function
+
+' Measured on the label that draws it, so the height counted is the height shown
+function measureText(width as float) as float
+    m.overviewText.width = width
+    m.overviewText.height = 0
+
+    return m.overviewText.boundingRect().height
+end function
+
+sub layout()
+    textWidth = m.top.canToggle ? m.top.maxWidth - (BOX_PAD * 2) : m.top.maxWidth
+    fullHeight = measureText(textWidth)
+    textHeight = fullHeight
+
+    if not m.top.canToggle
+        showText(textWidth, textHeight, textHeight, 0)
+        m.top.boxHeight = textHeight
+        paintBox()
+        return
+    end if
+
+    if m.top.expanded
+        ' Capped on a whole line, so the last one shown is not sliced in half
+        if textHeight > EXPANDED_MAX_HEIGHT
+            textHeight = Int(EXPANDED_MAX_HEIGHT / lineHeight()) * lineHeight()
+        end if
+    else
+        textHeight = COLLAPSED_LINES * lineHeight()
+    end if
+
+    m.scrollStep = SCROLL_LINES * lineHeight()
+    showText(textWidth, textHeight, fullHeight, BOX_PAD)
+
+    m.readMore.text = m.top.expanded ? tr("Read Less") : tr("Read More")
+    m.readMore.translation = [BOX_PAD, BOX_PAD + textHeight + READ_MORE_GAP]
+
+    boxHeight = (BOX_PAD * 2) + textHeight + READ_MORE_GAP + READ_MORE_SIZE
+    for each layer in [m.boxFill, m.boxBorder, m.boxFocus]
+        layer.width = m.top.maxWidth
+        layer.height = boxHeight
+    end for
+
+    m.top.boxHeight = boxHeight
+    paintBox()
+end sub
+
+' The label keeps its full height and the window over it is what changes, so the
+' text can be paged by sliding it behind the clip
+sub showText(width as float, windowHeight as float, fullHeight as float, inset as float)
+    m.scrollTop = 0
+    m.textClip.translation = [inset, inset]
+    m.textClip.clippingRect = [0, 0, width, windowHeight]
+
+    m.overviewText.width = width
+    m.overviewText.height = fullHeight
+    m.overviewText.translation = [0, 0]
+
+    m.windowHeight = windowHeight
+    m.fullHeight = fullHeight
+end sub
+
+' Up and down page the text while there is more of it in that direction, and
+' once it runs out the press belongs to whatever sits above or below
+function pageText(down as boolean) as boolean
+    room = down ? m.fullHeight - m.windowHeight - m.scrollTop > 1 : m.scrollTop > 1
+    if not room then return false
+
+    m.scrollTop += down ? m.scrollStep : -m.scrollStep
+    if m.scrollTop < 0 then m.scrollTop = 0
+
+    limit = m.fullHeight - m.windowHeight
+    if m.scrollTop > limit then m.scrollTop = limit
+
+    m.overviewText.translation = [0, -m.scrollTop]
+
+    return true
+end function
+
+sub paintBox()
+    showBox = m.top.canToggle
+    focused = m.top.isInFocusChain()
+
+    m.boxFill.visible = showBox
+    m.boxFill.opacity = focused ? 0.04 : 0.02
+    m.boxBorder.visible = showBox and not focused
+    m.boxFocus.visible = showBox and focused
+    m.readMore.visible = showBox
+end sub
+
+sub onFocusChanged()
+    paintBox()
+end sub
+
+sub toggle()
+    if not m.top.canToggle then return
+
+    m.top.expanded = not m.top.expanded
+    layout()
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = KeyCode.OK and m.top.canToggle
+        toggle()
+        return true
+    end if
+
+    ' Back closes the box where it stands rather than leaving the screen
+    if key = KeyCode.BACK then return collapse()
+
+    if m.top.expanded and (key = KeyCode.UP or key = KeyCode.DOWN)
+        return pageText(key = KeyCode.DOWN)
+    end if
+
+    return false
+end function
+
+function collapse() as boolean
+    if not m.top.expanded then return false
+
+    m.top.expanded = false
+    layout()
+
+    return true
+end function
