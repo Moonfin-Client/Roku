@@ -7,20 +7,30 @@ import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/multiserver.bs"
 import "pkg:/source/utils/themeChrome.bs"
 
-const ICON_SIZE = 50
+' The bar is laid out in the pixels the other clients lay it out in. It carries
+' no padding of its own, so a focused button fills it top to bottom rather than
+' floating inside it, and it is only as wide as what is in it
+const NAV_TOP = 30
+const NAV_HEIGHT = 70
+const NAV_MAX_WIDTH = 1400
+
+const ICON_SIZE = 36
 const ICON_LABEL_GAP = 10
-const ITEM_SPACING = 36
-const PILL_HEIGHT = 80
-const PILL_PAD = 30
-const NAV_HEIGHT = 80
-const ITEM_Y = 15
-const AVATAR_RIGHT = 200
-const CLOCK_LEFT = 1560
-const NAV_SIDE_PAD = 30
+const ITEM_PAD = 18
+const ITEM_PAD_FOCUSED = 24
+const ITEM_GAP = 2
+const LABEL_SIZE = 22
+
+' Libraries open out as their own smaller buttons alongside the rest
+const LIB_ITEM_PAD = 20
+const LIB_ITEM_HEIGHT = 58
+const LIB_ITEM_GAP = 4
+
+const CLOCK_SIZE = 28
+const SCREEN_MIDDLE = 960
 
 sub init()
     m.top.id = "overhang"
-    m.top.translation = [54, 0]
 
     m.navContainer = m.top.findNode("navContainer")
     m.navClipGroup = m.top.findNode("navClipGroup")
@@ -28,6 +38,12 @@ sub init()
     m.navItemsGroup = m.top.findNode("navItemsGroup")
     m.focusPill = m.top.findNode("focusPill")
     m.clock = m.top.findNode("overlayClock")
+    ' Sized here rather than in the Clock, which the sidebar and player share
+    clockText = m.clock.findNode("clockTime")
+    if isValid(clockText)
+        clockText.font.size = CLOCK_SIZE
+        clockText.color = "#FFFFFFE6"
+    end if
     m.profileImage = m.top.findNode("overlayCurrentUserProfileImage")
     m.overlayCurrentUser = m.top.findNode("overlayCurrentUser")
     m.overlayCurrentUserSelection = m.top.findNode("overlayCurrentUserSelection")
@@ -60,7 +76,6 @@ sub init()
     m.libraryItems = []
     m.librariesExpanded = false
     m.multiServerTask = invalid
-    m.navCycleAnim = invalid
     m.lastNavbarSettings = { shuffle: invalid, favorites: invalid, genres: invalid, libraries: invalid, seerr: invalid }
 
     m.homeItem = createNavItem("home", "pkg:/images/icons/home.png", "Home")
@@ -91,21 +106,19 @@ function createNavItem(id as string, iconUri as string, labelText as string, ble
     icon.width = ICON_SIZE
     icon.height = ICON_SIZE
     icon.loadDisplayMode = "scaleToFit"
-    icon.opacity = 0.6
     if blendColor <> "" then icon.blendColor = blendColor
     btn.appendChild(icon)
 
     label = createObject("roSGNode", "Label")
     label.text = labelText
     label.font = "font:SmallestBoldSystemFont"
-    label.color = "#000000"
-    label.height = ICON_SIZE
+    label.font.size = LABEL_SIZE
+    label.height = NAV_HEIGHT
     label.vertAlign = "center"
-    label.translation = [ICON_SIZE + ICON_LABEL_GAP, 2]
     label.visible = false
     btn.appendChild(label)
 
-    return { id: id, btn: btn, icon: icon, label: label, isLibChild: false, defaultBlendColor: blendColor }
+    return { id: id, btn: btn, icon: icon, label: label, isLibChild: false, defaultBlendColor: blendColor, cycleInk: "" }
 end function
 
 function createLibraryChildItem(id as string, labelText as string) as object
@@ -115,12 +128,12 @@ function createLibraryChildItem(id as string, labelText as string) as object
     label = createObject("roSGNode", "Label")
     label.text = labelText
     label.font = "font:SmallestBoldSystemFont"
-    label.color = "#000000"
-    label.height = ICON_SIZE
+    label.height = LIB_ITEM_HEIGHT
     label.vertAlign = "center"
+    label.translation = [LIB_ITEM_PAD, 0]
     btn.appendChild(label)
 
-    return { id: "lib_" + id, btn: btn, icon: invalid, label: label, isLibChild: true }
+    return { id: "lib_" + id, btn: btn, icon: invalid, label: label, isLibChild: true, cycleInk: "" }
 end function
 
 sub rebuildNavItems()
@@ -165,6 +178,8 @@ sub layoutNavbar()
     idleIconColor = themed ? themeChrome.OnBackground() : invalid
     idleLabelColor = themed ? themeChrome.OnBackground() : "#FFFFFF"
 
+    m.focusPill.blendColor = themed ? themeChrome.Accent() : "0xFFFFFFFF"
+
     if themed and isValid(m.navbarBg)
         m.navbarBg.blendColor = themeChrome.Surface()
     end if
@@ -176,6 +191,11 @@ sub layoutNavbar()
         if isValid(item.icon)
             if isFocused
                 item.icon.blendColor = focusIconColor
+                item.icon.opacity = 1.0
+            else if isValidAndNotEmpty(item.cycleInk)
+                ' A colour cycle names each button outright, so it draws at full
+                ' strength rather than the muted white the rest sit at
+                item.icon.blendColor = item.cycleInk
                 item.icon.opacity = 1.0
             else
                 if themed
@@ -198,7 +218,9 @@ sub layoutNavbar()
                 item.label.opacity = 0.6
             end if
         else
+            ' Only ever seen on the focused button, so it is inked for the pill
             item.label.visible = isFocused
+            item.label.color = focusLabelColor
         end if
     end for
 
@@ -213,19 +235,22 @@ sub layoutNavbar()
 
     for i = 0 to m.navItems.count() - 1
         item = m.navItems[i]
-        w = getItemWidth(item)
+        if item.isLibChild then xCursor += LIB_ITEM_GAP
 
-        itemPositions.push({ x: xCursor, width: w })
-        item.btn.translation = [xCursor, ITEM_Y]
+        w = getItemWidth(item)
+        h = item.isLibChild ? LIB_ITEM_HEIGHT : NAV_HEIGHT
+        itemPositions.push({ x: xCursor, width: w, height: h })
+        item.btn.translation = [xCursor, (NAV_HEIGHT - h) / 2]
+        layoutNavItem(item)
 
         xCursor += w
-        if i < m.navItems.count() - 1 then xCursor += ITEM_SPACING
+        if i < m.navItems.count() - 1 then xCursor += ITEM_GAP
     end for
 
     m.totalContentWidth = xCursor
     m.itemPositions = itemPositions
 
-    sizePillAndClip()
+    sizeBarAndClip()
 
     if not m.avatarSelected
         scrollToFocusedItem()
@@ -238,68 +263,69 @@ sub layoutNavbar()
     end if
 end sub
 
-' Get the rendered width of a nav item based on current state
-function getItemWidth(item as object) as integer
-    if item.isLibChild
-        return item.label.boundingRect().width
-    end if
-
-    w = ICON_SIZE
-    if item.label.visible
-        labelWidth = item.label.boundingRect().width
-        w = ICON_SIZE + ICON_LABEL_GAP + labelWidth
-    end if
-    return w
+' A button opens out a little wider once it has a label to carry
+function itemPad(item as object) as integer
+    return item.label.visible ? ITEM_PAD_FOCUSED : ITEM_PAD
 end function
 
-sub sizePillAndClip()
-    maxNavWidth = CLOCK_LEFT - AVATAR_RIGHT - 40
-    contentWithPad = m.totalContentWidth + (NAV_SIDE_PAD * 2)
-
-    if contentWithPad <= maxNavWidth
-        pillWidth = contentWithPad
-        clipWidth = contentWithPad
-    else
-        pillWidth = maxNavWidth
-        clipWidth = maxNavWidth
+' What a nav item takes up, its own padding included
+function getItemWidth(item as object) as integer
+    if item.isLibChild
+        return item.label.boundingRect().width + (LIB_ITEM_PAD * 2)
     end if
 
-    m.clipWidth = clipWidth
-    navCenterX = AVATAR_RIGHT + (maxNavWidth / 2)
-    pillX = navCenterX - (pillWidth / 2)
+    pad = itemPad(item)
+    if item.label.visible
+        return (pad * 2) + ICON_SIZE + ICON_LABEL_GAP + item.label.boundingRect().width
+    end if
 
-    m.navbarBg.translation = [pillX, 40]
-    m.navbarBg.width = pillWidth
-    m.navbarBg.height = NAV_HEIGHT
-    m.navContainer.translation = [pillX, 40]
-    m.navClipGroup.clippingRect = [0, 0, clipWidth, NAV_HEIGHT]
+    return (pad * 2) + ICON_SIZE
+end function
+
+sub layoutNavItem(item as object)
+    if item.isLibChild then return
+
+    pad = itemPad(item)
+    item.icon.translation = [pad, (NAV_HEIGHT - ICON_SIZE) / 2]
+    item.label.translation = [pad + ICON_SIZE + ICON_LABEL_GAP, 0]
 end sub
 
+' The bar wraps whatever is in it and sits on the middle of the screen, growing
+' until it hits its cap and scrolling after that
+sub sizeBarAndClip()
+    barWidth = m.totalContentWidth
+    if barWidth > NAV_MAX_WIDTH then barWidth = NAV_MAX_WIDTH
+
+    m.clipWidth = barWidth
+    barX = SCREEN_MIDDLE - (barWidth / 2)
+
+    m.navbarBg.translation = [barX, NAV_TOP]
+    m.navbarBg.width = barWidth
+    m.navbarBg.height = NAV_HEIGHT
+    m.navContainer.translation = [barX, NAV_TOP]
+    m.navClipGroup.clippingRect = [0, 0, barWidth, NAV_HEIGHT]
+end sub
+
+' Everything fits until the bar reaches its cap, and past that the row slides to
+' keep the focused button in view
 sub scrollToFocusedItem()
     if m.selectedIndex < 0 or m.selectedIndex >= m.itemPositions.count() then return
 
-    itemPos = m.itemPositions[m.selectedIndex]
-    itemLeft = itemPos.x
-    itemRight = itemPos.x + itemPos.width
+    targetScroll = 0
+    if m.totalContentWidth > m.clipWidth
+        itemPos = m.itemPositions[m.selectedIndex]
+        targetScroll = m.scrollX
 
-    viewPad = 40
-    viewLeft = -m.scrollX + viewPad
-    viewRight = -m.scrollX + m.clipWidth - viewPad
+        if itemPos.x + m.scrollX < 0
+            targetScroll = - itemPos.x
+        else if itemPos.x + itemPos.width + m.scrollX > m.clipWidth
+            targetScroll = m.clipWidth - (itemPos.x + itemPos.width)
+        end if
 
-    targetScroll = m.scrollX
-
-    if m.totalContentWidth + (NAV_SIDE_PAD * 2) <= m.clipWidth
-        targetScroll = (m.clipWidth - m.totalContentWidth) / 2
-    else if itemLeft < viewLeft
-        targetScroll = - (itemLeft - viewPad)
-    else if itemRight > viewRight
-        targetScroll = - (itemRight - m.clipWidth + viewPad)
+        minScroll = m.clipWidth - m.totalContentWidth
+        if targetScroll < minScroll then targetScroll = minScroll
+        if targetScroll > 0 then targetScroll = 0
     end if
-
-    minScroll = - (m.totalContentWidth - m.clipWidth + NAV_SIDE_PAD)
-    maxScroll = NAV_SIDE_PAD
-    if targetScroll < minScroll then targetScroll = minScroll
-    if targetScroll > maxScroll then targetScroll = maxScroll
 
     if targetScroll <> m.scrollX
         animateScroll(targetScroll)
@@ -327,11 +353,11 @@ sub positionFocusPill()
 
     itemPos = m.itemPositions[m.selectedIndex]
 
-    pillX = m.scrollX + (itemPos.x - PILL_PAD)
-    pillY = 0
-    pillWidth = itemPos.width + (PILL_PAD * 2)
+    pillX = m.scrollX + itemPos.x
+    pillY = (NAV_HEIGHT - itemPos.height) / 2
+    pillWidth = itemPos.width
 
-    m.focusPill.height = PILL_HEIGHT
+    m.focusPill.height = itemPos.height
 
     if m.firstFocusShow or not m.focusPill.visible
         m.focusPill.translation = [pillX, pillY]
@@ -582,13 +608,15 @@ sub applyOverlaySettings()
     end if
 end sub
 
+' The other clients hand each button its own colour from the cycle, in the order
+' the buttons actually appear, so hiding one never doubles a colour on its
+' neighbours
 sub applyNavColorCycle()
-    if not isValid(m.focusPill) then return
-
     cycleSetting = ""
     if isValid(m.global) and isValid(m.global.session) and isValid(m.global.session.user) and isValid(m.global.session.user.settings)
         cycleSetting = m.global.session.user.settings["ui.theme.navColorCycle"]
     end if
+
     colors = []
     if isValidAndNotEmpty(cycleSetting)
         parsed = ParseJson(cycleSetting)
@@ -600,38 +628,20 @@ sub applyNavColorCycle()
         end if
     end if
 
-    if isValid(m.navCycleAnim)
-        m.navCycleAnim.control = "stop"
-        m.top.removeChild(m.navCycleAnim)
-        m.navCycleAnim = invalid
-    end if
+    cycleLength = colors.count()
+    slot = 0
+    for each item in m.navItems
+        if item.isLibChild then continue for
 
-    if colors.count() < 2
-        m.focusPill.blendColor = themeChrome.IsActive() ? themeChrome.Accent() : "0xFFFFFFFF"
-        return
-    end if
-
-    steps = colors.count()
-    keys = []
-    keyValues = []
-    for i = 0 to steps
-        keys.push(i / (steps * 1.0))
-        keyValues.push(colors[i mod steps])
+        if cycleLength > 0
+            item.cycleInk = colors[slot mod cycleLength]
+            slot++
+        else
+            item.cycleInk = ""
+        end if
     end for
 
-    anim = createObject("roSGNode", "Animation")
-    anim.duration = steps * 1.6
-    anim.repeat = true
-    anim.easeFunction = "linear"
-
-    interp = anim.createChild("ColorFieldInterpolator")
-    interp.fieldToInterp = "focusPill.blendColor"
-    interp.key = keys
-    interp.keyValue = keyValues
-
-    m.top.appendChild(anim)
-    m.navCycleAnim = anim
-    anim.control = "start"
+    layoutNavbar()
 end sub
 
 sub updateShuffleButtonVisibility()
