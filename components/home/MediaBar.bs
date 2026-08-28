@@ -4,6 +4,17 @@ import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/themeApply.bs"
 
+' Geometry for the aya frame, taken from the other clients, which write their
+' layout in the same 1920x1080 pixels this screen uses
+const AYA_FRAME_WIDTH = 1760
+const AYA_TITLE_SIZE = 34
+const AYA_INDICATOR_TOP = 22
+const AYA_INDICATOR_RIGHT = 24
+const AYA_INDICATOR_WIDTH = 10
+const AYA_INDICATOR_ACTIVE_WIDTH = 16
+const AYA_INDICATOR_GAP = 5
+const AYA_FOCUS_SCALE = 1.006
+
 sub init()
     m.logoImage = m.top.findNode("logoImage")
     m.logoShadow = m.top.findNode("logoShadow")
@@ -41,6 +52,16 @@ sub init()
 
     m.bookshelfGroup = m.top.findNode("bookshelfGroup")
     m.bookshelfGrid = m.top.findNode("bookshelfGrid")
+
+    m.ayaGroup = m.top.findNode("ayaGroup")
+    m.ayaBackdrop = m.top.findNode("ayaBackdrop")
+    m.ayaBackdropNext = m.top.findNode("ayaBackdropNext")
+    m.ayaLogo = m.top.findNode("ayaLogo")
+    m.ayaTitle = m.top.findNode("ayaTitle")
+    m.ayaIndicators = m.top.findNode("ayaIndicators")
+    m.ayaFocusRing = m.top.findNode("ayaFocusRing")
+    m.ayaSlideIn = m.top.findNode("ayaSlideIn")
+    m.ayaSlideIn.observeField("state", "onAyaSlideInComplete")
 
     m.global.observeFieldScoped("mediaBarModeChanged", "onMediaBarModeChanged")
     applyCurrentStyle()
@@ -80,6 +101,7 @@ sub init()
 
     ' Observe focus changes to ensure backdrop is set on initial focus
     m.top.observeFieldScoped("hasFocus", "onFocusChanged")
+    m.top.observeField("focusedChild", "onAyaFocusChanged")
 
     ' Observe overlay settings changes
     if isValid(m.global)
@@ -130,6 +152,7 @@ end sub
 sub applyCurrentStyle()
     mode = m.global.session.user.settings["ui.home.mediaBarMode"] ?? "moonfin"
     m.mediaBarMode = mode
+    m.ayaGroup.visible = false
     if mode = "off" or mode = ""
         m.galleryGroup.visible = false
         m.bookshelfGroup.visible = false
@@ -145,7 +168,7 @@ sub applyCurrentStyle()
         if isValid(m.autoAdvanceTimer) then m.autoAdvanceTimer.control = "stop"
     end if
 
-    if mode <> "moonfin" and mode <> "makd" and mode <> "gallery" and mode <> "banner" and mode <> "bookshelf" ' Only accept available styles
+    if mode <> "moonfin" and mode <> "makd" and mode <> "gallery" and mode <> "banner" and mode <> "bookshelf" and mode <> "aya" ' Only accept available styles
         mode = "moonfin"
         m.mediaBarMode = mode
     end if
@@ -283,6 +306,32 @@ sub applyCurrentStyle()
         m.dotsBgY = 793
         ' Paused Indicator
         m.pauseIndicator.translation = "[1722, 808]"
+    else if mode = "aya"
+        if isValid(m.contentFadeOut) then m.contentFadeOut.control = "stop"
+        if isValid(m.contentFadeIn) then m.contentFadeIn.control = "stop"
+        m.pendingDisplayIndex = -1
+
+        m.logoShadow.visible = false
+        m.logoImage.visible = false
+        m.titleText.visible = false
+        m.infoBackground.visible = false
+        m.infoOverlayContent.visible = false
+        m.leftArrow.visible = false
+        m.leftArrowBg.visible = false
+        m.rightArrow.visible = false
+        m.rightArrowBg.visible = false
+        m.dotsBackground.visible = false
+        m.indicatorDots.visible = false
+        m.overviewLabel.visible = false
+
+        m.galleryGroup.visible = false
+        m.bookshelfGroup.visible = false
+        m.ayaGroup.visible = true
+
+        m.ayaTitle.font.size = AYA_TITLE_SIZE
+        onAyaFocusChanged()
+
+        m.pauseIndicator.translation = "[1772, 808]"
     else if mode = "banner"
         m.infoBottomAnchor = 240
 
@@ -885,6 +934,13 @@ end sub
 sub displayMediaBarItem(index as integer)
     if index < 0 or index >= m.mediaBarItems.count() then return
 
+    ' Aya fades its own artwork inside the frame rather than the overlay the
+    ' other styles share
+    if m.mediaBarMode = "aya"
+        showMediaBarItem(index)
+        return
+    end if
+
     ' If this is not the first display and we have fade animations, do a crossfade
     if m.currentIndex <> index or m.pendingDisplayIndex >= 0
         if isValid(m.contentFadeOut) and isValid(m.infoOverlayContent) and m.infoOverlayContent.opacity > 0
@@ -900,6 +956,95 @@ sub displayMediaBarItem(index as integer)
     end if
 
     showMediaBarItem(index)
+end sub
+
+' The home screen hands the bar real focus rather than setting hasFocus, so the
+' frame follows the focus chain to lift and take its ring
+sub onAyaFocusChanged()
+    if m.mediaBarMode <> "aya" then return
+
+    focused = m.top.isInFocusChain()
+    m.ayaFocusRing.visible = focused
+    m.ayaGroup.scale = focused ? [AYA_FOCUS_SCALE, AYA_FOCUS_SCALE] : [1.0, 1.0]
+end sub
+
+sub showAyaItem(item as object)
+    if item.logoUrl <> ""
+        m.ayaLogo.uri = item.logoUrl
+        m.ayaLogo.visible = true
+        m.ayaTitle.visible = false
+    else
+        m.ayaTitle.text = item.title
+        m.ayaTitle.visible = true
+        m.ayaLogo.visible = false
+    end if
+
+    updateAyaIndicators()
+    showAyaBackdrop(item.backdropUrl)
+end sub
+
+' The incoming artwork fades in over the one already showing, then takes its
+' place, so a slide never lands half drawn
+sub showAyaBackdrop(url as string)
+    if url = "" or isStringEqual(url, m.ayaBackdrop.uri) then return
+
+    if not isValidAndNotEmpty(m.ayaBackdrop.uri)
+        m.ayaBackdrop.uri = url
+        return
+    end if
+
+    ' Let whatever is still fading land before starting the next one
+    if isStringEqual(m.ayaSlideIn.state, "running") then commitAyaBackdrop()
+
+    m.ayaBackdropNext.uri = url
+    m.ayaSlideIn.control = "start"
+end sub
+
+sub onAyaSlideInComplete(event as object)
+    if isStringEqual(event.getData(), "stopped") then commitAyaBackdrop()
+end sub
+
+sub commitAyaBackdrop()
+    if not isValidAndNotEmpty(m.ayaBackdropNext.uri) then return
+
+    m.ayaBackdrop.uri = m.ayaBackdropNext.uri
+    m.ayaBackdropNext.uri = ""
+    m.ayaBackdropNext.opacity = 0
+end sub
+
+' The bars are right aligned in the corner, so the row is measured before it is
+' placed and the active one is wider
+sub updateAyaIndicators()
+    count = m.mediaBarItems.count()
+    if count <= 1
+        m.ayaIndicators.visible = false
+        return
+    end if
+
+    if m.ayaIndicators.getChildCount() <> count
+        m.ayaIndicators.removeChildrenIndex(m.ayaIndicators.getChildCount(), 0)
+        for i = 0 to count - 1
+            bar = m.ayaIndicators.createChild("Rectangle")
+            bar.height = 2
+        end for
+    end if
+
+    rowWidth = 0
+    for i = 0 to count - 1
+        bar = m.ayaIndicators.getChild(i)
+        if i = m.currentIndex
+            bar.width = AYA_INDICATOR_ACTIVE_WIDTH
+            bar.color = "#FFFFFFFF"
+        else
+            bar.width = AYA_INDICATOR_WIDTH
+            bar.color = "#FFFFFF4D"
+        end if
+        rowWidth += bar.width
+    end for
+    rowWidth += (count - 1) * AYA_INDICATOR_GAP
+
+    m.ayaIndicators.translation = [AYA_FRAME_WIDTH - AYA_INDICATOR_RIGHT - rowWidth, AYA_INDICATOR_TOP]
+    m.ayaIndicators.visible = true
 end sub
 
 ' Called when contentFadeOut completes - swap content and fade back in
@@ -930,6 +1075,11 @@ sub showMediaBarItem(index as integer)
     ' Update backdrop (single set, parent handles transitions)
     if item.backdropUrl <> ""
         m.top.currentBackdrop = item.backdropUrl
+    end if
+
+    if m.mediaBarMode = "aya"
+        showAyaItem(item)
+        return
     end if
 
     ' Show logo OR title

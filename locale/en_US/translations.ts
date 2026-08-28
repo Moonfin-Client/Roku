@@ -13,6 +13,10 @@
         <translation>Action Buttons</translation>
     </message>
     <message>
+        <source>Aya</source>
+        <translation>Aya</translation>
+    </message>
+    <message>
         <source>Cancel</source>
         <translation>Cancel</translation>
     </message>
