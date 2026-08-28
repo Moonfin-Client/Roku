@@ -1,0 +1,131 @@
+import "pkg:/source/utils/misc.bs"
+
+' The languages the other clients spell out, so a track naming its language in
+' full still searches by the code the server wants
+const SUBTITLE_LANGUAGES = "english:eng,en:eng,eng:eng,spanish:spa,es:spa,spa:spa,french:fra,fr:fra,fra:fra,de:deu,deu:deu,german:deu,it:ita,ita:ita,japanese:jpn,ja:jpn,jpn:jpn,korean:kor,ko:kor,kor:kor,chinese:zho,zh:zho,zho:zho"
+
+' Nothing in here may name a local after one of these functions, since a bare
+' identifier inside a namespace resolves to its members before its locals
+namespace remoteSubtitles
+
+    ' The first of the given languages that says anything, falling back to
+    ' english the way the other clients do
+    function Language(candidates as object) as string
+        for each value in candidates
+            if isValidAndNotEmpty(value)
+                normalized = LCase(value.toStr().Trim())
+                if normalized <> "" and normalized <> "unknown"
+                    known = remoteSubtitles.Mapped(normalized)
+                    if known <> "" then return known
+                    if Len(normalized) = 3 or Len(normalized) = 2 then return normalized
+                end if
+            end if
+        end for
+
+        return "eng"
+    end function
+
+    ' The language to search in, taken from the subtitle in use, then the audio,
+    ' then the first subtitle the file carries
+    function LanguageFor(streams as dynamic, subtitleIndex as integer, audioIndex as integer) as string
+        chosenSubtitle = ""
+        chosenAudio = ""
+        firstSubtitle = ""
+
+        if isValidAndNotEmpty(streams)
+            for i = 0 to streams.count() - 1
+                stream = streams[i]
+                streamType = stream.LookupCI("Type") ?? ""
+                spoken = stream.LookupCI("Language") ?? ""
+
+                if isStringEqual(streamType, "Subtitle")
+                    if firstSubtitle = "" then firstSubtitle = spoken
+                    if i = subtitleIndex then chosenSubtitle = spoken
+                else if isStringEqual(streamType, "Audio") and i = audioIndex
+                    chosenAudio = spoken
+                end if
+            end for
+        end if
+
+        return remoteSubtitles.Language([chosenSubtitle, chosenAudio, firstSubtitle])
+    end function
+
+    function Mapped(normalized as string) as string
+        for each pair in SUBTITLE_LANGUAGES.Split(",")
+            parts = pair.Split(":")
+            if parts.count() = 2 and parts[0] = normalized then return parts[1]
+        end for
+
+        return ""
+    end function
+
+    ' What the provider says about an upload, which is what decides whether a
+    ' result is worth taking at all. These are kept out of the detail line and
+    ' drawn as their own badges, since run in with the rest a long release name
+    ' pushes them off the end of the row
+    function Flags(result as object) as object
+        badges = []
+        if result.LookupCI("AiTranslated") = true then badges.push(tr("AI Translated"))
+        if result.LookupCI("MachineTranslated") = true then badges.push(tr("Machine Translated"))
+        if result.LookupCI("HearingImpaired") = true then badges.push(tr("SDH"))
+        if result.LookupCI("Forced") = true then badges.push(tr("Forced"))
+        if result.LookupCI("IsHashMatch") = true then badges.push(tr("Perfect match"))
+
+        return badges
+    end function
+
+    ' The provider's own bookkeeping, as one line under the release name
+    function Details(result as object) as string
+        parts = []
+
+        spoken = remoteSubtitles.Text(result, "ThreeLetterISOLanguageName")
+        if spoken = "" then spoken = remoteSubtitles.Text(result, "Language")
+        if spoken <> "" then parts.push(UCase(spoken))
+
+        provider = remoteSubtitles.Text(result, "ProviderName")
+        if provider <> "" then parts.push(provider)
+
+        container = remoteSubtitles.Text(result, "Format")
+        if container <> "" then parts.push(UCase(container))
+
+        rating = result.LookupCI("CommunityRating")
+        if isValid(rating) then parts.push(`${Str(Int(rating * 10 + 0.5) / 10).Trim()}★`)
+
+        downloads = result.LookupCI("DownloadCount")
+        if isValid(downloads)
+            if downloads = 1
+                parts.push(tr("1 download"))
+            else
+                parts.push(tr("{count} downloads").Replace("{count}", downloads.toStr()))
+            end if
+        end if
+
+        rate = result.LookupCI("FrameRate")
+        if isValid(rate) and rate > 0
+            parts.push(tr("{fps} fps").Replace("{fps}", remoteSubtitles.FrameRate(rate)))
+        end if
+
+        return parts.join(" · ")
+    end function
+
+    ' 23.976 stays as it is, 25.000 reads better as 25
+    function FrameRate(value as dynamic) as string
+        shown = Str(Int(value * 1000 + 0.5) / 1000).Trim()
+        if Instr(1, shown, ".") = 0 then return shown
+
+        while Right(shown, 1) = "0"
+            shown = Left(shown, Len(shown) - 1)
+        end while
+        if Right(shown, 1) = "." then shown = Left(shown, Len(shown) - 1)
+
+        return shown
+    end function
+
+    function Text(result as object, fieldName as string) as string
+        value = result.LookupCI(fieldName)
+        if not isValid(value) then return ""
+
+        return value.toStr().Trim()
+    end function
+
+end namespace
