@@ -1,65 +1,112 @@
-import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/SubtitleSelection.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/trackDialog.bs"
+import "pkg:/source/utils/trackLabels.bs"
 
 sub init()
     m.subtitleMenu = m.top.findNode("subtitleMenu")
-    m.subtitleMenu.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
-    m.subtitleMenu.focusedColor = ColorPalette.WHITE
     m.subtitleMenu.observeField("itemSelected", "onSubtitleItemSelected")
 
-    m.selectedSubtitleIndex = SubtitleSelection.NONE
+    m.top.findNode("title").text = tr("Subtitle Track")
+
+    m.parts = {
+        panel: m.top.findNode("panel"),
+        panelBg: m.top.findNode("panelBg"),
+        panelBorder: m.top.findNode("panelBorder"),
+        title: m.top.findNode("title"),
+        titleRule: m.top.findNode("titleRule"),
+        list: m.subtitleMenu
+    }
 
     m.top.observeField("visible", "onVisibleChanged")
 end sub
 
 sub onVisibleChanged()
-    if m.top.visible
-        m.subtitleMenu.setFocus(true)
-    else
-        m.subtitleMenu.setFocus(false)
-    end if
+    if m.top.visible then m.subtitleMenu.setFocus(true)
 end sub
 
+' The file's own tracks list before downloaded ones, the order the player uses.
+' Rows are picked by their place in the unsorted list, so each one keeps that
+' place rather than its place on screen.
+function orderedTracks(tracks as object) as object
+    internal = []
+    external = []
+
+    for each track in tracks
+        if track.StreamIndex = SubtitleSelection.NONE
+            internal.push(track)
+        else if trackLabels.IsExternal(track.json)
+            external.push(track)
+        else
+            internal.push(track)
+        end if
+    end for
+
+    for each track in external
+        internal.push(track)
+    end for
+
+    return internal
+end function
+
 sub subtitleTracksSet()
-    if isValid(m.top.subtitleTracks)
-        subtitleContent = CreateObject("roSGNode", "ContentNode")
-        index = 0
-        selectedSubtitleIndex = 0
+    if not isValid(m.top.subtitleTracks) then return
 
-        for each subtitle in m.top.subtitleTracks
-            entry = subtitleContent.CreateChild("SubtitleTrackListData")
-            entry.json = subtitle.json
-            entry.title = subtitle.Title
-            entry.description = subtitle.Title
-            entry.index = subtitle.StreamIndex.toStr()
-            entry.StreamIndex = subtitle.StreamIndex
-            if isValid(subtitle.Selected) and subtitle.Selected
-                selectedSubtitleIndex = index
-                entry.selected = true
-            end if
-            index = index + 1
-        end for
+    subtitleContent = CreateObject("roSGNode", "ContentNode")
+    index = 0
+    position = 0
+    selectedSubtitleIndex = 0
 
-        downloadEntry = subtitleContent.CreateChild("SubtitleTrackListData")
-        downloadEntry.index = "downloadSubtitlesEntry"
-        downloadEntry.title = tr("Download Subtitles...")
-        downloadEntry.description = tr("Download Subtitles...")
-        downloadEntry.StreamIndex = SubtitleSelection.NONE
+    for each subtitle in orderedTracks(m.top.subtitleTracks)
+        entry = subtitleContent.CreateChild("SubtitleTrackListData")
+        entry.json = subtitle.json
+        entry.index = subtitle.StreamIndex.toStr()
+        entry.StreamIndex = subtitle.StreamIndex
 
-        m.subtitleMenu.content = subtitleContent
-        m.subtitleMenu.jumpToItem = selectedSubtitleIndex
-        m.subtitleMenu.checkedItem = selectedSubtitleIndex
-        m.selectedSubtitleIndex = selectedSubtitleIndex
-    end if
+        if subtitle.StreamIndex = SubtitleSelection.NONE
+            entry.title = tr("None")
+        else
+            position = position + 1
+            entry.title = trackLabels.NumberedName(position, subtitle.Title, tr("Subtitle"))
+            entry.description = trackLabels.SubtitleDetail(subtitle.json, subtitle.Title)
+        end if
+
+        if isValid(subtitle.Selected) and subtitle.Selected
+            selectedSubtitleIndex = index
+            entry.selected = true
+        end if
+        index = index + 1
+    end for
+
+    download = subtitleContent.CreateChild("SubtitleTrackListData")
+    download.title = tr("Download subtitles...")
+    download.description = tr("Search using the OpenSubtitles plugin")
+    download.action = "download"
+    download.dividerAbove = true
+
+    cancel = subtitleContent.CreateChild("SubtitleTrackListData")
+    cancel.title = tr("Cancel")
+    cancel.action = "cancel"
+    cancel.dimmed = true
+    cancel.dividerAbove = true
+
+    trackDialog.Layout(m.parts, subtitleContent.getChildCount())
+
+    m.subtitleMenu.content = subtitleContent
+    m.subtitleMenu.jumpToItem = selectedSubtitleIndex
 end sub
 
 sub onSubtitleItemSelected()
     selectedItem = m.subtitleMenu.content.getChild(m.subtitleMenu.itemSelected)
     if not isValid(selectedItem) then return
 
-    if isStringEqual(chainLookupReturn(selectedItem, "index", ""), "downloadSubtitlesEntry")
+    if selectedItem.action = "cancel"
+        m.top.visible = false
+        return
+    end if
+
+    if selectedItem.action = "download"
         m.top.downloadRequested = true
         m.top.visible = false
         return
@@ -71,6 +118,10 @@ end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
+
+    ' A picker that has been dismissed can still be holding focus, and swallowing
+    ' keys there would leave the screen behind it unable to move
+    if not m.top.visible then return false
 
     if key = KeyCode.BACK
         m.top.visible = false
