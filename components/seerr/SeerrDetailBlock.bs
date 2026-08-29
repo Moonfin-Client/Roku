@@ -1,0 +1,349 @@
+import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/loginStyle.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/seerrFacts.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
+
+const BLOCK_WIDTH = 1710
+const ROW_HEIGHT = 400
+const SECTION_GAP = 40
+const FACTS_PER_LINE = 3
+const FACT_LINE_HEIGHT = 64
+const BANNER_HEIGHT = 150
+const CHIP_PADDING = 32
+const CARD_LIMIT = 20
+
+sub init()
+    m.tagsChip = m.top.findNode("tagsChip")
+    m.factsGroup = m.top.findNode("factsGroup")
+    m.recommendationsSection = m.top.findNode("recommendationsSection")
+    m.recommendationsHeading = m.top.findNode("recommendationsHeading")
+    m.recommendationsRow = m.top.findNode("recommendationsRow")
+    m.similarSection = m.top.findNode("similarSection")
+    m.similarHeading = m.top.findNode("similarHeading")
+    m.similarRow = m.top.findNode("similarRow")
+    m.collectionBanner = m.top.findNode("collectionBanner")
+    m.collectionBackdrop = m.top.findNode("collectionBackdrop")
+    m.collectionFocus = m.top.findNode("collectionFocus")
+    m.collectionText = m.top.findNode("collectionText")
+    m.collectionCta = m.top.findNode("collectionCta")
+
+    m.tagsChip.text = tr("Genres and Tags")
+    m.collectionCta.text = tr("View Collection")
+
+    measure = CreateObject("roSGNode", "Label")
+    measure.font = "font:SmallSystemFont"
+    measure.text = m.tagsChip.text
+    m.tagsChip.width = measure.boundingRect().width + (CHIP_PADDING * 2)
+    loginStyle.ApplyButton(m.tagsChip)
+
+    for each row in [m.recommendationsRow, m.similarRow]
+        row.rowItemSize = [180, 270]
+        row.rowItemSpacing = [20, 0]
+        row.focusBitmapUri = "pkg:/images/hd_focus.9.png"
+        row.focusBitmapBlendColor = ColorPalette.WHITE
+        row.focusFootprintBitmapUri = ""
+        row.focusFootprintBlendColor = ColorPalette.TRANSPARENT
+    end for
+
+    m.recommendationsRow.observeFieldScoped("rowItemSelected", "onRecommendationSelected")
+    m.similarRow.observeFieldScoped("rowItemSelected", "onSimilarSelected")
+
+    m.tasks = []
+    m.details = invalid
+    m.factLines = 0
+    m.stops = []
+    m.stopOffsets = []
+    m.focusedStop = 0
+end sub
+
+' Nothing is fetched until a host hands over a title Seerr can be asked about
+sub loadTarget()
+    resetBlock()
+
+    if not isValidAndNotEmpty(m.top.tmdbId) then return
+
+    config = GetSeerrConfig()
+    if not isValid(config) or config.enabled <> true then return
+
+    ' The details endpoint takes no paging, and the proxy turns away a request that sends it
+    startRequest("", "onDetailsResponse", {})
+    startRequest("/recommendations", "onRecommendationsResponse", { page: "1" })
+    startRequest("/similar", "onSimilarResponse", { page: "1" })
+end sub
+
+sub startRequest(suffix as string, callback as string, queryParams as object)
+    task = CreateObject("roSGNode", "SeerrAPITask")
+    task.request = {
+        method: "GET",
+        endpoint: `/api/v1/${m.top.mediaType}/${m.top.tmdbId}${suffix}`,
+        queryParams: queryParams
+    }
+    task.observeField("response", callback)
+    task.control = "RUN"
+
+    m.tasks.push(task)
+end sub
+
+sub resetBlock()
+    for each task in m.tasks
+        task.unobserveField("response")
+    end for
+    m.tasks = []
+
+    m.details = invalid
+    m.tagsChip.visible = false
+    m.factsGroup.visible = false
+    m.factsGroup.removeChildrenIndex(m.factsGroup.getChildCount(), 0)
+    m.recommendationsSection.visible = false
+    m.similarSection.visible = false
+    m.collectionBanner.visible = false
+    m.top.hasContent = false
+    m.factLines = 0
+    m.stops = []
+    m.stopOffsets = []
+    m.focusedStop = 0
+end sub
+
+sub onDetailsResponse(event as object)
+    response = event.getData()
+    if not response.success or not isValid(response.data) then return
+
+    m.details = response.data
+
+    m.tagsChip.visible = hasTags(m.details)
+
+    buildFacts()
+    buildCollectionBanner()
+    layoutBlock()
+end sub
+
+' Whether the tags dialog would have anything in it
+function hasTags(details as object) as boolean
+    for each key in ["genres", "networks", "keywords"]
+        list = details[key]
+        if isValid(list) and type(list) = "roArray" and list.count() > 0 then return true
+    end for
+    return false
+end function
+
+sub buildFacts()
+    m.factsGroup.removeChildrenIndex(m.factsGroup.getChildCount(), 0)
+
+    facts = seerrFacts.Build(m.details, m.top.mediaType)
+    m.factLines = int((facts.count() + FACTS_PER_LINE - 1) / FACTS_PER_LINE)
+    m.factsGroup.visible = facts.count() > 0
+    if not m.factsGroup.visible then return
+
+    columnWidth = BLOCK_WIDTH / FACTS_PER_LINE
+
+    for i = 0 to facts.count() - 1
+        fact = facts[i]
+        x = (i mod FACTS_PER_LINE) * columnWidth
+        y = int(i / FACTS_PER_LINE) * FACT_LINE_HEIGHT
+
+        label = m.factsGroup.createChild("Label")
+        label.text = fact.label
+        label.font = "font:SmallestBoldSystemFont"
+        label.color = "0xFFFFFF66"
+        label.width = columnWidth
+        label.height = 26
+        label.translation = [x, y]
+
+        value = m.factsGroup.createChild("Label")
+        value.text = fact.value
+        value.font = "font:SmallSystemFont"
+        value.color = "0xFFFFFFD9"
+        value.width = columnWidth
+        value.height = 30
+        value.translation = [x, y + 26]
+    end for
+end sub
+
+sub buildCollectionBanner()
+    collection = m.details.collection
+    if not isValid(collection) or not isValidAndNotEmpty(collection.name)
+        m.collectionBanner.visible = false
+        return
+    end if
+
+    m.collectionText.text = Substitute(tr("Part of {0}"), collection.name)
+
+    if isValidAndNotEmpty(collection.backdropPath)
+        m.collectionBackdrop.uri = GetTmdbImageBaseUrls().backdropW780 + collection.backdropPath
+    else
+        m.collectionBackdrop.uri = ""
+    end if
+
+    m.collectionBanner.addReplace("collectionId", collection.id)
+    m.collectionBanner.addReplace("collectionName", collection.name)
+    m.collectionBanner.visible = true
+end sub
+
+sub onRecommendationsResponse(event as object)
+    fillRow(event.getData(), m.recommendationsRow, m.recommendationsSection, m.recommendationsHeading, tr("Recommendations"))
+end sub
+
+sub onSimilarResponse(event as object)
+    fillRow(event.getData(), m.similarRow, m.similarSection, m.similarHeading, tr("Similar"))
+end sub
+
+' The rows carry whatever the server calls Seerr, so they read apart from the
+' library's own More Like This row
+sub fillRow(response as object, row as object, section as object, heading as object, rowName as string)
+    section.visible = false
+
+    if not response.success or not isValid(response.data) then return
+
+    results = response.data.results
+    if not isValid(results) or results.count() = 0 then return
+
+    rowNode = CreateObject("roSGNode", "ContentNode")
+    for each item in results
+        if rowNode.getChildCount() >= CARD_LIMIT then exit for
+        card = CreateMediaContentNode(item)
+        if isValid(card) then rowNode.appendChild(card)
+    end for
+
+    if rowNode.getChildCount() = 0 then return
+
+    content = CreateObject("roSGNode", "ContentNode")
+    content.appendChild(rowNode)
+
+    heading.text = `${GetSeerrDisplayName()} • ${rowName}`
+    row.content = content
+    section.visible = true
+
+    layoutBlock()
+end sub
+
+' Whatever Seerr had nothing for is left out rather than left blank
+sub layoutBlock()
+    yPos = 0
+    m.stops = []
+    m.stopOffsets = []
+
+    if m.tagsChip.visible
+        m.tagsChip.translation = [0, yPos]
+        addStop(m.tagsChip, yPos)
+        yPos += m.tagsChip.height + SECTION_GAP
+    end if
+
+    if m.collectionBanner.visible
+        m.collectionBanner.translation = [0, yPos]
+        addStop(m.collectionBanner, yPos)
+        yPos += BANNER_HEIGHT + SECTION_GAP
+    end if
+
+    if m.factsGroup.visible
+        m.factsGroup.translation = [0, yPos]
+        yPos += (m.factLines * FACT_LINE_HEIGHT) + SECTION_GAP
+    end if
+
+    if m.recommendationsSection.visible
+        m.recommendationsSection.translation = [0, yPos]
+        addStop(m.recommendationsRow, yPos)
+        yPos += ROW_HEIGHT + SECTION_GAP
+    end if
+
+    if m.similarSection.visible
+        m.similarSection.translation = [0, yPos]
+        addStop(m.similarRow, yPos)
+        yPos += ROW_HEIGHT + SECTION_GAP
+    end if
+
+    m.top.hasContent = yPos > 0
+end sub
+
+function focusFirst() as boolean
+    if m.stops.count() = 0 then return false
+    m.focusedStop = 0
+    applyFocus()
+    return true
+end function
+
+sub addStop(node as object, offset as integer)
+    m.stops.push(node)
+    m.stopOffsets.push(offset)
+end sub
+
+sub applyFocus()
+    target = m.stops[m.focusedStop]
+    target.setFocus(true)
+    m.collectionFocus.visible = target.isSameNode(m.collectionBanner)
+    m.top.focusedOffset = m.stopOffsets[m.focusedStop]
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = KeyCode.DOWN
+        if m.focusedStop >= m.stops.count() - 1 then return false
+        m.focusedStop++
+        applyFocus()
+        return true
+    end if
+
+    if key = KeyCode.UP
+        if m.focusedStop <= 0 then return false
+        m.focusedStop--
+        applyFocus()
+        return true
+    end if
+
+    if key = KeyCode.OK
+        target = m.stops[m.focusedStop]
+        if target.isSameNode(m.tagsChip)
+            openTagsDialog()
+            return true
+        end if
+        if target.isSameNode(m.collectionBanner)
+            openCollection()
+            return true
+        end if
+    end if
+
+    return false
+end function
+
+sub openCollection()
+    collectionId = m.collectionBanner.collectionId
+    if not isValid(collectionId) then return
+
+    screen = CreateObject("roSGNode", "SeerrGenreBrowseScreen")
+    screen.browseType = "collection"
+    screen.mediaType = m.top.mediaType
+    screen.genreName = m.collectionBanner.collectionName
+    screen.genreId = collectionId
+    m.global.sceneManager.callFunc("pushScene", screen)
+end sub
+
+sub openTagsDialog()
+    dialog = m.top.getScene().findNode("seerrTagsDialog")
+    if not isValid(dialog) then return
+
+    dialog.details = m.details
+    dialog.mediaType = m.top.mediaType
+    dialog.returnFocus = m.top
+    dialog.callFunc("showDialog")
+end sub
+
+sub onRecommendationSelected()
+    openCard(m.recommendationsRow)
+end sub
+
+sub onSimilarSelected()
+    openCard(m.similarRow)
+end sub
+
+sub openCard(row as object)
+    selection = row.rowItemSelected
+    if not isValid(selection) or selection.count() < 2 or not isValid(row.content) then return
+
+    rowNode = row.content.getChild(0)
+    if not isValid(rowNode) then return
+
+    card = rowNode.getChild(selection[1])
+    if isValid(card) then ShowSeerrDetails(card)
+end sub

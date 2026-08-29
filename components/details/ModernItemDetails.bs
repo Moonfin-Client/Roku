@@ -6,6 +6,7 @@ import "pkg:/source/utils/detailButtons.bs"
 import "pkg:/source/utils/fontApply.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/remoteSubtitles.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/multiserver.bs"
 
 import "pkg:/source/enums/AnimationControl.bs"
@@ -146,6 +147,11 @@ sub init()
     m.studioGrid = m.top.findNode("studioGrid")
     m.studioGrid.observeField("itemSelected", "onStudioGridSelected")
     m.chaptersGrid = m.top.findNode("chaptersGrid")
+    m.seerrBlock = m.top.findNode("seerrBlock")
+    if isValid(m.seerrBlock)
+        m.seerrBlock.observeField("hasContent", "onSeerrBlockChanged")
+        m.seerrBlock.observeField("focusedOffset", "onSeerrFocusMoved")
+    end if
     m.chaptersGrid.observeField("itemSelected", "onChapterSelected")
     m.episodeRowGrid = m.top.findNode("episodeRowGrid")
     m.episodeRowGrid.observeField("itemSelected", "onEpisodeRowSelected")
@@ -297,8 +303,53 @@ sub buildTabsFromContent(content as object)
         m.sectionTabs.push({ label: tr("Details"), kind: "details", index: -1 })
     end if
 
+    appendSeerrTab()
+
     showUpNextCard()
     buildTabBar()
+end sub
+
+' Everything Seerr adds to a title goes in one tab rather than several
+sub appendSeerrTab()
+    if not isValid(m.sectionTabs) then m.sectionTabs = []
+    if not isValid(m.seerrBlock) or not m.seerrBlock.hasContent then return
+
+    for each tabDef in m.sectionTabs
+        if tabDef.kind = "seerr" then return
+    end for
+
+    m.sectionTabs.push({ label: GetSeerrDisplayName(), kind: "seerr", index: -1 })
+end sub
+
+' Seerr answers after the tabs are already up, so the bar gains the tab then and
+' keeps whichever one the viewer was on
+sub onSeerrBlockChanged()
+    ' Rebuilding the bar mid-load disturbs the hero layout, so the tab is only
+    ' added once the rest of the screen has settled
+    if not m.tabsBuilt then return
+
+    selected = m.tabBar.selectedIndex
+    appendSeerrTab()
+    buildTabBar()
+    if selected >= 0 and selected < m.sectionTabs.count()
+        m.tabBar.selectedIndex = selected
+    end if
+end sub
+
+' The block is taller than the tab area, so moving between its sections carries
+' the page down with it
+sub onSeerrFocusMoved()
+    if not m.seerrBlock.isInFocusChain() then return
+    scrollContentTo(-(500 + m.seerrBlock.focusedOffset))
+end sub
+
+sub loadSeerrBlock(itemData as object)
+    if not isValid(m.seerrBlock) then return
+
+    target = GetSeerrTargetFor(itemData)
+    m.seerrBlock.mediaType = target.mediaType
+    m.seerrBlock.tmdbId = target.tmdbId
+    m.seerrBlock.callFunc("loadTarget")
 end sub
 
 sub pushSection(items as object, size as object, label as string, kind as string)
@@ -793,6 +844,7 @@ sub onTabSelected()
     m.artistAlbumGrid.visible = false
     m.streamGrid.visible = false
     m.castGrid.visible = false
+    if isValid(m.seerrBlock) then m.seerrBlock.visible = false
     m.activeGrid = invalid
 
     if idx < 0 or idx >= m.sectionTabs.count() then return
@@ -826,6 +878,9 @@ sub onTabSelected()
         populateChapterGrid()
         m.chaptersGrid.visible = true
         m.activeGrid = m.chaptersGrid
+    else if tabDef.kind = "seerr"
+        m.seerrBlock.visible = true
+        m.activeGrid = m.seerrBlock
     else
         showSectionGrid(tabDef.index)
         m.tabGrid.visible = true
@@ -889,6 +944,15 @@ sub onTabBarEscape()
     if dir = "up"
         focusButtonsFromTabs()
     else if dir = "down"
+        if isValid(m.seerrBlock) and isValid(m.activeGrid) and m.activeGrid.isSameNode(m.seerrBlock)
+            if m.seerrBlock.callFunc("focusFirst")
+                m.top.lastFocus = m.seerrBlock
+                setLastFocus(m.seerrBlock)
+                scrollContentTo(-500)
+            end if
+            return
+        end if
+
         if isValid(m.activeGrid) and m.activeGrid.visible and isValid(m.activeGrid.content)
             m.activeGrid.setFocus(true)
             m.top.lastFocus = m.activeGrid
@@ -1011,6 +1075,8 @@ sub itemContentChanged()
 
     itemData = item.json
     m.top.id = itemData.id
+
+    loadSeerrBlock(itemData)
 
     if isValid(m.themeMusicPlayer)
         m.themeMusicPlayer.itemId = itemData.id
@@ -1914,7 +1980,7 @@ sub layoutContainer()
     placeHeroRow(m.tabBar, TAB_BAR_HEIGHT, HERO_TABS_GAP)
 
     contentY = m.heroY + TAB_CONTENT_GAP
-    for each id in ["streamGrid", "tabGrid", "castGrid", "studioGrid", "chaptersGrid", "episodeRowGrid", "trackGrid", "artistAlbumGrid"]
+    for each id in ["streamGrid", "tabGrid", "castGrid", "studioGrid", "chaptersGrid", "episodeRowGrid", "trackGrid", "artistAlbumGrid", "seerrBlock"]
         grid = m.top.findNode(id)
         if isValid(grid) then grid.translation = [0, contentY]
     end for
@@ -2866,6 +2932,19 @@ function onKeyEvent(key as string, press as boolean) as boolean
                 return true
             end if
         end for
+    end if
+
+    ' The Seerr tab holds a block of sections rather than a grid, and it has already
+    ' had its say by the time an up press reaches here
+    if key = KeyCode.UP and isValid(m.seerrBlock) and m.seerrBlock.isInFocusChain()
+        if isValid(m.tabBar) and m.tabsBuilt
+            m.tabBar.setFocus(true)
+            m.top.lastFocus = m.tabBar
+            setLastFocus(m.tabBar)
+            scrollContentTo(0)
+            return true
+        end if
+        return false
     end if
 
     if key = KeyCode.UP and isValid(m.activeGrid) and m.activeGrid.isInFocusChain()
