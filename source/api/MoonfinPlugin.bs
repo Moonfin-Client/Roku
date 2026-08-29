@@ -316,19 +316,41 @@ namespace moonfinPlugin
         return moonfinPlugin.ParseBoolSetting(chainLookupReturn(m.global.session, "user.settings.`plugin.tmdb.episodeRatings`", true), true)
     end function
 
-    ' With no plugin there's nothing to filter by, and an absent or empty list
-    ' means the user hasn't narrowed the sources, so both allow everything through.
-    function IsRatingSourceEnabled(source as string) as boolean
-        if not moonfinPlugin.IsEnabled() then return true
+    ' The sources the viewer picked, lowercased, or invalid when they have not narrowed them,
+    ' which is also how a missing plugin and an empty list both let everything through.
+    ' The order they picked is the order the ratings are shown in.
+    function EnabledRatingSources() as object
+        if not moonfinPlugin.IsEnabled() then return invalid
 
         raw = chainLookupReturn(m.global.session, "user.settings.`plugin.mdblist.ratingSources`", "")
-        if not isValidAndNotEmpty(raw) then return true
+        if not isValidAndNotEmpty(raw) then return invalid
 
         sources = ParseJson(raw)
-        if not isValidAndNotEmpty(sources) then return true
+        if not isValidAndNotEmpty(sources) then return invalid
 
+        picked = []
         for each entry in sources
-            if isValid(entry) and LCase(entry.toStr()) = LCase(source) then return true
+            if isValid(entry) then picked.push(LCase(entry.toStr()))
+        end for
+
+        if picked.count() = 0 then return invalid
+        return picked
+    end function
+
+    ' An episode's TMDB rating keeps its own source name because it is scored out of ten
+    ' rather than a hundred, but the picker only offers TMDB, so it follows that choice.
+    function SelectionSource(source as string) as string
+        if LCase(source) = "tmdb_episode" then return "tmdb"
+        return LCase(source)
+    end function
+
+    function IsRatingSourceEnabled(source as string) as boolean
+        picked = moonfinPlugin.EnabledRatingSources()
+        if not isValid(picked) then return true
+
+        wanted = moonfinPlugin.SelectionSource(source)
+        for each entry in picked
+            if entry = wanted then return true
         end for
         return false
     end function
@@ -352,11 +374,14 @@ namespace moonfinPlugin
     function BuildDisplayRatings(ratings as object) as object
         if not isValidAndNotEmpty(ratings) then return []
 
+        picked = moonfinPlugin.EnabledRatingSources()
         result = []
 
         for each rating in ratings
             source = LCase(rating.source ?? "")
             if source = "" then continue for
+
+            if isValid(picked) and not moonfinPlugin.IsRatingSourceEnabled(source) then continue for
 
             formatted = moonfinPlugin.FormatRating(rating)
             if formatted = "" then continue for
@@ -371,7 +396,30 @@ namespace moonfinPlugin
             })
         end for
 
-        return result
+        return moonfinPlugin.InPickedOrder(result, picked)
+    end function
+
+    ' The picker's order is the order they are shown in, with anything it does not name
+    ' left where the plugin put it
+    function InPickedOrder(ratings as object, picked as object) as object
+        if not isValid(picked) or ratings.count() < 2 then return ratings
+
+        ordered = []
+        for each wanted in picked
+            for each rating in ratings
+                if moonfinPlugin.SelectionSource(rating.source) = wanted then ordered.push(rating)
+            end for
+        end for
+
+        for each rating in ratings
+            found = false
+            for each placed in ordered
+                if placed.source = rating.source then found = true
+            end for
+            if not found then ordered.push(rating)
+        end for
+
+        return ordered
     end function
 
     function GetSourceName(source as string) as string
