@@ -5,6 +5,7 @@ import "pkg:/source/enums/PlaybackMethod.bs"
 import "pkg:/source/enums/SettingType.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/utils/buttonLayout.bs"
+import "pkg:/source/utils/tvKeyboard.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/misc.bs"
@@ -1213,56 +1214,38 @@ sub onKeyGridEscape()
 end sub
 
 sub showStringInputDialog(settingItem as object)
-    ' Show keyboard dialog for string input
     m.currentStringSetting = settingItem
 
-    ' Get current value
     currentValue = get_user_setting(settingItem.settingName)
     if not isValid(currentValue) then currentValue = ""
 
-    ' Determine if this is a password/secure field
     isSecure = (InStr(LCase(settingItem.settingName), "password") > 0 or InStr(LCase(settingItem.settingName), "apikey") > 0)
 
-    ' Create keyboard dialog
-    dialog = createObject("roSGNode", "StandardKeyboardDialog")
-    dialog.title = tr(settingItem.title)
-    dialog.text = currentValue
-
-    if isSecure
-        dialog.textEditBox.secureMode = true
-    end if
-
-    ' Set palette
-    dlgPalette = createObject("roSGNode", "RSGPalette")
-    dlgPalette.colors = {
-        DialogBackgroundColor: chainLookupReturn(m.global.session, "user.settings.colorDialogBackground", ColorPalette.ELEMENTBACKGROUND),
-        DialogFocusColor: chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT),
-        DialogFocusItemColor: chainLookupReturn(m.global.session, "user.settings.colorDialogSelectedText", ColorPalette.WHITE),
-        DialogTextColor: chainLookupReturn(m.global.session, "user.settings.colorDialogText", ColorPalette.WHITE)
-    }
-    dialog.palette = dlgPalette
-    dialog.buttons = [tr("OK"), tr("Cancel")]
-
-    m.stringInputDialog = dialog
-    dialog.observeField("buttonSelected", "onStringInputDialogButton")
-    m.top.getScene().dialog = dialog
+    m.stringInputDialog = tvKeyboard.Open(m.top.getScene(), {
+        title: tr(settingItem.title),
+        text: currentValue,
+        secure: isSecure
+    })
+    m.stringInputDialog.observeField("submitted", "onStringInputSubmitted")
+    m.stringInputDialog.observeField("cancelled", "onStringInputClosed")
 end sub
 
-sub onStringInputDialogButton(event as object)
-    dialog = event.getRoSGNode()
-    buttonIndex = dialog.buttonSelected
-    updatedSetting = m.currentStringSetting
+sub onStringInputSubmitted(event as object)
+    panel = event.getRoSGNode()
+    if isValid(m.currentStringSetting)
+        set_user_setting(m.currentStringSetting.settingName, panel.text)
+    end if
+    onStringInputClosed(event)
+end sub
 
-    if buttonIndex = 0 ' OK pressed
-        ' Save the value
-        newValue = dialog.text
-        if isValid(m.currentStringSetting)
-            set_user_setting(m.currentStringSetting.settingName, newValue)
-        end if
+sub onStringInputClosed(_event as object)
+    updatedSetting = m.currentStringSetting
+    if isValid(m.stringInputDialog)
+        m.stringInputDialog.unobserveField("submitted")
+        m.stringInputDialog.unobserveField("cancelled")
+        m.stringInputDialog = invalid
     end if
 
-    ' Close dialog and return focus
-    dialog.close = true
     m.settingsMenu.setFocus(true)
     m.currentStringSetting = invalid
     refreshCurrentItemValue(updatedSetting)
@@ -1446,44 +1429,40 @@ sub StartSeerrLocalSignIn()
 end sub
 
 sub ShowSeerrKeyboard(title as string, initialValue as string, isPassword as boolean)
-    dialog = CreateObject("roSGNode", "StandardKeyboardDialog")
-    dialog.title = tr(title)
-    dialog.text = initialValue
-    if isPassword
-        dialog.textEditBox.secureMode = true
-    end if
-    dlgPalette = CreateObject("roSGNode", "RSGPalette")
-    dlgPalette.colors = {
-        DialogBackgroundColor: chainLookupReturn(m.global.session, "user.settings.colorDialogBackground", ColorPalette.ELEMENTBACKGROUND),
-        DialogFocusColor: chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT),
-        DialogFocusItemColor: chainLookupReturn(m.global.session, "user.settings.colorDialogSelectedText", ColorPalette.WHITE),
-        DialogTextColor: chainLookupReturn(m.global.session, "user.settings.colorDialogText", ColorPalette.WHITE)
-    }
-    dialog.palette = dlgPalette
-    dialog.buttons = [tr("OK"), tr("Cancel")]
-    dialog.observeField("buttonSelected", "onSeerrKeyboardButton")
-    m.top.getScene().dialog = dialog
+    chips = []
+    if not isPassword and m.seerrKeyboardMode = "local_username" then chips = tvKeyboard.EmailChips()
+
+    m.seerrKeyboard = tvKeyboard.Open(m.top.getScene(), {
+        title: tr(title),
+        text: initialValue,
+        secure: isPassword,
+        chips: chips
+    })
+    m.seerrKeyboard.observeField("submitted", "onSeerrKeyboardSubmitted")
+    m.seerrKeyboard.observeField("cancelled", "onSeerrKeyboardCancelled")
 end sub
 
-sub onSeerrKeyboardButton(event as object)
-    dialog = event.getRoSGNode()
-    buttonIndex = dialog.buttonSelected
+sub releaseSeerrKeyboard()
+    tvKeyboard.Release(m.seerrKeyboard, ["submitted", "cancelled"])
+    m.seerrKeyboard = invalid
+end sub
 
-    if buttonIndex <> 0 ' Cancel
-        dialog.close = true
-        m.seerrKeyboardMode = ""
-        m.seerrTempUsername = ""
-        m.settingsMenu.setFocus(true)
-        return
-    end if
+sub onSeerrKeyboardCancelled(_event as object)
+    releaseSeerrKeyboard()
+    m.seerrKeyboardMode = ""
+    m.seerrTempUsername = ""
+    m.settingsMenu.setFocus(true)
+end sub
 
-    enteredText = dialog.text
-    dialog.close = true
+sub onSeerrKeyboardSubmitted(event as object)
+    enteredText = event.getRoSGNode().text
+    releaseSeerrKeyboard()
 
     if m.seerrKeyboardMode = "jellyfin_username"
         m.seerrTempUsername = enteredText
         m.seerrKeyboardMode = "jellyfin_password"
         ShowSeerrKeyboard("Jellyfin Password", "", true)
+        return
     else if m.seerrKeyboardMode = "jellyfin_password"
         username = m.seerrTempUsername
         m.seerrTempUsername = ""
@@ -1493,12 +1472,14 @@ sub onSeerrKeyboardButton(event as object)
         m.seerrTempUsername = enteredText
         m.seerrKeyboardMode = "local_password"
         ShowSeerrKeyboard("Password", "", true)
+        return
     else if m.seerrKeyboardMode = "local_password"
         username = m.seerrTempUsername
         m.seerrTempUsername = ""
         m.seerrKeyboardMode = ""
         PerformSeerrPluginLogin("local", username, enteredText)
     end if
+
     m.settingsMenu.setFocus(true)
 end sub
 

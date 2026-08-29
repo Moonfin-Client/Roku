@@ -1,0 +1,724 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/keyboardLayouts.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/themeChrome.bs"
+
+' The in-app keyboard, drawn in the pixels the other clients draw it in. It sits
+' against the foot of the screen, and reports where its panel starts so a screen
+' can lift whatever it is filling clear of it.
+const KB_PANEL_WIDTH = 1640
+const KB_PANEL_PAD_X = 28
+const KB_PANEL_PAD_Y = 24
+const KB_BOTTOM_MARGIN = 32
+
+const KB_TITLE_SIZE = 30
+const KB_TITLE_GAP = 16
+const KB_FIELD_HEIGHT = 76
+const KB_FIELD_SIZE = 30
+const KB_FIELD_GAP = 20
+const KB_FIELD_PAD_X = 24
+const KB_FIELD_PAD_Y = 14
+
+const KB_CHIP_BAR_HEIGHT = 72
+const KB_CHIP_BAR_GAP = 16
+const KB_CHIP_PAD_X = 24
+const KB_CHIP_GAP = 12
+const KB_CHIP_SIZE = 26
+
+const KB_KEY_HEIGHT = 80
+const KB_ROW_GAP = 8
+const KB_KEY_SIZE = 28
+
+const KB_SPACE_BAR_HEIGHT = 8
+const KB_SPACE_BAR_INSET = 28
+
+const KB_DOT_SIZE = 7
+const KB_DOT_INSET = 10
+
+const KB_ALT_HEIGHT = 72
+const KB_ALT_MIN_WIDTH = 72
+const KB_ALT_PAD_X = 12
+const KB_ALT_GAP = 12
+const KB_ALT_SIZE = 36
+const KB_ALT_BOX_PAD = 16
+
+' Held arrows and backspace repeat, the way they do on the other clients
+const KB_REPEAT_DELAY = 0.4
+
+sub init()
+    m.scrim = m.top.findNode("scrim")
+    m.panel = m.top.findNode("panel")
+    m.panelBg = m.top.findNode("panelBg")
+    m.panelBorder = m.top.findNode("panelBorder")
+    m.title = m.top.findNode("title")
+    m.fieldGroup = m.top.findNode("fieldGroup")
+    m.fieldBg = m.top.findNode("fieldBg")
+    m.field = m.top.findNode("field")
+    m.chipBar = m.top.findNode("chipBar")
+    m.grid = m.top.findNode("grid")
+    m.altPopup = m.top.findNode("altPopup")
+    m.altBg = m.top.findNode("altBg")
+    m.altOptions = m.top.findNode("altOptions")
+    m.repeatTimer = m.top.findNode("repeatTimer")
+
+    m.fieldWidth = 0
+    m.rows = []
+    m.keyNodes = []
+    m.chipNodes = []
+    m.altNodes = []
+    m.rowIndex = 0
+    m.colIndex = 0
+    m.chipIndex = -1
+    m.altIndex = -1
+    m.shifted = false
+    m.numericPage = false
+    m.repeatKey = ""
+
+    m.title.font.size = KB_TITLE_SIZE
+    m.field.fontSize = KB_FIELD_SIZE
+    m.field.observeField("isDictating", "onDictatingChanged")
+    ' The default caps out well short of a server address or a long password
+    m.field.maxTextLength = 256
+
+    m.repeatTimer.observeField("fire", "onRepeatFire")
+    m.focusTimer = m.top.findNode("focusTimer")
+    m.focusTimer.observeField("fire", "onFocusTimerFire")
+    m.restoreTimer = m.top.findNode("restoreTimer")
+    m.restoreTimer.observeField("fire", "onRestoreTimerFire")
+    m.top.observeField("visible", "onVisibleChanged")
+end sub
+
+sub onVisibleChanged()
+    m.field.voiceEnabled = m.top.visible
+
+    if not m.top.visible
+        m.repeatTimer.control = "stop"
+        return
+    end if
+
+    m.shifted = false
+    m.numericPage = false
+    m.rowIndex = 0
+    m.colIndex = 0
+    m.chipIndex = -1
+    m.altIndex = -1
+    m.altPopup.visible = false
+
+    m.field.text = m.top.text
+    m.field.cursorPosition = Len(m.top.text)
+    m.field.secureMode = m.top.secureMode
+    m.field.hintText = m.top.hintText
+    m.title.text = m.top.titleText
+    m.title.visible = isValidAndNotEmpty(m.top.titleText)
+    m.scrim.visible = m.top.showScrim
+
+    build()
+    m.top.setFocus(true)
+    ' A screen opening the keyboard as it is pushed has its own focus restored
+    ' afterwards, so the claim is made again once that has settled
+    m.focusTimer.control = "start"
+end sub
+
+function currentLayout() as object
+    if m.numericPage then return keyboardLayouts.Numeric()
+
+    variant = keyboardLayouts.VariantForLocale(m.global.session.user.settings["ui.language"] ?? "")
+    if m.shifted then return keyboardLayouts.Upper(variant)
+
+    return keyboardLayouts.Lower(variant)
+end function
+
+sub build()
+    m.rows = currentLayout()
+    buildChips()
+    buildGrid()
+    layoutPanel()
+    paint()
+end sub
+
+' Each chip is a pill sized to the words it carries
+sub buildChips()
+    m.chipBar.removeChildrenIndex(m.chipBar.getChildCount(), 0)
+    m.chipNodes = []
+    if not isValidAndNotEmpty(m.top.chips) then return
+
+    for each entry in m.top.chips
+        chip = m.chipBar.createChild("Group")
+        bg = chip.createChild("Poster")
+        bg.uri = "pkg:/images/details/surface12.9.png"
+        label = chip.createChild("Label")
+        label.text = entry
+        label.font = "font:SmallestBoldSystemFont"
+        label.font.size = KB_CHIP_SIZE
+        label.horizAlign = "center"
+        label.vertAlign = "center"
+        label.height = KB_CHIP_BAR_HEIGHT
+        m.chipNodes.push({ node: chip, bg: bg, label: label, value: entry })
+    end for
+end sub
+
+' Widths are taken before the labels are given one, since a label asked how wide
+' it is once it has a width answers with the box rather than the words
+sub layoutChips()
+    xPos = 0
+    for each chip in m.chipNodes
+        width = chip.label.boundingRect().width + (KB_CHIP_PAD_X * 2)
+        chip.node.translation = [xPos, 0]
+        chip.bg.width = width
+        chip.bg.height = KB_CHIP_BAR_HEIGHT
+        chip.label.width = width
+        xPos += width + KB_CHIP_GAP
+    end for
+end sub
+
+sub buildGrid()
+    m.grid.removeChildrenIndex(m.grid.getChildCount(), 0)
+    m.keyNodes = []
+
+    for each gridRow in m.rows
+        builtRow = []
+        for each entry in gridRow
+            keyGroup = m.grid.createChild("Group")
+
+            bg = keyGroup.createChild("Poster")
+            bg.uri = "pkg:/images/details/surface12.9.png"
+
+            iconUri = iconFor(entry)
+            icon = invalid
+            label = invalid
+            if iconUri <> ""
+                icon = keyGroup.createChild("Poster")
+                icon.uri = iconUri
+                ' A Poster measures nothing until its image arrives, so the size
+                ' is stated up front for the centring below to work on
+                icon.width = iconSizeFor(entry)
+                icon.height = icon.width
+            else
+                label = keyGroup.createChild("Label")
+                label.text = keyLabel(entry)
+                label.font = "font:SmallestBoldSystemFont"
+                label.font.size = KB_KEY_SIZE
+                label.horizAlign = "center"
+                label.vertAlign = "center"
+                label.height = KB_KEY_HEIGHT
+            end if
+
+            bar = invalid
+            if entry = "SPACE"
+                bar = keyGroup.createChild("Poster")
+                bar.uri = "pkg:/images/details/surface8.9.png"
+                bar.height = KB_SPACE_BAR_HEIGHT
+            end if
+
+            dot = invalid
+            if isValid(keyboardLayouts.AlternatesFor(entry))
+                dot = keyGroup.createChild("Poster")
+                dot.uri = "pkg:/images/icons/circle.png"
+                dot.width = KB_DOT_SIZE
+                dot.height = KB_DOT_SIZE
+            end if
+
+            builtRow.push({ node: keyGroup, bg: bg, icon: icon, label: label, dot: dot, bar: bar, value: entry })
+        end for
+        m.keyNodes.push(builtRow)
+    end for
+end sub
+
+function iconFor(entry as string) as string
+    icons = {
+        "BACKSPACE": "pkg:/images/keyboard/backspace.png",
+        "CURSORL": "pkg:/images/keyboard/cursorl.png",
+        "CURSORR": "pkg:/images/keyboard/cursorr.png",
+        "DONE": "pkg:/images/keyboard/done.png",
+        "SHIFT": "pkg:/images/keyboard/shift.png"
+    }
+
+    if entry = "SHIFT" and m.shifted then return "pkg:/images/keyboard/shiftlocked.png"
+    uri = icons[entry]
+    if isValid(uri) then return uri
+
+    return ""
+end function
+
+function iconSizeFor(entry as string) as integer
+    sizes = {
+        "BACKSPACE": 36,
+        "CURSORL": 44,
+        "CURSORR": 44,
+        "DONE": 40,
+        "SHIFT": 40
+    }
+
+    size = sizes[entry]
+    if isValid(size) then return size
+
+    return 36
+end function
+
+function keyLabel(entry as string) as string
+    if entry = "SPACE" then return ""
+
+    return entry
+end function
+
+' The box paints a panel of its own by default, which would sit inside the one
+' drawn behind it
+sub applyFieldChrome()
+    m.field.backgroundUri = "pkg:/images/keyboard/transparent.png"
+    m.field.width = m.fieldWidth
+    m.field.height = KB_FIELD_HEIGHT - (KB_FIELD_PAD_Y * 2)
+    m.field.translation = [KB_FIELD_PAD_X, KB_FIELD_PAD_Y]
+end sub
+
+' Dictation is handed the box by the platform, which leaves it focused and
+' wearing chrome of its own. What was said is carried out so the screen behind
+' sees it, and the tidying up waits for the platform to finish
+sub onDictatingChanged()
+    if m.field.isDictating then return
+
+    m.top.text = m.field.text
+    m.restoreTimer.control = "start"
+end sub
+
+sub onRestoreTimerFire()
+    if not m.top.visible then return
+
+    applyFieldChrome()
+    m.top.setFocus(true)
+    paint()
+end sub
+
+sub layoutPanel()
+    contentWidth = KB_PANEL_WIDTH - (KB_PANEL_PAD_X * 2)
+
+    yPos = KB_PANEL_PAD_Y
+    if m.title.visible
+        m.title.width = contentWidth
+        m.title.translation = [KB_PANEL_PAD_X, yPos]
+        yPos += m.title.boundingRect().height + KB_TITLE_GAP
+    end if
+
+    m.fieldBg.width = contentWidth
+    m.fieldBg.height = KB_FIELD_HEIGHT
+    m.fieldWidth = contentWidth - (KB_FIELD_PAD_X * 2)
+    applyFieldChrome()
+    ' Voice entry grows the box beyond its bounds, which would otherwise paint
+    ' over the keys below it
+    m.fieldGroup.clippingRect = [0, 0, contentWidth, KB_FIELD_HEIGHT]
+    m.fieldGroup.translation = [KB_PANEL_PAD_X, yPos]
+    yPos += KB_FIELD_HEIGHT + KB_FIELD_GAP
+
+    if m.chipNodes.count() > 0
+        m.chipBar.translation = [KB_PANEL_PAD_X, yPos]
+        layoutChips()
+        yPos += KB_CHIP_BAR_HEIGHT + KB_CHIP_BAR_GAP
+    end if
+
+    ' Keys share the row out in units, so space keeps its stretch whatever the
+    ' panel is sized to
+    unit = contentWidth / keyboardLayouts.MaxRowSpan(m.rows)
+    gap = unit * keyboardLayouts.KEY_GAP_FACTOR
+
+    m.grid.translation = [KB_PANEL_PAD_X, yPos]
+    rowY = 0
+    for i = 0 to m.keyNodes.count() - 1
+        builtRow = m.keyNodes[i]
+        rowWidth = 0
+        for each entry in builtRow
+            rowWidth += unit * keyboardLayouts.KeyUnitSpan(entry.value)
+        end for
+        rowWidth += (builtRow.count() - 1) * gap
+
+        xPos = (contentWidth - rowWidth) / 2
+        for each entry in builtRow
+            width = unit * keyboardLayouts.KeyUnitSpan(entry.value)
+            entry.node.translation = [xPos, rowY]
+            entry.bg.width = width
+            entry.bg.height = KB_KEY_HEIGHT
+            entry.width = width
+
+            if isValid(entry.label)
+                entry.label.width = width
+                entry.label.translation = [0, 0]
+            end if
+            if isValid(entry.icon)
+                entry.icon.translation = [(width - entry.icon.width) / 2, (KB_KEY_HEIGHT - entry.icon.height) / 2]
+            end if
+            if isValid(entry.dot)
+                entry.dot.translation = [width - KB_DOT_INSET - KB_DOT_SIZE, KB_DOT_INSET]
+            end if
+            if isValid(entry.bar)
+                entry.bar.width = width - (KB_SPACE_BAR_INSET * 2)
+                entry.bar.translation = [KB_SPACE_BAR_INSET, (KB_KEY_HEIGHT - KB_SPACE_BAR_HEIGHT) / 2]
+            end if
+
+            xPos += width + gap
+        end for
+        rowY += KB_KEY_HEIGHT + KB_ROW_GAP
+    end for
+
+    gridHeight = rowY - KB_ROW_GAP
+    yPos += gridHeight
+
+    yPos += KB_PANEL_PAD_Y
+
+    m.panelBg.width = KB_PANEL_WIDTH
+    m.panelBg.height = yPos
+    m.panelBorder.width = KB_PANEL_WIDTH
+    m.panelBorder.height = yPos
+    m.panel.translation = [(1920 - KB_PANEL_WIDTH) / 2, 1080 - KB_BOTTOM_MARGIN - yPos]
+
+    m.top.panelTop = m.panel.translation[1]
+end sub
+
+' Every colour the keyboard draws comes from the theme, so it sits with whatever
+' the rest of the app is wearing
+sub paint()
+    surface = themeChrome.IsActive() ? themeChrome.Surface() : "#181818"
+    onSurface = themeChrome.IsActive() ? themeChrome.OnSurface() : "#FFFFFF"
+    idleKey = themeChrome.IsActive() ? themeChrome.SurfaceVariant() : "#2A2A2A"
+    focusKey = themeChrome.Token("buttonFocused", "#FFFFFF")
+    onFocusKey = themeChrome.Token("onButtonFocused", "#000000")
+    accent = themeChrome.Accent()
+
+    m.panelBg.blendColor = surface
+    m.panelBorder.blendColor = onSurface
+    m.title.color = onSurface
+    m.fieldBg.blendColor = idleKey
+    m.field.textColor = onSurface
+    m.field.hintTextColor = onSurface
+
+    for i = 0 to m.chipNodes.count() - 1
+        chip = m.chipNodes[i]
+        chosen = (m.chipIndex = i)
+        chip.bg.blendColor = chosen ? focusKey : idleKey
+        chip.label.color = chosen ? onFocusKey : onSurface
+    end for
+
+    for r = 0 to m.keyNodes.count() - 1
+        for c = 0 to m.keyNodes[r].count() - 1
+            entry = m.keyNodes[r][c]
+            chosen = (m.chipIndex < 0 and r = m.rowIndex and c = m.colIndex)
+            entry.bg.blendColor = chosen ? focusKey : idleKey
+            if isValid(entry.label) then entry.label.color = chosen ? onFocusKey : onSurface
+            if isValid(entry.icon) then entry.icon.blendColor = chosen ? onFocusKey : onSurface
+            if isValid(entry.dot) then entry.dot.blendColor = chosen ? onFocusKey : accent
+            if isValid(entry.bar) then entry.bar.blendColor = chosen ? onFocusKey : onSurface
+        end for
+    end for
+
+    for i = 0 to m.altNodes.count() - 1
+        alt = m.altNodes[i]
+        chosen = (m.altIndex = i)
+        alt.bg.blendColor = chosen ? focusKey : idleKey
+        alt.label.color = chosen ? onFocusKey : onSurface
+    end for
+
+    m.altBg.blendColor = surface
+end sub
+
+function currentKey() as object
+    if m.rowIndex >= m.keyNodes.count() then return invalid
+    builtRow = m.keyNodes[m.rowIndex]
+    if m.colIndex >= builtRow.count() then return invalid
+
+    return builtRow[m.colIndex]
+end function
+
+sub insertText(value as string)
+    current = m.field.text
+    at = m.field.cursorPosition
+    m.field.text = Left(current, at) + value + Mid(current, at + 1)
+    m.field.cursorPosition = at + Len(value)
+    m.top.text = m.field.text
+end sub
+
+sub backspace()
+    at = m.field.cursorPosition
+    if at <= 0 then return
+
+    current = m.field.text
+    m.field.text = Left(current, at - 1) + Mid(current, at + 1)
+    m.field.cursorPosition = at - 1
+    m.top.text = m.field.text
+end sub
+
+sub moveCursor(delta as integer)
+    at = m.field.cursorPosition + delta
+    if at < 0 then at = 0
+    if at > Len(m.field.text) then at = Len(m.field.text)
+    m.field.cursorPosition = at
+end sub
+
+sub pressKey(entry as string)
+    if entry = "SHIFT"
+        m.shifted = not m.shifted
+        build()
+        return
+    end if
+
+    if entry = "123"
+        m.numericPage = true
+        m.rowIndex = 0
+        m.colIndex = 0
+        build()
+        return
+    end if
+
+    if entry = "ABC"
+        m.numericPage = false
+        m.rowIndex = 0
+        m.colIndex = 0
+        build()
+        return
+    end if
+
+    if entry = "DONE"
+        m.top.text = m.field.text
+        m.top.submitted = true
+        m.top.visible = false
+        return
+    end if
+
+    if entry = "BACKSPACE"
+        backspace()
+        return
+    end if
+
+    if entry = "CURSORL"
+        moveCursor(-1)
+        return
+    end if
+
+    if entry = "CURSORR"
+        moveCursor(1)
+        return
+    end if
+
+    if entry = "SPACE"
+        insertText(" ")
+        return
+    end if
+
+    insertText(entry)
+end sub
+
+' The accents sit over the key they belong to, pulled back inside the panel when
+' the key is near either end
+sub openAlternates()
+    entry = currentKey()
+    if not isValid(entry) then return
+
+    options = keyboardLayouts.AlternatesFor(entry.value)
+    if not isValid(options) then return
+
+    m.altOptions.removeChildrenIndex(m.altOptions.getChildCount(), 0)
+    m.altNodes = []
+
+    xPos = 0
+    for each option in options
+        optionGroup = m.altOptions.createChild("Group")
+        bg = optionGroup.createChild("Poster")
+        bg.uri = "pkg:/images/details/surface12.9.png"
+        label = optionGroup.createChild("Label")
+        label.text = option
+        label.font = "font:SmallestBoldSystemFont"
+        label.font.size = KB_ALT_SIZE
+        label.horizAlign = "center"
+        label.vertAlign = "center"
+        label.height = KB_ALT_HEIGHT
+
+        width = label.boundingRect().width + (KB_ALT_PAD_X * 2)
+        if width < KB_ALT_MIN_WIDTH then width = KB_ALT_MIN_WIDTH
+
+        optionGroup.translation = [xPos, 0]
+        bg.width = width
+        bg.height = KB_ALT_HEIGHT
+        label.width = width
+        xPos += width + KB_ALT_GAP
+
+        m.altNodes.push({ node: optionGroup, bg: bg, label: label, value: option })
+    end for
+
+    boxWidth = xPos - KB_ALT_GAP + (KB_ALT_BOX_PAD * 2)
+    m.altBg.width = boxWidth
+    m.altBg.height = KB_ALT_HEIGHT + (KB_ALT_BOX_PAD * 2)
+    m.altOptions.translation = [KB_ALT_BOX_PAD, KB_ALT_BOX_PAD]
+
+    keyCentre = m.panel.translation[0] + m.grid.translation[0] + entry.node.translation[0] + (entry.width / 2)
+    boxX = keyCentre - (boxWidth / 2)
+    if boxX < KB_ALT_BOX_PAD then boxX = KB_ALT_BOX_PAD
+    if boxX + boxWidth > 1920 - KB_ALT_BOX_PAD then boxX = 1920 - KB_ALT_BOX_PAD - boxWidth
+
+    keyTop = m.panel.translation[1] + m.grid.translation[1] + entry.node.translation[1]
+    m.altPopup.translation = [boxX, keyTop - m.altBg.height - KB_ROW_GAP]
+
+    m.altIndex = 0
+    m.altPopup.visible = true
+    paint()
+end sub
+
+sub closeAlternates()
+    m.altPopup.visible = false
+    m.altIndex = -1
+    paint()
+end sub
+
+sub startRepeat(entry as string)
+    if not keyboardLayouts.IsRepeatable(entry) then return
+
+    m.repeatKey = entry
+    m.repeatTimer.duration = KB_REPEAT_DELAY
+    m.repeatTimer.control = "start"
+end sub
+
+sub onFocusTimerFire()
+    if m.top.visible then m.top.setFocus(true)
+end sub
+
+sub onRepeatFire()
+    if m.repeatKey = ""
+        m.repeatTimer.control = "stop"
+        return
+    end if
+
+    pressKey(m.repeatKey)
+    ' The first wait is longer, so a single press does not run away
+    m.repeatTimer.duration = 0.12
+end sub
+
+sub stopRepeat()
+    m.repeatKey = ""
+    m.repeatTimer.control = "stop"
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not m.top.visible then return false
+
+    if not press
+        stopRepeat()
+        return false
+    end if
+
+    ' Whatever the phone app and the on screen remote send lands here as a
+    ' literal, so typing from a phone fills the same field
+    if key.left(4) = "Lit_"
+        insertText(key.mid(4))
+        return true
+    end if
+
+    if m.altPopup.visible then return handleAlternatesKey(key)
+
+    if key = KeyCode.BACK
+        m.top.cancelled = true
+        m.top.visible = false
+        return true
+    end if
+
+    if key = KeyCode.OPTIONS
+        openAlternates()
+        return true
+    end if
+
+    if key = KeyCode.OK
+        if m.chipIndex >= 0
+            insertText(m.chipNodes[m.chipIndex].value)
+        else
+            entry = currentKey()
+            if isValid(entry)
+                pressKey(entry.value)
+                startRepeat(entry.value)
+            end if
+        end if
+        return true
+    end if
+
+    return moveSelection(key)
+end function
+
+function handleAlternatesKey(key as string) as boolean
+    if key = KeyCode.BACK
+        closeAlternates()
+        return true
+    end if
+
+    if key = KeyCode.OK
+        insertText(m.altNodes[m.altIndex].value)
+        closeAlternates()
+        return true
+    end if
+
+    if key = KeyCode.LEFT and m.altIndex > 0
+        m.altIndex--
+        paint()
+        return true
+    end if
+
+    if key = KeyCode.RIGHT and m.altIndex < m.altNodes.count() - 1
+        m.altIndex++
+        paint()
+        return true
+    end if
+
+    return true
+end function
+
+function moveSelection(key as string) as boolean
+    if key = KeyCode.UP
+        if m.chipIndex >= 0 then return true
+
+        if m.rowIndex > 0
+            m.rowIndex--
+            clampColumn()
+        else if m.chipNodes.count() > 0
+            m.chipIndex = 0
+        else
+            ' Whether there is anywhere above to go is the screen's call, so
+            ' it is told and left to close the keyboard if it takes the offer
+            m.top.escape = "up"
+            return true
+        end if
+        paint()
+        return true
+    end if
+
+    if key = KeyCode.DOWN
+        if m.chipIndex >= 0
+            m.chipIndex = -1
+        else if m.rowIndex < m.keyNodes.count() - 1
+            m.rowIndex++
+            clampColumn()
+        end if
+        paint()
+        return true
+    end if
+
+    if key = KeyCode.LEFT
+        if m.chipIndex > 0
+            m.chipIndex--
+        else if m.chipIndex < 0 and m.colIndex > 0
+            m.colIndex--
+        end if
+        paint()
+        return true
+    end if
+
+    if key = KeyCode.RIGHT
+        if m.chipIndex >= 0
+            if m.chipIndex < m.chipNodes.count() - 1 then m.chipIndex++
+        else if m.colIndex < m.keyNodes[m.rowIndex].count() - 1
+            m.colIndex++
+        end if
+        paint()
+        return true
+    end if
+
+    return false
+end function
+
+' Rows are not all the same length, so stepping between them lands on the
+' nearest key rather than falling off the end
+sub clampColumn()
+    last = m.keyNodes[m.rowIndex].count() - 1
+    if m.colIndex > last then m.colIndex = last
+end sub
