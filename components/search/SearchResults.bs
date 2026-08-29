@@ -17,11 +17,14 @@ sub init()
     m.searchTask = CreateObject("roSGNode", "SearchTask")
     m.searchBox = m.top.findNode("SearchBox")
 
-    m.debounceTimer = m.top.findNode("debounceTimer")
-    m.debounceTimer.observeFieldScoped("fire", "onDebounceTimerFire")
-    m.pendingQuery = ""
     m.searchRequestId = 0
     m.activeSearchToken = ""
+
+    m.searchTabs = m.top.findNode("searchTabs")
+    m.searchTabs.observeFieldScoped("selectedIndex", "onSearchTabSelected")
+    m.searchTabs.observeFieldScoped("escape", "onSearchTabEscape")
+    m.searchRow.observeFieldScoped("groupSummary", "onGroupSummaryChanged")
+    m.tabKeys = []
 
     m.searchHelpText = m.top.findNode("SearchHelpText")
     m.searchHelpText.text = tr("You can search for Titles, People, Live TV Channels and more")
@@ -46,16 +49,21 @@ sub openSearchKeyboard()
         showScrim: false
     })
     m.keyboard.observeField("text", "onSearchTextChanged")
-    m.keyboard.observeField("submitted", "onSearchKeyboardClosed")
+    m.keyboard.observeField("submitted", "onSearchSubmitted")
     m.keyboard.observeField("cancelled", "onSearchKeyboardClosed")
     m.keyboard.observeField("escape", "onSearchKeyboardEscaped")
     m.top.lastFocus = m.keyboard
 end sub
 
+' Typing only updates what the box shows. Searching on every letter costs a
+' request and a full rebuild of every row, so the query waits to be submitted
 sub onSearchTextChanged(event as object)
-    typed = event.getData()
-    m.searchBox.query = typed
-    m.searchBox.search_values = typed
+    m.searchBox.query = event.getData()
+end sub
+
+sub onSearchSubmitted(event as object)
+    m.searchBox.search_values = event.getRoSGNode().text
+    onSearchKeyboardClosed(invalid)
 end sub
 
 sub focusResults()
@@ -118,9 +126,7 @@ sub searchMedias()
     query = m.top.searchAlpha
 
     if query.len() = 0
-        m.debounceTimer.control = "stop"
         m.searchTask.control = "stop"
-        m.pendingQuery = ""
         m.activeSearchToken = ""
         m.searchTask.requestToken = ""
         stopLoadingSpinner()
@@ -131,15 +137,6 @@ sub searchMedias()
         m.searchHelpText.visible = true
         return
     end if
-
-    m.pendingQuery = query
-    m.debounceTimer.control = "stop"
-    m.debounceTimer.control = "start"
-end sub
-
-sub onDebounceTimerFire()
-    query = m.pendingQuery
-    if query = "" then return
 
     m.searchRequestId = m.searchRequestId + 1
     m.activeSearchToken = m.searchRequestId.toStr() + ":" + query
@@ -186,7 +183,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
     ' Up or back from the results returns to the search box rather than opening
     ' the keyboard again, which would leave nowhere to go
     if (key = "up" or key = "back") and m.searchRow.isinFocusChain()
-        focusSearchBox()
+        if m.searchTabs.visible
+            focusSearchTabs()
+        else
+            focusSearchBox()
+        end if
         return true
     end if
 
@@ -196,8 +197,15 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         end if
 
+        ' The search box is the top of the screen, so up from it leaves for
+        ' whichever nav is showing
+        if key = "up"
+            m.searchBox.focused = false
+            return FocusNav(m.top)
+        end if
+
         if key = "down" and hasResults()
-            focusResults()
+            focusSearchTabs()
             return true
         end if
     end if
@@ -296,4 +304,74 @@ sub onItemDataLoaded()
     if not isValid(focusedItem) then return
 
     focusedItem.callFunc("setWatched", chainLookupReturn(itemData[0], "json.UserData.Played", false), chainLookupReturn(itemData[0], "json.UserData.UnplayedItemCount", 0))
+end sub
+
+sub onGroupSummaryChanged()
+    summary = m.searchRow.groupSummary
+    if not isValidAndNotEmpty(summary)
+        m.searchTabs.visible = false
+        m.tabKeys = []
+        return
+    end if
+
+    total = 0
+    for each entry in summary
+        total += entry.count
+    end for
+
+    ' Seerr leads, then everything at once, then a tab per group, which is the
+    ' order the other clients lay them out in
+    tabDefs = []
+    m.tabKeys = []
+    allIndex = 0
+
+    for each entry in summary
+        if entry.key <> "seerr" then continue for
+
+        tabDefs.push({ id: entry.key, label: entry.title + ": " + Str(entry.count).trim() })
+        m.tabKeys.push(entry.key)
+        allIndex = 1
+    end for
+
+    tabDefs.push({ id: "all", label: tr("All") + ": " + Str(total).trim() })
+    m.tabKeys.push("")
+
+    for each entry in summary
+        if entry.key = "seerr" then continue for
+
+        tabDefs.push({ id: entry.key, label: entry.title + ": " + Str(entry.count).trim() })
+        m.tabKeys.push(entry.key)
+    end for
+
+    m.searchTabs.tabs = tabDefs
+    m.searchTabs.visible = true
+
+    ' A fresh set of results always starts on everything at once
+    if m.searchRow.activeGroup = "" then m.searchTabs.selectedIndex = allIndex
+end sub
+
+sub onSearchTabSelected()
+    index = m.searchTabs.selectedIndex
+    if index < 0 or index >= m.tabKeys.count() then return
+    if m.searchRow.activeGroup = m.tabKeys[index] then return
+
+    m.searchRow.activeGroup = m.tabKeys[index]
+    m.searchRow.itemData = m.searchRow.itemData
+end sub
+
+sub onSearchTabEscape()
+    if m.searchTabs.escape = "up"
+        focusSearchBox()
+        return
+    end if
+
+    if hasResults()
+        focusResults()
+    end if
+end sub
+
+sub focusSearchTabs()
+    m.searchBox.focused = false
+    m.searchTabs.setFocus(true)
+    m.top.lastFocus = m.searchTabs
 end sub

@@ -4,6 +4,14 @@ import "pkg:/source/api/Items.bs"
 import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
+import "pkg:/source/utils/searchGroups.bs"
+
+' The room a card leaves under its artwork, and the air around a row
+const CARD_TEXT_HEIGHT = 56
+const ROW_PADDING = 60
+const GRID_ROW_PADDING = 20
+const CARD_GAP = 20
+const CONTENT_WIDTH = 1728
 
 sub init()
 end sub
@@ -37,72 +45,60 @@ function getData()
     m.rowHeights = []
 
     itemData = m.top.itemData
+    if not isValid(itemData) then return data
 
-    if not isValid(itemData)
-        return data
-    end if
-
-    type_array = [ItemType.MOVIE, ItemType.SERIES, ItemType.TVCHANNEL, ItemType.EPISODE, ItemType.MUSICARTIST, ItemType.MUSICALBUM, ItemType.AUDIO, ItemType.PERSON, ItemType.PLAYLIST, ItemType.PROGRAM]
-
-    content_types = {
-        "movie": { "label": tr("Movies"), size: [230, 405], imageDimensions: [230, 340] },
-        "series": { "label": tr("Shows"), size: [230, 405], imageDimensions: [230, 340] },
-        "tvchannel": { "label": tr("Channels"), size: [400, 305], imageDimensions: [400, 260] },
-        "episode": { "label": tr("Episodes"), size: [400, 330], imageDimensions: [400, 260] },
-        "musicartist": { "label": tr("Artists"), size: [400, 305], imageDimensions: [400, 260] },
-        "musicalbum": { "label": tr("Albums"), size: [330, 330], imageDimensions: [330, 260] },
-        "audio": { "label": tr("Songs"), size: [330, 330], imageDimensions: [330, 260] },
-        "person": { "label": tr("People"), size: [230, 385], imageDimensions: [230, 340] },
-        "playlist": { "label": tr("Playlists"), size: [330, 330], imageDimensions: [330, 260] },
-        "program": { "label": tr("Programs"), size: [400, 330], imageDimensions: [400, 260] }
-    }
-
-    itemBuckets = {}
-    seerrItems = []
     items = chainLookup(itemData, "items")
-
     if not isValid(items) then return data
 
+    buckets = {}
+    seerrItems = []
     for each item in items
         if item.isSeerrResult <> invalid and item.isSeerrResult = true
             seerrItems.push(item)
         else if isValid(item.type)
-            bucketKey = LCase(item.type)
-            if not isValid(itemBuckets[bucketKey])
-                itemBuckets[bucketKey] = []
-            end if
-            itemBuckets[bucketKey].push(item)
-        end if
-    end for
-
-    for each ctype in type_array
-        ctypeLower = LCase(ctype)
-        bucket = itemBuckets[ctypeLower]
-
-        if isValidAndNotEmpty(bucket)
-            content_type = content_types.LookupCI(ctype)
-            if isValid(content_type)
-                row = data.CreateChild("ContentNode")
-                row.title = content_type.label
-                for each item in bucket
-                    item.imageDimensions = content_type.imageDimensions
-                    row.appendChild(item)
-                end for
-                m.rowItemSizes.push(content_type.size)
-                m.rowHeights.push(content_type.size[1] + 100)
+            key = groupKeyFor(item.type)
+            if key <> ""
+                if not isValid(buckets[key]) then buckets[key] = []
+                buckets[key].push(item)
             end if
         end if
     end for
 
+    summary = []
     if seerrItems.count() > 0
-        seerrSize = [180, 360]
-        row = data.CreateChild("ContentNode")
-        row.title = "Seerr"
-        for each item in seerrItems
-            row.appendChild(item)
+        summary.push({ key: "seerr", title: "Seerr", count: seerrItems.count() })
+    end if
+
+    for each entry in searchGroups.Catalogue()
+        bucket = buckets[entry.key]
+        if not isValidAndNotEmpty(bucket) then continue for
+
+        buckets[entry.key] = dedupeByName(bucket)
+        summary.push({ key: entry.key, title: entry.title, count: buckets[entry.key].count() })
+    end for
+    m.top.groupSummary = summary
+
+    ' One group on its own fills the screen as a grid, while every group shares
+    ' the screen as a row apiece
+    if m.top.activeGroup = "seerr"
+        appendGrid(data, seerrItems, searchGroups.ASPECT_POSTER)
+    else if m.top.activeGroup <> ""
+        for each entry in searchGroups.Catalogue()
+            if entry.key <> m.top.activeGroup then continue for
+            if isValidAndNotEmpty(buckets[entry.key])
+                appendGrid(data, buckets[entry.key], searchGroups.AspectFor(entry.types[0]))
+            end if
         end for
-        m.rowItemSizes.push(seerrSize)
-        m.rowHeights.push(seerrSize[1] + 100)
+    else
+        if seerrItems.count() > 0
+            appendRow(data, "Seerr", seerrItems, searchGroups.ASPECT_POSTER)
+        end if
+
+        for each entry in searchGroups.Catalogue()
+            if not isValidAndNotEmpty(buckets[entry.key]) then continue for
+
+            appendRow(data, entry.title, buckets[entry.key], searchGroups.AspectFor(entry.types[0]))
+        end for
     end if
 
     m.top.rowHeights = m.rowHeights
@@ -110,3 +106,70 @@ function getData()
     m.top.content = data
     return data
 end function
+
+function groupKeyFor(itemType as string) as string
+    lowered = LCase(itemType)
+    for each entry in searchGroups.Catalogue()
+        for each candidate in entry.types
+            if lowered = candidate then return entry.key
+        end for
+    end for
+
+    return ""
+end function
+
+' The same title can come back more than once across libraries, so only the
+' first copy of each is kept
+function dedupeByName(bucket as object) as object
+    seen = {}
+    unique = []
+    for each item in bucket
+        if unique.count() >= searchGroups.RESULT_CAP then exit for
+
+        name = LCase(chainLookupReturn(item, "json.Name", ""))
+        if name <> "" and isValid(seen[name]) then continue for
+
+        seen[name] = true
+        unique.push(item)
+    end for
+
+    return unique
+end function
+
+' A grid is the same cards broken into as many rows as the width takes, with
+' no headings since the tab above already names them
+sub appendGrid(data as object, bucket as object, aspect as string)
+    card = searchGroups.CardSize(aspect)
+    perRow = Int(CONTENT_WIDTH / (card.width + CARD_GAP))
+    if perRow < 1 then perRow = 1
+
+    index = 0
+    while index < bucket.count()
+        row = data.CreateChild("ContentNode")
+        for offset = 0 to perRow - 1
+            if index + offset >= bucket.count() then exit for
+
+            item = bucket[index + offset]
+            item.imageDimensions = [card.width, card.image]
+            row.appendChild(item)
+        end for
+
+        m.rowItemSizes.push([card.width, card.image + CARD_TEXT_HEIGHT])
+        m.rowHeights.push(card.image + CARD_TEXT_HEIGHT + GRID_ROW_PADDING)
+        index += perRow
+    end while
+end sub
+
+sub appendRow(data as object, title as string, bucket as object, aspect as string)
+    card = searchGroups.CardSize(aspect)
+    row = data.CreateChild("ContentNode")
+    row.title = title + " (" + Str(bucket.count()).trim() + ")"
+
+    for each item in bucket
+        item.imageDimensions = [card.width, card.image]
+        row.appendChild(item)
+    end for
+
+    m.rowItemSizes.push([card.width, card.image + CARD_TEXT_HEIGHT])
+    m.rowHeights.push(card.image + CARD_TEXT_HEIGHT + ROW_PADDING)
+end sub
