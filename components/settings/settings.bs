@@ -31,25 +31,6 @@ sub init()
     m.settingDesc = m.top.findNode("settingDesc")
     m.path = m.top.findNode("path")
 
-    m.version = m.top.findNode("version")
-    drawingStyles = {
-        "default": {
-            "fontSize": 27,
-            "fontUri": "font:SystemFontFile",
-            "color": "#EFEFEFFF"
-        },
-        "b": {
-            "fontSize": 27,
-            "fontUri": "font:SystemFontFile",
-            "color": chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
-        }
-    }
-
-    if isValid(m.version)
-        m.version.drawingStyles = drawingStyles
-        m.version.text = `${LCase(m.global.app.name)} ${m.global.app.version} - ${tr("What's New")}?`
-    end if
-
     m.integerSetting = m.top.findNode("integerSetting")
     m.colorgrid = m.top.findNode("colorgrid")
     m.slider = m.top.findNode("slider")
@@ -63,6 +44,10 @@ sub init()
     m.integerSetting.observeField("escape", "onKeyGridEscape")
 
     m.settingsMenu.setFocus(true)
+    m.lastFocusIndex = 0
+    m.pendingFocusIndex = -1
+    m.skipSectionTimer = m.top.findNode("skipSectionTimer")
+    m.skipSectionTimer.observeField("fire", "onSkipSectionTimer")
     m.settingsMenu.observeField("itemFocused", "settingFocused")
     m.settingsMenu.observeField("itemSelected", "settingSelected")
 
@@ -1745,7 +1730,7 @@ function reorderSettingsForFlutter(configTree as object) as object
     moonfinSettings = findSettingsSectionByTitle(configTree, "Moonfin Settings")
     pluginRootSection = findSettingsSectionByTitle(configTree, "Moonfin Plugin")
     playback = findSettingsSectionByTitle(configTree, "Playback")
-    rememberMe = findSettingsSectionByTitle(configTree, "Remember Me?")
+    accountSecurity = findSettingsSectionByTitle(configTree, "Account & Security")
     userInterface = findSettingsSectionByTitle(configTree, "User Interface")
 
     navigationBar = findSettingsChildByTitle(moonfinSettings, "Navigation")
@@ -1755,7 +1740,7 @@ function reorderSettingsForFlutter(configTree as object) as object
     shuffle = findSettingsChildByTitle(moonfinSettings, "Shuffle")
     supportMoonfin = findSettingsChildByTitle(moonfinSettings, "Support Moonfin")
 
-    general = findSettingsChildByTitle(userInterface, "General")
+    general = findSettingsChildByTitle(userInterface, "General Style")
     libraries = findSettingsChildByTitle(userInterface, "Libraries")
     detailsScreen = findSettingsChildByTitle(userInterface, "Details Screen")
 
@@ -1767,21 +1752,7 @@ function reorderSettingsForFlutter(configTree as object) as object
 
     reordered = []
 
-    accountChildren = []
-    if isValid(rememberMe)
-        rememberMe.title = "Auto Sign In"
-        rememberMe.description = "Automatically sign in with the last logged-in user on app start."
-        rememberMe.icon = "person.png"
-        accountChildren.push(rememberMe)
-    end if
-    if accountChildren.count() > 0
-        reordered.push({
-            title: "Account & Security",
-            description: "Automatic sign-in preferences.",
-            icon: "lock.png",
-            children: accountChildren
-        })
-    end if
+    pushSettingIfValid(reordered, accountSecurity)
 
     personalizationChildren = []
     pushSettingIfValid(personalizationChildren, general)
@@ -1814,7 +1785,7 @@ function reorderSettingsForFlutter(configTree as object) as object
     integrationsChildren = []
     if pluginChildren.count() > 0
         integrationsChildren.push({
-            title: "Plugin",
+            title: "Moonbase Plugin",
             description: "Plugin connectivity and settings sync.",
             icon: "plugin.png",
             children: pluginChildren
@@ -1834,7 +1805,23 @@ function reorderSettingsForFlutter(configTree as object) as object
         })
     end if
 
-    aboutChildren = []
+    aboutChildren = [
+        { title: "App Info", type: SettingType.SECTION },
+        {
+            title: "Version",
+            description: `${LCase(m.global.app.name)} ${m.global.app.version}`,
+            icon: "info.png",
+            type: ""
+        },
+        {
+            title: "What's New",
+            description: "See what changed in this release.",
+            settingName: "moonfin.showWhatsNew",
+            icon: "article.png",
+            type: ""
+        },
+        { title: "Links", type: SettingType.SECTION }
+    ]
     pushSettingIfValid(aboutChildren, supportMoonfin)
     if aboutChildren.count() > 0
         reordered.push({
@@ -1853,7 +1840,7 @@ function reorderSettingsForFlutter(configTree as object) as object
     pluginMappedTitles = ["Enable Plugin", "Settings Sync", "Metadata & Ratings", "Seerr", "External Lists"]
     pushUnmappedChildrenByTitle(additionalChildren, pluginRootSection, pluginMappedTitles)
 
-    userInterfaceMappedTitles = ["General", "Libraries", "Details Screen"]
+    userInterfaceMappedTitles = ["General Style", "Libraries", "Details Screen"]
     pushUnmappedChildrenByTitle(additionalChildren, userInterface, userInterfaceMappedTitles)
 
     if additionalChildren.count() > 0
@@ -1864,7 +1851,7 @@ function reorderSettingsForFlutter(configTree as object) as object
         })
     end if
 
-    knownRootTitles = ["Moonfin Settings", "Moonfin Plugin", "Playback", "Remember Me?", "User Interface", "Auto Sign In"]
+    knownRootTitles = ["Moonfin Settings", "Moonfin Plugin", "Playback", "Account & Security", "User Interface"]
     for each rootSection in configTree
         rootTitle = chainLookupReturn(rootSection, "title", "")
         if not isValidAndNotEmpty(rootTitle) then continue for
@@ -1921,8 +1908,8 @@ sub LoadMenu(configSection, appendPath = true as boolean)
 
         listItem = result.CreateChild("ContentNode")
         listItem.title = tr(item.title)
-        listItem.Description = tr(item.description)
-        listItem.id = item.id
+        listItem.Description = tr(chainLookupReturn(item, "description", ""))
+        listItem.id = chainLookupReturn(item, "id", "")
         extraFields = { currentValue: getSettingCurrentValueLabel(item) }
 
         if item.icon <> invalid and isValidAndNotEmpty(item.icon)
@@ -1945,8 +1932,21 @@ sub LoadMenu(configSection, appendPath = true as boolean)
         listItem.addFields(extraFields)
     end for
 
+    m.lastFocusIndex = 0
+    m.pendingFocusIndex = -1
     if configSection.selectedIndex <> invalid and configSection.selectedIndex > -1
+        m.lastFocusIndex = configSection.selectedIndex
         m.settingsMenu.jumpToItem = configSection.selectedIndex
+    else if isSectionRow(0)
+        ' A menu that opens on a heading starts on the first setting under it
+        firstSetting = 0
+        while isSectionRow(firstSetting)
+            firstSetting++
+        end while
+        if firstSetting < m.visibleItemsMap.count()
+            m.lastFocusIndex = firstSetting
+            m.settingsMenu.jumpToItem = firstSetting
+        end if
     end if
 
     ' Set Path display
@@ -1959,7 +1959,47 @@ sub LoadMenu(configSection, appendPath = true as boolean)
     end if
 end sub
 
+function isSectionRow(index as integer) as boolean
+    if index < 0 or index >= m.visibleItemsMap.count() then return false
+
+    return chainLookupReturn(m.visibleItemsMap[index], "type", "") = SettingType.SECTION
+end function
+
+' Headings are rows like any other, so focus is carried past them. The jump has
+' to run outside this callback or the list keeps drawing the row it came from.
 sub settingFocused()
+    focused = m.settingsMenu.itemFocused
+    if isSectionRow(focused)
+        direction = focused >= m.lastFocusIndex ? 1 : -1
+        target = focused + direction
+        while isSectionRow(target)
+            target += direction
+        end while
+
+        if target < 0 or target >= m.visibleItemsMap.count()
+            ' Nothing but headings that way, so focus goes back where it started
+            target = m.lastFocusIndex
+        end if
+
+        m.pendingFocusIndex = target
+        m.skipSectionTimer.control = "start"
+        return
+    end if
+
+    m.lastFocusIndex = focused
+    settingFocusedRow()
+end sub
+
+sub onSkipSectionTimer()
+    if m.pendingFocusIndex < 0 then return
+
+    target = m.pendingFocusIndex
+    m.pendingFocusIndex = -1
+    m.lastFocusIndex = target
+    m.settingsMenu.jumpToItem = target
+end sub
+
+sub settingFocusedRow()
     selectedSetting = getFocusedSetting()
     if not isValid(selectedSetting) then return
 
@@ -1981,6 +2021,12 @@ sub settingSelected()
 
     if isValid(selectedItem.settingName) and selectedItem.settingName = "moonfin.showDonation"
         showDonationDialog()
+        return
+    end if
+
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "moonfin.showWhatsNew"
+        dismissPanel()
+        m.global.sceneManager.callFunc("whatsNewDialog")
         return
     end if
 
@@ -2077,12 +2123,16 @@ sub settingSelected()
             radioOptions = selectedItem.options
 
             if Left(chainLookupReturn(selectedItem, "settingName", ""), 17) = "homeScreenSection"
+                ' Rows that ship in the picker are dropped when their toggle is off, so
+                ' the picker and the home screen agree on what can appear
                 filteredOptions = []
-                showFavorites = normalizeBoolSettingValue(getUserSettingValue("ui.home.displayFavoritesRows", false))
+                optInRowEnabled = {
+                    favorites: normalizeBoolSettingValue(getUserSettingValue("ui.home.displayFavoritesRows", false)),
+                    rewatch: normalizeBoolSettingValue(getUserSettingValue("ui.home.displayRewatchRow", false))
+                }
                 for each option in selectedItem.options
-                    if option.id = "favorites"
-                        if showFavorites then filteredOptions.push(option)
-                    else
+                    enabled = optInRowEnabled[option.id]
+                    if not isValid(enabled) or enabled
                         filteredOptions.push(option)
                     end if
                 end for
@@ -2375,41 +2425,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
             dismissPanel()
             return true
         end if
-
-        if isValid(m.version) and m.version.hasFocus()
-            dismissPanel()
-            return true
-        end if
     end if
 
     if key = "options"
         dismissPanel()
         return true
-    end if
-
-    if isValid(m.version)
-        if isStringEqual(key, KeyCode.DOWN)
-            if m.settingsMenu.hasFocus()
-                m.version.setfocus(true)
-                m.version.text = `${LCase(m.global.app.name)} ${m.global.app.version} - <b>${tr("What's New")}?</b>`
-                return true
-            end if
-        end if
-
-        if m.version.hasFocus()
-            if isStringEqual(key, KeyCode.UP)
-                m.settingsMenu.setfocus(true)
-                m.version.text = `${LCase(m.global.app.name)} ${m.global.app.version} - ${tr("What's New")}?`
-                return true
-            end if
-
-            if isStringEqual(key, KeyCode.OK)
-                dismissPanel()
-                m.global.sceneManager.callFunc("whatsNewDialog")
-                return true
-            end if
-            return false
-        end if
     end if
 
     if key = "right"
