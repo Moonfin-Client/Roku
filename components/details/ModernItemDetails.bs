@@ -7,6 +7,8 @@ import "pkg:/source/utils/fontApply.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/remoteSubtitles.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
+import "pkg:/source/utils/seerrButtons.bs"
+import "pkg:/source/utils/seerrDetailHost.bs"
 import "pkg:/source/utils/multiserver.bs"
 
 import "pkg:/source/enums/AnimationControl.bs"
@@ -147,6 +149,7 @@ sub init()
     m.studioGrid = m.top.findNode("studioGrid")
     m.studioGrid.observeField("itemSelected", "onStudioGridSelected")
     m.chaptersGrid = m.top.findNode("chaptersGrid")
+    m.extrasTabsBuilt = false
     m.seerrBlock = m.top.findNode("seerrBlock")
     if isValid(m.seerrBlock)
         m.seerrBlock.observeField("hasContent", "onSeerrBlockChanged")
@@ -250,6 +253,7 @@ end sub
 ' Capture each loaded row's items and card size as a tab, then show one section
 ' at a time as a grid.
 sub buildTabsFromContent(content as object)
+    m.extrasTabsBuilt = true
     m.sectionItems = []
     m.sectionSize = []
     m.sectionTabs = []
@@ -323,14 +327,30 @@ end sub
 
 ' Seerr answers after the tabs are already up, so the bar gains the tab then and
 ' keeps whichever one the viewer was on
+' A Seerr title brings no library rows with it, so its tab is the only one the bar gets.
+' The rebuild waits a beat because doing it while the hero is still settling leaves the
+' screen half drawn.
 sub onSeerrBlockChanged()
-    ' Rebuilding the bar mid-load disturbs the hero layout, so the tab is only
-    ' added once the rest of the screen has settled
-    if not m.tabsBuilt then return
+    if not isValid(m.seerrTabTimer)
+        m.seerrTabTimer = CreateObject("roSGNode", "Timer")
+        m.seerrTabTimer.duration = 0.1
+        m.seerrTabTimer.repeat = false
+        m.seerrTabTimer.observeField("fire", "rebuildTabsWithSeerr")
+        m.top.appendChild(m.seerrTabTimer)
+    end if
 
+    m.seerrTabTimer.control = "start"
+end sub
+
+sub rebuildTabsWithSeerr()
     selected = m.tabBar.selectedIndex
     appendSeerrTab()
     buildTabBar()
+
+    ' Putting the bar up marks the tabs as built, which would stop the extras rows from ever
+    ' adding theirs. A Seerr title has no extras coming, so only a library one hands it back.
+    if not m.extrasTabsBuilt and not m.top.seerrOnly then m.tabsBuilt = false
+
     if selected >= 0 and selected < m.sectionTabs.count()
         m.tabBar.selectedIndex = selected
     end if
@@ -343,15 +363,7 @@ sub onSeerrFocusMoved()
     scrollContentTo(-(500 + m.seerrBlock.focusedOffset))
 end sub
 
-sub loadSeerrBlock(itemData as object)
-    if not isValid(m.seerrBlock) then return
-
-    target = GetSeerrTargetFor(itemData)
-    m.seerrBlock.mediaType = target.mediaType
-    m.seerrBlock.tmdbId = target.tmdbId
-    m.seerrBlock.callFunc("loadTarget")
-end sub
-
+' A Seerr title arrives as a tmdb id, and the screen asks Seerr for the rest itself
 sub pushSection(items as object, size as object, label as string, kind as string)
     m.sectionItems.push(items)
     m.sectionSize.push(size)
@@ -1078,7 +1090,7 @@ sub itemContentChanged()
 
     loadSeerrBlock(itemData)
 
-    if isValid(m.themeMusicPlayer)
+    if isValid(m.themeMusicPlayer) and not m.top.seerrOnly
         m.themeMusicPlayer.itemId = itemData.id
     end if
 
@@ -1097,7 +1109,7 @@ sub itemContentChanged()
 
     setBackdropImage(itemData)
 
-    if not isSeries() and not isSeason() and not isMusic() and m.top.selectedVideoStreamId = "" and isValid(itemData.MediaSources)
+    if not isSeries() and not isSeason() and not isMusic() and m.top.selectedVideoStreamId = "" and isValidAndNotEmpty(itemData.MediaSources)
         for i = 0 to itemData.mediaStreams.Count() - 1
             if itemData.mediaStreams[i].Type = "Video"
                 m.currentCodec = itemData.MediaStreams[i].Codec
@@ -1211,6 +1223,12 @@ end function
 sub setBackdropImage(itemData as object)
     backdropPoster = m.top.findNode("backdrop")
     if not isValid(backdropPoster) then return
+
+    ' A Seerr title has no library images, so it carries finished TMDB urls instead
+    if isValidAndNotEmpty(itemData._externalBackdropUrl)
+        backdropPoster.uri = itemData._externalBackdropUrl
+        return
+    end if
 
     serverBaseUrl = invalid
     if isChainValid(itemData, "_serverUrl")
@@ -2321,11 +2339,17 @@ sub addArrangedButtons(candidates as object)
     order = m.global.session.user.settings[DETAIL_ORDER_SETTING]
     hidden = m.global.session.user.settings[DETAIL_HIDDEN_SETTING]
 
+    for each candidate in seerrButtons.Candidates(m.seerrDetails, seerrMediaType())
+        candidates.push(candidate)
+    end for
+
     for each candidate in buttonLayout.Arrange(candidates, order, hidden)
         addButton(candidate.config)
     end for
 end sub
 
+' Asking Seerr for the title is its own flow, with dialogs of its own, so it is handed off
+' Seerr has taken the request, so the buttons are rebuilt off a fresh payload
 sub addSeriesButtons()
     hasResume = m.top.displayResumeButton
     if hasResume
@@ -2428,6 +2452,9 @@ sub addMusicButtons()
 end sub
 
 sub addButton(config as object)
+    ' A Seerr title has nothing in the library behind it, so only the actions that reach
+    ' Seerr itself are worth offering
+    if m.top.seerrOnly and Left(config.id, 5) <> "seerr" then return
     buttonGroup = detailButtons.createModernButton(config, m.buttonGroups.count())
     buttonGroup.observeField("focusedChild", "onButtonFocusChanged")
     m.buttonRow.appendChild(buttonGroup)
@@ -2483,6 +2510,11 @@ sub handleButtonSelect()
 
     buttonAction = buttonGroup.buttonAction
     if buttonAction = invalid then return
+
+    if Left(buttonAction, 5) = "seerr"
+        startSeerrRequest(buttonAction)
+        return
+    end if
 
     m.loadStatus = ViewLoadStatus.RELOAD
 

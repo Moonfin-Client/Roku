@@ -7,6 +7,8 @@ import "pkg:/source/utils/fontApply.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/remoteSubtitles.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
+import "pkg:/source/utils/seerrButtons.bs"
+import "pkg:/source/utils/seerrDetailHost.bs"
 import "pkg:/source/utils/multiserver.bs"
 
 import "pkg:/source/enums/AnimationControl.bs"
@@ -65,7 +67,7 @@ sub init()
 
     if m.extrasGrid <> invalid
         m.extrasGrid.observeField("itemFocused", "onExtrasRowChanged")
-        m.extrasGrid.observeField("hasItems", "onExtrasRowsLoaded")
+        m.extrasGrid.observeField("rowItemSize", "onExtrasRowsLoaded")
     end if
 
     m.seerrBlock = m.top.findNode("seerrBlock")
@@ -275,7 +277,7 @@ sub itemContentChanged()
 
     loadSeerrBlock(itemData)
 
-    if isValid(m.themeMusicPlayer)
+    if isValid(m.themeMusicPlayer) and not m.top.seerrOnly
         m.themeMusicPlayer.itemId = itemData.id
     end if
 
@@ -294,7 +296,7 @@ sub itemContentChanged()
 
     setBackdropImage(itemData)
 
-    if not isSeries() and m.top.selectedVideoStreamId = "" and isValid(itemData.MediaSources)
+    if not isSeries() and m.top.selectedVideoStreamId = "" and isValidAndNotEmpty(itemData.MediaSources)
         for i = 0 to itemData.mediaStreams.Count() - 1
             if itemData.mediaStreams[i].Type = "Video"
                 m.currentCodec = itemData.MediaStreams[i].Codec
@@ -394,6 +396,12 @@ end function
 sub setBackdropImage(itemData as object)
     backdropPoster = m.top.findNode("backdrop")
     if not isValid(backdropPoster) then return
+
+    ' A Seerr title has no library images, so it carries finished TMDB urls instead
+    if isValidAndNotEmpty(itemData._externalBackdropUrl)
+        backdropPoster.uri = itemData._externalBackdropUrl
+        return
+    end if
 
     serverBaseUrl = invalid
     if isChainValid(itemData, "_serverUrl")
@@ -1235,21 +1243,13 @@ sub layoutContainer()
 end sub
 
 ' Seerr is asked about a title only once the library has told us what it is
-sub loadSeerrBlock(itemData as object)
-    if not isValid(m.seerrBlock) then return
-
-    target = GetSeerrTargetFor(itemData)
-    m.seerrBlock.visible = false
-    m.seerrBlock.mediaType = target.mediaType
-    m.seerrBlock.tmdbId = target.tmdbId
-    m.seerrBlock.callFunc("loadTarget")
-end sub
-
+' A Seerr title arrives as a tmdb id, and the screen asks Seerr for the rest itself
 function extrasRowCount() as integer
     if not isValid(m.extrasGrid) or not isValid(m.extrasGrid.content) then return 0
     return m.extrasGrid.content.getChildCount()
 end function
 
+' Each extras row lands separately, so the block is placed again as the rows stack up
 sub onExtrasRowsLoaded()
     layoutContainer()
 end sub
@@ -1288,6 +1288,13 @@ end sub
 
 sub setPosterImage(itemData as object)
     if not isValid(m.posterImage) or not isValid(m.posterMask) then return
+
+    ' A Seerr title has no library images, so it carries a finished TMDB url instead
+    if isValidAndNotEmpty(itemData._externalPosterUrl)
+        m.posterImage.uri = itemData._externalPosterUrl
+        m.posterMask.visible = true
+        return
+    end if
 
     posterItemId = itemData.id
     imageTag = invalid
@@ -1679,11 +1686,17 @@ sub addArrangedButtons(candidates as object)
     order = m.global.session.user.settings[DETAIL_ORDER_SETTING]
     hidden = m.global.session.user.settings[DETAIL_HIDDEN_SETTING]
 
+    for each candidate in seerrButtons.Candidates(m.seerrDetails, seerrMediaType())
+        candidates.push(candidate)
+    end for
+
     for each candidate in buttonLayout.Arrange(candidates, order, hidden)
         addButton(candidate.config)
     end for
 end sub
 
+' Asking Seerr for the title is its own flow, with dialogs of its own, so it is handed off
+' Seerr has taken the request, so the buttons are rebuilt off a fresh payload
 sub addSeriesButtons()
     hasResume = m.top.displayResumeButton
     if hasResume
@@ -1742,6 +1755,9 @@ sub addSeriesButtons()
 end sub
 
 sub addButton(config as object)
+    ' A Seerr title has nothing in the library behind it, so only the actions that reach
+    ' Seerr itself are worth offering
+    if m.top.seerrOnly and Left(config.id, 5) <> "seerr" then return
     buttonGroup = detailButtons.createButton(config, m.buttonGroups.count())
     buttonGroup.observeField("focusedChild", "onButtonFocusChanged")
     m.buttonRow.appendChild(buttonGroup)
@@ -1778,6 +1794,11 @@ sub handleButtonSelect()
 
     buttonAction = buttonGroup.buttonAction
     if buttonAction = invalid then return
+
+    if Left(buttonAction, 5) = "seerr"
+        startSeerrRequest(buttonAction)
+        return
+    end if
 
     m.loadStatus = ViewLoadStatus.RELOAD
 
@@ -2213,11 +2234,19 @@ function onKeyEvent(key as string, press as boolean) as boolean
             end if
         end if
 
-        if key = KeyCode.UP and m.seerrBlock.isInFocusChain() and isValid(m.extrasGrid)
-            m.extrasGrid.setFocus(true)
-            setLastFocus(m.extrasGrid)
-            m.top.lastFocus = m.extrasGrid
-            scrollContentTo(-500)
+        if key = KeyCode.UP and m.seerrBlock.isInFocusChain()
+            if isValid(m.extrasGrid) and isValid(m.extrasGrid.content)
+                m.extrasGrid.setFocus(true)
+                setLastFocus(m.extrasGrid)
+                m.top.lastFocus = m.extrasGrid
+                scrollContentTo(-500)
+            else if m.buttonGroups.count() > 0
+                m.buttonGroups[m.currentButtonIndex].setFocus(true)
+                m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
+                highlightButton(m.currentButtonIndex)
+                setLastFocus(m.buttonGroups[m.currentButtonIndex])
+                scrollContentTo(0)
+            end if
             return true
         end if
     end if
@@ -2279,6 +2308,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
                 setLastFocus(m.extrasGrid)
                 unhighlightAllButtons()
                 scrollContentTo(-500)
+            else if isValid(m.seerrBlock) and m.seerrBlock.visible and m.seerrBlock.callFunc("focusFirst")
+                m.top.lastFocus = m.seerrBlock
+                setLastFocus(m.seerrBlock)
+                unhighlightAllButtons()
+                scrollToSeerrBlock()
             end if
             return true
         end if

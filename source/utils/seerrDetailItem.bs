@@ -1,0 +1,170 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
+
+' A Seerr title dressed up in the shape the detail screens read.
+'
+' There is no Jellyfin item behind one of these and the screens are built around one, so the
+' payload Seerr returns is mapped across rather than teaching every part of the screen a second
+' shape. Artwork comes as a finished url, since these images live on TMDB.
+namespace seerrDetailItem
+
+    const TICKS_PER_MINUTE = 600000000
+    const CAST_LIMIT = 20
+
+    function Build(details as object, mediaType as string) as object
+        if not isValid(details) then return invalid
+
+        isTv = isStringEqual(mediaType, "tv")
+        urls = GetTmdbImageBaseUrls()
+
+        item = {
+            Id: `seerr-${mediaType}-${details.id}`,
+            Name: seerrDetailItem.FirstText([details.title, details.name]),
+            Type: isTv ? "Series" : "Movie",
+            Overview: details.overview ?? "",
+            ProductionYear: seerrDetailItem.YearOf(details),
+            CommunityRating: seerrDetailItem.RatingOf(details),
+            RunTimeTicks: seerrDetailItem.RuntimeTicks(details, isTv),
+            Genres: seerrDetailItem.GenreNames(details),
+            Taglines: isValidAndNotEmpty(details.tagline) ? [details.tagline] : [],
+            People: seerrDetailItem.People(details),
+            ChildCount: isTv ? (details.numberOfSeasons ?? 0) : 0,
+            ProviderIds: { Tmdb: details.id.toStr() },
+            ' Nothing here is in the library, so there is no playback state and nothing to
+            ' play. The zeros are spelled out because the screens compare these rather than
+            ' check them first.
+            UserData: {
+                PlaybackPositionTicks: 0,
+                PlayCount: 0,
+                Played: false,
+                IsFavorite: false,
+                UnplayedItemCount: 0
+            },
+            MediaSources: [],
+            MediaStreams: [],
+            RemoteTrailers: [],
+            Studios: [],
+            Chapters: []
+        }
+
+        ' The screens read this for the Continuing badge, which only a series shows. TMDB calls
+        ' that state a returning series.
+        if isTv and isValidStringValue(details.status)
+            item.Status = isStringEqual(details.status, "Returning Series") ? "Continuing" : details.status
+        end if
+
+        if isValidAndNotEmpty(details.posterPath)
+            item._externalPosterUrl = urls.posterW500 + details.posterPath
+        end if
+        if isValidAndNotEmpty(details.backdropPath)
+            item._externalBackdropUrl = urls.backdropW1280 + details.backdropPath
+        end if
+
+        return item
+    end function
+
+    ' The screens read an item off a node's json, so the built item is wrapped the way a
+    ' library item arrives
+    function NodeFor(details as object, mediaType as string) as object
+        item = seerrDetailItem.Build(details, mediaType)
+        if not isValid(item) then return invalid
+
+        node = CreateObject("roSGNode", isStringEqual(item.Type, "Series") ? "SeriesData" : "MovieData")
+        node.json = item
+        return node
+    end function
+
+    ' Seerr names a film with title and a series with name
+    function FirstText(candidates as object) as string
+        for each candidate in candidates
+            if isValidAndNotEmpty(candidate) then return candidate
+        end for
+        return ""
+    end function
+
+    function YearOf(details as object) as dynamic
+        date = seerrDetailItem.FirstText([details.releaseDate, details.firstAirDate])
+        if len(date) < 4 then return invalid
+
+        year = date.left(4).toInt()
+        if year <= 0 then return invalid
+        return year
+    end function
+
+    ' Seerr gives a rating out of 10, which is what the library uses too
+    function RatingOf(details as object) as dynamic
+        if not isValid(details.voteAverage) then return invalid
+
+        vote = val(details.voteAverage.toStr())
+        if vote <= 0 then return invalid
+        return vote
+    end function
+
+    function RuntimeTicks(details as object, isTv as boolean) as dynamic
+        minutes = details.runtime
+        if isTv
+            ' A series reports the length of one episode as a list
+            episodeRuntimes = details.episodeRunTime
+            minutes = invalid
+            if isValidAndNotEmpty(episodeRuntimes) then minutes = episodeRuntimes[0]
+        end if
+
+        if not isValid(minutes) then return invalid
+
+        total = int(val(minutes.toStr()))
+        if total <= 0 then return invalid
+        return total * seerrDetailItem.TICKS_PER_MINUTE
+    end function
+
+    function GenreNames(details as object) as object
+        names = []
+        if not isValidAndNotEmpty(details.genres) then return names
+
+        for each genre in details.genres
+            if isValidAndNotEmpty(genre.name) then names.push(genre.name)
+        end for
+
+        return names
+    end function
+
+    ' The metadata columns read the director and writer off this list, and the cast row reads
+    ' the actors, so both halves of the credits come across
+    function People(details as object) as object
+        credited = []
+        credits = details.credits
+        if not isValid(credits) then return credited
+
+        if isValidAndNotEmpty(credits.cast)
+            for each member in credits.cast
+                if credited.count() >= seerrDetailItem.CAST_LIMIT then exit for
+                credited.push(seerrDetailItem.Person(member, "Actor", member.character))
+            end for
+        end if
+
+        if isValidAndNotEmpty(credits.crew)
+            for each member in credits.crew
+                job = member.job ?? ""
+                if not isStringEqual(job, "Director") and not isStringEqual(job, "Writer") then continue for
+                credited.push(seerrDetailItem.Person(member, job, job))
+            end for
+        end if
+
+        return credited
+    end function
+
+    function Person(member as object, personType as string, role as dynamic) as object
+        entry = {
+            Id: (member.id ?? "").toStr(),
+            Name: member.name ?? "",
+            Type: personType,
+            Role: role ?? ""
+        }
+
+        if isValidAndNotEmpty(member.profilePath)
+            entry._externalImageUrl = GetTmdbImageBaseUrls().posterW342 + member.profilePath
+        end if
+
+        return entry
+    end function
+
+end namespace
