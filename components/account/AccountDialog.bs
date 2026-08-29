@@ -1,0 +1,372 @@
+import "pkg:/source/api/userauth.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/loginStyle.bs"
+import "pkg:/source/utils/misc.bs"
+
+const TILE_WIDTH = 140
+const TILE_SPACING = 40
+const TILE_ROW_HEIGHT = 240
+const PANEL_Y = 180
+const PANEL_PADDING = 32
+const PANEL_MIN_WIDTH = 520
+const PANEL_MAX_WIDTH = 800
+const PANEL_BOTTOM_PADDING = 28
+const ACTIONS_Y = 356
+const ACTION_GAP = 10
+const ACTION_STACK_GAP = 8
+const DANGER = "0xC62828FF"
+
+sub init()
+    m.panel = m.top.findNode("panel")
+    m.userRowClip = m.top.findNode("userRowClip")
+    m.userRow = m.top.findNode("userRow")
+    m.userRow.itemSpacings = [TILE_SPACING]
+    m.closeButton = m.top.findNode("closeButton")
+    m.changeServer = m.top.findNode("changeServerButton")
+    m.signOut = m.top.findNode("signOutButton")
+    m.signOutAll = m.top.findNode("signOutAllButton")
+
+    m.top.findNode("title").text = tr("Switch Account")
+    m.changeServer.text = tr("Change Server")
+    m.signOut.text = tr("Sign Out")
+    m.signOutAll.text = tr("Sign Out All Users")
+
+    for each button in [m.closeButton, m.changeServer, m.signOut, m.signOutAll]
+        loginStyle.ApplyButton(button)
+    end for
+
+    ' Signing every user out is the one destructive action here
+    m.signOutAll.color = DANGER
+    m.signOutAll.focusColor = DANGER
+    m.signOutAll.borderColor = DANGER
+    m.signOutAll.focusBorderColor = DANGER
+
+    m.tiles = []
+    m.clipWidth = 0
+    m.focusedTile = 0
+    m.lastFocusedTile = 0
+    m.focusZone = "tiles"
+    m.actionIndex = 0
+    m.removeFocused = false
+end sub
+
+sub showDialog()
+    accounts = collectAccounts()
+
+    m.userRow.removeChildrenIndex(m.userRow.getChildCount(), 0)
+    m.tiles = []
+
+    activeIndex = 0
+    for each account in accounts
+        tile = m.userRow.createChild("AccountUserItem")
+        node = CreateObject("roSGNode", "AccountUserData")
+        node.id = account.id
+        node.username = account.username
+        node.serverName = account.serverName
+        node.serverUrl = account.serverUrl
+        node.imageURL = account.imageURL
+        node.isActive = account.isActive
+        node.canRemove = account.canRemove
+        tile.itemContent = node
+        if account.isActive then activeIndex = m.tiles.count()
+        m.tiles.push(tile)
+    end for
+
+    m.tiles.push(m.userRow.createChild("AccountAddUserItem"))
+
+    m.signOutAll.visible = (accounts.count() > 1)
+
+    layoutDialog(accounts.count())
+
+    m.focusZone = "tiles"
+    m.focusedTile = activeIndex
+    m.lastFocusedTile = activeIndex
+    m.actionIndex = 0
+    m.removeFocused = false
+    refreshFocus()
+
+    m.top.visible = true
+    m.top.setFocus(true)
+end sub
+
+sub layoutDialog(tileCount as integer)
+    rowCount = tileCount + 1
+    rowWidth = (rowCount * TILE_WIDTH) + ((rowCount - 1) * TILE_SPACING)
+
+    panelWidth = rowWidth + (PANEL_PADDING * 2)
+    if panelWidth < PANEL_MIN_WIDTH then panelWidth = PANEL_MIN_WIDTH
+    if panelWidth > PANEL_MAX_WIDTH then panelWidth = PANEL_MAX_WIDTH
+
+    clipWidth = panelWidth - (PANEL_PADDING * 2)
+    ' Kept on m because reading clippingRect back gives an associative array
+    m.clipWidth = clipWidth
+    m.userRowClip.clippingRect = [0, 0, clipWidth, TILE_ROW_HEIGHT]
+    m.userRowClip.translation = [PANEL_PADDING, 92]
+
+    if rowWidth <= clipWidth
+        m.userRow.translation = [(clipWidth - rowWidth) / 2, 0]
+    else
+        m.userRow.translation = [0, 0]
+    end if
+
+    actionHeight = m.changeServer.height
+    half = (clipWidth - ACTION_GAP) / 2
+    m.changeServer.width = half
+    m.changeServer.translation = [PANEL_PADDING, ACTIONS_Y]
+    m.signOut.width = half
+    m.signOut.translation = [PANEL_PADDING + half + ACTION_GAP, ACTIONS_Y]
+
+    actionsBottom = ACTIONS_Y + actionHeight
+    if m.signOutAll.visible
+        m.signOutAll.width = clipWidth
+        m.signOutAll.translation = [PANEL_PADDING, actionsBottom + ACTION_STACK_GAP]
+        actionsBottom = actionsBottom + ACTION_STACK_GAP + actionHeight
+    end if
+
+    m.panel.width = panelWidth
+    m.panel.height = actionsBottom + PANEL_BOTTOM_PADDING
+    m.panel.translation = [(1920 - panelWidth) / 2, PANEL_Y]
+
+    m.closeButton.translation = [panelWidth - PANEL_PADDING - m.closeButton.width, 24]
+end sub
+
+' Saved accounts come from the registry, and the signed in user is always shown
+' even before anything has been saved
+function collectAccounts() as object
+    accounts = []
+    serverNames = savedServerNames()
+    activeId = m.global.session.user.id
+
+    for each user in AvailableUsers()
+        if not isValidAndNotEmpty(user.id) then continue for
+
+        serverUrl = user.server ?? ""
+        accounts.push({
+            id: user.id,
+            username: user.username ?? "",
+            serverUrl: serverUrl,
+            serverName: serverNames[LCase(serverUrl)] ?? serverUrl,
+            imageURL: accountImageURL(serverUrl, user.id),
+            isActive: isStringEqual(user.id, activeId),
+            canRemove: true
+        })
+    end for
+
+    if accounts.count() = 0 and isValidAndNotEmpty(activeId)
+        serverUrl = m.global.session.server.url ?? ""
+        accounts.push({
+            id: activeId,
+            username: m.global.session.user.name ?? "",
+            serverUrl: serverUrl,
+            serverName: serverNames[LCase(serverUrl)] ?? serverUrl,
+            imageURL: accountImageURL(serverUrl, activeId),
+            isActive: true,
+            canRemove: false
+        })
+    end if
+
+    ' The only account left is the one in use, so there is nothing to remove
+    if accounts.count() = 1 and accounts[0].isActive then accounts[0].canRemove = false
+
+    return accounts
+end function
+
+function savedServerNames() as object
+    names = {}
+    saved = ParseJson(get_setting("saved_servers", "{}"))
+    if not isValid(saved) or not isValid(saved.serverList) then return names
+
+    for each entry in saved.serverList
+        if isValidAndNotEmpty(entry.baseUrl) then names[LCase(entry.baseUrl)] = entry.name
+    end for
+
+    return names
+end function
+
+' Built against the account's own server so a user on another one still resolves
+function accountImageURL(serverUrl as string, userId as string) as string
+    if not isValidAndNotEmpty(serverUrl) or not isValidAndNotEmpty(userId) then return ""
+
+    base = serverUrl
+    if right(base, 1) = "/" then base = left(base, len(base) - 1)
+
+    return `${base}/Users/${userId}/Images/Primary?quality=90&maxHeight=150`
+end function
+
+sub refreshFocus()
+    for i = 0 to m.tiles.count() - 1
+        m.tiles[i].itemHasFocus = (m.focusZone = "tiles" and i = m.focusedTile)
+        if m.tiles[i].hasField("removeFocused")
+            m.tiles[i].removeFocused = (m.focusZone = "tiles" and i = m.focusedTile and m.removeFocused)
+        end if
+    end for
+
+    m.closeButton.focus = (m.focusZone = "close")
+    m.changeServer.focus = (m.focusZone = "actions" and m.actionIndex = 0)
+    m.signOut.focus = (m.focusZone = "actions" and m.actionIndex = 1)
+    m.signOutAll.focus = (m.focusZone = "actions" and m.actionIndex = 2)
+
+    scrollRow()
+end sub
+
+sub scrollRow()
+    if m.tiles.count() = 0 then return
+
+    clipWidth = m.clipWidth
+    if clipWidth <= 0 then return
+
+    rowWidth = (m.tiles.count() * TILE_WIDTH) + ((m.tiles.count() - 1) * TILE_SPACING)
+    if rowWidth <= clipWidth then return
+
+    tileLeft = m.focusedTile * (TILE_WIDTH + TILE_SPACING)
+    tileRight = tileLeft + TILE_WIDTH
+    offset = -m.userRow.translation[0]
+
+    if tileRight > offset + clipWidth
+        offset = tileRight - clipWidth
+    else if tileLeft < offset
+        offset = tileLeft
+    end if
+
+    maxOffset = rowWidth - clipWidth
+    if offset < 0 then offset = 0
+    if offset > maxOffset then offset = maxOffset
+
+    m.userRow.translation = [-offset, 0]
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = KeyCode.BACK
+        m.top.accountAction = "close"
+        return true
+    end if
+
+    if key = KeyCode.LEFT then return moveLeft()
+    if key = KeyCode.RIGHT then return moveRight()
+    if key = KeyCode.UP then return moveUp()
+    if key = KeyCode.DOWN then return moveDown()
+    if key = KeyCode.OK then return selectFocused()
+
+    return false
+end function
+
+' The dialog swallows every direction key so focus cannot wander out of it
+function moveLeft() as boolean
+    if m.focusZone = "tiles"
+        if m.removeFocused
+            m.removeFocused = false
+            refreshFocus()
+        else if m.focusedTile > 0
+            m.focusedTile--
+            m.lastFocusedTile = m.focusedTile
+            refreshFocus()
+        end if
+    else if m.focusZone = "actions" and m.actionIndex = 1
+        m.actionIndex = 0
+        refreshFocus()
+    end if
+
+    return true
+end function
+
+function moveRight() as boolean
+    if m.focusZone = "tiles"
+        tile = m.tiles[m.focusedTile]
+        canRemove = isValid(tile.itemContent) and tile.itemContent.canRemove
+        if canRemove and not m.removeFocused
+            m.removeFocused = true
+        else
+            m.removeFocused = false
+            if m.focusedTile < m.tiles.count() - 1
+                m.focusedTile++
+                m.lastFocusedTile = m.focusedTile
+            end if
+        end if
+        refreshFocus()
+    else if m.focusZone = "actions" and m.actionIndex = 0
+        m.actionIndex = 1
+        refreshFocus()
+    end if
+
+    return true
+end function
+
+function moveUp() as boolean
+    if m.focusZone = "actions"
+        if m.actionIndex = 2
+            m.actionIndex = 0
+        else
+            m.focusZone = "tiles"
+            m.focusedTile = m.lastFocusedTile
+        end if
+        refreshFocus()
+    else if m.focusZone = "tiles"
+        m.focusZone = "close"
+        m.removeFocused = false
+        refreshFocus()
+    end if
+
+    return true
+end function
+
+function moveDown() as boolean
+    if m.focusZone = "close"
+        m.focusZone = "tiles"
+        refreshFocus()
+    else if m.focusZone = "tiles"
+        m.removeFocused = false
+        m.focusZone = "actions"
+        m.actionIndex = 0
+        refreshFocus()
+    else if m.focusZone = "actions" and m.actionIndex < 2 and m.signOutAll.visible
+        m.actionIndex = 2
+        refreshFocus()
+    end if
+
+    return true
+end function
+
+function selectFocused() as boolean
+    if m.focusZone = "close"
+        m.top.accountAction = "close"
+        return true
+    end if
+
+    if m.focusZone = "actions"
+        if m.actionIndex = 0
+            m.top.accountAction = "change_server"
+        else if m.actionIndex = 1
+            m.top.accountAction = "sign_out"
+        else
+            m.top.accountAction = "sign_out_all"
+        end if
+        return true
+    end if
+
+    tile = m.tiles[m.focusedTile]
+    if not isValid(tile.itemContent)
+        m.top.accountAction = "add_user"
+        return true
+    end if
+
+    content = tile.itemContent
+    if m.removeFocused
+        m.top.removeUserRequest = {
+            id: content.id,
+            username: content.username,
+            serverName: content.serverName
+        }
+        return true
+    end if
+
+    if content.isActive
+        m.top.accountAction = "close"
+        return true
+    end if
+
+    m.top.switchToUser = { id: content.id, serverUrl: content.serverUrl }
+    return true
+end function
