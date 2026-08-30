@@ -10,6 +10,7 @@ import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/HomeRecommendations.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/seerrBrowseRows.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 
 ' Items a "Recently Added" row holds, both per library and after libraries are merged
@@ -1987,6 +1988,21 @@ sub loadItems()
         return
     end if
 
+    if isStringEqual(m.top.itemsToLoad, "studios")
+        m.top.content = loadStudios()
+        return
+    end if
+
+    if isStringEqual(m.top.itemsToLoad, "radarr_calendar")
+        m.top.content = loadArrCalendar("radarr")
+        return
+    end if
+
+    if isStringEqual(m.top.itemsToLoad, "sonarr_calendar")
+        m.top.content = loadArrCalendar("sonarr")
+        return
+    end if
+
     if isStringEqual(m.top.itemsToLoad, "audio")
         m.top.content = loadAudio()
         return
@@ -2221,7 +2237,17 @@ function loadCustomDynamicList(listName as string, additionalData as dynamic) as
         else if chartType = "seerr_upcoming_series" or chartType = "upcomingseries" or chartType = "upcomingSeries"
             endpoint = "/api/v1/discover/tv/upcoming"
             queryParams = { language: "en" }
+        else if chartType = "seerr_watchlist" or chartType = "watchlist" or chartType = "yourWatchlist"
+            endpoint = "/api/v1/discover/watchlist"
+            queryParams = { page: "1" }
         end if
+
+        ' The browse rows are tiles rather than media, so they build their own nodes
+        if chartType = "seerr_studios" or chartType = "studios" then return seerrTileRow("studio")
+        if chartType = "seerr_networks" or chartType = "networks" then return seerrTileRow("network")
+        if chartType = "seerr_movie_genres" or chartType = "genreMovies" then return seerrGenreTileRow("movie")
+        if chartType = "seerr_series_genres" or chartType = "genreTv" then return seerrGenreTileRow("tv")
+        if chartType = "seerr_shortcuts" or chartType = "shortcuts" then return seerrShortcutRow()
 
         if endpoint <> ""
             if Left(endpoint, 7) = "/api/v1"
@@ -2488,6 +2514,284 @@ function loadPickedRow(picked as object) as object
     return results
 end function
 
+' A tile that opens a filtered browse rather than a title. The markers ride on the node so
+' the home screen knows to push SeerrGenreBrowseScreen instead of a detail screen.
+function seerrBrowseTile(browseType as string, id as integer, name as string, mediaType as string, artUrl as string) as object
+    tile = createSGNode("HomeData")
+
+    ' The json goes on first. Setting it rebuilds the node from Jellyfin image tags, which
+    ' would throw away artwork that came from TMDB.
+    tile.json = {
+        Id: `seerr-${browseType}-${id.toStr()}`,
+        name: name,
+        Type: "SeerrBrowse",
+        SeerrBrowseType: browseType,
+        SeerrBrowseId: id,
+        SeerrBrowseName: name,
+        SeerrMediaType: mediaType
+    }
+
+    tile.id = `seerr-${browseType}-${id.toStr()}`
+    tile.name = name
+    tile.title = name
+    tile.type = "SeerrBrowse"
+    tile.usePoster = false
+    if artUrl <> "" then tile.posterURL = artUrl
+
+    return tile
+end function
+
+' The studios and networks Seerr offers, drawn as logos
+function seerrTileRow(browseType as string) as object
+    results = []
+
+    if browseType = "studio"
+        entries = seerrBrowseRows.Studios()
+        mediaType = "movie"
+    else
+        entries = seerrBrowseRows.Networks()
+        mediaType = "tv"
+    end if
+
+    for each entry in entries
+        results.push(seerrBrowseTile(browseType, entry.id, entry.name, mediaType, seerrBrowseRows.LogoUrl(entry.logoPath)))
+    end for
+
+    return results
+end function
+
+' Seerr names a backdrop per genre, which is what gives each tile its own artwork
+function seerrGenreTileRow(mediaType as string) as object
+    results = []
+
+    response = unwrapSeerrProxyResponse(getJson(APIRequest(`/Moonfin/Seerr/Api/discover/genreslider/${mediaType}`, {})))
+    if LCase(type(response)) <> "roarray" then return results
+
+    for each genre in response
+        if not isValid(genre) then continue for
+
+        genreId = genre.LookupCI("id")
+        genreName = toNormalizedString(genre.LookupCI("name"))
+        if not isValid(genreId) or genreName = "" then continue for
+
+        art = ""
+        backdrops = genre.LookupCI("backdrops")
+        if isValidAndNotEmpty(backdrops) then art = "https://image.tmdb.org/t/p/w780" + toNormalizedString(backdrops[0])
+
+        results.push(seerrBrowseTile("genre", genreId, genreName, mediaType, art))
+    end for
+
+    return results
+end function
+
+' The places Seerr can be browsed from, with a still borrowed off trending so the tiles
+' carry artwork. A failed read still leaves the row usable, just plainer.
+function seerrShortcutRow() as object
+    shortcuts = [
+        { key: "discover", name: tr("Discover") },
+        { key: "movies", name: tr("Movies") },
+        { key: "series", name: tr("TV Shows") },
+        { key: "requests", name: tr("Requests") }
+    ]
+
+    art = []
+    response = unwrapSeerrProxyResponse(getJson(APIRequest("/Moonfin/Seerr/Api/discover/trending", { page: "1", language: "en" })))
+    if isValid(response) and isChainValid(response, "results")
+        for each item in response.results
+            path = toNormalizedString(item.LookupCI("backdropPath"))
+            if path = "" then path = toNormalizedString(item.LookupCI("backdrop_path"))
+            if path <> "" then art.push("https://image.tmdb.org/t/p/w780" + path)
+        end for
+    end if
+
+    results = []
+    for i = 0 to shortcuts.count() - 1
+        entry = shortcuts[i]
+        still = i < art.count() ? art[i] : ""
+
+        tile = createSGNode("HomeData")
+        tile.json = {
+            Id: `seerr-shortcut-${entry.key}`,
+            name: entry.name,
+            Type: "SeerrShortcut",
+            SeerrShortcut: entry.key
+        }
+
+        tile.id = `seerr-shortcut-${entry.key}`
+        tile.name = entry.name
+        tile.title = entry.name
+        tile.type = "SeerrShortcut"
+        tile.usePoster = false
+        if still <> "" then tile.posterURL = still
+
+        results.push(tile)
+    end for
+
+    return results
+end function
+
+
+' The Radarr and Sonarr calendars, fetched through the plugin so the API key stays on the
+' server and a remote client still sees them. Merging is what the other clients do when
+' both are on and the viewer asked for one list.
+function loadArrCalendar(service as string) as object
+    settings = m.global.session.user.settings
+
+    radarrOn = getBoolSetting(settings, "calendar.radarr.enabled", false)
+    sonarrOn = getBoolSetting(settings, "calendar.sonarr.enabled", false)
+    merged = getBoolSetting(settings, "calendar.merge", false) and radarrOn and sonarrOn
+
+    results = []
+    if service = "radarr" or merged
+        if radarrOn then appendRadarrCalendar(results, settings)
+    end if
+    if service = "sonarr" or merged
+        if sonarrOn then appendSonarrCalendar(results, settings)
+    end if
+
+    sortByCalendarDate(results)
+    return results
+end function
+
+function arrCalendarItems(service as string) as object
+    now = CreateObject("roDateTime")
+    start = now.ToISOString()
+    now.AddSeconds(90 * 24 * 60 * 60)
+
+    data = getJson(APIRequest(`/Moonfin/Seerr/${service}/Calendar`, { start: start, end: now.ToISOString() }))
+    if LCase(type(data)) <> "roarray" then return []
+
+    return data
+end function
+
+' Radarr names three release dates and the viewer chooses which count, so the row shows the
+' soonest one still ahead and says which kind it is
+sub appendRadarrCalendar(results as object, settings as object)
+    showDate = getBoolSetting(settings, "calendar.radarr.showDate", true)
+    kinds = []
+    if getBoolSetting(settings, "calendar.radarr.showCinema", true) then kinds.push({ field: "inCinemas", label: tr("Cinema") })
+    if getBoolSetting(settings, "calendar.radarr.showDigital", true) then kinds.push({ field: "digitalRelease", label: tr("Digital") })
+    if getBoolSetting(settings, "calendar.radarr.showPhysical", true) then kinds.push({ field: "physicalRelease", label: tr("Physical") })
+    if kinds.count() = 0 then return
+
+    today = CreateObject("roDateTime").ToISOString()
+
+    for each movie in arrCalendarItems("Radarr")
+        soonest = ""
+        kindLabel = ""
+        for each kind in kinds
+            when = toNormalizedString(movie.LookupCI(kind.field))
+            if when = "" or when < today then continue for
+            if soonest = "" or when < soonest
+                soonest = when
+                kindLabel = kind.label
+            end if
+        end for
+        if soonest = "" then continue for
+
+        results.push(calendarNode(movie, toNormalizedString(movie.LookupCI("title")), "Movie", soonest, calendarSubtitle(kindLabel, soonest, showDate)))
+    end for
+end sub
+
+' Sonarr lists every episode, so only the next one per series earns a place in the row
+sub appendSonarrCalendar(results as object, settings as object)
+    showDate = getBoolSetting(settings, "calendar.sonarr.showDate", true)
+    showEpisode = getBoolSetting(settings, "calendar.sonarr.showEpisodeInfo", true)
+    today = CreateObject("roDateTime").ToISOString()
+
+    nextPerSeries = {}
+    for each episode in arrCalendarItems("Sonarr")
+        series = episode.LookupCI("series")
+        if not isValid(series) then continue for
+
+        airs = toNormalizedString(episode.LookupCI("airDateUtc"))
+        if airs = "" then airs = toNormalizedString(episode.LookupCI("airDate"))
+        if airs = "" or airs < today then continue for
+
+        key = toNormalizedString(series.LookupCI("id"))
+        held = nextPerSeries[key]
+        if isValid(held) and held.airs <= airs then continue for
+
+        nextPerSeries[key] = { episode: episode, series: series, airs: airs }
+    end for
+
+    for each key in nextPerSeries
+        entry = nextPerSeries[key]
+        label = ""
+        if showEpisode
+            season = entry.episode.LookupCI("seasonNumber")
+            number = entry.episode.LookupCI("episodeNumber")
+            if isValid(season) and isValid(number) then label = `S${season.ToStr()}E${number.ToStr()}`
+        end if
+
+        results.push(calendarNode(entry.series, toNormalizedString(entry.series.LookupCI("title")), "Series", entry.airs, calendarSubtitle(label, entry.airs, showDate)))
+    end for
+end sub
+
+function calendarSubtitle(label as string, airs as string, showDate as boolean) as string
+    parts = []
+    if label <> "" then parts.push(label)
+    if showDate and Len(airs) >= 10 then parts.push(Mid(airs, 1, 10))
+
+    return parts.count() > 0 ? parts.join(" ") : ""
+end function
+
+' Radarr and Sonarr both name their artwork the same way, so one reader covers both
+function arrImage(item as object, coverType as string) as string
+    images = item.LookupCI("images")
+    if not isValidAndNotEmpty(images) then return ""
+
+    for each image in images
+        if not isStringEqual(toNormalizedString(image.LookupCI("coverType")), coverType) then continue for
+
+        url = toNormalizedString(image.LookupCI("remoteUrl"))
+        if url = "" then url = toNormalizedString(image.LookupCI("url"))
+        if url <> "" then return url
+    end for
+
+    return ""
+end function
+
+function calendarNode(item as object, title as string, itemType as string, airs as string, subtitle as string) as object
+    node = createSGNode("HomeData")
+    node.json = {
+        Id: `cal-${itemType}-${toNormalizedString(item.LookupCI("id"))}`,
+        name: title,
+        Type: itemType,
+        Overview: toNormalizedString(item.LookupCI("overview")),
+        ProductionYear: item.LookupCI("year"),
+        CalendarDate: airs,
+        Subtitle: subtitle
+    }
+
+    node.id = `cal-${itemType}-${toNormalizedString(item.LookupCI("id"))}`
+    node.name = title
+    node.title = title
+    node.type = itemType
+    node.usePoster = true
+
+    poster = arrImage(item, "poster")
+    if poster = "" then poster = arrImage(item, "fanart")
+    if poster <> "" then node.posterURL = poster
+
+    backdrop = arrImage(item, "fanart")
+    if backdrop <> "" then node.backdropURL = backdrop
+
+    return node
+end function
+
+sub sortByCalendarDate(results as object)
+    for i = 1 to results.count() - 1
+        held = results[i]
+        j = i - 1
+        while j >= 0 and results[j].json.CalendarDate > held.json.CalendarDate
+            results[j + 1] = results[j]
+            j = j - 1
+        end while
+        results[j + 1] = held
+    end for
+end sub
+
 ' rowSortByParam: Maps a sort choice to its Jellyfin sort parameter. The keys are the names
 ' the plugin exchanges, so a sort this screen doesnt offer still resolves when a server pushes it.
 '
@@ -2539,6 +2843,26 @@ function genresRowItemTypes(settings as object) as string
     }
 
     return filterItemTypes[getStringSetting(settings, "ui.home.genresRowItemFilter", "both")] ?? "Movie,Series"
+end function
+
+' The studios in the library, drawn as tiles the way the genres row is
+function loadStudios() as object
+    results = []
+
+    settings = m.global.session.user.settings
+    data = api.studios.Get({
+        userId: m.global.session.user.id,
+        sortBy: rowSortByParam(getStringSetting(settings, "ui.home.studiosRowSortBy", "name")),
+        sortOrder: "Ascending",
+        Fields: "PrimaryImageAspectRatio,ImageTags",
+        EnableTotalRecordCount: false
+    })
+    if not isChainValid(data, "items") then return results
+
+    for each item in data.items
+        results.push(internalRowNode(item, "Studio"))
+    end for
+    return results
 end function
 
 function loadGenres() as object
