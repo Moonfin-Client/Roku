@@ -676,7 +676,7 @@
     </message>
     <message>
         <source>Use system settings</source>
-        <translation>Nutze System EInstellungen</translation>
+        <translation>Nutze System Einstellungen</translation>
         <extracomment>User Setting - Option title</extracomment>
     </message>
     <message>
@@ -1866,7 +1866,7 @@
     </message>
     <message>
         <source>Delete Saved</source>
-        <translation type="unfinished">Löschen</translation>
+        <translation>Gespeicherte löschen</translation>
     </message>
     <message>
         <source>On Now</source>
@@ -1891,7 +1891,6 @@
     <message>
         <source>Special Features</source>
         <translation>Besonderheiten</translation>
-        
     </message>
     <message>
         <source>Support direct play of MPEG 2 content (e.g. Live TV). This will prevent transcoding of MPEG 2 content, but uses significantly more bandwidth</source>
@@ -2119,7 +2118,7 @@
     </message>
     <message>
         <source>Support Direct Play of MPEG-2 content (e.g., Live TV). This will prevent transcoding of MPEG-2 content, but uses significantly more bandwidth.</source>
-        <translation type="unfinished">Unterstützung von Direkt Abspielen von MPEG-2 Inhalte (z.B., Live Fernsehen). Dadurch wird die Transcodierung von MPEG-2-Inhalten verhindert, aber es nutzt bedeutend mehr Bandbreite.</translation>
+        <translation>Unterstützung für das direkte Abspielen von MPEG-2-Inhalten (z.B. Live-TV). Dadurch wird das Transcodieren von MPEG-2-Inhalten vermieden, es wird jedoch erheblich mehr Bandbreite verwendet.</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
