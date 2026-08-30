@@ -1,27 +1,145 @@
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/trackDialog.bs"
+
+const HINT_SIZE = 20
+const HINT_LINE = 26
 
 sub init()
-    m.top.id = "OKDialog"
-    m.top.height = 900
-
     m.checklist = m.top.findNode("checklist")
-    m.checklist.font.size = 30
-    m.checklist.focusedFont.size = 30
+    m.checklist.observeField("content", "onSourceChanged")
+    m.checklist.observeField("checkedState", "onCheckedChanged")
+    m.checklist.observeField("itemSelected", "onItemSelected")
+
+    m.hint = m.top.findNode("hint")
+    m.hint.font.size = HINT_SIZE
+
+    m.parts = {
+        panel: m.top.findNode("panel"),
+        panelBg: m.top.findNode("panelBg"),
+        panelBorder: m.top.findNode("panelBorder"),
+        title: m.top.findNode("title"),
+        titleRule: m.top.findNode("titleRule"),
+        list: m.checklist
+    }
+
+    m.rowCount = 0
+    m.rebuilding = false
+    m.sourceRows = []
+end sub
+
+' The caller hands over the rows and which of them are on. Everything the panel draws is
+' built from those two, with the actions added on the end
+sub onSourceChanged()
+    if m.rebuilding then return
+
+    source = m.checklist.content
+    if not isValid(source) or source.getChildCount() = 0 then return
+
+    ' What the caller handed over is kept, since the list itself is replaced by the built
+    ' one and the checked state arrives after it
+    m.sourceRows = []
+    for i = 0 to source.getChildCount() - 1
+        child = source.getChild(i)
+        m.sourceRows.push({ id: child.id, title: child.title })
+    end for
+
+    rebuildList()
+end sub
+
+sub onCheckedChanged()
+    if m.rebuilding then return
+
+    rebuildList()
+end sub
+
+sub rebuildList()
+    rowCount = m.sourceRows.count()
+    checked = m.checklist.checkedState
+    if not isValid(checked) then checked = []
+
+    built = CreateObject("roSGNode", "ContentNode")
+    for i = 0 to rowCount - 1
+        entry = built.CreateChild("AudioTrackListData")
+        entry.id = m.sourceRows[i].id
+        entry.title = m.sourceRows[i].title
+        entry.selected = i < checked.count() and checked[i] = true
+        entry.reorderable = m.top.allowReorder
+        entry.canMoveLeft = i > 0
+        entry.canMoveRight = i < rowCount - 1
+    end for
+
+    ' Only the first action needs a divider, to set the whole footer apart from the rows
+    for i = 0 to m.top.buttons.count() - 1
+        action = built.CreateChild("AudioTrackListData")
+        action.title = m.top.buttons[i]
+        action.action = "button"
+        action.dimmed = true
+        action.dividerAbove = (i = 0)
+    end for
+
+    m.rowCount = rowCount
+    layoutPanel(built.getChildCount())
+
+    focused = m.checklist.itemFocused
+
+    m.rebuilding = true
+    m.checklist.content = built
+    m.rebuilding = false
+
+    if focused > 0 then m.checklist.jumpToItem = focused
+    m.checklist.setFocus(true)
+end sub
+
+sub layoutPanel(count as integer)
+    trackDialog.Layout(m.parts, count)
+
+    m.hint.text = m.top.allowReorder ? tr("Press OK to show or hide a row, Left or Right to move it") : tr("Press OK to show or hide a row")
+    m.hint.width = trackDialog.PANEL_WIDTH - (trackDialog.ROW_PAD_X * 2)
+    m.hint.height = HINT_LINE
+    m.hint.translation = [trackDialog.ROW_PAD_X, trackDialog.PANEL_PAD_Y + trackDialog.TITLE_LINE]
+
+    ' The hint sits between the title and its rule, so everything below it moves down a line
+    rulePosition = m.parts.titleRule.translation
+    m.parts.titleRule.translation = [rulePosition[0], rulePosition[1] + HINT_LINE]
+
+    listPosition = m.checklist.translation
+    m.checklist.translation = [listPosition[0], listPosition[1] + HINT_LINE]
+
+    panelPosition = m.parts.panel.translation
+    m.parts.panel.translation = [panelPosition[0], panelPosition[1] - (HINT_LINE / 2)]
+
+    for each layer in [m.parts.panelBg, m.parts.panelBorder]
+        layer.height = layer.height + HINT_LINE
+    end for
+end sub
+
+sub onItemSelected()
+    index = m.checklist.itemSelected
+    row = m.checklist.content.getChild(index)
+    if not isValid(row) then return
+
+    if row.action = "button"
+        m.top.buttonSelected = index - m.rowCount
+        return
+    end if
+
+    checked = m.checklist.checkedState
+    if index >= checked.count() then return
+
+    checked[index] = not (checked[index] = true)
+    row.selected = checked[index]
+
+    m.rebuilding = true
+    m.checklist.checkedState = checked
+    m.rebuilding = false
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
-    if isStringEqual(key, KeyCode.UP)
-        if not m.checklist.isInFocusChain()
-            m.checklist.setFocus(true)
-            return true
-        end if
-    end if
-
-    ' The list takes rewind and fast forward for itself as page jumps, so left
-    ' and right are what actually reach here to move a row
+    ' The list takes rewind and fast forward for itself as page jumps, so left and right are
+    ' what actually reach here to move a row
     if m.top.allowReorder and m.checklist.isInFocusChain()
         if isStringEqual(key, KeyCode.LEFT) or isStringEqual(key, KeyCode.REWIND)
             return moveChecklistItem(-1)
@@ -32,59 +150,39 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
     end if
 
+    ' Backing out of the picker is the same as taking its last action, which is the one
+    ' that leaves without saving
+    if isStringEqual(key, KeyCode.BACK)
+        m.top.buttonSelected = m.top.buttons.count() - 1
+        return true
+    end if
+
     return false
 end function
 
 function moveChecklistItem(direction as integer) as boolean
-    content = m.checklist.content
-    if not isValid(content)
-        return false
-    end if
-
     focusedIndex = m.checklist.itemFocused
-    if focusedIndex < 0
-        return false
-    end if
-
     targetIndex = focusedIndex + direction
-    itemCount = content.getChildCount()
-    if targetIndex < 0 or targetIndex >= itemCount
-        return false
+    if focusedIndex < 0 or targetIndex < 0 then return false
+    if focusedIndex >= m.rowCount or targetIndex >= m.rowCount then return false
+
+    checked = m.checklist.checkedState
+
+    held = m.sourceRows[focusedIndex]
+    m.sourceRows[focusedIndex] = m.sourceRows[targetIndex]
+    m.sourceRows[targetIndex] = held
+
+    if focusedIndex < checked.count() and targetIndex < checked.count()
+        heldChecked = checked[focusedIndex]
+        checked[focusedIndex] = checked[targetIndex]
+        checked[targetIndex] = heldChecked
     end if
 
-    rows = []
-    for i = 0 to itemCount - 1
-        item = content.getChild(i)
-        rows.push({
-            id: item.id,
-            title: item.title
-        })
-    end for
+    m.rebuilding = true
+    m.checklist.checkedState = checked
+    m.rebuilding = false
 
-    checkedState = m.checklist.checkedState
-    if type(checkedState) <> "Array" and type(checkedState) <> "roArray"
-        checkedState = []
-    end if
-
-    tmpRow = rows[focusedIndex]
-    rows[focusedIndex] = rows[targetIndex]
-    rows[targetIndex] = tmpRow
-
-    if focusedIndex < checkedState.Count() and targetIndex < checkedState.Count()
-        tmpChecked = checkedState[focusedIndex]
-        checkedState[focusedIndex] = checkedState[targetIndex]
-        checkedState[targetIndex] = tmpChecked
-    end if
-
-    rebuiltContent = createObject("roSGNode", "ContentNode")
-    for each row in rows
-        listItem = rebuiltContent.CreateChild("ContentNode")
-        listItem.id = row.id
-        listItem.title = row.title
-    end for
-
-    m.checklist.content = rebuiltContent
-    m.checklist.checkedState = checkedState
+    rebuildList()
     m.checklist.jumpToItem = targetIndex
     return true
 end function
