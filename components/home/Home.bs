@@ -78,7 +78,19 @@ sub init()
     m.mfMeta = m.top.findNode("mfMeta")
     m.mfRatings = m.top.findNode("mfRatings")
     m.mfOverview = m.top.findNode("mfOverview")
-    m.mfGrow = m.top.findNode("mfGrow")
+    m.mfInfoFadeIn = m.top.findNode("mfInfoFadeIn")
+    m.mfInfoOp = m.top.findNode("mfInfoOp")
+    m.mfImagePrev = m.top.findNode("mfImagePrev")
+    m.mfImageFadeIn = m.top.findNode("mfImageFadeIn")
+    m.mfImageFadeInInterp = m.top.findNode("mfImageFadeInInterp")
+    m.mfImagePrevFadeOut = m.top.findNode("mfImagePrevFadeOut")
+    m.mfImagePrevFadeOutInterp = m.top.findNode("mfImagePrevFadeOutInterp")
+    m.mfImageSettle = m.top.findNode("mfImageSettle")
+    if isValid(m.mfImageSettle) then m.mfImageSettle.observeField("fire", "onModernImageSettled")
+    if isValid(m.mfImage) then m.mfImage.observeField("loadStatus", "onModernImageLoadStatusChange")
+    m.mfPendingUri = ""
+    m.mfCrossfading = false
+    m.mfSettling = false
     m.modernCardShown = false
     m.modernShiftAmount = 284
     m.prevReflowRow = invalid
@@ -1276,7 +1288,6 @@ end sub
 sub showModernFocusCard(focusedItem as object)
     if not isValid(m.modernFocusCard) then return
 
-    if isValid(m.mfImage) then m.mfImage.uri = homeLandscapeUri(focusedItem)
     if isValid(m.mfTitle) then m.mfTitle.text = focusedItem.title ?? ""
     if isValid(m.mfMeta) then m.mfMeta.text = ""
     if isValid(m.mfOverview) then m.mfOverview.text = ""
@@ -1287,16 +1298,88 @@ sub showModernFocusCard(focusedItem as object)
 
     m.modernFocusCard.visible = true
 
-    if m.modernCardShown
-        ' Already open, just swap the content without replaying the grow
-        if isValid(m.mfImage) then m.mfImage.width = 464
-        if isValid(m.mfInfo) then m.mfInfo.opacity = 1
-    else
+    if not m.modernCardShown
         m.modernCardShown = true
-        if isValid(m.mfImage) then m.mfImage.width = 180
-        if isValid(m.mfInfo) then m.mfInfo.opacity = 0
-        if isValid(m.mfGrow) then m.mfGrow.control = "start"
+
+        ' The frame starts empty so the wide image fades into it rather than replacing
+        ' whichever row was open before
+        if isValid(m.mfImage)
+            m.mfImage.uri = ""
+            m.mfImage.opacity = 0
+        end if
+        if isValid(m.mfImagePrev)
+            m.mfImagePrev.uri = ""
+            m.mfImagePrev.opacity = 0
+        end if
+        m.mfCrossfading = false
+
+        fadeInModernInfo()
     end if
+
+    m.mfPendingUri = homeLandscapeUri(focusedItem)
+
+    if isValid(m.mfImageSettle)
+        m.mfImageSettle.control = "stop"
+        m.mfImageSettle.control = "start"
+    end if
+
+    ' A move on its own swaps straight away so it feels immediate. Only once a burst is
+    ' under way do the rest wait, which is what stops a held direction fetching per cell.
+    if not m.mfSettling
+        m.mfSettling = true
+        swapModernImage()
+    end if
+end sub
+
+' Brings the title and meta up from wherever they currently sit, so a move that lands mid
+' fade carries on rather than restarting from nothing
+sub fadeInModernInfo()
+    if not isAllValid([m.mfInfoFadeIn, m.mfInfoOp, m.mfInfo]) then return
+
+    m.mfInfoFadeIn.control = "stop"
+    m.mfInfoOp.keyValue = [m.mfInfo.opacity, 1.0]
+    m.mfInfoFadeIn.control = "start"
+end sub
+
+sub onModernImageSettled()
+    m.mfSettling = false
+    swapModernImage()
+end sub
+
+sub swapModernImage()
+    if not isValid(m.mfImage) then return
+    if not isValidAndNotEmpty(m.mfPendingUri) then return
+    if isStringEqual(m.mfImage.uri, m.mfPendingUri) then return
+
+    if isValid(m.mfImageFadeIn) then m.mfImageFadeIn.control = "stop"
+    if isValid(m.mfImagePrevFadeOut) then m.mfImagePrevFadeOut.control = "stop"
+
+    ' Hold what is on screen underneath while the new image loads
+    if isValid(m.mfImagePrev) and isValidAndNotEmpty(m.mfImage.uri)
+        m.mfImagePrev.uri = m.mfImage.uri
+        m.mfImagePrev.opacity = 1
+    end if
+
+    m.mfImage.opacity = 0
+
+    ' Armed before the uri is set, since an image already in the cache reports itself ready
+    ' straight away and the fade would otherwise be skipped, leaving an empty frame
+    m.mfCrossfading = true
+    m.mfImage.uri = m.mfPendingUri
+    onModernImageLoadStatusChange()
+end sub
+
+sub onModernImageLoadStatusChange()
+    if not m.mfCrossfading then return
+    if not isValid(m.mfImage) or m.mfImage.loadStatus <> "ready" then return
+    if not isAllValid([m.mfImagePrev, m.mfImageFadeIn, m.mfImageFadeInInterp, m.mfImagePrevFadeOut, m.mfImagePrevFadeOutInterp]) then return
+
+    m.mfImageFadeInInterp.keyValue = [m.mfImage.opacity, 1.0]
+    m.mfImagePrevFadeOutInterp.keyValue = [m.mfImagePrev.opacity, 0.0]
+    m.mfImageFadeIn.control = "start"
+    m.mfImagePrevFadeOut.control = "start"
+
+    m.mfCrossfading = false
 end sub
 
 function homeLandscapeUri(node as object) as string
@@ -1313,7 +1396,12 @@ function homeLandscapeUri(node as object) as string
 end function
 
 sub hideModernFocusCard()
-    if isValid(m.mfGrow) then m.mfGrow.control = "stop"
+    if isValid(m.mfInfoFadeIn) then m.mfInfoFadeIn.control = "stop"
+    if isValid(m.mfImageSettle) then m.mfImageSettle.control = "stop"
+    m.mfCrossfading = false
+    m.mfSettling = false
+    m.mfPendingUri = ""
+
     if isValid(m.modernFocusCard) then m.modernFocusCard.visible = false
     m.modernCardShown = false
 
