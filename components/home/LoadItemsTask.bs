@@ -7,6 +7,7 @@ import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
+import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/HomeRecommendations.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
@@ -1891,6 +1892,14 @@ sub loadItems()
         return
     end if
 
+    ' A picked collection, genre or playlist shares the pluginDynamic prefix with the rows
+    ' the plugin proxies, so it has to be recognised before that branch claims it
+    picked = homeRowLayout.SourceFromId(m.top.itemsToLoad)
+    if isValid(picked)
+        m.top.content = loadPickedRow(picked)
+        return
+    end if
+
     ' Row ids reach us lowercased when they come from settings and camel cased when they
     ' come from the server, so match the prefix case-insensitively
     lowerItemsToLoad = LCase(m.top.itemsToLoad)
@@ -2429,6 +2438,53 @@ function internalRowNode(item as object, itemType as string) as object
     return tmp
 end function
 
+' loadPickedRow: Items for one collection, genre or playlist the viewer put on the home
+' screen as a row of its own. Each source sorts and filters the way its tile row does, so a
+' picked row and the list it came from agree on what belongs in it.
+'
+' @param {object} picked - Source key and item id, from homeRowLayout.SourceFromId
+' @return {object} HomeData nodes for the row
+function loadPickedRow(picked as object) as object
+    results = []
+
+    itemId = picked.itemId
+    if not isValidAndNotEmpty(itemId) then return results
+
+    settings = m.global.session.user.settings
+    params = {
+        UserId: m.global.session.user.id,
+        Recursive: true,
+        Limit: 40,
+        Fields: "PrimaryImageAspectRatio,ProductionYear,PremiereDate,ImageTags,UserData,BackdropImageTags,SeriesPrimaryImageTag",
+        EnableTotalRecordCount: false
+    }
+
+    if isStringEqual(picked.source, "genres")
+        params.GenreIds = itemId
+        params.IncludeItemTypes = genresRowItemTypes(settings)
+        params.SortBy = rowSortByParam(getStringSetting(settings, "ui.home.genresRowSortBy", "name"))
+    else
+        params.ParentId = itemId
+
+        if isStringEqual(picked.source, "collections")
+            params.SortBy = rowSortByParam(getStringSetting(settings, "ui.home.collectionsRowSortBy", "name"))
+            ' The tile row hides episodes unless asked, so a picked collection does too
+            if not getBoolSetting(settings, "ui.home.collectionsRowShowEpisodes", false)
+                params.ExcludeItemTypes = "Episode"
+            end if
+        end if
+    end if
+
+    data = api.items.Get(params)
+    if not isChainValid(data, "Items") then return results
+
+    for each item in data.Items
+        results.push(makeHomeItem(item))
+    end for
+
+    return results
+end function
+
 ' rowSortByParam: Maps a sort choice to its Jellyfin sort parameter. The keys are the names
 ' the plugin exchanges, so a sort this screen doesnt offer still resolves when a server pushes it.
 '
@@ -2472,23 +2528,27 @@ function loadCollections() as object
     return results
 end function
 
-function loadGenres() as object
-    results = []
-
-    settings = m.global.session.user.settings
-    genresSortBy = getStringSetting(settings, "ui.home.genresRowSortBy", "name")
-    genresFilter = getStringSetting(settings, "ui.home.genresRowItemFilter", "both")
-
+' What the genres rows count as an item, so the tile row and a picked genre row agree
+function genresRowItemTypes(settings as object) as string
     filterItemTypes = {
         movies: "Movie",
         series: "Series"
     }
 
+    return filterItemTypes[getStringSetting(settings, "ui.home.genresRowItemFilter", "both")] ?? "Movie,Series"
+end function
+
+function loadGenres() as object
+    results = []
+
+    settings = m.global.session.user.settings
+    genresSortBy = getStringSetting(settings, "ui.home.genresRowSortBy", "name")
+
     genres = api.genres.Get({
         userId: m.global.session.user.id,
         sortBy: rowSortByParam(genresSortBy),
         sortOrder: "Ascending",
-        includeItemTypes: filterItemTypes[genresFilter] ?? "Movie,Series",
+        includeItemTypes: genresRowItemTypes(settings),
         Fields: "PrimaryImageAspectRatio,ImageTags",
         EnableTotalRecordCount: false
     })

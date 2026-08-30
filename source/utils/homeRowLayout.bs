@@ -9,10 +9,13 @@ namespace homeRowLayout
 
     const ORDER_SETTING = "ui.home.rowOrder"
     const HIDDEN_SETTING = "ui.home.hiddenRows"
+    const DYNAMIC_SETTING = "ui.home.dynamicRows"
+    const DYNAMIC_PREFIX = "plugindynamic:"
     const LEGACY_SLOT_COUNT = 8
 
-    ' Declaration order decides where a row nobody arranged ends up, so it matches the
-    ' order the other clients declare them in.
+    ' Only rows this app can actually build belong here. The other clients split some of
+    ' these apart, favourites by media type for instance, and Save carries those ids
+    ' through untouched. Declaration order decides where a row nobody arranged ends up.
     function Catalogue() as object
         return [
             { id: "resume", label: "Continue Watching" },
@@ -20,14 +23,8 @@ namespace homeRowLayout
             { id: "latestmedia", label: "Recently Added Media" },
             { id: "collections", label: "Collections" },
             { id: "smalllibrarytiles", label: "My Media" },
-            { id: "favoritemovies", label: "Favorite Movies" },
-            { id: "favoriteseries", label: "Favorite Series" },
-            { id: "favoriteepisodes", label: "Favorite Episodes" },
-            { id: "favoritepeople", label: "Favorite People" },
-            { id: "favoriteartists", label: "Favorite Artists" },
-            { id: "favoritemusicvideos", label: "Favorite Music Videos" },
-            { id: "favoritealbums", label: "Favorite Albums" },
-            { id: "favoritesongs", label: "Favorite Songs" },
+            { id: "favorites", label: "Favorites" },
+            { id: "mylist", label: "My List" },
             { id: "genres", label: "Genres" },
             { id: "recentlyreleased", label: "Recently Released" },
             { id: "imdb_top_250_movies", label: "IMDb Top 250 Movies" },
@@ -36,18 +33,11 @@ namespace homeRowLayout
             { id: "imdb_most_popular_tv_shows", label: "IMDb Most Popular TV Shows" },
             { id: "imdb_lowest_rated_movies", label: "IMDb Lowest Rated Movies" },
             { id: "imdb_top_english_movies", label: "IMDb Top Rated English Movies" },
-            { id: "sinceyouwatched1", label: "Since You Watched Row 1" },
-            { id: "sinceyouwatched2", label: "Since You Watched Row 2" },
-            { id: "sinceyouwatched3", label: "Since You Watched Row 3" },
-            { id: "sinceyouwatched4", label: "Since You Watched Row 4" },
-            { id: "sinceyouwatched5", label: "Since You Watched Row 5" },
+            { id: "sinceyouwatched", label: "Since You Watched" },
             { id: "rewatch", label: "Rewatch" },
             { id: "playlists", label: "Playlists" },
-            { id: "audioartists", label: "Music Artists" },
-            { id: "audioalbums", label: "Music Albums" },
-            { id: "audioplaylists", label: "Music Playlists" },
+            { id: "audio", label: "Music" },
             { id: "resumeaudio", label: "Continue Listening" },
-            { id: "activerecordings", label: "Recordings" },
             { id: "livetv", label: "Live TV" },
             { id: "seerr_shortcuts", label: "Seerr Browse" },
             { id: "seerr_recent_requests", label: "Recent Requests" },
@@ -74,12 +64,151 @@ namespace homeRowLayout
             { id: "tmdb_trending_movie_weekly", label: "TMDB Trending Movies (Weekly)" },
             { id: "tmdb_trending_tv_daily", label: "TMDB Trending TV (Daily)" },
             { id: "tmdb_trending_tv_weekly", label: "TMDB Trending TV (Weekly)" },
-            { id: "tmdb_trending_all_weekly", label: "TMDB Trending All (Weekly)" },
-            { id: "radarr_calendar", label: "Radarr Upcoming" },
-            { id: "sonarr_calendar", label: "Sonarr Upcoming" },
-            { id: "librarybuttons", label: "Library Buttons" },
-            { id: "studios", label: "Studios" }
+            { id: "tmdb_trending_all_weekly", label: "TMDB Trending All (Weekly)" }
         ]
+    end function
+
+    ' The three lists the server can be asked for, each offered as one row per item. The
+    ' source name and the section word both go into the row id, so they have to match what
+    ' the other clients write or the same collection ends up with two identities.
+    function Sources() as object
+        return [
+            { key: "collections", section: "collection", gate: "ui.home.displayCollectionsRows", setting: "ui.home.pickCollections", task: "collections" },
+            { key: "genres", section: "genre", gate: "ui.home.displayGenresRows", setting: "ui.home.pickGenres", task: "genres" },
+            { key: "playlists", section: "playlist", gate: "ui.home.displayPlaylistsRows", setting: "ui.home.pickPlaylists", task: "homeplaylists" }
+        ]
+    end function
+
+    function SourceFor(key as string) as object
+        for each entry in homeRowLayout.Sources()
+            if isStringEqual(entry.key, key) then return entry
+        end for
+
+        return invalid
+    end function
+
+    function SourceForSetting(settingName as dynamic) as object
+        name = homeRowLayout.AsText(settingName)
+        for each entry in homeRowLayout.Sources()
+            if isStringEqual(entry.setting, name) then return entry
+        end for
+
+        return invalid
+    end function
+
+    ' These rows are keyed on the server they came from, so the same collection on two
+    ' servers stays two rows
+    function ServerId() as string
+        return homeRowLayout.AsText(chainLookupReturn(m.global, "session.server.url", ""))
+    end function
+
+    function DynamicId(sourceKey as string, serverKey as string, itemId as string) as string
+        entry = homeRowLayout.SourceFor(sourceKey)
+        word = isValid(entry) ? entry.section : sourceKey
+
+        return `pluginDynamic:${sourceKey}:${serverKey}:${word}:${itemId}`
+    end function
+
+    ' What a row id is asking for, or invalid when it is not one of these rows. The server
+    ' key sits in the middle and is a url, so it carries colons of its own and only the two
+    ' ends of the id can be read.
+    function SourceFromId(id as dynamic) as object
+        text = homeRowLayout.AsText(id)
+        if not LCase(text).startsWith(homeRowLayout.DYNAMIC_PREFIX) then return invalid
+
+        parts = text.Split(":")
+        if parts.Count() < 5 then return invalid
+
+        entry = homeRowLayout.SourceFor(parts[1])
+        if not isValid(entry) then return invalid
+
+        return { source: entry.key, itemId: parts[parts.Count() - 1] }
+    end function
+
+    function AsText(value as dynamic) as string
+        if not isValid(value) then return ""
+
+        return value.ToStr().Trim()
+    end function
+
+    ' Rows picked out of those lists. The order and the off list hold them alongside the
+    ' built in rows, so only what the loader and the picker cannot work out for themselves
+    ' is kept here.
+    function DynamicRows() as object
+        entries = []
+
+        stored = get_user_setting(homeRowLayout.DYNAMIC_SETTING)
+        if not isValidAndNotEmpty(stored) then return entries
+
+        parsed = ParseJson(stored)
+        if LCase(type(parsed)) <> "roarray" then return entries
+
+        for each record in parsed
+            if LCase(type(record)) <> "roassociativearray" then continue for
+
+            id = homeRowLayout.AsText(record.id)
+            if id = "" then continue for
+
+            entries.push({
+                id: id,
+                source: homeRowLayout.AsText(record.source),
+                itemId: homeRowLayout.AsText(record.itemId),
+                title: homeRowLayout.AsText(record.title)
+            })
+        end for
+
+        return entries
+    end function
+
+    function DynamicLookup() as object
+        found = {}
+        for each entry in homeRowLayout.DynamicRows()
+            found[LCase(entry.id)] = entry
+        end for
+
+        return found
+    end function
+
+    sub SaveDynamic(entries as object)
+        set_user_setting(homeRowLayout.DYNAMIC_SETTING, FormatJson(entries))
+    end sub
+
+    ' A few rows sit behind a switch of their own that turns a whole group on or off. The
+    ' home screen honours those switches, so the picker leaves those rows out rather than
+    ' offering to arrange something that never appears.
+    function Offered() as object
+        gates = {
+            favorites: "ui.home.displayFavoritesRows",
+            collections: "ui.home.displayCollectionsRows",
+            genres: "ui.home.displayGenresRows",
+            playlists: "ui.home.displayPlaylistsRows",
+            audio: "ui.home.displayAudioRows",
+            rewatch: "ui.home.displayRewatchRow"
+        }
+
+        ' Only rows already picked from a list reach the main picker, so it stays short no
+        ' matter how many collections the server holds
+        picked = {}
+        for each entry in homeRowLayout.DynamicRows()
+            if not isValid(picked[entry.source]) then picked[entry.source] = []
+            picked[entry.source].push({ id: entry.id, label: entry.title })
+        end for
+
+        rows = []
+        for each row in homeRowLayout.Catalogue()
+            gate = gates[row.id]
+            if isValid(gate) and not get_user_setting_bool(gate, false) then continue for
+            rows.push(row)
+
+            ' A picked row starts beside the list it came from, until the viewer moves it
+            fromList = picked[row.id]
+            if not isValid(fromList) then continue for
+            for each entry in fromList
+                rows.push(entry)
+            end for
+        end for
+
+        return rows
     end function
 
     ' What a viewer who has never arranged anything starts with, matching the other clients.
@@ -88,26 +217,37 @@ namespace homeRowLayout
         return ["resume", "nextup", "latestmedia"]
     end function
 
-    ' Every row that is not on by default, which is what Reset needs to write
-    function DisabledByDefault() as object
-        enabled = homeRowLayout.DefaultEnabled()
-        hidden = []
-        for each row in homeRowLayout.Catalogue()
-            if not inArray(enabled, row.id) then hidden.push(row.id)
-        end for
+    ' A row in neither list is one this app started offering after the viewer last arranged
+    ' their layout, and those start off, since every row but the opening three is declared
+    ' off across the clients.
+    function IsEnabled(id as string, placed as object, off as object, picked as object) as boolean
+        if isValid(off[id]) then return false
+        if inArray(placed, id) then return true
 
-        return hidden
+        ' Picking a row is what switches it on, so it needs no place in the order until the
+        ' viewer moves it. Until then it sits beside the list it came from.
+        if isValid(picked[LCase(id)]) then return true
+
+        return inArray(homeRowLayout.DefaultEnabled(), id)
     end function
 
     ' The rows the viewer left on, in the order they put them. Only the ids come back,
     ' since that is what the home screen builds from.
     function Arranged() as object
-        order = get_user_setting(homeRowLayout.ORDER_SETTING)
-        hidden = get_user_setting(homeRowLayout.HIDDEN_SETTING)
+        storedOrder = get_user_setting(homeRowLayout.ORDER_SETTING)
+        placed = buttonLayout.ToIds(storedOrder)
+        off = buttonLayout.HiddenLookup(get_user_setting(homeRowLayout.HIDDEN_SETTING))
+
+        known = homeRowLayout.Catalogue()
+        picked = {}
+        for each entry in homeRowLayout.DynamicRows()
+            known.push({ id: entry.id, label: entry.title })
+            picked[LCase(entry.id)] = entry
+        end for
 
         ids = []
-        for each row in buttonLayout.Arrange(homeRowLayout.Catalogue(), order, hidden)
-            ids.push(row.id)
+        for each row in buttonLayout.Ordered(known, storedOrder)
+            if homeRowLayout.IsEnabled(row.id, placed, off, picked) then ids.push(row.id)
         end for
 
         return ids
@@ -137,11 +277,12 @@ namespace homeRowLayout
         set_user_setting(homeRowLayout.HIDDEN_SETTING, FormatJson(hidden))
     end sub
 
-    ' A row this app has no builder for is still carried through, so turning it off here
-    ' does not erase it for whichever client does show it.
+    ' A save from here has to carry through every id the picker did not offer. That covers
+    ' the rows the other clients have and this app does not, and the rows behind a switch
+    ' that is currently off, so saving a layout never erases either.
     function Save(order as object, hidden as object) as object
         return buttonLayout.WithUnknownIds(
-            homeRowLayout.Catalogue(),
+            homeRowLayout.Offered(),
             order,
             hidden,
             get_user_setting(homeRowLayout.ORDER_SETTING),
