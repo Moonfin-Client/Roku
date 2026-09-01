@@ -6,22 +6,40 @@ import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/multiserver.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
+
+const META_ROW_GAP = "   •   "
+const LINK_COLOR = "#00A4DC"
 
 sub init()
     m.name = m.top.findNode("name")
-    m.birthInfo = m.top.findNode("birthInfo")
-    m.dscr = m.top.findNode("description")
+    m.metaRow = m.top.findNode("metaRow")
+    m.overview = m.top.findNode("overview")
+    m.overviewToggle = m.top.findNode("overviewToggle")
+    m.overviewGroup = m.top.findNode("overviewGroup")
     m.personImage = m.top.findNode("personImage")
-    m.playedIndicator = m.top.findNode("playedIndicator")
-    m.filmographyLabel = m.top.findNode("filmographyLabel")
+    m.personImageRing = m.top.findNode("personImageRing")
+    m.noImage = m.top.findNode("noImage")
+    m.ratings = m.top.findNode("ratings")
 
+    m.buttonRow = m.top.findNode("buttonRow")
     m.favoriteButtonGroup = m.top.findNode("favoriteButtonGroup")
     m.favoriteIcon = m.top.findNode("favoriteIcon")
     m.favoriteButtonBg = m.top.findNode("favoriteButtonBg")
+    m.favoriteButtonLabel = m.top.findNode("favoriteButtonLabel")
 
-    if isValid(m.favoriteButtonGroup)
-        m.favoriteButtonGroup.observeField("focusedChild", "onFavoriteButtonFocusChanged")
+    m.tabBar = m.top.findNode("tabBar")
+    m.filmographyRow = m.top.findNode("filmographyRow")
+
+    if isValid(m.personImageRing)
+        m.personImageRing.blendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", LINK_COLOR)
     end if
+
+    m.tmdbId = ""
+    m.overviewExpanded = false
+    m.isFavorite = false
+    m.libraryCredits = { movies: [], series: [], guest: [], music: [] }
+    m.seerrCredits = { appearances: [], crew: [] }
 
     m.backdrop = m.top.findNode("backdrop")
     m.backdropPrev = m.top.findNode("backdropPrev")
@@ -37,28 +55,590 @@ sub init()
 
     m.favoriteTask = createObject("roSGNode", "FavoriteItemsTask")
 
-    m.extrasGrid = m.top.findNode("extrasGrid")
-    if isValid(m.extrasGrid)
-        m.extrasGrid.observeField("focusedItem", "onFilmographyItemFocused")
+    if isValid(m.tabBar)
+        m.tabBar.observeFieldScoped("selectedIndex", "onTabSelected")
+        m.tabBar.observeFieldScoped("escape", "onTabEscape")
+    end if
+
+    if isValid(m.overviewGroup)
+        m.overviewGroup.observeField("focusedChild", "onOverviewFocusChanged")
+    end if
+    if isValid(m.favoriteButtonGroup)
+        m.favoriteButtonGroup.observeField("focusedChild", "onFavoriteButtonFocusChanged")
+    end if
+    if isValid(m.filmographyRow)
+        m.filmographyRow.observeField("rowItemSelected", "onFilmographyItemSelected")
     end if
 
     m.top.optionsAvailable = false
+    m.filmographyTabs = []
+end sub
 
-    m.filmographyItemCount = 0
+sub loadPerson()
+    item = m.top.itemContent
+    if not isValid(item) then return
+    itemData = item.json
+
+    startLoadingSpinner()
+    m.tmdbId = LCase(chainLookupReturn(itemData, "ProviderIds.Tmdb", "") ?? "")
+    m.top.Id = itemData.id
+
+    m.isFavorite = chainLookupReturn(itemData, "UserData.IsFavorite", false) = true
+
+    populateHeader(itemData)
+
+    if isValid(m.filmographyRow)
+        loadFilmography()
+    end if
+
+    loadRatings(itemData)
+    updateFavoriteVisual()
+end sub
+
+sub loadSeerrPerson()
+    seerrId = m.top.seerrPersonId
+    if not isValidAndNotEmpty(seerrId) then return
+
+    startLoadingSpinner()
+    m.tmdbId = seerrId
+
+    config = GetSeerrConfig()
+    if not IsValidSeerrConfig(config)
+        stopLoadingSpinner()
+        return
+    end if
+
+    task = CreateObject("roSGNode", "SeerrAPITask")
+    task.request = {
+        method: "GET",
+        endpoint: `/api/v1/person/${seerrId}`
+    }
+    task.observeField("response", "onSeerrPersonLoaded")
+    task.control = "RUN"
+end sub
+
+sub onSeerrPersonLoaded(event as object)
+    response = event.getData()
+    if not response.success or not isValid(response.data)
+        stopLoadingSpinner()
+        return
+    end if
+
+    person = response.data
+
+    header = {
+        Name: person.name ?? "",
+        Overview: person.biography ?? "",
+        PremiereDate: person.birthday ?? "",
+        EndDate: person.deathDay ?? "",
+        ProductionLocations: [person.placeOfBirth]
+    }
+    if isValidAndNotEmpty(person.profilePath)
+        header._externalImageUrl = GetTmdbImageBaseUrls().posterW500 + person.profilePath
+    end if
+
+    populateHeader(header)
+
+    loadSeerrCredits(m.tmdbId)
+    updateFavoriteVisual()
+    stopLoadingSpinner()
+end sub
+
+sub loadSeerrCredits(seerrId as string)
+    config = GetSeerrConfig()
+    if not IsValidSeerrConfig(config) then return
+
+    task = CreateObject("roSGNode", "SeerrAPITask")
+    task.request = {
+        method: "GET",
+        endpoint: `/api/v1/person/${seerrId}/combined_credits`
+    }
+    task.observeField("response", "onSeerrCreditsLoaded")
+    task.control = "RUN"
+end sub
+
+sub onSeerrCreditsLoaded(event as object)
+    response = event.getData()
+    if not response.success or not isValid(response.data)
+        stopLoadingSpinner()
+        return
+    end if
+
+    credits = response.data
+    appearances = usableSeerrCredits(credits.cast, false)
+    crewCredits = usableSeerrCredits(credits.crew, true)
+
+    m.seerrCredits = { appearances: appearances, crew: crewCredits }
+    rebuildTabs()
+    stopLoadingSpinner()
+end sub
+
+function usableSeerrCredits(credits as object, isCrew as boolean) as object
+    list = []
+    if not isValidAndNotEmpty(credits) then return list
+
+    for each credit in credits
+        posterPath = credit.LookupCI("posterPath")
+        if not isValidAndNotEmpty(posterPath) then continue for
+
+        if isCrew
+            job = LCase(credit.LookupCI("job") ?? "")
+            if job = "thanks" or job = "special thanks" then continue for
+        end if
+
+        tmdbId = ""
+        rawId = credit.LookupCI("id")
+        if isValid(rawId) then tmdbId = rawId.ToStr()
+        mediaType = LCase(credit.LookupCI("mediaType") ?? "")
+        if mediaType = "" then mediaType = isValidAndNotEmpty(credit.LookupCI("title")) ? "movie" : "tv"
+
+        title = credit.LookupCI("title")
+        if not isValidAndNotEmpty(title) then title = credit.LookupCI("name")
+
+        ' The card caption reads the year off the same field the library entries use
+        released = credit.LookupCI("releaseDate")
+        if not isValidAndNotEmpty(released) then released = credit.LookupCI("firstAirDate")
+        year = invalid
+        if isValidAndNotEmpty(released) and released.len() >= 4 then year = released.left(4).toInt()
+
+        ' Selecting the card opens the Seerr page, which reads the credit off SeerrItem
+        ' the same way the home rows do
+        credit.mediaType = mediaType
+
+        data = {
+            Id: tmdbId,
+            name: title ?? "",
+            Type: mediaType = "tv" ? "Series" : "Movie",
+            SeerrTmdbId: tmdbId,
+            SeerrMediaType: mediaType,
+            SeerrPosterURL: GetTmdbImageBaseUrls().posterW342 + posterPath,
+            SeerrItem: credit
+        }
+        if isValid(year) and year > 0 then data.ProductionYear = year
+
+        entry = createSGNode("HomeData")
+        entry.json = data
+        list.push(entry)
+    end for
+
+    return list
+end function
+
+' Biographies often open with a phonetic spelling and the name in its own script. The
+' player font has no glyphs for those, so they come out as boxes. Latin text and its
+' accents are kept and the rest is dropped along with any brackets left empty by it.
+function readableText(value as dynamic) as string
+    if not isValidAndNotEmpty(value) then return ""
+
+    bytes = CreateObject("roByteArray")
+    bytes.FromAsciiString(value)
+    kept = CreateObject("roByteArray")
+
+    i = 0
+    while i < bytes.Count()
+        byte = bytes[i]
+        if byte < 128
+            kept.Push(byte)
+            i++
+        else if byte = 194 or byte = 195
+            ' Latin-1 accents, which the font does draw
+            kept.Push(byte)
+            if i + 1 < bytes.Count() then kept.Push(bytes[i + 1])
+            i += 2
+        else if byte = 226 and i + 2 < bytes.Count() and bytes[i + 1] = 128
+            ' Typographic punctuation has a plain equivalent, so it is swapped rather
+            ' than dropped and left running words together
+            third = bytes[i + 2]
+            if third = 147 or third = 148
+                kept.Push(45)
+            else if third = 152 or third = 153
+                kept.Push(39)
+            else if third = 156 or third = 157
+                kept.Push(34)
+            else if third = 166
+                kept.Push(46)
+                kept.Push(46)
+                kept.Push(46)
+            end if
+            i += 3
+        else
+            ' Everything else is skipped a whole character at a time
+            if byte >= 240
+                i += 4
+            else if byte >= 224
+                i += 3
+            else
+                i += 2
+            end if
+        end if
+    end while
+
+    text = kept.ToAsciiString()
+    emptyBrackets = CreateObject("roRegex", "\(\s*[;:,/]*\s*\)|\[\s*[;:,/]*\s*\]", "i")
+    text = emptyBrackets.ReplaceAll(text, "")
+    gaps = CreateObject("roRegex", "\s+([,;.])", "i")
+    text = gaps.ReplaceAll(text, "\1")
+    spacing = CreateObject("roRegex", "\s+", "i")
+
+    return spacing.ReplaceAll(text, " ").Trim()
+end function
+
+sub populateHeader(itemData as object)
+    if isValid(m.name)
+        m.name.text = chainLookupReturn(itemData, "Name", "")
+        m.name.width = 1500
+        m.name.height = 66
+    end if
+
+    metaParts = []
+    premiereDate = chainLookupReturn(itemData, "PremiereDate", "")
+    endDate = chainLookupReturn(itemData, "EndDate", "")
+    if isValidAndNotEmpty(premiereDate)
+        born = formatPersonDate(premiereDate)
+        if born <> ""
+            metaParts.push(tr("Born") + " " + born)
+        end if
+        if isValidAndNotEmpty(endDate)
+            died = formatPersonDate(endDate)
+            if died <> ""
+                metaParts.push(tr("Died") + " " + died)
+            end if
+        else
+            age = personAge(premiereDate, endDate)
+            if age > 0
+                metaParts.push(tr("Age") + " " + age.toStr())
+            end if
+        end if
+    end if
+
+    birthPlace = chainLookupReturn(itemData, "ProductionLocations", invalid)
+    if isValid(birthPlace) and type(birthPlace) = "roArray" and birthPlace.count() > 0
+        birthPlace = birthPlace[0]
+    else
+        birthPlace = chainLookupReturn(itemData, "placeOfBirth", invalid)
+    end if
+    if isValidAndNotEmpty(birthPlace)
+        metaParts.push(birthPlace)
+    end if
+
+    if isValid(m.metaRow)
+        if metaParts.count() > 0
+            m.metaRow.text = metaParts.join(META_ROW_GAP)
+        else
+            m.metaRow.text = ""
+        end if
+    end if
+
+    if isValid(m.overview)
+        overviewText = readableText(chainLookupReturn(itemData, "Overview", ""))
+        if isValidAndNotEmpty(overviewText)
+            m.overview.text = overviewText
+            m.overview.visible = true
+            setOverviewExpanded(false)
+            m.overviewToggle.visible = true
+        else
+            m.overview.text = tr("Biographical information for this person is not currently available.")
+            m.overview.visible = true
+            m.overviewToggle.visible = false
+        end if
+    end if
+
+    posterUrl = chainLookupReturn(itemData, "_externalImageUrl", "")
+    if not isValidAndNotEmpty(posterUrl)
+        libraryId = chainLookupReturn(itemData, "Id", "")
+        if isValidAndNotEmpty(libraryId) and isChainValid(itemData, "ImageTags.Primary")
+            posterUrl = ImageURL(libraryId, "Primary", { maxHeight: "500", quality: "90" })
+        end if
+    end if
+
+    if isValidAndNotEmpty(posterUrl)
+        if isValid(m.personImage) then m.personImage.uri = posterUrl
+        if isValid(m.noImage) then m.noImage.visible = false
+        if isValid(m.personImageRing) then m.personImageRing.visible = false
+    else
+        initial = ""
+        nameValue = chainLookupReturn(itemData, "Name", "")
+        if isValidAndNotEmpty(nameValue) then initial = nameValue.left(1)
+        if isValid(m.noImage)
+            m.noImage.text = initial
+            m.noImage.visible = true
+        end if
+        if isValid(m.personImage) then m.personImage.uri = ""
+        if isValid(m.personImageRing) then m.personImageRing.visible = true
+    end if
+end sub
+
+function SeerrIsEnabled() as boolean
+    config = GetSeerrConfig()
+    return IsValidSeerrConfig(config)
+end function
+
+sub loadFilmography()
+    loadTask = CreateObject("roSGNode", "LoadExtrasTask")
+    loadTask.itemId = m.top.Id
+    loadTask.isPersonMode = true
+
+    item = m.top.itemContent
+    if isValid(item) and isChainValid(item, "json")
+        itemData = item.json
+        if isValidAndNotEmpty(itemData._serverUrl)
+            loadTask.serverUrl = itemData._serverUrl
+        end if
+        if isValidAndNotEmpty(itemData._userId)
+            loadTask.serverUserId = itemData._userId
+        end if
+        if isValidAndNotEmpty(itemData._authToken)
+            loadTask.serverAuthToken = itemData._authToken
+        end if
+    end if
+
+    loadTask.observeField("content", "onFilmographyLoaded")
+    loadTask.control = "RUN"
+end sub
+
+sub onFilmographyLoaded(event as object)
+    content = event.getData()
+    if not isValid(content) then return
+
+    movies = []
+    series = []
+    guestAppearances = []
+    musicVideos = []
+
+    for i = 0 to content.getChildCount() - 1
+        entry = content.getChild(i)
+        if not isValid(entry) then continue for
+
+        entryType = LCase(chainLookupReturn(entry, "json.Type", "") ?? "")
+        if entryType = "movie"
+            movies.push(entry)
+        else if entryType = "series"
+            series.push(entry)
+        else if entryType = "episode"
+            ' An episode the person is billed on is already covered by its series,
+            ' so only the rest count as a guest appearance
+            seriesId = chainLookupReturn(entry, "json.SeriesId", invalid)
+            if not isEntryInList(series, seriesId)
+                guestAppearances.push(entry)
+            end if
+        else if entryType = "musicvideo"
+            musicVideos.push(entry)
+        end if
+    end for
+
+    m.libraryCredits = { movies: movies, series: series, guest: guestAppearances, music: musicVideos }
+    rebuildTabs()
+
+    if isValidAndNotEmpty(m.tmdbId) and SeerrIsEnabled()
+        loadSeerrCredits(m.tmdbId)
+    end if
+
+    backdropCandidates = []
+    for each entry in movies
+        candidate = chainLookupReturn(entry, "backdropUrl", "")
+        if isValidAndNotEmpty(candidate) then backdropCandidates.push(candidate)
+    end for
+    for each entry in series
+        candidate = chainLookupReturn(entry, "backdropUrl", "")
+        if isValidAndNotEmpty(candidate) then backdropCandidates.push(candidate)
+    end for
+    if backdropCandidates.count() > 0 and isValidAndNotEmpty(m.backdrop.uri) = false
+        setBackdrop(backdropCandidates[Rnd(backdropCandidates.count()) - 1])
+    end if
+end sub
+
+function isEntryInList(list as object, id as dynamic) as boolean
+    if not isValidAndNotEmpty(id) then return false
+    for each entry in list
+        if entry.id = id then return true
+    end for
+    return false
+end function
+
+' Both halves land separately, so the tabs are built from whatever has arrived so far
+sub rebuildTabs()
+    buildTabs(m.libraryCredits.movies, m.libraryCredits.series, m.libraryCredits.guest, m.libraryCredits.music, m.seerrCredits.appearances, m.seerrCredits.crew)
+end sub
+
+sub buildTabs(movies as object, series as object, guestAppearances as object, musicVideos as object, appearances as object, crewCredits as object)
+    m.filmographyTabs = []
+
+    if movies.count() > 0
+        m.filmographyTabs.push({ key: "movies", label: tr("Movies"), content: movies })
+    end if
+    if series.count() > 0
+        m.filmographyTabs.push({ key: "series", label: tr("Series"), content: series })
+    end if
+    if guestAppearances.count() > 0
+        m.filmographyTabs.push({ key: "guest", label: tr("Guest Appearances"), content: guestAppearances })
+    end if
+    if musicVideos.count() > 0
+        m.filmographyTabs.push({ key: "music", label: tr("Music Videos"), content: musicVideos })
+    end if
+    if crewCredits.count() > 0
+        m.filmographyTabs.push({ key: "crew", label: tr("Crew Contributions (Seerr)"), content: crewCredits })
+    end if
+    if appearances.count() > 0
+        m.filmographyTabs.push({ key: "seerr", label: tr("Appearances (Seerr)"), content: appearances })
+    end if
+
+    if not isValid(m.tabBar) then return
+
+    if m.filmographyTabs.count() = 0
+        m.tabBar.visible = false
+        if isValid(m.filmographyRow) then m.filmographyRow.visible = false
+        stopLoadingSpinner()
+        return
+    end if
+
+    tabDefs = []
+    for each filmTab in m.filmographyTabs
+        tabDefs.push({ id: filmTab.key, label: filmTab.label })
+    end for
+
+    m.tabBar.tabs = tabDefs
+    m.tabBar.visible = true
+    m.tabBar.focusIndex = 0
+    m.tabBar.selectedIndex = 0
+    showTab(0)
+
+    if not isValid(m.top.lastFocus)
+        focusPersonButtons()
+    end if
+end sub
+
+sub showTab(index as integer)
+    if index < 0 or index >= m.filmographyTabs.count() then return
+    filmTab = m.filmographyTabs[index]
+    if not isValid(filmTab) then return
+
+    ' Guest spots are episodes, so they get the wider still that the extras rows use
+    ' for episodes everywhere else
+    isEpisodeTab = filmTab.key = "guest"
+    imageWidth = isEpisodeTab ? 502 : 180
+    rowSize = isEpisodeTab ? [502, 320] : [180, 350]
+
+    rowContent = CreateObject("roSGNode", "ContentNode")
+    row = rowContent.createChild("ContentNode")
+
+    for each entry in filmTab.content
+        if not entry.hasField("labelText") then entry.addField("labelText", "string", false)
+        if not entry.hasField("imageWidth") then entry.addField("imageWidth", "integer", false)
+
+        entry.labelText = chainLookupReturn(entry, "json.Name", "")
+        entry.imageWidth = imageWidth
+
+        if isEpisodeTab and isChainValid(entry, "json.ParentIndexNumber") and isChainValid(entry, "json.IndexNumber")
+            entry.subTitle = `S${entry.json.ParentIndexNumber}:E${entry.json.IndexNumber} - ${chainLookupReturn(entry, "json.Name", "")}`
+            entry.labelText = chainLookupReturn(entry, "json.SeriesName", entry.labelText)
+        else
+            year = chainLookupReturn(entry, "json.ProductionYear", invalid)
+            entry.subTitle = isValid(year) ? year.toStr() : ""
+        end if
+
+        row.appendChild(entry)
+    end for
+
+    if not isValid(m.filmographyRow) then return
+
+    ' The row list draws nothing until it is told how big its items are
+    m.filmographyRow.rowItemSize = [rowSize]
+    m.filmographyRow.content = rowContent
+    m.filmographyRow.visible = row.getChildCount() > 0
+end sub
+
+sub onTabSelected()
+    if not isValid(m.tabBar) then return
+    index = m.tabBar.selectedIndex
+    if index >= 0 and index < m.filmographyTabs.count()
+        showTab(index)
+    end if
+end sub
+
+sub onTabEscape()
+    dir = m.tabBar.escape
+    if dir = "up"
+        focusPersonButtons()
+    else if dir = "down"
+        if isValid(m.filmographyRow) and m.filmographyRow.visible and m.filmographyRow.content <> invalid and m.filmographyRow.content.getChildCount() > 0
+            m.filmographyRow.setFocus(true)
+            setLastFocus(m.filmographyRow)
+            m.top.lastFocus = m.filmographyRow
+        end if
+    end if
+end sub
+
+sub onFilmographyItemSelected(event as object)
+    selected = event.getData()
+    if not isValid(selected) or selected.count() <> 2 then return
+
+    row = m.filmographyRow.content.getChild(selected[0])
+    if not isValid(row) then return
+    item = row.getChild(selected[1])
+    if not isValid(item) then return
+
+    m.top.selectedItem = item
+end sub
+
+sub OnScreenShown(_isReturning = false as boolean)
+    if isValid(m.top.lastFocus)
+        m.top.lastFocus.setFocus(true)
+        setLastFocus(m.top.lastFocus)
+    else
+        focusPersonButtons()
+    end if
+end sub
+
+sub setOverviewExpanded(expanded as boolean)
+    m.overviewExpanded = expanded
+
+    if isValid(m.overview) then m.overview.maxLines = expanded ? 16 : 4
+    if isValid(m.overviewToggle)
+        m.overviewToggle.text = expanded ? tr("Show Less") : tr("Show More")
+        m.overviewToggle.translation = [0, expanded ? 880 : 380]
+    end if
+
+    if isValid(m.buttonRow) then m.buttonRow.visible = not expanded
+    if isValid(m.tabBar) then m.tabBar.visible = not expanded and m.filmographyTabs.count() > 0
+    if isValid(m.filmographyRow) then m.filmographyRow.visible = not expanded and m.filmographyTabs.count() > 0
+end sub
+
+sub onOverviewFocusChanged()
+    if not isValid(m.overviewToggle) then return
+
+    isFocused = isValid(m.overviewGroup) and m.overviewGroup.hasFocus()
+    m.overviewToggle.color = isFocused ? "#FFFFFF" : LINK_COLOR
+end sub
+
+sub focusPersonButtons()
+    if isValid(m.favoriteButtonGroup)
+        timer = CreateObject("roSGNode", "Timer")
+        timer.duration = 0.05
+        timer.repeat = false
+        timer.observeField("fire", "onFocusTimerFired")
+        timer.control = "start"
+        m.focusTimer = timer
+    end if
+end sub
+
+sub onFocusTimerFired()
+    if isValid(m.favoriteButtonGroup)
+        m.favoriteButtonGroup.setFocus(true)
+        setLastFocus(m.favoriteButtonGroup)
+        m.top.lastFocus = m.favoriteButtonGroup
+    end if
+    updateFavoriteVisual()
 end sub
 
 sub onFavoriteButtonFocusChanged()
-    updateFavoriteFocusVisual()
+    updateFavoriteVisual()
 end sub
 
-sub updateFavoriteFocusVisual()
+sub updateFavoriteVisual()
     if not isValid(m.favoriteButtonBg) or not isValid(m.favoriteButtonGroup) then return
 
     isFocused = m.favoriteButtonGroup.hasFocus() or m.favoriteButtonGroup.isInFocusChain()
-    fave = false
-    if isValid(m.top.itemContent) and isChainValid(m.top.itemContent, "json")
-        fave = chainLookupReturn(m.top.itemContent.json, "UserData.IsFavorite", false)
-    end if
+    fave = m.isFavorite = true
 
     if isFocused
         m.favoriteButtonBg.blendColor = ColorPalette.WHITE
@@ -73,90 +653,94 @@ sub updateFavoriteFocusVisual()
             m.favoriteIcon.blendColor = fave ? "#CC3333" : "#FFFFFF"
         end if
     end if
-end sub
 
-sub loadPerson()
-    item = m.top.itemContent
-    itemData = item.json
-    m.top.Id = itemData.id
-
-    if isValid(m.name) and isValid(itemData.Name)
-        m.name.text = itemData.Name
-    end if
-
-    if isValid(m.birthInfo) and isValidAndNotEmpty(itemData.PremiereDate)
-        birthDate = CreateObject("roDateTime")
-        birthDate.FromISO8601String(itemData.PremiereDate)
-
-        birthString = tr("Born") + ": " + birthDate.AsDateString("long-date-no-weekday")
-
-        if isValidAndNotEmpty(itemData.EndDate)
-            deathDate = CreateObject("roDateTime")
-            deathDate.FromISO8601String(itemData.EndDate)
-            birthString += " — " + tr("Died") + ": " + deathDate.AsDateString("long-date-no-weekday")
-        end if
-
-        m.birthInfo.text = birthString
-    end if
-
-    if isValid(m.dscr)
-        if isValidAndNotEmpty(itemData.Overview)
-            m.dscr.text = itemData.Overview
-        else
-            m.dscr.text = tr("Biographical information for this person is not currently available.")
-        end if
-    end if
-
-    if isValid(m.personImage)
-        if isValidAndNotEmpty(item.posterURL)
-            m.personImage.uri = item.posterURL
-        else
-            m.personImage.uri = "pkg:/images/baseline_person_white_48dp.png"
-        end if
-    end if
-
-    if isValidAndNotEmpty(item.backdropUrl)
-        setBackdrop(item.backdropUrl)
-    end if
-
-    if isValid(m.extrasGrid)
-        loadPersonVideos()
-    end if
-
-    updateFavoriteFocusVisual()
-    updateFilmographyLabel(0)
-
-    m.playedIndicator.data = {
-        favorite: chainLookupReturn(itemData, "UserData.IsFavorite", false)
-    }
-end sub
-
-sub OnScreenShown(_isReturning = false as boolean)
-    if isValid(m.top.lastFocus)
-        m.top.lastFocus.setFocus(true)
-        setLastFocus(m.top.lastFocus)
-    else
-        if isValid(m.favoriteButtonGroup)
-            timer = CreateObject("roSGNode", "Timer")
-            timer.duration = 0.05
-            timer.repeat = false
-            timer.observeField("fire", "focusFavoriteButton")
-            timer.control = "start"
-            m.focusTimer = timer
-        end if
+    if isValid(m.favoriteButtonLabel)
+        m.favoriteButtonLabel.text = fave ? tr("Favorited") : tr("Favorite")
+        m.favoriteButtonLabel.color = isFocused ? "#000000" : "#FFFFFF"
     end if
 end sub
 
-sub focusFavoriteButton()
-    if isValid(m.favoriteButtonGroup)
-        m.favoriteButtonGroup.setFocus(true)
-        setLastFocus(m.favoriteButtonGroup)
-        m.top.lastFocus = m.favoriteButtonGroup
-    end if
-    updateFavoriteFocusVisual()
+sub toggleFavorite()
+    if not isValid(m.top.itemContent) then return
+    itemData = m.top.itemContent.json
+    if not isValid(itemData) or not isValid(itemData.id) then return
+
+    newStatus = not m.isFavorite
+    m.isFavorite = newStatus
+    updateFavoriteVisual()
+
+    if not isValid(m.favoriteTask) then return
+    m.favoriteTask.itemId = itemData.id
+    m.favoriteTask.favTask = newStatus ? "favorite" : "unfavorite"
+    m.favoriteTask.control = "RUN"
 end sub
 
-' ===== Backdrop Management =====
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = KeyCode.BACK
+        if m.overviewExpanded
+            setOverviewExpanded(false)
+            return true
+        end if
+        m.global.sceneManager.callFunc("popScene")
+        return true
+    end if
+
+    if key = KeyCode.OK
+        if isValid(m.overviewGroup) and m.overviewGroup.hasFocus()
+            setOverviewExpanded(not m.overviewExpanded)
+            return true
+        end if
+        if isValid(m.favoriteButtonGroup) and m.favoriteButtonGroup.hasFocus()
+            toggleFavorite()
+            return true
+        end if
+        return false
+    end if
+
+    if key = KeyCode.DOWN
+        if isValid(m.overviewGroup) and m.overviewGroup.hasFocus()
+            if m.overviewExpanded then return true
+            if isValid(m.favoriteButtonGroup)
+                m.favoriteButtonGroup.setFocus(true)
+                updateFavoriteVisual()
+                onOverviewFocusChanged()
+                return true
+            end if
+        end if
+        if isValid(m.favoriteButtonGroup) and m.favoriteButtonGroup.hasFocus()
+            if isValid(m.tabBar) and m.tabBar.visible
+                m.tabBar.setFocus(true)
+                setLastFocus(m.tabBar)
+                m.top.lastFocus = m.tabBar
+                return true
+            end if
+        end if
+    else if key = KeyCode.UP
+        if isValid(m.favoriteButtonGroup) and m.favoriteButtonGroup.hasFocus()
+            if isValid(m.overviewGroup) and isValid(m.overviewToggle) and m.overviewToggle.visible
+                m.overviewGroup.setFocus(true)
+                onOverviewFocusChanged()
+                return true
+            end if
+        end if
+        if isValid(m.filmographyRow) and m.filmographyRow.isInFocusChain()
+            if isValid(m.tabBar) and m.tabBar.visible
+                m.tabBar.setFocus(true)
+                setLastFocus(m.tabBar)
+                m.top.lastFocus = m.tabBar
+                return true
+            end if
+        end if
+    else if key = KeyCode.LEFT
+        if isValid(m.favoriteButtonGroup) and m.favoriteButtonGroup.hasFocus()
+            return FocusSidebar(m.top)
+        end if
+    end if
+
+    return false
+end function
 
 sub setBackdrop(url as string)
     if not isValid(m.backdrop) or not isValidAndNotEmpty(url) then return
@@ -164,17 +748,14 @@ sub setBackdrop(url as string)
     ' Don't reload the same image
     if m.backdrop.uri = url then return
 
-    ' Stop any running animations
     if isValid(m.backdropFadeIn) then m.backdropFadeIn.control = "stop"
     if isValid(m.backdropPrevFadeOut) then m.backdropPrevFadeOut.control = "stop"
 
-    ' Copy current backdrop to prev layer
     if isValid(m.backdropPrev) and m.backdrop.uri <> ""
         m.backdropPrev.uri = m.backdrop.uri
         m.backdropPrev.opacity = m.backdrop.opacity
     end if
 
-    ' Set new backdrop, hidden until loaded
     m.backdrop.opacity = 0.0
     m.backdrop.uri = url
     m.backdropCrossfading = true
@@ -187,21 +768,14 @@ sub onBackdropLoadStatusChange()
 
     if m.backdropCrossfading
         targetOpacity = 0.4
-
         if isValid(m.backdropFadeInInterp)
             m.backdropFadeInInterp.keyValue = [0.0, targetOpacity]
         end if
         if isValid(m.backdropPrevFadeOutInterp)
             m.backdropPrevFadeOutInterp.keyValue = [targetOpacity, 0.0]
         end if
-
-        if isValid(m.backdropFadeIn)
-            m.backdropFadeIn.control = "start"
-        end if
-        if isValid(m.backdropPrevFadeOut)
-            m.backdropPrevFadeOut.control = "start"
-        end if
-
+        if isValid(m.backdropFadeIn) then m.backdropFadeIn.control = "start"
+        if isValid(m.backdropPrevFadeOut) then m.backdropPrevFadeOut.control = "start"
         m.backdropCrossfading = false
     else
         if isValid(m.backdropPrev)
@@ -210,151 +784,70 @@ sub onBackdropLoadStatusChange()
     end if
 end sub
 
-sub onFilmographyItemFocused()
-    if not isValid(m.extrasGrid) then return
+' Dates are parsed from the string, because roDateTime localizes on parse and
+' shifts the day for anyone west of UTC
+function formatPersonDate(value as dynamic) as string
+    if not isValidAndNotEmpty(value) then return ""
 
-    focusedItem = m.extrasGrid.focusedItem
-    if not isValid(focusedItem) then return
+    monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-    ' Update backdrop from focused filmography item
-    if isValidAndNotEmpty(focusedItem.backdropUrl)
-        setBackdrop(focusedItem.backdropUrl)
-    end if
-end sub
+    parts = value.split("-")
+    if parts.count() = 3
+        year = parts[0].toInt()
+        month = parts[1].toInt()
+        day = parts[2].toInt()
 
-' ===== Key Handling =====
-
-function onKeyEvent(key as string, press as boolean) as boolean
-    if not press then return false
-
-    if key = KeyCode.OK
-        if m.favoriteButtonGroup.hasFocus()
-            toggleFavorite()
-            return true
-        end if
-        return false
-    end if
-
-    if key = KeyCode.BACK
-        m.global.sceneManager.callfunc("popScene")
-        return true
-    end if
-
-    if key = KeyCode.DOWN
-        if m.favoriteButtonGroup.hasFocus()
-            if isValid(m.extrasGrid) and m.extrasGrid.hasItems
-                m.extrasGrid.setFocus(true)
-                setLastFocus(m.extrasGrid)
-                m.top.lastFocus = m.extrasGrid
-                return true
-            end if
-        end if
-    else if key = KeyCode.LEFT
-        if m.favoriteButtonGroup.hasFocus()
-            return FocusSidebar(m.top)
-        end if
-    else if key = KeyCode.UP
-        if m.favoriteButtonGroup.hasFocus()
-            return FocusOverhang(m.top)
-        else if isValid(m.extrasGrid) and m.extrasGrid.isInFocusChain()
-            focusedRow = m.extrasGrid.rowItemFocused
-            if isValid(focusedRow) and focusedRow.count() > 0 and focusedRow[0] = 0
-                m.favoriteButtonGroup.setFocus(true)
-                setLastFocus(m.favoriteButtonGroup)
-                m.top.lastFocus = m.favoriteButtonGroup
-                return true
-            end if
+        if month >= 1 and month <= 12
+            return monthNames[month - 1] + " " + day.toStr() + ", " + year.toStr()
         end if
     end if
-
-    return false
+    return value
 end function
 
-' ===== Data Loading =====
+function personAge(birthValue as dynamic, deathValue as dynamic) as integer
+    if not isValidAndNotEmpty(birthValue) then return 0
 
-sub loadPersonVideos()
-    loadTask = CreateObject("roSGNode", "LoadExtrasTask")
-    loadTask.itemId = m.top.Id
-    loadTask.isPersonMode = true
+    birthParts = birthValue.split("-")
+    if birthParts.count() <> 3 then return 0
 
-    ' Pass multi-server metadata if present
-    item = m.top.itemContent
-    if isValid(item) and isChainValid(item, "json")
-        itemData = item.json
-
-        if isValidAndNotEmpty(itemData._serverUrl)
-            loadTask.serverUrl = itemData._serverUrl
-        end if
-        if isValidAndNotEmpty(itemData._userId)
-            loadTask.serverUserId = itemData._userId
-        end if
-        if isValidAndNotEmpty(itemData._authToken)
-            loadTask.serverAuthToken = itemData._authToken
-        end if
+    endParts = invalid
+    if isValidAndNotEmpty(deathValue)
+        endParts = deathValue.split("-")
     end if
 
-    loadTask.observeField("content", "onPersonVideosLoaded")
-    loadTask.control = "RUN"
-end sub
-
-sub onPersonVideosLoaded(event as object)
-    content = event.getData()
-    if isValid(content) and isValid(m.extrasGrid)
-        m.filmographyItemCount = content.getChildCount()
-        updateFilmographyLabel(m.filmographyItemCount)
-        ' Grab the first backdrop URL before updateContent reparents the nodes
-        initialBackdropUrl = ""
-        if not isValidAndNotEmpty(m.backdrop.uri)
-            for i = 0 to content.getChildCount() - 1
-                item = content.getChild(i)
-                if isValid(item) and isValidAndNotEmpty(item.backdropUrl)
-                    initialBackdropUrl = item.backdropUrl
-                    exit for
-                end if
-            end for
-        end if
-
-        m.extrasGrid.callFunc("updateContent", content)
-
-        ' Set initial backdrop
-        if isValidAndNotEmpty(initialBackdropUrl)
-            setBackdrop(initialBackdropUrl)
-        end if
-    end if
-end sub
-
-sub updateFilmographyLabel(count as integer)
-    if isValid(m.filmographyLabel)
-        if count > 0
-            m.filmographyLabel.text = tr("Filmography") + ` (${count})`
-        else
-            m.filmographyLabel.text = tr("Filmography")
-        end if
-    end if
-end sub
-
-' ===== Favorite =====
-
-sub toggleFavorite()
-    if not isValid(m.top.itemContent) then return
-    itemData = m.top.itemContent.json
-    if not isValid(itemData) or not isValid(itemData.id) then return
-
-    newStatus = not chainLookupReturn(itemData, "UserData.IsFavorite", false)
-
-    m.favoriteTask.itemId = itemData.id
-    m.favoriteTask.favTask = newStatus ? "favorite" : "unfavorite"
-    m.favoriteTask.control = "RUN"
-
-    if not isChainValid(itemData, "UserData")
-        itemData.UserData = { "IsFavorite": newStatus }
-    else
-        itemData.UserData.IsFavorite = newStatus
+    birthYear = birthParts[0].toInt()
+    endYear = CreateObject("roDateTime").GetYear()
+    if endParts <> invalid and endParts.count() = 3
+        endYear = endParts[0].toInt()
     end if
 
-    updateFavoriteFocusVisual()
+    age = endYear - birthYear
+    if age <= 0 then return 0
+    return age
+end function
 
-    m.playedIndicator.data = {
-        favorite: newStatus
+sub loadRatings(itemData as object)
+    if not isValid(m.ratings) then return
+
+    showRatings = toBoolean(m.global.session.user.settings["ui.itemdetail.showRatings"] ?? true)
+    if not showRatings
+        m.ratings.ratingsData = invalid
+        return
+    end if
+
+    community = chainLookupReturn(itemData, "CommunityRating", invalid)
+    if not isValid(community) or community <= 0
+        m.ratings.ratingsData = invalid
+        return
+    end if
+
+    entry = {
+        source: "stars",
+        name: tr("Community"),
+        iconPath: "pkg:/images/sharp_star_white_18dp.png",
+        iconBlendColor: "#FFD700",
+        formatted: str(Int(community * 10) / 10).trim()
     }
+
+    m.ratings.ratingsData = { data: [entry] }
 end sub
