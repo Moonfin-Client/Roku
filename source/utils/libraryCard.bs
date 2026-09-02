@@ -1,0 +1,182 @@
+import "pkg:/source/utils/misc.bs"
+
+' The card the library grid draws, sized and captioned the way the other clients do it.
+
+namespace libraryCard
+
+    ' A focused card grows about its centre and paints past the cell it was given
+    const FOCUS_SCALE = 1.05
+    ' Half the gap between two cards, and the least a cell can be padded by
+    const MIN_CELL_GAP = 9
+    const MIN_ROW_GAP = 6
+    ' What is left for the grid once the page margins are taken off
+    const GRID_WIDTH = 1746
+
+    const TEXT_HEIGHT_WITH_SUBTITLE = 61
+    const TEXT_HEIGHT_TITLE_ONLY = 35
+
+    ' A folder of these still describes itself rather than counting its children
+    function DetailedFolderType(itemType as string) as boolean
+        for each named in ["Series", "BoxSet", "Playlist", "MusicAlbum", "MusicArtist"]
+            if isStringEqual(itemType, named) then return true
+        end for
+        return false
+    end function
+
+    ' The runtime as the other clients write it. This floors where getFormattedRuntime
+    ' rounds, and says 2h 0m where that one says 2h.
+    function FormatDuration(ticks as dynamic) as string
+        if not isValid(ticks) or ticks <= 0 then return ""
+
+        totalMinutes = Int(ticks / 600000000)
+        hours = Int(totalMinutes / 60)
+        minutes = totalMinutes mod 60
+
+        if hours > 0 then return `${hours.toStr()}h ${minutes.toStr()}m`
+        return `${minutes.toStr()}m`
+    end function
+
+    ' Always a tenth, so a round score still reads as 8.0 rather than 8
+    function OneDecimal(value as float) as string
+        tenths = Int((value * 10) + 0.5)
+        return `${Int(tenths / 10).toStr()}.${(tenths mod 10).toStr()}`
+    end function
+
+    ' The line under the title. The first case that fits wins, and the detailed setting
+    ' is what turns a bare year into the whole run of facts.
+    function Subtitle(json as object, isFolder as boolean, detailed as boolean) as string
+        if not isValid(json) then return ""
+
+        if isFolder
+            count = json.ChildCount
+            if isValid(count) then return `${count.toStr()} ${tr("Items")}`
+            return tr("Folder")
+        end if
+
+        itemType = json.Type ?? ""
+
+        if isStringEqual(itemType, "MusicAlbum")
+            artists = json.Artists
+            if isValidAndNotEmpty(artists) then return artists.join(", ")
+            if isValidAndNotEmpty(json.AlbumArtist) then return json.AlbumArtist
+        end if
+
+        if isStringEqual(itemType, "Playlist")
+            count = json.ChildCount ?? json.RecursiveItemCount
+            if isValid(count) then return `${count.toStr()} ${tr("Items")}`
+            return ""
+        end if
+
+        year = json.ProductionYear
+        if not detailed
+            return isValid(year) ? year.toStr() : ""
+        end if
+
+        parts = []
+        if isValid(year) then parts.push(year.toStr())
+        if isValidAndNotEmpty(json.OfficialRating) then parts.push(json.OfficialRating)
+
+        runtime = libraryCard.FormatDuration(json.RunTimeTicks)
+        if runtime <> "" and runtime <> "0m" then parts.push(runtime)
+
+        rating = json.CommunityRating
+        if isValid(rating) and rating > 0
+            parts.push(`★ ${libraryCard.OneDecimal(rating)}`)
+        end if
+
+        return parts.join("  ")
+    end function
+
+    function focusOverhang(size as float) as integer
+        grown = size * (libraryCard.FOCUS_SCALE - 1) / 2
+        whole = Int(grown)
+        if grown > whole then whole = whole + 1
+        return whole
+    end function
+
+    ' The grid stretches every cell to fill its row, so a card ends up wider than the size
+    ' it asked for and grows further again when focused. Working the columns out the way the
+    ' grid does gives the width the padding has to cover, and a wider pad can drop a column,
+    ' so it settles rather than guesses.
+    function horizontalCellPad(cardWidth as integer) as integer
+        pad = libraryCard.MIN_CELL_GAP
+        overhang = libraryCard.focusOverhang(cardWidth)
+        if overhang > pad then pad = overhang
+
+        for i = 1 to 3
+            columns = Int(libraryCard.GRID_WIDTH / (cardWidth + (pad * 2)))
+            if columns < 1 then columns = 1
+            needed = libraryCard.focusOverhang((libraryCard.GRID_WIDTH / columns) - (pad * 2))
+            if needed <= pad then exit for
+            pad = needed
+        end for
+
+        return pad
+    end function
+
+    function posterHeightFor(imageSize as string, isWide as boolean) as integer
+        if isWide
+            if imageSize = "small" then return 128
+            if imageSize = "large" then return 191
+            if imageSize = "extraLarge" then return 223
+            return 160
+        end if
+
+        if imageSize = "small" then return 174
+        if imageSize = "large" then return 261
+        if imageSize = "extraLarge" then return 304
+        return 217
+    end function
+
+    function cardWidthFor(imageSize as string, imageType as string, posterHeight as integer) as integer
+        if imageType = "square" then return posterHeight
+
+        if imageType = "thumbnail"
+            if imageSize = "small" then return 227
+            if imageSize = "large" then return 340
+            if imageSize = "extraLarge" then return 397
+            return 284
+        end if
+
+        if imageSize = "small" then return 116
+        if imageSize = "large" then return 174
+        if imageSize = "extraLarge" then return 203
+        return 145
+    end function
+
+    ' Everything the grid and the card need to draw a row, worked out once per layout
+    function Metrics(imageSize as string, imageType as string, showText as boolean, hasSubtitles as boolean, detailed as boolean) as object
+        isWide = imageType = "thumbnail"
+        posterHeight = libraryCard.posterHeightFor(imageSize, isWide)
+        cardWidth = libraryCard.cardWidthFor(imageSize, imageType, posterHeight)
+
+        textHeight = 0
+        if showText
+            textHeight = hasSubtitles ? libraryCard.TEXT_HEIGHT_WITH_SUBTITLE : libraryCard.TEXT_HEIGHT_TITLE_ONLY
+        end if
+
+        cardHeight = posterHeight + textHeight
+
+        padX = libraryCard.horizontalCellPad(cardWidth)
+        padY = libraryCard.focusOverhang(cardHeight)
+        if padY < libraryCard.MIN_ROW_GAP then padY = libraryCard.MIN_ROW_GAP
+
+        columns = Int(libraryCard.GRID_WIDTH / (cardWidth + (padX * 2)))
+        if columns < 1 then columns = 1
+        cellWidth = Int(libraryCard.GRID_WIDTH / columns)
+
+        return {
+            columns: columns,
+            cellWidth: cellWidth,
+            cellHeight: cardHeight + (padY * 2),
+            posterWidth: cellWidth - (padX * 2),
+            posterHeight: posterHeight,
+            textHeight: textHeight,
+            padX: padX,
+            padY: padY,
+            imageType: imageType,
+            detailed: detailed
+        }
+    end function
+
+end namespace
