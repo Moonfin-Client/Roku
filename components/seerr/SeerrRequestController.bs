@@ -3,800 +3,285 @@ import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/seerrButtons.bs"
 
-' Asking Seerr for a title, and taking the ask back, along with the quality, advanced and
-' season dialogs the flow puts up on the way. Shared so both detail screens offer the same thing.
+' Asking Seerr for a title, and taking the ask back. The ask itself is one dialog, the same
+' one the other clients put up. Shared so both detail screens behave the same.
+
+sub init()
+    m.apiTask = CreateObject("roSGNode", "SeerrAPITask")
+end sub
 
 ' The detail screens hand over what they already fetched rather than asking again
 sub begin(action as string)
     details = m.top.details
     if not isValid(details) then return
 
-    m.mediaItem = { tmdbId: m.top.tmdbId, mediaType: m.top.mediaType }
-    m.mediaInfo = details.mediaInfo
-    m.tvDetails = invalid
-    if isStringEqual(m.top.mediaType, "tv") then m.tvDetails = details
-    m.pendingRequests = seerrButtons.PendingRequests(m.mediaInfo)
+    m.pendingRequests = seerrButtons.PendingRequests(details.mediaInfo)
 
-    if action = "seerrRequest" and seerrButtons.OffersBothTracks(details, m.top.mediaType)
-        onRequestQualityPressed()
-    else if action = "seerrRequest"
-        onRequestHDPressed()
-    else if action = "seerrRequest4k"
-        onRequest4KPressed()
-    else if action = "seerrCancel"
+    if action = "seerrCancel"
         onCancelRequestPressed()
+    else if action = "seerrRequest4k"
+        ShowRequestDialog(true, false)
+    else if action = "seerrRequest"
+        ' One button covers both tracks, so the dialog carries the switch between them
+        ShowRequestDialog(false, seerrButtons.OffersBothTracks(details, m.top.mediaType))
     end if
 end sub
 
-' The host owns the spinner, so these lean on the shared one
-sub ShowLoading()
+' ===== The request dialog =====
+
+sub ShowRequestDialog(is4k as boolean, qualityToggle as boolean)
+    permissions = GetCurrentUserSeerrPermissions()
+
+    m.requestDialog = CreateObject("roSGNode", "SeerrRequestDialog")
+    m.requestDialog.details = m.top.details
+    m.requestDialog.mediaType = m.top.mediaType
+    m.requestDialog.is4k = is4k
+    m.requestDialog.qualityToggle = qualityToggle
+    m.requestDialog.canRequest4k = CanRequest4K(permissions, m.top.mediaType)
+    m.requestDialog.canRequestAdvanced = HasAdvancedRequestPermission(permissions)
+    m.requestDialog.seerrUserId = CurrentSeerrUserId()
+    m.requestDialog.returnFocus = m.top.returnFocus
+
+    m.requestDialog.observeField("submitted", "onRequestDialogSubmitted")
+    m.requestDialog.observeField("wasCancelled", "onRequestDialogCancelled")
+
+    m.top.getScene().appendChild(m.requestDialog)
+    m.requestDialog.callFunc("showDialog")
+end sub
+
+sub CloseRequestDialog()
+    if not isValid(m.requestDialog) then return
+
+    m.requestDialog.unobserveField("submitted")
+    m.requestDialog.unobserveField("wasCancelled")
+    m.top.getScene().removeChild(m.requestDialog)
+    m.requestDialog = invalid
+end sub
+
+sub onRequestDialogSubmitted(event as object)
+    if event.getData() <> true then return
+
+    result = m.requestDialog.result
+    CloseRequestDialog()
+    SubmitRequest(result)
+end sub
+
+sub onRequestDialogCancelled(event as object)
+    if event.getData() <> true then return
+
+    CloseRequestDialog()
+end sub
+
+' ===== Submitting =====
+
+sub SubmitRequest(result as object)
+    if not isValid(result) then return
+
     startLoadingSpinner()
-end sub
+    m.lastRequestIs4k = result.is4k
 
-sub HideLoading()
-    stopLoadingSpinner()
-end sub
+    pairs = [
+        { key: "mediaType", value: m.top.mediaType },
+        { key: "mediaId", value: m.top.tmdbId.toInt() },
+        { key: "is4k", value: result.is4k }
+    ]
 
-sub ShowError(message as string)
-    ShowMessage(tr("Request Failed"), message)
-end sub
-
-sub restoreHostFocus()
-    if isValid(m.top.returnFocus) then m.top.returnFocus.setFocus(true)
-end sub
-
-sub onRequestHDPressed()
-    userPermissions = GetCurrentUserSeerrPermissions()
-    hasAdvancedPerm = HasAdvancedRequestPermission(userPermissions)
-
-    if hasAdvancedPerm
-        m.pendingQualitySelection = "hd"
-        ShowAdvancedDialog("hd")
-    else
-        SubmitRequest(false)
-    end if
-end sub
-
-sub onRequest4KPressed()
-    userPermissions = GetCurrentUserSeerrPermissions()
-    hasAdvancedPerm = HasAdvancedRequestPermission(userPermissions)
-
-    if hasAdvancedPerm
-        m.pendingQualitySelection = "4k"
-        ShowAdvancedDialog("4k")
-    else
-        SubmitRequest(true)
-    end if
-end sub
-
-sub onRequestQualityPressed()
-    m.qualityDialog = CreateObject("roSGNode", "SeerrQualityDialog")
-
-    hdStatus = invalid
-    status4k = invalid
-    if m.mediaInfo <> invalid
-        hdStatus = m.mediaInfo.status
-        status4k = m.mediaInfo.status4k
-    end if
-
-    ' Pass status values for label/enabled state updates
-    if hdStatus <> invalid
-        m.qualityDialog.hdStatus = hdStatus
-    end if
-    if status4k <> invalid
-        m.qualityDialog.status4k = status4k
-    end if
-
-    userPermissions = GetCurrentUserSeerrPermissions()
-    mediaType = "movie"
-    if m.mediaItem <> invalid and m.mediaItem.mediaType <> invalid
-        mediaType = m.mediaItem.mediaType
-    end if
-    has4kPermission = CanRequest4K(userPermissions, mediaType)
-
-    ' Calculate permission based on status AND user permission
-    ' Can request if status is null/1 (unknown), or 4 (partial)
-    userCanRequestHD = (hdStatus = invalid or hdStatus = 1 or hdStatus = 4)
-    userCanRequest4K = (status4k = invalid or status4k = 1 or status4k = 4) and has4kPermission
-
-    ' Pass permission values to dialog
-    m.qualityDialog.canRequestHD = userCanRequestHD
-    m.qualityDialog.canRequest4K = userCanRequest4K
-
-    ' Observe for selection
-    m.qualityDialog.observeField("selectedQuality", "onQualityDialogResponse")
-    m.qualityDialog.observeField("wasCancelled", "onQualityDialogCancelled")
-
-    m.top.getScene().appendChild(m.qualityDialog)
-    m.qualityDialog.setFocus(true)
-end sub
-
-sub onQualityDialogResponse(event as object)
-    selectedQuality = event.getData()
-
-
-    ' Ignore empty selection (initial state)
-    if selectedQuality = "" then return
-
-    if m.qualityDialog <> invalid
-        m.qualityDialog.unobserveField("selectedQuality")
-        m.qualityDialog.unobserveField("wasCancelled")
-        m.top.getScene().removeChild(m.qualityDialog)
-        m.qualityDialog = invalid
-    end if
-
-    userPermissions = GetCurrentUserSeerrPermissions()
-    hasAdvancedPerm = HasAdvancedRequestPermission(userPermissions)
-
-
-    if hasAdvancedPerm
-        m.pendingQualitySelection = selectedQuality
-        ShowAdvancedDialog(selectedQuality)
-    else
-        ' No advanced permission, submit directly with defaults
-        if selectedQuality = "hd"
-            SubmitRequest(false)
-        else if selectedQuality = "4k"
-            SubmitRequest(true)
-        else if selectedQuality = "both"
-            ' Submit HD first, then 4K after HD completes
-            m.pending4kAfterHD = true
-            SubmitRequest(false)
+    if isStringEqual(m.top.mediaType, "tv")
+        if isValid(result.seasons) and result.seasons.count() > 0
+            pairs.push({ key: "seasons", value: result.seasons })
+        else
+            pairs.push({ key: "seasons", value: "all" })
         end if
     end if
-end sub
 
-sub ShowAdvancedDialog(selectedQuality as string)
-    mediaType = "movie"
-    if m.mediaItem <> invalid and m.mediaItem.mediaType <> invalid
-        mediaType = m.mediaItem.mediaType
-    end if
+    if isValid(result.serverId) then pairs.push({ key: "serverId", value: result.serverId })
+    if isValid(result.profileId) then pairs.push({ key: "profileId", value: result.profileId })
+    if isValidAndNotEmpty(result.rootFolder) then pairs.push({ key: "rootFolder", value: result.rootFolder })
 
-    is4k = (selectedQuality = "4k")
-
-
-    m.advancedDialog = CreateObject("roSGNode", "SeerrAdvancedDialog")
-    m.advancedDialog.mediaType = mediaType
-    m.advancedDialog.is4k = is4k
-
-    m.advancedDialog.observeField("wasSubmitted", "onAdvancedDialogSubmitted")
-    m.advancedDialog.observeField("wasCancelled", "onAdvancedDialogCancelled")
-
-    m.top.getScene().appendChild(m.advancedDialog)
-    m.advancedDialog.setFocus(true)
-end sub
-
-sub onAdvancedDialogSubmitted(event as object)
-    wasSubmitted = event.getData()
-    if not wasSubmitted then return
-
-    serverId = m.advancedDialog.selectedServerId
-    profileId = m.advancedDialog.selectedProfileId
-    rootFolderPath = m.advancedDialog.selectedRootFolderPath
-
-
-    m.advancedOptions = {
-        serverId: serverId,
-        profileId: profileId,
-        rootFolder: rootFolderPath
+    m.apiTask.request = {
+        method: "POST",
+        endpoint: "/api/v1/request",
+        bodyJson: SeerrJsonFromPairs(pairs)
     }
-
-    if m.advancedDialog <> invalid
-        m.advancedDialog.unobserveField("wasSubmitted")
-        m.advancedDialog.unobserveField("wasCancelled")
-        m.top.getScene().removeChild(m.advancedDialog)
-        m.advancedDialog = invalid
-    end if
-
-    restoreHostFocus()
-
-    ' Now submit the request based on original quality selection
-    selectedQuality = m.pendingQualitySelection
-    if selectedQuality = "hd"
-        SubmitRequestWithAdvancedOptions(false)
-    else if selectedQuality = "4k"
-        SubmitRequestWithAdvancedOptions(true)
-    else if selectedQuality = "both"
-        ' Submit HD first with advanced options, then 4K after HD completes
-        m.pending4kAfterHD = true
-        m.pending4kUseAdvancedOptions = true
-        SubmitRequestWithAdvancedOptions(false)
-    end if
+    m.apiTask.unobserveField("response")
+    m.apiTask.observeField("response", "onRequestSubmitted")
+    m.apiTask.control = TaskControl.RUN
 end sub
 
-sub onAdvancedDialogCancelled(event as object)
-    wasCancelled = event.getData()
-    if not wasCancelled then return
+sub onRequestSubmitted(event as object)
+    response = event.getData()
+    stopLoadingSpinner()
 
-    if m.advancedDialog <> invalid
-        m.advancedDialog.unobserveField("wasSubmitted")
-        m.advancedDialog.unobserveField("wasCancelled")
-        m.top.getScene().removeChild(m.advancedDialog)
-        m.advancedDialog = invalid
-    end if
+    qualityLabel = m.lastRequestIs4k = true ? "4K" : "HD"
 
-    restoreHostFocus()
-end sub
-
-sub SubmitRequestWithAdvancedOptions(is4k as boolean)
-    mediaType = m.mediaItem.mediaType
-    if mediaType = invalid then mediaType = "movie"
-
-    if mediaType = "tv" and m.tvDetails <> invalid and m.tvDetails.numberOfSeasons <> invalid
-        numberOfSeasons = m.tvDetails.numberOfSeasons
-        if numberOfSeasons > 1
-                m.pendingRequestIs4k = is4k
-            m.useAdvancedOptions = true
-            ShowSeasonDialog(is4k)
-            return
-        end if
-    end if
-
-    ' For movies or TV shows with 1 season, submit with advanced options
-    SubmitRequestWithSeasonsAndOptions(invalid, is4k, m.advancedOptions)
-end sub
-
-sub onQualityDialogCancelled(event as object)
-    wasCancelled = event.getData()
-    if wasCancelled
-            if m.qualityDialog <> invalid
-            m.qualityDialog.unobserveField("selectedQuality")
-            m.qualityDialog.unobserveField("wasCancelled")
-            m.top.getScene().removeChild(m.qualityDialog)
-            m.qualityDialog = invalid
-        end if
-
-        restoreHostFocus()
-    end if
-end sub
-
-sub onCancelRequestPressed()
-    if m.pendingRequests = invalid or m.pendingRequests.count() = 0
-        ShowMessage("No Requests", "There are no pending requests to cancel.")
+    if response.success
+        ShowSuccessAndReload(Substitute(tr("^0 request submitted."), qualityLabel))
         return
     end if
 
-    description = ""
-    if m.pendingRequests.count() = 1
-        request = m.pendingRequests[0]
-        qualityType = "HD"
-        if request.is4k = true then qualityType = "4K"
-        description = "Cancel your pending " + qualityType + " request?"
-    else
-        description = "Cancel all " + m.pendingRequests.count().toStr() + " pending requests?"
+    if response.statusCode = 403
+        ShowMessage(tr("Permission Denied"), tr("You don't have permission to make this request. Ask your Seerr administrator to adjust your permissions."))
+        return
     end if
 
-    ' Create confirmation dialog
-    dialog = CreateObject("roSGNode", "StandardMessageDialog")
-    dialog.title = "Cancel Request"
-    dialog.message = [description]
-    dialog.buttons = ["Cancel Request", "Keep Request"]
+    if response.statusCode = 409
+        ShowMessage(tr("Request Failed"), tr("This title was already requested."))
+        return
+    end if
 
-    m.cancelConfirmDialog = dialog
-    dialog.observeField("buttonSelected", "onCancelConfirmDialogResponse")
-    m.top.getScene().dialog = dialog
+    ShowMessage(tr("Request Failed"), RequestErrorMessage(response, qualityLabel))
 end sub
 
-sub onCancelConfirmDialogResponse(event as object)
-    buttonIndex = event.getData()
-
-    ' Close the dialog
-    m.top.getScene().dialog = invalid
-    m.cancelConfirmDialog.unobserveField("buttonSelected")
-    m.cancelConfirmDialog = invalid
-
-    ' Button 0 = "Cancel Request" (confirm), Button 1 = "Keep Request" (cancel)
-    if buttonIndex = 0
-        ' User confirmed - cancel all pending requests
-        CancelPendingRequests()
+' The task unwraps whatever reason Seerr sent, and falls back to a message of its own
+' that says nothing, so the status code stands in for it
+function RequestErrorMessage(response as object, qualityLabel as string) as string
+    if isValidAndNotEmpty(response.error) and response.error <> "Plugin request failed"
+        return response.error
     end if
+
+    status = 0
+    if isValid(response.statusCode) then status = response.statusCode
+
+    return Substitute(tr("Could not submit the ^0 request (HTTP ^1)."), qualityLabel, status.toStr())
+end function
+
+' ===== Taking a request back =====
+
+sub onCancelRequestPressed()
+    if not isValid(m.pendingRequests) or m.pendingRequests.count() = 0
+        ShowMessage(tr("No Requests"), tr("There are no pending requests to cancel."))
+        return
+    end if
+
+    ShowDialog(tr("Cancel Request"), CancelDescription(), [tr("Keep Request"), tr("Cancel Request")], "onCancelConfirmResponse")
+end sub
+
+' One request names its track, several are counted per track
+function CancelDescription() as string
+    title = chainLookupReturn(m.top.details, "title", "")
+    if not isValidAndNotEmpty(title) then title = chainLookupReturn(m.top.details, "name", "")
+
+    if m.pendingRequests.count() = 1
+        quality = m.pendingRequests[0].is4k = true ? "4K" : "HD"
+        return Substitute(tr(`Cancel ^0 request for "^1"?`), quality, title)
+    end if
+
+    hdCount = 0
+    fourKCount = 0
+    for each request in m.pendingRequests
+        if request.is4k = true
+            fourKCount++
+        else
+            hdCount++
+        end if
+    end for
+
+    parts = []
+    if hdCount > 0 then parts.push(Substitute(tr("^0 HD"), hdCount.toStr()))
+    if fourKCount > 0 then parts.push(Substitute(tr("^0 4K"), fourKCount.toStr()))
+
+    return Substitute(tr(`Cancel ^0 requests for "^1"?`), parts.join(` ${tr("and")} `), title)
+end function
+
+sub onCancelConfirmResponse(event as object)
+    confirmed = event.getData() = 1
+    CloseDialog()
+
+    if confirmed then CancelPendingRequests()
 end sub
 
 sub CancelPendingRequests()
-    if m.pendingRequests = invalid or m.pendingRequests.count() = 0
-        return
-    end if
+    if not isValid(m.pendingRequests) or m.pendingRequests.count() = 0 then return
 
-    ShowLoading()
+    startLoadingSpinner()
 
-    ' Store pending requests count for status messages
     m.cancelRequestsRemaining = m.pendingRequests.count()
     m.cancelRequestsSuccess = 0
     m.cancelRequestsFailed = 0
+    m.cancelTasks = []
 
-    ' Cancel each pending request
     for each request in m.pendingRequests
         CancelSingleRequest(request.id)
     end for
 end sub
 
 sub CancelSingleRequest(requestId as integer)
-    endpoint = "/api/v1/request/" + requestId.toStr()
-
-    cancelTask = CreateObject("roSGNode", "SeerrAPITask")
-    cancelTask.addField("requestId", "integer", false)
-    cancelTask.requestId = requestId
-
-    cancelTask.request = {
+    task = CreateObject("roSGNode", "SeerrAPITask")
+    task.request = {
         method: "DELETE",
-        endpoint: endpoint
+        endpoint: `/api/v1/request/${requestId.toStr()}`
     }
+    task.observeField("response", "onCancelRequestResponse")
 
-    cancelTask.observeField("response", "onCancelRequestResponse")
-    cancelTask.control = "RUN"
+    ' Held onto, otherwise the node goes out of scope while the call is still in flight
+    m.cancelTasks.push(task)
+    task.control = TaskControl.RUN
 end sub
 
 sub onCancelRequestResponse(event as object)
     response = event.getData()
-    ' Note: event.getRoSGNode() available if needed for request ID tracking
 
     m.cancelRequestsRemaining = m.cancelRequestsRemaining - 1
-
     if response.success
         m.cancelRequestsSuccess = m.cancelRequestsSuccess + 1
     else
         m.cancelRequestsFailed = m.cancelRequestsFailed + 1
     end if
 
-    ' Check if all requests have been processed
-    if m.cancelRequestsRemaining = 0
-        HideLoading()
+    if m.cancelRequestsRemaining > 0 then return
 
-            if m.cancelRequestsFailed = 0
-            if m.cancelRequestsSuccess = 1
-                ShowSuccessAndReload("Request cancelled successfully.")
-            else
-                ShowSuccessAndReload(m.cancelRequestsSuccess.toStr() + " requests cancelled.")
-            end if
-        else if m.cancelRequestsSuccess = 0
-            ShowMessage("Failed", "Failed to cancel request. You may not have permission.")
+    stopLoadingSpinner()
+    m.cancelTasks = []
+
+    if m.cancelRequestsFailed = 0
+        if m.cancelRequestsSuccess = 1
+            ShowSuccessAndReload(tr("Request cancelled."))
         else
-            ' Some of the tracks were taken, so the host still refetches
-            ShowSuccessAndReload(m.cancelRequestsSuccess.toStr() + " cancelled, " + m.cancelRequestsFailed.toStr() + " failed.")
+            ShowSuccessAndReload(Substitute(tr("^0 requests cancelled."), m.cancelRequestsSuccess.toStr()))
         end if
-    end if
-end sub
-
-sub SubmitRequest(is4k as boolean)
-    mediaType = m.mediaItem.mediaType
-    if mediaType = invalid then mediaType = "movie"
-
-    if mediaType = "tv" and m.tvDetails <> invalid and m.tvDetails.numberOfSeasons <> invalid
-        numberOfSeasons = m.tvDetails.numberOfSeasons
-
-        ' If more than 1 season, show the dialog
-        if numberOfSeasons > 1
-            ShowSeasonDialog(is4k)
-            return
-        end if
-    end if
-
-    ' For movies or TV shows with 1 season, submit directly with all seasons
-    SubmitRequestWithSeasons(invalid, is4k)
-end sub
-
-sub ShowSeasonDialog(is4k as boolean)
-    m.pendingRequestIs4k = is4k
-
-    showName = ""
-    if m.tvDetails <> invalid
-        if m.tvDetails.name <> invalid and m.tvDetails.name <> ""
-            showName = m.tvDetails.name
-        else if m.tvDetails.title <> invalid and m.tvDetails.title <> ""
-            showName = m.tvDetails.title
-        end if
-    end if
-
-    if showName = ""
-        showName = m.mediaItem.title
-        if showName = invalid then showName = "Unknown Show"
-    end if
-
-    numberOfSeasons = m.tvDetails.numberOfSeasons
-
-    ' Get unavailable seasons (already requested/available for this quality)
-    unavailableSeasons = GetUnavailableSeasons(is4k)
-
-    ' Create season dialog
-    m.seasonDialog = CreateObject("roSGNode", "SeerrSeasonDialog")
-    m.seasonDialog.showName = showName
-    m.seasonDialog.numberOfSeasons = numberOfSeasons
-    m.seasonDialog.is4k = is4k
-    m.seasonDialog.unavailableSeasons = unavailableSeasons
-
-    ' Observe for response BEFORE setting any array fields
-    m.seasonDialog.observeField("selectedSeasons", "onSeasonDialogResponse")
-    m.seasonDialog.observeField("wasCancelled", "onSeasonDialogCancelled")
-
-    ' Show dialog by adding to scene
-    m.top.getScene().appendChild(m.seasonDialog)
-
-    ' Explicitly set focus to the dialog
-    m.seasonDialog.setFocus(true)
-end sub
-
-' Get set of season numbers that are already requested or available
-' for the specified quality (HD or 4K)
-function GetUnavailableSeasons(is4k as boolean) as object
-    unavailableSeasons = []
-
-    ' Check if we have mediaInfo with requests
-    if m.mediaInfo = invalid then return unavailableSeasons
-    if m.mediaInfo.requests = invalid then return unavailableSeasons
-
-    ' Check existing requests for this quality
-    for each request in m.mediaInfo.requests
-        ' Only consider requests matching the quality (HD or 4K)
-        requestIs4k = false
-        if request.is4k <> invalid then requestIs4k = request.is4k
-        if requestIs4k = is4k
-            ' Only consider non-declined requests (status != 3)
-            requestStatus = 0
-            if request.status <> invalid then requestStatus = request.status
-            if requestStatus <> 3
-                ' Add all seasons from this request
-                if request.seasons <> invalid and GetInterface(request.seasons, "ifArray") <> invalid
-                    for each seasonRequest in request.seasons
-                        if seasonRequest <> invalid and seasonRequest.seasonNumber <> invalid
-                            unavailableSeasons.push(seasonRequest.seasonNumber)
-                        end if
-                    end for
-                end if
-            end if
-        end if
-    end for
-
-    return unavailableSeasons
-end function
-
-sub onSeasonDialogResponse(event as object)
-    selectedSeasons = event.getData()
-
-    ' Ignore if we don't have a valid dialog or if selectedSeasons is not a valid array
-    if m.seasonDialog = invalid then return
-    if selectedSeasons = invalid or GetInterface(selectedSeasons, "ifArray") = invalid then return
-
-    ' Check if array is actually populated with integers (not just empty on init)
-    hasValidData = false
-    if selectedSeasons.count() = 0
-        ' Empty array is valid (means "all seasons")
-        hasValidData = true
+    else if m.cancelRequestsSuccess = 0
+        ShowMessage(tr("Request Failed"), tr("Could not cancel the request. You may not have permission."))
     else
-        ' Check if first element is an integer
-        if selectedSeasons.count() > 0 and GetInterface(selectedSeasons[0], "ifInt") <> invalid
-            hasValidData = true
-        end if
-    end if
-
-    if not hasValidData then return
-
-    ' Unobserve and close dialog
-    if m.seasonDialog <> invalid
-        m.seasonDialog.unobserveField("selectedSeasons")
-        m.seasonDialog.unobserveField("wasCancelled")
-        m.top.getScene().removeChild(m.seasonDialog)
-        m.seasonDialog = invalid
-    end if
-
-    restoreHostFocus()
-
-    ' Submit request with selected seasons
-    ' Check if we should use advanced options
-    if m.useAdvancedOptions = true and m.advancedOptions <> invalid
-        SubmitRequestWithSeasonsAndOptions(selectedSeasons, m.pendingRequestIs4k, m.advancedOptions)
-        m.useAdvancedOptions = false
-    else
-        SubmitRequestWithSeasons(selectedSeasons, m.pendingRequestIs4k)
+        ' Some of the tracks were taken, so the host still refetches
+        ShowSuccessAndReload(Substitute(tr("^0 cancelled, ^1 failed."), m.cancelRequestsSuccess.toStr(), m.cancelRequestsFailed.toStr()))
     end if
 end sub
 
-sub onSeasonDialogCancelled(event as object)
-    wasCancelled = event.getData()
-    if wasCancelled
-        ' Unobserve and close dialog
-        if m.seasonDialog <> invalid
-            m.seasonDialog.unobserveField("selectedSeasons")
-            m.seasonDialog.unobserveField("wasCancelled")
-            m.top.getScene().removeChild(m.seasonDialog)
-            m.seasonDialog = invalid
-        end if
+' ===== Panels =====
 
-        restoreHostFocus()
-    end if
+sub ShowDialog(title as string, message as string, options as object, callback as string)
+    m.messageDialog = CreateObject("roSGNode", "SeerrMessageDialog")
+    m.messageDialog.dialogTitle = title
+    m.messageDialog.message = message
+    m.messageDialog.options = options
+    m.messageDialog.returnFocus = m.top.returnFocus
+    m.messageDialog.observeField("optionSelected", callback)
+
+    m.top.getScene().appendChild(m.messageDialog)
+    m.messageDialog.callFunc("showDialog")
 end sub
 
-sub SubmitRequestWithSeasons(seasons as object, is4k as boolean)
-    ShowLoading()
+sub CloseDialog()
+    if not isValid(m.messageDialog) then return
 
-    ' Store is4k for error handling
-    m.lastRequestIs4k = is4k
-
-    mediaType = m.mediaItem.mediaType
-    if mediaType = invalid then mediaType = "movie"
-
-    ' Create request body with proper camelCase keys for API
-    ' Note: We must build the JSON string manually to preserve camelCase
-    requestBodyJson = "{"
-    requestBodyJson = requestBodyJson + """mediaType"":""" + mediaType + """"
-    requestBodyJson = requestBodyJson + ",""mediaId"":" + m.mediaItem.tmdbId.toStr()
-    requestBodyJson = requestBodyJson + ",""is4k"":"
-    if is4k
-        requestBodyJson = requestBodyJson + "true"
-    else
-        requestBodyJson = requestBodyJson + "false"
-    end if
-
-    ' Handle seasons parameter for TV shows
-    if mediaType = "tv"
-        if seasons <> invalid and seasons.count() > 0
-            ' Use selected seasons array
-            requestBodyJson = requestBodyJson + ",""seasons"":["
-            for i = 0 to seasons.count() - 1
-                if i > 0 then requestBodyJson = requestBodyJson + ","
-                ' Convert roInt to string - use itostr or just concatenate with empty string
-                seasonNum = seasons[i]
-                requestBodyJson = requestBodyJson + seasonNum.toStr()
-            end for
-            requestBodyJson = requestBodyJson + "]"
-        else
-            ' Request all seasons (empty array or invalid means "all")
-            requestBodyJson = requestBodyJson + ",""seasons"":""all"""
-        end if
-    end if
-
-    requestBodyJson = requestBodyJson + "}"
-
-    endpoint = "/api/v1/request"
-
-    ' Parse the JSON string back to an object for the API task
-    requestBody = ParseJson(requestBodyJson)
-
-    m.apiTask.request = {
-        method: "POST",
-        endpoint: endpoint,
-        body: requestBody
-    }
-
-    m.apiTask.unobserveField("response")
-    m.apiTask.observeField("response", "onRequestSubmitted")
-    m.apiTask.control = "RUN"
+    m.messageDialog.unobserveField("optionSelected")
+    m.top.getScene().removeChild(m.messageDialog)
+    m.messageDialog = invalid
 end sub
 
-' Submit request with advanced options (server, profile, root folder)
-sub SubmitRequestWithSeasonsAndOptions(seasons as object, is4k as boolean, options as object)
-    ShowLoading()
-
-    ' Store is4k for error handling
-    m.lastRequestIs4k = is4k
-
-    mediaType = m.mediaItem.mediaType
-    if mediaType = invalid then mediaType = "movie"
-
-    ' Create request body with proper camelCase keys for API
-    requestBodyJson = "{"
-    requestBodyJson = requestBodyJson + """mediaType"":""" + mediaType + """"
-    requestBodyJson = requestBodyJson + ",""mediaId"":" + m.mediaItem.tmdbId.toStr()
-    requestBodyJson = requestBodyJson + ",""is4k"":"
-    if is4k
-        requestBodyJson = requestBodyJson + "true"
-    else
-        requestBodyJson = requestBodyJson + "false"
-    end if
-
-    ' Add advanced options if provided
-    if options <> invalid
-        if options.serverId <> invalid and options.serverId >= 0
-            requestBodyJson = requestBodyJson + ",""serverId"":" + options.serverId.toStr()
-        end if
-        if options.profileId <> invalid and options.profileId > 0
-            requestBodyJson = requestBodyJson + ",""profileId"":" + options.profileId.toStr()
-        end if
-        if options.rootFolder <> invalid and options.rootFolder <> ""
-            requestBodyJson = requestBodyJson + ",""rootFolder"":""" + options.rootFolder + """"
-        end if
-    end if
-
-    ' Handle seasons parameter for TV shows
-    if mediaType = "tv"
-        if seasons <> invalid and seasons.count() > 0
-            requestBodyJson = requestBodyJson + ",""seasons"":["
-            for i = 0 to seasons.count() - 1
-                if i > 0 then requestBodyJson = requestBodyJson + ","
-                seasonNum = seasons[i]
-                requestBodyJson = requestBodyJson + seasonNum.toStr()
-            end for
-            requestBodyJson = requestBodyJson + "]"
-        else
-            requestBodyJson = requestBodyJson + ",""seasons"":""all"""
-        end if
-    end if
-
-    requestBodyJson = requestBodyJson + "}"
-
-
-    endpoint = "/api/v1/request"
-    requestBody = ParseJson(requestBodyJson)
-
-    m.apiTask.request = {
-        method: "POST",
-        endpoint: endpoint,
-        body: requestBody
-    }
-
-    m.apiTask.unobserveField("response")
-    m.apiTask.observeField("response", "onRequestSubmitted")
-    m.apiTask.control = "RUN"
-end sub
-
-sub onRequestSubmitted(event as object)
-    response = event.getData()
-    HideLoading()
-
-    qualityLabel = "HD"
-    if m.lastRequestIs4k = true then qualityLabel = "4K"
-
-    if response.success
-        if m.pending4kAfterHD = true
-            m.pending4kAfterHD = false
-            if m.pending4kUseAdvancedOptions = true
-                m.pending4kUseAdvancedOptions = false
-                SubmitRequestWithAdvancedOptions(true)
-            else
-                SubmitRequest(true)
-            end if
-            return
-        end if
-
-        ShowSuccessAndReload(qualityLabel + " request submitted successfully!")
-    else
-        m.pending4kAfterHD = false
-        m.pending4kUseAdvancedOptions = false
-
-        errorMsg = "Failed to submit " + qualityLabel + " request"
-        errorTitle = "Request Failed"
-
-        ' Check if response has error field (from API task)
-        if response.error <> invalid
-            errType = type(response.error)
-            if errType = "roString" or errType = "String"
-                if response.error <> ""
-                    errorMsg = response.error
-                end if
-            end if
-        end if
-
-        ' Handle specific error codes
-        if response.statusCode = 403
-            ' Simplified 403 permission error message (single line for better dialog display)
-            errorTitle = "Permission Denied"
-            errorMsg = "You don't have permission to request " + qualityLabel + " content. Contact your Seerr administrator to adjust your permissions."
-        else if response.statusCode = 400
-            errorTitle = "Invalid Request"
-            errorMsg = "Invalid request. Please check your Seerr configuration."
-        else
-            ' Parse the rawResponse for error message
-            if response.rawResponse <> invalid and response.rawResponse <> ""
-                jsonError = ParseJson(response.rawResponse)
-                if jsonError <> invalid
-                    ' Safely extract error message as string
-                    if jsonError.message <> invalid
-                        msgType = type(jsonError.message)
-                        if msgType = "roString" or msgType = "String"
-                            if jsonError.message <> ""
-                                errorMsg = errorMsg + ": " + jsonError.message
-                            end if
-                        end if
-                    else if jsonError.error <> invalid
-                        errType = type(jsonError.error)
-                        if errType = "roString" or errType = "String"
-                            if jsonError.error <> ""
-                                errorMsg = errorMsg + ": " + jsonError.error
-                            end if
-                        end if
-                    end if
-                end if
-            end if
-        end if
-
-        ShowMessage(errorTitle, errorMsg)
-    end if
-end sub
-
-sub ShowMessage(title as string, message as dynamic)
-    ' Initialize with a guaranteed string literal
-    defaultMsg = "An error occurred"
-    safeMessage = defaultMsg
-
-    ' Ensure title is a valid string
-    safeTitle = "Error"
-    if title <> invalid
-        titleType = type(title)
-        if titleType = "roString" or titleType = "String"
-            if title <> ""
-                safeTitle = title
-            end if
-        end if
-    end if
-
-    ' Try to convert message to string
-    if message <> invalid
-        msgType = type(message)
-        if msgType = "roString" or msgType = "String"
-            ' Already a string - use directly but ensure not empty
-            if message <> ""
-                safeMessage = message
-            end if
-        else if msgType = "roInt" or msgType = "roInteger" or msgType = "Integer"
-            ' Convert integer to string
-            tempStr = Str(message).Trim()
-            if tempStr <> ""
-                safeMessage = tempStr
-            end if
-        else if msgType = "roBoolean" or msgType = "Boolean"
-            ' Convert boolean to string
-            if message = true
-                safeMessage = "true"
-            else
-                safeMessage = "false"
-            end if
-        end if
-    end if
-
-    ' Create and show dialog with safe values
-    dialog = CreateObject("roSGNode", "StandardMessageDialog")
-    if dialog <> invalid
-        ' Set properties individually with explicit string values
-        dialog.title = safeTitle + "" ' Force string concatenation
-        dialog.message = [safeMessage + ""] ' StandardMessageDialog expects an array of strings
-        dialog.buttons = ["OK"]
-        dialog.observeField("buttonSelected", "onMessageDialogClosed")
-
-        scene = m.top.getScene()
-        if scene <> invalid
-            m.messageDialog = dialog
-            scene.dialog = dialog
-        end if
-    end if
+sub ShowMessage(title as string, message as string)
+    ShowDialog(title, message, [tr("OK")], "onMessageDialogClosed")
 end sub
 
 sub onMessageDialogClosed(_event as object)
-    scene = m.top.getScene()
-    if scene <> invalid
-        scene.dialog = invalid
-    end if
-
-    if m.messageDialog <> invalid
-        m.messageDialog.unobserveField("buttonSelected")
-        m.messageDialog = invalid
-    end if
+    CloseDialog()
 end sub
 
 sub ShowSuccessAndReload(message as string)
-    dialog = CreateObject("roSGNode", "StandardMessageDialog")
-    if dialog <> invalid
-        dialog.title = "Success"
-        dialog.message = [message]
-        dialog.buttons = ["OK"]
-        dialog.observeField("buttonSelected", "onSuccessDialogClosed")
-
-        scene = m.top.getScene()
-        if scene <> invalid
-            m.successDialog = dialog
-            scene.dialog = dialog
-        end if
-    end if
+    ShowDialog(tr("Success"), message, [tr("OK")], "onSuccessDialogClosed")
 end sub
 
 sub onSuccessDialogClosed(_event as object)
-    scene = m.top.getScene()
-    if scene <> invalid
-        scene.dialog = invalid
-    end if
-
-    if m.successDialog <> invalid
-        m.successDialog.unobserveField("buttonSelected")
-        m.successDialog = invalid
-    end if
-
+    CloseDialog()
     m.top.requestCompleted = true
 end sub

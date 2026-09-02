@@ -1,0 +1,668 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
+import "pkg:/source/utils/trackDialog.bs"
+
+' Seerr media status: 4 partly available, 5 available
+const SEASON_AVAILABLE_FROM = 4
+const STATUS_AVAILABLE = 5
+' Seerr request status: 3 declined, 5 failed
+const REQUEST_DECLINED = 3
+const REQUEST_FAILED = 5
+' The TMDB keyword Seerr reads to tell anime apart
+const ANIME_KEYWORD_ID = 210024
+
+sub init()
+    m.rowMenu = m.top.findNode("rowMenu")
+    m.rowMenu.observeField("itemSelected", "onRowSelected")
+
+    m.parts = {
+        panel: m.top.findNode("panel"),
+        panelBg: m.top.findNode("panelBg"),
+        panelBorder: m.top.findNode("panelBorder"),
+        title: m.top.findNode("title"),
+        titleRule: m.top.findNode("titleRule"),
+        list: m.rowMenu
+    }
+
+    m.actions = []
+    m.advancedLoading = false
+    m.quota = invalid
+
+    m.quotaTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.serversTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.serverDetailTask = CreateObject("roSGNode", "SeerrAPITask")
+end sub
+
+sub showDialog()
+    m.selected4k = m.top.is4k
+    m.allSeasons = true
+    m.selectedSeasons = []
+    m.advancedOpen = false
+    m.servers = invalid
+    clearAdvancedSelection()
+
+    loadQuota()
+    if m.top.canRequestAdvanced then loadServers()
+
+    rebuild(0)
+    m.top.visible = true
+    m.rowMenu.setFocus(true)
+end sub
+
+function isTv() as boolean
+    return isStringEqual(m.top.mediaType, "tv")
+end function
+
+' ===== The rows =====
+
+sub rebuild(focusIndex as integer)
+    kind = isTv() ? tr("Series") : tr("Movie")
+    showsToggle = m.top.qualityToggle and m.top.canRequest4k
+    if m.selected4k and not showsToggle
+        m.parts.title.text = Substitute(tr("Request 4K ^0"), kind)
+    else
+        m.parts.title.text = Substitute(tr("Request ^0"), kind)
+    end if
+
+    content = CreateObject("roSGNode", "ContentNode")
+    m.actions = []
+
+    addContinuingRow(content)
+    if showsToggle then addRow(content, tr("4K"), "", "4k", m.selected4k, false, false)
+    addSeasonRows(content)
+    addAdvancedRows(content)
+
+    blocked = quotaBlocked()
+    addQuotaRow(content, blocked)
+    addRow(content, tr("Submit Request"), "", blocked ? "" : "submit", false, blocked, true)
+    addRow(content, tr("Cancel"), "", "cancel", false, true, false)
+
+    trackDialog.Layout(m.parts, content.getChildCount())
+
+    m.rowMenu.content = content
+    if focusIndex >= 0 and focusIndex < content.getChildCount() then m.rowMenu.jumpToItem = focusIndex
+end sub
+
+sub addRow(content as object, title as string, description as string, action as string, selected as boolean, dimmed as boolean, dividerAbove as boolean)
+    row = content.CreateChild("SeerrRequestListData")
+    row.title = title
+    row.description = description
+    row.action = action
+    row.selected = selected
+    row.dimmed = dimmed
+    row.dividerAbove = dividerAbove
+    row.rowHeight = trackDialog.RowHeight()
+    row.noIndicator = (action = "")
+
+    m.actions.push(action)
+end sub
+
+' ===== Continuing series =====
+
+sub addContinuingRow(content as object)
+    if not isTv() then return
+    if not seriesIsContinuing() then return
+    if not trackIsFullyAvailable() then return
+
+    addRow(content, tr("Series Continuing"), tr("Future seasons can be requested"), "", false, true, false)
+end sub
+
+function seriesIsContinuing() as boolean
+    status = chainLookupReturn(m.top.details, "status", "")
+    if not isValidAndNotEmpty(status) then return false
+    return isStringEqual(status, "Returning Series") or isStringEqual(status, "In Production")
+end function
+
+function trackIsFullyAvailable() as boolean
+    mediaInfo = chainLookupReturn(m.top.details, "mediaInfo", invalid)
+    if not isValid(mediaInfo) then return false
+
+    status = m.selected4k ? mediaInfo.status4k : mediaInfo.status
+    return isValid(status) and status = STATUS_AVAILABLE
+end function
+
+' ===== Seasons =====
+
+sub addSeasonRows(content as object)
+    if not isTv() then return
+
+    addRow(content, tr("All Seasons"), "", "allSeasons", m.allSeasons, false, true)
+    if m.allSeasons then return
+
+    taken = takenSeasons()
+    available = availableSeasons()
+
+    for each number in seasonNumbers()
+        isTaken = isInList(taken, number)
+
+        detail = ""
+        if isInList(available, number)
+            detail = tr("Available")
+        else if isTaken
+            detail = tr("Already requested")
+        end if
+
+        addRow(content, Substitute(tr("Season ^0"), number.toStr()), detail, isTaken ? "" : `season:${number}`, isInList(m.selectedSeasons, number), isTaken, false)
+    end for
+end sub
+
+' The seasons Seerr reports, specials left out. A payload with no season list still
+' has the count, so the numbers are filled in from that instead.
+function seasonNumbers() as object
+    numbers = []
+    seasons = chainLookupReturn(m.top.details, "seasons", invalid)
+
+    if isValid(seasons) and type(seasons) = "roArray"
+        for each season in seasons
+            number = chainLookupReturn(season, "seasonNumber", invalid)
+            if isValid(number) and number > 0 then numbers.push(number)
+        end for
+    end if
+
+    if numbers.count() > 0 then return numbers
+
+    total = chainLookupReturn(m.top.details, "numberOfSeasons", 0)
+    if not isValid(total) then total = 0
+    for i = 1 to total
+        numbers.push(i)
+    end for
+
+    return numbers
+end function
+
+' Seasons already asked for on this track, plus the ones already there
+function takenSeasons() as object
+    taken = []
+    for each number in requestedSeasons()
+        if not isInList(taken, number) then taken.push(number)
+    end for
+    for each number in availableSeasons()
+        if not isInList(taken, number) then taken.push(number)
+    end for
+    return taken
+end function
+
+function requestedSeasons() as object
+    numbers = []
+    requests = chainLookupReturn(m.top.details, "mediaInfo.requests", invalid)
+    if not isValid(requests) or type(requests) <> "roArray" then return numbers
+
+    for each request in requests
+        if (request.is4k = true) <> m.selected4k then continue for
+
+        status = chainLookupReturn(request, "status", invalid)
+        if isValid(status) and (status = REQUEST_DECLINED or status = REQUEST_FAILED) then continue for
+
+        seasons = chainLookupReturn(request, "seasons", invalid)
+        if not isValid(seasons) or type(seasons) <> "roArray" then continue for
+
+        for each season in seasons
+            number = chainLookupReturn(season, "seasonNumber", invalid)
+            if isValid(number) and not isInList(numbers, number) then numbers.push(number)
+        end for
+    end for
+
+    return numbers
+end function
+
+function availableSeasons() as object
+    numbers = []
+    seasons = chainLookupReturn(m.top.details, "mediaInfo.seasons", invalid)
+    if not isValid(seasons) or type(seasons) <> "roArray" then return numbers
+
+    for each season in seasons
+        number = chainLookupReturn(season, "seasonNumber", invalid)
+        if not isValid(number) then continue for
+
+        status = m.selected4k ? chainLookupReturn(season, "status4k", invalid) : chainLookupReturn(season, "status", invalid)
+        if isValid(status) and status >= SEASON_AVAILABLE_FROM and not isInList(numbers, number)
+            numbers.push(number)
+        end if
+    end for
+
+    return numbers
+end function
+
+function isInList(list as object, value as integer) as boolean
+    for each entry in list
+        if entry = value then return true
+    end for
+    return false
+end function
+
+' ===== Advanced options =====
+
+sub addAdvancedRows(content as object)
+    if not m.top.canRequestAdvanced then return
+
+    addRow(content, tr("Advanced Options"), "", "advanced", m.advancedOpen, false, true)
+    if not m.advancedOpen then return
+
+    if m.advancedLoading
+        addRow(content, tr("Loading..."), "", "", false, true, false)
+        return
+    end if
+
+    if not isValid(m.servers) or m.servers.count() = 0
+        addRow(content, tr("No service servers configured"), "", "", false, true, false)
+        return
+    end if
+
+    addRow(content, tr("Server"), serverLabel(), "server", false, false, false)
+    addRow(content, tr("Quality Profile"), profileLabel(), "profile", false, false, false)
+    addRow(content, tr("Root Folder"), rootFolderLabel(), "rootFolder", false, false, false)
+end sub
+
+function serverLabel() as string
+    if not isValid(m.selectedServer) then return tr("Default")
+    return serverName(m.selectedServer)
+end function
+
+function serverName(server as object) as string
+    name = chainLookupReturn(server, "name", "")
+    if server.is4k = true then name += " (4K)"
+    return name
+end function
+
+function profileLabel() as string
+    profiles = chainLookupReturn(m.serverDetails, "profiles", invalid)
+    if isValid(profiles) and isValid(m.selectedProfileId)
+        for each profile in profiles
+            if profile.id = m.selectedProfileId then return profile.name
+        end for
+    end if
+    return tr("Default")
+end function
+
+function rootFolderLabel() as string
+    if isValidAndNotEmpty(m.selectedRootFolder) then return m.selectedRootFolder
+    return tr("Default")
+end function
+
+sub clearAdvancedSelection()
+    m.selectedServer = invalid
+    m.selectedProfileId = invalid
+    m.selectedRootFolder = ""
+    m.serverDetails = invalid
+end sub
+
+' ===== Quota =====
+
+sub addQuotaRow(content as object, blocked as boolean)
+    detail = quotaDetail()
+    if not isValid(detail) then return
+    if quotaIsUnlimited(detail) then return
+
+    if blocked
+        addRow(content, tr("Request limit reached"), "", "", false, true, true)
+        return
+    end if
+
+    remaining = chainLookupReturn(detail, "remaining", 0)
+    limit = chainLookupReturn(detail, "limit", 0)
+    template = isTv() ? tr("^0 of ^1 season requests remaining") : tr("^0 of ^1 movie requests remaining")
+
+    addRow(content, Substitute(template, remaining.toStr(), limit.toStr()), "", "", false, true, true)
+end sub
+
+function quotaDetail() as object
+    if not isValid(m.quota) then return invalid
+    return isTv() ? m.quota.tv : m.quota.movie
+end function
+
+function quotaIsUnlimited(detail as object) as boolean
+    limit = chainLookupReturn(detail, "limit", invalid)
+    return not isValid(limit) or limit = 0
+end function
+
+' What the request would spend: one for a movie, and for a series the seasons it would take
+function seasonsNeeded() as integer
+    if not isTv() then return 1
+    if not m.allSeasons then return m.selectedSeasons.count()
+
+    total = seasonNumbers().count()
+    needed = total - takenSeasons().count()
+    if needed < 1 then needed = 1
+    return needed
+end function
+
+function quotaBlocked() as boolean
+    detail = quotaDetail()
+    if not isValid(detail) then return false
+    if quotaIsUnlimited(detail) then return false
+    if chainLookupReturn(detail, "restricted", false) = true then return true
+
+    remaining = chainLookupReturn(detail, "remaining", invalid)
+    if not isValid(remaining) then return false
+
+    return seasonsNeeded() > remaining
+end function
+
+' ===== Picking a row =====
+
+sub onRowSelected()
+    index = m.rowMenu.itemSelected
+    if index < 0 or index >= m.actions.count() then return
+
+    action = m.actions[index]
+    if action = "" then return
+
+    if action = "cancel"
+        cancelDialog()
+    else if action = "submit"
+        submit()
+    else if action = "4k"
+        toggleQuality(index)
+    else if action = "allSeasons"
+        m.allSeasons = not m.allSeasons
+        if m.allSeasons then m.selectedSeasons = []
+        rebuild(index)
+    else if action = "advanced"
+        m.advancedOpen = not m.advancedOpen
+        rebuild(index)
+    else if Left(action, 7) = "season:"
+        toggleSeason(Mid(action, 8).toInt(), index)
+    else
+        openPicker(action)
+    end if
+end sub
+
+' The track decides which seasons are still open and which server the request goes to,
+' so both are worked out again from scratch
+sub toggleQuality(index as integer)
+    m.selected4k = not m.selected4k
+    m.selectedSeasons = []
+    clearAdvancedSelection()
+    if m.top.canRequestAdvanced then applyServerDefaults()
+    rebuild(index)
+end sub
+
+sub toggleSeason(number as integer, index as integer)
+    if isInList(m.selectedSeasons, number)
+        remaining = []
+        for each entry in m.selectedSeasons
+            if entry <> number then remaining.push(entry)
+        end for
+        m.selectedSeasons = remaining
+    else
+        m.selectedSeasons.push(number)
+    end if
+
+    rebuild(index)
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    ' A dismissed dialog can still hold focus, and swallowing keys there would strand the screen
+    if not m.top.visible then return false
+
+    if key = KeyCode.BACK
+        cancelDialog()
+        return true
+    end if
+
+    if key = KeyCode.UP or key = KeyCode.DOWN or key = KeyCode.OK
+        if not m.rowMenu.isInFocusChain() then m.rowMenu.setFocus(true)
+        return true
+    end if
+
+    return false
+end function
+
+sub cancelDialog()
+    releaseFocus()
+    m.top.wasCancelled = true
+end sub
+
+' The owner takes this node out of the scene as soon as it is told, so focus moves first
+sub releaseFocus()
+    m.top.visible = false
+    if isValid(m.top.returnFocus) then m.top.returnFocus.setFocus(true)
+end sub
+
+sub submit()
+    if quotaBlocked() then return
+
+    seasons = invalid
+    if isTv() and not m.allSeasons
+        if m.selectedSeasons.count() = 0 then return
+        seasons = m.selectedSeasons
+        seasons.sort()
+    end if
+
+    result = {
+        is4k: m.selected4k,
+        seasons: seasons
+    }
+    if isValid(m.selectedServer) then result.serverId = m.selectedServer.id
+    if isValid(m.selectedProfileId) then result.profileId = m.selectedProfileId
+    if isValidAndNotEmpty(m.selectedRootFolder) then result.rootFolder = m.selectedRootFolder
+
+    releaseFocus()
+    m.top.result = result
+    m.top.submitted = true
+end sub
+
+' ===== Option pickers =====
+
+sub openPicker(key as string)
+    options = pickerOptions(key)
+    if options.count() = 0 then return
+
+    labels = []
+    for each option in options
+        labels.push(option.label)
+    end for
+
+    m.pickerKey = key
+    m.pickerOptions = options
+
+    m.picker = CreateObject("roSGNode", "SeerrMessageDialog")
+    m.picker.dialogTitle = pickerTitle(key)
+    m.picker.options = labels
+    m.picker.returnFocus = m.rowMenu
+    m.picker.observeField("optionSelected", "onPickerResponse")
+
+    m.top.getScene().appendChild(m.picker)
+    m.picker.callFunc("showDialog")
+end sub
+
+function pickerTitle(key as string) as string
+    if key = "server" then return tr("Server")
+    if key = "profile" then return tr("Quality Profile")
+    return tr("Root Folder")
+end function
+
+function pickerOptions(key as string) as object
+    options = []
+
+    if key = "server"
+        if not isValid(m.servers) then return options
+        for each server in m.servers
+            options.push({ label: serverName(server), value: server })
+        end for
+        return options
+    end if
+
+    if key = "profile"
+        profiles = chainLookupReturn(m.serverDetails, "profiles", invalid)
+        if not isValid(profiles) then return options
+        for each profile in profiles
+            options.push({ label: profile.name, value: profile.id })
+        end for
+        return options
+    end if
+
+    folders = chainLookupReturn(m.serverDetails, "rootFolders", invalid)
+    if not isValid(folders) then return options
+    for each folder in folders
+        options.push({ label: folder.path, value: folder.path })
+    end for
+    return options
+end function
+
+sub onPickerResponse(event as object)
+    index = event.getData()
+
+    m.picker.unobserveField("optionSelected")
+    m.top.getScene().removeChild(m.picker)
+    m.picker = invalid
+
+    if index >= 0 and index < m.pickerOptions.count()
+        option = m.pickerOptions[index]
+        if m.pickerKey = "server"
+            clearAdvancedSelection()
+            m.selectedServer = option.value
+            loadServerDetails()
+        else if m.pickerKey = "profile"
+            m.selectedProfileId = option.value
+        else
+            m.selectedRootFolder = option.value
+        end if
+    end if
+
+    rebuild(m.rowMenu.itemFocused)
+    m.rowMenu.setFocus(true)
+end sub
+
+' ===== Loading =====
+
+sub loadQuota()
+    if m.top.seerrUserId <= 0 then return
+
+    m.quotaTask.request = {
+        method: "GET",
+        endpoint: `/api/v1/user/${m.top.seerrUserId.toStr()}/quota`
+    }
+    m.quotaTask.unobserveField("response")
+    m.quotaTask.observeField("response", "onQuotaLoaded")
+    m.quotaTask.control = TaskControl.RUN
+end sub
+
+sub onQuotaLoaded(event as object)
+    response = event.getData()
+    if not isValid(response) or not response.success or not isValid(response.data) then return
+
+    m.quota = response.data
+    rebuild(m.rowMenu.itemFocused)
+end sub
+
+sub loadServers()
+    m.advancedLoading = true
+
+    m.serversTask.request = {
+        method: "GET",
+        endpoint: `/api/v1/service/${serviceName()}`
+    }
+    m.serversTask.unobserveField("response")
+    m.serversTask.observeField("response", "onServersLoaded")
+    m.serversTask.control = TaskControl.RUN
+end sub
+
+sub onServersLoaded(event as object)
+    response = event.getData()
+    m.advancedLoading = false
+
+    if isValid(response) and response.success and isValid(response.data) and type(response.data) = "roArray"
+        m.servers = response.data
+        applyServerDefaults()
+    else
+        m.servers = []
+    end if
+
+    rebuild(m.rowMenu.itemFocused)
+end sub
+
+' Seerr keeps films and series on separate services
+function serviceName() as string
+    return isTv() ? "sonarr" : "radarr"
+end function
+
+sub applyServerDefaults()
+    if not isValid(m.servers) or m.servers.count() = 0 then return
+
+    m.selectedServer = defaultServer()
+    loadServerDetails()
+end sub
+
+' The server Seerr would have picked itself: the default for this track, else any
+' server on this track, else whatever is first
+function defaultServer() as object
+    for each server in m.servers
+        if (server.is4k = true) = m.selected4k and server.isDefault = true then return server
+    end for
+
+    for each server in m.servers
+        if (server.is4k = true) = m.selected4k then return server
+    end for
+
+    return m.servers[0]
+end function
+
+sub loadServerDetails()
+    if not isValid(m.selectedServer) then return
+
+    m.serverDetailTask.request = {
+        method: "GET",
+        endpoint: `/api/v1/service/${serviceName()}/${m.selectedServer.id.toStr()}`
+    }
+    m.serverDetailTask.unobserveField("response")
+    m.serverDetailTask.observeField("response", "onServerDetailsLoaded")
+    m.serverDetailTask.control = TaskControl.RUN
+end sub
+
+sub onServerDetailsLoaded(event as object)
+    response = event.getData()
+    if not isValid(response) or not response.success or not isValid(response.data) then return
+
+    m.serverDetails = response.data
+    applyProfileAndFolderDefaults()
+    rebuild(m.rowMenu.itemFocused)
+end sub
+
+' Anime gets its own profile and folder on the Seerr side, so the title decides which
+sub applyProfileAndFolderDefaults()
+    server = m.selectedServer
+    if not isValid(server) then return
+
+    anime = titleIsAnime()
+
+    if not isValid(m.selectedProfileId)
+        profileId = invalid
+        if anime then profileId = chainLookupReturn(server, "activeAnimeProfileId", invalid)
+        if not isValid(profileId) then profileId = chainLookupReturn(server, "activeProfileId", invalid)
+        m.selectedProfileId = profileId
+    end if
+
+    if isValidAndNotEmpty(m.selectedRootFolder) then return
+
+    directory = ""
+    if anime then directory = chainLookupReturn(server, "activeAnimeDirectory", "")
+    if not isValidAndNotEmpty(directory) then directory = chainLookupReturn(server, "activeDirectory", "")
+
+    folders = chainLookupReturn(m.serverDetails, "rootFolders", invalid)
+    if not isValid(folders) or folders.count() = 0 then return
+
+    for each folder in folders
+        if isStringEqual(folder.path, directory)
+            m.selectedRootFolder = folder.path
+            return
+        end if
+    end for
+
+    m.selectedRootFolder = folders[0].path
+end sub
+
+function titleIsAnime() as boolean
+    keywords = chainLookupReturn(m.top.details, "keywords", invalid)
+    if not isValid(keywords) or type(keywords) <> "roArray" then return false
+
+    for each keyword in keywords
+        if chainLookupReturn(keyword, "id", 0) = ANIME_KEYWORD_ID then return true
+    end for
+
+    return false
+end function

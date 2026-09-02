@@ -29,6 +29,8 @@ end function
 ' @param mediaType - "movie" or "tv"
 ' @returns True if user can request 4K for this media type
 function CanRequest4K(permissions as integer, mediaType as string) as boolean
+    if not Seerr4kEnabled(mediaType) then return false
+
     ' Admin can request anything
     if (permissions and SEERR_PERMISSION_ADMIN) <> 0
         return true
@@ -48,6 +50,46 @@ function CanRequest4K(permissions as integer, mediaType as string) as boolean
 
     return false
 end function
+
+' Whether the server has 4K switched on for this media type. Seerr leaves the flag out on
+' older builds, so an answer that hasn't arrived or doesn't carry it counts as on.
+function Seerr4kEnabled(mediaType as string) as boolean
+    publicSettings = invalid
+    if m.global <> invalid then publicSettings = m.global.seerrPublicSettings
+    if publicSettings = invalid then return true
+
+    if mediaType = "tv"
+        flag = publicSettings.series4kEnabled
+    else
+        flag = publicSettings.movie4kEnabled
+    end if
+
+    if flag = invalid then return true
+    return flag = true
+end function
+
+' Fetched once a session, since it only changes when the server is reconfigured
+sub EnsureSeerrPublicSettings()
+    if m.global = invalid then return
+    if m.global.seerrPublicSettings <> invalid then return
+    if m.seerrPublicSettingsTask <> invalid then return
+
+    m.seerrPublicSettingsTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.seerrPublicSettingsTask.request = {
+        method: "GET",
+        endpoint: "/api/v1/settings/public"
+    }
+    m.seerrPublicSettingsTask.observeField("response", "onSeerrPublicSettingsLoaded")
+    m.seerrPublicSettingsTask.control = "RUN"
+end sub
+
+sub onSeerrPublicSettingsLoaded(event as object)
+    response = event.getData()
+    m.seerrPublicSettingsTask = invalid
+
+    if response = invalid or response.success <> true or response.data = invalid then return
+    m.global.addFields({ seerrPublicSettings: response.data })
+end sub
 
 ' Check if user has advanced request permission (can select server, profile, root folder)
 ' @param permissions - User's permission bitmask
@@ -77,6 +119,14 @@ function GetCurrentJellyfinUserId() as string
         return m.global.session.user.id
     end if
     return ""
+end function
+
+' The Seerr account behind the signed-in Jellyfin user, which the quota is keyed by
+function CurrentSeerrUserId() as integer
+    userId = GetCurrentJellyfinUserId()
+    if userId = "" then return 0
+
+    return GetSeerrUserConfig(userId).seerrUserId
 end function
 
 ' Get the last Jellyfin user ID that used Seerr
@@ -686,6 +736,21 @@ function UrlEncode(str as string) as string
         end if
     end for
     return encoded
+end function
+
+' Seerr wants camelCase keys, and an associative array hands its keys back lowercased once it
+' has been through a node field. Building from ordered pairs keeps the case the caller wrote.
+function SeerrJsonFromPairs(pairs as object) as string
+    json = "{"
+
+    for i = 0 to pairs.Count() - 1
+        if i > 0
+            json = json + ","
+        end if
+        json = json + """" + pairs[i].key + """:" + SeerrFormatJsonValue(pairs[i].value)
+    end for
+
+    return json + "}"
 end function
 
 function SeerrFormatJson(obj as object) as string
