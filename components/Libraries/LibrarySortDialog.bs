@@ -1,0 +1,469 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/libraryPanel.bs"
+import "pkg:/source/utils/trackDialog.bs"
+import "pkg:/source/utils/librarySorts.bs"
+import "pkg:/source/utils/libraryFilters.bs"
+import "pkg:/source/enums/KeyCode.bs"
+
+' How many values a facet opens on, since a tag list can run to thousands of entries and
+' each one costs a focusable row
+const FACET_PAGE = 50
+const SORT_SECTION = "sort"
+
+sub init()
+    m.rowMenu = m.top.findNode("rowMenu")
+
+    title = m.top.findNode("title")
+    title.text = tr("Sort & Filter")
+
+    ' Groups open and close as the viewer works, so the panel is held at full height
+    ' rather than resizing under them
+    trackDialog.Layout({
+        panel: m.top.findNode("panel"),
+        panelBg: m.top.findNode("panelBg"),
+        panelBorder: m.top.findNode("panelBorder"),
+        title: title,
+        titleRule: m.top.findNode("titleRule"),
+        list: m.rowMenu
+    }, libraryPanel.FullHeightRows(), libraryPanel.ROW_HEIGHT)
+
+    m.expanded = SORT_SECTION
+    m.facetLimit = FACET_PAGE
+end sub
+
+sub showDialog()
+    m.working = m.top.state
+    m.expanded = SORT_SECTION
+    m.facetLimit = FACET_PAGE
+
+    buildRows()
+    m.top.visible = true
+
+    ' Sorting is what the dialog is opened for most of the time, so it opens on the first
+    ' sort row rather than on the heading above it
+    m.rowMenu.jumpToItem = firstRowIn(SORT_SECTION)
+    m.rowMenu.setFocus(true)
+end sub
+
+' The dialog is a plain group, so focus handed to it would sit above the list rather than
+' on it and the arrow keys would go nowhere
+sub focusDialog()
+    m.rowMenu.setFocus(true)
+end sub
+
+function firstRowIn(section as string) as integer
+    rows = m.rowMenu.content
+    for i = 0 to rows.getChildCount() - 1
+        row = rows.getChild(i)
+        if isStringEqual(row.section, section) and row.kind <> "header" then return i
+    end for
+    return 0
+end function
+
+function chosenLabel(options as object, value as dynamic) as string
+    if not isValidAndNotEmpty(value) or isStringEqual(value, "all") then return ""
+    for each option in options
+        if isStringEqual(option.value, value) then return option.label
+    end for
+    return ""
+end function
+
+function countLabel(chosen as object) as string
+    if not isValidAndNotEmpty(chosen) then return ""
+    return chosen.count().toStr()
+end function
+
+function facetOptions(values as dynamic) as object
+    options = []
+    if not isValidAndNotEmpty(values) then return options
+
+    for each entry in values
+        if type(entry) = "roAssociativeArray"
+            options.push({ value: entry.value, label: entry.name })
+        else
+            options.push({ value: toString(entry), label: toString(entry) })
+        end if
+    end for
+    return options
+end function
+
+' Every group the dialog can show, in the order the other clients show them. The View
+' group leads because it is what decides between a grid of items and a grid of genres,
+' and nothing else on the screen offers that.
+function buildSections() as object
+    context = m.top.context
+    filters = m.working.filters
+    sections = []
+
+    if isValidAndNotEmpty(context.views) and context.views.count() > 1
+        views = []
+        for each view in context.views
+            views.push({ value: view.key, label: view.label })
+        end for
+        sections.push({
+            key: "view",
+            title: tr("View"),
+            kind: "radio",
+            options: views,
+            selected: m.working.view,
+            summary: chosenLabel(views, m.working.view)
+        })
+    end if
+
+    sorts = []
+    for each option in librarySorts.Options(context.isMusic = true, context.isMyList = true)
+        if option.seriesOnly <> true or context.isSeries = true then sorts.push(option)
+    end for
+
+    ' A grid of genres has nothing to rank but its own names
+    if context.namesOnly = true then sorts = [sorts[0]]
+    sections.push({
+        key: SORT_SECTION,
+        title: tr("Sort By"),
+        kind: "radio",
+        options: sorts,
+        selected: m.working.sortKey,
+        summary: chosenLabel(sorts, m.working.sortKey),
+        sorted: true
+    })
+
+    sections.push({
+        key: "favorites",
+        title: tr("Filters"),
+        kind: "check",
+        options: [{ value: "favorites", label: tr("Favorites Only") }],
+        selected: filters.favorites = true ? ["favorites"] : [],
+        summary: filters.favorites = true ? tr("Favorites") : ""
+    })
+
+    played = [
+        { value: "all", label: tr("All") },
+        { value: "played", label: tr("Watched") },
+        { value: "unplayed", label: tr("Unwatched") },
+        { value: "resumable", label: tr("In Progress") }
+    ]
+    sections.push({
+        key: "played",
+        title: tr("Played Status"),
+        kind: "radio",
+        options: played,
+        selected: filters.played,
+        summary: chosenLabel(played, filters.played)
+    })
+
+    rated = [
+        { value: "all", label: tr("All") },
+        { value: "liked", label: tr("Liked") },
+        { value: "disliked", label: tr("Disliked") }
+    ]
+    sections.push({
+        key: "rated",
+        title: tr("My Rating"),
+        kind: "radio",
+        options: rated,
+        selected: filters.rated,
+        summary: chosenLabel(rated, filters.rated)
+    })
+
+    if context.isSeries = true
+        seriesStatus = [
+            { value: "all", label: tr("All") },
+            { value: "Continuing", label: tr("Continuing") },
+            { value: "Ended", label: tr("Ended") },
+            { value: "Unreleased", label: tr("Unreleased") }
+        ]
+        sections.push({
+            key: "seriesStatus",
+            title: tr("Series Status"),
+            kind: "radio",
+            options: seriesStatus,
+            selected: filters.seriesStatus,
+            summary: chosenLabel(seriesStatus, filters.seriesStatus)
+        })
+    end if
+
+    if context.showVideoFilters = true
+        sections.push({
+            key: "features",
+            title: tr("Features"),
+            kind: "check",
+            options: [
+                { value: "HasSubtitles", label: tr("Subtitles") },
+                { value: "HasTrailer", label: tr("Trailers") },
+                { value: "HasSpecialFeature", label: tr("Extras") },
+                { value: "HasThemeSong", label: tr("Theme Songs") },
+                { value: "HasThemeVideo", label: tr("Theme Videos") }
+            ],
+            selected: filters.features,
+            summary: countLabel(filters.features)
+        })
+
+        sections.push({
+            key: "quality",
+            title: tr("Quality"),
+            kind: "check",
+            options: [
+                { value: "sd", label: tr("SD") },
+                { value: "hd", label: tr("HD") },
+                { value: "uhd", label: tr("4K") },
+                { value: "threeD", label: tr("3D") }
+            ],
+            selected: filters.quality,
+            summary: countLabel(filters.quality)
+        })
+
+        sections.push({
+            key: "videoSources",
+            title: tr("Source"),
+            kind: "check",
+            options: [
+                { value: "Dvd", label: tr("DVD") },
+                { value: "BluRay", label: tr("Blu-ray") },
+                { value: "Iso", label: tr("ISO") }
+            ],
+            selected: filters.videoSources,
+            summary: countLabel(filters.videoSources)
+        })
+    end if
+
+    facets = m.top.facets
+    if isValid(facets)
+        addFacet(sections, "genres", tr("Genres"), facets.genres, filters.genres)
+        addFacet(sections, "ratings", tr("Parental Rating"), facets.officialRatings, filters.ratings)
+        addFacet(sections, "tags", tr("Tags"), facets.tags, filters.tags)
+        addFacet(sections, "years", tr("Years"), facets.years, filters.years)
+        addFacet(sections, "audioLanguages", tr("Audio Language"), facets.audioLanguages, filters.audioLanguages)
+        addFacet(sections, "subtitleLanguages", tr("Subtitle Language"), facets.subtitleLanguages, filters.subtitleLanguages)
+    end if
+
+    return sections
+end function
+
+' A group the library holds no values for is left out entirely
+sub addFacet(sections as object, key as string, title as string, values as dynamic, selected as dynamic)
+    options = facetOptions(values)
+    if options.count() = 0 then return
+
+    sections.push({
+        key: key,
+        title: title,
+        kind: "check",
+        options: options,
+        selected: isValid(selected) ? selected : [],
+        summary: countLabel(selected),
+        facet: true
+    })
+end sub
+
+sub buildRows()
+    content = createSGNode("ContentNode")
+    first = true
+
+    for each section in buildSections()
+        row = content.createChild("LibraryPanelRowData")
+        row.kind = "header"
+        row.section = section.key
+        row.title = section.title
+        row.summary = section.summary
+        row.expanded = isStringEqual(section.key, m.expanded)
+        row.ruleAbove = not first
+        first = false
+
+        if row.expanded then addSectionBody(content, section)
+    end for
+
+    if not libraryFilters.IsEmpty(m.working.filters)
+        row = content.createChild("LibraryPanelRowData")
+        row.kind = "action"
+        row.section = "clear"
+        row.title = tr("Clear Filters")
+        row.ruleAbove = true
+    end if
+
+    m.rowMenu.content = content
+end sub
+
+sub addSectionBody(content as object, section as object)
+    options = section.options
+
+    ' Anything already picked stays on screen however far down it sits, otherwise the page
+    ' limit could hide the only way to clear it
+    remaining = 0
+    if section.facet = true
+        room = m.facetLimit
+        visible = []
+        for each option in options
+            if isChosen(section, option.value)
+                visible.push(option)
+            else if room > 0
+                visible.push(option)
+                room -= 1
+            end if
+        end for
+        remaining = options.count() - visible.count()
+        options = visible
+    end if
+
+    for each option in options
+        row = content.createChild("LibraryPanelRowData")
+        row.kind = section.kind
+        row.section = section.key
+        row.value = option.value
+        row.title = option.label
+        row.selected = isChosen(section, option.value)
+
+        ' Picking the sort already in use turns it around, so the one in use says which
+        ' way it currently runs
+        if section.sorted = true and row.selected
+            row.sortOrder = isValidAndNotEmpty(m.working.sortOrder) ? m.working.sortOrder : option.order
+        end if
+    end for
+
+    if remaining > 0
+        row = content.createChild("LibraryPanelRowData")
+        row.kind = "action"
+        row.section = section.key
+        row.value = "more"
+        row.title = Substitute(tr("Show more ({0} left)"), remaining.toStr())
+    end if
+end sub
+
+function isChosen(section as object, value as string) as boolean
+    if section.kind = "radio" then return isStringEqual(toString(section.selected), value)
+
+    if not isValidAndNotEmpty(section.selected) then return false
+    for each chosen in section.selected
+        if isStringEqual(toString(chosen), value) then return true
+    end for
+    return false
+end function
+
+sub toggleValue(key as string, value as string)
+    chosen = m.working.filters[key]
+    if not isValid(chosen) then chosen = []
+
+    kept = []
+    found = false
+    for each entry in chosen
+        if isStringEqual(toString(entry), value)
+            found = true
+        else
+            kept.push(entry)
+        end if
+    end for
+
+    if not found then kept.push(value)
+    m.working.filters[key] = kept
+end sub
+
+sub applyRow(row as object)
+    if row.kind = "header"
+        m.expanded = isStringEqual(m.expanded, row.section) ? "" : row.section
+        m.facetLimit = FACET_PAGE
+        rebuild()
+        return
+    end if
+
+    if row.kind = "action" and isStringEqual(row.value, "more")
+        m.facetLimit += FACET_PAGE
+        rebuild()
+        return
+    end if
+
+    if row.kind = "action" and isStringEqual(row.section, "clear")
+        m.working.filters = libraryFilters.EmptyState()
+        notifyScene()
+        closeDialog()
+        return
+    end if
+
+    ' The one choice groups are the whole reason the dialog was opened, so making one puts
+    ' it away. The many choice groups stay, since picking one of them is rarely the only
+    ' thing the viewer came to do.
+    if row.kind = "radio"
+        applyRadio(row)
+        notifyScene()
+        closeDialog()
+        return
+    end if
+
+    if isStringEqual(row.section, "favorites")
+        m.working.filters.favorites = not (m.working.filters.favorites = true)
+    else
+        toggleValue(row.section, row.value)
+    end if
+
+    notifyScene()
+    rebuild()
+end sub
+
+sub applyRadio(row as object)
+    if isStringEqual(row.section, "view")
+        if isStringEqual(m.working.view, row.value) then return
+        m.working.view = row.value
+        ' A different view lists different things, so nothing carried over would still
+        ' mean anything
+        m.working.sortKey = "SortName"
+        m.working.sortOrder = ""
+        m.working.filters = libraryFilters.EmptyState()
+        return
+    end if
+
+    if isStringEqual(row.section, SORT_SECTION)
+        if isStringEqual(m.working.sortKey, row.value)
+            option = librarySorts.Chosen(row.value, m.top.context.isMusic = true, m.top.context.isMyList = true)
+            current = isValidAndNotEmpty(m.working.sortOrder) ? m.working.sortOrder : option.order
+            m.working.sortOrder = isStringEqual(current, "Ascending") ? "Descending" : "Ascending"
+        else
+            m.working.sortKey = row.value
+            m.working.sortOrder = ""
+        end if
+        return
+    end if
+
+    m.working.filters[row.section] = row.value
+end sub
+
+' The list rebuilds under the cursor, so the group just opened or the row just ticked is
+' still the one in hand
+sub rebuild()
+    focused = m.rowMenu.itemFocused
+    buildRows()
+
+    last = m.rowMenu.content.getChildCount() - 1
+    if focused > last then focused = last
+    if focused < 0 then focused = 0
+    m.rowMenu.jumpToItem = focused
+    m.rowMenu.setFocus(true)
+end sub
+
+sub notifyScene()
+    m.top.applied = {
+        view: m.working.view,
+        sortKey: m.working.sortKey,
+        sortOrder: m.working.sortOrder,
+        filters: m.working.filters
+    }
+end sub
+
+sub closeDialog()
+    m.top.visible = false
+    m.top.closed = true
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if isStringEqual(key, KeyCode.BACK)
+        closeDialog()
+        return true
+    end if
+
+    if isStringEqual(key, KeyCode.OK)
+        row = m.rowMenu.content.getChild(m.rowMenu.itemFocused)
+        if isValid(row) then applyRow(row)
+        return true
+    end if
+
+    return false
+end function

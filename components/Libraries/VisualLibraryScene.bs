@@ -1,6 +1,8 @@
 
 import "pkg:/source/utils/tvKeyboard.bs"
 import "pkg:/source/utils/libraryCard.bs"
+import "pkg:/source/utils/librarySorts.bs"
+import "pkg:/source/utils/libraryFilters.bs"
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
@@ -14,6 +16,10 @@ import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/misc.bs"
 
+' The age rating and series status badges, sized around whatever they are given
+const PILL_PAD_X = 18
+const PILL_HEIGHT = 26
+
 ' Return parent collection type
 function getCollectionType() as string
     return m.top.parentItem.collectionType ?? m.top.parentItem.Type
@@ -25,7 +31,8 @@ sub setupNodes()
     m.top.showItemTitles = "showonhover"
 
     ' Grid and lists
-    m.options = m.top.findNode("options")
+    m.sortDialog = m.top.findNode("sortDialog")
+    m.settingsDialog = m.top.findNode("settingsDialog")
     m.itemGrid = m.top.findNode("itemGrid")
     m.genreGrid = m.top.findNode("genreGrid")
     m.emptyText = m.top.findNode("emptyText")
@@ -85,7 +92,11 @@ sub init()
     m.itemGrid.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
     m.genreGrid.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
 
-    m.options.observeField("visible", "onOptionsVisibleChange")
+    m.sortDialog.observeField("applied", "onSortApplied")
+    m.sortDialog.observeField("closed", "onSortClosed")
+
+    m.settingsDialog.observeField("applied", "onSettingsApplied")
+    m.settingsDialog.observeField("closed", "onSortClosed")
 
     m.loadedRows = 0
     m.loadedItems = 0
@@ -106,8 +117,9 @@ sub init()
     m.sortField = "SortName"
     m.sortAscending = true
 
-    m.filter = "All"
-    m.filterOptions = {}
+    m.sortKey = "SortName"
+    m.sortOrder = "Ascending"
+    m.filterState = libraryFilters.EmptyState()
 
     m.view = "presentation"
 
@@ -312,10 +324,9 @@ sub loadInitialItems()
     itemId = getParentItemId()
 
     m.sortField = m.global.session.user.settings["display." + itemId + ".sortField"]
-    m.filter = m.global.session.user.settings["display." + itemId + ".filter"]
-    m.filterOptions = m.global.session.user.settings["display." + itemId + ".filterOptions"]
     m.view = m.global.session.user.settings["display." + itemId + ".landing"]
     m.sortAscending = m.global.session.user.settings["display." + itemId + ".sortAscending"]
+    m.filterState = storedFilterState(itemId)
 
     ' If user has not set a preferred view for this folder, check if they've set a default view
     if not isValid(m.view)
@@ -328,19 +339,8 @@ sub loadInitialItems()
         m.view = m.global.session.user.settings[settingName]
     end if
 
-    ' Boxsets are sorted by Premiere Data by default
-    if not isValidAndNotEmpty(m.sortField)
-        if isStringEqual(getCollectionType(), ItemType.BOXSET)
-            m.sortField = "PremiereDate,SortName"
-        else if isStringEqual(getCollectionType(), ItemType.MYLIST)
-            m.sortField = "OrderAdded"
-        else
-            m.sortField = "SortName"
-        end if
-    end if
+    if not isValidAndNotEmpty(m.sortField) then m.sortField = "SortName"
 
-    if not isValidAndNotEmpty(m.filter) then m.filter = "All"
-    if not isValidAndNotEmpty(m.filterOptions) then m.filterOptions = "{}"
     if not isValidAndNotEmpty(m.view)
         if isStringEqual(m.top.mediaType, ItemType.MUSICARTIST)
             m.view = "Artists"
@@ -370,15 +370,18 @@ sub loadInitialItems()
         end if
     end if
 
-    m.filterOptions = ParseJson(m.filterOptions)
+    m.sortKey = librarySorts.KeyFor(m.sortField, isMusicLibrary(), isMyListLibrary())
+    m.sortOrder = m.sortAscending ? "Ascending" : "Descending"
 
     m.loadItemsTask.sortField = m.sortField
     m.loadItemsTask.sortAscending = m.sortAscending
-    m.loadItemsTask.filter = m.filter
-    m.loadItemsTask.filterOptions = m.filterOptions
+    m.loadItemsTask.filterState = m.filterState
+    m.folderView = settingOr(`library_folderView_${itemId}`, "off") = "on"
     m.loadItemsTask.startIndex = 0
     m.loadItemsTask.studioIds = string.EMPTY
     m.loadItemsTask.view = string.EMPTY
+    ' The task outlives a load, so anything a branch below switches off is put back first
+    m.loadItemsTask.recursive = true
     m.loadItemsTask.passToItem = {
         libraryID: getParentItemId()
     }
@@ -501,6 +504,16 @@ sub loadInitialItems()
         end if
     end if
 
+    ' Folder view lists one level at a time rather than everything underneath it, so the
+    ' folders themselves come back alongside the items
+    if m.folderView and not isValid(m.top.genreFilter) and not isValid(m.top.studioFilter)
+        m.loadItemsTask.recursive = false
+        if isValidAndNotEmpty(m.loadItemsTask.itemType)
+            m.loadItemsTask.itemType = `${m.loadItemsTask.itemType},${ItemType.FOLDER}`
+        end if
+    end if
+
+    applyLetterNav()
     m.emptyText.visible = false
 
     showDetails = get_user_setting_bool("ui.library.showMediaDetails", true)
@@ -591,349 +604,205 @@ function defaultImageType() as string
     return "poster"
 end function
 
-function setOptions() as object
-    if isStringEqual(m.top.mediaType, ItemType.MOVIE)
-        return setMovieOptions()
+' Which grids this library can put up. Nothing in the other clients offers this, so it
+' leads the dialog rather than being dropped.
+function availableViews() as object
+    if isMusicLibrary()
+        views = [
+            { key: "Artists", label: tr("Artists") },
+            { key: "Albums", label: tr("Albums") }
+        ]
+        if not isValid(m.top.genreFilter) then views.push({ key: "Genres", label: tr("Genres") })
+        return views
     end if
 
-    if isStringEqual(m.top.mediaType, ItemType.BOXSET)
-        return setMovieOptions()
-    end if
+    views = [{ key: "presentation", label: tr("Presentation") }]
 
-    if isStringEqual(m.top.mediaType, ItemType.MYLIST)
-        return setMovieOptions()
-    end if
+    ' A genre browse, a studio browse, a boxset and a folder inside a genre are each one
+    ' grid already
+    if isValid(m.top.genreFilter) or isValid(m.top.studioFilter) then return views
+    if isValid(m.top.parentItem.parentFolder) then return views
+    if inArray([ItemType.BOXSET, CollectionType.BOXSETS, ItemType.MYLIST], getCollectionType()) then return views
 
-    if isStringEqual(m.top.mediaType, ItemType.PLAYLIST)
-        return setMovieOptions()
-    end if
-
-    if isStringEqual(m.top.mediaType, ItemType.FOLDER)
-        return setMovieOptions()
-    end if
-
+    views.push({ key: "Genres", label: tr("Genres") })
     if isStringEqual(m.top.mediaType, ItemType.SERIES)
-        return setSeriesOptions()
+        views.push({ key: "Episodes", label: tr("Episodes") })
     end if
 
-    if isStringEqual(m.top.mediaType, ItemType.MUSICVIDEO)
-        return setMusicVideoOptions()
-    end if
-
-    if inArray([ItemType.PHOTO, ItemType.PHOTOALBUM], m.top.mediaType)
-        return setPhotoOptions()
-    end if
-
-    if isStringEqual(m.top.mediaType, ItemType.MUSICARTIST)
-        return setMusicOptions()
-    end if
-
-    return {
-        filter: []
-    }
+    return views
 end function
 
-' Set view, sort, and filter options
-function setMovieOptions() as object
-    options = {
-        filter: []
-    }
-
-    options.views = [
-        { "Title": tr("Presentation"), "Name": "presentation", "Track": { "description": tr("Presentation") } }
-    ]
-
-    if not isStringEqual(m.top.mediaType, ItemType.MYLIST) and not isValid(m.top.genreFilter)
-        options.views.push({ "Title": tr("Genres"), "Name": "Genres", "Track": { "description": tr("Genres") } })
-    end if
-
-    options.sort = [
-        { "Title": tr("TITLE"), "Name": "SortName", "Track": { "description": tr("TITLE") } },
-        { "Title": tr("Community Rating"), "Name": "CommunityRating,SortName", "Track": { "description": tr("Community Rating") } },
-        { "Title": tr("Critics Rating"), "Name": "CriticRating,SortName", "Track": { "description": tr("Critics Rating") } },
-        { "Title": tr("DATE_ADDED"), "Name": "DateCreated,SortName", "Track": { "description": tr("DATE_ADDED") } },
-        { "Title": tr("DATE_PLAYED"), "Name": "DatePlayed,SortName", "Track": { "description": tr("DATE_PLAYED") } },
-        { "Title": tr("Parental Rating"), "Name": "OfficialRating,SortName", "Track": { "description": tr("Parental Rating") } },
-        { "Title": tr("PLAY_COUNT"), "Name": "PlayCount,SortName", "Track": { "description": tr("PLAY_COUNT") } },
-        { "Title": tr("RELEASE_DATE"), "Name": "PremiereDate,SortName", "Track": { "description": tr("RELEASE_DATE") } },
-        { "Title": tr("RUNTIME"), "Name": "Runtime,SortName", "Track": { "description": tr("RUNTIME") } },
-        { "Title": tr("Random"), "Name": "Random", "Track": { "description": tr("Random") } }
-    ]
-
-    options.filter = [
-        { "Title": tr("All"), "Name": "All" },
-        { "Title": tr("Played"), "Name": "Played" },
-        { "Title": tr("Unplayed"), "Name": "Unplayed" },
-        { "Title": tr("Resumable"), "Name": "Resumable" },
-        { "Title": tr("Favorites"), "Name": "Favorites" }
-    ]
-
-    if inArray([ItemType.BOXSET, CollectionType.BOXSETS], getCollectionType())
-        options.views = [
-            { "Title": tr("Presentation"), "Name": "presentation", "Track": { "description": tr("Presentation") } }
-        ]
-    end if
-
-    if inArray([ItemType.MYLIST], getCollectionType())
-        options.sort.unshift({ "Title": tr("Order Added"), "Name": "OrderAdded", "Track": { "description": tr("Order Added") } })
-    end if
-
-    if isStringEqual(m.view, "genres")
-        options.sort = [{ "Title": tr("TITLE"), "Name": "SortName", "Track": { "description": tr("TITLE") } }]
-        options.filter = [{ "Title": tr("All"), "Name": "All" }]
-    end if
-
-    ' If we're in a genre subfolder
-    if isValid(m.top.parentItem.parentFolder)
-        options.views = [
-            { "Title": tr("Presentation"), "Name": "presentation", "Track": { "description": tr("Presentation") } }
-        ]
-    end if
-
-    return options
+function isMusicLibrary() as boolean
+    return isStringEqual(m.top.mediaType, ItemType.MUSICARTIST)
 end function
 
-function setMusicVideoOptions() as object
-    options = {
-        filter: []
-    }
-
-    options.views = [
-        { "Title": tr("Presentation"), "Name": "presentation", "Track": { "description": tr("Presentation") } }
-    ]
-
-    if not isValid(m.top.genreFilter)
-        options.views.push({ "Title": tr("Genres"), "Name": "Genres", "Track": { "description": tr("Genres") } })
-    end if
-
-    options.sort = [
-        { "Title": tr("TITLE"), "Name": "SortName", "Track": { "description": tr("TITLE") } },
-        { "Title": tr("Community Rating"), "Name": "CommunityRating,SortName", "Track": { "description": tr("Community Rating") } },
-        { "Title": tr("Critics Rating"), "Name": "CriticRating,SortName", "Track": { "description": tr("Critics Rating") } },
-        { "Title": tr("DATE_ADDED"), "Name": "DateCreated,SortName", "Track": { "description": tr("DATE_ADDED") } },
-        { "Title": tr("DATE_PLAYED"), "Name": "DatePlayed,SortName", "Track": { "description": tr("DATE_PLAYED") } },
-        { "Title": tr("Folders"), "Name": "IsFolder,SortName", "Track": { "description": tr("Folders") } },
-        { "Title": tr("Parental Rating"), "Name": "OfficialRating,SortName", "Track": { "description": tr("Parental Rating") } },
-        { "Title": tr("PLAY_COUNT"), "Name": "PlayCount,SortName", "Track": { "description": tr("PLAY_COUNT") } },
-        { "Title": tr("RELEASE_DATE"), "Name": "PremiereDate,SortName", "Track": { "description": tr("RELEASE_DATE") } },
-        { "Title": tr("RUNTIME"), "Name": "Runtime,SortName", "Track": { "description": tr("RUNTIME") } },
-        { "Title": tr("Random"), "Name": "Random", "Track": { "description": tr("Random") } }
-    ]
-
-    options.filter = [
-        { "Title": tr("All"), "Name": "All" },
-        { "Title": tr("Played"), "Name": "Played" },
-        { "Title": tr("Unplayed"), "Name": "Unplayed" },
-        { "Title": tr("Resumable"), "Name": "Resumable" },
-        { "Title": tr("Favorites"), "Name": "Favorites" }
-    ]
-
-    if isStringEqual(m.view, "genres")
-        options.sort = [{ "Title": tr("TITLE"), "Name": "SortName", "Track": { "description": tr("TITLE") } }]
-        options.filter = [{ "Title": tr("All"), "Name": "All" }]
-    end if
-
-    ' If we're in a genre subfolder
-    if isValid(m.top.parentItem.parentFolder)
-        options.views = [
-            { "Title": tr("Presentation"), "Name": "presentation", "Track": { "description": tr("Presentation") } }
-        ]
-    end if
-
-    return options
+function isMyListLibrary() as boolean
+    return isStringEqual(getCollectionType(), ItemType.MYLIST)
 end function
 
-function setPhotoOptions() as object
-    options = {
-        filter: []
-    }
+' A shape written by an older build could be missing whatever has been added since, so
+' the stored values fill in over a full set rather than standing in for one
+function storedFilterState(itemId as string) as object
+    state = libraryFilters.EmptyState()
+    stored = m.global.session.user.settings["display." + itemId + ".filterState"]
+    if not isValidAndNotEmpty(stored) then return state
 
-    options.views = [
-        { "Title": tr("Presentation"), "Name": "presentation", "Track": { "description": tr("Presentation") } }
-    ]
+    parsed = ParseJson(stored)
+    if not isValid(parsed) then return state
 
-    options.sort = [
-        { "Title": tr("TITLE"), "Name": "SortName", "Track": { "description": tr("TITLE") } },
-        { "Title": tr("DATE_ADDED"), "Name": "DateCreated,SortName", "Track": { "description": tr("DATE_ADDED") } },
-        { "Title": tr("Folders"), "Name": "IsFolder,SortName", "Track": { "description": tr("Folders") } },
-        { "Title": tr("Random"), "Name": "Random", "Track": { "description": tr("Random") } }
-    ]
-
-    options.filter = [
-        { "Title": tr("All"), "Name": "All" },
-        { "Title": tr("Favorites"), "Name": "Favorites" },
-        { "Title": tr("Item Type"), "Name": "includeItemTypes", "Options": ["Photo", "Photo Album", "Video"], "Delimiter": ",", "CheckedState": [] }
-    ]
-
-    return options
-end function
-
-function setMusicOptions() as object
-    options = {
-        filter: []
-    }
-
-    options.views = [
-        { "Title": tr("Artists"), "Name": "Artists", "Track": { "description": tr("Artists") } },
-        { "Title": tr("Albums"), "Name": "Albums", "Track": { "description": tr("Albums") } }
-    ]
-
-    if not isValid(m.top.genreFilter)
-        options.views.push({ "Title": tr("Genres"), "Name": "Genres", "Track": { "description": tr("Genres") } })
-    end if
-
-    options.sort = [
-        { "Title": tr("TITLE"), "Name": "SortName", "Track": { "description": tr("TITLE") } },
-        { "Title": tr("DATE_ADDED"), "Name": "DateCreated,SortName", "Track": { "description": tr("DATE_ADDED") } },
-        { "Title": tr("DATE_PLAYED"), "Name": "DatePlayed,SortName", "Track": { "description": tr("DATE_PLAYED") } },
-        { "Title": tr("Random"), "Name": "Random", "Track": { "description": tr("Random") } }
-    ]
-
-    options.filter = [
-        { "Title": tr("All"), "Name": "All" },
-        { "Title": tr("Favorites"), "Name": "Favorites" }
-    ]
-
-    if isStringEqual(m.view, "genres")
-        options.sort = [{ "Title": tr("TITLE"), "Name": "SortName", "Track": { "description": tr("TITLE") } }]
-        options.filter = [{ "Title": tr("All"), "Name": "All" }]
-    end if
-
-    return options
-end function
-
-function setSeriesOptions() as object
-    options = {
-        filter: []
-    }
-
-    options.views = [
-        { "Title": tr("Presentation"), "Name": "presentation", "Track": { "description": tr("Presentation") } }
-    ]
-
-    if not isValid(m.top.genreFilter)
-        options.views.push({ "Title": tr("Genres"), "Name": "Genres", "Track": { "description": tr("Genres") } })
-    end if
-    options.views.push({ "Title": tr("Episodes"), "Name": "Episodes", "Track": { "description": tr("Episodes") } })
-
-    options.sort = [
-        { "Title": tr("TITLE"), "Name": "SortName", "Track": { "description": tr("TITLE") } },
-        { "Title": tr("Community Rating"), "Name": "CommunityRating,SortName", "Track": { "description": tr("Community Rating") } },
-        { "Title": tr("Date Show Added"), "Name": "DateCreated,SortName", "Track": { "description": tr("Date Show Added") } },
-        { "Title": tr("Date Episode Added"), "Name": "DateLastContentAdded,SortName", "Track": { "description": tr("Date Episode Added") } },
-        { "Title": tr("DATE_PLAYED"), "Name": "SeriesDatePlayed,SortName", "Track": { "description": tr("DATE_PLAYED") } },
-        { "Title": tr("OFFICIAL_RATING"), "Name": "OfficialRating,SortName", "Track": { "description": tr("OFFICIAL_RATING") } },
-        { "Title": tr("RELEASE_DATE"), "Name": "PremiereDate,SortName", "Track": { "description": tr("RELEASE_DATE") } },
-        { "Title": tr("Random"), "Name": "Random", "Track": { "description": tr("Random") } }
-    ]
-
-    options.filter = [
-        { "Title": tr("All"), "Name": "All" },
-        { "Title": tr("Played"), "Name": "Played" },
-        { "Title": tr("Unplayed"), "Name": "Unplayed" },
-        { "Title": tr("Favorites"), "Name": "Favorites" }
-    ]
-
-    if isStringEqual(m.view, "genres")
-        options.sort = [{ "Title": tr("TITLE"), "Name": "SortName", "Track": { "description": tr("TITLE") } }]
-        options.filter = [{ "Title": tr("All"), "Name": "All" }]
-    end if
-
-    ' If we're in a genre subfolder
-    if isValid(m.top.parentItem.parentFolder)
-        options.views = [
-            { "Title": tr("Presentation"), "Name": "presentation", "Track": { "description": tr("Presentation") } }
-        ]
-    end if
-
-    return options
-end function
-
-' Data to display when options button selected
-sub setSelectedOptions(options)
-    ' Set selected view option
-    for each o in options.views
-        if o.Name = m.view
-            o.Selected = true
-        end if
+    for each key in parsed
+        if state.doesExist(key) then state[key] = parsed[key]
     end for
+    return state
+end function
 
-    ' Set selected sort option
-    for each o in options.sort
-        if o.Name = m.sortField
-            o.Selected = true
-        end if
-    end for
+sub openSettingsDialog()
+    m.settingsDialog.context = {
+        libraryName: m.libraryName.text,
+        kind: isValid(m.top.genreFilter) ? tr("Genre") : isValid(m.top.studioFilter) ? tr("Studio") : tr("Libraries"),
+        showImageType: not isStringEqual(defaultImageType(), "square"),
+        showFolderView: not isValid(m.top.genreFilter) and not isValid(m.top.studioFilter)
+    }
 
-    ' Set selected filter
-    for each o in options.filter
-        if o.Name = m.filter
-            o.Selected = true
-            m.options.filter = o.Name
-        end if
+    libraryId = getParentItemId()
+    m.settingsDialog.settings = {
+        imageSize: settingOr(`library_imageSize_${libraryId}`, "medium"),
+        imageType: settingOr(`library_imageType_${libraryId}`, defaultImageType()),
+        cardText: settingOr(`library_cardText_${libraryId}`, "on"),
+        letterNav: settingOr(`library_letterNav_${libraryId}`, "on"),
+        folderView: settingOr(`library_folderView_${libraryId}`, "off")
+    }
+    m.settingsDialog.callFunc("showDialog")
 
-        ' Select selected filter options
-        if isValid(o.options) and isValid(m.filterOptions)
-            if o.options.Count() > 0 and m.filterOptions.Count() > 0
-                if LCase(o.Name) = LCase(m.filterOptions.keys()[0])
-                    selectedFilterOptions = m.filterOptions[m.filterOptions.keys()[0]].split(o.delimiter)
-                    checkedState = []
-
-                    for each availableFilterOption in o.options
-                        matchFound = false
-
-                        for each selectedFilterOption in selectedFilterOptions
-                            if LCase(toString(availableFilterOption).trim()) = LCase(selectedFilterOption.trim())
-                                matchFound = true
-                            end if
-                        end for
-
-                        checkedState.push(matchFound)
-                    end for
-
-                    o.checkedState = checkedState
-                end if
-            end if
-        end if
-    end for
-
-    options.sortAscending = m.sortAscending
-
-    m.options.options = options
+    group = m.global.sceneManager.callFunc("getActiveScene")
+    group.lastFocus = m.settingsDialog
 end sub
 
-' Filter data loaded from API
-sub FilterDataLoaded(msg)
-    options = setOptions()
+' Every row takes effect as it is stepped on, so this runs once per press
+sub onSettingsApplied(msg as object)
+    applied = msg.getData()
+    if not isValid(applied) then return
 
-    data = msg.GetData()
+    libraryId = getParentItemId()
+    wasFolderView = settingOr(`library_folderView_${libraryId}`, "off")
+
+    set_user_setting(`library_imageSize_${libraryId}`, applied.imageSize)
+    set_user_setting(`library_imageType_${libraryId}`, applied.imageType)
+    set_user_setting(`library_cardText_${libraryId}`, applied.cardText)
+    set_user_setting(`library_letterNav_${libraryId}`, applied.letterNav)
+    set_user_setting(`library_folderView_${libraryId}`, applied.folderView)
+
+    applyLetterNav()
+
+    ' Listing folders rather than everything inside them is a different query
+    if not isStringEqual(wasFolderView, applied.folderView)
+        resetLoadedItems()
+        loadInitialItems()
+        return
+    end if
+
+    redrawItems()
+end sub
+
+' The alphabet strip is the only toolbar item that can be turned off, so focus skips over
+' it while it is gone
+sub applyLetterNav()
+    m.alphaPicker.visible = settingOr(`library_letterNav_${getParentItemId()}`, "on") <> "off"
+end sub
+
+sub openSortDialog()
+    m.sortDialog.context = {
+        views: availableViews(),
+        isSeries: isStringEqual(m.top.mediaType, ItemType.SERIES),
+        isMusic: isMusicLibrary(),
+        isMyList: isMyListLibrary(),
+        showVideoFilters: not isMusicLibrary() and not isStringEqual(m.top.mediaType, ItemType.PLAYLIST),
+        namesOnly: isStringEqual(m.view, "Genres")
+    }
+    m.sortDialog.state = {
+        view: m.view,
+        sortKey: m.sortKey,
+        sortOrder: m.sortOrder,
+        filters: m.filterState
+    }
+    m.sortDialog.callFunc("showDialog")
+
+    group = m.global.sceneManager.callFunc("getActiveScene")
+    group.lastFocus = m.sortDialog
+end sub
+
+' Every choice in the dialog takes effect as it is made, so this runs on each one rather
+' than once at the end
+sub onSortApplied(msg as object)
+    applied = msg.getData()
+    if not isValid(applied) then return
+
+    itemId = m.top.parentItem.Id
+
+    if not isStringEqual(applied.view, m.view)
+        previousView = m.view
+        m.view = applied.view
+        set_user_setting("display." + itemId + ".landing", m.view)
+
+        ' Episodes draws a different card, so the grid is rebuilt around it
+        if inArray([previousView, m.view], "Episodes")
+            m.top.removeChild(m.itemGrid)
+            m.itemGridCounter++
+            createItemGrid(`itemGrid${m.itemGridCounter}`)
+        end if
+
+        clearSearchQuery()
+        m.top.alphaSelected = string.EMPTY
+        m.loadItemsTask.nameStartsWith = " "
+
+        if not isStringEqual(m.view, "Genres")
+            set_user_setting(`display.${m.top.mediaType}library.defaultview`, m.view)
+        end if
+    end if
+
+    option = librarySorts.Chosen(applied.sortKey, isMusicLibrary(), isMyListLibrary())
+    m.sortKey = option.value
+    m.sortOrder = isValidAndNotEmpty(applied.sortOrder) ? applied.sortOrder : option.order
+    m.sortField = option.field
+    m.sortAscending = isStringEqual(m.sortOrder, "Ascending")
+    m.filterState = applied.filters
+
+    set_user_setting("display." + itemId + ".sortField", m.sortField)
+    set_user_setting("display." + itemId + ".sortAscending", m.sortAscending ? "true" : "false")
+    set_user_setting("display." + itemId + ".filterState", FormatJson(m.filterState))
+
+    resetLoadedItems()
+    loadInitialItems()
+end sub
+
+' A dialog left open while the grid reloads would lose focus to it, since setting the
+' grid's content takes focus back
+sub restoreDialogFocus(group as object)
+    for each dialog in [m.sortDialog, m.settingsDialog]
+        if dialog.visible
+            dialog.callFunc("focusDialog")
+            group.lastFocus = dialog
+            return
+        end if
+    end for
+end sub
+
+sub onSortClosed()
+    m.itemGrid.setFocus(m.itemGrid.opacity = 1)
+    m.genreGrid.setFocus(m.genreGrid.opacity = 1)
+
+    group = m.global.sceneManager.callFunc("getActiveScene")
+    group.lastFocus = m.itemGrid.opacity = 1 ? m.itemGrid : m.genreGrid
+end sub
+
+' What the library holds, for the genre, rating, tag, year and language groups
+sub FilterDataLoaded(msg as object)
     m.getFiltersTask.unobserveField("filters")
 
-    if not isValid(data) then return
-
-    ' Add filters from the API data
-    if isStringEqual(m.view, "presentation")
-        options.filter.push({ "Title": tr("Features"), "Name": "Features", "Options": ["Subtitles", "Special Features", "Theme Song", "Theme Video"], "Delimiter": "|", "CheckedState": [] })
-
-        if isValidAndNotEmpty(data.genres)
-            options.filter.push({ "Title": tr("Genres"), "Name": "Genres", "Options": data.genres, "Delimiter": "|", "CheckedState": [] })
-        end if
-
-        if isValidAndNotEmpty(data.OfficialRatings)
-            options.filter.push({ "Title": tr("Parental Ratings"), "Name": "OfficialRatings", "Options": data.OfficialRatings, "Delimiter": "|", "CheckedState": [] })
-        end if
-
-        if isValidAndNotEmpty(data.Years)
-            options.filter.push({ "Title": tr("Years"), "Name": "Years", "Options": data.Years, "Delimiter": ",", "CheckedState": [] })
-        end if
-    end if
-
-    setSelectedOptions(options)
-
-    m.options.options = options
+    data = msg.GetData()
+    if isValid(data) then m.sortDialog.facets = data
 end sub
 
-' Handle loaded data, and add to grid
 sub ItemDataLoaded(msg)
     itemData = msg.GetData()
     itemCount = itemData.count()
@@ -983,11 +852,7 @@ sub ItemDataLoaded(msg)
 
         stopLoadingOperation()
 
-        ' Return focus to options menu if it was opened while library was loading
-        if m.options.visible
-            m.options.setFocus(true)
-            group.lastFocus = m.options
-        end if
+        restoreDialogFocus(group)
 
         if m.loadedItems = 0
             m.emptyText.text = tr("No items found. Try adjusting your selected filters.")
@@ -1043,12 +908,7 @@ sub ItemDataLoaded(msg)
     m.Loading = false
     stopLoadingSpinner()
 
-    ' Return focus to options menu if it was opened while library was loading
-    if m.options.visible
-        m.options.setFocus(true)
-        group = m.global.sceneManager.callFunc("getActiveScene")
-        group.lastFocus = m.options
-    end if
+    restoreDialogFocus(m.global.sceneManager.callFunc("getActiveScene"))
 
     updateStatusBar()
 end sub
@@ -1194,7 +1054,7 @@ sub drawMetaRow(itemData as object)
     status = itemData.Status ?? ""
     showStatus = isSeries and isValidAndNotEmpty(status)
     if showStatus
-        fillPill("seriesStatusPill", "seriesStatusFill", "seriesStatusLabel", tr(status))
+        fillPill("seriesStatusFill", "seriesStatusLabel", tr(status))
         m.top.findNode("seriesStatusFill").blendColor = isStringEqual(status, "Continuing") ? "#22C55E" : "#EF4444"
         m.top.findNode("seriesStatusFill").opacity = 1
     end if
@@ -1202,23 +1062,26 @@ sub drawMetaRow(itemData as object)
 
     rating = itemData.OfficialRating ?? ""
     showRating = isValidAndNotEmpty(rating) and not isStringEqual(itemData.Type ?? "", "Playlist")
-    if showRating then fillPill("officialRatingPill", "officialRatingFill", "selectedItemOfficialRating", rating)
+    if showRating then fillPill("officialRatingFill", "selectedItemOfficialRating", rating)
     m.top.findNode("officialRatingPill").visible = showRating
 end sub
 
 ' A pill is only as wide as the words it holds, plus the padding the other clients give it
-sub fillPill(groupId as string, fillId as string, labelId as string, text as string)
+sub fillPill(fillId as string, labelId as string, text as string)
     label = m.top.findNode(labelId)
     fill = m.top.findNode(fillId)
 
     label.text = text
-    width = label.boundingRect().width + 18
-    height = 26
+
+    ' A label given a width reports that width back rather than the width of its text, so
+    ' the last size it was given has to go before this one can be measured
+    label.width = 0
+    width = label.boundingRect().width + PILL_PAD_X
 
     label.width = width
-    label.height = height
+    label.height = PILL_HEIGHT
     fill.width = width
-    fill.height = height
+    fill.height = PILL_HEIGHT
 end sub
 
 function getBlurredImageURL(itemId as string, imageType as string, imageTag as string) as string
@@ -1331,30 +1194,6 @@ sub onGenreItemSelected()
     }
 end sub
 
-sub resetDropdownsToDefaultState()
-    m.filter = "All"
-    m.filterOptions = {}
-    if isStringEqual(getCollectionType(), ItemType.BOXSET)
-        m.sortField = "PremiereDate,SortName"
-    else if isStringEqual(getCollectionType(), ItemType.MYLIST)
-        m.sortField = "OrderAdded"
-    else
-        m.sortField = "SortName"
-    end if
-    m.sortAscending = true
-
-    set_user_setting("display." + m.top.parentItem.Id + ".sortField", m.sortField)
-    set_user_setting("display." + m.top.parentItem.Id + ".sortAscending", "true")
-    set_user_setting("display." + m.top.parentItem.Id + ".filter", m.filter)
-    set_user_setting("display." + m.top.parentItem.Id + ".filterOptions", FormatJson(m.filterOptions))
-
-    if not isStringEqual(m.view, "Genres")
-        set_user_setting(`display.${m.top.mediaType}library.defaultview`, m.view)
-    end if
-
-    m.getFiltersTask.control = "RUN"
-end sub
-
 ' Everything the grid was showing goes, so a fresh page does not land beside the old one
 sub resetLoadedItems()
     m.loadedRows = 0
@@ -1458,96 +1297,6 @@ sub alphaSelectedChanged()
     loadInitialItems()
 end sub
 
-' Check if options updated and any reloading required
-sub onOptionsVisibleChange()
-    if m.options.visible then return
-
-    reload = false
-
-    ' Check if view changed
-    if isValidAndNotEmpty(m.options.selectedView) and not isStringEqual(m.options.selectedView, m.view)
-        previousView = m.view
-        m.view = m.options.selectedView
-        set_user_setting("display." + m.top.parentItem.Id + ".landing", m.view)
-
-        ' If switching to/from Episodes, recreate the grid for the new component type
-        if inArray([previousView, m.view], "Episodes")
-            m.top.removeChild(m.itemGrid)
-            m.itemGridCounter++
-            createItemGrid(`itemGrid${m.itemGridCounter}`)
-        end if
-
-        ' View change requires full reset of sort/filter
-        clearSearchQuery()
-        m.top.alphaSelected = string.EMPTY
-        m.loadItemsTask.nameStartsWith = " "
-        m.filter = "All"
-        m.filterOptions = {}
-        m.sortField = "SortName"
-        m.sortAscending = true
-        set_user_setting("display." + m.top.parentItem.Id + ".sortField", m.sortField)
-        set_user_setting("display." + m.top.parentItem.Id + ".sortAscending", "true")
-        set_user_setting("display." + m.top.parentItem.Id + ".filter", m.filter)
-        set_user_setting("display." + m.top.parentItem.Id + ".filterOptions", FormatJson(m.filterOptions))
-
-        if not isStringEqual(m.view, "Genres")
-            set_user_setting(`display.${m.top.mediaType}library.defaultview`, m.view)
-        end if
-
-        reload = true
-    end if
-
-    ' Check if sort changed
-    sortChanged = isValidAndNotEmpty(m.options.selectedSort) and not isStringEqual(m.options.selectedSort, m.sortField)
-    ascendingChanged = m.options.sortAscending <> m.sortAscending
-
-    if sortChanged or ascendingChanged
-        if sortChanged
-            m.sortField = m.options.selectedSort
-            set_user_setting("display." + m.top.parentItem.Id + ".sortField", m.sortField)
-        end if
-        m.sortAscending = m.options.sortAscending
-        set_user_setting("display." + m.top.parentItem.Id + ".sortAscending", m.sortAscending ? "true" : "false")
-        reload = true
-    end if
-
-    ' Check if filter changed
-    if not isStringEqual(m.options.filter, m.filter)
-        m.filter = m.options.filter
-        set_user_setting("display." + m.top.parentItem.Id + ".filter", m.options.filter)
-        reload = true
-    end if
-
-    if not isValid(m.options.filterOptions)
-        m.filterOptions = {}
-    end if
-
-    if not AssocArrayEqual(m.options.filterOptions, m.filterOptions)
-        m.filterOptions = m.options.filterOptions
-        reload = true
-        set_user_setting("display." + m.top.parentItem.Id + ".filterOptions", FormatJson(m.options.filterOptions))
-    end if
-
-    if reload
-        resetLoadedItems()
-        loadInitialItems()
-    end if
-
-    m.itemGrid.setFocus(m.itemGrid.opacity = 1)
-    m.genreGrid.setFocus(m.genreGrid.opacity = 1)
-
-    group = m.global.sceneManager.callFunc("getActiveScene")
-    group.lastFocus = m.itemGrid.opacity = 1 ? m.itemGrid : m.genreGrid
-
-    updateStatusBar()
-end sub
-
-sub onLibrarySettingsButtonSelected()
-    dialog = m.top.getScene().dialog
-    if isValid(dialog)
-        dialog.close = true
-    end if
-end sub
 
 sub createItemGrid(itemGridID = "itemGrid" as string)
     m.itemGrid = createObject("rosgnode", "MarkupGrid")
@@ -1592,7 +1341,10 @@ end sub
 ' =====================================================================
 
 sub focusToolbarItem(index as integer)
-    ' Unfocus all toolbar items
+    ' The alphabet strip is the one toolbar item that can be turned off, so focus lands
+    ' back on the gear rather than on nothing
+    if index = 3 and not m.alphaPicker.visible then index = 2
+
     for each btn in m.toolbarButtons
         btn.focus = false
     end for
@@ -1703,34 +1455,10 @@ function onKeyEvent(key as string, press as boolean) as boolean
                 m.global.sceneManager.callfunc("popScene")
                 return true
             else if m.sortButton.isInFocusChain()
-                ' Open combined Sort & Filter dialog
-                m.options.visible = true
-                viewMenu = m.options.findNode("viewMenu")
-                if viewMenu.visible
-                    viewMenu.setFocus(true)
-                else
-                    m.options.findNode("sortMenu").setFocus(true)
-                end if
-                group = m.global.sceneManager.callFunc("getActiveScene")
-                group.lastFocus = m.options
+                openSortDialog()
                 return true
             else if m.settingsButton.isInFocusChain()
-                ' Open library settings dialog (watched checkmark, landscape images)
-                dialog = createObject("roSGNode", "LibrarySettingDialog")
-                dlgPalette = createObject("roSGNode", "RSGPalette")
-                dlgPalette.colors = {
-                    DialogBackgroundColor: chainLookupReturn(m.global.session, "user.settings.colorDialogBackground", ColorPalette.ELEMENTBACKGROUND),
-                    DialogFocusColor: chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT),
-                    DialogFocusItemColor: chainLookupReturn(m.global.session, "user.settings.colorDialogSelectedText", ColorPalette.WHITE),
-                    DialogSecondaryTextColor: ColorPalette.RED,
-                    DialogSecondaryItemColor: chainLookupReturn(m.global.session, "user.settings.colorDialogBorderLine", ColorPalette.LIGHTBLUE),
-                    DialogTextColor: chainLookupReturn(m.global.session, "user.settings.colorDialogText", ColorPalette.WHITE)
-                }
-                dialog.palette = dlgPalette
-                dialog.title = tr("Library Settings")
-                dialog.buttons = [tr("OK")]
-                dialog.observeField("buttonSelected", "onLibrarySettingsButtonSelected")
-                m.top.getScene().dialog = dialog
+                openSettingsDialog()
                 return true
             end if
         end if
