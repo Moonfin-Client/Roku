@@ -1,0 +1,215 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/trackDialog.bs"
+
+const GRID_COLUMNS = 3
+const GRID_ROWS = 2
+
+sub init()
+    m.rowMenu = m.top.findNode("rowMenu")
+    m.rowMenu.observeField("itemSelected", "onKindSelected")
+
+    m.parts = {
+        panel: m.top.findNode("panel"),
+        panelBg: m.top.findNode("panelBg"),
+        panelBorder: m.top.findNode("panelBorder"),
+        title: m.top.findNode("title"),
+        titleRule: m.top.findNode("titleRule"),
+        list: m.rowMenu
+    }
+
+    m.imagePanel = m.top.findNode("imagePanel")
+    m.imageGrid = m.top.findNode("imageGrid")
+    m.imageGrid.observeField("itemSelected", "onImageSelected")
+
+    m.imageParts = {
+        panel: m.imagePanel,
+        panelBg: m.top.findNode("imagePanelBg"),
+        panelBorder: m.top.findNode("imagePanelBorder"),
+        title: m.top.findNode("imageTitle"),
+        titleRule: m.top.findNode("imageTitleRule"),
+        grid: m.imageGrid,
+        state: m.top.findNode("imageState")
+    }
+
+    m.applied = false
+
+    m.fetchTask = CreateObject("roSGNode", "JellyfinAPITask")
+    m.applyTask = CreateObject("roSGNode", "JellyfinAPITask")
+end sub
+
+' Which images a type can carry, since the server rejects a kind the item has no slot for
+function supportedKinds() as object
+    itemType = LCase(m.top.itemType)
+    if itemType = "movie" then return ["Primary", "Backdrop", "Banner", "Logo", "Thumb", "Art", "Disc"]
+    if itemType = "series" then return ["Primary", "Backdrop", "Banner", "Logo", "Thumb", "Art"]
+    if itemType = "season" then return ["Primary", "Backdrop", "Banner"]
+    if itemType = "episode" then return ["Primary"]
+    if itemType = "boxset" then return ["Primary", "Backdrop", "Banner", "Logo", "Thumb"]
+    if itemType = "musicalbum" then return ["Primary", "Backdrop", "Disc"]
+    if itemType = "musicartist" then return ["Primary", "Backdrop", "Banner", "Logo"]
+    if itemType = "playlist" then return ["Primary", "Backdrop"]
+    if itemType = "audio" then return ["Primary"]
+    return ["Primary", "Backdrop"]
+end function
+
+function kindLabel(kind as string) as string
+    if kind = "Primary" then return LCase(m.top.itemType) = "episode" ? tr("Thumbnail") : tr("Poster")
+    if kind = "Backdrop" then return tr("Backdrops")
+    if kind = "Banner" then return tr("Banner")
+    if kind = "Logo" then return tr("Logo")
+    if kind = "Thumb" then return tr("Thumbnail")
+    if kind = "Art" then return tr("Art")
+    if kind = "Disc" then return tr("Disc Art")
+    return kind
+end function
+
+sub showDialog()
+    m.applied = false
+    m.parts.title.text = tr("Change Artwork")
+    m.kinds = supportedKinds()
+
+    content = CreateObject("roSGNode", "ContentNode")
+    for each kind in m.kinds
+        row = content.CreateChild("SeerrRequestListData")
+        row.title = kindLabel(kind)
+        row.noIndicator = true
+        row.rowHeight = trackDialog.RowHeight()
+    end for
+
+    trackDialog.Layout(m.parts, content.getChildCount())
+    m.rowMenu.content = content
+
+    m.top.visible = true
+    m.rowMenu.setFocus(true)
+end sub
+
+sub onKindSelected()
+    index = m.rowMenu.itemSelected
+    if index < 0 or index >= m.kinds.count() then return
+
+    m.kind = m.kinds[index]
+    m.parts.panel.visible = false
+    m.imagePanel.visible = true
+    m.imageParts.title.text = kindLabel(m.kind)
+    trackDialog.LayoutGrid(m.imageParts, GRID_COLUMNS, GRID_ROWS, [400, 266], 24)
+    m.imageGrid.content = invalid
+    showImageState(tr("Loading..."))
+
+    m.fetchTask.request = {
+        method: "GET",
+        path: Substitute("Items/{0}/RemoteImages", m.top.itemId),
+        params: { Type: m.kind, IncludeAllLanguages: "false" }
+    }
+    m.fetchTask.unobserveField("response")
+    m.fetchTask.observeField("response", "onImagesLoaded")
+    m.fetchTask.control = "RUN"
+end sub
+
+sub onImagesLoaded(event as object)
+    response = event.getData()
+
+    images = chainLookupReturn(response, "data.Images", invalid)
+    if not isValid(images) or images.count() = 0
+        showImageState(tr("Nothing offered for this one"))
+        return
+    end if
+
+    ' A few screenfuls is plenty, since the point is a quick swap rather than a browse
+    limit = GRID_COLUMNS * GRID_ROWS * 4
+
+    content = CreateObject("roSGNode", "ContentNode")
+    count = 0
+    for each image in images
+        if isValidAndNotEmpty(image.Url)
+            card = content.CreateChild("RemoteImageData")
+            card.url = image.Url
+            card.provider = image.ProviderName ?? ""
+            count++
+        end if
+        if count >= limit then exit for
+    end for
+
+    hideImageState()
+    m.imageGrid.content = content
+    m.imageGrid.setFocus(true)
+end sub
+
+sub onImageSelected()
+    index = m.imageGrid.itemSelected
+    if index < 0 then return
+
+    card = m.imageGrid.content.getChild(index)
+    if not isValid(card) then return
+
+    startLoadingSpinner()
+
+    m.applyTask.request = {
+        method: "POST",
+        path: Substitute("Items/{0}/RemoteImages/Download", m.top.itemId),
+        params: { Type: m.kind, ImageUrl: card.url }
+    }
+    m.applyTask.unobserveField("response")
+    m.applyTask.observeField("response", "onImageApplied")
+    m.applyTask.control = "RUN"
+end sub
+
+sub onImageApplied(event as object)
+    response = event.getData()
+    stopLoadingSpinner()
+
+    if isValid(response) and response.success
+        m.applied = true
+        closeDialog()
+        return
+    end if
+
+    showImageState(tr("Something went wrong"))
+end sub
+
+sub showImageState(message as string)
+    m.imageParts.state.text = message
+    m.imageParts.state.visible = true
+end sub
+
+sub hideImageState()
+    m.imageParts.state.visible = false
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if not m.top.visible then return false
+
+    if key = KeyCode.BACK
+        ' Back from the images returns to the kinds rather than leaving
+        if m.imagePanel.visible
+            m.imagePanel.visible = false
+            m.parts.panel.visible = true
+            m.rowMenu.setFocus(true)
+            return true
+        end if
+
+        closeDialog()
+        return true
+    end if
+
+    if key = KeyCode.UP or key = KeyCode.DOWN or key = KeyCode.OK
+        if not m.rowMenu.isInFocusChain() and not m.imageGrid.isInFocusChain()
+            if m.imagePanel.visible
+                m.imageGrid.setFocus(true)
+            else
+                m.rowMenu.setFocus(true)
+            end if
+        end if
+        return true
+    end if
+
+    return false
+end function
+
+' The owner takes this node out of the scene as soon as it is told, so focus moves first
+sub closeDialog()
+    m.top.visible = false
+    if isValid(m.top.returnFocus) then m.top.returnFocus.setFocus(true)
+    m.top.finished = m.applied
+end sub

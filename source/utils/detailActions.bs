@@ -1,0 +1,474 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/tvKeyboard.bs"
+
+' The library half of the details action row: rating, playlists, collections, deleting,
+' artwork and identify. These run in the host screen's scope, so m is whichever detail
+' screen imported them, the same way the Seerr half works.
+
+' The score at which a rating counts as liked, the same line the other clients draw
+const LIKED_RATING_THRESHOLD = 6.5
+
+function detailActionCandidates(itemData as object) as object
+    candidates = []
+    if not isValid(itemData) then return candidates
+
+    itemType = LCase(chainLookupReturn(itemData, "Type", ""))
+    onDisc = itemType = "movie" or itemType = "series" or itemType = "season" or itemType = "episode"
+    isAdmin = chainLookupReturn(m.global.session, "user.Policy.IsAdministrator", false) = true
+
+    if onDisc
+        candidates.push({ id: "personalRating", config: ratingButtonConfig(itemData) })
+    end if
+
+    candidates.push({ id: "playlist", config: { icon: "pkg:/images/icons/add_to_playlist.png", label: tr("Add to Playlist"), action: "addToPlaylist", id: "playlistButton" } })
+
+    if onDisc
+        candidates.push({ id: "collection", config: { icon: "pkg:/images/icons/add_to_collection.png", label: tr("Add to Collection"), action: "addToCollection", id: "collectionButton" } })
+    end if
+
+    if chainLookupReturn(itemData, "CanDelete", false) = true
+        candidates.push({ id: "deleteFiles", config: { icon: "pkg:/images/icons/delete_item.png", label: tr("Delete"), action: "deleteItem", id: "deleteButton" } })
+    end if
+
+    if isAdmin and onDisc
+        candidates.push({ id: "artwork", config: { icon: "pkg:/images/icons/artwork.png", label: tr("Change Artwork"), action: "changeArtwork", id: "artworkButton" } })
+        candidates.push({ id: "admin", config: { icon: "pkg:/images/icons/admin_controls.png", label: tr("Admin Controls"), action: "adminControls", id: "adminButton" } })
+    end if
+
+    return candidates
+end function
+
+' The task has to outlive this call or it is collected before it answers
+function runDetailAction(request as object, callback as string) as object
+    task = CreateObject("roSGNode", "JellyfinAPITask")
+    task.request = request
+    task.observeField("response", callback)
+    m.detailActionTask = task
+    task.control = "RUN"
+    return task
+end function
+
+' ===== Rating =====
+
+function personalRatingStyle() as string
+    style = LCase(chainLookupReturn(m.global.session, "user.settings.`ui.itemdetail.personalRatingStyle`", "thumbs"))
+    if style = "stars" or style = "numeric" then return style
+    return "thumbs"
+end function
+
+function savedRating(itemData as object) as dynamic
+    return chainLookupReturn(itemData, "UserData.Rating", invalid)
+end function
+
+' A thumb only stores the liked flag, so a bare score has to stand in for one
+function savedLikes(itemData as object) as dynamic
+    likes = chainLookupReturn(itemData, "UserData.Likes", invalid)
+    if isValid(likes) then return likes
+
+    rating = savedRating(itemData)
+    if not isValid(rating) then return invalid
+    return rating >= LIKED_RATING_THRESHOLD
+end function
+
+function ratingButtonConfig(itemData as object) as object
+    style = personalRatingStyle()
+
+    icon = "pkg:/images/icons/rating_star.png"
+    if style = "numeric" then icon = "pkg:/images/icons/rating_numbers.png"
+
+    label = tr("Rate")
+    if style = "thumbs"
+        likes = savedLikes(itemData)
+        icon = likes = false ? "pkg:/images/icons/rating_thumb_down.png" : "pkg:/images/icons/rating_thumb_up.png"
+        if isValid(likes) then label = likes ? tr("Like") : tr("Dislike")
+    else
+        rating = savedRating(itemData)
+        if isValid(rating)
+            label = style = "stars" ? starLabel(rating) : tr("Rated")
+        end if
+    end if
+
+    return { icon: icon, label: label, action: "personalRating", id: "personalRatingButton" }
+end function
+
+' Full stars with a half added when the remainder is close enough to earn one
+function starLabel(rating as float) as string
+    stars = rating / 2
+    full = Int(stars)
+
+    label = ""
+    for i = 1 to full
+        label += "★"
+    end for
+    if stars - full >= 0.25 then label += "½"
+
+    if label = "" then return tr("Rate")
+    return label
+end function
+
+' The scores run from ten down to one, so a saved score sits that many rows in
+function markedRatingIndex(rating as dynamic) as integer
+    if not isValid(rating) then return -1
+    whole = Int(rating + 0.5)
+    if whole < 1 or whole > 10 then return -1
+    if Abs(rating - whole) > 0.01 then return -1
+    return 10 - whole
+end function
+
+sub showRatingPrompt()
+    itemData = m.top.itemContent.json
+    style = personalRatingStyle()
+
+    options = []
+    m.ratingChoices = []
+    marked = -1
+
+    if style = "thumbs"
+        likes = savedLikes(itemData)
+        options.push(tr("Like"))
+        m.ratingChoices.push({ kind: "likes", value: true })
+        options.push(tr("Dislike"))
+        m.ratingChoices.push({ kind: "likes", value: false })
+        if isValid(likes) then marked = likes ? 0 : 1
+    else
+        for score = 10 to 1 step -1
+            options.push(style = "stars" ? starLabel(score * 1.0) : score.toStr())
+            m.ratingChoices.push({ kind: "rating", value: score * 1.0 })
+        end for
+        marked = markedRatingIndex(savedRating(itemData))
+    end if
+
+    if isValid(savedLikes(itemData)) or isValid(savedRating(itemData))
+        options.push(tr("Clear Rating"))
+        m.ratingChoices.push({ kind: "clear" })
+    end if
+
+    showActionPrompt(tr("Rate"), options, "onRatingChosen", { selected: marked })
+end sub
+
+sub onRatingChosen(event as object)
+    index = event.getData()
+    closeActionPrompt()
+    if index < 0 or index >= m.ratingChoices.count() then return
+
+    choice = m.ratingChoices[index]
+    itemId = chainLookupReturn(m.top.itemContent, "json.id", "")
+    if not isValidAndNotEmpty(itemId) then return
+
+    if choice.kind = "likes"
+        request = { method: "POST", path: Substitute("UserItems/{0}/Rating", itemId), params: { Likes: choice.value } }
+    else if choice.kind = "rating"
+        request = { method: "POST", path: Substitute("UserItems/{0}/UserData", itemId), bodyJson: FormatJson({ Rating: choice.value }) }
+    else
+        request = { method: "DELETE", path: Substitute("UserItems/{0}/Rating", itemId) }
+    end if
+
+    task = CreateObject("roSGNode", "JellyfinAPITask")
+    task.addField("choice", "assocarray", false)
+    task.choice = choice
+    task.request = request
+    task.observeField("response", "onRatingSaved")
+    m.detailActionTask = task
+    task.control = "RUN"
+end sub
+
+' The button changes face straight away, the way watched and favorite already do
+sub onRatingSaved(event as object)
+    choice = event.getRoSGNode().choice
+
+    itemData = m.top.itemContent.json
+    userData = itemData.UserData
+    if not isValid(userData) then userData = {}
+
+    if choice.kind = "likes"
+        userData.Likes = choice.value
+        userData.Delete("Rating")
+    else if choice.kind = "rating"
+        userData.Rating = choice.value
+        userData.Likes = choice.value >= LIKED_RATING_THRESHOLD
+    else
+        userData.Delete("Rating")
+        userData.Delete("Likes")
+    end if
+    itemData.UserData = userData
+    m.top.itemContent.json = itemData
+
+    button = m.top.findNode("personalRatingButton")
+    if isValid(button)
+        config = ratingButtonConfig(itemData)
+        button.labelText = config.label
+        button.iconUri = config.icon
+    end if
+end sub
+
+' ===== Playlists and collections =====
+
+sub showPlaylistPicker()
+    startLoadingSpinner()
+
+    runDetailAction({
+        method: "GET",
+        path: "Items",
+        params: {
+            UserId: m.global.session.user.id,
+            IncludeItemTypes: "Playlist",
+            Recursive: "true",
+            SortBy: "SortName"
+        }
+    }, "onPlaylistsLoaded")
+end sub
+
+' Both pickers list the same shape, a name with however many items it already holds
+sub fillPickerEntries(response as object, options as object, details as object)
+    m.pickerEntries = []
+    if not isValid(response) or not response.success then return
+
+    items = chainLookupReturn(response, "data.Items", invalid)
+    if not isValid(items) then return
+
+    for each item in items
+        m.pickerEntries.push(item)
+        options.push(item.Name)
+
+        count = chainLookupReturn(item, "ChildCount", invalid)
+        details.push(isValid(count) ? Substitute(tr("{0} items"), count.toStr()) : "")
+    end for
+end sub
+
+sub onPlaylistsLoaded(event as object)
+    response = event.getData()
+    stopLoadingSpinner()
+
+    options = [tr("Create New Playlist")]
+    details = [""]
+    fillPickerEntries(response, options, details)
+
+    showActionPrompt(tr("Add to Playlist"), options, "onPlaylistChosen", {
+        details: details,
+        message: m.pickerEntries.count() = 0 ? tr("No playlists found") : ""
+    })
+end sub
+
+sub onPlaylistChosen(event as object)
+    index = event.getData()
+    closeActionPrompt()
+    if index < 0 then return
+
+    if index = 0
+        openNamePrompt(tr("Name the playlist"), "onPlaylistNamed")
+        return
+    end if
+
+    itemId = chainLookupReturn(m.top.itemContent, "json.id", "")
+    picked = m.pickerEntries[index - 1]
+
+    runDetailAction({
+        method: "POST",
+        path: Substitute("Playlists/{0}/Items", picked.Id),
+        params: { Ids: itemId, UserId: m.global.session.user.id }
+    }, "onDetailActionDone")
+end sub
+
+sub onPlaylistNamed(event as object)
+    name = event.getRoSGNode().text
+    closeNamePrompt(event)
+    if not isValidAndNotEmpty(name) then return
+
+    itemId = chainLookupReturn(m.top.itemContent, "json.id", "")
+
+    runDetailAction({
+        method: "POST",
+        path: "Playlists",
+        bodyJson: FormatJson({ Name: name, Ids: [itemId], UserId: m.global.session.user.id })
+    }, "onDetailActionDone")
+end sub
+
+sub showCollectionPicker()
+    startLoadingSpinner()
+
+    runDetailAction({
+        method: "GET",
+        path: "Items",
+        params: {
+            UserId: m.global.session.user.id,
+            IncludeItemTypes: "BoxSet",
+            Recursive: "true",
+            SortBy: "SortName"
+        }
+    }, "onCollectionsLoaded")
+end sub
+
+sub onCollectionsLoaded(event as object)
+    response = event.getData()
+    stopLoadingSpinner()
+
+    options = [tr("Create New Collection")]
+    details = [""]
+    fillPickerEntries(response, options, details)
+
+    showActionPrompt(tr("Add to Collection"), options, "onCollectionChosen", {
+        details: details,
+        message: m.pickerEntries.count() = 0 ? tr("No collections found") : ""
+    })
+end sub
+
+sub onCollectionChosen(event as object)
+    index = event.getData()
+    closeActionPrompt()
+    if index < 0 then return
+
+    if index = 0
+        openNamePrompt(tr("Name the collection"), "onCollectionNamed")
+        return
+    end if
+
+    itemId = chainLookupReturn(m.top.itemContent, "json.id", "")
+    picked = m.pickerEntries[index - 1]
+
+    runDetailAction({
+        method: "POST",
+        path: Substitute("Collections/{0}/Items", picked.Id),
+        params: { Ids: itemId }
+    }, "onDetailActionDone")
+end sub
+
+sub onCollectionNamed(event as object)
+    name = event.getRoSGNode().text
+    closeNamePrompt(event)
+    if not isValidAndNotEmpty(name) then return
+
+    itemId = chainLookupReturn(m.top.itemContent, "json.id", "")
+
+    ' The collections route reads everything off the query string
+    runDetailAction({
+        method: "POST",
+        path: "Collections",
+        params: { Name: name, Ids: itemId }
+    }, "onDetailActionDone")
+end sub
+
+sub onDetailActionDone(event as object)
+    response = event.getData()
+
+    if not isValid(response) or not response.success
+        showActionPrompt(tr("Something went wrong"), [tr("OK")], "onDetailActionNoticeClosed")
+    end if
+end sub
+
+sub onDetailActionNoticeClosed(_event as object)
+    closeActionPrompt()
+end sub
+
+' ===== Deleting =====
+
+sub confirmDelete()
+    title = chainLookupReturn(m.top.itemContent, "json.name", "")
+    showActionPrompt(Substitute(tr(`Delete "^0"?`), title), [tr("Cancel"), tr("Delete")], "onDeleteChosen")
+end sub
+
+sub onDeleteChosen(event as object)
+    index = event.getData()
+    closeActionPrompt()
+    if index <> 1 then return
+
+    itemId = chainLookupReturn(m.top.itemContent, "json.id", "")
+    startLoadingSpinner()
+
+    runDetailAction({ method: "DELETE", path: Substitute("Items/{0}", itemId) }, "onItemDeleted")
+end sub
+
+' The item is gone, so the screen showing it goes too
+sub onItemDeleted(_event as object)
+    stopLoadingSpinner()
+    m.global.sceneManager.callFunc("popScene")
+end sub
+
+' ===== Artwork and identify =====
+
+sub showArtworkPicker()
+    m.artworkDialog = CreateObject("roSGNode", "ArtworkPickerDialog")
+    m.artworkDialog.itemId = chainLookupReturn(m.top.itemContent, "json.id", "")
+    m.artworkDialog.itemType = chainLookupReturn(m.top.itemContent, "json.Type", "")
+    m.artworkDialog.returnFocus = seerrFocusTarget()
+    m.artworkDialog.observeField("finished", "onArtworkFinished")
+
+    m.top.getScene().appendChild(m.artworkDialog)
+    m.artworkDialog.callFunc("showDialog")
+end sub
+
+sub onArtworkFinished(event as object)
+    changed = event.getData()
+
+    m.artworkDialog.unobserveField("finished")
+    m.top.getScene().removeChild(m.artworkDialog)
+    m.artworkDialog = invalid
+
+    if changed then refreshAfterAdminChange()
+end sub
+
+sub showIdentify()
+    m.identifyDialog = CreateObject("roSGNode", "IdentifyDialog")
+    m.identifyDialog.itemId = chainLookupReturn(m.top.itemContent, "json.id", "")
+    m.identifyDialog.itemName = chainLookupReturn(m.top.itemContent, "json.name", "")
+    m.identifyDialog.itemType = chainLookupReturn(m.top.itemContent, "json.Type", "")
+    m.identifyDialog.itemYear = chainLookupReturn(m.top.itemContent, "json.ProductionYear", 0)
+    m.identifyDialog.returnFocus = seerrFocusTarget()
+    m.identifyDialog.observeField("finished", "onIdentifyFinished")
+
+    m.top.getScene().appendChild(m.identifyDialog)
+    m.identifyDialog.callFunc("showDialog")
+end sub
+
+sub onIdentifyFinished(event as object)
+    changed = event.getData()
+
+    m.identifyDialog.unobserveField("finished")
+    m.top.getScene().removeChild(m.identifyDialog)
+    m.identifyDialog = invalid
+
+    if changed then refreshAfterAdminChange()
+end sub
+
+' A metadata or artwork change only shows after a refetch, so the screen reloads itself
+sub refreshAfterAdminChange()
+    m.top.itemContent = m.top.itemContent
+end sub
+
+' ===== The shared prompt =====
+
+' extras carries the optional trimmings: message, details and selected
+sub showActionPrompt(title as string, options as object, callback as string, extras = {} as object)
+    m.actionPrompt = CreateObject("roSGNode", "ListPromptDialog")
+    m.actionPrompt.dialogTitle = title
+    m.actionPrompt.message = extras.message ?? ""
+    m.actionPrompt.options = options
+    m.actionPrompt.optionDetails = extras.details ?? []
+    m.actionPrompt.selectedOption = extras.selected ?? -1
+    m.actionPrompt.returnFocus = seerrFocusTarget()
+    m.actionPrompt.observeField("optionSelected", callback)
+
+    m.top.getScene().appendChild(m.actionPrompt)
+    m.actionPrompt.callFunc("showDialog")
+end sub
+
+sub closeActionPrompt()
+    if not isValid(m.actionPrompt) then return
+
+    m.actionPrompt.unobserveField("optionSelected")
+    m.top.getScene().removeChild(m.actionPrompt)
+    m.actionPrompt = invalid
+end sub
+
+sub openNamePrompt(title as string, callback as string)
+    m.nameKeyboard = tvKeyboard.Open(m.top.getScene(), { title: title })
+    m.nameKeyboard.observeField("submitted", callback)
+    m.nameKeyboard.observeField("cancelled", "closeNamePrompt")
+end sub
+
+sub closeNamePrompt(_event as object)
+    tvKeyboard.Release(m.nameKeyboard, ["submitted", "cancelled"])
+    m.nameKeyboard = invalid
+
+    target = seerrFocusTarget()
+    if isValid(target) then target.setFocus(true)
+end sub

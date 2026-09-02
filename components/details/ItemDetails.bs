@@ -9,6 +9,7 @@ import "pkg:/source/utils/remoteSubtitles.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/mediaBadges.bs"
 import "pkg:/source/utils/seerrButtons.bs"
+import "pkg:/source/utils/detailActions.bs"
 import "pkg:/source/utils/seerrDetailHost.bs"
 import "pkg:/source/utils/multiserver.bs"
 
@@ -25,6 +26,11 @@ import "pkg:/source/enums/SubtitleSelection.bs"
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/enums/VideoType.bs"
 import "pkg:/source/enums/ViewLoadStatus.bs"
+
+' The classic action row, in the pixels detailButtons draws it
+const CLASSIC_ROW_WIDTH = 1728
+const CLASSIC_BUTTON_WIDTH = 157
+const CLASSIC_BUTTON_GAP = 12
 
 ' The classic screen is laid out in the pixels the other clients lay it out in.
 ' Small text runs a little larger, since the Roku system font draws smaller than
@@ -64,6 +70,7 @@ const CLASSIC_CELL_PAD_Y = 14
 const CLASSIC_CELL_GAP = 4
 
 sub init()
+    m.top.observeField("seerrButtonsStale", "onSeerrButtonsStale")
     m.global.queueManager.callFunc("setForceTranscode", PlaybackMethod.PLAYNORMALLY)
     m.performRotationCheck = true
 
@@ -114,6 +121,10 @@ sub init()
     m.overview.observeField("boxHeight", "onOverviewHeightChanged")
 
     m.buttonRow = m.top.findNode("buttonRow")
+    m.buttonRowExtra = m.top.findNode("buttonRowExtra")
+    m.buttonConfigs = []
+    m.primaryCount = 0
+    m.actionsExpanded = false
     m.currentButtonIndex = 0
     m.buttonGroups = []
 
@@ -1184,6 +1195,9 @@ sub layoutContainer()
         ' rather than assumed
         rowHeight = 0
         if isValid(m.buttonRow) then rowHeight = m.buttonRow.boundingRect().height
+        if isValid(m.buttonRowExtra) and m.buttonRowExtra.visible
+            rowHeight = m.buttonRowExtra.translation[1] - 9 + m.buttonRowExtra.boundingRect().height
+        end if
         yPos += 9 + rowHeight + 9 + 36
     end if
 
@@ -1499,12 +1513,37 @@ end sub
 ' Button management
 ' ============================================
 
+' The Seerr payload lands after the row is first drawn, so it is drawn again with the
+' Seerr entries in, keeping focus where it was rather than snapping to the front
+sub onSeerrButtonsStale()
+    hadFocus = false
+    focusIndex = 0
+    for i = 0 to m.buttonGroups.count() - 1
+        if m.buttonGroups[i].isInFocusChain()
+            hadFocus = true
+            focusIndex = i
+            exit for
+        end if
+    end for
+
+    m.buttonConfigs = []
+    addButtons(m.top.itemContent.json)
+    buildButtonRows()
+
+    if hadFocus and m.buttonGroups.count() > 0
+        if focusIndex >= m.buttonGroups.count() then focusIndex = m.buttonGroups.count() - 1
+        m.currentButtonIndex = focusIndex
+        m.buttonGroups[focusIndex].setFocus(true)
+        highlightButton(focusIndex)
+    end if
+end sub
+
 sub updateButtonVisibility(itemData as object)
-    m.buttonRow.removeChildrenIndex(m.buttonRow.getChildCount(), 0)
-    m.buttonGroups = []
+    m.buttonConfigs = []
+    m.actionsExpanded = false
 
     addButtons(itemData)
-    centerButtonRow()
+    buildButtonRows()
 
     if m.buttonGroups.count() > 0
         m.currentButtonIndex = 0
@@ -1518,7 +1557,8 @@ sub updateButtonVisibility(itemData as object)
 end sub
 
 sub centerButtonRow()
-    centerButtonRowInContainer(m.buttonRow, m.buttonGroups.count(), 160, 50, 96)
+    centerButtonRowInContainer(m.buttonRow, m.primaryCount, CLASSIC_BUTTON_WIDTH, CLASSIC_BUTTON_GAP, 96)
+    centerButtonRowInContainer(m.buttonRowExtra, m.buttonGroups.count() - m.primaryCount, CLASSIC_BUTTON_WIDTH, CLASSIC_BUTTON_GAP, 96)
 end sub
 
 sub focusFirstButton()
@@ -1559,7 +1599,7 @@ sub addButtons(itemData as object)
 
     if hasProgress
         addButton({
-            icon: "pkg:/images/icons/play.png",
+            icon: "pkg:/images/icons/detail_play.png",
             label: tr("Resume"),
             detail: getFormattedRuntime(positionTicks),
             action: "resume",
@@ -1570,7 +1610,7 @@ sub addButtons(itemData as object)
     ' With a resume point on offer the second button starts over instead, which
     ' is how the other clients pair the two
     addButton({
-        icon: hasProgress ? "pkg:/images/icons/restart.png" : "pkg:/images/icons/play.png",
+        icon: hasProgress ? "pkg:/images/icons/detail_restart.png" : "pkg:/images/icons/detail_play.png",
         label: hasProgress ? tr("Restart") : tr("Play"),
         action: hasProgress ? "restart" : "play",
         id: hasProgress ? "restartButton" : "playButton"
@@ -1582,7 +1622,7 @@ sub addButtons(itemData as object)
 
     if isValid(itemData.MediaSources) and itemData.MediaSources.Count() > 1
         candidates.push({ id: "version", config: {
-            icon: "pkg:/images/details/version.png",
+            icon: "pkg:/images/icons/detail_version.png",
             label: tr("Versions"),
             action: "versionTrack",
             id: "versionButton"
@@ -1596,7 +1636,7 @@ sub addButtons(itemData as object)
         end for
         if audioCount > 1
             candidates.push({ id: "audio", config: {
-                icon: "pkg:/images/icons/audio_track.png",
+                icon: "pkg:/images/icons/detail_audio.png",
                 label: tr("Audio"),
                 action: "audioTrack",
                 id: "audioTrackButton"
@@ -1605,15 +1645,15 @@ sub addButtons(itemData as object)
     end if
 
     candidates.push({ id: "subtitles", config: {
-        icon: "pkg:/images/details/subtitle.png",
+        icon: "pkg:/images/icons/detail_subtitle.png",
         label: tr("Subtitle"),
         action: "subtitleTrack",
         id: "subtitleButton"
     } })
 
-    if not isEpisode() and m.top.trailerAvailable
+    if m.top.trailerAvailable
         candidates.push({ id: "trailer", config: {
-            icon: "pkg:/images/icons/trailer.png",
+            icon: "pkg:/images/icons/detail_trailer.png",
             label: tr("Trailer"),
             action: "trailer",
             id: "trailerButton"
@@ -1622,7 +1662,7 @@ sub addButtons(itemData as object)
 
     isWatched = chainLookupReturn(itemData, "UserData.Played", false)
     candidates.push({ id: "watched", config: {
-        icon: "pkg:/images/icons/watched.png",
+        icon: "pkg:/images/icons/detail_watched.png",
         label: isWatched ? tr("Watched") : tr("Unwatched"),
         activeInk: isWatched ? CLASSIC_WATCHED_INK : "",
         action: "watched",
@@ -1631,7 +1671,7 @@ sub addButtons(itemData as object)
 
     isFavorited = chainLookupReturn(itemData, "UserData.IsFavorite", false)
     candidates.push({ id: "favorite", config: {
-        icon: "pkg:/images/icons/favorite.png",
+        icon: "pkg:/images/icons/detail_favorite.png",
         label: isFavorited ? tr("Favorited") : tr("Favorite"),
         activeInk: isFavorited ? CLASSIC_FAVORITE_INK : "",
         action: "favorite",
@@ -1640,7 +1680,7 @@ sub addButtons(itemData as object)
 
     if isEpisode()
         candidates.push({ id: "goToSeries", config: {
-            icon: "pkg:/images/icons/go_to_series.png",
+            icon: "pkg:/images/icons/detail_series.png",
             label: tr("Go to Series"),
             action: "goToSeries",
             id: "goToSeriesButton"
@@ -1658,7 +1698,11 @@ sub addArrangedButtons(candidates as object)
         candidates.push(candidate)
     end for
 
-    for each candidate in buttonLayout.Arrange(candidates, order, hidden)
+    for each candidate in detailActionCandidates(m.top.itemContent.json)
+        candidates.push(candidate)
+    end for
+
+    for each candidate in buttonLayout.Arrange(buttonLayout.InCatalogueOrder(candidates), order, hidden)
         addButton(candidate.config)
     end for
 end sub
@@ -1669,7 +1713,7 @@ sub addSeriesButtons()
     hasResume = m.top.displayResumeButton
     if hasResume
         addButton({
-            icon: "pkg:/images/icons/play.png",
+            icon: "pkg:/images/icons/detail_play.png",
             label: tr("Resume"),
             action: "seriesResume",
             id: "resumeButton"
@@ -1677,7 +1721,7 @@ sub addSeriesButtons()
     end if
 
     addButton({
-        icon: hasResume ? "pkg:/images/icons/restart.png" : "pkg:/images/icons/play.png",
+        icon: hasResume ? "pkg:/images/icons/detail_restart.png" : "pkg:/images/icons/detail_play.png",
         label: hasResume ? tr("Restart") : tr("Play"),
         action: "seriesPlay",
         id: "playButton"
@@ -1688,7 +1732,7 @@ sub addSeriesButtons()
 
     candidates = []
     candidates.push({ id: "shuffle", config: {
-        icon: "pkg:/images/icons/shuffle.png",
+        icon: "pkg:/images/icons/detail_shuffle.png",
         label: tr("Shuffle"),
         action: "seriesShuffle",
         id: "shuffleButton"
@@ -1696,7 +1740,7 @@ sub addSeriesButtons()
 
     if m.top.trailerAvailable
         candidates.push({ id: "trailer", config: {
-            icon: "pkg:/images/icons/trailer.png",
+            icon: "pkg:/images/icons/detail_trailer.png",
             label: tr("Trailer"),
             action: "trailer",
             id: "trailerButton"
@@ -1704,7 +1748,7 @@ sub addSeriesButtons()
     end if
 
     candidates.push({ id: "watched", config: {
-        icon: "pkg:/images/icons/watched.png",
+        icon: "pkg:/images/icons/detail_watched.png",
         label: isWatched ? tr("Watched") : tr("Unwatched"),
         activeInk: isWatched ? CLASSIC_WATCHED_INK : "",
         action: "watched",
@@ -1712,7 +1756,7 @@ sub addSeriesButtons()
     } })
 
     candidates.push({ id: "favorite", config: {
-        icon: "pkg:/images/icons/favorite.png",
+        icon: "pkg:/images/icons/detail_favorite.png",
         label: isFavorited ? tr("Favorited") : tr("Favorite"),
         activeInk: isFavorited ? CLASSIC_FAVORITE_INK : "",
         action: "favorite",
@@ -1726,10 +1770,109 @@ sub addButton(config as object)
     ' A Seerr title has nothing in the library behind it, so only the actions that reach
     ' Seerr itself are worth offering
     if m.top.seerrOnly and Left(config.id, 5) <> "seerr" then return
+    m.buttonConfigs.push(config)
+end sub
+
+function primaryRowCapacity() as integer
+    stride = CLASSIC_BUTTON_WIDTH + CLASSIC_BUTTON_GAP
+    fits = (CLASSIC_ROW_WIDTH + CLASSIC_BUTTON_GAP) / stride
+    if fits < 3 then return 3
+    return Int(fits)
+end function
+
+' The row holds as many buttons as fit across the screen. Anything past that folds
+' under a trailing More, which opens a second row underneath, the way the other
+' clients handle a long action row.
+sub buildButtonRows()
+    m.buttonRow.removeChildrenIndex(m.buttonRow.getChildCount(), 0)
+    m.buttonRowExtra.removeChildrenIndex(m.buttonRowExtra.getChildCount(), 0)
+    m.buttonGroups = []
+
+    configs = m.buttonConfigs
+    capacity = primaryRowCapacity()
+    overflows = configs.count() > capacity
+
+    primary = configs
+    extra = []
+    if overflows
+        primary = []
+        for i = 0 to capacity - 2
+            primary.push(configs[i])
+        end for
+        for i = capacity - 1 to configs.count() - 1
+            extra.push(configs[i])
+        end for
+    end if
+
+    for each config in primary
+        appendButton(config, m.buttonRow)
+    end for
+
+    if overflows
+        appendButton(moreButtonConfig(), m.buttonRow)
+    end if
+
+    m.primaryCount = m.buttonGroups.count()
+
+    for each config in extra
+        appendButton(config, m.buttonRowExtra)
+    end for
+
+    m.buttonRowExtra.visible = m.actionsExpanded and extra.count() > 0
+    if not m.buttonRowExtra.visible then m.actionsExpanded = false
+
+    if m.buttonRowExtra.visible
+        m.buttonRowExtra.translation = [0, 27 + m.buttonRow.boundingRect().height]
+    end if
+
+    centerButtonRow()
+    layoutContainer()
+end sub
+
+function moreButtonConfig() as object
+    return {
+        icon: m.actionsExpanded ? "pkg:/images/icons/chevron-up.png" : "pkg:/images/icons/chevron-down.png",
+        label: m.actionsExpanded ? tr("Less") : tr("More"),
+        action: "toggleMoreActions",
+        id: "moreActionsButton"
+    }
+end function
+
+sub appendButton(config as object, row as object)
     buttonGroup = detailButtons.createButton(config, m.buttonGroups.count())
     buttonGroup.observeField("focusedChild", "onButtonFocusChanged")
-    m.buttonRow.appendChild(buttonGroup)
+    row.appendChild(buttonGroup)
     m.buttonGroups.push(buttonGroup)
+end sub
+
+' Whether an index sits on the second row, so the arrows stay inside their own row
+function isExtraRowIndex(index as integer) as boolean
+    return index >= m.primaryCount
+end function
+
+function rowStart(index as integer) as integer
+    return isExtraRowIndex(index) ? m.primaryCount : 0
+end function
+
+function rowEnd(index as integer) as integer
+    return isExtraRowIndex(index) ? m.buttonGroups.count() - 1 : m.primaryCount - 1
+end function
+
+sub focusButton(index as integer)
+    if index < 0 or index >= m.buttonGroups.count() then return
+
+    m.buttonGroups[index].setFocus(true)
+    m.top.lastFocus = m.buttonGroups[index]
+    m.currentButtonIndex = index
+    highlightButton(index)
+    setLastFocus(m.buttonGroups[index])
+end sub
+
+sub toggleMoreActions()
+    m.actionsExpanded = not m.actionsExpanded
+    index = m.currentButtonIndex
+    buildButtonRows()
+    focusButton(index)
 end sub
 
 sub onButtonFocusChanged(event as object)
@@ -1762,6 +1905,11 @@ sub handleButtonSelect()
 
     buttonAction = buttonGroup.buttonAction
     if buttonAction = invalid then return
+
+    if buttonAction = "toggleMoreActions"
+        toggleMoreActions()
+        return
+    end if
 
     if Left(buttonAction, 5) = "seerr"
         startSeerrRequest(buttonAction)
@@ -1819,6 +1967,18 @@ sub handleButtonSelect()
         setLastFocus(m.subtitleSelector)
     else if buttonAction = "watched"
         toggleWatched()
+    else if buttonAction = "personalRating"
+        showRatingPrompt()
+    else if buttonAction = "addToPlaylist"
+        showPlaylistPicker()
+    else if buttonAction = "addToCollection"
+        showCollectionPicker()
+    else if buttonAction = "deleteItem"
+        confirmDelete()
+    else if buttonAction = "changeArtwork"
+        showArtworkPicker()
+    else if buttonAction = "adminControls"
+        showIdentify()
     else if buttonAction = "goToSeries"
         m.top.buttonSelected = "goToSeries-button"
     else if buttonAction = "favorite"
@@ -2168,7 +2328,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return true
     end if
 
-    if key = KeyCode.UP and m.buttonGroups.count() > 0
+    if key = KeyCode.UP and m.buttonGroups.count() > 0 and not isExtraRowIndex(m.currentButtonIndex)
         for each btn in m.buttonGroups
             if btn.hasFocus() or btn.isInFocusChain()
                 unhighlightAllButtons()
@@ -2241,29 +2401,30 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     if isButtonFocused
         if key = KeyCode.LEFT
-            if m.currentButtonIndex > 0
-                newIndex = m.currentButtonIndex - 1
-                m.buttonGroups[newIndex].setFocus(true)
-                m.top.lastFocus = m.buttonGroups[newIndex]
-                m.currentButtonIndex = newIndex
-                highlightButton(newIndex)
-                setLastFocus(m.buttonGroups[newIndex])
+            if m.currentButtonIndex > rowStart(m.currentButtonIndex)
+                focusButton(m.currentButtonIndex - 1)
             else
                 return FocusSidebar(m.top)
             end if
             return true
         else if key = KeyCode.RIGHT
-            if m.currentButtonIndex < m.buttonGroups.count() - 1
-                newIndex = m.currentButtonIndex + 1
-                m.buttonGroups[newIndex].setFocus(true)
-                m.top.lastFocus = m.buttonGroups[newIndex]
-                m.currentButtonIndex = newIndex
-                highlightButton(newIndex)
-                setLastFocus(m.buttonGroups[newIndex])
+            if m.currentButtonIndex < rowEnd(m.currentButtonIndex)
+                focusButton(m.currentButtonIndex + 1)
             end if
             return true
         else if key = KeyCode.OK
             handleButtonSelect()
+            return true
+        else if key = KeyCode.UP and isExtraRowIndex(m.currentButtonIndex)
+            ' Back to the same column on the first row, or to More where the row is shorter
+            column = m.currentButtonIndex - m.primaryCount
+            if column >= m.primaryCount then column = m.primaryCount - 1
+            focusButton(column)
+            return true
+        else if key = KeyCode.DOWN and m.actionsExpanded and not isExtraRowIndex(m.currentButtonIndex)
+            column = m.currentButtonIndex
+            if m.primaryCount + column > m.buttonGroups.count() - 1 then column = m.buttonGroups.count() - 1 - m.primaryCount
+            focusButton(m.primaryCount + column)
             return true
         else if key = KeyCode.DOWN
             if m.extrasGrid <> invalid and m.extrasGrid.content <> invalid

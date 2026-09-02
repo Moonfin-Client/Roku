@@ -1,0 +1,256 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/trackDialog.bs"
+import "pkg:/source/utils/tvKeyboard.bs"
+
+sub init()
+    m.rowMenu = m.top.findNode("rowMenu")
+    m.rowMenu.observeField("itemSelected", "onMatchSelected")
+
+    m.parts = {
+        panel: m.top.findNode("panel"),
+        panelBg: m.top.findNode("panelBg"),
+        panelBorder: m.top.findNode("panelBorder"),
+        title: m.top.findNode("title"),
+        titleRule: m.top.findNode("titleRule"),
+        list: m.rowMenu
+    }
+
+    m.results = []
+    m.applied = false
+
+    m.searchTask = CreateObject("roSGNode", "JellyfinAPITask")
+    m.applyTask = CreateObject("roSGNode", "JellyfinAPITask")
+    m.refreshTask = CreateObject("roSGNode", "JellyfinAPITask")
+end sub
+
+sub showDialog()
+    m.applied = false
+    m.top.visible = true
+    showMenu()
+end sub
+
+' The two admin actions. Identify is only offered where the providers have a route
+' for the item's type, since the server has none for a season or an episode.
+sub showMenu()
+    m.view = "menu"
+    m.parts.title.text = tr("Admin Controls")
+
+    labels = []
+    details = []
+    m.menuActions = []
+
+    if isValidAndNotEmpty(searchRoute())
+        labels.push(tr("Identify"))
+        details.push(tr("Search the metadata providers for a better match"))
+        m.menuActions.push("identify")
+    end if
+
+    labels.push(tr("Refresh Metadata"))
+    details.push(tr("Re-read the metadata the providers already have"))
+    m.menuActions.push("refresh")
+
+    showRows("", labels, true, details)
+    m.rowMenu.jumpToItem = 0
+    m.rowMenu.setFocus(true)
+end sub
+
+sub startSearch()
+    m.keyboard = tvKeyboard.Open(m.top.getScene(), {
+        title: tr("Search for the title"),
+        text: m.top.itemName
+    })
+    m.keyboard.observeField("submitted", "onSearchSubmitted")
+    m.keyboard.observeField("cancelled", "onSearchCancelled")
+end sub
+
+sub refreshMetadata()
+    startLoadingSpinner()
+
+    m.refreshTask.request = {
+        method: "POST",
+        path: Substitute("Items/{0}/Refresh", m.top.itemId),
+        params: { ReplaceAllMetadata: "true", ReplaceAllImages: "false" }
+    }
+    m.refreshTask.unobserveField("response")
+    m.refreshTask.observeField("response", "onMetadataRefreshed")
+    m.refreshTask.control = "RUN"
+end sub
+
+sub onMetadataRefreshed(event as object)
+    response = event.getData()
+    stopLoadingSpinner()
+
+    if isValid(response) and response.success
+        m.applied = true
+        closeDialog()
+        return
+    end if
+
+    showRows(tr("Could not refresh metadata"), [], false)
+end sub
+
+sub onSearchSubmitted(event as object)
+    query = event.getRoSGNode().text
+    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled"])
+    m.keyboard = invalid
+
+    if not isValidAndNotEmpty(query)
+        showMenu()
+        return
+    end if
+
+    m.view = "results"
+    m.parts.title.text = tr("Identify")
+    showRows(tr("Searching..."), [], false)
+    m.rowMenu.setFocus(true)
+
+    searchInfo = { Name: query, ProviderIds: {} }
+    if m.top.itemYear > 0 then searchInfo.Year = m.top.itemYear
+
+    m.searchTask.request = {
+        method: "POST",
+        path: Substitute("Items/RemoteSearch/{0}", searchRoute()),
+        bodyJson: FormatJson({ SearchInfo: searchInfo, ItemId: m.top.itemId, IncludeDisabledProviders: false })
+    }
+    m.searchTask.unobserveField("response")
+    m.searchTask.observeField("response", "onSearchResults")
+    m.searchTask.control = "RUN"
+end sub
+
+sub onSearchCancelled(_event as object)
+    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled"])
+    m.keyboard = invalid
+    showMenu()
+end sub
+
+function searchRoute() as string
+    routes = ["Movie", "Series", "BoxSet", "Person", "MusicAlbum", "MusicArtist", "Book", "Trailer", "MusicVideo"]
+    for each route in routes
+        if isStringEqual(m.top.itemType, route) then return route
+    end for
+    return ""
+end function
+
+sub onSearchResults(event as object)
+    response = event.getData()
+
+    m.results = []
+    if isValid(response) and response.success and isValid(response.data) and type(response.data) = "roArray"
+        m.results = response.data
+    end if
+
+    if m.results.count() = 0
+        showRows(tr("No matches found"), [], false)
+        return
+    end if
+
+    labels = []
+    details = []
+    for each result in m.results
+        name = result.Name ?? ""
+        year = chainLookupReturn(result, "ProductionYear", invalid)
+        if isValid(year) then name += ` (${year.toStr()})`
+        labels.push(name)
+        details.push(result.SearchProviderName ?? "")
+    end for
+
+    showRows("", labels, true, details)
+    m.rowMenu.jumpToItem = 0
+end sub
+
+sub showRows(notice as string, labels as object, selectable as boolean, details = [] as object)
+    content = CreateObject("roSGNode", "ContentNode")
+
+    if notice <> ""
+        row = content.CreateChild("SeerrRequestListData")
+        row.title = notice
+        row.dimmed = true
+        row.noIndicator = true
+        row.rowHeight = trackDialog.RowHeight()
+    end if
+
+    for i = 0 to labels.count() - 1
+        row = content.CreateChild("SeerrRequestListData")
+        row.title = labels[i]
+        if i < details.count() then row.description = details[i]
+        row.noIndicator = true
+        row.rowHeight = trackDialog.RowHeight()
+    end for
+
+    m.selectable = selectable
+    trackDialog.Layout(m.parts, content.getChildCount())
+    m.rowMenu.content = content
+end sub
+
+sub onMatchSelected()
+    if m.selectable <> true then return
+
+    index = m.rowMenu.itemSelected
+    if index < 0 then return
+
+    if m.view = "menu"
+        if index >= m.menuActions.count() then return
+        if m.menuActions[index] = "identify"
+            startSearch()
+        else
+            refreshMetadata()
+        end if
+        return
+    end if
+
+    if index >= m.results.count() then return
+
+    startLoadingSpinner()
+
+    m.applyTask.request = {
+        method: "POST",
+        path: Substitute("Items/RemoteSearch/Apply/{0}", m.top.itemId),
+        params: { ReplaceAllImages: "true" },
+        bodyJson: FormatJson(m.results[index])
+    }
+    m.applyTask.unobserveField("response")
+    m.applyTask.observeField("response", "onMatchApplied")
+    m.applyTask.control = "RUN"
+end sub
+
+sub onMatchApplied(event as object)
+    response = event.getData()
+    stopLoadingSpinner()
+
+    if isValid(response) and response.success
+        m.applied = true
+        closeDialog()
+        return
+    end if
+
+    showRows(tr("Something went wrong"), [], false)
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if not m.top.visible then return false
+
+    if key = KeyCode.BACK
+        if m.view = "menu"
+            closeDialog()
+        else
+            showMenu()
+        end if
+        return true
+    end if
+
+    if key = KeyCode.UP or key = KeyCode.DOWN or key = KeyCode.OK
+        if not m.rowMenu.isInFocusChain() then m.rowMenu.setFocus(true)
+        return true
+    end if
+
+    return false
+end function
+
+' The owner takes this node out of the scene as soon as it is told, so focus moves first
+sub closeDialog()
+    m.top.visible = false
+    if isValid(m.top.returnFocus) then m.top.returnFocus.setFocus(true)
+    m.top.finished = m.applied
+end sub

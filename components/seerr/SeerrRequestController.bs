@@ -2,6 +2,7 @@ import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/seerrButtons.bs"
+import "pkg:/source/utils/tvKeyboard.bs"
 
 ' Asking Seerr for a title, and taking the ask back. The ask itself is one dialog, the same
 ' one the other clients put up. Shared so both detail screens behave the same.
@@ -15,16 +16,267 @@ sub begin(action as string)
     details = m.top.details
     if not isValid(details) then return
 
-    m.pendingRequests = seerrButtons.PendingRequests(details.mediaInfo)
-
-    if action = "seerrCancel"
+    if action = "seerrCancelHd" or action = "seerrCancel4k"
+        m.pendingRequests = seerrButtons.PendingRequests(details.mediaInfo, action = "seerrCancel4k")
         onCancelRequestPressed()
     else if action = "seerrRequest4k"
         ShowRequestDialog(true, false)
     else if action = "seerrRequest"
         ' One button covers both tracks, so the dialog carries the switch between them
         ShowRequestDialog(false, seerrButtons.OffersBothTracks(details, m.top.mediaType))
+    else if action = "seerrWatchlist"
+        ToggleWatchlist()
+    else if action = "seerrReportIssue"
+        StartReportIssue()
+    else if action = "seerrManage"
+        ShowManageRequests()
     end if
+end sub
+
+' ===== Watchlist =====
+
+sub ToggleWatchlist()
+    startLoadingSpinner()
+
+    if m.top.details.onUserWatchlist = true
+        m.watchlistTask = CreateObject("roSGNode", "SeerrAPITask")
+        ' The query rides on the endpoint, since an assocarray crossing a node field
+        ' arrives with its keys lowercased and Seerr reads mediaType as written
+        m.watchlistTask.request = {
+            method: "DELETE",
+            endpoint: `/api/v1/watchlist/${m.top.tmdbId}?mediaType=${m.top.mediaType}`
+        }
+    else
+        m.watchlistTask = CreateObject("roSGNode", "SeerrAPITask")
+        m.watchlistTask.request = {
+            method: "POST",
+            endpoint: "/api/v1/watchlist",
+            bodyJson: SeerrJsonFromPairs([
+                { key: "tmdbId", value: m.top.tmdbId.toInt() },
+                { key: "mediaType", value: m.top.mediaType }
+            ])
+        }
+    end if
+
+    m.watchlistTask.observeField("response", "onWatchlistToggled")
+    m.watchlistTask.control = TaskControl.RUN
+end sub
+
+sub onWatchlistToggled(event as object)
+    response = event.getData()
+    stopLoadingSpinner()
+
+    if not isValid(response) or not response.success
+        ShowMessage(tr("Request Failed"), tr("Could not update the watchlist."))
+        return
+    end if
+
+    m.top.watchlistState = not (m.top.details.onUserWatchlist = true)
+end sub
+
+' ===== Reporting an issue =====
+
+sub StartReportIssue()
+    m.issueType = 0
+    m.issueSeason = 0
+    m.issueEpisode = 0
+
+    ShowDialog(tr("Report Issue"), "", [tr("Video"), tr("Audio"), tr("Subtitles"), tr("Other")], "onIssueTypeChosen")
+end sub
+
+sub onIssueTypeChosen(event as object)
+    index = event.getData()
+    CloseDialog()
+    if index < 0 then return
+
+    ' Seerr numbers the kinds one to four in the order they were offered
+    m.issueType = index + 1
+
+    if isStringEqual(m.top.mediaType, "tv")
+        ShowSeasonPrompt()
+        return
+    end if
+
+    ShowIssueKeyboard()
+end sub
+
+sub ShowSeasonPrompt()
+    m.issueSeasonNumbers = []
+    options = [tr("All Seasons")]
+
+    seasons = chainLookupReturn(m.top.details, "seasons", invalid)
+    if isValid(seasons) and type(seasons) = "roArray"
+        for each season in seasons
+            number = chainLookupReturn(season, "seasonNumber", invalid)
+            if isValid(number) and number > 0
+                m.issueSeasonNumbers.push({ number: number, episodes: chainLookupReturn(season, "episodeCount", 0) })
+                options.push(Substitute(tr("Season ^0"), number.toStr()))
+            end if
+        end for
+    end if
+
+    if options.count() = 1
+        ShowIssueKeyboard()
+        return
+    end if
+
+    ShowDialog(tr("Report Issue"), "", options, "onIssueSeasonChosen")
+end sub
+
+sub onIssueSeasonChosen(event as object)
+    index = event.getData()
+    CloseDialog()
+    if index < 0 then return
+
+    if index = 0
+        ShowIssueKeyboard()
+        return
+    end if
+
+    chosen = m.issueSeasonNumbers[index - 1]
+    m.issueSeason = chosen.number
+
+    if chosen.episodes <= 0
+        ShowIssueKeyboard()
+        return
+    end if
+
+    options = [tr("All Episodes")]
+    for episode = 1 to chosen.episodes
+        options.push(`E${episode.toStr()}`)
+    end for
+
+    ShowDialog(Substitute(tr("Season ^0"), chosen.number.toStr()), "", options, "onIssueEpisodeChosen")
+end sub
+
+sub onIssueEpisodeChosen(event as object)
+    index = event.getData()
+    CloseDialog()
+    if index < 0 then return
+
+    if index > 0 then m.issueEpisode = index
+
+    ShowIssueKeyboard()
+end sub
+
+sub ShowIssueKeyboard()
+    m.keyboard = tvKeyboard.Open(m.top.getScene(), {
+        title: tr("Describe the issue...")
+    })
+    m.keyboard.observeField("submitted", "onIssueMessageSubmitted")
+    m.keyboard.observeField("cancelled", "onIssueKeyboardClosed")
+end sub
+
+sub onIssueMessageSubmitted(event as object)
+    message = event.getRoSGNode().text
+    onIssueKeyboardClosed(event)
+
+    if not isValidAndNotEmpty(message) then return
+
+    startLoadingSpinner()
+
+    m.issueTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.issueTask.request = {
+        method: "POST",
+        endpoint: "/api/v1/issue",
+        bodyJson: SeerrJsonFromPairs([
+            { key: "issueType", value: m.issueType },
+            { key: "message", value: message },
+            { key: "mediaId", value: chainLookupReturn(m.top.details, "mediaInfo.id", 0) },
+            { key: "problemSeason", value: m.issueSeason },
+            { key: "problemEpisode", value: m.issueEpisode }
+        ])
+    }
+    m.issueTask.observeField("response", "onIssueReported")
+    m.issueTask.control = TaskControl.RUN
+end sub
+
+sub onIssueKeyboardClosed(_event as object)
+    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled"])
+    m.keyboard = invalid
+    if isValid(m.top.returnFocus) then m.top.returnFocus.setFocus(true)
+end sub
+
+sub onIssueReported(event as object)
+    response = event.getData()
+    stopLoadingSpinner()
+
+    if not isValid(response) or not response.success
+        ShowMessage(tr("Request Failed"), tr("Could not report the issue."))
+        return
+    end if
+
+    ShowMessage(tr("Success"), tr("Issue reported."))
+end sub
+
+' ===== Moderating requests =====
+
+sub ShowManageRequests()
+    m.manageable = seerrButtons.AllPendingRequests(m.top.details.mediaInfo)
+    if m.manageable.count() = 0 then return
+
+    options = []
+    for each request in m.manageable
+        options.push(ManageRequestLabel(request))
+    end for
+
+    ShowDialog(tr("Manage Requests"), "", options, "onManageRequestChosen")
+end sub
+
+function ManageRequestLabel(request as object) as string
+    who = chainLookupReturn(request, "requestedBy.displayName", "")
+    if not isValidAndNotEmpty(who) then who = tr("Unknown")
+
+    label = `${who} · ${request.is4k = true ? "4K" : "HD"}`
+
+    numbers = []
+    seasons = chainLookupReturn(request, "seasons", invalid)
+    if isValid(seasons) and type(seasons) = "roArray"
+        for each season in seasons
+            number = chainLookupReturn(season, "seasonNumber", invalid)
+            if isValid(number) and number > 0 then numbers.push(number.toStr())
+        end for
+    end if
+    if numbers.count() > 0 then label += ` · ${tr("Seasons")} ${numbers.join(", ")}`
+
+    return label
+end function
+
+sub onManageRequestChosen(event as object)
+    index = event.getData()
+    CloseDialog()
+    if index < 0 or index >= m.manageable.count() then return
+
+    m.managed = m.manageable[index]
+    ShowDialog(ManageRequestLabel(m.managed), "", [tr("Approve"), tr("Decline"), tr("Cancel")], "onManageActionChosen")
+end sub
+
+sub onManageActionChosen(event as object)
+    index = event.getData()
+    CloseDialog()
+    if index < 0 or index > 1 then return
+
+    startLoadingSpinner()
+
+    m.manageTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.manageTask.request = {
+        method: "POST",
+        endpoint: `/api/v1/request/${m.managed.id.toStr()}/${index = 0 ? "approve" : "decline"}`
+    }
+    m.manageTask.observeField("response", "onManageActionDone")
+    m.manageTask.control = TaskControl.RUN
+end sub
+
+sub onManageActionDone(event as object)
+    response = event.getData()
+    stopLoadingSpinner()
+
+    if not isValid(response) or not response.success
+        ShowMessage(tr("Request Failed"), tr("Could not update the request."))
+        return
+    end if
+
+    m.top.requestCompleted = true
 end sub
 
 ' ===== The request dialog =====
@@ -250,7 +502,7 @@ end sub
 ' ===== Panels =====
 
 sub ShowDialog(title as string, message as string, options as object, callback as string)
-    m.messageDialog = CreateObject("roSGNode", "SeerrMessageDialog")
+    m.messageDialog = CreateObject("roSGNode", "ListPromptDialog")
     m.messageDialog.dialogTitle = title
     m.messageDialog.message = message
     m.messageDialog.options = options
