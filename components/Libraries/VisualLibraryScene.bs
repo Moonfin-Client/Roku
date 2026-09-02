@@ -1,4 +1,5 @@
 
+import "pkg:/source/utils/tvKeyboard.bs"
 import "pkg:/source/utils/libraryCard.bs"
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
@@ -37,6 +38,9 @@ sub setupNodes()
     m.pluginRatings = m.top.findNode("pluginRatings")
 
     ' Header
+    m.searchBox = m.top.findNode("searchBox")
+    m.searchBox.placeholder = tr("Search this library...")
+
     m.libraryName = m.top.findNode("libraryName")
     m.libraryName.font.size = 38
     m.itemCountLabel = m.top.findNode("itemCount")
@@ -75,7 +79,8 @@ sub init()
     m.itemGridCounter = 0
     m.top.optionsAvailable = false
     setupNodes()
-    m.bypassSearchEvent = false
+    m.allItems = []
+    m.searchQuery = ""
 
     m.itemGrid.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
     m.genreGrid.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
@@ -276,10 +281,7 @@ end sub
 sub redrawItems()
     applyGridMetrics()
 
-    itemGridContent = m.data.getChildren(-1, 0)
-    m.data = createSGNode("ContentNode")
-    m.itemGrid.content = m.data
-    m.data.appendChildren(itemGridContent)
+    applySearchFilter()
 
     ' Reset cursor back to its previous location
     m.itemGrid.jumpToItem = m.itemGrid.itemFocused
@@ -370,7 +372,6 @@ sub loadInitialItems()
 
     m.filterOptions = ParseJson(m.filterOptions)
 
-    m.loadItemsTask.searchTerm = m.top.searchTerm
     m.loadItemsTask.sortField = m.sortField
     m.loadItemsTask.sortAscending = m.sortAscending
     m.loadItemsTask.filter = m.filter
@@ -452,14 +453,6 @@ sub loadInitialItems()
             m.loadItemsTask.passToItem.addreplace("collectionType", ItemType.MUSICVIDEO)
         end if
 
-        if isStringEqual(m.top.mediaType, ItemType.BOXSET)
-            if not isStringEqual(m.top.parentItem.LookupCI("type"), ItemType.BOXSET)
-                if m.loadItemsTask.searchTerm <> string.EMPTY
-                    m.loadItemsTask.itemType = ItemType.BOXSET
-                    m.loadItemsTask.recursive = true
-                end if
-            end if
-        end if
     else if isStringEqual(m.view, "Episodes")
         m.loadItemsTask.recursive = true
         m.loadItemsTask.itemType = ItemType.EPISODE
@@ -1008,17 +1001,28 @@ sub ItemDataLoaded(msg)
     m.itemGrid.opacity = "1"
     m.genreGrid.opacity = "0"
 
-    m.itemGrid.setFocus(true)
-    m.genreGrid.setFocus(false)
-    group = m.global.sceneManager.callFunc("getActiveScene")
-    group.lastFocus = m.itemGrid
+    ' A page arriving behind the open keyboard must not pull focus out of it
+    if not isValid(m.keyboard)
+        m.itemGrid.setFocus(true)
+        m.genreGrid.setFocus(false)
+        group = m.global.sceneManager.callFunc("getActiveScene")
+        group.lastFocus = m.itemGrid
+    end if
 
     if m.data.getChildCount() = 0
         m.itemGrid.jumpToItem = 0
     end if
 
-    m.data.appendChildren(itemData)
+    for each item in itemData
+        m.allItems.push(item)
+    end for
     noteCardSubtitles(itemData)
+
+    if m.searchQuery = ""
+        m.data.appendChildren(itemData)
+    else
+        applySearchFilter()
+    end if
 
     ' Update the stored counts
     m.loadedItems = m.loadedItems + itemCount
@@ -1351,28 +1355,92 @@ sub resetDropdownsToDefaultState()
     m.getFiltersTask.control = "RUN"
 end sub
 
-sub onSearchTermChanged()
-    if isStringEqual(m.loadItemsTask.searchTerm, m.top.searchTerm) then return
-
-    if not isStringEqual(m.top.searchTerm, string.EMPTY)
-        resetDropdownsToDefaultState()
-    end if
-
-    if m.bypassSearchEvent
-        m.bypassSearchEvent = false
-        return
-    end if
-
+' Everything the grid was showing goes, so a fresh page does not land beside the old one
+sub resetLoadedItems()
     m.loadedRows = 0
     m.loadedItems = 0
-
+    m.allItems = []
     m.data = createSGNode("ContentNode")
     m.itemGrid.content = m.data
+end sub
 
-    m.genreData = createSGNode("ContentNode")
-    m.genreGrid.content = m.genreData
+' The query narrows what is already loaded rather than asking the server again, so the
+' grid answers on every keystroke
+sub applySearchFilter()
+    query = LCase(m.searchQuery)
 
-    loadInitialItems()
+    m.data = createSGNode("ContentNode")
+
+    if query = ""
+        m.data.appendChildren(m.allItems)
+    else
+        matches = []
+        for each item in m.allItems
+            if sortableName(item).instr(query) <> -1 then matches.push(item)
+        end for
+        m.data.appendChildren(matches)
+    end if
+
+    m.itemGrid.content = m.data
+    updateStatusBar()
+
+    ' Handing the grid new content puts focus back on it, which would send the next
+    ' keystroke to a poster rather than the keyboard still standing open over it
+    if isValid(m.keyboard) then m.keyboard.setFocus(true)
+end sub
+
+' The server sorts on SortName, so a query is matched against that where it exists
+function sortableName(item as object) as string
+    name = chainLookupReturn(item, "json.SortName", "")
+    if not isValidAndNotEmpty(name) then name = chainLookupReturn(item, "json.Name", "")
+    return LCase(name)
+end function
+
+sub onSearchQueryChanged(event as object)
+    m.searchQuery = event.getData()
+    m.searchBox.query = m.searchQuery
+    applySearchFilter()
+
+    ' A match further into the library than the pages loaded so far only turns up once
+    ' more of it has arrived, so a pause in the typing fetches the next page
+    if isValid(m.searchPageTimer) then m.searchPageTimer.control = "stop"
+    if m.searchQuery = "" then return
+
+    if not isValid(m.searchPageTimer)
+        m.searchPageTimer = createObject("roSGNode", "Timer")
+        m.searchPageTimer.duration = 0.3
+        m.searchPageTimer.repeat = false
+        m.searchPageTimer.observeField("fire", "onSearchPageTimer")
+    end if
+    m.searchPageTimer.control = "start"
+end sub
+
+sub clearSearchQuery()
+    m.searchQuery = ""
+    m.searchBox.query = ""
+end sub
+
+sub onSearchPageTimer()
+    if m.loadedItems < m.loadItemsTask.totalRecordCount then loadMoreData()
+end sub
+
+sub openSearchKeyboard()
+    m.keyboard = tvKeyboard.Open(m.top.getScene(), {
+        hint: tr("Search this library..."),
+        text: m.searchQuery,
+        showScrim: false
+    })
+    if not isValid(m.keyboard) then return
+
+    m.keyboard.observeField("text", "onSearchQueryChanged")
+    m.keyboard.observeField("submitted", "closeSearchKeyboard")
+    m.keyboard.observeField("cancelled", "closeSearchKeyboard")
+end sub
+
+sub closeSearchKeyboard(_event as object)
+    tvKeyboard.Release(m.keyboard, ["text", "submitted", "cancelled"])
+    m.keyboard = invalid
+    focusToolbarItem(4)
 end sub
 
 sub alphaSelectedChanged()
@@ -1381,17 +1449,12 @@ sub alphaSelectedChanged()
         m.top.alphaSelected = string.EMPTY
     end if
 
-    m.loadedRows = 0
-    m.loadedItems = 0
-
-    m.data = createSGNode("ContentNode")
-    m.itemGrid.content = m.data
+    resetLoadedItems()
 
     m.genreData = createSGNode("ContentNode")
     m.genreGrid.content = m.genreData
 
     m.loadItemsTask.nameStartsWith = m.top.alphaSelected
-    m.top.searchTerm = string.EMPTY
     loadInitialItems()
 end sub
 
@@ -1415,11 +1478,9 @@ sub onOptionsVisibleChange()
         end if
 
         ' View change requires full reset of sort/filter
-        m.bypassSearchEvent = true
-        m.top.searchTerm = string.EMPTY
+        clearSearchQuery()
         m.top.alphaSelected = string.EMPTY
         m.loadItemsTask.nameStartsWith = " "
-        m.loadItemsTask.searchTerm = string.EMPTY
         m.filter = "All"
         m.filterOptions = {}
         m.sortField = "SortName"
@@ -1468,10 +1529,7 @@ sub onOptionsVisibleChange()
     end if
 
     if reload
-        m.loadedRows = 0
-        m.loadedItems = 0
-        m.data = createSGNode("ContentNode")
-        m.itemGrid.content = m.data
+        resetLoadedItems()
         loadInitialItems()
     end if
 
@@ -1540,19 +1598,23 @@ sub focusToolbarItem(index as integer)
     end for
 
     m.toolbarFocusIndex = index
+    m.searchBox.focused = index = 4
 
     if index >= 0 and index < m.toolbarButtons.count()
         m.toolbarButtons[index].focus = true
         m.toolbarButtons[index].setFocus(true)
         setLastFocus(m.toolbarButtons[index])
     else if index = 3
-        ' Alpha picker
         m.alphaGrid.setFocus(true)
         setLastFocus(m.alphaGrid)
+    else if index = 4
+        m.searchBox.setFocus(true)
+        setLastFocus(m.searchBox)
     end if
 end sub
 
 sub unfocusAllToolbarItems()
+    m.searchBox.focused = false
     for each btn in m.toolbarButtons
         btn.focus = false
     end for
@@ -1565,6 +1627,32 @@ end sub
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
+    if m.searchBox.isInFocusChain()
+        if isStringEqual(key, KeyCode.OK)
+            openSearchKeyboard()
+            return true
+        end if
+
+        if isStringEqual(key, KeyCode.LEFT)
+            focusToolbarItem(3)
+            return true
+        end if
+
+        if isStringEqual(key, KeyCode.DOWN)
+            m.searchBox.focused = false
+            focusToolbarItem(0)
+            return true
+        end if
+
+        if isStringEqual(key, KeyCode.BACK)
+            reclaimResources()
+            m.global.sceneManager.callfunc("popScene")
+            return true
+        end if
+
+        return true
+    end if
+
     ' ---- TOOLBAR ICON NAVIGATION ----
     if m.homeButton.isInFocusChain() or m.sortButton.isInFocusChain() or m.settingsButton.isInFocusChain()
         if isStringEqual(key, KeyCode.RIGHT)
@@ -1575,7 +1663,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
                 focusToolbarItem(2)
                 return true
             else if m.settingsButton.isInFocusChain()
-                ' Move to alpha picker
                 unfocusAllToolbarItems()
                 focusToolbarItem(3)
                 return true
@@ -1591,6 +1678,12 @@ function onKeyEvent(key as string, press as boolean) as boolean
                 return true
             end if
             ' At home button, LEFT does nothing
+            return true
+        end if
+
+        if isStringEqual(key, KeyCode.UP)
+            unfocusAllToolbarItems()
+            focusToolbarItem(4)
             return true
         end if
 
@@ -1656,6 +1749,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if isStringEqual(key, KeyCode.LEFT) and m.alphaGrid.itemFocused = 0
             ' Move from alpha to settings icon
             focusToolbarItem(2)
+            return true
+        end if
+
+        if isStringEqual(key, KeyCode.UP)
+            focusToolbarItem(4)
             return true
         end if
 
@@ -1782,8 +1880,7 @@ sub reclaimResources()
     m.loadItemsTask.control = TaskControl.STOP
     m.loadItemsTask.content = []
 
-    m.data = createSGNode("ContentNode")
-    m.itemGrid.content = m.data
+    resetLoadedItems()
 
     m.genreData = createSGNode("ContentNode")
     m.genreGrid.content = m.genreData
