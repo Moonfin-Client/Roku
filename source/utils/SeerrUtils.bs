@@ -11,6 +11,9 @@ const SEERR_PERMISSION_REQUEST_4K = 1024
 const SEERR_PERMISSION_REQUEST_4K_MOVIE = 2048
 const SEERR_PERMISSION_REQUEST_4K_TV = 4096
 const SEERR_PERMISSION_REQUEST_ADVANCED = 8192
+const SEERR_PERMISSION_MANAGE_ISSUES = 1048576
+const SEERR_PERMISSION_VIEW_ISSUES = 2097152
+const SEERR_PERMISSION_CREATE_ISSUES = 4194304
 
 ' Check if user has a specific Seerr permission
 ' @param permissions - User's permission bitmask
@@ -998,6 +1001,191 @@ function GetRequestStatusText(status as integer) as string
         return "Available"
     end if
     return "Unknown"
+end function
+
+' ============================================
+' Request and issue state
+' ============================================
+
+' Seerr media status
+const SEERR_MEDIA_PENDING = 2
+const SEERR_MEDIA_PROCESSING = 3
+const SEERR_MEDIA_PARTIAL = 4
+const SEERR_MEDIA_AVAILABLE = 5
+const SEERR_MEDIA_BLOCKLISTED = 6
+const SEERR_MEDIA_DELETED = 7
+
+' Seerr request status
+const SEERR_REQUEST_PENDING = 1
+const SEERR_REQUEST_APPROVED = 2
+const SEERR_REQUEST_DECLINED = 3
+const SEERR_REQUEST_FAILED = 4
+const SEERR_REQUEST_COMPLETED = 5
+
+' Seerr issue status
+const SEERR_ISSUE_OPEN = 1
+const SEERR_ISSUE_RESOLVED = 2
+
+function SeerrPosterUrl(media as object, size as string) as string
+    if media = invalid then return ""
+    if not isValidStringValue(media.posterPath) then return ""
+
+    return "https://image.tmdb.org/t/p/" + size + media.posterPath
+end function
+
+function SeerrMediaTitle(media as object) as string
+    if media <> invalid
+        if isValidStringValue(media.title) then return media.title
+        if isValidStringValue(media.name) then return media.name
+    end if
+
+    return tr("Unknown")
+end function
+
+function CanManageIssues(permissions as integer) as boolean
+    return HasSeerrPermission(permissions, SEERR_PERMISSION_MANAGE_ISSUES)
+end function
+
+function CanManageRequests(permissions as integer) as boolean
+    return HasSeerrPermission(permissions, SEERR_PERMISSION_MANAGE_REQUESTS)
+end function
+
+' What a request reads as, the way the other clients work it out. The media status wins over
+' the request status except where the request was turned down, and a queue with something in
+' it is the difference between processing and merely requested.
+function SeerrRequestStatusInfo(request as object) as object
+    if request = invalid then return { label: tr("Unknown"), color: "approved" }
+
+    if request.status = SEERR_REQUEST_DECLINED then return { label: tr("Declined"), color: "error" }
+    if request.status = SEERR_REQUEST_FAILED then return { label: tr("Failed"), color: "error" }
+
+    media = request.media
+    mediaStatus = invalid
+    downloading = false
+    if media <> invalid
+        if request.is4k = true
+            mediaStatus = media.status4k
+            downloading = SeerrQueueHasWork(media.downloadStatus4k)
+        else
+            mediaStatus = media.status
+            downloading = SeerrQueueHasWork(media.downloadStatus)
+        end if
+    end if
+
+    if mediaStatus = SEERR_MEDIA_PENDING then return { label: tr("Pending"), color: "pending" }
+    if mediaStatus = SEERR_MEDIA_PROCESSING
+        if downloading then return { label: tr("Processing"), color: "requested" }
+        return { label: tr("Requested"), color: "requested" }
+    end if
+    if mediaStatus = SEERR_MEDIA_PARTIAL
+        if downloading then return { label: tr("Processing"), color: "requested" }
+        return { label: tr("Partially Available"), color: "available" }
+    end if
+    if mediaStatus = SEERR_MEDIA_AVAILABLE then return { label: tr("Available"), color: "available" }
+    if mediaStatus = SEERR_MEDIA_BLOCKLISTED then return { label: tr("Blocklisted"), color: "error" }
+    if mediaStatus = SEERR_MEDIA_DELETED then return { label: tr("Deleted"), color: "error" }
+
+    if request.status = SEERR_REQUEST_PENDING then return { label: tr("Pending"), color: "pending" }
+    if request.status = SEERR_REQUEST_COMPLETED then return { label: tr("Available"), color: "available" }
+
+    return { label: tr("Approved"), color: "approved" }
+end function
+
+function SeerrQueueHasWork(queue as object) as boolean
+    if queue = invalid then return false
+    if type(queue) <> "roArray" then return false
+    return queue.Count() > 0
+end function
+
+function SeerrIssueStatusInfo(issue as object) as object
+    if issue <> invalid and issue.status = SEERR_ISSUE_RESOLVED
+        return { label: tr("Resolved"), color: "available" }
+    end if
+
+    return { label: tr("Open"), color: "pending" }
+end function
+
+function SeerrIssueTypeLabel(issueType as integer) as string
+    if issueType = 1 then return tr("Video")
+    if issueType = 2 then return tr("Audio")
+    if issueType = 3 then return tr("Subtitles")
+    return tr("Other")
+end function
+
+' How far along a download is, by bytes across the queue. Nothing to show unless the title is
+' being worked on, so a finished or turned down request returns invalid.
+function SeerrRequestDownloadSummary(request as object) as object
+    if request = invalid then return invalid
+    if request.status = SEERR_REQUEST_DECLINED or request.status = SEERR_REQUEST_FAILED then return invalid
+
+    media = request.media
+    if media = invalid then return invalid
+
+    if request.is4k = true
+        mediaStatus = media.status4k
+        queue = media.downloadStatus4k
+    else
+        mediaStatus = media.status
+        queue = media.downloadStatus
+    end if
+
+    if mediaStatus <> SEERR_MEDIA_PROCESSING and mediaStatus <> SEERR_MEDIA_PARTIAL then return invalid
+    if not SeerrQueueHasWork(queue) then return invalid
+
+    total = 0.0
+    left = 0.0
+    for each entry in queue
+        if entry = invalid then continue for
+        if entry.size <> invalid then total += entry.size
+        if entry.sizeLeft <> invalid then left += entry.sizeLeft
+    end for
+
+    if total <= 0 then return invalid
+
+    done = total - left
+    if done < 0 then done = 0
+    fraction = done / total
+    if fraction > 1 then fraction = 1
+
+    return { fraction: fraction, done: done, total: total, isImporting: left <= 0 }
+end function
+
+' The done half is read in the total's unit, so a part finished download says 1.6 GB / 4.4 GB
+' rather than 330.9 MB / 4.4 GB
+function SeerrDownloadSizeText(summary as object) as string
+    if summary = invalid then return ""
+
+    unit = SeerrByteUnit(summary.total)
+    return SeerrScaleBytes(summary.done, unit) + " / " + SeerrScaleBytes(summary.total, unit)
+end function
+
+function SeerrByteUnit(bytes as double) as string
+    if bytes >= 1073741824 then return "GB"
+    if bytes >= 1048576 then return "MB"
+    if bytes >= 1024 then return "KB"
+    return "B"
+end function
+
+function SeerrScaleBytes(bytes as double, unit as string) as string
+    if unit = "GB" then return Str(Int(bytes / 107374182.4) / 10).Trim() + " GB"
+    if unit = "MB" then return Str(Int(bytes / 104857.6) / 10).Trim() + " MB"
+    if unit = "KB" then return Str(Int(bytes / 102.4) / 10).Trim() + " KB"
+    return Str(Int(bytes)).Trim() + " B"
+end function
+
+' Dates are cut out of the string, because roDateTime shifts the day for anyone west of UTC
+function SeerrFormatDate(value as dynamic) as string
+    if not isValidStringValue(value) then return ""
+    if Len(value) < 10 then return ""
+
+    year = Mid(value, 1, 4)
+    month = Mid(value, 6, 2).toInt()
+    day = Mid(value, 9, 2).toInt()
+    if month < 1 or month > 12 then return ""
+
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    return tr(months[month - 1]) + " " + day.toStr() + ", " + year
 end function
 
 ' ============================================

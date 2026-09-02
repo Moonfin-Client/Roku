@@ -1,0 +1,257 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
+import "pkg:/source/utils/trackDialog.bs"
+
+sub init()
+    m.rowMenu = m.top.findNode("rowMenu")
+    m.rowMenu.observeField("itemSelected", "onRowSelected")
+
+    m.parts = {
+        panel: m.top.findNode("panel"),
+        panelBg: m.top.findNode("panelBg"),
+        panelBorder: m.top.findNode("panelBorder"),
+        title: m.top.findNode("title"),
+        titleRule: m.top.findNode("titleRule"),
+        list: m.rowMenu
+    }
+
+    m.actions = []
+    m.deleteArmed = false
+
+    m.detailTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.actionTask = CreateObject("roSGNode", "SeerrAPITask")
+end sub
+
+sub showThread()
+    m.deleteArmed = false
+    rebuild(0)
+
+    m.top.visible = true
+    m.rowMenu.setFocus(true)
+
+    ' The list payload leaves the comment authors out, so the whole issue is fetched again
+    issueId = chainLookupReturn(m.top.issue, "id", invalid)
+    if not isValid(issueId) then return
+
+    m.detailTask.request = {
+        method: "GET",
+        endpoint: `/api/v1/issue/${issueId.toStr()}`
+    }
+    m.detailTask.unobserveField("response")
+    m.detailTask.observeField("response", "onIssueLoaded")
+    m.detailTask.control = TaskControl.RUN
+end sub
+
+sub onIssueLoaded(event as object)
+    response = event.getData()
+    if not isValid(response) or not response.success or not isValid(response.data) then return
+
+    m.top.issue = response.data
+    rebuild(m.rowMenu.itemFocused)
+end sub
+
+sub rebuild(focusIndex as integer)
+    issue = m.top.issue
+    m.parts.title.text = SeerrMediaTitle(chainLookupReturn(issue, "media", invalid))
+
+    content = CreateObject("roSGNode", "ContentNode")
+    m.actions = []
+
+    info = SeerrIssueStatusInfo(issue)
+    addRow(content, headline(issue), info.label, "", false)
+
+    comments = chainLookupReturn(issue, "comments", invalid)
+    if isValid(comments) and type(comments) = "roArray"
+        for i = 0 to comments.count() - 1
+            comment = comments[i]
+            if not isValid(comment) then continue for
+
+            who = chainLookupReturn(comment, "user.displayName", "")
+            if not isValidAndNotEmpty(who) then who = tr("Unknown")
+            when = SeerrFormatDate(comment.createdAt)
+
+            ' The first comment is the issue itself, the rest are replies
+            heading = i = 0 ? Substitute(tr("^0 reported"), who) : who
+            if isValidAndNotEmpty(when) then heading += `  ${when}`
+
+            addRow(content, heading, chainLookupReturn(comment, "message", ""), "", i = 0)
+        end for
+    end if
+
+    if mayAct(issue)
+        resolved = chainLookupReturn(issue, "status", SEERR_ISSUE_OPEN) = SEERR_ISSUE_RESOLVED
+        addRow(content, resolved ? tr("Reopen") : tr("Resolve"), "", "status", true)
+    end if
+
+    if mayDelete(issue)
+        addRow(content, m.deleteArmed ? tr("Press again to confirm") : tr("Delete Issue"), "", "delete", false)
+    end if
+
+    addRow(content, tr("Close"), "", "close", true)
+
+    trackDialog.Layout(m.parts, content.getChildCount())
+
+    m.rowMenu.content = content
+    if focusIndex >= 0 and focusIndex < content.getChildCount() then m.rowMenu.jumpToItem = focusIndex
+end sub
+
+' What the issue is about, in the line the list rows use
+function headline(issue as object) as string
+    line = SeerrIssueTypeLabel(chainLookupReturn(issue, "issueType", 4))
+
+    season = chainLookupReturn(issue, "problemSeason", 0)
+    episode = chainLookupReturn(issue, "problemEpisode", 0)
+    if isValid(season) and season > 0
+        if isValid(episode) and episode > 0
+            line += ` · S${season.toStr()} E${episode.toStr()}`
+        else
+            line += ` · ${tr("Season")} ${season.toStr()}`
+        end if
+    end if
+
+    return line
+end function
+
+sub addRow(content as object, title as string, description as string, action as string, dividerAbove as boolean)
+    row = content.CreateChild("SeerrRequestListData")
+    row.title = title
+    row.description = description
+    row.action = action
+    row.dimmed = action = ""
+    row.noIndicator = true
+    row.dividerAbove = dividerAbove
+    row.rowHeight = trackDialog.RowHeight()
+
+    m.actions.push(action)
+end sub
+
+function mayAct(issue as object) as boolean
+    if m.top.canManage then return true
+
+    return chainLookupReturn(issue, "createdBy.id", -1) = m.top.seerrUserId
+end function
+
+' The author can take back an issue only while nobody has replied to it
+function mayDelete(issue as object) as boolean
+    if m.top.canManage then return true
+    if chainLookupReturn(issue, "createdBy.id", -1) <> m.top.seerrUserId then return false
+
+    comments = chainLookupReturn(issue, "comments", invalid)
+    if not isValid(comments) or type(comments) <> "roArray" then return true
+
+    return comments.count() <= 1
+end function
+
+sub onRowSelected()
+    index = m.rowMenu.itemSelected
+    if index < 0 or index >= m.actions.count() then return
+
+    action = m.actions[index]
+    if action = "" then return
+
+    if action = "close"
+        closeThread(invalid)
+    else if action = "status"
+        toggleStatus()
+    else if action = "delete"
+        confirmDelete(index)
+    end if
+end sub
+
+sub toggleStatus()
+    issueId = chainLookupReturn(m.top.issue, "id", invalid)
+    if not isValid(issueId) then return
+
+    resolved = chainLookupReturn(m.top.issue, "status", SEERR_ISSUE_OPEN) = SEERR_ISSUE_RESOLVED
+    m.pendingAction = "status"
+
+    startLoadingSpinner()
+    m.actionTask.request = {
+        method: "POST",
+        endpoint: `/api/v1/issue/${issueId.toStr()}/${resolved ? "open" : "resolved"}`
+    }
+    m.actionTask.unobserveField("response")
+    m.actionTask.observeField("response", "onActionDone")
+    m.actionTask.control = TaskControl.RUN
+end sub
+
+' Taking an issue back asks twice, on the row itself rather than in a panel of its own
+sub confirmDelete(index as integer)
+    if not m.deleteArmed
+        m.deleteArmed = true
+        rebuild(index)
+        return
+    end if
+
+    issueId = chainLookupReturn(m.top.issue, "id", invalid)
+    if not isValid(issueId) then return
+
+    m.pendingAction = "delete"
+    startLoadingSpinner()
+    m.actionTask.request = {
+        method: "DELETE",
+        endpoint: `/api/v1/issue/${issueId.toStr()}`
+    }
+    m.actionTask.unobserveField("response")
+    m.actionTask.observeField("response", "onActionDone")
+    m.actionTask.control = TaskControl.RUN
+end sub
+
+sub onActionDone(event as object)
+    response = event.getData()
+    stopLoadingSpinner()
+
+    if not isValid(response) or not response.success
+        m.deleteArmed = false
+        rebuild(m.rowMenu.itemFocused)
+        return
+    end if
+
+    if m.pendingAction = "delete"
+        closeThread({ deleted: true })
+        return
+    end if
+
+    issue = m.top.issue
+    if isValid(response.data)
+        issue = response.data
+    else
+        issue.status = chainLookupReturn(issue, "status", SEERR_ISSUE_OPEN) = SEERR_ISSUE_RESOLVED ? SEERR_ISSUE_OPEN : SEERR_ISSUE_RESOLVED
+    end if
+
+    m.top.issue = issue
+    rebuild(m.rowMenu.itemFocused)
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    ' A dismissed thread can still hold focus, and swallowing keys there would strand the screen
+    if not m.top.visible then return false
+
+    if key = KeyCode.BACK
+        closeThread(invalid)
+        return true
+    end if
+
+    if key = KeyCode.UP or key = KeyCode.DOWN or key = KeyCode.OK
+        if not m.rowMenu.isInFocusChain() then m.rowMenu.setFocus(true)
+        return true
+    end if
+
+    return false
+end function
+
+' The owner takes this node out of the scene as soon as it is told, so focus moves first
+sub closeThread(change as object)
+    m.top.visible = false
+    if isValid(m.top.returnFocus) then m.top.returnFocus.setFocus(true)
+
+    if isValid(change)
+        m.top.issueChanged = change
+    else
+        m.top.issueChanged = { issue: m.top.issue }
+    end if
+end sub

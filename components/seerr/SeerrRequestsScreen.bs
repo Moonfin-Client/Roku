@@ -1,0 +1,639 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
+
+const PAGE_SIZE = 20
+' Seerr leaves the title and artwork off a request, so each one is filled in from TMDB. A few
+' at a time, since a page of twenty would otherwise be twenty calls in a row.
+const HYDRATION_BATCH = 6
+' How close to the end of the list a load of the next page starts
+const LOAD_MORE_MARGIN = 5
+
+sub init()
+    m.titleLabel = m.top.findNode("titleLabel")
+    m.tabBar = m.top.findNode("tabBar")
+    m.filterBar = m.top.findNode("filterBar")
+    m.requestGrid = m.top.findNode("requestGrid")
+    m.issueList = m.top.findNode("issueList")
+    m.stateLabel = m.top.findNode("stateLabel")
+    m.retryButton = m.top.findNode("retryButton")
+
+    m.titleLabel.text = tr("Requests")
+    m.retryButton.text = tr("Retry")
+
+    m.tabBar.observeField("selectedIndex", "onTabSelected")
+    m.tabBar.observeField("escape", "onTabEscape")
+    m.filterBar.observeField("selectedIndex", "onFilterSelected")
+    m.filterBar.observeField("escape", "onFilterEscape")
+    m.requestGrid.observeField("itemSelected", "onRequestSelected")
+    m.requestGrid.observeField("itemFocused", "onListItemFocused")
+    m.issueList.observeField("itemSelected", "onIssueSelected")
+    m.issueList.observeField("itemFocused", "onListItemFocused")
+    m.retryButton.observeField("buttonSelected", "onRetryPressed")
+
+    m.tab = "requests"
+    m.requestFilter = "all"
+    m.issueFilter = "open"
+    m.items = []
+    m.counts = { pending: 0, open: 0 }
+    m.loading = false
+    m.loadingMore = false
+    m.hasMore = true
+
+    permissions = GetCurrentUserSeerrPermissions()
+    m.canManageRequests = CanManageRequests(permissions)
+    m.canManageIssues = CanManageIssues(permissions)
+    m.seerrUserId = CurrentSeerrUserId()
+
+    m.listTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.actionTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.countTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.hydrationTasks = []
+    m.hydrationExpected = 0
+    m.loadGeneration = 0
+    m.listTask.addField("generation", "integer", false)
+end sub
+
+sub OnScreenShown(_isReturning = false as boolean)
+    if isValid(m.top.lastFocus)
+        m.top.lastFocus.setFocus(true)
+        setLastFocus(m.top.lastFocus)
+        return
+    end if
+
+    m.tab = isStringEqual(m.top.initialTab, "issues") ? "issues" : "requests"
+    buildTabs()
+    buildFilters()
+    loadCounts()
+    reload()
+
+    m.tabBar.setFocus(true)
+end sub
+
+sub OnScreenHidden()
+    for each task in [m.listTask, m.actionTask, m.countTask]
+        task.unobserveField("response")
+    end for
+end sub
+
+' ===== The two bars =====
+
+sub buildTabs()
+    m.tabBar.tabs = [
+        { id: "requests", label: tabLabel(tr("Requests"), m.counts.pending) },
+        { id: "issues", label: tabLabel(tr("Issues"), m.counts.open) }
+    ]
+
+    index = m.tab = "issues" ? 1 : 0
+    m.tabBar.focusIndex = index
+    m.tabBar.selectedIndex = index
+end sub
+
+' Only a viewer who can act on them is told how many are waiting
+function tabLabel(name as string, count as integer) as string
+    if count <= 0 then return name
+    return `${name}  ${count.toStr()}`
+end function
+
+sub buildFilters()
+    if m.tab = "issues"
+        m.filterBar.tabs = [
+            { id: "open", label: tr("Open") },
+            { id: "resolved", label: tr("Resolved") },
+            { id: "all", label: tr("All") }
+        ]
+        wanted = m.issueFilter
+    else
+        m.filterBar.tabs = [
+            { id: "all", label: tr("All") },
+            { id: "pending", label: tr("Pending") },
+            { id: "approved", label: tr("Approved") },
+            { id: "processing", label: tr("Processing") },
+            { id: "available", label: tr("Available") },
+            { id: "failed", label: tr("Failed") }
+        ]
+        wanted = m.requestFilter
+    end if
+
+    selected = filterIndex(m.filterBar.tabs, wanted)
+    m.filterBar.focusIndex = selected
+    m.filterBar.selectedIndex = selected
+end sub
+
+function filterIndex(tabs as object, wanted as string) as integer
+    for i = 0 to tabs.count() - 1
+        if tabs[i].id = wanted then return i
+    end for
+    return 0
+end function
+
+sub onTabSelected(event as object)
+    index = event.getData()
+    if index < 0 then return
+
+    wanted = index = 1 ? "issues" : "requests"
+    if wanted = m.tab then return
+
+    m.tab = wanted
+    buildFilters()
+    reload()
+end sub
+
+sub onFilterSelected(event as object)
+    index = event.getData()
+    if index < 0 or not isValid(m.filterBar.tabs) then return
+    if index >= m.filterBar.tabs.count() then return
+
+    chosen = m.filterBar.tabs[index].id
+    if m.tab = "issues"
+        if chosen = m.issueFilter then return
+        m.issueFilter = chosen
+    else
+        if chosen = m.requestFilter then return
+        m.requestFilter = chosen
+    end if
+
+    reload()
+end sub
+
+sub onTabEscape(event as object)
+    if event.getData() = KeyCode.DOWN
+        m.filterBar.setFocus(true)
+    else
+        m.top.lastFocus = m.tabBar
+        FocusNav(m.top)
+    end if
+end sub
+
+sub onFilterEscape(event as object)
+    if event.getData() = KeyCode.UP
+        m.tabBar.setFocus(true)
+        return
+    end if
+
+    focusList()
+end sub
+
+sub focusList()
+    list = activeList()
+    if list.content = invalid or list.content.getChildCount() = 0 then return
+
+    list.setFocus(true)
+    m.top.lastFocus = list
+end sub
+
+function activeList() as object
+    return m.tab = "issues" ? m.issueList : m.requestGrid
+end function
+
+' ===== Loading =====
+
+sub reload()
+    m.loadGeneration++
+    m.items = []
+    m.hasMore = true
+    m.loadingMore = false
+    activeList().content = invalid
+
+    showState(tr("Loading requests..."), false)
+    m.loading = true
+    requestPage(0)
+end sub
+
+sub requestPage(skip as integer)
+    if m.tab = "issues"
+        endpoint = "/api/v1/issue"
+        params = { filter: m.issueFilter, take: PAGE_SIZE.toStr(), skip: skip.toStr() }
+    else
+        endpoint = "/api/v1/request"
+        params = { filter: m.requestFilter, take: PAGE_SIZE.toStr(), skip: skip.toStr(), sort: "added" }
+    end if
+
+    m.listTask.generation = m.loadGeneration
+    m.listTask.request = { method: "GET", endpoint: endpoint, queryParams: params }
+    m.listTask.unobserveField("response")
+    m.listTask.observeField("response", "onPageLoaded")
+    m.listTask.control = TaskControl.RUN
+end sub
+
+sub onPageLoaded(event as object)
+    if event.getRoSGNode().generation <> m.loadGeneration then return
+
+    response = event.getData()
+
+    if not isValid(response) or not response.success
+        m.loading = false
+        m.loadingMore = false
+        if m.items.count() > 0 then return
+
+        showState(tr("Failed to load requests"), true)
+        return
+    end if
+
+    results = chainLookupReturn(response, "data.results", invalid)
+    if not isValid(results) or type(results) <> "roArray" then results = []
+
+    ' Paging stops on the raw page, before anything is filled in, so a failed lookup can't
+    ' cut the list short
+    m.hasMore = results.count() >= PAGE_SIZE
+
+    m.pendingHydration = []
+    m.hydrated = []
+    for each entry in results
+        if isValid(entry) then m.pendingHydration.push(entry)
+    end for
+    m.hydrationExpected = m.pendingHydration.count()
+
+    if m.hydrationExpected = 0
+        finishPage()
+        return
+    end if
+
+    started = 0
+    while started < HYDRATION_BATCH and m.pendingHydration.count() > 0
+        hydrateNext()
+        started++
+    end while
+end sub
+
+sub hydrateNext()
+    if m.pendingHydration.count() = 0 then return
+
+    entry = m.pendingHydration.Shift()
+    media = entry.media
+    tmdbId = chainLookupReturn(media, "tmdbId", invalid)
+    mediaType = chainLookupReturn(media, "mediaType", "")
+
+    if not isValid(tmdbId) or not isValidAndNotEmpty(mediaType) or isValidAndNotEmpty(SeerrPosterUrl(media, "w342"))
+        m.hydrated.push(entry)
+        settleHydration()
+        return
+    end if
+
+    task = CreateObject("roSGNode", "SeerrAPITask")
+    task.addField("entry", "assocarray", false)
+    task.addField("generation", "integer", false)
+    task.entry = entry
+    task.generation = m.loadGeneration
+    task.request = {
+        method: "GET",
+        endpoint: `/api/v1/${mediaType}/${tmdbId.toStr()}`
+    }
+    task.observeField("response", "onHydrated")
+
+    ' Held onto, otherwise the node goes out of scope while the call is still in flight
+    m.hydrationTasks.push(task)
+    task.control = TaskControl.RUN
+end sub
+
+sub onHydrated(event as object)
+    task = event.getRoSGNode()
+    if task.generation <> m.loadGeneration then return
+
+    response = event.getData()
+    entry = task.entry
+
+    if isValid(response) and response.success and isValid(response.data)
+        details = response.data
+        media = entry.media
+        if isValid(media)
+            if isValidAndNotEmpty(details.title) then media.title = details.title
+            if isValidAndNotEmpty(details.name) then media.name = details.name
+            if isValidAndNotEmpty(details.posterPath) then media.posterPath = details.posterPath
+            entry.media = media
+        end if
+    end if
+
+    m.hydrated.push(entry)
+    settleHydration()
+end sub
+
+' Several lookups are in the air at once, so the page is only finished when the last of them
+' has landed rather than when the queue happens to be empty
+sub settleHydration()
+    if m.pendingHydration.count() > 0
+        hydrateNext()
+        return
+    end if
+
+    if m.hydrated.count() < m.hydrationExpected then return
+
+    finishPage()
+end sub
+
+sub finishPage()
+    m.hydrationExpected = 0
+    m.hydrationTasks = []
+
+    for each entry in m.hydrated
+        m.items.push(entry)
+    end for
+
+    m.loading = false
+    m.loadingMore = false
+    renderItems()
+end sub
+
+sub renderItems()
+    if m.items.count() = 0
+        showState(m.tab = "issues" ? tr("No issues found") : tr("No requests found"), false)
+        return
+    end if
+
+    content = CreateObject("roSGNode", "ContentNode")
+    for each entry in m.items
+        if m.tab = "issues"
+            row = content.CreateChild("SeerrIssueData")
+            row.issue = entry
+        else
+            row = content.CreateChild("SeerrRequestData")
+            row.request = entry
+        end if
+    end for
+
+    list = activeList()
+    hideState()
+    m.requestGrid.visible = m.tab <> "issues"
+    m.issueList.visible = m.tab = "issues"
+    list.content = content
+end sub
+
+sub onListItemFocused(event as object)
+    index = event.getData()
+    if index < 0 then return
+    if not m.hasMore or m.loading or m.loadingMore then return
+    if index < m.items.count() - LOAD_MORE_MARGIN then return
+
+    m.loadingMore = true
+    requestPage(m.items.count())
+end sub
+
+' ===== States =====
+
+sub showState(message as string, offerRetry as boolean)
+    m.stateLabel.text = message
+    m.stateLabel.visible = true
+    m.retryButton.visible = offerRetry
+    m.requestGrid.visible = false
+    m.issueList.visible = false
+
+    if offerRetry then m.retryButton.setFocus(true)
+end sub
+
+sub hideState()
+    m.stateLabel.visible = false
+    m.retryButton.visible = false
+end sub
+
+sub onRetryPressed()
+    reload()
+    m.tabBar.setFocus(true)
+end sub
+
+' ===== Acting on a row =====
+
+sub onRequestSelected(event as object)
+    index = event.getData()
+    if index < 0 or index >= m.items.count() then return
+
+    m.activeItem = m.items[index]
+    m.activeIndex = index
+
+    ' Nothing can be done to a title that has arrived, and a viewer who can't moderate has
+    ' nothing to do with any of them, so both go straight to the title itself
+    if not m.canManageRequests or SeerrRequestStatusInfo(m.activeItem).color = "available"
+        openActiveMedia()
+        return
+    end if
+
+    options = []
+    m.actions = []
+
+    status = chainLookupReturn(m.activeItem, "status", 0)
+    if status = SEERR_REQUEST_PENDING
+        options.push(tr("Approve"))
+        m.actions.push("approve")
+        options.push(tr("Decline"))
+        m.actions.push("decline")
+    else if status = SEERR_REQUEST_FAILED
+        options.push(tr("Retry"))
+        m.actions.push("retry")
+    end if
+
+    ' With nothing to offer beyond the title, the panel would only be in the way
+    if options.count() = 0
+        openActiveMedia()
+        return
+    end if
+
+    options.push(tr("Open"))
+    m.actions.push("open")
+
+    showOptions(SeerrMediaTitle(m.activeItem.media), options, "onRequestActionChosen")
+end sub
+
+sub showOptions(title as string, options as object, callback as string)
+    m.optionDialog = CreateObject("roSGNode", "SeerrMessageDialog")
+    m.optionDialog.dialogTitle = title
+    m.optionDialog.options = options
+    m.optionDialog.returnFocus = activeList()
+    m.optionDialog.observeField("optionSelected", callback)
+
+    m.top.getScene().appendChild(m.optionDialog)
+    m.optionDialog.callFunc("showDialog")
+end sub
+
+sub closeOptions()
+    if not isValid(m.optionDialog) then return
+
+    m.optionDialog.unobserveField("optionSelected")
+    m.top.getScene().removeChild(m.optionDialog)
+    m.optionDialog = invalid
+end sub
+
+sub onRequestActionChosen(event as object)
+    index = event.getData()
+    closeOptions()
+
+    if index < 0 or index >= m.actions.count() then return
+
+    action = m.actions[index]
+    if action = "open"
+        openActiveMedia()
+        return
+    end if
+
+    runRequestAction(action)
+end sub
+
+sub openActiveMedia()
+    media = m.activeItem.media
+    tmdbId = chainLookupReturn(media, "tmdbId", invalid)
+    if not isValid(tmdbId) then return
+
+    ShowSeerrDetails({
+        tmdbId: tmdbId,
+        mediaType: chainLookupReturn(media, "mediaType", "movie")
+    })
+end sub
+
+sub runRequestAction(action as string)
+    requestId = chainLookupReturn(m.activeItem, "id", invalid)
+    if not isValid(requestId) then return
+
+    m.pendingAction = action
+    endpoint = `/api/v1/request/${requestId.toStr()}`
+
+    endpoint += `/${action}`
+
+    startLoadingSpinner()
+    m.actionTask.request = { method: "POST", endpoint: endpoint }
+    m.actionTask.unobserveField("response")
+    m.actionTask.observeField("response", "onRequestActionDone")
+    m.actionTask.control = TaskControl.RUN
+end sub
+
+sub onRequestActionDone(event as object)
+    response = event.getData()
+    stopLoadingSpinner()
+
+    if not isValid(response) or not response.success then return
+
+    if m.pendingAction = "decline"
+        patchActiveStatus(SEERR_REQUEST_DECLINED)
+    else
+        patchActiveStatus(SEERR_REQUEST_APPROVED)
+    end if
+
+    ' A retry was already off the pending pile, the other two have just left it
+    if m.pendingAction <> "retry" then adjustCount("pending", -1)
+end sub
+
+sub patchActiveStatus(status as integer)
+    if m.activeIndex < 0 or m.activeIndex >= m.items.count() then return
+
+    entry = m.items[m.activeIndex]
+    entry.status = status
+    m.items[m.activeIndex] = entry
+    renderItems()
+    activeList().jumpToItem = m.activeIndex
+end sub
+
+sub dropActiveItem()
+    remaining = []
+    for i = 0 to m.items.count() - 1
+        if i <> m.activeIndex then remaining.push(m.items[i])
+    end for
+
+    m.items = remaining
+    renderItems()
+end sub
+
+' ===== Issues =====
+
+sub onIssueSelected(event as object)
+    index = event.getData()
+    if index < 0 or index >= m.items.count() then return
+
+    m.activeItem = m.items[index]
+    m.activeIndex = index
+
+    m.activeIssueResolved = chainLookupReturn(m.activeItem, "status", SEERR_ISSUE_OPEN) = SEERR_ISSUE_RESOLVED
+
+    m.thread = CreateObject("roSGNode", "SeerrIssueThread")
+    m.thread.issue = m.activeItem
+    m.thread.canManage = m.canManageIssues
+    m.thread.seerrUserId = m.seerrUserId
+    m.thread.returnFocus = m.issueList
+    m.thread.observeField("issueChanged", "onIssueChanged")
+
+    m.top.getScene().appendChild(m.thread)
+    m.thread.callFunc("showThread")
+end sub
+
+sub onIssueChanged(event as object)
+    change = event.getData()
+
+    m.thread.unobserveField("issueChanged")
+    m.top.getScene().removeChild(m.thread)
+    m.thread = invalid
+
+    if not isValid(change) then return
+
+    if change.deleted = true
+        dropActiveItem()
+        adjustCount("open", -1)
+        return
+    end if
+
+    if not isValid(change.issue) then return
+
+    m.items[m.activeIndex] = change.issue
+    renderItems()
+    m.issueList.jumpToItem = m.activeIndex
+
+    resolved = change.issue.status = SEERR_ISSUE_RESOLVED
+    if resolved = m.activeIssueResolved then return
+
+    adjustCount("open", resolved ? -1 : 1)
+end sub
+
+' ===== Counts =====
+
+sub loadCounts()
+    if m.canManageRequests
+        fetchCount("/api/v1/request/count", "onRequestCount")
+    else if m.canManageIssues
+        fetchCount("/api/v1/issue/count", "onIssueCount")
+    end if
+end sub
+
+sub fetchCount(endpoint as string, callback as string)
+    m.countTask.request = { method: "GET", endpoint: endpoint }
+    m.countTask.unobserveField("response")
+    m.countTask.observeField("response", callback)
+    m.countTask.control = TaskControl.RUN
+end sub
+
+sub onRequestCount(event as object)
+    response = event.getData()
+    if isValid(response) and response.success
+        m.counts.pending = chainLookupReturn(response, "data.pending", 0)
+        buildTabs()
+    end if
+
+    if m.canManageIssues then fetchCount("/api/v1/issue/count", "onIssueCount")
+end sub
+
+sub onIssueCount(event as object)
+    response = event.getData()
+    if not isValid(response) or not response.success then return
+
+    m.counts.open = chainLookupReturn(response, "data.open", 0)
+    buildTabs()
+end sub
+
+sub adjustCount(key as string, delta as integer)
+    value = m.counts[key] + delta
+    if value < 0 then value = 0
+
+    m.counts[key] = value
+    buildTabs()
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = KeyCode.BACK
+        m.global.sceneManager.callFunc("popScene")
+        return true
+    end if
+
+    if key = KeyCode.UP and activeList().hasFocus()
+        m.filterBar.setFocus(true)
+        return true
+    end if
+
+    return false
+end function
