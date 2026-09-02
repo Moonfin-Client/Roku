@@ -1,6 +1,9 @@
 import "pkg:/source/api/sdk.bs"
 import "pkg:/source/utils/misc.bs"
 
+' How many picks the row shows, asked for at twice that so the dedupe has something to drop
+const SHUFFLE_ITEM_COUNT = 5
+
 sub init()
     m.top.functionName = "shuffleLoadFunction"
 end sub
@@ -17,15 +20,55 @@ sub shuffleLoadFunction()
     end if
 end sub
 
+function requestedContentType() as string
+    contentType = m.top.contentType
+    if not isValidAndNotEmpty(contentType) then return "both"
+    return contentType
+end function
+
+function includeItemTypes() as string
+    contentType = requestedContentType()
+    if contentType = "tv_only" then return "Series"
+    if contentType = "movies_only" then return "Movie"
+    return "Series,Movie"
+end function
+
+' A shuffle set to one kind of content only offers the libraries that hold it, and the
+' shelves that hold nothing to shuffle never belong in the list
+function libraryAllowed(libItem as object) as boolean
+    collectionType = libItem.LookupCI("CollectionType")
+    if not isValidAndNotEmpty(collectionType) then return false
+
+    name = LCase(libItem.LookupCI("name") ?? "")
+    if name = "folders" or name = "recordings" then return false
+
+    kind = LCase(collectionType)
+    contentType = requestedContentType()
+    if contentType = "movies_only" then return kind = "movies"
+    if contentType = "tv_only" then return kind = "tvshows"
+    return kind = "movies" or kind = "tvshows"
+end function
+
+' A genre the chosen content type has nothing under is a dead end. A server that reports
+' no counts at all keeps everything, since there is nothing to judge it on.
+function genreAllowed(genreItem as object) as boolean
+    movies = genreItem.LookupCI("MovieCount") ?? 0
+    series = genreItem.LookupCI("SeriesCount") ?? 0
+    if movies = 0 and series = 0 then return true
+
+    contentType = requestedContentType()
+    if contentType = "movies_only" then return movies > 0
+    if contentType = "tv_only" then return series > 0
+    return movies > 0 or series > 0
+end function
+
 sub loadLibraryList()
     items = []
-    userId = m.top.userId
-    data = api.GetUserViews({ "userId": userId })
+    data = api.GetUserViews({ "userId": m.top.userId })
 
     if isValid(data) and isChainValid(data, "Items")
         for each libItem in data.Items
-            collectionType = libItem.LookupCI("CollectionType")
-            if collectionType = "movies" or collectionType = "tvshows"
+            if libraryAllowed(libItem)
                 items.push({
                     description: libItem.LookupCI("name"),
                     value: libItem.LookupCI("Id"),
@@ -35,19 +78,26 @@ sub loadLibraryList()
         end for
     end if
 
+    items.SortBy("description", "i")
     m.top.resultsData = { data: items }
 end sub
 
 sub loadGenreList()
     items = []
-    userId = m.top.userId
-    data = api.genres.Get({ "userId": userId })
+    data = api.genres.Get({
+        "userId": m.top.userId,
+        "Recursive": true,
+        "SortBy": "SortName",
+        "SortOrder": "Ascending",
+        "Fields": "ItemCounts",
+        "IncludeItemTypes": includeItemTypes()
+    })
 
     if isValid(data) and isChainValid(data, "Items")
         for each genreItem in data.Items
             name = genreItem.LookupCI("name")
             genreId = genreItem.LookupCI("id")
-            if isValidAndNotEmpty(name) and isValidAndNotEmpty(genreId)
+            if isValidAndNotEmpty(name) and isValidAndNotEmpty(genreId) and genreAllowed(genreItem)
                 items.push({
                     description: name,
                     value: genreId,
@@ -57,8 +107,26 @@ sub loadGenreList()
         end for
     end if
 
+    items.SortBy("description", "i")
     m.top.resultsData = { data: items }
 end sub
+
+' The query asks for more than the row holds, so repeats can be dropped before it is filled
+function pickDistinct(items as object) as object
+    picked = []
+    seen = {}
+
+    for each item in items
+        id = item.LookupCI("id")
+        if isValidAndNotEmpty(id) and not seen.DoesExist(id)
+            seen[id] = true
+            picked.push(item)
+            if picked.Count() >= SHUFFLE_ITEM_COUNT then exit for
+        end if
+    end for
+
+    return picked
+end function
 
 sub loadShuffleItems()
     userId = m.top.userId
@@ -67,46 +135,38 @@ sub loadShuffleItems()
         return
     end if
 
-    contentType = m.top.contentType
-    if not isValidAndNotEmpty(contentType)
-        contentType = "both"
-    end if
-
-    libraryId = m.top.libraryId
-    genreIds = m.top.genreIds
-
     params = {
         "userId": userId,
         "Recursive": true,
         "SortBy": "Random",
-        "Limit": 10,
-        "Fields": "Id,Name,Type,ImageTags,ProductionYear,Overview,OfficialRating,UserData,CommunityRating"
+        "Limit": SHUFFLE_ITEM_COUNT * 2,
+        "IncludeItemTypes": includeItemTypes(),
+        "ExcludeItemTypes": "BoxSet",
+        "HasBackdrop": true,
+        "Fields": "Id,Name,Type,ImageTags,ProductionYear,Overview,OfficialRating,UserData,CommunityRating,Genres,RunTimeTicks,ProviderIds"
     }
 
-    if contentType = "tv_only"
-        params.IncludeItemTypes = "Series"
-    else if contentType = "movies_only"
-        params.IncludeItemTypes = "Movie"
-    else
-        params.IncludeItemTypes = "Series,Movie"
+    if isValidAndNotEmpty(m.top.libraryId)
+        params.ParentId = m.top.libraryId
     end if
 
-    if isValidAndNotEmpty(libraryId)
-        params.ParentId = libraryId
-    end if
-
-    if isValidAndNotEmpty(genreIds)
-        params.GenreIds = genreIds
+    if isValidAndNotEmpty(m.top.genreIds)
+        params.GenreIds = m.top.genreIds
     end if
 
     items = []
+    failed = false
     try
         data = api.items.Get(params)
-        if isValid(data) and isValid(data.Items)
-            items = data.Items
+        if isValid(data) and isChainValid(data, "Items")
+            items = pickDistinct(data.Items)
+        else
+            failed = true
         end if
     catch _error
+        failed = true
     end try
 
+    m.top.loadFailed = failed
     m.top.results = items
 end sub
