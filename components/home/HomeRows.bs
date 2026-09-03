@@ -31,16 +31,6 @@ function getPosterSize(preferWide = true as boolean) as object
     end if
 end function
 
-' Number of Since You Watched rows the user wants, clamped to a sane range.
-function getSinceYouWatchedNumRows() as integer
-    raw = get_user_setting("ui.home.sinceYouWatchedNumRows")
-    numRows = 1
-    if isValidAndNotEmpty(raw) then numRows = raw.ToInt()
-    if numRows < 1 then numRows = 1
-    if numRows > 5 then numRows = 5
-    return numRows
-end function
-
 ' Helper function to check if Featured Media is enabled via toggle (not home sections)
 function isFeaturedMediaEnabled() as boolean
     ' Check the media bar enabled toggle in Moonfin settings
@@ -93,12 +83,6 @@ sub init()
     ' Initialize task storage - tasks will be created on-demand
     m.contentTasks = {}
     m.multiServerTasks = {}
-    m.useServerConfig = false
-    m.serverHomeRows = []
-    m.serverHomeRowsSource = "legacy"
-    m.serverLegacyRowOrder = []
-    m.serverDynamicRowTitles = {}
-    m.hasResolvedRowsPayload = false
     m.pendingProbeCount = 0
     m.initialHomeRowsStarted = false
 end sub
@@ -195,33 +179,6 @@ function getDefaultSection(index as integer) as string
     return "none"
 end function
 
-function normalizeBooleanValue(value as dynamic, defaultValue = false as boolean) as boolean
-    if not isValid(value)
-        return defaultValue
-    end if
-
-    if type(value) = "String" or type(value) = "roString"
-        return LCase(value) = "true"
-    end if
-
-    return value = true
-end function
-
-function shouldUseServerConfig() as boolean
-    return normalizeBooleanValue(get_user_setting("homeRows.useServerConfig"), false)
-end function
-
-
-function isPluginFeatureOptedOut(settingName as string) as boolean
-    settingValue = get_user_setting(settingName)
-    if not isValid(settingValue)
-        return false
-    end if
-
-    return not normalizeBooleanValue(settingValue, false)
-end function
-
-
 function isArrayValue(value as dynamic) as boolean
     valueType = type(value)
     return valueType = "Array" or valueType = "roArray"
@@ -230,21 +187,6 @@ end function
 function isAssociativeArrayValue(value as dynamic) as boolean
     valueType = type(value)
     return valueType = "AssociativeArray" or valueType = "roAssociativeArray"
-end function
-
-function getCaseInsensitiveValue(data as dynamic, key as string, defaultValue = invalid as dynamic) as dynamic
-    if not isAssociativeArrayValue(data)
-        return defaultValue
-    end if
-
-    target = LCase(key ?? "")
-    for each dataKey in data
-        if LCase(dataKey) = target
-            return data[dataKey]
-        end if
-    end for
-
-    return defaultValue
 end function
 
 function toNormalizedString(value as dynamic) as string
@@ -260,375 +202,8 @@ function toNormalizedString(value as dynamic) as string
     return value.ToStr().Trim()
 end function
 
-function parseJsonObjectOrArray(value as dynamic) as dynamic
-    if not isValid(value)
-        return invalid
-    end if
-
-    if isAssociativeArrayValue(value) or isArrayValue(value)
-        return value
-    end if
-
-    valueType = type(value)
-    if valueType = "String" or valueType = "roString"
-        return ParseJson(value)
-    end if
-
-    return invalid
-end function
-
-function parseIntValue(value as dynamic, defaultValue = 0 as integer) as integer
-    if not isValid(value)
-        return defaultValue
-    end if
-
-    valueType = type(value)
-    if valueType = "Integer" or valueType = "LongInteger" or valueType = "roInteger" or valueType = "roInt"
-        return value
-    end if
-
-    if valueType = "Float" or valueType = "Double" or valueType = "roFloat" or valueType = "roDouble"
-        return Int(value)
-    end if
-
-    if valueType = "String" or valueType = "roString"
-        return Int(Val(value))
-    end if
-
-    return defaultValue
-end function
-
-function normalizeHomeRowsSource(sourceValue as dynamic) as string
-    source = LCase(toNormalizedString(sourceValue))
-
-    if source = "legacy" then return "legacy"
-    if source = "jellyfin" then return "jellyfin"
-    if source = "moonfin" then return "moonfin"
-
-    return source
-end function
-
-function parseHomeRowOrderSetting() as object
-    settings = chainLookupReturn(m.global, "session.user.settings", invalid)
-    if not isAssociativeArrayValue(settings)
-        return []
-    end if
-
-    rowOrderValue = settings["ui.home.rowOrder"]
-    parsed = parseJsonObjectOrArray(rowOrderValue)
-    if not isArrayValue(parsed)
-        return []
-    end if
-
-    rows = []
-    for each value in parsed
-        rowName = LCase(toNormalizedString(value))
-        if isValidAndNotEmpty(rowName)
-            rows.push(rowName)
-        end if
-    end for
-
-    return rows
-end function
-
-function getStoredUserSetting(settingName as string, defaultValue = invalid as dynamic) as dynamic
-    value = get_user_setting(settingName)
-    if isValid(value)
-        return value
-    end if
-
-    settings = chainLookupReturn(m.global, "session.user.settings", invalid)
-    if isAssociativeArrayValue(settings) and isValid(settings[settingName])
-        return settings[settingName]
-    end if
-
-    return defaultValue
-end function
-
-function parsePluginRowsConfigSetting(settingName as string) as object
-    configValue = getStoredUserSetting(settingName, "[]")
-    parsed = parseJsonObjectOrArray(configValue)
-    if not isArrayValue(parsed)
-        return []
-    end if
-
-    rows = []
-    for each row in parsed
-        if isAssociativeArrayValue(row)
-            rows.push(row)
-        end if
-    end for
-
-    return rows
-end function
-
-function buildPluginRowsFilterMap(configRows as object) as object
-    filterMap = {}
-    if not isArrayValue(configRows)
-        return filterMap
-    end if
-
-    for each row in configRows
-        rowId = LCase(toNormalizedString(chainLookupReturn(row, "id", "")))
-        if not isValidAndNotEmpty(rowId)
-            continue for
-        end if
-
-        filterMap[rowId] = {
-            enabled: normalizeBooleanValue(chainLookupReturn(row, "enabled", true), true),
-            order: parseIntValue(chainLookupReturn(row, "order", 0), 0)
-        }
-    end for
-
-    return filterMap
-end function
-
-
-function getLocalPluginRowFilter(row as object) as dynamic
-    rowSource = normalizeHomeRowsSource(chainLookupReturn(row, "source", m.serverHomeRowsSource))
-
-    rowId = LCase(toNormalizedString(chainLookupReturn(row, "id", "")))
-    if not isValidAndNotEmpty(rowId)
-        return invalid
-    end if
-
-    sourceMap = chainLookupReturn(m.localPluginRowFilters, rowSource, invalid)
-    if not isAssociativeArrayValue(sourceMap)
-        return invalid
-    end if
-
-    if sourceMap.DoesExist(rowId)
-        return sourceMap[rowId]
-    end if
-
-    return invalid
-end function
-
-function shouldIncludeServerRowByLocalFilter(row as object) as boolean
-    rowFilter = getLocalPluginRowFilter(row)
-    if not isAssociativeArrayValue(rowFilter)
-        return true
-    end if
-
-    return normalizeBooleanValue(chainLookupReturn(rowFilter, "enabled", true), true)
-end function
-
-function getLocalPluginRowOrderOverride(row as object, fallbackOrder = 0 as integer) as integer
-    rowFilter = getLocalPluginRowFilter(row)
-    if not isAssociativeArrayValue(rowFilter)
-        return fallbackOrder
-    end if
-
-    return parseIntValue(chainLookupReturn(rowFilter, "order", fallbackOrder), fallbackOrder)
-end function
-
-function parseResolvedRowsPayload() as object
-    defaultPayload = {
-        source: "legacy",
-        rows: []
-    }
-
-    settings = chainLookupReturn(m.global, "session.user.settings", invalid)
-    if not isAssociativeArrayValue(settings)
-        return defaultPayload
-    end if
-
-    resolvedValue = settings["ui.home.resolvedRows"]
-    resolvedPayload = parseJsonObjectOrArray(resolvedValue)
-    if isAssociativeArrayValue(resolvedPayload)
-        payloadRows = parseJsonObjectOrArray(getCaseInsensitiveValue(resolvedPayload, "rows", []))
-        if not isArrayValue(payloadRows)
-            payloadRows = []
-        end if
-
-        payloadSource = normalizeHomeRowsSource(getCaseInsensitiveValue(resolvedPayload, "source", "legacy"))
-        if not isValidAndNotEmpty(payloadSource)
-            payloadSource = "legacy"
-        end if
-
-        return {
-            source: payloadSource,
-            rows: payloadRows
-        }
-    end if
-
-    rowsValue = settings["ui.home.rowsV2"]
-    rows = parseJsonObjectOrArray(rowsValue)
-    if not isArrayValue(rows)
-        rows = []
-    end if
-
-    source = normalizeHomeRowsSource(settings["ui.home.rowsSource"])
-    if not isValidAndNotEmpty(source)
-        source = "legacy"
-    end if
-
-    return {
-        source: source,
-        rows: rows
-    }
-end function
-
-function hasResolvedServerRowsPayload() as boolean
-    settings = chainLookupReturn(m.global, "session.user.settings", invalid)
-    if not isAssociativeArrayValue(settings)
-        return false
-    end if
-
-    resolvedValue = settings["ui.home.resolvedRows"]
-    resolvedPayload = parseJsonObjectOrArray(resolvedValue)
-    if isAssociativeArrayValue(resolvedPayload)
-        return true
-    end if
-
-    rowsValue = settings["ui.home.rowsV2"]
-    rows = parseJsonObjectOrArray(rowsValue)
-    return isArrayValue(rows)
-end function
-
-function normalizeServerRow(row as dynamic, fallbackOrder = 0 as integer, defaultSource = "legacy" as string) as dynamic
-    if not isAssociativeArrayValue(row)
-        return invalid
-    end if
-
-    rowId = toNormalizedString(getCaseInsensitiveValue(row, "id", ""))
-    rowTitle = toNormalizedString(getCaseInsensitiveValue(row, "title", ""))
-    rowKind = LCase(toNormalizedString(getCaseInsensitiveValue(row, "kind", "")))
-    rowSource = normalizeHomeRowsSource(getCaseInsensitiveValue(row, "source", defaultSource))
-    if not isValidAndNotEmpty(rowSource)
-        rowSource = defaultSource
-    end if
-
-    if not isValidAndNotEmpty(rowId)
-        rowId = toNormalizedString(getCaseInsensitiveValue(row, "route", ""))
-    end if
-
-    if not isValidAndNotEmpty(rowTitle)
-        rowTitle = rowId
-    end if
-
-    return {
-        id: rowId,
-        title: rowTitle,
-        kind: rowKind,
-        source: rowSource,
-        enabled: normalizeBooleanValue(getCaseInsensitiveValue(row, "enabled", true), true),
-        order: parseIntValue(getCaseInsensitiveValue(row, "order", fallbackOrder), fallbackOrder),
-        route: toNormalizedString(getCaseInsensitiveValue(row, "route", "")),
-        viewMode: toNormalizedString(getCaseInsensitiveValue(row, "viewMode", "")),
-        additionalData: getCaseInsensitiveValue(row, "additionalData", invalid)
-    }
-end function
-
-function sortRowsByOrder(rows as object) as object
-    if not isArrayValue(rows)
-        return []
-    end if
-
-    sortedRows = []
-    for each row in rows
-        if not isAssociativeArrayValue(row)
-            continue for
-        end if
-
-        inserted = false
-        for i = 0 to sortedRows.Count() - 1
-            if parseIntValue(row.order, i) < parseIntValue(sortedRows[i].order, i)
-                sortedRows.Insert(i, row)
-                inserted = true
-                exit for
-            end if
-        end for
-
-        if not inserted
-            sortedRows.push(row)
-        end if
-    end for
-
-    return sortedRows
-end function
-
-sub refreshServerRowsState()
-    m.useServerConfig = shouldUseServerConfig()
-    m.serverHomeRowsSource = "legacy"
-    m.serverHomeRows = []
-    m.serverLegacyRowOrder = []
-    m.hasResolvedRowsPayload = false
-
-    if not m.useServerConfig
-        return
-    end if
-
-    m.serverLegacyRowOrder = parseHomeRowOrderSetting()
-    '    refreshLocalPluginRowFilters()
-    m.hasResolvedRowsPayload = hasResolvedServerRowsPayload()
-
-    payload = parseResolvedRowsPayload()
-    payloadRows = chainLookupReturn(payload, "rows", [])
-
-    m.serverHomeRowsSource = normalizeHomeRowsSource(chainLookupReturn(payload, "source", "legacy"))
-    if not isValidAndNotEmpty(m.serverHomeRowsSource)
-        m.serverHomeRowsSource = "legacy"
-    end if
-
-    normalizedRows = []
-    if isArrayValue(payloadRows)
-        rowIndex = 0
-        for each row in payloadRows
-            normalizedRow = normalizeServerRow(row, rowIndex, m.serverHomeRowsSource)
-            if isAssociativeArrayValue(normalizedRow) and normalizeBooleanValue(normalizedRow.enabled, true)
-                if not shouldIncludeServerRowByLocalFilter(normalizedRow)
-                    rowIndex++
-                    continue for
-                end if
-
-                normalizedRow.order = getLocalPluginRowOrderOverride(normalizedRow, parseIntValue(chainLookupReturn(normalizedRow, "order", rowIndex), rowIndex))
-                normalizedRows.push(normalizedRow)
-            end if
-            rowIndex++
-        end for
-    end if
-
-    m.serverHomeRows = sortRowsByOrder(normalizedRows)
-end sub
-
-function shouldUseResolvedServerRows() as boolean
-    return m.useServerConfig and (m.hasResolvedRowsPayload or isValidAndNotEmpty(m.serverHomeRows))
-end function
-
-function hasServerRowsForSource(sourceName as string) as boolean
-    if not shouldUseResolvedServerRows()
-        return false
-    end if
-
-    searchSource = normalizeHomeRowsSource(sourceName)
-    if not isValidAndNotEmpty(searchSource)
-        return false
-    end if
-
-    for each row in m.serverHomeRows
-        rowSource = normalizeHomeRowsSource(chainLookupReturn(row, "source", ""))
-        if rowSource = searchSource
-            return true
-        end if
-    end for
-
-    return false
-end function
-
-' A layout from the plugin carries its own length and is the one that decides the rows. The
-' fixed count is only reached for a layout still coming from Jellyfin's own preferences.
 function homeSectionCount() as integer
-    if not m.useServerConfig then return localRowOrder().Count()
-
-    serverRowOrder = m.serverLegacyRowOrder
-    if not isArrayValue(serverRowOrder)
-        serverRowOrder = parseHomeRowOrderSetting()
-    end if
-
-    if isArrayValue(serverRowOrder) and serverRowOrder.Count() > 0 then return serverRowOrder.Count()
-
-    return homeRowLayout.LEGACY_SLOT_COUNT
+    return localRowOrder().Count()
 end function
 
 ' Arranged reads and parses the stored layout, and a row build asks for it once per row
@@ -638,47 +213,26 @@ function localRowOrder() as object
     return m.cachedRowOrder
 end function
 
-function getResolvedSectionNameForMode(index as integer, useServerConfig as boolean) as string
-    if useServerConfig
-        serverRowOrder = m.serverLegacyRowOrder
-        if not isArrayValue(serverRowOrder)
-            serverRowOrder = parseHomeRowOrderSetting()
-        end if
-
-        if isArrayValue(serverRowOrder) and serverRowOrder.Count() > 0
-            ' A pushed order is the whole layout, so slots past its end stay empty rather
-            ' than falling back to the built-in defaults
-            if index < 0 or index >= serverRowOrder.Count() then return "none"
-            userSection = serverRowOrder[index]
-        else
-            userSection = m.global.session.user.settings["homesection" + index.toStr()]
-        end if
-    else
-        localOrder = localRowOrder()
-        if index < 0 or index >= localOrder.Count() then return "none"
-        userSection = localOrder[index]
-    end if
-
-    if not isValid(userSection)
-        return getDefaultSection(index)
-    end if
-
-    return LCase(userSection ?? "none")
-end function
-
+' The other clients name a few of these rows differently, so an id arriving from one of
+' them is put into this app's own vocabulary. An id it has no other name for, every
+' dynamic row among them, is passed through as it stands.
 function getResolvedSectionName(index as integer) as string
-    return getResolvedSectionNameForMode(index, m.useServerConfig)
+    localOrder = localRowOrder()
+    if index < 0 or index >= localOrder.Count() then return "none"
+
+    userSection = localOrder[index]
+    if not isValid(userSection) then return getDefaultSection(index)
+
+    known = normalizeSectionId(userSection)
+    if isValidAndNotEmpty(known) then return known
+
+    return LCase(userSection)
 end function
 
 
 sub startHomeRowsLoading()
-    m.serverDynamicRowTitles = {}
     m.pendingProbeCount = 0
     m.initialHomeRowsStarted = false
-
-    refreshServerRowsState()
-
-
     m.initialHomeRowsStarted = true
     processUserSections()
 end sub
@@ -736,10 +290,6 @@ function getExpectedRowContribution(sectionName as string) as integer
         return rowCount
     end if
 
-    if sectionName = "sinceyouwatched"
-        return getSinceYouWatchedNumRows()
-    end if
-
     return 1
 end function
 
@@ -751,29 +301,9 @@ function normalizeSectionToken(value as dynamic) as string
     return token
 end function
 
-function inferServerRowSource(row as object) as string
-    rowSource = normalizeHomeRowsSource(chainLookupReturn(row, "source", m.serverHomeRowsSource))
-    if not isValidAndNotEmpty(rowSource)
-        rowSource = m.serverHomeRowsSource
-    end if
-
-
-    return rowSource
-end function
-
-function mapBuiltinSectionFromServerRow(row as object) as string
-    candidates = [
-        chainLookupReturn(row, "id", ""),
-        chainLookupReturn(row, "route", ""),
-        chainLookupReturn(row, "title", "")
-    ]
-
-    for each candidate in candidates
-        token = normalizeSectionToken(candidate)
-        if not isValidAndNotEmpty(token)
-            continue for
-        end if
-
+function normalizeSectionId(id as dynamic) as string
+    token = normalizeSectionToken(id)
+    if isValidAndNotEmpty(token)
         if token = "continuewatching" or token = "resume" then return "resume"
         if token = "continuelistening" or token = "resumeaudio" then return "resumeaudio"
         if token = "nextup" then return "nextup"
@@ -788,80 +318,15 @@ function mapBuiltinSectionFromServerRow(row as object) as string
         if token = "audio" then return "audio"
         if token = "smalllibrarytiles" or token = "librarytilessmall" or token = "librarybuttons" or token = "mymedia" then return "smalllibrarytiles"
         if token = "featuredmedia" or token = "mediabar" then return "featuredmedia"
-        if token = "sinceyouwatched" then return "sinceyouwatched"
+        if token = "sinceyouwatched" then return "sinceyouwatched1"
+        if homeRowLayout.SeedRowIndex(token) > 0 then return token
         if token = "rewatch" then return "rewatch"
         if token = "none" then return "none"
-    end for
+    end if
 
     return ""
 end function
 
-
-function parseServerAdditionalData(row as object) as dynamic
-    return parseJsonObjectOrArray(chainLookupReturn(row, "additionalData", invalid))
-end function
-
-
-function addServerHomeRow(row as object) as boolean
-    sectionType = mapBuiltinSectionFromServerRow(row)
-    if not isValidAndNotEmpty(sectionType) or sectionType = "none"
-        rowId = chainLookupReturn(row, "id", "")
-        rowSource = chainLookupReturn(row, "source", "")
-
-        lowerRowId = LCase(rowId)
-        hasCustomPrefix = isValidAndNotEmpty(rowId) and (lowerRowId.startsWith("imdb_") or lowerRowId.startsWith("tmdb_") or lowerRowId.startsWith("seerr_") or lowerRowId.startsWith("plugindynamic:"))
-        hasCustomSource = (rowSource = "custom" or rowSource = "seerr" or rowSource = "tmdb" or rowSource = "letterboxd" or rowSource = "mdblist" or rowSource = "genre" or rowSource = "collection")
-        isCustomRow = hasCustomPrefix or hasCustomSource
-
-        if isCustomRow
-            return createCustomDynamicRow(row)
-        end if
-
-        m.processedRowCount++
-        return false
-    end if
-
-    return addHomeSection(sectionType)
-end function
-
-sub processServerRows()
-    m.expectedRowCount = 0
-    m.processedRowCount = 0
-
-    for each row in m.serverHomeRows
-
-
-        sectionType = mapBuiltinSectionFromServerRow(row)
-        if not isValidAndNotEmpty(sectionType) or sectionType = "none"
-            m.expectedRowCount++
-            continue for
-        end if
-
-        m.expectedRowCount = m.expectedRowCount + getExpectedRowContribution(sectionType)
-    end for
-
-    loadedSections = 0
-    rowIndex = 0
-    for each row in m.serverHomeRows
-        sectionLoaded = addServerHomeRow(row)
-        if sectionLoaded then loadedSections++
-
-        if not m.global.app_loaded
-            if loadedSections = 2 or rowIndex = m.serverHomeRows.Count() - 1
-                m.top.signalBeacon("AppLaunchComplete")
-                m.global.app_loaded = true
-            end if
-        end if
-
-        rowIndex++
-    end for
-
-    if loadedSections = 0
-        m.overhang.setfocus(true)
-    end if
-
-    m.loadingTimer.control = "start"
-end sub
 
 ' processUserSections: Loop through user's chosen home section settings and generate the content for each row
 '
@@ -869,25 +334,17 @@ sub processUserSections()
     m.expectedRowCount = 0
     m.processedRowCount = 0
 
-    refreshServerRowsState()
-
-    if shouldUseResolvedServerRows()
-        processServerRows()
-        return
-    end if
-
     ' Migration: Remove featuredmedia from local settings if present (run once)
-    if not m.useServerConfig
-        for i = 0 to 7
-            userSection = get_user_setting("homeScreenSection" + i.toStr())
-            if isValid(userSection) and LCase(userSection) = "featuredmedia"
-                set_user_setting("homeScreenSection" + i.toStr(), "none")
-            end if
-        end for
+    for i = 0 to 7
+        userSection = get_user_setting("homeScreenSection" + i.toStr())
+        if isValid(userSection) and LCase(userSection) = "featuredmedia"
+            set_user_setting("homeScreenSection" + i.toStr(), "none")
+        end if
+    end for
 
-        homeRowLayout.MigrateLegacySlots()
-        m.cachedRowOrder = invalid
-    end if
+    homeRowLayout.MigrateLegacySlots()
+    homeRowLayout.MigrateSinceYouWatched()
+    m.cachedRowOrder = invalid
 
     for i = 0 to homeSectionCount() - 1
         sectionName = getResolvedSectionName(i)
@@ -1298,8 +755,9 @@ function addHomeSection(sectionType as string) as boolean
     end if
 
     ' Since You Watched recommendation rows
-    if sectionType = "sinceyouwatched"
-        createSinceYouWatchedRows()
+    seedIndex = homeRowLayout.SeedRowIndex(sectionType)
+    if seedIndex > 0
+        createSinceYouWatchedRow(seedIndex)
         return true
     end if
 
@@ -1530,41 +988,30 @@ sub createRecentlyReleasedRow()
     end for
 end sub
 
-' createSinceYouWatchedRows: Fires one task per requested Since You Watched row.
-' Each row is seeded from a different recently watched item.
-sub createSinceYouWatchedRows()
-    removeSinceYouWatchedRows()
+' createSinceYouWatchedRow: The index picks which recently watched item seeds the row
+sub createSinceYouWatchedRow(rowIndex as integer)
+    removeHomeRowById(homeRowLayout.SEED_ROW_PREFIX + rowIndex.ToStr())
 
-    numRows = getSinceYouWatchedNumRows()
-    for rowIndex = 1 to numRows
-        task = createObject("roSGNode", "LoadItemsTask")
-        task.itemsToLoad = "sinceYouWatched"
-        task.metadata = { rowIndex: rowIndex }
-        task.observeField("content", "updateSinceYouWatchedItems")
-        task.control = TaskControl.RUN
-    end for
+    task = createObject("roSGNode", "LoadItemsTask")
+    task.itemsToLoad = "sinceYouWatched"
+    task.metadata = { rowIndex: rowIndex }
+    task.observeField("content", "updateSinceYouWatchedItems")
+    task.control = TaskControl.RUN
 end sub
 
-' removeSinceYouWatchedRows: Drops any existing Since You Watched rows so a
-' refresh doesnt leave stale seeds behind.
-sub removeSinceYouWatchedRows()
+' removeHomeRowById: A seed row is titled after whatever seeded it, so a rebuild onto a
+' different seed has to find the old one by id or it would be left behind
+sub removeHomeRowById(rowId as string)
     if not isValid(m.top.content) then return
-
-    prefix = LCase(tr("Since you watched")).Replace(" ", "")
-    removedAny = false
 
     for i = m.top.content.getChildCount() - 1 to 0 step -1
         section = m.top.content.getChild(i)
-        if isValid(section) and isValid(section.title)
-            title = LCase(section.title).Replace(" ", "")
-            if Left(title, Len(prefix)) = prefix
-                m.top.content.removeChildIndex(i)
-                removedAny = true
-            end if
+        if isValid(section) and isStringEqual(section.id, rowId)
+            m.top.content.removeChildIndex(i)
+            setRowItemSize()
+            return
         end if
     end for
-
-    if removedAny then setRowItemSize()
 end sub
 
 ' updateSinceYouWatchedItems: Builds a single Since You Watched row from its task
@@ -1604,9 +1051,8 @@ sub updateSinceYouWatchedItems(msg)
         row.appendChild(item)
     end for
 
-    ' Every seed row carries the same id, so the sort keeps them together where the
-    ' viewer put the section and leaves their own order alone
-    addOrUpdateHomeRow(row, sectionName, "sinceyouwatched")
+    rowIndex = isValid(node.metadata.rowIndex) ? node.metadata.rowIndex : 1
+    addOrUpdateHomeRow(row, sectionName, homeRowLayout.SEED_ROW_PREFIX + rowIndex.ToStr())
 end sub
 
 ' createRewatchRow: Creates a row of movies, shows, and collections the user has finished
@@ -3025,18 +2471,8 @@ sub updateCustomDynamicRowItems(event as object)
     rowId = task.itemsToLoad
     itemData = getTaskContentAndCleanup(rowId)
 
-    sectionName = ""
-    for each serverRow in m.serverHomeRows
-        if isStringEqual(serverRow.id, rowId)
-            sectionName = serverRow.title
-            exit for
-        end if
-    end for
-
-    if not isValidAndNotEmpty(sectionName) or isStringEqual(sectionName, rowId)
-        mappedName = customDynamicRowTitle(rowId)
-        sectionName = isValidAndNotEmpty(mappedName) ? mappedName : rowId
-    end if
+    mappedName = customDynamicRowTitle(rowId)
+    sectionName = isValidAndNotEmpty(mappedName) ? mappedName : rowId
 
     if not isValidAndNotEmpty(itemData)
         removeHomeSection(sectionName)
@@ -3115,19 +2551,7 @@ end function
 ' @param {string} sectionKey - Home section key
 ' @return {boolean} true for rows that have no toggle, otherwise the state of that toggle
 function internalRowEnabled(sectionKey as string) as boolean
-    if m.useServerConfig then return true
-
-    settingNames = {
-        favorites: "ui.home.displayFavoritesRows",
-        collections: "ui.home.displayCollectionsRows",
-        genres: "ui.home.displayGenresRows",
-        studios: "ui.home.displayStudiosRows",
-        playlists: "ui.home.displayPlaylistsRows",
-        audio: "ui.home.displayAudioRows",
-        rewatch: "ui.home.displayRewatchRow"
-    }
-
-    settingName = settingNames[sectionKey]
+    settingName = homeRowLayout.RowToggles()[sectionKey]
 
     ' A picked collection, genre or playlist answers to the same switch as the list it was
     ' picked from, so turning that list off takes its rows with it

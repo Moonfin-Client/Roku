@@ -1,6 +1,7 @@
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/themeApply.bs"
 import "pkg:/source/utils/themeRegistry.bs"
@@ -45,7 +46,6 @@ namespace settingsSync
             { pluginKey: "detailUseSeriesThumbnails", rokuKey: "ui.itemdetail.useSeriesThumbnails", type: "bool" },
             { pluginKey: "hideHomeMediaDescription", rokuKey: "ui.home.hideMediaDescription", type: "bool" },
             { pluginKey: "homeRowsStyle", rokuKey: "ui.home.rowsStyle", type: "direct" },
-            { pluginKey: "homeRowsSource", rokuKey: "ui.home.rowsSource", type: "direct", skipRegistry: true },
             { pluginKey: "homeRowOrder", rokuKey: "ui.home.rowOrder", type: "jsonArray", skipRegistry: true },
             { pluginKey: "detailsScreenBlur", rokuKey: "ui.backdrop.detailBlurAmount", type: "direct" },
             { pluginKey: "browsingBlur", rokuKey: "ui.backdrop.homeBlurAmount", type: "direct" },
@@ -58,7 +58,7 @@ namespace settingsSync
             ' Settings the server can now store that already had a switch here.
             { pluginKey: "cinemaModeEnabled", rokuKey: "playback.cinemamode", type: "bool" },
             { pluginKey: "autoplayNextEpisode", rokuKey: "playback.showNextUpAfterFinish", type: "bool" },
-            { pluginKey: "resumeSubtractDuration", rokuKey: "playback.resumeRewind", type: "intToStr" },
+            { pluginKey: "resumeSubtractDuration", rokuKey: "playback.resumeRewind", type: "direct" },
             { pluginKey: "unpauseRewindDuration", rokuKey: "playback.unpauseRewind", type: "intToStr" },
             { pluginKey: "skipBackLength", rokuKey: "playback.skipBackLength", type: "secondsToMs" },
             { pluginKey: "skipForwardLength", rokuKey: "playback.skipForwardLength", type: "secondsToMs" },
@@ -86,6 +86,10 @@ namespace settingsSync
             { pluginKey: "displayGenresRows", rokuKey: "ui.home.displayGenresRows", type: "bool" },
             { pluginKey: "displayPlaylistsRows", rokuKey: "ui.home.displayPlaylistsRows", type: "bool" },
             { pluginKey: "displayAudioRows", rokuKey: "ui.home.displayAudioRows", type: "bool" },
+            { pluginKey: "displayStudiosRows", rokuKey: "ui.home.displayStudiosRows", type: "bool" },
+            { pluginKey: "useDetailedSubHeadings", rokuKey: "ui.library.detailedSubHeadings", type: "bool" },
+            { pluginKey: "favoritesRowSortBy", rokuKey: "ui.home.favoritesSortField", type: "favoritesSortField" },
+            { pluginKey: "favoritesRowSortOrder", rokuKey: "ui.home.favoritesSortOrder", type: "favoritesSortOrder" },
             { pluginKey: "collectionsRowSortBy", rokuKey: "ui.home.collectionsRowSortBy", type: "direct" },
             { pluginKey: "genresRowSortBy", rokuKey: "ui.home.genresRowSortBy", type: "direct" },
             { pluginKey: "genresRowItemFilter", rokuKey: "ui.home.genresRowItemFilter", type: "direct" },
@@ -126,8 +130,8 @@ namespace settingsSync
             { pluginKey: "collectionsRowShowEpisodes", rokuKey: "ui.home.collectionsRowShowEpisodes", type: "bool" },
             { pluginKey: "playlistsRowShowEpisodes", rokuKey: "ui.home.playlistsRowShowEpisodes", type: "bool" },
             { pluginKey: "showCastButton", rokuKey: "navbar.show_cast", type: "bool" },
-            { pluginKey: "classicHomeRowsPadding", rokuKey: "ui.home.classicRowsPadding", type: "direct" },
-            { pluginKey: "modernHomeRowsPadding", rokuKey: "ui.home.modernRowsPadding", type: "direct" },
+            { pluginKey: "classicHomeRowsPadding", rokuKey: "ui.home.classicRowsPadding", type: "intToStr" },
+            { pluginKey: "modernHomeRowsPadding", rokuKey: "ui.home.modernRowsPadding", type: "intToStr" },
             { pluginKey: "detailShowTechnicalDetails", rokuKey: "ui.library.showTechnicalDetails", type: "bool" },
             { pluginKey: "recommendationSystemSource", rokuKey: "ui.home.recommendationSource", type: "direct" },
             { pluginKey: "recommendationsApplyParentalRatingCap", rokuKey: "ui.home.recommendationsParentalCap", type: "bool" },
@@ -245,26 +249,12 @@ namespace settingsSync
             end for
         end if
 
-        resolvedRows = []
-        shouldFetchResolvedRows = toBoolean(chainLookupReturn(tmpSettings, "`homeRows.useServerConfig`", false))
-        if shouldFetchResolvedRows
-            resolvedHomeRows = settingsSync.FetchResolvedHomeRows("tv")
-            if isValid(resolvedHomeRows)
-                resolvedRowsSource = LCase(chainLookupReturn(resolvedHomeRows, "source", "legacy"))
-                resolvedRows = chainLookupReturn(resolvedHomeRows, "rows", [])
-
-                tmpSettings["ui.home.resolvedRows"] = FormatJson({
-                    source: resolvedRowsSource,
-                    rows: resolvedRows
-                })
-                tmpSettings["ui.home.rowsSource"] = resolvedRowsSource
-
-                tmpSettings["ui.home.rowsV2"] = FormatJson(resolvedRows)
-            end if
-        end if
+        ' The layout arrives as sections, which unlike the flat order can say a row is off
+        ' and can carry the rows a plugin contributes
+        sections = settingsSync.ApplyHomeSections(tmpSettings, profile.homeSections)
 
         ' Runs last so it can use the pushed layout, which says whether each row is on
-        settingsSync.SyncTogglesFromServerRows(tmpSettings, resolvedRows, profile.homeRowOrder)
+        settingsSync.SyncTogglesFromServerRows(tmpSettings, sections, profile.homeRowOrder)
 
         session.user.Update("settings", tmpSettings)
 
@@ -379,6 +369,17 @@ namespace settingsSync
         settingsSync.SaveProfile("tv", profileData)
     end sub
 
+    ' What a render thread hands a PostTask, since it cannot make the request itself
+    function ProfilePush(profileData as object) as object
+        return {
+            url: "/Moonfin/Settings/Profile/tv",
+            body: FormatJson({
+                profile: profileData,
+                clientId: "roku"
+            })
+        }
+    end function
+
     ' Prepare settings sync push data without making HTTP requests (render-thread safe).
     function PreparePush(rokuKey as string, rokuValue as dynamic) as dynamic
         if not settingsSync.IsSyncEnabled() then return invalid
@@ -396,13 +397,7 @@ namespace settingsSync
                 end if
             end for
 
-            return {
-                url: "/Moonfin/Settings/Profile/tv",
-                body: FormatJson({
-                    profile: { seerrRows: seerrRows },
-                    clientId: "roku"
-                })
-            }
+            return settingsSync.ProfilePush({ seerrRows: seerrRows })
         end if
 
         mapping = settingsSync.FindMappingByRokuKey(rokuKey)
@@ -414,35 +409,21 @@ namespace settingsSync
         profileData = {}
         profileData[mapping.pluginKey] = pluginValue
 
-        return {
-            url: "/Moonfin/Settings/Profile/tv",
-            body: FormatJson({
-                profile: profileData,
-                clientId: "roku"
-            })
-        }
+        return settingsSync.ProfilePush(profileData)
     end function
 
     ' Seerr row flags live in a nested seerrRows object on the server, so they can't use
     ' the flat mapping table that GetMappings covers
     function GetSeerrRowMappings() as object
         return [
-            { rokuKey: "seerr.row.trending_movies", pluginKey: "trendingMovies" },
-            { rokuKey: "seerr.row.trending_tv", pluginKey: "trendingTv" },
-            { rokuKey: "seerr.row.trending", pluginKey: "trending"},
+            ' Seerr serves movie and TV trending from one endpoint, so the single row here
+            ' drives both flags the server keeps
+            { rokuKey: "seerr.row.trending", pluginKey: "trendingMovies" },
+            { rokuKey: "seerr.row.trending", pluginKey: "trendingTv" },
             { rokuKey: "seerr.row.popular_movies", pluginKey: "popularMovies" },
             { rokuKey: "seerr.row.popular_tv", pluginKey: "popularTv" },
             { rokuKey: "seerr.row.upcoming_movies", pluginKey: "upcomingMovies" },
-            { rokuKey: "seerr.row.upcoming_tv", pluginKey: "upcomingTv" },
-            { rokuKey: "seerr.row.shortcuts", pluginKey: "shortcuts" },
-            { rokuKey: "seerr.row.recent_requests", pluginKey: "recentRequests" },
-            { rokuKey: "seerr.row.recently_added", pluginKey: "recentlyAdded" },
-            { rokuKey: "seerr.row.shortcuts", pluginKey: "shortcuts" },
-            { rokuKey: "seerr.row.movie_genres", pluginKey: "movieGenres" },
-            { rokuKey: "seerr.row.series_genres", pluginKey: "seriesGenres" },
-            { rokuKey: "seerr.row.studios", pluginKey: "studios" },
-            { rokuKey: "seerr.row.networks", pluginKey: "networks" },
-            { rokuKey: "seerr.row.watchlist", pluginKey: "yourWatchlist" },
+            { rokuKey: "seerr.row.upcoming_tv", pluginKey: "upcomingTv" }
         ]
     end function
 
@@ -476,6 +457,21 @@ namespace settingsSync
             if mapping.rokuKey = rokuKey then return mapping
         end for
         return invalid
+    end function
+
+    ' The other clients name these sorts, and the value here goes into the query as it is
+    function FavoritesSortFields() as object
+        return [
+            { name: "name", field: "SortName" },
+            { name: "dateAdded", field: "DateCreated,SortName" },
+            { name: "dateEpisodeAdded", field: "DateLastContentAdded,SortName" },
+            { name: "premiereDate", field: "PremiereDate,SortName" },
+            { name: "rating", field: "OfficialRating,SortName" },
+            { name: "runtime", field: "Runtime,SortName" },
+            { name: "random", field: "Random" },
+            { name: "criticRating", field: "CriticRating,SortName" },
+            { name: "communityRating", field: "CommunityRating,SortName" }
+        ]
     end function
 
     function PluginToRoku(pluginValue as dynamic, conversionType as string) as dynamic
@@ -543,6 +539,14 @@ namespace settingsSync
             if valStr = "long_" then return "150"
             if valStr = "verylong" then return "240"
             return "0"
+        else if conversionType = "favoritesSortField"
+            valStr = LCase(pluginValue.toStr())
+            for each entry in settingsSync.FavoritesSortFields()
+                if LCase(entry.name) = valStr then return entry.field
+            end for
+            return "Random"
+        else if conversionType = "favoritesSortOrder"
+            return LCase(pluginValue.toStr()) = "descending" ? "Descending" : "Ascending"
         else if conversionType = "mediaSegmentCountdown"
             return LCase(pluginValue.toStr())
         else if conversionType = "shuffleType"
@@ -601,6 +605,14 @@ namespace settingsSync
             rokuFloat = val(rokuStr)
             return int(rokuFloat * 100 + 0.5)
 
+        else if conversionType = "favoritesSortField"
+            for each entry in settingsSync.FavoritesSortFields()
+                if LCase(entry.field) = LCase(rokuStr) then return entry.name
+            end for
+            return "random"
+        else if conversionType = "favoritesSortOrder"
+            return LCase(rokuStr) = "descending" ? "descending" : "ascending"
+
         else if conversionType = "maxVideoResolution"
             ' Roku offers steps the plugin has no name for, so those report as auto
             if rokuStr = "480" then return "res480p"
@@ -652,29 +664,6 @@ namespace settingsSync
         return moonfinPlugin.normalizeKeys(result)
     end function
 
-    function FetchResolvedHomeRows(profile as string) as object
-        req = APIRequest(`/Moonfin/HomeRows/${profile}`)
-        if not isValid(req) then return invalid
-
-        result = getJson(req)
-        if not isValid(result) then return invalid
-
-        normalizedResult = moonfinPlugin.normalizeKeys(result)
-
-        rows = chainLookupReturn(normalizedResult, "rows", [])
-        normalizedRows = []
-        if type(rows) = "roArray" or type(rows) = "Array"
-            for each row in rows
-                if type(row) = "roAssociativeArray" or type(row) = "AssociativeArray"
-                    normalizedRows.push(moonfinPlugin.normalizeKeys(row))
-                end if
-            end for
-        end if
-
-        normalizedResult["rows"] = normalizedRows
-        return normalizedResult
-    end function
-
     sub SaveProfile(profile as string, profileData as object)
         req = APIRequest(`/Moonfin/Settings/Profile/${profile}`)
         if not isValid(req) then return
@@ -690,42 +679,7 @@ namespace settingsSync
     ' Optional rows the server can turn on or off, keyed by the row id it uses in a pushed
     ' layout. A row maps to more than one setting where the picker offers them as one entry.
     function GetRowToggleMappings() as object
-        return {
-            imdb_top_250_movies: "imdb.top250movies",
-            imdb_top_250_tv_shows: "imdb.top250tvshows",
-            imdb_most_popular_movies: "imdb.mostpopularmovies",
-            imdb_most_popular_tv_shows: "imdb.mostpopulartvshows",
-            imdb_lowest_rated_movies: "imdb.lowestratedmovies",
-            imdb_top_english_movies: "imdb.topenglishmovies",
-
-            tmdb_popular_movies: "tmdb.popularmovies",
-            tmdb_top_rated_movies: "tmdb.topratedmovies",
-            tmdb_now_playing_movies: "tmdb.nowplayingmovies",
-            tmdb_upcoming_movies: "tmdb.upcomingmovies",
-            tmdb_popular_tv: "tmdb.populartv",
-            tmdb_top_rated_tv: "tmdb.topratedtv",
-            tmdb_airing_today_tv: "tmdb.airingtodaytv",
-            tmdb_on_the_air_tv: "tmdb.ontheairtv",
-            tmdb_trending_movie_daily: "tmdb.trendingmoviedaily",
-            tmdb_trending_movie_weekly: "tmdb.trendingmovieweekly",
-            tmdb_trending_tv_daily: "tmdb.trendingtvdaily",
-            tmdb_trending_tv_weekly: "tmdb.trendingtvweekly",
-            tmdb_trending_all_weekly: "tmdb.trendingallweekly",
-
-            ' One Seerr endpoint serves both, so the single row drives both settings
-            seerr_trending: ["seerr.row.trending_movies", "seerr.row.trending_tv"],
-            seerr_popular_movies: "seerr.row.popular_movies",
-            seerr_popular_series: "seerr.row.popular_tv",
-            seerr_upcoming_movies: "seerr.row.upcoming_movies",
-            seerr_upcoming_series: "seerr.row.upcoming_tv",
-
-            favorites: "ui.home.displayFavoritesRows",
-            collections: "ui.home.displayCollectionsRows",
-            genres: "ui.home.displayGenresRows",
-            playlists: "ui.home.displayPlaylistsRows",
-            audio: "ui.home.displayAudioRows",
-            rewatch: "ui.home.displayRewatchRow"
-        }
+        return homeRowLayout.RowToggles()
     end function
 
     ' CollectRowStates: Reads how the server wants each row set. Resolved rows carry an
@@ -740,7 +694,7 @@ namespace settingsSync
 
         if type(rows) = "roArray" or type(rows) = "Array"
             for each row in rows
-                rowId = chainLookupReturn(row, "id", "")
+                rowId = chainLookupReturn(row, "type", chainLookupReturn(row, "id", ""))
                 if type(rowId) <> "String" and type(rowId) <> "roString" then continue for
                 if rowId = "" then continue for
 
@@ -761,6 +715,44 @@ namespace settingsSync
         end if
 
         return states
+    end function
+
+    ' ApplyHomeSections: Turns the layout the server holds into the two lists this app
+    ' arranges its rows from, so the picker and the home screen need no further translation.
+    ' Returns the sections so the caller can read each row's state off them.
+    '
+    ' @param {object} tmpSettings - Settings map the caller commits once it finishes
+    ' @param {dynamic} sections - homeSections from the resolved profile
+    function ApplyHomeSections(tmpSettings as object, sections as dynamic) as object
+        if type(sections) <> "roArray" and type(sections) <> "Array" then return []
+        if sections.Count() = 0 then return []
+
+        order = []
+        hidden = []
+
+        for each section in sections
+            rowType = chainLookupReturn(section, "type", "")
+            if type(rowType) <> "String" and type(rowType) <> "roString" then continue for
+
+            rowId = LCase(rowType)
+            if not isValidAndNotEmpty(rowId) or rowId = "none" then continue for
+
+            order.push(rowId)
+            if not settingsSync.ToBooleanValue(chainLookupReturn(section, "enabled", true), true)
+                hidden.push(rowId)
+            end if
+        end for
+
+        if order.Count() = 0 then return []
+
+        userId = m.global.session.user.id
+        for each entry in [{ key: homeRowLayout.ORDER_SETTING, value: order }, { key: homeRowLayout.HIDDEN_SETTING, value: hidden }]
+            serialized = FormatJson(entry.value)
+            tmpSettings[entry.key] = serialized
+            registry_write(entry.key, serialized, userId)
+        end for
+
+        return sections
     end function
 
     ' SyncTogglesFromServerRows: Applies the state the server pushed for each row it names.
