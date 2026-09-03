@@ -479,7 +479,7 @@
     </message>
     <message>
         <source>Pick a Jellyfin server from the local network</source>
-        <translation>Seleccioneu un servidor de Jellyfin disponible des de la xarxa local:</translation>
+        <translation>Seleccioneu un servidor de Jellyfin disponible des de la xarxa local</translation>
         <extracomment>Instructions on initial app launch when the user is asked to pick a server from a list</extracomment>
     </message>
     <message>
