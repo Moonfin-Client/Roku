@@ -67,14 +67,6 @@ sub init()
     m.mediaBarSelectorDialogOptions = []
     m.mediaBarPickerTask = invalid
     m.pendingMediaBarSettingItem = invalid
-    m.homeRowsSourceTask = invalid
-    m.pendingPluginRowsSetting = invalid
-    m.pendingPluginRowsSource = ""
-    m.pluginRowsDialogSource = ""
-    m.pluginRowsDialogSettingKey = ""
-    m.pluginRowsDialogOptions = []
-    m.pluginRowsDialogOptionMap = {}
-    m.pluginRowsDialogSettingItem = invalid
 
     m.seerrKeyboardMode = ""
     m.seerrTempUsername = ""
@@ -472,227 +464,6 @@ sub onMediaBarSelectorDialogButton(event as object)
 end sub
 
 
-sub onHomeRowsSourceRowsLoaded(event as object)
-    rows = event.getData()
-
-    if not isValid(m.pendingPluginRowsSetting)
-        clearHomeRowsSourceTask()
-        return
-    end if
-
-    pendingSetting = m.pendingPluginRowsSetting
-    pendingSource = m.pendingPluginRowsSource
-    clearHomeRowsSourceTask()
-    showPluginRowsManagerDialog(pendingSetting, pendingSource, rows)
-end sub
-
-sub onHomeRowsSourceRowsError(event as object)
-    err = dynamicToDisplayString(event.getData())
-    if isValidAndNotEmpty(err)
-        ShowToast(err, "error")
-        m.settingsMenu.setFocus(true)
-    end if
-    clearHomeRowsSourceTask()
-end sub
-
-sub clearHomeRowsSourceTask(clearPending = true as boolean)
-    if isValid(m.homeRowsSourceTask)
-        m.homeRowsSourceTask.unobserveFieldScoped("rows")
-        m.homeRowsSourceTask.unobserveFieldScoped("errorMessage")
-    end if
-
-    m.homeRowsSourceTask = invalid
-
-    if clearPending
-        m.pendingPluginRowsSetting = invalid
-        m.pendingPluginRowsSource = ""
-    end if
-end sub
-
-sub showPluginRowsManagerDialog(settingItem as object, sourceName as string, rows as dynamic)
-    if type(rows) <> "Array" and type(rows) <> "roArray"
-        rows = []
-    end if
-
-    normalizedRows = []
-    for each row in rows
-        rowId = dynamicToDisplayString(chainLookupReturn(row, "id", "")).Trim()
-        if not isValidAndNotEmpty(rowId)
-            continue for
-        end if
-
-        rowTitle = dynamicToDisplayString(chainLookupReturn(row, "title", rowId)).Trim()
-        if not isValidAndNotEmpty(rowTitle)
-            rowTitle = rowId
-        end if
-
-        normalizedRows.push({
-            id: rowId,
-            title: rowTitle,
-            source: normalizeHomeRowsSourceName(chainLookupReturn(row, "source", sourceName)),
-            kind: dynamicToDisplayString(chainLookupReturn(row, "kind", "")),
-            route: dynamicToDisplayString(chainLookupReturn(row, "route", "")),
-            additionalData: chainLookupReturn(row, "additionalData", invalid),
-            enabled: normalizeBoolSettingValue(chainLookupReturn(row, "enabled", true)),
-            order: parseIntSettingValue(chainLookupReturn(row, "order", normalizedRows.Count()), normalizedRows.Count())
-        })
-    end for
-
-    if normalizedRows.Count() = 0
-        ShowToast("No rows available for this source.", "error")
-        m.settingsMenu.setFocus(true)
-        return
-    end if
-
-    settingKey = ""
-    savedRows = parsePluginRowsConfigValue(getUserSettingValue("", "[]"))
-    savedMap = buildPluginRowsConfigMap(savedRows)
-
-    sortedRows = []
-    for each row in normalizedRows
-        mapKey = LCase(dynamicToDisplayString(chainLookupReturn(row, "id", "")).Trim())
-        rowOrder = parseIntSettingValue(chainLookupReturn(row, "order", sortedRows.Count()), sortedRows.Count())
-        if savedMap.DoesExist(mapKey)
-            rowOrder = parseIntSettingValue(chainLookupReturn(savedMap[mapKey], "order", rowOrder), rowOrder)
-        end if
-
-        row.order = rowOrder
-
-        inserted = false
-        for i = 0 to sortedRows.Count() - 1
-            if rowOrder < parseIntSettingValue(chainLookupReturn(sortedRows[i], "order", i), i)
-                sortedRows.Insert(i, row)
-                inserted = true
-                exit for
-            end if
-        end for
-
-        if not inserted
-            sortedRows.push(row)
-        end if
-    end for
-
-    dialog = createObject("roSGNode", "MediaBarChecklistDialog")
-    dialog.title = tr(settingItem.title)
-    dialog.allowReorder = true
-    dialog.buttons = [tr("Save"), tr("Cancel")]
-    dialog.observeField("buttonSelected", "onPluginRowsManagerDialogButton")
-
-    checklist = dialog.findNode("checklist")
-    checklistContent = createObject("roSGNode", "ContentNode")
-    checkedState = []
-    optionMap = {}
-
-    for each row in sortedRows
-        listItem = checklistContent.CreateChild("ContentNode")
-        listItem.id = row.id
-        listItem.title = row.title
-
-        mapKey = LCase(dynamicToDisplayString(chainLookupReturn(row, "id", "")).Trim())
-        rowEnabled = normalizeBoolSettingValue(chainLookupReturn(row, "enabled", true))
-        if savedMap.DoesExist(mapKey)
-            rowEnabled = normalizeBoolSettingValue(chainLookupReturn(savedMap[mapKey], "enabled", rowEnabled))
-        end if
-
-        optionMap[mapKey] = row
-
-        checkedState.push(rowEnabled)
-    end for
-
-    checklist.content = checklistContent
-    checklist.checkedState = checkedState
-
-    m.pluginRowsDialogSource = sourceName
-    m.pluginRowsDialogSettingKey = settingKey
-    m.pluginRowsDialogOptions = sortedRows
-    m.pluginRowsDialogOptionMap = optionMap
-    m.pluginRowsDialogSettingItem = settingItem
-    showPickerPanel(dialog)
-end sub
-
-sub onPluginRowsManagerDialogButton(event as object)
-    dialog = event.getRoSGNode()
-    buttonIndex = dialog.buttonSelected
-
-    if buttonIndex = 0 and isValidAndNotEmpty(m.pluginRowsDialogSettingKey)
-        checklist = dialog.findNode("checklist")
-        checkedState = []
-        checklistContent = invalid
-        if isValid(checklist)
-            checkedState = checklist.checkedState
-            checklistContent = checklist.content
-        end if
-
-        savedRows = []
-        if isValid(checklistContent)
-            childCount = checklistContent.getChildCount()
-            for i = 0 to childCount - 1
-                listItem = checklistContent.getChild(i)
-                itemId = LCase(dynamicToDisplayString(listItem.id).Trim())
-                if not isValidAndNotEmpty(itemId)
-                    continue for
-                end if
-                if not m.pluginRowsDialogOptionMap.DoesExist(itemId)
-                    continue for
-                end if
-
-                option = m.pluginRowsDialogOptionMap[itemId]
-                rowEnabled = false
-                if i < checkedState.Count()
-                    rowEnabled = checkedState[i]
-                end if
-
-                savedRows.push({
-                    id: chainLookupReturn(option, "id", ""),
-                    title: chainLookupReturn(option, "title", ""),
-                    source: normalizeHomeRowsSourceName(chainLookupReturn(option, "source", m.pluginRowsDialogSource)),
-                    kind: chainLookupReturn(option, "kind", ""),
-                    route: chainLookupReturn(option, "route", ""),
-                    additionalData: chainLookupReturn(option, "additionalData", invalid),
-                    enabled: normalizeBoolSettingValue(rowEnabled),
-                    order: i
-                })
-            end for
-        else
-            for i = 0 to m.pluginRowsDialogOptions.Count() - 1
-                option = m.pluginRowsDialogOptions[i]
-                rowEnabled = false
-                if i < checkedState.Count()
-                    rowEnabled = checkedState[i]
-                end if
-
-                savedRows.push({
-                    id: chainLookupReturn(option, "id", ""),
-                    title: chainLookupReturn(option, "title", ""),
-                    source: normalizeHomeRowsSourceName(chainLookupReturn(option, "source", m.pluginRowsDialogSource)),
-                    kind: chainLookupReturn(option, "kind", ""),
-                    route: chainLookupReturn(option, "route", ""),
-                    additionalData: chainLookupReturn(option, "additionalData", invalid),
-                    enabled: normalizeBoolSettingValue(rowEnabled),
-                    order: i
-                })
-            end for
-        end if
-
-        serialized = FormatJson(savedRows)
-        set_user_setting(m.pluginRowsDialogSettingKey, serialized)
-        session.user.settings.Save(m.pluginRowsDialogSettingKey, serialized)
-
-        if isValid(m.pluginRowsDialogSettingItem)
-            refreshCurrentItemValue(m.pluginRowsDialogSettingItem)
-        end if
-    end if
-
-    closePickerPanel(dialog)
-    m.pluginRowsDialogSource = ""
-    m.pluginRowsDialogSettingKey = ""
-    m.pluginRowsDialogOptions = []
-    m.pluginRowsDialogOptionMap = {}
-    m.pluginRowsDialogSettingItem = invalid
-    hideEditingControls()
-    m.settingsMenu.setFocus(true)
-end sub
-
 function getSettingCurrentValueLabel(settingItem as dynamic) as string
     if not isValid(settingItem) then return ""
     if not isValid(settingItem.type) then return ""
@@ -960,7 +731,7 @@ end sub
 sub saveHomeRowLayout(order as object, hidden as object)
     set_user_setting(homeRowLayout.ORDER_SETTING, FormatJson(order))
     set_user_setting(homeRowLayout.HIDDEN_SETTING, FormatJson(hidden))
-    syncHomeRowsContractToServer()
+    syncHomeRowsToServer()
 end sub
 
 ' The individual collections, genres or playlists that can each be a row of their own. The
@@ -1169,140 +940,60 @@ function getUserSettingValue(settingName as string, defaultValue = invalid as dy
     return defaultValue
 end function
 
-function shouldUseServerManagedHomeRows() as boolean
-    return normalizeBoolSettingValue(getUserSettingValue("homeRows.useServerConfig", false))
-end function
-
-function normalizeHomeRowsSourceName(sourceValue as dynamic) as string
-    return LCase(dynamicToDisplayString(sourceValue))
-end function
-
-
-
-
-function parsePluginRowsConfigValue(value as dynamic) as object
-    if not isValid(value)
-        return []
-    end if
-
-    parsed = invalid
-    valueType = type(value)
-    if valueType = "Array" or valueType = "roArray"
-        parsed = value
-    else if valueType = "String" or valueType = "roString"
-        parsed = ParseJson(value)
-    end if
-
-    if type(parsed) <> "Array" and type(parsed) <> "roArray"
-        return []
-    end if
-
-    rows = []
-    for each row in parsed
-        rowType = type(row)
-        if rowType = "AssociativeArray" or rowType = "roAssociativeArray"
-            rows.push(row)
-        end if
-    end for
-
-    return rows
-end function
-
-function parseIntSettingValue(value as dynamic, defaultValue = 0 as integer) as integer
-    if not isValid(value)
-        return defaultValue
-    end if
-
-    valueType = type(value)
-    if valueType = "Integer" or valueType = "LongInteger" or valueType = "roInteger" or valueType = "roInt"
-        return value
-    end if
-
-    if valueType = "Float" or valueType = "Double" or valueType = "roFloat" or valueType = "roDouble"
-        return Int(value)
-    end if
-
-    if valueType = "String" or valueType = "roString"
-        return Int(Val(value))
-    end if
-
-    return defaultValue
-end function
-
-function buildPluginRowsConfigMap(configRows as object) as object
-    configMap = {}
-    if not isValid(configRows)
-        return configMap
-    end if
-
-    for each row in configRows
-        rowId = LCase(dynamicToDisplayString(chainLookupReturn(row, "id", "")).Trim())
-        if isValidAndNotEmpty(rowId)
-            configMap[rowId] = row
-        end if
-    end for
-
-    return configMap
-end function
-
-function buildHomeRowsV2Payload(rowOrder as object) as object
-    rows = []
+' buildHomeSectionsPayload: The whole layout as the other clients read it. Every row the
+' picker offers goes over with its own enabled flag, since a list of only the enabled ones
+' cannot say which rows the viewer turned off.
+function buildHomeSectionsPayload() as object
+    storedOrder = get_user_setting(homeRowLayout.ORDER_SETTING)
+    placed = buttonLayout.ToIds(storedOrder)
+    off = buttonLayout.HiddenLookup(get_user_setting(homeRowLayout.HIDDEN_SETTING))
     picked = homeRowLayout.DynamicLookup()
     serverKey = homeRowLayout.ServerId()
 
-    for i = 0 to rowOrder.Count() - 1
-        sectionId = rowOrder[i]
+    sections = []
+    order = 0
 
-        ' A picked collection, genre or playlist has to go over as the structured record the
-        ' other clients read, since the flat order cannot say which item it stands for
-        entry = picked[LCase(sectionId)]
+    for each row in buttonLayout.Ordered(homeRowLayout.Offered(), storedOrder)
+        enabled = homeRowLayout.IsEnabled(row.id, placed, off, picked)
+
+        section = { type: row.id, enabled: enabled, order: order, kind: "builtin" }
+
+        ' A picked collection, genre or playlist goes over as the record the other clients
+        ' read, since the row id alone cannot say which item it stands for
+        entry = picked[LCase(row.id)]
         if isValid(entry)
             listEntry = homeRowLayout.SourceFor(entry.source)
-            rows.push({
-                id: sectionId,
-                title: entry.title,
-                kind: "pluginDynamic",
-                source: entry.source,
-                pluginSource: entry.source,
-                pluginSection: isValid(listEntry) ? listEntry.section : entry.source,
-                pluginAdditionalData: entry.itemId,
-                pluginDisplayText: entry.title,
-                serverId: serverKey,
-                enabled: true,
-                order: i
-            })
-            continue for
+            section.kind = "pluginDynamic"
+            section.pluginSource = entry.source
+            section.pluginSection = isValid(listEntry) ? listEntry.section : entry.source
+            section.pluginAdditionalData = entry.itemId
+            section.pluginDisplayText = entry.title
+            section.serverId = serverKey
         end if
 
-        rows.push({
-            id: sectionId,
-            title: sectionId,
-            kind: "builtin",
-            source: "jellyfin",
-            enabled: true,
-            order: i
-        })
+        sections.push(section)
+        order++
     end for
 
-    return rows
+    return sections
 end function
 
-sub syncHomeRowsContractToServer()
+' The layout rides the settings profile like every other setting. Both keys go together,
+' since a row order arriving without sections makes the server drop the sections it holds,
+' taking the other clients' disabled and plugin rows with them.
+sub syncHomeRowsToServer()
     if not settingsSync.IsSyncEnabled()
         return
     end if
 
-    rowOrder = homeRowLayout.Arranged()
-    rowsV2 = buildHomeRowsV2Payload(rowOrder)
+    pushData = settingsSync.ProfilePush({
+        homeSections: buildHomeSectionsPayload(),
+        homeRowOrder: homeRowLayout.Arranged()
+    })
 
     m.homeRowsSyncTask = createObject("roSGNode", "PostTask")
-    m.homeRowsSyncTask.apiUrl = "/Moonfin/HomeRows/tv"
-    m.homeRowsSyncTask.stringData = FormatJson({
-        source: "moonfin",
-        rows: rowsV2,
-        homeRowOrder: rowOrder,
-        clientId: "roku"
-    })
+    m.homeRowsSyncTask.apiUrl = pushData.url
+    m.homeRowsSyncTask.stringData = pushData.body
     m.homeRowsSyncTask.control = "RUN"
 end sub
 
@@ -2554,7 +2245,7 @@ sub radioSettingChanged()
     syncSettingToServer(selectedSetting.settingName, selectedValue)
 
     if Left(chainLookupReturn(selectedSetting, "settingName", ""), 17) = "homeScreenSection"
-        syncHomeRowsContractToServer()
+        syncHomeRowsToServer()
     end if
 
     refreshCurrentItemValue(selectedSetting)
