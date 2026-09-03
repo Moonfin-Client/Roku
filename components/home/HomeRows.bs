@@ -31,16 +31,6 @@ function getPosterSize(preferWide = true as boolean) as object
     end if
 end function
 
-' Number of Since You Watched rows the user wants, clamped to a sane range.
-function getSinceYouWatchedNumRows() as integer
-    raw = get_user_setting("ui.home.sinceYouWatchedNumRows")
-    numRows = 1
-    if isValidAndNotEmpty(raw) then numRows = raw.ToInt()
-    if numRows < 1 then numRows = 1
-    if numRows > 5 then numRows = 5
-    return numRows
-end function
-
 ' Helper function to check if Featured Media is enabled via toggle (not home sections)
 function isFeaturedMediaEnabled() as boolean
     ' Check the media bar enabled toggle in Moonfin settings
@@ -736,10 +726,6 @@ function getExpectedRowContribution(sectionName as string) as integer
         return rowCount
     end if
 
-    if sectionName = "sinceyouwatched"
-        return getSinceYouWatchedNumRows()
-    end if
-
     return 1
 end function
 
@@ -788,7 +774,8 @@ function mapBuiltinSectionFromServerRow(row as object) as string
         if token = "audio" then return "audio"
         if token = "smalllibrarytiles" or token = "librarytilessmall" or token = "librarybuttons" or token = "mymedia" then return "smalllibrarytiles"
         if token = "featuredmedia" or token = "mediabar" then return "featuredmedia"
-        if token = "sinceyouwatched" then return "sinceyouwatched"
+        if token = "sinceyouwatched" then return "sinceyouwatched1"
+        if homeRowLayout.SeedRowIndex(token) > 0 then return token
         if token = "rewatch" then return "rewatch"
         if token = "none" then return "none"
     end for
@@ -886,6 +873,7 @@ sub processUserSections()
         end for
 
         homeRowLayout.MigrateLegacySlots()
+        homeRowLayout.MigrateSinceYouWatched()
         m.cachedRowOrder = invalid
     end if
 
@@ -1298,8 +1286,9 @@ function addHomeSection(sectionType as string) as boolean
     end if
 
     ' Since You Watched recommendation rows
-    if sectionType = "sinceyouwatched"
-        createSinceYouWatchedRows()
+    seedIndex = homeRowLayout.SeedRowIndex(sectionType)
+    if seedIndex > 0
+        createSinceYouWatchedRow(seedIndex)
         return true
     end if
 
@@ -1530,41 +1519,30 @@ sub createRecentlyReleasedRow()
     end for
 end sub
 
-' createSinceYouWatchedRows: Fires one task per requested Since You Watched row.
-' Each row is seeded from a different recently watched item.
-sub createSinceYouWatchedRows()
-    removeSinceYouWatchedRows()
+' createSinceYouWatchedRow: The index picks which recently watched item seeds the row
+sub createSinceYouWatchedRow(rowIndex as integer)
+    removeHomeRowById(homeRowLayout.SEED_ROW_PREFIX + rowIndex.ToStr())
 
-    numRows = getSinceYouWatchedNumRows()
-    for rowIndex = 1 to numRows
-        task = createObject("roSGNode", "LoadItemsTask")
-        task.itemsToLoad = "sinceYouWatched"
-        task.metadata = { rowIndex: rowIndex }
-        task.observeField("content", "updateSinceYouWatchedItems")
-        task.control = TaskControl.RUN
-    end for
+    task = createObject("roSGNode", "LoadItemsTask")
+    task.itemsToLoad = "sinceYouWatched"
+    task.metadata = { rowIndex: rowIndex }
+    task.observeField("content", "updateSinceYouWatchedItems")
+    task.control = TaskControl.RUN
 end sub
 
-' removeSinceYouWatchedRows: Drops any existing Since You Watched rows so a
-' refresh doesnt leave stale seeds behind.
-sub removeSinceYouWatchedRows()
+' removeHomeRowById: A seed row is titled after whatever seeded it, so a rebuild onto a
+' different seed has to find the old one by id or it would be left behind
+sub removeHomeRowById(rowId as string)
     if not isValid(m.top.content) then return
-
-    prefix = LCase(tr("Since you watched")).Replace(" ", "")
-    removedAny = false
 
     for i = m.top.content.getChildCount() - 1 to 0 step -1
         section = m.top.content.getChild(i)
-        if isValid(section) and isValid(section.title)
-            title = LCase(section.title).Replace(" ", "")
-            if Left(title, Len(prefix)) = prefix
-                m.top.content.removeChildIndex(i)
-                removedAny = true
-            end if
+        if isValid(section) and isStringEqual(section.id, rowId)
+            m.top.content.removeChildIndex(i)
+            setRowItemSize()
+            return
         end if
     end for
-
-    if removedAny then setRowItemSize()
 end sub
 
 ' updateSinceYouWatchedItems: Builds a single Since You Watched row from its task
@@ -1604,9 +1582,8 @@ sub updateSinceYouWatchedItems(msg)
         row.appendChild(item)
     end for
 
-    ' Every seed row carries the same id, so the sort keeps them together where the
-    ' viewer put the section and leaves their own order alone
-    addOrUpdateHomeRow(row, sectionName, "sinceyouwatched")
+    rowIndex = isValid(node.metadata.rowIndex) ? node.metadata.rowIndex : 1
+    addOrUpdateHomeRow(row, sectionName, homeRowLayout.SEED_ROW_PREFIX + rowIndex.ToStr())
 end sub
 
 ' createRewatchRow: Creates a row of movies, shows, and collections the user has finished
