@@ -880,6 +880,8 @@ sub syncSettingToServer(rokuKey as string, rokuValue as dynamic)
         if isStringEqual(pending.state, "run") then running.push(pending)
     end for
 
+    diagnostics.Log(diagnostics.CAT_SYNC, diagnostics.LEVEL_DEBUG, `Pushing ${rokuKey} to the server`)
+
     task = createObject("roSGNode", "PostTask")
     task.apiUrl = pushData.url
     task.stringData = pushData.body
@@ -1625,6 +1627,7 @@ function reorderSettingsForFlutter(configTree as object) as object
     themeMusic = findSettingsChildByTitle(moonfinSettings, "Theme Music")
     shuffle = findSettingsChildByTitle(moonfinSettings, "Shuffle")
     supportMoonfin = findSettingsChildByTitle(moonfinSettings, "Support Moonfin")
+    diagLogging = findSettingsChildByTitle(moonfinSettings, "Diagnostics")
 
     general = findSettingsChildByTitle(userInterface, "General Style")
     libraries = findSettingsChildByTitle(userInterface, "Libraries")
@@ -1705,9 +1708,10 @@ function reorderSettingsForFlutter(configTree as object) as object
             settingName: "moonfin.showWhatsNew",
             icon: "article.png",
             type: ""
-        },
-        { title: "Links", type: SettingType.SECTION }
+        }
     ]
+    pushSettingIfValid(aboutChildren, diagLogging)
+    aboutChildren.push({ title: "Links", type: SettingType.SECTION })
     pushSettingIfValid(aboutChildren, supportMoonfin)
     if aboutChildren.count() > 0
         reordered.push({
@@ -1720,7 +1724,7 @@ function reorderSettingsForFlutter(configTree as object) as object
 
     additionalChildren = []
 
-    moonfinMappedTitles = ["Navigation", "Home Screen", "Libraries", "Media Bar", "Theme Music", "Shuffle", "Support Moonfin"]
+    moonfinMappedTitles = ["Navigation", "Home Screen", "Libraries", "Media Bar", "Theme Music", "Shuffle", "Support Moonfin", "Diagnostics"]
     pushUnmappedChildrenByTitle(additionalChildren, moonfinSettings, moonfinMappedTitles)
 
     pluginMappedTitles = ["Enable Plugin", "Settings Sync", "Metadata & Ratings", "Seerr", "External Lists"]
@@ -1953,6 +1957,12 @@ sub settingSelected()
         return
     end if
 
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "diagnostics.viewLogs"
+        m.settingDesc.visible = false
+        showDiagnosticsPanel()
+        return
+    end if
+
     if isValid(selectedItem.settingName) and selectedItem.settingName = "ui.home.rowLayout"
         m.settingDesc.visible = false
         showHomeRowLayoutDialog(selectedItem)
@@ -2165,6 +2175,8 @@ sub boolSettingChanged(selectedSetting as object)
         if selectedSetting.settingName = "plugin.enabled"
             testPluginConnection()
         end if
+        ' The store keeps its own copy of both switches, so it is told as they change
+        if Left(selectedSetting.settingName, 12) = "diagnostics." then diagnostics.Apply()
     end if
 
     if isStringEqual(selectedSetting.settingName, "playback.playDefaultAudioTrack")
@@ -2400,4 +2412,61 @@ sub adjustDetailsBackdropBlurItem(item as dynamic)
         { title: "Heavy (20)", id: "20" },
         { title: "Maximum (25)", id: "25" }
     ]
+end sub
+
+' The log readout. Drawn as a panel parented to this screen rather than a pushed scene,
+' since the settings screen is itself an overlay and a scene would land underneath it.
+sub showDiagnosticsPanel()
+    dialog = createObject("roSGNode", "DiagnosticsPanel")
+    dialog.observeField("sendRequested", "onDiagnosticsSendRequested")
+    dialog.observeField("closed", "onDiagnosticsPanelClosed")
+
+    m.diagnosticsPanel = dialog
+    showPickerPanel(dialog)
+    dialog.callFunc("showDialog")
+end sub
+
+sub onDiagnosticsPanelClosed(event as object)
+    dialog = event.getRoSGNode()
+    if not dialog.closed then return
+
+    closePickerPanel(dialog)
+    m.diagnosticsPanel = invalid
+    hideEditingControls()
+    m.settingsMenu.setFocus(true)
+end sub
+
+' Uploading is a request, so it runs on a task rather than the render thread this screen
+' is drawn on
+sub onDiagnosticsSendRequested(event as object)
+    dialog = event.getRoSGNode()
+    if not dialog.sendRequested then return
+
+    dialog.status = tr("Sending report...")
+
+    task = createObject("roSGNode", "PostTask")
+    task.apiUrl = diagnostics.UPLOAD_URL
+    task.contentType = "text/plain"
+    task.stringData = diagnostics.BuildReport()
+    task.observeField("responseCode", "onDiagnosticsReportSent")
+    task.control = "RUN"
+
+    m.diagnosticsUploadTask = task
+end sub
+
+sub onDiagnosticsReportSent(event as object)
+    code = event.getData()
+    m.diagnosticsUploadTask = invalid
+
+    if not isValid(m.diagnosticsPanel) then return
+
+    if code = 204 or code = 200
+        m.diagnosticsPanel.status = tr("Report sent to the server")
+    else if code = 403
+        ' Jellyfin answers 403 when client logging is switched off server side, which is
+        ' worth saying rather than reporting a plain failure
+        m.diagnosticsPanel.status = tr("The server isnt accepting client logs. Turn them on in the server dashboard.")
+    else
+        m.diagnosticsPanel.status = tr("Couldnt send the report.") + " (" + code.ToStr() + ")"
+    end if
 end sub

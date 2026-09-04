@@ -1,0 +1,89 @@
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/diagnostics.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Held small on purpose. These sets are memory tight and a runaway buffer is its own bug
+const MAX_ENTRIES = 300
+
+' Writing the registry on every entry would cost more than the logging is worth
+const FLUSH_EVERY = 25
+
+sub init()
+    m.entries = []
+    m.enabled = false
+    m.persist = false
+    m.sinceFlush = 0
+end sub
+
+' Entries arrive with lowercase keys already. An assocarray crossing a node field comes back
+' lowercased anyway, so writing them that way to begin with means nothing changes in transit
+sub append(entry as object)
+    if not m.enabled or not isValid(entry) then return
+
+    m.entries.push(entry)
+    while m.entries.Count() > MAX_ENTRIES
+        m.entries.Delete(0)
+    end while
+
+    if not m.persist then return
+
+    m.sinceFlush = m.sinceFlush + 1
+    if m.sinceFlush >= FLUSH_EVERY
+        m.sinceFlush = 0
+        flushCrashTail()
+    end if
+end sub
+
+function getEntries() as object
+    return m.entries
+end function
+
+sub clear()
+    m.entries = []
+    m.sinceFlush = 0
+    registry_delete(diagnostics.CRASH_KEY, diagnostics.CRASH_SECTION)
+end sub
+
+' Lowercase keys, so they survive the crossing onto this node unchanged
+sub setEnabled(flags as object)
+    if not isValid(flags) then return
+
+    m.enabled = flags.on = true
+    m.persist = flags.persist = true
+    m.top.on = m.enabled
+
+    if not m.enabled then m.entries = []
+    if not m.persist then registry_delete(diagnostics.CRASH_KEY, diagnostics.CRASH_SECTION)
+end sub
+
+' Cleared as it is read, so a report only ever goes out once
+function takeCrashTail() as string
+    tail = registry_read(diagnostics.CRASH_KEY, diagnostics.CRASH_SECTION)
+    registry_delete(diagnostics.CRASH_KEY, diagnostics.CRASH_SECTION)
+
+    if not isValidAndNotEmpty(tail) then return ""
+    return tail
+end function
+
+' Newest entries matter most after a crash, so the budget is filled from the end backwards
+sub flushCrashTail()
+    lines = []
+    used = 0
+
+    for i = m.entries.Count() - 1 to 0 step -1
+        entry = m.entries[i]
+        line = diagnostics.FormatEntry(entry)
+
+        used = used + Len(line) + 1
+        if used > diagnostics.CRASH_BUDGET then exit for
+
+        lines.Unshift(line)
+    end for
+
+    if lines.Count() = 0
+        registry_delete(diagnostics.CRASH_KEY, diagnostics.CRASH_SECTION)
+        return
+    end if
+
+    registry_write(diagnostics.CRASH_KEY, lines.Join(Chr(10)), diagnostics.CRASH_SECTION)
+end sub

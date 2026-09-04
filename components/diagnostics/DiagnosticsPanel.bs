@@ -1,0 +1,148 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/diagnostics.bs"
+import "pkg:/source/utils/libraryPanel.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/trackDialog.bs"
+
+sub init()
+    m.checklist = m.top.findNode("checklist")
+    m.checklist.observeField("itemSelected", "onRowSelected")
+
+    ' Cycled by the filter row rather than a submenu, since one press per step beats a
+    ' second panel drawn over this one
+    m.filters = ["all"]
+    m.filters.Append(diagnostics.Categories())
+    m.filterIndex = 0
+    m.rows = []
+
+    m.top.observeField("status", "onStatusChanged")
+
+    ' The list length changes as entries arrive and as the filter moves, so the panel is
+    ' held at full height rather than resizing under the viewer
+    trackDialog.Layout({
+        panel: m.top.findNode("panel"),
+        panelBg: m.top.findNode("panelBg"),
+        panelBorder: m.top.findNode("panelBorder"),
+        title: m.top.findNode("title"),
+        titleRule: m.top.findNode("titleRule"),
+        list: m.checklist
+    }, trackDialog.VisibleRows(999, libraryPanel.SETTING_ROW_HEIGHT), libraryPanel.SETTING_ROW_HEIGHT)
+
+    m.top.findNode("title").text = tr("Logs")
+end sub
+
+sub showDialog()
+    rebuild()
+    m.checklist.setFocus(true)
+end sub
+
+sub onStatusChanged()
+    rebuild()
+end sub
+
+' Newest first, which is what anyone reading a log after something went wrong wants
+sub rebuild()
+    keep = m.filters[m.filterIndex]
+    entries = []
+    if isValid(m.global) and isValid(m.global.diagLog)
+        entries = m.global.diagLog.callFunc("getEntries")
+    end if
+    if not isValid(entries) then entries = []
+
+    shown = []
+    for i = entries.Count() - 1 to 0 step -1
+        entry = entries[i]
+        if keep = "all" or entry.category = keep then shown.push(entry)
+    end for
+
+    content = createObject("roSGNode", "ContentNode")
+    m.rows = []
+
+    if isValidAndNotEmpty(m.top.status)
+        addRow(content, "status", m.top.status, "", "action")
+    end if
+
+    ' Actions sit above the entries. A full buffer is 300 rows and nobody should have to
+    ' page past all of them to reach Clear
+    filterLabel = keep = "all" ? tr("All categories") : keep
+    addRow(content, "filter", tr("Filter") + ": " + filterLabel, "", "action")
+    addRow(content, "send", tr("Send Report"), "", "action")
+    addRow(content, "clear", tr("Clear"), "", "action")
+    addRow(content, "close", tr("Close"), "", "action")
+
+    if shown.Count() = 0
+        empty = diagnostics.IsOn() ? tr("Nothing recorded yet.") : tr("Turn on Diagnostic Logging to start recording.")
+        addRow(content, "empty", empty, "", "action", true)
+    end if
+
+    first = true
+    for each entry in shown
+        addRow(content, "entry", entry.message, `${entry.ts}  ${entry.level}  [${entry.category}]`, "setting", first)
+        first = false
+    end for
+
+    m.checklist.content = content
+end sub
+
+sub addRow(content as object, action as string, label as string, summary as string, kind as string, ruleAbove = false as boolean)
+    row = content.CreateChild("LibraryPanelRowData")
+    row.title = label
+    row.summary = summary
+    row.kind = kind
+    row.ruleAbove = ruleAbove
+    row.rowHeight = libraryPanel.SETTING_ROW_HEIGHT
+
+    m.rows.push(action)
+end sub
+
+sub onRowSelected()
+    index = m.checklist.itemSelected
+    if index < 0 or index >= m.rows.Count() then return
+
+    action = m.rows[index]
+
+    if action = "filter"
+        m.filterIndex = (m.filterIndex + 1) mod m.filters.Count()
+        rebuild()
+        m.checklist.jumpToItem = jumpTargetFor("filter")
+        return
+    end if
+
+    if action = "clear"
+        if isValid(m.global) and isValid(m.global.diagLog)
+            m.global.diagLog.callFunc("clear")
+        end if
+        m.top.status = tr("Logs cleared")
+        return
+    end if
+
+    if action = "send"
+        m.top.sendRequested = true
+        return
+    end if
+
+    if action = "close"
+        m.top.closed = true
+    end if
+end sub
+
+' Keeps the cursor on the row that was just pressed after the list is rebuilt underneath it
+function jumpTargetFor(action as string) as integer
+    for i = 0 to m.rows.Count() - 1
+        if m.rows[i] = action then return i
+    end for
+
+    return 0
+end function
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    ' Swallowed, or back would close the settings overlay this panel is drawn inside
+    if key = KeyCode.BACK
+        m.top.closed = true
+        return true
+    end if
+
+    return false
+end function

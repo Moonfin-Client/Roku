@@ -1,0 +1,223 @@
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+
+' The caller side of the diagnostic log. Everything here runs on whichever thread is doing
+' the logging, so the first job is to answer "is this on" without paying to reach the global
+' node every time.
+namespace diagnostics
+
+    const LEVEL_DEBUG = "DEBUG"
+    const LEVEL_INFO = "INFO"
+    const LEVEL_WARN = "WARN"
+    const LEVEL_ERROR = "ERROR"
+
+    ' The same seven Core uses, so a report reads the same whichever client sent it
+    const CAT_GENERAL = "general"
+    const CAT_MEDIA = "media"
+    const CAT_SEERR = "seerr"
+    const CAT_NETWORK = "network"
+    const CAT_AUTH = "auth"
+    const CAT_PLAYBACK = "playback"
+    const CAT_SYNC = "sync"
+
+    const CACHE_KEY = "moonfin.diag.on"
+    const SCRUB_KEY = "moonfin.diag.scrub"
+    const UPLOAD_URL = "/ClientLog/Document?documentType=Log&name=moonfin-roku-log"
+
+    ' Where the tail that survives a crash is kept. The registry is around 32KB for the
+    ' whole channel and other things live there too, so this is budgeted in bytes
+    const CRASH_SECTION = "moonfin_diag"
+    const CRASH_KEY = "tail"
+    const CRASH_BUDGET = 6144
+    const EXIT_KEY = "cleanexit"
+
+    function Categories() as object
+        return [diagnostics.CAT_NETWORK, diagnostics.CAT_PLAYBACK, diagnostics.CAT_AUTH, diagnostics.CAT_SEERR, diagnostics.CAT_MEDIA, diagnostics.CAT_SYNC, diagnostics.CAT_GENERAL]
+    end function
+
+    ' Reaching the global node from a task thread waits on the render thread, so the answer
+    ' is kept per thread after the first ask. Tasks are short lived, so one that started
+    ' before the setting changed simply misses that run.
+    function IsOn() as boolean
+        context = GetGlobalAA()
+
+        remembered = context[diagnostics.CACHE_KEY]
+        if remembered <> invalid then return remembered
+
+        answer = false
+        if isValid(m.global) and isValid(m.global.diagLog)
+            answer = m.global.diagLog.on = true
+        end if
+
+        context[diagnostics.CACHE_KEY] = answer
+        return answer
+    end function
+
+    sub Apply()
+        if not isValid(m.global) or not isValid(m.global.diagLog) then return
+
+        m.global.diagLog.callFunc("setEnabled", {
+            on: get_user_setting_bool("diagnostics.enabled", false),
+            persist: get_user_setting_bool("diagnostics.crashReports", false)
+        })
+
+        GetGlobalAA().Delete(diagnostics.CACHE_KEY)
+    end sub
+
+    function Stamp() as string
+        now = CreateObject("roDateTime")
+        now.ToLocalTime()
+
+        return leftPad(now.GetHours().ToStr(), "0", 2) + ":" + leftPad(now.GetMinutes().ToStr(), "0", 2) + ":" + leftPad(now.GetSeconds().ToStr(), "0", 2) + "." + leftPad(now.GetMilliseconds().ToStr(), "0", 3)
+    end function
+
+    ' Keys are lowercase because an assocarray crossing a node field arrives that way, and
+    ' matching it here means the entry the viewer reads is the entry that was written
+    sub Log(category as string, level as string, message as string)
+        if not diagnostics.IsOn() then return
+        if not isValid(m.global) or not isValid(m.global.diagLog) then return
+
+        m.global.diagLog.callFunc("append", {
+            ts: diagnostics.Stamp(),
+            level: level,
+            category: category,
+            message: message
+        })
+    end sub
+
+    sub Network(message as string, level = diagnostics.LEVEL_DEBUG as string)
+        diagnostics.Log(diagnostics.CAT_NETWORK, level, message)
+    end sub
+
+    sub Playback(message as string, level = diagnostics.LEVEL_INFO as string)
+        diagnostics.Log(diagnostics.CAT_PLAYBACK, level, message)
+    end sub
+
+    sub Auth(message as string, level = diagnostics.LEVEL_INFO as string)
+        diagnostics.Log(diagnostics.CAT_AUTH, level, message)
+    end sub
+
+    sub General(message as string, level = diagnostics.LEVEL_INFO as string)
+        diagnostics.Log(diagnostics.CAT_GENERAL, level, message)
+    end sub
+
+    function FormatEntry(entry as object) as string
+        return `${entry.ts} ${entry.level} [${entry.category}] ${entry.message}`
+    end function
+
+    ' One line per request rather than a start and a finish. The buffer is 300 entries and
+    ' the outcome is the half worth keeping. Hands back invalid when logging is off so the
+    ' finish call costs a null check and the timer is never even created.
+    function StartTrace(verb as string, req as object) as object
+        if not diagnostics.IsOn() or not isValid(req) then return invalid
+
+        return {
+            verb: verb,
+            url: diagnostics.Redact(req.GetUrl()),
+            timer: CreateObject("roTimespan")
+        }
+    end function
+
+    sub EndTrace(started as object, outcome as string, level = diagnostics.LEVEL_DEBUG as string)
+        if not isValid(started) then return
+
+        diagnostics.Network(`${started.verb} ${started.url} ${outcome} (${started.timer.TotalMilliseconds()}ms)`, level)
+    end sub
+
+    ' The device's friendly name and serial identify the owner, so neither is in here
+    function HeaderLines() as object
+        lines = []
+        if not isValid(m.global) then return lines
+
+        if isValid(m.global.app) then lines.push(`App: ${m.global.app.name} ${m.global.app.version}`)
+        if isValid(m.global.device) then lines.push(`Device: ${m.global.device.model}, Roku OS ${m.global.device.osVersion}`)
+
+        return lines
+    end function
+
+    function BuildReport() as string
+        lines = ["Moonfin for Roku diagnostic report", `Generated: ${diagnostics.Stamp()}`]
+        lines.Append(diagnostics.HeaderLines())
+
+        if isValid(m.global) and isValid(m.global.session) and isValid(m.global.session.server)
+            lines.push(`Server: Jellyfin ${m.global.session.server.version ?? "unknown"}`)
+        end if
+
+        entries = []
+        if isValid(m.global) and isValid(m.global.diagLog)
+            entries = m.global.diagLog.callFunc("getEntries")
+        end if
+        if not isValid(entries) then entries = []
+
+        lines.push(`Entries: ${entries.Count()}`)
+        lines.push(String(60, "="))
+
+        for each entry in entries
+            lines.push(diagnostics.FormatEntry(entry))
+        end for
+
+        return lines.Join(Chr(10))
+    end function
+
+    ' Roku gives no crash hook. A fatal error takes the channel down with no chance to run
+    ' anything, so the only way to catch one is to leave a marker on a clean exit and look
+    ' for its absence next time.
+    sub NoteCleanExit()
+        registry_write(diagnostics.EXIT_KEY, "true", diagnostics.CRASH_SECTION)
+    end sub
+
+    ' Called once the user's settings exist, so the switch can be read
+    sub SendCrashTailIfAny()
+        if not isValid(m.global) or not isValid(m.global.diagLog) then return
+
+        exitedCleanly = registry_read(diagnostics.EXIT_KEY, diagnostics.CRASH_SECTION) = "true"
+        registry_write(diagnostics.EXIT_KEY, "false", diagnostics.CRASH_SECTION)
+
+        tail = m.global.diagLog.callFunc("takeCrashTail")
+        if exitedCleanly or not isValidAndNotEmpty(tail) then return
+        if not get_user_setting_bool("diagnostics.crashReports", false) then return
+
+        report = ["Moonfin for Roku crash report", `The previous session ended without shutting down. Generated: ${diagnostics.Stamp()}`]
+        report.Append(diagnostics.HeaderLines())
+        report.push(String(60, "="))
+        report.push(tail)
+
+        task = createObject("roSGNode", "PostTask")
+        task.apiUrl = diagnostics.UPLOAD_URL
+        task.contentType = "text/plain"
+        task.stringData = report.Join(Chr(10))
+        task.control = "RUN"
+
+        ' Held so the task isnt collected while the post is still in flight
+        m.diagnosticsCrashTask = task
+    end sub
+
+    ' A report gets uploaded, so it carries neither the address of someone's server nor a
+    ' working credential. The scrub runs on the finished URL rather than the params, since
+    ' the trickplay loader bakes its key into the path before the URL is ever built.
+    function Redact(url as dynamic) as string
+        if not isValidAndNotEmpty(url) then return ""
+
+        text = url
+        marker = Instr(1, text, "://")
+        if marker > 0
+            firstSlash = Instr(marker + 3, text, "/")
+            text = firstSlash > 0 ? Mid(text, firstSlash) : "/"
+        end if
+
+        return diagnostics.SecretScrubber().ReplaceAll(text, "\1***")
+    end function
+
+    ' Kept per thread rather than compiled on every request
+    function SecretScrubber() as object
+        context = GetGlobalAA()
+
+        cached = context[diagnostics.SCRUB_KEY]
+        if cached <> invalid then return cached
+
+        cached = CreateObject("roRegex", "([?&](?:api_key|apikey|token|x-emby-token)=)[^&]*", "i")
+        context[diagnostics.SCRUB_KEY] = cached
+        return cached
+    end function
+
+end namespace
