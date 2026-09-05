@@ -952,39 +952,75 @@ function getUserSettingValue(settingName as string, defaultValue = invalid as dy
     return defaultValue
 end function
 
-' buildHomeSectionsPayload: The whole layout as the other clients read it. Every row the
-' picker offers goes over with its own enabled flag, since a list of only the enabled ones
-' cannot say which rows the viewer turned off.
+' buildHomeSectionsPayload: The whole layout as the other clients read it. Every row this
+' app knows goes over with its own enabled flag, a row behind an off switch going over as
+' off, and rows belonging to the other clients keep the place the stored lists hold them
+' in. Sections this app cannot draw ride along exactly as they arrived.
 function buildHomeSectionsPayload() as object
     storedOrder = get_user_setting(homeRowLayout.ORDER_SETTING)
+    storedHidden = get_user_setting(homeRowLayout.HIDDEN_SETTING)
     placed = buttonLayout.ToIds(storedOrder)
-    off = buttonLayout.HiddenLookup(get_user_setting(homeRowLayout.HIDDEN_SETTING))
+    off = buttonLayout.HiddenLookup(storedHidden)
     picked = homeRowLayout.DynamicLookup()
+    toggles = homeRowLayout.RowToggles()
     serverKey = homeRowLayout.ServerId()
+
+    ' The full catalogue rather than what the picker is offering, so a row behind an off
+    ' switch keeps its place in the layout instead of vanishing from it
+    known = homeRowLayout.Catalogue()
+    for each entry in homeRowLayout.DynamicRows()
+        known.push({ id: entry.id, label: entry.title })
+    end for
+
+    arranged = []
+    hiddenKnown = []
+    for each row in buttonLayout.Ordered(known, storedOrder)
+        arranged.push(row.id)
+        if not homeRowLayout.IsEnabled(row.id, placed, off, picked) then hiddenKnown.push(row.id)
+    end for
+
+    merged = buttonLayout.WithUnknownIds(known, arranged, hiddenKnown, storedOrder, storedHidden)
+
+    offAll = {}
+    for each id in merged.hidden
+        offAll[id] = true
+    end for
 
     sections = []
     order = 0
 
-    for each row in buttonLayout.Ordered(homeRowLayout.Offered(), storedOrder)
-        enabled = homeRowLayout.IsEnabled(row.id, placed, off, picked)
-
-        section = { type: row.id, enabled: enabled, order: order, kind: "builtin" }
+    for each id in merged.order
+        enabled = not isValid(offAll[id])
+        if enabled and not homeRowLayout.RowToggleOn(id, toggles) then enabled = false
 
         ' A picked collection, genre or playlist goes over as the record the other clients
-        ' read, since the row id alone cannot say which item it stands for
-        entry = picked[LCase(row.id)]
+        ' read, typed none the way they write it, since the row id alone cannot say which
+        ' item the row stands for
+        entry = picked[LCase(id)]
         if isValid(entry)
             listEntry = homeRowLayout.SourceFor(entry.source)
-            section.kind = "pluginDynamic"
-            section.pluginSource = entry.source
-            section.pluginSection = isValid(listEntry) ? listEntry.section : entry.source
-            section.pluginAdditionalData = entry.itemId
-            section.pluginDisplayText = entry.title
-            section.serverId = serverKey
+            if enabled and isValid(listEntry) and not get_user_setting_bool(listEntry.gate, false) then enabled = false
+
+            sections.push({
+                kind: "pluginDynamic",
+                type: "none",
+                enabled: enabled,
+                order: order,
+                serverId: serverKey,
+                pluginSource: entry.source,
+                pluginSection: isValid(listEntry) ? listEntry.section : entry.source,
+                pluginAdditionalData: entry.itemId,
+                pluginDisplayText: entry.title
+            })
+        else
+            sections.push({ kind: "builtin", type: id, enabled: enabled, order: order })
         end if
 
-        sections.push(section)
         order++
+    end for
+
+    for each section in homeRowLayout.Passthrough()
+        sections.push(section)
     end for
 
     return sections

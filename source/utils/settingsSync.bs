@@ -265,10 +265,17 @@ namespace settingsSync
 
         ' The layout arrives as sections, which unlike the flat order can say a row is off
         ' and can carry the rows a plugin contributes
-        sections = settingsSync.ApplyHomeSections(tmpSettings, profile.homeSections)
+        applied = settingsSync.ApplyHomeSections(tmpSettings, profile.homeSections)
 
-        ' Runs last so it can use the pushed layout, which says whether each row is on
-        settingsSync.SyncTogglesFromServerRows(tmpSettings, sections, profile.homeRowOrder)
+        settingsSync.SyncTogglesFromServerRows(tmpSettings, applied.sections, profile.homeRowOrder)
+
+        ' A picked row answers to the switch for the list it came from, so a layout that
+        ' turns such a row on turns its switch on too, the way picking one here does.
+        ' Runs after the toggles above so the arriving rows always win.
+        for each gateKey in applied.gates
+            tmpSettings[gateKey] = "true"
+            registry_write(gateKey, "true", m.global.session.user.id)
+        end for
 
         session.user.Update("settings", tmpSettings)
 
@@ -795,20 +802,44 @@ namespace settingsSync
         return states
     end function
 
-    ' ApplyHomeSections: Turns the layout the server holds into the two lists this app
-    ' arranges its rows from, so the picker and the home screen need no further translation.
-    ' Returns the sections so the caller can read each row's state off them.
+    ' ApplyHomeSections: Turns the layout the server holds into the lists this app arranges
+    ' its rows from, so the picker and the home screen need no further translation. A picked
+    ' collection, genre or playlist arrives as a pluginDynamic section and becomes the same
+    ' record the local picker writes, so the row loads like one picked here. Sections this
+    ' app cannot draw are kept aside verbatim for the next save to hand back. Returns the
+    ' sections and the list switches the enabled picked rows depend on.
     '
     ' @param {object} tmpSettings - Settings map the caller commits once it finishes
     ' @param {dynamic} sections - homeSections from the resolved profile
     function ApplyHomeSections(tmpSettings as object, sections as dynamic) as object
-        if type(sections) <> "roArray" and type(sections) <> "Array" then return []
-        if sections.Count() = 0 then return []
+        applied = { sections: [], gates: [] }
+        if type(sections) <> "roArray" and type(sections) <> "Array" then return applied
+        if sections.Count() = 0 then return applied
+
+        applied.sections = sections
 
         order = []
         hidden = []
+        dynamicRows = []
+        passthrough = []
+        gates = {}
+        serverKey = homeRowLayout.ServerId()
 
         for each section in sections
+            if LCase(homeRowLayout.AsText(chainLookupReturn(section, "kind", ""))) = "plugindynamic"
+                picked = settingsSync.PickedRowFromSection(section, serverKey)
+                if not isValid(picked)
+                    passthrough.push(section)
+                    continue for
+                end if
+
+                order.push(picked.id)
+                if not picked.enabled then hidden.push(picked.id)
+                dynamicRows.push({ id: picked.id, source: picked.source, itemId: picked.itemId, title: picked.title })
+                if picked.enabled then gates[picked.gate] = true
+                continue for
+            end if
+
             rowType = chainLookupReturn(section, "type", "")
             if type(rowType) <> "String" and type(rowType) <> "roString" then continue for
 
@@ -821,16 +852,66 @@ namespace settingsSync
             end if
         end for
 
-        if order.Count() = 0 then return []
-
         userId = m.global.session.user.id
-        for each entry in [{ key: homeRowLayout.ORDER_SETTING, value: order }, { key: homeRowLayout.HIDDEN_SETTING, value: hidden }]
+
+        writes = [
+            { key: homeRowLayout.DYNAMIC_SETTING, value: dynamicRows },
+            { key: homeRowLayout.PASSTHROUGH_SETTING, value: passthrough }
+        ]
+
+        ' A layout of nothing but sections this app cannot draw leaves the rows alone
+        if order.Count() > 0
+            writes.push({ key: homeRowLayout.ORDER_SETTING, value: order })
+            writes.push({ key: homeRowLayout.HIDDEN_SETTING, value: hidden })
+        end if
+
+        for each entry in writes
             serialized = FormatJson(entry.value)
             tmpSettings[entry.key] = serialized
             registry_write(entry.key, serialized, userId)
         end for
 
-        return sections
+        applied.gates = gates.Keys()
+        return applied
+    end function
+
+    ' The record the local picker would have written for a section this app can draw: one
+    ' of the three list sources, for the server this session is on, naming an item. The id
+    ' is rebuilt the way the picker builds it so the arriving row and a local pick of the
+    ' same item stay one row.
+    function PickedRowFromSection(section as object, serverKey as string) as object
+        source = LCase(homeRowLayout.AsText(chainLookupReturn(section, "pluginSource", "")))
+        listEntry = homeRowLayout.SourceFor(source)
+        if not isValid(listEntry) then return invalid
+
+        itemId = homeRowLayout.AsText(chainLookupReturn(section, "pluginAdditionalData", ""))
+        if itemId = "" then return invalid
+
+        sectionServer = homeRowLayout.AsText(chainLookupReturn(section, "serverId", ""))
+        if not settingsSync.IsSameServer(sectionServer, serverKey) then return invalid
+
+        return {
+            id: homeRowLayout.DynamicId(source, serverKey, itemId),
+            source: source,
+            itemId: itemId,
+            title: homeRowLayout.AsText(chainLookupReturn(section, "pluginDisplayText", "")),
+            enabled: settingsSync.ToBooleanValue(chainLookupReturn(section, "enabled", true), true),
+            gate: listEntry.gate
+        }
+    end function
+
+    ' Clients spell the same server with and without a trailing slash
+    function IsSameServer(a as string, b as string) as boolean
+        return LCase(settingsSync.WithoutTrailingSlash(a)) = LCase(settingsSync.WithoutTrailingSlash(b))
+    end function
+
+    function WithoutTrailingSlash(url as string) as string
+        trimmed = url.Trim()
+        while trimmed.endsWith("/")
+            trimmed = Left(trimmed, Len(trimmed) - 1)
+        end while
+
+        return trimmed
     end function
 
     ' SyncTogglesFromServerRows: Applies the state the server pushed for each row it names.
