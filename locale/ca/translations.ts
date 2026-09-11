@@ -1376,7 +1376,7 @@
     </message>
     <message>
         <source>downloads</source>
-        <translation>descàrregues</translation>
+        <translation>baixades</translation>
     </message>
     <message>
         <source>Series</source>
