@@ -49,7 +49,7 @@ More in the [Screenshots](https://github.com/Moonfin-Client/Roku/wiki/Screenshot
 
 **The easy way:** add [Moonfin](https://channelstore.roku.com/details/92a83c9f4112b76a7bcee3dc076254ca:3251a91bf7af7339652d5409ccfdcb39/moonfin) from the Roku Channel Store. It installs on your devices and updates itself from then on.
 
-Moonfin needs Roku OS 9.1 or newer, which covers most Roku devices from 2018 onwards.
+Moonfin needs Roku OS 9.1 or newer, which covers most Roku devices from 2018 onwards. Once it's installed, [Getting Started](https://github.com/Moonfin-Client/Roku/wiki/Getting-Started) walks through connecting to your server and signing in with Quick Connect.
 
 Seerr is optional. It connects through the [Moonfin server plugin](https://github.com/Moonfin-Client/Plugin), so there is nothing to type on the Roku. See [Seerr Setup](https://github.com/Moonfin-Client/Roku/wiki/Seerr-Setup).
 
@@ -81,6 +81,9 @@ The deeper reference material lives in the [Wiki](https://github.com/Moonfin-Cli
 |------|----------------|
 | [Features](https://github.com/Moonfin-Client/Roku/wiki/Features) | The full feature list, section by section |
 | [Installation and Sideloading](https://github.com/Moonfin-Client/Roku/wiki/Installation-and-Sideloading) | The Channel Store, Developer Mode, sideloading, and supported devices |
+| [Getting Started](https://github.com/Moonfin-Client/Roku/wiki/Getting-Started) | Picking your server, Quick Connect, the setup wizard, and the settings worth a look on day one |
+| [User Guide](https://github.com/Moonfin-Client/Roku/wiki/User-Guide) | The remote inside the player, typing, finding things, Seerr requests, themes and home rows |
+| [Common Problems](https://github.com/Moonfin-Client/Roku/wiki/Common-Problems) | Plain fixes for connection, sign-in, install, playback, sound, subtitle and sync trouble |
 | [Seerr Setup](https://github.com/Moonfin-Client/Roku/wiki/Seerr-Setup) | Connecting Seerr through the Moonfin server plugin |
 | [Building from Source](https://github.com/Moonfin-Client/Roku/wiki/Building-from-Source) | Toolchain, build steps, and deploying to a device |
 | [Development](https://github.com/Moonfin-Client/Roku/wiki/Development) | Project structure, BrighterScript notes, and developer guidelines |
