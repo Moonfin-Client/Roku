@@ -32,6 +32,7 @@ sub onSeerrDetailsLoaded(event as object)
 
     node = seerrDetailItem.NodeFor(response.data, m.top.seerrTarget.mediaType)
     if isValid(node) then m.top.itemContent = node
+    updateSeerrSeasonMarkers()
 end sub
 
 sub startSeerrRequest(action as string)
@@ -128,4 +129,101 @@ sub onLibrarySeerrDetails(event as object)
 
     m.seerrDetails = response.data
     m.top.seerrButtonsStale = true
+    updateSeerrSeasonMarkers()
+end sub
+
+' Maps season numbers to Seerr availability status (matching Smart-TV and Core)
+function GetSeerrSeasonMarkers(seerrDetails as object) as object
+    markers = {}
+    if not isValid(seerrDetails) or not isChainValid(seerrDetails, "mediaInfo.seasons") then return markers
+
+    for each season in seerrDetails.mediaInfo.seasons
+        if isValid(season.seasonNumber)
+            status = chainLookupReturn(season, "status", 1)
+            status4k = chainLookupReturn(season, "status4k", 1)
+            effectiveStatus = status > 1 ? status : status4k
+            if effectiveStatus > 1
+                markers[season.seasonNumber.toStr()] = effectiveStatus
+            end if
+        end if
+    end for
+
+    if isChainValid(seerrDetails, "mediaInfo.requests")
+        for each req in seerrDetails.mediaInfo.requests
+            reqStatus = chainLookupReturn(req, "status", 1)
+            mappedStatus = reqStatus = 1 ? 2 : 3
+            if isValid(req.seasons)
+                for each reqSeason in req.seasons
+                    if isValid(reqSeason.seasonNumber)
+                        key = reqSeason.seasonNumber.toStr()
+                        if not markers.doesExist(key)
+                            markers[key] = mappedStatus
+                        end if
+                    end if
+                end for
+            end if
+        end for
+    end if
+
+    return markers
+end function
+
+' Updates the seerrStatus field on all season items across extras rows, tabs, and tab grids
+sub updateSeerrSeasonMarkers()
+    if not isValid(m.seerrDetails) then return
+
+    markers = GetSeerrSeasonMarkers(m.seerrDetails)
+    hasMarkers = (markers.count() > 0)
+    isEnabled = isSeerrAvailabilityBadgesEnabled()
+
+    if isValid(m.extrasGrid) and isValid(m.extrasGrid.content)
+        applyMarkersToContent(m.extrasGrid.content, markers, isEnabled, hasMarkers)
+    end if
+
+    if isValid(m.sectionItems) and type(m.sectionItems) = "roArray"
+        for each section in m.sectionItems
+            if isValid(section) and type(section) = "roArray"
+                for each item in section
+                    applyMarkerToSeasonItem(item, markers, isEnabled, hasMarkers)
+                end for
+            end if
+        end for
+    end if
+
+    if isValid(m.tabGrid) and isValid(m.tabGrid.content)
+        for i = 0 to m.tabGrid.content.getChildCount() - 1
+            applyMarkerToSeasonItem(m.tabGrid.content.getChild(i), markers, isEnabled, hasMarkers)
+        end for
+    end if
+end sub
+
+sub applyMarkersToContent(content as object, markers as object, isEnabled as boolean, hasMarkers as boolean)
+    for i = 0 to content.getChildCount() - 1
+        row = content.getChild(i)
+        if isValid(row)
+            for j = 0 to row.getChildCount() - 1
+                applyMarkerToSeasonItem(row.getChild(j), markers, isEnabled, hasMarkers)
+            end for
+        end if
+    end for
+end sub
+
+sub applyMarkerToSeasonItem(item as object, markers as object, isEnabled as boolean, hasMarkers as boolean)
+    if not isValid(item) or not isValid(item.json) then return
+
+    itemType = chainLookupReturn(item, "json.Type", "")
+    if not isStringEqual(itemType, "Season") then return
+
+    seasonNum = chainLookupReturn(item, "json.IndexNumber", -1)
+    status = 0
+    if isEnabled and hasMarkers and seasonNum >= 0 and markers.doesExist(seasonNum.toStr())
+        status = markers[seasonNum.toStr()]
+    end if
+
+    if item.hasField("seerrStatus")
+        item.seerrStatus = status
+    else
+        item.addField("seerrStatus", "integer", false)
+        item.seerrStatus = status
+    end if
 end sub
