@@ -1,556 +1,1098 @@
-import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
-import "pkg:/source/constants/HomeRowItemSizes.bs"
+import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/enums/ColorPalette.bs"
-import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/enums/String.bs"
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/favoriteTabs.bs"
+import "pkg:/source/utils/libraryCard.bs"
+import "pkg:/source/utils/libraryFilters.bs"
+import "pkg:/source/utils/mediaBadges.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/multiserver.bs"
+import "pkg:/source/utils/ratingsRow.bs"
+
+' The age rating, resolution and series status badges, sized around whatever they hold
+const PILL_PAD_X = 20
+const PILL_HEIGHT = 29
+
+' What the grid has to draw in, and where it starts in each layout
+const GRID_WIDTH = 1824
+const HOME_GRID_TOP = 423
+const LIBRARY_GRID_TOP = 176
+const LIBRARY_GRID_BOTTOM = 1036
+
+' Toolbar positions, with the strip last so focus can skip it while it is hidden
+const TOOLBAR_HOME = 0
+const TOOLBAR_SORT = 1
+const TOOLBAR_SETTINGS = 2
+const TOOLBAR_ALPHA = 3
 
 sub init()
     m.top.optionsAvailable = false
+    m.top.overhangVisible = false
 
-    ' Get references to UI elements
-    m.favoritesRows = m.top.findNode("favoritesRows")
-    m.loadingGroup = m.top.findNode("loadingGroup")
-    m.emptyStateGroup = m.top.findNode("emptyStateGroup")
+    setupNodes()
 
-    ' Detail section references
-    m.detailsSection = m.top.findNode("detailsSection")
-    m.itemTitle = m.top.findNode("itemTitle")
-    m.itemOverview = m.top.findNode("itemOverview")
-    m.metadataText = m.top.findNode("metadataText")
+    m.viewStyle = "home"
+    m.imageSize = "medium"
+    m.imageType = "poster"
+    m.sortKey = "SortName"
+    m.sortOrder = ""
+    m.typeFilter = "all"
+
+    m.tabs = []
+    m.tabIndex = 0
+    m.buckets = {}
+    m.counts = {}
+    m.contentByTab = {}
+    m.listContent = createSGNode("ContentNode")
+    m.listTotal = 0
+    m.listLoaded = 0
+    m.startLetter = string.EMPTY
+    m.shape = string.EMPTY
+    m.loading = false
+    m.pagingTab = string.EMPTY
+    m.loaded = false
+    m.toolbarFocusIndex = TOOLBAR_HOME
+
+    m.loadTask = createObject("roSGNode", "LoadFavoritesTask")
+    m.loadTask.observeField("results", "onFavoritesLoaded")
+    m.loadTask.observeField("error", "onLoadFailed")
+end sub
+
+sub setupNodes()
+    m.screenTitle = m.top.findNode("screenTitle")
+    m.itemCountLabel = m.top.findNode("itemCount")
+    m.screenTitle.text = tr("Favorites")
+    m.screenTitle.font.size = 42
+    m.itemCountLabel.font.size = 18
+
+    m.homeButton = m.top.findNode("homeButton")
+    m.sortButton = m.top.findNode("sortButton")
+    m.settingsButton = m.top.findNode("settingsButton")
+    m.toolbarButtons = [m.homeButton, m.sortButton, m.settingsButton]
+
+    m.alphaPicker = m.top.findNode("alphaPicker")
+    m.alphaGrid = m.alphaPicker.findNode("alphaGrid")
+
+    m.focusedInfo = m.top.findNode("focusedInfo")
+    m.focusedName = m.top.findNode("focusedName")
+    m.pluginRatings = m.top.findNode("pluginRatings")
+    m.focusedName.font.size = 32
+    for each label in [m.top.findNode("focusedYear"), m.top.findNode("focusedRuntime")]
+        label.font.size = 22
+    end for
+
+    m.statusPill = pillParts("seriesStatusPill", "seriesStatusFill", "seriesStatusLabel")
+    m.ratingPill = pillParts("officialRatingPill", "officialRatingFill", "focusedOfficialRating")
+    m.resolutionPill = pillParts("resolutionPill", "resolutionFill", "focusedResolution")
+
+    m.tabBar = m.top.findNode("tabBar")
+    m.tabBar.observeField("selectedIndex", "onTabSelected")
+    m.tabBar.observeField("activated", "onTabActivated")
+    m.tabBar.observeField("escape", "onTabBarEscape")
+
+    m.itemGrid = m.top.findNode("itemGrid")
+    m.itemGrid.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+    m.itemGrid.observeField("itemFocused", "onItemFocused")
+    m.itemGrid.observeFieldScoped("itemSelected", "onItemSelected")
+
+    m.emptyLabel = m.top.findNode("emptyLabel")
+    m.statusText = m.top.findNode("statusText")
+    m.statusCount = m.top.findNode("statusCount")
+
+    m.sortDialog = m.top.findNode("sortDialog")
+    m.settingsDialog = m.top.findNode("settingsDialog")
+    m.sortDialog.observeField("applied", "onSortApplied")
+    m.sortDialog.observeField("closed", "onDialogClosed")
+    m.settingsDialog.observeField("applied", "onSettingsApplied")
+    m.settingsDialog.observeField("closed", "onDialogClosed")
+
     m.backdrop = m.top.findNode("backdrop")
     m.backdropPrev = m.top.findNode("backdropPrev")
-    m.backdropTint = m.top.findNode("backdropTint")
-
-    ' Set up row list
-    m.favoritesRows.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
-    m.favoritesRows.content = createSGNode("ContentNode")
-
-    ' Configure row sizes for portrait posters (primary images)
-    m.favoritesRows.itemSize = [1703, 380]
-    m.favoritesRows.itemSpacing = [0, 110]
-    m.favoritesRows.rowItemSpacing = [20, 0]
-    m.favoritesRows.rowItemSize = homeRowItemSizes.MOVIE_POSTER
-    m.favoritesRows.focusBitmapBlendColor = ColorPalette.WHITE
-
-    ' Observe events
+    m.backdropFadeIn = m.top.findNode("backdropFadeIn")
+    m.backdropPrevFadeOut = m.top.findNode("backdropPrevFadeOut")
+    m.backdropFadeInInterp = m.top.findNode("backdropFadeInInterp")
+    m.backdropPrevFadeOutInterp = m.top.findNode("backdropPrevFadeOutInterp")
     m.backdrop.observeField("loadStatus", "onBackdropLoadStatusChange")
-    m.favoritesRows.observeField("rowItemFocused", "onItemFocusChanged")
-    m.favoritesRows.observeField("rowItemSelected", "onItemSelected")
+    m.backdropCrossfading = false
 
-    ' Data storage
-    m.allFavorites = []
-    m.movieItems = []
-    m.seriesItems = []
-    m.episodeItems = []
-    m.isLoading = false
-
-    ' Create loading task
-    m.loadFavoritesTask = createObject("roSGNode", "LoadFavoritesTask")
-    m.loadFavoritesTask.observeField("results", "onFavoritesLoaded")
-    m.loadFavoritesTask.observeField("error", "onLoadError")
+    m.overhang = getActiveNav(m.top.getScene())
 end sub
 
-' JFScreen hook called when the screen is displayed
-sub OnScreenShown(_isReturning = false as boolean)
-    scene = m.top.getScene()
-    activeNav = getActiveNav(scene)
-    if isValid(activeNav)
-        activeNav.visible = true
-    end if
+function pillParts(groupId as string, fillId as string, labelId as string) as object
+    parts = {
+        group: m.top.findNode(groupId),
+        fill: m.top.findNode(fillId),
+        label: m.top.findNode(labelId)
+    }
+    parts.label.font.size = 18
+    return parts
+end function
 
-    ' Load favorites on first show
-    if m.allFavorites.Count() = 0
-        loadFavorites()
-    else
-        ' Restore focus based on what's visible
-        if m.emptyStateGroup.visible
-            m.emptyStateGroup.setFocus(true)
-        else
-            m.favoritesRows.setFocus(true)
-        end if
-    end if
-end sub
+' =====================================================================
+' COMING AND GOING
+' =====================================================================
 
-' JFScreen hook called when the screen is hidden
-sub OnScreenHidden()
-end sub
+sub OnScreenShown(isReturning = false as boolean)
+    if isValid(m.overhang) then m.overhang.isVisible = false
 
-sub loadFavorites()
-    if m.isLoading then return
-
-    m.isLoading = true
-    showLoading(true)
-    hideEmptyState()
-
-    m.loadFavoritesTask.control = TaskControl.RUN
-end sub
-
-sub onFavoritesLoaded(event as object)
-    items = event.getData()
-    m.isLoading = false
-    showLoading(false)
-
-    if not isValid(items) or items.Count() = 0
-        m.allFavorites = []
-        showEmptyState()
+    if not m.loaded
+        readSettings()
+        applyViewStyle()
+        loadCurrentView()
         return
     end if
 
-    m.allFavorites = items
+    ' A library screen on top of this one leaves its own card shape behind
+    applyShape(m.shape, true)
 
-    ' Categorize items
-    m.movieItems = []
-    m.seriesItems = []
-    m.episodeItems = []
-
-    for each item in items
-        itemType = LCase(item.type)
-        if itemType = "movie"
-            m.movieItems.push(item)
-        else if itemType = "series"
-            m.seriesItems.push(item)
-        else if itemType = "episode"
-            m.episodeItems.push(item)
-        end if
-    end for
-
-    ' Build rows
-    buildRows()
-
-    ' Focus the rows
-    m.favoritesRows.setFocus(true)
-end sub
-
-sub onLoadError()
-    m.isLoading = false
-    showLoading(false)
-    showEmptyState()
-end sub
-
-sub buildRows()
-    m.favoritesRows.content.removeChildrenIndex(m.favoritesRows.content.getChildCount(), 0)
-
-    rowsAdded = 0
-    rowItemSizes = []
-
-    ' Add Movies row if there are movies
-    if m.movieItems.Count() > 0
-        addRow("Favorite Movies", m.movieItems, "movie")
-        rowItemSizes.push(homeRowItemSizes.MOVIE_POSTER)
-        rowsAdded++
-    end if
-
-    ' Add Series row if there are series
-    if m.seriesItems.Count() > 0
-        addRow("Favorite Shows", m.seriesItems, "series")
-        rowItemSizes.push(homeRowItemSizes.MOVIE_POSTER)
-        rowsAdded++
-    end if
-
-    ' Add Episodes row if there are episodes - use wide poster for screenshots
-    if m.episodeItems.Count() > 0
-        addRow("Favorite Episodes", m.episodeItems, "episode")
-        rowItemSizes.push(homeRowItemSizes.WIDE_POSTER)
-        rowsAdded++
-    end if
-
-    ' Set per-row item sizes
-    m.favoritesRows.rowItemSize = rowItemSizes
-
-    if rowsAdded = 0
-        showEmptyState()
-    end if
-end sub
-
-sub addRow(title as string, items as object, _rowType as string)
-    row = m.favoritesRows.content.createChild("ContentNode")
-    row.title = title
-
-    for each item in items
-        child = invalid
-        itemType = LCase(item.type)
-
-        ' Determine server URL for multi-server image support
-        serverUrl = ""
-        if isValidAndNotEmpty(item.serverUrl)
-            serverUrl = item.serverUrl
-        else if isValid(item.json) and isValidAndNotEmpty(item.json._serverUrl)
-            serverUrl = item.json._serverUrl
-        end if
-
-        if itemType = "movie"
-            child = row.createChild("HomeData")
-            child.json = item.json
-            child.id = item.id
-            child.title = item.json.name
-            child.type = "Movie"
-
-            ' Set poster images - portrait dimensions for primary
-            if isValid(item.json.ImageTags) and isValid(item.json.ImageTags.Primary)
-                imgParams = { "maxHeight": 270, "maxWidth": 180, "Tag": item.json.ImageTags.Primary }
-                if isValidAndNotEmpty(serverUrl)
-                    child.posterURL = buildImageURLForServer(serverUrl, item.id, "Primary", imgParams)
-                else
-                    child.posterURL = ImageURL(item.id, "Primary", imgParams)
-                end if
-            end if
-            if isValid(item.json.BackdropImageTags) and item.json.BackdropImageTags.Count() > 0
-                imgParams = { "maxHeight": 270, "maxWidth": 480, "Tag": item.json.BackdropImageTags[0] }
-                if isValidAndNotEmpty(serverUrl)
-                    child.thumbnailURL = buildImageURLForServer(serverUrl, item.id, "Backdrop", imgParams)
-                else
-                    child.thumbnailURL = ImageURL(item.id, "Backdrop", imgParams)
-                end if
-                child.widePosterURL = child.thumbnailURL
-            else
-                child.widePosterURL = child.posterURL
-                child.thumbnailURL = child.posterURL
-            end if
-
-            ' Set image dimensions for poster item
-            child.imageWidth = 180
-
-        else if itemType = "series"
-            child = row.createChild("HomeData")
-            child.json = item.json
-            child.id = item.id
-            child.title = item.json.name
-            child.type = "Series"
-
-            ' Set poster images - portrait dimensions for primary
-            if hasImageTagPrimary(item.json)
-                imgParams = { "maxHeight": 270, "maxWidth": 180, "Tag": item.json.ImageTags.Primary }
-                if isValidAndNotEmpty(serverUrl)
-                    child.posterURL = buildImageURLForServer(serverUrl, item.id, "Primary", imgParams)
-                else
-                    child.posterURL = ImageURL(item.id, "Primary", imgParams)
-                end if
-            end if
-            if isValid(item.json.BackdropImageTags) and item.json.BackdropImageTags.Count() > 0
-                imgParams = { "maxHeight": 270, "maxWidth": 480, "Tag": item.json.BackdropImageTags[0] }
-                if isValidAndNotEmpty(serverUrl)
-                    child.thumbnailURL = buildImageURLForServer(serverUrl, item.id, "Backdrop", imgParams)
-                else
-                    child.thumbnailURL = ImageURL(item.id, "Backdrop", imgParams)
-                end if
-                child.widePosterURL = child.thumbnailURL
-            else
-                child.widePosterURL = child.posterURL
-                child.thumbnailURL = child.posterURL
-            end if
-
-            child.imageWidth = 180
-
-        else if itemType = "episode"
-            child = row.createChild("HomeData")
-            child.json = item.json
-            child.id = item.id
-            child.title = item.json.name
-            child.type = "Episode"
-
-            ' For episodes, use episode screenshot as primary display (wide poster)
-            ' Use episode's Primary image (screenshot) for posterURL
-            if hasImageTagPrimary(item.json)
-                imgParams = { "maxHeight": 331, "maxWidth": 464, "Tag": item.json.ImageTags.Primary }
-                if isValidAndNotEmpty(serverUrl)
-                    child.posterURL = buildImageURLForServer(serverUrl, item.id, "Primary", imgParams)
-                else
-                    child.posterURL = ImageURL(item.id, "Primary", imgParams)
-                end if
-                child.thumbnailURL = child.posterURL
-            end if
-
-            ' Fallback to series thumb if no episode image
-            seriesId = item.json.LookupCI("SeriesId")
-            if not isValidAndNotEmpty(child.posterURL) and isValid(seriesId)
-                if isValid(item.json.SeriesThumbImageTag)
-                    imgParams = { "maxHeight": 331, "maxWidth": 464, "Tag": item.json.SeriesThumbImageTag }
-                    if isValidAndNotEmpty(serverUrl)
-                        child.posterURL = buildImageURLForServer(serverUrl, seriesId, "Thumb", imgParams)
-                    else
-                        child.posterURL = ImageURL(seriesId, "Thumb", imgParams)
-                    end if
-                    child.thumbnailURL = child.posterURL
-                else if isValid(item.json.SeriesPrimaryImageTag)
-                    imgParams = { "maxHeight": 331, "maxWidth": 464, "Tag": item.json.SeriesPrimaryImageTag }
-                    if isValidAndNotEmpty(serverUrl)
-                        child.posterURL = buildImageURLForServer(serverUrl, seriesId, "Primary", imgParams)
-                    else
-                        child.posterURL = ImageURL(seriesId, "Primary", imgParams)
-                    end if
-                    child.thumbnailURL = child.posterURL
-                end if
-            end if
-
-            ' Use backdrop from parent series for widePosterURL
-            if isValid(item.json.ParentBackdropImageTags) and item.json.ParentBackdropImageTags.Count() > 0
-                imgParams = { "maxHeight": 331, "maxWidth": 464, "Tag": item.json.ParentBackdropImageTags[0] }
-                child.widePosterURL = ImageURL(item.json.ParentBackdropItemId, "Backdrop", imgParams)
-            else
-                child.widePosterURL = child.posterURL
-            end if
-
-            child.imageWidth = 464
-        end if
-    end for
-end sub
-
-sub onItemFocusChanged(event as object)
-    focusedIndex = event.getData()
-    if not isValid(focusedIndex) or focusedIndex.Count() < 2 then return
-
-    rowIndex = focusedIndex[0]
-    itemIndex = focusedIndex[1]
-
-    row = m.favoritesRows.content.getChild(rowIndex)
-    if not isValid(row) then return
-
-    item = row.getChild(itemIndex)
-    if not isValid(item) then return
-
-    updateDetailsSection(item)
-    updateBackdrop(item)
-end sub
-
-sub updateDetailsSection(item as object)
-    if not isValid(item) or not isValid(item.json) then return
-
-    json = item.json
-    itemType = LCase(item.type)
-
-    ' Set title based on item type
-    if itemType = "episode"
-        seriesName = json.LookupCI("SeriesName")
-        if isValidAndNotEmpty(seriesName)
-            m.itemTitle.text = seriesName
-        else
-            m.itemTitle.text = json.name
-        end if
+    if isValid(m.top.lastFocus)
+        m.top.lastFocus.setFocus(true)
     else
-        m.itemTitle.text = json.name
-    end if
-
-    ' Build metadata string with separator
-    metadataParts = []
-    separator = "  •  "
-
-    ' Community Rating (star rating)
-    if isValid(json.CommunityRating) and json.CommunityRating > 0
-        metadataParts.push("★ " + formatRating(json.CommunityRating))
-    end if
-
-    ' Critic Rating (Rotten Tomatoes)
-    if isValid(json.CriticRating) and json.CriticRating > 0
-        metadataParts.push(json.CriticRating.toStr() + "% RT")
-    end if
-
-    ' Episode Number (S1E3) - only for episodes
-    if itemType = "episode"
-        episodeInfo = ""
-        if isValid(json.ParentIndexNumber)
-            episodeInfo = "S" + json.ParentIndexNumber.toStr()
-        end if
-        if isValid(json.IndexNumber)
-            episodeInfo += "E" + json.IndexNumber.toStr()
-        end if
-        if episodeInfo <> ""
-            metadataParts.push(episodeInfo)
-        end if
-    end if
-
-    ' Release Year
-    if isValid(json.ProductionYear)
-        if itemType = "series"
-            yearText = json.ProductionYear.toStr()
-            if isValid(json.Status)
-                if LCase(json.Status) = "continuing"
-                    yearText += " - Present"
-                else if LCase(json.Status) = "ended" and isValid(json.EndDate)
-                    yearText += " - " + LEFT(json.EndDate, 4)
-                end if
-            end if
-            metadataParts.push(yearText)
-        else
-            metadataParts.push(json.ProductionYear.toStr())
-        end if
-    end if
-
-    ' Runtime
-    if isValid(json.RunTimeTicks) and json.RunTimeTicks > 0
-        runtimeMinutes = Int(json.RunTimeTicks / 600000000)
-        hours = Int(runtimeMinutes / 60)
-        minutes = runtimeMinutes mod 60
-        if hours > 0
-            metadataParts.push(hours.toStr() + "h " + minutes.toStr() + "m")
-        else
-            metadataParts.push(minutes.toStr() + "m")
-        end if
-    end if
-
-    ' Official Rating (PG-13, TV-MA, etc.)
-    if isValidAndNotEmpty(json.OfficialRating)
-        metadataParts.push(json.OfficialRating)
-    end if
-
-    ' Series Status - only for series
-    if itemType = "series" and isValid(json.Status)
-        status = LCase(json.Status)
-        if status = "continuing"
-            metadataParts.push("Continuing")
-        else if status = "ended"
-            metadataParts.push("Ended")
-        end if
-    end if
-
-    ' Join all metadata parts with separator
-    m.metadataText.text = metadataParts.Join(separator)
-
-    ' Set overview
-    if itemType = "episode"
-        ' For episodes, show episode name + overview
-        overviewText = ""
-        if isValidAndNotEmpty(json.name)
-            overviewText = json.name
-        end if
-        if isValidAndNotEmpty(json.Overview)
-            if overviewText <> ""
-                overviewText += chr(10) + chr(10) + json.Overview
-            else
-                overviewText = json.Overview
-            end if
-        end if
-        m.itemOverview.text = overviewText
-    else
-        if isValidAndNotEmpty(json.Overview)
-            m.itemOverview.text = json.Overview
-        else
-            m.itemOverview.text = ""
-        end if
+        focusGrid()
     end if
 end sub
 
-function formatRating(rating as float) as string
-    ' Format rating to one decimal place
-    return Left(rating.toStr(), 3)
+sub OnScreenHidden()
+    if isValid(m.overhang) and not m.overhang.isVisible
+        m.overhang.disableMoveAnimation = true
+        m.overhang.isVisible = true
+        m.overhang.disableMoveAnimation = false
+    end if
+end sub
+
+sub readSettings()
+    m.viewStyle = settingOr("favorites_viewStyle", "home")
+    m.imageSize = settingOr("favorites_imageSize", "medium")
+    m.imageType = settingOr("favorites_imageType", "poster")
+    m.sortKey = settingOr("favorites_sortKey", "SortName")
+end sub
+
+function isHomeView() as boolean
+    return not isStringEqual(m.viewStyle, "library")
 end function
 
+' The flat grid draws every card the same, which the image type setting picks
+function listShape() as string
+    return m.imageType = "thumbnail" ? "landscape" : "portrait"
+end function
 
+' =====================================================================
+' LOADING
+' =====================================================================
 
-sub updateBackdrop(item as object)
-    if not isValid(item) then return
+sub loadCurrentView()
+    m.tabs = []
+    m.buckets = {}
+    m.counts = {}
+    m.contentByTab = {}
+    m.listContent = createSGNode("ContentNode")
+    m.listTotal = 0
+    m.listLoaded = 0
+    m.pagingTab = string.EMPTY
 
-    backdropUrl = ""
+    m.itemGrid.content = createSGNode("ContentNode")
+    m.tabBar.tabs = []
+    m.tabBar.visible = false
+    clearFocusedItem()
+    m.emptyLabel.visible = false
 
-    ' Determine server URL for multi-server image support
-    serverUrl = ""
-    if isValid(item.json) and isValidAndNotEmpty(item.json._serverUrl)
-        serverUrl = item.json._serverUrl
+    if isHomeView()
+        runRequest({ mode: "tabs" })
+        return
     end if
 
-    ' Try to get higher quality backdrop from json with blur
-    if isValid(item.json)
-        json = item.json
-        if isValid(json.BackdropImageTags) and json.BackdropImageTags.Count() > 0
-            imgParams = { "maxHeight": 1080, "maxWidth": 1920, "quality": 90, "blur": getHomeBackdropBlurAmount(), "Tag": json.BackdropImageTags[0] }
-            if isValidAndNotEmpty(serverUrl)
-                backdropUrl = buildImageURLForServer(serverUrl, item.id, "Backdrop", imgParams)
-            else
-                backdropUrl = ImageURL(item.id, "Backdrop", imgParams)
-            end if
-        else if isValid(json.ParentBackdropImageTags) and json.ParentBackdropImageTags.Count() > 0
-            imgParams = { "maxHeight": 1080, "maxWidth": 1920, "quality": 90, "blur": getHomeBackdropBlurAmount(), "Tag": json.ParentBackdropImageTags[0] }
-            if isValidAndNotEmpty(serverUrl)
-                backdropUrl = buildImageURLForServer(serverUrl, json.ParentBackdropItemId, "Backdrop", imgParams)
-            else
-                backdropUrl = ImageURL(json.ParentBackdropItemId, "Backdrop", imgParams)
-            end if
-        end if
+    runRequest({
+        mode: "list",
+        startIndex: 0,
+        itemTypes: favoriteTabs.ChosenTypeFilter(m.typeFilter).types,
+        nameStartsWith: m.startLetter
+    })
+end sub
+
+sub runRequest(request as object)
+    option = favoriteTabs.ChosenSort(m.sortKey)
+    request.sortField = option.field
+    request.sortOrder = isValidAndNotEmpty(m.sortOrder) ? m.sortOrder : option.order
+
+    m.loading = true
+    startLoadingSpinner(false)
+
+    m.loadTask.control = TaskControl.STOP
+    m.loadTask.request = request
+    m.loadTask.control = TaskControl.RUN
+end sub
+
+sub onLoadFailed()
+    m.loading = false
+    m.pagingTab = string.EMPTY
+    stopLoadingSpinner()
+    showEmpty()
+end sub
+
+sub onFavoritesLoaded(event as object)
+    nodes = event.getData()
+    mode = m.loadTask.mode
+
+    m.loading = false
+    stopLoadingSpinner()
+    m.loaded = true
+
+    if not isValid(nodes) then nodes = []
+
+    if mode = "tabs"
+        applyTabs(nodes, m.loadTask.counts)
+    else if mode = "page"
+        appendPage(m.loadTask.tabKey, nodes)
+    else
+        applyList(nodes, m.loadTask.total, m.loadTask.startIndex)
     end if
 
-    ' Fallback to lower quality images if no json backdrop
-    if backdropUrl = ""
-        if isValidAndNotEmpty(item.widePosterURL)
-            backdropUrl = item.widePosterURL
-        else if isValidAndNotEmpty(item.thumbnailURL)
-            backdropUrl = item.thumbnailURL
-        else if isValidAndNotEmpty(item.posterURL)
-            backdropUrl = item.posterURL
-        end if
+    restoreDialogFocus()
+end sub
+
+' =====================================================================
+' THE TABBED LAYOUT
+' =====================================================================
+
+sub applyTabs(nodes as object, counts as object)
+    m.buckets = {}
+    m.contentByTab = {}
+    m.counts = isValid(counts) ? counts : {}
+
+    known = favoriteTabs.Tabs()
+    for each tabDef in known
+        m.buckets[tabDef.key] = []
+    end for
+
+    for each node in nodes
+        key = node.favoritesTab
+        if isValidAndNotEmpty(key) and isValid(m.buckets[key]) then m.buckets[key].push(node)
+    end for
+
+    ' A tab with nothing behind it is left out rather than opening on an empty grid
+    m.tabs = []
+    for each tabDef in known
+        if m.buckets[tabDef.key].count() > 0 then m.tabs.push(tabDef)
+    end for
+
+    if m.tabs.count() = 0
+        m.tabBar.visible = false
+        showEmpty()
+        return
     end if
 
-    if isValidAndNotEmpty(backdropUrl) and m.backdrop.uri <> backdropUrl
-        m.backdrop.uri = backdropUrl
+    labels = []
+    total = 0
+    for each tabDef in m.tabs
+        content = createSGNode("ContentNode")
+        content.appendChildren(m.buckets[tabDef.key])
+        m.contentByTab[tabDef.key] = content
+
+        count = m.counts[tabDef.key]
+        if not isValid(count) then count = m.buckets[tabDef.key].count()
+        total += count
+        labels.push({ id: tabDef.key, label: `${tabDef.label}: ${count.toStr()}` })
+    end for
+
+    m.emptyLabel.visible = false
+    m.itemGrid.visible = true
+    m.tabBar.tabs = labels
+    m.tabBar.visible = true
+    updateItemCount(total)
+
+    ' The tab that was open stays open across a reload, so the bar is told where the grid
+    ' actually ended up rather than being left on the one it marked before
+    m.tabIndex = favoriteTabs.ClampTabIndex(m.tabIndex, m.tabs)
+    m.tabBar.focusIndex = m.tabIndex
+    showTab(m.tabIndex)
+    m.tabBar.selectedIndex = m.tabIndex
+    focusGrid()
+end sub
+
+' Moving along the tabs changes the grid under them, and rebuilding it for every tab the
+' focus crosses is more than an older player keeps up with. The same grid stays put and is
+' handed the other list instead.
+sub showTab(index as integer)
+    if m.tabs.count() = 0 then return
+
+    m.tabIndex = favoriteTabs.ClampTabIndex(index, m.tabs)
+    openTab = m.tabs[m.tabIndex]
+
+    applyShape(openTab.shape, false)
+    m.itemGrid.content = m.contentByTab[openTab.key]
+    m.itemGrid.jumpToItem = 0
+    clearFocusedItem()
+end sub
+
+sub onTabSelected()
+    index = m.tabBar.selectedIndex
+    if index < 0 or index >= m.tabs.count() then return
+    if index = m.tabIndex and isValid(m.itemGrid.content) and m.itemGrid.content.getChildCount() > 0 then return
+
+    showTab(index)
+end sub
+
+' Focus only leaves the bar when the viewer actually presses a tab
+sub onTabActivated()
+    if m.tabBar.activated < 0 then return
+    focusGrid()
+end sub
+
+sub onTabBarEscape()
+    if m.tabBar.escape = "up"
+        focusToolbarItem(m.toolbarFocusIndex)
+    else if m.tabBar.escape = "down"
+        focusGrid()
     end if
 end sub
 
+' The next page of the open tab, asked for as its grid runs out
+sub loadMoreForTab(focusedIndex as integer)
+    if m.loading or m.pagingTab <> string.EMPTY then return
+    if m.tabs.count() = 0 then return
+
+    openTab = m.tabs[m.tabIndex]
+    loaded = m.buckets[openTab.key].count()
+    count = m.counts[openTab.key]
+    if not isValid(count) then count = loaded
+    if loaded >= count then return
+    if focusedIndex < loaded - favoriteTabs.PAGE_AHEAD then return
+
+    m.pagingTab = openTab.key
+    runRequest({ mode: "page", tabKey: openTab.key, startIndex: loaded })
+end sub
+
+sub appendPage(tabKey as string, nodes as object)
+    m.pagingTab = string.EMPTY
+    if nodes.count() = 0 then return
+
+    bucket = m.buckets[tabKey]
+    content = m.contentByTab[tabKey]
+    if not isValid(bucket) or not isValid(content) then return
+
+    for each node in nodes
+        bucket.push(node)
+    end for
+    content.appendChildren(nodes)
+end sub
+
+' =====================================================================
+' THE FLAT LAYOUT
+' =====================================================================
+
+sub applyList(nodes as object, total as integer, startIndex as integer)
+    m.pagingTab = string.EMPTY
+
+    m.listTotal = total
+    m.listLoaded += nodes.count()
+    m.listContent.appendChildren(nodes)
+
+    if m.listLoaded = 0
+        showEmpty()
+        updateItemCount(0)
+        updateStatusBar()
+        return
+    end if
+
+    m.emptyLabel.visible = false
+    m.itemGrid.visible = true
+    updateItemCount(total)
+
+    if startIndex = 0
+        applyShape(listShape(), false)
+        m.itemGrid.content = m.listContent
+        m.itemGrid.jumpToItem = 0
+        clearFocusedItem()
+        focusGrid()
+    end if
+
+    updateStatusBar()
+end sub
+
+sub loadMoreForList(focusedIndex as integer)
+    if m.loading or m.listLoaded >= m.listTotal then return
+    if focusedIndex < m.listLoaded - favoriteTabs.PAGE_AHEAD then return
+
+    runRequest({
+        mode: "list",
+        startIndex: m.listLoaded,
+        itemTypes: favoriteTabs.ChosenTypeFilter(m.typeFilter).types,
+        nameStartsWith: m.startLetter
+    })
+end sub
+
+sub onLetterSelected()
+    letter = m.top.alphaSelected
+    if not isValidAndNotEmpty(letter) then return
+
+    ' Picking the same letter again clears it, the way the libraries do
+    m.startLetter = isStringEqual(m.startLetter, letter) ? string.EMPTY : letter
+    loadCurrentView()
+end sub
+
+sub updateStatusBar()
+    show = not isHomeView()
+    m.statusText.visible = show
+    m.statusCount.visible = show
+    if not show then return
+
+    sortLabel = favoriteTabs.ChosenSort(m.sortKey).label
+    text = Substitute(tr("{0} favorites sorted by {1}"), m.listTotal.toStr(), sortLabel)
+
+    filter = favoriteTabs.ChosenTypeFilter(m.typeFilter)
+    if not isStringEqual(filter.value, "all") then text += `  ·  ${filter.label}`
+
+    m.statusText.text = text
+    m.statusCount.text = `${m.listLoaded.toStr()} | ${m.listTotal.toStr()}`
+end sub
+
+' =====================================================================
+' THE GRID
+' =====================================================================
+
+' Every card reads the shape the whole grid agreed on from the one place both sides reach,
+' so it is in place before any content is handed over
+sub applyShape(shape as string, force as boolean)
+    if not isValidAndNotEmpty(shape) then shape = "portrait"
+
+    metrics = favoriteTabs.CardMetrics(shape, m.imageSize, GRID_WIDTH)
+    m.global.addFields({ libraryCardMetrics: metrics })
+    m.global.libraryCardMetrics = metrics
+
+    if m.shape = shape and not force then return
+    m.shape = shape
+
+    ' The tabbed layout starts lower and runs to the bottom of the screen, the flat one
+    ' starts higher and stops above its status line
+    top = LIBRARY_GRID_TOP
+    room = LIBRARY_GRID_BOTTOM - LIBRARY_GRID_TOP
+    if isHomeView()
+        top = HOME_GRID_TOP
+        room = 1080 - HOME_GRID_TOP
+    end if
+
+    rows = Int(room / metrics.cellHeight)
+    if rows < 1 then rows = 1
+
+    m.itemGrid.translation = [48, top]
+    m.itemGrid.clippingRect = [0, 0, GRID_WIDTH, room]
+    m.itemGrid.itemSize = [metrics.cellWidth, metrics.cellHeight]
+    m.itemGrid.rowHeights = [metrics.cellHeight]
+    m.itemGrid.numColumns = metrics.columns
+    m.itemGrid.numRows = rows
+end sub
+
+sub onItemFocused()
+    index = m.itemGrid.itemFocused
+    if index < 0 then return
+
+    if isHomeView()
+        loadMoreForTab(index)
+    else
+        loadMoreForList(index)
+    end if
+
+    updateFocusedItem()
+end sub
+
+sub onItemSelected()
+    node = getItemGridFocusedItem(m.itemGrid)
+    if not isValid(node) then return
+
+    m.top.selectedItem = node
+    m.top.selectedItem = invalid
+end sub
+
+sub focusGrid()
+    if not isValid(m.itemGrid.content) or m.itemGrid.content.getChildCount() = 0
+        focusToolbarItem(TOOLBAR_HOME)
+        return
+    end if
+
+    unfocusAllToolbarItems()
+    m.itemGrid.setFocus(true)
+    setLastFocus(m.itemGrid)
+
+    ' The grid keeps the position it already had, so nothing tells the line above it what
+    ' is under the cursor now
+    updateFocusedItem()
+end sub
+
+sub showEmpty()
+    m.emptyLabel.text = isHomeView() ? tr("No favorites yet") : tr("No favorites found")
+    m.emptyLabel.visible = true
+    m.itemGrid.visible = false
+    clearFocusedItem()
+    updateItemCount(0)
+    focusToolbarItem(TOOLBAR_HOME)
+end sub
+
+' The name and the count read as one line, so the pair is centred rather than each of them
+sub updateItemCount(total as integer)
+    m.itemCountLabel.text = total > 0 ? `${total.toStr()} ${tr("Items")}` : ""
+
+    nameWidth = m.screenTitle.boundingRect().width
+    countWidth = m.itemCountLabel.boundingRect().width
+    gap = countWidth > 0 ? 16 : 0
+
+    startX = (1920 - (nameWidth + gap + countWidth)) / 2
+    m.screenTitle.translation = [startX, 28]
+    m.itemCountLabel.translation = [startX + nameWidth + gap, 34]
+end sub
+
+' =====================================================================
+' THE LINE ABOVE THE GRID
+' =====================================================================
+
+sub clearFocusedItem()
+    m.focusedName.text = string.EMPTY
+    setFieldText("focusedYear", string.EMPTY)
+    setFieldText("focusedRuntime", string.EMPTY)
+    for each pill in [m.statusPill, m.ratingPill, m.resolutionPill]
+        pill.group.visible = false
+    end for
+
+    clearPluginRatings()
+    clearBackdrop()
+end sub
+
+sub updateFocusedItem()
+    node = getItemGridFocusedItem(m.itemGrid)
+    if not isChainValid(node, "json")
+        clearFocusedItem()
+        return
+    end if
+
+    itemData = node.json
+
+    m.focusedName.text = focusedTitle(itemData)
+    drawMetaRow(itemData)
+
+    clearPluginRatings()
+    m.serverRatings = ratingsRow.ServerEntries(itemData)
+    renderRatingsRow([])
+    if moonfinPlugin.IsRatingsEnabled() then fetchRatings(itemData)
+
+    updateBackdrop(itemData)
+end sub
+
+' An episode is known by the show it came from as much as by its own name
+function focusedTitle(itemData as object) as string
+    name = itemData.Name ?? ""
+
+    if isStringEqual(itemData.Type ?? "", "Episode") and isValidAndNotEmpty(itemData.SeriesName)
+        return `${itemData.SeriesName} - ${name}`
+    end if
+
+    return name
+end function
+
+' A series has no single runtime, and only a series carries a status worth a pill
+sub drawMetaRow(itemData as object)
+    isSeries = isStringEqual(itemData.Type ?? "", "Series")
+
+    setFieldText("focusedYear", isValid(itemData.ProductionYear) ? itemData.ProductionYear.toStr() : "")
+
+    runtime = ""
+    if not isSeries
+        runtime = libraryCard.FormatDuration(itemData.RunTimeTicks)
+        if runtime = "0m" then runtime = ""
+    end if
+    setFieldText("focusedRuntime", runtime)
+
+    status = itemData.Status ?? ""
+    showStatus = isSeries and isValidAndNotEmpty(status)
+    if showStatus
+        fillPill(m.statusPill, tr(status))
+        m.statusPill.fill.blendColor = isStringEqual(status, "Continuing") ? "#22C55E" : "#EF4444"
+        m.statusPill.fill.opacity = 1
+    end if
+    m.statusPill.group.visible = showStatus
+
+    rating = itemData.OfficialRating ?? ""
+    showRating = isValidAndNotEmpty(rating)
+    if showRating then fillPill(m.ratingPill, rating)
+    m.ratingPill.group.visible = showRating
+
+    resolution = mediaBadges.ResolutionLabel(itemData)
+    showResolution = isValidAndNotEmpty(resolution)
+    if showResolution then fillPill(m.resolutionPill, resolution)
+    m.resolutionPill.group.visible = showResolution
+end sub
+
+' A pill is only as wide as the words it holds, plus the padding the other clients give it
+sub fillPill(pill as object, text as string)
+    label = pill.label
+
+    label.text = text
+
+    ' A label given a width reports that width back rather than the width of its text, so
+    ' the last size it was given has to go before this one can be measured
+    label.width = 0
+    width = label.boundingRect().width + PILL_PAD_X
+
+    label.width = width
+    label.height = PILL_HEIGHT
+    pill.fill.width = width
+    pill.fill.height = PILL_HEIGHT
+end sub
+
+' =====================================================================
+' RATINGS
+' =====================================================================
+
+sub renderRatingsRow(pluginRatings as object)
+    if not isValid(m.pluginRatings) then return
+
+    m.pluginRatings.showBadges = get_user_setting_bool("plugin.mdblist.showRatingBadges", true)
+
+    entries = ratingsRow.Merge(m.serverRatings, pluginRatings)
+    m.pluginRatings.ratingsData = { data: entries }
+    m.pluginRatings.visible = entries.count() > 0
+end sub
+
+sub clearPluginRatings()
+    m.serverRatings = invalid
+
+    if isValid(m.pluginRatings)
+        m.pluginRatings.ratingsData = invalid
+        m.pluginRatings.visible = false
+    end if
+
+    if isValid(m.ratingsDebounce) then m.ratingsDebounce.control = "stop"
+    m.pendingRatingsItem = invalid
+
+    if isValid(m.ratingsTask)
+        m.ratingsTask.unobserveFieldScoped("ratings")
+        m.ratingsTask = invalid
+    end if
+end sub
+
+sub fetchRatings(itemData as object)
+    if moonfinPlugin.GetTmdbId(itemData.ProviderIds ?? invalid) = "" then return
+    if not isValidAndNotEmpty(itemData.Type) then return
+
+    ' Debounce so sweeping along a row does not fire a request per card
+    m.pendingRatingsItem = itemData
+    m.ratingsDebounce = moonfinPlugin.StartRatingsDebounce(m.ratingsDebounce, "onRatingsDebounceFired")
+end sub
+
+sub onRatingsDebounceFired()
+    itemData = m.pendingRatingsItem
+    if not isValid(itemData) then return
+    m.pendingRatingsItem = invalid
+
+    if isValid(m.ratingsTask)
+        m.ratingsTask.unobserveFieldScoped("ratings")
+        m.ratingsTask = invalid
+    end if
+
+    m.ratingsTask = createObject("roSGNode", "FetchRatingsTask")
+    m.ratingsTask.itemData = itemData
+    m.ratingsTask.observeFieldScoped("ratings", "onRatingsLoaded")
+    m.ratingsTask.control = TaskControl.RUN
+end sub
+
+sub onRatingsLoaded(event as object)
+    result = event.getData()
+    if not isValid(result) then return
+    if not isValidAndNotEmpty(result.data) then return
+
+    renderRatingsRow(result.data)
+end sub
+
+' =====================================================================
+' THE PICTURE BEHIND THE PAGE
+' =====================================================================
+
+sub updateBackdrop(itemData as object)
+    if not isHomeView()
+        clearBackdrop()
+        return
+    end if
+
+    uri = ""
+    if isValidAndNotEmpty(itemData.BackdropImageTags)
+        uri = blurredBackdropURL(itemData.Id, itemData.BackdropImageTags[0], itemData)
+    else if isValidAndNotEmpty(itemData.ParentBackdropItemId) and isValidAndNotEmpty(itemData.ParentBackdropImageTags)
+        uri = blurredBackdropURL(itemData.ParentBackdropItemId, itemData.ParentBackdropImageTags[0], itemData)
+    end if
+
+    if uri = ""
+        clearBackdrop()
+        return
+    end if
+
+    startBackdropCrossfade(uri)
+end sub
+
+function blurredBackdropURL(itemId as string, imageTag as string, itemData as object) as string
+    params = {
+        "maxHeight": 1080,
+        "maxWidth": 1920,
+        "quality": 90,
+        "blur": getHomeBackdropBlurAmount(),
+        "Tag": imageTag
+    }
+
+    serverUrl = itemData._serverUrl
+    if isValidAndNotEmpty(serverUrl) then return buildImageURLForServer(serverUrl, itemId, "Backdrop", params)
+
+    return ImageURL(itemId, "Backdrop", params)
+end function
+
+sub startBackdropCrossfade(uri as string)
+    if m.backdrop.uri = uri then return
+
+    m.backdropFadeIn.control = "stop"
+    m.backdropPrevFadeOut.control = "stop"
+
+    if isValidAndNotEmpty(m.backdrop.uri)
+        m.backdropPrev.uri = m.backdrop.uri
+        m.backdropPrev.opacity = m.backdrop.opacity
+    end if
+
+    m.backdrop.opacity = 0
+    m.backdropCrossfading = true
+    m.backdrop.uri = uri
+end sub
+
+' The new picture only crossfades in once it has actually loaded
 sub onBackdropLoadStatusChange()
-    if isValid(m.backdrop) and m.backdrop.loadStatus = "ready" and isValidAndNotEmpty(m.backdrop.uri)
-        if isValid(m.backdropPrev)
-            m.backdropPrev.uri = m.backdrop.uri
+    if not m.backdropCrossfading then return
+    if m.backdrop.loadStatus <> "ready" or not isValidAndNotEmpty(m.backdrop.uri) then return
+
+    m.backdropFadeInInterp.keyValue = [m.backdrop.opacity, 0.3]
+    m.backdropPrevFadeOutInterp.keyValue = [m.backdropPrev.opacity, 0.0]
+    m.backdropFadeIn.control = "start"
+    m.backdropPrevFadeOut.control = "start"
+    m.backdropCrossfading = false
+end sub
+
+sub clearBackdrop()
+    if not isValid(m.backdrop) then return
+
+    m.backdropFadeIn.control = "stop"
+    m.backdropPrevFadeOut.control = "stop"
+    m.backdrop.uri = ""
+    m.backdrop.opacity = 0
+    m.backdropPrev.uri = ""
+    m.backdropPrev.opacity = 0
+    m.backdropCrossfading = false
+end sub
+
+' =====================================================================
+' THE TWO PANELS
+' =====================================================================
+
+sub openSortDialog()
+    filters = libraryFilters.EmptyState()
+    context = {
+        title: isHomeView() ? tr("Sort By") : tr("Sort & Filter"),
+        sorts: favoriteTabs.SortOptions(),
+        sortOnly: true
+    }
+
+    ' The tabs are the type picker in the other layout
+    if not isHomeView()
+        context.typeOptions = favoriteTabs.TypeFilters()
+        filters.type = m.typeFilter
+    end if
+
+    m.sortDialog.context = context
+    m.sortDialog.state = {
+        view: string.EMPTY,
+        sortKey: m.sortKey,
+        sortOrder: m.sortOrder,
+        filters: filters
+    }
+    m.sortDialog.callFunc("showDialog")
+    setLastFocus(m.sortDialog)
+end sub
+
+sub onSortApplied(msg as object)
+    applied = msg.getData()
+    if not isValid(applied) then return
+
+    m.sortKey = applied.sortKey
+    m.sortOrder = applied.sortOrder
+    set_user_setting("favorites_sortKey", m.sortKey)
+
+    typeFilter = chainLookupReturn(applied, "filters.type", m.typeFilter)
+    if isValidAndNotEmpty(typeFilter) then m.typeFilter = typeFilter
+
+    loadCurrentView()
+end sub
+
+sub openSettingsDialog()
+    m.settingsDialog.context = {
+        libraryName: tr("Settings"),
+        kind: tr("Favorites"),
+        ' Each tab already knows what shape its cards are
+        showImageType: not isHomeView(),
+        showCardText: false,
+        showLetterNav: false,
+        showViewStyle: true
+    }
+    m.settingsDialog.settings = {
+        imageSize: m.imageSize,
+        imageType: m.imageType,
+        viewStyle: m.viewStyle
+    }
+    m.settingsDialog.callFunc("showDialog")
+    setLastFocus(m.settingsDialog)
+end sub
+
+' Every row takes effect as it is stepped on, so this runs once per press
+sub onSettingsApplied(msg as object)
+    applied = msg.getData()
+    if not isValid(applied) then return
+
+    styleChanged = not isStringEqual(m.viewStyle, applied.viewStyle)
+    typeChanged = not isStringEqual(m.imageType, applied.imageType)
+
+    m.imageSize = applied.imageSize
+    m.imageType = applied.imageType
+    m.viewStyle = applied.viewStyle
+
+    set_user_setting("favorites_imageSize", m.imageSize)
+    set_user_setting("favorites_imageType", m.imageType)
+    set_user_setting("favorites_viewStyle", m.viewStyle)
+
+    ' The whole screen is rebuilt underneath, so the panel steps out of the way and the
+    ' focus waits on the button that opened it
+    if styleChanged
+        m.settingsDialog.callFunc("closeDialog")
+        applyViewStyle()
+        loadCurrentView()
+        focusToolbarItem(TOOLBAR_SETTINGS)
+        return
+    end if
+
+    if typeChanged and not isHomeView()
+        loadCurrentView()
+        setLastFocus(m.settingsDialog)
+        return
+    end if
+
+    applyShape(m.shape, true)
+    redrawGrid()
+end sub
+
+' The cards are the same, so only the shape they are drawn at has moved
+sub redrawGrid()
+    focused = m.itemGrid.itemFocused
+    content = m.itemGrid.content
+    m.itemGrid.content = createSGNode("ContentNode")
+    m.itemGrid.content = content
+    if focused > 0 then m.itemGrid.jumpToItem = focused
+end sub
+
+sub applyViewStyle()
+    home = isHomeView()
+
+    m.focusedInfo.visible = home
+    m.tabBar.visible = false
+    m.alphaPicker.visible = not home
+    m.statusText.visible = not home
+    m.statusCount.visible = not home
+
+    if home
+        m.startLetter = string.EMPTY
+        m.typeFilter = "all"
+    end if
+
+    clearBackdrop()
+    applyShape(home ? "portrait" : listShape(), true)
+end sub
+
+' A panel left open while the grid reloads would lose focus to it, since handing the grid
+' its content takes focus back
+sub restoreDialogFocus()
+    for each dialog in [m.sortDialog, m.settingsDialog]
+        if dialog.visible
+            dialog.callFunc("focusDialog")
+            setLastFocus(dialog)
+            return
         end if
+    end for
+end sub
+
+sub onDialogClosed()
+    focusToolbarItem(m.toolbarFocusIndex)
+end sub
+
+' =====================================================================
+' FOCUS
+' =====================================================================
+
+sub focusToolbarItem(index as integer)
+    ' The strip is the one toolbar item that goes away, so focus lands back on the gear
+    if index = TOOLBAR_ALPHA and not m.alphaPicker.visible then index = TOOLBAR_SETTINGS
+
+    unfocusAllToolbarItems()
+    m.toolbarFocusIndex = index
+
+    if index >= 0 and index < m.toolbarButtons.count()
+        m.toolbarButtons[index].focus = true
+        m.toolbarButtons[index].setFocus(true)
+        setLastFocus(m.toolbarButtons[index])
+    else if index = TOOLBAR_ALPHA
+        m.alphaGrid.setFocus(true)
+        setLastFocus(m.alphaGrid)
     end if
 end sub
 
-sub onItemSelected(event as object)
-    selectedIndex = event.getData()
-    if not isValid(selectedIndex) or selectedIndex.Count() < 2 then return
-
-    rowIndex = selectedIndex[0]
-    itemIndex = selectedIndex[1]
-
-    row = m.favoritesRows.content.getChild(rowIndex)
-    if not isValid(row) then return
-
-    item = row.getChild(itemIndex)
-    if not isValid(item) then return
-
-    m.top.selectedItem = item
+sub unfocusAllToolbarItems()
+    for each button in m.toolbarButtons
+        button.focus = false
+    end for
 end sub
 
-sub showLoading(visible as boolean)
-    m.loadingGroup.visible = visible
-    m.favoritesRows.visible = not visible
-    m.detailsSection.visible = not visible
+sub focusBelowToolbar()
+    unfocusAllToolbarItems()
+
+    if isHomeView() and m.tabBar.visible
+        m.tabBar.setFocus(true)
+        setLastFocus(m.tabBar)
+        return
+    end if
+
+    focusGrid()
 end sub
 
-sub showEmptyState()
-    m.emptyStateGroup.visible = true
-    m.favoritesRows.visible = false
-    m.detailsSection.visible = false
-    m.emptyStateGroup.setFocus(true)
+sub reclaimResources()
+    m.loadTask.control = TaskControl.STOP
+    clearPluginRatings()
+    clearBackdrop()
 end sub
 
-sub hideEmptyState()
-    m.emptyStateGroup.visible = false
-    m.favoritesRows.visible = true
-    m.detailsSection.visible = true
+sub leaveScreen()
+    reclaimResources()
+    m.global.sceneManager.callFunc("popScene")
 end sub
+
+' =====================================================================
+' KEYS
+' =====================================================================
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
-    if key = KeyCode.UP
-        if isValid(m.emptyStateGroup) and m.emptyStateGroup.hasFocus()
-            m.top.lastFocus = m.emptyStateGroup
-            return FocusNav(m.top)
+    ' The nav has slid away, so the first tab has nothing to its left
+    if m.tabBar.isInFocusChain()
+        if isStringEqual(key, KeyCode.LEFT) then return true
+        if isStringEqual(key, KeyCode.BACK)
+            leaveScreen()
+            return true
         end if
-
-        if isValid(m.favoritesRows) and m.favoritesRows.hasFocus()
-            focusedIndex = m.favoritesRows.rowItemFocused
-            if isValidAndNotEmpty(focusedIndex) and focusedIndex[0] = 0
-                m.top.lastFocus = m.favoritesRows
-                return FocusNav(m.top)
-            end if
-        end if
+        return false
     end if
 
-    if key = KeyCode.BACK
-        return false
+    if m.homeButton.isInFocusChain() or m.sortButton.isInFocusChain() or m.settingsButton.isInFocusChain()
+        return toolbarKey(key)
+    end if
+
+    if m.alphaGrid.isInFocusChain()
+        return alphaKey(key)
+    end if
+
+    if m.itemGrid.isInFocusChain()
+        return gridKey(key)
+    end if
+
+    return false
+end function
+
+function toolbarKey(key as string) as boolean
+    if isStringEqual(key, KeyCode.RIGHT)
+        if m.toolbarFocusIndex < TOOLBAR_SETTINGS
+            focusToolbarItem(m.toolbarFocusIndex + 1)
+        else if m.alphaPicker.visible
+            focusToolbarItem(TOOLBAR_ALPHA)
+        end if
+        return true
+    end if
+
+    if isStringEqual(key, KeyCode.LEFT)
+        if m.toolbarFocusIndex > TOOLBAR_HOME then focusToolbarItem(m.toolbarFocusIndex - 1)
+        return true
+    end if
+
+    if isStringEqual(key, KeyCode.DOWN)
+        focusBelowToolbar()
+        return true
+    end if
+
+    if isStringEqual(key, KeyCode.OK)
+        if m.toolbarFocusIndex = TOOLBAR_HOME
+            leaveScreen()
+        else if m.toolbarFocusIndex = TOOLBAR_SORT
+            openSortDialog()
+        else
+            openSettingsDialog()
+        end if
+        return true
+    end if
+
+    if isStringEqual(key, KeyCode.BACK)
+        leaveScreen()
+        return true
+    end if
+
+    ' Nothing sits above the toolbar, so up stays where it is
+    return true
+end function
+
+function alphaKey(key as string) as boolean
+    if isStringEqual(key, KeyCode.LEFT) and m.alphaGrid.itemFocused = 0
+        focusToolbarItem(TOOLBAR_SETTINGS)
+        return true
+    end if
+
+    if isStringEqual(key, KeyCode.DOWN)
+        focusGrid()
+        return true
+    end if
+
+    if isStringEqual(key, KeyCode.UP)
+        return true
+    end if
+
+    if isStringEqual(key, KeyCode.BACK)
+        leaveScreen()
+        return true
+    end if
+
+    return false
+end function
+
+function gridKey(key as string) as boolean
+    if isStringEqual(key, KeyCode.UP)
+        if m.itemGrid.itemFocused >= m.itemGrid.numColumns then return false
+
+        if isHomeView() and m.tabBar.visible
+            m.tabBar.setFocus(true)
+            setLastFocus(m.tabBar)
+        else
+            focusToolbarItem(m.alphaPicker.visible ? TOOLBAR_ALPHA : m.toolbarFocusIndex)
+        end if
+        return true
+    end if
+
+    if isStringEqual(key, KeyCode.BACK)
+        ' Back climbs out of a long grid before it leaves the screen
+        if m.itemGrid.itemFocused >= m.itemGrid.numColumns
+            m.itemGrid.jumpToItem = 0
+            return true
+        end if
+
+        leaveScreen()
+        return true
     end if
 
     return false

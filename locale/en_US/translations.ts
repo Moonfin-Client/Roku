@@ -2585,5 +2585,37 @@
         <source>You're set. Here's what else is in here.</source>
         <translation>You're set. Here's what else is in here.</translation>
     </message>
+    <message>
+        <source>Home View</source>
+        <translation>Home View</translation>
+    </message>
+    <message>
+        <source>Library View</source>
+        <translation>Library View</translation>
+    </message>
+    <message>
+        <source>View style</source>
+        <translation>View style</translation>
+    </message>
+    <message>
+        <source>No favorites yet</source>
+        <translation>No favorites yet</translation>
+    </message>
+    <message>
+        <source>No favorites found</source>
+        <translation>No favorites found</translation>
+    </message>
+    <message>
+        <source>People</source>
+        <translation>People</translation>
+    </message>
+    <message>
+        <source>Music Videos</source>
+        <translation>Music Videos</translation>
+    </message>
+    <message>
+        <source>{0} favorites sorted by {1}</source>
+        <translation>{0} favorites sorted by {1}</translation>
+    </message>
 </context>
 </TS>

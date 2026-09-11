@@ -1,222 +1,413 @@
-import "pkg:/source/api/baserequest.bs"
-import "pkg:/source/api/Image.bs"
-import "pkg:/source/api/sdk.bs"
-import "pkg:/source/enums/ImageType.bs"
-import "pkg:/source/enums/ItemType.bs"
-import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/diagnostics.bs"
+import "pkg:/source/utils/favoriteTabs.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/multiserver.bs"
+
+' How long a batch has before whatever has not arrived is given up on
+const FAVORITES_TIMEOUT = 15
 
 sub init()
     m.top.functionName = "loadFavorites"
 end sub
 
 sub loadFavorites()
-    ' Get all server sessions if multi-server is enabled
-    allSessions = []
-
-    if m.top.enableMultiServer and isMultiServerEnabled()
-        allSessions = getAllServerSessions()
+    request = m.top.request
+    if not isValid(request)
+        m.top.error = "No request"
+        return
     end if
 
-    ' If no sessions found or multi-server disabled, fall back to current server only
-    if allSessions.Count() = 0
-        currentSession = getCurrentServerSession()
-        if isValid(currentSession)
-            allSessions.push(currentSession)
-        end if
-    end if
-
-    if allSessions.Count() = 0
+    sessions = favoriteSessions()
+    if sessions.count() = 0
         m.top.error = "No server sessions available"
         return
     end if
 
-    ' Load favorites from all servers in parallel using port
-    port = CreateObject("roMessagePort")
-    activeRequests = {}
-    requestObjects = {} ' Keep request objects alive
-    results = []
-    totalItemCount = 0
+    ' The table is read once per item further down, so it is built here and handed on
+    tabs = favoriteTabs.Tabs()
+    mode = request.mode ?? "tabs"
 
-    ' Start requests for all servers
-    for each userSession in allSessions
-        requestInfo = startFavoritesRequest(userSession, port)
-        if isValid(requestInfo)
-            activeRequests[requestInfo.id] = userSession
-            requestObjects[requestInfo.id] = requestInfo.request ' Keep alive
+    ' One server answers each type on its own so the counts come from the server. Several
+    ' answer everything at once, since nine queries per server is more than the fan out is
+    ' worth, and the buckets are counted here instead.
+    pooled = sessions.count() > 1
+
+    if mode = "page"
+        loadPage(sessions, request, tabs)
+    else if mode = "list"
+        loadList(sessions, request, tabs, pooled)
+    else if pooled
+        loadPooledTabs(sessions, request, tabs)
+    else
+        loadTabs(sessions[0], request, tabs)
+    end if
+end sub
+
+function emptyCounts(tabs as object) as object
+    counts = {}
+    for each tabDef in tabs
+        counts[tabDef.key] = 0
+    end for
+    return counts
+end function
+
+' The nodes go out last, since that is the field the screen waits on
+sub answerWith(mode as string, nodes as object, counts as object, total as integer, startIndex as integer, tabKey as string)
+    m.top.mode = mode
+    m.top.tabKey = tabKey
+    m.top.counts = counts
+    m.top.total = total
+    m.top.startIndex = startIndex
+    m.top.results = nodes
+end sub
+
+function favoriteSessions() as object
+    sessions = []
+
+    if isMultiServerEnabled() then sessions = getAllServerSessions()
+
+    if sessions.count() = 0
+        current = getCurrentServerSession()
+        if isValid(current) then sessions.push(current)
+    end if
+
+    return sessions
+end function
+
+' =====================================================================
+' THE THREE SHAPES OF LOAD
+' =====================================================================
+
+' Every tab of one server, asked for together
+sub loadTabs(userSession as object, request as object, tabs as object)
+    port = CreateObject("roMessagePort")
+    pending = {}
+    keepAlive = {}
+
+    for each tabDef in tabs
+        params = listParams(userSession, tabDef.types, request.sortField, request.sortOrder, 0, favoriteTabs.PAGE_SIZE)
+        started = startRequest(userSession, params, port)
+        if isValid(started)
+            pending[started.id] = tabDef
+            keepAlive[started.id] = started.request
         end if
     end for
 
-    ' Wait for all responses (15 second timeout)
-    startTime = CreateObject("roDateTime").AsSeconds()
+    nodes = []
+    counts = emptyCounts(tabs)
 
-    while activeRequests.Count() > 0
-        msg = wait(1000, port)
+    for each answer in awaitAll(port, pending, keepAlive)
+        tabDef = answer.tag
+        built = buildNodes(answer.items, userSession, tabs, tabDef)
+        counts[tabDef.key] = answer.total > 0 ? answer.total : built.count()
 
-        ' Check timeout
-        currentTime = CreateObject("roDateTime").AsSeconds()
-        if currentTime - startTime > 15
-            diagnostics.Network("Favourites request timed out waiting for the server", diagnostics.LEVEL_WARN)
-            exit while
-        end if
+        for each node in built
+            nodes.push(node)
+        end for
+    end for
 
-        if msg = invalid then continue while
-
-        if type(msg) = "roUrlEvent"
-            requestId = msg.GetSourceIdentity().ToStr()
-            userSession = activeRequests[requestId]
-
-            if isValid(userSession)
-                activeRequests.Delete(requestId)
-                requestObjects.Delete(requestId) ' Clean up
-
-                responseCode = msg.GetResponseCode()
-                if responseCode = 200
-                    responseBody = msg.GetString()
-                    data = ParseJson(responseBody)
-
-                    if isValid(data) and isChainValid(data, "Items")
-                        ' Process items from this server
-                        for each item in data.Items
-                            ' Skip certain item types
-                            if inArray([ItemType.BOOK, ItemType.AUDIO, ItemType.FOLDER], LCase(item.type)) then continue for
-
-                            transformed = transformItemWithServer(item, userSession)
-                            if isValid(transformed)
-                                results.push(transformed)
-                                totalItemCount++
-                            end if
-                        end for
-                    end if
-                end if
-            end if
-        end if
-    end while
-
-    ' Set results
-    m.top.totalCount = totalItemCount
-    m.top.results = results
+    answerWith("tabs", nodes, counts, nodes.count(), 0, "")
 end sub
 
-' Start an async request to load favorites from a server
-function startFavoritesRequest(userSession as object, port as object) as object
+' Every tab across every server, one request each, bucketed here
+sub loadPooledTabs(sessions as object, request as object, tabs as object)
+    port = CreateObject("roMessagePort")
+    pending = {}
+    keepAlive = {}
+    bySession = {}
+
+    for each userSession in sessions
+        params = listParams(userSession, favoriteTabs.AllTypes(), request.sortField, request.sortOrder, 0, 0)
+        started = startRequest(userSession, params, port)
+        if isValid(started)
+            pending[started.id] = started.id
+            keepAlive[started.id] = started.request
+            bySession[started.id] = userSession
+        end if
+    end for
+
+    nodes = []
+    counts = emptyCounts(tabs)
+
+    for each answer in awaitAll(port, pending, keepAlive)
+        userSession = bySession[answer.tag]
+        for each node in buildNodes(answer.items, userSession, tabs)
+            nodes.push(node)
+            counts[node.favoritesTab] = counts[node.favoritesTab] + 1
+        end for
+    end for
+
+    answerWith("tabs", nodes, counts, nodes.count(), 0, "")
+end sub
+
+' The next page of one tab. Several servers hand back everything at once, so there is
+' never a page to ask them for.
+sub loadPage(sessions as object, request as object, tabs as object)
+    pageTab = favoriteTabs.TabWithKey(tabs, request.tabKey ?? "")
+    if not isValid(pageTab)
+        m.top.error = "Unknown tab"
+        return
+    end if
+
+    userSession = sessions[0]
+    startIndex = request.startIndex ?? 0
+    params = listParams(userSession, pageTab.types, request.sortField, request.sortOrder, startIndex, favoriteTabs.PAGE_SIZE)
+
+    answer = fetchOne(userSession, params)
+    counts = emptyCounts(tabs)
+    counts[pageTab.key] = answer.total
+
+    answerWith("page", buildNodes(answer.items, userSession, tabs, pageTab), counts, answer.total, startIndex, pageTab.key)
+end sub
+
+' The flat view, which narrows by type rather than tabbing between them
+sub loadList(sessions as object, request as object, tabs as object, pooled as boolean)
+    itemTypes = request.itemTypes ?? favoriteTabs.ChosenTypeFilter("all").types
+
+    if pooled
+        loadPooledList(sessions, request, tabs, itemTypes)
+        return
+    end if
+
+    userSession = sessions[0]
+    startIndex = request.startIndex ?? 0
+    params = listParams(userSession, itemTypes, request.sortField, request.sortOrder, startIndex, favoriteTabs.LIST_PAGE_SIZE)
+    if isValidAndNotEmpty(request.nameStartsWith) then params.NameStartsWith = request.nameStartsWith
+
+    answer = fetchOne(userSession, params)
+    answerWith("list", buildNodes(answer.items, userSession, tabs), emptyCounts(tabs), answer.total, startIndex, "")
+end sub
+
+' Several servers cant be paged as one list, so they are gathered whole and narrowed here
+sub loadPooledList(sessions as object, request as object, tabs as object, itemTypes as string)
+    port = CreateObject("roMessagePort")
+    pending = {}
+    keepAlive = {}
+    bySession = {}
+
+    for each userSession in sessions
+        params = listParams(userSession, itemTypes, "SortName", "Ascending", 0, 0)
+        started = startRequest(userSession, params, port)
+        if isValid(started)
+            pending[started.id] = started.id
+            keepAlive[started.id] = started.request
+            bySession[started.id] = userSession
+        end if
+    end for
+
+    nodes = []
+    for each answer in awaitAll(port, pending, keepAlive)
+        userSession = bySession[answer.tag]
+        for each node in buildNodes(answer.items, userSession, tabs)
+            nodes.push(node)
+        end for
+    end for
+
+    if isValidAndNotEmpty(request.nameStartsWith) then nodes = narrowToLetter(nodes, request.nameStartsWith)
+
+    answerWith("list", nodes, emptyCounts(tabs), nodes.count(), 0, "")
+end sub
+
+' The server does this for a single server list, so the pooled one matches it here
+function narrowToLetter(nodes as object, letter as string) as object
+    kept = []
+    wanted = UCase(letter)
+
+    for each node in nodes
+        name = UCase(toString(chainLookupReturn(node, "json.SortName", node.title ?? "")))
+        if name = "" then continue for
+
+        first = Left(name, 1)
+        if wanted = "#"
+            if first < "A" or first > "Z" then kept.push(node)
+        else if first = wanted
+            kept.push(node)
+        end if
+    end for
+
+    return kept
+end function
+
+' =====================================================================
+' REQUESTS
+' =====================================================================
+
+function listParams(userSession as object, itemTypes as string, sortField as dynamic, sortOrder as dynamic, startIndex as integer, limit as integer) as object
     params = {
-        userid: userSession.userId,
-        Filters: "IsFavorite",
-        IncludeItemTypes: "Movie,Series,Episode,Video,MusicVideo,BoxSet",
-        Limit: m.top.limit,
-        StartIndex: m.top.startIndex,
+        userId: userSession.userId,
         Recursive: true,
-        SortBy: "SortName",
-        SortOrder: "Ascending",
-        Fields: "Overview,PrimaryImageAspectRatio,ProductionYear,OfficialRating,CommunityRating,RunTimeTicks,UserData,BackdropImageTags,ParentBackdropImageTags,SeriesId,SeriesPrimaryImageTag,SeasonName,IndexNumber,ImageTags,ChildCount,RecursiveItemCount",
-        EnableTotalRecordCount: true
+        Filters: "IsFavorite",
+        IncludeItemTypes: itemTypes,
+        SortBy: isValidAndNotEmpty(sortField) ? sortField : "SortName",
+        SortOrder: isValidAndNotEmpty(sortOrder) ? sortOrder : "Ascending",
+        StartIndex: startIndex,
+        EnableTotalRecordCount: true,
+        Fields: favoriteTabs.FIELDS
     }
 
-    url = buildURLForSession(userSession, "/Users/" + userSession.userId + "/Items", params)
-    authHeader = buildAuthHeaderForSession(userSession)
+    if limit > 0 then params.Limit = limit
 
+    return params
+end function
+
+function startRequest(userSession as object, params as object, port as object) as object
     request = CreateObject("roUrlTransfer")
-    request.SetUrl(url)
-    request.AddHeader("Authorization", authHeader)
+    request.SetUrl(buildURLForSession(userSession, `/Users/${userSession.userId}/Items`, params))
+    request.AddHeader("Authorization", buildAuthHeaderForSession(userSession))
     request.AddHeader("Content-Type", "application/json")
     request.SetCertificatesFile("common:/certs/ca-bundle.crt")
     request.InitClientCertificates()
     request.SetMessagePort(port)
     request.EnableEncodings(true)
 
-    if request.AsyncGetToString()
-        return {
-            id: request.GetIdentity().ToStr(),
-            request: request
-        }
+    if not request.AsyncGetToString() then return invalid
+
+    return { id: request.GetIdentity().ToStr(), request: request }
+end function
+
+' Waits on every request in one batch and hands back what each of them answered
+function awaitAll(port as object, pending as object, keepAlive as object) as object
+    answers = []
+    startedAt = CreateObject("roDateTime").AsSeconds()
+
+    while pending.count() > 0
+        msg = wait(1000, port)
+
+        if CreateObject("roDateTime").AsSeconds() - startedAt > FAVORITES_TIMEOUT
+            diagnostics.Network("Favorites request timed out waiting for the server", diagnostics.LEVEL_WARN)
+            exit while
+        end if
+
+        if not isValid(msg) then continue while
+        if type(msg) <> "roUrlEvent" then continue while
+
+        requestId = msg.GetSourceIdentity().ToStr()
+        tag = pending[requestId]
+        if not isValid(tag) then continue while
+
+        pending.Delete(requestId)
+        keepAlive.Delete(requestId)
+
+        if msg.GetResponseCode() <> 200 then continue while
+
+        data = ParseJson(msg.GetString())
+        if not isValid(data) then continue while
+
+        answers.push({
+            tag: tag,
+            items: isValid(data.Items) ? data.Items : [],
+            total: isValid(data.TotalRecordCount) ? data.TotalRecordCount : 0
+        })
+    end while
+
+    return answers
+end function
+
+' One request, waited on by itself
+function fetchOne(userSession as object, params as object) as object
+    port = CreateObject("roMessagePort")
+    started = startRequest(userSession, params, port)
+    if not isValid(started) then return { items: [], total: 0 }
+
+    pending = {}
+    pending[started.id] = started.id
+    keepAlive = {}
+    keepAlive[started.id] = started.request
+
+    answers = awaitAll(port, pending, keepAlive)
+    if answers.count() = 0 then return { items: [], total: 0 }
+
+    return answers[0]
+end function
+
+' =====================================================================
+' BUILDING THE CARDS
+' =====================================================================
+
+' A tab of its own means every item belongs to it. Without one each item is placed by what
+' it is, which is what the flat grid mixing every type needs.
+function buildNodes(items as object, userSession as object, tabs as object, fixedTab = invalid as object) as object
+    nodes = []
+    if not isValidAndNotEmpty(items) then return nodes
+
+    for each item in items
+        tabDef = fixedTab
+        if not isValid(tabDef) then tabDef = favoriteTabs.TabForType(tabs, item.Type)
+        if isValid(tabDef)
+            node = buildNode(item, userSession, tabDef)
+            if isValid(node) then nodes.push(node)
+        end if
+    end for
+
+    return nodes
+end function
+
+' The same node types the library grid builds, so a card selected here opens what the
+' same card opens there
+function buildNode(item as object, userSession as object, tabDef as object) as object
+    if not isValid(item) or not isValidAndNotEmpty(item.Id) then return invalid
+
+    node = nodeForType(item.Type ?? "")
+    if not isValid(node) then return invalid
+
+    node.addField("favoritesTab", "string", false)
+    node.favoritesTab = tabDef.key
+
+    ' Every setFields reads straight off the json, so what it looks for is put there first
+    item.AddReplace("_serverUrl", userSession.serverUrl)
+    item.AddReplace("_userId", userSession.userId)
+    item.AddReplace("_authToken", userSession.authToken)
+    item.AddReplace("_serverName", userSession.serverName)
+    if not isValid(item.ImageTags) then item.AddReplace("ImageTags", {})
+    if not isValid(item.BackdropImageTags) then item.AddReplace("BackdropImageTags", [])
+    if not isValid(item.UserData) then item.AddReplace("UserData", {})
+
+    node.json = item
+    node.title = item.Name ?? ""
+
+    ' setFields sizes its poster for the library grid, and a tab knows better what shape
+    ' its own cards are
+    artwork = cardArtwork(item, tabDef.shape, userSession)
+    if artwork <> "" then node.posterUrl = artwork
+    node.landscapePosterURL = artwork
+
+    return node
+end function
+
+function nodeForType(itemType as string) as object
+    if isStringEqual(itemType, "Movie") or isStringEqual(itemType, "MusicVideo") then return CreateObject("roSGNode", "MovieData")
+    if isStringEqual(itemType, "Series") then return CreateObject("roSGNode", "SeriesData")
+    if isStringEqual(itemType, "BoxSet") then return CreateObject("roSGNode", "CollectionData")
+    if isStringEqual(itemType, "Person") then return CreateObject("roSGNode", "PersonData")
+    if isStringEqual(itemType, "MusicArtist") then return CreateObject("roSGNode", "MusicArtistData")
+
+    if isStringEqual(itemType, "Episode")
+        node = CreateObject("roSGNode", "TVEpisode")
+        node.type = "Episode"
+        return node
+    end if
+
+    if isStringEqual(itemType, "MusicAlbum")
+        node = CreateObject("roSGNode", "MusicAlbumData")
+        node.type = "MusicAlbum"
+        return node
+    end if
+
+    if isStringEqual(itemType, "Audio")
+        node = CreateObject("roSGNode", "MusicSongData")
+        node.type = "audio"
+        return node
     end if
 
     return invalid
 end function
 
-' Transform item with server info for multi-server support
-function transformItemWithServer(item as object, userSession as object) as object
-    if not isValid(item) then return invalid
+function cardArtwork(item as object, shape as string, userSession as object) as string
+    picked = favoriteTabs.CardImage(item, shape)
+    if picked.id = "" then return ""
 
-    result = {
-        id: item.Id,
-        title: item.Name,
-        type: item.Type,
-        year: isValid(item.ProductionYear) ? item.ProductionYear.toStr() : "",
-        rating: isValid(item.CommunityRating) ? item.CommunityRating.toStr() : "",
-        officialRating: isValid(item.OfficialRating) ? item.OfficialRating : "",
-        runtime: formatRuntimeTicks(item.RunTimeTicks),
-        overview: isValid(item.Overview) ? item.Overview : "",
-        posterUrl: buildPosterUrlForServer(item, userSession),
-        backdropUrl: buildBackdropUrlForServer(item, userSession),
-        serverUrl: userSession.serverUrl,
-        serverName: userSession.serverName,
-        userId: userSession.userId,
-        authToken: userSession.authToken,
-        json: item
-    }
+    params = { maxHeight: 400, quality: 80 }
+    if isValidAndNotEmpty(picked.tag) then params.Tag = picked.tag
 
-    ' Add server info to json for downstream use
-    result.json._serverUrl = userSession.serverUrl
-    result.json._userId = userSession.userId
-    result.json._authToken = userSession.authToken
-    result.json._serverName = userSession.serverName
-
-    return result
-end function
-
-function buildPosterUrlForServer(item as object, userSession as object) as string
-    if not isValid(item) or not isValid(item.Id) then return ""
-
-    params = {
-        maxWidth: 300,
-        quality: 90
-    }
-
-    if hasImageTagPrimary(item)
-        params.Tag = item.ImageTags.Primary
-    end if
-
-    return buildImageURLForServer(userSession.serverUrl, item.Id, "Primary", params)
-end function
-
-function buildBackdropUrlForServer(item as object, userSession as object) as string
-    if not isValid(item) or not isValid(item.Id) then return ""
-
-    params = {
-        maxWidth: 1280,
-        quality: 80
-    }
-
-    ' Try item's own backdrop first
-    if isValid(item.BackdropImageTags) and item.BackdropImageTags.Count() > 0
-        params.Tag = item.BackdropImageTags[0]
-        return buildImageURLForServer(userSession.serverUrl, item.Id, "Backdrop", params)
-    end if
-
-    ' Fall back to parent backdrop
-    if isValid(item.ParentBackdropItemId) and isValid(item.ParentBackdropImageTags) and item.ParentBackdropImageTags.Count() > 0
-        params.Tag = item.ParentBackdropImageTags[0]
-        return buildImageURLForServer(userSession.serverUrl, item.ParentBackdropItemId, "Backdrop", params)
-    end if
-
-    return ""
-end function
-
-function formatRuntimeTicks(ticks as dynamic) as string
-    if not isValid(ticks) or ticks = 0 then return ""
-
-    ' Convert 100-nanosecond ticks to minutes
-    totalMinutes = Int(ticks / 600000000)
-    hours = Int(totalMinutes / 60)
-    minutes = totalMinutes mod 60
-
-    if hours > 0
-        return hours.toStr() + "h " + minutes.toStr() + "m"
-    else
-        return minutes.toStr() + "m"
-    end if
+    return buildImageURLForServer(userSession.serverUrl, picked.id, picked.imageType, params)
 end function

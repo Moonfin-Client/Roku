@@ -1,0 +1,214 @@
+import "pkg:/source/utils/libraryCard.bs"
+import "pkg:/source/utils/librarySorts.bs"
+import "pkg:/source/utils/misc.bs"
+
+' What the tabbed favorites screen is built from: which favorite types get a tab, what
+' shape their cards take, and how each card picks its artwork.
+
+namespace favoriteTabs
+
+    ' A favorites query that does not name its types comes back without any people in it,
+    ' so each tab asks for its own types rather than one query being split up afterwards.
+    function Tabs() as object
+        return [
+            { key: "movie", label: tr("Movies"), types: "Movie", shape: "portrait" },
+            { key: "series", label: tr("Series"), types: "Series", shape: "portrait" },
+            { key: "episode", label: tr("Episodes"), types: "Episode", shape: "landscape" },
+            { key: "collection", label: tr("Collections"), types: "BoxSet", shape: "portrait" },
+            { key: "person", label: tr("People"), types: "Person", shape: "circle" },
+            { key: "musicVideo", label: tr("Music Videos"), types: "MusicVideo", shape: "portrait" },
+            { key: "artist", label: tr("Artists"), types: "MusicArtist", shape: "circle" },
+            { key: "album", label: tr("Albums"), types: "MusicAlbum", shape: "square" },
+            { key: "song", label: tr("Songs"), types: "Audio", shape: "square" }
+        ]
+    end function
+
+    ' Status draws the continuing or ended chip, MediaStreams the resolution chip, and the
+    ' backdrop tags the picture behind the grid.
+    const FIELDS = "ProductionYear,ImageTags,BackdropImageTags,ParentBackdropItemId,ParentBackdropImageTags,OfficialRating,CommunityRating,CriticRating,RunTimeTicks,UserData,Status,MediaStreams,MediaSources,AlbumPrimaryImageTag,ProviderIds,SeriesName,SeriesId,SeriesPrimaryImageTag,SeriesThumbImageTag,SortName"
+
+    const PAGE_SIZE = 30
+    ' How far from the end of a tab the next page is asked for
+    const PAGE_AHEAD = 15
+    ' The flat view asks for more at a time, since it has no tabs to spread the cost over
+    const LIST_PAGE_SIZE = 150
+
+    ' Multi server mode makes one query instead of nine, so it needs the types as a list
+    function AllTypes() as string
+        types = []
+        for each tabDef in favoriteTabs.Tabs()
+            types.push(tabDef.types)
+        end for
+        return types.join(",")
+    end function
+
+    ' Both lookups are made once per item, so they take the table rather than building
+    ' another one each time
+    function TabForType(known as object, itemType as dynamic) as object
+        if not isValidAndNotEmpty(itemType) then return invalid
+
+        for each tabDef in known
+            for each named in tabDef.types.split(",")
+                if isStringEqual(named, itemType) then return tabDef
+            end for
+        end for
+        return invalid
+    end function
+
+    function TabWithKey(known as object, key as string) as object
+        for each tabDef in known
+            if isStringEqual(tabDef.key, key) then return tabDef
+        end for
+        return invalid
+    end function
+
+    ' The selected tab disappears when its last favorite is removed, so the index settles
+    ' onto whatever is still there
+    function ClampTabIndex(index as integer, shown as object) as integer
+        if not isValidAndNotEmpty(shown) then return 0
+        if index < 0 then return 0
+        if index > shown.count() - 1 then return shown.count() - 1
+        return index
+    end function
+
+    function posterHeightFor(shape as string, imageSize as string) as integer
+        if shape = "landscape"
+            if imageSize = "small" then return 120
+            if imageSize = "large" then return 210
+            if imageSize = "extraLarge" then return 260
+            return 160
+        end if
+
+        if shape = "square" or shape = "circle"
+            if imageSize = "small" then return 200
+            if imageSize = "large" then return 340
+            if imageSize = "extraLarge" then return 420
+            return 260
+        end if
+
+        if imageSize = "small" then return 200
+        if imageSize = "large" then return 350
+        if imageSize = "extraLarge" then return 440
+        return 270
+    end function
+
+    ' A square is as wide as it is tall. The others carry their own width, taken from the
+    ' cell the other clients give them less the margin the card sits in.
+    function cardWidthFor(shape as string, imageSize as string, posterHeight as integer) as integer
+        if shape = "square" or shape = "circle" then return posterHeight
+
+        if shape = "landscape"
+            if imageSize = "small" then return 200
+            if imageSize = "large" then return 340
+            if imageSize = "extraLarge" then return 420
+            return 260
+        end if
+
+        if imageSize = "small" then return 110
+        if imageSize = "large" then return 200
+        if imageSize = "extraLarge" then return 250
+        return 150
+    end function
+
+    ' The image type a LibraryCard draws itself with, which knows nothing about tabs
+    function CardImageType(shape as string) as string
+        if shape = "landscape" then return "thumbnail"
+        if shape = "circle" then return "circle"
+        if shape = "square" then return "square"
+        return "poster"
+    end function
+
+    function CardMetrics(shape as string, imageSize as string, gridWidth as integer) as object
+        posterHeight = favoriteTabs.posterHeightFor(shape, imageSize)
+        cardWidth = favoriteTabs.cardWidthFor(shape, imageSize, posterHeight)
+
+        metrics = libraryCard.MetricsFor(cardWidth, posterHeight, favoriteTabs.CardImageType(shape), 0, false, gridWidth)
+        ' Every card here is a favorite, so the heart would say nothing
+        metrics.showFavoriteBadge = false
+        ' A person is drawn round wherever they turn up, even in a grid of posters
+        metrics.roundPeople = true
+        return metrics
+    end function
+
+    ' What a card draws, taking the first that the item actually carries
+    function CardImage(item as object, shape as string) as object
+        if not isValid(item) then return { id: "", imageType: "Primary", tag: "" }
+
+        if shape = "landscape" and isValidAndNotEmpty(chainLookupReturn(item, "ImageTags.Thumb", ""))
+            return { id: item.Id, imageType: "Thumb", tag: item.ImageTags.Thumb }
+        end if
+
+        primary = chainLookupReturn(item, "ImageTags.Primary", "")
+        if isValidAndNotEmpty(primary) then return { id: item.Id, imageType: "Primary", tag: primary }
+
+        ' A song with no art of its own borrows the cover of the album it came off
+        if isStringEqual(item.Type ?? "", "Audio") and isValidAndNotEmpty(item.AlbumId) and isValidAndNotEmpty(item.AlbumPrimaryImageTag)
+            return { id: item.AlbumId, imageType: "Primary", tag: item.AlbumPrimaryImageTag }
+        end if
+
+        ' An episode with no still of its own falls back to the show it came from
+        if isStringEqual(item.Type ?? "", "Episode") and isValidAndNotEmpty(item.SeriesId)
+            if isValidAndNotEmpty(item.SeriesThumbImageTag)
+                return { id: item.SeriesId, imageType: "Thumb", tag: item.SeriesThumbImageTag }
+            end if
+            if isValidAndNotEmpty(item.SeriesPrimaryImageTag)
+                return { id: item.SeriesId, imageType: "Primary", tag: item.SeriesPrimaryImageTag }
+            end if
+        end if
+
+        if isValidAndNotEmpty(item.BackdropImageTags)
+            return { id: item.Id, imageType: "Backdrop", tag: item.BackdropImageTags[0] }
+        end if
+
+        return { id: "", imageType: "Primary", tag: "" }
+    end function
+
+    ' What the sort panel offers. These are the library's own sorts narrowed to the ones
+    ' that mean anything across every favorite type, so they keep the SortName tiebreak.
+    function SortOptions() as object
+        wanted = ["SortName", "DateCreated", "PremiereDate", "CommunityRating", "CriticRating", "DatePlayed", "Runtime"]
+        all = librarySorts.Options(false)
+        options = []
+
+        for each key in wanted
+            for each option in all
+                if isStringEqual(option.value, key)
+                    options.push(option)
+                    exit for
+                end if
+            end for
+        end for
+
+        return options
+    end function
+
+    function ChosenSort(key as string) as object
+        options = favoriteTabs.SortOptions()
+        for each option in options
+            if isStringEqual(option.value, key) then return option
+        end for
+        return options[0]
+    end function
+
+    ' The flat view narrows by type instead of tabbing between them
+    function TypeFilters() as object
+        return [
+            { value: "all", label: tr("All"), types: "Movie,Series,Episode,Person" },
+            { value: "movies", label: tr("Movies"), types: "Movie" },
+            { value: "shows", label: tr("Shows"), types: "Series" },
+            { value: "episodes", label: tr("Episodes"), types: "Episode" },
+            { value: "people", label: tr("People"), types: "Person" }
+        ]
+    end function
+
+    function ChosenTypeFilter(value as dynamic) as object
+        filters = favoriteTabs.TypeFilters()
+        if isValidAndNotEmpty(value)
+            for each filter in filters
+                if isStringEqual(filter.value, value) then return filter
+            end for
+        end if
+        return filters[0]
+    end function
+
+end namespace
