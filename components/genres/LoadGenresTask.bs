@@ -33,32 +33,74 @@ sub loadGenreItems()
         return
     end if
 
-    ' Load genres from all servers in parallel using port
+    groupCollections = m.top.groupCollections ?? false
     port = CreateObject("roMessagePort")
-    activeRequests = {}
-    requestObjects = {} ' Keep request objects alive
-    genreMap = {} ' Maps genre name to array of items (aggregated across servers)
+    activeGenreRequests = {}
+    requestObjects = {}
+    genreMap = {}
     totalItemCount = 0
 
-    ' Start requests for all servers
+    ' Stage 1: Load genre lists from each server via /Genres
     for each userSession in allSessions
-        requestInfo = startGenreRequest(userSession, port)
-        if isValid(requestInfo)
-            activeRequests[requestInfo.id] = userSession
-            requestObjects[requestInfo.id] = requestInfo.request ' Keep alive
+        genresList = fetchServerGenres(userSession)
+        if isValid(genresList) and genresList.Count() > 0
+            for each genre in genresList
+                genreName = genre.Name
+                genreId = genre.Id
+                if not isValidAndNotEmpty(genreName) then continue for
+
+                genreLower = LCase(genreName)
+                movieCount = genre.MovieCount ?? 0
+                seriesCount = genre.SeriesCount ?? 0
+                childCount = genre.ChildCount ?? 0
+
+                initialCount = movieCount + seriesCount
+                if initialCount = 0 then initialCount = childCount
+                if initialCount <= 0 then continue for
+
+                customBackdropUrl = getCustomGenreArtworkUrl(genre, userSession)
+
+                ' Pre-initialize in genreMap with server baseline count
+                if not genreMap.DoesExist(genreLower)
+                    genreMap[genreLower] = {
+                        displayName: genreName,
+                        id: genreId,
+                        itemCount: initialCount,
+                        candidateBackdrops: isValidAndNotEmpty(customBackdropUrl) ? [customBackdropUrl] : [],
+                        items: []
+                    }
+                else
+                    genreMap[genreLower].itemCount += initialCount
+                    if isValidAndNotEmpty(customBackdropUrl)
+                        genreMap[genreLower].candidateBackdrops.push(customBackdropUrl)
+                    end if
+                end if
+
+                ' Stage 2: Queue random representative items query to get grouped counts and backdrop art
+                req = startGenreItemsRequest(userSession, genre, port, groupCollections)
+                if isValid(req)
+                    activeGenreRequests[req.id] = {
+                        userSession: userSession,
+                        genreLower: genreLower,
+                        genreName: genreName,
+                        genreId: genreId,
+                        initialCount: initialCount
+                    }
+                    requestObjects[req.id] = req.request
+                end if
+            end for
         end if
     end for
 
-    ' Wait for all responses (15 second timeout)
+    ' Wait for Stage 2 responses (15 second timeout)
     startTime = CreateObject("roDateTime").AsSeconds()
 
-    while activeRequests.Count() > 0
+    while activeGenreRequests.Count() > 0
         msg = wait(1000, port)
 
-        ' Check timeout
         currentTime = CreateObject("roDateTime").AsSeconds()
         if currentTime - startTime > 15
-            diagnostics.Network("Genres request timed out waiting for the server", diagnostics.LEVEL_WARN)
+            diagnostics.Network("Genre items requests timed out waiting for the server", diagnostics.LEVEL_WARN)
             exit while
         end if
 
@@ -66,26 +108,37 @@ sub loadGenreItems()
 
         if type(msg) = "roUrlEvent"
             requestId = msg.GetSourceIdentity().ToStr()
-            userSession = activeRequests[requestId]
+            reqInfo = activeGenreRequests[requestId]
 
-            if isValid(userSession)
-                activeRequests.Delete(requestId)
-                requestObjects.Delete(requestId) ' Clean up
+            if isValid(reqInfo)
+                activeGenreRequests.Delete(requestId)
+                requestObjects.Delete(requestId)
 
                 responseCode = msg.GetResponseCode()
                 if responseCode = 200
                     responseBody = msg.GetString()
                     data = ParseJson(responseBody)
 
-                    if isValid(data) and isChainValid(data, "Items")
-                        ' Process items and add to genre map
-                        itemCount = processServerItems(data.Items, userSession, genreMap)
-                        totalItemCount += itemCount
+                    if isValid(data)
+                        processGenreItemsResponse(data, reqInfo, genreMap)
                     end if
                 end if
             end if
         end if
     end while
+
+    ' Clean up any genres whose final itemCount is 0
+    emptyKeys = []
+    for each key in genreMap.Keys()
+        if genreMap[key].itemCount <= 0
+            emptyKeys.push(key)
+        else
+            totalItemCount += genreMap[key].itemCount
+        end if
+    end for
+    for each key in emptyKeys
+        genreMap.Delete(key)
+    end for
 
     ' Set results
     m.top.totalCount = totalItemCount
@@ -101,21 +154,77 @@ sub loadGenreItems()
     m.top.results = results
 end sub
 
-' Start an async request to load genres from a server
-function startGenreRequest(userSession as object, port as object) as object
-    groupCollections = m.top.groupCollections ?? false
+' Fetch all genres with counts from a server via /Genres
+function fetchServerGenres(userSession as object) as object
+    params = {
+        userId: userSession.userId,
+        includeItemTypes: "Movie,Series",
+        recursive: true,
+        sortBy: "SortName",
+        sortOrder: "Ascending",
+        fields: "ItemCounts,PrimaryImageTag,ImageTags,BackdropImageTags,PrimaryImageAspectRatio",
+        enableTotalRecordCount: true
+    }
+
+    url = buildURLForSession(userSession, "/Genres", params)
+    authHeader = buildAuthHeaderForSession(userSession)
+
+    request = CreateObject("roUrlTransfer")
+    request.SetUrl(url)
+    request.AddHeader("Authorization", authHeader)
+    request.AddHeader("Content-Type", "application/json")
+    request.SetCertificatesFile("common:/certs/ca-bundle.crt")
+    request.InitClientCertificates()
+    request.EnableEncodings(true)
+
+    responseBody = request.GetToString()
+    if isValidAndNotEmpty(responseBody)
+        data = ParseJson(responseBody)
+        if isValid(data) and isChainValid(data, "Items")
+            return data.Items
+        end if
+    end if
+
+    return []
+end function
+
+' Extract custom genre backdrop or thumb URL if present on the server
+function getCustomGenreArtworkUrl(genre as object, userSession as object) as string
+    if not isValid(genre) or not isValid(genre.Id) then return ""
 
     params = {
+        maxWidth: 1280,
+        quality: 80
+    }
+
+    if isValid(genre.BackdropImageTags) and genre.BackdropImageTags.Count() > 0
+        params.Tag = genre.BackdropImageTags[0]
+        return buildImageURLForServer(userSession.serverUrl, genre.Id, "Backdrop", params)
+    end if
+
+    if isValid(genre.ImageTags) and isValid(genre.ImageTags.Thumb)
+        params.Tag = genre.ImageTags.Thumb
+        return buildImageURLForServer(userSession.serverUrl, genre.Id, "Thumb", params)
+    end if
+
+    return ""
+end function
+
+' Start an async request to load representative items and accurate grouped count for a genre
+function startGenreItemsRequest(userSession as object, genre as object, port as object, groupCollections as boolean) as object
+    params = {
         userid: userSession.userId,
+        GenreIds: genre.Id,
         IncludeItemTypes: groupCollections ? "Movie,Series,BoxSet" : "Movie,Series",
         ExcludeItemTypes: groupCollections ? "Playlist,Episode,Season,Folder" : "BoxSet,Playlist,Episode,Season,Folder",
         CollapseBoxSetItems: groupCollections,
-        Limit: m.top.limit,
-        StartIndex: m.top.startIndex,
+        Limit: 4,
         Recursive: true,
-        SortBy: "SortName",
+        SortBy: "Random",
         SortOrder: "Ascending",
-        Fields: "Overview,PrimaryImageAspectRatio,ProductionYear,OfficialRating,CommunityRating,CriticRating,RunTimeTicks,UserData,BackdropImageTags,Genres,Status,EndDate,MediaSources,ImageTags,ChildCount,RecursiveItemCount",
+        Fields: "BackdropImageTags,ParentBackdropItemId,ParentBackdropImageTags,ImageTags",
+        EnableImageTypes: "Backdrop",
+        ImageTypeLimit: 1,
         EnableTotalRecordCount: true
     }
 
@@ -141,62 +250,43 @@ function startGenreRequest(userSession as object, port as object) as object
     return invalid
 end function
 
-' Process items from a server and add to genre map
-function processServerItems(items as object, userSession as object, genreMap as object) as integer
-    if not isValid(items) then return 0
+' Process response from genre items request
+sub processGenreItemsResponse(data as object, reqInfo as object, genreMap as object)
+    if not isValid(data) then return
 
-    itemCount = 0
-    groupCollections = m.top.groupCollections ?? false
+    genreLower = reqInfo.genreLower
+    if not genreMap.DoesExist(genreLower) then return
 
-    for each item in items
-        ' Only include movies, series (and boxsets when grouping collections)
-        itemType = LCase(item.type)
-        if groupCollections
-            if itemType <> "movie" and itemType <> "series" and itemType <> "boxset" then continue for
-        else
-            if itemType <> "movie" and itemType <> "series" then continue for
-        end if
+    ' Update total count with server's exact record count respecting collapseBoxSetItems
+    if isValid(data.TotalRecordCount)
+        genreMap[genreLower].itemCount = data.TotalRecordCount
+    end if
 
-        ' Get genres from the item
-        if not isValid(item.Genres) or item.Genres.Count() = 0 then continue for
+    if not isValid(data.Items) then return
 
-        ' Transform item with server info embedded
-        transformed = transformItemWithServer(item, userSession)
-        if not isValid(transformed) then continue for
-
-        itemCount++
-
-        ' Add to each genre this item belongs to
-        for each genre in item.Genres
-            if not isValidAndNotEmpty(genre) then continue for
-
-            genreLower = LCase(genre)
-
-            ' Initialize genre array if it doesn't exist
-            if not genreMap.DoesExist(genreLower)
-                genreMap[genreLower] = {
-                    displayName: genre,
-                    items: []
-                }
-            end if
-
-            ' Check if this item already exists (by ID) to avoid duplicates from same server
-            isDuplicate = false
-            for each existingItem in genreMap[genreLower].items
-                if existingItem.id = transformed.id and existingItem.serverUrl = transformed.serverUrl
-                    isDuplicate = true
+    ' Gather backdrop images from representative items
+    for each item in data.Items
+        backdropUrl = buildBackdropUrlForServer(item, reqInfo.userSession)
+        if isValidAndNotEmpty(backdropUrl)
+            isDup = false
+            for each existing in genreMap[genreLower].candidateBackdrops
+                if existing = backdropUrl
+                    isDup = true
                     exit for
                 end if
             end for
-
-            if not isDuplicate
-                genreMap[genreLower].items.push(transformed)
+            if not isDup
+                genreMap[genreLower].candidateBackdrops.push(backdropUrl)
             end if
-        end for
-    end for
+        end if
 
-    return itemCount
-end function
+        ' Also transform for legacy items array
+        transformed = transformItemWithServer(item, reqInfo.userSession)
+        if isValid(transformed)
+            genreMap[genreLower].items.push(transformed)
+        end if
+    end for
+end sub
 
 ' Transform item with server info for multi-server support
 function transformItemWithServer(item as object, userSession as object) as object
@@ -263,6 +353,12 @@ function buildBackdropUrlForServer(item as object, userSession as object) as str
     if isValid(item.ParentBackdropItemId) and isValid(item.ParentBackdropImageTags) and item.ParentBackdropImageTags.Count() > 0
         params.Tag = item.ParentBackdropImageTags[0]
         return buildImageURLForServer(userSession.serverUrl, item.ParentBackdropItemId, "Backdrop", params)
+    end if
+
+    ' Fall back to thumb if available
+    if isValid(item.ImageTags) and isValid(item.ImageTags.Thumb)
+        params.Tag = item.ImageTags.Thumb
+        return buildImageURLForServer(userSession.serverUrl, item.Id, "Thumb", params)
     end if
 
     return ""
