@@ -41,6 +41,9 @@ namespace HomeRecommendations
         if setContainsAll(setA, b) or setContainsAll(setB, a) then return true
 
         if setA.Count() = 1 and setB.Count() = 1
+            ' A single subject word differing only by a short suffix (<= 2 chars), so pluralized
+            ' sequels like "Alien" and "Aliens" match, while unrelated titles sharing a common
+            ' prefix (such as matching "Alien" to "The Alienist") are excluded.
             if Len(a[0]) <= Len(b[0])
                 shortWord = a[0]
                 longWord = b[0]
@@ -53,6 +56,13 @@ namespace HomeRecommendations
         return false
     end function
 
+    function scoreDiminishing(count as integer, first as float, second as float, third = 0.0 as float) as float
+        if count <= 0 then return 0.0
+        if count = 1 then return first
+        if count = 2 then return first + second
+        return first + second + third
+    end function
+
     ' Builds the scoring context from the seed item once so candidates can be
     ' compared against it.
     function buildContext(seed as object) as object
@@ -62,6 +72,7 @@ namespace HomeRecommendations
             tags: readItemArray(seed, "Tags"),
             baseStudios: studioNameList(readItemArray(seed, "Studios")),
             baseYear: seed.ProductionYear,
+            baseRating: seed.CommunityRating,
             baseName: readItemString(seed, "Name"),
             actorNames: namesList(people, "Actor"),
             directorNames: namesList(people, "Director"),
@@ -75,50 +86,86 @@ namespace HomeRecommendations
     function scoreCandidate(candidate as object, ctx as object) as float
         score = 0.0
 
+        ' Genres: 7.0 pts/match, capped at 35.0 (5 matches)
+        genreMatches = 0
         cGenres = toStringSet(readItemArray(candidate, "Genres"))
         for each g in ctx.genres
-            if cGenres.DoesExist(g) then score = score + 3.0
+            if cGenres.DoesExist(g) then genreMatches = genreMatches + 1
         end for
+        genreScore = genreMatches * 7.0
+        if genreScore > 35.0 then genreScore = 35.0
+        score = score + genreScore
 
+        ' Tags: 4.0 pts/match, capped at 20.0 (5 matches)
+        tagMatches = 0
         cTags = toStringSet(readItemArray(candidate, "Tags"))
         for each t in ctx.tags
-            if cTags.DoesExist(t) then score = score + 3.0
+            if cTags.DoesExist(t) then tagMatches = tagMatches + 1
         end for
+        tagScore = tagMatches * 4.0
+        if tagScore > 20.0 then tagScore = 20.0
+        score = score + tagScore
 
         people = readItemArray(candidate, "People")
         cActors = namesSet(people, "Actor")
         cDirectors = namesSet(people, "Director")
         cWriters = namesSet(people, "Writer")
-        for each a in ctx.actorNames
-            if cActors.DoesExist(a) then score = score + 5.0
-        end for
-        for each d in ctx.directorNames
-            if cDirectors.DoesExist(d) then score = score + 6.0
-        end for
-        for each w in ctx.writerNames
-            if cWriters.DoesExist(w) then score = score + 6.0
-        end for
 
+        ' Directors: 15, 10, 5 diminishing returns (capped at 30.0 pts)
+        dirMatches = 0
+        for each d in ctx.directorNames
+            if cDirectors.DoesExist(d) then dirMatches = dirMatches + 1
+        end for
+        score = score + scoreDiminishing(dirMatches, 15.0, 10.0, 5.0)
+
+        ' Writers: 15, 10, 5 diminishing returns (capped at 30.0 pts)
+        writerMatches = 0
+        for each w in ctx.writerNames
+            if cWriters.DoesExist(w) then writerMatches = writerMatches + 1
+        end for
+        score = score + scoreDiminishing(writerMatches, 15.0, 10.0, 5.0)
+
+        ' Actors: 10, 6, 4 diminishing returns (capped at 20.0 pts)
+        actorMatches = 0
+        for each a in ctx.actorNames
+            if cActors.DoesExist(a) then actorMatches = actorMatches + 1
+        end for
+        score = score + scoreDiminishing(actorMatches, 10.0, 6.0, 4.0)
+
+        ' Studios: 12, 8 diminishing returns (capped at 20.0 pts)
+        studioMatches = 0
         cStudios = toStringSet(studioNameList(readItemArray(candidate, "Studios")))
         for each s in ctx.baseStudios
-            if cStudios.DoesExist(s) then score = score + 3.0
+            if cStudios.DoesExist(s) then studioMatches = studioMatches + 1
         end for
+        score = score + scoreDiminishing(studioMatches, 12.0, 8.0)
 
+        ' Title / Franchise match: 25.0 pts
+        if isSequelOrSimilarTitle(ctx.baseName, readItemString(candidate, "Name"))
+            score = score + 25.0
+        end if
+
+        ' Production Year: smooth 15-year decay up to 10.0 pts
         candYear = candidate.ProductionYear
         if isNumber(candYear) and isNumber(ctx.baseYear)
-            if candYear = ctx.baseYear
-                score = score + 2.0
-            else if Abs(candYear - ctx.baseYear) <= 3
-                score = score + 1.0
+            delta = Abs(candYear - ctx.baseYear)
+            if delta < 15.0
+                score = score + (10.0 * (1.0 - (delta / 15.0)))
             end if
         end if
 
-        if isSequelOrSimilarTitle(ctx.baseName, readItemString(candidate, "Name"))
-            score = score + 10.0
-        end if
-
+        ' Community Rating proximity: up to 10.0 pts
         comm = candidate.CommunityRating
-        if isNumber(comm) then score = score + comm / 10.0
+        if isNumber(comm)
+            if isNumber(ctx.baseRating)
+                delta = Abs(comm - ctx.baseRating)
+                if delta < 10.0
+                    score = score + (10.0 * (1.0 - (delta / 10.0)))
+                end if
+            else
+                score = score + comm
+            end if
+        end if
 
         return score
     end function
@@ -221,5 +268,26 @@ namespace HomeRecommendations
         end for
         return true
     end function
+
+    function scoredEntryComesAfter(a as object, b as object) as boolean
+        if a.score <> b.score then return a.score < b.score
+        aDate = readItemString(a.item, "PremiereDate")
+        bDate = readItemString(b.item, "PremiereDate")
+        return aDate < bDate
+    end function
+
+    ' Sorts candidate entries in place descending by score, breaking ties by newest PremiereDate.
+    sub sortScoredCandidates(scored as object)
+        total = scored.Count()
+        for i = 1 to total - 1
+            current = scored[i]
+            j = i - 1
+            while j >= 0 and scoredEntryComesAfter(scored[j], current)
+                scored[j + 1] = scored[j]
+                j = j - 1
+            end while
+            scored[j + 1] = current
+        end for
+    end sub
 
 end namespace
