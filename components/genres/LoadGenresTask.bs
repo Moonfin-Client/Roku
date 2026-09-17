@@ -38,7 +38,6 @@ sub loadGenreItems()
     activeGenreRequests = {}
     requestObjects = {}
     genreMap = {}
-    totalItemCount = 0
 
     ' Stage 1: Load genre lists from each server via /Genres
     for each userSession in allSessions
@@ -66,11 +65,13 @@ sub loadGenreItems()
                         displayName: genreName,
                         id: genreId,
                         itemCount: initialCount,
-                        candidateBackdrops: isValidAndNotEmpty(customBackdropUrl) ? [customBackdropUrl] : [],
-                        items: []
+                        candidateBackdrops: isValidAndNotEmpty(customBackdropUrl) ? [customBackdropUrl] : []
                     }
                 else
                     genreMap[genreLower].itemCount += initialCount
+                    ' A genre from more than one server has no single id, so the browse
+                    ' matches on the name instead
+                    genreMap[genreLower].id = ""
                     if isValidAndNotEmpty(customBackdropUrl)
                         genreMap[genreLower].candidateBackdrops.push(customBackdropUrl)
                     end if
@@ -127,31 +128,15 @@ sub loadGenreItems()
         end if
     end while
 
-    ' Clean up any genres whose final itemCount is 0
     emptyKeys = []
     for each key in genreMap.Keys()
-        if genreMap[key].itemCount <= 0
-            emptyKeys.push(key)
-        else
-            totalItemCount += genreMap[key].itemCount
-        end if
+        if genreMap[key].itemCount <= 0 then emptyKeys.push(key)
     end for
     for each key in emptyKeys
         genreMap.Delete(key)
     end for
 
-    ' Set results
-    m.top.totalCount = totalItemCount
     m.top.genreResults = genreMap
-
-    ' Also set legacy results array for compatibility
-    results = []
-    for each genreName in genreMap.Keys()
-        for each item in genreMap[genreName].items
-            results.push(item)
-        end for
-    end for
-    m.top.results = results
 end sub
 
 ' Fetch all genres with counts from a server via /Genres
@@ -257,9 +242,9 @@ sub processGenreItemsResponse(data as object, reqInfo as object, genreMap as obj
     genreLower = reqInfo.genreLower
     if not genreMap.DoesExist(genreLower) then return
 
-    ' Update total count with server's exact record count respecting collapseBoxSetItems
+    ' Swap this server's baseline for its exact count and leave the other servers alone
     if isValid(data.TotalRecordCount)
-        genreMap[genreLower].itemCount = data.TotalRecordCount
+        genreMap[genreLower].itemCount += data.TotalRecordCount - reqInfo.initialCount
     end if
 
     if not isValid(data.Items) then return
@@ -279,61 +264,8 @@ sub processGenreItemsResponse(data as object, reqInfo as object, genreMap as obj
                 genreMap[genreLower].candidateBackdrops.push(backdropUrl)
             end if
         end if
-
-        ' Also transform for legacy items array
-        transformed = transformItemWithServer(item, reqInfo.userSession)
-        if isValid(transformed)
-            genreMap[genreLower].items.push(transformed)
-        end if
     end for
 end sub
-
-' Transform item with server info for multi-server support
-function transformItemWithServer(item as object, userSession as object) as object
-    if not isValid(item) then return invalid
-
-    result = {
-        id: item.Id,
-        title: item.Name,
-        type: item.Type,
-        year: isValid(item.ProductionYear) ? item.ProductionYear.toStr() : "",
-        rating: isValid(item.CommunityRating) ? item.CommunityRating.toStr() : "",
-        officialRating: isValid(item.OfficialRating) ? item.OfficialRating : "",
-        runtime: formatRuntimeTicks(item.RunTimeTicks),
-        overview: isValid(item.Overview) ? item.Overview : "",
-        posterUrl: buildPosterUrlForServer(item, userSession),
-        backdropUrl: buildBackdropUrlForServer(item, userSession),
-        serverUrl: userSession.serverUrl,
-        serverName: userSession.serverName,
-        userId: userSession.userId,
-        authToken: userSession.authToken,
-        json: item
-    }
-
-    ' Add server info to json for downstream use
-    result.json._serverUrl = userSession.serverUrl
-    result.json._userId = userSession.userId
-    result.json._authToken = userSession.authToken
-    result.json._serverName = userSession.serverName
-
-    return result
-end function
-
-function buildPosterUrlForServer(item as object, userSession as object) as string
-    if not isValid(item) or not isValid(item.Id) then return ""
-
-    params = {
-        maxWidth: 300,
-        quality: 90
-    }
-
-    if hasImageTagPrimary(item)
-        params.Tag = item.ImageTags.Primary
-    end if
-
-    ' Use multi-server image URL builder
-    return buildImageURLForServer(userSession.serverUrl, item.Id, "Primary", params)
-end function
 
 function buildBackdropUrlForServer(item as object, userSession as object) as string
     if not isValid(item) or not isValid(item.Id) then return ""
@@ -362,19 +294,4 @@ function buildBackdropUrlForServer(item as object, userSession as object) as str
     end if
 
     return ""
-end function
-
-function formatRuntimeTicks(ticks as dynamic) as string
-    if not isValid(ticks) or ticks = 0 then return ""
-
-    ' Convert 100-nanosecond ticks to minutes
-    totalMinutes = Int(ticks / 600000000)
-    hours = Int(totalMinutes / 60)
-    minutes = totalMinutes mod 60
-
-    if hours > 0
-        return hours.toStr() + "h " + minutes.toStr() + "m"
-    else
-        return minutes.toStr() + "m"
-    end if
 end function
