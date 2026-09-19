@@ -1,0 +1,177 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/misc.bs"
+
+' The cloud account and server access keys live only in the sign-in task.
+' Requests deliberately bypass APIRequest and diagnostic tracing: a local
+' server token must never be sent to Emby Connect, nor credentials to a log.
+namespace embyConnect
+    function StringValue(data as dynamic, keys as object) as string
+        if type(data) <> "roAssociativeArray" then return ""
+        for each key in keys
+            value = data.LookupCI(key)
+            if type(value) = "String" or type(value) = "roString"
+                if value <> "" then return value
+            end if
+        end for
+        return ""
+    end function
+
+    function AuthSession(data as dynamic) as dynamic
+        if type(data) <> "roAssociativeArray" then return invalid
+        token = embyConnect.StringValue(data, ["AccessToken", "ConnectAccessToken"])
+        userId = embyConnect.StringValue(data.User, ["Id", "UserId", "ConnectUserId"])
+        if userId = "" then userId = embyConnect.StringValue(data, ["Id", "UserId", "ConnectUserId"])
+        if token = "" or userId = "" then return invalid
+        return { userId: userId, accessToken: token }
+    end function
+
+    function AuthBody(username as string, password as string) as string
+        return "nameOrEmail=" + username.Trim().EncodeUriComponent() + "&rawpw=" + password.EncodeUriComponent()
+    end function
+
+    function Addresses(server as object) as object
+        candidates = []
+        seen = {}
+        for each address in [embyConnect.StringValue(server, ["Url", "Address"]), embyConnect.StringValue(server, ["LocalAddress", "LocalAddress1"])]
+            address = address.Trim().Split("#")[0].Split("?")[0]
+            if address <> ""
+                if address.Right(1) = "/" then address = address.Left(address.Len() - 1)
+                variants = [address]
+                if address.Instr("://") < 0 then variants = ["https://" + address, "http://" + address]
+                for each candidate in variants
+                    parsed = ParsedUrl(candidate)
+                    if parsed <> invalid
+                        if (parsed.proto = "http" or parsed.proto = "https") and parsed.host <> "" and parsed.host.Instr("@") < 0
+                            if not seen.DoesExist(candidate)
+                                seen[candidate] = true
+                                candidates.Push(candidate)
+                            end if
+                        end if
+                    end if
+                end for
+            end if
+        end for
+        return candidates
+    end function
+
+    function ExchangeBases(address as string) as object
+        bases = [address]
+        if LCase(address).Right(5) <> "/emby" then bases.Push(address + "/emby")
+        return bases
+    end function
+
+    function Servers(data as dynamic) as dynamic
+        if type(data) = "roAssociativeArray"
+            if type(data.Items) = "roArray"
+                data = data.Items
+            else
+                data = data.Servers
+            end if
+        end if
+        if type(data) <> "roArray" then return invalid
+        serverList = []
+        for each entry in data
+            if type(entry) = "roAssociativeArray"
+                accessKey = embyConnect.StringValue(entry, ["AccessKey", "ConnectAccessKey", "UserAccessToken"])
+                serverAddresses = embyConnect.Addresses(entry)
+                if accessKey <> "" and serverAddresses.Count() > 0
+                    name = embyConnect.StringValue(entry, ["Name"])
+                    if name = "" then name = "Emby Server"
+                    serverList.Push({ name: name, systemId: embyConnect.StringValue(entry, ["SystemId"]), accessKey: accessKey, addresses: serverAddresses })
+                end if
+            end if
+        end for
+        return serverList
+    end function
+
+    function Request(url as string, method = "GET" as string, body = "" as string, headers = {} as object) as object
+        req = CreateObject("roUrlTransfer")
+        req.SetUrl(url)
+        req.SetCertificatesFile("common:/certs/ca-bundle.crt")
+        req.InitClientCertificates()
+        req.AddHeader("Accept", "application/json")
+        identity = getAuthHeaderContext()
+        req.AddHeader("X-Application", identity.appName + "/" + identity.appVersion)
+        for each key in headers
+            req.AddHeader(key, headers[key])
+        end for
+        port = CreateObject("roMessagePort")
+        req.SetMessagePort(port)
+        if method = "POST"
+            started = req.AsyncPostFromString(body)
+        else
+            started = req.AsyncGetToString()
+        end if
+        if not started then return { status: 0, data: invalid }
+        event = wait(15000, port)
+        if type(event) <> "roUrlEvent"
+            req.AsyncCancel()
+            return { status: 0, data: invalid }
+        end if
+        code = event.GetResponseCode()
+        data = invalid
+        if code >= 200 and code < 300 then data = ParseJson(event.GetString())
+        return { status: code, data: data }
+    end function
+
+    function Authenticate(username as string, password as string) as object
+        response = embyConnect.Request("https://connect.emby.media/service/user/authenticate", "POST", embyConnect.AuthBody(username, password), { "Content-Type": "application/x-www-form-urlencoded" })
+        if response.status = 400 or response.status = 401 or response.status = 403 then return { error: "credentials" }
+        if response.status < 200 or response.status >= 300 then return { error: "network" }
+        auth = embyConnect.AuthSession(response.data)
+        if auth = invalid then return { error: "response" }
+        response = embyConnect.Request("https://connect.emby.media/service/servers?userId=" + auth.userId.EncodeUriComponent(), "GET", "", { "X-Connect-UserToken": auth.accessToken })
+        if response.status < 200 or response.status >= 300 then return { error: "network" }
+        serverList = embyConnect.Servers(response.data)
+        if serverList = invalid then return { error: "response" }
+        if serverList.Count() = 0 then return { error: "noServers" }
+        return { userId: auth.userId, servers: serverList }
+    end function
+
+    function Exchange(server as object, connectUserId as string) as object
+        for each address in server.addresses
+            for each base in embyConnect.ExchangeBases(address)
+                connection = embyConnect.TryExchange(base, server, connectUserId)
+                if connection <> invalid then return connection
+            end for
+        end for
+        return { error: "server" }
+    end function
+
+    function TryExchange(base as string, server as object, connectUserId as string) as dynamic
+        ' Verify the expected server before transmitting its Connect access key.
+        publicInfo = embyConnect.Request(base + "/System/Info/Public")
+        if detectServerType(publicInfo.data) <> "emby" then return invalid
+        serverId = embyConnect.StringValue(publicInfo.data, ["Id"])
+        if serverId = "" then return invalid
+        if server.systemId <> "" and serverId <> server.systemId then return invalid
+        headers = {
+            "X-Emby-Token": server.accessKey,
+            "X-Emby-Authorization": embyConnect.ServerAuthorization(base, "", "")
+        }
+        response = embyConnect.Request(base + "/Connect/Exchange?format=json&ConnectUserId=" + connectUserId.EncodeUriComponent(), "GET", "", headers)
+        userId = embyConnect.StringValue(response.data, ["LocalUserId"])
+        token = embyConnect.StringValue(response.data, ["AccessToken"])
+        if userId = "" or token = "" then return invalid
+        authHeader = embyConnect.ServerAuthorization(base, userId, token)
+        user = embyConnect.Request(base + "/Users/" + userId.EncodeUriComponent(), "GET", "", { "X-Emby-Authorization": authHeader })
+        if embyConnect.StringValue(user.data, ["Id"]) <> userId then return invalid
+        if embyConnect.StringValue(user.data, ["Name"]) = "" then return invalid
+        if embyConnect.StringValue(publicInfo.data, ["ServerName"]) = "" then publicInfo.data.ServerName = server.name
+        return { serverUrl: base, publicInfo: publicInfo.data, user: user.data, accessToken: token }
+    end function
+
+    function ServerAuthorization(base as string, userId as string, token as string) as string
+        header = buildAuthHeaderForServer({ serverUrl: base, userId: userId, authToken: token })
+        if header.Left(13) = "MediaBrowser " then header = "Emby " + header.Mid(13)
+        return header
+    end function
+
+    function ErrorMessage(code as string) as string
+        if code = "credentials" then return tr("Emby Connect username or password is incorrect.")
+        if code = "noServers" then return tr("No servers with a usable address are linked to this Emby Connect account.")
+        if code = "response" then return tr("Emby Connect returned an invalid response. Please try again.")
+        if code = "server" then return tr("Could not sign in to this Emby server. Check that it is online and linked to your Emby Connect account.")
+        return tr("Could not reach Emby Connect. Check your internet connection and try again.")
+    end function
+end namespace

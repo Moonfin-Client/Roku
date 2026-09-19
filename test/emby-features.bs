@@ -1,0 +1,77 @@
+sub testEmbyFeatures()
+    assertEqual(embyFeatures.ChooseMediaSource({ MediaSources: [{ Id: "version-id" }] }, "item-id"), "version-id", "Emby media source is independent of item ID")
+    assertEqual(embyFeatures.ChooseMediaSource({ MediaSources: [] }, "item-id"), "item-id", "Missing media source fallback")
+    assertEqual(embyFeatures.Marker(1), "introstart", "Numeric Emby marker")
+    assertEqual(embyFeatures.Marker(" IntroEnd "), "introend", "Named Emby marker")
+    assertEqual(embyFeatures.Marker(99), "", "Reject unknown marker")
+    assertEqual(embyFeatures.Marker(1.5), "", "Reject noninteger marker")
+    assertEqual(embyFeatures.Segments(invalid).TotalRecordCount, 0, "Missing chapter data")
+    data = {
+        RunTimeTicks: 20000000000&, Chapters: [
+            { MarkerType: "IntroStart", StartPositionTicks: 0& },
+            { MarkerType: 2, StartPositionTicks: 800000000& },
+            { MarkerType: 3, StartPositionTicks: 19000000000& }
+        ]
+    }
+    segments = embyFeatures.Segments(data)
+    assertEqual(segments.TotalRecordCount, 2, "Intro and credits without plugin")
+    assertEqual(segments.Items[0].Type, "intro", "Roku skip segment format")
+    assertEqual(segments.Items[0].StartTicks, 0&, "Intro can begin at zero")
+    assertEqual(segments.Items[1].EndTicks, 20000000000&, "Credits retain 64-bit runtime")
+    assertEqual(segments.Items[1].Type, "outro", "Credits drive existing outro controls")
+    data.Chapters = [{ MarkerType: 1, StartPositionTicks: 10& }, { StartPositionTicks: 30& }, { StartPositionTicks: 20& }]
+    assertEqual(embyFeatures.Segments(data).Items[0].EndTicks, 20&, "Fallback to earliest following chapter")
+    data.Chapters = [{ MarkerType: 1, StartPositionTicks: 10& }]
+    assertEqual(embyFeatures.Segments(data).TotalRecordCount, 0, "Do not invent end for unbounded intro")
+    data.Chapters = [invalid, { MarkerType: 1, StartPositionTicks: "oops" }, { MarkerType: 3, StartPositionTicks: -1 }]
+    assertEqual(embyFeatures.Segments(data).TotalRecordCount, 0, "Reject malformed markers")
+    server = { serverUrl: "https://emby.test/emby", authToken: "preview-token" }
+    preview = embyFeatures.PreviewData({
+        AspectRatio: 1.7778, Thumbnails: [
+            { PositionTicks: 900000000&, ImageTag: "second" },
+            { PositionTicks: 0&, ImageTag: "first" },
+            { PositionTicks: -1, ImageTag: "bad" }, invalid
+        ]
+    }, server, "movie", "source")
+    assertEqual(preview.frames.Count(), 2, "Filter malformed thumbnails")
+    assertEqual(preview.frames[0].ticks, 0&, "Sort irregular thumbnail timestamps")
+    assertEqual(preview.frames[0].url.Instr("https://emby.test/emby/Items/movie/Images/Thumbnail?"), 0, "Thumbnail endpoint keeps server base")
+    assertEqual(preview.frames[0].url.Instr("api_key=preview-token") >= 0, true, "Preview uses target session token")
+    assertEqual(LCase(preview.frames[0].url).Instr("mediasourceid=source") >= 0, true, "Preview keeps selected media version")
+    assertEqual(embyFeatures.FrameIndex(preview.frames, 899999999&), 0, "Irregular seek selects preceding frame")
+    assertEqual(embyFeatures.FrameIndex(preview.frames, 900000000&), 1, "Seek reaches next thumbnail")
+    assertEqual(embyFeatures.FrameIndex([], 0&), -1, "Empty preview safe")
+    assertEqual(embyFeatures.PreviewData({}, server, "movie", "").frames.Count(), 0, "Missing previews do not block playback")
+    assertEqual(embyFeatures.PreviewData({ AspectRatio: 0, Thumbnails: [] }, server, "movie", "").frames.Count(), 0, "Reject invalid aspect ratio")
+    m.top = { server: server, itemId: "movie", mediaSourceId: "source" }
+    m.requests = []
+    m.responses = [{ status: 404, data: invalid }]
+    m.top.result = loadPreviewData()
+    assertEqual(m.top.result.frames.Count(), 0, "Unavailable thumbnail API degrades gracefully")
+    assertEqual(m.requests[0].headers["X-Emby-Authorization"].Instr("preview-token") >= 0, true, "Metadata uses target account header")
+    m.responses = [{ status: 200, data: { AspectRatio: 1.777, Thumbnails: [{ PositionTicks: 0&, ImageTag: "a" }] } }]
+    m.top.result = loadPreviewData()
+    assertEqual(m.top.result.frames.Count(), 1, "Thumbnail task publishes valid frame list")
+    m.cleanupRequests = []
+    closeEmbyPlayback({ serverUrl: "https://emby.test/emby", userId: "local", authToken: "target" }, { LiveStreamId: "tuner", PlaySessionId: "play" })
+    assertEqual(m.cleanupRequests.Count(), 2, "Release Emby tuner and encoding")
+    assertEqual(m.cleanupRequests[0].endpoint, "LiveStreams/Close", "Close live stream endpoint")
+    assertEqual(m.cleanupRequests[0].params.LiveStreamId, "tuner", "Close only the stopped live stream")
+    assertEqual(m.cleanupRequests[1].params.PlaySessionId, "play", "Stop only the stopped encoding session")
+    assertEqual(m.cleanupRequests[1].serverUrl, "https://emby.test/emby", "Cleanup belongs to playback server")
+    closeEmbyPlayback({ serverUrl: "https://jellyfin.test", userId: "local", authToken: "target" }, { LiveStreamId: "tuner", PlaySessionId: "play" })
+    assertEqual(m.cleanupRequests.Count(), 2, "Preserve existing Jellyfin cleanup behavior")
+end sub
+
+function APIRequestForServer(serverUrl as string, userId as string, authToken as string, endpoint as string, params = {} as object) as object
+    request = { serverUrl: serverUrl, userId: userId, authToken: authToken, endpoint: endpoint, params: params }
+    m.cleanupRequests.Push(request)
+    return request
+end function
+
+function postVoid(request as object) as boolean
+    return true
+end function
+
+sub deleteVoid(request as object)
+end sub

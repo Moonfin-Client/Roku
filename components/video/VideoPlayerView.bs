@@ -15,6 +15,7 @@ import "pkg:/source/enums/TimerControl.bs"
 import "pkg:/source/enums/VideoControl.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/diagnostics.bs"
+import "pkg:/source/utils/embyFeatures.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
 
@@ -908,9 +909,12 @@ sub onVideoContentLoaded()
 
     m.osd.itemTitleText = m.top.content.title
 
+    resetEmbyPreview()
     m.trickplayDataFinal = invalid
     ' Check if this is a live stream to skip trickplay
-    isLiveStream = isValid(videoContent[0]) and videoContent[0].live = true
+    isLiveStream = isValid(videoContent[0].content) and videoContent[0].content.live = true
+
+    startEmbyPreview(isLiveStream)
 
     if isValidAndNotEmpty(m.trickplay) and not isLiveStream
         trickplayData = m.trickplay.LookupCI(m.top.id)
@@ -1049,6 +1053,7 @@ sub onStartDelayElapsed()
 end sub
 
 sub displayTrickplayImage(trickPosition as integer)
+    if displayEmbyPreview(trickPosition) then return
     if not isValid(m.trickplayDataFinal) then return
 
     ' Index of trickplay image that matches seek timestamp - out of all trickplay images
@@ -1756,6 +1761,7 @@ sub ReportPlayback(state = "update" as string)
 
     if isValid(m.itemServerData)
         params.serverData = m.itemServerData
+        params.UserId = m.itemServerData.userId
     end if
     if isValid(m.top.content) and isValid(m.top.content.live) and m.top.content.live
         params.append({
@@ -2254,6 +2260,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         end if
 
+        resetEmbyPreview()
         m.PreloadTrickplayImagesTask.method = "REMOVE"
         m.PreloadTrickplayImagesTask.control = TaskControl.RUN
 
@@ -2266,4 +2273,62 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     return false
+end function
+
+sub resetEmbyPreview()
+    if isValid(m.embyPreviewTask)
+        m.embyPreviewTask.unobserveField("result")
+        m.embyPreviewTask.control = "STOP"
+        m.embyPreviewTask = invalid
+    end if
+    m.embyPreview = invalid
+    poster = m.top.findNode("trickplayImage")
+    if isValid(poster) then m.top.removeChild(poster)
+end sub
+
+sub startEmbyPreview(isLive as boolean)
+    if isLive then return
+    server = m.itemServerData
+    if not isValid(server)
+        server = { serverUrl: get_url(), userId: m.global.session.user.id, authToken: m.global.session.user.authToken }
+    end if
+    if not isEmbyServer(server.serverUrl) then return
+    m.embyPreviewTask = CreateObject("roSGNode", "EmbyPreviewTask")
+    m.embyPreviewTask.server = server
+    m.embyPreviewTask.itemId = m.top.videoId
+    m.embyPreviewTask.mediaSourceId = m.top.mediaSourceId
+    m.embyPreviewTask.observeField("result", "onEmbyPreviewReady")
+    m.embyPreviewTask.control = "RUN"
+end sub
+
+sub onEmbyPreviewReady(event as object)
+    m.embyPreview = event.getData()
+end sub
+
+function displayEmbyPreview(position as integer) as boolean
+    if not isValid(m.embyPreview) then return false
+    frames = m.embyPreview.frames
+    if not isValidAndNotEmpty(frames) then return false
+    frame = embyFeatures.FrameIndex(frames, position * 10000000&)
+    poster = m.top.findNode("trickplayImage")
+    if frame < 0
+        if isValid(poster) then poster.visible = false
+        return true
+    end if
+    if not isValid(poster)
+        poster = CreateObject("roSGNode", "Poster")
+        poster.id = "trickplayImage"
+        poster.width = 320
+        poster.height = m.embyPreview.height
+        poster.loadDisplayMode = "scaleToFit"
+        m.top.appendChild(poster)
+    end if
+    x = 100
+    if m.top.duration > 0 then x = 103 + 1714 * position / m.top.duration - 160
+    if x < 0 then x = 0
+    if x > 1600 then x = 1600
+    poster.translation = [x, 900 - m.embyPreview.height]
+    if poster.uri <> frames[frame].url then poster.uri = frames[frame].url
+    poster.visible = true
+    return true
 end function

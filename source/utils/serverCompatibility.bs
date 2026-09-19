@@ -1,0 +1,145 @@
+' Server identity is learned from public info, never from a user-chosen server name.
+function detectServerType(info as dynamic) as string
+    if type(info) <> "roAssociativeArray" then return ""
+    product = info.LookupCI("ProductName")
+    if type(product) = "roString" or type(product) = "String"
+        product = LCase(product)
+        if product = "jellyfin server" then return "jellyfin"
+        if product = "emby server" or product = "emby" then return "emby"
+        if product <> "" then return ""
+    end if
+
+    ' Older Emby public-info responses omit ProductName (as in Moonfin-Core).
+    version = info.LookupCI("Version")
+    id = info.LookupCI("Id")
+    name = info.LookupCI("ServerName")
+    if type(version) <> "roString" and type(version) <> "String" then return ""
+    if type(id) <> "roString" and type(id) <> "String" then return ""
+    if type(name) <> "roString" and type(name) <> "String" then return ""
+    if id = "" or name = "" then return ""
+    if CreateObject("roRegex", "^[1-9][.][0-9]+[.][0-9]+[.][0-9]+$", "").IsMatch(version) then return "emby"
+    return ""
+end function
+
+' An explicit target must not inherit the active server's type during multi-server playback.
+function isEmbyServer(serverUrl = "" as string) as boolean
+    serverUrl = serverIdentityKey(serverUrl)
+    if isChainValid(m.global, "session.server.url")
+        current = m.global.session.server
+        if serverUrl = "" or serverUrl = serverIdentityKey(current.url)
+            return current.serverType = "emby"
+        end if
+    end if
+    if serverUrl = "" then return false
+    return registry_read(serverUrl, "ServerTypes") = "emby"
+end function
+
+function serverIdentityKey(url as string) as string
+    if url.Right(1) = "/" then url = url.Left(url.Len() - 1)
+    return LCase(url)
+end function
+
+function serverAuthScheme(serverUrl = "" as string) as string
+    if isEmbyServer(serverUrl) then return "Emby"
+    return "MediaBrowser"
+end function
+
+' Keep caller-owned query objects intact; they can also be reused for another server.
+function serverCompatibleParams(params as object, emby as boolean) as object
+    if not emby then return params
+    result = {}
+    for each entry in params.items()
+        key = entry.key
+        includeParam = true
+        value = entry.value
+        if LCase(key) = "fields" and (type(value) = "String" or type(value) = "roString")
+            fields = []
+            for each field in value.Split(",")
+                field = field.Trim()
+                if LCase(field) <> "trickplay" and LCase(field) <> "itemcounts" and field <> "" then fields.Push(field)
+            end for
+            includeParam = fields.Count() > 0
+            value = fields.Join(",")
+        else if LCase(key) = "apikey"
+            key = "api_key"
+        end if
+        if includeParam then result[key] = value
+    end for
+    return result
+end function
+
+function serverItemMetadataPath(id as string, userId as string, emby as boolean) as string
+    if emby then return "Users/" + userId + "/Items/" + id
+    return "Items/" + id
+end function
+
+' Poster nodes cannot send Authorization headers. Only attach a token belonging
+' to this Emby server, including when artwork comes from a second server.
+function authenticatedImageParams(serverUrl as string, params as object) as object
+    if not isEmbyServer(serverUrl) then return params
+    result = serverCompatibleParams(params, true)
+    token = invalid
+    if isChainValid(m.global, "session.server.url")
+        if serverIdentityKey(m.global.session.server.url) = serverIdentityKey(serverUrl)
+            if isChainValid(m.global, "session.user.authToken") then token = m.global.session.user.authToken
+        end if
+    end if
+    if not isValidAndNotEmpty(token)
+        users = ParseJson(get_setting("available_users", "[]"))
+        if type(users) = "roArray"
+            for each user in users
+                savedUrl = registry_read("serverUrl", user.id)
+                if isValidAndNotEmpty(savedUrl)
+                    if serverIdentityKey(savedUrl) = serverIdentityKey(serverUrl)
+                        token = registry_read("token", user.id)
+                        if isValidAndNotEmpty(token) then exit for
+                    end if
+                end if
+            end for
+        end if
+    end if
+    if isValidAndNotEmpty(token) then result["api_key"] = token
+    return result
+end function
+
+function serverAuthHeaderName(serverUrl = "" as string) as string
+    if isEmbyServer(serverUrl) then return "X-Emby-Authorization"
+    return "Authorization"
+end function
+
+' A server may return an error object or no playable sources (e.g. Live TV
+' unavailable or playback denied). Never index those responses as media.
+function usablePlaybackInfo(info as dynamic) as boolean
+    if type(info) <> "roAssociativeArray" then return false
+    if type(info.MediaSources) <> "roArray" then return false
+    if info.MediaSources.Count() = 0 then return false
+    firstSource = info.MediaSources[0]
+    if type(firstSource) <> "roAssociativeArray" then return false
+    return type(firstSource.MediaStreams) = "roArray"
+end function
+
+' Jellyfin 12 flattened user-scoped routes. Emby still requires the user in
+' the path; keep this at the request boundary so all callers agree.
+function serverCompatiblePath(path as string, params as object, userId as string, emby as boolean) as string
+    if not emby then return path
+    if isValidAndNotEmpty(params.LookupCI("UserId")) then userId = params.LookupCI("UserId")
+    if userId = "" then return path
+    route = LCase(path)
+    if route.Left(1) = "/" then route = route.Mid(1)
+    if route.Right(1) = "/" then route = route.Left(route.Len() - 1)
+    prefix = "Users/" + userId + "/"
+    if route = "userviews" then return prefix + "Views"
+    if route = "userviews/groupingoptions" then return prefix + "GroupingOptions"
+    if route = "items" then return prefix + "Items"
+    if route = "items/latest" then return prefix + "Items/Latest"
+    if route = "items/suggestions" then return prefix + "Suggestions"
+    if route = "useritems/resume" then return prefix + "Items/Resume"
+    if route.Left(18) = "userfavoriteitems/" then return prefix + "FavoriteItems/" + path.Split("/").Peek()
+    if route.Left(16) = "userplayeditems/" then return prefix + "PlayedItems/" + path.Split("/").Peek()
+    return path
+end function
+
+function validItemMetadata(data as dynamic) as boolean
+    if type(data) <> "roAssociativeArray" then return false
+    return isValidAndNotEmpty(data.Id) and isValidAndNotEmpty(data.Type)
+end function

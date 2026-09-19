@@ -2471,5 +2471,81 @@
         <translation>Neuigkeiten in dieser Version</translation>
         <extracomment>Popup title - Popup displays all the major changes to the app since the last version</extracomment>
     </message>
+    <message>
+        <source>Enter Server URL</source>
+        <translation>Server-URL eingeben</translation>
+    </message>
+    <message>
+        <source>Emby username or email</source>
+        <translation>Emby-Benutzername oder E-Mail</translation>
+    </message>
+    <message>
+        <source>Sign in with your Emby account to find your servers.</source>
+        <translation>Mit deinem Emby-Konto anmelden, um deine Server zu finden.</translation>
+    </message>
+    <message>
+        <source>Enter your Emby username or email.</source>
+        <translation>Gib deinen Emby-Benutzernamen oder deine E-Mail-Adresse ein.</translation>
+    </message>
+    <message>
+        <source>Signing in to Emby Connect...</source>
+        <translation>Anmeldung bei Emby Connect …</translation>
+    </message>
+    <message>
+        <source>Choose an Emby server</source>
+        <translation>Emby-Server auswählen</translation>
+    </message>
+    <message>
+        <source>Emby Connect username or password is incorrect.</source>
+        <translation>Emby-Connect-Benutzername oder Passwort ist falsch.</translation>
+    </message>
+    <message>
+        <source>No servers with a usable address are linked to this Emby Connect account.</source>
+        <translation>Mit diesem Emby-Connect-Konto sind keine Server mit nutzbarer Adresse verknüpft.</translation>
+    </message>
+    <message>
+        <source>Emby Connect returned an invalid response. Please try again.</source>
+        <translation>Emby Connect hat eine ungültige Antwort geliefert. Bitte erneut versuchen.</translation>
+    </message>
+    <message>
+        <source>Could not sign in to this Emby server. Check that it is online and linked to your Emby Connect account.</source>
+        <translation>Anmeldung am Emby-Server fehlgeschlagen. Prüfe, ob er online und mit deinem Emby-Connect-Konto verknüpft ist.</translation>
+    </message>
+    <message>
+        <source>Could not reach Emby Connect. Check your internet connection and try again.</source>
+        <translation>Emby Connect ist nicht erreichbar. Prüfe deine Internetverbindung und versuche es erneut.</translation>
+    </message>
+    <message>
+        <source>Emby server rejected the login. Use the local server account, or choose Emby Connect for your Emby account.</source>
+        <translation>Der Emby-Server hat die Anmeldung abgelehnt. Nutze das lokale Serverkonto oder wähle Emby Connect für dein Emby-Konto.</translation>
+    </message>
+    <message>
+        <source>Username or password is incorrect, or access is denied.</source>
+        <translation>Benutzername oder Passwort falsch oder Zugriff verweigert.</translation>
+    </message>
+    <message>
+        <source>The server did not respond. Check the connection and try again.</source>
+        <translation>Der Server antwortet nicht. Prüfe die Verbindung und versuche es erneut.</translation>
+    </message>
+    <message>
+        <source>Login endpoint not found. Check the server URL and proxy path.</source>
+        <translation>Anmelde-Endpunkt nicht gefunden. Prüfe Server-URL und Proxy-Pfad.</translation>
+    </message>
+    <message>
+        <source>Login failed. Server response:</source>
+        <translation>Anmeldung fehlgeschlagen. Serverantwort:</translation>
+    </message>
+    <message>
+        <source>Emby Account</source>
+        <translation>Emby-Konto</translation>
+    </message>
+    <message>
+        <source>Enter your Emby server username</source>
+        <translation>Emby-Server-Benutzernamen eingeben</translation>
+    </message>
+    <message>
+        <source>Unable to load item details. Check the server connection and try again.</source>
+        <translation>Details konnten nicht geladen werden. Prüfe die Serververbindung und versuche es erneut.</translation>
+    </message>
 </context>
 </TS>

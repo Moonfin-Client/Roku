@@ -10,6 +10,7 @@ import "pkg:/source/enums/String.bs"
 import "pkg:/source/enums/SubtitleSelection.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
+import "pkg:/source/utils/embyFeatures.bs"
 import "pkg:/source/utils/misc.bs"
 
 sub init()
@@ -32,10 +33,45 @@ function getPlaybackInfo(id as string, mediaSourceId = "" as string, audioTrackI
             userId: serverUserId,
             authToken: serverAuthToken
         }
-        return ItemPostPlaybackInfoForServer(serverData, id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
+        result = ItemPostPlaybackInfoForServer(serverData, id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
     else
-        return ItemPostPlaybackInfo(id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
+        result = ItemPostPlaybackInfo(id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
     end if
+    if not usablePlaybackInfo(result) then return invalid
+    return result
+end function
+
+function playbackResourceURL(path as string) as string
+    serverUrl = m.top.serverUrl
+    if not isValidAndNotEmpty(serverUrl) then serverUrl = get_url()
+    return resolvePlaybackURL(serverUrl, path)
+end function
+
+' Server responses may contain absolute URLs or paths already including the base path.
+function resolvePlaybackURL(serverUrl as string, path as string) as string
+    lowerPath = LCase(path)
+    if lowerPath.StartsWith("https://") or lowerPath.StartsWith("http://") then return path
+    base = ParsedUrl(serverUrl)
+    if path.StartsWith("//") then return base.proto + ":" + path
+    if not path.StartsWith("/") then path = "/" + path
+    if base.path <> ""
+        if path.StartsWith(base.path + "/") then return base.proto + "://" + base.host + playbackPort(base.port) + path
+    end if
+    return buildURLForServer(serverUrl, path)
+end function
+
+function playbackPort(port as string) as string
+    if port = "" then return ""
+    return ":" + port
+end function
+
+function playbackUsesServerAuth(url as string) as boolean
+    serverUrl = m.top.serverUrl
+    if not isValidAndNotEmpty(serverUrl) then serverUrl = get_url()
+    target = ParsedUrl(url)
+    server = ParsedUrl(serverUrl)
+    if target = invalid or server = invalid then return false
+    return LCase(target.proto) = LCase(server.proto) and LCase(target.host) = LCase(server.host) and target.port = server.port
 end function
 
 sub loadItems()
@@ -69,7 +105,7 @@ sub loadItems()
     end if
 
     id = m.top.itemId
-    mediaSourceId = invalid
+    mediaSourceId = selectedPlaybackSource(m.global.queueManager.callFunc("getCurrentItem"), id)
     audio_stream_idx = m.top.selectedAudioStreamIndex
 
     m.top.content = [LoadItems_VideoPlayer(id, mediaSourceId, audio_stream_idx)]
@@ -127,6 +163,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
             meta.title = meta.json.Name
         end if
         meta.live = true
+        if isEmbyServer(m.top.serverUrl) then meta.live = (videotype = "program" or videotype = "tvchannel")
         if LCase(meta.json.type) = "program"
             video.id = meta.json.ChannelId
         else
@@ -181,6 +218,8 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
             end if
         end if
     end if
+
+    if isEmbyServer(m.top.serverUrl) then video.mediaSegments = embyFeatures.Segments(meta.json)
 
     hasOutroSegment = false
     if isValidAndNotEmpty(video.mediaSegments)
@@ -281,7 +320,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     end if
     video.content.PlayStart = playStartSec
 
-    if not isValid(mediaSourceId) then mediaSourceId = video.id
+    if not isValid(mediaSourceId) then mediaSourceId = embyFeatures.ChooseMediaSource(meta.json, video.id)
     if meta.live then mediaSourceId = ""
 
     m.playbackInfo = getPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, m.top.selectedSubtitleIndex, playbackPosition)
@@ -332,6 +371,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     end if
 
     video.videoId = video.id
+    mediaSourceId = embyFeatures.ChooseMediaSource(m.playbackInfo, mediaSourceId)
     video.mediaSourceId = mediaSourceId
     video.audioIndex = audio_stream_idx
 
@@ -359,7 +399,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
 
 
     ' 'TODO: allow user selection of subtitle track before playback initiated, for now set to no subtitles
-    video.directPlaySupported = m.playbackInfo.MediaSources[0].SupportsDirectPlay
+    video.directPlaySupported = (m.playbackInfo.MediaSources[0].SupportsDirectPlay = true)
 
     ' For h264/hevc video, Roku spec states that it supports specfic encoding levels
     ' The device can decode content with a Higher Encoding level but may play it back with certain
@@ -383,6 +423,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
         video.isTranscoded = false
         addVideoContentURL(video, mediaSourceId, audio_stream_idx)
         setCertificateAuthority(video.content)
+        if not playbackUsesServerAuth(video.content.url) then return
         ' Use multi-server auth if applicable
         serverUrl = m.top.serverUrl
         serverAuthToken = m.top.serverAuthToken
@@ -419,20 +460,31 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
 
     ' If transcoding and burnInSubtitlesIfTrancoding is enabled, zero out SubtitleProfiles
     if chainLookupReturn(m.global, "session.user.settings.`playback.subs.burnin`", true) and meta.live = false
-        m.playbackInfo = ItemPostPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, m.top.selectedSubtitleIndex, playbackPosition, {
+        m.playbackInfo = getPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, m.top.selectedSubtitleIndex, playbackPosition, {
             emptySubtitleProfiles: true
         })
+        if not isValid(m.playbackInfo)
+            video.errorMsg = "Error loading playback info"
+            video.content = invalid
+            return
+        end if
+        if not isValidAndNotEmpty(m.playbackInfo.MediaSources[0].TranscodingUrl)
+            video.errorMsg = "No transcoding stream available"
+            video.content = invalid
+            return
+        end if
         ' Re-posting playback info will generate a new PlaysessionId
         video.PlaySessionId = m.playbackInfo.PlaySessionId
     end if
 
     ' Get transcoding reason
     video.transcodeReasons = getTranscodeReasons(m.playbackInfo.MediaSources[0].TranscodingUrl)
-    video.content.url = buildURL(m.playbackInfo.MediaSources[0].TranscodingUrl)
+    video.content.url = playbackResourceURL(m.playbackInfo.MediaSources[0].TranscodingUrl)
     video.isTranscoded = true
 
     setCertificateAuthority(video.content)
 
+    if not playbackUsesServerAuth(video.content.url) then return
     ' Use multi-server auth if applicable
     serverUrl = m.top.serverUrl
     serverUserId = m.top.serverUserId
@@ -451,7 +503,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
 end sub
 
 function isHTTPStream() as boolean
-    if not m.playbackInfo.MediaSources[0].LookupCI("isremote") then return false
+    if m.playbackInfo.MediaSources[0].LookupCI("isremote") <> true then return false
     if not isStringEqual(m.playbackInfo.MediaSources[0].LookupCI("VideoType"), "VideoFile") then return false
     return true
 end function
@@ -478,18 +530,13 @@ sub addVideoContentURL(video, mediaSourceId, audio_stream_idx)
     serverUrl = m.top.serverUrl
     useMultiServer = isValidAndNotEmpty(serverUrl)
 
-    protocol = LCase(m.playbackInfo.MediaSources[0].Protocol)
+    protocol = LCase(m.playbackInfo.MediaSources[0].Protocol ?? "file")
     if protocol <> "file"
         uri = ParsedUrl(m.playbackInfo.MediaSources[0].Path)
-        if isLocalhost(uri.host)
-            ' if the domain of the URI is local to the server,
-            ' create a new URI by appending the received path to the server URL
-            ' later we will substitute the users provided URL for this case
-            if useMultiServer
-                video.content.url = buildURLForServer(serverUrl, uri.path)
-            else
-                video.content.url = buildURL(uri.path)
-            end if
+        if uri <> invalid and isLocalhost(uri.host)
+            resource = uri.path
+            if uri.query <> "" then resource += "?" + uri.query
+            video.content.url = playbackResourceURL(resource)
         else
             video.content.url = m.playbackInfo.MediaSources[0].Path
         end if
@@ -562,7 +609,7 @@ end sub
 ' @returns Array of Strings
 function getTranscodeReasons(url as string) as object
 
-    regex = CreateObject("roRegex", "&TranscodeReasons=([^&]*)", "")
+    regex = CreateObject("roRegex", "[?&]TranscodeReasons=([^&]*)", "i")
     match = regex.Match(url)
 
     if match.count() > 1
@@ -602,7 +649,7 @@ end function
 
 function getContainerType(meta as object) as string
     ' Determine the file type of the video file source
-    if meta.json.mediaSources = invalid then return ""
+    if not isValidAndNotEmpty(meta.json.mediaSources) then return ""
 
     container = meta.json.mediaSources[0].container
     if container = invalid
@@ -738,7 +785,7 @@ function sortSubtitles(MediaStreams)
 
             url = ""
             if isValid(stream.DeliveryUrl)
-                url = buildURL(stream.DeliveryUrl)
+                url = playbackResourceURL(stream.DeliveryUrl)
             end if
 
             ' stream is rebuilt below without these fields, so read them while they are still here

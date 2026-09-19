@@ -1,0 +1,175 @@
+sub Main()
+    m.failures = 0
+    m.checks = 0
+    m.registry = { "emby-user": { serverUrl: "https://emby.test/emby", token: "emby-art-token" }, "jf-user": { serverUrl: "https://jellyfin.test", token: "jf-art-token" } }
+    m.serverTypes = { "https://emby.test/emby": "emby", "https://jellyfin.test": "jellyfin" }
+    m.global = { session: { server: { url: "https://jellyfin.test", serverType: "jellyfin" } } }
+
+    assertEqual(detectServerType({ ProductName: "Jellyfin Server", Version: "10.9.0" }), "jellyfin", "Jellyfin detection")
+    assertEqual(detectServerType({ ProductName: "Emby Server", Version: "4.9.3.30" }), "emby", "Emby detection")
+    assertEqual(detectServerType({ productname: "EMBY SERVER" }), "emby", "Case-insensitive identity")
+    assertEqual(detectServerType({ Version: "4.8.11.0", Id: "server-id", ServerName: "Living Room" }), "emby", "Older Emby public info")
+    for each badInfo in [invalid, [], 42, "Emby", {}, { ProductName: "Other", Version: "4.9.3.30" }, { Version: "4.9.3.30" }, { Version: "4.x.0.0", Id: "id", ServerName: "name" }]
+        assertEqual(detectServerType(badInfo), "", "Reject unrelated or malformed responses")
+    end for
+    assertEqual(isSupportedMediaServer("null"), false, "Reject null discovery response")
+    assertEqual(isSupportedMediaServer(FormatJson({ ProductName: "Emby Server" })), true, "Accept Emby discovery response")
+    assertEqual(isEmbyServer(), false, "Active Jellyfin")
+    assertEqual(isEmbyServer("https://emby.test/emby"), true, "Remote Emby while Jellyfin active")
+    assertEqual(serverAuthScheme("https://unknown.test"), "MediaBrowser", "Unknown saved server remains compatible")
+    m.scene = { isLoading: true }
+    m.dialogCalls = 0
+    ServerVersionCheck("10.9.0")
+    assertEqual(m.dialogCalls, 0, "Accept supported Jellyfin")
+    ServerVersionCheck("10.8.13")
+    assertEqual(m.dialogCalls, 1, "Continue rejecting old Jellyfin")
+    m.global.session.server = { url: "https://emby.test/emby", serverType: "emby" }
+    ServerVersionCheck("4.9.3.30")
+    assertEqual(m.dialogCalls, 1, "Do not reject Emby against Jellyfin minimum")
+    assertEqual(isEmbyServer(), true, "Switch to Emby")
+    m.quickConnect = { visible: true }
+    m.passwordTab = { visible: true }
+    checkQuickConnectEnabled()
+    assertEqual(m.quickConnect.visible, true, "Offer Emby Connect on local Emby login")
+    assertEqual(m.quickConnect.text, "Emby Connect", "Identify Emby account route")
+    assertEqual(m.passwordTab.visible, false, "Hide unnecessary sign-in tabs on Emby")
+    assertEqual(isEmbyServer("https://jellyfin.test"), false, "Remote Jellyfin while Emby active")
+    assertEqual(serverAuthScheme("https://emby.test/emby"), "Emby", "Emby authorization")
+    assertEqual(serverAuthScheme("https://jellyfin.test"), "MediaBrowser", "Jellyfin authorization")
+
+    params = { Fields: "Chapters,Trickplay,Taglines,ItemCounts", ApiKey: "test-token", UserId: "user-1" }
+    embyParams = serverCompatibleParams(params, true)
+    assertEqual(embyParams.Fields, "Chapters,Taglines", "Remove unsupported Emby fields")
+    assertEqual(embyParams.api_key, "test-token", "Emby token query parameter")
+    assertEqual(embyParams.UserId, "user-1", "Preserve user context")
+    assertEqual(params.Fields, "Chapters,Trickplay,Taglines,ItemCounts", "Do not mutate shared query object")
+    assertEqual(serverCompatibleParams(params, false).Fields, params.Fields, "Preserve Jellyfin fields")
+    assertEqual(serverCompatibleParams({ fields: "Trickplay,ItemCounts" }, true).DoesExist("fields"), false, "Omit empty fields")
+    assertEqual(serverItemMetadataPath("123", "user-1", true), "Users/user-1/Items/123", "Emby item metadata endpoint")
+    assertEqual(serverItemMetadataPath("abc", "user-1", false), "Items/abc", "Jellyfin metadata unchanged")
+    assertEqual(buildURLForServer("https://emby.test/emby", "Audio/123/stream", { ApiKey: "test-token" }), "https://emby.test/emby/Audio/123/stream?api_key=test-token", "Emby theme music URL")
+    assertEqual(buildURLForServer("https://jellyfin.test", "Audio/123/stream", { ApiKey: "test-token" }), "https://jellyfin.test/Audio/123/stream?ApiKey=test-token", "Jellyfin theme music URL")
+    assertEqual(buildURL("Users/Public"), "https://emby.test/emby/Users/Public", "Keep Emby prefix")
+    assertEqual(buildURLForServer("https://emby.test/emby", "Items?Limit=5", { Fields: "Chapters,Trickplay" }), "https://emby.test/emby/Items?Limit=5&Fields=Chapters", "Emby fields with inline query")
+    embyAuth = buildAuthHeaderForServer({ serverUrl: "https://emby.test/emby", userId: "emby-user", authToken: "emby-token" })
+    jfAuth = buildAuthHeaderForServer({ serverUrl: "https://jellyfin.test", userId: "jf-user", authToken: "jf-token" })
+    assertEqual(embyAuth.Left(5), "Emby ", "Emby header scheme")
+    assertEqual(jfAuth.Left(13), "MediaBrowser ", "Remote Jellyfin header scheme")
+    assertEqual(Instr(1, embyAuth, "emby-token") > 0, true, "Emby token remains attached")
+    assertEqual(Instr(1, jfAuth, "emby-token"), 0, "Never use active Emby token for remote Jellyfin")
+    assertEqual(buildAuthHeader().Left(5), "Emby ", "Active Emby header")
+
+    m.global.session.user = { authToken: "active-emby-token" }
+    artworkParams = { maxHeight: "200" }
+    assertEqual(authenticatedImageParams("https://emby.test/emby", artworkParams).api_key, "active-emby-token", "Active Emby artwork authenticated")
+    assertEqual(artworkParams.DoesExist("api_key"), false, "Do not mutate shared artwork params")
+    assertEqual(authenticatedImageParams("https://jellyfin.test", {}).DoesExist("api_key"), false, "Do not send Emby token to Jellyfin images")
+    assertEqual(isEmbyServer("https://emby.test/emby/"), true, "Trailing slash server identity")
+    m.global.session.server = { url: "https://jellyfin.test", serverType: "jellyfin" }
+    m.global.session.user.authToken = "active-jf-token"
+    assertEqual(authenticatedImageParams("https://emby.test/emby", {}).api_key, "emby-art-token", "Remote artwork uses remote token")
+    m.serverTypes["https://other-emby.test"] = "emby"
+    assertEqual(authenticatedImageParams("https://other-emby.test", {}).DoesExist("api_key"), false, "Never use unrelated token for unknown account")
+
+    candidates = urlCandidates("https://media.test:8920/proxy?route=tv")
+    assertEqual(candidates.Count(), 2, "Probe explicit base and Emby prefix")
+    assertEqual(candidates[0].path, "/proxy", "Keep explicit proxy base")
+    assertEqual(candidates[1].path, "/proxy/emby", "Append Emby prefix")
+    assertEqual(candidates[1].query, "route=tv", "Preserve proxy query")
+    assertEqual(candidates[1].port, "8920", "Preserve explicit port")
+    assertEqual(urlCandidates("https://media.test:8920/emby").Count(), 1, "Avoid duplicate Emby prefix")
+    assertEqual(urlCandidates("media.test").Count(), 8, "Discover default ports on both protocols and prefixes")
+    m.global.session.server = { url: "https://jellyfin.test", serverType: "jellyfin" }
+    assertEqual(buildAuthHeader().Left(13), "MediaBrowser ", "Switch back to Jellyfin")
+    testEmbyConnect()
+    testEmbyFeatures()
+    testEmbyMediaRoutes()
+    testEmbyDetails()
+    assertEqual(detectServerType({ Version: "4.10.0.40", Id: "server", ServerName: "Test" }), "emby", "Observed Emby 4.10 public info shape")
+    assertEqual(serverAuthHeaderName("https://emby.test/emby"), "X-Emby-Authorization", "Emby proxy-compatible header")
+    assertEqual(serverAuthHeaderName("https://jellyfin.test"), "Authorization", "Keep Jellyfin authorization header")
+    for each response in [invalid, {}, { ErrorCode: "NoCompatibleStream" }, { MediaSources: [] }, { MediaSources: [invalid] }, { MediaSources: [{}] }]
+        assertEqual(usablePlaybackInfo(response), false, "Reject unusable playback response")
+    end for
+    assertEqual(usablePlaybackInfo({ MediaSources: [{ MediaStreams: [] }] }), true, "Accept media source with stream array")
+    m.top = { serverUrl: "https://emby.test/emby" }
+    assertEqual(playbackResourceURL("Videos/id/master.m3u8?PlaySessionId=123"), "https://emby.test/emby/Videos/id/master.m3u8?PlaySessionId=123", "Transcode URL belongs to selected Emby server")
+    embyItem = { id: "1234", json: { _serverUrl: "https://emby.test/emby", Id: "1234" } }
+    selectPlaybackSource(embyItem, "file-version-abc")
+    assertEqual(embyItem.id, "1234", "Emby playback retains library item ID")
+    assertEqual(selectedPlaybackSource(embyItem, "1234"), "file-version-abc", "Emby selected version reaches playback request separately")
+    assertEqual(selectedPlaybackSource(embyItem, "other-item"), invalid, "Version cannot leak into another queued item")
+    selectPlaybackSource(embyItem, "file-version-two")
+    assertEqual(selectedPlaybackSource(embyItem, "1234"), "file-version-two", "Changing version keeps selection")
+    jfItem = { id: "jf-item", json: { _serverUrl: "https://jellyfin.test" } }
+    selectPlaybackSource(jfItem, "")
+    assertEqual(jfItem.id, "jf-item", "Empty version retains item ID on all detail styles")
+    selectPlaybackSource(jfItem, "jf-version")
+    assertEqual(jfItem.id, "jf-version", "Jellyfin version selection unchanged")
+    assertEqual(playbackResourceURL("https://emby.test/emby/Videos/id/master.m3u8?token=a%2Fb"), "https://emby.test/emby/Videos/id/master.m3u8?token=a%2Fb", "Absolute stream URL preserved")
+    assertEqual(playbackResourceURL("/emby/Videos/id/master.m3u8?x=1"), "https://emby.test/emby/Videos/id/master.m3u8?x=1", "Base path not duplicated")
+    assertEqual(playbackResourceURL("https://cdn.test/sub.srt?sig=a%2Fb"), "https://cdn.test/sub.srt?sig=a%2Fb", "External signed subtitle preserved")
+    assertEqual(playbackUsesServerAuth("https://cdn.test/video"), false, "No server credentials on external media")
+    assertEqual(playbackUsesServerAuth("https://emby.test/emby/video"), true, "Authenticate selected server media")
+    assertEqual(playbackUsesServerAuth("http://emby.test/emby/video"), false, "No credentials on protocol downgrade")
+    assertEqual(getTranscodeReasons("/video?TranscodeReasons=VideoCodecNotSupported")[0], "VideoCodecNotSupported", "Transcode reasons in first query parameter")
+    m.playbackInfo = { MediaSources: [{}] }
+    fixtureVideo = { id: "movie", container: "mp4", PlaySessionId: "session", content: {} }
+    addVideoContentURL(fixtureVideo, "source", 1)
+    assertEqual(fixtureVideo.content.url.Instr("/Videos/movie/stream?") > 0, true, "Missing Protocol uses server stream")
+    m.playbackInfo = { MediaSources: [{ Protocol: "Http", Path: "http://localhost:8096/emby/Videos/movie/stream?token=a%2Fb&static=true" }] }
+    addVideoContentURL(fixtureVideo, "source", 1)
+    assertEqual(fixtureVideo.content.url, "https://emby.test/emby/Videos/movie/stream?token=a%2Fb&static=true", "Local server stream retains signed query")
+
+    m.playbackInfo = { MediaSources: [{}] }
+    assertEqual(isHTTPStream(), false, "Absent IsRemote is safe")
+    assertEqual(playbackResourceURL("Videos/id/Subtitles/1/Stream.srt"), "https://emby.test/emby/Videos/id/Subtitles/1/Stream.srt", "Subtitles belong to selected Emby server")
+    m.top.serverAuthToken = "selected-user-token"
+    posterURL = getTargetImageURL("film", "Primary", 0, {})
+    assertEqual(posterURL, "https://emby.test/emby/Items/film/Images/Primary?api_key=selected-user-token", "Remote Emby poster uses selected account token")
+    m.top.serverUrl = "https://jellyfin.test"
+    assertEqual(getTargetImageURL("film", "Primary", 0, {}).Instr("api_key"), -1, "Do not attach Emby poster token to Jellyfin")
+    m.top.serverUrl = ""
+    assertEqual(playbackResourceURL("Videos/id/master.m3u8"), "https://jellyfin.test/Videos/id/master.m3u8", "Keep active server playback fallback")
+    m.global = invalid
+    assertEqual(isEmbyServer("https://emby.test/emby"), true, "Registry fallback without scene context")
+    if m.failures = 0 then print "PASS: server compatibility ("; m.checks; " checks)"
+end sub
+
+sub assertEqual(actual as dynamic, expected as dynamic, description as string)
+    m.checks++
+    if actual <> expected
+        m.failures++
+        print "FAIL: "; description; " expected="; expected; " actual="; actual
+    end if
+end sub
+
+function registry_read(key as string, section as string) as dynamic
+    if section = "ServerTypes" then return m.serverTypes[key]
+    if m.registry.DoesExist(section) then return m.registry[section][key]
+    return invalid
+end function
+
+function get_setting(key as string, fallback as string) as string
+    return FormatJson([{ id: "jf-user" }, { id: "emby-user" }])
+end function
+
+function get_url() as string
+    return m.global.session.server.url
+end function
+
+function getAuthHeaderContext() as object
+    return { appName: "Moonfin", appVersion: "2.0.0", deviceName: "Test Roku", deviceModel: "4800", deviceId: "device-1", authToken: "active-token" }
+end function
+
+sub stopLoadingSpinner()
+end sub
+
+function tr(value as string) as string
+    return value
+end function
+
+function show_dialog(message as string, options as object, selected as integer) as dynamic
+    m.dialogCalls++
+    return invalid
+end function
