@@ -1,4 +1,5 @@
 import "pkg:/source/utils/diagnostics.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
 ' Functions for making requests to the API
 function buildParams(params = {} as object) as string
     ' Take an object of parameters and construct the URL query
@@ -8,16 +9,16 @@ function buildParams(params = {} as object) as string
         item = ""
         if type(field.value) = "String" or type(field.value) = "roString"
             item = field.key + "=" + field.value.trim().EncodeUriComponent()
-        else if type(field.value) = "roInteger" or type(field.value) = "roInt"
+        else if type(field.value) = "roInteger" or type(field.value) = "roInt" or type(field.value) = "Integer"
             item = field.key + "=" + stri(field.value).trim()
             'item = field.key + "=" + str(field.value).trim()
-        else if type(field.value) = "roFloat"
+        else if type(field.value) = "roFloat" or type(field.value) = "Float"
             item = field.key + "=" + stri(int(field.value)).trim()
-        else if type(field.value) = "LongInteger"
+        else if type(field.value) = "LongInteger" or type(field.value) = "roLongInteger"
             item = field.key + "=" + field.value.toStr().trim()
         else if type(field.value) = "roArray"
             ' TODO handle array params
-        else if type(field.value) = "roBoolean"
+        else if type(field.value) = "roBoolean" or type(field.value) = "Boolean"
             if field.value
                 item = field.key + "=true"
             else
@@ -39,6 +40,7 @@ function buildURL(path as string, params = {} as object) as dynamic
     serverURL = get_url()
     if serverURL = invalid then return invalid
 
+    params = serverCompatibleParams(params, isEmbyServer(serverURL))
     parsed_url = ParsedUrl(serverURL)
     full_url = `${parsed_url.proto}://${parsed_url.host}${parsed_url.port = "" ? "" : `:${parsed_url.port}`}${parsed_url.path}`
 
@@ -81,6 +83,9 @@ function buildURL(path as string, params = {} as object) as dynamic
 end function
 
 function APIRequest(url as string, params = {} as object) as dynamic
+    userId = ""
+    if isChainValid(m.global, "session.user.id") then userId = m.global.session.user.id
+    url = serverCompatiblePath(url, params, userId, isEmbyServer())
     full_url = buildURL(url, params)
     if full_url = invalid then return invalid
 
@@ -103,11 +108,22 @@ function getJson(req)
     if req = invalid then return invalid
 
     started = diagnostics.StartTrace("GET", req)
-    data = req.GetToString()
+    req.SetMessagePort(CreateObject("roMessagePort"))
+    if not req.AsyncGetToString() then return invalid
+    response = wait(15000, req.GetMessagePort())
+    if type(response) <> "roUrlEvent"
+        req.AsyncCancel()
+        diagnostics.EndTrace(started, "timed out", diagnostics.LEVEL_WARN)
+        return invalid
+    end if
+    status = response.GetResponseCode()
+    if status < 200 or status >= 300
+        diagnostics.EndTrace(started, status.ToStr(), diagnostics.LEVEL_WARN)
+        return invalid
+    end if
+    data = response.GetString()
 
     if data = invalid or data = ""
-        ' GetToString is synchronous and reports neither a status nor a reason, so an empty
-        ' body is the only failure this path can describe
         diagnostics.EndTrace(started, "no body", diagnostics.LEVEL_WARN)
         return invalid
     end if
@@ -376,7 +392,7 @@ function buildAuthHeader() as string
     QUOTE = Chr(34)
     headerContext = getAuthHeaderContext()
 
-    auth = "MediaBrowser" + " Client=" + QUOTE + headerContext.appName + " Roku" + QUOTE
+    auth = serverAuthScheme(get_url() ?? "") + " Client=" + QUOTE + headerContext.appName + " Roku" + QUOTE
     auth = auth + ", Device=" + QUOTE + headerContext.deviceName + " (" + headerContext.deviceModel + ")" + QUOTE
     auth = auth + ", Version=" + QUOTE + headerContext.appVersion + QUOTE
     auth = auth + ", DeviceId=" + QUOTE + headerContext.deviceId + QUOTE
@@ -474,12 +490,14 @@ end sub
 
 ' Takes and returns a roUrlTransfer object after adding a Jellyfin "Authorization" header
 function authRequest(req as object) as object
-    req.AddHeader("Authorization", buildAuthHeader())
+    req.AddHeader("Accept", "application/json")
+    req.AddHeader(serverAuthHeaderName(), buildAuthHeader())
     return req
 end function
 
 function authRequestForServer(req as object, serverData as object) as object
-    req.AddHeader("Authorization", buildAuthHeaderForServer(serverData))
+    req.AddHeader("Accept", "application/json")
+    req.AddHeader(serverAuthHeaderName(serverData.serverUrl), buildAuthHeaderForServer(serverData))
     return req
 end function
 
@@ -487,7 +505,7 @@ function buildAuthHeaderForServer(serverData as object) as string
     QUOTE = Chr(34)
     headerContext = getAuthHeaderContext()
 
-    auth = "MediaBrowser" + " Client=" + QUOTE + headerContext.appName + " Roku" + QUOTE
+    auth = serverAuthScheme(serverData.serverUrl ?? "") + " Client=" + QUOTE + headerContext.appName + " Roku" + QUOTE
     auth = auth + ", Device=" + QUOTE + headerContext.deviceName + " (" + headerContext.deviceModel + ")" + QUOTE
     auth = auth + ", Version=" + QUOTE + headerContext.appVersion + QUOTE
 
@@ -506,6 +524,7 @@ end function
 
 function buildURLForServer(serverUrl as string, path as string, params = {} as object) as string
     if serverUrl = "" then return ""
+    params = serverCompatibleParams(params, isEmbyServer(serverUrl))
 
     if serverUrl.right(1) = "/"
         serverUrl = serverUrl.left(serverUrl.len() - 1)
@@ -548,6 +567,7 @@ function buildURLForServer(serverUrl as string, path as string, params = {} as o
 end function
 
 function APIRequestForServer(serverUrl as string, userId as string, authToken as string, url as string, params = {} as object) as dynamic
+    url = serverCompatiblePath(url, params, userId, isEmbyServer(serverUrl))
     full_url = buildURLForServer(serverUrl, url, params)
     if full_url = "" then return invalid
 
@@ -561,7 +581,8 @@ function APIRequestForServer(serverUrl as string, userId as string, authToken as
         userId: userId,
         authToken: authToken
     }
-    req.AddHeader("Authorization", buildAuthHeaderForServer(serverData))
+    req.AddHeader("Accept", "application/json")
+    req.AddHeader(serverAuthHeaderName(serverData.serverUrl), buildAuthHeaderForServer(serverData))
 
     if serverUrl.left(8) = "https://"
         setCertificateAuthority(req)

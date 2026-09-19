@@ -1,0 +1,66 @@
+sub testEmbyConnect()
+    m.requests = []
+    m.responses = [{ status: 200, data: { User: { Id: "user", Name: "Local" }, AccessToken: "new" } }]
+    response = passwordLoginRequest("https://emby.test/emby", " Local ", " secret ")
+    assertEqual(validPasswordLogin(response), true, "Accept authenticated local user")
+    request = m.requests[0]
+    assertEqual(request.url, "https://emby.test/emby/Users/AuthenticateByName?format=json", "Preserve domain base path on login")
+    assertEqual(request.headers["X-Emby-Authorization"].Left(5), "Emby ", "Use Emby-specific login header")
+    assertEqual(request.headers["X-Emby-Authorization"].Instr("Token="), -1, "Login excludes stale account token")
+    assertEqual(ParseJson(request.body).Pw, " secret ", "Local password is not trimmed")
+    assertEqual(ParseJson(request.body).Username, "Local", "Trim username")
+    assertEqual(validPasswordLogin({ status: 401, data: response.data }), false, "Reject failed HTTP response even with JSON")
+    assertEqual(validPasswordLogin({ status: 200, data: { Error: "bad" } }), false, "Reject malformed successful response")
+    m.responses = [{ status: 401, data: invalid }]
+    passwordLoginRequest("https://jellyfin.test", "Local", "bad")
+    assertEqual(m.requests[1].headers.Authorization.Left(13), "MediaBrowser ", "Preserve Jellyfin password login scheme")
+
+    assertEqual(embyConnect.AuthSession({ User: { Id: "cloud" }, AccessToken: "token" }).userId, "cloud", "Nested Connect account")
+    assertEqual(embyConnect.AuthSession({ ConnectUserId: "cloud", ConnectAccessToken: "token" }).accessToken, "token", "Connect account aliases")
+    assertEqual(embyConnect.AuthSession({ User: { Id: "cloud" } }), invalid, "Reject missing account token")
+    assertEqual(embyConnect.AuthBody(" email@example.org ", " a&b "), "nameOrEmail=email%40example.org&rawpw=%20a%26b%20", "Encode credentials preserving password spaces")
+    assertEqual(embyConnect.Addresses({ Url: "https://server.test/proxy/?bad=1#x", LocalAddress: "https://server.test/proxy/" }).Count(), 1, "Normalize and deduplicate addresses")
+    assertEqual(embyConnect.Addresses({ Url: "ftp://server.test", LocalAddress: "http://user@server.test" }).Count(), 0, "Reject invalid protocols and embedded credentials")
+    assertEqual(embyConnect.Addresses({ Url: "server.test" })[0], "https://server.test", "Prefer HTTPS for bare hostname")
+    assertEqual(embyConnect.ExchangeBases("https://server.test/emby").Count(), 1, "Do not duplicate Emby base")
+    linked = { Name: "Home", SystemId: "server", AccessKey: "key", Url: "https://server.test" }
+    assertEqual(embyConnect.Servers({ Items: [linked] }).Count(), 1, "Wrapped server list")
+    assertEqual(embyConnect.Servers([invalid, {}, { Url: "https://server.test" }]).Count(), 0, "Reject unusable linked servers")
+    assertEqual(embyConnect.Servers({}), invalid, "Reject malformed list")
+    m.requests = []
+    m.responses = [{ status: 200, data: { User: { Id: "cloud" }, AccessToken: "cloud-token" } }, { status: 200, data: [linked] }]
+    account = embyConnect.Authenticate("person", "secret")
+    assertEqual(account.servers.Count(), 1, "Authenticate and load linked servers")
+    assertEqual(m.requests[0].method, "POST", "Credentials only in POST")
+    assertEqual(m.requests[0].url.Instr("secret"), -1, "Password absent from URL")
+    assertEqual(m.requests[0].headers.DoesExist("Authorization"), false, "Do not forward local session to cloud")
+    assertEqual(m.requests[1].headers["X-Connect-UserToken"], "cloud-token", "Cloud list uses cloud token")
+    assertEqual(account.DoesExist("accessToken"), false, "Discard cloud token after listing")
+    m.responses = [{ status: 401, data: invalid }]
+    assertEqual(embyConnect.Authenticate("person", "bad").error, "credentials", "Report incorrect credentials")
+    m.responses = [{ status: 0, data: invalid }]
+    assertEqual(embyConnect.Authenticate("person", "bad").error, "network", "Report network failure")
+    m.responses = [{ status: 200, data: { User: { Id: "cloud" }, AccessToken: "token" } }, { status: 200, data: [] }]
+    assertEqual(embyConnect.Authenticate("person", "secret").error, "noServers", "Report empty server list")
+    server = embyConnect.Servers([linked])[0]
+    info = { ProductName: "Emby Server", Id: "server", Version: "4.9.3.0" }
+    m.requests = []
+    m.responses = [{ status: 200, data: { ProductName: "Emby Server", Id: "wrong" } }]
+    assertEqual(embyConnect.TryExchange("https://server.test", server, "cloud"), invalid, "Reject another server identity")
+    assertEqual(m.requests.Count(), 1, "Do not transmit key to mismatched server")
+    m.requests = []
+    m.responses = [{ status: 200, data: info }, { status: 200, data: { LocalUserId: "local", AccessToken: "local-token" } }, { status: 200, data: { Id: "local", Name: "User" } }]
+    connection = embyConnect.Exchange(server, "cloud")
+    assertEqual(connection.accessToken, "local-token", "Exchange creates local token")
+    assertEqual(connection.user.Id, "local", "Load local user identity")
+    assertEqual(m.requests[1].headers["X-Emby-Token"], "key", "Exchange uses server access key")
+    assertEqual(m.requests[2].headers["X-Emby-Authorization"].Left(5), "Emby ", "Local user request uses Emby scheme")
+    assertEqual(m.requests[2].headers["X-Emby-Authorization"].Instr("local-token") >= 0, true, "Local user request uses exchanged token")
+    assertEqual(m.requests[2].headers["X-Emby-Authorization"].Instr("active-token"), -1, "Do not reuse previous account token")
+    m.requests = []
+    m.responses = [{ status: 200, data: info }, { status: 200, data: { LocalUserId: "local", AccessToken: "local-token" } }, { status: 200, data: { Id: "wrong", Name: "User" } }]
+    assertEqual(embyConnect.TryExchange("https://server.test", server, "cloud"), invalid, "Reject mismatched local user")
+    m.requests = []
+    m.responses = [{ status: 404, data: invalid }, { status: 200, data: info }, { status: 200, data: { LocalUserId: "local", AccessToken: "local-token" } }, { status: 200, data: { Id: "local", Name: "User" } }]
+    assertEqual(embyConnect.Exchange(server, "cloud").serverUrl, "https://server.test/emby", "Fall back to Emby base path")
+end sub

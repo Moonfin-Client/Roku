@@ -18,6 +18,24 @@
 
 Moonfin for Roku is an enhanced fork of the official Jellyfin Roku client. It brings the full Moonfin experience to Roku hardware. It shares its look, screens, and settings with the other Moonfin clients, and it syncs your preferences through the Moonbase server plugin.
 
+## Emby servers
+
+Connect to Emby through **Emby Connect**, local discovery, or **Enter Server URL**.
+Emby Connect accepts an Emby account and lists its linked servers; direct URL login
+uses a local server account. Reverse-proxy base paths, including `/emby`, are supported.
+Emby Connect credentials are not saved; the app stores the resulting local server
+session through the existing account system. Jellyfin Quick Connect remains available
+for Jellyfin servers.
+
+Core browsing and playback work without a server plugin. The Emby edition of the
+[Moonfin server plugin](https://github.com/Moonfin-Client/Plugin) enables its supported
+settings sync, ratings, themes, messages, diagnostic uploads and Seerr integration.
+Seek previews and intro/credits skipping use thumbnails and chapter markers supplied
+by Emby. Emby does not provide Jellyfin's lyrics API.
+
+See [Emby compatibility and validation](docs/emby-validation.md) for coverage,
+server requirements and the remaining device test matrix.
+
 ## Features
 
 - **A modern home screen and detail screen**, both on by default. The focused row item grows into a landscape card with metadata and ratings. Detail pages get a cinematic tabbed layout with studio logos, chapters, and an Up Next card. The classic layouts stay selectable.
@@ -25,7 +43,7 @@ Moonfin for Roku is an enhanced fork of the official Jellyfin Roku client. It br
 - **A featured media bar** with six styles: Moonfin, MakD, Banner, Gallery, Bookshelf, and the rounded Aya hero.
 - **A home screen full of rows** you pick and order yourself, with no cap on how many. Choose from Seerr rows, IMDb and TMDB charts, Radarr and Sonarr calendars, Favorites, Collections, Genres, Playlists, Audio, Since You Watched, Rewatch, and Recently Released, plus rows for one specific collection, genre, or playlist. The whole layout syncs.
 - **Seerr built into the detail screen.** Request in HD or 4K with smart season selection, track your requests and issues, filter NSFW content, and get Seerr results in global search. See [Seerr Setup](https://github.com/Moonfin-Client/Roku/wiki/Seerr-Setup).
-- **Multi-server support** with seamless playback across every connected Jellyfin server.
+- **Multi-server support** with seamless playback across connected Jellyfin and Emby servers.
 - **Settings sync** through the [Moonfin server plugin](https://github.com/Moonfin-Client/Plugin). Your theme, layouts, row order, hidden items, and much more follow you between devices.
 - **Playback done right**: trickplay previews while scrubbing, pre-playback track selection, fast forward and rewind at 3x, 15x, and 50x, HDR10+ and Dolby Vision with fallbacks, manual subtitle sync, theme music, and rearrangeable player buttons.
 - **A setup wizard on first run** that shows live previews built from your own artwork, and skips anything you have already chosen.

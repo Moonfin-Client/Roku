@@ -1,0 +1,111 @@
+import "pkg:/source/api/EmbyConnect.bs"
+import "pkg:/source/utils/session.bs"
+
+' The normal scene loop stays responsive while the account/server requests run
+' in a task. Back cancels the task and never installs a partial local session.
+function WaitForEmbyConnectTask(task as object, port as object) as dynamic
+    task.observeField("result", port)
+    task.control = "RUN"
+    while true
+        msg = wait(0, port)
+        if isNodeEvent(msg, "result")
+            result = msg.GetData()
+            task.unobserveField("result")
+            task.result = {}
+            return result
+        else if isNodeEvent(msg, "backPressed") or (type(msg) = "roSGScreenEvent" and msg.isScreenClosed())
+            task.control = "STOP"
+            task.unobserveField("result")
+            task.password = ""
+            task.server = {}
+            task.result = {}
+            return invalid
+        end if
+    end while
+    return invalid
+end function
+
+function CreateEmbyConnectGroup() as boolean
+    group = CreateObject("roSGNode", "EmbyConnectScene")
+    m.global.sceneManager.callFunc("pushScene", group)
+    port = CreateObject("roMessagePort")
+    group.observeField("backPressed", port)
+    group.findNode("submit").observeField("buttonSelected", port)
+    config = group.findNode("configOptions")
+    username = config.content.GetChild(0)
+    password = config.content.GetChild(1)
+    config.setFocus(true)
+    config.jumpToItem = 0
+    succeeded = false
+    canceled = false
+
+    while not succeeded and not canceled
+        msg = wait(0, port)
+        if isNodeEvent(msg, "backPressed") or (type(msg) = "roSGScreenEvent" and msg.isScreenClosed())
+            exit while
+        end if
+        if not isNodeEvent(msg, "buttonSelected") then continue while
+        if username.value.Trim() = ""
+            group.alert = tr("Enter your Emby username or email.")
+            continue while
+        end if
+
+        group.alert = ""
+        group.findNode("connectingTo").text = tr("Signing in to Emby Connect...")
+        task = CreateObject("roSGNode", "EmbyConnectTask")
+        task.username = username.value.Trim()
+        task.password = password.value
+        password.value = ""
+        account = WaitForEmbyConnectTask(task, port)
+        if account = invalid then exit while
+        if account.error <> invalid
+            group.alert = embyConnect.ErrorMessage(account.error)
+            group.findNode("connectingTo").text = tr("Sign in with your Emby account to find your servers.")
+            continue while
+        end if
+
+        ' Keep the linked-server list for retries, without keeping the cloud token.
+        while true
+            names = []
+            for each server in account.servers
+                names.Push(server.name)
+            end for
+            selected = show_dialog(tr("Choose an Emby server"), names)
+            if selected < 0 then exit while
+            group.alert = ""
+            group.findNode("connectingTo").text = tr("Connecting to ") + account.servers[selected].name
+            task = CreateObject("roSGNode", "EmbyConnectTask")
+            task.mode = "exchange"
+            task.connectUserId = account.userId
+            task.server = account.servers[selected]
+            connection = WaitForEmbyConnectTask(task, port)
+            if connection = invalid
+                canceled = true
+                exit while
+            end if
+            if connection.error <> invalid
+                show_dialog(embyConnect.ErrorMessage(connection.error), [tr("OK")])
+                continue while
+            end if
+
+            ' Publish the validated local identity only after the exchange and
+            ' authenticated user lookup have both succeeded.
+            session.server.Update("url", connection.serverUrl)
+            session.server.ApplyInfo(connection.publicInfo)
+            set_setting("server", connection.serverUrl)
+            unset_setting("active_user")
+            user = CreateObject("roSGNode", "UserData")
+            user.json = { User: connection.user, AccessToken: connection.accessToken }
+            session.user.Login(user, should_save_credentials())
+            succeeded = true
+            exit while
+        end while
+        group.findNode("connectingTo").text = tr("Sign in with your Emby account to find your servers.")
+    end while
+
+    password.value = ""
+    group.unobserveField("backPressed")
+    group.findNode("submit").unobserveField("buttonSelected")
+    m.global.sceneManager.callFunc("popScene")
+    return succeeded
+end function

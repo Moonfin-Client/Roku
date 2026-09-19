@@ -1,0 +1,113 @@
+import "pkg:/source/api/baserequest.bs"
+
+namespace embyFeatures
+    function IsNumber(value as dynamic) as boolean
+        kind = LCase(type(value))
+        return kind = "integer" or kind = "roint" or kind = "rointeger" or kind = "longinteger" or kind = "rolonginteger" or kind = "float" or kind = "rofloat" or kind = "double" or kind = "rodouble"
+    end function
+
+    function ChooseMediaSource(item as dynamic, fallback as string) as string
+        if type(item) = "roAssociativeArray"
+            if type(item.MediaSources) = "roArray"
+                if item.MediaSources.Count() > 0
+                    first = item.MediaSources[0]
+                    if type(first) = "roAssociativeArray"
+                        if type(first.Id) = "String" or type(first.Id) = "roString"
+                            if first.Id <> "" then return first.Id
+                        end if
+                    end if
+                end if
+            end if
+        end if
+        return fallback
+    end function
+
+    function Marker(value as dynamic) as string
+        markers = ["chapter", "introstart", "introend", "creditsstart"]
+        if embyFeatures.IsNumber(value)
+            if value >= 0 and value < markers.Count() and value = Fix(value) then return markers[value]
+        else if type(value) = "String" or type(value) = "roString"
+            return LCase(value.Trim())
+        end if
+        return ""
+    end function
+
+    function Segments(item as dynamic) as object
+        result = { Items: [], TotalRecordCount: 0 }
+        if type(item) <> "roAssociativeArray" then return result
+        if type(item.Chapters) <> "roArray" then return result
+        introStart = invalid
+        introEnd = invalid
+        creditsStart = invalid
+        positions = []
+        for each chapter in item.Chapters
+            if type(chapter) = "roAssociativeArray"
+                ticks = chapter.StartPositionTicks
+                if embyFeatures.IsNumber(ticks)
+                    if ticks >= 0
+                        positions.Push(ticks)
+                        kind = embyFeatures.Marker(chapter.MarkerType)
+                        if kind = "introstart" and introStart = invalid then introStart = ticks
+                        if kind = "introend" and introEnd = invalid then introEnd = ticks
+                        if kind = "creditsstart" and creditsStart = invalid then creditsStart = ticks
+                    end if
+                end if
+            end if
+        end for
+        if introStart <> invalid and introEnd = invalid
+            for each ticks in positions
+                if ticks > introStart
+                    if introEnd = invalid or ticks < introEnd then introEnd = ticks
+                end if
+            end for
+        end if
+        if introStart <> invalid and introEnd <> invalid
+            if introEnd > introStart then result.Items.Push({ Type: "intro", StartTicks: introStart, EndTicks: introEnd })
+        end if
+        if creditsStart <> invalid and embyFeatures.IsNumber(item.RunTimeTicks)
+            if item.RunTimeTicks > creditsStart then result.Items.Push({ Type: "outro", StartTicks: creditsStart, EndTicks: item.RunTimeTicks })
+        end if
+        result.TotalRecordCount = result.Items.Count()
+        return result
+    end function
+
+    function PreviewData(data as dynamic, server as object, itemId as string, mediaSourceId as string) as object
+        result = { frames: [], height: 180 }
+        if type(data) <> "roAssociativeArray" then return result
+        if not embyFeatures.IsNumber(data.AspectRatio) then return result
+        if data.AspectRatio < 0.2 or data.AspectRatio > 10 then return result
+        if type(data.Thumbnails) <> "roArray" then return result
+        result.height = Int(320 / data.AspectRatio)
+        if result.height > 320 then result.height = 320
+        for each frame in data.Thumbnails
+            if type(frame) = "roAssociativeArray"
+                if embyFeatures.IsNumber(frame.PositionTicks) and (type(frame.ImageTag) = "String" or type(frame.ImageTag) = "roString")
+                    if frame.PositionTicks >= 0 and frame.ImageTag <> ""
+                        params = { maxWidth: 320, PositionTicks: frame.PositionTicks, tag: frame.ImageTag, quality: 90, api_key: server.authToken }
+                        if mediaSourceId <> "" then params.MediaSourceId = mediaSourceId
+                        result.frames.Push({ ticks: frame.PositionTicks, url: buildURLForServer(server.serverUrl, "Items/" + itemId + "/Images/Thumbnail", params) })
+                    end if
+                end if
+            end if
+        end for
+        result.frames.SortBy("ticks")
+        return result
+    end function
+
+    ' Binary search also handles irregular timestamp intervals and duplicate frames.
+    function FrameIndex(frames as object, ticks as longinteger) as integer
+        low = 0
+        high = frames.Count() - 1
+        selected = -1
+        while low <= high
+            middle = Int((low + high) / 2)
+            if frames[middle].ticks <= ticks
+                selected = middle
+                low = middle + 1
+            else
+                high = middle - 1
+            end if
+        end while
+        return selected
+    end function
+end namespace

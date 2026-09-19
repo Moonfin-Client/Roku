@@ -1,6 +1,7 @@
 import "pkg:/source/enums/ImageType.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/parsedUrl.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
 
 function isNodeEvent(msg, field as string) as boolean
     return type(msg) = "roSGNodeEvent" and msg.getField() = field
@@ -273,6 +274,7 @@ function inferServerUrl(url as string) as string
         reqs.push(req) ' keep in scope outside of loop, else -10001
         finalUrl = `${endpoint.proto}://${endpoint.host}${endpoint.port = "" ? "" : `:${endpoint.port}`}${endpoint.path}`
         req.seturl(`${finalUrl}/system/info/public${endpoint.query = "" ? "" : `?${endpoint.query}`}`)
+        req.AddHeader("Accept", "application/json")
         req.setMessagePort(port)
         hosts.addreplace(req.getidentity().ToStr(), `${finalUrl}${endpoint.query = "" ? "" : `?${endpoint.query}`}`)
         if isStringEqual(endpoint.proto, "https")
@@ -284,12 +286,13 @@ function inferServerUrl(url as string) as string
     timeout = CreateObject("roTimespan")
     if hosts.count() > 0
         while timeout.totalseconds() < 15
-            resp = wait(0, port)
+            resp = wait(250, port)
+            if resp = invalid then continue while
             if type(resp) = "roUrlEvent"
                 ' TODO
                 ' if response code is a 300 redirect then we should return the redirect url
                 ' Make sure this happens or make it happen
-                if resp.GetResponseCode() = 200 and isJellyfinServer(resp.GetString())
+                if resp.GetResponseCode() = 200 and isSupportedMediaServer(resp.GetString())
                     selectedUrl = hosts.lookup(resp.GetSourceIdentity().ToStr())
                     return selectedUrl
                 end if
@@ -332,6 +335,18 @@ function urlCandidates(input as string)
             end if
         end if
     end for
+    ' Also probe Emby's API prefix, preserving reverse-proxy paths and queries.
+    embyCandidates = []
+    for each candidate in finalCandidates
+        basePath = candidate.path
+        if basePath.Right(1) = "/" then basePath = basePath.Left(basePath.Len() - 1)
+        if LCase(basePath).Right(5) <> "/emby"
+            portSuffix = candidate.port = "" ? "" : ":" + candidate.port
+            querySuffix = candidate.query = "" ? "" : "?" + candidate.query
+            embyCandidates.Push(ParsedUrl(candidate.proto + "://" + candidate.host + portSuffix + basePath + "/emby" + querySuffix))
+        end if
+    end for
+    finalCandidates.Append(embyCandidates)
     return finalCandidates
 end function
 
@@ -834,14 +849,8 @@ sub stopLoadingSpinner()
     end if
 end sub
 
-' accepts the raw json string of /system/info/public and returns
-' a boolean indicating if ProductName is "Jellyfin Server"
-function isJellyfinServer(systemInfo as object) as boolean
-    data = ParseJson(systemInfo)
-    if isValid(data) and isValid(data.ProductName)
-        return LCase(data.ProductName) = m.global.constants.jellyfin_server
-    end if
-    return false
+function isSupportedMediaServer(systemInfo as string) as boolean
+    return detectServerType(ParseJson(systemInfo)) <> ""
 end function
 
 ' Takes an array of data, shuffles the order, then returns the array

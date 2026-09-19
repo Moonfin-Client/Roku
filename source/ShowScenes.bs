@@ -1,4 +1,5 @@
 import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/EmbyConnectFlow.bs"
 import "pkg:/source/enums/ImageType.bs"
 import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/utils/kidsMode.bs"
@@ -30,6 +31,11 @@ function LoginFlow()
             return false
         end if
         SaveServerList()
+        if m.embyConnectAuthenticated = true
+            LoadUserAbilities()
+            m.global.sceneManager.callFunc("clearScenes")
+            return true
+        end if
     end if
 
     if isValidAndNotEmpty(m.global.session.server.version)
@@ -192,6 +198,8 @@ function LoginFlow()
 end function
 
 sub ServerVersionCheck(systemVersion as string)
+    ' Emby versions are independent of Jellyfin's minimum supported version.
+    if isEmbyServer() then return
     meetsRequirements = serverVersionMeetsMinimumRequirements(systemVersion, minimumServerVersion)
     if not meetsRequirements
         m.scene.isLoading = false
@@ -283,6 +291,7 @@ sub SendPerformanceBeacon(signalName as string)
 end sub
 
 function CreateServerGroup() as string
+    m.embyConnectAuthenticated = false
     screen = CreateObject("roSGNode", "SetServerScreen")
     m.global.sceneManager.callFunc("pushScene", screen)
     port = CreateObject("roMessagePort")
@@ -296,6 +305,7 @@ function CreateServerGroup() as string
         connectButton.observeField("buttonSelected", port)
     end if
 
+    screen.findNode("embyConnectButton").observeField("buttonSelected", port)
     screen.observeField("forgetServer", port)
     screen.observeField("backPressed", port)
 
@@ -308,7 +318,13 @@ function CreateServerGroup() as string
         else if type(msg) = "roSGNodeEvent"
             node = msg.getNode()
 
-            if node = "connectButton"
+            if node = "embyConnectButton"
+                if CreateEmbyConnectGroup()
+                    m.embyConnectAuthenticated = true
+                    screen.visible = false
+                    return m.global.session.server.name
+                end if
+            else if node = "connectButton"
                 m.scene.isLoading = true
 
                 serverUrl = inferServerUrl(screen.serverUrl)
@@ -488,8 +504,15 @@ function CreateSigninGroup(user = "")
                     return "true"
                 end if
                 stopLoadingSpinner()
-                group.alert = tr("Login attempt failed.")
+                group.alert = m.loginError
             else if isStringEqual(node, "quickConnect")
+                if isEmbyServer()
+                    if CreateEmbyConnectGroup()
+                        SaveServerList()
+                        return "true"
+                    end if
+                    continue while
+                end if
                 json = initQuickConnect()
                 if json = invalid
                     m.global.sceneManager.callFunc("standardDialog", "Quick Connect Error", { data: ["<p>" + tr("There was an error detecting Quick Connect. Quick Connect is disabled on your server.") + "</p>"] })
@@ -607,6 +630,19 @@ function usesRichMusicScreen() as boolean
 end function
 
 function CreateMovieDetailsGroup(movie as object) as dynamic
+    try
+        result = CreateMovieDetailsGroupInternal(movie)
+        stopLoadingSpinner()
+        return result
+    catch error
+        stopLoadingSpinner()
+        print "[Details] CreateMovieDetailsGroup failed: "; error.number; " "; error.message
+        show_dialog(tr("Unable to load item details. Check the server connection and try again."), [tr("OK")])
+        return invalid
+    end try
+end function
+
+function CreateMovieDetailsGroupInternal(movie as object) as dynamic
     ' validate movie node
     if not isValid(movie) or not isValid(movie.id) then return invalid
 
@@ -623,6 +659,7 @@ function CreateMovieDetailsGroup(movie as object) as dynamic
     ' validate movie meta data
     if not isValid(movieMetaData)
         stopLoadingSpinner()
+        show_dialog(tr("Unable to load item details. Check the server connection and try again."), [tr("OK")])
         return invalid
     end if
 
@@ -643,29 +680,7 @@ function CreateMovieDetailsGroup(movie as object) as dynamic
     group.observeField("refreshEpisodeDetailsData", m.port)
     group.observeField("refreshMovieDetailsData", m.port)
 
-    ' local trailers
-    trailerData = api.items.GetLocalTrailers(movie.id, { userId: m.global.session.user.id })
-    group.trailerAvailable = isValidAndNotEmpty(trailerData)
-
-    group.additionalParts = {
-        masterID: movie.id,
-        parts: api.videos.GetAdditionalParts(movie.id)
-    }
-
-    ' Load logo image
-    if itemType = "episode" or itemType = "series"
-        if isValid(movieMetaData.json.SeriesID)
-            logoImageExists = api.items.HeadImageURLByName(movieMetaData.json.SeriesID, ImageType.LOGO)
-            if logoImageExists
-                group.logoImageURI = api.items.GetImageURL(movieMetaData.json.SeriesID, ImageType.LOGO, 0, { "format": "Png", "maxHeight": 250, "maxWidth": 500, "quality": "90" })
-            end if
-        end if
-    else
-        logoImageExists = api.items.HeadImageURLByName(movie.id, ImageType.LOGO)
-        if logoImageExists
-            group.logoImageURI = api.items.GetImageURL(movie.id, ImageType.LOGO, 0, { "format": "Png", "maxHeight": 250, "maxWidth": 500, "quality": "90" })
-        end if
-    end if
+    startDetailExtras(group, movieMetaData.json, movieServerData, true)
 
     ' setup and load movie extras
     extras = group.findNode("extrasGrid")
@@ -745,6 +760,19 @@ function hasNextUpEpisode(parentID as string) as boolean
 end function
 
 function CreateSeriesDetailsGroup(seriesID as string, seriesServerData = invalid as object) as dynamic
+    try
+        result = CreateSeriesDetailsGroupInternal(seriesID, seriesServerData)
+        stopLoadingSpinner()
+        return result
+    catch error
+        stopLoadingSpinner()
+        print "[Details] CreateSeriesDetailsGroup failed: "; error.number; " "; error.message
+        show_dialog(tr("Unable to load item details. Check the server connection and try again."), [tr("OK")])
+        return invalid
+    end try
+end function
+
+function CreateSeriesDetailsGroupInternal(seriesID as string, seriesServerData = invalid as object) as dynamic
     ' validate series node
     if not isValidAndNotEmpty(seriesID) then return invalid
 
@@ -808,15 +836,7 @@ function CreateSeriesDetailsGroup(seriesID as string, seriesServerData = invalid
     group.observeField("playSeriesFromStart", m.port)
     group.observeField("refreshSeriesDetailsData", m.port)
 
-    ' Load logo image for series
-    logoImageExists = api.items.HeadImageURLByName(seriesID, ImageType.LOGO)
-    if logoImageExists
-        group.logoImageURI = api.items.GetImageURL(seriesID, ImageType.LOGO, 0, { "format": "Png", "maxHeight": 250, "maxWidth": 500, "quality": "90" })
-    end if
-
-    ' Local trailers
-    trailerData = api.items.GetLocalTrailers(seriesID, { userId: m.global.session.user.id })
-    group.trailerAvailable = isValidAndNotEmpty(trailerData)
+    startDetailExtras(group, seriesMetaData.json, seriesServerData, false)
 
     ' Setup and load series extras
     extras = group.findNode("extrasGrid")
@@ -1238,4 +1258,30 @@ sub playbackOptionDialog(time as longinteger, meta as object)
     end if
     stopLoadingSpinner()
     m.global.sceneManager.callFunc("optionDialog", "playback", tr("Playback Options"), [], resumeData, { id: string.EMPTY })
+end sub
+
+' Show essential details before optional network requests for trailers/parts.
+sub startDetailExtras(group as object, item as object, server = invalid as dynamic, includeParts = false as boolean)
+    if not isValid(server)
+        server = { serverUrl: get_url(), userId: m.global.session.user.id, authToken: m.global.session.user.authToken }
+    end if
+    logoId = item.Id
+    logoTag = chainLookupReturn(item, "ImageTags.Logo", "")
+    if logoTag = "" and isValidAndNotEmpty(item.ParentLogoItemId)
+        logoId = item.ParentLogoItemId
+        logoTag = item.ParentLogoImageTag ?? ""
+    end if
+    if logoTag <> ""
+        params = { tag: logoTag, maxHeight: 250, maxWidth: 500 }
+        if isEmbyServer(server.serverUrl) then params.api_key = server.authToken
+        group.logoImageURI = buildURLForServer(server.serverUrl, "Items/" + logoId + "/Images/Logo", params)
+    end if
+    task = CreateObject("roSGNode", "DetailExtrasTask")
+    group.addField("detailExtrasTask", "node", false)
+    group.detailExtrasTask = task
+    task.target = group
+    task.item = item
+    task.server = server
+    task.includeParts = includeParts
+    task.control = "RUN"
 end sub

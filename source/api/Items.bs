@@ -1,6 +1,7 @@
 import "pkg:/source/api/sdk.bs"
 import "pkg:/source/enums/PlaybackMethod.bs"
 import "pkg:/source/enums/SubtitleSelection.bs"
+import "pkg:/source/utils/detailCompatibility.bs"
 
 function ItemGetPlaybackInfo(id as string, startTimeTicks = 0 as longinteger)
     params = {
@@ -47,7 +48,7 @@ function ItemPostPlaybackInfo(id as string, mediaSourceId = "" as string, audioT
 
     if mediaSourceId <> ""
         params.MediaSourceId = mediaSourceId
-    else
+    else if not isEmbyServer()
         ' Note: Jellyfin v10.9 remuxs LiveTV and does not allow DirectPlay.
         ' Because of this, we need to tell the server "EnableDirectPlay = false" so that we receive the
         ' transcoding URL (which is just a remux and not a transcode; unless it is)
@@ -100,7 +101,7 @@ function ItemPostPlaybackInfoForServer(serverData as object, id as string, media
 
     if mediaSourceId <> ""
         params.MediaSourceId = mediaSourceId
-    else
+    else if not isEmbyServer(serverData.serverUrl)
         params.EnableDirectPlay = false
     end if
 
@@ -121,6 +122,7 @@ end function
 ' Plugins can only contribute search results through /Search/Hints, and that is new
 ' in Jellyfin 12, so older servers stay on the plain /Items search.
 function serverSupportsSearchHints() as boolean
+    if isEmbyServer() then return false
     if not isChainValid(m.global, "session.server.version") then return false
 
     version = m.global.session.server.version
@@ -323,13 +325,14 @@ end function
 
 ' MetaData about an item
 function ItemMetaData(id as string)
-    url = Substitute("Items/{0}", id)
+    url = serverItemMetadataPath(id, m.global.session.user.id, isEmbyServer())
     resp = APIRequest(url, {
         userid: m.global.session.user.id,
-        fields: "Chapters,Trickplay"
+        fields: "Chapters,Trickplay,MediaSources,MediaStreams,People,Overview,Studios,Genres,ProviderIds,Taglines"
     })
     data = getJson(resp)
-    if not isValidAndNotEmpty(data) then return invalid
+    if not validItemMetadata(data) then return invalid
+    data = normalizeDetailMetadata(data)
 
     imgParams = {}
     if data.type <> "Audio"
@@ -340,37 +343,37 @@ function ItemMetaData(id as string)
     end if
     if data.type = "Movie" or data.type = "MusicVideo"
         tmp = CreateObject("roSGNode", "MovieData")
-        tmp.image = PosterImage(data.id, imgParams)
+        tmp.image = MetadataPosterImage(data.id, imgParams)
         tmp.json = data
         return tmp
     else if data.type = "Series"
         tmp = CreateObject("roSGNode", "SeriesData")
-        tmp.image = PosterImage(data.id)
+        tmp.image = MetadataPosterImage(data.id)
         tmp.json = data
         return tmp
     else if data.type = "Episode"
         tmp = CreateObject("roSGNode", "TVEpisodeData")
-        tmp.image = PosterImage(data.id, imgParams)
+        tmp.image = MetadataPosterImage(data.id, imgParams)
         tmp.json = data
         return tmp
     else if data.type = "Recording"
         tmp = CreateObject("roSGNode", "RecordingData")
-        tmp.image = PosterImage(data.id, imgParams)
+        tmp.image = MetadataPosterImage(data.id, imgParams)
         tmp.json = data
         return tmp
     else if data.type = "BoxSet" or data.type = "Playlist"
         tmp = CreateObject("roSGNode", "CollectionData")
-        tmp.image = PosterImage(data.id, imgParams)
+        tmp.image = MetadataPosterImage(data.id, imgParams)
         tmp.json = data
         return tmp
     else if data.type = "Season"
         tmp = CreateObject("roSGNode", "TVSeasonData")
-        tmp.image = PosterImage(data.id)
+        tmp.image = MetadataPosterImage(data.id)
         tmp.json = data
         return tmp
     else if data.type = "Video"
         tmp = CreateObject("roSGNode", "VideoData")
-        tmp.image = PosterImage(data.id)
+        tmp.image = MetadataPosterImage(data.id)
         tmp.json = data
         return tmp
     else if data.type = "Trailer"
@@ -383,25 +386,25 @@ function ItemMetaData(id as string)
         return tmp
     else if data.type = "TvChannel" or data.type = "Program"
         tmp = CreateObject("roSGNode", "ChannelData")
-        tmp.image = PosterImage(data.id)
+        tmp.image = MetadataPosterImage(data.id)
         tmp.isFavorite = data.UserData.isFavorite
         tmp.json = data
         return tmp
     else if data.type = "Person"
         tmp = CreateObject("roSGNode", "PersonData")
-        tmp.image = PosterImage(data.id, { "MaxWidth": 300, "MaxHeight": 450 })
+        tmp.image = MetadataPosterImage(data.id, { "MaxWidth": 300, "MaxHeight": 450 })
         tmp.json = data
         return tmp
     else if data.type = "MusicArtist"
         ' User clicked on an artist and wants to see the list of their albums
         tmp = CreateObject("roSGNode", "MusicArtistData")
-        tmp.image = PosterImage(data.id)
+        tmp.image = MetadataPosterImage(data.id)
         tmp.json = data
         return tmp
     else if data.type = "MusicAlbum"
         ' User clicked on an album and wants to see the list of songs
         tmp = CreateObject("roSGNode", "MusicAlbumSongListData")
-        tmp.image = PosterImage(data.id)
+        tmp.image = MetadataPosterImage(data.id)
         tmp.json = data
         return tmp
     else if data.type = "Audio"
@@ -409,11 +412,11 @@ function ItemMetaData(id as string)
         tmp = CreateObject("roSGNode", "MusicSongData")
 
         ' Try using song's parent for poster image
-        tmp.image = PosterImage(data.ParentId, { "MaxWidth": 500, "MaxHeight": 500 })
+        tmp.image = MetadataPosterImage(data.ParentId, { "MaxWidth": 500, "MaxHeight": 500 })
 
         ' Song's parent poster image is no good, try using the song's poster image
         if tmp.image = invalid
-            tmp.image = PosterImage(data.id, { "MaxWidth": 500, "MaxHeight": 500 })
+            tmp.image = MetadataPosterImage(data.id, { "MaxWidth": 500, "MaxHeight": 500 })
         end if
 
         tmp.json = data
@@ -422,11 +425,11 @@ function ItemMetaData(id as string)
         tmp = CreateObject("roSGNode", "MusicSongData")
 
         ' Try using song's parent for poster image
-        tmp.image = PosterImage(data.id, { "MaxWidth": 500, "MaxHeight": 500 })
+        tmp.image = MetadataPosterImage(data.id, { "MaxWidth": 500, "MaxHeight": 500 })
 
         ' Song's parent poster image is no good, try using the song's poster image
         if not isValid(tmp.image)
-            tmp.image = PosterImage(data.ParentId, { "MaxWidth": 500, "MaxHeight": 500 })
+            tmp.image = MetadataPosterImage(data.ParentId, { "MaxWidth": 500, "MaxHeight": 500 })
         end if
 
         tmp.json = data
@@ -448,11 +451,12 @@ function ItemMetaDataForServer(serverData as object, id as string)
     if not isValid(serverData.authToken) then return invalid
 
     url = Substitute("Users/{0}/Items/{1}", serverData.userId, id)
-    req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, { "fields": "Chapters,Trickplay,Taglines" })
+    req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, { "fields": "Chapters,Trickplay,MediaSources,MediaStreams,People,Overview,Studios,Genres,ProviderIds,Taglines" })
     if not isValid(req) then return invalid
 
     data = getJson(req)
-    if data = invalid then return invalid
+    if not validItemMetadata(data) then return invalid
+    data = normalizeDetailMetadata(data)
 
     data._serverUrl = serverData.serverUrl
     data._userId = serverData.userId
@@ -522,16 +526,11 @@ end function
 function PosterImageForServer(serverBaseUrl as string, id as string, params = {} as object) as dynamic
     if not isValidAndNotEmpty(id) then return invalid
 
-    imgUrl = serverBaseUrl + "/Items/" + id + "/Images/Primary"
-    paramString = "?maxWidth=400&quality=90"
-
-    for each key in params
-        paramString = paramString + "&" + key + "=" + params[key].toStr()
-    end for
-
+    imageParams = { maxWidth: 400, quality: 90 }
+    imageParams.Append(params)
     tmp = CreateObject("roSGNode", "ImageData")
     tmp.imagetype = "Primary"
-    tmp.url = imgUrl + paramString
+    tmp.url = buildURLForServer(serverBaseUrl, "Items/" + id + "/Images/Primary", authenticatedImageParams(serverBaseUrl, imageParams))
     return tmp
 end function
 
