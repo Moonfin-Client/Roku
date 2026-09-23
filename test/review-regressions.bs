@@ -1,0 +1,183 @@
+' Execute API callers with a deterministic roUrlTransfer boundary.
+function testUrlTransfer() as object
+    return {
+        headers: {}, url: "", fixtureBody: m.fixtureBody ?? "{}",
+        SetUrl: sub(url as string)
+            m.url = url
+        end sub,
+        AddHeader: sub(name as string, value as string)
+            m.headers[name] = value
+        end sub,
+        SetCertificatesFile: sub(path as string)
+            m.certificateFile = path
+        end sub,
+        GetToString: function() as string
+            return m.fixtureBody
+        end function
+    }
+end function
+
+namespace diagnostics
+    const LEVEL_WARN = "warn"
+    function StartTrace(method as string, request as object) as integer
+        return 1
+    end function
+    sub EndTrace(started as integer, result as string, level = "debug" as string)
+    end sub
+end namespace
+
+function requestResponse(req as object, method = "GET" as string, body = "" as string, timeoutMs = 30000 as integer, cancelNode = invalid as dynamic) as object
+    m.playbackRequests.Push({ request: req, method: method, payload: ParseJson(body) })
+    if m.playbackResponses.Count() = 0 then return { status: 0, data: invalid }
+    return m.playbackResponses.Shift()
+end function
+
+function postJson(req as object, body as string) as dynamic
+    m.jellyfinPosts++
+    return ParseJson(body)
+end function
+
+sub testReviewRegressions()
+    emby = "https://emby.test/emby"
+    jellyfin = "https://jellyfin.test"
+    m.global = { session: { server: { url: jellyfin, serverType: "jellyfin" }, user: { id: "jf-user", authToken: "jf-token" } } }
+    for each version in ["10.9.0", "12.0.0"]
+        assertEqual(detectServerType({ Version: version, Id: "jf", ServerName: "Home", ProductName: "My server" }), "jellyfin", "Rebranded Jellyfin identity")
+        assertEqual(detectServerType({ Version: version, Id: "jf", ServerName: "Home" }), "jellyfin", "Missing product with valid Jellyfin shape")
+    end for
+    assertEqual(detectServerType({ ProductName: "Custom Jellyfin", Version: "12.0.0" }), "jellyfin", "Product substring detection")
+    assertEqual(canonicalServerURL("https://jf.test/proxy/emby?route=tv", "jellyfin"), "https://jf.test/proxy?route=tv", "Remove Jellyfin legacy prefix")
+    assertEqual(canonicalServerURL("https://jf.test/proxy/mediabrowser/", "jellyfin"), "https://jf.test/proxy", "Remove MediaBrowser legacy prefix")
+    assertEqual(canonicalServerURL(emby, "emby"), emby, "Keep Emby prefix")
+
+    remote = { serverUrl: emby, userId: "remote-user", authToken: "remote-token" }
+    url = buildURLForSession(remote, "/Items/Latest", { Limit: 10 })
+    assertEqual(url.Instr("/Users/remote-user/Items/Latest?") > 0, true, "HomeRows session builder translates Emby latest")
+    assertEqual(buildURLForSession({ serverUrl: jellyfin, userId: "jf" }, "/Items/Latest"), jellyfin + "/Items/Latest", "Jellyfin session builder stays flat")
+    assertEqual(buildURLForServer(emby, "Items/Latest?Limit=5", {}, "remote-user"), emby + "/Users/remote-user/Items/Latest?Limit=5", "Translate paths with embedded query")
+
+    req = APIRequestForServer(emby, "remote-user", "remote-token", "Items/Latest")
+    assertEqual(req.url, emby + "/Users/remote-user/Items/Latest", "Real remote API caller translates route")
+    assertEqual(req.headers.Authorization, req.headers["X-Emby-Authorization"], "Emby API sends identical standard and legacy authorization")
+    assertEqual(req.headers.Authorization.Instr("remote-token") > 0, true, "Remote API uses destination token")
+    assertEqual(req.headers.Authorization.Instr("active-token"), -1, "Remote request excludes active account token")
+    assertEqual(req.headers.Accept, "application/json", "API transfer requests JSON")
+    req = APIRequest("Items/Latest")
+    assertEqual(req.url, jellyfin + "/Items/Latest", "Jellyfin API caller unchanged")
+    assertEqual(req.headers.DoesExist("X-Emby-Authorization"), false, "Jellyfin 12 never receives legacy header")
+    content = authRequestForServer(testUrlTransfer(), remote)
+    assertEqual(content.headers.DoesExist("Accept"), false, "Video authentication does not require JSON")
+    assertEqual(content.headers.Authorization, content.headers["X-Emby-Authorization"], "Video authenticates with both Emby headers")
+    content = authRequest(testUrlTransfer())
+    assertEqual(content.headers.DoesExist("Accept"), false, "Jellyfin video Accept header unchanged")
+
+    filters = { Genres: "Drama,Comedy", OfficialRatings: "PG,R", Tags: ["first", "second"], Studios: "A,B" }
+    converted = serverCompatibleParams(filters, true)
+    assertEqual(converted.Genres, "Drama|Comedy", "Emby genre delimiter")
+    assertEqual(converted.OfficialRatings, "PG|R", "Emby rating delimiter")
+    assertEqual(converted.Tags, "first|second", "Emby array filter")
+    assertEqual(converted.Studios, "A|B", "Emby studio delimiter")
+    assertEqual(serverCompatibleParams(filters, false).Genres, "Drama,Comedy", "Jellyfin filter untouched")
+
+    sources = normalizeDetailMetadata({ Id: "item", Type: "Movie", MediaSources: [{ Id: 1234 }] })
+    assertEqual(sources.MediaSources[0].Id, "1234", "Normalize numeric IDs for SceneGraph fields")
+    assertEqual(initialPlaybackSource(sources, invalid, "item", false, jellyfin), "item", "Jellyfin defaults to item ID, not first source")
+    assertEqual(initialPlaybackSource(sources, invalid, "item", false, emby), "1234", "Emby defaults to source ID")
+    assertEqual(initialPlaybackSource(sources, "chosen", "item", false, emby), "chosen", "Keep explicit Emby version")
+    assertEqual(initialPlaybackSource(sources, "chosen", "item", false, jellyfin), "chosen", "Keep explicit Jellyfin version")
+    assertEqual(initialPlaybackSource(sources, "chosen", "item", true, emby), "", "Live TV begins without a source ID")
+    assertEqual(negotiatedPlaybackSource(sources, "", true, jellyfin), "", "Jellyfin live TV source remains empty")
+    assertEqual(negotiatedPlaybackSource(sources, "", true, emby), "", "Emby live TV source remains empty")
+    assertEqual(negotiatedPlaybackSource(sources, "item", false, jellyfin), "item", "Jellyfin negotiation does not select alternate version")
+    assertEqual(embyFeatures.ChooseMediaSource({ MediaSources: [{ Id: 1234 }] }, "item"), "1234", "Accept numeric playback response IDs")
+    assertEqual(playbackSourceForItem({ id: "item", mediaSourceId: "", json: {} }), "item", "Empty SceneGraph default falls through")
+    assertEqual(playbackSourceForItem({ id: "item", mediaSourceId: "selected", json: {} }), "selected", "Playback-info caller retains selected source")
+    assertEqual(playbackSourceForItem({ id: "item", mediaSourceId: "selected", json: { _selectedMediaSourceId: "explicit" } }), "explicit", "Explicit Emby version takes precedence")
+
+    m.global.session = { server: { url: emby, serverType: "emby" }, user: { id: "active", authToken: "active-emby" } }
+    assertEqual(currentSessionUserId(), "active", "Read active user safely")
+    assertEqual(activeServerContext().authToken, "active-emby", "Snapshot active token")
+    assertEqual(buildURL("Items/Latest"), emby + "/Users/active/Items/Latest", "Active URL builder also translates")
+    assertEqual(api.items.GetImageURL("film").Instr("api_key=active-emby") > 0, true, "SDK image caller adds active Emby auth")
+    assertEqual(buildURLForServer(emby, "Items/film/Images/Chapter/0", { api_key: "chosen-user" }).Instr("api_key=chosen-user") > 0, true, "Chapter image retains specified account")
+    image = emby + "/Items/film/Images/Primary?tag=abc"
+    assertEqual(authenticatedResourceURL(image, emby, "target"), image + "&api_key=target", "Poster uses explicit account")
+    assertEqual(authenticatedResourceURL(image + "&api_key=signed", emby, "target"), image + "&api_key=signed", "Preserve server-provided image token")
+    assertEqual(authenticatedResourceURL("https://cdn.test/sub.srt?sig=x", emby, "target"), "https://cdn.test/sub.srt?sig=x", "No subtitle token on external origin")
+    assertEqual(authenticatedResourceURL("http://emby.test/emby/sub.srt", emby, "target"), "http://emby.test/emby/sub.srt", "No subtitle token on scheme downgrade")
+    assertEqual(authenticatedResourceURL("https://emby.test:444/emby/sub.srt", emby, "target"), "https://emby.test:444/emby/sub.srt", "No token on another port")
+    assertEqual(authenticatedResourceURL(emby + "/sub.srt#cue", emby, "a b"), emby + "/sub.srt?api_key=a%20b#cue", "Subtitle token before fragment")
+    assertEqual(accountImageURL(emby, "emby-user").Instr("api_key=emby-art-token") > 0, true, "Account avatar uses that account, not active user")
+    assertEqual(metadataPosterURL({ Id: "episode", ImageTags: { Primary: "tag" } }).Instr("api_key=active-emby") > 0, true, "Episode/season/recording image-tag fallback")
+    assertEqual(metadataPosterURL({ Id: "episode", SeriesId: "series", SeriesPrimaryImageTag: "tag" }).Instr("/Items/series/Images/Primary?") > 0, true, "Episode series artwork fallback")
+
+    m.fixtureBody = "[{" + Chr(34) + "Id" + Chr(34) + ":" + Chr(34) + "entry" + Chr(34) + "}]"
+    assertEqual(api.items.GetLatest()[0].Id, "entry", "SDK latest caller consumes bare array")
+    assertEqual(api.items.GetSpecialFeatures("film")[0].Id, "entry", "SDK special-feature caller consumes bare array")
+    m.fixtureBody = FormatJson({ Items: [{ Id: "wrapped" }] })
+    assertEqual(api.items.GetLatest()[0].Id, "wrapped", "SDK latest accepts wrapped proxy response")
+    assertEqual(api.items.GetSpecialFeatures("film")[0].Id, "wrapped", "SDK specials accepts wrapped response")
+    m.fixtureBody = "null"
+    assertEqual(api.items.GetLatest().Count(), 0, "Latest malformed response is an empty list")
+
+    m.global.session.user = invalid
+    assertEqual(currentSessionUserId(), "", "Before login has no typed invalid user ID")
+    assertEqual(activeServerContext(), invalid, "Sign-out stops optional work")
+    assertEqual(api.items.GetByID("film"), invalid, "SDK item caller before login returns safely")
+    assertEqual(api.items.GetLocalTrailers("film"), invalid, "SDK trailer caller before login returns safely")
+    assertEqual(ItemMetaData("film"), invalid, "Metadata caller before login returns safely")
+    startDetailExtras({}, { Id: "film" })
+    m.itemServerData = invalid
+    startEmbyPreview(false)
+    assertEqual(m.embyPreviewTask, invalid, "Preview cannot start after signout")
+    m.cleanupRequests = []
+    closeEmbyPlayback(invalid, { LiveStreamId: "gone" })
+    assertEqual(m.cleanupRequests.Count(), 0, "Late cleanup after signout does not dereference user")
+
+    m.jellyfinPosts = 0
+    m.playbackRequests = []
+    body = { DeviceProfile: { Name: "Roku" }, AlwaysBurnInSubtitleWhenTranscoding: true }
+    m.playbackResponses = [{ status: 400 }, { status: 422 }, { status: 200, data: { PlaySessionId: "ready" } }]
+    assertEqual(postPlaybackInfo(testUrlTransfer(), body, true).PlaySessionId, "ready", "Emby profile retry ladder succeeds")
+    assertEqual(m.playbackRequests.Count(), 3, "At most three profile attempts")
+    assertEqual(m.playbackRequests[0].payload.DeviceProfile.Name, "Roku", "Try full device profile first")
+    assertEqual(m.playbackRequests[1].payload.DoesExist("DeviceProfile"), false, "Second attempt excludes profile")
+    assertEqual(m.playbackRequests[1].payload.AlwaysBurnInSubtitleWhenTranscoding, true, "Second attempt keeps other options")
+    assertEqual(m.playbackRequests[2].payload.Count(), 0, "Last attempt has bare body")
+    assertEqual(body.DeviceProfile.Name, "Roku", "Retry does not mutate caller profile")
+    for each status in [0, 401, 403, 404]
+        m.playbackRequests = []
+        m.playbackResponses = [{ status: status, data: invalid }]
+        postPlaybackInfo(testUrlTransfer(), body, true)
+        assertEqual(m.playbackRequests.Count(), 1, "Do not retry timeouts/auth/missing items")
+    end for
+    postPlaybackInfo(testUrlTransfer(), body, false)
+    assertEqual(m.jellyfinPosts, 1, "Jellyfin uses original single POST")
+
+    m.top = { cancelRequested: true }
+    m.requests = []
+    assertEqual(embyConnect.Exchange({ addresses: [emby] }, "cloud").error, "canceled", "Canceled Connect never starts another address")
+    assertEqual(m.requests.Count(), 0, "Cancellation before exchange makes no request")
+    m.top.cancelRequested = false
+    m.cancelAfterRequest = 2
+    m.responses = [{ status: 200, data: { ProductName: "Emby", Id: "server" } }, { status: 200, data: { LocalUserId: "local", AccessToken: "late-token" } }, { status: 204 }]
+    assertEqual(embyConnect.TryExchange(emby, { systemId: "server", name: "Home" }, "cloud"), invalid, "Do not publish token after cancel")
+    assertEqual(m.requests.Count(), 3, "Late exchange result triggers revocation")
+    assertEqual(m.requests[2].url, emby + "/Sessions/Logout", "Revoke on originating server")
+    assertEqual(m.requests[2].headers.Authorization.Instr("late-token") > 0, true, "Revoke the late token only")
+    assertEqual(m.requests[2].headers.Authorization, m.requests[2].headers["X-Emby-Authorization"], "Revocation uses both headers")
+    m.cancelAfterRequest = invalid
+    m.top = {}
+    m.global.serverIdentity = { url: jellyfin, serverType: "jellyfin" }
+    assertEqual(isEmbyServer(), false, "Small identity cache overrides stale session")
+    assertEqual(isEmbyServer(emby), true, "Cached active identity does not override remote type")
+    m.global.serverIdentity = { url: emby, serverType: "emby" }
+    assertEqual(isEmbyServer(), true, "Cached Emby identity")
+    m.global.serverIdentity = { url: "", serverType: "" }
+    assertEqual(isEmbyServer(), false, "Deleted active identity cannot reuse previous type")
+    assertEqual(authenticatedResourceURL(emby + "/subtitle.srt?sig=abc", emby, "new"), emby + "/subtitle.srt?sig=abc", "Preserve same-origin signed resource")
+    targetParams = { UserId: "wrong-active-user", Limit: 5 }
+    url = buildURLForSession(remote, "Items/Latest", targetParams)
+    assertEqual(url.Instr("/Users/remote-user/Items/Latest?") > 0, true, "Remote session overrides shared active user query")
+    assertEqual(targetParams.UserId, "wrong-active-user", "Remote builder leaves caller params intact")
+end sub

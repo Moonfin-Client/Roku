@@ -84,7 +84,7 @@ namespace embyConnect
         return serverList
     end function
 
-    function Request(url as string, method = "GET" as string, body = "" as string, headers = {} as object) as object
+    function Request(url as string, method = "GET" as string, body = "" as string, headers = {} as object, honorCancellation = true as boolean) as object
         req = CreateObject("roUrlTransfer")
         req.SetUrl(url)
         req.SetCertificatesFile("common:/certs/ca-bundle.crt")
@@ -95,23 +95,9 @@ namespace embyConnect
         for each key in headers
             req.AddHeader(key, headers[key])
         end for
-        port = CreateObject("roMessagePort")
-        req.SetMessagePort(port)
-        if method = "POST"
-            started = req.AsyncPostFromString(body)
-        else
-            started = req.AsyncGetToString()
-        end if
-        if not started then return { status: 0, data: invalid }
-        event = wait(15000, port)
-        if type(event) <> "roUrlEvent"
-            req.AsyncCancel()
-            return { status: 0, data: invalid }
-        end if
-        code = event.GetResponseCode()
-        data = invalid
-        if code >= 200 and code < 300 then data = ParseJson(event.GetString())
-        return { status: code, data: data }
+        cancelNode = invalid
+        if honorCancellation and isValid(m.top) then cancelNode = m.top
+        return requestResponse(req, method, body, 30000, cancelNode)
     end function
 
     function Authenticate(username as string, password as string) as object
@@ -130,7 +116,9 @@ namespace embyConnect
 
     function Exchange(server as object, connectUserId as string) as object
         for each address in server.addresses
+            if embyConnect.Canceled() then return { error: "canceled" }
             for each base in embyConnect.ExchangeBases(address)
+                if embyConnect.Canceled() then return { error: "canceled" }
                 connection = embyConnect.TryExchange(base, server, connectUserId)
                 if connection <> invalid then return connection
             end for
@@ -145,21 +133,39 @@ namespace embyConnect
         serverId = embyConnect.StringValue(publicInfo.data, ["Id"])
         if serverId = "" then return invalid
         if server.systemId <> "" and serverId <> server.systemId then return invalid
+        if embyConnect.Canceled() then return invalid
         headers = {
+            "Authorization": embyConnect.ServerAuthorization(base, "", ""),
             "X-Emby-Token": server.accessKey,
             "X-Emby-Authorization": embyConnect.ServerAuthorization(base, "", "")
         }
-        response = embyConnect.Request(base + "/Connect/Exchange?format=json&ConnectUserId=" + connectUserId.EncodeUriComponent(), "GET", "", headers)
+        response = embyConnect.Request(base + "/Connect/Exchange?format=json&ConnectUserId=" + connectUserId.EncodeUriComponent(), "GET", "", headers, false)
         userId = embyConnect.StringValue(response.data, ["LocalUserId"])
         token = embyConnect.StringValue(response.data, ["AccessToken"])
         if userId = "" or token = "" then return invalid
         authHeader = embyConnect.ServerAuthorization(base, userId, token)
-        user = embyConnect.Request(base + "/Users/" + userId.EncodeUriComponent(), "GET", "", { "X-Emby-Authorization": authHeader })
-        if embyConnect.StringValue(user.data, ["Id"]) <> userId then return invalid
-        if embyConnect.StringValue(user.data, ["Name"]) = "" then return invalid
+        if embyConnect.Canceled()
+            embyConnect.Revoke(base, userId, token)
+            return invalid
+        end if
+        user = embyConnect.Request(base + "/Users/" + userId.EncodeUriComponent(), "GET", "", { "Authorization": authHeader, "X-Emby-Authorization": authHeader })
+        if embyConnect.Canceled() or embyConnect.StringValue(user.data, ["Id"]) <> userId or embyConnect.StringValue(user.data, ["Name"]) = ""
+            embyConnect.Revoke(base, userId, token)
+            return invalid
+        end if
         if embyConnect.StringValue(publicInfo.data, ["ServerName"]) = "" then publicInfo.data.ServerName = server.name
         return { serverUrl: base, publicInfo: publicInfo.data, user: user.data, accessToken: token }
     end function
+
+    function Canceled() as boolean
+        if not isValid(m.top) then return false
+        return m.top.cancelRequested = true
+    end function
+
+    sub Revoke(base as string, userId as string, token as string)
+        auth = embyConnect.ServerAuthorization(base, userId, token)
+        embyConnect.Request(base + "/Sessions/Logout", "POST", "", { "Authorization": auth, "X-Emby-Authorization": auth }, false)
+    end sub
 
     function ServerAuthorization(base as string, userId as string, token as string) as string
         header = buildAuthHeaderForServer({ serverUrl: base, userId: userId, authToken: token })

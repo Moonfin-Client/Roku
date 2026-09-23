@@ -257,18 +257,15 @@ end function
 ' the complete url. then tests these guesses to see if it can find a jf server
 ' returns the url of the server it found, or an empty string
 function inferServerUrl(url as string) as string
-    ' if this server is already stored, just use the value directly
-    ' the server had to get resolved in the first place to get into the registry
-    saved = get_setting("saved_servers")
-    if isValid(saved)
-        savedServers = ParseJson(saved)
-        if isValid(savedServers.lookup(url)) then return url
-    end if
+    found = probeServerCandidates(urlCandidates(url))
+    if found <> "" then return found
+    return probeServerCandidates(urlCandidates(url, true), true)
+end function
 
+function probeServerCandidates(candidates as object, embyOnly = false as boolean) as string
     port = CreateObject("roMessagePort")
     hosts = CreateObject("roAssociativeArray")
     reqs = []
-    candidates = urlCandidates(url)
     for each endpoint in candidates
         req = CreateObject("roUrlTransfer")
         reqs.push(req) ' keep in scope outside of loop, else -10001
@@ -293,16 +290,23 @@ function inferServerUrl(url as string) as string
                 ' if response code is a 300 redirect then we should return the redirect url
                 ' Make sure this happens or make it happen
                 if resp.GetResponseCode() = 200 and isSupportedMediaServer(resp.GetString())
-                    selectedUrl = hosts.lookup(resp.GetSourceIdentity().ToStr())
-                    return selectedUrl
+                    serverType = detectServerType(ParseJson(resp.GetString()))
+                    if not embyOnly or serverType = "emby"
+                        selectedUrl = hosts.lookup(resp.GetSourceIdentity().ToStr())
+                        for each pending in reqs
+                            pending.AsyncCancel()
+                        end for
+                        return canonicalServerURL(selectedUrl, serverType)
+                    end if
                 end if
             end if
             handled += 1
-            if handled = reqs.count()
-                return ""
-            end if
+            if handled = reqs.count() then exit while
         end while
     end if
+    for each pending in reqs
+        pending.AsyncCancel()
+    end for
     return ""
 end function
 
@@ -315,7 +319,7 @@ end function
 ' this is the "educated guess" logic for inferServerUrl that generates a list of complete url's as candidates
 ' for the tests in inferServerUrl. takes an incomplete url as an arg and returns a list of extrapolated
 ' full urls. returned urls are all ParsedUrls.
-function urlCandidates(input as string)
+function urlCandidates(input as string, embyFallback = false as boolean)
     url = ParsedUrl(input)
     ' if the parsed url is invalid then the string is not a valid url
     if not isValid(url) then return []
@@ -335,6 +339,7 @@ function urlCandidates(input as string)
             end if
         end if
     end for
+    if not embyFallback then return finalCandidates
     ' Also probe Emby's API prefix, preserving reverse-proxy paths and queries.
     embyCandidates = []
     for each candidate in finalCandidates
@@ -346,8 +351,7 @@ function urlCandidates(input as string)
             embyCandidates.Push(ParsedUrl(candidate.proto + "://" + candidate.host + portSuffix + basePath + "/emby" + querySuffix))
         end if
     end for
-    finalCandidates.Append(embyCandidates)
-    return finalCandidates
+    return embyCandidates
 end function
 
 sub setFieldTextValue(field, value)

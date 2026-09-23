@@ -4,9 +4,8 @@ function detectServerType(info as dynamic) as string
     product = info.LookupCI("ProductName")
     if type(product) = "roString" or type(product) = "String"
         product = LCase(product)
-        if product = "jellyfin server" then return "jellyfin"
-        if product = "emby server" or product = "emby" then return "emby"
-        if product <> "" then return ""
+        if Instr(1, product, "jellyfin") > 0 then return "jellyfin"
+        if Instr(1, product, "emby") > 0 then return "emby"
     end if
 
     ' Older Emby public-info responses omit ProductName (as in Moonfin-Core).
@@ -18,16 +17,25 @@ function detectServerType(info as dynamic) as string
     if type(name) <> "roString" and type(name) <> "String" then return ""
     if id = "" or name = "" then return ""
     if CreateObject("roRegex", "^[1-9][.][0-9]+[.][0-9]+[.][0-9]+$", "").IsMatch(version) then return "emby"
+    if CreateObject("roRegex", "^[0-9]+[.][0-9]+[.][0-9]+$", "").IsMatch(version) then return "jellyfin"
     return ""
 end function
 
 ' An explicit target must not inherit the active server's type during multi-server playback.
 function isEmbyServer(serverUrl = "" as string) as boolean
     serverUrl = serverIdentityKey(serverUrl)
+    if isValid(m.global)
+        identity = m.global.serverIdentity
+        if type(identity) = "roAssociativeArray"
+            if serverUrl = "" or serverUrl = serverIdentityKey(identity.url)
+                return identity.serverType = "emby"
+            end if
+            return registry_read(serverUrl, "ServerTypes") = "emby"
+        end if
+    end if
     if isChainValid(m.global, "session.server.url")
-        current = m.global.session.server
-        if serverUrl = "" or serverUrl = serverIdentityKey(current.url)
-            return current.serverType = "emby"
+        if serverUrl = "" or serverUrl = serverIdentityKey(m.global.session.server.url)
+            return m.global.session.server.serverType = "emby"
         end if
     end if
     if serverUrl = "" then return false
@@ -60,6 +68,9 @@ function serverCompatibleParams(params as object, emby as boolean) as object
             end for
             includeParam = fields.Count() > 0
             value = fields.Join(",")
+        else if LCase(key) = "genres" or LCase(key) = "officialratings" or LCase(key) = "tags" or LCase(key) = "studios"
+            if type(value) = "roArray" then value = value.Join("|")
+            if type(value) = "String" or type(value) = "roString" then value = value.Replace(",", "|")
         else if LCase(key) = "apikey"
             key = "api_key"
         end if
@@ -78,6 +89,7 @@ end function
 function authenticatedImageParams(serverUrl as string, params as object) as object
     if not isEmbyServer(serverUrl) then return params
     result = serverCompatibleParams(params, true)
+    if isValidAndNotEmpty(result.api_key) then return result
     token = invalid
     if isChainValid(m.global, "session.server.url")
         if serverIdentityKey(m.global.session.server.url) = serverIdentityKey(serverUrl)
@@ -102,11 +114,6 @@ function authenticatedImageParams(serverUrl as string, params as object) as obje
     return result
 end function
 
-function serverAuthHeaderName(serverUrl = "" as string) as string
-    if isEmbyServer(serverUrl) then return "X-Emby-Authorization"
-    return "Authorization"
-end function
-
 ' A server may return an error object or no playable sources (e.g. Live TV
 ' unavailable or playback denied). Never index those responses as media.
 function usablePlaybackInfo(info as dynamic) as boolean
@@ -124,6 +131,8 @@ function serverCompatiblePath(path as string, params as object, userId as string
     if not emby then return path
     if isValidAndNotEmpty(params.LookupCI("UserId")) then userId = params.LookupCI("UserId")
     if userId = "" then return path
+    parts = path.Split("?")
+    if parts.Count() > 1 then return serverCompatiblePath(parts[0], params, userId, emby) + "?" + parts[1]
     route = LCase(path)
     if route.Left(1) = "/" then route = route.Mid(1)
     if route.Right(1) = "/" then route = route.Left(route.Len() - 1)
@@ -142,4 +151,79 @@ end function
 function validItemMetadata(data as dynamic) as boolean
     if type(data) <> "roAssociativeArray" then return false
     return isValidAndNotEmpty(data.Id) and isValidAndNotEmpty(data.Type)
+end function
+
+' A task may finish after sign-out, or start before a deep-link has logged in.
+function activeServerContext() as dynamic
+    if not isChainValid(m.global, "session.server.url") then return invalid
+    if not isChainValid(m.global, "session.user.id") then return invalid
+    if not isChainValid(m.global, "session.user.authToken") then return invalid
+    if not isValidAndNotEmpty(m.global.session.user.id) or not isValidAndNotEmpty(m.global.session.user.authToken) then return invalid
+    return { serverUrl: m.global.session.server.url, userId: m.global.session.user.id, authToken: m.global.session.user.authToken }
+end function
+
+function currentSessionUserId() as string
+    if isChainValid(m.global, "session.user.id")
+        if isValidAndNotEmpty(m.global.session.user.id) then return m.global.session.user.id
+    end if
+    return ""
+end function
+
+sub addServerAuthorization(req as object, authorization as string, serverUrl = "" as string)
+    req.AddHeader("Authorization", authorization)
+    if isEmbyServer(serverUrl) then req.AddHeader("X-Emby-Authorization", authorization)
+end sub
+
+function canonicalServerURL(url as string, serverType as string) as string
+    if serverType <> "jellyfin" then return url
+    parsed = ParsedUrl(url)
+    path = parsed.path
+    if path.Right(1) = "/" then path = path.Left(path.Len() - 1)
+    lowerPath = LCase(path)
+    if lowerPath.Right(5) = "/emby" then path = path.Left(path.Len() - 5)
+    if lowerPath.Right(13) = "/mediabrowser" then path = path.Left(path.Len() - 13)
+    port = ""
+    if parsed.port <> "" then port = ":" + parsed.port
+    query = ""
+    if parsed.query <> "" then query = "?" + parsed.query
+    return parsed.proto + "://" + parsed.host + port + path + query
+end function
+
+' List endpoints return arrays on Emby and may be wrapped by a proxy/plugin.
+function responseItems(data as dynamic) as object
+    if type(data) = "roArray" then return data
+    if type(data) = "roAssociativeArray"
+        if type(data.Items) = "roArray" then return data.Items
+    end if
+    return []
+end function
+
+' Roku Poster and subtitle fetches cannot supply our API request headers.
+' Preserve signed URLs and never put a server token on another origin.
+function authenticatedResourceURL(url as string, serverUrl as string, token = "" as string) as string
+    if url = "" or not isEmbyServer(serverUrl) then return url
+    target = ParsedUrl(url)
+    server = ParsedUrl(serverUrl)
+    if target = invalid or server = invalid then return url
+    if LCase(target.proto) <> LCase(server.proto) or LCase(target.host) <> LCase(server.host) then return url
+    targetPort = target.port
+    serverPort = server.port
+    if targetPort = "" then targetPort = target.proto = "https" ? "443" : "80"
+    if serverPort = "" then serverPort = server.proto = "https" ? "443" : "80"
+    if targetPort <> serverPort then return url
+    for each param in target.query.Split("&")
+        key = LCase(param.Split("=")[0])
+        if key = "api_key" or key = "apikey" or key = "token" or key = "sig" or key = "signature" or key = "x-amz-signature" then return url
+    end for
+    if token = ""
+        params = authenticatedImageParams(serverUrl, {})
+        token = params.api_key ?? ""
+    end if
+    if token = "" then return url
+    parts = url.Split("#")
+    separator = "?"
+    if Instr(1, parts[0], "?") > 0 then separator = "&"
+    result = parts[0] + separator + "api_key=" + token.EncodeUriComponent()
+    if parts.Count() > 1 then result += "#" + parts[1]
+    return result
 end function

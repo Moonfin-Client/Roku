@@ -40,6 +40,7 @@ function buildURL(path as string, params = {} as object) as dynamic
     serverURL = get_url()
     if serverURL = invalid then return invalid
 
+    path = serverCompatiblePath(path, params, currentSessionUserId(), isEmbyServer(serverURL))
     params = serverCompatibleParams(params, isEmbyServer(serverURL))
     parsed_url = ParsedUrl(serverURL)
     full_url = `${parsed_url.proto}://${parsed_url.host}${parsed_url.port = "" ? "" : `:${parsed_url.port}`}${parsed_url.path}`
@@ -79,6 +80,7 @@ function buildURL(path as string, params = {} as object) as dynamic
         end if
     end if
 
+    if Instr(1, LCase(path), "/images/") > 0 then full_url = authenticatedResourceURL(full_url, serverURL, params.LookupCI("api_key") ?? "")
     return full_url
 end function
 
@@ -93,6 +95,7 @@ function APIRequest(url as string, params = {} as object) as dynamic
     if not isValid(req) then return invalid
 
     req.setUrl(full_url)
+    req.AddHeader("Accept", "application/json")
     req = authRequest(req)
     ' SSL cert
     if LCase(full_url).left(8) = "https://"
@@ -108,20 +111,7 @@ function getJson(req)
     if req = invalid then return invalid
 
     started = diagnostics.StartTrace("GET", req)
-    req.SetMessagePort(CreateObject("roMessagePort"))
-    if not req.AsyncGetToString() then return invalid
-    response = wait(15000, req.GetMessagePort())
-    if type(response) <> "roUrlEvent"
-        req.AsyncCancel()
-        diagnostics.EndTrace(started, "timed out", diagnostics.LEVEL_WARN)
-        return invalid
-    end if
-    status = response.GetResponseCode()
-    if status < 200 or status >= 300
-        diagnostics.EndTrace(started, status.ToStr(), diagnostics.LEVEL_WARN)
-        return invalid
-    end if
-    data = response.GetString()
+    data = req.GetToString()
 
     if data = invalid or data = ""
         diagnostics.EndTrace(started, "no body", diagnostics.LEVEL_WARN)
@@ -490,14 +480,12 @@ end sub
 
 ' Takes and returns a roUrlTransfer object after adding a Jellyfin "Authorization" header
 function authRequest(req as object) as object
-    req.AddHeader("Accept", "application/json")
-    req.AddHeader(serverAuthHeaderName(), buildAuthHeader())
+    addServerAuthorization(req, buildAuthHeader())
     return req
 end function
 
 function authRequestForServer(req as object, serverData as object) as object
-    req.AddHeader("Accept", "application/json")
-    req.AddHeader(serverAuthHeaderName(serverData.serverUrl), buildAuthHeaderForServer(serverData))
+    addServerAuthorization(req, buildAuthHeaderForServer(serverData), serverData.serverUrl)
     return req
 end function
 
@@ -522,8 +510,9 @@ function buildAuthHeaderForServer(serverData as object) as string
     return auth
 end function
 
-function buildURLForServer(serverUrl as string, path as string, params = {} as object) as string
+function buildURLForServer(serverUrl as string, path as string, params = {} as object, userId = "" as string) as string
     if serverUrl = "" then return ""
+    path = serverCompatiblePath(path, params, userId, isEmbyServer(serverUrl))
     params = serverCompatibleParams(params, isEmbyServer(serverUrl))
 
     if serverUrl.right(1) = "/"
@@ -563,6 +552,7 @@ function buildURLForServer(serverUrl as string, path as string, params = {} as o
         end if
     end if
 
+    if Instr(1, LCase(path), "/images/") > 0 then full_url = authenticatedResourceURL(full_url, serverUrl, params.LookupCI("api_key") ?? "")
     return full_url
 end function
 
@@ -582,7 +572,7 @@ function APIRequestForServer(serverUrl as string, userId as string, authToken as
         authToken: authToken
     }
     req.AddHeader("Accept", "application/json")
-    req.AddHeader(serverAuthHeaderName(serverData.serverUrl), buildAuthHeaderForServer(serverData))
+    addServerAuthorization(req, buildAuthHeaderForServer(serverData), serverData.serverUrl)
 
     if serverUrl.left(8) = "https://"
         setCertificateAuthority(req)
@@ -615,4 +605,60 @@ end function
 function isMultiServerItem(item as object) as boolean
     itemServerData = getServerInfoFromItem(item)
     return isValid(itemServerData)
+end function
+
+' Bounded optional requests share cancellation/status handling. Regular library
+' GETs retain their transport-managed timeout through getJson.
+function requestResponse(req as object, method = "GET" as string, body = "" as string, timeoutMs = 30000 as integer, cancelNode = invalid as dynamic) as object
+    if req = invalid then return { status: 0, data: invalid }
+    if requestCanceled(cancelNode) then return { status: 0, data: invalid }
+    port = CreateObject("roMessagePort")
+    req.SetMessagePort(port)
+    if method = "POST"
+        started = req.AsyncPostFromString(body)
+    else
+        started = req.AsyncGetToString()
+    end if
+    if not started then return { status: 0, data: invalid }
+    timer = CreateObject("roTimespan")
+    while timer.TotalMilliseconds() < timeoutMs
+        if requestCanceled(cancelNode) then exit while
+        event = wait(100, port)
+        if type(event) = "roUrlEvent"
+            code = event.GetResponseCode()
+            data = invalid
+            if code >= 200 and code < 300 then data = ParseJson(event.GetString())
+            return { status: code, data: data }
+        end if
+    end while
+    req.AsyncCancel()
+    return { status: 0, data: invalid }
+end function
+
+function requestCanceled(node as dynamic) as boolean
+    if node = invalid then return false
+    return node.cancelRequested = true
+end function
+
+function optionalJson(req as dynamic) as dynamic
+    if req = invalid then return invalid
+    return requestResponse(req).data
+end function
+
+' Older Emby releases can reject the Roku DeviceProfile. Retry only those
+' server errors, never bad credentials, missing items, or a network timeout.
+function postPlaybackInfo(req as object, body as object, emby as boolean) as dynamic
+    if not emby then return postJson(req, FormatJson(body))
+    req.AddHeader("Content-Type", "application/json")
+    attempts = [body]
+    withoutProfile = {}
+    withoutProfile.Append(body)
+    withoutProfile.Delete("DeviceProfile")
+    attempts.Push(withoutProfile)
+    attempts.Push({})
+    for each payload in attempts
+        response = requestResponse(req, "POST", FormatJson(payload))
+        if response.status <> 400 and response.status <> 422 and response.status <> 500 then return response.data
+    end for
+    return invalid
 end function

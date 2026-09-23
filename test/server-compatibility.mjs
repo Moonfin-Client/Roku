@@ -39,15 +39,20 @@ const selections = {
     'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL'],
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError'],
-    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements'],
-    'source/ShowScenes.bs': ['ServerVersionCheck'],
+    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements'],
+    'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
+    'source/utils/multiserver.bs': ['buildURLForSession'],
+    'source/api/Items.bs': ['ItemMetaData'],
+    'components/video/VideoPlayerView.bs': ['startEmbyPreview'],
+    'source/api/Image.bs': ['ImageURL', 'metadataPosterURL'],
+    'components/account/AccountDialog.bs': ['accountImageURL'],
     'components/config/SigninScene.bs': ['checkQuickConnectEnabled'],
     'source/utils/parsedUrl.bs': ['ParsedUrl', '__ParsedUrl_ToString'],
-    'source/api/baserequest.bs': ['buildParams', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer'],
+    'source/api/baserequest.bs': ['buildParams', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer', 'APIRequest', 'APIRequestForServer', 'authRequest', 'authRequestForServer', 'setCertificateAuthority', 'getJson', 'postPlaybackInfo', 'requestCanceled'],
 };
 let source = 'namespace bslib\n' + bslib.source + '\nend namespace\n' + await readFile('source/enums/String.bs', 'utf8');
 for (const [file, names] of Object.entries(selections)) {
-    const text = await readFile(file, 'utf8');
+    const text = (await readFile(file, 'utf8')).replaceAll('CreateObject("roUrlTransfer")', 'testUrlTransfer()');
     if (names === null) {
         source += '\n' + text;
     } else {
@@ -65,6 +70,14 @@ source += '\n' + await readFile('test/emby-features.bs', 'utf8');
 source += '\n' + await readFile('test/emby-media-routes.bs', 'utf8');
 source += '\n' + await readFile('test/emby-details.bs', 'utf8');
 source += '\n' + await readFile('test/server-compatibility.bs', 'utf8');
+source += '\n' + await readFile('test/review-regressions.bs', 'utf8');
+// Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
+const sdk = await readFile('source/api/sdk.bs', 'utf8');
+source += '\nnamespace api\nnamespace items\n';
+for (const name of ['GetByID', 'GetLocalTrailers', 'GetLatest', 'GetSpecialFeatures', 'GetImageURL']) {
+    source += '\n' + sdk.match(new RegExp(`        function ${name}\\([^]*?        end function`))[0];
+}
+source += '\nend namespace\nend namespace\n';
 const directory = await mkdtemp(path.join(tmpdir(), 'moonfin-emby-'));
 const program = new bsc.Program({ rootDir: directory, sourceMap: false });
 try {
