@@ -2317,36 +2317,6 @@
         <extracomment>Libraries Setting - Setting description</extracomment>
     </message>
     <message>
-        <source>Library Landscape Column Count</source>
-        <translation>Library Landscape Column Count</translation>
-        <extracomment>Libraries Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Number of columns in library view when showing landscape (wide) images</source>
-        <translation>Number of columns in library view when showing landscape (wide) images</translation>
-        <extracomment>Libraries Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Library Portrait Column Count</source>
-        <translation>Library Portrait Column Count</translation>
-        <extracomment>Libraries Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Number of columns in library view when showing portrait (tall) images</source>
-        <translation>Number of columns in library view when showing portrait (tall) images</translation>
-        <extracomment>Libraries Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Library Square Column Count</source>
-        <translation>Library Square Column Count</translation>
-        <extracomment>Libraries Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Number of columns in library view when showing square images</source>
-        <translation>Number of columns in library view when showing square images</translation>
-        <extracomment>Libraries Setting - Setting description</extracomment>
-    </message>
-    <message>
         <source>View All Next Up</source>
         <translation>View All Next Up</translation>
         <extracomment>Title for viewing all episodes available in the Next Up section</extracomment>
