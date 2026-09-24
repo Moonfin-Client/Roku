@@ -163,4 +163,8 @@ assert.match(homeRows, /task\.endpoint = "\/UserViews"/, 'Library discovery uses
 
 const seerrTask = await readFile('components/seerr/SeerrAPITask.bs', 'utf8');
 assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParams\)/, 'Plugin proxy preserves saved server query through shared compositor');
-process.stdout.write('PASS: Jellyfin review regressions (22 checks)\n');
+
+const extrasTask = await readFile('components/extras/LoadExtrasTask.bs', 'utf8');
+assert.match(extrasTask, /function multiServerExtrasImageURL\([^]*?return buildURLForServer\(/, 'Remote detail extras images use the shared builder');
+assert.doesNotMatch(extrasTask, /normalizedServerUrl \+ "\/Items\//, 'Remote detail extras do not concatenate server URLs');
+process.stdout.write('PASS: Jellyfin review regressions (24 checks)\n');
