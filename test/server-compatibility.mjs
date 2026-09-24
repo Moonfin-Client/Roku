@@ -112,3 +112,13 @@ assert.match(entry, /id="embyConnectButton"\s+text="Emby Connect"/);
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if CreateEmbyConnectGroup\(\)/);
 assert.match(await readFile('components/embyConnect/EmbyConnectScene.xml', 'utf8'), /extends="SigninScene"/);
 process.stdout.write('PASS: sign-in entry wiring (4 checks)\n');
+
+for (const detailStyle of ['components/details/SpotlightItemDetails.bs', 'components/details/MinimalistItemDetails.bs']) {
+    const detailSource = await readFile(detailStyle, 'utf8');
+    assert.match(detailSource, /sub init\(\)[^]*?m\.trackData = \{\}/, `${detailStyle} initializes shared track state`);
+}
+const miscSource = await readFile('source/utils/misc.bs', 'utf8');
+const probe = miscSource.match(/function probeServerCandidates\([^]*?end function/)[0];
+assert.match(probe, /wait\(0, port\)/, 'Discovery should accept late server responses');
+assert.doesNotMatch(probe, /totalseconds\(\) < 15/, 'Discovery must not restore the 15 second cap');
+process.stdout.write('PASS: Jellyfin review regressions (4 checks)\n');
