@@ -41,14 +41,14 @@ const selections = {
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError'],
     'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
-    'source/utils/multiserver.bs': ['buildURLForSession'],
+    'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer'],
     'source/api/Items.bs': ['ItemMetaData'],
     'components/video/VideoPlayerView.bs': ['startEmbyPreview'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
     'components/config/SigninScene.bs': ['checkQuickConnectEnabled'],
     'source/utils/parsedUrl.bs': ['ParsedUrl', '__ParsedUrl_ToString'],
-    'source/api/baserequest.bs': ['buildParams', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer', 'APIRequest', 'APIRequestForServer', 'authRequest', 'authRequestForServer', 'setCertificateAuthority', 'getJson', 'postPlaybackInfo', 'requestCanceled'],
+    'source/api/baserequest.bs': ['buildParams', 'buildServerURL', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer', 'APIRequest', 'APIRequestForServer', 'authRequest', 'authRequestForServer', 'setCertificateAuthority', 'getJson', 'postPlaybackInfo', 'requestCanceled'],
 };
 let source = 'namespace bslib\n' + bslib.source + '\nend namespace\n' + await readFile('source/enums/String.bs', 'utf8');
 for (const [file, names] of Object.entries(selections)) {
@@ -139,4 +139,28 @@ const buttonHost = await readFile('components/details/detailButtonHost.bs', 'utf
 const extrasChanged = buttonHost.match(/sub onDetailExtrasChanged\(\)[^]*?end sub/)[0];
 assert.match(extrasChanged, /selectedId = m\.buttonGroups\[previousIndex\]\.id/, 'Async button rebuild remembers logical selection');
 assert.match(extrasChanged, /m\.currentButtonIndex = i[^]*?if focusedId <> "" then focusButton\(i\)/, 'Async button rebuild restores index without stealing focus');
-process.stdout.write('PASS: Jellyfin review regressions (12 checks)\n');
+
+const remoteItems = await readFile('source/api/Items.bs', 'utf8');
+const remoteMetadata = remoteItems.match(/function ItemMetaDataForServer\([^]*?end function/)[0];
+assert.match(remoteMetadata, /serverItemMetadataPath\(id, serverData\.userId, isEmbyServer\(serverData\.serverUrl\)\)/, 'Remote metadata uses server-specific canonical path');
+
+const favoriteWrites = await readFile('components/ItemGrid/FavoriteItemsTask.bs', 'utf8');
+assert.match(favoriteWrites, /APIRequestForServer\([^]*?"UserFavoriteItems\/" \+ itemId/, 'Remote favorites use the shared request builder');
+assert.doesNotMatch(favoriteWrites, /serverData\.serverUrl[^\n]*favoriteitems/i, 'Remote favorites do not concatenate server URLs');
+
+const playstateWrites = await readFile('components/PlaystateTask.bs', 'utf8');
+assert.match(playstateWrites, /APIRequestForServer\([^]*?"UserPlayedItems\/" \+ itemId/, 'Remote playstate writes use canonical routes');
+assert.doesNotMatch(playstateWrites, /normalizedUrl \+ "\/Users\//, 'Remote playstate writes do not concatenate legacy routes');
+
+const multiServerUtils = await readFile('source/utils/multiserver.bs', 'utf8');
+const imageBuilder = multiServerUtils.match(/function buildImageURLForServer\([^]*?end function/)[0];
+assert.match(imageBuilder, /return buildURLForServer\(/, 'Remote images use the shared query-safe builder');
+
+const homeRows = await readFile('components/home/HomeRows.bs', 'utf8');
+assert.doesNotMatch(homeRows, /task\.endpoint = "\/Users\/\{userId\}\/(?:Items|Views)/, 'Home multi-server routes stay canonical');
+assert.match(homeRows, /task\.endpoint = "\/UserItems\/Resume"/, 'Continue Watching uses the canonical user-items route');
+assert.match(homeRows, /task\.endpoint = "\/UserViews"/, 'Library discovery uses the canonical user-views route');
+
+const seerrTask = await readFile('components/seerr/SeerrAPITask.bs', 'utf8');
+assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParams\)/, 'Plugin proxy preserves saved server query through shared compositor');
+process.stdout.write('PASS: Jellyfin review regressions (22 checks)\n');
