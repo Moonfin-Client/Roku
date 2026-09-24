@@ -181,4 +181,24 @@ assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParam
 const extrasTask = await readFile('components/extras/LoadExtrasTask.bs', 'utf8');
 assert.match(extrasTask, /function multiServerExtrasImageURL\([^]*?return buildURLForServer\(/, 'Remote detail extras images use the shared builder');
 assert.doesNotMatch(extrasTask, /normalizedServerUrl \+ "\/Items\//, 'Remote detail extras do not concatenate server URLs');
-process.stdout.write('PASS: Jellyfin review regressions (24 checks)\n');
+
+const itemApi = await readFile('source/api/Items.bs', 'utf8');
+for (const name of ['MusicAlbumList', 'AppearsOnList', 'GetSongsByArtist', 'MusicSongList', 'CreateArtistMix']) {
+    const fn = itemApi.match(new RegExp(`function ${name}\\([^]*?end function`))[0];
+    assert.match(fn, /APIRequest\("Items"/, `${name} uses the flat Jellyfin item route`);
+    assert.doesNotMatch(fn, /Users\/\{0\}\/Items/, `${name} does not hard-code a legacy user route`);
+}
+assert.match(itemApi.match(/function AudioItem\([^]*?end function/)[0], /serverItemMetadataPath\(/, 'Audio metadata uses the server-aware item route');
+assert.match(itemApi.match(/function GetIntroVideos\([^]*?end function/)[0], /serverItemMetadataPath\([^]*?\) \+ "\/Intros"/, 'Cinema intros use the server-aware item route');
+
+const sdkSource = await readFile('source/api/sdk.bs', 'utf8');
+const localTrailers = sdkSource.match(/function GetLocalTrailers\([^]*?end function/)[0];
+assert.match(localTrailers, /APIRequestForServer\(serverData\.serverUrl, userId, serverData\.authToken/, 'Remote local trailers use the item server request');
+
+const mainActions = await readFile('source/MainActions.bs', 'utf8');
+const trailerAction = mainActions.match(/sub onTrailerButtonClicked\([^]*?end sub/)[0];
+assert.match(trailerAction, /trailerItemId = chainLookupReturn\(itemContent, "id", ""\)/, 'Trailer lookup uses the detail item id');
+assert.match(trailerAction, /getServerInfoFromItem\(itemContent\)/, 'Trailer lookup reads the detail item server');
+assert.match(trailerAction, /GetLocalTrailers\(trailerItemId, trailerParams, trailerServerData\)/, 'Trailer lookup passes destination server context');
+assert.match(trailerAction, /trailer\["_serverUrl"\] = trailerServerData\.serverUrl/, 'Remote trailers keep destination metadata for playback');
+process.stdout.write('PASS: Jellyfin review regressions (31 checks)\n');
