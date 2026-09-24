@@ -268,24 +268,27 @@ function probeServerCandidates(candidates as object, embyOnly = false as boolean
     reqs = []
     for each endpoint in candidates
         req = CreateObject("roUrlTransfer")
-        reqs.push(req) ' keep in scope outside of loop, else -10001
         finalUrl = `${endpoint.proto}://${endpoint.host}${endpoint.port = "" ? "" : `:${endpoint.port}`}${endpoint.path}`
         req.seturl(`${finalUrl}/system/info/public${endpoint.query = "" ? "" : `?${endpoint.query}`}`)
         req.AddHeader("Accept", "application/json")
         req.setMessagePort(port)
-        hosts.addreplace(req.getidentity().ToStr(), `${finalUrl}${endpoint.query = "" ? "" : `?${endpoint.query}`}`)
         if isStringEqual(endpoint.proto, "https")
             req.setCertificatesFile("common:/certs/ca-bundle.crt")
         end if
-        req.AsyncGetToString()
+        ' A transfer that failed to start never posts a completion event. Only keep
+        ' successful probes in the pending count or discovery could wait forever.
+        if req.AsyncGetToString()
+            reqs.push(req) ' keep in scope outside of loop, else -10001
+            hosts.addreplace(req.getidentity().ToStr(), `${finalUrl}${endpoint.query = "" ? "" : `?${endpoint.query}`}`)
+        end if
     end for
     handled = 0
-    if hosts.count() > 0
-        ' Match the pre-Emby discovery behavior: a slow server may answer after 15 seconds.
-        ' Each async transfer eventually posts its completion event, so wait until every probe
-        ' has answered instead of imposing a client-side deadline.
-        while handled < reqs.count()
-            resp = wait(0, port)
+    if reqs.count() > 0
+        ' Cold NAS devices can need more than 15 seconds to wake, but discovery must
+        ' still have an upper bound when a transfer never produces a completion event.
+        timeout = CreateObject("roTimespan")
+        while handled < reqs.count() and timeout.TotalSeconds() < 45
+            resp = wait(250, port)
             if type(resp) = "roUrlEvent"
                 ' TODO
                 ' if response code is a 300 redirect then we should return the redirect url

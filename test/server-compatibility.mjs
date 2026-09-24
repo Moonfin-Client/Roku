@@ -36,7 +36,7 @@ const selections = {
     'source/utils/embyFeatures.bs': null,
     'components/embyPreview/EmbyPreviewTask.bs': ['loadPreviewData'],
     'components/PlaystateTask.bs': ['closeEmbyPlayback'],
-    'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL'],
+    'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL'],
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError'],
     'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements'],
@@ -119,6 +119,24 @@ for (const detailStyle of ['components/details/SpotlightItemDetails.bs', 'compon
 }
 const miscSource = await readFile('source/utils/misc.bs', 'utf8');
 const probe = miscSource.match(/function probeServerCandidates\([^]*?end function/)[0];
-assert.match(probe, /wait\(0, port\)/, 'Discovery should accept late server responses');
-assert.doesNotMatch(probe, /totalseconds\(\) < 15/, 'Discovery must not restore the 15 second cap');
-process.stdout.write('PASS: Jellyfin review regressions (4 checks)\n');
+assert.match(probe, /if req\.AsyncGetToString\(\)/, 'Discovery only counts transfers that started');
+assert.match(probe, /TotalSeconds\(\) < 45/, 'Discovery keeps a finite late-response window');
+assert.match(probe, /wait\(250, port\)/, 'Discovery polls until the bounded deadline');
+assert.doesNotMatch(probe, /wait\(0, port\)/, 'Discovery must not wait forever');
+
+const eventHandlers = await readFile('source/MainEventHandlers.bs', 'utf8');
+const refreshDetails = eventHandlers.match(/sub onRefreshMovieDetailsDataEvent\(\)[^]*?end sub/)[0];
+assert.match(refreshDetails, /selectedPartId[^]*?selectedPartId = currentItemID/, 'Only the selected multipart item preserves old extras');
+assert.match(refreshDetails, /additionalParts = \{\}[^]*?trailerAvailable = false/, 'Normal item changes clear stale async extras');
+assert.match(refreshDetails, /startDetailExtras\(currentScene, itemData\.json, serverData, true\)/, 'Normal item changes restart optional extras');
+
+const screenHost = await readFile('components/details/detailScreenHost.bs', 'utf8');
+assert.match(screenHost, /selectedPartId = chainLookupReturn\(m\.top, "selectedPart\.id", ""\)[^]*?if not isValidAndNotEmpty\(selectedPartId\) then return/, 'Clearing multipart selection is safe');
+const showScenes = await readFile('source/ShowScenes.bs', 'utf8');
+assert.match(showScenes, /if not group\.hasField\("detailExtrasTask"\) then group\.addField/, 'Detail extras task can be restarted on one screen');
+
+const buttonHost = await readFile('components/details/detailButtonHost.bs', 'utf8');
+const extrasChanged = buttonHost.match(/sub onDetailExtrasChanged\(\)[^]*?end sub/)[0];
+assert.match(extrasChanged, /selectedId = m\.buttonGroups\[previousIndex\]\.id/, 'Async button rebuild remembers logical selection');
+assert.match(extrasChanged, /m\.currentButtonIndex = i[^]*?if focusedId <> "" then focusButton\(i\)/, 'Async button rebuild restores index without stealing focus');
+process.stdout.write('PASS: Jellyfin review regressions (12 checks)\n');
