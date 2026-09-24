@@ -123,6 +123,19 @@ assert.match(probe, /if req\.AsyncGetToString\(\)/, 'Discovery only counts trans
 assert.match(probe, /TotalSeconds\(\) < 45/, 'Discovery keeps a finite late-response window');
 assert.match(probe, /wait\(250, port\)/, 'Discovery polls until the bounded deadline');
 assert.doesNotMatch(probe, /wait\(0, port\)/, 'Discovery must not wait forever');
+assert.match(probe, /GetResponseCode\(\) > 0 then probeState\.answered = true/, 'Discovery notes when the host answered at all');
+const infer = miscSource.match(/function inferServerUrl\([^]*?end function/)[0];
+assert.match(infer, /if not probeState\.answered then return ""[^]*?urlCandidates\(url, true\)/, 'The /emby pass only runs when the host answered the plain pass');
+for (const detailStyle of ['components/details/ItemDetails.bs', 'components/details/ModernItemDetails.bs', 'components/details/NouveauItemDetails.bs', 'components/details/SpotlightItemDetails.bs', 'components/details/MinimalistItemDetails.bs']) {
+    const detailSource = await readFile(detailStyle, 'utf8');
+    assert.match(detailSource, /trailerAvailable = detailHasTrailer\(itemData\)/, `${detailStyle} counts local trailers as numbers`);
+}
+const extrasButtonHost = await readFile('components/details/detailButtonHost.bs', 'utf8');
+assert.match(extrasButtonHost, /sub onDetailExtrasChanged\(\)[^]*?detailExtrasSignature\(\) = m\.builtExtrasSignature then return/, 'An unchanged trailer and parts answer doesn\'t rebuild the button row');
+for (const dataNode of ['components/data/TVEpisodeData.bs', 'components/data/RecordingData.bs']) {
+    const dataSource = await readFile(dataNode, 'utf8');
+    assert.match(dataSource, /if m\.top\.posterURL = "" then setPoster\(\)/, `${dataNode} keeps the caller's thumbnail`);
+}
 
 const eventHandlers = await readFile('source/MainEventHandlers.bs', 'utf8');
 const refreshDetails = eventHandlers.match(/sub onRefreshMovieDetailsDataEvent\(\)[^]*?end sub/)[0];
@@ -146,7 +159,7 @@ assert.match(remoteMetadata, /serverItemMetadataPath\(id, serverData\.userId, is
 
 const favoriteWrites = await readFile('components/ItemGrid/FavoriteItemsTask.bs', 'utf8');
 assert.match(favoriteWrites, /APIRequestForServer\([^]*?"UserFavoriteItems\/" \+ itemId/, 'Remote favorites use the shared request builder');
-assert.doesNotMatch(favoriteWrites, /serverData\.serverUrl[^\n]*favoriteitems/i, 'Remote favorites do not concatenate server URLs');
+assert.doesNotMatch(favoriteWrites, /Substitute\([^\n]*favoriteitems|serverData\.serverUrl\s*\+/i, 'Remote favorites don\'t concatenate server URLs');
 
 const playstateWrites = await readFile('components/PlaystateTask.bs', 'utf8');
 assert.match(playstateWrites, /APIRequestForServer\([^]*?"UserPlayedItems\/" \+ itemId/, 'Remote playstate writes use canonical routes');
@@ -160,6 +173,7 @@ const homeRows = await readFile('components/home/HomeRows.bs', 'utf8');
 assert.doesNotMatch(homeRows, /task\.endpoint = "\/Users\/\{userId\}\/(?:Items|Views)/, 'Home multi-server routes stay canonical');
 assert.match(homeRows, /task\.endpoint = "\/UserItems\/Resume"/, 'Continue Watching uses the canonical user-items route');
 assert.match(homeRows, /task\.endpoint = "\/UserViews"/, 'Library discovery uses the canonical user-views route');
+assert.doesNotMatch(homeRows, /baseUrl \+ "\/Items\//, 'Remote row artwork uses the shared builder');
 
 const seerrTask = await readFile('components/seerr/SeerrAPITask.bs', 'utf8');
 assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParams\)/, 'Plugin proxy preserves saved server query through shared compositor');
