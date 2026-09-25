@@ -10,6 +10,9 @@ import "pkg:/source/utils/HomeRecommendations.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/misc.bs"
 
+' How many similar titles a details screen asks for
+const SIMILAR_LIMIT = 20
+
 ' Fast parallel loading task for TV show details
 ' Loads seasons, next up, people, and similar items simultaneously
 sub init()
@@ -183,6 +186,7 @@ sub loadAllExtras()
     for each item in similarData
         similarNode.appendChild(item)
     end for
+    similarNode.addFields({ similarSource: m.similarSource })
 
     specialsData = loadSpecials()
     for each item in specialsData
@@ -643,10 +647,15 @@ function loadPeople() as object
     return people
 end function
 
+' Which list fills the similar row follows the recommendation source setting, and every choice
+' falls back to the server's similar titles when it has nothing. The source that actually
+' filled it is kept so a card can be named for where the list came from.
 function loadSimilar() as object
-    ' Music keeps to the server's own list, the way the other clients do
+    m.similarSource = "jellyfin"
+
+    ' Music albums and artists take the plain similar list
     itemType = LCase(m.top.itemType)
-    if itemType = "musicalbum" or itemType = "musicartist" then return loadJellyfinSimilar(15)
+    if itemType = "musicalbum" or itemType = "musicartist" then return loadJellyfinSimilar(15, false)
 
     settings = m.global.session.user.settings
     recSource = kidsMode.RecommendationSource(settings["ui.home.recommendationSource"] ?? "")
@@ -655,24 +664,39 @@ function loadSimilar() as object
     end if
 
     mode = LCase(recSource)
+    canScore = moonfinPlugin.AreRecommendationsSupported()
+
+    if mode = "server" then return loadJellyfinSimilar(SIMILAR_LIMIT, true)
 
     if mode = "online"
         onlineItems = loadOnlineSimilar()
-        if isValidAndNotEmpty(onlineItems) then return onlineItems
-    else if mode = "local"
-        localItems = loadLocalSimilar()
-        if isValidAndNotEmpty(localItems) then return localItems
-    else if mode = "server"
-        serverItems = loadJellyfinSimilar()
-        if isValidAndNotEmpty(serverItems) then return serverItems
+        if onlineItems.count() > 0
+            m.similarSource = "tmdb"
+            return onlineItems
+        end if
     else if mode = "hybrid"
-        serverItems = loadJellyfinSimilar()
-        if isValidAndNotEmpty(serverItems) then return serverItems
-
-        return loadLocalSimilar()
+        ' The server's list leads and the scored one tops it up
+        if canScore
+            secondary = loadMoonfinScoredSimilar()
+        else
+            secondary = loadClientScoredSimilar()
+        end if
+        merged = HomeRecommendations.mergeItems(loadJellyfinSimilar(SIMILAR_LIMIT, true), secondary, SIMILAR_LIMIT)
+        if merged.count() > 0
+            m.similarSource = "moonfin"
+            return merged
+        end if
+    else if mode = "local"
+        scoredItems = []
+        if canScore then scoredItems = loadMoonfinScoredSimilar()
+        if scoredItems.count() = 0 then scoredItems = loadClientScoredSimilar()
+        if scoredItems.count() > 0
+            m.similarSource = "moonfin"
+            return scoredItems
+        end if
     end if
 
-    return loadLocalSimilar()
+    return loadJellyfinSimilar(SIMILAR_LIMIT, false)
 end function
 
 function loadOnlineSimilar() as object
@@ -744,23 +768,15 @@ function loadOnlineSimilar() as object
     return results
 end function
 
-function loadLocalSimilar() as object
-    mfData = invalid
-    if moonfinPlugin.AreRecommendationsSupported() then mfData = apiItemsGetMoonfinSimilar(m.top.itemId, { limit: 20, userId: getUserId() })
+' The plugin's own scored list, for a server that can score
+function loadMoonfinScoredSimilar() as object
+    mfData = apiItemsGetMoonfinSimilar(m.top.itemId, { limit: SIMILAR_LIMIT, userId: getUserId() })
 
+    results = []
     if isChainValid(mfData, "Items") and mfData.Items.Count() > 0
-        results = []
         count = 0
-        normalizedServerUrl = ""
-        if isMultiServer()
-            normalizedServerUrl = m.top.serverUrl
-            if normalizedServerUrl.right(1) = "/"
-                normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
-            end if
-        end if
-
         for each item in mfData.Items
-            if count >= 20 then exit for
+            if count >= SIMILAR_LIMIT then exit for
             tmp = createSGNode("HomeData")
             if isMultiServer()
                 item._serverUrl = m.top.serverUrl
@@ -781,8 +797,13 @@ function loadLocalSimilar() as object
             results.push(tmp)
             count = count + 1
         end for
-        if results.Count() > 0 then return results
     end if
+    return results
+end function
+
+' Titles scored here against the one on screen, from candidates that share its genres
+function loadClientScoredSimilar() as object
+    if not HomeRecommendations.canScoreSeedLocally(m.top.itemType) then return []
 
     baseItem = invalid
     if isMultiServer()
@@ -831,7 +852,7 @@ function loadLocalSimilar() as object
     results = []
     count = 0
     for each entry in scored
-        if count >= 20 then exit for
+        if count >= SIMILAR_LIMIT then exit for
         item = entry.item
         tmp = createSGNode("HomeData")
         if isMultiServer()
@@ -844,8 +865,6 @@ function loadLocalSimilar() as object
         imgParams = { "maxHeight": 270, "maxWidth": 180 }
         if hasImageTagPrimary(item) then imgParams.Tag = item.ImageTags.Primary
         if isMultiServer()
-            normalizedServerUrl = m.top.serverUrl
-            if normalizedServerUrl.right(1) = "/" then normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
             tmp.posterURL = multiServerExtrasImageURL(item.Id, "Primary", imgParams)
         else
             tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
@@ -858,24 +877,17 @@ function loadLocalSimilar() as object
     return results
 end function
 
-function loadJellyfinSimilar(limit = 20 as integer) as object
+' The server's similar titles. Bypassing Moonfin asks for the server's own engine, and leaving it
+' in lets the plugin's provider answer.
+function loadJellyfinSimilar(limit as integer, bypass as boolean) as object
     similar = []
-
-    ' Normalize server URL once if multi-server
-    normalizedServerUrl = ""
-    if isMultiServer()
-        normalizedServerUrl = m.top.serverUrl
-        if normalizedServerUrl.right(1) = "/"
-            normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
-        end if
-    end if
 
     params = {
         userId: getUserId(),
         limit: limit,
-        bypass: "moonfin",
         Fields: "PrimaryImageAspectRatio,MediaSources,UserData,OfficialRating,ProductionYear,PremiereDate,ImageTags"
     }
+    if bypass then params.bypass = "moonfin"
 
     data = apiItemsGetSimilar(m.top.itemId, params)
 
