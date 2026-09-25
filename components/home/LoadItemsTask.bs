@@ -29,6 +29,96 @@ sub init()
     m.top.functionName = "loadItems"
 end sub
 
+function loadItemsTaskServerData() as dynamic
+    if not isValidAndNotEmpty(m.top.serverUrl) then return invalid
+    if not isValidAndNotEmpty(m.top.serverUserId) then return invalid
+    if not isValidAndNotEmpty(m.top.serverAuthToken) then return invalid
+
+    return {
+        serverUrl: m.top.serverUrl,
+        userId: m.top.serverUserId,
+        authToken: m.top.serverAuthToken
+    }
+end function
+
+function audioResourceUsesServer(url as string, serverUrl as string) as boolean
+    target = ParsedUrl(url)
+    server = ParsedUrl(serverUrl)
+    if target = invalid or server = invalid then return false
+    if LCase(target.proto) <> LCase(server.proto) or LCase(target.host) <> LCase(server.host) then return false
+
+    targetPort = target.port
+    serverPort = server.port
+    if targetPort = "" then targetPort = LCase(target.proto) = "https" ? "443" : "80"
+    if serverPort = "" then serverPort = LCase(server.proto) = "https" ? "443" : "80"
+    return targetPort = serverPort
+end function
+
+function audioResourceURLForServer(serverData as object, path as string) as string
+    lowerPath = LCase(path)
+    if lowerPath.StartsWith("http://") or lowerPath.StartsWith("https://")
+        url = path
+    else
+        url = buildURLForServer(serverData.serverUrl, path, {}, serverData.userId)
+    end if
+    return authenticatedResourceURL(url, serverData.serverUrl, serverData.authToken)
+end function
+
+function loadAudioStreamForServer(id as string, serverData as object) as dynamic
+    songNode = ItemMetaDataForServer(serverData, id)
+    if not isValid(songNode) then return invalid
+
+    songData = songNode
+    if isValid(songNode.json) then songData = songNode.json
+    if not isValidAndNotEmpty(songData.MediaSources) then return invalid
+
+    content = CreateObject("roSGNode", "AudioStreamData")
+    if isValidAndNotEmpty(songNode.title)
+        content.title = songNode.title
+    else if isValidAndNotEmpty(songData.Name)
+        content.title = songData.Name
+    end if
+
+    content.hasLyrics = false
+    if isValid(songData.HasLyrics) then content.hasLyrics = songData.HasLyrics
+    if content.hasLyrics and not isEmbyServer(serverData.serverUrl)
+        lyricsReq = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, "Audio/" + id + "/Lyrics")
+        content.lyricData = getJson(lyricsReq)
+    end if
+
+    if not isValid(songData.MediaSources[0].Id) then return invalid
+    mediaSourceId = songData.MediaSources[0].Id.ToStr()
+    playbackInfo = ItemPostPlaybackInfoForServer(serverData, songData.Id, mediaSourceId)
+    if not usablePlaybackInfo(playbackInfo) then return invalid
+
+    content.id = playbackInfo.PlaySessionId
+    if useTranscodeAudioStream(playbackInfo)
+        content.url = audioResourceURLForServer(serverData, playbackInfo.MediaSources[0].TranscodingURL)
+    else
+        params = {
+            "Static": "true",
+            "Container": songData.MediaSources[0].Container,
+            "MediaSourceId": songData.MediaSources[0].Id
+        }
+        content.streamformat = songData.MediaSources[0].Container
+        content.url = buildURLForServer(serverData.serverUrl, "Audio/" + songData.Id + "/stream", params, serverData.userId)
+        content.url = authenticatedResourceURL(content.url, serverData.serverUrl, serverData.authToken)
+    end if
+
+    setCertificateAuthority(content)
+    if audioResourceUsesServer(content.url, serverData.serverUrl)
+        content = authRequestForServer(content, serverData)
+    end if
+
+    return content
+end function
+
+function backdropImageForServer(id as string, serverData as object) as string
+    params = { "maxHeight": "720", "maxWidth": "1280" }
+    if isEmbyServer(serverData.serverUrl) then params.api_key = serverData.authToken
+    return buildURLForServer(serverData.serverUrl, "Items/" + id + "/Images/Backdrop", params, serverData.userId)
+end function
+
 function loadLibraries() as object
     results = []
 
@@ -2103,12 +2193,22 @@ sub loadItems()
     end if
 
     if isStringEqual(m.top.itemsToLoad, "backdropImage")
-        m.top.content = [BackdropImage(m.top.itemId)]
+        serverData = loadItemsTaskServerData()
+        if isValid(serverData)
+            m.top.content = [backdropImageForServer(m.top.itemId, serverData)]
+        else
+            m.top.content = [BackdropImage(m.top.itemId)]
+        end if
         return
     end if
 
     if isStringEqual(m.top.itemsToLoad, "audioStream")
-        m.top.content = [AudioStream(m.top.itemId)]
+        serverData = loadItemsTaskServerData()
+        if isValid(serverData)
+            m.top.content = [loadAudioStreamForServer(m.top.itemId, serverData)]
+        else
+            m.top.content = [AudioStream(m.top.itemId)]
+        end if
         return
     end if
 
