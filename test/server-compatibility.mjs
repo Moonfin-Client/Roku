@@ -181,4 +181,27 @@ assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParam
 const extrasTask = await readFile('components/extras/LoadExtrasTask.bs', 'utf8');
 assert.match(extrasTask, /function multiServerExtrasImageURL\([^]*?return buildURLForServer\(/, 'Remote detail extras images use the shared builder');
 assert.doesNotMatch(extrasTask, /normalizedServerUrl \+ "\/Items\//, 'Remote detail extras do not concatenate server URLs');
-process.stdout.write('PASS: Jellyfin review regressions (24 checks)\n');
+
+const videoPlaybackTask = await readFile('components/ItemGrid/LoadVideoContentTask.bs', 'utf8');
+const introPlayback = videoPlaybackTask.match(/function getIntroVideosForPlayback\([^]*?end function/)[0];
+assert.match(introPlayback, /serverItemMetadataPath\([^]*?APIRequestForServer\(/, 'Remote prerolls are requested from the item server');
+
+const additionalPartsPlayback = videoPlaybackTask.match(/function getAdditionalPartsForPlayback\([^]*?end function/)[0];
+assert.match(additionalPartsPlayback, /APIRequestForServer\([^]*?AdditionalParts[^]*?tagPlaybackServerItems/, 'Remote multipart videos stay on the item server');
+
+const segmentPlayback = videoPlaybackTask.match(/function getMediaSegmentsForPlayback\([^]*?end function/)[0];
+assert.match(segmentPlayback, /isEmbyServer\(serverData\.serverUrl\) then return invalid[^]*?APIRequestForServer/, 'Remote segment lookup skips Emby and uses the target Jellyfin server');
+
+const episodePlayback = videoPlaybackTask.match(/function getShowEpisodesForPlayback\([^]*?end function/)[0];
+assert.match(episodePlayback, /targetParams\.UserId = serverData\.userId[^]*?APIRequestForServer[^]*?tagPlaybackServerItems/, 'Remote autoplay episodes keep server metadata');
+
+const nextEpisodeQueue = videoPlaybackTask.match(/sub addNextEpisodesToQueue\([^]*?end sub/)[0];
+assert.match(nextEpisodeQueue, /ItemMetaDataForServer\(serverData, videoID\)[^]*?getShowEpisodesForPlayback\(showID, urlParams, serverData\)/, 'Remote next-episode queue resolves on the item server');
+
+const finishEpisode = videoPlaybackTask.match(/sub addEpisodeToShowAtFinish\([^]*?end sub/)[0];
+assert.match(finishEpisode, /ItemMetaDataForServer\(serverData, videoID\)[^]*?getShowEpisodesForPlayback\(showID, urlParams, serverData\)/, 'Remote finish autoplay resolves on the item server');
+
+const preferredAudio = videoPlaybackTask.match(/function FindPreferredAudioStream\([^]*?end function/)[0];
+assert.match(preferredAudio, /getPlaybackItem\(m\.top\.itemId, playbackServerData\(\)\)/, 'Remote preferred-audio fallback reads metadata from the item server');
+
+process.stdout.write('PASS: Jellyfin review regressions (31 checks)\n');

@@ -88,6 +88,94 @@ function playbackUsesServerAuth(url as string) as boolean
     return LCase(target.proto) = LCase(server.proto) and LCase(target.host) = LCase(server.host) and normalizedPlaybackPort(target) = normalizedPlaybackPort(server)
 end function
 
+function playbackServerData() as dynamic
+    serverUrl = m.top.serverUrl
+    userId = m.top.serverUserId
+    authToken = m.top.serverAuthToken
+
+    if not isValidAndNotEmpty(serverUrl) then return invalid
+    if not isValidAndNotEmpty(userId) then return invalid
+    if not isValidAndNotEmpty(authToken) then return invalid
+
+    return {
+        serverUrl: serverUrl,
+        userId: userId,
+        authToken: authToken
+    }
+end function
+
+sub tagPlaybackServerItems(items as dynamic, serverData as dynamic)
+    if type(items) <> "roArray" or not isValid(serverData) then return
+
+    for each item in items
+        if type(item) = "roAssociativeArray"
+            item._serverUrl = serverData.serverUrl
+            item._userId = serverData.userId
+            item._authToken = serverData.authToken
+        end if
+    end for
+end sub
+
+function getIntroVideosForPlayback(id as string, serverData as dynamic) as dynamic
+    if not isValid(serverData) then return GetIntroVideos(id)
+
+    path = serverItemMetadataPath(id, serverData.userId, isEmbyServer(serverData.serverUrl)) + "/Intros"
+    req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, path, {
+        "UserId": serverData.userId
+    })
+    return getJson(req)
+end function
+
+function getAdditionalPartsForPlayback(id as string, serverData as dynamic) as dynamic
+    if not isValid(serverData) then return api.videos.GetAdditionalParts(id)
+
+    req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, Substitute("Videos/{0}/AdditionalParts", id), {
+        "UserId": serverData.userId
+    })
+    data = getJson(req)
+    if isChainValid(data, "Items") then tagPlaybackServerItems(data.Items, serverData)
+    return data
+end function
+
+function getMediaSegmentsForPlayback(id as string, serverData as dynamic) as dynamic
+    if not isValid(serverData) then return api.MediaSegments.Get(id)
+    if isEmbyServer(serverData.serverUrl) then return invalid
+
+    req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, "MediaSegments/" + id, {
+        "UserId": serverData.userId
+    })
+    return getJson(req)
+end function
+
+function getPlaybackItem(id as string, serverData as dynamic) as dynamic
+    if not isValid(serverData)
+        return api.items.GetByID(id, {
+            "UserId": m.global.session.user.id
+        })
+    end if
+
+    path = serverItemMetadataPath(id, serverData.userId, isEmbyServer(serverData.serverUrl))
+    req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, path, {
+        "UserId": serverData.userId,
+        "Fields": "MediaStreams,MediaSources"
+    })
+    return getJson(req)
+end function
+
+function getShowEpisodesForPlayback(showID as string, params as object, serverData as dynamic) as dynamic
+    if not isValid(serverData)
+        return getJson(APIRequest(Substitute("Shows/{0}/Episodes", showID), params))
+    end if
+
+    targetParams = {}
+    targetParams.Append(params)
+    targetParams.UserId = serverData.userId
+    req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, Substitute("Shows/{0}/Episodes", showID), targetParams)
+    data = getJson(req)
+    if isChainValid(data, "Items") then tagPlaybackServerItems(data.Items, serverData)
+    return data
+end function
+
 sub loadItems()
     ' Reset intro tracker in case task gets reused
     m.top.isIntro = false
@@ -97,7 +185,7 @@ sub loadItems()
         currentItem = m.global.queueManager.callFunc("getCurrentItem")
         ' Prerolls not allowed if we're resuming video
         if isValid(currentItem) and currentItem.startingPoint = 0
-            preRoll = GetIntroVideos(m.top.itemId)
+            preRoll = getIntroVideosForPlayback(m.top.itemId, playbackServerData())
             if isValid(preRoll) and preRoll.TotalRecordCount > 0 and isValid(preRoll.items[0])
                 ' If an error is thrown in the Intros plugin, instead of passing the error they pass the entire rick roll music video.
                 ' Bypass the music video and treat it as an error message
@@ -148,7 +236,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     serverAuthToken = m.top.serverAuthToken
 
     useMultiServer = isValidAndNotEmpty(serverUrl) and isValidAndNotEmpty(serverUserId) and isValidAndNotEmpty(serverAuthToken)
-
+    serverData = invalid
 
     if useMultiServer
         serverData = {
@@ -228,7 +316,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     if isValidAndNotEmpty(meta.json.MediaSources)
         if isValid(meta.json.MediaSources[0].HasSegments)
             if meta.json.MediaSources[0].HasSegments
-                video.mediaSegments = api.MediaSegments.Get(video.id)
+                video.mediaSegments = getMediaSegmentsForPlayback(video.id, serverData)
             end if
         end if
     end if
@@ -290,7 +378,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
         video.logoImage = api.items.GetImageURL(logoLookupID, logoSource, 0, { "format": "Png", "maxHeight": 65, "maxWidth": 300, "quality": "90" })
     end if
 
-    additionalParts = api.videos.GetAdditionalParts(video.id)
+    additionalParts = getAdditionalPartsForPlayback(video.id, serverData)
     additionalPartsCount = 0
     if isValidAndNotEmpty(chainLookup(additionalParts, "Items"))
         additionalPartsCount = additionalParts.Items.Count()
@@ -304,11 +392,11 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
             episodeQueueLimit = chainLookupReturn(m.global.session, "user.settings.episodeQueueLimit", "50")
             episodeQueueLimit = episodeQueueLimit.ToInt()
 
-            addNextEpisodesToQueue(video.showID, additionalPartsCount, episodeQueueLimit)
+            addNextEpisodesToQueue(video.showID, additionalPartsCount, episodeQueueLimit, serverData)
         else
             gotoNextEpisodeAfterCurrentEnds = m.global.session.user.settings["playback.showNextUpAfterFinish"] ?? false
             if gotoNextEpisodeAfterCurrentEnds
-                addEpisodeToShowAtFinish(video.showID)
+                addEpisodeToShowAtFinish(video.showID, serverData)
             end if
         end if
     end if
@@ -676,7 +764,7 @@ function getContainerType(meta as object) as string
     return container
 end function
 
-sub addNextEpisodesToQueue(showID, additionalPartsCount as integer, queueLimit as integer)
+sub addNextEpisodesToQueue(showID, additionalPartsCount as integer, queueLimit as integer, serverData = invalid as dynamic)
     ' Cap next episodes limit to 15 to conserve memory on Roku devices
     if queueLimit > 15 then queueLimit = 15
     ' Don't queue next episodes if we already have a playback queue
@@ -698,21 +786,25 @@ sub addNextEpisodesToQueue(showID, additionalPartsCount as integer, queueLimit a
             videoID = currentVideo.id
 
             ' Override showID value since it's for the intro video
-            meta = ItemMetaData(videoID)
+            if isValid(serverData)
+                meta = ItemMetaDataForServer(serverData, videoID)
+            else
+                meta = ItemMetaData(videoID)
+            end if
             if isValid(meta)
                 showID = meta.showID
             end if
         end if
     end if
 
-    url = Substitute("Shows/{0}/Episodes", showID)
+    userId = m.global.session.user.id
+    if isValid(serverData) then userId = serverData.userId
     urlParams = {
-        "UserId": m.global.session.user.id,
+        "UserId": userId,
         "isMissing": false,
         "Fields": "PrimaryImageAspectRatio,BasicSyncInfo"
     }
-    resp = APIRequest(url, urlParams)
-    data = getJson(resp)
+    data = getShowEpisodesForPlayback(showID, urlParams, serverData)
 
     if not isChainValid(data, "Items") or data.Items.Count() = 0 then return
     episodes = data.Items
@@ -732,7 +824,6 @@ sub addNextEpisodesToQueue(showID, additionalPartsCount as integer, queueLimit a
 
     if targetIndex < 0 then return
 
-    ' Calculate queue window (up to 5 previous episodes and up to queueLimit next episodes)
     startIndex = targetIndex - 5
     if startIndex < 0 then startIndex = 0
 
@@ -757,7 +848,7 @@ sub addNextEpisodesToQueue(showID, additionalPartsCount as integer, queueLimit a
 end sub
 
 ' Add episode to show at finish of current episode
-sub addEpisodeToShowAtFinish(showID)
+sub addEpisodeToShowAtFinish(showID, serverData = invalid as dynamic)
     videoID = m.top.itemId
 
     ' If first item is an intro video, use the next item in the queue
@@ -768,22 +859,28 @@ sub addEpisodeToShowAtFinish(showID)
             videoID = currentVideo.id
 
             ' Override showID value since it's for the intro video
-            meta = ItemMetaData(videoID)
+            if isValid(serverData)
+                meta = ItemMetaDataForServer(serverData, videoID)
+            else
+                meta = ItemMetaData(videoID)
+            end if
             if isValid(meta)
                 showID = meta.showID
             end if
         end if
     end if
 
-    url = Substitute("Shows/{0}/Episodes", showID)
-    urlParams = { "UserId": m.global.session.user.id }
-    urlParams.Append({ "StartItemId": videoID })
-    urlParams.Append({ "Limit": 2 })
-    urlParams.Append({ "isMissing": false })
-    resp = APIRequest(url, urlParams)
-    data = getJson(resp)
+    userId = m.global.session.user.id
+    if isValid(serverData) then userId = serverData.userId
+    urlParams = {
+        "UserId": userId,
+        "StartItemId": videoID,
+        "Limit": 2,
+        "isMissing": false
+    }
+    data = getShowEpisodesForPlayback(showID, urlParams, serverData)
 
-    if isValid(data) and data.Items.Count() > 1
+    if isValid(data) and isValid(data.Items) and data.Items.Count() > 1
         m.global.queueManager.callFunc("setEpisodeToShowAtFinish", data.Items[1])
     end if
 end sub
@@ -864,9 +961,7 @@ function FindPreferredAudioStream(streams as dynamic) as integer
 
     ' Do we already have the MediaStreams or not?
     if not isValidAndNotEmpty(streams)
-        jsonResponse = api.items.GetByID(m.top.itemId, {
-            UserId: m.global.session.user.id
-        })
+        jsonResponse = getPlaybackItem(m.top.itemId, playbackServerData())
 
         if jsonResponse = invalid or jsonResponse.MediaStreams = invalid then return 1
 
