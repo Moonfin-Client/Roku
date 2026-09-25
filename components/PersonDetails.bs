@@ -1,3 +1,4 @@
+import "pkg:/components/personCreditsHost.bs"
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/sdk.bs"
@@ -10,6 +11,7 @@ import "pkg:/source/utils/SeerrUtils.bs"
 
 const META_ROW_GAP = "   •   "
 const LINK_COLOR = "#00A4DC"
+const PERSON_FILMOGRAPHY_LIMIT = 100
 
 sub init()
     m.name = m.top.findNode("name")
@@ -87,9 +89,7 @@ sub loadPerson()
 
     populateHeader(itemData)
 
-    if isValid(m.filmographyRow)
-        loadFilmography()
-    end if
+    if isValid(m.filmographyRow) then startPersonFilmography(m.top.Id, itemData, PERSON_FILMOGRAPHY_LIMIT, "onFilmographyLoaded")
 
     loadRatings(itemData)
     updateFavoriteVisual()
@@ -139,22 +139,9 @@ sub onSeerrPersonLoaded(event as object)
 
     populateHeader(header)
 
-    loadSeerrCredits(m.tmdbId)
+    startSeerrPersonCredits(m.tmdbId, "onSeerrCreditsLoaded")
     updateFavoriteVisual()
     stopLoadingSpinner()
-end sub
-
-sub loadSeerrCredits(seerrId as string)
-    config = GetSeerrConfig()
-    if not IsValidSeerrConfig(config) then return
-
-    task = CreateObject("roSGNode", "SeerrAPITask")
-    task.request = {
-        method: "GET",
-        endpoint: `/api/v1/person/${seerrId}/combined_credits`
-    }
-    task.observeField("response", "onSeerrCreditsLoaded")
-    task.control = "RUN"
 end sub
 
 sub onSeerrCreditsLoaded(event as object)
@@ -173,116 +160,6 @@ sub onSeerrCreditsLoaded(event as object)
     stopLoadingSpinner()
 end sub
 
-function usableSeerrCredits(credits as object, isCrew as boolean) as object
-    list = []
-    if not isValidAndNotEmpty(credits) then return list
-
-    for each credit in credits
-        posterPath = credit.LookupCI("posterPath")
-        if not isValidAndNotEmpty(posterPath) then continue for
-
-        if isCrew
-            job = LCase(credit.LookupCI("job") ?? "")
-            if job = "thanks" or job = "special thanks" then continue for
-        end if
-
-        tmdbId = ""
-        rawId = credit.LookupCI("id")
-        if isValid(rawId) then tmdbId = rawId.ToStr()
-        mediaType = LCase(credit.LookupCI("mediaType") ?? "")
-        if mediaType = "" then mediaType = isValidAndNotEmpty(credit.LookupCI("title")) ? "movie" : "tv"
-
-        title = credit.LookupCI("title")
-        if not isValidAndNotEmpty(title) then title = credit.LookupCI("name")
-
-        ' The card caption reads the year off the same field the library entries use
-        released = credit.LookupCI("releaseDate")
-        if not isValidAndNotEmpty(released) then released = credit.LookupCI("firstAirDate")
-        year = invalid
-        if isValidAndNotEmpty(released) and released.len() >= 4 then year = released.left(4).toInt()
-
-        ' Selecting the card opens the Seerr page, which reads the credit off SeerrItem
-        ' the same way the home rows do
-        credit.mediaType = mediaType
-
-        data = {
-            Id: tmdbId,
-            name: title ?? "",
-            Type: mediaType = "tv" ? "Series" : "Movie",
-            SeerrTmdbId: tmdbId,
-            SeerrMediaType: mediaType,
-            SeerrPosterURL: GetTmdbImageBaseUrls().posterW342 + posterPath,
-            SeerrItem: credit
-        }
-        if isValid(year) and year > 0 then data.ProductionYear = year
-
-        entry = createSGNode("HomeData")
-        entry.json = data
-        list.push(entry)
-    end for
-
-    return list
-end function
-
-' Biographies often open with a phonetic spelling and the name in its own script. The
-' player font has no glyphs for those, so they come out as boxes. Latin text and its
-' accents are kept and the rest is dropped along with any brackets left empty by it.
-function readableText(value as dynamic) as string
-    if not isValidAndNotEmpty(value) then return ""
-
-    bytes = CreateObject("roByteArray")
-    bytes.FromAsciiString(value)
-    kept = CreateObject("roByteArray")
-
-    i = 0
-    while i < bytes.Count()
-        byte = bytes[i]
-        if byte < 128
-            kept.Push(byte)
-            i++
-        else if byte = 194 or byte = 195
-            ' Latin-1 accents, which the font does draw
-            kept.Push(byte)
-            if i + 1 < bytes.Count() then kept.Push(bytes[i + 1])
-            i += 2
-        else if byte = 226 and i + 2 < bytes.Count() and bytes[i + 1] = 128
-            ' Typographic punctuation has a plain equivalent, so it is swapped rather
-            ' than dropped and left running words together
-            third = bytes[i + 2]
-            if third = 147 or third = 148
-                kept.Push(45)
-            else if third = 152 or third = 153
-                kept.Push(39)
-            else if third = 156 or third = 157
-                kept.Push(34)
-            else if third = 166
-                kept.Push(46)
-                kept.Push(46)
-                kept.Push(46)
-            end if
-            i += 3
-        else
-            ' Everything else is skipped a whole character at a time
-            if byte >= 240
-                i += 4
-            else if byte >= 224
-                i += 3
-            else
-                i += 2
-            end if
-        end if
-    end while
-
-    text = kept.ToAsciiString()
-    emptyBrackets = CreateObject("roRegex", "\(\s*[;:,/]*\s*\)|\[\s*[;:,/]*\s*\]", "i")
-    text = emptyBrackets.ReplaceAll(text, "")
-    gaps = CreateObject("roRegex", "\s+([,;.])", "i")
-    text = gaps.ReplaceAll(text, "\1")
-    spacing = CreateObject("roRegex", "\s+", "i")
-
-    return spacing.ReplaceAll(text, " ").Trim()
-end function
-
 sub populateHeader(itemData as object)
     if isValid(m.name)
         m.name.text = chainLookupReturn(itemData, "Name", "")
@@ -290,36 +167,7 @@ sub populateHeader(itemData as object)
         m.name.height = 66
     end if
 
-    metaParts = []
-    premiereDate = chainLookupReturn(itemData, "PremiereDate", "")
-    endDate = chainLookupReturn(itemData, "EndDate", "")
-    if isValidAndNotEmpty(premiereDate)
-        born = formatPersonDate(premiereDate)
-        if born <> ""
-            metaParts.push(tr("Born") + " " + born)
-        end if
-        if isValidAndNotEmpty(endDate)
-            died = formatPersonDate(endDate)
-            if died <> ""
-                metaParts.push(tr("Died") + " " + died)
-            end if
-        else
-            age = personAge(premiereDate, endDate)
-            if age > 0
-                metaParts.push(tr("Age") + " " + age.toStr())
-            end if
-        end if
-    end if
-
-    birthPlace = chainLookupReturn(itemData, "ProductionLocations", invalid)
-    if isValid(birthPlace) and type(birthPlace) = "roArray" and birthPlace.count() > 0
-        birthPlace = birthPlace[0]
-    else
-        birthPlace = chainLookupReturn(itemData, "placeOfBirth", invalid)
-    end if
-    if isValidAndNotEmpty(birthPlace)
-        metaParts.push(birthPlace)
-    end if
+    metaParts = personMetaParts(itemData)
 
     if isValid(m.metaRow)
         if metaParts.count() > 0
@@ -368,77 +216,21 @@ sub populateHeader(itemData as object)
     end if
 end sub
 
-function SeerrIsEnabled() as boolean
-    config = GetSeerrConfig()
-    return IsValidSeerrConfig(config)
-end function
-
-sub loadFilmography()
-    loadTask = CreateObject("roSGNode", "LoadExtrasTask")
-    loadTask.itemId = m.top.Id
-    loadTask.isPersonMode = true
-
-    item = m.top.itemContent
-    if isValid(item) and isChainValid(item, "json")
-        itemData = item.json
-        if isValidAndNotEmpty(itemData._serverUrl)
-            loadTask.serverUrl = itemData._serverUrl
-        end if
-        if isValidAndNotEmpty(itemData._userId)
-            loadTask.serverUserId = itemData._userId
-        end if
-        if isValidAndNotEmpty(itemData._authToken)
-            loadTask.serverAuthToken = itemData._authToken
-        end if
-    end if
-
-    loadTask.observeField("content", "onFilmographyLoaded")
-    loadTask.control = "RUN"
-end sub
-
 sub onFilmographyLoaded(event as object)
     content = event.getData()
     if not isValid(content) then return
 
-    movies = []
-    series = []
-    guestAppearances = []
-    musicVideos = []
-
-    for i = 0 to content.getChildCount() - 1
-        entry = content.getChild(i)
-        if not isValid(entry) then continue for
-
-        entryType = LCase(chainLookupReturn(entry, "json.Type", "") ?? "")
-        if entryType = "movie"
-            movies.push(entry)
-        else if entryType = "series"
-            series.push(entry)
-        else if entryType = "episode"
-            ' An episode the person is billed on is already covered by its series,
-            ' so only the rest count as a guest appearance
-            seriesId = chainLookupReturn(entry, "json.SeriesId", invalid)
-            if not isEntryInList(series, seriesId)
-                guestAppearances.push(entry)
-            end if
-        else if entryType = "musicvideo"
-            musicVideos.push(entry)
-        end if
-    end for
-
-    m.libraryCredits = { movies: movies, series: series, guest: guestAppearances, music: musicVideos }
+    m.libraryCredits = splitFilmography(content.getChildren(-1, 0))
     rebuildTabs()
 
-    if isValidAndNotEmpty(m.tmdbId) and SeerrIsEnabled()
-        loadSeerrCredits(m.tmdbId)
-    end if
+    startSeerrPersonCredits(m.tmdbId, "onSeerrCreditsLoaded")
 
     backdropCandidates = []
-    for each entry in movies
+    for each entry in m.libraryCredits.movies
         candidate = chainLookupReturn(entry, "backdropUrl", "")
         if isValidAndNotEmpty(candidate) then backdropCandidates.push(candidate)
     end for
-    for each entry in series
+    for each entry in m.libraryCredits.series
         candidate = chainLookupReturn(entry, "backdropUrl", "")
         if isValidAndNotEmpty(candidate) then backdropCandidates.push(candidate)
     end for
@@ -446,14 +238,6 @@ sub onFilmographyLoaded(event as object)
         setBackdrop(backdropCandidates[Rnd(backdropCandidates.count()) - 1])
     end if
 end sub
-
-function isEntryInList(list as object, id as dynamic) as boolean
-    if not isValidAndNotEmpty(id) then return false
-    for each entry in list
-        if entry.id = id then return true
-    end for
-    return false
-end function
 
 ' Both halves land separately, so the tabs are built from whatever has arrived so far
 sub rebuildTabs()
@@ -796,55 +580,6 @@ sub onBackdropLoadStatusChange()
         end if
     end if
 end sub
-
-' Dates are parsed from the string, because roDateTime localizes on parse and
-' shifts the day for anyone west of UTC
-function formatPersonDate(value as dynamic) as string
-    if not isValidAndNotEmpty(value) then return ""
-
-    monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-    parts = value.split("-")
-    if parts.count() = 3
-        year = parts[0].toInt()
-        month = parts[1].toInt()
-        day = parts[2].toInt()
-
-        if month >= 1 and month <= 12
-            return monthNames[month - 1] + " " + day.toStr() + ", " + year.toStr()
-        end if
-    end if
-    return value
-end function
-
-' Whole years between the two dates, one fewer until this year's birthday has come round. With no
-' date of death the count runs to today on the viewer's own calendar.
-function personAge(birthValue as dynamic, deathValue as dynamic) as integer
-    if not isValidAndNotEmpty(birthValue) then return 0
-
-    birthParts = Left(birthValue, 10).split("-")
-    if birthParts.count() <> 3 then return 0
-
-    today = CreateObject("roDateTime")
-    today.ToLocalTime()
-    endYear = today.GetYear()
-    endMonth = today.GetMonth()
-    endDay = today.GetDayOfMonth()
-    if isValidAndNotEmpty(deathValue)
-        endParts = Left(deathValue, 10).split("-")
-        if endParts.count() = 3
-            endYear = endParts[0].toInt()
-            endMonth = endParts[1].toInt()
-            endDay = endParts[2].toInt()
-        end if
-    end if
-
-    birthMonth = birthParts[1].toInt()
-    age = endYear - birthParts[0].toInt()
-    if endMonth < birthMonth or (endMonth = birthMonth and endDay < birthParts[2].toInt()) then age -= 1
-    if age <= 0 then return 0
-    return age
-end function
 
 sub loadRatings(itemData as object)
     if not isValid(m.ratings) then return
