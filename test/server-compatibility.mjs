@@ -238,4 +238,27 @@ assert.match(trailerAction, /trailerItemId = chainLookupReturn\(itemContent, "id
 assert.match(trailerAction, /getServerInfoFromItem\(itemContent\)/, 'Trailer lookup reads the detail item server');
 assert.match(trailerAction, /GetLocalTrailers\(trailerItemId, trailerParams, trailerServerData\)/, 'Trailer lookup passes destination server context');
 assert.match(trailerAction, /trailer\["_serverUrl"\] = trailerServerData\.serverUrl/, 'Remote trailers keep destination metadata for playback');
-process.stdout.write('PASS: Jellyfin review regressions (33 checks)\n');
+
+const seasonResumeCheck = showScenes.match(/function hasSeasonEpisodeToResume\([^]*?end function/)[0];
+assert.match(seasonResumeCheck, /return hasResummableEpisode\(seasonID\)/, 'Season Resume requires an actual resumable episode');
+assert.doesNotMatch(seasonResumeCheck, /GetEpisodes\(/, 'Unplayed episodes do not masquerade as Resume');
+
+const createSeriesDetails = showScenes.match(/function CreateSeriesDetailsGroup\([^]*?end function/)[0];
+assert.doesNotMatch(createSeriesDetails, /displayResumeButton = hasNextUpEpisode/, 'Series Resume is not enabled by Next Up alone');
+
+const seriesRefresh = eventHandlers.match(/sub onRefreshSeriesDetailsDataEvent\(\)[^]*?end sub/)[0];
+assert.doesNotMatch(seriesRefresh, /hasNextUpEpisode\(/, 'Series refresh keeps Resume tied to saved progress');
+
+const quickplaySource = await readFile('source/utils/quickplay.bs', 'utf8');
+const resumeHelper = quickplaySource.match(/sub applyResumeStartingPoint\([^]*?end sub/)[0];
+assert.match(resumeHelper, /positionTicks <= 0 then return[^]*?item\.startingPoint = positionTicks/, 'Resume helper only copies positive playback positions');
+
+const seriesLocal = quickplaySource.match(/sub seriesLocal\([^]*?end sub/)[0];
+assert.match(seriesLocal, /if quickplayFromResume[^]*?GetResumeItems\([^]*?applyResumeStartingPoint\(data\.Items\[0\]\)/, 'Local series Resume prefers a resumable episode and copies its position');
+assert.match(seriesLocal, /GetNextUp\([^]*?if quickplayFromResume then quickplay\.applyResumeStartingPoint\(data\.Items\[0\]\)/, 'Local Next Up fallback preserves a resume position when present');
+
+const seriesRemote = quickplaySource.match(/sub seriesForServer\([^]*?end sub/)[0];
+assert.match(seriesRemote, /quickplayFromResume[^]*?resumeUrl = "UserItems\/Resume"[^]*?if quickplayFromResume[^]*?APIRequestForServer\([^]*?resumeUrl/, 'Remote series Resume queries the resumable endpoint first');
+assert.match(seriesRemote, /applyResumeStartingPoint\(data\.Items\[0\]\)/, 'Remote series Resume copies the saved playback position');
+
+process.stdout.write('PASS: Jellyfin review regressions (39 checks)\n');
