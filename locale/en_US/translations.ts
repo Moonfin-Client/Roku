@@ -3069,14 +3069,6 @@
         <translation>Sort Order for the row - Ascending,Descending.</translation>
     </message>
     <message>
-        <source>Current Offset</source>
-        <translation>Current Offset</translation>
-    </message>
-    <message>
-        <source>Adjust Subtitle Timing</source>
-        <translation>Adjust Subtitle Timing</translation>
-    </message>
-    <message>
         <source>Display Episodes In Two Columns</source>
         <translation>Display Episodes In Two Columns</translation>
     </message>
@@ -3259,6 +3251,21 @@
         <source>{0}d ago</source>
         <extracomment>Days since something happened</extracomment>
         <translation>{0}d ago</translation>
+    </message>
+    <message>
+        <source>Offset</source>
+        <extracomment>Subtitle track picker row that opens the subtitle offset panel</extracomment>
+        <translation>Offset</translation>
+    </message>
+    <message>
+        <source>Subtitle Offset</source>
+        <extracomment>Title of the panel that moves subtitles earlier or later</extracomment>
+        <translation>Subtitle Offset</translation>
+    </message>
+    <message>
+        <source>Press BACK to close</source>
+        <extracomment>Button that closes the subtitle offset panel</extracomment>
+        <translation>Press BACK to close</translation>
     </message>
 </context>
 </TS>
