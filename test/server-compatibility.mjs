@@ -181,6 +181,8 @@ assert.match(extrasChanged, /m\.currentButtonIndex = i[^]*?if focusedId <> "" th
 const remoteItems = await readFile('source/api/Items.bs', 'utf8');
 const remoteMetadata = remoteItems.match(/function ItemMetaDataForServer\([^]*?end function/)[0];
 assert.match(remoteMetadata, /serverItemMetadataPath\(id, serverData\.userId, isEmbyServer\(serverData\.serverUrl\)\)/, 'Remote metadata uses server-specific canonical path');
+const remotePlaybackInfo = remoteItems.match(/function ItemPostPlaybackInfoForServer\([^]*?end function/)[0];
+assert.match(remotePlaybackInfo, /PlaybackMethod\.FORCELIVETVREMUX[^]*?params\.EnableDirectPlay = false/, 'Remote Live TV retry disables direct play to request a remux');
 
 const favoriteWrites = await readFile('components/ItemGrid/FavoriteItemsTask.bs', 'utf8');
 assert.match(favoriteWrites, /APIRequestForServer\([^]*?"UserFavoriteItems\/" \+ itemId/, 'Remote favorites use the shared request builder');
@@ -258,4 +260,4 @@ const videoLoader = await readFile('components/ItemGrid/LoadVideoContentTask.bs'
 const episodeWindow = videoLoader.match(/sub addNextEpisodesToQueue\([^]*?end sub/)[0];
 assert.match(episodeWindow, /if i = targetIndex and isValid\(playingItem\)\s+windowQueue\.push\(playingItem\)/, 'The rebuilt episode queue keeps the playing item and its start position');
 
-process.stdout.write('PASS: Jellyfin review regressions (39 checks)\n');
+process.stdout.write('PASS: Jellyfin review regressions (40 checks)\n');
