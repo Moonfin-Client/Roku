@@ -1,0 +1,699 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/itemMenu.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+import "pkg:/source/utils/settingsSync.bs"
+import "pkg:/source/utils/tvKeyboard.bs"
+
+' The card menu, for whichever screen imports this. The screen answers the options key on a
+' card with showItemMenu, and everything here runs in that screen's scope, so m is the screen.
+'
+' A screen that imports this has to define
+'     sub itemMenuChanged(action as string, card as dynamic, menuJson as object)
+' which hears about each change the menu made to an item, with the item as it now stands, so
+' the screen can redraw what it shows of it. The actions are watched, favorite,
+' hideContinueWatching, hideNextUp, addToCollection, createCollection, removeFromCollection,
+' addToPlaylist, createPlaylist and metadata.
+
+' How long a press waits on the item before another press may start over
+const ITEM_MENU_LOAD_SECONDS = 10
+
+' ===== Opening =====
+
+' card is a content node carrying json, or the json itself. options.inCollection, with
+' collectionId and collectionName, offers taking the item out of that collection. Answers false
+' when the card has no menu, so the key can go on to whatever else wants it.
+function showItemMenu(card as dynamic, options = {} as object) as boolean
+    menuJson = itemMenuCardJson(card)
+    if not isValid(menuJson) then return false
+
+    ' A second press while the first is still loading is the same press
+    now = CreateObject("roDateTime").AsSeconds()
+    if isValid(m.itemMenuPending) and now - m.itemMenuPending.startedAt < ITEM_MENU_LOAD_SECONDS then return true
+
+    flags = itemMenuFlags(menuJson, options)
+    if itemMenu.BuildEntries(menuJson, flags).count() = 0 and itemMenu.LibraryItemEntries(menuJson, flags).count() = 0 then return false
+
+    m.itemMenuPending = {
+        card: card,
+        json: menuJson,
+        options: options,
+        flags: flags,
+        returnFocus: tvKeyboard.deepestFocus(m.top.getScene()),
+        startedAt: now,
+        tasks: []
+    }
+
+    ' The card can be older than the item, so the menu reads the item as it is now. A genre or
+    ' a library has nothing to read and opens straight away.
+    itemType = LCase(itemMenu.TypeOf(menuJson))
+    if inArray(itemMenu.MediaTypes(), itemType) or inArray(itemMenu.MyListTypes(), itemType)
+        m.itemMenuPending.tasks.push(runItemMenuTask({ op: "load", itemId: menuJson.Id, server: itemMenuServer(menuJson) }, "onItemMenuItemLoaded"))
+
+        if not flags.foreign and not itemMenu.IsExtra(menuJson)
+            listTask = CreateObject("roSGNode", "LoadItemsTask")
+            listTask.itemsToLoad = "isInMyList"
+            listTask.itemId = menuJson.Id
+            listTask.observeField("content", "onItemMenuListLoaded")
+            holdItemMenuTask(listTask)
+            listTask.control = "RUN"
+            m.itemMenuPending.tasks.push(listTask)
+        end if
+    end if
+
+    if m.itemMenuPending.tasks.count() = 0 then openItemMenu()
+    return true
+end function
+
+' A press given up on can still answer late, and its answer mustnt count toward the next one.
+' Answers true when the task belongs to the press still waiting, and stops it waiting on it.
+function itemMenuPendingTakes(task as object) as boolean
+    pending = m.itemMenuPending
+    if not isValid(pending) then return false
+
+    for i = 0 to pending.tasks.count() - 1
+        if pending.tasks[i].isSameNode(task)
+            pending.tasks.delete(i)
+            return true
+        end if
+    end for
+
+    return false
+end function
+
+function itemMenuCardJson(card as dynamic) as dynamic
+    menuJson = invalid
+    if type(card) = "roAssociativeArray"
+        menuJson = card
+    else if type(card) = "roSGNode"
+        ' A Seerr search result says so on the node rather than in its json
+        if card.hasField("isSeerrResult") and card.isSeerrResult = true then return invalid
+        if card.hasField("json") then menuJson = card.json
+
+        ' Some rows only fill in the node and leave its json empty, so the node says what it holds
+        if not isValidAndNotEmpty(chainLookupReturn(menuJson, "Id", "")) and card.hasField("type")
+            nodeType = card.type
+            if isValidAndNotEmpty(card.id) and isString(nodeType) and nodeType <> ""
+                menuJson = { Id: card.id, Type: nodeType, Name: card.title ?? "" }
+            end if
+        end if
+    end if
+
+    if type(menuJson) <> "roAssociativeArray" then return invalid
+    if not isValidAndNotEmpty(menuJson.Id) or itemMenu.IsFromSeerr(menuJson) then return invalid
+    return menuJson
+end function
+
+function itemMenuFlags(menuJson as object, options as object) as object
+    ' Each read of the session copies the whole of it
+    signedIn = m.global.session
+    activeUrl = chainLookupReturn(signedIn, "server.url", "")
+    itemUrl = menuJson._serverUrl
+    foreign = isString(itemUrl) and itemUrl <> "" and serverIdentityKey(itemUrl) <> serverIdentityKey(activeUrl)
+
+    isAdmin = itemMenu.IsTrue(chainLookupReturn(signedIn, "user.Policy.IsAdministrator", false))
+    activeIsJellyfin = not isEmbyServer()
+
+    ' Jellyfin only lets a user touch collections on their own server with the permission for
+    ' it. An item from another server is left to that server to refuse.
+    canManageCollections = not activeIsJellyfin or foreign or isAdmin or itemMenu.IsTrue(chainLookupReturn(signedIn, "user.Policy.EnableCollectionManagement", false))
+
+    return {
+        ' The admin dialogs only reach the server that is signed in
+        isAdmin: isAdmin and not foreign,
+        isJellyfin: activeIsJellyfin,
+        canManageCollections: canManageCollections,
+        inCollection: itemMenu.IsTrue(options.inCollection) and isValidAndNotEmpty(options.collectionId),
+        foreign: foreign,
+        inMyList: false
+    }
+end function
+
+' A card from another signed in server is acted on there
+function itemMenuServer(menuJson as object) as dynamic
+    info = getServerInfoFromItem(menuJson)
+    if not isValid(info) then return invalid
+
+    activeUrl = chainLookupReturn(m.global.session, "server.url", "")
+    if serverIdentityKey(info.serverUrl) = serverIdentityKey(activeUrl) then return invalid
+
+    return { serverUrl: info.serverUrl, userId: info.userId, authToken: info.authToken }
+end function
+
+sub onItemMenuItemLoaded(event as object)
+    response = event.getData()
+    task = event.getRoSGNode()
+    releaseItemMenuTask(task, "response")
+    if not itemMenuPendingTakes(task) then return
+
+    pending = m.itemMenuPending
+    fresh = response.data
+    if response.success and validItemMetadata(fresh)
+        ' Where the card came from, and the library a genre opens in, arent part of the answer
+        for each key in ["_serverUrl", "_userId", "_authToken", "_serverId", "_serverName", "LibraryId"]
+            if isValid(pending.json[key]) and not isValid(fresh[key]) then fresh[key] = pending.json[key]
+        end for
+        pending.json = fresh
+    end if
+
+    if pending.tasks.count() = 0 then openItemMenu()
+end sub
+
+sub onItemMenuListLoaded(event as object)
+    listed = event.getData()
+    task = event.getRoSGNode()
+    releaseItemMenuTask(task, "content")
+    if not itemMenuPendingTakes(task) then return
+
+    pending = m.itemMenuPending
+    pending.flags.inMyList = isValidAndNotEmpty(listed) and itemMenu.IsTrue(listed[0])
+    if pending.tasks.count() = 0 then openItemMenu()
+end sub
+
+sub openItemMenu()
+    pending = m.itemMenuPending
+    m.itemMenuPending = invalid
+    if not isValid(pending) then return
+
+    ' The viewer moved on while the item loaded, and the menu would open over the wrong screen
+    if not m.top.isInFocusChain() then return
+
+    menuEntries = itemMenu.BuildEntries(pending.json, pending.flags)
+    menuEntries.append(itemMenu.LibraryItemEntries(pending.json, pending.flags))
+    if menuEntries.count() = 0 then return
+
+    m.itemMenuSubject = {
+        card: pending.card,
+        json: pending.json,
+        options: pending.options,
+        entries: menuEntries,
+        returnFocus: pending.returnFocus
+    }
+
+    m.itemMenuPanel = CreateObject("roSGNode", "ItemContextMenu")
+    m.itemMenuPanel.menuTitle = pending.json.Name ?? ""
+    m.itemMenuPanel.entries = menuEntries
+    m.itemMenuPanel.returnFocus = pending.returnFocus
+    m.itemMenuPanel.observeField("chosen", "onItemMenuChosen")
+    m.itemMenuPanel.observeField("dismissed", "onItemMenuDismissed")
+
+    m.top.getScene().appendChild(m.itemMenuPanel)
+    m.itemMenuPanel.callFunc("showMenu")
+end sub
+
+' Picking closes the menu first and acts after, so whatever the entry opens has the screen
+sub onItemMenuChosen(event as object)
+    entryId = event.getData()
+    closeItemMenuPanel()
+    runItemMenuEntry(entryId)
+end sub
+
+sub onItemMenuDismissed(_event as object)
+    closeItemMenuPanel()
+end sub
+
+sub closeItemMenuPanel()
+    if not isValid(m.itemMenuPanel) then return
+
+    m.itemMenuPanel.unobserveField("chosen")
+    m.itemMenuPanel.unobserveField("dismissed")
+    m.top.getScene().removeChild(m.itemMenuPanel)
+    m.itemMenuPanel = invalid
+end sub
+
+' ===== Entries =====
+
+sub runItemMenuEntry(entryId as string)
+    subject = m.itemMenuSubject
+    if not isValid(subject) then return
+    menuJson = subject.json
+
+    if entryId = "play"
+        itemMenuPlay(subject)
+    else if entryId = "watched"
+        played = itemMenu.IsTrue(chainLookupReturn(menuJson, "UserData.Played", false))
+        runItemMenuTask(itemMenuRequest(subject, "played", { value: not played }), "onItemMenuPlayedSaved")
+    else if entryId = "hideContinueWatching"
+        itemMenuHide(subject, false)
+    else if entryId = "hideNextUp"
+        itemMenuHide(subject, true)
+    else if entryId = "favorite"
+        favorite = itemMenu.IsTrue(chainLookupReturn(menuJson, "UserData.IsFavorite", false))
+        runItemMenuTask(itemMenuRequest(subject, "favorite", { value: not favorite }), "onItemMenuFavoriteSaved")
+    else if entryId = "addToCollection"
+        itemMenuLoadPicker(subject, "collections")
+    else if entryId = "removeFromCollection"
+        itemMenuConfirmRemoval(subject)
+    else if entryId = "addToPlaylist"
+        itemMenuLoadPicker(subject, "playlists")
+    else if entryId = "refreshMetadata"
+        runItemMenuTask(itemMenuRequest(subject, "refresh", {}), "onItemMenuRefreshed")
+    else if entryId = "identify"
+        itemMenuShowIdentify(subject)
+    else if entryId = "changeArtwork"
+        itemMenuShowArtwork(subject)
+    else if entryId = "goToSeries"
+        m.global.sceneManager.itemMenuRequest = {
+            action: "goToSeries",
+            seriesId: menuJson.SeriesId,
+            serverData: getServerInfoFromItem(menuJson)
+        }
+    else
+        ' Entries the library item handler on the main thread runs
+        for each menuEntry in subject.entries
+            if menuEntry.id = entryId and isValid(menuEntry.legacy)
+                m.global.sceneManager.itemMenuRequest = {
+                    action: "libraryItem",
+                    label: menuEntry.label,
+                    itemId: menuJson.Id,
+                    params: menuEntry.params
+                }
+                exit for
+            end if
+        end for
+    end if
+end sub
+
+' Playing goes the way the play key does, which resumes from wherever the item was left
+sub itemMenuPlay(subject as object)
+    menuCard = subject.card
+    if type(menuCard) = "roSGNode" and menuCard.hasField("json")
+        playNode = menuCard.clone(false)
+        playNode.json = subject.json
+    else
+        playNode = CreateObject("roSGNode", "ContentNode")
+        playNode.addFields({ type: itemMenu.TypeOf(subject.json), json: subject.json, selectedAudioStreamIndex: 0 })
+        playNode.addField("startingPoint", "longinteger", false)
+        playNode.id = subject.json.Id
+    end if
+
+    m.global.sceneManager.quickPlayNode = playNode
+end sub
+
+sub onItemMenuPlayedSaved(event as object)
+    response = event.getData()
+    releaseItemMenuTask(event.getRoSGNode(), "response")
+    if not response.success then return
+
+    ' Either way the server drops the resume point, so the item says so too
+    subject = response.request.subject
+    itemMenuPatchUserData(subject, { Played: response.request.value, PlaybackPositionTicks: 0, PlayedPercentage: invalid })
+    itemMenuNotify("watched", subject)
+end sub
+
+sub onItemMenuFavoriteSaved(event as object)
+    response = event.getData()
+    releaseItemMenuTask(event.getRoSGNode(), "response")
+    if not response.success then return
+
+    subject = response.request.subject
+    itemMenuPatchUserData(subject, { IsFavorite: response.request.value })
+    itemMenuNotify("favorite", subject)
+end sub
+
+sub itemMenuPatchUserData(subject as object, patch as object)
+    userData = subject.json.UserData
+    if type(userData) <> "roAssociativeArray" then userData = {}
+
+    for each key in patch
+        if isValid(patch[key])
+            userData[key] = patch[key]
+        else
+            userData.Delete(key)
+        end if
+    end for
+    subject.json.UserData = userData
+end sub
+
+' Home reads its rows again when it comes back, since a change here can show on it
+sub itemMenuNotify(action as string, subject as object)
+    if not m.top.isSubType("Home") then m.global.homeNeedsRefresh = true
+    itemMenuChanged(action, subject.card, subject.json)
+end sub
+
+' ===== Hiding =====
+
+' The hidden maps are settings, so they sync through the server. A hide only ever adds to what
+' is stored.
+sub itemMenuHide(subject as object, nextUp as boolean)
+    menuJson = subject.json
+    settings = m.global.session.user.settings
+    stamp = CreateObject("roDateTime").ToISOString()
+    watchingKey = "ui.home.hiddenContinueWatchingItems"
+    nextUpKey = "ui.home.hiddenNextUpSeries"
+
+    if nextUp
+        seriesId = menuJson.SeriesId
+        nextUpMap = itemMenu.HiddenMapWith(settings[nextUpKey], seriesId, stamp)
+        watchingMap = itemMenu.HiddenMapWith(settings[watchingKey], seriesId, stamp)
+        set_user_setting(nextUpKey, nextUpMap)
+        set_user_setting(watchingKey, watchingMap)
+        itemMenuPushSettings({ hiddenNextUpSeries: nextUpMap, hiddenContinueWatchingItems: watchingMap })
+    else
+        hideId = menuJson.Id
+        if isValidAndNotEmpty(menuJson.SeriesId) then hideId = menuJson.SeriesId
+        watchingMap = itemMenu.HiddenMapWith(settings[watchingKey], hideId, stamp)
+        set_user_setting(watchingKey, watchingMap)
+        itemMenuPushSettings({ hiddenContinueWatchingItems: watchingMap })
+    end if
+
+    ' Clearing the play state is what takes the resume point away with it
+    hideAction = nextUp ? "hideNextUp" : "hideContinueWatching"
+    runItemMenuTask(itemMenuRequest(subject, "played", { value: false, hideAction: hideAction }), "onItemMenuHidden")
+end sub
+
+sub onItemMenuHidden(event as object)
+    response = event.getData()
+    releaseItemMenuTask(event.getRoSGNode(), "response")
+
+    subject = response.request.subject
+    if response.success then itemMenuPatchUserData(subject, { Played: false, PlaybackPositionTicks: 0, PlayedPercentage: invalid })
+
+    ' The settings changed either way, so the rows are read again either way
+    itemMenuNotify(response.request.hideAction, subject)
+end sub
+
+sub itemMenuPushSettings(profileData as object)
+    if not settingsSync.IsSyncEnabled() then return
+
+    ' Held only so it isnt collected mid push, since a failed post never reports back
+    pushData = settingsSync.ProfilePush(profileData)
+    m.itemMenuSettingsTask = CreateObject("roSGNode", "PostTask")
+    m.itemMenuSettingsTask.apiUrl = pushData.url
+    m.itemMenuSettingsTask.stringData = pushData.body
+    m.itemMenuSettingsTask.control = "RUN"
+end sub
+
+' ===== Collections and playlists =====
+
+sub itemMenuLoadPicker(subject as object, kind as string)
+    startLoadingSpinner()
+    runItemMenuTask(itemMenuRequest(subject, kind, {}), "onItemMenuPickerLoaded")
+end sub
+
+' A new one comes first, then whatever the server already has with how much each holds
+sub onItemMenuPickerLoaded(event as object)
+    response = event.getData()
+    releaseItemMenuTask(event.getRoSGNode(), "response")
+    stopLoadingSpinner()
+
+    m.itemMenuPickerSubject = response.request.subject
+    m.itemMenuPickerKind = response.request.op
+    forCollections = m.itemMenuPickerKind = "collections"
+
+    m.itemMenuPickerEntries = []
+    options = [forCollections ? tr("Create New Collection") : tr("Create New Playlist")]
+    details = [""]
+    for each pick in chainLookupReturn(response, "data.Items", [])
+        m.itemMenuPickerEntries.push(pick)
+        options.push(pick.Name ?? "")
+
+        count = pick.ChildCount
+        if isValid(count)
+            details.push(tr("{count} items").Replace("{count}", count.toStr()))
+        else
+            details.push("")
+        end if
+    end for
+
+    nothing = forCollections ? tr("No collections found") : tr("No playlists found")
+
+    m.itemMenuPrompt = CreateObject("roSGNode", "ListPromptDialog")
+    m.itemMenuPrompt.dialogTitle = forCollections ? tr("Add to Collection") : tr("Add to Playlist")
+    m.itemMenuPrompt.message = m.itemMenuPickerEntries.count() = 0 ? nothing : ""
+    m.itemMenuPrompt.options = options
+    m.itemMenuPrompt.optionDetails = details
+    m.itemMenuPrompt.returnFocus = m.itemMenuPickerSubject.returnFocus
+    m.itemMenuPrompt.observeField("optionSelected", "onItemMenuPickerChosen")
+
+    m.top.getScene().appendChild(m.itemMenuPrompt)
+    m.itemMenuPrompt.callFunc("showDialog")
+end sub
+
+sub onItemMenuPickerChosen(event as object)
+    index = event.getData()
+    closeItemMenuPrompt()
+    if index < 0 then return
+
+    subject = m.itemMenuPickerSubject
+    forCollections = m.itemMenuPickerKind = "collections"
+
+    if index = 0
+        m.itemMenuKeyboard = tvKeyboard.Open(m.top.getScene(), {
+            title: forCollections ? tr("New Collection") : tr("New Playlist"),
+            hint: forCollections ? tr("Collection name") : tr("Playlist name")
+        })
+        if not isValid(m.itemMenuKeyboard) then return
+
+        m.itemMenuKeyboard.observeField("submitted", "onItemMenuNameSubmitted")
+        m.itemMenuKeyboard.observeField("cancelled", "onItemMenuNameCancelled")
+        return
+    end if
+
+    picked = m.itemMenuPickerEntries[index - 1]
+    if not isValid(picked) then return
+
+    if forCollections
+        runItemMenuTask(itemMenuRequest(subject, "addToCollection", { collectionId: picked.Id }), "onItemMenuAdded")
+    else
+        runItemMenuTask(itemMenuRequest(subject, "addToPlaylist", { playlistId: picked.Id }), "onItemMenuAdded")
+    end if
+end sub
+
+sub closeItemMenuPrompt()
+    if not isValid(m.itemMenuPrompt) then return
+
+    m.itemMenuPrompt.unobserveField("optionSelected")
+    m.top.getScene().removeChild(m.itemMenuPrompt)
+    m.itemMenuPrompt = invalid
+end sub
+
+sub onItemMenuNameSubmitted(event as object)
+    typed = event.getRoSGNode().text
+    releaseItemMenuKeyboard()
+
+    if not isString(typed) then return
+    newName = Left(typed.Trim(), 100)
+    if newName = "" then return
+
+    op = m.itemMenuPickerKind = "collections" ? "createCollection" : "createPlaylist"
+    runItemMenuTask(itemMenuRequest(m.itemMenuPickerSubject, op, { name: newName }), "onItemMenuAdded")
+end sub
+
+sub onItemMenuNameCancelled(_event as object)
+    releaseItemMenuKeyboard()
+end sub
+
+sub releaseItemMenuKeyboard()
+    tvKeyboard.Release(m.itemMenuKeyboard, ["submitted", "cancelled"])
+    m.itemMenuKeyboard = invalid
+end sub
+
+sub onItemMenuAdded(event as object)
+    response = event.getData()
+    releaseItemMenuTask(event.getRoSGNode(), "response")
+    if not response.success then return
+
+    op = response.request.op
+    if op = "addToCollection"
+        showItemMenuToast(tr("Added to collection"))
+    else if op = "addToPlaylist"
+        showItemMenuToast(tr("Added to playlist"))
+    else
+        showItemMenuToast(tr("Created ""{name}"" and added item").Replace("{name}", response.request.name))
+    end if
+
+    itemMenuNotify(op, response.request.subject)
+end sub
+
+' ===== Removing from a collection =====
+
+sub itemMenuConfirmRemoval(subject as object)
+    question = tr("Remove {item} from {collection}? The item stays in your library.")
+    question = question.Replace("{item}", subject.json.Name ?? "").Replace("{collection}", subject.options.collectionName ?? "")
+
+    m.itemMenuRemoving = subject
+    m.itemMenuConfirm = CreateObject("roSGNode", "ItemContextMenu")
+    m.itemMenuConfirm.menuTitle = tr("Remove from Collection")
+    m.itemMenuConfirm.question = question
+    m.itemMenuConfirm.answers = [
+        { id: "cancel", label: tr("Cancel"), strong: false },
+        { id: "remove", label: tr("Remove"), strong: true }
+    ]
+    m.itemMenuConfirm.returnFocus = subject.returnFocus
+    m.itemMenuConfirm.observeField("chosen", "onItemMenuRemovalAnswered")
+    m.itemMenuConfirm.observeField("dismissed", "onItemMenuRemovalAnswered")
+
+    m.top.getScene().appendChild(m.itemMenuConfirm)
+    m.itemMenuConfirm.callFunc("showMenu")
+end sub
+
+' The card leaves the list on the press that confirms it, and comes back if the server says no
+sub onItemMenuRemovalAnswered(event as object)
+    answer = event.getData()
+
+    if isValid(m.itemMenuConfirm)
+        m.itemMenuConfirm.unobserveField("chosen")
+        m.itemMenuConfirm.unobserveField("dismissed")
+        m.top.getScene().removeChild(m.itemMenuConfirm)
+        m.itemMenuConfirm = invalid
+    end if
+
+    if not isStringEqual(answer, "remove") then return
+
+    subject = m.itemMenuRemoving
+    removal = itemMenuTakeCard(subject.card)
+    runItemMenuTask(itemMenuRequest(subject, "removeFromCollection", {
+        collectionId: subject.options.collectionId,
+        removal: removal
+    }), "onItemMenuRemoved")
+end sub
+
+function itemMenuTakeCard(menuCard as dynamic) as dynamic
+    if type(menuCard) <> "roSGNode" then return invalid
+
+    parent = menuCard.getParent()
+    if not isValid(parent) then return invalid
+
+    for i = 0 to parent.getChildCount() - 1
+        if parent.getChild(i).isSameNode(menuCard)
+            parent.removeChildIndex(i)
+            return { parent: parent, index: i, card: menuCard }
+        end if
+    end for
+
+    return invalid
+end function
+
+sub onItemMenuRemoved(event as object)
+    response = event.getData()
+    releaseItemMenuTask(event.getRoSGNode(), "response")
+
+    if response.success
+        itemMenuNotify("removeFromCollection", response.request.subject)
+        return
+    end if
+
+    removal = response.request.removal
+    if isValid(removal) then removal.parent.insertChild(removal.card, removal.index)
+    showItemMenuToast(tr("Failed to remove from collection: {error}").Replace("{error}", itemMenu.DescribeError(response.status, response.message)))
+end sub
+
+' ===== Admin =====
+
+sub onItemMenuRefreshed(event as object)
+    response = event.getData()
+    releaseItemMenuTask(event.getRoSGNode(), "response")
+
+    if response.success
+        showItemMenuToast(tr("Metadata refresh requested"))
+    else
+        showItemMenuToast(tr("Failed to refresh metadata: {error}").Replace("{error}", itemMenu.DescribeError(response.status, response.message)))
+    end if
+end sub
+
+sub itemMenuShowIdentify(subject as object, wholeShow = true as boolean)
+    target = itemMenu.IdentifyTarget(subject.json, wholeShow)
+
+    m.itemMenuDialogSubject = subject
+    m.itemMenuDialog = CreateObject("roSGNode", "IdentifyDialog")
+    m.itemMenuDialog.itemId = target.id
+    m.itemMenuDialog.itemName = target.name
+    m.itemMenuDialog.itemType = target.type
+    m.itemMenuDialog.itemYear = target.year
+    m.itemMenuDialog.returnFocus = subject.returnFocus
+    m.itemMenuDialog.observeField("finished", "onItemMenuDialogFinished")
+
+    m.top.getScene().appendChild(m.itemMenuDialog)
+    m.itemMenuDialog.callFunc("showDialog")
+end sub
+
+sub itemMenuShowArtwork(subject as object)
+    m.itemMenuDialogSubject = subject
+    m.itemMenuDialog = CreateObject("roSGNode", "ArtworkPickerDialog")
+    m.itemMenuDialog.itemId = subject.json.Id
+    m.itemMenuDialog.itemType = itemMenu.TypeOf(subject.json)
+    m.itemMenuDialog.returnFocus = subject.returnFocus
+    m.itemMenuDialog.observeField("finished", "onItemMenuDialogFinished")
+
+    m.top.getScene().appendChild(m.itemMenuDialog)
+    m.itemMenuDialog.callFunc("showDialog")
+end sub
+
+sub onItemMenuDialogFinished(event as object)
+    changed = event.getData()
+    dialogNode = event.getRoSGNode()
+
+    dialogNode.unobserveField("finished")
+    m.top.getScene().removeChild(dialogNode)
+    m.itemMenuDialog = invalid
+    if not changed then return
+
+    if dialogNode.isSubType("ArtworkPickerDialog")
+        showItemMenuToast(tr("Artwork updated successfully"))
+    else if dialogNode.outcome = "refreshed"
+        showItemMenuToast(tr("Refreshing metadata"))
+    else
+        showItemMenuToast(tr("Metadata updated"))
+    end if
+
+    itemMenuNotify("metadata", m.itemMenuDialogSubject)
+end sub
+
+' ===== Plumbing =====
+
+sub showItemMenuToast(message as string)
+    ' A task can answer after its screen has gone behind another one
+    scene = m.top.getScene()
+    if not isValid(scene) then return
+
+    toast = scene.findNode("itemMenuToast")
+    if isValid(toast)
+        ' Lifted back to the front, over whatever opened since the last one
+        scene.removeChild(toast)
+    else
+        toast = CreateObject("roSGNode", "ItemMenuToast")
+        toast.id = "itemMenuToast"
+    end if
+
+    scene.appendChild(toast)
+    toast.message = message
+end sub
+
+function itemMenuRequest(subject as object, op as string, extra as object) as object
+    request = {
+        op: op,
+        itemId: subject.json.Id,
+        server: itemMenuServer(subject.json),
+        subject: subject
+    }
+    request.append(extra)
+    return request
+end function
+
+function runItemMenuTask(request as object, callback as string) as object
+    task = CreateObject("roSGNode", "ItemMenuTask")
+    task.request = request
+    task.observeField("response", callback)
+    holdItemMenuTask(task)
+    task.control = "RUN"
+    return task
+end function
+
+' A task with nothing holding it can be collected before it answers
+sub holdItemMenuTask(task as object)
+    if not isValid(m.itemMenuTasks) then m.itemMenuTasks = []
+    m.itemMenuTasks.push(task)
+end sub
+
+sub releaseItemMenuTask(task as object, field as string)
+    task.unobserveField(field)
+    if not isValid(m.itemMenuTasks) then return
+
+    kept = []
+    for each held in m.itemMenuTasks
+        if not held.isSameNode(task) then kept.push(held)
+    end for
+    m.itemMenuTasks = kept
+end sub

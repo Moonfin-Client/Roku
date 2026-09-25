@@ -2477,10 +2477,6 @@
         <translation>Search this library</translation>
     </message>
     <message>
-        <source>Mark As Unplayed</source>
-        <translation>Mark As Unplayed</translation>
-    </message>
-    <message>
         <source>Mark As Played</source>
         <translation>Mark As Played</translation>
     </message>
@@ -4011,6 +4007,176 @@
         <source>December</source>
         <extracomment>Month in a person's birth or death date</extracomment>
         <translation>December</translation>
+    </message>
+    <message>
+        <source>Mark as Watched</source>
+        <extracomment>Card menu entry</extracomment>
+        <translation>Mark as Watched</translation>
+    </message>
+    <message>
+        <source>Mark as Unwatched</source>
+        <extracomment>Card menu entry</extracomment>
+        <translation>Mark as Unwatched</translation>
+    </message>
+    <message>
+        <source>Hide from Continue Watching</source>
+        <extracomment>Card menu entry</extracomment>
+        <translation>Hide from Continue Watching</translation>
+    </message>
+    <message>
+        <source>Hide from Next Up</source>
+        <extracomment>Card menu entry</extracomment>
+        <translation>Hide from Next Up</translation>
+    </message>
+    <message>
+        <source>Add to Favorites</source>
+        <extracomment>Card menu entry</extracomment>
+        <translation>Add to Favorites</translation>
+    </message>
+    <message>
+        <source>Remove from Favorites</source>
+        <extracomment>Card menu entry</extracomment>
+        <translation>Remove from Favorites</translation>
+    </message>
+    <message>
+        <source>Add to Collection</source>
+        <extracomment>Card menu entry, and the title of the collection picker</extracomment>
+        <translation>Add to Collection</translation>
+    </message>
+    <message>
+        <source>Remove from Collection</source>
+        <extracomment>Card menu entry, and the title of the dialog confirming it</extracomment>
+        <translation>Remove from Collection</translation>
+    </message>
+    <message>
+        <source>Add to Playlist</source>
+        <extracomment>Card menu entry, and the title of the playlist picker</extracomment>
+        <translation>Add to Playlist</translation>
+    </message>
+    <message>
+        <source>Refresh Metadata</source>
+        <extracomment>Card menu entry for admins, and a button in the Identify dialog</extracomment>
+        <translation>Refresh Metadata</translation>
+    </message>
+    <message>
+        <source>Identify</source>
+        <extracomment>Card menu entry for admins, and the title of the Identify dialog</extracomment>
+        <translation>Identify</translation>
+    </message>
+    <message>
+        <source>Change Artwork</source>
+        <extracomment>Card menu entry for admins, the details screen button and the title of the artwork picker</extracomment>
+        <translation>Change Artwork</translation>
+    </message>
+    <message>
+        <source>Artwork updated successfully</source>
+        <extracomment>Note after new artwork was picked</extracomment>
+        <translation>Artwork updated successfully</translation>
+    </message>
+    <message>
+        <source>Create New Collection</source>
+        <extracomment>First row of the collection picker</extracomment>
+        <translation>Create New Collection</translation>
+    </message>
+    <message>
+        <source>No collections found</source>
+        <extracomment>Collection picker with nothing to pick</extracomment>
+        <translation>No collections found</translation>
+    </message>
+    <message>
+        <source>New Collection</source>
+        <extracomment>Title of the keyboard naming a new collection</extracomment>
+        <translation>New Collection</translation>
+    </message>
+    <message>
+        <source>Collection name</source>
+        <extracomment>Hint in the keyboard naming a new collection</extracomment>
+        <translation>Collection name</translation>
+    </message>
+    <message>
+        <source>Added to collection</source>
+        <extracomment>Note after adding an item to a collection</extracomment>
+        <translation>Added to collection</translation>
+    </message>
+    <message>
+        <source>Created &quot;{name}&quot; and added item</source>
+        <extracomment>Note after creating a collection or playlist with the item in it. {name} is what it was called</extracomment>
+        <translation>Created &quot;{name}&quot; and added item</translation>
+    </message>
+    <message>
+        <source>Remove {item} from {collection}? The item stays in your library.</source>
+        <extracomment>Confirming taking a title out of a collection. {item} is the title and {collection} the collection</extracomment>
+        <translation>Remove {item} from {collection}? The item stays in your library.</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <extracomment>Button confirming a removal</extracomment>
+        <translation>Remove</translation>
+    </message>
+    <message>
+        <source>Failed to remove from collection: {error}</source>
+        <extracomment>Note when the server refuses a removal. {error} is the reason</extracomment>
+        <translation>Failed to remove from collection: {error}</translation>
+    </message>
+    <message>
+        <source>Create New Playlist</source>
+        <extracomment>Starts a new playlist, as the first row of the playlist picker or a keyboard title</extracomment>
+        <translation>Create New Playlist</translation>
+    </message>
+    <message>
+        <source>No playlists found</source>
+        <extracomment>Playlist picker with nothing to pick</extracomment>
+        <translation>No playlists found</translation>
+    </message>
+    <message>
+        <source>New Playlist</source>
+        <extracomment>Names a new playlist, as a keyboard title or a menu option</extracomment>
+        <translation>New Playlist</translation>
+    </message>
+    <message>
+        <source>Playlist name</source>
+        <extracomment>Hint in the keyboard naming a new playlist</extracomment>
+        <translation>Playlist name</translation>
+    </message>
+    <message>
+        <source>Added to playlist</source>
+        <extracomment>Note after adding an item to a playlist</extracomment>
+        <translation>Added to playlist</translation>
+    </message>
+    <message>
+        <source>Metadata refresh requested</source>
+        <extracomment>Note after asking the server to refresh an item</extracomment>
+        <translation>Metadata refresh requested</translation>
+    </message>
+    <message>
+        <source>Failed to refresh metadata: {error}</source>
+        <extracomment>Note when the server refuses a refresh. {error} is the reason</extracomment>
+        <translation>Failed to refresh metadata: {error}</translation>
+    </message>
+    <message>
+        <source>Unauthorized</source>
+        <extracomment>Reason a card menu request failed, when the server wants the viewer signed in again</extracomment>
+        <translation>Unauthorized</translation>
+    </message>
+    <message>
+        <source>Forbidden</source>
+        <extracomment>Reason a card menu request failed, when the viewer isnt allowed to do it</extracomment>
+        <translation>Forbidden</translation>
+    </message>
+    <message>
+        <source>HTTP error</source>
+        <extracomment>Reason a card menu request failed, when the server gave nothing more specific</extracomment>
+        <translation>HTTP error</translation>
+    </message>
+    <message>
+        <source>Metadata updated</source>
+        <extracomment>Note after an item was matched with Identify</extracomment>
+        <translation>Metadata updated</translation>
+    </message>
+    <message>
+        <source>Refreshing metadata</source>
+        <extracomment>Note after a refresh was asked for from the Identify dialog</extracomment>
+        <translation>Refreshing metadata</translation>
     </message>
 </context>
 </TS>

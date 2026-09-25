@@ -1,0 +1,185 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/misc.bs"
+
+sub init()
+    m.top.functionName = "runItemMenuTask"
+end sub
+
+sub runItemMenuTask()
+    request = m.top.request
+    if not isValid(request)
+        m.top.response = { request: {}, success: false, status: 0, message: "", data: invalid }
+        return
+    end if
+
+    ' Read once, since every read of the field copies the whole request
+    m.server = request.server
+
+    op = request.op ?? ""
+    itemId = request.itemId ?? ""
+    result = { status: 0, data: invalid, message: "" }
+
+    if op = "load"
+        userId = taskUserId()
+        result = taskSend(taskRequest(serverItemMetadataPath(itemId, userId, taskIsEmby()), { UserId: userId }), "GET")
+    else if op = "played"
+        result = taskSend(taskRequest(`UserPlayedItems/${itemId}`, { UserId: taskUserId() }), request.value = true ? "POST" : "DELETE")
+    else if op = "favorite"
+        result = taskSend(taskRequest(`UserFavoriteItems/${itemId}`, { UserId: taskUserId() }), request.value = true ? "POST" : "DELETE")
+    else if op = "collections"
+        result = listItems({
+            IncludeItemTypes: "BoxSet",
+            Limit: 500,
+            Fields: "PrimaryImageAspectRatio,ProductionYear,OfficialRating"
+        })
+    else if op = "playlists"
+        result = listItems({ IncludeItemTypes: "Playlist" })
+    else if op = "addToCollection"
+        result = sendCollectionItems(request.collectionId, itemId, "POST")
+    else if op = "createCollection"
+        result = createCollection(request.name, itemId)
+    else if op = "removeFromCollection"
+        result = removeFromCollection(request.collectionId, itemId)
+    else if op = "addToPlaylist"
+        result = taskSend(taskRequest(`Playlists/${request.playlistId}/Items`, { Ids: itemId, UserId: taskUserId() }), "POST")
+    else if op = "createPlaylist"
+        result = taskSend(taskRequest("Playlists", {}), "POST", FormatJson({ Name: request.name, Ids: [itemId], UserId: taskUserId() }))
+    else if op = "refresh"
+        result = taskSend(taskRequest(`Items/${itemId}/Refresh`, {}), "POST")
+    end if
+
+    m.top.response = {
+        request: request,
+        success: result.status >= 200 and result.status < 300,
+        status: result.status,
+        message: result.message,
+        data: result.data
+    }
+end sub
+
+' ===== Requests =====
+
+function taskServer() as dynamic
+    server = m.server
+    if type(server) = "roAssociativeArray" and isValidAndNotEmpty(server.serverUrl) then return server
+    return invalid
+end function
+
+function taskRequest(path as string, params as object) as dynamic
+    server = taskServer()
+    if isValid(server) then return APIRequestForServer(server.serverUrl, server.userId ?? "", server.authToken ?? "", path, params)
+    return APIRequest(path, params)
+end function
+
+function taskUserId() as string
+    server = taskServer()
+    if isValid(server) and isValidAndNotEmpty(server.userId) then return server.userId
+    return chainLookupReturn(m.global.session, "user.id", "")
+end function
+
+function taskIsEmby() as boolean
+    server = taskServer()
+    if isValid(server) then return isEmbyServer(server.serverUrl)
+    return isEmbyServer()
+end function
+
+' Most of these routes answer 204 with nothing in the body, and a refusal has to be able to say
+' why, so the status comes back with whatever was read
+function taskSend(req as dynamic, method as string, body = "" as string) as object
+    if req = invalid then return { status: 0, data: invalid, message: "" }
+
+    port = CreateObject("roMessagePort")
+    req.SetMessagePort(port)
+    req.AddHeader("Content-Type", "application/json")
+
+    if method = "GET"
+        started = req.AsyncGetToString()
+    else
+        if method <> "POST" then req.SetRequest(method)
+        if body = "" and method <> "POST"
+            started = req.AsyncGetToString()
+        else
+            started = req.AsyncPostFromString(body)
+        end if
+    end if
+    if not started then return { status: 0, data: invalid, message: "" }
+
+    event = wait(30000, port)
+    if type(event) <> "roUrlEvent"
+        req.AsyncCancel()
+        return { status: 0, data: invalid, message: "" }
+    end if
+
+    code = event.GetResponseCode()
+    data = invalid
+    if code >= 200 and code < 300
+        text = event.GetString()
+        if isValidAndNotEmpty(text) then data = ParseJson(text)
+    end if
+
+    return { status: code, data: data, message: event.GetFailureReason() ?? "" }
+end function
+
+function listItems(params as object) as object
+    params.UserId = taskUserId()
+    params.Recursive = "true"
+    params.SortBy = "SortName"
+    params.SortOrder = "Ascending"
+    return taskSend(taskRequest("Items", params), "GET")
+end function
+
+' ===== Collections =====
+
+' Servers disagree about how the collection routes want their arguments, and one that rejects
+' a shape answers with one of these rather than a server error. The writers below walk the
+' accepted shapes and only give up once all of them have failed.
+function canRetryCollection(status as integer) as boolean
+    for each retryable in [400, 404, 405, 415, 422]
+        if status = retryable then return true
+    end for
+    return false
+end function
+
+function sendCollectionItems(collectionId as string, itemId as string, method as string) as object
+    path = `Collections/${collectionId}/Items`
+    for each key in ["Ids", "ids"]
+        result = taskSend(taskRequest(`${path}?${key}=${itemId}`, {}), method)
+        if not canRetryCollection(result.status) then return result
+    end for
+
+    return taskSend(taskRequest(path, {}), method, FormatJson({ Ids: [itemId] }))
+end function
+
+' Some builds match the query keys case sensitively, so both spellings go
+function createCollection(collectionName as string, itemId as string) as object
+    encoded = collectionName.EncodeUriComponent()
+    path = `Collections?Name=${encoded}&name=${encoded}&Ids=${itemId}&ids=${itemId}`
+
+    result = taskSend(taskRequest(path, {}), "POST")
+    if not canRetryCollection(result.status) then return result
+
+    return taskSend(taskRequest(path, {}), "POST", FormatJson({ Name: collectionName, Ids: [itemId] }))
+end function
+
+function removeFromCollection(collectionId as string, itemId as string) as object
+    result = sendCollectionItems(collectionId, itemId, "DELETE")
+    if result.status < 200 or result.status > 299 then return result
+
+    ' A saved order still naming it would put the title back on the next open
+    orderPath = `Moonfin/Collections/${collectionId}/Order`
+    saved = taskSend(taskRequest(orderPath, {}), "GET")
+    if type(saved.data) <> "roArray" then return result
+
+    kept = []
+    found = false
+    for each entryId in saved.data
+        if guidKey(entryId) = guidKey(itemId)
+            found = true
+        else
+            kept.push(entryId)
+        end if
+    end for
+
+    if found then taskSend(taskRequest(orderPath, {}), "POST", FormatJson(kept))
+    return result
+end function
