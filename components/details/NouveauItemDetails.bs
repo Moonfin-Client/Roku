@@ -4,6 +4,7 @@ import "pkg:/components/details/detailMetadataHost.bs"
 import "pkg:/components/details/detailPopulationHost.bs"
 import "pkg:/components/details/detailScreenHost.bs"
 import "pkg:/components/details/detailTrackHost.bs"
+import "pkg:/components/personCreditsHost.bs"
 
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/utils/detailButtons.bs"
@@ -67,6 +68,9 @@ const NOUVEAU_BUTTON_SIZE = 75
 const NOUVEAU_BUTTON_GAP = 12
 const NOUVEAU_PRIMARY_GAP = 18
 const NOUVEAU_BUTTON_LABEL_PAD = 41
+' A person's page asks for this much of their filmography, and draws their backdrop faintly
+const NOUVEAU_PERSON_LIMIT = 50
+const NOUVEAU_PERSON_BACKDROP_ALPHA = 0.4
 
 sub init()
     m.loadStatus = ViewLoadStatus.INIT
@@ -86,7 +90,11 @@ sub init()
     m.upcomingBadge = m.top.findNode("upcomingBadge")
     m.seerrPills = m.top.findNode("seerrPills")
     m.upcomingIncludesSeasons = true
+    ' The badges are a fixed height pill on this hero
+    m.badgeHeight = 30
+    m.badgePadH = 11
     m.metadataRow = m.top.findNode("metadataRow")
+    m.personMeta = m.top.findNode("personMeta")
     m.metaSeparators = m.top.findNode("metaSeparators")
     m.runtimeGroup = m.top.findNode("runtimeGroup")
     m.techRow = m.top.findNode("techRow")
@@ -195,7 +203,7 @@ sub sizeHeroFonts()
     m.top.findNode("upcomingBadgeText").font.size = fontApply.ThemeTextSize(13)
 
     metaSize = fontApply.ThemeTextSize(16)
-    for each id in ["releaseYear", "officialRating", "seasonCount", "episodeNumber", "runtime", "endsAt"]
+    for each id in ["releaseYear", "officialRating", "seasonCount", "episodeNumber", "runtime", "endsAt", "personMeta"]
         node = m.top.findNode(id)
         if isValid(node) then node.font.size = metaSize
     end for
@@ -223,7 +231,8 @@ function newSectionData() as object
         seerrRecommendations: [],
         seerrSimilar: [],
         seerrResolved: false,
-        collection: []
+        collection: [],
+        person: { movies: [], series: [], guest: [], music: [], appearances: [], crew: [] }
     }
 end function
 
@@ -261,7 +270,7 @@ sub renderDetailContent()
 
     loadSeerrBlock(itemData)
 
-    if isValid(m.themeMusicPlayer) and not m.top.seerrOnly
+    if isValid(m.themeMusicPlayer) and not m.top.seerrOnly and not isPerson()
         m.themeMusicPlayer.itemId = itemData.id
     end if
 
@@ -283,7 +292,9 @@ sub renderDetailContent()
     m.statusBadge.visible = false
     m.upcomingBadge.visible = false
 
-    if isEpisode()
+    if isPerson()
+        populatePersonMetadata(itemData)
+    else if isEpisode()
         populateEpisodeMetadata(itemData)
     else if isSeries()
         populateSeriesMetadata(itemData)
@@ -293,14 +304,22 @@ sub renderDetailContent()
         populateMovieMetadata(itemData)
     end if
 
-    populateRatings(itemData)
-    fetchMDBListRatings(itemData)
+    if not isPerson()
+        populateRatings(itemData)
+        fetchMDBListRatings(itemData)
+    end if
     populateGenres(itemData)
     updateStatusBadge(itemData)
     updateUpcomingBadge(itemData)
     updateSeerrPills()
     populateRuntime(itemData)
-    setBackdropImage(itemData)
+    ' A person only has a backdrop when one was set for them, and it sits back further
+    if isPerson()
+        m.backdrop.opacity = NOUVEAU_PERSON_BACKDROP_ALPHA
+        if isValidAndNotEmpty(itemData.BackdropImageTags) then setBackdropImage(itemData)
+    else
+        setBackdropImage(itemData)
+    end if
 
     setFieldText("title", itemData.name)
     ' The name stands in until a logo arrives, and a title with no logo keeps it
@@ -309,6 +328,7 @@ sub renderDetailContent()
     hideMediaDesc = hidesMediaDescription() and (isEpisode() or LCase(m.top.itemType) = "movie")
     overviewText = itemData.overview
     if isValidAndNotEmpty(overviewText) then overviewText = stripHtmlTags(overviewText)
+    if isPerson() then overviewText = readableText(overviewText)
     m.overview.text = overviewText
     m.overview.visible = not hideMediaDesc and isValidAndNotEmpty(overviewText)
 
@@ -387,9 +407,24 @@ sub addTechChip(label as string)
     chip.addFields({ chipWidth: width })
 end sub
 
+function isPerson() as boolean
+    return LCase(m.top.itemType) = "person"
+end function
+
+' A person's hero is their dates and birthplace in place of the facts a title carries
+sub populatePersonMetadata(itemData as object)
+    m.personMeta.text = personMetaParts(itemData).join(` ${fontApply.ThemeSeparator()} `)
+    m.personMeta.visible = m.personMeta.text <> ""
+end sub
+
 ' ===== Section loading =====
 
 sub loadSections()
+    if isPerson()
+        loadPersonCredits()
+        return
+    end if
+
     ' A collection's page is its titles, and nothing similar or extra to go with them
     if isCollection()
         m.membersTask = startCollectionMembersTask("onCollectionMembersLoaded")
@@ -510,6 +545,30 @@ sub onSeerrSimilar(event as object)
     rebuildSections()
 end sub
 
+' What the library has them in, and what Seerr knows they worked on
+sub loadPersonCredits()
+    itemData = m.top.itemContent.json
+    m.personFilmTask = startPersonFilmography(m.top.id, itemData, NOUVEAU_PERSON_LIMIT, "onPersonFilmographyLoaded")
+    m.personCreditsTask = startSeerrPersonCredits(chainLookupReturn(itemData, "ProviderIds.Tmdb", ""), "onPersonSeerrCreditsLoaded")
+end sub
+
+sub onPersonFilmographyLoaded(event as object)
+    content = event.getData()
+    if not isValid(content) then return
+
+    m.sectionData.person.Append(splitFilmography(content.getChildren(-1, 0)))
+    rebuildSections()
+end sub
+
+sub onPersonSeerrCreditsLoaded(event as object)
+    response = event.getData()
+    if not isValid(response) or not response.success or not isValid(response.data) then return
+
+    m.sectionData.person.appearances = usableSeerrCredits(response.data.cast, false)
+    m.sectionData.person.crew = usableSeerrCredits(response.data.crew, true)
+    rebuildSections()
+end sub
+
 ' ===== Sections =====
 
 sub rebuildSections()
@@ -531,6 +590,8 @@ sub rebuildSections()
             buildEpisodesSection()
         else if id = NOUVEAU_SECTION_COLLECTION
             buildCollectionRail()
+        else if id = NOUVEAU_SECTION_PERSON
+            buildPersonRails()
         else if id = NOUVEAU_SECTION_CHAPTERS
             buildChaptersRail()
         else if id = NOUVEAU_SECTION_EXTRAS
@@ -735,6 +796,22 @@ sub buildCollectionRail()
         cards: cards,
         leadsSection: true
     }, "poster", items)
+end sub
+
+' Each part of the filmography that has anything in it, what the library holds leading and what
+' Seerr only knows about after
+sub buildPersonRails()
+    person = m.sectionData.person
+    for each rail in [
+            { title: tr("Movies"), items: person.movies },
+            { title: tr("Series"), items: person.series },
+            { title: tr("Guest Appearances"), items: person.guest },
+            { title: tr("Music Videos"), items: person.music },
+            { title: tr("Crew Contributions (Seerr)"), items: person.crew },
+            { title: tr("Appearances (Seerr)"), items: person.appearances }
+        ]
+        if rail.items.count() > 0 then addRail(posterSpec(rail.title, rail.items, true), "poster", rail.items)
+    end for
 end sub
 
 function collectionMembers() as object
@@ -996,7 +1073,11 @@ sub layoutHero()
         y += layoutBadges()
     end if
 
-    if m.metaRowHeight > 0
+    if m.personMeta.visible
+        y += NOUVEAU_ROW_GAP
+        m.personMeta.translation = [0, y]
+        y += m.personMeta.boundingRect().height
+    else if m.metaRowHeight > 0
         ' With badges above it the line sits closer, since the two read as one
         ' block about the title
         y += m.badgesRow.visible ? NOUVEAU_ROW_GAP_TIGHT : NOUVEAU_ROW_GAP
@@ -1443,7 +1524,7 @@ end sub
 
 ' Play or Resume leads the row carrying a word and everything after it is a circle. The
 ' row is shorter than the one the other screens keep because a page of rails sits under it.
-' A Seerr title has nothing to play, so its row is circles only.
+' A Seerr title or a person has nothing to play, so its row is circles only.
 sub commitButtonRow()
     m.buttonRowScrolls = buttonRowScrolls()
     leading = 0
@@ -1493,6 +1574,11 @@ end sub
 ' ===== Button host hooks =====
 
 function typeSpecificButtons() as boolean
+    if isPerson()
+        addArrangedButtons([favoriteCandidate(chainLookupReturn(m.top.itemContent, "json", {}))])
+        return true
+    end if
+
     if not isCollection() then return false
 
     addCollectionButtons()

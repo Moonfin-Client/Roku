@@ -1,0 +1,246 @@
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
+
+' A person's dates and filmography, shared by the person screen and the Nouveau details screen.
+
+' Dates are read off the string, because roDateTime localizes on parse and shifts the day for
+' anyone west of UTC
+function formatPersonDate(value as dynamic) as string
+    if not isValidAndNotEmpty(value) then return ""
+
+    parts = Left(value, 10).split("-")
+    if parts.count() <> 3 then return value
+
+    month = parts[1].toInt()
+    if month < 1 or month > 12 then return value
+
+    monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+    return `${tr(monthNames[month - 1])} ${parts[2].toInt()}, ${parts[0].toInt()}`
+end function
+
+' Whole years to today on the viewer's own calendar, one fewer until this year's birthday has
+' come round
+function personAge(birthValue as dynamic) as integer
+    if not isValidAndNotEmpty(birthValue) then return 0
+
+    birthParts = Left(birthValue, 10).split("-")
+    if birthParts.count() <> 3 then return 0
+
+    today = CreateObject("roDateTime")
+    today.ToLocalTime()
+    endYear = today.GetYear()
+    endMonth = today.GetMonth()
+    endDay = today.GetDayOfMonth()
+
+    birthMonth = birthParts[1].toInt()
+    age = endYear - birthParts[0].toInt()
+    if endMonth < birthMonth or (endMonth = birthMonth and endDay < birthParts[2].toInt()) then age -= 1
+    if age <= 0 then return 0
+    return age
+end function
+
+' Born, then either the date they died or how old they are now, then where they were born
+function personMetaParts(itemData as object) as object
+    parts = []
+    premiereDate = chainLookupReturn(itemData, "PremiereDate", "")
+    born = formatPersonDate(premiereDate)
+    if born <> "" then parts.push(tr("Born") + " " + born)
+
+    died = formatPersonDate(chainLookupReturn(itemData, "EndDate", ""))
+    if died <> ""
+        parts.push(tr("Died") + " " + died)
+    else if born <> ""
+        age = personAge(premiereDate)
+        if age > 0 then parts.push(tr("Age") + " " + age.toStr())
+    end if
+
+    birthPlace = chainLookupReturn(itemData, "ProductionLocations", invalid)
+    if type(birthPlace) = "roArray" and birthPlace.count() > 0
+        birthPlace = birthPlace[0]
+    else
+        birthPlace = chainLookupReturn(itemData, "placeOfBirth", invalid)
+    end if
+    if isValidAndNotEmpty(birthPlace) then parts.push(birthPlace)
+
+    return parts
+end function
+
+' The filmography comes back as one list, and each kind of work gets its own group. An episode
+' of a series the person is billed on is already covered by that series, so only the rest count
+' as a guest appearance.
+function splitFilmography(entries as object) as object
+    filmography = { movies: [], series: [], guest: [], music: [] }
+    seriesIds = {}
+    for each entry in entries
+        if chainLookupReturn(entry, "json.Type", "") = "Series" then seriesIds[chainLookupReturn(entry, "json.Id", "")] = true
+    end for
+
+    for each entry in entries
+        entryType = chainLookupReturn(entry, "json.Type", "")
+        if entryType = "Movie"
+            filmography.movies.push(entry)
+        else if entryType = "Series"
+            filmography.series.push(entry)
+        else if entryType = "MusicVideo"
+            filmography.music.push(entry)
+        else if entryType = "Episode"
+            seriesId = chainLookupReturn(entry, "json.SeriesId", "")
+            if seriesId = "" or not seriesIds.DoesExist(seriesId) then filmography.guest.push(entry)
+        end if
+    end for
+
+    return filmography
+end function
+
+' Only credits with a poster, never a crew job that is a thank you rather than work on the title,
+' sorted by title. Seerr lists a title once per credit, so it is kept once.
+function usableSeerrCredits(credits as object, isCrew as boolean) as object
+    list = []
+    if not isValidAndNotEmpty(credits) then return list
+
+    usable = []
+    for each credit in credits
+        posterPath = credit.LookupCI("posterPath")
+        if not isValidAndNotEmpty(posterPath) then continue for
+
+        if isCrew
+            job = LCase(credit.LookupCI("job") ?? "")
+            if job = "thanks" or job = "special thanks" then continue for
+        end if
+
+        title = credit.LookupCI("title")
+        if not isValidAndNotEmpty(title) then title = credit.LookupCI("name")
+        usable.push({ title: title ?? "", credit: credit, posterPath: posterPath })
+    end for
+    usable.SortBy("title", "i")
+
+    ' Films and shows number their ids apart, so the same id can be one of each
+    posterBase = GetTmdbImageBaseUrls().posterW342
+    seen = {}
+    for each entry in usable
+        credit = entry.credit
+
+        mediaType = LCase(credit.LookupCI("mediaType") ?? "")
+        if mediaType = "" then mediaType = isValidAndNotEmpty(credit.LookupCI("title")) ? "movie" : "tv"
+
+        tmdbId = ""
+        rawId = credit.LookupCI("id")
+        if isValid(rawId) then tmdbId = rawId.ToStr()
+        if seen.DoesExist(mediaType + ":" + tmdbId) then continue for
+        seen[mediaType + ":" + tmdbId] = true
+
+        ' The card caption reads the year off the same field the library entries use
+        released = credit.LookupCI("releaseDate")
+        if not isValidAndNotEmpty(released) then released = credit.LookupCI("firstAirDate")
+        year = invalid
+        if isValidAndNotEmpty(released) and released.len() >= 4 then year = released.left(4).toInt()
+
+        ' Selecting the card opens the Seerr page, which reads the credit off SeerrItem the same
+        ' way the home rows do
+        credit.mediaType = mediaType
+
+        data = {
+            Id: tmdbId,
+            name: entry.title,
+            Type: mediaType = "tv" ? "Series" : "Movie",
+            SeerrTmdbId: tmdbId,
+            SeerrMediaType: mediaType,
+            SeerrPosterURL: posterBase + entry.posterPath,
+            SeerrItem: credit
+        }
+        if isValid(year) and year > 0 then data.ProductionYear = year
+
+        card = createSGNode("HomeData")
+        card.json = data
+        list.push(card)
+    end for
+
+    return list
+end function
+
+' Biographies often open with a phonetic spelling and the name in its own script. The
+' player font has no glyphs for those, so they come out as boxes. Latin text and its
+' accents are kept and the rest is dropped along with any brackets left empty by it.
+function readableText(value as dynamic) as string
+    if not isValidAndNotEmpty(value) then return ""
+
+    bytes = CreateObject("roByteArray")
+    bytes.FromAsciiString(value)
+    kept = CreateObject("roByteArray")
+
+    i = 0
+    while i < bytes.Count()
+        byte = bytes[i]
+        if byte < 128
+            kept.Push(byte)
+            i++
+        else if byte = 194 or byte = 195
+            ' Latin-1 accents, which the font does draw
+            kept.Push(byte)
+            if i + 1 < bytes.Count() then kept.Push(bytes[i + 1])
+            i += 2
+        else if byte = 226 and i + 2 < bytes.Count() and bytes[i + 1] = 128
+            ' Typographic punctuation has a plain equivalent, so it is swapped rather
+            ' than dropped and left running words together
+            third = bytes[i + 2]
+            if third = 147 or third = 148
+                kept.Push(45)
+            else if third = 152 or third = 153
+                kept.Push(39)
+            else if third = 156 or third = 157
+                kept.Push(34)
+            else if third = 166
+                kept.Push(46)
+                kept.Push(46)
+                kept.Push(46)
+            end if
+            i += 3
+        else
+            ' Everything else is skipped a whole character at a time
+            if byte >= 240
+                i += 4
+            else if byte >= 224
+                i += 3
+            else
+                i += 2
+            end if
+        end if
+    end while
+
+    text = kept.ToAsciiString()
+    emptyBrackets = CreateObject("roRegex", "\(\s*[;:,/]*\s*\)|\[\s*[;:,/]*\s*\]", "i")
+    text = emptyBrackets.ReplaceAll(text, "")
+    gaps = CreateObject("roRegex", "\s+([,;.])", "i")
+    text = gaps.ReplaceAll(text, "\1")
+    spacing = CreateObject("roRegex", "\s+", "i")
+
+    return spacing.ReplaceAll(text, " ").Trim()
+end function
+
+' The titles the library credits a person on, asked of the server the person came from
+function startPersonFilmography(personId as string, itemData as dynamic, limit as integer, handler as string) as object
+    task = CreateObject("roSGNode", "LoadExtrasTask")
+    task.itemId = personId
+    task.isPersonMode = true
+    task.personLimit = limit
+    if isValidAndNotEmpty(chainLookupReturn(itemData, "_serverUrl", ""))
+        task.serverUrl = itemData._serverUrl
+        task.serverUserId = itemData._userId ?? ""
+        task.serverAuthToken = itemData._authToken ?? ""
+    end if
+    task.observeField("content", handler)
+    task.control = TaskControl.RUN
+    return task
+end function
+
+' What Seerr knows a person worked on, when Seerr is set up and the person has a TMDB id
+function startSeerrPersonCredits(tmdbId as string, handler as string) as dynamic
+    if not isValidAndNotEmpty(tmdbId) or not IsValidSeerrConfig(GetSeerrConfig()) then return invalid
+
+    task = CreateObject("roSGNode", "SeerrAPITask")
+    task.request = { method: "GET", endpoint: `/api/v1/person/${tmdbId}/combined_credits` }
+    task.observeField("response", handler)
+    task.control = TaskControl.RUN
+    return task
+end function

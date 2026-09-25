@@ -3284,7 +3284,7 @@
     </message>
     <message>
         <source>May</source>
-        <extracomment>Short month name</extracomment>
+        <extracomment>Month name, used both in short dates and in full ones, so it needs a form that works for both</extracomment>
         <translation>May</translation>
     </message>
     <message>
@@ -3908,9 +3908,74 @@
         <translation>Seerr Availability</translation>
     </message>
     <message>
-        <source>Shows request and media availability status from Seerr</source>
-        <extracomment>Metadata row item description in the details screen settings</extracomment>
-        <translation>Shows request and media availability status from Seerr</translation>
+        <source>Guest Appearances</source>
+        <extracomment>A rail or tab of episodes a person appears in outside a show they are billed on</extracomment>
+        <translation>Guest Appearances</translation>
+    </message>
+    <message>
+        <source>Crew Contributions (Seerr)</source>
+        <extracomment>A rail of titles Seerr credits a person as crew on</extracomment>
+        <translation>Crew Contributions (Seerr)</translation>
+    </message>
+    <message>
+        <source>Appearances (Seerr)</source>
+        <extracomment>A rail of titles Seerr credits a person as cast on</extracomment>
+        <translation>Appearances (Seerr)</translation>
+    </message>
+    <message>
+        <source>January</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>January</translation>
+    </message>
+    <message>
+        <source>February</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>February</translation>
+    </message>
+    <message>
+        <source>March</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>March</translation>
+    </message>
+    <message>
+        <source>April</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>April</translation>
+    </message>
+    <message>
+        <source>June</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>June</translation>
+    </message>
+    <message>
+        <source>July</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>July</translation>
+    </message>
+    <message>
+        <source>August</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>August</translation>
+    </message>
+    <message>
+        <source>September</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>September</translation>
+    </message>
+    <message>
+        <source>October</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>October</translation>
+    </message>
+    <message>
+        <source>November</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>November</translation>
+    </message>
+    <message>
+        <source>December</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>December</translation>
     </message>
 </context>
 </TS>
