@@ -3862,5 +3862,55 @@
         <extracomment>Series status badge, and the start of a finished program time like Ended Monday, 8:00 PM</extracomment>
         <translation>Ended</translation>
     </message>
+    <message>
+        <source>Declined</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Declined</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Available</translation>
+    </message>
+    <message>
+        <source>Partially Available</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Partially Available</translation>
+    </message>
+    <message>
+        <source>Requested</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Requested</translation>
+    </message>
+    <message>
+        <source>Pending</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Pending</translation>
+    </message>
+    <message>
+        <source>Blocklisted</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Blocklisted</translation>
+    </message>
+    <message>
+        <source>Deleted</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Deleted</translation>
+    </message>
+    <message>
+        <source>Not Requested</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Not Requested</translation>
+    </message>
+    <message>
+        <source>Seerr Availability</source>
+        <extracomment>Metadata row item in the details screen settings</extracomment>
+        <translation>Seerr Availability</translation>
+    </message>
+    <message>
+        <source>Shows request and media availability status from Seerr</source>
+        <extracomment>Metadata row item description in the details screen settings</extracomment>
+        <translation>Shows request and media availability status from Seerr</translation>
+    </message>
 </context>
 </TS>
