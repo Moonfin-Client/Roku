@@ -738,10 +738,6 @@
         <translation>Swap this set for a different one</translation>
     </message>
     <message>
-        <source>SyncPlay watch parties</source>
-        <translation>SyncPlay watch parties</translation>
-    </message>
-    <message>
         <source>There is more waiting in Settings</source>
         <translation>There is more waiting in Settings</translation>
     </message>
