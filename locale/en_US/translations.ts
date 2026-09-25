@@ -3802,5 +3802,25 @@
         <extracomment>Button on the classic details screen that opens the actions that didnt fit, and the name of an untitled tab on the modern one</extracomment>
         <translation>More</translation>
     </message>
+    <message>
+        <source>Items in Collection</source>
+        <extracomment>Row of the titles in a collection on the classic details screen</extracomment>
+        <translation>Items in Collection</translation>
+    </message>
+    <message>
+        <source>Items</source>
+        <extracomment>Tab of the titles in a collection on the modern details screen, and the word after a count like 42 Items</extracomment>
+        <translation>Items</translation>
+    </message>
+    <message>
+        <source>Movie</source>
+        <extracomment>What a title in a collection is, under its card</extracomment>
+        <translation>Movie</translation>
+    </message>
+    <message>
+        <source>TV Show</source>
+        <extracomment>What a title in a collection is, under its card</extracomment>
+        <translation>TV Show</translation>
+    </message>
 </context>
 </TS>

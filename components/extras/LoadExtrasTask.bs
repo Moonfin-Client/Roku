@@ -1,3 +1,4 @@
+import "pkg:/components/extras/collectionLookup.bs"
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/Items.bs"
@@ -95,13 +96,25 @@ end function
 
 ' Main function that loads all extras data in parallel
 sub loadAllExtras()
-    if isMultiServer()
-    end if
+    m.serverData = invalid
+    if isMultiServer() then m.serverData = getServerData()
 
     ' Create ContentNode to hold all results
     resultsNode = CreateObject("roSGNode", "ContentNode")
 
     if not isValid(m.top.itemId) or m.top.itemId = ""
+        m.top.content = resultsNode
+        return
+    end if
+
+    ' A collection's page is its titles, with nothing similar, no extras and no collection of its own
+    itemKind = LCase(m.top.itemType)
+    if itemKind = "boxset"
+        membersNode = resultsNode.createChild("ContentNode")
+        membersNode.title = "collectionItems"
+        for each item in collectionTitles(m.top.itemId, "ProductionYear", "PrimaryImageAspectRatio,ProductionYear,ProviderIds")
+            membersNode.appendChild(collectionCard(item))
+        end for
         m.top.content = resultsNode
         return
     end if
@@ -176,8 +189,60 @@ sub loadAllExtras()
         specialsNode.appendChild(item)
     end for
 
+    if m.top.includeCollections and (itemKind = "movie" or itemKind = "video") then loadParentCollection(resultsNode)
+
     m.top.content = resultsNode
 end sub
+
+' The first collection the film is in that holds anything else, with the titles the library is
+' missing slotted in by release
+sub loadParentCollection(resultsNode as object)
+    for each collection in findParents({ Id: m.top.itemId, ProviderIds: m.top.providerIds })
+        members = collectionTitles(collection.Id, "PremiereDate", "PrimaryImageAspectRatio,ProductionYear,ProviderIds")
+        if members.count() <= 1 then continue for
+
+        missing = []
+        if showsMissing() then missing = seerrMissingCollection.Find(collection, members)
+
+        parentNode = resultsNode.createChild("ContentNode")
+        parentNode.title = "parentCollection"
+        parentNode.addFields({ collectionName: isValidAndNotEmpty(collection.Name) ? collection.Name : tr("Collection") })
+        for each item in seerrMissingCollection.MergeByRelease(members, missing)
+            parentNode.appendChild(collectionCard(item))
+        end for
+        return
+    end for
+end sub
+
+' A poster card the extras rows can draw. A title the library is missing shows Seerr's poster.
+function collectionCard(json as object) as object
+    node = cardNode(json)
+    node.imageWidth = 180
+    node.labelText = json.Name ?? ""
+    node.type = json.Type ?? ""
+
+    if isValid(json.SeerrItem)
+        node.posterURL = json.SeerrPosterURL ?? ""
+        return node
+    end if
+
+    imgParams = { "maxHeight": 270, "maxWidth": 180 }
+    if hasImageTagPrimary(json) then imgParams.Tag = json.ImageTags.Primary
+    if isMultiServer()
+        node.posterURL = multiServerExtrasImageURL(json.Id, "Primary", imgParams)
+    else
+        node.posterURL = ImageURL(json.Id, "Primary", imgParams)
+    end if
+    return node
+end function
+
+function fetch(path as string, params as object) as dynamic
+    params.userId = getUserId()
+    if isMultiServer()
+        return getJson(APIRequestForServer(m.top.serverUrl, m.top.serverUserId, m.top.serverAuthToken, path, params))
+    end if
+    return getJson(APIRequest(path, params))
+end function
 
 function loadSeasons() as object
     seasons = []
