@@ -1,4 +1,5 @@
 import "pkg:/components/details/detailButtonHost.bs"
+import "pkg:/components/details/detailCollectionHost.bs"
 import "pkg:/components/details/detailMetadataHost.bs"
 import "pkg:/components/details/detailPopulationHost.bs"
 import "pkg:/components/details/detailScreenHost.bs"
@@ -71,6 +72,18 @@ const TAB_BAR_HEIGHT = 63
 const BUTTON_COLLAPSED_WIDTH = 75
 const BUTTON_ROW_GAP = 12
 const BUTTON_LABEL_PAD = 41
+' Where each tab sits in the bar
+const TAB_RANK_SEASONS = 0
+const TAB_RANK_EPISODES = 1
+const TAB_RANK_ITEMS = 2
+const TAB_RANK_CAST = 3
+const TAB_RANK_CREW = 4
+const TAB_RANK_STUDIOS = 5
+const TAB_RANK_CHAPTERS = 6
+const TAB_RANK_EXTRAS = 7
+const TAB_RANK_DETAILS = 8
+const TAB_RANK_COLLECTION = 9
+const TAB_RANK_OTHER = 10
 
 sub init()
     m.top.observeField("seerrButtonsStale", "onSeerrButtonsStale")
@@ -305,7 +318,7 @@ sub buildTabsFromContent(content as object)
         ' An episode lists the whole season it sits in as rows, the way a season does
         if row.hasField("seasonRun")
             m.seasonEpisodes = row.seasonRun
-            m.sectionTabs.push({ label: tr("Episodes"), kind: "episodes", index: -1 })
+            m.sectionTabs.push({ label: tr("Episodes"), kind: "episodes", index: -1, rank: TAB_RANK_EPISODES })
             continue for
         end if
 
@@ -313,8 +326,8 @@ sub buildTabsFromContent(content as object)
         ' as two tabs
         if isStringEqual(rowTitle, tr("Cast"))
             people = splitCastAndCrewLimited(items)
-            if people.cast.count() > 0 then pushSection(people.cast, [160, 265], tr("Cast"), "cast")
-            if people.crew.count() > 0 then pushSection(people.crew, [160, 265], tr("Crew"), "cast")
+            if people.cast.count() > 0 then pushSection(people.cast, [160, 265], tr("Cast"), "cast", TAB_RANK_CAST)
+            if people.crew.count() > 0 then pushSection(people.crew, [160, 265], tr("Crew"), "cast", TAB_RANK_CREW)
             continue for
         end if
 
@@ -323,24 +336,41 @@ sub buildTabsFromContent(content as object)
 
         label = row.title
         if not isValidAndNotEmpty(label) then label = tr("More")
-        pushSection(items, sz, label, "section")
+        rowKind = row.hasField("rowKind") ? row.rowKind : ""
+        rank = TAB_RANK_OTHER
+        if rowKind = "collectionItems"
+            label = tr("Items")
+            rank = TAB_RANK_ITEMS
+            m.collectionMembers = items
+        else if rowKind = "parentCollection"
+            rank = TAB_RANK_COLLECTION
+        else if isStringEqual(rowTitle, tr("Seasons"))
+            rank = TAB_RANK_SEASONS
+        else if isStringEqual(rowTitle, tr("Special Features"))
+            label = tr("Extras")
+            rank = TAB_RANK_EXTRAS
+        end if
+        pushSection(items, sz, label, "section", rank)
     end for
 
     buildStudioData()
     if m.studioData.count() > 0
-        m.sectionTabs.push({ label: tr("Studios"), kind: "studios", index: -1 })
+        m.sectionTabs.push({ label: tr("Studios"), kind: "studios", index: -1, rank: TAB_RANK_STUDIOS })
         startStudioLogoFetch()
     end if
 
     buildChapterData()
     if m.chapterData.count() > 0
-        m.sectionTabs.push({ label: tr("Chapters"), kind: "chapters", index: -1 })
+        m.sectionTabs.push({ label: tr("Chapters"), kind: "chapters", index: -1, rank: TAB_RANK_CHAPTERS })
     end if
 
     if hasDetailsInfo()
-        m.sectionTabs.push({ label: tr("Details"), kind: "details", index: -1 })
+        m.sectionTabs.push({ label: tr("Details"), kind: "details", index: -1, rank: TAB_RANK_DETAILS })
     end if
 
+    ' The tabs run in a fixed order, whatever order the loader handed its rows over in. The sort
+    ' is stable, so tabs of one rank keep theirs.
+    m.sectionTabs.SortBy("rank")
     appendSeerrTab()
 
     showUpNextCard()
@@ -398,10 +428,10 @@ sub scrollToSeerrFocus()
 end sub
 
 ' A Seerr title arrives as a tmdb id, and the screen asks Seerr for the rest itself
-sub pushSection(items as object, size as object, label as string, kind as string)
+sub pushSection(items as object, size as object, label as string, kind as string, rank as integer)
     m.sectionItems.push(items)
     m.sectionSize.push(size)
-    m.sectionTabs.push({ label: label, kind: kind, index: m.sectionItems.count() - 1 })
+    m.sectionTabs.push({ label: label, kind: kind, index: m.sectionItems.count() - 1, rank: rank })
 end sub
 
 ' The shared split, plus what this screen's grids need: a person credited more
@@ -1124,6 +1154,7 @@ sub renderDetailContent()
     updateButtonVisibility(itemData)
 
     if m.loadStatus = ViewLoadStatus.RELOAD
+        if isCollection() then refreshCollectionMembers()
         return
     end if
 
@@ -1201,6 +1232,10 @@ end sub
 ' ============================================
 ' Item type helper
 ' ============================================
+
+function collectionMembers() as object
+    return m.collectionMembers ?? []
+end function
 
 function isSeason() as boolean
     return LCase(m.top.itemType) = "season"
@@ -1648,6 +1683,11 @@ end sub
 
 ' Item types that own their whole action row
 function typeSpecificButtons() as boolean
+    if isCollection()
+        addCollectionButtons()
+        return true
+    end if
+
     if isSeason()
         addSeasonButtons()
         return true
@@ -1710,7 +1750,9 @@ end sub
 ' Actions only one screen offers, the season and music rows the classic screen
 ' never draws
 sub handleScreenButtonAction(action as string)
-    if action = "seasonResume"
+    if action = "collectionPlay" or action = "collectionShuffle"
+        playCollection(action = "collectionShuffle")
+    else if action = "seasonResume"
         ep = findSeasonResumeEpisode()
         if isValid(ep) then m.top.quickPlayNode = ep
     else if action = "seasonPlay"

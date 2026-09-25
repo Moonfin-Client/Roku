@@ -1,12 +1,8 @@
+import "pkg:/components/extras/collectionLookup.bs"
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
-import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/seerrMissingCollection.bs"
-import "pkg:/source/utils/SeerrUtils.bs"
-
-' How many collections are read when the server cant say which ones hold a title
-const MAX_COLLECTIONS = 500
 
 sub init()
     m.top.functionName = "load"
@@ -32,13 +28,7 @@ sub loadParents(itemJson as object)
     found = []
 
     for each collection in findParents(itemJson)
-        data = fetch("/Items", {
-            ParentId: collection.Id,
-            SortBy: "PremiereDate,SortName",
-            SortOrder: "Ascending",
-            Fields: "PrimaryImageAspectRatio,ProductionYear,ProviderIds,People"
-        })
-        members = chainLookupReturn(data, "Items", [])
+        members = collectionTitles(collection.Id, "PremiereDate", "PrimaryImageAspectRatio,ProductionYear,ProviderIds,People")
         if members.count() <= 1 then continue for
 
         missing = []
@@ -61,87 +51,18 @@ end sub
 ' A collection's own page: its titles in release order, the ones the library is missing, and
 ' everyone who appears in them
 sub loadMembers(boxSet as object)
-    data = fetch("/Items", {
-        ParentId: boxSet.Id,
-        SortBy: "ProductionYear,SortName",
-        SortOrder: "Ascending",
-        Fields: "PrimaryImageAspectRatio,ProductionYear,ProviderIds,People"
-    })
-    members = chainLookupReturn(data, "Items", [])
+    fields = "PrimaryImageAspectRatio,ProductionYear,ProviderIds"
+    if not m.top.titlesOnly then fields += ",People"
+    members = collectionTitles(boxSet.Id, "ProductionYear", fields)
+
+    m.top.items = cardNodes(members)
+    if m.top.titlesOnly then return
 
     missing = []
     if showsMissing() then missing = seerrMissingCollection.Find(boxSet, members)
-
-    m.top.items = cardNodes(members)
     m.top.missing = cardNodes(missing)
     m.top.people = pooledPeople(members)
 end sub
-
-' Jellyfin 12 answers outright. Older servers are asked for every collection, then which one
-' the title names as its own, and only then what each collection holds.
-function findParents(itemJson as object) as object
-    direct = fetch(`/Items/${itemJson.Id}/Collections`, { Fields: "ProviderIds" })
-    if isChainValid(direct, "Items") then return namedFirst(itemJson, direct.Items)
-
-    all = fetch("/Items", {
-        IncludeItemTypes: "BoxSet",
-        Recursive: "true",
-        Limit: MAX_COLLECTIONS,
-        Fields: "ProviderIds",
-        EnableImages: "false",
-        EnableUserData: "false",
-        EnableTotalRecordCount: "false"
-    })
-    collections = chainLookupReturn(all, "Items", [])
-    if collections.count() = 0 then return []
-
-    named = namedCollection(itemJson, collections)
-    if isValid(named) then return [named]
-
-    owners = membership(collections)
-    return owners[itemJson.Id] ?? []
-end function
-
-function namedCollection(itemJson as object, collections as object) as dynamic
-    wanted = seerrMissingCollection.ProviderId(itemJson, "TmdbCollection")
-    if wanted = "" then return invalid
-
-    for each collection in collections
-        if seerrMissingCollection.ProviderId(collection, "Tmdb") = wanted then return collection
-    end for
-    return invalid
-end function
-
-' The collection a title names is the one it most belongs to, so it leads
-function namedFirst(itemJson as object, collections as object) as object
-    named = namedCollection(itemJson, collections)
-    if not isValid(named) then return collections
-
-    ordered = [named]
-    for each collection in collections
-        if collection.Id <> named.Id then ordered.push(collection)
-    end for
-    return ordered
-end function
-
-' Which collections hold each title, read once and kept for the rest of the session
-function membership(collections as object) as object
-    if m.global.hasField("collectionOwners") and isValid(m.global.collectionOwners) then return m.global.collectionOwners
-
-    owners = {}
-    for each collection in collections
-        data = fetch("/Items", { ParentId: collection.Id, EnableImages: "false", EnableUserData: "false", EnableTotalRecordCount: "false" })
-        for each member in chainLookupReturn(data, "Items", [])
-            if not isValidAndNotEmpty(member.Id) then continue for
-            if not owners.DoesExist(member.Id) then owners[member.Id] = []
-            owners[member.Id].push(collection)
-        end for
-    end for
-
-    if not m.global.hasField("collectionOwners") then m.global.addFields({ collectionOwners: {} })
-    m.global.collectionOwners = owners
-    return owners
-end function
 
 ' The cast and crew of every title in the collection, each person listed once
 function pooledPeople(members as object) as object
@@ -188,27 +109,6 @@ function collectionNode(collection as object) as object
     return node
 end function
 
-function cardNodes(items as object) as object
-    nodes = []
-    for each item in items
-        nodes.push(cardNode(item))
-    end for
-    return nodes
-end function
-
-' A title from another server carries that server with it, so opening it goes back there
-function cardNode(json as object) as object
-    if isValid(m.serverData) and not isValid(json.SeerrItem)
-        json._serverUrl = m.serverData.serverUrl
-        json._userId = m.serverData.userId
-        json._authToken = m.serverData.authToken
-    end if
-
-    node = CreateObject("roSGNode", "HomeData")
-    node.json = json
-    return node
-end function
-
 function fetch(path as string, params as object) as dynamic
     if isValid(m.serverData)
         params.userId = m.serverData.userId
@@ -217,11 +117,4 @@ function fetch(path as string, params as object) as dynamic
 
     params.userId = m.global.session.user.id
     return getJson(APIRequest(path, params))
-end function
-
-function showsMissing() as boolean
-    if not GetSeerrConfig().enabled then return false
-
-    setting = chainLookupReturn(m.global.session, "user.settings.`seerr.showMissingCollectionItems`", true)
-    return LCase(setting.toStr()) <> "false"
 end function

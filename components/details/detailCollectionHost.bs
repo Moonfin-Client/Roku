@@ -1,0 +1,135 @@
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/misc.bs"
+
+' A collection's action row and how it plays, shared by every details screen that draws one.
+' These run in the host screen's scope, so m is whichever screen imported them.
+'
+' Also leans on the button host for addButton, addArrangedButtons and the candidate helpers.
+'
+' Hooks each screen provides:
+'   function collectionMembers() as object
+
+function isCollection() as boolean
+    return LCase(m.top.itemType) = "boxset"
+end function
+
+' Play leads the row, then whatever the viewer arranged from what a collection can offer
+sub addCollectionButtons()
+    itemData = chainLookupReturn(m.top.itemContent, "json", {})
+    addButton({
+        icon: "pkg:/images/icons/detail_play.png",
+        label: tr("Play"),
+        action: "collectionPlay",
+        id: "playButton"
+    })
+
+    candidates = [
+        { id: "shuffle", config: { icon: "pkg:/images/icons/detail_shuffle.png", label: tr("Shuffle"), action: "collectionShuffle", id: "shuffleButton" } },
+        watchedCandidate(itemData),
+        favoriteCandidate(itemData)
+    ]
+    if m.top.trailerAvailable then candidates.push(trailerCandidate())
+    addArrangedButtons(candidates)
+end sub
+
+' What in a collection can be handed straight to the player. A series in there opens rather
+' than plays, so it stays out of the queue instead of stopping the run when it comes round.
+function collectionQueue() as object
+    queue = []
+    for each item in collectionMembers()
+        itemType = chainLookupReturn(item, "json.Type", "")
+        if itemType = "Movie" or itemType = "Video" or itemType = "Episode" or itemType = "MusicVideo" then queue.push(item)
+    end for
+    return queue
+end function
+
+function isPartWatched(item as object) as boolean
+    return chainLookupReturn(item, "json.UserData.PlaybackPositionTicks", 0) > 0 and not chainLookupReturn(item, "json.UserData.Played", false)
+end function
+
+' One left part way through carries on, otherwise the first unwatched, so a run through a set
+' of films picks up where it was. A collection watched all the way through starts over.
+sub playCollection(shuffle as boolean)
+    queue = collectionQueue()
+    if queue.count() = 0 then return
+
+    start = 0
+    if shuffle
+        shuffled = []
+        while queue.count() > 0
+            pick = Rnd(queue.count()) - 1
+            shuffled.push(queue[pick])
+            queue.delete(pick)
+        end while
+        queue = shuffled
+    else
+        start = -1
+        for i = 0 to queue.count() - 1
+            if isPartWatched(queue[i])
+                start = i
+                exit for
+            end if
+        end for
+        if start < 0
+            for i = 0 to queue.count() - 1
+                if not chainLookupReturn(queue[i], "json.UserData.Played", false)
+                    start = i
+                    exit for
+                end if
+            end for
+        end if
+        if start < 0 then start = 0
+    end if
+
+    ' Only the first title resumes, the rest of the run starts each one from the top
+    for each item in queue
+        item.startingPoint = 0
+    end for
+    target = queue[start]
+    if not shuffle and isPartWatched(target) then target.startingPoint = chainLookupReturn(target, "json.UserData.PlaybackPositionTicks", 0)
+
+    m.global.queueManager.callFunc("clear")
+    ' Cinema mode intros are left out of a collection run
+    m.global.queueManager.callFunc("setPrerollStatus", false)
+    for each item in queue
+        m.global.queueManager.callFunc("push", item)
+    end for
+    m.global.queueManager.callFunc("setPosition", start)
+    m.global.queueManager.callFunc("playQueue")
+end sub
+
+' Coming back from playback, the titles are asked for again and laid over the cards already
+' showing, so the next Play picks up from where the run got to
+sub refreshCollectionMembers()
+    if isValid(m.collectionRefreshTask) then m.collectionRefreshTask.unobserveField("done")
+    m.collectionRefreshTask = startCollectionMembersTask("onCollectionMembersRefreshed")
+end sub
+
+function startCollectionMembersTask(handler as string) as object
+    task = CreateObject("roSGNode", "LoadCollectionsTask")
+    task.mode = "members"
+    task.titlesOnly = true
+    task.itemJson = m.top.itemContent.json
+    task.observeField("done", handler)
+    task.control = TaskControl.RUN
+    return task
+end function
+
+sub onCollectionMembersRefreshed()
+    fresh = {}
+    for each node in m.collectionRefreshTask.items ?? []
+        id = chainLookupReturn(node, "json.Id", "")
+        if id <> "" then fresh[id] = node.json
+    end for
+
+    ' A new json redraws the card's poster at the size its type gets by default, so the one the
+    ' card was given is put back
+    for each member in collectionMembers()
+        json = fresh[chainLookupReturn(member, "json.Id", "")]
+        if not isValid(json) then continue for
+
+        poster = member.posterURL
+        member.json = json
+        if isValid(poster) then member.posterURL = poster
+    end for
+end sub
