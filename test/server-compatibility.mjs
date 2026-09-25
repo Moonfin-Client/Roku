@@ -181,4 +181,23 @@ assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParam
 const extrasTask = await readFile('components/extras/LoadExtrasTask.bs', 'utf8');
 assert.match(extrasTask, /function multiServerExtrasImageURL\([^]*?return buildURLForServer\(/, 'Remote detail extras images use the shared builder');
 assert.doesNotMatch(extrasTask, /normalizedServerUrl \+ "\/Items\//, 'Remote detail extras do not concatenate server URLs');
-process.stdout.write('PASS: Jellyfin review regressions (24 checks)\n');
+
+const detailApiTask = await readFile('components/JellyfinAPITask.bs', 'utf8');
+assert.match(detailApiTask, /request\.serverData[^]*?APIRequestForServer\(serverData\.serverUrl, serverData\.userId, serverData\.authToken/, 'Detail API task can target the item server');
+assert.match(detailApiTask, /LookupCI\("UserId"\)[^]*?targetParams\.UserId = serverData\.userId/, 'Remote detail requests replace active-session user ids');
+
+const detailActions = await readFile('source/utils/detailActions.bs', 'utf8');
+assert.match(detailActions, /function detailActionServerData\([^]*?getServerInfoFromItem\(m\.top\.itemContent\)[^]*?function withDetailActionServer\([^]*?request\.serverData = serverData/, 'Detail actions carry the item server context');
+assert.match(detailActions, /UserId: detailActionUserId\(\)/, 'Detail playlist and collection queries use the owning server user');
+assert.match(detailActions, /m\.artworkDialog\.serverData = detailActionServerData\(\)[^]*?m\.identifyDialog\.serverData = detailActionServerData\(\)/, 'Artwork and admin dialogs inherit the item server');
+
+const artworkDialog = await readFile('components/ArtworkPickerDialog.bs', 'utf8');
+assert.match(artworkDialog, /serverData: m\.top\.serverData[^]*?RemoteImages[^]*?serverData: m\.top\.serverData[^]*?RemoteImages\/Download/, 'Artwork requests stay on the item server');
+
+const identifyDialog = await readFile('components/IdentifyDialog.bs', 'utf8');
+assert.match(identifyDialog, /serverData: m\.top\.serverData[^]*?Items\/RemoteSearch[^]*?serverData: m\.top\.serverData[^]*?Items\/RemoteSearch\/Apply/, 'Identify requests stay on the item server');
+
+const compatibilityRoutes = await readFile('source/utils/serverCompatibility.bs', 'utf8');
+assert.match(compatibilityRoutes, /userItemParts\.Count\(\) = 3[^]*?action = "rating" or action = "userdata"[^]*?prefix \+ "Items\/" \+ userItemParts\[1\]/, 'Emby personal rating routes map to the user-scoped item path');
+
+process.stdout.write('PASS: Jellyfin review regressions (32 checks)\n');
