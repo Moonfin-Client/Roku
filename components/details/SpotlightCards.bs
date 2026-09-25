@@ -67,6 +67,314 @@ function spotlightDedupePeople(people as object) as object
     return out
 end function
 
+function spotlightPersonKey(person as object) as string
+    if isValidAndNotEmpty(person.id) then return person.id.toStr()
+    return chainLookupReturn(person, "json.Name", "")
+end function
+
+' A role written in block capitals reads as shouting next to the rest, and one person
+' can arrive with several jobs run together in a single field
+function spotlightNormalizeRoles(role as string) as object
+    roles = []
+    for each part in CreateObject("roRegex", "[;,]", "").Split(role)
+        part = part.Trim()
+        if part = "" then continue for
+        if Len(part) > 1 and part = UCase(part) then part = Left(part, 1) + LCase(Mid(part, 2))
+        if not inArray(roles, part) then roles.push(part)
+    end for
+    return roles
+end function
+
+' Actors in Cast, directors then writers merged into Crew, and the first 20 of each.
+' Somebody who both directed and acted belongs with the crew, so their name is kept out
+' of the cast. The role under each face is the role itself.
+function spotlightSplitPeople(people as object) as object
+    directors = []
+    writers = []
+    crewNames = {}
+    for each person in people
+        personType = chainLookupReturn(person, "json.Type", "")
+        if personType = "Director" then directors.push(person)
+        if personType = "Writer" then writers.push(person)
+        name = chainLookupReturn(person, "json.Name", "")
+        if (personType = "Director" or personType = "Writer") and name <> "" then crewNames[name] = true
+    end for
+
+    cast = []
+    for each person in people
+        if cast.count() >= 20 then exit for
+        personType = chainLookupReturn(person, "json.Type", "")
+        if personType <> "Actor" and personType <> "GuestStar" then continue for
+        if crewNames.DoesExist(chainLookupReturn(person, "json.Name", "")) then continue for
+        person.subTitle = chainLookupReturn(person, "json.Role", "").Trim()
+        cast.push(person)
+    end for
+
+    merged = []
+    byKey = {}
+    for each group in [{ people: directors, fallback: tr("Director") }, { people: writers, fallback: tr("Writer") }]
+        for each person in group.people
+            key = chainLookupReturn(person, "json.Id", "")
+            if key = "" then key = chainLookupReturn(person, "json.Name", "")
+            if key = "" then continue for
+
+            role = chainLookupReturn(person, "json.Role", "").Trim()
+            if role = "" then role = group.fallback
+
+            held = byKey[key]
+            if not isValid(held)
+                held = { node: person, roles: [] }
+                byKey[key] = held
+                merged.push(held)
+            end if
+            for each part in spotlightNormalizeRoles(role)
+                if not inArray(held.roles, part) then held.roles.push(part)
+            end for
+        end for
+    end for
+
+    crew = []
+    for each held in merged
+        if crew.count() >= 20 then exit for
+        held.node.subTitle = held.roles.join(Chr(10))
+        crew.push(held.node)
+    end for
+
+    return { cast: cast, crew: crew }
+end function
+
+const SPOTLIGHT_EXTRA_ORDER = ["extras", "behindTheScenes", "deletedScenes", "featurettes", "interviews", "scenes", "shorts", "trailers"]
+
+' Anything the server files as some other kind, or leaves unmarked, goes under Extras
+function spotlightExtraCategory(extra as object) as string
+    extraType = chainLookupReturn(extra, "json.ExtraType", "")
+    if extraType = "BehindTheScenes" then return "behindTheScenes"
+    if extraType = "DeletedScene" then return "deletedScenes"
+    if extraType = "Featurette" then return "featurettes"
+    if extraType = "Interview" then return "interviews"
+    if extraType = "Scene" then return "scenes"
+    if extraType = "Short" then return "shorts"
+    if extraType = "Trailer" then return "trailers"
+    return "extras"
+end function
+
+function spotlightExtraCategoryLabel(category as string) as string
+    labels = {
+        extras: tr("Extras"),
+        behindTheScenes: tr("Behind the Scenes"),
+        deletedScenes: tr("Deleted Scenes"),
+        featurettes: tr("Featurettes"),
+        interviews: tr("Interviews"),
+        scenes: tr("Scenes"),
+        shorts: tr("Shorts"),
+        trailers: tr("Trailers")
+    }
+    return labels[category]
+end function
+
+' One section per kind of extra, each keeping the order the server gave it
+function spotlightExtraSections(extras as object) as object
+    buckets = {}
+    for each extra in extras
+        category = spotlightExtraCategory(extra)
+        if not buckets.DoesExist(category) then buckets[category] = []
+        buckets[category].push(extra)
+    end for
+
+    sections = []
+    for each category in SPOTLIGHT_EXTRA_ORDER
+        items = buckets[category]
+        if isValidAndNotEmpty(items)
+            sections.push({ kind: "media", title: spotlightExtraCategoryLabel(category), count: items.count(), items: items, aspect: "landscape", isExtras: true })
+        end if
+    end for
+    return sections
+end function
+
+function spotlightChapterImageUrl(itemData as object, index as integer, tag as string, maxWidth as integer) as string
+    path = `Items/${itemData.Id}/Images/Chapter/${index.toStr()}`
+    serverUrl = itemData._serverUrl
+    if isValidAndNotEmpty(serverUrl)
+        if serverUrl.right(1) = "/" then serverUrl = serverUrl.left(serverUrl.len() - 1)
+        return `${serverUrl}/${path}?maxWidth=${maxWidth.toStr()}&quality=90&tag=${tag}`
+    end if
+    return buildURL(path, { maxWidth: maxWidth, quality: 90, tag: tag })
+end function
+
+' The first chapter that has a picture of its own
+function spotlightFirstChapterImageUrl(itemData as object) as string
+    chapters = itemData.Chapters
+    if not isValidAndNotEmpty(chapters) then return ""
+
+    for i = 0 to chapters.count() - 1
+        tag = chapters[i].ImageTag
+        if isValidAndNotEmpty(tag) then return spotlightChapterImageUrl(itemData, i, tag, 480)
+    end for
+    return ""
+end function
+
+function spotlightChapterNodes(itemData as object) as object
+    nodes = []
+    chapters = itemData.Chapters
+    if not isValidAndNotEmpty(chapters) then return nodes
+
+    for i = 0 to chapters.count() - 1
+        chapter = chapters[i]
+        ticks = chapter.StartPositionTicks ?? 0
+
+        name = chapter.Name
+        if not isValidAndNotEmpty(name) then name = tr("Chapter") + " " + (i + 1).toStr()
+
+        thumbUrl = ""
+        if isValidAndNotEmpty(chapter.ImageTag) then thumbUrl = spotlightChapterImageUrl(itemData, i, chapter.ImageTag, 400)
+
+        node = CreateObject("roSGNode", "ContentNode")
+        node.addFields({ name: name, timeText: secondsToHuman(Int(ticks / 10000000), false), thumbUrl: thumbUrl, startTicks: ticks })
+        nodes.push(node)
+    end for
+    return nodes
+end function
+
+' Audio runs short enough to read as minutes and seconds. Anything longer, an audiobook
+' chapter or an episode, reads better in hours and minutes.
+function spotlightTrackRuntime(ticks as dynamic, isAudio as boolean) as string
+    if not isValid(ticks) or ticks <= 0 then return ""
+
+    totalSeconds = Int(ticks / 10000000)
+    if isAudio then return Int(totalSeconds / 60).toStr() + ":" + Right("0" + (totalSeconds mod 60).toStr(), 2)
+
+    totalMinutes = Int(totalSeconds / 60)
+    hours = Int(totalMinutes / 60)
+    if hours > 0 then return `${hours.toStr()}h ${(totalMinutes mod 60).toStr()}m`
+    return `${totalMinutes.toStr()}m`
+end function
+
+' An episode leads with its series, since its own name says little about where it sits
+function spotlightTrackSubtitle(json as object, isAudiobook as boolean, showAlbum as boolean) as string
+    if json.Type = "Episode"
+        name = json.Name ?? ""
+        if isValid(json.ParentIndexNumber) and isValid(json.IndexNumber) then return `S${json.ParentIndexNumber.toStr()}:E${json.IndexNumber.toStr()} - ${name}`
+        return name
+    end if
+    if isAudiobook then return ""
+
+    artist = json.AlbumArtist ?? ""
+    if isValidAndNotEmpty(json.Artists) then artist = json.Artists.join(", ")
+    if showAlbum and isValidAndNotEmpty(json.Album)
+        if artist <> "" then return `${json.Album} • ${artist}`
+        return json.Album
+    end if
+    return artist
+end function
+
+' The rows of a track list as nodes the modal draws. Each keeps its place in the list it
+' came from, since that is the position playback is asked for. A playlist counts its own
+' positions, since its tracks carry the numbers they had on their own albums.
+function spotlightTrackNodes(tracks as object, countsPositions as boolean, isAudiobook as boolean) as object
+    nodes = []
+    for position = 0 to tracks.count() - 1
+        track = tracks[position]
+        json = track.json
+
+        number = position + 1
+        if not countsPositions and isValid(json.IndexNumber) then number = json.IndexNumber
+
+        title = json.Name ?? ""
+        if json.Type = "Episode" and isValidAndNotEmpty(json.SeriesName) then title = json.SeriesName
+
+        detailParts = []
+        subtitle = spotlightTrackSubtitle(json, isAudiobook, countsPositions)
+        if subtitle <> "" then detailParts.push(subtitle)
+        runtime = spotlightTrackRuntime(json.RunTimeTicks, json.Type = "Audio")
+        if runtime <> "" then detailParts.push(runtime)
+
+        node = CreateObject("roSGNode", "ContentNode")
+        node.id = json.Id ?? ""
+        node.addFields({
+            numberText: number.toStr(),
+            titleText: title,
+            detailText: detailParts.join(" • "),
+            trackIndex: track.index,
+            disc: json.ParentIndexNumber ?? 1
+        })
+        nodes.push(node)
+    end for
+    return nodes
+end function
+
+' An album that spans more than one disc lists each under its own heading
+function spotlightTrackSections(tracks as object, title as string, groupByDisc as boolean) as object
+    discs = []
+    byDisc = {}
+    for each track in tracks
+        key = track.disc.toStr()
+        if not byDisc.DoesExist(key)
+            byDisc[key] = []
+            discs.push(track.disc)
+        end if
+        byDisc[key].push(track)
+    end for
+
+    if not groupByDisc or discs.count() < 2 then return [{ kind: "tracks", title: title, count: tracks.count(), items: tracks }]
+
+    sections = []
+    for each disc in discs
+        items = byDisc[disc.toStr()]
+        sections.push({ kind: "tracks", title: tr("Disc {number}").replace("{number}", disc.toStr()), count: 0, items: items })
+    end for
+    return sections
+end function
+
+' Where a title was released, or where its year starts when that is all it has
+function spotlightReleasedSeconds(item as object) as dynamic
+    premiere = chainLookupReturn(item, "json.PremiereDate", "")
+    if Len(premiere) >= 10
+        date = CreateObject("roDateTime")
+        date.FromISO8601String(Left(premiere, 10) + "T00:00:00Z")
+        return date.AsSeconds()
+    end if
+
+    year = chainLookupReturn(item, "json.ProductionYear", 0)
+    if year > 0
+        date = CreateObject("roDateTime")
+        date.FromISO8601String(year.toStr() + "-01-01T00:00:00Z")
+        return date.AsSeconds()
+    end if
+    return invalid
+end function
+
+' Slots the titles the library is missing in by release date, leaving the order the
+' server gave the library alone. Each lands in front of the first title released after
+' it, or at the end when nothing is.
+function spotlightMergeMissing(library as object, missing as object) as object
+    merged = []
+    merged.append(library)
+    if not isValidAndNotEmpty(missing) then return merged
+
+    for each item in missing
+        released = spotlightReleasedSeconds(item)
+        at = merged.count()
+        if isValid(released)
+            for i = 0 to merged.count() - 1
+                other = spotlightReleasedSeconds(merged[i])
+                if isValid(other) and released < other
+                    at = i
+                    exit for
+                end if
+            end for
+        end if
+
+        placed = []
+        for i = 0 to merged.count() - 1
+            if i = at then placed.push(item)
+            placed.push(merged[i])
+        end for
+        if at = merged.count() then placed.push(item)
+        merged = placed
+    end for
+    return merged
+end function
+
 ' Which artwork a summary card leads with, and the landscape thumbnail a wider
 ' card takes, both shared with the Nouveau screen
 function spotlightItemImageUrl(_serverUrl as string, item as object) as string
@@ -116,7 +424,9 @@ function spotlightCardBuilder(state as object) as object
         tracksCard: spotlightBuilderTracksCard,
         playlistCard: spotlightBuilderPlaylistCard,
         albumsCard: spotlightBuilderAlbumsCard,
-        boxSetItemsCard: spotlightBuilderBoxSetItemsCard
+        boxSetItemsCard: spotlightBuilderBoxSetItemsCard,
+        chaptersExtrasCard: spotlightBuilderChaptersExtrasCard,
+        collectionsCard: spotlightBuilderCollectionsCard
     }
 end function
 
@@ -169,30 +479,101 @@ function spotlightBuilderMakeCard(id as string) as dynamic
     if id = "playlist" then return m.playlistCard()
     if id = "albums" then return m.albumsCard()
     if id = "boxset_items" then return m.boxSetItemsCard()
+    if id = "chapters_extras" then return m.chaptersExtrasCard()
+    if id = "collections" then return m.collectionsCard()
     return invalid
 end function
 
 ' The people behind the item, plus its studios
 function spotlightBuilderPeopleCard() as dynamic
     s = m.s
-    castItems = s.cast
+    people = spotlightDedupePeople(s.cast)
     crewItems = s.crew
-    if not isValidAndNotEmpty(castItems) and not isValidAndNotEmpty(crewItems) then return invalid
+    studioCards = s.studioCards
+    if people.count() = 0 and crewItems.count() = 0 and studioCards.count() = 0 then return invalid
 
-    people = spotlightDedupePeople(castItems)
-    if people.count() = 0 and crewItems.count() = 0 then return invalid
+    ' Someone in both the cast and the crew is still one person
+    keys = {}
+    for each group in [people, crewItems]
+        for each person in group
+            key = spotlightPersonKey(person)
+            if key <> "" then keys[key] = true
+        end for
+    end for
 
-    peopleCount = people.count()
+    subtitleParts = []
+    if keys.count() > 0 then subtitleParts.push(spotlightCountLabel(keys.count(), tr("1 person"), tr("{count} people")))
+    if studioCards.count() > 0 then subtitleParts.push(spotlightCountLabel(studioCards.count(), tr("1 studio"), tr("{count} studios")))
+
+    cardSections = []
+    if people.count() > 0 then cardSections.push({ kind: "people", title: tr("Cast"), count: people.count(), items: people })
+    if crewItems.count() > 0 then cardSections.push({ kind: "people", title: tr("Crew"), count: crewItems.count(), items: crewItems })
+    if studioCards.count() > 0 then cardSections.push({ kind: "studios", title: tr("Studios"), count: studioCards.count(), items: studioCards })
+
     return {
         id: "people",
         title: tr("Cast, Crew, and Studios"),
-        subtitle: spotlightCountLabel(peopleCount, tr("1 person"), tr("{count} people")),
+        subtitle: spotlightJoinSubtitle(subtitleParts),
         imageUrl: s.fallbackImageUrl,
         iconKey: "people",
-        sections: [
-            { kind: "people", title: tr("Cast"), count: people.count(), items: people },
-            { kind: "people", title: tr("Crew"), count: crewItems.count(), items: crewItems }
-        ]
+        sections: cardSections
+    }
+end function
+
+function spotlightBuilderChaptersExtrasCard() as dynamic
+    s = m.s
+    itemData = chainLookupReturn(s.item, "json", {})
+    chapters = spotlightChapterNodes(itemData)
+    extras = s.extras
+    if chapters.count() = 0 and extras.count() = 0 then return invalid
+
+    subtitleParts = []
+    if chapters.count() > 0 then subtitleParts.push(spotlightCountLabel(chapters.count(), tr("1 chapter"), tr("{count} chapters")))
+    if extras.count() > 0 then subtitleParts.push(spotlightCountLabel(extras.count(), tr("1 extra"), tr("{count} extras")))
+
+    cardImage = spotlightFirstChapterImageUrl(itemData)
+    if cardImage = "" and extras.count() > 0 then cardImage = spotlightLandscapeImageUrl(s.serverUrl, extras[0])
+    if not isValidAndNotEmpty(cardImage) then cardImage = s.fallbackImageUrl
+
+    cardSections = []
+    if chapters.count() > 0 then cardSections.push({ kind: "chapters", title: tr("Chapters"), count: chapters.count(), items: chapters })
+    cardSections.append(spotlightExtraSections(extras))
+
+    return {
+        id: "chapters_extras",
+        title: tr("Chapters and Extras"),
+        subtitle: spotlightJoinSubtitle(subtitleParts),
+        imageUrl: cardImage,
+        iconKey: "chapters_extras",
+        sections: cardSections
+    }
+end function
+
+' Each collection the title is in, led by the collection itself so there is a way into
+' it, then its titles with any the library is missing slotted in by release date
+function spotlightBuilderCollectionsCard() as dynamic
+    s = m.s
+    collections = s.parentCollections
+    if collections.count() = 0 then return invalid
+
+    cardSections = []
+    cardImage = ""
+    for each collection in collections
+        sectionItems = [collection.boxSet]
+        sectionItems.append(spotlightMergeMissing(collection.items, collection.missing))
+        cardSections.push({ kind: "media", title: collection.name, count: sectionItems.count(), items: sectionItems, aspect: "portrait" })
+
+        if cardImage = "" then cardImage = spotlightFirstLandscapeUrl(s.serverUrl, collection.items)
+    end for
+    if not isValidAndNotEmpty(cardImage) then cardImage = s.fallbackImageUrl
+
+    return {
+        id: "collections",
+        title: tr("Collections"),
+        subtitle: spotlightCountLabel(collections.count(), tr("1 collection"), tr("{count} collections")),
+        imageUrl: cardImage,
+        iconKey: "collections",
+        sections: cardSections
     }
 end function
 
@@ -302,8 +683,8 @@ function spotlightBuilderTracksCard() as dynamic
     if tracks.count() = 0 then return invalid
 
     totalTicks = 0
-    for each track in tracks
-        if isValid(track.json) and isValid(track.json.RunTimeTicks) then totalTicks += track.json.RunTimeTicks
+    for each ticks in s.albumTrackTicks
+        totalTicks += ticks
     end for
 
     subtitleParts = [spotlightCountLabel(tracks.count(), tr("1 track"), tr("{count} tracks"))]
@@ -315,7 +696,8 @@ function spotlightBuilderTracksCard() as dynamic
         title: tr("Track List"),
         subtitle: spotlightJoinSubtitle(subtitleParts),
         imageUrl: spotlightItemImageUrl(s.serverUrl, s.item),
-        sections: [{ kind: "tracks", title: tr("Track List"), count: tracks.count(), items: tracks, groupByDisc: itemType = "musicalalbum" }]
+        iconKey: "tracks",
+        sections: spotlightTrackSections(tracks, tr("Track List"), itemType = "musicalbum")
     }
 end function
 
@@ -332,6 +714,7 @@ function spotlightBuilderPlaylistCard() as dynamic
         title: tr("Playlist"),
         subtitle: spotlightCountLabel(playlistTracks.count(), tr("1 item"), tr("{count} items")),
         imageUrl: cardImage,
+        iconKey: "playlist",
         sections: [{ kind: "tracks", title: tr("Playlist"), count: playlistTracks.count(), items: playlistTracks }]
     }
 end function
@@ -341,7 +724,7 @@ function spotlightBuilderAlbumsCard() as dynamic
     albumItems = s.artistAlbums
     if albumItems.count() = 0 then return invalid
 
-    cardImage = spotlightFirstPosterUrl(s.serverUrl, albumItems)
+    cardImage = spotlightItemImageUrl(s.serverUrl, albumItems[0])
     if not isValidAndNotEmpty(cardImage) then cardImage = s.fallbackImageUrl
 
     return {
@@ -349,13 +732,14 @@ function spotlightBuilderAlbumsCard() as dynamic
         title: tr("Albums"),
         subtitle: spotlightCountLabel(albumItems.count(), tr("1 album"), tr("{count} albums")),
         imageUrl: cardImage,
+        iconKey: "albums",
         sections: [{ kind: "media", title: tr("Albums"), count: albumItems.count(), items: albumItems, aspect: "square" }]
     }
 end function
 
 function spotlightBuilderBoxSetItemsCard() as dynamic
     s = m.s
-    boxItems = s.collectionItems
+    boxItems = spotlightMergeMissing(s.collectionItems, s.collectionMissing)
     if boxItems.count() = 0 then return invalid
 
     movies = []

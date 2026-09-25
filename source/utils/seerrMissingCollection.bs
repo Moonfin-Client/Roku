@@ -1,0 +1,127 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
+
+' The films of a collection the library doesnt hold, found through Seerr. Seerr lists every part
+' of a TMDB collection, so anything it names that the library has no copy of is missing.
+namespace seerrMissingCollection
+
+    ' Seerr's status for a title an admin has blocked from being requested
+    const STATUS_BLOCKLISTED = 6
+
+    function ProviderId(json as object, name as string) as string
+        ids = chainLookup(json, "ProviderIds")
+        if not isValid(ids) then return ""
+
+        value = ids.LookupCI(name)
+        if not isValid(value) then return ""
+        return value.toStr().Trim()
+    end function
+
+    ' The TMDB collection behind a set of films: the collection's own id, then one a member
+    ' names, then whatever collection Seerr files the first few films under
+    function CollectionTmdbId(boxSet as object, members as object) as integer
+        own = seerrMissingCollection.ProviderId(boxSet, "Tmdb")
+        if own = "" then own = seerrMissingCollection.ProviderId(boxSet, "TmdbCollection")
+        if own.toInt() > 0 then return own.toInt()
+
+        for each member in members
+            named = seerrMissingCollection.ProviderId(member, "TmdbCollection").toInt()
+            if named > 0 then return named
+        end for
+
+        probed = 0
+        for each member in members
+            if probed >= 4 then exit for
+
+            memberType = member.Type ?? ""
+            tmdbId = seerrMissingCollection.ProviderId(member, "Tmdb").toInt()
+            if (memberType = "Movie" or memberType = "") and tmdbId > 0
+                probed++
+                movie = getJson(APIRequest(`/Moonfin/Seerr/Api/movie/${tmdbId.toStr()}`))
+                collectionId = chainLookupReturn(movie, "collection.id", 0)
+                if collectionId > 0 then return collectionId
+            end if
+        end for
+
+        return 0
+    end function
+
+    ' Each missing film as the json of a card that opens its Seerr page
+    function Find(boxSet as object, members as object) as object
+        missing = []
+        if not isValidAndNotEmpty(members) then return missing
+
+        collectionId = seerrMissingCollection.CollectionTmdbId(boxSet, members)
+        if collectionId <= 0 then return missing
+
+        parts = chainLookup(getJson(APIRequest(`/Moonfin/Seerr/Api/collection/${collectionId.toStr()}`)), "parts")
+        if not isValidAndNotEmpty(parts) then return missing
+
+        libraryIds = {}
+        libraryTitles = {}
+        movieCount = 0
+        for each member in members
+            tmdbId = seerrMissingCollection.ProviderId(member, "Tmdb")
+            if tmdbId <> "" then libraryIds[tmdbId] = true
+            title = LCase((member.Name ?? "").Trim())
+            if title <> "" then libraryTitles[title] = true
+            memberType = member.Type ?? ""
+            if memberType = "Movie" or memberType = "" then movieCount++
+        end for
+
+        overlap = 0
+        for each part in parts
+            if seerrMissingCollection.inLibrary(part, libraryIds, libraryTitles) then overlap++
+        end for
+
+        ' Nothing matching means the collection describes something else, and a hand made set
+        ' of more than one film has to share at least two with it before taking on a franchise
+        if overlap = 0 then return missing
+        if movieCount > 1 and overlap < 2 then return missing
+
+        for each part in parts
+            if seerrMissingCollection.inLibrary(part, libraryIds, libraryTitles) then continue for
+            if chainLookupReturn(part, "mediaInfo.status", 0) = seerrMissingCollection.STATUS_BLOCKLISTED then continue for
+            missing.push(seerrMissingCollection.itemJson(part))
+        end for
+
+        return missing
+    end function
+
+    function inLibrary(part as object, libraryIds as object, libraryTitles as object) as boolean
+        if isValid(part.id) and libraryIds.DoesExist(part.id.toStr()) then return true
+
+        title = LCase(((part.title ?? part.name) ?? "").Trim())
+        return title <> "" and libraryTitles.DoesExist(title)
+    end function
+
+    function itemJson(part as object) as object
+        releaseDate = part.releaseDate ?? (part.release_date ?? "")
+        posterPath = part.posterPath ?? part.poster_path
+        backdropPath = part.backdropPath ?? part.backdrop_path
+        images = GetTmdbImageBaseUrls()
+
+        part.mediaType = "movie"
+        json = {
+            Id: `seerr-movie-${part.id.toStr()}`,
+            Name: (part.title ?? part.name) ?? "",
+            Type: "Movie",
+            Overview: part.overview ?? "",
+            ProviderIds: { Tmdb: part.id.toStr() },
+            SeerrTmdbId: part.id,
+            SeerrMissing: true,
+            SeerrItem: part,
+            SeerrPosterURL: isValidAndNotEmpty(posterPath) ? images.posterW342 + posterPath : ""
+        }
+
+        if Len(releaseDate) >= 4
+            json.PremiereDate = releaseDate
+            json.ProductionYear = Left(releaseDate, 4).toInt()
+        end if
+        if isValidAndNotEmpty(backdropPath) then json.BackdropURL = images.backdropW1280 + backdropPath
+
+        return json
+    end function
+
+end namespace

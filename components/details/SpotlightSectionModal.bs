@@ -19,6 +19,13 @@ sub init()
     m.sections = []
     m.focusedSection = -1
     m.scrollY = 0
+    m.cardId = ""
+    m.top.observeField("visible", "onVisibleChanged")
+end sub
+
+' A card opened again starts from its first section
+sub onVisibleChanged()
+    if not m.top.visible then m.cardId = ""
 end sub
 
 ' How each kind of section draws, taken from the grids the other detail screens use.
@@ -28,13 +35,14 @@ function sectionGridSpec(kind as string, aspect as string) as object
     if kind = "people" then return { component: "DetailCastCard", width: 160, height: 265, gap: 30 }
     if kind = "studios" then return { component: "StudioCard", width: 240, height: 166, gap: 30 }
     if kind = "chapters" then return { component: "ChapterCard", width: 300, height: 206, gap: 30 }
-    if kind = "tracks" then return { component: "PlaylistItemRow", width: MODAL_BODY_WIDTH, height: 120, gap: 8 }
+    if kind = "tracks" then return { component: "SpotlightTrackRow", width: MODAL_BODY_WIDTH, height: 76, gap: 6 }
     ' A Seerr title carries no library json, so it draws with the card Seerr rows use
     if kind = "seerr" then return { component: "SeerrPoster", width: 180, height: 370, gap: 30 }
 
     ' Episodes run wide, and stay above the width where the card spells out the
     ' episode number and its runtime rather than a name and a role
     if aspect = "landscape" then return { component: "ExtrasItem", width: 450, height: 320, gap: 30, posterWidth: 450 }
+    if aspect = "square" then return { component: "ExtrasItem", width: 240, height: 330, gap: 30, posterWidth: 240, square: true }
 
     return { component: "ExtrasItem", width: 200, height: 380, gap: 30, posterWidth: 200 }
 end function
@@ -42,6 +50,13 @@ end function
 sub onCardChanged()
     card = m.top.card
     if not isValid(card) then return
+
+    ' The same card drawn again with more in it keeps the remote where it was
+    held = invalid
+    if m.cardId = chainLookupReturn(card, "id", "") and m.focusedSection >= 0
+        held = { section: m.focusedSection, item: m.sections[m.focusedSection].grid.itemFocused }
+    end if
+    m.cardId = chainLookupReturn(card, "id", "")
 
     title = m.top.findNode("modalHeaderTitle")
     if isValid(title)
@@ -57,6 +72,11 @@ sub onCardChanged()
     end if
 
     buildSections(chainLookupReturn(card, "sections", []))
+
+    if isValid(held) and held.section < m.sections.count()
+        focusSection(held.section)
+        m.sections[held.section].grid.jumpToItem = held.item
+    end if
 end sub
 
 sub buildSections(sections as object)
@@ -100,11 +120,18 @@ sub buildSections(sections as object)
         grid.vertFocusAnimationStyle = "fixedFocus"
         grid.drawFocusFeedback = false
         grid.translation = [0, y]
-        grid.content = spotlightContentFromItems(items, chainLookupReturn(spec, "posterWidth", 0))
+        grid.content = spotlightContentFromItems(items, chainLookupReturn(spec, "posterWidth", 0), chainLookupReturn(spec, "square", false))
         grid.observeField("itemSelected", "onGridItemSelected")
 
         gridHeight = rows * spec.height + (rows - 1) * spec.gap
-        m.sections.push({ grid: grid, top: y - MODAL_HEADING_HEIGHT, columns: columns, rows: rows })
+        m.sections.push({
+            grid: grid,
+            top: y - MODAL_HEADING_HEIGHT,
+            columns: columns,
+            rows: rows,
+            kind: chainLookupReturn(section, "kind", "media"),
+            isExtras: chainLookupReturn(section, "isExtras", false)
+        })
         y += gridHeight + MODAL_SECTION_GAP
     end for
 
@@ -139,13 +166,17 @@ sub scrollSectionIntoView(index as integer)
     m.scrollAnim.control = "start"
 end sub
 
-function spotlightContentFromItems(items as object, posterWidth = 0 as integer) as object
+function spotlightContentFromItems(items as object, posterWidth = 0 as integer, square = false as boolean) as object
     content = CreateObject("roSGNode", "ContentNode")
     for each item in items
         if isValid(item)
             ' The card sizes itself from this, so a season poster and an episode still
             ' each fill the cell the section gave them
             if posterWidth > 0 and item.hasField("imageWidth") then item.imageWidth = posterWidth
+            if square
+                if not item.hasField("squareArt") then item.addFields({ squareArt: true })
+                item.squareArt = true
+            end if
             ' The grids here draw no feedback of their own, so each card rings its own
             ' poster instead of the cell around it
             if not item.hasField("ownFocusRing") then item.addFields({ ownFocusRing: true })
@@ -164,7 +195,28 @@ sub onGridItemSelected(event as object)
     if not isValid(content) then return
 
     item = content.getChild(event.getData())
-    if isValid(item) then m.top.sectionItemSelected = item
+    if not isValid(item) then return
+
+    entry = invalid
+    for each section in m.sections
+        if section.grid.isSameNode(grid) then entry = section
+    end for
+    if not isValid(entry)
+        m.top.sectionItemSelected = item
+        return
+    end if
+
+    if entry.kind = "chapters"
+        m.top.chapterSeekTicks = item.startTicks
+    else if entry.kind = "studios"
+        m.top.studioChosen = item
+    else if entry.kind = "tracks"
+        m.top.trackChosen = item.trackIndex
+    else if entry.isExtras
+        m.top.extraChosen = item
+    else
+        m.top.sectionItemSelected = item
+    end if
 end sub
 
 ' Which row of its own grid the remote sits on, so the modal knows when a press

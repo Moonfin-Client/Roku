@@ -3342,5 +3342,245 @@
         <extracomment>Home row that merges Continue Watching with Next Up</extracomment>
         <translation>Continue Watching &amp; Next Up</translation>
     </message>
+    <message>
+        <source>Chapters and Extras</source>
+        <extracomment>Spotlight card that holds a title's chapters and extras</extracomment>
+        <translation>Chapters and Extras</translation>
+    </message>
+    <message>
+        <source>1 chapter</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 chapter</translation>
+    </message>
+    <message>
+        <source>{count} chapters</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} chapters</translation>
+    </message>
+    <message>
+        <source>1 extra</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 extra</translation>
+    </message>
+    <message>
+        <source>{count} extras</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} extras</translation>
+    </message>
+    <message>
+        <source>Chapter</source>
+        <extracomment>A chapter with no name of its own, followed by its number</extracomment>
+        <translation>Chapter</translation>
+    </message>
+    <message>
+        <source>Behind the Scenes</source>
+        <extracomment>A kind of extra</extracomment>
+        <translation>Behind the Scenes</translation>
+    </message>
+    <message>
+        <source>Deleted Scenes</source>
+        <extracomment>A kind of extra</extracomment>
+        <translation>Deleted Scenes</translation>
+    </message>
+    <message>
+        <source>Featurettes</source>
+        <extracomment>A kind of extra</extracomment>
+        <translation>Featurettes</translation>
+    </message>
+    <message>
+        <source>Interviews</source>
+        <extracomment>A kind of extra</extracomment>
+        <translation>Interviews</translation>
+    </message>
+    <message>
+        <source>Scenes</source>
+        <extracomment>A kind of extra</extracomment>
+        <translation>Scenes</translation>
+    </message>
+    <message>
+        <source>Shorts</source>
+        <extracomment>A kind of extra</extracomment>
+        <translation>Shorts</translation>
+    </message>
+    <message>
+        <source>Trailers</source>
+        <extracomment>A kind of extra</extracomment>
+        <translation>Trailers</translation>
+    </message>
+    <message>
+        <source>1 collection</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 collection</translation>
+    </message>
+    <message>
+        <source>{count} collections</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} collections</translation>
+    </message>
+    <message>
+        <source>Collection</source>
+        <extracomment>A collection with no name of its own</extracomment>
+        <translation>Collection</translation>
+    </message>
+    <message>
+        <source>Cast, Crew, and Studios</source>
+        <extracomment>Spotlight card that holds the people and studios behind a title</extracomment>
+        <translation>Cast, Crew, and Studios</translation>
+    </message>
+    <message>
+        <source>1 person</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 person</translation>
+    </message>
+    <message>
+        <source>{count} people</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} people</translation>
+    </message>
+    <message>
+        <source>1 studio</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 studio</translation>
+    </message>
+    <message>
+        <source>{count} studios</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} studios</translation>
+    </message>
+    <message>
+        <source>Writer</source>
+        <extracomment>A crew member credited as a writer</extracomment>
+        <translation>Writer</translation>
+    </message>
+    <message>
+        <source>Track List</source>
+        <extracomment>Spotlight card that holds an album's tracks</extracomment>
+        <translation>Track List</translation>
+    </message>
+    <message>
+        <source>1 track</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 track</translation>
+    </message>
+    <message>
+        <source>{count} tracks</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} tracks</translation>
+    </message>
+    <message>
+        <source>Playlist</source>
+        <extracomment>Spotlight card that holds a playlist's items</extracomment>
+        <translation>Playlist</translation>
+    </message>
+    <message>
+        <source>1 album</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 album</translation>
+    </message>
+    <message>
+        <source>{count} albums</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} albums</translation>
+    </message>
+    <message>
+        <source>Disc {number}</source>
+        <extracomment>Heading over the tracks on one disc of an album</extracomment>
+        <translation>Disc {number}</translation>
+    </message>
+    <message>
+        <source>Movies &amp; Shows</source>
+        <extracomment>Spotlight card that holds a collection's titles</extracomment>
+        <translation>Movies &amp; Shows</translation>
+    </message>
+    <message>
+        <source>1 movie</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 movie</translation>
+    </message>
+    <message>
+        <source>{count} movies</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} movies</translation>
+    </message>
+    <message>
+        <source>1 show</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 show</translation>
+    </message>
+    <message>
+        <source>{count} shows</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} shows</translation>
+    </message>
+    <message>
+        <source>1 item</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 item</translation>
+    </message>
+    <message>
+        <source>{count} items</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} items</translation>
+    </message>
+    <message>
+        <source>1 title</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 title</translation>
+    </message>
+    <message>
+        <source>{count} titles</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} titles</translation>
+    </message>
+    <message>
+        <source>Moonfin Recommends</source>
+        <extracomment>Recommendations scored by Moonfin</extracomment>
+        <translation>Moonfin Recommends</translation>
+    </message>
+    <message>
+        <source>TMDb</source>
+        <extracomment>Recommendations from TMDb</extracomment>
+        <translation>TMDb</translation>
+    </message>
+    <message>
+        <source>Recommendations (Seerr)</source>
+        <extracomment>Recommendations that come from Seerr</extracomment>
+        <translation>Recommendations (Seerr)</translation>
+    </message>
+    <message>
+        <source>Similar (Seerr)</source>
+        <extracomment>Similar titles that come from Seerr</extracomment>
+        <translation>Similar (Seerr)</translation>
+    </message>
+    <message>
+        <source>1 season</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 season</translation>
+    </message>
+    <message>
+        <source>{count} seasons</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} seasons</translation>
+    </message>
+    <message>
+        <source>1 episode</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 episode</translation>
+    </message>
+    <message>
+        <source>{count} episodes</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} episodes</translation>
+    </message>
+    <message>
+        <source>Show Missing Collection Items</source>
+        <extracomment>Seerr setting</extracomment>
+        <translation>Show Missing Collection Items</translation>
+    </message>
+    <message>
+        <source>Include missing items on Collection pages</source>
+        <extracomment>Seerr setting description</extracomment>
+        <translation>Include missing items on Collection pages</translation>
+    </message>
 </context>
 </TS>
