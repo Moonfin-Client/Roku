@@ -1,0 +1,381 @@
+import "pkg:/source/utils/fileFacts.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Why a file cant direct play, in words, with a hint about the setting that would change it.
+'
+' The server's own reasons come first and keep their wording. It doesnt always give them, so the
+' rest are worked out here by holding the file against the profile this set asked with.
+namespace directPlayReasons
+
+    function BitrateKeys() as object
+        return ["videobitratenotsupported", "containerbitrateexceedslimit", "videobitrateexceedslimit", "bitratelimitexceeded", "containerbitratenotsupported", "audiobitratenotsupported"]
+    end function
+
+    ' The methods that hand a subtitle over as it is. Anything else, Encode above all, means the
+    ' server has to burn it into the picture.
+    function DirectSubtitleMethods() as object
+        return ["embed", "external", "hls"]
+    end function
+
+    function Lower(value as dynamic) as string
+        if not isValid(value) then return ""
+        return LCase(value.ToStr().Trim())
+    end function
+
+    function ListOf(value as dynamic) as object
+        entries = []
+        for each part in directPlayReasons.Lower(value).Split(",")
+            entry = part.Trim()
+            if entry <> "" then entries.push(entry)
+        end for
+        return entries
+    end function
+
+    function Contains(list as object, value as string) as boolean
+        for each entry in list
+            if entry = value then return true
+        end for
+        return false
+    end function
+
+    function WholeNumber(value as dynamic) as dynamic
+        if fileFacts.IsNumber(value) then return Fix(value)
+        if not isString(value) then return invalid
+
+        match = CreateObject("roRegex", "^\s*-?\d+", "").Match(value)
+        if match.count() = 0 then return invalid
+        return Val(match[0].Trim(), 10)
+    end function
+
+    function StreamsOfType(streams as object, streamType as string) as object
+        found = []
+        for each stream in streams
+            if directPlayReasons.Lower(chainLookupReturn(stream, "Type", "")) = streamType then found.push(stream)
+        end for
+        return found
+    end function
+
+    function CodecOf(stream as dynamic) as string
+        return directPlayReasons.Lower(chainLookupReturn(stream, "Codec", ""))
+    end function
+
+    ' The stream the server worked from, or the first of that type when nothing said which
+    function SelectedStream(streams as object, streamType as string, index as dynamic) as dynamic
+        ofType = directPlayReasons.StreamsOfType(streams, streamType)
+        if ofType.count() = 0 then return invalid
+        if isValid(index)
+            for each stream in ofType
+                if chainLookupReturn(stream, "Index", -1) = index then return stream
+            end for
+        end if
+        return ofType[0]
+    end function
+
+    ' A profile that leaves the key off accepts anything, so an empty list is no opinion rather
+    ' than a rejection
+    function Rejects(profiles as object, key as string, value as string) as boolean
+        allowed = []
+        for each profile in profiles
+            for each entry in directPlayReasons.ListOf(profile[key])
+                allowed.push(entry)
+            end for
+        end for
+        return allowed.count() > 0 and not directPlayReasons.Contains(allowed, value)
+    end function
+
+    function DirectPlayProfiles(deviceProfile as dynamic, profileType as string) as object
+        found = []
+        for each profile in chainLookupReturn(deviceProfile, "DirectPlayProfiles", [])
+            if isValid(profile) and directPlayReasons.Lower(profile.Type) = profileType then found.push(profile)
+        end for
+        return found
+    end function
+
+    function CodecProfiles(deviceProfile as dynamic, profileType as string, codec as string) as object
+        found = []
+        for each profile in chainLookupReturn(deviceProfile, "CodecProfiles", [])
+            if not isValid(profile) or directPlayReasons.Lower(profile.Type) <> LCase(profileType) then continue for
+            codecs = directPlayReasons.ListOf(profile.Codec)
+            if codec = "" or codecs.count() = 0 or directPlayReasons.Contains(codecs, codec) then found.push(profile)
+        end for
+        return found
+    end function
+
+    function ConditionsOf(profiles as object, property as string) as object
+        found = []
+        for each profile in profiles
+            for each condition in chainLookupReturn(profile, "Conditions", [])
+                if isValid(condition) and condition.Property = property then found.push(condition)
+            end for
+        end for
+        return found
+    end function
+
+    function NormalizeRange(token as dynamic) as string
+        return directPlayReasons.Lower(token).Replace("_", "")
+    end function
+
+    function SubtitleNeedsBurnIn(subtitleProfiles as object, subtitleFormat as string) as boolean
+        ' This set lists SubRip under its file extension, and the server treats the two as one
+        if subtitleFormat = "subrip" then subtitleFormat = "srt"
+
+        directMethods = directPlayReasons.DirectSubtitleMethods()
+        for each profile in subtitleProfiles
+            if not directPlayReasons.Contains(directPlayReasons.ListOf(chainLookupReturn(profile, "Format", "")), subtitleFormat) then continue for
+            for each method in directPlayReasons.ListOf(profile.Method)
+                if directPlayReasons.Contains(directMethods, method) then return false
+            end for
+        end for
+        return true
+    end function
+
+    sub AddDetail(state as object, detail as object, alsoCovers = [] as object)
+        key = directPlayReasons.Lower(detail.reason)
+        if directPlayReasons.Contains(state.seen, key) then return
+        for each covered in alsoCovers
+            if directPlayReasons.Contains(state.seen, covered) then return
+        end for
+        state.details.push(detail)
+        state.seen.push(key)
+    end sub
+
+    ' Every reason the source cant direct play, the server's first and then whatever the profile
+    ' shows, each carrying what its message needs
+    function ResolveDetails(opts as object) as object
+        serverReasons = opts.serverReasons ?? []
+        mediaStreams = opts.mediaStreams ?? []
+        sourceBitrate = opts.sourceBitrate
+        maxStreamingBitrate = opts.maxStreamingBitrate
+        subtitleStreamIndex = opts.subtitleStreamIndex
+        deviceProfile = opts.deviceProfile
+        state = { details: [], seen: [] }
+
+        video = directPlayReasons.StreamsOfType(mediaStreams, "video")
+        audioOnly = video.count() = 0 and directPlayReasons.StreamsOfType(mediaStreams, "audio").count() > 0
+        profiles = directPlayReasons.DirectPlayProfiles(deviceProfile, audioOnly ? "audio" : "video")
+        container = directPlayReasons.Lower(opts.container)
+
+        audioTrack = directPlayReasons.SelectedStream(mediaStreams, "audio", opts.audioStreamIndex)
+        audioCodec = directPlayReasons.CodecOf(audioTrack)
+        videoStream = invalid
+        if video.count() > 0 then videoStream = video[0]
+        videoCodec = directPlayReasons.CodecOf(videoStream)
+        subtitleCodec = ""
+        if isValid(subtitleStreamIndex) and subtitleStreamIndex >= 0
+            subtitleCodec = directPlayReasons.CodecOf(directPlayReasons.SelectedStream(mediaStreams, "subtitle", subtitleStreamIndex))
+        end if
+
+        for each reason in serverReasons
+            if not isValidAndNotEmpty(reason) then continue for
+            key = directPlayReasons.Lower(reason)
+            if key = "audiocodecnotsupported"
+                state.details.push({ reason: reason, codec: audioCodec })
+            else if key = "videocodecnotsupported"
+                state.details.push({ reason: reason, codec: videoCodec })
+            else if key = "subtitlecodecnotsupported"
+                state.details.push({ reason: reason, codec: subtitleCodec })
+            else if key = "containernotsupported"
+                state.details.push({ reason: reason, container: container })
+            else if directPlayReasons.Contains(directPlayReasons.BitrateKeys(), key)
+                state.details.push({ reason: reason, sourceBitrate: sourceBitrate, maxStreamingBitrate: maxStreamingBitrate })
+            else if key = "audiochannelsnotsupported"
+                channels = invalid
+                if isValid(audioTrack) then channels = directPlayReasons.WholeNumber(audioTrack.Channels)
+                state.details.push({ reason: reason, codec: audioCodec, audioChannels: channels })
+            else
+                state.details.push({ reason: reason })
+            end if
+            state.seen.push(key)
+        end for
+
+        if isValid(maxStreamingBitrate) and isValid(sourceBitrate) and sourceBitrate > maxStreamingBitrate
+            directPlayReasons.AddDetail(state, { reason: "VideoBitrateExceedsLimit", sourceBitrate: sourceBitrate, maxStreamingBitrate: maxStreamingBitrate }, directPlayReasons.BitrateKeys())
+        end if
+
+        if container <> "" and profiles.count() > 0 and directPlayReasons.Rejects(profiles, "Container", container)
+            directPlayReasons.AddDetail(state, { reason: "ContainerNotSupported", container: container })
+        end if
+
+        if mediaStreams.count() = 0 then return state.details
+
+        if videoCodec <> "" and profiles.count() > 0 and directPlayReasons.Rejects(profiles, "VideoCodec", videoCodec)
+            directPlayReasons.AddDetail(state, { reason: "VideoCodecNotSupported", codec: videoCodec })
+        end if
+
+        if isValid(videoStream) and videoCodec <> ""
+            videoProfiles = directPlayReasons.CodecProfiles(deviceProfile, "Video", videoCodec)
+
+            streamRange = directPlayReasons.NormalizeRange(chainLookupReturn(videoStream, "VideoRangeType", ""))
+            if streamRange <> ""
+                for each condition in directPlayReasons.ConditionsOf(videoProfiles, "VideoRangeType")
+                    listed = false
+                    for each token in chainLookupReturn(condition, "Value", "").ToStr().Split("|")
+                        if directPlayReasons.NormalizeRange(token) = streamRange then listed = true
+                    end for
+                    if (condition.Condition = "NotEquals" and listed) or (condition.Condition = "EqualsAny" and not listed)
+                        directPlayReasons.AddDetail(state, { reason: "VideoRangeTypeNotSupported", codec: videoCodec })
+                        exit for
+                    end if
+                end for
+            end if
+
+            streamProfile = directPlayReasons.Lower(videoStream.Profile)
+            if streamProfile <> ""
+                for each condition in directPlayReasons.ConditionsOf(videoProfiles, "VideoProfile")
+                    listed = false
+                    for each token in directPlayReasons.Lower(condition.Value).Split("|")
+                        if token.Trim() = streamProfile then listed = true
+                    end for
+                    if (condition.Condition = "EqualsAny" and not listed) or (condition.Condition = "NotEquals" and listed)
+                        directPlayReasons.AddDetail(state, { reason: "VideoProfileNotSupported", codec: videoCodec })
+                        exit for
+                    end if
+                end for
+            end if
+
+            bitDepth = directPlayReasons.WholeNumber(videoStream.BitDepth)
+            if isValid(bitDepth)
+                for each condition in directPlayReasons.ConditionsOf(videoProfiles, "VideoBitDepth")
+                    maxDepth = directPlayReasons.WholeNumber(condition.Value)
+                    if condition.Condition = "LessThanEqual" and isValid(maxDepth) and bitDepth > maxDepth
+                        directPlayReasons.AddDetail(state, { reason: "VideoBitDepthNotSupported", codec: videoCodec })
+                        exit for
+                    end if
+                end for
+            end if
+        end if
+
+        if audioCodec <> "" and profiles.count() > 0 and directPlayReasons.Rejects(profiles, "AudioCodec", audioCodec)
+            directPlayReasons.AddDetail(state, { reason: "AudioCodecNotSupported", codec: audioCodec })
+        end if
+
+        channelCount = invalid
+        if isValid(audioTrack) then channelCount = directPlayReasons.WholeNumber(audioTrack.Channels)
+        if isValid(channelCount) and audioCodec <> ""
+            for each condition in directPlayReasons.ConditionsOf(directPlayReasons.CodecProfiles(deviceProfile, "VideoAudio", audioCodec), "AudioChannels")
+                maxChannels = directPlayReasons.WholeNumber(condition.Value)
+                if condition.Condition = "LessThanEqual" and isValid(maxChannels) and channelCount > maxChannels
+                    directPlayReasons.AddDetail(state, { reason: "AudioChannelsNotSupported", codec: audioCodec, audioChannels: channelCount })
+                    exit for
+                end if
+            end for
+        end if
+
+        subtitleProfiles = chainLookupReturn(deviceProfile, "SubtitleProfiles", [])
+        if subtitleProfiles.count() > 0
+            targetIndex = subtitleStreamIndex
+            if not isValid(targetIndex)
+                for each stream in directPlayReasons.StreamsOfType(mediaStreams, "subtitle")
+                    if chainLookupReturn(stream, "IsDefault", false) = true or chainLookupReturn(stream, "IsForced", false) = true
+                        targetIndex = directPlayReasons.WholeNumber(stream.Index)
+                        exit for
+                    end if
+                end for
+            end if
+            if isValid(targetIndex) and targetIndex >= 0
+                codec = directPlayReasons.CodecOf(directPlayReasons.SelectedStream(mediaStreams, "subtitle", targetIndex))
+                if codec <> "" and directPlayReasons.SubtitleNeedsBurnIn(subtitleProfiles, codec)
+                    directPlayReasons.AddDetail(state, { reason: "SubtitleCodecNotSupported", codec: codec })
+                end if
+            end if
+        end if
+
+        if state.details.count() = 0 and serverReasons.count() = 0 then state.details.push({ reason: "DirectPlayError" })
+
+        return state.details
+    end function
+
+    function Mbps(bitrate as dynamic) as string
+        return fileFacts.Fixed(bitrate / 1000000.0, 1) + " Mbps"
+    end function
+
+    ' The sentence for one reason, and the hint when a setting on this set would change it
+    function Format(detail as object) as object
+        reason = detail.reason
+        codec = UCase(detail.codec ?? "")
+        key = directPlayReasons.Lower(reason)
+        maxBitrateHint = tr("Tip: Increase 'Maximum Bitrate' in Video Playback Preferences to allow direct streaming.")
+
+        if key = "audiocodecnotsupported"
+            if codec = "" then return { description: tr("Audio codec is not supported.") }
+            return { description: Substitute(tr("Audio codec ({0}) is not supported directly."), codec) }
+        end if
+
+        if key = "audiochannelsnotsupported"
+            description = tr("Number of audio channels is not supported.")
+            if isValid(detail.audioChannels) then description = Substitute(tr("Audio channel count ({0}ch) exceeds the player limit."), detail.audioChannels.ToStr())
+            return { description: description, hint: tr("Tip: Adjust 'Maximum Audio Channels' in Audio Preferences.") }
+        end if
+
+        if key = "subtitlecodecnotsupported"
+            subtitleCodec = directPlayReasons.Lower(detail.codec)
+            burnedIn = tr("Subtitle format ({0}) is not supported directly and must be burned in.")
+            if subtitleCodec.Instr("ass") >= 0 or subtitleCodec.Instr("ssa") >= 0
+                if not get_user_setting_bool("playback.subs.assdirectplay", false)
+                    return {
+                        description: tr("ASS/SSA subtitles require transcoding because direct play is turned off."),
+                        hint: tr("Tip: Enable 'Direct Play ASS Subtitles' in Subtitle Preferences to play directly without transcoding.")
+                    }
+                end if
+                return { description: Substitute(burnedIn, codec) }
+            end if
+            if subtitleCodec.Instr("pgs") >= 0
+                if not get_user_setting_bool("playback.subs.pgsdirectplay", false)
+                    return {
+                        description: tr("PGS subtitles require transcoding because direct play is turned off."),
+                        hint: tr("Tip: Enable 'Direct Play PGS Subtitles' in Subtitle Preferences to play directly without transcoding.")
+                    }
+                end if
+                return { description: Substitute(burnedIn, "PGS") }
+            end if
+            if codec = "" then return { description: tr("Subtitle format is not supported (requires burning).") }
+            return { description: Substitute(burnedIn, codec) }
+        end if
+
+        if key = "audiobitratenotsupported" or key = "audiobitrateexceedslimit"
+            return { description: tr("Audio bitrate exceeds streaming limit."), hint: maxBitrateHint }
+        end if
+
+        if directPlayReasons.Contains(directPlayReasons.BitrateKeys(), key)
+            if isValid(detail.sourceBitrate) and isValid(detail.maxStreamingBitrate)
+                description = Substitute(tr("File bitrate ({0}) exceeds the configured streaming limit ({1})."), directPlayReasons.Mbps(detail.sourceBitrate), directPlayReasons.Mbps(detail.maxStreamingBitrate))
+            else if key = "containerbitrateexceedslimit"
+                description = tr("File bitrate exceeds player streaming limit.")
+            else
+                description = tr("Video bitrate exceeds streaming limit.")
+            end if
+            return { description: description, hint: maxBitrateHint }
+        end if
+
+        plain = {
+            containernotsupported: "Container format is not supported by the player.",
+            videocodecnotsupported: "Video codec is not supported.",
+            videorangetypenotsupported: "Video dynamic range (e.g. Dolby Vision / HDR) is not supported by this display.",
+            audioprofilenotsupported: "Audio profile is not supported.",
+            videoprofilenotsupported: "Video profile is not supported.",
+            videolevelnotsupported: "Video level is not supported.",
+            videoresolutionnotsupported: "Video resolution is not supported by this device.",
+            videobitdepthnotsupported: "Video bit depth is not supported.",
+            videoframeratenotsupported: "Video framerate is not supported.",
+            audiosampleratenotsupported: "Audio sample rate is not supported.",
+            audiobitdepthnotsupported: "Audio bit depth is not supported.",
+            refframesnotsupported: "Video reference frames exceed player limits.",
+            anamorphicvideonotsupported: "Anamorphic video is not supported.",
+            interlacedvideonotsupported: "Interlaced video is not supported.",
+            secondaryaudionotsupported: "Secondary audio stream requires transcoding.",
+            directplayerror: "Direct play is not supported for this media format."
+        }
+        if isValid(plain[key]) then return { description: tr(plain[key]) }
+        return { description: reason }
+    end function
+
+    ' Every reason the source cant direct play, as sentences with their hints
+    function BuildItems(opts as object) as object
+        items = []
+        for each detail in directPlayReasons.ResolveDetails(opts)
+            items.push(directPlayReasons.Format(detail))
+        end for
+        return items
+    end function
+
+end namespace

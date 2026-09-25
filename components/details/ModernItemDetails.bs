@@ -11,6 +11,7 @@ import "pkg:/source/utils/detailActions.bs"
 import "pkg:/source/utils/detailButtons.bs"
 import "pkg:/source/utils/detailCompatibility.bs"
 import "pkg:/source/utils/detailMetadataLayout.bs"
+import "pkg:/source/utils/fileFacts.bs"
 import "pkg:/source/utils/fontApply.bs"
 import "pkg:/source/utils/mediaBadges.bs"
 import "pkg:/source/utils/misc.bs"
@@ -185,8 +186,12 @@ sub init()
     m.upNextCard.observeField("selected", "onUpNextSelected")
     m.upNextCard.observeField("escape", "onUpNextEscape")
     m.upNextItem = invalid
-    m.streamGrid = m.top.findNode("streamGrid")
-    m.streamData = []
+    m.fileInfo = m.top.findNode("fileInfo")
+    m.fileInfo.observeField("focusedOffset", "onFileInfoFocusMoved")
+    m.fileInfo.observeField("retryRequested", "probeFileInfo")
+    m.fileInfoSubtitle = SubtitleSelection.NONE
+    m.top.observeField("selectedAudioStreamIndex", "onFileInfoTracksChanged")
+    m.subtitleSelector.observeField("subtitleStream", "onFileInfoTracksChanged")
     m.extrasGrid.visible = false
     m.sectionItems = []
     m.sectionSize = []
@@ -792,48 +797,100 @@ sub onChapterSelected()
     m.global.queueManager.callFunc("playQueue")
 end sub
 
-' The Details tab lists what the file is made of, so it only earns a place
-' when the item actually carries streams
+' The Details tab lists what the file is made of, so it only earns a place on a
+' video with a real source whose streams the server listed
 function hasDetailsInfo() as boolean
-    buildStreamData()
-    return m.streamData.count() > 0
+    itemData = chainLookupReturn(m.top.itemContent, "json", invalid)
+    if not isValid(itemData) or not isStringEqual(itemData.MediaType, "Video") then return false
+    if not isValidAndNotEmpty(itemData.MediaSources) or (itemData.MediaSources[0].Type ?? "") = "Placeholder" then return false
+    return isValidAndNotEmpty(chainLookupReturn(fileInfoSource(), "MediaStreams", invalid))
 end function
 
-sub buildStreamData()
-    m.streamData = []
-    itemData = chainLookupReturn(m.top.itemContent, "json", invalid)
-    if not isValid(itemData) then return
-
-    source = invalid
-    if isValidAndNotEmpty(itemData.MediaSources) then source = itemData.MediaSources[0]
-
-    streams = invalid
-    if isValid(source) and isValidAndNotEmpty(source.MediaStreams)
-        streams = source.MediaStreams
-    else if isValidAndNotEmpty(itemData.MediaStreams)
-        streams = itemData.MediaStreams
-    end if
-    if not isValid(streams) then return
-
-    for each stream in streams
-        heading = stream.Type ?? ""
-        if heading = "" then continue for
-
-        language = stream.Language ?? ""
-        if language <> "" then heading += ` (${language})`
-
-        m.streamData.push({ heading: heading, line: stream.DisplayTitle ?? "" })
+' The version picked in the version picker, otherwise the first one
+function fileInfoSource() as dynamic
+    sources = chainLookupReturn(m.top.itemContent, "json.MediaSources", [])
+    if sources.count() = 0 then return invalid
+    for each candidate in sources
+        if isValid(candidate.Id) and candidate.Id = m.top.selectedVideoStreamId then return candidate
     end for
+    return sources[0]
+end function
+
+sub showFileInfo()
+    source = fileInfoSource()
+    video = invalid
+    audio = []
+    subtitles = []
+    for each stream in chainLookupReturn(source, "MediaStreams", [])
+        streamType = chainLookupReturn(stream, "Type", "")
+        if streamType = "Video" and not isValid(video) then video = stream
+        if streamType = "Audio" then audio.push(stream)
+        if streamType = "Subtitle" then subtitles.push(stream)
+    end for
+
+    ' The audio picker keeps a place in the stream list, while a track knows itself by its own index
+    activeAudio = m.top.selectedAudioStreamIndex
+    streams = chainLookupReturn(m.top.itemContent, "json.MediaStreams", [])
+    if activeAudio >= 0 and activeAudio < streams.count() then activeAudio = chainLookupReturn(streams[activeAudio], "Index", activeAudio)
+
+    added = fileFacts.AddedOn(chainLookupReturn(m.top.itemContent, "json.DateCreated", invalid))
+    if added <> "" then added = Substitute(tr("Date Added: {0}"), added)
+
+    m.fileInfo.callFunc("setContent", {
+        fileName: fileFacts.FileName(source),
+        sizeLine: fileFacts.SizeLine(source),
+        added: added,
+        videoLine: fileFacts.VideoLines(video).join("  •  "),
+        audioLines: fileInfoTrackLines(audio, activeAudio, false),
+        subtitleLines: fileInfoTrackLines(subtitles, m.fileInfoSubtitle, true)
+    })
+    probeFileInfo()
 end sub
 
-sub populateStreamGrid()
-    content = CreateObject("roSGNode", "ContentNode")
-    for each stream in m.streamData
-        row = content.createChild("ContentNode")
-        row.title = stream.heading
-        row.description = stream.line
+function fileInfoTrackLines(streams as object, activeIndex as integer, includeForced as boolean) as object
+    lines = []
+    for each stream in streams
+        lines.push({
+            text: fileFacts.TrackLine(stream, includeForced),
+            active: activeIndex >= 0 and chainLookupReturn(stream, "Index", -1) = activeIndex
+        })
     end for
-    m.streamGrid.content = content
+    return lines
+end function
+
+' Asked again whenever the tab opens or a pick changes what would play, since the answer
+' depends on the tracks as much as the file
+sub probeFileInfo()
+    if isValid(m.fileInfoTask) then m.fileInfoTask.unobserveField("result")
+    m.fileInfo.callFunc("setDirectPlay", { state: "loading" })
+
+    task = CreateObject("roSGNode", "DetailPlaybackInfoTask")
+    task.itemJson = m.top.itemContent.json
+    task.mediaSourceId = chainLookupReturn(fileInfoSource(), "Id", "")
+    task.audioStreamIndex = m.top.selectedAudioStreamIndex
+    task.subtitleStreamIndex = m.fileInfoSubtitle
+    task.observeField("result", "onFileInfoProbed")
+    task.control = TaskControl.RUN
+    m.fileInfoTask = task
+end sub
+
+sub onFileInfoProbed(event as object)
+    result = event.getData()
+    if isValid(result) then m.fileInfo.callFunc("setDirectPlay", result)
+end sub
+
+' The subtitle pick arrives here before the shared handler has stored it, so it is read off
+' the event rather than asked for again
+sub onFileInfoTracksChanged(event as object)
+    if event.getField() = "subtitleStream"
+        m.fileInfoSubtitle = chainLookupReturn(event.getData(), "StreamIndex", SubtitleSelection.NONE)
+    end if
+    if m.fileInfo.visible then showFileInfo()
+end sub
+
+sub onFileInfoFocusMoved()
+    if not m.fileInfo.isInFocusChain() then return
+    scrollContentTo(contentScrollOffset() - m.fileInfo.focusedOffset)
 end sub
 
 sub buildTabBar()
@@ -861,7 +918,7 @@ sub onTabSelected()
     m.episodeRowGrid.visible = false
     m.trackGrid.visible = false
     m.artistAlbumGrid.visible = false
-    m.streamGrid.visible = false
+    m.fileInfo.visible = false
     m.castGrid.visible = false
     if isValid(m.seerrBlock) then m.seerrBlock.visible = false
     m.activeGrid = invalid
@@ -870,9 +927,10 @@ sub onTabSelected()
 
     tabDef = m.sectionTabs[idx]
     if tabDef.kind = "details"
-        populateStreamGrid()
-        m.streamGrid.visible = true
-        m.activeGrid = m.streamGrid
+        m.fileInfoSubtitle = chainLookupReturn(m.global.queueManager.callFunc("getPreferredSubtitleTrack"), "StreamIndex", SubtitleSelection.NONE)
+        showFileInfo()
+        m.fileInfo.visible = true
+        m.activeGrid = m.fileInfo
     else if tabDef.kind = "episodes"
         populateEpisodeRowGrid()
         m.episodeRowGrid.visible = true
@@ -964,10 +1022,14 @@ sub onTabBarEscape()
         focusButtonsFromTabs()
     else if dir = "down"
         scrollAmount = contentScrollOffset()
-        if isValid(m.seerrBlock) and isValid(m.activeGrid) and m.activeGrid.isSameNode(m.seerrBlock)
-            if m.seerrBlock.callFunc("focusFirst")
-                m.top.lastFocus = m.seerrBlock
-                setLastFocus(m.seerrBlock)
+        ' The Seerr and Details tabs hold blocks of their own rather than a grid
+        block = invalid
+        if isValid(m.activeGrid) and isValid(m.seerrBlock) and m.activeGrid.isSameNode(m.seerrBlock) then block = m.seerrBlock
+        if isValid(m.activeGrid) and m.activeGrid.isSameNode(m.fileInfo) then block = m.fileInfo
+        if isValid(block)
+            if block.callFunc("focusFirst")
+                m.top.lastFocus = block
+                setLastFocus(block)
                 scrollContentTo(scrollAmount)
             end if
             return
@@ -1322,8 +1384,7 @@ sub buildTechRow(itemData as object)
     if isValidAndNotEmpty(itemData.MediaSources) then source = itemData.MediaSources[0]
 
     if isValid(source) and not isSeries() and not isSeason()
-        bytes = source.Size
-        if isValid(bytes) and bytes > 0 then sizeNode.text = formatMediaSize(bytes)
+        sizeNode.text = fileFacts.FormatSize(source.Size)
     end if
 
     labels = mediaBadges.Build(itemData)
@@ -1393,32 +1454,6 @@ function layoutTechChips(labels as object) as float
     return rowHeight
 end function
 
-function formatMediaSize(bytes as longinteger) as string
-    megabytes = bytes / 1048576.0
-    if megabytes <= 999 then return `${Int(megabytes + 0.5)} MB`
-
-    gigabytes = megabytes / 1024.0
-    whole = Int(gigabytes)
-    hundredths = Int((gigabytes - whole) * 100 + 0.5)
-    if hundredths >= 100
-        whole += 1
-        hundredths = 0
-    end if
-
-    return `${whole}.${padLeftZero(hundredths)} GB`
-end function
-
-function padLeftZero(value as integer) as string
-    if value < 10 then return `0${value}`
-
-    return value.toStr()
-end function
-
-
-
-
-
-
 ' ============================================
 ' Layout: metadata row (horizontal positioning)
 ' ============================================
@@ -1474,7 +1509,7 @@ sub layoutContainer()
     placeHeroRow(m.tabBar, TAB_BAR_HEIGHT, HERO_TABS_GAP)
 
     contentY = m.heroY + TAB_CONTENT_GAP
-    for each id in ["streamGrid", "tabGrid", "castGrid", "studioGrid", "chaptersGrid", "episodeRowGrid", "trackGrid", "artistAlbumGrid", "seerrBlock"]
+    for each id in ["fileInfo", "tabGrid", "castGrid", "studioGrid", "chaptersGrid", "episodeRowGrid", "trackGrid", "artistAlbumGrid", "seerrBlock"]
         grid = m.top.findNode(id)
         if isValid(grid) then grid.translation = [0, contentY]
     end for
@@ -1818,6 +1853,7 @@ end sub
 
 sub refreshAfterVersionChange()
     layoutMetadataRow()
+    if m.fileInfo.visible then showFileInfo()
 end sub
 
 ' How far the page moves so the tab content clears the header. The description is
@@ -1882,9 +1918,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end for
     end if
 
-    ' The Seerr tab holds a block of sections rather than a grid, and it has already
-    ' had its say by the time an up press reaches here
-    if key = KeyCode.UP and isValid(m.seerrBlock) and m.seerrBlock.isInFocusChain()
+    ' The Seerr and Details tabs hold blocks rather than grids, and they have
+    ' already had their say by the time an up press reaches here
+    if key = KeyCode.UP and ((isValid(m.seerrBlock) and m.seerrBlock.isInFocusChain()) or m.fileInfo.isInFocusChain())
         if isValid(m.tabBar) and m.tabsBuilt
             m.tabBar.setFocus(true)
             m.top.lastFocus = m.tabBar
@@ -1967,6 +2003,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
 
         if isValid(m.activeGrid) and m.activeGrid.isInFocusChain()
+            if m.activeGrid.isSameNode(m.fileInfo) then m.fileInfo.callFunc("clearFocus")
             if isValid(m.tabBar) and m.tabsBuilt
                 m.tabBar.setFocus(true)
                 m.top.lastFocus = m.tabBar

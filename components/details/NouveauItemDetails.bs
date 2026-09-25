@@ -7,6 +7,7 @@ import "pkg:/components/details/detailTrackHost.bs"
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/utils/detailButtons.bs"
 import "pkg:/source/utils/detailImages.bs"
+import "pkg:/source/utils/fileFacts.bs"
 import "pkg:/source/utils/fontApply.bs"
 import "pkg:/source/utils/mediaBadges.bs"
 import "pkg:/source/utils/misc.bs"
@@ -171,6 +172,7 @@ sub init()
     m.seasonBarRail = -1
     m.directPlayState = "loading"
     m.directPlaySupported = false
+    m.directPlayReasons = ""
 
     m.sectionData = newSectionData()
     m.seasonNumbers = []
@@ -310,6 +312,7 @@ sub renderDetailContent()
     m.sectionData = newSectionData()
     m.directPlayState = "loading"
     m.directPlaySupported = false
+    m.directPlayReasons = ""
     if isValidAndNotEmpty(itemData.Chapters) then m.sectionData.chapters = itemData.Chapters
 
     layoutContainer()
@@ -337,7 +340,6 @@ end sub
 ' The file facts in the tech row: what the file weighs and what it is encoded with
 sub buildStreamSummary(itemData as object)
     m.techChips.removeChildrenIndex(m.techChips.getChildCount(), 0)
-    setFieldText("techSize", "")
 
     badges = []
     if mediaBadges.Enabled() then badges = mediaBadges.Build(itemData)
@@ -345,8 +347,9 @@ sub buildStreamSummary(itemData as object)
         if isValidAndNotEmpty(badge) then addTechChip(badge)
     end for
 
-    sizeBytes = chainLookupReturn(itemData, "MediaSources[0].Size", 0)
-    if sizeBytes > 0 then setFieldText("techSize", formatFileSize(sizeBytes))
+    firstSource = invalid
+    if isValidAndNotEmpty(itemData.MediaSources) then firstSource = itemData.MediaSources[0]
+    setFieldText("techSize", fileFacts.FormatSize(chainLookupReturn(firstSource, "Size", 0)))
 
     hasSize = isValidAndNotEmpty(m.top.findNode("techSize").text)
     m.techRow.visible = hasSize or m.techChips.getChildCount() > 0
@@ -829,9 +832,10 @@ sub buildFooter()
         studios: studios,
         seerrHeight: m.seerrBlock.visible ? m.seerrBlock.blockHeight : 0,
         hasMediaSource: isValid(source),
-        fileName: fileNameOf(source),
-        fileMeta: fileSizeLine(source),
-        videoLines: videoLines(video),
+        fileName: fileFacts.FileName(source),
+        fileMeta: fileFacts.SizeLine(source),
+        directPlayReasons: m.directPlayReasons,
+        videoLines: fileFacts.VideoLines(video),
         audioRows: trackRows(audio, m.top.selectedAudioStreamIndex, false),
         subtitleRows: trackRows(subtitles, activeSubtitle, true)
     })
@@ -841,59 +845,6 @@ sub buildFooter()
     m.footer.callFunc("setDirectPlay", m.directPlayState, m.directPlaySupported)
     m.footer.visible = true
 end sub
-
-' The name the server holds for the file, falling back to the last part of its
-' path where it only gave one of those
-function fileNameOf(source as object) as string
-    name = chainLookupReturn(source, "Name", "")
-    if isValidAndNotEmpty(name) then return name.trim()
-
-    path = chainLookupReturn(source, "Path", "")
-    if not isValidAndNotEmpty(path) then return ""
-
-    parts = path.replace("\", "/").split("/")
-    return parts[parts.count() - 1]
-end function
-
-' Both halves or neither, since one on its own reads as a sentence with a hole
-' in it
-function fileSizeLine(source as object) as string
-    size = chainLookupReturn(source, "Size", 0)
-    container = UCase(chainLookupReturn(source, "Container", ""))
-    if size <= 0 or container = "" then return ""
-
-    return substitute(tr("Size: {0}  •  Format: {1}"), formatFileSize(size), container)
-end function
-
-' The footer reports what the file says it is, so a codec stays the letters the
-' server gave and a range keeps its type beside it
-function videoLines(video as object) as object
-    if not isValid(video) then return []
-
-    lines = []
-    codec = UCase(chainLookupReturn(video, "Codec", ""))
-    if codec = "" then codec = tr("Unknown Codec")
-    profile = chainLookupReturn(video, "Profile", "")
-    lines.push(isValidAndNotEmpty(profile) ? `${codec} (${profile})` : codec)
-
-    width = chainLookupReturn(video, "Width", 0)
-    height = chainLookupReturn(video, "Height", 0)
-    if width > 0 and height > 0 then lines.push(`${width} x ${height}`)
-
-    fps = chainLookupReturn(video, "RealFrameRate", chainLookupReturn(video, "AverageFrameRate", 0))
-    if fps > 0 then lines.push(str(Int(fps * 1000) / 1000.0).trim() + " fps")
-
-    bitDepth = chainLookupReturn(video, "BitDepth", 0)
-    if bitDepth > 0 then lines.push(`${bitDepth}-bit`)
-
-    range = chainLookupReturn(video, "VideoRange", "")
-    if isValidAndNotEmpty(range)
-        rangeType = chainLookupReturn(video, "VideoRangeType", "")
-        lines.push(isValidAndNotEmpty(rangeType) ? `${range} (${rangeType})` : range)
-    end if
-
-    return lines
-end function
 
 function trackRows(streams as object, activeIndex as integer, includeForced as boolean) as object
     rows = []
@@ -927,9 +878,9 @@ sub probeDirectPlay()
 
     if isValid(m.directPlayTask) then m.directPlayTask.unobserveField("result")
 
-    task = CreateObject("roSGNode", "NouveauDirectPlayTask")
-    task.itemId = m.top.id
-    task.mediaSourceId = chainLookupReturn(itemData, "MediaSources[0].Id", "")
+    task = CreateObject("roSGNode", "DetailPlaybackInfoTask")
+    task.itemJson = itemData
+    task.mediaSourceId = itemData.MediaSources[0].Id ?? ""
     task.audioStreamIndex = m.top.selectedAudioStreamIndex
     task.subtitleStreamIndex = chainLookupReturn(m.global.queueManager.callFunc("getPreferredSubtitleTrack"), "StreamIndex", -1)
     task.observeField("result", "onDirectPlayResult")
@@ -943,6 +894,16 @@ sub onDirectPlayResult(event as object)
 
     m.directPlayState = result.state
     m.directPlaySupported = result.supportsDirectPlay
+
+    ' Reasons push the groups under them down, so the page is laid out again around them
+    reasons = ""
+    if result.state = "ready" and not result.supportsDirectPlay then reasons = result.shortReasons ?? ""
+    if reasons <> m.directPlayReasons
+        m.directPlayReasons = reasons
+        rebuildSections()
+        return
+    end if
+
     m.footer.callFunc("setDirectPlay", m.directPlayState, m.directPlaySupported)
 end sub
 
