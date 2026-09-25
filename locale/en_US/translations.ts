@@ -3337,5 +3337,10 @@
         <extracomment>Button that closes the subtitle offset panel</extracomment>
         <translation>Press BACK to close</translation>
     </message>
+    <message>
+        <source>Continue Watching &amp; Next Up</source>
+        <extracomment>Home row that merges Continue Watching with Next Up</extracomment>
+        <translation>Continue Watching &amp; Next Up</translation>
+    </message>
 </context>
 </TS>

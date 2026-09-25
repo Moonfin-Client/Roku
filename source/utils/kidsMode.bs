@@ -3,17 +3,19 @@ import "pkg:/source/utils/misc.bs"
 
 ' Kids Mode strips the app back to what a child needs and locks the way out behind a PIN.
 '
-' Everything the mode decides lives here, so the rules can be read in one place. The flag is kept
-' in this user's registry on this Roku rather than synced, since a parent handing over the TV
-' should not put their phone in Kids Mode too.
+' Everything the mode decides lives here, so the rules can be read in one place. The flag belongs
+' to this Roku rather than to whoever is signed in, so switching account or signing out leaves the
+' mode on. It isnt synced either, since a parent handing over the TV shouldnt put their phone in
+' Kids Mode too.
 
-' The only rows the mode leaves standing: the way into the libraries, and what arrived in them
-' lately. An allow list rather than a block list, so a row added later stays hidden until someone
-' decides a child should see it. Everything else pulls from somewhere this mode cannot vouch for,
-' whether that is a request queue, an outside catalogue no parental rating reaches, or the watch
-' history of whoever used the account last.
+' The only rows the mode leaves standing: the way into the libraries, what arrived in them lately,
+' and the account's own Continue Watching and Next Up as one row. An allow list rather than a block
+' list, so a row added later stays hidden until someone decides a child should see it. Everything
+' else pulls from somewhere this mode cant vouch for, whether that is a request queue or an
+' outside catalog no parental rating reaches.
 const KIDS_LIBRARY_ROW = "smalllibrarytiles"
 const KIDS_LATEST_ROW = "latestmedia"
+const KIDS_MERGED_ROW = "resume"
 
 ' The only buttons the mode offers, alongside the play and restart every details screen puts in
 ' front of them. An allow list rather than a block list, so a button added later stays out until
@@ -21,32 +23,69 @@ const KIDS_LATEST_ROW = "latestmedia"
 ' that does not fit folds into a menu, which hands back everything the mode meant to put away.
 const KIDS_BUTTONS = ["shuffle", "favorite"]
 
+const KIDS_ENABLED_KEY = "global.kids.enabled"
+const KIDS_PIN_KEY = "global.kids.pinHash"
+
 ' The guide, the recordings and everything Seerr, named by the screens that draw them
 const BLOCKED_SCENES = ["LiveTVLibraryView", "Schedule", "SeerrDiscoveryScreen", "SeerrRequestsScreen", "SeerrGenreBrowseScreen", "SeerrHubScreen", "SeerrIssueThread", "SeerrSettingsScreen"]
 
 namespace kidsMode
 
     function Enabled() as boolean
-        return get_user_setting_bool("kids.enabled", false)
+        return get_setting(KIDS_ENABLED_KEY, "false") = "true"
+    end function
+
+    function PinHash() as string
+        return get_setting(KIDS_PIN_KEY, "")
     end function
 
     ' Whether the way out needs a PIN at all. Nothing should be able to leave the mode on without
     ' one, but if anything ever did there would be no code to check and no way to recover on a
     ' television, so the door opens rather than locking for good.
     function NeedsPin() as boolean
-        return isValidAndNotEmpty(get_user_setting("kids.pinHash"))
+        return kidsMode.PinHash() <> ""
     end function
+
+    sub TurnOn(hash as string)
+        kidsMode.store(KIDS_PIN_KEY, hash)
+        kidsMode.store(KIDS_ENABLED_KEY, "true")
+    end sub
+
+    ' The PIN belonged to this stretch of the mode, so the next time it goes on someone picks a
+    ' code for it rather than a forgotten one still being the way out
+    sub TurnOff()
+        kidsMode.store(KIDS_ENABLED_KEY, "false")
+        kidsMode.store(KIDS_PIN_KEY, "")
+    end sub
+
+    ' The navigation redraws off the session, so the change lands there as well as on the device
+    sub store(key as string, value as string)
+        set_setting(key, value)
+        session.user.settings.Save(key, value)
+    end sub
 
     ' Applied on read rather than by rewriting the saved rows, so turning the mode off gives the
     ' viewer their own home screen back untouched. The mode drops the libraries entry from the
     ' navigation, so the library row is the only way into a library and it leads.
+    ' Continue Watching and Next Up come back as the one merged row, in the place the first of
+    ' them was saved.
     function Sections(saved as object) as object
         kept = [KIDS_LIBRARY_ROW]
+        mergedPlaced = false
         for each name in saved
-            if name = KIDS_LATEST_ROW then kept.push(name)
+            if name = KIDS_LATEST_ROW
+                kept.push(name)
+            else if (name = "resume" or name = "nextup") and not mergedPlaced
+                kept.push(KIDS_MERGED_ROW)
+                mergedPlaced = true
+            end if
         end for
 
         return kept
+    end function
+
+    function MergesContinueWatching(chosen as boolean) as boolean
+        return Enabled() or chosen
     end function
 
     ' The guide is off limits, so the tile that leads to it is the one thing the library row
