@@ -18,6 +18,7 @@ import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/multiserver.bs"
 import "pkg:/source/utils/seerrButtons.bs"
 import "pkg:/source/utils/seerrDetailHost.bs"
+import "pkg:/source/utils/seerrFacts.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/studioLogos.bs"
 
@@ -71,6 +72,7 @@ sub init()
     m.statusBadge = m.top.findNode("statusBadge")
     m.upcomingBadge = m.top.findNode("upcomingBadge")
     m.upcomingIncludesSeasons = true
+    m.statusShowsAnyValue = true
     m.metaSeparators = m.top.findNode("metaSeparators")
     m.runtimeGroup = m.top.findNode("runtimeGroup")
     m.techRow = m.top.findNode("techRow")
@@ -118,6 +120,10 @@ sub init()
     m.overflowMenu.observeField("chosenAction", "onOverflowAction")
     m.overflowMenu.observeField("closed", "onOverflowClosed")
     m.overflowActions = []
+
+    ' Seerr answers after the page is up, so its buttons and what it knows about the title
+    ' land then
+    m.top.observeField("seerrButtonsStale", "onSpotlightSeerrStale")
 
     m.favoriteTask = m.top.findNode("favoriteTask")
     m.playstateTask = m.top.findNode("playstateTask")
@@ -338,7 +344,49 @@ sub loadExtrasForCards()
 
     loadTask.observeField("content", "onExtrasForCardsLoaded")
     loadTask.control = "RUN"
+
+    ' An episode offers the whole run of its show, not just its own season
+    if isEpisode() and isValidAndNotEmpty(chainLookupReturn(item, "json.SeriesId", ""))
+        if isValid(m.seriesEpisodesTask) then m.seriesEpisodesTask.unobserveField("episodes")
+        episodesTask = CreateObject("roSGNode", "NouveauSeriesEpisodesTask")
+        episodesTask.seriesId = item.json.SeriesId
+        if isValidAndNotEmpty(item.json._serverUrl)
+            episodesTask.serverUrl = item.json._serverUrl
+            episodesTask.serverUserId = item.json._userId
+            episodesTask.serverAuthToken = item.json._authToken
+        end if
+        episodesTask.observeField("episodes", "onSeriesEpisodesForCards")
+        episodesTask.control = "RUN"
+        m.seriesEpisodesTask = episodesTask
+    end if
 end sub
+
+sub onSeriesEpisodesForCards(event as object)
+    updateCardState({ seriesEpisodes: event.getData() })
+end sub
+
+sub onSpotlightSeerrStale()
+    onSeerrButtonsStale()
+    updateCardState(spotlightSeerrState())
+end sub
+
+' What Seerr knows about the title for the Details card and the head of Recommendations. Only
+' the tag lists travel with the card, not the whole payload.
+function spotlightSeerrState() as object
+    details = m.seerrDetails
+    state = { seerrChipCount: 0, seerrFacts: [], seerrTags: {}, seerrMediaType: seerrMediaType() }
+    if not isValid(details) then return state
+
+    for each key in ["genres", "networks", "keywords"]
+        list = details[key]
+        if type(list) = "roArray"
+            state.seerrTags[key] = list
+            state.seerrChipCount += list.count()
+        end if
+    end for
+    state.seerrFacts = seerrFacts.Build(details, state.seerrMediaType)
+    return state
+end function
 
 sub onExtrasForCardsLoaded(event as object)
     content = event.getData()
@@ -589,6 +637,7 @@ function spotlightCardState(over = invalid) as object
         seerrSimilar: m.seerrSimilar,
         fallbackImageUrl: m.backdrop.uri
     }
+    state.Append(spotlightSeerrState())
     if isValid(over)
         for each key in over
             state[key] = over[key]
@@ -962,10 +1011,9 @@ sub onModalExtraChosen(event as object)
     extra = event.getData()
     if not isValid(extra) then return
 
+    ' An extra opens on its own page, the way any other title in a card does
     closeSectionModal()
-    m.global.queueManager.callFunc("clear")
-    m.global.queueManager.callFunc("push", extra)
-    m.global.queueManager.callFunc("playQueue")
+    m.top.selectedItem = extra
 end sub
 
 sub closeSectionModal()

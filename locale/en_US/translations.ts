@@ -3822,5 +3822,45 @@
         <extracomment>What a title in a collection is, under its card</extracomment>
         <translation>TV Show</translation>
     </message>
+    <message>
+        <source>More Episodes</source>
+        <extracomment>Spotlight card holding every episode of the show, a section per season</extracomment>
+        <translation>More Episodes</translation>
+    </message>
+    <message>
+        <source>1 fact</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 fact</translation>
+    </message>
+    <message>
+        <source>{count} facts</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} facts</translation>
+    </message>
+    <message>
+        <source>1 tag</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 tag</translation>
+    </message>
+    <message>
+        <source>{count} tags</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} tags</translation>
+    </message>
+    <message>
+        <source>Genres and Tags</source>
+        <extracomment>Chip that opens Seerr's genres, networks and keywords for a title</extracomment>
+        <translation>Genres and Tags</translation>
+    </message>
+    <message>
+        <source>Continuing</source>
+        <extracomment>Series status badge</extracomment>
+        <translation>Continuing</translation>
+    </message>
+    <message>
+        <source>Ended</source>
+        <extracomment>Series status badge, and the start of a finished program time like Ended Monday, 8:00 PM</extracomment>
+        <translation>Ended</translation>
+    </message>
 </context>
 </TS>
