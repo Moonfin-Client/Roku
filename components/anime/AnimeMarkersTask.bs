@@ -1,0 +1,108 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/animeMarkers.bs"
+import "pkg:/source/utils/misc.bs"
+
+sub init()
+    m.top.functionName = "fetchMarkers"
+end sub
+
+' Every series table and every item batch in the job, each answered with a status the
+' store turns into a cache entry, a retry or the feature being off
+sub fetchMarkers()
+    job = m.top.job
+    seriesAnswers = {}
+    itemAnswers = []
+
+    if isValid(job)
+        ' A server that has both features off says so for every series, and the items with them
+        offServers = {}
+        for each seriesRequest in job.series ?? []
+            if offServers.DoesExist(seriesRequest.serverKey)
+                seriesAnswers[seriesRequest.key] = { status: "off", serverKey: seriesRequest.serverKey }
+                continue for
+            end if
+
+            answer = fetchSeriesMarkers(seriesRequest)
+            if answer.status = "off" then offServers[seriesRequest.serverKey] = true
+            seriesAnswers[seriesRequest.key] = answer
+        end for
+
+        for each batch in job.items ?? []
+            if offServers.DoesExist(batch.serverKey)
+                itemAnswers.push({ serverKey: batch.serverKey, ids: batch.ids, status: "off", audio: {} })
+            else
+                itemAnswers.push(fetchItemAudio(batch))
+            end if
+        end for
+    end if
+
+    m.top.result = { series: seriesAnswers, items: itemAnswers }
+end sub
+
+' Items from another server in a multi-server row are asked about on that server
+function markersRequest(server as object, path as string, params as object) as dynamic
+    if isValidAndNotEmpty(server.url)
+        return APIRequestForServer(server.url, server.userId, server.authToken, path, params)
+    end if
+
+    return APIRequest(path, params)
+end function
+
+' The markers for every episode of one series, keyed by episode id
+function fetchSeriesMarkers(seriesRequest as object) as object
+    response = requestResponse(markersRequest(seriesRequest.server, "/Moonfin/AnimeMarkers/Series", { seriesId: seriesRequest.seriesId }))
+    body = response.data
+    if response.status < 200 or response.status >= 300 or type(body) <> "roAssociativeArray" then return { status: "failed" }
+
+    ' Off server wide, so no other series will answer differently
+    if (body.LookupCI("enabled") ?? false) <> true then return { status: "off", serverKey: seriesRequest.serverKey }
+
+    ' The table hasnt been fetched on the server yet, which is worth asking about again later
+    if (body.LookupCI("pending") ?? false) = true then return { status: "failed" }
+
+    episodes = {}
+    rawEpisodes = body.LookupCI("episodes")
+    if type(rawEpisodes) = "roAssociativeArray"
+        for each id in rawEpisodes
+            entry = rawEpisodes[id]
+            if type(entry) <> "roAssociativeArray" then continue for
+
+            marker = {
+                kind: entry.LookupCI("kind") ?? "",
+                recap: (entry.LookupCI("recap") ?? false) = true,
+                audio: entry.LookupCI("audio") ?? ""
+            }
+
+            ' A long series brings thousands of episodes, so only the ones with a pill are kept
+            if animeMarkers.HasPills(marker) then episodes[guidKey(id)] = marker
+        end for
+    end if
+
+    return { status: "ok", episodes: episodes }
+end function
+
+' The subbed or dubbed verdict for up to 200 standalone items on one server
+function fetchItemAudio(batch as object) as object
+    answer = { serverKey: batch.serverKey, ids: batch.ids, status: "failed", audio: {} }
+
+    response = requestResponse(markersRequest(batch.server, "/Moonfin/AnimeMarkers/Items", { ids: batch.ids.join(",") }))
+    body = response.data
+    if response.status < 200 or response.status >= 300 or type(body) <> "roAssociativeArray" then return answer
+
+    ' The audio half can be off while the filler markers stay on
+    if (body.LookupCI("enabled") ?? true) = false
+        answer.status = "off"
+        return answer
+    end if
+
+    rawItems = body.LookupCI("items")
+    if type(rawItems) = "roAssociativeArray"
+        for each id in rawItems
+            audio = chainLookupReturn(rawItems[id], "audio", "")
+            if isValidAndNotEmpty(audio) then answer.audio[guidKey(id)] = audio
+        end for
+    end if
+
+    answer.status = "ok"
+    return answer
+end function

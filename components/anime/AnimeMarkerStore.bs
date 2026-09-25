@@ -1,0 +1,387 @@
+import "pkg:/source/api/MoonfinPlugin.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/animeMarkers.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+
+' A series table is trusted for half an hour, and a lookup that failed is left alone for
+' three minutes before it is tried again
+const CACHE_SECONDS = 1800
+const RETRY_SECONDS = 180
+
+' Long enough for a row of cards to finish binding, so they go out as one request
+const BATCH_SECONDS = 0.08
+
+' How long a card waits before asking, so its artwork draws before the pills arrive
+const CARD_DELAY_SECONDS = 0.7
+
+' Timers can fire a hair early, so a card this close to due goes out with the rest
+const DUE_SLACK_SECONDS = 0.05
+
+' The plugin ignores anything past 200 ids in one request
+const ITEM_BATCH_MAX = 200
+
+' Whether the plugin is on is read off the session, which copies all of it, so a row of
+' cards binding at once reads it once rather than once each
+const GATE_SECONDS = 2
+
+' Where a lookup stands. Done has nothing left to do, ask needs the server, and wait is
+' already being asked about.
+const STATE_DONE = "done"
+const STATE_ASK = "ask"
+const STATE_WAIT = "wait"
+
+sub init()
+    m.batchTimer = CreateObject("roSGNode", "Timer")
+    m.batchTimer.duration = BATCH_SECONDS
+    m.batchTimer.repeat = false
+    m.batchTimer.observeField("fire", "flushQueue")
+
+    m.delayTimer = CreateObject("roSGNode", "Timer")
+    m.delayTimer.repeat = false
+    m.delayTimer.observeField("fire", "onCardDelayElapsed")
+
+    m.task = invalid
+    resetState()
+end sub
+
+sub resetState()
+    ' Keyed by server as well as id, since a multi-server row mixes libraries
+    m.series = {}
+    m.seriesFailedAt = {}
+    m.seriesPending = {}
+    m.seriesQueue = {}
+
+    ' An answered item keeps its audio here, empty when it has none, and is never asked
+    ' about again
+    m.itemAudio = {}
+    m.itemFailedAt = {}
+    m.itemPending = {}
+    m.itemQueue = {}
+
+    ' Set per server when it says the feature is off, so a library full of series doesnt
+    ' pay one request each to hear the same thing. Both lapse, or an admin turning the
+    ' feature on would go unnoticed until the next sign in.
+    m.seriesOffAt = {}
+    m.itemOffAt = {}
+
+    m.embyServers = {}
+    m.waiting = []
+    m.delayed = []
+    m.batchArmed = false
+    m.delayArmed = false
+    m.gateCheckedAt = invalid
+    m.gateOpen = false
+end sub
+
+' Stamps the node straight from the cache when it can and queues a lookup when it cant.
+' Returns false when the feature is off, so the caller draws nothing.
+function requestMarker(request as object) as boolean
+    if not featureOn() then return false
+
+    node = request.node
+    lookup = request.lookup
+    if type(node) <> "roSGNode" or not isValid(lookup) then return false
+
+    if not node.hasField("animeMarker") then node.addField("animeMarker", "assocarray", false)
+
+    state = resolveLookup(node, lookup)
+    if state = STATE_DONE then return true
+
+    if state = STATE_ASK and (request.delayed ?? false) = true
+        m.delayed.push({ node: node, lookup: lookup, due: UpTime(0) + CARD_DELAY_SECONDS })
+        if not m.delayArmed then armDelay(CARD_DELAY_SECONDS)
+        return true
+    end if
+
+    queueLookup(node, lookup, state)
+    return true
+end function
+
+' The markers belong to the account and server that fetched them
+sub clearMarkers()
+    if isValid(m.task) then m.task.unobserveField("result")
+    m.task = invalid
+    m.batchTimer.control = "stop"
+    m.delayTimer.control = "stop"
+    resetState()
+end sub
+
+function featureOn() as boolean
+    now = UpTime(0)
+    if not isValid(m.gateCheckedAt) or now - m.gateCheckedAt >= GATE_SECONDS
+        m.gateCheckedAt = now
+        m.gateOpen = moonfinPlugin.IsEnabled()
+    end if
+
+    return m.gateOpen
+end function
+
+' Stamps the node when the cache already knows its answer
+function resolveLookup(node as object, lookup as object) as string
+    now = UpTime(0)
+    serverKey = serverKeyOf(lookup)
+
+    ' Only the Jellyfin plugin serves markers
+    if isEmbyKey(lookup, serverKey) then return STATE_DONE
+    if latched(m.seriesOffAt, serverKey, now) then return STATE_DONE
+
+    if lookup.itemType = "episode"
+        key = seriesKeyOf(lookup)
+        entry = m.series[key]
+        if isValid(entry) and now - entry.at < CACHE_SECONDS
+            stampMarker(node, entry.episodes[guidKey(lookup.itemId)])
+            return STATE_DONE
+        end if
+
+        if recentlyFailed(m.seriesFailedAt, key, now) then return STATE_DONE
+        if m.seriesPending.DoesExist(key) then return STATE_WAIT
+        return STATE_ASK
+    end if
+
+    key = itemKeyOf(lookup)
+    if m.itemAudio.DoesExist(key)
+        stampMarker(node, { audio: m.itemAudio[key] })
+        return STATE_DONE
+    end if
+
+    if latched(m.itemOffAt, serverKey, now) then return STATE_DONE
+    if recentlyFailed(m.itemFailedAt, key, now) then return STATE_DONE
+    if m.itemPending.DoesExist(key) then return STATE_WAIT
+    return STATE_ASK
+end function
+
+' Only a change is written, since every write wakes whatever is drawing the node
+sub stampMarker(node as object, marker as dynamic)
+    value = marker ?? {}
+    current = node.animeMarker
+    if isValid(current) and sameMarker(current, value) then return
+
+    node.animeMarker = value
+end sub
+
+function sameMarker(a as object, b as object) as boolean
+    if (a.kind ?? "") <> (b.kind ?? "") then return false
+    if (a.recap ?? false) <> (b.recap ?? false) then return false
+    return (a.audio ?? "") = (b.audio ?? "")
+end function
+
+sub queueLookup(node as object, lookup as object, state as string)
+    m.waiting.push({ node: node, lookup: lookup })
+    if state = STATE_ASK then queueKey(lookup)
+end sub
+
+sub queueKey(lookup as object)
+    if lookup.itemType = "episode"
+        m.seriesQueue[seriesKeyOf(lookup)] = lookup
+    else
+        m.itemQueue[itemKeyOf(lookup)] = lookup
+    end if
+
+    armBatch()
+end sub
+
+sub armBatch()
+    if m.batchArmed then return
+
+    m.batchArmed = true
+    m.batchTimer.control = "start"
+end sub
+
+sub armDelay(seconds as float)
+    if seconds < DUE_SLACK_SECONDS then seconds = DUE_SLACK_SECONDS
+
+    m.delayArmed = true
+    m.delayTimer.duration = seconds
+    m.delayTimer.control = "start"
+end sub
+
+sub onCardDelayElapsed()
+    m.delayArmed = false
+    if not featureOn()
+        m.delayed = []
+        return
+    end if
+
+    now = UpTime(0)
+    later = []
+    for each entry in m.delayed
+        if entry.due - now <= DUE_SLACK_SECONDS
+            state = resolveLookup(entry.node, entry.lookup)
+            if state <> STATE_DONE then queueLookup(entry.node, entry.lookup, state)
+        else
+            later.push(entry)
+        end if
+    end for
+    m.delayed = later
+
+    ' Cards join in the order they bind, so the first one left is the next one due
+    if later.count() > 0 then armDelay(later[0].due - now)
+end sub
+
+sub flushQueue()
+    m.batchArmed = false
+
+    ' One batch at a time. The one running flushes again when it lands.
+    if isValid(m.task) then return
+
+    if not featureOn()
+        m.seriesQueue = {}
+        m.itemQueue = {}
+        m.waiting = []
+        return
+    end if
+
+    job = { series: [], items: [] }
+
+    for each key in m.seriesQueue
+        lookup = m.seriesQueue[key]
+        job.series.push({ key: key, serverKey: serverKeyOf(lookup), seriesId: lookup.seriesId, server: serverOf(lookup) })
+        m.seriesPending[key] = true
+    end for
+    m.seriesQueue = {}
+
+    ' One request per server, capped where the plugin caps it. The rest go in the next batch.
+    batches = {}
+    leftOver = {}
+    for each key in m.itemQueue
+        lookup = m.itemQueue[key]
+        serverKey = serverKeyOf(lookup)
+        batch = batches[serverKey]
+        if not isValid(batch)
+            batch = { serverKey: serverKey, server: serverOf(lookup), ids: [] }
+            batches[serverKey] = batch
+        end if
+
+        if batch.ids.count() < ITEM_BATCH_MAX
+            batch.ids.push(guidKey(lookup.itemId))
+            m.itemPending[key] = true
+        else
+            leftOver[key] = lookup
+        end if
+    end for
+    m.itemQueue = leftOver
+
+    for each serverKey in batches
+        job.items.push(batches[serverKey])
+    end for
+
+    if job.series.count() = 0 and job.items.count() = 0 then return
+
+    m.task = CreateObject("roSGNode", "AnimeMarkersTask")
+    m.task.observeField("result", "onTaskResult")
+    m.task.job = job
+    m.task.control = TaskControl.RUN
+end sub
+
+sub onTaskResult()
+    task = m.task
+    if not isValid(task) then return
+    m.task = invalid
+    task.unobserveField("result")
+
+    result = task.result
+    now = UpTime(0)
+
+    seriesAnswers = result.series ?? {}
+    for each key in seriesAnswers
+        answer = seriesAnswers[key]
+        m.seriesPending.Delete(key)
+
+        if answer.status = "ok"
+            m.series[key] = { at: now, episodes: answer.episodes ?? {} }
+            m.seriesFailedAt.Delete(key)
+        else if answer.status = "off"
+            m.seriesOffAt[answer.serverKey] = now
+            m.seriesQueue = dropServerFrom(m.seriesQueue, answer.serverKey)
+            m.itemQueue = dropServerFrom(m.itemQueue, answer.serverKey)
+        else
+            m.seriesFailedAt[key] = now
+        end if
+    end for
+
+    for each answer in result.items ?? []
+        serverKey = answer.serverKey
+        for each id in answer.ids
+            key = serverKey + "|" + id
+            m.itemPending.Delete(key)
+
+            if answer.status = "ok"
+                m.itemAudio[key] = answer.audio[id] ?? ""
+                m.itemFailedAt.Delete(key)
+            else if answer.status <> "off"
+                m.itemFailedAt[key] = now
+            end if
+        end for
+
+        if answer.status = "off"
+            m.itemOffAt[serverKey] = now
+            m.itemQueue = dropServerFrom(m.itemQueue, serverKey)
+        end if
+    end for
+
+    settleWaiting()
+    if m.seriesQueue.count() > 0 or m.itemQueue.count() > 0 then armBatch()
+end sub
+
+' Answers everyone the batch settled and keeps the rest for the next one
+sub settleWaiting()
+    still = []
+    for each entry in m.waiting
+        state = resolveLookup(entry.node, entry.lookup)
+        if state = STATE_DONE then continue for
+
+        still.push(entry)
+
+        ' Left behind a full batch, or its answer lapsed while it waited
+        if state = STATE_ASK then queueKey(entry.lookup)
+    end for
+
+    m.waiting = still
+end sub
+
+function dropServerFrom(queue as object, serverKey as string) as object
+    kept = {}
+    for each key in queue
+        lookup = queue[key]
+        if serverKeyOf(lookup) <> serverKey then kept[key] = lookup
+    end for
+
+    return kept
+end function
+
+' The signed in server has no url of its own on its items
+function serverKeyOf(lookup as object) as string
+    url = lookup.serverUrl ?? ""
+    if url = "" then return "local"
+
+    return serverIdentityKey(url)
+end function
+
+function seriesKeyOf(lookup as object) as string
+    return serverKeyOf(lookup) + "|" + guidKey(lookup.seriesId)
+end function
+
+function itemKeyOf(lookup as object) as string
+    return serverKeyOf(lookup) + "|" + guidKey(lookup.itemId)
+end function
+
+function serverOf(lookup as object) as object
+    return { url: lookup.serverUrl ?? "", userId: lookup.userId ?? "", authToken: lookup.authToken ?? "" }
+end function
+
+function isEmbyKey(lookup as object, serverKey as string) as boolean
+    if not m.embyServers.DoesExist(serverKey) then m.embyServers[serverKey] = isEmbyServer(lookup.serverUrl ?? "")
+
+    return m.embyServers[serverKey]
+end function
+
+function latched(offAt as object, serverKey as string, now as float) as boolean
+    since = offAt[serverKey]
+    return isValid(since) and now - since < CACHE_SECONDS
+end function
+
+function recentlyFailed(failedAt as object, key as string, now as float) as boolean
+    since = failedAt[key]
+    return isValid(since) and now - since < RETRY_SECONDS
+end function

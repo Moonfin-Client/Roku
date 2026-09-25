@@ -536,6 +536,41 @@
         <translation>Recap</translation>
     </message>
     <message>
+        <source>Filler</source>
+        <extracomment>Anime marker pill for an episode that isnt part of the original story</extracomment>
+        <translation>Filler</translation>
+    </message>
+    <message>
+        <source>Mixed Canon/Filler</source>
+        <extracomment>Anime marker pill for an episode that is part story and part filler</extracomment>
+        <translation>Mixed Canon/Filler</translation>
+    </message>
+    <message>
+        <source>Manga Canon</source>
+        <extracomment>Anime marker pill for an episode adapted from the manga</extracomment>
+        <translation>Manga Canon</translation>
+    </message>
+    <message>
+        <source>Anime Canon</source>
+        <extracomment>Anime marker pill for an original anime episode that counts as part of the story</extracomment>
+        <translation>Anime Canon</translation>
+    </message>
+    <message>
+        <source>Subbed</source>
+        <extracomment>Anime marker pill for an item with the original audio and subtitles</extracomment>
+        <translation>Subbed</translation>
+    </message>
+    <message>
+        <source>Dubbed</source>
+        <extracomment>Anime marker pill for an item with dubbed audio</extracomment>
+        <translation>Dubbed</translation>
+    </message>
+    <message>
+        <source>Subbed/Dubbed</source>
+        <extracomment>Anime marker pill for an item with both the original audio and a dub</extracomment>
+        <translation>Subbed/Dubbed</translation>
+    </message>
+    <message>
         <source>Rewatches</source>
         <translation>Rewatches</translation>
     </message>
