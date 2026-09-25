@@ -3582,5 +3582,195 @@
         <extracomment>Seerr setting description</extracomment>
         <translation>Include missing items on Collection pages</translation>
     </message>
+    <message>
+        <source>Date Added: {0}</source>
+        <extracomment>When the file was added, on the File Information tab of the details screen. {0} is a date like Sep 24, 2026</extracomment>
+        <translation>Date Added: {0}</translation>
+    </message>
+    <message>
+        <source>Direct Play Capability:</source>
+        <extracomment>Label before Yes or No on the File Information tab</extracomment>
+        <translation>Direct Play Capability:</translation>
+    </message>
+    <message>
+        <source>No</source>
+        <extracomment>Direct play answer on the File Information tab</extracomment>
+        <translation>No</translation>
+    </message>
+    <message>
+        <source>Show All ({0}) Audio Tracks</source>
+        <extracomment>Opens the full audio track list on the File Information tab. {0} is how many there are</extracomment>
+        <translation>Show All ({0}) Audio Tracks</translation>
+    </message>
+    <message>
+        <source>Show All ({0}) Subtitle Tracks</source>
+        <extracomment>Opens the full subtitle track list on the File Information tab. {0} is how many there are</extracomment>
+        <translation>Show All ({0}) Subtitle Tracks</translation>
+    </message>
+    <message>
+        <source>Show Less</source>
+        <extracomment>Folds a long text or track list back</extracomment>
+        <translation>Show Less</translation>
+    </message>
+    <message>
+        <source>Container format is not supported by the player.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Container format is not supported by the player.</translation>
+    </message>
+    <message>
+        <source>Video codec is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video codec is not supported.</translation>
+    </message>
+    <message>
+        <source>Audio codec is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Audio codec is not supported.</translation>
+    </message>
+    <message>
+        <source>Subtitle format is not supported (requires burning).</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Subtitle format is not supported (requires burning).</translation>
+    </message>
+    <message>
+        <source>Audio profile is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Audio profile is not supported.</translation>
+    </message>
+    <message>
+        <source>Video profile is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video profile is not supported.</translation>
+    </message>
+    <message>
+        <source>Video level is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video level is not supported.</translation>
+    </message>
+    <message>
+        <source>Video resolution is not supported by this device.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video resolution is not supported by this device.</translation>
+    </message>
+    <message>
+        <source>Video bit depth is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video bit depth is not supported.</translation>
+    </message>
+    <message>
+        <source>Video framerate is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video framerate is not supported.</translation>
+    </message>
+    <message>
+        <source>File bitrate exceeds player streaming limit.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>File bitrate exceeds player streaming limit.</translation>
+    </message>
+    <message>
+        <source>Video bitrate exceeds streaming limit.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video bitrate exceeds streaming limit.</translation>
+    </message>
+    <message>
+        <source>Audio bitrate exceeds streaming limit.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Audio bitrate exceeds streaming limit.</translation>
+    </message>
+    <message>
+        <source>Number of audio channels is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Number of audio channels is not supported.</translation>
+    </message>
+    <message>
+        <source>Audio codec ({0}) is not supported directly.</source>
+        <extracomment>Why a file cant direct play, {0} is the codec</extracomment>
+        <translation>Audio codec ({0}) is not supported directly.</translation>
+    </message>
+    <message>
+        <source>Audio channel count ({0}ch) exceeds the player limit.</source>
+        <extracomment>Why a file cant direct play, {0} is the channel count</extracomment>
+        <translation>Audio channel count ({0}ch) exceeds the player limit.</translation>
+    </message>
+    <message>
+        <source>Tip: Adjust 'Maximum Audio Channels' in Audio Preferences.</source>
+        <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
+        <translation>Tip: Adjust 'Maximum Audio Channels' in Audio Preferences.</translation>
+    </message>
+    <message>
+        <source>Subtitle format ({0}) is not supported directly and must be burned in.</source>
+        <extracomment>Why a file cant direct play, {0} is the subtitle format</extracomment>
+        <translation>Subtitle format ({0}) is not supported directly and must be burned in.</translation>
+    </message>
+    <message>
+        <source>ASS/SSA subtitles require transcoding because direct play is turned off.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>ASS/SSA subtitles require transcoding because direct play is turned off.</translation>
+    </message>
+    <message>
+        <source>Tip: Enable 'Direct Play ASS Subtitles' in Subtitle Preferences to play directly without transcoding.</source>
+        <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
+        <translation>Tip: Enable 'Direct Play ASS Subtitles' in Subtitle Preferences to play directly without transcoding.</translation>
+    </message>
+    <message>
+        <source>PGS subtitles require transcoding because direct play is turned off.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>PGS subtitles require transcoding because direct play is turned off.</translation>
+    </message>
+    <message>
+        <source>Tip: Enable 'Direct Play PGS Subtitles' in Subtitle Preferences to play directly without transcoding.</source>
+        <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
+        <translation>Tip: Enable 'Direct Play PGS Subtitles' in Subtitle Preferences to play directly without transcoding.</translation>
+    </message>
+    <message>
+        <source>Tip: Increase 'Maximum Bitrate' in Video Playback Preferences to allow direct streaming.</source>
+        <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
+        <translation>Tip: Increase 'Maximum Bitrate' in Video Playback Preferences to allow direct streaming.</translation>
+    </message>
+    <message>
+        <source>File bitrate ({0}) exceeds the configured streaming limit ({1}).</source>
+        <extracomment>Why a file cant direct play, both are bitrates like 42.0 Mbps</extracomment>
+        <translation>File bitrate ({0}) exceeds the configured streaming limit ({1}).</translation>
+    </message>
+    <message>
+        <source>Video dynamic range (e.g. Dolby Vision / HDR) is not supported by this display.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video dynamic range (e.g. Dolby Vision / HDR) is not supported by this display.</translation>
+    </message>
+    <message>
+        <source>Audio sample rate is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Audio sample rate is not supported.</translation>
+    </message>
+    <message>
+        <source>Audio bit depth is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Audio bit depth is not supported.</translation>
+    </message>
+    <message>
+        <source>Video reference frames exceed player limits.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video reference frames exceed player limits.</translation>
+    </message>
+    <message>
+        <source>Anamorphic video is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Anamorphic video is not supported.</translation>
+    </message>
+    <message>
+        <source>Interlaced video is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Interlaced video is not supported.</translation>
+    </message>
+    <message>
+        <source>Secondary audio stream requires transcoding.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Secondary audio stream requires transcoding.</translation>
+    </message>
+    <message>
+        <source>Direct play is not supported for this media format.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Direct play is not supported for this media format.</translation>
+    </message>
 </context>
 </TS>

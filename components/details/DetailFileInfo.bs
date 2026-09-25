@@ -1,0 +1,460 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/themeApply.bs"
+
+' What the file behind the title is: its name, size and when it was added, the tracks inside it,
+' and whether it plays as it is. A file that cant direct play says why, with a hint about the
+' setting that would change it.
+
+const FILE_INFO_WIDTH = 1100
+const FILE_INFO_TITLE_GAP = 17
+const FILE_CARD_PAD = 17
+const FILE_CARD_GAP = 20
+const FILE_NAME_GAP = 6
+const FILE_ROW_PAD = 4
+const FILE_ROW_GAP = 11
+const FILE_LABEL_WIDTH = 130
+const FILE_TRACK_UNDERLINE = 2
+const FILE_LINK_PAD_H = 15
+const FILE_LINK_PAD_V = 6
+const FILE_LINK_GAP = 2
+const FILE_SECTION_GAP = 17
+const FILE_CAPABILITY_GAP = 6
+const FILE_REASONS_GAP = 9
+const FILE_REASONS_INDENT = 17
+const FILE_REASON_PAD = 4
+const FILE_HINT_GAP = 3
+const FILE_SPINNER_SIZE = 16
+const FILE_SPINNER_GAP = 12
+const FILE_RETRY_GAP = 12
+' How many tracks of a kind show before the rest wait behind Show All
+const FILE_COLLAPSED_TRACKS = 2
+
+const FILE_INK = "#FFFFFF"
+const FILE_INK_SOFT = "#FFFFFFB3"
+const FILE_INK_VALUE = "#FFFFFFE6"
+const FILE_INK_LABEL = "#FFFFFF8A"
+const FILE_ACCENT = "#00A4DC"
+const FILE_YES = "#2E7D32"
+const FILE_NO = "#D32F2F"
+const FILE_CARD_FILL = "#FFFFFF0A"
+const FILE_CARD_BORDER = "#FFFFFF1A"
+const FILE_FOCUS_FILL = "#FFFFFF1F"
+
+sub init()
+    m.heading = m.top.findNode("heading")
+    m.body = m.top.findNode("body")
+
+    m.heading.font.size = 26
+    m.top.findNode("nameFont").font.size = 26
+    m.top.findNode("metaFont").font.size = 20
+    m.top.findNode("rowFont").font.size = 23
+    m.top.findNode("rowBoldFont").font.size = 23
+    m.top.findNode("linkFont").font.size = 20
+    m.top.findNode("hintFont").font.size = 19
+    m.heading.text = tr("File Information")
+
+    m.spec = {}
+    m.directPlay = { state: "loading" }
+    m.expanded = { audio: false, subtitle: false }
+    m.stops = []
+    m.focusedStop = -1
+
+    themeApply.ApplyToItem(m.top)
+
+    ' A theme font swaps each label's font for one of its own, so they are read after it
+    m.nameFont = m.top.findNode("nameFont").font
+    m.metaFont = m.top.findNode("metaFont").font
+    m.rowFont = m.top.findNode("rowFont").font
+    m.rowBoldFont = m.top.findNode("rowBoldFont").font
+    m.linkFont = m.top.findNode("linkFont").font
+    m.hintFont = m.top.findNode("hintFont").font
+end sub
+
+' spec: { fileName, sizeLine, added, videoLine, audioLines, subtitleLines }, where each track line
+' is { text, active }. Setting it again starts over with the track lists folded.
+sub setContent(spec as object)
+    m.spec = spec
+    m.expanded = { audio: false, subtitle: false }
+    m.directPlay = { state: "loading" }
+    render()
+end sub
+
+' result: { state: loading|ready|failed|empty, supportsDirectPlay, reasons: [{ description, hint }] }
+sub setDirectPlay(result as object)
+    if result.state = "loading" and m.directPlay.state = "loading" then return
+    m.directPlay = result
+    render()
+end sub
+
+sub render()
+    focusedKey = ""
+    if m.focusedStop >= 0 and m.focusedStop < m.stops.count() then focusedKey = m.stops[m.focusedStop].key
+    hadFocus = m.top.isInFocusChain()
+
+    m.body.removeChildrenIndex(m.body.getChildCount(), 0)
+    m.stops = []
+    m.focusedStop = -1
+
+    y = m.heading.boundingRect().height + FILE_INFO_TITLE_GAP
+    y = addFileCard(y) + FILE_CARD_GAP
+
+    hasRowAbove = false
+    if isValidAndNotEmpty(m.spec.videoLine)
+        y = addInfoRow(y, "video", tr("Video"), [{ text: m.spec.videoLine, active: false }])
+        hasRowAbove = true
+    end if
+
+    y = addTrackRows(y, "audio", tr("Audio"), m.spec.audioLines, tr("Show All ({0}) Audio Tracks"), hasRowAbove)
+    if isValidAndNotEmpty(m.spec.audioLines) then hasRowAbove = true
+    y = addTrackRows(y, "subtitle", tr("Subtitles"), m.spec.subtitleLines, tr("Show All ({0}) Subtitle Tracks"), hasRowAbove)
+
+    addDirectPlay(y)
+
+    if not hadFocus then return
+
+    ' A row that opened or closed keeps focus, and the direct play line keeps it through a retry
+    ' whether the loading row, the answer or Retry stands there
+    target = 0
+    for i = 0 to m.stops.count() - 1
+        if focusSlot(m.stops[i].key) = focusSlot(focusedKey) then target = i
+    end for
+    if m.stops.count() > 0 then applyFocus(target)
+end sub
+
+function focusSlot(key as string) as string
+    if key = "retry" then return "directPlay"
+    return key
+end function
+
+function addFileCard(top as float) as float
+    card = m.body.createChild("Group")
+    card.translation = [0, top]
+
+    fill = card.createChild("Poster")
+    fill.uri = "pkg:/images/details/surface12.9.png"
+    fill.loadDisplayMode = "scaleToFit"
+    fill.blendColor = FILE_CARD_FILL
+    fill.width = FILE_INFO_WIDTH
+
+    border = card.createChild("Poster")
+    border.uri = "pkg:/images/details/cardborder12.9.png"
+    border.loadDisplayMode = "scaleToFit"
+    border.blendColor = FILE_CARD_BORDER
+    border.width = FILE_INFO_WIDTH
+
+    y = FILE_CARD_PAD
+    textWidth = FILE_INFO_WIDTH - FILE_CARD_PAD * 2
+    if isValidAndNotEmpty(m.spec.fileName)
+        name = card.createChild("Label")
+        name.font = m.nameFont
+        name.color = FILE_INK
+        name.width = textWidth
+        name.wrap = true
+        name.translation = [FILE_CARD_PAD, y]
+        name.text = m.spec.fileName
+        y += name.boundingRect().height + FILE_NAME_GAP
+    end if
+
+    for each line in [m.spec.sizeLine, m.spec.added]
+        if not isValidAndNotEmpty(line) then continue for
+        meta = card.createChild("Label")
+        meta.font = m.metaFont
+        meta.color = FILE_INK_SOFT
+        meta.width = textWidth
+        meta.translation = [FILE_CARD_PAD, y]
+        meta.text = line
+        y += meta.boundingRect().height
+    end for
+
+    height = y + FILE_CARD_PAD
+    if isValidAndNotEmpty(m.spec.fileName) and not isValidAndNotEmpty(m.spec.sizeLine) and not isValidAndNotEmpty(m.spec.added) then height -= FILE_NAME_GAP
+    fill.height = height
+    border.height = height
+
+    addStop("card", card, top, fill, FILE_CARD_FILL, FILE_FOCUS_FILL)
+    return top + height
+end function
+
+' A label on the left and one line per value on the right. The rows take focus though there is
+' nothing to activate on most of them, since focus is how the page knows where to scroll.
+function addInfoRow(top as float, key as string, label as string, lines as object) as float
+    row = m.body.createChild("Group")
+    row.translation = [0, top]
+
+    focusFill = row.createChild("Poster")
+    focusFill.uri = "pkg:/images/details/surface8.9.png"
+    focusFill.loadDisplayMode = "scaleToFit"
+    focusFill.blendColor = FILE_FOCUS_FILL
+    focusFill.width = FILE_INFO_WIDTH
+    focusFill.visible = false
+
+    heading = row.createChild("Label")
+    heading.font = m.rowBoldFont
+    heading.color = FILE_INK_LABEL
+    heading.width = FILE_LABEL_WIDTH
+    heading.translation = [0, FILE_ROW_PAD]
+    heading.text = label
+
+    y = FILE_ROW_PAD
+    valueWidth = FILE_INFO_WIDTH - FILE_LABEL_WIDTH
+    for each line in lines
+        value = row.createChild("Label")
+        value.font = line.active ? m.rowBoldFont : m.rowFont
+        value.color = line.active ? FILE_INK : (key = "video" ? FILE_INK_VALUE : FILE_INK_SOFT)
+        ' A track keeps to the width of its own text, so the line under the one in use stops
+        ' where the name does
+        if key = "video"
+            value.width = valueWidth
+            value.wrap = true
+        end if
+        value.translation = [FILE_LABEL_WIDTH, y]
+        value.text = line.text
+        bounds = value.boundingRect()
+
+        if line.active
+            underline = row.createChild("Rectangle")
+            underline.color = FILE_ACCENT
+            underline.width = bounds.width
+            underline.height = FILE_TRACK_UNDERLINE
+            underline.translation = [FILE_LABEL_WIDTH, y + bounds.height]
+            y += FILE_TRACK_UNDERLINE
+        end if
+
+        y += bounds.height
+    end for
+
+    height = y + FILE_ROW_PAD
+    focusFill.height = height
+    addStop(key, row, top, focusFill, "", "")
+    return top + height
+end function
+
+function addTrackRows(top as float, key as string, label as string, lines as dynamic, showAllLabel as string, hasRowAbove as boolean) as float
+    if not isValidAndNotEmpty(lines) then return top
+
+    shown = lines
+    if not m.expanded[key] and lines.count() > FILE_COLLAPSED_TRACKS
+        shown = []
+        for i = 0 to FILE_COLLAPSED_TRACKS - 1
+            shown.push(lines[i])
+        end for
+    end if
+
+    if hasRowAbove then top += FILE_ROW_GAP
+    y = addInfoRow(top, key, label, shown)
+    if lines.count() <= FILE_COLLAPSED_TRACKS then return y
+
+    linkText = m.expanded[key] ? tr("Show Less") : Substitute(showAllLabel, lines.count().ToStr())
+    return addLink(y + FILE_LINK_GAP, key + "ShowAll", linkText, FILE_LABEL_WIDTH)
+end function
+
+' A small accent label that answers OK, framed in white while it holds focus
+function addLink(top as float, key as string, text as string, left as float) as float
+    link = m.body.createChild("Group")
+    link.translation = [left, top]
+
+    border = link.createChild("Poster")
+    border.uri = "pkg:/images/details/outline6.9.png"
+    border.loadDisplayMode = "scaleToFit"
+    border.blendColor = FILE_INK
+    border.visible = false
+
+    label = link.createChild("Label")
+    label.font = m.linkFont
+    label.color = FILE_ACCENT
+    label.translation = [FILE_LINK_PAD_H, FILE_LINK_PAD_V]
+    label.text = text
+
+    bounds = label.boundingRect()
+    border.width = bounds.width + FILE_LINK_PAD_H * 2
+    border.height = bounds.height + FILE_LINK_PAD_V * 2
+
+    addStop(key, link, top, border, "", "")
+    return top + border.height
+end function
+
+function addDirectPlay(top as float) as float
+    state = m.directPlay.state
+    if state = "empty" then return top
+
+    y = top + FILE_SECTION_GAP
+    if state = "loading"
+        row = m.body.createChild("Group")
+        row.translation = [0, y]
+
+        ' The loading row holds focus while a retry runs, so the page stays where it was
+        focusFill = row.createChild("Poster")
+        focusFill.uri = "pkg:/images/details/surface8.9.png"
+        focusFill.loadDisplayMode = "scaleToFit"
+        focusFill.blendColor = FILE_FOCUS_FILL
+        focusFill.width = FILE_INFO_WIDTH
+        focusFill.visible = false
+
+        spinner = row.createChild("BusySpinner")
+        spinner.poster.uri = "pkg:/images/spinner.png"
+        spinner.poster.width = FILE_SPINNER_SIZE
+        spinner.poster.height = FILE_SPINNER_SIZE
+        spinner.spinInterval = 0.9
+        spinner.control = "start"
+
+        label = row.createChild("Label")
+        label.font = m.metaFont
+        label.color = FILE_INK_LABEL
+        label.text = tr("Checking Direct Play capability...")
+        labelHeight = label.boundingRect().height
+        label.translation = [FILE_SPINNER_SIZE + FILE_SPINNER_GAP, 0]
+        spinner.translation = [0, (labelHeight - FILE_SPINNER_SIZE) / 2]
+        focusFill.height = labelHeight
+        addStop("directPlay", row, y, focusFill, "", "")
+        return y + labelHeight
+    end if
+
+    if state = "failed"
+        row = m.body.createChild("Group")
+        row.translation = [0, y]
+        x = addCapabilityLabel(row, 0)
+
+        failed = row.createChild("Label")
+        failed.font = m.rowFont
+        failed.color = FILE_INK_SOFT
+        failed.translation = [x, 0]
+        failed.text = tr("Failed to load")
+        failedBounds = failed.boundingRect()
+
+        linkTop = y + (failedBounds.height - (m.linkFont.size + FILE_LINK_PAD_V * 2)) / 2
+        linkBottom = addLink(linkTop, "retry", tr("Retry"), x + failedBounds.width + FILE_RETRY_GAP)
+        if linkBottom > y + failedBounds.height then return linkBottom
+        return y + failedBounds.height
+    end if
+
+    block = m.body.createChild("Group")
+    block.translation = [0, y]
+
+    focusFill = block.createChild("Poster")
+    focusFill.uri = "pkg:/images/details/surface8.9.png"
+    focusFill.loadDisplayMode = "scaleToFit"
+    focusFill.blendColor = FILE_FOCUS_FILL
+    focusFill.width = FILE_INFO_WIDTH
+    focusFill.visible = false
+
+    direct = m.directPlay.supportsDirectPlay = true
+    x = addCapabilityLabel(block, FILE_ROW_PAD)
+    answer = block.createChild("Label")
+    answer.font = m.rowBoldFont
+    answer.color = direct ? FILE_YES : FILE_NO
+    answer.translation = [x, FILE_ROW_PAD]
+    answer.text = direct ? tr("Yes") : tr("No")
+    height = FILE_ROW_PAD + answer.boundingRect().height
+
+    reasons = m.directPlay.reasons ?? []
+    if not direct and reasons.count() > 0
+        height += FILE_REASONS_GAP
+        for each reason in reasons
+            height += FILE_REASON_PAD
+            text = block.createChild("Label")
+            text.font = m.metaFont
+            text.color = FILE_INK_SOFT
+            text.width = FILE_INFO_WIDTH - FILE_REASONS_INDENT
+            text.wrap = true
+            text.translation = [FILE_REASONS_INDENT, height]
+            text.text = "• " + reason.description
+            height += text.boundingRect().height
+
+            if isValidAndNotEmpty(reason.hint)
+                height += FILE_HINT_GAP
+                hint = block.createChild("Label")
+                hint.font = m.hintFont
+                hint.color = FILE_ACCENT
+                hint.width = FILE_INFO_WIDTH - FILE_REASONS_INDENT * 2
+                hint.wrap = true
+                hint.translation = [FILE_REASONS_INDENT * 2, height]
+                hint.text = reason.hint
+                height += hint.boundingRect().height
+            end if
+        end for
+    end if
+
+    height += FILE_ROW_PAD
+    focusFill.height = height
+    addStop("directPlay", block, y, focusFill, "", "")
+    return y + height
+end function
+
+' Returns where the answer beside the label starts
+function addCapabilityLabel(parent as object, top as float) as float
+    label = parent.createChild("Label")
+    label.font = m.rowBoldFont
+    label.color = FILE_INK_LABEL
+    label.translation = [0, top]
+    label.text = tr("Direct Play Capability:")
+    return label.boundingRect().width + FILE_CAPABILITY_GAP
+end function
+
+' A stop either shows a node while focused, or swaps the color of one it always shows
+sub addStop(key as string, node as object, offset as float, focusNode as object, restInk as string, focusInk as string)
+    node.focusable = true
+    m.stops.push({ key: key, node: node, offset: Int(offset), focusNode: focusNode, restInk: restInk, focusInk: focusInk })
+end sub
+
+sub applyFocus(index as integer)
+    for i = 0 to m.stops.count() - 1
+        entry = m.stops[i]
+        focused = i = index
+        if entry.focusInk <> ""
+            entry.focusNode.blendColor = focused ? entry.focusInk : entry.restInk
+        else
+            entry.focusNode.visible = focused
+        end if
+    end for
+
+    m.focusedStop = index
+    if index < 0 then return
+    m.stops[index].node.setFocus(true)
+    m.top.focusedOffset = m.stops[index].offset
+end sub
+
+function focusFirst() as boolean
+    if m.stops.count() = 0 then return false
+    applyFocus(0)
+    return true
+end function
+
+sub clearFocus()
+    applyFocus(-1)
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press or m.focusedStop < 0 then return false
+
+    if key = KeyCode.DOWN
+        if m.focusedStop >= m.stops.count() - 1 then return true
+        applyFocus(m.focusedStop + 1)
+        return true
+    end if
+
+    if key = KeyCode.UP
+        if m.focusedStop = 0
+            clearFocus()
+            return false
+        end if
+        applyFocus(m.focusedStop - 1)
+        return true
+    end if
+
+    if key = KeyCode.OK
+        stopKey = m.stops[m.focusedStop].key
+        if stopKey = "audioShowAll"
+            m.expanded.audio = not m.expanded.audio
+            render()
+        else if stopKey = "subtitleShowAll"
+            m.expanded.subtitle = not m.expanded.subtitle
+            render()
+        else if stopKey = "retry"
+            m.top.retryRequested = true
+        end if
+        return true
+    end if
+
+    return false
+end function
