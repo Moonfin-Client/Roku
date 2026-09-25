@@ -2,6 +2,14 @@ import "pkg:/source/utils/detailCompatibility.bs"
 ' All of the Quick Play logic seperated by media type
 namespace quickplay
 
+    ' Copy a real server resume point onto the queue item.
+    sub applyResumeStartingPoint(item as dynamic)
+        if not isValid(item) or not isValid(item.UserData) then return
+        positionTicks = item.UserData.PlaybackPositionTicks
+        if not isValid(positionTicks) or positionTicks <= 0 then return
+        item.startingPoint = positionTicks
+    end sub
+
     ' Takes an array of items and adds to global queue.
     ' Also shuffles the playlist if asked
     sub pushToQueue(queueArray as object, shufflePlay = false as boolean)
@@ -200,68 +208,47 @@ namespace quickplay
     end sub
 
     sub seriesLocal(itemNode as object)
-
-        ' If quickplayFromResume is set, start playback attempt from first resumable episode before looking at next up
         quickplayFromResume = chainLookupReturn(itemNode, "quickplayFromResume", false)
 
         if quickplayFromResume
             data = api.useritems.GetResumeItems({
                 "parentId": itemNode.id,
                 "userid": m.global.session.user.id,
-                "SortBy": "SortName",
-                "recursive": true,
-                "SortOrder": "Ascending",
-                "Filters": "IsResumable",
-                "EnableTotalRecordCount": false
-            })
-
-            if isValid(data) and isValidAndNotEmpty(data.Items)
-                ' play the resumable episode
-                if isValid(data.Items[0].UserData) and isValid(data.Items[0].UserData.PlaybackPositionTicks)
-                    data.Items[0].startingPoint = data.Items[0].userdata.PlaybackPositionTicks
-                end if
-                m.global.queueManager.callFunc("push", data.Items[0])
-                return
-            end if
-        else
-            data = api.shows.GetNextUp({
-                "seriesId": itemNode.id,
-                "recursive": true,
                 "SortBy": "DatePlayed",
+                "recursive": true,
                 "SortOrder": "Descending",
-                "ImageTypeLimit": 1,
-                "UserId": m.global.session.user.id,
-                "DisableFirstEpisode": false,
+                "Filters": "IsResumable",
+                "limit": 1,
                 "EnableTotalRecordCount": false
             })
 
             if isValid(data) and isValidAndNotEmpty(data.Items)
-                ' there are unwatched episodes
+                quickplay.applyResumeStartingPoint(data.Items[0])
                 m.global.queueManager.callFunc("push", data.Items[0])
                 return
             end if
         end if
 
-        if quickplayFromResume
-            data = api.shows.GetNextUp({
-                "seriesId": itemNode.id,
-                "recursive": true,
-                "SortBy": "DatePlayed",
-                "SortOrder": "Descending",
-                "ImageTypeLimit": 1,
-                "UserId": m.global.session.user.id,
-                "DisableFirstEpisode": false,
-                "EnableTotalRecordCount": false
-            })
+        data = api.shows.GetNextUp({
+            "seriesId": itemNode.id,
+            "recursive": true,
+            "SortBy": "DatePlayed",
+            "SortOrder": "Descending",
+            "ImageTypeLimit": 1,
+            "UserId": m.global.session.user.id,
+            "DisableFirstEpisode": false,
+            "EnableTotalRecordCount": false
+        })
 
-            if isValid(data) and isValidAndNotEmpty(data.Items)
-                ' there are unwatched episodes
-                m.global.queueManager.callFunc("push", data.Items[0])
-                return
-            end if
-        else
-            ' next up check was empty
-            ' check for a resumable episode
+        if isValid(data) and isValidAndNotEmpty(data.Items)
+            ' If the Resume lookup raced the latest progress update, keep any
+            ' position that Jellyfin already attached to the Next Up item.
+            if quickplayFromResume then quickplay.applyResumeStartingPoint(data.Items[0])
+            m.global.queueManager.callFunc("push", data.Items[0])
+            return
+        end if
+
+        if not quickplayFromResume
             data = api.useritems.GetResumeItems({
                 "parentId": itemNode.id,
                 "userid": m.global.session.user.id,
@@ -273,16 +260,12 @@ namespace quickplay
             })
 
             if isValid(data) and isValidAndNotEmpty(data.Items)
-                ' play the resumable episode
-                if isValid(data.Items[0].UserData) and isValid(data.Items[0].UserData.PlaybackPositionTicks)
-                    data.Items[0].startingPoint = data.Items[0].userdata.PlaybackPositionTicks
-                end if
+                quickplay.applyResumeStartingPoint(data.Items[0])
                 m.global.queueManager.callFunc("push", data.Items[0])
                 return
             end if
         end if
 
-        ' shuffle all episodes
         data = api.shows.GetEpisodes(itemNode.id, {
             "userid": m.global.session.user.id,
             "SortBy": quickplayFromResume ? "SortName" : "Random",
@@ -292,7 +275,7 @@ namespace quickplay
         })
 
         if isValid(data) and isValidAndNotEmpty(data.Items)
-            ' add all episodes found to a playlist
+            if quickplayFromResume then quickplay.applyResumeStartingPoint(data.Items[0])
             quickplay.pushToQueue(data.Items)
         else
             stopLoadingSpinner()
@@ -300,7 +283,6 @@ namespace quickplay
     end sub
 
     sub seriesForServer(itemNode as object, serverData as object)
-
         injectServerMetadata = sub(items as object, sData as object)
             if isValid(items)
                 for each item in items
@@ -310,6 +292,32 @@ namespace quickplay
                 end for
             end if
         end sub
+
+        quickplayFromResume = chainLookupReturn(itemNode, "quickplayFromResume", false)
+        resumeUrl = "UserItems/Resume"
+        resumeParams = {
+            "UserId": serverData.userId,
+            "parentId": itemNode.id,
+            "SortBy": "DatePlayed",
+            "recursive": "true",
+            "SortOrder": "Descending",
+            "Filters": "IsResumable",
+            "limit": "1",
+            "EnableTotalRecordCount": "false"
+        }
+
+        if quickplayFromResume
+            req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, resumeUrl, resumeParams)
+            data = invalid
+            if isValid(req) then data = getJson(req)
+
+            if isValid(data) and isValidAndNotEmpty(data.Items)
+                injectServerMetadata(data.Items, serverData)
+                quickplay.applyResumeStartingPoint(data.Items[0])
+                m.global.queueManager.callFunc("push", data.Items[0])
+                return
+            end if
+        end if
 
         nextUpUrl = Substitute("Shows/{0}/NextUp", itemNode.id)
         nextUpParams = {
@@ -325,60 +333,47 @@ namespace quickplay
 
         req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, nextUpUrl, nextUpParams)
         data = invalid
-        if isValid(req)
-            data = getJson(req)
-        end if
+        if isValid(req) then data = getJson(req)
 
         if isValid(data) and isValidAndNotEmpty(data.Items)
             injectServerMetadata(data.Items, serverData)
+            if quickplayFromResume then quickplay.applyResumeStartingPoint(data.Items[0])
             m.global.queueManager.callFunc("push", data.Items[0])
-        else
-            resumeUrl = "UserItems/Resume"
-            resumeParams = {
-                "UserId": serverData.userId,
-                "parentId": itemNode.id,
-                "SortBy": "DatePlayed",
-                "recursive": "true",
-                "SortOrder": "Descending",
-                "Filters": "IsResumable",
-                "EnableTotalRecordCount": "false"
-            }
+            return
+        end if
 
+        if not quickplayFromResume
             req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, resumeUrl, resumeParams)
             data = invalid
-            if isValid(req)
-                data = getJson(req)
-            end if
+            if isValid(req) then data = getJson(req)
 
             if isValid(data) and isValidAndNotEmpty(data.Items)
                 injectServerMetadata(data.Items, serverData)
-                if isValid(data.Items[0].UserData) and isValid(data.Items[0].UserData.PlaybackPositionTicks)
-                    data.Items[0].startingPoint = data.Items[0].userdata.PlaybackPositionTicks
-                end if
+                quickplay.applyResumeStartingPoint(data.Items[0])
                 m.global.queueManager.callFunc("push", data.Items[0])
-            else
-                episodesUrl = Substitute("Shows/{0}/Episodes", itemNode.id)
-                episodesParams = {
-                    "UserId": serverData.userId,
-                    "SortBy": "Random",
-                    "Limit": "2000",
-                    "EnableTotalRecordCount": "false",
-                    "IsMissing": "false"
-                }
-
-                req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, episodesUrl, episodesParams)
-                data = invalid
-                if isValid(req)
-                    data = getJson(req)
-                end if
-
-                if isValid(data) and isValidAndNotEmpty(data.Items)
-                    injectServerMetadata(data.Items, serverData)
-                    quickplay.pushToQueue(data.Items)
-                else
-                    stopLoadingSpinner()
-                end if
+                return
             end if
+        end if
+
+        episodesUrl = Substitute("Shows/{0}/Episodes", itemNode.id)
+        episodesParams = {
+            "UserId": serverData.userId,
+            "SortBy": quickplayFromResume ? "SortName" : "Random",
+            "Limit": quickplayFromResume ? "1" : "2000",
+            "EnableTotalRecordCount": "false",
+            "IsMissing": "false"
+        }
+
+        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, episodesUrl, episodesParams)
+        data = invalid
+        if isValid(req) then data = getJson(req)
+
+        if isValid(data) and isValidAndNotEmpty(data.Items)
+            injectServerMetadata(data.Items, serverData)
+            if quickplayFromResume then quickplay.applyResumeStartingPoint(data.Items[0])
+            quickplay.pushToQueue(data.Items)
+        else
+            stopLoadingSpinner()
         end if
     end sub
 
@@ -510,9 +505,7 @@ namespace quickplay
             })
 
             if isValid(continueData) and isValidAndNotEmpty(continueData.Items)
-                if isValid(continueData.Items[0].UserData) and isValid(continueData.Items[0].UserData.PlaybackPositionTicks)
-                    continueData.Items[0].startingPoint = continueData.Items[0].userdata.PlaybackPositionTicks
-                end if
+                quickplay.applyResumeStartingPoint(continueData.Items[0])
                 m.global.queueManager.callFunc("push", continueData.Items[0])
                 return
             end if
@@ -533,9 +526,7 @@ namespace quickplay
                 if isValid(item.UserData)
                     if isValid(item.UserData.Played) and item.UserData.Played = false
                         firstUnwatchedEpisodeIndex = isValid(item.IndexNumber) ? item.IndexNumber - 1 : 0
-                        if isValid(item.UserData.PlaybackPositionTicks)
-                            item.startingPoint = item.UserData.PlaybackPositionTicks
-                        end if
+                        quickplay.applyResumeStartingPoint(item)
                         exit for
                     end if
                 end if
@@ -561,9 +552,7 @@ namespace quickplay
                 if isValid(continueData) and isValidAndNotEmpty(continueData.Items)
                     ' play the resumable episode
                     for each item in continueData.Items
-                        if isValid(item.UserData) and isValid(item.UserData.PlaybackPositionTicks)
-                            item.startingPoint = item.userdata.PlaybackPositionTicks
-                        end if
+                        quickplay.applyResumeStartingPoint(item)
                         m.global.queueManager.callFunc("push", item)
                     end for
                 else
