@@ -1,11 +1,14 @@
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/utils/detailImages.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/nouveauLayout.bs"
 
 ' Which summary cards an item gets, in what order, and what each one opens.
 '
 ' A card is an AA: id, title, optional modalTitle, subtitle, imageUrl, iconKey and
-' sections. A section is an AA: kind, title, count, items and options.
+' sections. A section is an AA: kind, title, count, items and options, with aspect for its
+' artwork, id, collapsible and expanded for a season that folds, tags and mediaType for the
+' Seerr chips, and facts for the Seerr facts.
 
 
 ' "1h 32m", "2h", or "48m". The shared formatter says "2h 0m" for a round number
@@ -421,6 +424,8 @@ function spotlightCardBuilder(state as object) as object
         similarCard: spotlightBuilderSimilarCard,
         seasonsCard: spotlightBuilderSeasonsCard,
         episodesCard: spotlightBuilderEpisodesCard,
+        moreEpisodesCard: spotlightBuilderMoreEpisodesCard,
+        seerrDetailsCard: spotlightBuilderSeerrDetailsCard,
         tracksCard: spotlightBuilderTracksCard,
         playlistCard: spotlightBuilderPlaylistCard,
         albumsCard: spotlightBuilderAlbumsCard,
@@ -436,7 +441,7 @@ end function
 function spotlightBuilderFactories() as object
     s = m.s
     if isValid(s.seerrOnly) and s.seerrOnly = true
-        return ["people", "similar"]
+        return ["seerr_details", "people", "similar"]
     end if
 
     itemType = LCase(chainLookupReturn(s.item, "json.Type", chainLookupReturn(s.item, "Type", "")))
@@ -474,7 +479,11 @@ function spotlightBuilderMakeCard(id as string) as dynamic
     if id = "people" then return m.peopleCard()
     if id = "similar" then return m.similarCard()
     if id = "seasons" then return m.seasonsCard()
-    if id = "episodes" then return m.episodesCard()
+    if id = "episodes"
+        if LCase(chainLookupReturn(m.s.item, "json.Type", "")) = "episode" then return m.moreEpisodesCard()
+        return m.episodesCard()
+    end if
+    if id = "seerr_details" then return m.seerrDetailsCard()
     if id = "tracks" then return m.tracksCard()
     if id = "playlist" then return m.playlistCard()
     if id = "albums" then return m.albumsCard()
@@ -598,6 +607,12 @@ function spotlightBuilderSimilarCard() as dynamic
 
     total = similar.count() + recommendations.count() + seerrSimilar.count()
     cardSections = []
+    ' What Seerr knows about the title itself, ahead of the lists. A Seerr only title keeps these
+    ' on its own Details card, so repeating them would show them twice.
+    if not s.seerrOnly
+        if s.seerrChipCount > 0 then cardSections.push({ kind: "seerrChips", tags: s.seerrTags, mediaType: s.seerrMediaType })
+        if s.seerrFacts.count() > 0 then cardSections.push({ kind: "seerrFacts", facts: s.seerrFacts })
+    end if
     if similar.count() > 0 then cardSections.push({ kind: "media", title: libraryTitle, count: similar.count(), items: similar, aspect: "portrait" })
     if recommendations.count() > 0 then cardSections.push({ kind: "seerr", title: tr("Recommendations (Seerr)"), count: recommendations.count(), items: recommendations })
     if seerrSimilar.count() > 0
@@ -620,6 +635,35 @@ function spotlightBuilderSimilarCard() as dynamic
         title: tr("Recommendations"),
         subtitle: spotlightCountLabel(total, tr("1 title"), tr("{count} titles")),
         imageUrl: cardImage,
+        iconKey: "similar",
+        sections: cardSections
+    }
+end function
+
+' Seerr's tags and facts get a card rather than a place on the hero, where nothing above the
+' action row has a path into them
+function spotlightBuilderSeerrDetailsCard() as dynamic
+    s = m.s
+    chipCount = s.seerrChipCount
+    factCount = s.seerrFacts.count()
+    if chipCount = 0 and factCount = 0 then return invalid
+
+    subtitleParts = []
+    if factCount > 0 then subtitleParts.push(spotlightCountLabel(factCount, tr("1 fact"), tr("{count} facts")))
+    if chipCount > 0 then subtitleParts.push(spotlightCountLabel(chipCount, tr("1 tag"), tr("{count} tags")))
+
+    ' The modal opens on its first section, so the chips lead and the remote lands on something
+    ' it can press
+    cardSections = []
+    if chipCount > 0 then cardSections.push({ kind: "seerrChips", title: tr("Genres and Tags"), count: chipCount, tags: s.seerrTags, mediaType: s.seerrMediaType })
+    if factCount > 0 then cardSections.push({ kind: "seerrFacts", facts: s.seerrFacts })
+
+    return {
+        id: "seerr_details",
+        title: tr("Details"),
+        subtitle: spotlightJoinSubtitle(subtitleParts),
+        imageUrl: s.fallbackImageUrl,
+        iconKey: "seerr_details",
         sections: cardSections
     }
 end function
@@ -673,8 +717,84 @@ function spotlightBuilderEpisodesCard() as dynamic
         modalTitle: cardModalTitle,
         subtitle: spotlightCountLabel(episodeItems.count(), tr("1 episode"), tr("{count} episodes")),
         imageUrl: cardImage,
+        iconKey: "episodes",
         sections: [{ kind: "media", title: tr("Episodes"), count: episodeItems.count(), items: episodeItems, aspect: "landscape" }]
     }
+end function
+
+' The whole run rather than just this episode's season, a foldable section per season with only
+' the one being watched left open
+function spotlightBuilderMoreEpisodesCard() as dynamic
+    s = m.s
+    all = s.seriesEpisodes
+    if all.count() = 0 then all = s.episodes
+    if all.count() = 0 then return invalid
+
+    currentSeason = chainLookupReturn(s.item, "json.ParentIndexNumber", invalid)
+    ordered = []
+    for each episode in all
+        ordered.push({ season: spotlightEpisodeSeason(episode, currentSeason), index: chainLookupReturn(episode, "json.IndexNumber", 0), node: episode })
+    end for
+    ordered.SortBy("index")
+    ordered.SortBy("season")
+
+    groups = []
+    for each entry in ordered
+        if groups.count() = 0 or groups[groups.count() - 1].season <> entry.season then groups.push({ season: entry.season, items: [] })
+        groups[groups.count() - 1].items.push(entry.node)
+    end for
+
+    ' A show with one season has nothing to choose between, so it opens. Otherwise the season
+    ' number says which one is being watched, and where an episode carries no number the section
+    ' holding it does.
+    itemId = chainLookupReturn(s.item, "json.Id", "")
+    seasonId = chainLookupReturn(s.item, "json.SeasonId", "")
+    cardSections = []
+    for each group in groups
+        expanded = groups.count() = 1
+        if not expanded and isValid(currentSeason)
+            expanded = group.season = currentSeason
+        else if not expanded
+            for each episode in group.items
+                if chainLookupReturn(episode, "json.Id", "") = itemId or (seasonId <> "" and chainLookupReturn(episode, "json.SeasonId", "") = seasonId) then expanded = true
+            end for
+        end if
+
+        cardSections.push({
+            kind: "media",
+            title: nouveauLayout.SeasonLabel(group.season),
+            count: group.items.count(),
+            items: group.items,
+            aspect: "landscape",
+            id: `season-${group.season}`,
+            collapsible: true,
+            expanded: expanded
+        })
+    end for
+
+    subtitleParts = []
+    if groups.count() > 1 then subtitleParts.push(spotlightCountLabel(groups.count(), tr("1 season"), tr("{count} seasons")))
+    subtitleParts.push(spotlightCountLabel(all.count(), tr("1 episode"), tr("{count} episodes")))
+
+    cardImage = spotlightFirstPosterUrl(s.serverUrl, all)
+    if not isValidAndNotEmpty(cardImage) then cardImage = s.fallbackImageUrl
+
+    return {
+        id: "episodes",
+        title: tr("More Episodes"),
+        subtitle: spotlightJoinSubtitle(subtitleParts),
+        imageUrl: cardImage,
+        iconKey: "episodes",
+        sections: cardSections
+    }
+end function
+
+' An episode with no season of its own goes with the one being watched, or the first
+function spotlightEpisodeSeason(episode as object, currentSeason as dynamic) as integer
+    season = chainLookupReturn(episode, "json.ParentIndexNumber", invalid)
+    if isValid(season) then return season
+    if isValid(currentSeason) then return currentSeason
+    return 1
 end function
 
 function spotlightBuilderTracksCard() as dynamic

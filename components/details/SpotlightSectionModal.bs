@@ -1,7 +1,9 @@
 import "pkg:/components/details/SpotlightCards.bs"
 import "pkg:/components/details/SpotlightSummaryCard.bs"
 import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/loginStyle.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/seerrFacts.bs"
 
 ' An open card as a panel over the page, with every section it holds stacked down
 ' one scrolling body.
@@ -10,6 +12,12 @@ const MODAL_BODY_WIDTH = 1526
 const MODAL_BODY_HEIGHT = 790
 const MODAL_SECTION_GAP = 28
 const MODAL_HEADING_HEIGHT = 46
+' A foldable section's heading is a row the remote can land on, with a chevron and a count
+const MODAL_FOLD_HEIGHT = 52
+const MODAL_FOLD_PAD = 12
+const MODAL_CHEVRON = 28
+const MODAL_CHIP_HEIGHT = 56
+const MODAL_CHIP_PAD = 32
 
 sub init()
     m.body = m.top.findNode("modalBody")
@@ -20,12 +28,17 @@ sub init()
     m.focusedSection = -1
     m.scrollY = 0
     m.cardId = ""
+    ' Which foldable sections the viewer opened or closed, kept while the card stays open
+    m.expandedById = {}
+    m.cardSections = []
     m.top.observeField("visible", "onVisibleChanged")
 end sub
 
 ' A card opened again starts from its first section
 sub onVisibleChanged()
-    if not m.top.visible then m.cardId = ""
+    if m.top.visible then return
+    m.cardId = ""
+    m.expandedById = {}
 end sub
 
 ' How each kind of section draws, taken from the grids the other detail screens use.
@@ -52,11 +65,13 @@ sub onCardChanged()
     if not isValid(card) then return
 
     ' The same card drawn again with more in it keeps the remote where it was
+    cardId = chainLookupReturn(card, "id", "")
     held = invalid
-    if m.cardId = chainLookupReturn(card, "id", "") and m.focusedSection >= 0
-        held = { section: m.focusedSection, item: m.sections[m.focusedSection].grid.itemFocused }
+    if m.cardId = cardId and m.focusedSection >= 0
+        held = { section: m.focusedSection, item: focusedItemIndex(m.sections[m.focusedSection]) }
     end if
-    m.cardId = chainLookupReturn(card, "id", "")
+    if m.cardId <> cardId then m.expandedById = {}
+    m.cardId = cardId
 
     title = m.top.findNode("modalHeaderTitle")
     if isValid(title)
@@ -71,15 +86,28 @@ sub onCardChanged()
         if isValidAndNotEmpty(iconUri) then icon.uri = iconUri
     end if
 
-    buildSections(chainLookupReturn(card, "sections", []))
+    m.cardSections = chainLookupReturn(card, "sections", [])
+    buildSections(m.cardSections)
 
     if isValid(held) and held.section < m.sections.count()
         focusSection(held.section)
-        m.sections[held.section].grid.jumpToItem = held.item
+        if m.sections[held.section].isGrid and held.item >= 0 then m.sections[held.section].node.jumpToItem = held.item
     end if
 end sub
 
-sub buildSections(sections as object)
+function focusedItemIndex(entry as object) as integer
+    if entry.isGrid then return entry.node.itemFocused
+    return 0
+end function
+
+function sectionExpanded(section as object) as boolean
+    sectionId = chainLookupReturn(section, "id", "")
+    if sectionId <> "" and m.expandedById.DoesExist(sectionId) then return m.expandedById[sectionId]
+    return chainLookupReturn(section, "expanded", true)
+end function
+
+' A rebuild that puts focus somewhere itself passes focusOpening false
+sub buildSections(sections as object, focusOpening = true as boolean)
     m.body.removeChildrenIndex(m.body.getChildCount(), 0)
     m.sections = []
     m.focusedSection = -1
@@ -89,60 +117,214 @@ sub buildSections(sections as object)
     if not isValidAndNotEmpty(sections) then return
 
     y = 0
+    openFocus = -1
     for each section in sections
+        kind = chainLookupReturn(section, "kind", "media")
         items = chainLookupReturn(section, "items", [])
+
+        if kind = "seerrChips"
+            y = addHeading(section, y)
+            y = addTagsChip(section, y) + MODAL_SECTION_GAP
+            continue for
+        end if
+
+        if kind = "seerrFacts"
+            y = addHeading(section, y)
+            y = addFacts(chainLookupReturn(section, "facts", []), y) + MODAL_SECTION_GAP
+            continue for
+        end if
+
         if not isValidAndNotEmpty(items) then continue for
 
-        heading = m.body.createChild("Label")
-        heading.font = "font:MediumSystemFont"
-        heading.color = "#FFFFFF"
-        heading.translation = [0, y]
-        headingText = chainLookupReturn(section, "title", "")
-        count = chainLookupReturn(section, "count", items.count())
-        if isValidAndNotEmpty(headingText)
-            heading.text = count > 0 ? `${headingText} (${count.toStr()})` : headingText
+        ' A grid scrolls to its heading, so the heading comes into view along with it
+        headingTop = y
+        if chainLookupReturn(section, "collapsible", false)
+            expanded = sectionExpanded(section)
+            y = addFoldHeader(section, expanded, y)
+            if not expanded
+                y += MODAL_SECTION_GAP
+                continue for
+            end if
+            if openFocus < 0 then openFocus = m.sections.count()
+        else
+            y = addHeading(section, y)
         end if
-        y += MODAL_HEADING_HEIGHT
 
-        spec = sectionGridSpec(chainLookupReturn(section, "kind", "media"), chainLookupReturn(section, "aspect", "portrait"))
-        columns = int((MODAL_BODY_WIDTH + spec.gap) / (spec.width + spec.gap))
-        if columns < 1 then columns = 1
-        rows = int((items.count() + columns - 1) / columns)
-        if rows < 1 then rows = 1
-
-        grid = m.body.createChild("MarkupGrid")
-        grid.itemComponentName = spec.component
-        grid.numColumns = columns
-        grid.numRows = rows
-        grid.itemSize = [spec.width, spec.height]
-        grid.rowHeights = [spec.height]
-        grid.itemSpacing = [spec.gap, spec.gap]
-        grid.vertFocusAnimationStyle = "fixedFocus"
-        grid.drawFocusFeedback = false
-        grid.translation = [0, y]
-        grid.content = spotlightContentFromItems(items, chainLookupReturn(spec, "posterWidth", 0), chainLookupReturn(spec, "square", false))
-        grid.observeField("itemSelected", "onGridItemSelected")
-
-        gridHeight = rows * spec.height + (rows - 1) * spec.gap
-        m.sections.push({
-            grid: grid,
-            top: y - MODAL_HEADING_HEIGHT,
-            columns: columns,
-            rows: rows,
-            kind: chainLookupReturn(section, "kind", "media"),
-            isExtras: chainLookupReturn(section, "isExtras", false)
-        })
-        y += gridHeight + MODAL_SECTION_GAP
+        y = addGrid(section, kind, items, y, headingTop) + MODAL_SECTION_GAP
     end for
 
-    if m.sections.count() > 0 then focusSection(0)
+    if not focusOpening then return
+
+    ' A card of folded seasons opens on the first cell of the season that is open
+    if openFocus >= 0
+        focusSection(openFocus)
+    else if m.sections.count() > 0
+        focusSection(0)
+    end if
+end sub
+
+function addHeading(section as object, y as float) as float
+    headingText = chainLookupReturn(section, "title", "")
+    if not isValidAndNotEmpty(headingText) then return y
+
+    heading = m.body.createChild("Label")
+    heading.font = "font:MediumSystemFont"
+    heading.color = "#FFFFFF"
+    heading.translation = [0, y]
+    count = chainLookupReturn(section, "count", chainLookupReturn(section, "items", []).count())
+    heading.text = count > 0 ? `${headingText} (${count.toStr()})` : headingText
+    return y + MODAL_HEADING_HEIGHT
+end function
+
+function addGrid(section as object, kind as string, items as object, y as float, headingTop as float) as float
+    spec = sectionGridSpec(kind, chainLookupReturn(section, "aspect", "portrait"))
+    columns = int((MODAL_BODY_WIDTH + spec.gap) / (spec.width + spec.gap))
+    if columns < 1 then columns = 1
+    rows = int((items.count() + columns - 1) / columns)
+    if rows < 1 then rows = 1
+
+    grid = m.body.createChild("MarkupGrid")
+    grid.itemComponentName = spec.component
+    grid.numColumns = columns
+    grid.numRows = rows
+    grid.itemSize = [spec.width, spec.height]
+    grid.rowHeights = [spec.height]
+    grid.itemSpacing = [spec.gap, spec.gap]
+    grid.vertFocusAnimationStyle = "fixedFocus"
+    grid.drawFocusFeedback = false
+    grid.translation = [0, y]
+    grid.content = spotlightContentFromItems(items, chainLookupReturn(spec, "posterWidth", 0), chainLookupReturn(spec, "square", false))
+    grid.observeField("itemSelected", "onGridItemSelected")
+
+    gridHeight = rows * spec.height + (rows - 1) * spec.gap
+    m.sections.push({
+        node: grid,
+        isGrid: true,
+        top: headingTop,
+        bottom: y + gridHeight,
+        columns: columns,
+        rows: rows,
+        kind: kind,
+        isExtras: chainLookupReturn(section, "isExtras", false)
+    })
+    return y + gridHeight
+end function
+
+' The heading of a foldable section, a row with a chevron that says whether it is open, the
+' title, and how many it holds
+function addFoldHeader(section as object, expanded as boolean, y as float) as float
+    header = m.body.createChild("Group")
+    header.translation = [0, y]
+    header.focusable = true
+
+    fill = header.createChild("Poster")
+    fill.uri = "pkg:/images/details/surface12.9.png"
+    fill.loadDisplayMode = "scaleToFit"
+    fill.blendColor = "#FFFFFF"
+    fill.opacity = 0
+    fill.width = MODAL_BODY_WIDTH
+    fill.height = MODAL_FOLD_HEIGHT
+
+    chevron = header.createChild("Poster")
+    chevron.uri = expanded ? "pkg:/images/icons/chevron-down.png" : "pkg:/images/icons/chevron-right.png"
+    chevron.width = MODAL_CHEVRON
+    chevron.height = MODAL_CHEVRON
+    chevron.blendColor = "#FFFFFF"
+    chevron.translation = [MODAL_FOLD_PAD, (MODAL_FOLD_HEIGHT - MODAL_CHEVRON) / 2]
+
+    title = header.createChild("Label")
+    title.font = "font:MediumSystemFont"
+    title.color = "#FFFFFF"
+    title.height = MODAL_FOLD_HEIGHT
+    title.vertAlign = "center"
+    title.translation = [MODAL_FOLD_PAD * 2 + MODAL_CHEVRON, 0]
+    title.text = chainLookupReturn(section, "title", "")
+
+    count = chainLookupReturn(section, "count", 0)
+    if count > 0
+        ' Measured before it joins the header, so the pill it sits on can go in under it
+        pillText = CreateObject("roSGNode", "Label")
+        pillText.font = "font:SmallestBoldSystemFont"
+        pillText.color = "#FFFFFFCC"
+        pillText.text = count.toStr()
+        pillBounds = pillText.boundingRect()
+        pillX = title.translation[0] + title.boundingRect().width + MODAL_FOLD_PAD
+        pillHeight = pillBounds.height + 6
+
+        pill = header.createChild("Poster")
+        pill.uri = "pkg:/images/details/badgefill6.9.png"
+        pill.loadDisplayMode = "scaleToFit"
+        pill.blendColor = "#FFFFFF26"
+        pill.width = pillBounds.width + 20
+        pill.height = pillHeight
+        pill.translation = [pillX, (MODAL_FOLD_HEIGHT - pillHeight) / 2]
+        header.appendChild(pillText)
+        pillText.translation = [pillX + 10, (MODAL_FOLD_HEIGHT - pillBounds.height) / 2]
+    end if
+
+    m.sections.push({ node: header, isGrid: false, top: y, bottom: y + MODAL_FOLD_HEIGHT, columns: 1, rows: 1, kind: "fold", sectionId: chainLookupReturn(section, "id", ""), expanded: expanded, fill: fill })
+    return y + MODAL_FOLD_HEIGHT + MODAL_SECTION_GAP / 2
+end function
+
+' Seerr's genres, networks and keywords behind one chip, which opens them as a dialog
+function addTagsChip(section as object, y as float) as float
+    chip = m.body.createChild("StandardButton")
+    chip.text = tr("Genres and Tags")
+    chip.height = MODAL_CHIP_HEIGHT
+    chip.fontSize = 24
+    chip.outline = true
+    chip.outlineUri = "pkg:/images/playback/outline41.9.png"
+    measure = CreateObject("roSGNode", "Label")
+    measure.font = "font:SmallSystemFont"
+    measure.text = chip.text
+    chip.width = measure.boundingRect().width + MODAL_CHIP_PAD * 2
+    loginStyle.ApplyButton(chip)
+    chip.translation = [0, y]
+    chip.observeField("buttonSelected", "onTagsChipSelected")
+
+    m.sections.push({ node: chip, isGrid: false, top: y, bottom: y + MODAL_CHIP_HEIGHT, columns: 1, rows: 1, kind: "seerrChips", tags: chainLookupReturn(section, "tags", {}), mediaType: chainLookupReturn(section, "mediaType", "movie") })
+    return y + MODAL_CHIP_HEIGHT
+end function
+
+' The facts are a stop of their own so the remote can bring them into view, though there is
+' nothing in them to activate
+function addFacts(facts as object, y as float) as float
+    if facts.count() = 0 then return y
+
+    block = m.body.createChild("Group")
+    block.translation = [0, y]
+    block.focusable = true
+    height = seerrFacts.DrawGrid(block, facts, MODAL_BODY_WIDTH)
+    m.sections.push({ node: block, isGrid: false, top: y, bottom: y + height, columns: 1, rows: 1, kind: "seerrFacts" })
+    return y + height
+end function
+
+sub onTagsChipSelected(event as object)
+    chip = event.getRoSGNode()
+    if not chip.buttonSelected then return
+
+    for each entry in m.sections
+        if entry.node.isSameNode(chip)
+            dialog = m.top.getScene().findNode("seerrTagsDialog")
+            if not isValid(dialog) then return
+            dialog.details = entry.tags
+            dialog.mediaType = entry.mediaType
+            dialog.returnFocus = chip
+            dialog.callFunc("showDialog")
+            return
+        end if
+    end for
 end sub
 
 sub focusSection(index as integer)
     if index < 0 or index >= m.sections.count() then return
 
     m.focusedSection = index
-    m.sections[index].grid.setFocus(true)
+    for i = 0 to m.sections.count() - 1
+        entry = m.sections[i]
+        if entry.kind = "fold" then entry.fill.opacity = i = index ? 0.12 : 0
+    end for
+    m.sections[index].node.setFocus(true)
     scrollSectionIntoView(index)
 end sub
 
@@ -152,8 +334,7 @@ sub scrollSectionIntoView(index as integer)
     target = entry.top
 
     maxScroll = 0
-    last = m.sections[m.sections.count() - 1]
-    contentHeight = last.top + MODAL_HEADING_HEIGHT + last.rows * last.grid.itemSize[1] + (last.rows - 1) * last.grid.itemSpacing[1]
+    contentHeight = m.sections[m.sections.count() - 1].bottom
     if contentHeight > MODAL_BODY_HEIGHT then maxScroll = contentHeight - MODAL_BODY_HEIGHT
     if target > maxScroll then target = maxScroll
     if target < 0 then target = 0
@@ -166,13 +347,35 @@ sub scrollSectionIntoView(index as integer)
     m.scrollAnim.control = "start"
 end sub
 
+' Opening or closing a season draws the card again and puts the remote back on its heading,
+' with the body left where it was
+sub toggleFold(entry as object)
+    m.expandedById[entry.sectionId] = not entry.expanded
+    scrollY = m.scrollY
+    buildSections(m.cardSections, false)
+    m.scrollY = scrollY
+    m.body.translation = [0, -scrollY]
+    for i = 0 to m.sections.count() - 1
+        if m.sections[i].kind = "fold" and m.sections[i].sectionId = entry.sectionId
+            focusSection(i)
+            return
+        end if
+    end for
+end sub
+
 function spotlightContentFromItems(items as object, posterWidth = 0 as integer, square = false as boolean) as object
     content = CreateObject("roSGNode", "ContentNode")
     for each item in items
         if isValid(item)
             ' The card sizes itself from this, so a season poster and an episode still
             ' each fill the cell the section gave them
-            if posterWidth > 0 and item.hasField("imageWidth") then item.imageWidth = posterWidth
+            if posterWidth > 0
+                if not item.hasField("imageWidth") then item.addFields({ imageWidth: posterWidth })
+                item.imageWidth = posterWidth
+            end if
+            ' An episode from the whole run is a plain episode node, so it takes the fields the
+            ' card draws from
+            if not item.hasField("labelText") then item.addFields({ labelText: chainLookupReturn(item, "json.Name", "") })
             if square
                 if not item.hasField("squareArt") then item.addFields({ squareArt: true })
                 item.squareArt = true
@@ -199,7 +402,7 @@ sub onGridItemSelected(event as object)
 
     entry = invalid
     for each section in m.sections
-        if section.grid.isSameNode(grid) then entry = section
+        if section.isGrid and section.node.isSameNode(grid) then entry = section
     end for
     if not isValid(entry)
         m.top.sectionItemSelected = item
@@ -222,7 +425,8 @@ end sub
 ' Which row of its own grid the remote sits on, so the modal knows when a press
 ' should leave the section rather than move inside it
 function focusedRow(entry as object) as integer
-    index = entry.grid.itemFocused
+    if not entry.isGrid then return 0
+    index = entry.node.itemFocused
     if index < 0 then return 0
     return int(index / entry.columns)
 end function
@@ -237,6 +441,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     if m.focusedSection < 0 then return false
     entry = m.sections[m.focusedSection]
+
+    if key = KeyCode.OK and entry.kind = "fold"
+        toggleFold(entry)
+        return true
+    end if
 
     if key = KeyCode.UP
         if focusedRow(entry) > 0 then return false
