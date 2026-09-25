@@ -1,0 +1,244 @@
+import "pkg:/source/utils/misc.bs"
+
+' The card menu: what can be done to one item without opening it. Which entries show depends on
+' the item's type and on what the signed in user may do.
+namespace itemMenu
+
+    const ICONS = "pkg:/images/itemMenu/"
+    const DETAIL_ICONS = "pkg:/images/icons/"
+
+    ' Everything except artwork needs the item to be one of these
+    function MediaTypes() as object
+        return ["movie", "episode", "series", "season", "audio", "musicalbum", "boxset"]
+    end function
+
+    ' The types the server can look up by name, where Identify has anything to search. Episodes
+    ' and seasons qualify because Identify goes to their series.
+    function IdentifiableTypes() as object
+        return ["movie", "series", "season", "episode", "boxset", "person", "musicalbum", "musicartist", "book", "trailer", "musicvideo"]
+    end function
+
+    function ArtworkFolderTypes() as object
+        return ["folder", "collectionfolder", "userview", "genre", "musicgenre", "studio", "network"]
+    end function
+
+    ' The types My List accepts. A music video stays out, since it gets no menu.
+    function MyListTypes() as object
+        return ["episode", "movie", "season", "series", "video", "recording", "boxset"]
+    end function
+
+    function MakeEntry(id as string, label as string, icon as string) as object
+        return { id: id, label: label, icon: icon }
+    end function
+
+    ' A Seerr card stands for a title the server doesnt hold, so nothing here applies to it. The
+    ' calendar and the charts from other sites carry ids from elsewhere for the same reason.
+    function IsFromSeerr(item as object) as boolean
+        for each key in ["_seerr", "_seerrRaw", "_seerrCredit", "SeerrItem", "SeerrTmdbId", "SeerrMediaType", "CalendarDate"]
+            if isValid(item[key]) then return true
+        end for
+
+        itemId = item.Id
+        if isString(itemId) and LCase(Left(itemId, 6)) = "seerr-" then return true
+
+        itemType = LCase(itemMenu.TypeOf(item))
+        return itemType = "seerrbrowse" or itemType = "seerrshortcut"
+    end function
+
+    ' A flag read off server json, where a missing one reads as off
+    function IsTrue(value as dynamic) as boolean
+        valueType = type(value)
+        if valueType <> "Boolean" and valueType <> "roBoolean" then return false
+        return value
+    end function
+
+    function TypeOf(item as object) as string
+        itemType = item.Type
+        if isString(itemType) then return itemType
+        return ""
+    end function
+
+    ' A trailer or a featurette rides along with a title rather than being one
+    function IsExtra(item as object) as boolean
+        return isValidAndNotEmpty(item.ExtraType)
+    end function
+
+    ' A series has no position of its own, so it counts as under way once some of it is watched
+    ' and some isnt. Anything else goes by its resume point.
+    function HasProgress(item as object) as boolean
+        userData = item.UserData
+        if type(userData) <> "roAssociativeArray" then userData = {}
+
+        if LCase(itemMenu.TypeOf(item)) = "series"
+            total = item.RecursiveItemCount ?? 0
+            unplayed = userData.UnplayedItemCount ?? total
+            return not itemMenu.IsTrue(userData.Played) and unplayed > 0 and unplayed < total
+        end if
+
+        return (userData.PlayedPercentage ?? 0) > 0 or (userData.PlaybackPositionTicks ?? 0) > 0
+    end function
+
+    ' flags carries isAdmin, isJellyfin, canManageCollections and inCollection
+    function BuildEntries(item as object, flags as object) as object
+        list = []
+        if not isValid(item) then return list
+
+        itemType = LCase(itemMenu.TypeOf(item))
+        userData = item.UserData
+        if type(userData) <> "roAssociativeArray" then userData = {}
+        played = itemMenu.IsTrue(userData.Played)
+        hasSeries = isValidAndNotEmpty(item.SeriesId)
+        serverTools = itemMenu.IsTrue(flags.isJellyfin) and itemMenu.IsTrue(flags.isAdmin)
+        isMedia = inArray(itemMenu.MediaTypes(), itemType)
+
+        if isMedia
+            list.push(itemMenu.MakeEntry("play", itemMenu.HasProgress(item) ? tr("Resume") : tr("Play"), itemMenu.DETAIL_ICONS + "detail_play.png"))
+
+            if played
+                list.push(itemMenu.MakeEntry("watched", tr("Mark as Unwatched"), itemMenu.ICONS + "visibility_off.png"))
+            else
+                list.push(itemMenu.MakeEntry("watched", tr("Mark as Watched"), itemMenu.ICONS + "visibility.png"))
+            end if
+
+            if (userData.PlaybackPositionTicks ?? 0) > 0 and not played
+                list.push(itemMenu.MakeEntry("hideContinueWatching", tr("Hide from Continue Watching"), itemMenu.ICONS + "visibility_off.png"))
+            end if
+
+            if itemType = "episode" and hasSeries
+                list.push(itemMenu.MakeEntry("hideNextUp", tr("Hide from Next Up"), itemMenu.ICONS + "visibility_off.png"))
+            end if
+
+            if itemMenu.IsTrue(userData.IsFavorite)
+                list.push(itemMenu.MakeEntry("favorite", tr("Remove from Favorites"), itemMenu.DETAIL_ICONS + "detail_favorite.png"))
+            else
+                list.push(itemMenu.MakeEntry("favorite", tr("Add to Favorites"), itemMenu.ICONS + "favorite_border.png"))
+            end if
+
+            if itemMenu.IsTrue(flags.canManageCollections)
+                list.push(itemMenu.MakeEntry("addToCollection", tr("Add to Collection"), itemMenu.DETAIL_ICONS + "add_to_collection.png"))
+                ' Only for the collection whose page the menu was opened from. An item can belong
+                ' to several, and pulling it out of one the viewer isnt looking at would be a surprise.
+                if itemMenu.IsTrue(flags.inCollection)
+                    list.push(itemMenu.MakeEntry("removeFromCollection", tr("Remove from Collection"), itemMenu.ICONS + "playlist_remove.png"))
+                end if
+            end if
+
+            list.push(itemMenu.MakeEntry("addToPlaylist", tr("Add to Playlist"), itemMenu.DETAIL_ICONS + "add_to_playlist.png"))
+
+            if serverTools
+                list.push(itemMenu.MakeEntry("refreshMetadata", tr("Refresh Metadata"), itemMenu.ICONS + "refresh.png"))
+                if inArray(itemMenu.IdentifiableTypes(), itemType)
+                    list.push(itemMenu.MakeEntry("identify", tr("Identify"), itemMenu.ICONS + "search.png"))
+                end if
+            end if
+        end if
+
+        if serverTools and (isMedia or inArray(itemMenu.ArtworkFolderTypes(), itemType))
+            list.push(itemMenu.MakeEntry("changeArtwork", tr("Change Artwork"), itemMenu.DETAIL_ICONS + "artwork.png"))
+        end if
+
+        if itemType = "episode" and hasSeries
+            list.push(itemMenu.MakeEntry("goToSeries", tr("Go to Series"), itemMenu.DETAIL_ICONS + "detail_series.png"))
+        end if
+
+        return list
+    end function
+
+    ' Entries the library item handler on the main thread runs, which knows each one by its label.
+    ' They follow the shared entries. flags adds foreign and inMyList.
+    function LibraryItemEntries(item as object, flags as object) as object
+        list = []
+        if not isValid(item) then return list
+
+        itemType = LCase(itemMenu.TypeOf(item))
+        itemId = item.Id ?? ""
+
+        ' A season goes to its series too
+        if itemType = "season" and isValidAndNotEmpty(item.SeriesId)
+            list.push(itemMenu.MakeEntry("goToSeries", tr("Go to Series"), itemMenu.DETAIL_ICONS + "detail_series.png"))
+        end if
+
+        ' The list is a playlist on the server that is signed in, so a card from another one
+        ' cant join it
+        if not itemMenu.IsTrue(flags.foreign) and not itemMenu.IsExtra(item)
+            if itemMenu.IsTrue(flags.inMyList)
+                list.push(itemMenu.LegacyEntry("myList", tr("Remove From My List"), "watchlist_on.png", {}))
+            else if inArray(itemMenu.MyListTypes(), itemType)
+                list.push(itemMenu.LegacyEntry("myList", tr("Add To My List"), "watchlist.png", {}))
+            end if
+        end if
+
+        if itemType = "episode" and isValidAndNotEmpty(item.SeriesId) and isValidAndNotEmpty(item.SeasonId)
+            list.push(itemMenu.LegacyEntry("goToSeason", tr("Go To Season"), "detail_series.png", { SeriesId: item.SeriesId, SeasonId: item.SeasonId }))
+        end if
+
+        if itemType = "boxset"
+            list.push(itemMenu.LegacyEntry("shuffleCollection", tr("Shuffle Play Collection"), "detail_shuffle.png", {}))
+        end if
+
+        if itemType = "musicalbum"
+            list.push(itemMenu.LegacyEntry("shuffleAlbum", tr("Shuffle Play Album"), "detail_shuffle.png", {}))
+            list.push(itemMenu.LegacyEntry("instantMix", tr("Play Instant Mix"), "instantMix.png", { AlbumId: itemId }))
+
+            ' The home rows keep the first artist's id on the card, the server lists them all
+            artistId = item.AlbumArtistId
+            artists = item.AlbumArtists
+            if type(artists) = "roArray" and artists.count() > 0
+                if type(artists[0]) = "roAssociativeArray" then artistId = artists[0].Id ?? artistId
+            end if
+            if isValidAndNotEmpty(artistId)
+                list.push(itemMenu.LegacyEntry("goToArtist", tr("Go To Artist"), "userGroup.png", { ArtistId: artistId, ArtistName: item.AlbumArtist ?? "" }))
+            end if
+
+            ' The genre opens inside the music library, so it needs to know which one
+            genres = item.GenreItems
+            if type(genres) <> "roArray" or genres.count() = 0 then genres = item.Genre
+            if type(genres) = "roArray" and genres.count() > 0 and isValidAndNotEmpty(item.LibraryId)
+                genre = genres[0]
+                if type(genre) = "roAssociativeArray" and isValidAndNotEmpty(genre.Name)
+                    label = tr("Go To Genre") + `: ${genre.Name}`
+                    list.push(itemMenu.LegacyEntry("goToGenre", label, "masks.png", { GenreName: genre.Name, GenreId: genre.Id ?? "", LibraryId: item.LibraryId }))
+                end if
+            end if
+        end if
+
+        return list
+    end function
+
+    function LegacyEntry(id as string, label as string, icon as string, params as object) as object
+        return { id: id, label: label, icon: itemMenu.DETAIL_ICONS + icon, legacy: true, params: params }
+    end function
+
+    ' A hidden map keyed by item or series id, holding when each was hidden. What is already
+    ' stored is kept, so hiding one thing never brings another back.
+    function HiddenMapWith(stored as dynamic, id as string, stamp as string) as string
+        hidden = invalid
+        if isString(stored) and stored <> "" then hidden = ParseJson(stored)
+        if type(hidden) <> "roAssociativeArray" then hidden = {}
+
+        hidden[id] = stamp
+        return FormatJson(hidden)
+    end function
+
+    ' A request the server turned down names its status, and anything else says what went wrong
+    function DescribeError(status as integer, message as string) as string
+        if status = 401 then return tr("Unauthorized")
+        if status = 403 then return tr("Forbidden")
+        if status = 404 then return tr("Not found")
+        if status > 0 then return `HTTP ${status.toStr()}`
+        if message <> "" then return message
+        return tr("HTTP error")
+    end function
+
+    ' Identify from a card matches a whole show, so an episode or a season hands over its series.
+    ' The item's own page identifies the item itself.
+    function IdentifyTarget(item as object, wholeShow = true as boolean) as object
+        itemType = LCase(itemMenu.TypeOf(item))
+        if wholeShow and (itemType = "episode" or itemType = "season") and isValidAndNotEmpty(item.SeriesId)
+            return { id: item.SeriesId, name: item.SeriesName ?? "", type: "Series", year: 0 }
+        end if
+
+        return { id: item.Id ?? "", name: item.Name ?? "", type: itemMenu.TypeOf(item), year: item.ProductionYear ?? 0 }
+    end function
+
+end namespace
