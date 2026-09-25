@@ -3253,6 +3253,76 @@
         <translation>{0}d ago</translation>
     </message>
     <message>
+        <source>Today</source>
+        <extracomment>When the next episode airs</extracomment>
+        <translation>Today</translation>
+    </message>
+    <message>
+        <source>Tomorrow</source>
+        <extracomment>When the next episode airs</extracomment>
+        <translation>Tomorrow</translation>
+    </message>
+    <message>
+        <source>Jan</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Jan</translation>
+    </message>
+    <message>
+        <source>Feb</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Feb</translation>
+    </message>
+    <message>
+        <source>Mar</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Mar</translation>
+    </message>
+    <message>
+        <source>Apr</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Apr</translation>
+    </message>
+    <message>
+        <source>May</source>
+        <extracomment>Short month name</extracomment>
+        <translation>May</translation>
+    </message>
+    <message>
+        <source>Jun</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Jun</translation>
+    </message>
+    <message>
+        <source>Jul</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Jul</translation>
+    </message>
+    <message>
+        <source>Aug</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Aug</translation>
+    </message>
+    <message>
+        <source>Sep</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Sep</translation>
+    </message>
+    <message>
+        <source>Oct</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Oct</translation>
+    </message>
+    <message>
+        <source>Nov</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Nov</translation>
+    </message>
+    <message>
+        <source>Dec</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Dec</translation>
+    </message>
+    <message>
         <source>Offset</source>
         <extracomment>Subtitle track picker row that opens the subtitle offset panel</extracomment>
         <translation>Offset</translation>
