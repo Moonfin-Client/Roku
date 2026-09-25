@@ -25,8 +25,13 @@ import "pkg:/source/enums/ViewLoadStatus.bs"
 '   sub setToggleButtonLabel(buttonId as string, label as string, isActive as boolean)
 '   sub handleScreenButtonAction(action as string)
 '   sub highlightButton(index as integer)
-'   sub toggleMoreActions()
 '   sub updatePlayedIndicator()
+'
+' A screen that folds buttons behind More Actions also keeps m.overflowMenu, a
+' NouveauOverflowMenu observed into onOverflowAction and onOverflowClosed.
+
+' How far past the edge a row scrolls to bring a button into view
+const BUTTON_ROW_SCROLL_MARGIN = 50
 
 sub addArrangedButtons(candidates as object)
     order = m.global.session.user.settings[DETAIL_ORDER_SETTING]
@@ -50,14 +55,149 @@ sub addArrangedButtons(candidates as object)
     end for
 end sub
 
-function moreButtonConfig() as object
-    return {
-        icon: m.actionsExpanded ? "pkg:/images/icons/chevron-up.png" : "pkg:/images/icons/chevron-down.png",
-        label: m.actionsExpanded ? tr("Less") : tr("More"),
+' The Action Buttons on Screen setting laid over the cap a style asks for. Returns how many
+' buttons stay in the row, or -1 when nothing folds. Play, Resume and Restart count toward the
+' cap but never fold, so the row always keeps those.
+function cappedButtonCount(buttons as object, styleCap as object) as integer
+    leading = 0
+    for each button in buttons
+        if button.id <> "resumeButton" and button.id <> "restartButton" and button.id <> "playButton" then exit for
+        leading++
+    end for
+
+    split = buttonLayout.CountSplit(buttons.count(), buttonLayout.ApplyButtonLimit(viewerButtonLimit(), styleCap))
+    if not split.needsOverflow then return -1
+    if split.visibleCount > leading then return split.visibleCount
+    return leading
+end function
+
+' Kids Mode's row is its own short allow list, so the viewer's cap is one more setting it
+' sets aside
+function viewerButtonLimit() as integer
+    if kidsMode.Enabled() then return 0
+    return buttonLayout.MaxVisibleSetting()
+end function
+
+' Whether the viewer asked for every button in one row that scrolls sideways
+function buttonRowScrolls() as boolean
+    return viewerButtonLimit() = -1
+end function
+
+' Everything from keep on moves behind a trailing More Actions button whose menu holds them
+sub foldButtonsIntoMenu(keep as integer)
+    m.overflowActions = []
+    if keep < 0 or keep >= m.buttonGroups.count() then return
+
+    for i = keep to m.buttonGroups.count() - 1
+        button = m.buttonGroups[i]
+        m.overflowActions.push({ icon: button.iconUri, label: button.labelText, action: button.buttonAction, id: button.id })
+    end for
+
+    while m.buttonGroups.count() > keep
+        m.buttonRow.removeChild(m.buttonGroups[m.buttonGroups.count() - 1])
+        m.buttonGroups.pop()
+    end while
+
+    appendButtonNode({
+        icon: "pkg:/images/icons/dotDotDot.png",
+        label: tr("More Actions"),
         action: "toggleMoreActions",
         id: "moreActionsButton"
-    }
+    })
+
+    ' A toggle leaves the menu open, so a row rebuilt behind it hands the menu its new labels
+    if m.overflowMenu.visible
+        for each entry in m.overflowActions
+            m.overflowMenu.callFunc("relabel", entry.action, entry.label)
+        end for
+    end if
+end sub
+
+sub openOverflowMenu()
+    if not isValidAndNotEmpty(m.overflowActions) then return
+
+    m.overflowMenu.actions = m.overflowActions
+    m.overflowMenu.visible = true
+    m.overflowMenu.setFocus(true)
+end sub
+
+sub onOverflowAction(event as object)
+    action = event.getData()
+    if not isValidAndNotEmpty(action) then return
+
+    ' A toggle changes in place, so the menu stays open on it. Anything else opens something of
+    ' its own.
+    if action <> "watched" and action <> "favorite" then closeOverflowMenu()
+    dispatchOverflowAction(action)
+end sub
+
+sub onOverflowClosed()
+    closeOverflowMenu()
+end sub
+
+sub closeOverflowMenu()
+    m.overflowMenu.visible = false
+    m.overflowMenu.setFocus(false)
+    focusButton(m.currentButtonIndex)
+end sub
+
+' The dispatcher reads whichever button has the row's focus, so a hidden action is run by
+' standing the More button in for it
+sub dispatchOverflowAction(action as string)
+    held = m.currentButtonIndex
+    more = m.buttonGroups.count() - 1
+    if more < 0 then return
+
+    standIn = m.buttonGroups[more].buttonAction
+    m.buttonGroups[more].buttonAction = action
+    m.currentButtonIndex = more
+    handleButtonSelect()
+    m.buttonGroups[more].buttonAction = standIn
+    m.currentButtonIndex = held
+end sub
+
+' A toggle hidden behind More changes in place, so the menu row and the entry it reopens from
+' take the new label
+sub relabelOverflowAction(buttonId as string, label as string)
+    if not isValid(m.overflowActions) then return
+
+    for each entry in m.overflowActions
+        if entry.id = buttonId
+            entry.label = label
+            if m.overflowMenu.visible then m.overflowMenu.callFunc("relabel", entry.action, label)
+        end if
+    end for
+end sub
+
+' A row wider than its room scrolls sideways to keep the focused button in view. Returns the
+' offset the row moves left by.
+function buttonRowScrollOffset(focusLeft as float, focusRight as float, rowWidth as float, viewport as float) as float
+    offset = m.buttonRowOffset ?? 0
+    if focusRight > focusLeft
+        if focusLeft < offset then offset = focusLeft - BUTTON_ROW_SCROLL_MARGIN
+        if focusRight > offset + viewport then offset = focusRight - viewport + BUTTON_ROW_SCROLL_MARGIN
+    end if
+
+    furthest = rowWidth - viewport
+    if offset > furthest then offset = furthest
+    if offset < 0 then offset = 0
+    m.buttonRowOffset = offset
+    return offset
 end function
+
+' Puts the finished row in its room. A row that scrolls is clipped to the room and moved along
+' to keep the focused button in view, and any other row sits where it was put.
+sub placeButtonRow(clip as object, scrolls as boolean, focusLeft as float, focusRight as float, rowWidth as float, viewport as float)
+    offset = 0
+    if scrolls
+        offset = buttonRowScrollOffset(focusLeft, focusRight, rowWidth, viewport)
+        clip.clippingRect = [0, -100, viewport, 400]
+    else
+        clip.clippingRect = BUTTON_NO_CLIP
+        m.buttonRowOffset = 0
+    end if
+    m.buttonRow.translation = [-offset, m.buttonRow.translation[1]]
+end sub
 
 sub onButtonFocusChanged(event as object)
     button = event.getRoSGNode()
@@ -131,7 +271,6 @@ end sub
 
 sub updateButtonVisibility(itemData as object)
     clearButtonRow()
-    m.actionsExpanded = false
 
     addButtons(itemData)
     commitButtonRow()
@@ -237,36 +376,10 @@ sub addButtons(itemData as object)
         candidates.push({ id: "parts", config: { icon: "pkg:/images/icons/detail_play.png", label: tr("Parts"), action: "parts", id: "partButton" } })
     end if
 
-    if m.top.trailerAvailable
-        candidates.push({
-            id: "trailer", config: {
-                icon: "pkg:/images/icons/detail_trailer.png",
-                label: tr("Trailer"),
-                action: "trailer",
-                id: "trailerButton"
-            }
-        })
-    end if
+    if m.top.trailerAvailable then candidates.push(trailerCandidate())
 
-    isWatched = chainLookupReturn(itemData, "UserData.Played", false)
-    candidates.push({
-        id: "watched", config: markActiveButton({
-            icon: "pkg:/images/icons/detail_watched.png",
-            label: isWatched ? tr("Watched") : tr("Unwatched"),
-            action: "watched",
-            id: "watchedButton"
-        }, isWatched, CLASSIC_WATCHED_INK)
-    })
-
-    isFavorited = chainLookupReturn(itemData, "UserData.IsFavorite", false)
-    candidates.push({
-        id: "favorite", config: markActiveButton({
-            icon: "pkg:/images/icons/detail_favorite.png",
-            label: isFavorited ? tr("Favorited") : tr("Favorite"),
-            action: "favorite",
-            id: "favoriteButton"
-        }, isFavorited, CLASSIC_FAVORITE_INK)
-    })
+    candidates.push(watchedCandidate(itemData))
+    candidates.push(favoriteCandidate(itemData))
 
     if isEpisode()
         candidates.push({
@@ -302,9 +415,7 @@ sub addSeriesButtons()
         id: "playButton"
     })
 
-    isWatched = chainLookupReturn(m.top.itemContent, "json.UserData.Played", false)
-    isFavorited = chainLookupReturn(m.top.itemContent, "json.UserData.IsFavorite", false)
-
+    itemData = chainLookupReturn(m.top.itemContent, "json", {})
     candidates = []
     candidates.push({
         id: "shuffle", config: {
@@ -315,37 +426,27 @@ sub addSeriesButtons()
         }
     })
 
-    if m.top.trailerAvailable
-        candidates.push({
-            id: "trailer", config: {
-                icon: "pkg:/images/icons/detail_trailer.png",
-                label: tr("Trailer"),
-                action: "trailer",
-                id: "trailerButton"
-            }
-        })
-    end if
+    if m.top.trailerAvailable then candidates.push(trailerCandidate())
 
-    candidates.push({
-        id: "watched", config: markActiveButton({
-            icon: "pkg:/images/icons/detail_watched.png",
-            label: isWatched ? tr("Watched") : tr("Unwatched"),
-            action: "watched",
-            id: "watchedButton"
-        }, isWatched, CLASSIC_WATCHED_INK)
-    })
-
-    candidates.push({
-        id: "favorite", config: markActiveButton({
-            icon: "pkg:/images/icons/detail_favorite.png",
-            label: isFavorited ? tr("Favorited") : tr("Favorite"),
-            action: "favorite",
-            id: "favoriteButton"
-        }, isFavorited, CLASSIC_FAVORITE_INK)
-    })
+    candidates.push(watchedCandidate(itemData))
+    candidates.push(favoriteCandidate(itemData))
 
     addArrangedButtons(candidates)
 end sub
+
+function trailerCandidate() as object
+    return { id: "trailer", config: { icon: "pkg:/images/icons/detail_trailer.png", label: tr("Trailer"), action: "trailer", id: "trailerButton" } }
+end function
+
+function watchedCandidate(itemData as object) as object
+    isWatched = chainLookupReturn(itemData, "UserData.Played", false)
+    return { id: "watched", config: markActiveButton({ icon: "pkg:/images/icons/detail_watched.png", label: isWatched ? tr("Watched") : tr("Unwatched"), action: "watched", id: "watchedButton" }, isWatched, CLASSIC_WATCHED_INK) }
+end function
+
+function favoriteCandidate(itemData as object) as object
+    isFavorited = chainLookupReturn(itemData, "UserData.IsFavorite", false)
+    return { id: "favorite", config: markActiveButton({ icon: "pkg:/images/icons/detail_favorite.png", label: isFavorited ? tr("Favorited") : tr("Favorite"), action: "favorite", id: "favoriteButton" }, isFavorited, CLASSIC_FAVORITE_INK) }
+end function
 
 sub handleButtonSelect()
     if m.currentButtonIndex < 0 or m.currentButtonIndex >= m.buttonGroups.count() then return
@@ -362,7 +463,7 @@ sub handleButtonSelect()
     end if
 
     if buttonAction = "toggleMoreActions"
-        toggleMoreActions()
+        openOverflowMenu()
         return
     end if
 
@@ -516,6 +617,7 @@ sub toggleWatched()
     updatePlayedIndicator()
 
     setToggleButtonLabel("watchedButton", newWatchedState ? tr("Watched") : tr("Unwatched"), newWatchedState)
+    relabelOverflowAction("watchedButton", newWatchedState ? tr("Watched") : tr("Unwatched"))
 
     if m.buttonGroups.count() > 0 and m.currentButtonIndex >= 0 and m.currentButtonIndex < m.buttonGroups.count()
         highlightButton(m.currentButtonIndex)
@@ -563,6 +665,7 @@ sub toggleFavorite()
     updatePlayedIndicator()
 
     setToggleButtonLabel("favoriteButton", newFavoriteState ? tr("Favorited") : tr("Favorite"), newFavoriteState)
+    relabelOverflowAction("favoriteButton", newFavoriteState ? tr("Favorited") : tr("Favorite"))
 
     if m.buttonGroups.count() > 0 and m.currentButtonIndex >= 0 and m.currentButtonIndex < m.buttonGroups.count()
         highlightButton(m.currentButtonIndex)

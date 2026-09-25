@@ -36,6 +36,8 @@ import "pkg:/source/enums/ViewLoadStatus.bs"
 const CLASSIC_ROW_WIDTH = 1728
 const CLASSIC_BUTTON_WIDTH = 157
 const CLASSIC_BUTTON_GAP = 12
+' The room either side of a row that scrolls rather than wrapping
+const CLASSIC_SCROLL_PAD = 40
 
 ' The classic screen is laid out in the pixels the other clients lay it out in.
 ' Small text runs a little larger, since the Roku system font draws smaller than
@@ -127,9 +129,14 @@ sub init()
 
     m.buttonRow = m.top.findNode("buttonRow")
     m.buttonRowExtra = m.top.findNode("buttonRowExtra")
+    m.buttonRowContainer = m.top.findNode("buttonRowContainer")
     m.buttonConfigs = []
     m.primaryCount = 0
-    m.actionsExpanded = false
+    m.buttonRowScrolls = false
+    m.overflowMenu = m.top.findNode("overflowMenu")
+    m.overflowMenu.observeField("chosenAction", "onOverflowAction")
+    m.overflowMenu.observeField("closed", "onOverflowClosed")
+    m.overflowActions = []
     m.currentButtonIndex = 0
     m.buttonGroups = []
 
@@ -1251,8 +1258,26 @@ sub commitButtonRow()
 end sub
 
 sub centerButtonRow()
+    if m.buttonRowScrolls
+        scrollButtonRowTo(m.currentButtonIndex)
+        return
+    end if
+
+    m.buttonRowContainer.clippingRect = BUTTON_NO_CLIP
     centerButtonRowInContainer(m.buttonRow, m.primaryCount, CLASSIC_BUTTON_WIDTH, CLASSIC_BUTTON_GAP, 96)
     centerButtonRowInContainer(m.buttonRowExtra, m.buttonGroups.count() - m.primaryCount, CLASSIC_BUTTON_WIDTH, CLASSIC_BUTTON_GAP, 96)
+end sub
+
+' A row that scrolls starts at the left, clear of the edge, and moves along to keep the
+' focused button in view
+sub scrollButtonRowTo(index as integer)
+    stride = CLASSIC_BUTTON_WIDTH + CLASSIC_BUTTON_GAP
+    focusLeft = CLASSIC_SCROLL_PAD + index * stride
+    rowWidth = CLASSIC_SCROLL_PAD * 2 + m.buttonGroups.count() * stride - CLASSIC_BUTTON_GAP
+    offset = buttonRowScrollOffset(focusLeft, focusLeft + CLASSIC_BUTTON_WIDTH, rowWidth, CLASSIC_ROW_WIDTH)
+
+    m.buttonRowContainer.clippingRect = [0, -100, CLASSIC_ROW_WIDTH, 400]
+    m.buttonRow.translation = [CLASSIC_SCROLL_PAD - offset, m.buttonRow.translation[1]]
 end sub
 
 ' How one button config becomes a row entry. The classic screen queues configs and
@@ -1281,27 +1306,43 @@ function primaryRowCapacity() as integer
     return Int(fits)
 end function
 
-' The row holds as many buttons as fit across the screen. Anything past that folds
-' under a trailing More, which opens a second row underneath, the way the other
-' clients handle a long action row.
+' Left alone the row wraps, as many to a line as fit across the screen. A cap from the
+' Action Buttons on Screen setting puts the rest behind More, and All keeps every button in
+' one row that scrolls sideways.
 sub buildButtonRows()
     m.buttonRow.removeChildrenIndex(m.buttonRow.getChildCount(), 0)
     m.buttonRowExtra.removeChildrenIndex(m.buttonRowExtra.getChildCount(), 0)
     m.buttonGroups = []
+    m.overflowActions = []
+    m.buttonRowScrolls = buttonRowScrolls()
 
     configs = m.buttonConfigs
-    capacity = primaryRowCapacity()
-    overflows = configs.count() > capacity
+    keep = cappedButtonCount(configs, { maxVisible: 0, overflowAsMenu: false, countCapped: false })
+    if keep >= 0
+        shown = []
+        for i = 0 to configs.count() - 1
+            config = configs[i]
+            if i < keep
+                shown.push(config)
+            else
+                m.overflowActions.push({ icon: config.icon, label: config.label, action: config.action, id: config.id })
+            end if
+        end for
+        shown.push({ icon: "pkg:/images/icons/admin_controls.png", label: tr("More"), action: "toggleMoreActions", id: "moreActionsButton" })
+        configs = shown
+    end if
 
     primary = configs
     extra = []
-    if overflows
+    capacity = primaryRowCapacity()
+    if not m.buttonRowScrolls and configs.count() > capacity
         primary = []
-        for i = 0 to capacity - 2
-            primary.push(configs[i])
-        end for
-        for i = capacity - 1 to configs.count() - 1
-            extra.push(configs[i])
+        for i = 0 to configs.count() - 1
+            if i < capacity
+                primary.push(configs[i])
+            else
+                extra.push(configs[i])
+            end if
         end for
     end if
 
@@ -1309,18 +1350,13 @@ sub buildButtonRows()
         appendButton(config, m.buttonRow)
     end for
 
-    if overflows
-        appendButton(moreButtonConfig(), m.buttonRow)
-    end if
-
     m.primaryCount = m.buttonGroups.count()
 
     for each config in extra
         appendButton(config, m.buttonRowExtra)
     end for
 
-    m.buttonRowExtra.visible = m.actionsExpanded and extra.count() > 0
-    if not m.buttonRowExtra.visible then m.actionsExpanded = false
+    m.buttonRowExtra.visible = extra.count() > 0
 
     if m.buttonRowExtra.visible
         m.buttonRowExtra.translation = [0, 27 + m.buttonRow.boundingRect().height]
@@ -1350,15 +1386,9 @@ function rowEnd(index as integer) as integer
     return isExtraRowIndex(index) ? m.buttonGroups.count() - 1 : m.primaryCount - 1
 end function
 
-sub toggleMoreActions()
-    m.actionsExpanded = not m.actionsExpanded
-    index = m.currentButtonIndex
-    buildButtonRows()
-    focusButton(index)
-end sub
-
 sub highlightButton(index as integer)
     detailButtons.highlight(index, m.buttonGroups)
+    if m.buttonRowScrolls then scrollButtonRowTo(index)
 end sub
 
 sub unhighlightAllButtons()
@@ -1407,6 +1437,7 @@ end function
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
+    if m.overflowMenu.visible then return false
 
     ' A picker left open across a screensaver can come back without focus, which
     ' would leave this screen answering the remote from behind it
@@ -1525,7 +1556,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
             if column >= m.primaryCount then column = m.primaryCount - 1
             focusButton(column)
             return true
-        else if key = KeyCode.DOWN and m.actionsExpanded and not isExtraRowIndex(m.currentButtonIndex)
+        else if key = KeyCode.DOWN and m.buttonRowExtra.visible and not isExtraRowIndex(m.currentButtonIndex)
             column = m.currentButtonIndex
             if m.primaryCount + column > m.buttonGroups.count() - 1 then column = m.buttonGroups.count() - 1 - m.primaryCount
             focusButton(m.primaryCount + column)

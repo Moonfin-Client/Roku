@@ -3772,5 +3772,35 @@
         <extracomment>Why a file cant direct play</extracomment>
         <translation>Direct play is not supported for this media format.</translation>
     </message>
+    <message>
+        <source>Action Buttons on Screen</source>
+        <extracomment>Details screen setting</extracomment>
+        <translation>Action Buttons on Screen</translation>
+    </message>
+    <message>
+        <source>Choose how many buttons stay on screen before the rest move into More Actions</source>
+        <extracomment>Details screen setting description</extracomment>
+        <translation>Choose how many buttons stay on screen before the rest move into More Actions</translation>
+    </message>
+    <message>
+        <source>Auto (Theme Default)</source>
+        <extracomment>Action Buttons on Screen option that leaves each details style to its own default</extracomment>
+        <translation>Auto (Theme Default)</translation>
+    </message>
+    <message>
+        <source>1 (Play only)</source>
+        <extracomment>Action Buttons on Screen option</extracomment>
+        <translation>1 (Play only)</translation>
+    </message>
+    <message>
+        <source>All (Horizontal Scroll)</source>
+        <extracomment>Action Buttons on Screen option that keeps every button in one row that scrolls sideways</extracomment>
+        <translation>All (Horizontal Scroll)</translation>
+    </message>
+    <message>
+        <source>More</source>
+        <extracomment>Button on the classic details screen that opens the actions that didnt fit, and the name of an untitled tab on the modern one</extracomment>
+        <translation>More</translation>
+    </message>
 </context>
 </TS>
