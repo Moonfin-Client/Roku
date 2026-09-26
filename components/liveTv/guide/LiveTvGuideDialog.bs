@@ -1,0 +1,378 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/liveTvGuide.bs"
+import "pkg:/source/utils/misc.bs"
+
+const DIALOG_WIDTH = 960
+const DIALOG_PAD = 36
+const DIALOG_MAX_HEIGHT = 864
+const BUTTON_GAP = 12
+const OPTION_ROW_HEIGHT = 65
+const DANGER = "E0685C"
+
+sub init()
+    m.box = m.top.findNode("box")
+    m.surface = m.top.findNode("surface")
+    m.title = m.top.findNode("title")
+    m.body = m.top.findNode("body")
+    m.actions = m.top.findNode("actions")
+
+    liveTvGuide.SetFont(m.title, 36, false)
+
+    m.buttons = []
+    m.options = []
+    m.focusIndex = 0
+end sub
+
+function addLabel(parent as object, text as string, size as float, color as string, y as float, wrap = false as boolean) as object
+    label = CreateObject("roSGNode", "Label")
+    liveTvGuide.SetFont(label, size, false)
+    label.color = color
+    label.text = text
+    label.width = m.inner
+    label.wrap = wrap
+    label.translation = [0, y]
+    parent.appendChild(label)
+    return label
+end function
+
+sub build()
+    model = m.top.model
+    m.body.removeChildrenIndex(m.body.getChildCount(), 0)
+    m.actions.removeChildrenIndex(m.actions.getChildCount(), 0)
+    m.buttons = []
+    m.options = []
+    m.focusIndex = 0
+    m.top.busy = false
+    if not isValid(model) then return
+
+    ' The recordings screen draws its popups a little narrower, and its confirmations on a bluer
+    ' surface, so those come in with the model
+    width = model.width ?? DIALOG_WIDTH
+    m.inner = width - DIALOG_PAD * 2
+    m.danger = model.dangerColor ?? DANGER
+    m.surface.blendColor = model.surfaceColor ?? "#1A1A1AFF"
+
+    m.title.width = m.inner
+    m.title.text = model.title ?? ""
+    titleHeight = m.title.boundingRect().height
+    m.title.translation = [DIALOG_PAD, DIALOG_PAD]
+    bodyTop = DIALOG_PAD + titleHeight + (model.titleGap ?? 24)
+    m.body.translation = [DIALOG_PAD, bodyTop]
+
+    if model.type = "sort" or model.type = "date"
+        bodyHeight = buildOptions(model, DIALOG_MAX_HEIGHT - bodyTop - DIALOG_PAD)
+        height = bodyTop + bodyHeight + DIALOG_PAD
+    else
+        bodyRoom = DIALOG_MAX_HEIGHT - bodyTop - DIALOG_PAD - 150
+        if model.type = "recording"
+            bodyHeight = buildRecordingBody(model, bodyRoom)
+        else if model.type = "confirm"
+            bodyHeight = addLabel(m.body, model.text ?? "", 21, "#FFFFFFCC", 0, true).boundingRect().height
+        else
+            bodyHeight = buildProgramBody(model, bodyRoom)
+        end if
+        actionsHeight = buildButtons(model.buttons ?? [])
+        m.actions.translation = [DIALOG_PAD, bodyTop + bodyHeight + 24]
+        height = bodyTop + bodyHeight + 24 + actionsHeight + DIALOG_PAD
+    end if
+
+    m.surface.width = width
+    m.surface.height = height
+    m.box.translation = [(1920 - width) / 2, Int((1080 - height) / 2)]
+    applyFocus()
+end sub
+
+' A recording's episode title, overview and channel and length
+function buildRecordingBody(model as object, maxHeight as float) as float
+    y = 0
+    if isValidAndNotEmpty(model.subtitle)
+        y += addLabel(m.body, model.subtitle, 21, "#FFFFFFB3", y).boundingRect().height
+    end if
+    metaHeight = 0
+    if isValidAndNotEmpty(model.meta) then metaHeight = 12 + 24
+    if isValidAndNotEmpty(model.overview)
+        top = y
+        if y > 0 then top += 12
+        overview = addLabel(m.body, model.overview, 20, "#FFFFFF99", top, true)
+        overview.lineSpacing = 8
+        room = maxHeight - top - metaHeight
+        if overview.boundingRect().height > room
+            overview.maxLines = Int(room / 30)
+            if overview.maxLines < 1 then overview.maxLines = 1
+        end if
+        y = top + overview.boundingRect().height
+    end if
+    if isValidAndNotEmpty(model.meta)
+        top = y
+        if y > 0 then top += 12
+        y = top + addLabel(m.body, model.meta, 18, "#FFFFFF80", top).boundingRect().height
+    end if
+    return y
+end function
+
+' The time, the episode line, the overview and the category chips, with the overview giving up
+' lines when a long one would push the actions off the dialog
+function buildProgramBody(model as object, maxHeight as float) as float
+    y = 0
+    time = addLabel(m.body, model.time ?? "", 21, "#FFFFFFB3", y)
+    y += time.boundingRect().height
+
+    if isValidAndNotEmpty(model.episode)
+        episode = addLabel(m.body, model.episode, 21, "#FFFFFFB3", y + 12)
+        y += 12 + episode.boundingRect().height
+    end if
+
+    chips = model.chips ?? []
+    chipHeight = 0
+    if chips.count() > 0 then chipHeight = 18 + 44
+
+    if isValidAndNotEmpty(model.overview)
+        overview = addLabel(m.body, model.overview, 20, "#FFFFFF99", y + 18, true)
+        overview.lineSpacing = 8
+        room = maxHeight - y - 18 - chipHeight
+        if overview.boundingRect().height > room
+            overview.height = room
+            overview.maxLines = Int(room / 30)
+            if overview.maxLines < 1 then overview.maxLines = 1
+        end if
+        y += 18 + overview.boundingRect().height
+    end if
+
+    if chips.count() > 0
+        y += 18
+        x = 0
+        for each text in chips
+            chip = CreateObject("roSGNode", "Group")
+            border = CreateObject("roSGNode", "Poster")
+            border.uri = "pkg:/images/livetv/stroke12w1.9.png"
+            border.blendColor = "#FFFFFF1F"
+            chip.appendChild(border)
+            label = CreateObject("roSGNode", "Label")
+            liveTvGuide.SetFont(label, 18, false)
+            label.color = "#FFFFFFD9"
+            label.text = text
+            label.translation = [15, 6]
+            chip.appendChild(label)
+            rect = label.boundingRect()
+            border.width = rect.width + 30
+            border.height = rect.height + 12
+            if x > 0 and x + border.width > m.inner
+                x = 0
+                y += border.height + 12
+            end if
+            chip.translation = [x, y]
+            m.body.appendChild(chip)
+            x += border.width + 12
+        end for
+        y += 44
+    end if
+    return y
+end function
+
+' Right aligned and wrapped the way a row of buttons flows, the first one leading
+function buildButtons(buttons as object) as float
+    lines = []
+    line = []
+    lineWidth = 0
+    for each entry in buttons
+        button = CreateObject("roSGNode", "Group")
+        fill = CreateObject("roSGNode", "Poster")
+        fill.uri = "pkg:/images/livetv/fill28.9.png"
+        fill.visible = false
+        button.appendChild(fill)
+        label = CreateObject("roSGNode", "Label")
+        liveTvGuide.SetFont(label, 21, true)
+        label.text = entry.label
+        label.translation = [18, 15]
+        color = GUIDE_ACCENT
+        if entry.danger = true then color = m.danger
+        label.color = "#" + color
+        button.appendChild(label)
+        rect = label.boundingRect()
+        fill.width = rect.width + 36
+        fill.height = rect.height + 30
+        fill.blendColor = liveTvGuide.Tint(color, 0.25)
+        m.actions.appendChild(button)
+
+        visual = { id: entry.id, group: button, fill: fill, width: fill.width, height: fill.height, line: 0, x: 0 }
+        if line.count() > 0 and lineWidth + BUTTON_GAP + visual.width > m.inner
+            lines.push(line)
+            line = []
+            lineWidth = 0
+        end if
+        if line.count() > 0 then lineWidth += BUTTON_GAP
+        lineWidth += visual.width
+        line.push(visual)
+        m.buttons.push(visual)
+        if entry.isDefault = true then m.focusIndex = m.buttons.count() - 1
+    end for
+    if line.count() > 0 then lines.push(line)
+
+    y = 0
+    for lineIndex = 0 to lines.count() - 1
+        entries = lines[lineIndex]
+        total = 0
+        for each visual in entries
+            total += visual.width
+        end for
+        total += BUTTON_GAP * (entries.count() - 1)
+        x = m.inner - total
+        rowHeight = 0
+        for each visual in entries
+            visual.line = lineIndex
+            visual.x = x
+            visual.group.translation = [x, y]
+            x += visual.width + BUTTON_GAP
+            if visual.height > rowHeight then rowHeight = visual.height
+        end for
+        y += rowHeight
+        if lineIndex < lines.count() - 1 then y += BUTTON_GAP
+    end for
+    return y
+end function
+
+' The sort's radio rows or the date list, scrolled so the focused row is always in view
+function buildOptions(model as object, maxHeight as float) as float
+    visibleRows = Int(maxHeight / OPTION_ROW_HEIGHT)
+    options = model.options ?? []
+    viewportHeight = options.count() * OPTION_ROW_HEIGHT
+    if options.count() > visibleRows then viewportHeight = visibleRows * OPTION_ROW_HEIGHT
+
+    m.viewport = CreateObject("roSGNode", "Group")
+    m.viewport.clippingRect = [0, 0, m.inner, viewportHeight]
+    m.body.appendChild(m.viewport)
+    m.list = CreateObject("roSGNode", "Group")
+    m.viewport.appendChild(m.list)
+    m.visibleRows = visibleRows
+    m.scrollRow = 0
+
+    radio = model.type = "sort"
+    for i = 0 to options.count() - 1
+        entry = options[i]
+        row = CreateObject("roSGNode", "Group")
+        row.translation = [0, i * OPTION_ROW_HEIGHT]
+        fill = CreateObject("roSGNode", "Poster")
+        fill.uri = "pkg:/images/details/surface12.9.png"
+        fill.width = m.inner
+        fill.height = OPTION_ROW_HEIGHT
+        fill.blendColor = liveTvGuide.Tint(GUIDE_ACCENT, 0.25)
+        fill.visible = false
+        row.appendChild(fill)
+
+        textLeft = 24
+        if radio
+            ring = CreateObject("roSGNode", "Poster")
+            ring.width = 27
+            ring.height = 27
+            ring.translation = [24, 19]
+            if entry.selected = true
+                ring.uri = "pkg:/images/livetv/radio_on.png"
+            else
+                ring.uri = "pkg:/images/livetv/radio_off.png"
+            end if
+            row.appendChild(ring)
+            textLeft = 24 + 27 + 24
+        end if
+
+        label = CreateObject("roSGNode", "Label")
+        liveTvGuide.SetFont(label, 24, false)
+        label.text = entry.label
+        label.color = "#FFFFFF"
+        if not radio and entry.selected = true then label.color = "#" + GUIDE_ACCENT
+        label.height = OPTION_ROW_HEIGHT
+        label.vertAlign = "center"
+        label.translation = [textLeft, 0]
+        row.appendChild(label)
+
+        if not radio and entry.selected = true
+            check = CreateObject("roSGNode", "Poster")
+            check.uri = "pkg:/images/livetv/check.png"
+            check.width = 27
+            check.height = 27
+            check.blendColor = "#" + GUIDE_ACCENT
+            check.translation = [m.inner - 24 - 27, 19]
+            row.appendChild(check)
+        end if
+
+        m.list.appendChild(row)
+        m.options.push({ fill: fill })
+        if entry.selected = true then m.focusIndex = i
+    end for
+    return viewportHeight
+end function
+
+sub applyFocus()
+    for i = 0 to m.buttons.count() - 1
+        m.buttons[i].fill.visible = i = m.focusIndex
+    end for
+    for i = 0 to m.options.count() - 1
+        m.options[i].fill.visible = i = m.focusIndex
+    end for
+
+    if m.options.count() > 0
+        if m.focusIndex < m.scrollRow then m.scrollRow = m.focusIndex
+        if m.focusIndex >= m.scrollRow + m.visibleRows then m.scrollRow = m.focusIndex - m.visibleRows + 1
+        m.list.translation = [0, -m.scrollRow * OPTION_ROW_HEIGHT]
+    end if
+end sub
+
+' Up and down leave a wrapped row of buttons for the one nearest above or below
+function nearestOnLine(line as integer) as integer
+    current = m.buttons[m.focusIndex]
+    center = current.x + current.width / 2
+    best = -1
+    bestDistance = 100000
+    for i = 0 to m.buttons.count() - 1
+        visual = m.buttons[i]
+        if visual.line <> line then continue for
+        distance = abs(visual.x + visual.width / 2 - center)
+        if distance < bestDistance
+            bestDistance = distance
+            best = i
+        end if
+    end for
+    return best
+end function
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return true
+
+    if key = KeyCode.BACK
+        m.top.dismissed = true
+        return true
+    end if
+
+    if m.options.count() > 0
+        if key = KeyCode.UP and m.focusIndex > 0
+            m.focusIndex--
+            applyFocus()
+        else if key = KeyCode.DOWN and m.focusIndex < m.options.count() - 1
+            m.focusIndex++
+            applyFocus()
+        else if key = KeyCode.OK
+            m.top.action = { option: m.focusIndex }
+        end if
+        return true
+    end if
+
+    if m.buttons.count() = 0 then return true
+    if key = KeyCode.LEFT and m.focusIndex > 0
+        m.focusIndex--
+        applyFocus()
+    else if key = KeyCode.RIGHT and m.focusIndex < m.buttons.count() - 1
+        m.focusIndex++
+        applyFocus()
+    else if key = KeyCode.UP or key = KeyCode.DOWN
+        line = m.buttons[m.focusIndex].line
+        if key = KeyCode.UP then line-- else line++
+        target = nearestOnLine(line)
+        if target >= 0
+            m.focusIndex = target
+            applyFocus()
+        end if
+    else if key = KeyCode.OK
+        if m.top.busy then return true
+        m.top.action = { id: m.buttons[m.focusIndex].id }
+    end if
+    return true
+end function

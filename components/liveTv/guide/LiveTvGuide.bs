@@ -1,0 +1,1418 @@
+import "pkg:/components/liveTv/guide/guideStore.bs"
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/liveTvGuide.bs"
+import "pkg:/source/utils/liveTvLastChannel.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/settingsSync.bs"
+
+const ROW_HEIGHT = 87
+const GRID_HEIGHT = 708
+const GRID_WIDTH = 1553
+const RULER_OFFSET = 297
+const VISIBLE_ROWS = 9
+const OVERSCAN_ROWS = 4
+' Start fetching the next batch this many rows before the loaded edge, so rows are usually filled
+' by the time they reach the screen
+const PROGRAM_PREFETCH_ROWS = 12
+' How far back the earlier button pages. Most guide sources keep little history.
+const MAX_GUIDE_HISTORY = 86400
+' A re-anchor waits this long after the last press, so the window never moves under the viewer
+const REANCHOR_INPUT_QUIET_MS = 1000
+const WINDOW_BAR_PREVIOUS = 0
+const WINDOW_BAR_LAST = 5
+const CHIP_RAIL_WIDTH = 1820
+const BAR_WIDTH = 1826
+const SORT_SETTING = "livetv.channelSortBy"
+
+sub init()
+    m.top.optionsAvailable = false
+    ' The guide owns the whole screen, the way the player does
+    m.top.overhangVisible = false
+
+    m.chipRail = m.top.findNode("chipRail")
+    m.hero = m.top.findNode("hero")
+    m.windowBar = m.top.findNode("windowBar")
+    m.windowLabel = m.top.findNode("windowLabel")
+    m.ruler = m.top.findNode("ruler")
+    m.gridViewport = m.top.findNode("gridViewport")
+    m.rowsLayer = m.top.findNode("rows")
+    m.spinner = m.top.findNode("spinner")
+    m.stateMessage = m.top.findNode("stateMessage")
+    m.numberOverlay = m.top.findNode("numberOverlay")
+    m.numberFill = m.top.findNode("numberFill")
+    m.numberText = m.top.findNode("numberText")
+    m.toast = m.top.findNode("toast")
+    m.toastFill = m.top.findNode("toastFill")
+    m.toastText = m.top.findNode("toastText")
+    m.scrollAnimation = m.top.findNode("scrollAnimation")
+    m.scrollInterp = m.top.findNode("scrollInterp")
+
+    liveTvGuide.SetFont(m.windowLabel, 20, false)
+    liveTvGuide.SetFont(m.stateMessage, 20, false)
+    liveTvGuide.SetFont(m.numberText, 54, true)
+    liveTvGuide.SetFont(m.toastText, 20, false)
+    m.spinner.translation = [(1850 - 125) / 2, 35 + (GRID_HEIGHT - 125) / 2]
+
+    ' The guide on the television canvas, less the page's padding
+    m.guideWindow = liveTvGuide.WindowFor(1920 / GUIDE_TV_CANVAS_SCALE - 48)
+    m.pxPerSec = GRID_WIDTH / m.guideWindow
+
+    m.clockNow = liveTvGuide.NowSeconds()
+    m.inputClock = CreateObject("roTimespan")
+    m.lastDpadMs = -1
+    m.disposed = false
+
+    m.version = 0
+    m.rowNodes = {}
+    m.freeRows = []
+    m.dialog = invalid
+    m.syncTasks = []
+    resetViewState()
+
+    buildChips()
+    buildWindowBar()
+
+    m.clockTimer = m.top.findNode("clockTimer")
+    m.clockTimer.observeField("fire", "onClockTick")
+    m.clockTimer.control = "start"
+    m.reanchorTimer = m.top.findNode("reanchorTimer")
+    m.reanchorTimer.observeField("fire", "onReanchorTick")
+    scheduleReanchor()
+    m.top.findNode("numberTimer").observeField("fire", "onChannelNumberSettled")
+    m.top.findNode("toastTimer").observeField("fire", "hideToast")
+    m.artworkTimer = m.top.findNode("artworkTimer")
+    m.artworkTimer.observeField("fire", "onArtworkSettled")
+
+    openGuide()
+end sub
+
+sub resetViewState()
+    m.lineup = []
+    m.lineupKey = ""
+    m.prevState = "loading"
+    m.didRestoreFocus = false
+    m.resetting = false
+    m.cellsCache = { version: -1, byChannel: {} }
+
+    m.area = "grid"
+    m.chipIndex = 0
+    m.barIndex = WINDOW_BAR_PREVIOUS
+    m.lastBarIndex = WINDOW_BAR_PREVIOUS
+    m.gridRow = 0
+    m.gridOnChannel = true
+    m.gridCell = 0
+    m.selection = invalid
+    m.pendingMove = invalid
+    m.focusRef = { railFocused: false, channelId: "", program: invalid, area: "grid" }
+    m.lastFocusedRow = -1
+    m.scrollTop = 0
+    m.scrollRow = 0
+    m.dialogType = ""
+    m.dialogProgram = invalid
+    m.channelNumber = ""
+end sub
+
+' A fresh store at the live edge. The sort is read again since another device may have synced a
+' new one in.
+sub openGuide()
+    storeInit(liveTvGuide.NormalizeSort(m.global.session.user.settings[SORT_SETTING]))
+    storeLoad({ guideWindow: m.guideWindow, windowStart: liveTvGuide.LeftEdge(liveTvGuide.NowSeconds()), livePosition: true })
+end sub
+
+sub OnScreenShown(isReturning = false as boolean)
+    m.top.setFocus(true)
+    if isReturning then reopenGuide()
+end sub
+
+' Back from playback or recordings, the guide starts over the way it first opened, on the channel
+' last tuned and with timers and favorites as the server now has them
+sub reopenGuide()
+    closeDialogNode()
+    hideToast()
+    m.numberOverlay.visible = false
+    m.scrollAnimation.control = "stop"
+    m.artworkTimer.control = "stop"
+    resetViewState()
+    m.rowsLayer.translation = [0, 0]
+    scheduleReanchor()
+    openGuide()
+end sub
+
+sub OnScreenHidden()
+    m.scrollAnimation.control = "stop"
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Chips and the window bar
+' ------------------------------------------------------------------------------------------------
+
+sub buildChips()
+    m.chips = []
+    m.chipTrack = CreateObject("roSGNode", "Group")
+    m.chipRail.appendChild(m.chipTrack)
+    x = 0
+    for each entry in liveTvGuide.Filters()
+        chip = CreateObject("roSGNode", "Group")
+        fill = CreateObject("roSGNode", "Poster")
+        fill.uri = "pkg:/images/livetv/fill19.9.png"
+        chip.appendChild(fill)
+        border = CreateObject("roSGNode", "Poster")
+        border.uri = "pkg:/images/livetv/stroke19w3.9.png"
+        chip.appendChild(border)
+        label = CreateObject("roSGNode", "Label")
+        liveTvGuide.SetFont(label, 20, false)
+        label.text = tr(entry.label)
+        label.translation = [20, 10]
+        chip.appendChild(label)
+
+        width = label.boundingRect().width + 40
+        for each layer in [fill, border]
+            layer.width = width
+            layer.height = 44
+        end for
+        chip.translation = [x, 0]
+        m.chipTrack.appendChild(chip)
+        m.chips.push({ key: entry.key, group: chip, fill: fill, border: border, label: label, x: x, width: width })
+        x += width + 6
+    end for
+    m.chipsWidth = x - 6
+end sub
+
+sub buildWindowBar()
+    m.barButtons = []
+    specs = [
+        { icon: "chevron_left.png", text: "" },
+        { icon: "", text: tr("Now") },
+        { icon: "chevron_right.png", text: "" },
+        { icon: "sort.png", text: "" },
+        { icon: "calendar.png", text: "" },
+        { icon: "dvr.png", text: tr("Recordings") }
+    ]
+    for each spec in specs
+        button = CreateObject("roSGNode", "Group")
+        fill = CreateObject("roSGNode", "Poster")
+        fill.uri = "pkg:/images/livetv/fill20.9.png"
+        button.appendChild(fill)
+        x = 17
+        icon = invalid
+        if spec.icon <> ""
+            icon = CreateObject("roSGNode", "Poster")
+            icon.uri = "pkg:/images/livetv/" + spec.icon
+            size = 26
+            if spec.text <> "" then size = 23
+            icon.width = size
+            icon.height = size
+            icon.translation = [x, (40 - size) / 2]
+            button.appendChild(icon)
+            x += size
+            if spec.text <> "" then x += 9
+        end if
+        label = invalid
+        if spec.text <> ""
+            label = CreateObject("roSGNode", "Label")
+            liveTvGuide.SetFont(label, 19, false)
+            label.text = spec.text
+            label.height = 40
+            label.vertAlign = "center"
+            label.translation = [x, 0]
+            button.appendChild(label)
+            x += label.boundingRect().width
+        end if
+        width = x + 17
+        fill.width = width
+        fill.height = 40
+        m.windowBar.appendChild(button)
+        m.barButtons.push({ group: button, fill: fill, icon: icon, label: label, width: width })
+    end for
+
+    ' Earlier, Now and Later lead, the sort, date and recordings buttons close the bar, and the
+    ' window's label takes the space between them
+    x = 0
+    for i = 0 to 2
+        if i > 0 then x += 3
+        m.barButtons[i].group.translation = [x, 0]
+        x += m.barButtons[i].width
+    end for
+    labelLeft = x + 12
+
+    right = BAR_WIDTH
+    for i = 5 to 3 step -1
+        right -= m.barButtons[i].width
+        m.barButtons[i].group.translation = [right, 0]
+        if i > 3 then right -= 6
+    end for
+    m.windowLabel.translation = [labelLeft, 0]
+    m.windowLabel.width = right - 12 - labelLeft
+end sub
+
+sub drawChips()
+    for i = 0 to m.chips.count() - 1
+        chip = m.chips[i]
+        selected = m.store.filter = chip.key
+        focused = m.area = "chips" and i = m.chipIndex
+        if selected
+            chip.fill.blendColor = "#" + GUIDE_ACCENT
+            chip.label.color = "#10242E"
+            liveTvGuide.SetFont(chip.label, 20, true)
+            chip.border.visible = focused
+            chip.border.blendColor = "#FFFFFFE6"
+        else
+            chip.fill.blendColor = "#1A1A1A8C"
+            chip.label.color = "#FFFFFFD9"
+            liveTvGuide.SetFont(chip.label, 20, false)
+            chip.border.visible = true
+            chip.border.blendColor = "#FFFFFF1F"
+            if focused then chip.border.blendColor = "#" + GUIDE_ACCENT
+        end if
+    end for
+end sub
+
+' The focused chip slides toward the middle when the row runs wider than the rail
+sub scrollChipRail()
+    if m.chipsWidth <= CHIP_RAIL_WIDTH
+        m.chipTrack.translation = [0, 0]
+        return
+    end if
+    chip = m.chips[m.chipIndex]
+    offset = chip.x - (CHIP_RAIL_WIDTH - chip.width) / 2
+    if offset < 0 then offset = 0
+    if offset > m.chipsWidth - CHIP_RAIL_WIDTH then offset = m.chipsWidth - CHIP_RAIL_WIDTH
+    m.chipTrack.translation = [-offset, 0]
+end sub
+
+sub drawWindowBar()
+    for i = 0 to m.barButtons.count() - 1
+        button = m.barButtons[i]
+        focused = m.area = "bar" and i = m.barIndex
+        ink = "#FFFFFFCC"
+        if focused
+            button.fill.blendColor = "#" + GUIDE_ACCENT
+            ink = "#FFFFFF"
+        else
+            button.fill.blendColor = "#FFFFFF1A"
+        end if
+        if isValid(button.icon) then button.icon.blendColor = ink
+        if isValid(button.label) then button.label.color = ink
+    end for
+    m.windowLabel.text = liveTvGuide.DayLabel(m.store.guideDate) + "  " + liveTvGuide.ClockTime(m.store.windowStart) + " – " + liveTvGuide.ClockTime(m.store.windowEnd)
+end sub
+
+sub drawRuler()
+    m.ruler.removeChildrenIndex(m.ruler.getChildCount(), 0)
+    slotWidth = GUIDE_HALF_HOUR * m.pxPerSec
+    index = 0
+    for time = m.store.windowStart to m.store.windowEnd - 1 step GUIDE_HALF_HOUR
+        label = CreateObject("roSGNode", "Label")
+        liveTvGuide.SetFont(label, 17, false)
+        label.color = "#FFFFFFB3"
+        label.text = liveTvGuide.ClockTime(time)
+        label.height = 34
+        label.vertAlign = "center"
+        label.width = slotWidth - 12
+        label.translation = [RULER_OFFSET + index * slotWidth + 12, 0]
+        m.ruler.appendChild(label)
+        index++
+    end for
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Reacting to the store
+' ------------------------------------------------------------------------------------------------
+
+sub onStoreChanged()
+    if m.disposed then return
+    m.version++
+    m.lineup = storeFilteredChannels()
+    state = m.store.state
+
+    showGrid = state = "ready" and m.lineup.count() > 0
+    m.ruler.visible = showGrid
+    m.gridViewport.visible = showGrid
+    m.top.findNode("rulerDivider").visible = showGrid
+    m.spinner.visible = state = "loading"
+    m.stateMessage.visible = false
+    if state = "error"
+        m.stateMessage.visible = true
+        m.stateMessage.text = tr("Failed to load guide: {error}").Replace("{error}", m.store.error)
+    else if state = "ready" and m.lineup.count() = 0
+        m.stateMessage.visible = true
+        m.stateMessage.text = tr("No channels found")
+    end if
+
+    drawChips()
+    drawWindowBar()
+    drawRuler()
+    clampScroll()
+    renderRows()
+    updateHero()
+    reactToStore()
+    prefetchMoreRows()
+end sub
+
+sub reactToStore()
+    currentState = m.store.state
+    prevState = m.prevState
+    m.prevState = currentState
+    if currentState <> "ready" then return
+
+    ids = []
+    for each channel in m.lineup
+        ids.push(channel.Id)
+    end for
+    lineupKey = ids.join(",")
+    lineupChanged = lineupKey <> m.lineupKey
+    m.lineupKey = lineupKey
+
+    ' Where the guide opens: the channel last tuned, or the first row
+    if not m.didRestoreFocus
+        if m.lineup.count() = 0 then return
+        m.didRestoreFocus = true
+        preferred = lineupIndexOf(liveTvLastChannel.Get())
+        if preferred < 0 then preferred = 0
+        focusChannelRow(preferred, false)
+        return
+    end if
+
+    ' A reload replaced the grid under the viewer, so focus goes back where it was
+    if prevState = "loading" and not isValid(m.dialog) and m.focusRef.area = "grid" and m.area = "grid"
+        restoreGridFocus()
+        return
+    end if
+
+    ' A filter or sort moved the selected channel to another row, or out of the lineup
+    if lineupChanged and isValid(m.selection) and m.lineup.count() > 0
+        rowIndex = lineupIndexOf(m.selection.channelId)
+        if rowIndex < 0
+            rowIndex = m.lastFocusedRow
+            if rowIndex < 0 then rowIndex = 0
+            if rowIndex > m.lineup.count() - 1 then rowIndex = m.lineup.count() - 1
+            fallbackCells = cellsFor(m.lineup[rowIndex].Id)
+            if fallbackCells.count() = 0 then return
+            cell = fallbackCells[liveTvGuide.ResolveCellIndexAt(fallbackCells, m.selection.anchorTime)]
+            m.selection = { channelId: m.lineup[rowIndex].Id, anchorTime: liveTvGuide.ClampAnchorInto(cell, m.selection.anchorTime), programId: liveTvGuide.ProgramIdOf(cell) }
+        end if
+        cells = cellsFor(m.selection.channelId)
+        if cells.count() = 0 then return
+        m.lastFocusedRow = -1
+        scrollToRow(rowIndex, true)
+        if m.focusRef.area = "grid" and m.area = "grid" then focusSelectedCell(m.selection, cells)
+    end if
+
+    applyPendingVerticalMove()
+end sub
+
+' As the guide nears the loaded edge, the next batch is asked for
+sub prefetchMoreRows()
+    if m.store.state <> "ready" then return
+    lastBuiltRow = m.scrollRow + VISIBLE_ROWS + OVERSCAN_ROWS * 2
+    if storeHasMore() and lastBuiltRow + PROGRAM_PREFETCH_ROWS >= storeHighWaterRows() then storeLoadMore()
+end sub
+
+' The screen's own steps, carried on from the store once a call it waited on answers
+sub onGuideStep(stepName as string, ctx as object, ok as boolean)
+    if stepName = "shifted"
+        onWindowShifted(ctx)
+    else if stepName = "anchorToWindowStart"
+        anchorToWindowStart()
+    else if stepName = "reset"
+        finishReset()
+    else if stepName = "reanchored"
+        onReanchored(ctx)
+    else if stepName = "reanchorFailed"
+        ' A failed refresh keeps what the guide already holds
+    else if stepName = "dialogDone"
+        onDialogActionDone(ctx, ok)
+    end if
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Cells and rows
+' ------------------------------------------------------------------------------------------------
+
+function lineupIndexOf(channelId as dynamic) as integer
+    if not isValidAndNotEmpty(channelId) then return -1
+    for i = 0 to m.lineup.count() - 1
+        if m.lineup[i].Id = channelId then return i
+    end for
+    return -1
+end function
+
+' The rows drawn reuse their cells until the guide changes, so a scroll only lays out the rows
+' that came into view
+function cellsFor(channelId as string) as object
+    if m.cellsCache.version <> m.version
+        m.cellsCache = { version: m.version, byChannel: {} }
+    end if
+    cells = m.cellsCache.byChannel[channelId]
+    if not isValid(cells)
+        cells = liveTvGuide.BuildRowCells(storeProgramsFor(channelId), storeUnfilteredFor(channelId), m.store.windowStart, m.store.windowEnd, storeHasProgramsFor(channelId))
+        m.cellsCache.byChannel[channelId] = cells
+    end if
+    return cells
+end function
+
+function logoUriFor(channel as object) as string
+    tag = chainLookupReturn(channel, "ImageTags.Primary", "")
+    if tag = "" then return ""
+    return buildURL(Substitute("/Items/{0}/Images/Primary", channel.Id), { maxHeight: ROW_HEIGHT, tag: tag }) ?? ""
+end function
+
+sub clampScroll()
+    maxScroll = m.lineup.count() * ROW_HEIGHT - GRID_HEIGHT
+    if maxScroll < 0 then maxScroll = 0
+    if m.scrollTop > maxScroll
+        m.scrollTop = maxScroll
+        m.rowsLayer.translation = [0, -m.scrollTop]
+    end if
+end sub
+
+' Builds the rows the viewport shows, plus one either side, recycling the ones scrolled away
+sub renderRows(fromScroll = -1 as integer)
+    count = m.lineup.count()
+    top = m.scrollTop
+    bottom = m.scrollTop + GRID_HEIGHT
+    ' While the list glides from one place to another, both ends of the glide stay drawn
+    if fromScroll >= 0
+        if fromScroll < top then top = fromScroll
+        if fromScroll + GRID_HEIGHT > bottom then bottom = fromScroll + GRID_HEIGHT
+    end if
+    first = Int(top / ROW_HEIGHT) - 1
+    if first < 0 then first = 0
+    last = Int(bottom / ROW_HEIGHT) + 1
+    if last > count - 1 then last = count - 1
+
+    firstVisible = Int(m.scrollTop / ROW_HEIGHT)
+    m.scrollRow = firstVisible - OVERSCAN_ROWS
+    if m.scrollRow < 0 then m.scrollRow = 0
+
+    kept = {}
+    for each key in m.rowNodes
+        index = key.toInt()
+        node = m.rowNodes[key]
+        if index < first or index > last or index >= count
+            node.visible = false
+            m.freeRows.push(node)
+        else
+            kept[key] = node
+        end if
+    end for
+    m.rowNodes = kept
+
+    for index = first to last
+        key = index.toStr()
+        node = m.rowNodes[key]
+        if not isValid(node)
+            if m.freeRows.count() > 0
+                node = m.freeRows.pop()
+            else
+                node = CreateObject("roSGNode", "LiveTvGuideRow")
+                m.rowsLayer.appendChild(node)
+            end if
+            node.addFields({ renderedKey: "" })
+            m.rowNodes[key] = node
+        end if
+        channel = m.lineup[index]
+        renderedKey = channel.Id + "@" + m.version.toStr()
+        node.visible = true
+        node.translation = [0, index * ROW_HEIGHT]
+        node.now = m.clockNow
+        if node.renderedKey <> renderedKey
+            node.renderedKey = renderedKey
+            node.model = {
+                channel: channel,
+                cells: cellsFor(channel.Id),
+                windowStart: m.store.windowStart,
+                pxPerSec: m.pxPerSec,
+                logoUri: logoUriFor(channel)
+            }
+        end if
+    end for
+    drawGridFocus()
+end sub
+
+sub drawGridFocus()
+    for each key in m.rowNodes
+        node = m.rowNodes[key]
+        index = key.toInt()
+        onRow = m.area = "grid" and index = m.gridRow
+        node.focusChannel = onRow and m.gridOnChannel
+        cellIndex = -1
+        if onRow and not m.gridOnChannel then cellIndex = m.gridCell
+        node.focusCell = cellIndex
+    end for
+end sub
+
+' The focused row scrolls to the top of the grid, so the rows below it are the ones in view
+sub scrollToRow(index as integer, animate as boolean)
+    if m.lastFocusedRow = index then return
+    m.lastFocusedRow = index
+    maxScroll = m.lineup.count() * ROW_HEIGHT - GRID_HEIGHT
+    if maxScroll < 0 then maxScroll = 0
+    target = index * ROW_HEIGHT
+    if target > maxScroll then target = maxScroll
+    if target < 0 then target = 0
+    previous = m.scrollTop
+    if target = previous then return
+
+    m.scrollTop = target
+    m.scrollAnimation.control = "stop"
+    ' A long jump would have to draw every row it passes, so only a short glide is animated
+    if animate and abs(target - previous) <= ROW_HEIGHT * 2
+        renderRows(previous)
+        m.scrollInterp.keyValue = [[0, -previous], [0, -target]]
+        m.scrollAnimation.control = "start"
+    else
+        m.rowsLayer.translation = [0, -target]
+        renderRows()
+    end if
+    prefetchMoreRows()
+end sub
+
+function rowsPerViewport() as integer
+    return Int(GRID_HEIGHT / ROW_HEIGHT)
+end function
+
+' ------------------------------------------------------------------------------------------------
+' The hero
+' ------------------------------------------------------------------------------------------------
+
+' Previews the focused program, or what the focused channel is airing now
+sub updateHero()
+    ref = m.focusRef
+    channel = invalid
+    if not ref.railFocused and isValid(ref.program)
+        channel = storeChannelForId(ref.program.LookupCI("ChannelId"))
+    else if ref.channelId <> ""
+        channel = storeChannelForId(ref.channelId)
+    end if
+
+    now = liveTvGuide.NowSeconds()
+    preview = ref.program
+    if not isValid(preview) and isValid(channel) then preview = liveTvGuide.ProgramAiringAt(storeProgramsFor(channel.Id), now)
+
+    ' The bulk fetch carries no artwork, so the focused program's is looked up on its own once
+    ' focus settles on it
+    m.artworkTimer.control = "stop"
+    m.artworkPreview = invalid
+    if isValid(preview) and not isValid(liveTvGuide.ArtworkSource(preview)) and not storeHasArtworkResult(preview.LookupCI("Id") ?? "")
+        m.artworkPreview = preview
+        m.artworkTimer.control = "start"
+    end if
+
+    logoUrl = invalid
+    tag = chainLookupReturn(channel, "ImageTags.Primary", "")
+    if tag <> "" then logoUrl = buildURL(Substitute("/Items/{0}/Images/Primary", channel.Id), { maxHeight: 209, tag: tag })
+
+    programImageUrl = invalid
+    if isValid(preview)
+        artwork = liveTvGuide.ArtworkSource(preview)
+        if not isValid(artwork) then artwork = storeCachedArtwork(preview.LookupCI("Id") ?? "")
+        if isValid(artwork)
+            if artwork.isThumb
+                programImageUrl = buildURL(Substitute("/Items/{0}/Images/Thumb", artwork.itemId), { maxWidth: 157, tag: artwork.tag })
+            else
+                programImageUrl = buildURL(Substitute("/Items/{0}/Images/Primary", artwork.itemId), { maxHeight: 209, maxWidth: 157, tag: artwork.tag })
+            end if
+        end if
+    end if
+
+    model = {
+        title: tr("Guide Timeline"),
+        programTitle: invalid,
+        programSubtitle: "",
+        channelLogoUrl: logoUrl,
+        programImageUrl: programImageUrl,
+        timeLabel: invalid,
+        genreLabel: invalid,
+        officialRating: invalid,
+        communityRating: invalid,
+        badgeLabel: invalid,
+        synopsis: invalid,
+        isLive: false
+    }
+    if isValid(channel)
+        model.title = channel.Name ?? ""
+    else if isValid(preview)
+        model.title = preview.LookupCI("Name") ?? ""
+    end if
+
+    if isValid(preview)
+        name = preview.LookupCI("Name") ?? ""
+        if isValid(channel) then model.programTitle = name
+        episodeTitle = liveTvGuide.EpisodeTitleOf(preview)
+        suffix = ""
+        if episodeTitle <> "" and episodeTitle <> name then suffix = " - " + episodeTitle
+        label = liveTvGuide.SeasonEpisodeLabel(preview)
+        if label <> "" then suffix += " (" + label + ")"
+        model.programSubtitle = suffix
+        model.timeLabel = liveTvGuide.ClockTime(preview.startSec) + " - " + liveTvGuide.ClockTime(preview.endSec)
+        genre = liveTvGuide.GenreFor(preview)
+        if isValid(genre) then model.genreLabel = genre.label
+        rating = preview.LookupCI("OfficialRating")
+        if isValidAndNotEmpty(rating) then model.officialRating = rating
+        model.communityRating = preview.LookupCI("CommunityRating")
+        if preview.LookupCI("IsPremiere") = true
+            model.badgeLabel = tr("Premiere")
+        else if preview.LookupCI("IsRepeat") = true
+            model.badgeLabel = tr("Repeat")
+        end if
+        model.synopsis = preview.LookupCI("Overview")
+        model.isLive = liveTvGuide.IsLiveAt(preview, now)
+    end if
+
+    m.hero.model = model
+end sub
+
+sub onArtworkSettled()
+    if isValid(m.artworkPreview) then storeRequestArtwork(m.artworkPreview)
+end sub
+
+sub onArtworkChanged()
+    updateHero()
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Focus
+' ------------------------------------------------------------------------------------------------
+
+sub onNavigationKey()
+    m.lastDpadMs = m.inputClock.TotalMilliseconds()
+    m.pendingMove = invalid
+end sub
+
+sub focusChip(index as integer)
+    if index < 0 or index >= m.chips.count() then return
+    m.area = "chips"
+    m.chipIndex = index
+    m.focusRef.area = "chips"
+    scrollChipRail()
+    drawChips()
+    drawWindowBar()
+    drawGridFocus()
+end sub
+
+sub focusWindowBar(index as integer)
+    if index < WINDOW_BAR_PREVIOUS or index > WINDOW_BAR_LAST then return
+    m.pendingMove = invalid
+    m.lastBarIndex = index
+    m.barIndex = index
+    m.area = "bar"
+    m.focusRef.area = "bar"
+    drawChips()
+    drawWindowBar()
+    drawGridFocus()
+end sub
+
+sub focusChannelRow(index as integer, animate = true as boolean)
+    if index < 0 or index >= m.lineup.count() then return
+    m.pendingMove = invalid
+    scrollToRow(index, animate)
+    m.area = "grid"
+    m.gridRow = index
+    m.gridOnChannel = true
+    m.focusRef = { railFocused: true, channelId: m.lineup[index].Id, program: invalid, area: "grid" }
+    drawChips()
+    drawWindowBar()
+    drawGridFocus()
+    updateHero()
+end sub
+
+sub focusCell(rowIndex as integer, channelId as string, cellIndex as integer)
+    cells = cellsFor(channelId)
+    if cellIndex < 0 or cellIndex >= cells.count() then return
+    cell = cells[cellIndex]
+    scrollToRow(rowIndex, true)
+    m.area = "grid"
+    m.gridRow = rowIndex
+    m.gridOnChannel = false
+    m.gridCell = cellIndex
+
+    program = invalid
+    if cell.kind = "program" then program = cell.program
+    m.focusRef = { railFocused: false, channelId: channelId, program: program, area: "grid" }
+    ' A key move lands on the cell holding the anchor already, so the anchor is only pulled into it
+    if isValid(m.selection)
+        m.selection = { channelId: channelId, anchorTime: liveTvGuide.ClampAnchorInto(cell, m.selection.anchorTime), programId: liveTvGuide.ProgramIdOf(cell) }
+    else
+        m.selection = { channelId: channelId, anchorTime: seedAnchorInto(cell), programId: liveTvGuide.ProgramIdOf(cell) }
+    end if
+    drawChips()
+    drawWindowBar()
+    drawGridFocus()
+    updateHero()
+end sub
+
+' Anchor for the first focused cell: now while the window covers it, the window start otherwise
+function seedAnchorInto(cell as object) as integer
+    now = liveTvGuide.NowSeconds()
+    base = m.store.windowStart
+    if now >= m.store.windowStart and now < m.store.windowEnd then base = now
+    return liveTvGuide.ClampAnchorInto(cell, base)
+end function
+
+' Only a row already drawn takes focus. The clock reaches here on its own, and it keeps the
+' selection right without scrolling the grid or taking the remote from a dialog.
+sub focusSelectedCell(selection as object, cells as object)
+    if isValid(m.dialog) or liveTvGuide.IsLoadingCells(cells) then return
+    rowIndex = lineupIndexOf(selection.channelId)
+    if rowIndex < 0 or not m.rowNodes.DoesExist(rowIndex.toStr()) then return
+    focusCell(rowIndex, selection.channelId, liveTvGuide.ResolveCellIndexAt(cells, selection.anchorTime))
+end sub
+
+' A horizontal move is the only navigation that rewrites the anchor
+sub handleHorizontalMove(cell as object)
+    if isValid(m.selection)
+        m.selection = { channelId: m.selection.channelId, anchorTime: liveTvGuide.ClampAnchorInto(cell, cell.start), programId: m.selection.programId }
+    end if
+end sub
+
+' Moves one row holding the anchor time, so the selection keeps its place in time instead of
+' following whichever cell happens to be nearest. A row still loading defers the move.
+sub moveSelectionVertically(fromRow as integer, delta as integer)
+    if not isValid(m.selection) then return
+    target = fromRow + delta
+    if target < 0 or target >= m.lineup.count() then return
+    channelId = m.lineup[target].Id
+    cells = cellsFor(channelId)
+    if cells.count() = 0 then return
+    if liveTvGuide.IsLoadingCells(cells)
+        m.pendingMove = { targetRow: target, anchorTime: m.selection.anchorTime }
+        return
+    end if
+    focusCell(target, channelId, liveTvGuide.ResolveCellIndexAt(cells, m.selection.anchorTime))
+end sub
+
+sub applyPendingVerticalMove()
+    pending = m.pendingMove
+    if not isValid(pending) or isValid(m.dialog) then return
+    if pending.targetRow >= m.lineup.count() then return
+    channelId = m.lineup[pending.targetRow].Id
+    cells = cellsFor(channelId)
+    if cells.count() = 0 or liveTvGuide.IsLoadingCells(cells) then return
+    m.pendingMove = invalid
+    focusCell(pending.targetRow, channelId, liveTvGuide.ResolveCellIndexAt(cells, pending.anchorTime))
+end sub
+
+sub pageChannelRows(fromRow as integer, direction as integer)
+    if m.lineup.count() = 0 then return
+    target = fromRow + direction * rowsPerViewport()
+    if target < 0 then target = 0
+    if target > m.lineup.count() - 1 then target = m.lineup.count() - 1
+    if target = fromRow then return
+    moveSelectionVertically(fromRow, target - fromRow)
+    ' A row a viewport away is usually not built yet. Scrolling builds it so the deferred move can
+    ' finish.
+    if isValid(m.pendingMove) then scrollToRow(target, true)
+end sub
+
+' Enters the program row at the anchor the viewer last used, or now when focus arrived through the
+' channel column
+sub focusProgramFromChannel(rowIndex as integer)
+    if rowIndex < 0 or rowIndex >= m.lineup.count() then return
+    channelId = m.lineup[rowIndex].Id
+    cells = cellsFor(channelId)
+    if cells.count() = 0 or liveTvGuide.IsLoadingCells(cells) then return
+    anchor = liveTvGuide.NowSeconds()
+    if isValid(m.selection) then anchor = m.selection.anchorTime
+    if anchor < m.store.windowStart then anchor = m.store.windowStart
+    if anchor > m.store.windowEnd then anchor = m.store.windowEnd - 1
+    index = liveTvGuide.ResolveCellIndexAt(cells, anchor)
+    m.selection = { channelId: channelId, anchorTime: liveTvGuide.ClampAnchorInto(cells[index], anchor), programId: liveTvGuide.ProgramIdOf(cells[index]) }
+    focusCell(rowIndex, channelId, index)
+end sub
+
+sub restoreGridFocus()
+    if isValid(m.selection)
+        cells = cellsFor(m.selection.channelId)
+        rowIndex = lineupIndexOf(m.selection.channelId)
+        if cells.count() > 0 and rowIndex >= 0 and not liveTvGuide.IsLoadingCells(cells)
+            m.lastFocusedRow = -1
+            focusCell(rowIndex, m.selection.channelId, liveTvGuide.ResolveCellIndexAt(cells, m.selection.anchorTime))
+            return
+        end if
+    end if
+    index = m.lastFocusedRow
+    if index < 0 then index = 0
+    if index > m.lineup.count() - 1 then index = m.lineup.count() - 1
+    m.lastFocusedRow = -1
+    focusChannelRow(index, false)
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' The window
+' ------------------------------------------------------------------------------------------------
+
+' focusGrid is false when a control drove the shift, so a press on a window button doesnt pull
+' focus down into the grid. allowPast is only for the earlier button, the one way to look before
+' the live window.
+sub shiftGuideWindow(amount as integer, focusGrid = true as boolean, allowPast = false as boolean)
+    m.pendingMove = invalid
+    oldStart = m.store.windowStart
+    oldEnd = m.store.windowEnd
+    target = oldStart + amount
+    liveStart = liveTvGuide.LeftEdge(liveTvGuide.NowSeconds())
+    floor = liveStart
+    if allowPast then floor = liveStart - MAX_GUIDE_HISTORY
+    if amount < 0 and target < floor then target = floor
+    if target = oldStart then return
+    storeSetWindowStart(target, target = liveStart, { then: "shifted", amount: amount, oldStart: oldStart, oldEnd: oldEnd, focusGrid: focusGrid })
+end sub
+
+sub onWindowShifted(ctx as object)
+    if not isValid(m.selection) then return
+    cells = cellsFor(m.selection.channelId)
+    if cells.count() = 0 then return
+    edgeAnchor = ctx.oldEnd
+    if ctx.amount < 0 then edgeAnchor = ctx.oldStart - 1
+    cell = cells[liveTvGuide.ResolveCellIndexAt(cells, edgeAnchor)]
+    updated = { channelId: m.selection.channelId, anchorTime: liveTvGuide.ClampAnchorInto(cell, edgeAnchor), programId: liveTvGuide.ProgramIdOf(cell) }
+    m.selection = updated
+    if ctx.focusGrid then focusSelectedCell(updated, cells)
+end sub
+
+' Puts the anchor on the new window start after a jump, so it addresses the first cell of every
+' row instead of a time the window no longer covers
+sub anchorToWindowStart()
+    if not isValid(m.selection) then return
+    cells = cellsFor(m.selection.channelId)
+    if cells.count() = 0
+        m.selection = { channelId: m.selection.channelId, anchorTime: m.store.windowStart, programId: "" }
+        return
+    end if
+    cell = cells[liveTvGuide.ResolveCellIndexAt(cells, m.store.windowStart)]
+    updated = { channelId: m.selection.channelId, anchorTime: liveTvGuide.ClampAnchorInto(cell, m.store.windowStart), programId: liveTvGuide.ProgramIdOf(cell) }
+    m.selection = updated
+    focusSelectedCell(updated, cells)
+end sub
+
+sub goToNow()
+    m.pendingMove = invalid
+    storeGoToNow(liveTvGuide.LeftEdge(liveTvGuide.NowSeconds()), { then: "anchorToWindowStart" })
+end sub
+
+sub handleProgramLeftEdge(rowIndex as integer)
+    if m.store.windowStart > liveTvGuide.LeftEdge(liveTvGuide.NowSeconds())
+        shiftGuideWindow(-GUIDE_HALF_HOUR)
+        return
+    end if
+    focusChannelRow(rowIndex)
+end sub
+
+' The window moves on the half hour the left edge floors to, so one timer is armed for the next one
+' rather than polling
+sub scheduleReanchor()
+    now = liveTvGuide.NowSeconds()
+    m.reanchorTimer.duration = liveTvGuide.FloorToHalfHour(now) + GUIDE_HALF_HOUR - now
+    m.reanchorTimer.control = "start"
+end sub
+
+sub onReanchorTick()
+    if m.lastDpadMs >= 0
+        quiet = REANCHOR_INPUT_QUIET_MS - (m.inputClock.TotalMilliseconds() - m.lastDpadMs)
+        if quiet > 0
+            ' Mid input, so it waits out the quiet period rather than moving under the viewer
+            m.reanchorTimer.duration = quiet / 1000
+            m.reanchorTimer.control = "start"
+            return
+        end if
+    end if
+    scheduleReanchor()
+    if not m.store.atLivePosition then return
+    at = liveTvGuide.NowSeconds()
+    storeSetWindowStart(liveTvGuide.LeftEdge(at), true, { then: "reanchored", fail: "reanchorFailed", at: at })
+end sub
+
+sub onReanchored(ctx as object)
+    if not isValid(m.selection) then return
+    cells = cellsFor(m.selection.channelId)
+    if cells.count() = 0 then return
+    updated = liveTvGuide.ReanchorSelection(m.selection, cells, ctx.at)
+    if updated.anchorTime = m.selection.anchorTime and updated.programId = m.selection.programId then return
+    m.pendingMove = invalid
+    m.selection = updated
+    if m.area = "grid" then focusSelectedCell(updated, cells)
+end sub
+
+sub onClockTick()
+    m.clockNow = liveTvGuide.NowSeconds()
+    for each key in m.rowNodes
+        m.rowNodes[key].now = m.clockNow
+    end for
+    updateHero()
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Watching and program actions
+' ------------------------------------------------------------------------------------------------
+
+' The guide hands its lineup over, in its own order, for the player's channel carousel
+sub watchChannel(channelId as string)
+    channel = storeChannelForId(channelId)
+    if not isValid(channel) then return
+    queue = m.global.queueManager
+    queue.callFunc("clear")
+    queue.callFunc("setLiveTvLineup", m.lineup)
+    queue.callFunc("push", { id: channelId, type: "video" })
+    queue.callFunc("playQueue")
+end sub
+
+sub openRecordings()
+    m.global.sceneManager.callFunc("pushScene", CreateObject("roSGNode", "LiveTvRecordings"))
+end sub
+
+sub openDialog(dialogType as string, model as object)
+    m.pendingMove = invalid
+    closeDialogNode()
+    m.dialogType = dialogType
+    m.dialog = CreateObject("roSGNode", "LiveTvGuideDialog")
+    m.dialog.observeField("action", "onDialogAction")
+    m.dialog.observeField("dismissed", "onDialogDismissed")
+    m.top.appendChild(m.dialog)
+    m.dialog.model = model
+    m.dialog.setFocus(true)
+end sub
+
+sub closeDialogNode()
+    if not isValid(m.dialog) then return
+    m.dialog.unobserveField("action")
+    m.dialog.unobserveField("dismissed")
+    m.top.removeChild(m.dialog)
+    m.dialog = invalid
+    m.dialogProgram = invalid
+    m.top.setFocus(true)
+end sub
+
+sub closeDialog()
+    closeDialogNode()
+    restoreGridFocus()
+end sub
+
+sub openProgramDialog(program as object)
+    now = liveTvGuide.NowSeconds()
+    ended = now > program.endSec
+    future = now < program.startSec
+    timer = liveTvGuide.HasTimer(program)
+    seriesTimer = liveTvGuide.HasSeriesTimer(program)
+    ' On air with a timer set, the recording is running, so cancelling it is almost certainly why
+    ' the dialog was opened
+    recordingNow = timer and not ended and not future
+    channel = storeChannelForId(program.LookupCI("ChannelId"))
+
+    chips = []
+    for each flag in [["IsMovie", "Movie"], ["IsSeries", "Series"], ["IsSports", "Sports"], ["IsNews", "News"], ["IsKids", "Kids"], ["IsPremiere", "Premiere"]]
+        if program.LookupCI(flag[0]) = true then chips.push(tr(flag[1]))
+    end for
+
+    buttons = []
+    if not ended
+        label = tr("Record")
+        if timer then label = tr("Cancel Recording")
+        buttons.push({ id: "record", label: label, danger: timer, isDefault: recordingNow })
+    end if
+    if program.LookupCI("IsSeries") = true
+        label = tr("Record Series")
+        if seriesTimer then label = tr("Cancel Series Recording")
+        buttons.push({ id: "recordSeries", label: label, danger: seriesTimer })
+    end if
+    if isValid(channel)
+        label = tr("Favorite Channel")
+        if liveTvGuide.IsFavoriteChannel(channel) then label = tr("Unfavorite Channel")
+        buttons.push({ id: "favorite", label: label })
+    end if
+    watchLabel = tr("Watch")
+    if ended or future then watchLabel = tr("Watch channel live")
+    buttons.push({ id: "watch", label: watchLabel, isDefault: not recordingNow })
+    buttons.push({ id: "close", label: tr("Close") })
+
+    openDialog("program", {
+        type: "program",
+        title: program.LookupCI("Name") ?? "",
+        time: liveTvGuide.ClockTime(program.startSec) + " – " + liveTvGuide.ClockTime(program.endSec),
+        episode: liveTvGuide.EpisodeLine(program),
+        overview: program.LookupCI("Overview") ?? "",
+        chips: chips,
+        buttons: buttons
+    })
+    m.dialogProgram = program
+end sub
+
+sub openSort()
+    labels = { number: "Channel Number", name: "Name", favoritesFirst: "Favorites First" }
+    options = []
+    for each key in liveTvGuide.ChannelSorts()
+        options.push({ label: tr(labels[key]), selected: m.store.sortBy = key })
+    end for
+    openDialog("sort", { type: "sort", title: tr("Sort By"), options: options })
+end sub
+
+' A week back through two weeks out. Each day is found from its noon, so a daylight saving change
+' cant land it on the day before.
+function dateOptions() as object
+    today = liveTvGuide.StartOfDay(liveTvGuide.NowSeconds())
+    dates = []
+    for offset = -7 to 14
+        dates.push(liveTvGuide.StartOfDay(today + offset * 86400 + 43200))
+    end for
+    return dates
+end function
+
+sub openDate()
+    guideDay = liveTvGuide.StartOfDay(m.store.guideDate)
+    options = []
+    dates = dateOptions()
+    for i = 0 to dates.count() - 1
+        label = liveTvGuide.DayLabel(dates[i])
+        if i = 7 then label += " (" + tr("Today") + ")"
+        options.push({ label: label, selected: liveTvGuide.StartOfDay(dates[i]) = guideDay })
+    end for
+    openDialog("date", { type: "date", title: tr("Select date"), options: options })
+end sub
+
+sub onDialogDismissed()
+    if m.dialogType = "program"
+        closeDialog()
+    else
+        closeDialogNode()
+        focusWindowBar(m.lastBarIndex)
+    end if
+end sub
+
+sub onDialogAction(event as object)
+    action = event.getData()
+    if m.dialogType = "sort"
+        key = liveTvGuide.ChannelSorts()[action.option]
+        saveSort(key)
+        m.pendingMove = invalid
+        storeSetSortBy(key)
+        closeDialogNode()
+        focusWindowBar(m.lastBarIndex)
+        return
+    end if
+
+    if m.dialogType = "date"
+        date = dateOptions()[action.option]
+        closeDialogNode()
+        focusWindowBar(m.lastBarIndex)
+        storeSetDate(date, { then: "anchorToWindowStart" })
+        return
+    end if
+
+    program = m.dialogProgram
+    if not isValid(program) then return
+    if action.id = "close"
+        closeDialog()
+    else if action.id = "watch"
+        channelId = program.LookupCI("ChannelId")
+        closeDialogNode()
+        watchChannel(channelId)
+    else if action.id = "record"
+        m.dialog.busy = true
+        success = tr("Program set to record")
+        failure = tr("Unable to create recording")
+        if liveTvGuide.HasTimer(program)
+            success = tr("Recording cancelled")
+            failure = tr("Failed to cancel recording")
+        end if
+        storeToggleProgramRecording(program, { then: "dialogDone", success: success, failure: failure })
+    else if action.id = "recordSeries"
+        m.dialog.busy = true
+        success = tr("Series set to record")
+        failure = tr("Unable to create series recording")
+        if liveTvGuide.HasSeriesTimer(program)
+            success = tr("Series recording cancelled")
+            failure = tr("Failed to cancel series recording")
+        end if
+        storeToggleSeriesRecording(program, { then: "dialogDone", success: success, failure: failure })
+    else if action.id = "favorite"
+        m.dialog.busy = true
+        channel = storeChannelForId(program.LookupCI("ChannelId"))
+        success = tr("Added to favorite channels")
+        if liveTvGuide.IsFavoriteChannel(channel) then success = tr("Removed from favorite channels")
+        storeToggleChannelFavorite(program.LookupCI("ChannelId"), { then: "dialogDone", success: success, failure: tr("Failed to update favorite channel") })
+    end if
+end sub
+
+sub onDialogActionDone(ctx as object, ok as boolean)
+    if ok
+        closeDialogNode()
+        showToast(ctx.success)
+        restoreGridFocus()
+        return
+    end if
+    if isValid(m.dialog) then m.dialog.busy = false
+    showToast(ctx.failure)
+end sub
+
+' Kept on this device and sent to the server, so the sort follows the account to its other screens
+sub saveSort(key as string)
+    set_user_setting(SORT_SETTING, key)
+    pushData = settingsSync.PreparePush(SORT_SETTING, key)
+    if not isValid(pushData) then return
+    task = createObject("roSGNode", "PostTask")
+    task.apiUrl = pushData.url
+    task.stringData = pushData.body
+    task.control = "RUN"
+    ' Held until it finishes, or a task nothing references can be collected mid flight
+    m.syncTasks.push(task)
+end sub
+
+sub showToast(message as string)
+    m.toastText.text = message
+    rect = m.toastText.boundingRect()
+    m.toastFill.width = rect.width + 56
+    m.toastFill.height = rect.height + 28
+    m.toast.translation = [(1920 - m.toastFill.width) / 2, 1080 - 60 - m.toastFill.height]
+    m.toast.visible = true
+    toastTimer = m.top.findNode("toastTimer")
+    toastTimer.control = "stop"
+    toastTimer.control = "start"
+end sub
+
+sub hideToast()
+    m.toast.visible = false
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Back
+' ------------------------------------------------------------------------------------------------
+
+' True once the viewer has paged off live or moved focus to a channel other than the one last tuned.
+' With nothing ever tuned, row 0 stands in for it.
+function isExploringAwayFromEntry() as boolean
+    homeId = liveTvLastChannel.Get()
+    if homeId <> "" then return not m.store.atLivePosition or m.focusRef.channelId <> homeId
+    if m.lineup.count() = 0 then return false
+    onRowZero = m.area = "grid" and m.gridRow = 0 and m.gridOnChannel
+    return not m.store.atLivePosition or not onRowZero
+end function
+
+' The row the guide calls home, the last tuned channel or row 0 before anything was, or -1 when
+' that channel isnt in the lineup
+function homeRowIndex() as integer
+    if m.lineup.count() = 0 then return -1
+    homeId = liveTvLastChannel.Get()
+    if homeId = "" then return 0
+    return lineupIndexOf(homeId)
+end function
+
+' A Back press first re-homes a guide that has drifted from where it opened, and only leaves once
+' the guide is already there
+function consumeBackIfExploring() as boolean
+    if m.resetting then return true
+    if not isExploringAwayFromEntry() or homeRowIndex() < 0 then return false
+    m.resetting = true
+    m.pendingMove = invalid
+    storeGoToNow(liveTvGuide.LeftEdge(liveTvGuide.NowSeconds()), { then: "reset" })
+    return true
+end function
+
+sub finishReset()
+    m.resetting = false
+    index = homeRowIndex()
+    if index < 0 then return
+    m.lastFocusedRow = -1
+    focusChannelRow(index, false)
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Channel numbers typed on the remote
+' ------------------------------------------------------------------------------------------------
+
+sub handleChannelNumber(digit as string)
+    m.channelNumber += digit
+    m.numberText.text = m.channelNumber
+    rect = m.numberText.boundingRect()
+    m.numberFill.width = rect.width + 72
+    m.numberFill.height = rect.height + 36
+    m.numberOverlay.translation = [1920 - 60 - m.numberFill.width, 60]
+    m.numberOverlay.visible = true
+    numberTimer = m.top.findNode("numberTimer")
+    numberTimer.control = "stop"
+    numberTimer.control = "start"
+end sub
+
+sub onChannelNumberSettled()
+    typed = m.channelNumber
+    m.channelNumber = ""
+    m.numberOverlay.visible = false
+    for i = 0 to m.lineup.count() - 1
+        if (m.lineup[i].LookupCI("ChannelNumber") ?? "") = typed
+            focusChannelRow(i, false)
+            return
+        end if
+    end for
+end sub
+
+function digitOf(key as string) as string
+    if Left(key, 4) = "Lit_" then key = Mid(key, 5)
+    if Len(key) = 1 and key >= "0" and key <= "9" then return key
+    return ""
+end function
+
+' ------------------------------------------------------------------------------------------------
+' Keys
+' ------------------------------------------------------------------------------------------------
+
+function pageDirection(key as string) as integer
+    if key = KeyCode.FASTFORWRD then return 1
+    if key = KeyCode.REWIND then return -1
+    return 0
+end function
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if isValid(m.dialog) then return true
+
+    digit = digitOf(key)
+    if digit <> ""
+        handleChannelNumber(digit)
+        return true
+    end if
+
+    if key = KeyCode.BACK
+        if consumeBackIfExploring() then return true
+        m.disposed = true
+        m.global.sceneManager.callFunc("popScene")
+        return true
+    end if
+
+    if m.area = "chips" then return handleChipKey(key)
+    if m.area = "bar" then return handleBarKey(key)
+    if m.store.state <> "ready" or m.lineup.count() = 0
+        if key = KeyCode.UP
+            focusWindowBar(m.lastBarIndex)
+        end if
+        return true
+    end if
+    if m.gridOnChannel then return handleChannelKey(key, m.gridRow)
+    return handleCellKey(key, m.gridRow)
+end function
+
+function handleChipKey(key as string) as boolean
+    if key = KeyCode.LEFT
+        focusChip(m.chipIndex - 1)
+    else if key = KeyCode.RIGHT
+        focusChip(m.chipIndex + 1)
+    else if key = KeyCode.DOWN
+        focusWindowBar(m.lastBarIndex)
+    else if key = KeyCode.OK
+        m.pendingMove = invalid
+        storeSetFilter(m.chips[m.chipIndex].key)
+        drawChips()
+    end if
+    return true
+end function
+
+function handleBarKey(key as string) as boolean
+    index = m.barIndex
+    if key = KeyCode.LEFT
+        focusWindowBar(index - 1)
+    else if key = KeyCode.RIGHT
+        focusWindowBar(index + 1)
+    else if key = KeyCode.UP
+        focusChip(0)
+    else if key = KeyCode.DOWN
+        focusChannelRow(0)
+    else if key = KeyCode.OK
+        if index = 0
+            shiftGuideWindow(-m.store.guideWindow, false, true)
+        else if index = 1
+            goToNow()
+        else if index = 2
+            shiftGuideWindow(m.store.guideWindow, false)
+        else if index = 3
+            openSort()
+        else if index = 4
+            openDate()
+        else if index = 5
+            openRecordings()
+        end if
+    end if
+    return true
+end function
+
+function handleChannelKey(key as string, index as integer) as boolean
+    page = pageDirection(key)
+    if page <> 0
+        onNavigationKey()
+        target = index + page * rowsPerViewport()
+        if target < 0 then target = 0
+        if target > m.lineup.count() - 1 then target = m.lineup.count() - 1
+        focusChannelRow(target)
+        return true
+    end if
+
+    if key = KeyCode.UP
+        onNavigationKey()
+        if index = 0
+            focusWindowBar(m.lastBarIndex)
+        else
+            focusChannelRow(index - 1)
+        end if
+    else if key = KeyCode.DOWN
+        onNavigationKey()
+        if index < m.lineup.count() - 1 then focusChannelRow(index + 1)
+    else if key = KeyCode.RIGHT
+        onNavigationKey()
+        focusProgramFromChannel(index)
+    else if key = KeyCode.LEFT
+        onNavigationKey()
+    else if key = KeyCode.OK
+        watchChannel(m.lineup[index].Id)
+    end if
+    return true
+end function
+
+function handleCellKey(key as string, rowIndex as integer) as boolean
+    channelId = m.lineup[rowIndex].Id
+    cells = cellsFor(channelId)
+    index = m.gridCell
+    if index > cells.count() - 1 then index = cells.count() - 1
+
+    page = pageDirection(key)
+    if page <> 0
+        onNavigationKey()
+        pageChannelRows(rowIndex, page)
+        return true
+    end if
+
+    if key = KeyCode.LEFT
+        onNavigationKey()
+        if index > 0
+            handleHorizontalMove(cells[index - 1])
+            focusCell(rowIndex, channelId, index - 1)
+        else
+            handleProgramLeftEdge(rowIndex)
+        end if
+    else if key = KeyCode.RIGHT
+        onNavigationKey()
+        if index < cells.count() - 1
+            handleHorizontalMove(cells[index + 1])
+            focusCell(rowIndex, channelId, index + 1)
+        else
+            shiftGuideWindow(GUIDE_HALF_HOUR)
+        end if
+    else if key = KeyCode.UP
+        onNavigationKey()
+        if rowIndex = 0
+            focusWindowBar(m.lastBarIndex)
+        else
+            moveSelectionVertically(rowIndex, -1)
+        end if
+    else if key = KeyCode.DOWN
+        ' Taken even when refused, so the selection cant drift in time
+        onNavigationKey()
+        moveSelectionVertically(rowIndex, 1)
+    else if key = KeyCode.OK
+        cell = cells[index]
+        ' A gap or a filtered hole tunes the channel. The placeholder does nothing.
+        if cell.kind = "program" and isValid(cell.program)
+            openProgramDialog(cell.program)
+        else if cell.kind = "gap" or cell.kind = "filtered"
+            watchChannel(channelId)
+        end if
+    end if
+    return true
+end function

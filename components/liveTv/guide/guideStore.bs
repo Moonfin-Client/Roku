@@ -1,0 +1,820 @@
+import "pkg:/source/utils/liveTvGuide.bs"
+import "pkg:/source/utils/misc.bs"
+
+' The guide's data: the lineup, the programs fetched for it, the window they cover, the active
+' filter and sort, and the reloads that keep it current. Every call to the server runs on its own
+' task, and a step that has to wait carries on from the task's answer through a named step.
+
+' Programs load lazily, this many channels at a time, instead of one request for the whole lineup
+const STORE_PROGRAM_BATCH = 50
+' Category filters walk the lineup in larger server filtered batches, so a sparse genre can
+' surface channels well past the first page of the plain guide
+const STORE_CATEGORY_BATCH = 200
+const STORE_CATEGORY_MIN_ROWS = 24
+' After this many artwork lookups in a row fail, the server is taken not to answer them at all
+const STORE_ARTWORK_FAILURE_LIMIT = 8
+
+sub storeInit(sortBy as string)
+    m.store = {
+        state: "loading",
+        error: "",
+        channels: [],
+        channelById: {},
+        sortBy: sortBy,
+        filter: "all",
+        guideWindow: liveTvGuide.DefaultWindow(),
+        guideDate: liveTvGuide.NowSeconds(),
+        windowStart: liveTvGuide.NowSeconds(),
+        windowEnd: liveTvGuide.NowSeconds(),
+        atLivePosition: true,
+        programsByChannel: {},
+        programsLoaded: {},
+        programsHighWater: 0,
+        loadingMore: false,
+        categoryPrograms: {},
+        categoryQueried: {},
+        categoryHighWater: 0,
+        categoryLoadedFor: "",
+        categoryRequest: 0,
+        categoryFetchInFlight: false,
+        ' Bumped by every replacement and every reset, so an answer whose window or channel set
+        ' has since moved on is dropped
+        programGeneration: 0,
+        loadGeneration: 0,
+        replacements: {},
+        artwork: {},
+        artworkByContent: {},
+        artworkInFlight: {},
+        artworkFailures: 0,
+        artworkDisabled: false,
+        tasks: []
+    }
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Requests
+' ------------------------------------------------------------------------------------------------
+
+sub storeSend(request as object)
+    task = CreateObject("roSGNode", "LiveTvRequestTask")
+    task.request = request
+    task.observeField("response", "onStoreResponse")
+    task.control = "RUN"
+    ' Held until it answers, or a task nothing references can be collected mid flight
+    m.store.tasks.push(task)
+end sub
+
+sub onStoreResponse(event as object)
+    task = event.getRoSGNode()
+    task.unobserveField("response")
+    owned = false
+    kept = []
+    for each running in m.store.tasks
+        if running.isSameNode(task)
+            owned = true
+        else
+            kept.push(running)
+        end if
+    end for
+    m.store.tasks = kept
+    ' A task sent before the guide started over answers a store that no longer exists
+    if m.disposed = true or not owned then return
+
+    response = event.getData()
+    tag = response.tag
+    if not isValid(tag) then return
+    op = tag.op
+    if op = "channels"
+        storeOnChannels(response, tag)
+    else if op = "batch"
+        storeOnBatch(response, tag)
+    else if op = "category"
+        storeOnCategory(response, tag)
+    else if op = "replace"
+        storeOnReplace(response, tag)
+    else if op = "artwork"
+        storeOnArtwork(response, tag)
+    else if op = "favorite"
+        storeOnFavorite(response, tag)
+    else if op = "timer"
+        storeOnTimer(response, tag)
+    end if
+end sub
+
+' Carries a waiting step on, or its failure step when the call behind it failed
+sub storeContinue(ctx as dynamic, ok = true as boolean)
+    if not isValid(ctx) then return
+    stepName = ctx.then
+    if not ok and isValid(ctx.fail) then stepName = ctx.fail
+    if not isValid(stepName) then return
+
+    if stepName = "loadFinish"
+        storeLoadFinish(ctx)
+    else if stepName = "loadReady"
+        storeLoadReady(ctx)
+    else if stepName = "loadFail"
+        storeLoadFail(ctx)
+    else if stepName = "ensureStep"
+        storeEnsure(ctx.rest)
+    else if stepName = "categoryDone"
+        storeCategoryDone(ctx, ok)
+    else if stepName = "reloadStep"
+        storeReloadStep(ctx)
+    else if stepName = "reloadDone"
+        storeReloadDone(ctx)
+    else if stepName = "reloadFail"
+        storeReloadFail(ctx)
+    else if stepName = "moreDone"
+        storeMoreDone(ctx)
+    else
+        onGuideStep(stepName, ctx, ok)
+    end if
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' What the screen reads
+' ------------------------------------------------------------------------------------------------
+
+function storeChannelForId(id as dynamic) as dynamic
+    if not isValidAndNotEmpty(id) then return invalid
+    return m.store.channelById[id]
+end function
+
+function storeHasProgramsFor(id as string) as boolean
+    if liveTvGuide.IsCategoryFilter(m.store.filter) then return m.store.categoryPrograms.DoesExist(id)
+    return m.store.programsLoaded.DoesExist(id)
+end function
+
+function storeProgramsFor(id as string) as object
+    if liveTvGuide.IsCategoryFilter(m.store.filter) then return m.store.categoryPrograms[id] ?? []
+    return m.store.programsByChannel[id] ?? []
+end function
+
+function storeUnfilteredFor(id as string) as object
+    return m.store.programsByChannel[id] ?? []
+end function
+
+function storeFilteredChannels() as object
+    filter = m.store.filter
+    if filter = "all" then return m.store.channels
+
+    kept = []
+    if filter = "favorites"
+        for each channel in m.store.channels
+            if liveTvGuide.IsFavoriteChannel(channel) then kept.push(channel)
+        end for
+        return kept
+    end if
+
+    if m.store.categoryLoadedFor <> filter then return kept
+    for each channel in m.store.channels
+        if m.store.categoryPrograms.DoesExist(channel.Id) then kept.push(channel)
+    end for
+    return kept
+end function
+
+function storeHasMore() as boolean
+    if liveTvGuide.IsCategoryFilter(m.store.filter) then return m.store.categoryHighWater < m.store.channels.count()
+    return m.store.programsHighWater < m.store.channels.count()
+end function
+
+function storeHighWaterRows() as integer
+    if liveTvGuide.IsCategoryFilter(m.store.filter) then return m.store.categoryPrograms.count()
+    return m.store.programsHighWater
+end function
+
+sub storeIndexChannels()
+    m.store.channelById = {}
+    for each channel in m.store.channels
+        m.store.channelById[channel.Id] = channel
+    end for
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Programs
+' ------------------------------------------------------------------------------------------------
+
+function groupByChannel(programs as object) as object
+    grouped = {}
+    for each program in programs
+        id = program.LookupCI("ChannelId")
+        if not grouped.DoesExist(id) then grouped[id] = []
+        grouped[id].push(program)
+    end for
+    for each id in grouped
+        grouped[id].SortBy("startSec")
+    end for
+    return grouped
+end function
+
+' Every requested channel counts as loaded, even one with no programs, so its row stops showing
+' the placeholder
+sub storeApplyPrograms(ids as object, programs as object)
+    grouped = groupByChannel(programs)
+    for each id in ids
+        fresh = grouped[id] ?? []
+        existing = m.store.programsByChannel[id]
+        if not isValid(existing)
+            m.store.programsByChannel[id] = fresh
+        else
+            existing.append(fresh)
+            existing.SortBy("startSec")
+            m.store.programsByChannel[id] = existing
+        end if
+        m.store.programsLoaded[id] = true
+    end for
+end sub
+
+sub storeSendBatch(ids as object, ctx as object, highWater as integer)
+    storeSend({
+        kind: "programs",
+        ids: ids,
+        from: m.store.windowStart,
+        upto: m.store.windowEnd,
+        tag: { op: "batch", gen: m.store.programGeneration, highWater: highWater, ctx: ctx }
+    })
+end sub
+
+sub storeLoadNextBatch(ctx as object)
+    count = m.store.channels.count()
+    if m.store.programsHighWater >= count
+        storeContinue(ctx)
+        return
+    end if
+
+    upto = m.store.programsHighWater + STORE_PROGRAM_BATCH
+    if upto > count then upto = count
+    ' A re-sort can move fetched channels back into the unwalked stretch, and fetching them again
+    ' would append their programs twice
+    ids = []
+    for i = m.store.programsHighWater to upto - 1
+        id = m.store.channels[i].Id
+        if not m.store.programsLoaded.DoesExist(id) then ids.push(id)
+    end for
+    if ids.count() = 0
+        m.store.programsHighWater = upto
+        storeContinue(ctx)
+        return
+    end if
+    storeSendBatch(ids, ctx, upto)
+end sub
+
+sub storeOnBatch(response as object, tag as object)
+    ctx = tag.ctx
+    if tag.gen <> m.store.programGeneration
+        ' A newer fetch owns the rows now. A targeted load stops here, anything else carries on.
+        if ctx.stopOnStale <> true then storeContinue(ctx)
+        return
+    end if
+    if not response.ok
+        storeContinue(ctx, false)
+        return
+    end if
+    storeApplyPrograms(response.ids, response.programs)
+    if tag.highWater >= 0 then m.store.programsHighWater = tag.highWater
+    storeContinue(ctx)
+end sub
+
+' Fetches only the channels asked for that arent in hand yet, even when they sit past the scroll
+' high water mark
+sub storeEnsure(ids as object)
+    missing = []
+    for each id in ids
+        if not m.store.programsLoaded.DoesExist(id) and isValid(storeChannelForId(id)) then missing.push(id)
+    end for
+    if missing.count() = 0
+        onStoreChanged()
+        return
+    end if
+
+    chunk = []
+    rest = []
+    for i = 0 to missing.count() - 1
+        if i < STORE_PROGRAM_BATCH then chunk.push(missing[i]) else rest.push(missing[i])
+    end for
+    storeSendBatch(chunk, { then: "ensureStep", rest: rest, stopOnStale: true }, -1)
+end sub
+
+sub storeResetCategory()
+    m.store.categoryPrograms = {}
+    m.store.categoryQueried = {}
+    m.store.categoryHighWater = 0
+    m.store.categoryLoadedFor = ""
+    m.store.categoryRequest++
+end sub
+
+sub storeResetPrograms()
+    m.store.programGeneration++
+    m.store.programsByChannel = {}
+    m.store.programsLoaded = {}
+    m.store.programsHighWater = 0
+    storeResetCategory()
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Category filters
+' ------------------------------------------------------------------------------------------------
+
+' Walks the lineup until a page's worth of matching rows has turned up, or until the high water
+' mark a reload has to get back to
+sub storeWalkCategory(minHighWater as integer, ctx as object)
+    m.store.categoryLoadedFor = m.store.filter
+    storeWalkStep({
+        request: m.store.categoryRequest,
+        active: m.store.filter,
+        startRows: m.store.categoryPrograms.count(),
+        minHighWater: minHighWater,
+        ctx: ctx
+    })
+end sub
+
+sub storeWalkStep(walk as object)
+    ' A newer filter or sort took over, which ends this walk as though it finished
+    if walk.request <> m.store.categoryRequest
+        storeContinue(walk.ctx)
+        return
+    end if
+
+    count = m.store.channels.count()
+    found = m.store.categoryPrograms.count() - walk.startRows
+    if m.store.categoryHighWater >= count or (found >= STORE_CATEGORY_MIN_ROWS and m.store.categoryHighWater >= walk.minHighWater)
+        storeContinue(walk.ctx)
+        return
+    end if
+
+    size = STORE_PROGRAM_BATCH
+    if liveTvGuide.IsServerFilteredCategory(walk.active) then size = STORE_CATEGORY_BATCH
+    upto = m.store.categoryHighWater + size
+    if upto > count then upto = count
+    ids = []
+    for i = m.store.categoryHighWater to upto - 1
+        id = m.store.channels[i].Id
+        if not m.store.categoryQueried.DoesExist(id) then ids.push(id)
+    end for
+    if ids.count() = 0
+        m.store.categoryHighWater = upto
+        storeWalkStep(walk)
+        return
+    end if
+
+    storeSend({
+        kind: "programs",
+        ids: ids,
+        from: m.store.windowStart,
+        upto: m.store.windowEnd,
+        category: walk.active,
+        tag: { op: "category", walk: walk, highWater: upto }
+    })
+end sub
+
+' Only the channels with a matching program come back
+sub storeOnCategory(response as object, tag as object)
+    walk = tag.walk
+    if walk.request <> m.store.categoryRequest
+        storeContinue(walk.ctx)
+        return
+    end if
+    if not response.ok
+        storeContinue(walk.ctx, false)
+        return
+    end if
+
+    grouped = groupByChannel(response.programs)
+    matched = false
+    for each id in response.ids
+        m.store.categoryQueried[id] = true
+        kept = []
+        for each program in grouped[id] ?? []
+            if liveTvGuide.MatchesFilter(walk.active, program) then kept.push(program)
+        end for
+        if kept.count() > 0
+            m.store.categoryPrograms[id] = kept
+            matched = true
+        end if
+    end for
+    m.store.categoryHighWater = tag.highWater
+    if matched then onStoreChanged()
+    storeWalkStep(walk)
+end sub
+
+sub storeLoadCategoryPrograms()
+    storeResetCategory()
+    m.store.categoryFetchInFlight = true
+    m.store.state = "loading"
+    onStoreChanged()
+    storeWalkCategory(0, { then: "categoryDone", fail: "categoryDone", request: m.store.categoryRequest })
+end sub
+
+sub storeCategoryDone(ctx as object, ok as boolean)
+    if ctx.request <> m.store.categoryRequest then return
+    if ok
+        m.store.state = "ready"
+    else
+        m.store.error = "category"
+        m.store.state = "error"
+    end if
+    m.store.categoryFetchInFlight = false
+    onStoreChanged()
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Loading
+' ------------------------------------------------------------------------------------------------
+
+' options: { guideWindow, windowStart, livePosition }, and nextStep carries the caller on once the
+' guide is ready or has failed
+sub storeLoad(options as object, nextStep = invalid as dynamic)
+    m.store.loadGeneration++
+    if isValid(options.guideWindow) then m.store.guideWindow = options.guideWindow
+    m.store.state = "loading"
+    onStoreChanged()
+    storeSend({
+        kind: "channels",
+        tag: {
+            op: "channels",
+            gen: m.store.loadGeneration,
+            windowStart: options.windowStart,
+            livePosition: options.livePosition <> false,
+            after: nextStep
+        }
+    })
+end sub
+
+sub storeOnChannels(response as object, tag as object)
+    if tag.gen <> m.store.loadGeneration then return
+    ctx = { then: "loadFinish", fail: "loadFail", gen: tag.gen, after: tag.after }
+    if not response.ok
+        storeLoadFail(ctx)
+        return
+    end if
+
+    m.store.channels = liveTvGuide.SortChannels(response.items, m.store.sortBy)
+    storeIndexChannels()
+    if isValid(tag.windowStart)
+        m.store.windowStart = tag.windowStart
+    else
+        m.store.windowStart = liveTvGuide.StartOfDay(m.store.guideDate) + liveTvGuide.HourOfDay(liveTvGuide.NowSeconds())
+    end if
+    m.store.windowEnd = m.store.windowStart + m.store.guideWindow
+    m.store.atLivePosition = tag.livePosition
+    storeResetPrograms()
+    storeLoadNextBatch(ctx)
+end sub
+
+sub storeLoadFinish(ctx as object)
+    if ctx.gen <> m.store.loadGeneration then return
+    if liveTvGuide.IsCategoryFilter(m.store.filter)
+        storeWalkCategory(0, { then: "loadReady", fail: "loadFail", gen: ctx.gen, after: ctx.after })
+        return
+    end if
+    storeLoadReady(ctx)
+end sub
+
+sub storeLoadReady(ctx as object)
+    if ctx.gen <> m.store.loadGeneration then return
+    m.store.state = "ready"
+    onStoreChanged()
+    storeContinue(ctx.after)
+end sub
+
+sub storeLoadFail(ctx as object)
+    if ctx.gen <> m.store.loadGeneration then return
+    m.store.error = "load"
+    m.store.state = "error"
+    onStoreChanged()
+    storeContinue(ctx.after)
+end sub
+
+' Re-fetches as many channels as were already loaded, so the viewer keeps the rows they had
+' scrolled to
+sub storeReload(nextStep = invalid as dynamic)
+    m.store.loadGeneration++
+    gen = m.store.loadGeneration
+    m.store.state = "loading"
+    onStoreChanged()
+
+    target = m.store.programsHighWater
+    if target < STORE_PROGRAM_BATCH then target = STORE_PROGRAM_BATCH
+    categoryTarget = m.store.categoryHighWater
+    storeResetPrograms()
+    reload = { then: "reloadStep", fail: "reloadFail", gen: gen, target: target, after: nextStep }
+    if liveTvGuide.IsCategoryFilter(m.store.filter)
+        reload.then = "reloadDone"
+        storeWalkCategory(categoryTarget, reload)
+        return
+    end if
+    storeReloadStep(reload)
+end sub
+
+sub storeReloadStep(reload as object)
+    if reload.gen <> m.store.loadGeneration then return
+    if m.store.programsHighWater < reload.target and storeHasMore()
+        storeLoadNextBatch(reload)
+        return
+    end if
+    storeReloadDone(reload)
+end sub
+
+sub storeReloadDone(reload as object)
+    if reload.gen <> m.store.loadGeneration then return
+    m.store.state = "ready"
+    onStoreChanged()
+    storeContinue(reload.after)
+end sub
+
+sub storeReloadFail(reload as object)
+    if reload.gen <> m.store.loadGeneration then return
+    m.store.error = "load"
+    m.store.state = "error"
+    onStoreChanged()
+    storeContinue(reload.after)
+end sub
+
+sub storeLoadMore()
+    if m.store.loadingMore or not storeHasMore() then return
+    m.store.loadingMore = true
+    ctx = { then: "moreDone", fail: "moreDone", gen: m.store.programGeneration }
+    if liveTvGuide.IsCategoryFilter(m.store.filter)
+        storeWalkCategory(0, ctx)
+    else
+        storeLoadNextBatch(ctx)
+    end if
+end sub
+
+sub storeMoreDone(ctx as object)
+    m.store.loadingMore = false
+    ' A reload owns the first batch until the guide is ready
+    if m.store.state = "ready" and ctx.gen <> m.store.programGeneration and storeHasMore()
+        storeLoadMore()
+    end if
+    onStoreChanged()
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Sort, filter and window
+' ------------------------------------------------------------------------------------------------
+
+sub storeSetSortBy(value as string)
+    if m.store.sortBy = value then return
+    m.store.programGeneration++
+    m.store.sortBy = value
+    m.store.channels = liveTvGuide.SortChannels(m.store.channels, value)
+    ' The lazy load follows list order, so it walks again from the top. Channels already in hand are
+    ' skipped.
+    m.store.programsHighWater = 0
+    m.store.categoryHighWater = 0
+    m.store.categoryRequest++
+    onStoreChanged()
+    storeLoadMore()
+end sub
+
+sub storeSetFilter(value as string)
+    if m.store.filter = value then return
+    m.store.filter = value
+    m.store.categoryRequest++
+    if m.store.categoryFetchInFlight
+        m.store.categoryFetchInFlight = false
+        m.store.state = "ready"
+    end if
+    if liveTvGuide.IsCategoryFilter(value) and m.store.categoryLoadedFor <> value
+        storeLoadCategoryPrograms()
+        return
+    end if
+    onStoreChanged()
+    ' Favorites can sit anywhere in the lineup, past what has loaded so far
+    if value = "favorites"
+        ids = []
+        for each channel in m.store.channels
+            if liveTvGuide.IsFavoriteChannel(channel) then ids.push(channel.Id)
+        end for
+        storeEnsure(ids)
+    end if
+end sub
+
+sub storeSetDate(date as integer, nextStep as dynamic)
+    m.store.guideDate = date
+    m.store.windowStart = liveTvGuide.StartOfDay(date) + liveTvGuide.HourOfDay(m.store.windowStart)
+    m.store.windowEnd = m.store.windowStart + m.store.guideWindow
+    m.store.atLivePosition = false
+    storeReload(nextStep)
+end sub
+
+' Moves the window without entering the loading state. The rows on screen stay until every
+' replacement is in.
+sub storeSetWindowStart(start as integer, livePosition as boolean, nextStep as dynamic)
+    if start = m.store.windowStart
+        m.store.atLivePosition = livePosition
+        storeContinue(nextStep)
+        return
+    end if
+
+    ids = []
+    for each id in m.store.programsLoaded
+        ids.push(id)
+    end for
+    m.store.programGeneration++
+    gen = m.store.programGeneration
+    m.store.windowStart = start
+    m.store.windowEnd = start + m.store.guideWindow
+    m.store.guideDate = start
+    m.store.atLivePosition = livePosition
+    onStoreChanged()
+    if ids.count() = 0
+        storeContinue(nextStep)
+        return
+    end if
+
+    m.store.replacements = {}
+    storeReplaceStep({ ids: ids, index: 0, gen: gen, after: nextStep })
+end sub
+
+sub storeReplaceStep(replace as object)
+    if replace.index >= replace.ids.count()
+        for each id in m.store.replacements
+            m.store.programsByChannel[id] = m.store.replacements[id]
+        end for
+        m.store.replacements = {}
+        onStoreChanged()
+        storeContinue(replace.after)
+        return
+    end if
+
+    chunk = []
+    for i = replace.index to replace.index + STORE_PROGRAM_BATCH - 1
+        if i >= replace.ids.count() then exit for
+        chunk.push(replace.ids[i])
+    end for
+    storeSend({
+        kind: "programs",
+        ids: chunk,
+        from: m.store.windowStart,
+        upto: m.store.windowEnd,
+        tag: { op: "replace", replace: replace, size: chunk.count() }
+    })
+end sub
+
+sub storeOnReplace(response as object, tag as object)
+    replace = tag.replace
+    if replace.gen <> m.store.programGeneration then return
+    if not response.ok
+        storeContinue(replace.after, false)
+        return
+    end if
+    grouped = groupByChannel(response.programs)
+    for each id in response.ids
+        m.store.replacements[id] = grouped[id] ?? []
+    end for
+    replace.index += tag.size
+    storeReplaceStep(replace)
+end sub
+
+sub storeGoToNow(start as integer, nextStep as dynamic)
+    m.store.guideDate = liveTvGuide.NowSeconds()
+    storeLoad({ guideWindow: m.store.guideWindow, windowStart: start, livePosition: true }, nextStep)
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Favorites and recordings
+' ------------------------------------------------------------------------------------------------
+
+sub storeApplyChannelUpdate(updated as object)
+    at = -1
+    for i = 0 to m.store.channels.count() - 1
+        if m.store.channels[i].Id = updated.Id
+            at = i
+            exit for
+        end if
+    end for
+    if at < 0 then return
+
+    lineup = []
+    lineup.append(m.store.channels)
+    lineup[at] = updated
+    ' Only favorites first reads the flag, so under any other sort the lineup stays put
+    resort = m.store.sortBy = "favoritesFirst"
+    if resort
+        lineup = liveTvGuide.SortChannels(lineup, m.store.sortBy)
+        m.store.programsHighWater = 0
+    end if
+    m.store.channels = lineup
+    storeIndexChannels()
+    onStoreChanged()
+    if resort then storeLoadMore()
+end sub
+
+sub storeToggleChannelFavorite(channelId as string, nextStep as object)
+    current = storeChannelForId(channelId)
+    if not isValid(current) then return
+    favorite = not liveTvGuide.IsFavoriteChannel(current)
+
+    updated = {}
+    updated.append(current)
+    userData = {}
+    if isValid(current.LookupCI("UserData")) then userData.append(current.LookupCI("UserData"))
+    userData.IsFavorite = favorite
+    updated.UserData = userData
+    storeApplyChannelUpdate(updated)
+
+    storeSend({ kind: "favorite", itemId: channelId, favorite: favorite, tag: { op: "favorite", previous: current, after: nextStep } })
+end sub
+
+sub storeOnFavorite(response as object, tag as object)
+    if not response.ok then storeApplyChannelUpdate(tag.previous)
+    storeContinue(tag.after, response.ok)
+end sub
+
+sub storeToggleProgramRecording(program as object, nextStep as object)
+    timerId = program.LookupCI("TimerId")
+    if isValid(timerId)
+        if not isValidAndNotEmpty(timerId)
+            storeContinue(nextStep, false)
+            return
+        end if
+        storeSend({ kind: "cancelTimer", timerId: timerId, tag: { op: "timer", after: nextStep } })
+    else
+        storeSend({ kind: "createTimer", programId: program.LookupCI("Id"), tag: { op: "timer", after: nextStep } })
+    end if
+end sub
+
+sub storeToggleSeriesRecording(program as object, nextStep as object)
+    seriesTimerId = program.LookupCI("SeriesTimerId")
+    if isValid(seriesTimerId)
+        if not isValidAndNotEmpty(seriesTimerId)
+            storeContinue(nextStep, false)
+            return
+        end if
+        storeSend({ kind: "cancelSeriesTimer", timerId: seriesTimerId, tag: { op: "timer", after: nextStep } })
+    else
+        storeSend({ kind: "createSeriesTimer", programId: program.LookupCI("Id"), tag: { op: "timer", after: nextStep } })
+    end if
+end sub
+
+' The timer changed, so the programs are read again to pick up their new timer ids before the
+' caller hears it worked
+sub storeOnTimer(response as object, tag as object)
+    if not response.ok
+        storeContinue(tag.after, false)
+        return
+    end if
+    storeReload(tag.after)
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Program artwork
+' ------------------------------------------------------------------------------------------------
+
+' A repeat airing of an episode already resolved is a cache hit. Without an episode title the name
+' alone would be the key, and generic names recur across unrelated channels.
+function artworkContentKey(program as object) as string
+    name = program.LookupCI("Name") ?? ""
+    episode = (program.LookupCI("EpisodeTitle") ?? "").Trim()
+    if episode <> "" then return name + chr(0) + episode
+    return name + chr(0) + "CH" + chr(0) + (program.LookupCI("ChannelId") ?? "")
+end function
+
+function storeHasArtworkResult(programId as string) as boolean
+    return m.store.artwork.DoesExist(programId)
+end function
+
+function storeCachedArtwork(programId as string) as dynamic
+    cached = m.store.artwork[programId]
+    if not isValid(cached) or cached.none = true then return invalid
+    return cached
+end function
+
+' Looks a program's own art up once, and remembers an answer of none like any other. A failed
+' lookup isnt remembered.
+sub storeRequestArtwork(program as object)
+    id = program.LookupCI("Id")
+    if not isValidAndNotEmpty(id) then return
+    if isValid(liveTvGuide.ArtworkSource(program)) or m.store.artwork.DoesExist(id) then return
+
+    contentKey = artworkContentKey(program)
+    if m.store.artworkByContent.DoesExist(contentKey)
+        m.store.artwork[id] = m.store.artworkByContent[contentKey]
+        onArtworkChanged()
+        return
+    end if
+    if m.store.artworkDisabled or m.store.artworkInFlight.DoesExist(id) then return
+
+    m.store.artworkInFlight[id] = true
+    storeSend({ kind: "program", programId: id, tag: { op: "artwork", programId: id, contentKey: contentKey } })
+end sub
+
+sub storeOnArtwork(response as object, tag as object)
+    m.store.artworkInFlight.Delete(tag.programId)
+    if not response.ok
+        m.store.artworkFailures++
+        if m.store.artworkFailures >= STORE_ARTWORK_FAILURE_LIMIT then m.store.artworkDisabled = true
+        return
+    end if
+    m.store.artworkFailures = 0
+
+    result = liveTvGuide.ArtworkSource(response.program)
+    if not isValid(result) then result = { none: true }
+    if m.store.artwork.count() > 2000 then m.store.artwork = {}
+    if m.store.artworkByContent.count() > 2000 then m.store.artworkByContent = {}
+    m.store.artwork[tag.programId] = result
+    m.store.artworkByContent[tag.contentKey] = result
+    onArtworkChanged()
+end sub
