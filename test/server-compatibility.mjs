@@ -296,11 +296,11 @@ assert.match(loadItemsTask, /itemsToLoad, "audioStream"[^]*?loadItemsTaskServerD
 assert.match(loadItemsTask, /itemsToLoad, "backdropImage"[^]*?backdropImageForServer/, 'Audio backdrop task selects the owning server');
 
 const audioPlayer = await readFile('components/mediaPlayers/AudioPlayer.bs', 'utf8');
-assert.match(audioPlayer, /setAudioTaskServerData\(m\.LoadAudioStreamTask, currentItem\)/, 'Audio player passes queue-item server data to the stream task');
+assert.match(audioPlayer, /setTaskServerFromItem\(m\.LoadAudioStreamTask, currentItem\)/, 'Audio player passes queue-item server data to the stream task');
 assert.match(audioPlayer, /getServerInfoFromItem\(currentItem\)[^]*?params\.serverData = serverData[^]*?params\.UserId = serverData\.userId/, 'Audio playstate is reported to the owning server');
 
 const audioPlayerView = await readFile('components/music/AudioPlayerView.bs', 'utf8');
-assert.match(audioPlayerView, /setAudioViewTaskServerData\(m\.LoadMetaDataTask, currentItem\)/, 'Audio metadata task follows the queue-item server');
+assert.match(audioPlayerView, /setTaskServerFromItem\(m\.LoadMetaDataTask, currentItem\)/, 'Audio metadata task follows the queue-item server');
 assert.match(audioPlayerView, /audioArtworkURL\(currentItem[^]*?ImageType\.PRIMARY/, 'Audio artwork uses the queue-item server');
 
 process.stdout.write('PASS: Jellyfin review regressions (58 checks)\n');
