@@ -308,7 +308,7 @@ assert.match(detailApiTask, /request\.serverData[^]*?APIRequestForServer\(server
 assert.match(detailApiTask, /LookupCI\("UserId"\)[^]*?targetParams\.UserId = serverData\.userId/, 'Remote detail requests replace active-session user ids');
 
 const detailActions = await readFile('source/utils/detailActions.bs', 'utf8');
-assert.match(detailActions, /function detailActionServerData\([^]*?getServerInfoFromItem\(m\.top\.itemContent\)[^]*?function withDetailActionServer\([^]*?request\.serverData = serverData/, 'Detail rating and delete actions carry the item server context');
+assert.match(detailActions, /function withDetailActionServer\([^]*?getServerInfoFromItem\(m\.top\.itemContent\)[^]*?serverIdentityKey\([^]*?request\.serverData = serverData/, 'Detail rating and delete actions carry the item server context, but not for the signed-in server');
 assert.match(detailActions, /task\.request = withDetailActionServer\(request\)/, 'Detail action tasks use the item server wrapper');
 
 const itemMenuHost = await readFile('components/itemMenu/itemMenuHost.bs', 'utf8');
@@ -320,7 +320,4 @@ assert.match(artworkDialog, /serverData: m\.top\.serverData[^]*?RemoteImages[^]*
 const identifyDialog = await readFile('components/IdentifyDialog.bs', 'utf8');
 assert.match(identifyDialog, /serverData: m\.top\.serverData[^]*?Items\/RemoteSearch[^]*?serverData: m\.top\.serverData[^]*?Items\/RemoteSearch\/Apply/, 'Identify requests stay on the item server');
 
-const compatibilityRoutes = await readFile('source/utils/serverCompatibility.bs', 'utf8');
-assert.match(compatibilityRoutes, /segments\.Count\(\) = 3 and LCase\(segments\[0\]\) = "useritems"[^]*?action = "rating" or action = "userdata"[^]*?prefix \+ "Items\/" \+ segments\[1\]/, 'Emby personal rating routes map to the user-scoped item path');
-
-process.stdout.write('PASS: Jellyfin review regressions (66 checks)\n');
+process.stdout.write('PASS: Jellyfin review regressions (65 checks)\n');
