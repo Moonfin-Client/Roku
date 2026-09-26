@@ -282,4 +282,8 @@ assert.match(finishEpisode, /ItemMetaDataForServer\(serverData, videoID\)[^]*?ge
 const preferredAudio = videoPlaybackTask.match(/function FindPreferredAudioStream\([^]*?end function/)[0];
 assert.match(preferredAudio, /getPlaybackItem\(m\.top\.itemId, playbackServerData\(\)\)/, 'Remote preferred-audio fallback reads metadata from the item server');
 
-process.stdout.write('PASS: Jellyfin review regressions (47 checks)\n');
+const playbackInfoTask = await readFile('components/GetPlaybackInfoTask.bs', 'utf8');
+const playbackSessionLookup = playbackInfoTask.match(/function findPlaybackSession\([^]*?end function/)[0];
+assert.match(playbackSessionLookup, /APIRequestForServer\(serverUrl, serverUserId, serverAuthToken, "Sessions", \{\}\)[^]*?api\.sessions\.Get\(\{\}\)/, 'Remote playback stats query the item server while local stats keep the active session path');
+
+process.stdout.write('PASS: Jellyfin review regressions (48 checks)\n');
