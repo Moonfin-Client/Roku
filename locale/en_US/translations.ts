@@ -4563,5 +4563,55 @@
         <extracomment>Description of the Show Live TV Button setting</extracomment>
         <translation>Show the Live TV button in the navigation bar when the server has a Live TV library</translation>
     </message>
+    <message>
+        <source>Trick Play</source>
+        <extracomment>Setting that shows preview thumbnails while seeking</extracomment>
+        <translation>Trick Play</translation>
+    </message>
+    <message>
+        <source>Show preview thumbnails when seeking</source>
+        <extracomment>Description of the Trick Play setting</extracomment>
+        <translation>Show preview thumbnails when seeking</translation>
+    </message>
+    <message>
+        <source>Pause While Scrubbing</source>
+        <extracomment>Setting that pauses playback while scrubbing the progress bar</extracomment>
+        <translation>Pause While Scrubbing</translation>
+    </message>
+    <message>
+        <source>Playback pauses while you seek and resumes when you press play. Turn this off to keep playing and jump straight to the new spot</source>
+        <extracomment>Description of the Pause While Scrubbing setting</extracomment>
+        <translation>Playback pauses while you seek and resumes when you press play. Turn this off to keep playing and jump straight to the new spot</translation>
+    </message>
+    <message>
+        <source>Seek Step</source>
+        <extracomment>Setting for how far each press moves while scrubbing the progress bar</extracomment>
+        <translation>Seek Step</translation>
+    </message>
+    <message>
+        <source>How far each press moves while scrubbing the progress bar</source>
+        <extracomment>Description of the Seek Step setting</extracomment>
+        <translation>How far each press moves while scrubbing the progress bar</translation>
+    </message>
+    <message>
+        <source>5 seconds</source>
+        <extracomment>How far each press moves while scrubbing the progress bar</extracomment>
+        <translation>5 seconds</translation>
+    </message>
+    <message>
+        <source>10 seconds</source>
+        <extracomment>How far each press moves while scrubbing the progress bar</extracomment>
+        <translation>10 seconds</translation>
+    </message>
+    <message>
+        <source>20 seconds</source>
+        <extracomment>How far each press moves while scrubbing the progress bar</extracomment>
+        <translation>20 seconds</translation>
+    </message>
+    <message>
+        <source>30 seconds</source>
+        <extracomment>How far each press moves while scrubbing the progress bar</extracomment>
+        <translation>30 seconds</translation>
+    </message>
 </context>
 </TS>
