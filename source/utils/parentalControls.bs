@@ -1,0 +1,119 @@
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/parentalFilter.bs"
+
+' Blocked ratings, kept per server and per user rather than with the settings, which follow the
+' account to its other devices. The list deliberately doesnt sync, so locking down the kids' TV
+' doesnt lock down a parent's phone.
+'
+' The signed in account's list is copied onto the global node when it signs in, so every screen
+' and task reads the same one without going back to the registry.
+
+const PARENTAL_REGISTRY_SECTION = "parentalControls"
+
+namespace parentalControls
+
+    ' The server address without its scheme, which is known even when the server cant be reached
+    function ScopeKey(serverUrl as dynamic, userId as dynamic) as string
+        server = LCase((serverUrl ?? "").toStr().Trim())
+        server = CreateObject("roRegex", "^https?://", "i").Replace(server, "")
+        server = CreateObject("roRegex", "/+$", "").Replace(server, "")
+        if server = "" or not isValidAndNotEmpty(userId) then return ""
+        return server + "_" + userId
+    end function
+
+    ' Reads the list of whoever just signed in, and forgets what the last account's series lookups
+    ' found
+    sub Activate()
+        if not m.global.hasField("parentalScope")
+            m.global.addFields({ parentalScope: "", parentalBlockedRatings: [], parentalSeriesRatings: {} })
+        end if
+
+        scope = parentalControls.ScopeKey(chainLookupReturn(m.global.session, "server.url", ""), chainLookupReturn(m.global.session, "user.id", ""))
+        m.global.parentalScope = scope
+        entry = parentalControls.readEntry(scope)
+        m.global.parentalBlockedRatings = entry.blockedRatings ?? []
+        m.global.parentalSeriesRatings = {}
+    end sub
+
+    function readEntry(scope as string) as object
+        if scope = "" then return {}
+
+        stored = registry_read(scope, PARENTAL_REGISTRY_SECTION)
+        if not isValidAndNotEmpty(stored) then return {}
+
+        entry = ParseJson(stored)
+        if type(entry) <> "roAssociativeArray" then return {}
+        return entry
+    end function
+
+    sub writeEntry(changes as object)
+        scope = parentalControls.activeScope()
+        if scope = "" then return
+
+        entry = parentalControls.readEntry(scope)
+        entry.Append(changes)
+        registry_write(scope, FormatJson(entry), PARENTAL_REGISTRY_SECTION)
+    end sub
+
+    function activeScope() as string
+        if not m.global.hasField("parentalScope") then return ""
+        return m.global.parentalScope
+    end function
+
+    function BlockedRatings() as object
+        if not m.global.hasField("parentalBlockedRatings") then return []
+        return m.global.parentalBlockedRatings
+    end function
+
+    ' The home screen reads its rows again on the way back, since the change can empty some of them
+    sub SetBlockedRatings(ratings as object)
+        normalized = parentalFilter.NormalizeList(ratings)
+        parentalControls.writeEntry({ blockedRatings: normalized })
+        m.global.parentalBlockedRatings = normalized
+        m.global.homeNeedsRefresh = true
+    end sub
+
+    ' Built once for each list, and again only when the list changes, since screens run every
+    ' item they load through it
+    function ActiveFilter() as object
+        ratings = parentalControls.BlockedRatings()
+        signature = ratings.join(",")
+        if not isValid(m.parentalFilterCache) or m.parentalFilterCache.signature <> signature
+            m.parentalFilterCache = { signature: signature, filter: parentalFilter.FromRatings(ratings) }
+        end if
+        return m.parentalFilterCache.filter
+    end function
+
+    function IsRatingBlocked(rating as dynamic) as boolean
+        return parentalFilter.IsBlockedRating(parentalControls.ActiveFilter(), rating)
+    end function
+
+    function WithoutBlockedItems(items as dynamic, fallbackRating = "" as dynamic) as dynamic
+        return parentalFilter.WithoutBlocked(items, parentalControls.ActiveFilter(), fallbackRating)
+    end function
+
+    ' Series last seen with a blocked rating. They stay blocked until a lookup succeeds and says
+    ' otherwise, so a dropped connection cant undo a refusal.
+    function BlockedSeriesIds() as object
+        entry = parentalControls.readEntry(parentalControls.activeScope())
+        return entry.blockedSeriesIds ?? []
+    end function
+
+    sub RememberSeriesBlocked(seriesId as string, blocked as boolean)
+        current = parentalControls.BlockedSeriesIds()
+        if blocked = inArray(current, seriesId) then return
+
+        if blocked
+            current.push(seriesId)
+        else
+            kept = []
+            for each id in current
+                if id <> seriesId then kept.push(id)
+            end for
+            current = kept
+        end if
+        parentalControls.writeEntry({ blockedSeriesIds: current })
+    end sub
+
+end namespace

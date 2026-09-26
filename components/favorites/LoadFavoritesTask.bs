@@ -3,6 +3,7 @@ import "pkg:/source/utils/diagnostics.bs"
 import "pkg:/source/utils/favoriteTabs.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/multiserver.bs"
+import "pkg:/source/utils/parentalControls.bs"
 
 ' How long a batch has before whatever has not arrived is given up on
 const FAVORITES_TIMEOUT = 15
@@ -53,7 +54,8 @@ function emptyCounts(tabs as object) as object
 end function
 
 ' The nodes go out last, since that is the field the screen waits on
-sub answerWith(mode as string, nodes as object, counts as object, total as integer, startIndex as integer, tabKey as string)
+sub answerWith(mode as string, nodes as object, counts as object, total as integer, startIndex as integer, tabKey as string, fetched = {} as object)
+    m.top.fetched = fetched
     m.top.mode = mode
     m.top.tabKey = tabKey
     m.top.counts = counts
@@ -96,18 +98,20 @@ sub loadTabs(userSession as object, request as object, tabs as object)
 
     nodes = []
     counts = emptyCounts(tabs)
+    fetched = {}
 
     for each answer in awaitAll(port, pending, keepAlive)
         tabDef = answer.tag
         built = buildNodes(answer.items, userSession, tabs, tabDef)
         counts[tabDef.key] = answer.total > 0 ? answer.total : built.count()
+        fetched[tabDef.key] = answer.items.count()
 
         for each node in built
             nodes.push(node)
         end for
     end for
 
-    answerWith("tabs", nodes, counts, nodes.count(), 0, "")
+    answerWith("tabs", nodes, counts, nodes.count(), 0, "", fetched)
 end sub
 
 ' Every tab across every server, one request each, bucketed here
@@ -158,7 +162,9 @@ sub loadPage(sessions as object, request as object, tabs as object)
     counts = emptyCounts(tabs)
     counts[pageTab.key] = answer.total
 
-    answerWith("page", buildNodes(answer.items, userSession, tabs, pageTab), counts, answer.total, startIndex, pageTab.key)
+    fetched = {}
+    fetched[pageTab.key] = answer.items.count()
+    answerWith("page", buildNodes(answer.items, userSession, tabs, pageTab), counts, answer.total, startIndex, pageTab.key, fetched)
 end sub
 
 ' The flat view, which narrows by type rather than tabbing between them
@@ -176,7 +182,7 @@ sub loadList(sessions as object, request as object, tabs as object, pooled as bo
     if isValidAndNotEmpty(request.nameStartsWith) then params.NameStartsWith = request.nameStartsWith
 
     answer = fetchOne(userSession, params)
-    answerWith("list", buildNodes(answer.items, userSession, tabs), emptyCounts(tabs), answer.total, startIndex, "")
+    answerWith("list", buildNodes(answer.items, userSession, tabs), emptyCounts(tabs), answer.total, startIndex, "", { list: answer.items.count() })
 end sub
 
 ' Several servers cant be paged as one list, so they are gathered whole and narrowed here
@@ -331,7 +337,7 @@ function buildNodes(items as object, userSession as object, tabs as object, fixe
     nodes = []
     if not isValidAndNotEmpty(items) then return nodes
 
-    for each item in items
+    for each item in parentalControls.WithoutBlockedItems(items)
         tabDef = fixedTab
         if not isValid(tabDef) then tabDef = favoriteTabs.TabForType(tabs, item.Type)
         if isValid(tabDef)

@@ -1,0 +1,133 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/parentalControls.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+
+' Decides whether an item may be opened or played. An episode usually has no rating of its own,
+' so it is judged by its series, which may need looking up first.
+'
+' Fails open when it cant tell, since blanking the app is worse than the gap. The exception is a
+' series already seen with a blocked rating, which stays blocked.
+
+const BLOCKED_SERIES_LOOKUP_MS = 3000
+
+namespace blockedContent
+
+    ' Queues and rows hold nodes as often as server json
+    function jsonOf(item as dynamic) as dynamic
+        if type(item) = "roSGNode" and item.hasField("json") then return item.json
+        return item
+    end function
+
+    function ownRating(item as dynamic) as string
+        rating = parentalFilter.OwnRating(item)
+        if not isString(rating) then return ""
+        return rating.Trim()
+    end function
+
+    ' seriesId to its rating, or an empty string when it has none. Shared by every thread through
+    ' the global node, and forgotten when someone else signs in.
+    function seriesRatings() as object
+        if not m.global.hasField("parentalSeriesRatings") then return {}
+        return m.global.parentalSeriesRatings
+    end function
+
+    ' The series rating a lookup or an earlier screen found, or an empty string
+    function SeriesRating(seriesId as dynamic) as string
+        if not isString(seriesId) then return ""
+        known = blockedContent.seriesRatings()
+        return known[seriesId] ?? ""
+    end function
+
+    sub rememberSeriesRating(seriesId as string, rating as string)
+        if not m.global.hasField("parentalSeriesRatings") then return
+
+        known = m.global.parentalSeriesRatings
+        known[seriesId] = rating
+        m.global.parentalSeriesRatings = known
+    end sub
+
+    ' Saves a lookup for a series the app already has in hand
+    sub ObserveItem(item as dynamic)
+        item = blockedContent.jsonOf(item)
+        if not isStringEqual(chainLookupReturn(item, "Type", ""), "Series") then return
+
+        seriesId = chainLookupReturn(item, "Id", "")
+        if seriesId <> "" then blockedContent.rememberSeriesRating(seriesId, blockedContent.ownRating(item))
+    end sub
+
+    ' No network, so a whole queue can go through it. A miss reads as allowed and IsBlocked catches
+    ' it for the one item about to play.
+    function IsBlockedNow(item as dynamic) as boolean
+        item = blockedContent.jsonOf(item)
+        own = blockedContent.ownRating(item)
+        if own <> "" then return parentalControls.IsRatingBlocked(own)
+
+        seriesId = chainLookupReturn(item, "SeriesId", "")
+        if seriesId = "" then return false
+        if inArray(parentalControls.BlockedSeriesIds(), seriesId) then return true
+
+        return parentalControls.IsRatingBlocked(blockedContent.seriesRatings()[seriesId])
+    end function
+
+    ' The answer for the one item about to open or play, looking the series up when it has to.
+    ' It waits on the network, so it runs on the main thread or in a task, never on the render
+    ' thread.
+    function IsBlocked(item as dynamic) as boolean
+        item = blockedContent.jsonOf(item)
+        own = blockedContent.ownRating(item)
+        if own <> "" then return parentalControls.IsRatingBlocked(own)
+
+        seriesId = chainLookupReturn(item, "SeriesId", "")
+        if seriesId = "" then return false
+
+        known = blockedContent.seriesRatings()
+        if known.DoesExist(seriesId)
+            lookup = { resolved: true, rating: known[seriesId] }
+        else
+            lookup = blockedContent.lookUpSeries(item, seriesId)
+        end if
+
+        ' A lookup that worked always wins, so unblocking a rating releases the series
+        if lookup.resolved
+            blocked = parentalControls.IsRatingBlocked(lookup.rating)
+            parentalControls.RememberSeriesBlocked(seriesId, blocked)
+            return blocked
+        end if
+
+        return inArray(parentalControls.BlockedSeriesIds(), seriesId)
+    end function
+
+    ' A failed lookup isnt the same as a series with no rating, so it is reported apart and never
+    ' kept
+    function lookUpSeries(item as dynamic, seriesId as string) as object
+        serverUrl = chainLookupReturn(item, "_serverUrl", "")
+        if serverUrl <> ""
+            userId = chainLookupReturn(item, "_userId", "")
+            req = APIRequestForServer(serverUrl, userId, chainLookupReturn(item, "_authToken", ""), serverItemMetadataPath(seriesId, userId, isEmbyServer(serverUrl)), { UserId: userId })
+        else
+            userId = chainLookupReturn(m.global.session, "user.id", "")
+            req = APIRequest(serverItemMetadataPath(seriesId, userId, isEmbyServer()), { UserId: userId })
+        end if
+        if not isValid(req) then return { resolved: false }
+
+        port = CreateObject("roMessagePort")
+        req.SetMessagePort(port)
+        if not req.AsyncGetToString() then return { resolved: false }
+
+        event = wait(BLOCKED_SERIES_LOOKUP_MS, port)
+        if type(event) <> "roUrlEvent"
+            req.AsyncCancel()
+            return { resolved: false }
+        end if
+        if event.GetResponseCode() < 200 or event.GetResponseCode() > 299 then return { resolved: false }
+
+        series = ParseJson(event.GetString())
+        if type(series) <> "roAssociativeArray" then return { resolved: false }
+
+        rating = blockedContent.ownRating(series)
+        blockedContent.rememberSeriesRating(seriesId, rating)
+        return { resolved: true, rating: rating }
+    end function
+
+end namespace

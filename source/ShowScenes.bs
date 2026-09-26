@@ -2,9 +2,12 @@ import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/EmbyConnectFlow.bs"
 import "pkg:/source/enums/ImageType.bs"
 import "pkg:/source/enums/ItemType.bs"
+import "pkg:/source/utils/blockedContent.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/minimalistRules.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/parentalControls.bs"
+import "pkg:/source/utils/signInPin.bs"
 
 const minimumServerVersion = [10, 9, 0]
 
@@ -556,6 +559,39 @@ function RunSetupWizard() as boolean
     return true
 end function
 
+' A title a blocked rating keeps out opens on a page saying so rather than on its details
+function ShowBlockedTitle() as object
+    stopLoadingSpinner()
+    group = CreateObject("roSGNode", "BlockedTitle")
+    m.global.sceneManager.callFunc("pushScene", group)
+    return group
+end function
+
+' Holds the app shut after signing in until the right PIN is in, when PIN Code Protection is on.
+' Every way in comes back through here, so switching account asks again.
+function RunPinGate() as boolean
+    if not signInPin.Enabled() then return true
+
+    stopLoadingSpinner()
+    group = CreateObject("roSGNode", "PinGate")
+    m.global.sceneManager.callFunc("pushScene", group)
+    port = CreateObject("roMessagePort")
+    group.observeField("unlocked", port)
+
+    while true
+        msg = wait(0, port)
+        if type(msg) = "roSGScreenEvent" and msg.isScreenClosed()
+            return false
+        else if isNodeEvent(msg, "unlocked")
+            exit while
+        end if
+    end while
+
+    group.visible = false
+    startLoadingSpinner()
+    return true
+end function
+
 function CreateHomeGroup()
     ' Main screen after logging in. Shows the user's libraries
     group = CreateObject("roSGNode", "Home")
@@ -669,6 +705,10 @@ function CreateMovieDetailsGroupInternal(movie as object) as dynamic
         show_dialog(tr("Unable to load item details. Check the server connection and try again."), [tr("OK")])
         return invalid
     end if
+
+    ' Checked before the screen is built, so nothing reads the title or fetches rows for a page
+    ' that wont be shown
+    if blockedContent.IsBlocked(movieMetaData.json) then return ShowBlockedTitle()
 
     ' Unified detail screen for both movies and episodes
     itemType = LCase(movieMetaData.json.type)
@@ -798,13 +838,6 @@ function CreateSeriesDetailsGroupInternal(seriesID as string, seriesServerData =
         return invalid
     end if
 
-    seasonData = CreateObject("roSGNode", "ContentNode")
-    for each item in apiSeasonData.Items
-        tmp = seasonData.createChild("TVSeasonData")
-        tmp.json = item
-        tmp.posterURL = api.items.GetImageURL(item.id, ImageType.PRIMARY, 0, { "maxHeight": 320, "maxWidth": 180, "quality": "90" })
-    end for
-
     if isValid(seriesServerData)
         seriesMetaData = ItemMetaDataForServer(seriesServerData, seriesID)
     else
@@ -816,6 +849,16 @@ function CreateSeriesDetailsGroupInternal(seriesID as string, seriesServerData =
         stopLoadingSpinner()
         return invalid
     end if
+
+    blockedContent.ObserveItem(seriesMetaData.json)
+    if blockedContent.IsBlocked(seriesMetaData.json) then return ShowBlockedTitle()
+
+    seasonData = CreateObject("roSGNode", "ContentNode")
+    for each item in parentalControls.WithoutBlockedItems(apiSeasonData.Items, chainLookupReturn(seriesMetaData.json, "OfficialRating", ""))
+        tmp = seasonData.createChild("TVSeasonData")
+        tmp.json = item
+        tmp.posterURL = api.items.GetImageURL(item.id, ImageType.PRIMARY, 0, { "maxHeight": 320, "maxWidth": 180, "quality": "90" })
+    end for
 
     ' Build unified ItemDetails view for series
     group = CreateObject("roSGNode", detailScreenComponent("series"))
@@ -1012,6 +1055,7 @@ function CreateSeasonDetailsGroup(series as object, season as object) as dynamic
         stopLoadingSpinner()
         return invalid
     end if
+    if blockedContent.IsBlocked(seasonMetaData.json) then return ShowBlockedTitle()
 
     displayResumeButton = hasSeasonEpisodeToResume(series.id, season.id)
 
@@ -1068,6 +1112,7 @@ function CreateSeasonDetailsGroupByID(seriesID as string, seasonID as string, se
         stopLoadingSpinner()
         return invalid
     end if
+    if blockedContent.IsBlocked(seasonMetaData.json) then return ShowBlockedTitle()
 
     displayResumeButton = hasSeasonEpisodeToResume(seriesID, seasonID)
 
