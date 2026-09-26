@@ -1,5 +1,6 @@
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/playbackOverlay.bs"
 import "pkg:/source/utils/themeChrome.bs"
 
 const OFFSET_STEP_MS = 100
@@ -10,9 +11,23 @@ const FOCUS_INCREASE = 1
 const FOCUS_RESET = 2
 const FOCUS_CLOSE = 3
 
-' Where the reset and close buttons sit, down from the top of the panel
+' Where the rows sit, down from the top of the panel. The timeline, when there is one, takes the
+' space between the steppers and the reset button.
+const STEPPER_TOP = 123
+const TIMELINE_TOP = 243
+const TIMELINE_HEIGHT = 222
 const RESET_TOP = 243
 const CLOSE_TOP = 317
+const PANEL_HEIGHT = 399
+const NARROW_WIDTH = 600
+const WIDE_WIDTH = 900
+const PANEL_PAD = 40
+
+const TIMELINE_WINDOW_SECONDS = 10
+const RULER_HEIGHT = 26
+const TRACK_HEIGHT = 154
+const BAR_INSET = 14
+const MIN_BAR_PERCENT = 0.4
 
 sub init()
     m.top.findNode("title").text = tr("Subtitle Offset")
@@ -21,13 +36,22 @@ sub init()
     m.top.findNode("decreaseLabel").font.size = 32
     m.top.findNode("increaseLabel").font.size = 32
 
-    placeButton("reset", tr("Reset"), 20, 30, 15, RESET_TOP)
-    placeButton("close", tr("Press BACK to close"), 18, 20, 10, CLOSE_TOP)
+    m.panelWidth = NARROW_WIDTH
+    m.accent = playbackOverlay.Palette().accent
+    m.markerPool = []
+    m.barPool = []
 
     m.focusIndex = FOCUS_RESET
     m.lastStepper = FOCUS_DECREASE
 
+    m.timeline = m.top.findNode("timeline")
+    m.ruler = m.top.findNode("ruler")
+    m.track = m.top.findNode("track")
+    m.bars = m.top.findNode("bars")
+    m.playhead = m.top.findNode("playhead")
+
     m.top.observeField("visible", "onVisibleChanged")
+    layoutPanel()
     drawValue()
     drawFocus()
 end sub
@@ -37,6 +61,9 @@ sub placeButton(id as string, text as string, fontSize as integer, padX as integ
     label = m.top.findNode(id + "Label")
     label.font.size = fontSize
     label.text = text
+    ' The panel lays out again when it widens, so measure the text and not the last size
+    label.width = 0
+    label.height = 0
     bounds = label.boundingRect()
 
     width = bounds.width + (padX * 2)
@@ -51,12 +78,144 @@ sub placeButton(id as string, text as string, fontSize as integer, padX as integ
         end if
     end for
 
-    m.top.findNode(id).translation = [(600 - width) / 2, top]
+    m.top.findNode(id).translation = [(m.panelWidth - width) / 2, top]
 end sub
+
+' Narrow by itself, and wide with the timeline under the steppers when there are cues to show
+sub layoutPanel()
+    wide = isValidAndNotEmpty(m.top.cues)
+    m.panelWidth = NARROW_WIDTH
+    shift = 0
+    if wide
+        m.panelWidth = WIDE_WIDTH
+        shift = TIMELINE_HEIGHT
+    end if
+    height = PANEL_HEIGHT + shift
+
+    for each id in ["panelBg", "panelBorder"]
+        m.top.findNode(id).width = m.panelWidth
+        m.top.findNode(id).height = height
+    end for
+    m.top.findNode("panel").translation = [(1920 - m.panelWidth) / 2, Int((1080 - height) / 2)]
+    m.top.findNode("title").width = m.panelWidth - PANEL_PAD * 2
+
+    left = (m.panelWidth - 400) / 2
+    m.top.findNode("decrease").translation = [left, STEPPER_TOP]
+    m.top.findNode("value").translation = [left + 100, STEPPER_TOP]
+    m.top.findNode("increase").translation = [left + 320, STEPPER_TOP]
+
+    placeButton("reset", tr("Reset"), 20, 30, 15, RESET_TOP + shift)
+    placeButton("close", tr("Press BACK to close"), 18, 20, 10, CLOSE_TOP + shift)
+
+    m.timeline.visible = wide
+    if not wide then return
+    m.trackWidth = m.panelWidth - PANEL_PAD * 2
+    m.timeline.translation = [PANEL_PAD, TIMELINE_TOP]
+    m.track.translation = [0, RULER_HEIGHT + 6]
+    for each id in ["trackFill", "trackBorder"]
+        m.top.findNode(id).width = m.trackWidth
+        m.top.findNode(id).height = TRACK_HEIGHT
+    end for
+    m.bars.clippingRect = [2, 2, m.trackWidth - 4, TRACK_HEIGHT - 4]
+    m.playhead.height = TRACK_HEIGHT
+    drawTimeline()
+end sub
+
+sub onOffsetChanged()
+    drawValue()
+    drawTimeline()
+end sub
+
+' The window runs five seconds either side of now, so now sits in the middle once playback is five
+' seconds in. Every cue that touches the window gets a bar, and the one playing now is lit.
+sub drawTimeline()
+    if not m.top.visible or not isValidAndNotEmpty(m.top.cues) or not isValid(m.trackWidth) then return
+    now = m.top.currentTime
+    windowStart = now - TIMELINE_WINDOW_SECONDS / 2
+    if windowStart < 0 then windowStart = 0
+    windowEnd = windowStart + TIMELINE_WINDOW_SECONDS
+
+    used = 0
+    second = Int(windowStart)
+    if second < windowStart then second++
+    while second <= windowEnd
+        label = pooledMarker(used)
+        label.text = `${Int(second / 60)}:${playbackOverlay.PadLeftZero(second mod 60)}`
+        label.translation = [xAt(second, windowStart) - label.width / 2, 0]
+        label.visible = true
+        used++
+        second++
+    end while
+    for i = used to m.markerPool.count() - 1
+        m.markerPool[i].visible = false
+    end for
+
+    offsetSeconds = m.top.offset / 1000
+    used = 0
+    for each cue in m.top.cues
+        start = cue.start / 1000 + offsetSeconds
+        finish = cue.finish / 1000 + offsetSeconds
+        if finish <= windowStart or start >= windowEnd then continue for
+        left = (start - windowStart) / TIMELINE_WINDOW_SECONDS * 100
+        if left < 0 then left = 0
+        right = (finish - windowStart) / TIMELINE_WINDOW_SECONDS * 100
+        if right > 100 then right = 100
+        width = right - left
+        if width < MIN_BAR_PERCENT then width = MIN_BAR_PERCENT
+
+        bar = pooledBar(used)
+        barWidth = m.trackWidth * width / 100
+        bar.group.translation = [m.trackWidth * left / 100, BAR_INSET]
+        bar.fill.width = barWidth
+        active = now >= start and now <= finish
+        bar.fill.color = active ? playbackOverlay.WithAlpha(m.accent, 140) : "#FFFFFF38"
+        bar.text.text = cue.text
+        bar.text.width = barWidth - 12
+        bar.text.visible = barWidth > 20
+        bar.group.visible = true
+        used++
+    end for
+    for i = used to m.barPool.count() - 1
+        m.barPool[i].group.visible = false
+    end for
+
+    m.playhead.translation = [xAt(now, windowStart) - 2, 0]
+end sub
+
+function xAt(moment as float, windowStart as float) as float
+    return m.trackWidth * (moment - windowStart) / TIMELINE_WINDOW_SECONDS
+end function
+
+function pooledMarker(index as integer) as object
+    if index < m.markerPool.count() then return m.markerPool[index]
+    label = m.ruler.createChild("Label")
+    playbackOverlay.SetFont(label, 18, false)
+    label.color = "#FFFFFF80"
+    label.horizAlign = "center"
+    label.width = 60
+    m.markerPool.push(label)
+    return label
+end function
+
+' A bar is a plain rectangle, since a sliver of a cue is narrower than a rounded shape's corners
+function pooledBar(index as integer) as object
+    if index < m.barPool.count() then return m.barPool[index]
+    group = m.bars.createChild("Group")
+    fill = group.createChild("Rectangle")
+    fill.height = TRACK_HEIGHT - BAR_INSET * 2
+    text = group.createChild("Label")
+    playbackOverlay.SetFont(text, 18, false)
+    text.color = "#FFFFFF"
+    text.translation = [6, 8]
+    bar = { group: group, fill: fill, text: text }
+    m.barPool.push(bar)
+    return bar
+end function
 
 sub onVisibleChanged()
     if not m.top.visible then return
 
+    layoutPanel()
     m.focusIndex = FOCUS_RESET
     m.lastStepper = FOCUS_DECREASE
     drawFocus()

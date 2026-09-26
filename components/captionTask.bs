@@ -3,6 +3,12 @@ import "pkg:/source/enums/CaptionMoveDirection.bs"
 import "pkg:/source/enums/MediaPlaybackState.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/playbackOverlay.bs"
+
+' The outline is four copies of the text, this far out at the smallest shadow size
+const SHADOW_OFFSET = 2
+' Subtitles never run wider than this share of the screen
+const MAX_WIDTH_PERCENT = 90
 
 sub init()
     m.top.playerState = MediaPlaybackState.STOPPED
@@ -15,34 +21,72 @@ sub init()
 
     m.captionList = []
     m.reader = createObject("roUrlTransfer")
-    m.font = CreateObject("roSGNode", "Font")
     m.tags = CreateObject("roRegex", "{\\an\d*}|&lt;.*?&gt;|<.*?>", "s")
-
-    ' Caption Style
-    m.fontSizeDict = { "Default": 60, "Large": 60, "Extra Large": 70, "Medium": 50, "Small": 40 }
-    m.percentageDict = { "Default": 1.0, "100%": 1.0, "75%": 0.75, "50%": 0.5, "25%": 0.25, "Off": 0 }
-    m.textColorDict = { "Default": &HFFFFFFFF, "White": &HFFFFFFFF, "Black": &H000000FF, "Red": &HFF0000FF, "Green": &H008000FF, "Blue": &H0000FFFF, "Yellow": &HFFFF00FF, "Magenta": &HFF00FFFF, "Cyan": &H00FFFFFF }
-    m.bgColorDict = { "Default": &H000000FF, "White": &HFFFFFFFF, "Black": &H000000FF, "Red": &HFF0000FF, "Green": &H008000FF, "Blue": &H0000FFFF, "Yellow": &HFFFF00FF, "Magenta": &HFF00FFFF, "Cyan": &H00FFFFFF }
-
-    deviceInfo = CreateObject("roDeviceInfo")
-    m.fontSize = m.fontSizeDict[deviceInfo.GetCaptionsOption("Text/Size")]
-    m.textColor = m.textColorDict[deviceInfo.GetCaptionsOption("Text/Color")]
-    m.textOpac = m.percentageDict[deviceInfo.GetCaptionsOption("Text/Opacity")]
-    m.bgColor = m.bgColorDict[deviceInfo.GetCaptionsOption("Background/Color")]
-    m.bgOpac = m.percentageDict[deviceInfo.GetCaptionsOption("Background/Opacity")]
-    setFont()
+    ' The fallback font for scripts the system font lacks. Style changes cant open the file system,
+    ' so it gets checked once here.
+    m.fontUri = ""
+    if CreateObject("roFileSystem").Exists("tmp:/font") then m.fontUri = "tmp:/font"
+    readStyle()
 end sub
 
-sub setFont()
-    fs = CreateObject("roFileSystem")
+' The style from settings, or its HDR twin while HDR plays and the twin is turned on
+sub readStyle()
+    m.suffix = ""
+    if m.top.isHdr and m.global.session.user.settings["playback.subs.style.hdrSeparate"] = true then m.suffix = "Hdr"
 
-    if fs.Exists("tmp:/font")
-        m.font.uri = "tmp:/font"
-        m.font.size = m.fontSize
-    else
-        m.font = "font:LargeSystemFont"
-    end if
+    sizes = { small: 36, medium: 44, large: 52, xlarge: 60 }
+    m.fontSize = sizes[styleValue("size", "medium")] ?? 44
+
+    position = styleValue("position", "bottom")
+    offsets = { bottom: 10, lower: 20, middle: 30, higher: 40 }
+    m.bottomPercent = offsets[position] ?? 10
+    if position = "absolute" then m.bottomPercent = 100 - Val(styleValue("positionAbsolute", "90"))
+
+    ' Zero reads as full, so the text can never be turned invisible by accident
+    opacity = Val(styleValue("opacity", "100"))
+    if opacity <= 0 then opacity = 100
+    m.textOpacity = opacity / 100
+
+    m.textColor = styleColor(styleValue("color", "#ffffff"), 100)
+    m.shadowColor = styleColor(styleValue("shadowColor", "#000000"), Val(styleValue("shadowOpacity", "100")))
+    blur = Val(styleValue("shadowBlur", "0.1"))
+    if blur <= 0 then blur = 0.1
+    m.shadowOffset = SHADOW_OFFSET + Int((blur - 0.1) * 4 + 0.5)
+    m.backgroundColor = styleColor(styleValue("backgroundColor", "#000000"), Val(styleValue("background", "0")))
+    m.cueNodes = {}
 end sub
+
+function styleValue(name as string, fallback as string) as string
+    value = m.global.session.user.settings["playback.subs.style." + name + m.suffix]
+    if not isValid(value) then return fallback
+    return value.toStr()
+end function
+
+' A #RRGGBBAA color from a #RRGGBB or #RRGGBBAA setting, with its own alpha scaled by the opacity
+function styleColor(hex as string, opacityPercent as float) as string
+    digits = hex.Replace("#", "")
+    if Len(digits) < 6 then digits = "ffffff"
+    alpha = 1.0
+    if Len(digits) >= 8 then alpha = Val(Mid(digits, 7, 2), 16) / 255
+    alpha = alpha * opacityPercent / 100
+    if alpha < 0 then alpha = 0
+    if alpha > 1 then alpha = 1
+    return "#" + UCase(Left(digits, 6)) + playbackOverlay.HexByte(Int(alpha * 255 + 0.5))
+end function
+
+sub onStyleChanged()
+    readStyle()
+    m.top.currentCaption = []
+end sub
+
+' The parsed cues as { start, finish, text } in milliseconds, for the offset panel's timeline
+function getCues() as object
+    cues = []
+    for each entry in m.captionList
+        cues.push({ start: entry["start"], finish: entry["end"], text: (entry["text"] ?? []).join(" ") })
+    end for
+    return cues
+end function
 
 sub fetchCaption()
     m.captionTimer.control = "stop"
@@ -58,42 +102,74 @@ sub fetchCaption()
     end if
 end sub
 
-function newlabel(txt)
+function styledLabel(txt as string, color as string) as object
     label = CreateObject("roSGNode", "Label")
     label.text = txt
-    label.font = m.font
-    label.font.size = m.fontSize
-    label.color = m.textColor
-    label.opacity = m.textOpac
+    if m.fontUri <> ""
+        font = CreateObject("roSGNode", "Font")
+        font.uri = m.fontUri
+        font.size = m.fontSize
+        label.font = font
+    else
+        label.font = "font:SmallestSystemFont"
+        label.font.size = m.fontSize
+    end if
+    label.color = color
+    label.horizAlign = "center"
+    maxWidth = 1920 * MAX_WIDTH_PERCENT / 100 - 32
+    if label.boundingRect().width > maxWidth
+        label.width = maxWidth
+        label.wrap = true
+    end if
     return label
+end function
+
+' A line with its outline: four copies in the shadow color, out on the diagonals, under the text
+function newlabel(txt)
+    line = CreateObject("roSGNode", "Group")
+    d = m.shadowOffset
+    for each offset in [[-d, -d], [d, -d], [-d, d], [d, d]]
+        shadow = styledLabel(txt, m.shadowColor)
+        shadow.translation = offset
+        line.appendChild(shadow)
+    end for
+    line.appendChild(styledLabel(txt, m.textColor))
+    return line
 end function
 
 function newLayoutGroup(labels)
     newlg = CreateObject("roSGNode", "LayoutGroup")
     newlg.appendchildren(labels)
     newlg.layoutDirection = "vert"
-    newlg.horizalignment = "left"
+    newlg.horizalignment = "center"
     newlg.vertalignment = "top"
-    newlg.itemSpacings = "[5]"
+    ' Lines sit 1.4 times the text size apart
+    if labels.count() > 0
+        spacing = m.fontSize * 1.4 - labels[0].getChild(labels[0].getChildCount() - 1).boundingRect().height
+        if spacing < 0 then spacing = 0
+        newlg.itemSpacings = [spacing]
+    end if
     return newlg
 end function
 
+' Text opacity is set on the whole cue, so it fades the background with the text
 function newRect(lg, id as string)
     rectxy = lg.BoundingRect()
 
-    rect = CreateObject("roSGNode", "Rectangle")
+    rect = CreateObject("roSGNode", "Group")
     rect.addreplace("id", id)
+    rect.opacity = m.textOpacity
+    background = rect.createChild("Poster")
+    background.uri = "pkg:/images/livetv/fill3.9.png"
+    background.blendColor = m.backgroundColor
+    background.width = rectxy.width + 32
+    background.height = rectxy.height + 16
     rect.appendchild(lg)
-    lg.translation = [5, 5]
-
-    rect.color = m.bgColor
-    rect.opacity = m.bgOpac
-    rect.width = rectxy.width + 10
-    rect.height = rectxy.height + 10
+    lg.translation = [16 - rectxy.x, 8 - rectxy.y]
 
     if lg.getchildCount() = 0
-        rect.width = 0
-        rect.height = 0
+        background.width = 0
+        background.height = 0
     end if
 
     return rect
@@ -112,27 +188,34 @@ sub updateCaption()
 
     m.top.currentPos = m.top.currentPos + 100
     captions = []
+    showing = {}
 
+    ' A cue keeps the nodes it was drawn with while it stays up, and starts from its own place each
+    ' tick so moving it clear of another cue never adds up
     for each entry in m.captionList
         if entry["start"] <= m.top.currentPos and m.top.currentPos < entry["end"]
+            id = entry.LookupCI("id")
+            cached = m.cueNodes[id]
+            if not isValid(cached)
+                labels = []
+                for each text in entry["text"]
+                    labels.push(newlabel(text))
+                end for
 
-            labels = []
-            for each text in entry["text"]
-                labels.push(newlabel(text))
-            end for
+                lines = newLayoutGroup(labels)
+                rect = newRect(lines, id)
+                cached = { rect: rect, place: prepareStyles(entry["styles"], rect, labels.count()).translation }
+            end if
+            showing[id] = cached
+            cached.rect.translation = cached.place
 
-            lines = newLayoutGroup(labels)
-            rect = newRect(lines, entry.LookupCI("id"))
+            adjustForCaptionOverlaps(cached.rect, captions)
 
-            finalStyles = prepareStyles(entry["styles"], rect, labels.count())
-            rect.translation = finalStyles.translation
-
-            adjustForCaptionOverlaps(rect, captions)
-
-            captions.push(rect)
+            captions.push(cached.rect)
         end if
     end for
 
+    m.cueNodes = showing
     m.top.currentCaption = captions
 end sub
 
@@ -178,10 +261,11 @@ end function
 
 function prepareStyles(styles as object, rect, lineCount = 1 as integer) as object
     captionStyles = styles
-    finalStyles = { translation: [960, 1020] }
-
-    verticalPosition = 1020
-    horizontalPositon = 960 - (rect.BoundingRect().width / 2)
+    bounds = rect.BoundingRect()
+    ' Centered, with the bottom edge the chosen share of the screen up from the bottom
+    horizontalPositon = (1920 - bounds.width) / 2
+    verticalPosition = 1080 * (1 - m.bottomPercent / 100) - bounds.height
+    finalStyles = { translation: [horizontalPositon, verticalPosition] }
 
     if not isValidAndNotEmpty(captionStyles)
         return finalStyles
