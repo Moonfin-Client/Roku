@@ -173,6 +173,8 @@ sub init()
     m.subtitleOffsetOverlay = m.top.findNode("subtitleOffsetOverlay")
     m.subtitleOffsetOverlay.observeField("offset", "onSubtitleOffsetChanged")
     m.subtitleOffsetOverlay.observeField("closed", "onSubtitleOffsetClosed")
+    m.pendingEmbeddedSubtitle = invalid
+    m.top.observeField("availableSubtitleTracks", "applyEmbeddedSubtitle")
 
     m.nextUp = m.top.findNode("nextUp")
 
@@ -788,10 +790,18 @@ sub onAllowCaptionsChange()
     end if
 end sub
 
-' Set caption url to server subtitle track
+' Custom subtitles draw what comes from the server. A track the device reads from the stream itself
+' can only be drawn by the device, so custom subtitles step aside for it.
 sub loadCaption()
+    custom = m.global.session.user.settings["playback.subs.custom"] = true
+    ' The device wraps the name of a track it was handed, so the address sits somewhere inside it
+    fromServer = Instr(1, LCase(m.top.subtitleTrack), "http") > 0
+    m.top.suppressCaptions = custom and (fromServer or m.top.subtitleTrack = "")
     if m.top.suppressCaptions
         m.captionTask.url = m.top.subtitleTrack
+    else
+        m.captionTask.url = ""
+        m.captionGroup.removeChildrenIndex(m.captionGroup.getChildCount(), 0)
     end if
 end sub
 
@@ -825,13 +835,17 @@ sub onSubtitleChange()
     if m.top.previousSubtitleWasEncoded then switchWithoutRefresh = false
 
     if switchWithoutRefresh then return
+    reloadWithSubtitle(m.top.SelectedSubtitle)
+end sub
 
-    ' Save the current video position
+' Loads the item again from where it is, with this subtitle picked. A subtitle downloaded during
+' playback isnt in the stream the player opened, so this is also how one gets shown.
+sub reloadWithSubtitle(index as integer)
     m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
 
     m.top.control = VideoControl.STOP
 
-    m.LoadMetaDataTask.selectedSubtitleIndex = m.top.SelectedSubtitle
+    m.LoadMetaDataTask.selectedSubtitleIndex = index
     m.LoadMetaDataTask.itemId = m.top.id
     m.LoadMetaDataTask.observeField("content", "onVideoContentLoaded")
     m.LoadMetaDataTask.control = TaskControl.RUN
@@ -1049,23 +1063,27 @@ sub onVideoContentLoaded()
         end if
     end for
 
+    ' Caption mode is a device setting, so what it was before playback is kept and put back after
+    if not isValid(m.originalClosedCaptionState) then m.originalClosedCaptionState = m.top.globalCaptionMode
+
     if m.isTranscoded and burnInSubtitles
         m.top.fullSubtitleData = updatedSubtitleData
         m.top.globalCaptionMode = "Off"
     end if
 
-    if isValid(selectedSubtitle)
+    m.pendingEmbeddedSubtitle = invalid
+    if isValid(selectedSubtitle) and selectedSubtitle.IsEmbeddedNative = true
+        selectEmbeddedSubtitle(selectedSubtitle.Index)
+    else if isValid(selectedSubtitle)
         availableSubtitleTrackIndex = availSubtitleTrackIdx(selectedSubtitle.Track.TrackName)
-        if availableSubtitleTrackIndex <> SubtitleSelection.NONE
-            if not selectedSubtitle.IsEncoded
-                if selectedSubtitle.IsForced
-                    ' If IsForced, make sure to remember the Roku global setting so we can set it back when the video is done playing.
-                    m.originalClosedCaptionState = m.top.globalCaptionMode
-                end if
-                m.top.globalCaptionMode = "On"
-                m.top.subtitleTrack = m.top.availableSubtitleTracks[availableSubtitleTrackIndex].TrackName
-            end if
+        if availableSubtitleTrackIndex <> SubtitleSelection.NONE and not selectedSubtitle.IsEncoded
+            m.top.globalCaptionMode = "On"
+            m.top.subtitleTrack = m.top.availableSubtitleTracks[availableSubtitleTrackIndex].TrackName
         end if
+    else
+        ' No pick means no subtitles, even where the device would otherwise show its own default track
+        m.top.globalCaptionMode = "Off"
+        m.top.subtitleTrack = ""
     end if
 
     ' Check if video content selected a subtitle
@@ -1917,11 +1935,57 @@ function stateAllowsOSD() as boolean
 end function
 
 
+' A track the server cant pull out of the file is picked from the ones the device finds in the
+' stream. Those only appear once the stream opens, so the pick waits for them if it has to.
+sub selectEmbeddedSubtitle(index as integer)
+    m.pendingEmbeddedSubtitle = index
+    applyEmbeddedSubtitle()
+end sub
+
+sub applyEmbeddedSubtitle()
+    if not isValid(m.pendingEmbeddedSubtitle) then return
+    trackName = embeddedTrackNameFor(m.pendingEmbeddedSubtitle)
+    if trackName = "" then return
+    m.pendingEmbeddedSubtitle = invalid
+    m.top.globalCaptionMode = "On"
+    m.top.subtitleTrack = trackName
+end sub
+
+' The device lists a file's own subtitles in the file's order, so the pick is found by its place
+' among them. When the device skips some it cant draw, the language decides instead.
+function embeddedTrackNameFor(index as integer) as string
+    embedded = []
+    language = ""
+    for each subtitle in m.top.fullSubtitleData
+        if subtitle.IsExternal <> true then embedded.push(subtitle.Index)
+        if subtitle.Index = index then language = LCase(chainLookupReturn(subtitle, "Track.Language", ""))
+    end for
+    embedded.Sort()
+
+    deviceTracks = []
+    for each track in m.top.availableSubtitleTracks
+        if Instr(1, LCase(track.TrackName ?? ""), "http") = 0 then deviceTracks.push(track)
+    end for
+    if deviceTracks.count() = 0 then return ""
+
+    if deviceTracks.count() = embedded.count()
+        for i = 0 to embedded.count() - 1
+            if embedded[i] = index then return deviceTracks[i].TrackName
+        end for
+    end if
+    for each track in deviceTracks
+        if language <> "" and isStringEqual(track.Language, language) then return track.TrackName
+    end for
+    return ""
+end function
+
 ' availSubtitleTrackIdx: Returns Roku's index for requested subtitle track
 '
 ' @param {string} tracknameToFind - TrackName for subtitle we're looking to match
 ' @return {integer} indicating Roku's index for requested subtitle track. Returns SubtitleSelection.NONE if not found
 function availSubtitleTrackIdx(tracknameToFind as string) as integer
+    ' A track with nothing to look for would match whatever comes first
+    if tracknameToFind = "" then return SubtitleSelection.NONE
     idx = 0
     for each availTrack in m.top.availableSubtitleTracks
         ' The TrackName must contain the URL we supplied originally, though

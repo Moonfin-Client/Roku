@@ -4788,5 +4788,35 @@
         <extracomment>Shown under the loading animation while a video starts</extracomment>
         <translation>Loading Stream...</translation>
     </message>
+    <message>
+        <source>You do not have permission to search for subtitles</source>
+        <extracomment>Shown when the server refuses a subtitle search</extracomment>
+        <translation>You do not have permission to search for subtitles</translation>
+    </message>
+    <message>
+        <source>No subtitle provider is set up on the server</source>
+        <extracomment>Shown when the server has nothing to search subtitles with</extracomment>
+        <translation>No subtitle provider is set up on the server</translation>
+    </message>
+    <message>
+        <source>You do not have permission to download subtitles</source>
+        <extracomment>Shown when the server refuses a subtitle download</extracomment>
+        <translation>You do not have permission to download subtitles</translation>
+    </message>
+    <message>
+        <source>That subtitle is no longer available</source>
+        <extracomment>Shown when a subtitle picked from the search results is gone</extracomment>
+        <translation>That subtitle is no longer available</translation>
+    </message>
+    <message>
+        <source>Subtitle download failed</source>
+        <extracomment>Shown when a subtitle download fails for any other reason</extracomment>
+        <translation>Subtitle download failed</translation>
+    </message>
+    <message>
+        <source>The subtitle was downloaded but has not appeared yet</source>
+        <extracomment>Shown when a downloaded subtitle hasnt shown up on the video after waiting for it</extracomment>
+        <translation>The subtitle was downloaded but has not appeared yet</translation>
+    </message>
 </context>
 </TS>
