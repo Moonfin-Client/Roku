@@ -1,9 +1,12 @@
 import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/utils/buttonLayout.bs"
+import "pkg:/source/utils/liveTvGuide.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/themeChrome.bs"
 
-const LOGO_RIGHT_PADDING = 30
+const LOGO_HEIGHT = 108
+const LOGO_MAX_WIDTH = 1310
+const LOGO_GAP = 8
 const CONTROLS_ROW_X = 103
 const CONTROLS_ROW_Y = 920
 const CONTROLS_ITEM_SPACING = 20
@@ -18,6 +21,11 @@ sub init()
     m.inactivityTimer = m.top.findNode("inactivityTimer")
     m.videoInfo = m.top.findNode("videoInfo")
     m.itemTitle = m.top.findNode("itemTitle")
+    m.itemSecondary = m.top.findNode("itemSecondary")
+    m.logo = m.top.findNode("logo")
+    m.logo.observeField("loadStatus", "onLogoLoadStatusChanged")
+    liveTvGuide.SetFont(m.itemTitle, 27, true)
+    liveTvGuide.SetFont(m.itemSecondary, 21, false)
     m.videoPlayPause = m.top.findNode("videoPlayPause")
     m.belowLeft = m.top.findNode("belowLeft")
     m.aboveRight = m.top.findNode("aboveRight")
@@ -26,17 +34,35 @@ sub init()
     m.aboveCenter = m.top.findNode("aboveCenter")
     m.belowCenter = m.top.findNode("belowCenter")
     m.clock = m.top.findNode("clock")
+    ' A slot showing the clock turns over with it, paused or not
+    m.clock.findNode("clockTime").observeField("text", "updateOSDTime")
     m.progressBar = m.top.findNode("progressBar")
     m.progressBarBackground = m.top.findNode("progressBarBackground")
     m.progressIndicator = m.top.findNode("progressIndicator")
+    m.chapterMarks = m.top.findNode("chapterMarks")
+    m.markedDuration = 0
     m.seekbarGroup = m.top.findNode("seekbarGroup")
     m.nextItem = m.top.FindNode("nextItem")
     m.previousItem = m.top.FindNode("previousItem")
     m.itemBackButton = m.top.findNode("itemBack")
     m.itemNextButton = m.top.findNode("itemNext")
-
-    m.isSeeking = false
-    m.seekPercentage = 0
+    m.liveHeader = m.top.findNode("liveHeader")
+    m.liveBadgeFill = m.top.findNode("liveBadgeFill")
+    m.liveBadgeLabel = m.top.findNode("liveBadgeLabel")
+    m.liveChannelName = m.top.findNode("liveChannelName")
+    m.liveProgramName = m.top.findNode("liveProgramName")
+    m.liveTimeline = m.top.findNode("liveTimeline")
+    m.liveEpisodeLine = m.top.findNode("liveEpisodeLine")
+    m.liveTrack = m.top.findNode("liveTrack")
+    m.liveFill = m.top.findNode("liveFill")
+    m.liveStartLabel = m.top.findNode("liveStartLabel")
+    m.liveEndLabel = m.top.findNode("liveEndLabel")
+    liveTvGuide.SetFont(m.liveBadgeLabel, 24, true)
+    liveTvGuide.SetFont(m.liveChannelName, 27, true)
+    liveTvGuide.SetFont(m.liveProgramName, 21, false)
+    liveTvGuide.SetFont(m.liveEpisodeLine, 21, false)
+    liveTvGuide.SetFont(m.liveStartLabel, 18, false)
+    liveTvGuide.SetFont(m.liveEndLabel, 18, false)
 
     m.top.observeField("visible", "onVisibleChanged")
     m.top.observeField("hasFocus", "onFocusChanged")
@@ -45,11 +71,8 @@ sub init()
     ' Ends-at is recalculated on a clock timer, so it moves while paused when position doesn't
     m.top.observeField("videoEndingTime", "updateOSDTime")
 
-    m.top.observeField("itemTitleText", "onItemTitleTextChanged")
-    m.top.observeField("itemSubtitleText", "onItemSubtitleTextChanged")
-    m.top.observeField("seasonNumber", "onSeasonNumberChanged")
-    m.top.observeField("episodeNumber", "onEpisodeNumberChanged")
-    m.top.observeField("episodeNumberEnd", "onEpisodeNumberEndChanged")
+    m.top.observeField("itemTitleText", "layoutHeader")
+    m.top.observeField("itemSecondaryText", "layoutHeader")
     m.top.observeField("logoImage", "onLogoImageChanged")
 
     m.top.observeField("previousItemIcon", "onPreviousItemIconChanged")
@@ -59,7 +82,6 @@ sub init()
 
     m.focusedButtonIndex = 0
     m.currentButtonGroup = "seekbar"
-    m.logoMoved = false
 
     m.seekbarGroup.setFocus(true)
     m.progressIndicator.blendColor = themeChrome.Token("rangeThumb", "0xFFFFFFFF")
@@ -89,6 +111,8 @@ end sub
 ' The node id stays the action the player already answers to, so the catalogue id is only
 ' ever used for arranging.
 function secondaryCandidates() as object
+    if m.top.liveMode then return liveCandidates()
+
     candidates = [
         { id: "speed", nodeId: "showSpeedMenu", icon: "pkg:/images/icons/settings.png" }
     ]
@@ -106,6 +130,103 @@ function secondaryCandidates() as object
 
     return candidates
 end function
+
+' The live row: the channel carousel and the guide lead, with nothing to seek or step through
+function liveCandidates() as object
+    candidates = [
+        { id: "channels", nodeId: "showChannels", icon: "pkg:/images/icons/osd/channels.png" },
+        { id: "guide", nodeId: "showGuide", icon: "pkg:/images/icons/osd/guide.png" }
+    ]
+    if m.top.hasAudioChoice
+        candidates.push({ id: "audio", nodeId: "showAudioMenu", icon: "pkg:/images/icons/osd/audio.png" })
+    end if
+    if m.top.hasSubtitles
+        candidates.push({ id: "subtitles", nodeId: "showSubtitleMenu", icon: "pkg:/images/icons/osd/subtitles.png" })
+    end if
+    candidates.push({ id: "info", nodeId: "showVideoInfoPopup", icon: "pkg:/images/icons/osd/info.png" })
+    return candidates
+end function
+
+sub applyLiveMode()
+    live = m.top.liveMode
+    m.videoInfo.visible = not live
+    m.liveHeader.visible = live
+    m.liveTimeline.visible = live
+    for each node in [m.seekbarGroup, m.progressIndicator, m.chapterMarks, m.aboveLeft, m.aboveCenter, m.aboveRight, m.belowLeft, m.belowCenter, m.belowRight]
+        node.visible = not live
+    end for
+    if live
+        for each id in ["itemBack", "rewind", "fastForward", "itemNext"]
+            setButtonInGroup(m.transportControls, m.top.findNode(id), false, 0)
+        end for
+    end if
+    buildSecondaryControls()
+    renderLive()
+end sub
+
+' The channel number in a badge, then the channel's name over the program's
+sub renderLive()
+    if not m.top.liveMode then return
+    channel = m.top.liveChannel
+    program = m.top.liveProgram
+
+    number = chainLookupReturn(channel, "number", "")
+    m.liveBadgeFill.visible = number <> ""
+    m.liveBadgeLabel.visible = number <> ""
+    infoLeft = 0
+    badgeHeight = 0
+    if number <> ""
+        m.liveBadgeLabel.text = number
+        rect = m.liveBadgeLabel.boundingRect()
+        m.liveBadgeFill.width = rect.width + 30
+        m.liveBadgeFill.height = rect.height + 12
+        badgeHeight = m.liveBadgeFill.height
+        infoLeft = m.liveBadgeFill.width + 18
+    end if
+
+    m.liveChannelName.text = chainLookupReturn(channel, "name", "")
+    nameHeight = m.liveChannelName.boundingRect().height
+    programName = chainLookupReturn(program, "Name", "")
+    m.liveProgramName.visible = programName <> ""
+    m.liveProgramName.text = programName
+    infoHeight = nameHeight
+    if programName <> "" then infoHeight += 3 + m.liveProgramName.boundingRect().height
+
+    rowHeight = infoHeight
+    if badgeHeight > rowHeight then rowHeight = badgeHeight
+    m.liveBadgeFill.translation = [0, (rowHeight - badgeHeight) / 2]
+    m.liveBadgeLabel.translation = [15, (rowHeight - badgeHeight) / 2 + 6]
+    m.liveChannelName.translation = [infoLeft, (rowHeight - infoHeight) / 2]
+    m.liveChannelName.width = 1500 - infoLeft
+    m.liveProgramName.translation = [infoLeft, (rowHeight - infoHeight) / 2 + nameHeight + 3]
+    m.liveProgramName.width = 1500 - infoLeft
+
+    updateLiveTimeline()
+end sub
+
+' The live timeline is the current program's span, not a seek bar. Without guide data it falls
+' back to a clock and a LIVE tag.
+sub updateLiveTimeline()
+    program = m.top.liveProgram
+    now = liveTvGuide.NowSeconds()
+    hasProgram = isValid(program) and isValid(program.startSec) and program.endSec > program.startSec
+
+    episodeLine = ""
+    if hasProgram then episodeLine = liveTvGuide.EpisodeLine(program)
+    m.liveEpisodeLine.text = episodeLine
+    m.liveEpisodeLine.visible = episodeLine <> ""
+    m.liveEpisodeLine.translation = [0, 40 - 6 - m.liveEpisodeLine.boundingRect().height]
+
+    m.liveFill.visible = hasProgram
+    if hasProgram
+        m.liveFill.width = m.liveTrack.width * liveTvGuide.ProgressAt(program, now)
+        m.liveStartLabel.text = liveTvGuide.ClockTime(program.startSec)
+        m.liveEndLabel.text = liveTvGuide.ClockTime(program.endSec)
+    else
+        m.liveStartLabel.text = liveTvGuide.ClockTime(now)
+        m.liveEndLabel.text = tr("LIVE")
+    end if
+end sub
 
 sub buildSecondaryControls()
     if not isValid(m.secondaryControls) then return
@@ -140,12 +261,18 @@ function formatOSDTimeSlot(slotKey as string, previewPosition as float) as strin
     position = previewPosition >= 0 ? previewPosition : m.top.positionTime
 
     if slotMode = "elapsed" then return secondsToHuman(position, true)
-    if slotMode = "endsAt" then return "Ends at " + m.top.videoEndingTime
+    if slotMode = "endsAt" then return tr("Ends at") + " " + endingTimeAt(previewPosition, totalTime - position)
     if slotMode = "time" then return m.clock.callFunc("getFormattedTime", m.clock.callFunc("getCurrentTime"), true)
+    if slotMode = "timeRemaining" then return "-" + secondsToHuman(totalTime - position, true)
     ' Both spellings are accepted because either can be the stored value
-    if slotMode = "timeRemaining" or slotMode = "remaining" then return "-" + secondsToHuman(totalTime - position, true)
     if slotMode = "totalDuration" or slotMode = "totalTime" then return secondsToHuman(totalTime, true)
     return ""
+end function
+
+' A scrub moves the end with it, working from where it aims rather than where playback is
+function endingTimeAt(previewPosition as float, remaining as float) as string
+    if previewPosition < 0 then return m.top.videoEndingTime
+    return m.clock.callFunc("getFormattedTime", m.clock.callFunc("getCurrentTime") + Int(remaining), true)
 end function
 
 ' Every slot is assigned so that switching one to None clears whatever it was holding
@@ -166,22 +293,57 @@ end sub
 ' onProgressPercentageChanged: Handler for changes to m.top.progressPercentage param
 '
 sub onProgressPercentageChanged()
-    m.progressBar.width = m.progressBarBackground.width * m.top.progressPercentage
+    ' The duration is only known once the stream has started, and a live one keeps growing
+    if abs(osdDurationSeconds() - m.markedDuration) > 1 then drawChapterMarks()
+    ' A scrub keeps the bar on where it is aiming until it lands
+    if m.top.scrubPosition >= 0 then return
+    drawBarAt(m.top.progressPercentage)
     updateOSDTime()
-
-    ' Update circle indicator position (centered on progress, offset by circle radius)
-    indicatorX = 103 + (m.progressBarBackground.width * m.top.progressPercentage) - 10
-    m.progressIndicator.translation = [indicatorX, 812]
 end sub
 
-sub updateSeekPreview(totalTime as float)
-    newPosition = totalTime * m.seekPercentage
-    m.progressBar.width = m.progressBarBackground.width * m.seekPercentage
-    renderOSDTimeSlots(newPosition)
+sub onScrubPositionChanged()
+    if m.top.scrubPosition < 0
+        drawBarAt(m.top.progressPercentage)
+        updateOSDTime()
+        return
+    end if
+    duration = osdDurationSeconds()
+    fraction = 0
+    if duration > 0 then fraction = m.top.scrubPosition / duration
+    drawBarAt(fraction)
+    renderOSDTimeSlots(m.top.scrubPosition)
+end sub
 
-    indicatorX = 103 + (m.progressBarBackground.width * m.seekPercentage) - 10
-    m.progressIndicator.translation = [indicatorX, 812]
-    m.top.action = "seek," + newPosition.ToStr()
+' The fill and the thumb, the thumb centered on the end of the fill
+sub drawBarAt(fraction as float)
+    m.progressBar.width = m.progressBarBackground.width * fraction
+    m.progressIndicator.translation = [103 + m.progressBarBackground.width * fraction - 10, 812]
+end sub
+
+function osdDurationSeconds() as float
+    return m.top.positionTime + m.top.remainingPositionTime
+end function
+
+' A mark at the very start or past the end has nothing to mark, and two chapters starting
+' together share one
+sub drawChapterMarks()
+    m.chapterMarks.removeChildrenIndex(m.chapterMarks.getChildCount(), 0)
+    duration = osdDurationSeconds()
+    m.markedDuration = duration
+    if m.top.liveMode or duration <= 0 then return
+    if m.global.session.user.settings["playback.showChapterMarkers"] <> true then return
+
+    durationMs = duration * 1000
+    drawn = {}
+    for each startMs in m.top.chapterStarts
+        if startMs <= 0 or startMs >= durationMs or drawn.DoesExist(startMs.toStr()) then continue for
+        drawn[startMs.toStr()] = true
+        mark = m.chapterMarks.createChild("Rectangle")
+        mark.width = 3
+        mark.height = 14.5
+        mark.color = "#FFFFFFE6"
+        mark.translation = [m.progressBarBackground.width * startMs / durationMs - 1.5, m.progressBarBackground.height / 2 - 7.25]
+    end for
 end sub
 
 
@@ -196,72 +358,38 @@ sub onPlaybackStateChanged()
     m.videoPlayPause.icon = "pkg:/images/icons/osd/play.png"
 end sub
 
-' onItemTitleTextChanged: Handler for changes to m.top.itemTitleText param.
-'
-sub onItemTitleTextChanged()
+' The logo takes the top line when there is one, and the series name steps aside for it
+sub layoutHeader()
+    hasLogo = m.logo.visible
     m.itemTitle.text = m.top.itemTitleText
+    m.itemTitle.visible = m.top.itemTitleText <> ""
+    m.itemSecondary.text = m.top.itemSecondaryText
+    m.itemSecondary.visible = not hasLogo and m.top.itemSecondaryText <> ""
+    top = 61
+    if hasLogo then top += LOGO_HEIGHT + LOGO_GAP
+    m.videoInfo.translation = [103, top]
 end sub
 
-sub onItemSubtitleTextChanged()
-    itemSeason = m.top.findNode("itemSeason")
-    itemSeason.font.size = 32
-    itemSeason.text = m.top.itemSubtitleText
-end sub
-
-' onSeasonNumberChanged: Handler for changes to m.top.seasonNumber param.
-'
-sub onSeasonNumberChanged()
-    m.top.unobserveField("seasonNumber")
-    itemSeason = m.top.findNode("itemSeason")
-    itemSeason.font.size = 32
-    itemSeason.text = `S${m.top.seasonNumber}`
-end sub
-
-' onEpisodeNumberChanged: Handler for changes to m.top.episodeNumber param.
-'
-sub onEpisodeNumberChanged()
-    m.top.unobserveField("episodeNumber")
-    itemEpisode = m.top.findNode("itemEpisode")
-    itemEpisode.font.size = 32
-    itemEpisode.text = `E${m.top.episodeNumber}`
-end sub
-
-' onEpisodeNumberEndChanged: Handler for changes to m.top.episodeNumberEnd param.
-'
-sub onEpisodeNumberEndChanged()
-    m.top.unobserveField("episodeNumberEnd")
-    itemEpisodeEnd = m.top.findNode("itemEpisodeEnd")
-    itemEpisodeEnd.font.size = 32
-    itemEpisodeEnd.text = `-${m.top.episodeNumberEnd}`
-end sub
-
-' onLogoLoadStatusChanged: Handler for changes to logo image's status.
-'
-' @param {dynamic} event - field change event
-sub onLogoLoadStatusChanged(event)
-    if LCase(event.GetData()) = "ready"
-        logoImage = event.getRoSGNode()
-        logoImage.unobserveField("loadStatus")
-
-        ' Move video info below the logo based on the logo height if not already moved
-        if not m.logoMoved
-            m.videoInfo.translation = `[${m.videoInfo.translation[0]}, ${m.videoInfo.translation[1] + logoImage.bitmapHeight + LOGO_RIGHT_PADDING}]`
-            m.logoMoved = true
-        end if
+' The logo keeps the box's height and only takes the width it needs, so it sits flush left with
+' the line under it
+sub onLogoLoadStatusChanged()
+    status = LCase(m.logo.loadStatus)
+    if status = "ready" and m.logo.bitmapHeight > 0
+        width = m.logo.bitmapWidth * LOGO_HEIGHT / m.logo.bitmapHeight
+        if width > LOGO_MAX_WIDTH then width = LOGO_MAX_WIDTH
+        m.logo.width = width
+        m.logo.visible = true
+        layoutHeader()
+    else if status = "failed"
+        m.logo.visible = false
+        layoutHeader()
     end if
 end sub
 
-' onLogoImageChanged: Handler for changes to m.top.logoImage param.
-'
 sub onLogoImageChanged()
-    if isValidAndNotEmpty(m.top.logoImage)
-        logoImage = createObject("roSGNode", "Poster")
-        logoImage.Id = "logoImage"
-        logoImage.observeField("loadStatus", "onLogoLoadStatusChanged")
-        logoImage.uri = m.top.logoImage
-        logoImage.translation = [103, 61]
-        m.top.appendChild(logoImage)
-    end if
+    m.logo.visible = false
+    m.logo.uri = m.top.logoImage
+    layoutHeader()
 end sub
 
 ' onPreviousItemIconChanged: Handler for changes to m.top.previousItemIcon param.
@@ -275,7 +403,7 @@ end sub
 sub onPreviousItemTitleTextChanged()
     m.previousItem.text = m.top.previousItemTitleText
 
-    if isValid(m.itemBackButton)
+    if isValid(m.itemBackButton) and not m.top.liveMode
         setButtonInGroup(m.transportControls, m.itemBackButton, true, 0)
         positionSecondaryControls()
     end if
@@ -292,7 +420,7 @@ end sub
 sub onNextItemTitleTextChanged()
     m.nextItem.text = m.top.nextItemTitleText
 
-    if isValid(m.itemNextButton)
+    if isValid(m.itemNextButton) and not m.top.liveMode
         setButtonInGroup(m.transportControls, m.itemNextButton, isValidAndNotEmpty(m.nextItem.text), m.transportControls.getChildCount())
         positionSecondaryControls()
     end if
@@ -384,7 +512,6 @@ sub clearAllButtonFocus()
     m.transportControls.setFocus(false)
     m.secondaryControls.setFocus(false)
     m.seekbarGroup.setFocus(false)
-    m.isSeeking = false
 end sub
 
 sub focusControlGroup(groupName as string, targetIndex as integer, fallbackDirection as integer)
@@ -457,6 +584,20 @@ sub focusOnSecondaryControls(index = invalid)
 end sub
 
 sub resetFocusToDefaultButton()
+    ' A button can be named, so the one that opened a popup gets focus back when it closes
+    for i = 0 to m.secondaryControls.getChildCount() - 1
+        if isStringEqual(m.secondaryControls.getChild(i).id, m.top.focusTarget)
+            focusOnSecondaryControls(i)
+            return
+        end if
+    end for
+
+    ' Live TV has no seek bar to start on
+    if m.top.liveMode
+        if m.top.focusTarget = "secondary" then focusOnSecondaryControls() else focusOnTransportControls()
+        return
+    end if
+
     if m.top.focusTarget = "video" or m.top.focusTarget = "transport"
         focusOnTransportControls()
     else if m.top.focusTarget = "secondary"
@@ -497,6 +638,8 @@ end sub
 ' inactiveCheck: Checks if the time since last keypress is greater than or equal to the allowed inactive time of the menu.
 '
 sub inactiveCheck()
+    if m.top.liveMode then updateLiveTimeline()
+
     ' If user is currently seeing a dialog box, ignore inactive check
     if m.global.sceneManager.callFunc("isDialogOpen")
         return
@@ -516,8 +659,9 @@ end sub
 ' onButtonSelected: Handler for selection of buttons from the menu.
 '
 sub onButtonSelected()
+    ' OK on the bar lands a paused scrub and plays, or toggles playback when theres none
     if m.currentButtonGroup = "seekbar"
-        m.top.action = "videoplaypause"
+        m.top.action = "scrubcommit"
         return
     end if
 
@@ -531,10 +675,6 @@ sub onButtonSelected()
 
     if not isValid(selectedButton) or not isValid(selectedButton.id)
         return
-    end if
-
-    if LCase(selectedButton.id) = "chapterlist"
-        m.top.showChapterList = not m.top.showChapterList
     end if
 
     checkDisplaySiblingItem("")
@@ -590,20 +730,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if key = "right"
-        ' Handle seeking if on seekbar
         if m.currentButtonGroup = "seekbar"
-            totalTime = m.top.positionTime + m.top.remainingPositionTime
-
-            ' If just entered seeking mode, initialize with current position
-            if not m.isSeeking
-                m.isSeeking = true
-                m.seekPercentage = m.top.progressPercentage
-            end if
-
-            m.seekPercentage = m.seekPercentage + 0.01
-            if m.seekPercentage > 1.0 then m.seekPercentage = 1.0
-
-            updateSeekPreview(totalTime)
+            m.top.action = "scrub,1"
             return true
         end if
 
@@ -625,20 +753,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if key = "left"
-        ' Handle seeking if on seekbar
         if m.currentButtonGroup = "seekbar"
-            totalTime = m.top.positionTime + m.top.remainingPositionTime
-
-            ' If just entered seeking mode, initialize with current position
-            if not m.isSeeking
-                m.isSeeking = true
-                m.seekPercentage = m.top.progressPercentage
-            end if
-
-            m.seekPercentage = m.seekPercentage - 0.01
-            if m.seekPercentage < 0 then m.seekPercentage = 0
-
-            updateSeekPreview(totalTime)
+            m.top.action = "scrub,-1"
             return true
         end if
 
@@ -659,6 +775,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     if key = "down"
         if m.currentButtonGroup = "seekbar"
+            ' Leaving the bar lands a paused scrub where it was aiming, still paused
+            m.top.action = "scrubsettle"
             focusOnTransportControls()
         else if m.currentButtonGroup = "transport"
             checkDisplaySiblingItem("")
@@ -672,6 +790,13 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if key = "up"
+        ' Up during live playback opens the channel carousel, over the controls or not
+        if m.top.liveMode
+            checkDisplaySiblingItem("")
+            m.top.action = "showchannels"
+            return true
+        end if
+
         if m.currentButtonGroup = "secondary"
             focusOnSeekbar()
 

@@ -1,0 +1,69 @@
+sub testYoutubeTrailer()
+    ids = [
+        ["https://www.youtube.com/watch?v=yQy-ANhnUpE", "yQy-ANhnUpE"],
+        ["https://youtube.com/watch?feature=share&v=BjRs18rV1FI", "BjRs18rV1FI"],
+        ["https://youtu.be/17KJk3ErIx0?t=3", "17KJk3ErIx0"],
+        ["https://www.youtube-nocookie.com/embed/Cqg3QmUKTks", "Cqg3QmUKTks"],
+        ["https://www.youtube.com/shorts/DfqPjRMsRP0", "DfqPjRMsRP0"],
+        ["https://vimeo.com/12345678", ""],
+        ["", ""]
+    ]
+    for each pair in ids
+        assertEqual(youtubeTrailer.ExtractIdFromUrl(pair[0]), pair[1], "YouTube id from " + pair[0])
+    end for
+    assertEqual(youtubeTrailer.ExtractId({ RemoteTrailers: [{ Url: "https://vimeo.com/1" }, { Url: "https://youtu.be/yQy-ANhnUpE" }] }), "yQy-ANhnUpE", "First YouTube trailer wins")
+    assertEqual(youtubeTrailer.ExtractId({ RemoteTrailers: invalid }), "", "No trailers, no id")
+
+    body = ParseJson(youtubeTrailer.PlayerRequestBody("yQy-ANhnUpE", youtubeTrailer.Clients()[2]))
+    assertEqual(body.context.client.clientName, "TVHTML5_SIMPLY_EMBEDDED_PLAYER", "Client name rides in the context")
+    assertEqual(body.context.thirdParty.embedUrl, "https://www.youtube.com/", "Embedded client names its page")
+    assertEqual(ParseJson(youtubeTrailer.PlayerRequestBody("x", youtubeTrailer.Clients()[0])).context.client.deviceModel, "Pixel 5", "Device details ride along")
+
+    muxed = {
+        playabilityStatus: { status: "OK" }, streamingData: {
+            formats: [
+                { url: "low", qualityLabel: "144p", mimeType: "video/mp4; codecs=""avc1.42001E, mp4a.40.2""" },
+                { url: "mid", qualityLabel: "360p", mimeType: "video/mp4; codecs=""avc1.42001E, mp4a.40.2""" },
+                { url: "silent", qualityLabel: "720p", mimeType: "video/mp4; codecs=""avc1.4d401f""" }
+            ]
+        }
+    }
+    stream = youtubeTrailer.PlayerStream(muxed, true)
+    assertEqual(stream.url, "mid", "Muxed streams need sound")
+    assertEqual(stream.quality, 360, "Quality read from the label")
+    assertEqual(stream.format, "mp4", "Muxed stream plays as mp4")
+    assertEqual(youtubeTrailer.PlayerStream({ playabilityStatus: { status: "LOGIN_REQUIRED" }, streamingData: muxed.streamingData }, true), invalid, "Refused answers give nothing")
+    assertEqual(youtubeTrailer.PlayerStream({ streamingData: { hlsManifestUrl: "manifest" } }, true).format, "hls", "A manifest beats every file")
+
+    captions = {
+        captions: {
+            playerCaptionsTracklistRenderer: {
+                captionTracks: [
+                    { baseUrl: "https://yt/auto?lang=fr", languageCode: "fr", kind: "asr" },
+                    { baseUrl: "https://yt/written?lang=de&fmt=srv3", languageCode: "de" },
+                    { baseUrl: "https://yt/written?lang=en", languageCode: "en" }
+                ]
+            }
+        }
+    }
+    assertEqual(youtubeTrailer.CaptionTrackUrl(captions, "de-DE"), "https://yt/written?lang=de&fmt=vtt", "Viewer language, its own format swapped for vtt")
+    assertEqual(youtubeTrailer.CaptionTrackUrl(captions, "fr"), "https://yt/written?lang=en&fmt=vtt", "Written English beats machine French")
+    assertEqual(youtubeTrailer.CaptionTrackUrl({}, "en"), "", "No tracks, no captions")
+
+    assertEqual(youtubeTrailer.PipedStream({ hls: "piped-hls" }, true).url, "piped-hls", "Piped manifest first")
+    assertEqual(youtubeTrailer.InvidiousStream({ formatStreams: [{ url: "inv", qualityLabel: "720p", mimeType: "video/mp4; codecs=""avc1.64001F, mp4a.40.2""" }] }, true).url, "inv", "Invidious muxed stream")
+
+    vtt = "WEBVTT" + Chr(10) + "Kind: captions" + Chr(10) + Chr(10) + "00:00:01.500 --> 00:00:03.000 align:start position:0%" + Chr(10) + "<c>Hello</c> there" + Chr(10) + "second line" + Chr(10) + Chr(10) + "01:02.250 --> 01:04.000" + Chr(10) + "Later"
+    cues = youtubeTrailer.VttCues(vtt)
+    assertEqual(cues.count(), 2, "Two cues read")
+    assertEqual(cues[0].start, 1.5, "Cue start in seconds")
+    assertEqual(cues[0].text, "Hello there" + Chr(10) + "second line", "Tags gone and lines kept")
+    assertEqual(cues[1].start, 62.25, "Hours are optional")
+    assertEqual(cues[1].finish, 64.0, "Cue end in seconds")
+
+    segments = youtubeTrailer.SponsorSegments([{ segment: [0, 7.5] }, { segment: [8, 12] }, { segment: [40, 50] }, { bad: true }])
+    assertEqual(segments.count(), 3, "Sponsor segments read")
+    assertEqual(youtubeTrailer.StartTime(segments), 12.0, "Back to back openings are all skipped")
+    assertEqual(youtubeTrailer.StartTime([]), 0.0, "Nothing marked starts at the top")
+    assertEqual(youtubeTrailer.StartTime([{ start: 40, finish: 50 }]), 5.0, "Anything marked starts five seconds in")
+end sub

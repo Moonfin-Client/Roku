@@ -1,0 +1,167 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/enums/PlaybackMethod.bs"
+import "pkg:/source/enums/String.bs"
+import "pkg:/source/utils/deviceCapabilities.bs"
+import "pkg:/source/utils/directPlayReasons.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Asks the server how it would play this item with the tracks the screen has selected, which is
+' what the direct play line and the reasons under it are read from.
+'
+' This deliberately doesnt go through the playback path. That one negotiates codecs, opens a
+' live stream and takes the current session over, none of which a details screen should set in
+' motion just to print a word.
+
+' What playback asks with when nothing caps the video codec
+const DEFAULT_STREAMING_BITRATE = 140000000
+
+sub init()
+    m.top.functionName = "probePlaybackInfo"
+end sub
+
+sub probePlaybackInfo()
+    itemJson = m.top.itemJson
+    itemId = chainLookupReturn(itemJson, "Id", "")
+    if not isValidAndNotEmpty(itemId)
+        m.top.result = { state: "empty", supportsDirectPlay: false }
+        return
+    end if
+
+    transcodeCodec = string.EMPTY
+    if isStringEqual(m.global.queueManager.callFunc("getForceTranscode"), PlaybackMethod.FORCETRANSCODEDISABLEREMUX)
+        transcodeCodec = m.global.queueManager.callFunc("getTranscodeCodec")
+    end if
+
+    ' Asked without a profile the server answers that it supports everything, so the line would
+    ' read as direct play for every title on every set
+    deviceProfile = getDeviceProfile(transcodeCodec)
+    body = {
+        "DeviceProfile": deviceProfile,
+        "EnableDirectPlay": true,
+        "EnableDirectStream": true,
+        "EnableTranscoding": true
+    }
+
+    serverData = getServerInfoFromItem(itemJson)
+    params = {
+        "UserId": isValid(serverData) ? serverData.userId : m.global.session.user.id,
+        "MaxStreamingBitrate": DEFAULT_STREAMING_BITRATE.ToStr(),
+        "MaxStaticBitrate": DEFAULT_STREAMING_BITRATE.ToStr()
+    }
+    if isValidAndNotEmpty(m.top.mediaSourceId) then params.MediaSourceId = m.top.mediaSourceId
+    if m.top.audioStreamIndex > -1 then params.AudioStreamIndex = m.top.audioStreamIndex
+    if m.top.subtitleStreamIndex > -1 then params.SubtitleStreamIndex = m.top.subtitleStreamIndex
+
+    path = Substitute("Items/{0}/PlaybackInfo", itemId)
+    if isValid(serverData)
+        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, path, params)
+        emby = isEmbyServer(serverData.serverUrl)
+    else
+        req = APIRequest(path, params)
+        emby = isEmbyServer()
+    end if
+
+    resp = invalid
+    if isValid(req)
+        req.SetRequest("POST")
+        resp = postPlaybackInfo(req, body, emby)
+    end if
+
+    if not isValid(resp) or not isValidAndNotEmpty(resp.MediaSources)
+        m.top.result = { state: "failed", supportsDirectPlay: false }
+        return
+    end if
+
+    source = matchingSource(resp.MediaSources)
+    if not isValid(source)
+        m.top.result = { state: "empty", supportsDirectPlay: false }
+        return
+    end if
+
+    direct = source.SupportsDirectPlay = true
+    reasons = []
+    shortReasons = []
+    if not direct
+        serverReasons = transcodeReasonsOf(source, resp)
+        known = matchingSource(chainLookupReturn(itemJson, "MediaSources", []))
+        streams = chainLookupReturn(source, "MediaStreams", [])
+        if streams.count() = 0 then streams = chainLookupReturn(known, "MediaStreams", [])
+
+        subtitleIndex = invalid
+        if m.top.subtitleStreamIndex > -1 then subtitleIndex = m.top.subtitleStreamIndex
+        audioIndex = invalid
+        if m.top.audioStreamIndex > -1 then audioIndex = m.top.audioStreamIndex
+
+        reasons = directPlayReasons.BuildItems({
+            serverReasons: serverReasons,
+            mediaStreams: streams,
+            container: source.Container ?? chainLookupReturn(known, "Container", invalid),
+            sourceBitrate: directPlayReasons.WholeNumber(source.Bitrate ?? chainLookupReturn(known, "Bitrate", invalid)),
+            maxStreamingBitrate: streamingCap(streams),
+            audioStreamIndex: audioIndex,
+            subtitleStreamIndex: subtitleIndex,
+            deviceProfile: deviceProfile
+        })
+
+        for each reason in serverReasons
+            shortReasons.push(directPlayReasons.Format({ reason: reason }).description)
+        end for
+    end if
+
+    m.top.result = {
+        state: "ready",
+        supportsDirectPlay: direct,
+        reasons: reasons,
+        shortReasons: shortReasons.join(" · ")
+    }
+end sub
+
+' The source the screen asked about, or the first one when it didnt say
+function matchingSource(sources as object) as dynamic
+    if not isValidAndNotEmpty(sources) then return invalid
+    if isValidAndNotEmpty(m.top.mediaSourceId)
+        for each candidate in sources
+            if isValid(candidate.Id) and candidate.Id = m.top.mediaSourceId then return candidate
+        end for
+    end if
+    return sources[0]
+end function
+
+' Some servers list the reasons on the source. Jellyfin leaves them off and only writes them into
+' the url it would transcode from.
+function transcodeReasonsOf(source as object, resp as object) as object
+    for each listed in [source.TranscodeReasons, source.TranscodingReasons, resp.TranscodeReasons]
+        listedType = LCase(type(listed))
+        if listedType = "roarray" and listed.count() > 0 then return listed
+        if (listedType = "string" or listedType = "rostring") and listed <> "" then return trimmedParts(listed)
+    end for
+
+    match = CreateObject("roRegex", "[?&]TranscodeReasons=([^&]+)", "").Match(source.TranscodingUrl ?? "")
+    if match.count() < 2 then return []
+    return trimmedParts(CreateObject("roUrlTransfer").Unescape(match[1]))
+end function
+
+function trimmedParts(text as string) as object
+    parts = []
+    for each part in text.Split(",")
+        piece = part.Trim()
+        if piece <> "" then parts.push(piece)
+    end for
+    return parts
+end function
+
+' The cap playback itself asks with. The viewer's own limit, or this set's limit for the codec,
+' goes into the profile as a video bitrate condition, and nothing capped means the default.
+function streamingCap(streams as object) as integer
+    videoCodec = ""
+    for each stream in streams
+        if LCase(chainLookupReturn(stream, "Type", "")) = "video"
+            videoCodec = chainLookupReturn(stream, "Codec", "")
+            exit for
+        end if
+    end for
+
+    limit = GetBitRateLimit(videoCodec)
+    if isValidAndNotEmpty(limit.Value) then return limit.Value.ToInt()
+    return DEFAULT_STREAMING_BITRATE
+end function

@@ -2,9 +2,12 @@ import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/EmbyConnectFlow.bs"
 import "pkg:/source/enums/ImageType.bs"
 import "pkg:/source/enums/ItemType.bs"
+import "pkg:/source/utils/blockedContent.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/minimalistRules.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/parentalControls.bs"
+import "pkg:/source/utils/signInPin.bs"
 
 const minimumServerVersion = [10, 9, 0]
 
@@ -556,6 +559,39 @@ function RunSetupWizard() as boolean
     return true
 end function
 
+' A title a blocked rating keeps out opens on a page saying so rather than on its details
+function ShowBlockedTitle() as object
+    stopLoadingSpinner()
+    group = CreateObject("roSGNode", "BlockedTitle")
+    m.global.sceneManager.callFunc("pushScene", group)
+    return group
+end function
+
+' Holds the app shut after signing in until the right PIN is in, when PIN Code Protection is on.
+' Every way in comes back through here, so switching account asks again.
+function RunPinGate() as boolean
+    if not signInPin.Enabled() then return true
+
+    stopLoadingSpinner()
+    group = CreateObject("roSGNode", "PinGate")
+    m.global.sceneManager.callFunc("pushScene", group)
+    port = CreateObject("roMessagePort")
+    group.observeField("unlocked", port)
+
+    while true
+        msg = wait(0, port)
+        if type(msg) = "roSGScreenEvent" and msg.isScreenClosed()
+            return false
+        else if isNodeEvent(msg, "unlocked")
+            exit while
+        end if
+    end while
+
+    group.visible = false
+    startLoadingSpinner()
+    return true
+end function
+
 function CreateHomeGroup()
     ' Main screen after logging in. Shows the user's libraries
     group = CreateObject("roSGNode", "Home")
@@ -630,6 +666,12 @@ function usesRichMusicScreen() as boolean
     return usesRichDetailScreen()
 end function
 
+' A title picked from one of the screen's cards is handed over through its extras grid
+sub observeCardPicks(group as object)
+    extras = group.findNode("extrasGrid")
+    if isValid(extras) then extras.observeFieldScoped("selectedItem", m.port)
+end sub
+
 function CreateMovieDetailsGroup(movie as object) as dynamic
     try
         result = CreateMovieDetailsGroupInternal(movie)
@@ -663,6 +705,10 @@ function CreateMovieDetailsGroupInternal(movie as object) as dynamic
         show_dialog(tr("Unable to load item details. Check the server connection and try again."), [tr("OK")])
         return invalid
     end if
+
+    ' Checked before the screen is built, so nothing reads the title or fetches rows for a page
+    ' that wont be shown
+    if blockedContent.IsBlocked(movieMetaData.json) then return ShowBlockedTitle()
 
     ' Unified detail screen for both movies and episodes
     itemType = LCase(movieMetaData.json.type)
@@ -792,13 +838,6 @@ function CreateSeriesDetailsGroupInternal(seriesID as string, seriesServerData =
         return invalid
     end if
 
-    seasonData = CreateObject("roSGNode", "ContentNode")
-    for each item in apiSeasonData.Items
-        tmp = seasonData.createChild("TVSeasonData")
-        tmp.json = item
-        tmp.posterURL = api.items.GetImageURL(item.id, ImageType.PRIMARY, 0, { "maxHeight": 320, "maxWidth": 180, "quality": "90" })
-    end for
-
     if isValid(seriesServerData)
         seriesMetaData = ItemMetaDataForServer(seriesServerData, seriesID)
     else
@@ -810,6 +849,16 @@ function CreateSeriesDetailsGroupInternal(seriesID as string, seriesServerData =
         stopLoadingSpinner()
         return invalid
     end if
+
+    blockedContent.ObserveItem(seriesMetaData.json)
+    if blockedContent.IsBlocked(seriesMetaData.json) then return ShowBlockedTitle()
+
+    seasonData = CreateObject("roSGNode", "ContentNode")
+    for each item in parentalControls.WithoutBlockedItems(apiSeasonData.Items, chainLookupReturn(seriesMetaData.json, "OfficialRating", ""))
+        tmp = seasonData.createChild("TVSeasonData")
+        tmp.json = item
+        tmp.posterURL = api.items.GetImageURL(item.id, ImageType.PRIMARY, 0, { "maxHeight": 320, "maxWidth": 180, "quality": "90" })
+    end for
 
     ' Build unified ItemDetails view for series
     group = CreateObject("roSGNode", detailScreenComponent("series"))
@@ -889,6 +938,7 @@ function CreateArtistView(artist as object) as dynamic
         group.observeField("playArtistSelected", m.port)
         group.observeField("instantMixSelected", m.port)
         if group.hasField("studioSelected") then group.observeField("studioSelected", m.port)
+        observeCardPicks(group)
         m.global.sceneManager.callFunc("pushScene", group)
         meta = ItemMetaData(artist.id)
         group.pageContent = meta
@@ -928,6 +978,7 @@ function CreateAlbumView(album as object) as dynamic
         group.observeField("playAlbumSelected", m.port)
         group.observeField("shuffleAlbumSelected", m.port)
         if group.hasField("studioSelected") then group.observeField("studioSelected", m.port)
+        observeCardPicks(group)
         m.global.sceneManager.callFunc("pushScene", group)
         meta = ItemMetaData(album.id)
         group.pageContent = meta
@@ -967,6 +1018,7 @@ sub CreatePlaylistView(playlist as object)
         group.observeField("playAll", m.port)
         group.observeField("shufflePlay", m.port)
         if group.hasField("studioSelected") then group.observeField("studioSelected", m.port)
+        observeCardPicks(group)
         m.global.sceneManager.callFunc("pushScene", group)
         meta = ItemMetaData(playlist.id)
         group.pageContent = meta
@@ -1003,6 +1055,7 @@ function CreateSeasonDetailsGroup(series as object, season as object) as dynamic
         stopLoadingSpinner()
         return invalid
     end if
+    if blockedContent.IsBlocked(seasonMetaData.json) then return ShowBlockedTitle()
 
     displayResumeButton = hasSeasonEpisodeToResume(series.id, season.id)
 
@@ -1015,6 +1068,7 @@ function CreateSeasonDetailsGroup(series as object, season as object) as dynamic
         group.observeField("playSeasonFromStart", m.port)
         group.observeFieldScoped("selectedItem", m.port)
         if group.hasField("studioSelected") then group.observeField("studioSelected", m.port)
+        observeCardPicks(group)
         group.seasonData = seasonMetaData
         m.global.sceneManager.callFunc("pushScene", group)
         group.itemContent = seasonMetaData
@@ -1058,6 +1112,7 @@ function CreateSeasonDetailsGroupByID(seriesID as string, seasonID as string, se
         stopLoadingSpinner()
         return invalid
     end if
+    if blockedContent.IsBlocked(seasonMetaData.json) then return ShowBlockedTitle()
 
     displayResumeButton = hasSeasonEpisodeToResume(seriesID, seasonID)
 
@@ -1070,6 +1125,7 @@ function CreateSeasonDetailsGroupByID(seriesID as string, seasonID as string, se
         group.observeField("playSeasonFromStart", m.port)
         group.observeFieldScoped("selectedItem", m.port)
         if group.hasField("studioSelected") then group.observeField("studioSelected", m.port)
+        observeCardPicks(group)
         group.seasonData = seasonMetaData
         m.global.sceneManager.callFunc("pushScene", group)
         group.itemContent = seasonMetaData
@@ -1115,16 +1171,8 @@ function CreateOtherLibrary(libraryItem as object) as dynamic
     return group
 end function
 
-function CreateLiveTVLibraryView(libraryItem as object) as dynamic
-    ' validate libraryItem
-    if not isValid(libraryItem) then return invalid
-
-    group = CreateObject("roSGNode", "LiveTVLibraryView")
-    group.parentItem = libraryItem
-    group.optionsAvailable = true
-    group.observeFieldScoped("selectedItem", m.port)
-    group.observeField("quickPlayNode", m.port)
-    return group
+function CreateLiveTvGuide() as dynamic
+    return CreateObject("roSGNode", "LiveTvGuide")
 end function
 
 function CreateVisualLibraryScene(libraryItem as object, mediaType as string) as dynamic
@@ -1193,6 +1241,17 @@ function CreatePersonView(personData as object) as dynamic
         return invalid
     end if
 
+    ' Nouveau opens a person inside its own details screen, as a page of filmography rails
+    if detailScreenComponent() = "NouveauItemDetails"
+        group = CreateObject("roSGNode", "NouveauItemDetails")
+        group.itemType = "person"
+        group.observeFieldScoped("selectedItem", m.port)
+        m.global.sceneManager.callFunc("pushScene", group)
+        group.itemContent = personMetaData
+        stopLoadingSpinner()
+        return group
+    end if
+
     person = CreateObject("roSGNode", "PersonDetails")
     ' push scene asap to prevent extra button presses while loading
     m.global.SceneManager.callFunc("pushScene", person)
@@ -1220,6 +1279,12 @@ end function
 function CreateSeerrPersonView(personData as object) as dynamic
     tmdbId = personData.id.toStr()
     if not isValidAndNotEmpty(tmdbId) then return invalid
+
+    ' A person drawn from Seerr is a Seerr screen, which Kids Mode keeps closed
+    if kidsMode.Enabled()
+        m.global.sceneManager.callFunc("goHome")
+        return invalid
+    end if
 
     startLoadingSpinner()
 

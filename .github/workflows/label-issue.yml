@@ -1,0 +1,103 @@
+name: Auto-label issues
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: label-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply server labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Only the Server answer is read, since the other answers can mention
+            // either server in passing.
+
+            const body = context.payload.issue.body || '';
+            const number = context.payload.issue.number;
+
+            const HEADING = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/;
+
+            function section(text, title) {
+              const lines = text.split(/\r?\n/);
+              let start = -1;
+              for (let i = 0; i < lines.length; i++) {
+                const m = lines[i].match(HEADING);
+                if (m && title.test(m[1].trim())) {
+                  start = i + 1;
+                  break;
+                }
+              }
+              if (start === -1) return null;
+              const out = [];
+              for (let i = start; i < lines.length; i++) {
+                if (HEADING.test(lines[i])) break;
+                out.push(lines[i]);
+              }
+              return out;
+            }
+
+            const SERVERS = [
+              ['Jellyfin', /\bJellyfin\b/i],
+              ['Emby', /\bEmby\b/i]
+            ];
+
+            const serverLines = section(body, /^server$/i);
+            if (!serverLines) {
+              core.info('No Server section found, leaving labels alone.');
+              return;
+            }
+
+            // "Both" on the feature request form gets both labels, so filtering by
+            // either server still finds it.
+            const items = serverLines.map(l => l.trim()).filter(Boolean);
+            const both = items.some(i => /^both\b/i.test(i));
+
+            const wanted = new Set();
+            for (const [label, regex] of SERVERS) {
+              if (both || items.some(i => regex.test(i))) wanted.add(label);
+            }
+
+            const { data: existing } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: number,
+              per_page: 100
+            });
+            const current = new Set(existing.map(l => l.name));
+
+            const addLabels = [...wanted].filter(l => !current.has(l));
+            const removeLabels = SERVERS
+              .map(([label]) => label)
+              .filter(l => current.has(l) && !wanted.has(l));
+
+            if (addLabels.length) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: number,
+                labels: addLabels
+              });
+            }
+
+            for (const label of removeLabels) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: number,
+                  name: label
+                });
+              } catch (e) {
+                if (e.status !== 404) throw e;
+              }
+            }

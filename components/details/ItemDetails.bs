@@ -1,7 +1,11 @@
+import "pkg:/components/anime/animeMarkerWatch.bs"
 import "pkg:/components/details/detailButtonHost.bs"
+import "pkg:/components/details/detailCollectionHost.bs"
 import "pkg:/components/details/detailMetadataHost.bs"
 import "pkg:/components/details/detailScreenHost.bs"
 import "pkg:/components/details/detailTrackHost.bs"
+import "pkg:/components/itemMenu/itemMenuDetailHost.bs"
+import "pkg:/components/userDataHost.bs"
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/utils/buttonLayout.bs"
@@ -36,6 +40,8 @@ import "pkg:/source/enums/ViewLoadStatus.bs"
 const CLASSIC_ROW_WIDTH = 1728
 const CLASSIC_BUTTON_WIDTH = 157
 const CLASSIC_BUTTON_GAP = 12
+' The room either side of a row that scrolls rather than wrapping
+const CLASSIC_SCROLL_PAD = 40
 
 ' The classic screen is laid out in the pixels the other clients lay it out in.
 ' Small text runs a little larger, since the Roku system font draws smaller than
@@ -75,6 +81,7 @@ const CLASSIC_CELL_PAD_Y = 14
 const CLASSIC_CELL_GAP = 4
 
 sub init()
+    observeUserData()
     m.top.observeField("seerrButtonsStale", "onSeerrButtonsStale")
     m.global.queueManager.callFunc("setForceTranscode", PlaybackMethod.PLAYNORMALLY)
     m.performRotationCheck = true
@@ -127,9 +134,14 @@ sub init()
 
     m.buttonRow = m.top.findNode("buttonRow")
     m.buttonRowExtra = m.top.findNode("buttonRowExtra")
+    m.buttonRowContainer = m.top.findNode("buttonRowContainer")
     m.buttonConfigs = []
     m.primaryCount = 0
-    m.actionsExpanded = false
+    m.buttonRowScrolls = false
+    m.overflowMenu = m.top.findNode("overflowMenu")
+    m.overflowMenu.observeField("chosenAction", "onOverflowAction")
+    m.overflowMenu.observeField("closed", "onOverflowClosed")
+    m.overflowActions = []
     m.currentButtonIndex = 0
     m.buttonGroups = []
 
@@ -272,6 +284,7 @@ sub renderDetailContent()
     updateButtonVisibility(itemData)
 
     if m.loadStatus = ViewLoadStatus.RELOAD
+        if isCollection() then refreshCollectionMembers()
         return
     end if
 
@@ -310,6 +323,7 @@ sub renderDetailContent()
 
     populateRatings(itemData)
     fetchMDBListRatings(itemData)
+    watchAnimeMarker(item, m.top.seerrOnly ? invalid : itemData)
     populateGenres(itemData)
     populateDirectors(itemData)
     populateWriters(itemData)
@@ -317,6 +331,7 @@ sub renderDetailContent()
     updateColumnDividers()
     updateStatusBadge(itemData)
     updateUpcomingBadge(itemData)
+    updateSeerrPills()
     populateRuntime(itemData)
 
     setFieldText("title", itemData.name)
@@ -804,7 +819,7 @@ sub layoutMetadataRow()
     if isValid(ratingGroup) then ratingGroup.visible = m.top.findNode("officialRating").text <> ""
 
     ' Hide all dots initially
-    allDots = ["dot1", "dot3", "dot4", "dot5", "dot6", "dot7", "dot8", "dot9", "dot10"]
+    allDots = ["dot1", "dot3", "dot4", "dot5", "dot6", "dot7", "dot8", "dot9", "dot10", "dot11"]
     for each dotId in allDots
         dot = m.top.findNode(dotId)
         if isValid(dot) then dot.visible = false
@@ -848,6 +863,10 @@ sub layoutMetadataRow()
         node = m.top.findNode("metaGenres")
         if isValid(node) then node.visible = false
     end if
+    if isValid(hiddenLookup["seerrAvailability"])
+        node = m.top.findNode("seerrPills")
+        if isValid(node) then node.visible = false
+    end if
 
     ' Get active catalogue items in arranged order
     arranged = detailMetadataLayout.Arrange(detailMetadataLayout.DetailMetadata(), orderSetting, hiddenSetting)
@@ -871,6 +890,8 @@ sub layoutMetadataRow()
             orderedNodeIds.push("upcomingBadge")
         else if item.id = "genres"
             orderedNodeIds.push("metaGenres")
+        else if item.id = "seerrAvailability"
+            orderedNodeIds.push("seerrPills")
         end if
     end for
 
@@ -912,6 +933,9 @@ sub layoutMetadataRow()
             bg = m.top.findNode("upcomingBadgeBg")
             node.translation = [xPos, -STATUS_PAD_V]
             xPos += bg.width + spacing
+        else if node.id = "seerrPills"
+            node.translation = [xPos, -SEERR_PILL_PAD_V]
+            xPos += m.seerrPillsSize.width + spacing
         else if node.id = "communityRatingGroup"
             layoutCommunityRating(node)
             node.translation = [xPos, 0]
@@ -1021,6 +1045,12 @@ sub layoutContainer()
         yPos += CLASSIC_INFO_ROW_HEIGHT
     end if
 
+    if isValid(m.animePills) and m.animePills.visible
+        yPos += 9
+        m.animePills.translation = [0, yPos]
+        yPos += m.animePills.rowHeight
+    end if
+
     ratingsRow = m.top.findNode("ratingsRow")
     if isValid(ratingsRow) and ratingsRow.visible
         ratingsRow.translation = [0, yPos]
@@ -1079,6 +1109,19 @@ sub layoutContainer()
     end if
 
     m.layingOut = false
+end sub
+
+' The pills for an anime episode or movie, under the technical badges
+sub showAnimeMarker(marker as dynamic)
+    if not isValid(m.animePills)
+        if not animeMarkers.HasPills(marker) then return
+
+        m.animePills = m.container.createChild("AnimeMarkerPills")
+    end if
+
+    wasShown = m.animePills.visible
+    m.animePills.marker = marker ?? {}
+    if wasShown or m.animePills.visible then layoutContainer()
 end sub
 
 ' Seerr is asked about a title only once the library has told us what it is
@@ -1251,8 +1294,26 @@ sub commitButtonRow()
 end sub
 
 sub centerButtonRow()
+    if m.buttonRowScrolls
+        scrollButtonRowTo(m.currentButtonIndex)
+        return
+    end if
+
+    m.buttonRowContainer.clippingRect = BUTTON_NO_CLIP
     centerButtonRowInContainer(m.buttonRow, m.primaryCount, CLASSIC_BUTTON_WIDTH, CLASSIC_BUTTON_GAP, 96)
     centerButtonRowInContainer(m.buttonRowExtra, m.buttonGroups.count() - m.primaryCount, CLASSIC_BUTTON_WIDTH, CLASSIC_BUTTON_GAP, 96)
+end sub
+
+' A row that scrolls starts at the left, clear of the edge, and moves along to keep the
+' focused button in view
+sub scrollButtonRowTo(index as integer)
+    stride = CLASSIC_BUTTON_WIDTH + CLASSIC_BUTTON_GAP
+    focusLeft = CLASSIC_SCROLL_PAD + index * stride
+    rowWidth = CLASSIC_SCROLL_PAD * 2 + m.buttonGroups.count() * stride - CLASSIC_BUTTON_GAP
+    offset = buttonRowScrollOffset(focusLeft, focusLeft + CLASSIC_BUTTON_WIDTH, rowWidth, CLASSIC_ROW_WIDTH)
+
+    m.buttonRowContainer.clippingRect = [0, -100, CLASSIC_ROW_WIDTH, 400]
+    m.buttonRow.translation = [CLASSIC_SCROLL_PAD - offset, m.buttonRow.translation[1]]
 end sub
 
 ' How one button config becomes a row entry. The classic screen queues configs and
@@ -1262,9 +1323,28 @@ sub appendButtonNode(config as object)
 end sub
 
 ' Item types that own their whole action row. The classic screen sends seasons,
-' albums and playlists to the legacy screens instead, so it has none
+' albums and playlists to the legacy screens instead, so only a collection has one.
 function typeSpecificButtons() as boolean
-    return false
+    if not isCollection() then return false
+
+    addCollectionButtons()
+    return true
+end function
+
+' The titles the loader listed on the collection's own row
+' The card menu already took the card out of its row, and the row is the list Play reads
+sub collectionMemberRemoved(_itemId as string)
+end sub
+
+function collectionMembers() as object
+    content = m.extrasGrid.content
+    if not isValid(content) then return []
+
+    for i = 0 to content.getChildCount() - 1
+        row = content.getChild(i)
+        if row.hasField("rowKind") and row.rowKind = "collectionItems" then return row.getChildren(-1, 0)
+    end for
+    return []
 end function
 
 ' How a button carries its on/off state. The classic screen tints the icon, the
@@ -1281,27 +1361,43 @@ function primaryRowCapacity() as integer
     return Int(fits)
 end function
 
-' The row holds as many buttons as fit across the screen. Anything past that folds
-' under a trailing More, which opens a second row underneath, the way the other
-' clients handle a long action row.
+' Left alone the row wraps, as many to a line as fit across the screen. A cap from the
+' Action Buttons on Screen setting puts the rest behind More, and All keeps every button in
+' one row that scrolls sideways.
 sub buildButtonRows()
     m.buttonRow.removeChildrenIndex(m.buttonRow.getChildCount(), 0)
     m.buttonRowExtra.removeChildrenIndex(m.buttonRowExtra.getChildCount(), 0)
     m.buttonGroups = []
+    m.overflowActions = []
+    m.buttonRowScrolls = buttonRowScrolls()
 
     configs = m.buttonConfigs
-    capacity = primaryRowCapacity()
-    overflows = configs.count() > capacity
+    keep = cappedButtonCount(configs, { maxVisible: 0, overflowAsMenu: false, countCapped: false })
+    if keep >= 0
+        shown = []
+        for i = 0 to configs.count() - 1
+            config = configs[i]
+            if i < keep
+                shown.push(config)
+            else
+                m.overflowActions.push({ icon: config.icon, label: config.label, action: config.action, id: config.id })
+            end if
+        end for
+        shown.push({ icon: "pkg:/images/icons/admin_controls.png", label: tr("More"), action: "toggleMoreActions", id: "moreActionsButton" })
+        configs = shown
+    end if
 
     primary = configs
     extra = []
-    if overflows
+    capacity = primaryRowCapacity()
+    if not m.buttonRowScrolls and configs.count() > capacity
         primary = []
-        for i = 0 to capacity - 2
-            primary.push(configs[i])
-        end for
-        for i = capacity - 1 to configs.count() - 1
-            extra.push(configs[i])
+        for i = 0 to configs.count() - 1
+            if i < capacity
+                primary.push(configs[i])
+            else
+                extra.push(configs[i])
+            end if
         end for
     end if
 
@@ -1309,18 +1405,13 @@ sub buildButtonRows()
         appendButton(config, m.buttonRow)
     end for
 
-    if overflows
-        appendButton(moreButtonConfig(), m.buttonRow)
-    end if
-
     m.primaryCount = m.buttonGroups.count()
 
     for each config in extra
         appendButton(config, m.buttonRowExtra)
     end for
 
-    m.buttonRowExtra.visible = m.actionsExpanded and extra.count() > 0
-    if not m.buttonRowExtra.visible then m.actionsExpanded = false
+    m.buttonRowExtra.visible = extra.count() > 0
 
     if m.buttonRowExtra.visible
         m.buttonRowExtra.translation = [0, 27 + m.buttonRow.boundingRect().height]
@@ -1350,15 +1441,9 @@ function rowEnd(index as integer) as integer
     return isExtraRowIndex(index) ? m.buttonGroups.count() - 1 : m.primaryCount - 1
 end function
 
-sub toggleMoreActions()
-    m.actionsExpanded = not m.actionsExpanded
-    index = m.currentButtonIndex
-    buildButtonRows()
-    focusButton(index)
-end sub
-
 sub highlightButton(index as integer)
     detailButtons.highlight(index, m.buttonGroups)
+    if m.buttonRowScrolls then scrollButtonRowTo(index)
 end sub
 
 sub unhighlightAllButtons()
@@ -1370,8 +1455,9 @@ end sub
 ' ============================================
 
 ' Actions only one screen offers. The classic screen sends seasons, albums and
-' playlists to the legacy screens, so it has none of its own
-sub handleScreenButtonAction(_action as string)
+' playlists to the legacy screens, so only a collection plays in a way of its own.
+sub handleScreenButtonAction(action as string)
+    if action = "collectionPlay" or action = "collectionShuffle" then playCollection(action = "collectionShuffle")
 end sub
 
 ' How a toggle button shows its new state. The classic screen writes the label node
@@ -1407,6 +1493,7 @@ end function
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
+    if m.overflowMenu.visible then return false
 
     ' A picker left open across a screensaver can come back without focus, which
     ' would leave this screen answering the remote from behind it
@@ -1525,7 +1612,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
             if column >= m.primaryCount then column = m.primaryCount - 1
             focusButton(column)
             return true
-        else if key = KeyCode.DOWN and m.actionsExpanded and not isExtraRowIndex(m.currentButtonIndex)
+        else if key = KeyCode.DOWN and m.buttonRowExtra.visible and not isExtraRowIndex(m.currentButtonIndex)
             column = m.currentButtonIndex
             if m.primaryCount + column > m.buttonGroups.count() - 1 then column = m.buttonGroups.count() - 1 - m.primaryCount
             focusButton(m.primaryCount + column)
@@ -1570,6 +1657,10 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
 
         return false
+    end if
+
+    if key = KeyCode.OPTIONS and m.extrasGrid <> invalid and m.extrasGrid.hasFocus()
+        return showItemMenu(m.extrasGrid.focusedItem, itemMenuPageOptions())
     end if
 
     if key = KeyCode.PLAY and m.extrasGrid <> invalid and m.extrasGrid.hasFocus()

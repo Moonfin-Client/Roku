@@ -1,3 +1,6 @@
+import "pkg:/components/anime/animeMarkerWatch.bs"
+import "pkg:/components/itemMenu/itemMenuHost.bs"
+import "pkg:/components/userDataHost.bs"
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/Items.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
@@ -11,6 +14,7 @@ import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 
 sub init()
+    observeUserData()
     ' Check if this is truly the first run (ever, not just this session)
     ' Use registry to persist this across app restarts
     firstRunKey = "home.hasRunBefore"
@@ -21,16 +25,6 @@ sub init()
 
     m.top.optionsAvailable = false
     m.postTask = createObject("roSGNode", "PostTask")
-
-    m.favoritesOptionText = tr("Add To Favorites")
-
-    m.loadItemsTask1 = createObject("roSGNode", "LoadItemsTask")
-    m.loadItemsTask1.observeFieldScoped("content", "onMyListLoaded")
-    m.loadItemsTask1.itemsToLoad = "isInMyList"
-
-    m.loadMetaDataTask = CreateObject("roSGNode", "LoadItemsTask")
-    m.loadMetaDataTask.itemsToLoad = "metaData"
-    m.loadMetaDataTask.observeFieldScoped("content", "onMetaDataLoaded")
 
     ' Task to load full item details for display
     m.loadItemDetailsTask = CreateObject("roSGNode", "LoadItemsTask")
@@ -148,6 +142,7 @@ sub init()
     if isValid(m.mediaBar)
         m.mediaBar.observeField("itemSelected", "onMediaBarItemSelected")
         m.mediaBar.observeField("currentBackdrop", "onMediaBarBackdropChanged")
+        m.mediaBar.observeField("focusedChild", "onMediaBarFocusChanged")
 
         ' Show MediaBar if enabled via toggle
         if m.isMediaBarEnabled
@@ -437,10 +432,7 @@ sub handleLibraryNavigation(libraryNode as object)
         group.parentItem = libraryItem
         group.observeField("quickPlayNode", m.port)
     else if collectionType = "livetv"
-        group = CreateObject("roSGNode", "LiveTVLibraryView")
-        group.parentItem = libraryItem
-        group.optionsAvailable = true
-        group.observeField("quickPlayNode", m.port)
+        group = CreateObject("roSGNode", "LiveTvGuide")
     else if collectionType = "photos"
         group = CreateObject("roSGNode", "VisualLibraryScene")
         group.mediaType = ItemType.PHOTO
@@ -612,11 +604,19 @@ const AYA_ROWS_TOP = 884
 ' The banner card runs from 130 to 554, and the rows follow it
 const BANNER_ROWS_TOP = 574
 
+' Whichever of the rows and the bar takes focus is where Back returns to, so a pick
+' from the bar comes back to the bar. The spinner that takes focus on the way out
+' never counts.
 sub onHomeRowsFocusChanged()
-    if not isValid(m.mediaBar) or not m.mediaBar.visible then return
     if not m.homeRows.isInFocusChain() then return
+    m.top.lastFocus = m.homeRows
 
+    if not isValid(m.mediaBar) or not m.mediaBar.visible then return
     applyMediaBarLayout(false)
+end sub
+
+sub onMediaBarFocusChanged()
+    if m.mediaBar.isInFocusChain() then m.top.lastFocus = m.mediaBar
 end sub
 
 sub applyMediaBarLayout(mediaBarVisible as boolean)
@@ -721,7 +721,7 @@ sub OnScreenShown(_isReturning = false as boolean)
                 onItemFocusChanged()
             end if
             ' Check if the saved focus was mediaBar itself or a child of mediaBar
-        else if isValid(m.mediaBar) and (scenePreviousFocus.isSameNode(m.mediaBar) or isChildOf(scenePreviousFocus, m.mediaBar))
+        else if isValid(m.mediaBar) and m.isMediaBarEnabled and (scenePreviousFocus.isSameNode(m.mediaBar) or isChildOf(scenePreviousFocus, m.mediaBar))
             m.currentFocusedItemId = ""
             m.currentFocusedItemServerUrl = invalid
 
@@ -826,6 +826,8 @@ sub OnScreenShown(_isReturning = false as boolean)
         m.postTask.control = "RUN"
         m.postTask.observeField("responseCode", "postFinished")
     end if
+
+    if isValid(m.mediaBar) then m.mediaBar.callFunc("setTrailerCovered", false)
 end sub
 
 ' JFScreen hook called when the screen is hidden by the screen manager
@@ -841,6 +843,15 @@ sub OnScreenHidden()
         activeNav.callFunc("dehighlightUser")
         activeNav.currentUser = ""
     end if
+
+    ' A trailer has to let go of the media pipeline before the next screen starts its own
+    if isValid(m.mediaBar) then m.mediaBar.callFunc("setTrailerCovered", true)
+end sub
+
+' The rows are read again for anything the card menu changed, since it can move a card between
+' rows or take one off
+sub itemMenuChanged(_action as string, _card as dynamic, _menuJson as object)
+    refresh()
 end sub
 
 ' Triggered by m.postTask after completing a post.
@@ -848,87 +859,6 @@ end sub
 sub postFinished()
     m.postTask.unobserveField("responseCode")
     m.postTask.callFunc("empty")
-end sub
-
-sub onMyListLoaded()
-    isInMyListData = m.loadItemsTask1.content
-    m.loadItemsTask1.content = []
-
-    if not isValidAndNotEmpty(isInMyListData) then return
-
-    focusedItem = getRowListItemAt(m.homeRows, m.homeRows.rowItemFocused)
-    if not isValid(focusedItem) then return
-
-    dialogData = []
-    paramData = {
-        id: focusedItem.LookupCI("id")
-    }
-
-    if isInMyListData[0]
-        dialogData.push(tr("Remove From My List"))
-    else
-        if inArray([ItemType.EPISODE, ItemType.MOVIE, ItemType.SEASON, ItemType.SERIES, ItemType.VIDEO, ItemType.MUSICVIDEO, ItemType.RECORDING, ItemType.BOXSET], focusedItem.LookupCI("type"))
-            dialogData.push(tr("Add To My List"))
-        end if
-    end if
-
-    dialogData.push(m.favoritesOptionText)
-
-    if not inArray([ItemType.COLLECTIONFOLDER, ItemType.CHANNEL, ItemType.FOLDER, ItemType.PLAYLIST, ItemType.PROGRAM, ItemType.TVCHANNEL, ItemType.USERVIEW], focusedItem.LookupCI("type"))
-        dialogData.push(tr("Add To Playlist"))
-    end if
-
-    if inArray([ItemType.EPISODE, ItemType.MOVIE, ItemType.SEASON, ItemType.SERIES, ItemType.VIDEO, ItemType.MUSICVIDEO, ItemType.RECORDING, ItemType.BOXSET, ItemType.AUDIOBOOK, ItemType.BOOK], focusedItem.LookupCI("type"))
-        showBothOptions = false
-        if isChainValid(focusedItem, "PlayedPercentage")
-            if focusedItem.PlayedPercentage > 0
-                showBothOptions = true
-            end if
-        end if
-
-        if showBothOptions
-            dialogData.push(tr("Mark As Unplayed"))
-            dialogData.push(tr("Watched"))
-        else
-            if isChainValid(focusedItem, "isWatched")
-                if focusedItem.isWatched
-                    dialogData.push(tr("Mark As Unplayed"))
-                else
-                    dialogData.push(tr("Watched"))
-                end if
-            end if
-        end if
-    end if
-
-    if inArray([ItemType.EPISODE, ItemType.SEASON], focusedItem.LookupCI("type"))
-        dialogData.push(tr("Go To Series"))
-        dialogData.push(tr("Go To Season"))
-        paramData.SeasonId = focusedItem.json.LookupCI("SeasonId")
-        paramData.SeriesId = focusedItem.json.LookupCI("SeriesId")
-    end if
-
-    if inArray([ItemType.MUSICALBUM], focusedItem.LookupCI("type"))
-        dialogData.push(tr("Play Instant Mix"))
-        dialogData.push(tr("Go To Artist"))
-
-        genreData = focusedItem.json.LookupCI("Genre")
-        if isValidAndNotEmpty(genreData)
-            if isValidAndNotEmpty(genreData[0])
-                if isValidAndNotEmpty(genreData[0].Name)
-                    dialogData.push(tr("Go To Genre") + `: ${genreData[0].LookupCI("Name")}`)
-                    paramData.GenreName = genreData[0].LookupCI("Name")
-                    paramData.GenreId = genreData[0].LookupCI("Id")
-                    paramData.LibraryId = chainLookup(focusedItem, "json.LibraryId")
-                end if
-            end if
-        end if
-
-        paramData.ArtistId = focusedItem.json.LookupCI("AlbumArtistId")
-        paramData.ArtistName = focusedItem.json.LookupCI("albumartist")
-        paramData.AlbumId = focusedItem.LookupCI("id")
-    end if
-
-    m.global.sceneManager.callFunc("optionDialog", "libraryitem", focusedItem.LookupCI("title"), [], dialogData, paramData)
 end sub
 
 ' Special handling for key presses on the home screen.
@@ -1026,9 +956,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
             focusedItem = getRowListItemAt(m.homeRows, m.homeRows.rowItemFocused)
             if not isValidAndNotEmpty(focusedItem) then return false
 
-            m.loadMetaDataTask.itemId = focusedItem.LookupCI("id")
-            m.loadMetaDataTask.control = TaskControl.RUN
-            return true
+            return showItemMenu(focusedItem)
         end if
     end if
 
@@ -1044,18 +972,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     return false
 end function
-
-sub onMetaDataLoaded()
-    data = m.loadMetaDataTask.content[0]
-
-    m.favoritesOptionText = chainLookupReturn(data, "json.UserData.IsFavorite", false) ? tr("Remove From Favorites") : tr("Add To Favorites")
-
-    focusedItem = getRowListItemAt(m.homeRows, m.homeRows.rowItemFocused)
-    if not isValid(focusedItem) then return
-
-    m.loadItemsTask1.itemId = focusedItem.LookupCI("id")
-    m.loadItemsTask1.control = TaskControl.RUN
-end sub
 
 sub clearTextNode(node as dynamic)
     if isValid(node)
@@ -1356,6 +1272,7 @@ sub showModernFocusCard(focusedItem as object)
         m.mfRatings.visible = false
     end if
     updateModernOverviewPosition()
+    watchAnimeMarker(focusedItem, focusedItem.json, true)
 
     m.modernFocusCard.visible = true
 
@@ -1472,6 +1389,7 @@ function homeLandscapeUri(node as object) as string
 end function
 
 sub hideModernFocusCard()
+    watchAnimeMarker(invalid, invalid)
     if isValid(m.mfInfoFadeIn) then m.mfInfoFadeIn.control = "stop"
     if isValid(m.mfImageSettle) then m.mfImageSettle.control = "stop"
     m.mfCrossfading = false
@@ -1486,6 +1404,13 @@ sub hideModernFocusCard()
         resetRowReflow(m.prevReflowRow)
         m.prevReflowRow = invalid
     end if
+end sub
+
+' The focused card carries the same pill as its cell in the row, over the wide artwork
+sub showAnimeMarker(marker as dynamic)
+    if not isValid(m.mfImage) then return
+
+    m.mfAnimePill = drawAnimeCardPill(m.mfAnimePill, m.mfImage.getParent(), marker, m.mfImage.width, m.mfImage.height, false)
 end sub
 
 ' Slides the items after the focused one to the right so the focused landscape
@@ -1834,6 +1759,8 @@ sub updateRowDots(metadataRow as object)
     if not isValid(children) or children.count() = 0 then return
 
     lastVisibleContentFound = false
+    ' A hidden fact between two dots would otherwise leave both of them showing
+    dotShown = false
 
     for i = 0 to children.count() - 1
         child = children[i]
@@ -1855,11 +1782,11 @@ sub updateRowDots(metadataRow as object)
                 end if
             end for
 
-            child.visible = hasVisibleBefore and hasVisibleAfter
-        else
-            if child.visible
-                lastVisibleContentFound = true
-            end if
+            child.visible = hasVisibleBefore and hasVisibleAfter and not dotShown
+            if child.visible then dotShown = true
+        else if child.visible
+            dotShown = false
+            lastVisibleContentFound = true
         end if
     end for
 end sub
@@ -1975,3 +1902,7 @@ function isChildOf(node as object, parent as object) as boolean
 
     return false
 end function
+
+' Home's rows take the change through their content, and nothing else here shows it
+sub userDataApplied(_changes as object)
+end sub

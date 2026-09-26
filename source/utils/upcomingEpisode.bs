@@ -1,254 +1,261 @@
 import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
 
 namespace upcomingEpisode
 
+    const LOOKUP_TIMEOUT_MS = 5000
+    const SONARR_TTL_SECONDS = 1800
+
+    ' Next: Today (S2:E1), counted in days on the viewer's own calendar
     function FormatUpcomingEpisode(info as object) as string
         if not isValid(info) or not isValidAndNotEmpty(info.airDate) then return ""
 
-        airDate = info.airDate
-        if Len(airDate) < 10 then return ""
+        target = upcomingEpisode.localDate(info.airDate)
+        if not isValid(target) then return ""
 
-        month = Mid(airDate, 6, 2).toInt()
-        day = Mid(airDate, 9, 2).toInt()
-        if month < 1 or month > 12 or day < 1 or day > 31 then return ""
+        now = CreateObject("roDateTime")
+        now.ToLocalTime()
+        diffDays = upcomingEpisode.dayNumber(target.year, target.month, target.day) - upcomingEpisode.dayNumber(now.GetYear(), now.GetMonth(), now.GetDayOfMonth())
 
-        targetDate = CreateObject("roDateTime")
-        targetDate.FromISO8601String(Mid(airDate, 1, 10) + "T12:00:00Z")
-
-        todayDate = CreateObject("roDateTime")
-        todayDate.ToLocalTime()
-        todayYearStr = todayDate.GetYear().ToStr()
-        todayMonthStr = Right("0" + todayDate.GetMonth().ToStr(), 2)
-        todayDayStr = Right("0" + todayDate.GetDayOfMonth().ToStr(), 2)
-
-        todayNoon = CreateObject("roDateTime")
-        todayNoon.FromISO8601String(Substitute("{0}-{1}-{2}T12:00:00Z", todayYearStr, todayMonthStr, todayDayStr))
-
-        diffSeconds = targetDate.AsSeconds() - todayNoon.AsSeconds()
-        diffDays = Int(diffSeconds / 86400)
-
-        ' Ignore past air dates
-        if diffDays < 0 then return ""
-
-        relDate = ""
         if diffDays = 0
-            relDate = tr("Today")
+            dateText = tr("Today")
         else if diffDays = 1
-            relDate = tr("Tomorrow")
-        else if diffDays < 7
+            dateText = tr("Tomorrow")
+        else if diffDays > 1 and diffDays < 7
             weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-            relDate = tr(weekdays[targetDate.GetDayOfWeek()])
+            dateText = tr(weekdays[target.weekday])
         else
             months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-            relDate = tr(months[month - 1]) + " " + day.ToStr()
+            dateText = `${tr(months[target.month - 1])} ${target.day.toStr()}`
         end if
 
         code = ""
-        if isValid(info.season) and isValid(info.episode) and info.season > 0 and info.episode > 0
-            code = Substitute("(S{0}:E{1})", info.season.ToStr(), info.episode.ToStr())
+        if isValid(info.seasonNumber) and isValid(info.episodeNumber)
+            code = ` (S${info.seasonNumber.toStr()}:E${info.episodeNumber.toStr()})`
         end if
 
-        if code <> ""
-            return Substitute("Next: {0} {1}", relDate, code)
-        else
-            return Substitute("Next: {0}", relDate)
-        end if
+        return `${tr("Next")}: ${dateText}${code}`
     end function
 
-    ' Resolves upcoming episode text for a series item, using globalNode.upcomingEpisodeCache
-    function ResolveUpcomingEpisodeText(itemData as object, globalNode as object) as string
-        if not isValid(itemData) or not isValid(globalNode) then return ""
-
-        seriesId = ""
-        if isChainValid(itemData, "Id")
-            seriesId = itemData.Id
-        else if isChainValid(itemData, "SeriesId")
-            seriesId = itemData.SeriesId
-        end if
-        if seriesId = "" then return ""
-
-        now = CreateObject("roDateTime")
-        nowSeconds = now.AsSeconds()
-
-        ' Check cache on globalNode
-        if not globalNode.hasField("upcomingEpisodeCache")
-            globalNode.addFields({ upcomingEpisodeCache: {} })
-        end if
-        cache = globalNode.upcomingEpisodeCache
-        if isValid(cache[seriesId])
-            entry = cache[seriesId]
-            if isValid(entry.expiresAt) and entry.expiresAt > nowSeconds
-                return entry.text
-            end if
-        end if
-
-        ' Fetch upcoming episode info
-        info = fetchUpcomingEpisode(itemData, globalNode)
-        formatted = ""
-        if isValid(info)
-            formatted = upcomingEpisode.FormatUpcomingEpisode(info)
-        end if
-
-        ' The fetch saves the shared calendar, so this re-reads instead of writing back
-        ' the copy taken before it ran
-        cache = globalNode.upcomingEpisodeCache
-        cache[seriesId] = { expiresAt: nowSeconds + 1800, text: formatted }
-        globalNode.upcomingEpisodeCache = cache
-
-        return formatted
-    end function
-
-    function fetchUpcomingEpisode(itemData as object, globalNode as object) as dynamic
-        ' 1. Try Sonarr Calendar if TVDB ID is present
-        tvdbId = getProviderId(itemData, "Tvdb")
-        if tvdbId <> ""
-            sonarrResult = fetchSonarrCalendarUpcoming(tvdbId, globalNode)
-            if isValid(sonarrResult) then return sonarrResult
-        end if
-
-        ' 2. Try TMDB via Moonbase proxy /Moonfin/Tmdb/NextEpisode or direct
-        tmdbId = getProviderId(itemData, "Tmdb")
-        if tmdbId <> ""
-            tmdbResult = fetchTmdbUpcoming(tmdbId)
-            if isValid(tmdbResult) then return tmdbResult
-        end if
-
-        return invalid
-    end function
-
-    function getProviderId(itemData as object, name as string) as string
+    function ResolveUpcomingEpisodeText(itemData as object) as string
         if not isValid(itemData) then return ""
-
-        if isChainValid(itemData, "ProviderIds") and isValid(itemData.ProviderIds)
-            for each key in itemData.ProviderIds
-                if LCase(key) = LCase(name)
-                    val = itemData.ProviderIds[key]
-                    if isValid(val) then return val.ToStr().Trim()
-                end if
-            end for
-        end if
-
-        ' Fallback to direct field
-        if isValid(itemData[name]) then return itemData[name].ToStr().Trim()
-        lowerName = LCase(name) + "Id"
-        if isValid(itemData[lowerName]) then return itemData[lowerName].ToStr().Trim()
-
-        return ""
+        return upcomingEpisode.FormatUpcomingEpisode(upcomingEpisode.lookup(itemData))
     end function
 
-    function fetchSonarrCalendarUpcoming(tvdbId as string, globalNode as object) as dynamic
-        now = CreateObject("roDateTime")
-        nowSeconds = now.AsSeconds()
+    ' A season or an episode asks about its series. Each series is looked up once per
+    ' session, and a miss is kept as well so the same series isnt asked about again.
+    function lookup(itemData as object) as dynamic
+        seriesId = itemData.Id
+        if not isStringEqual(itemData.Type, "Series") and isValidAndNotEmpty(itemData.SeriesId) then seriesId = itemData.SeriesId
+        if not isValidAndNotEmpty(seriesId) then return invalid
 
-        ' Check cached calendar array
-        calendar = invalid
-        if isValid(globalNode.upcomingEpisodeCache) and isValid(globalNode.upcomingEpisodeCache._sonarrCalendar)
-            calEntry = globalNode.upcomingEpisodeCache._sonarrCalendar
-            if isValid(calEntry.expiresAt) and calEntry.expiresAt > nowSeconds
-                calendar = calEntry.items
-            end if
-        end if
+        known = upcomingEpisode.cache().series
+        if known.DoesExist(seriesId) then return known[seriesId].info
 
-        if not isValid(calendar)
-            ' Query Sonarr calendar for next 90 days
-            startIso = now.ToISOString()
-            endDt = CreateObject("roDateTime")
-            endDt.FromSeconds(nowSeconds + 90 * 86400)
-            endIso = endDt.ToISOString()
+        info = upcomingEpisode.find(itemData)
 
-            data = getJson(APIRequest("/Moonfin/Seerr/Sonarr/Calendar", { start: startIso, end: endIso }))
-            if not isValid(data) or LCase(type(data)) <> "roarray"
-                data = getJson(APIRequest("/Sonarr/Calendar", { days: 90 }))
-            end if
+        stored = upcomingEpisode.cache()
+        stored.series[seriesId] = { info: info }
+        m.global.upcomingEpisodeCache = stored
+        return info
+    end function
 
-            if isValid(data) and LCase(type(data)) = "roarray"
-                calendar = data
-                cache = globalNode.upcomingEpisodeCache
-                cache._sonarrCalendar = { expiresAt: nowSeconds + 1800, items: data }
-                globalNode.upcomingEpisodeCache = cache
-            end if
-        end if
+    ' Sonarr first, matched on the TVDB id and then the TMDB id, then TMDB with the synced
+    ' key, then TMDB through Moonbase
+    function find(itemData as object) as dynamic
+        providerIds = upcomingEpisode.seriesProviderIds(itemData)
+        tvdbId = upcomingEpisode.providerId(providerIds, "Tvdb")
+        tmdbId = upcomingEpisode.providerId(providerIds, "Tmdb")
 
-        if not isValid(calendar) or LCase(type(calendar)) <> "roarray" then return invalid
+        calendar = upcomingEpisode.sonarrCalendar()
+        if tvdbId <> "" and calendar.byTvdb.DoesExist(tvdbId) then return calendar.byTvdb[tvdbId]
+        if tmdbId <> "" and calendar.byTmdb.DoesExist(tmdbId) then return calendar.byTmdb[tmdbId]
 
-        todayDate = CreateObject("roDateTime")
-        todayDate.ToLocalTime()
-        todayStr = Substitute("{0}-{1}-{2}", todayDate.GetYear().ToStr(), Right("0" + todayDate.GetMonth().ToStr(), 2), Right("0" + todayDate.GetDayOfMonth().ToStr(), 2))
+        if tmdbId = "" then return invalid
 
-        for each episode in calendar
-            series = episode.LookupCI("series")
-            match = false
-            if isValid(series)
-                seriesTvdb = toNormalizedString(series.LookupCI("tvdbId"))
-                if seriesTvdb = tvdbId then match = true
-            end if
-            if not match and toNormalizedString(episode.LookupCI("tvdbId")) = tvdbId
-                match = true
-            end if
+        info = upcomingEpisode.fromTmdb(tmdbId)
+        if isValid(info) then return info
+        return upcomingEpisode.fromMoonbase(tmdbId, itemData)
+    end function
 
-            if match
-                airDate = toNormalizedString(episode.LookupCI("airDateUtc"))
-                if airDate = "" then airDate = toNormalizedString(episode.LookupCI("airDate"))
-                if airDate <> "" and Mid(airDate, 1, 10) >= todayStr
-                    seasonNum = 0
-                    if isValid(episode.LookupCI("seasonNumber")) then seasonNum = episode.LookupCI("seasonNumber")
-                    epNum = 0
-                    if isValid(episode.LookupCI("episodeNumber")) then epNum = episode.LookupCI("episodeNumber")
-                    title = toNormalizedString(episode.LookupCI("title"))
+    ' A season carries its own provider ids, which Sonarr and TMDB know nothing about
+    function seriesProviderIds(itemData as object) as object
+        if isStringEqual(itemData.Type, "Series") or not isValidAndNotEmpty(itemData.SeriesId) then return itemData.ProviderIds
 
-                    return {
+        data = getJsonWithin(upcomingEpisode.serverRequest(itemData, "/Items", { ids: itemData.SeriesId, fields: "ProviderIds" }), upcomingEpisode.LOOKUP_TIMEOUT_MS)
+        series = chainLookup(data, "Items.0")
+        if isChainValid(series, "ProviderIds") then return series.ProviderIds
+        return itemData.ProviderIds
+    end function
+
+    function providerId(providerIds as dynamic, name as string) as string
+        if not isValid(providerIds) then return ""
+        return upcomingEpisode.idText(providerIds.LookupCI(name))
+    end function
+
+    function idText(value as dynamic) as string
+        if not isValid(value) then return ""
+        if type(value) = "String" or type(value) = "roString" then return value.Trim()
+        if value = 0 then return ""
+        return value.toStr()
+    end function
+
+    function serverRequest(itemData as object, path as string, params as object) as dynamic
+        serverData = getServerInfoFromItem(itemData)
+        if isValid(serverData) then return APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, path, params)
+        return APIRequest(path, params)
+    end function
+
+    ' Every show Sonarr has coming up in the next 90 days, keeping the earliest episode
+    ' of each that hasnt aired before today
+    function sonarrCalendar() as object
+        nowSeconds = CreateObject("roDateTime").AsSeconds()
+        cached = upcomingEpisode.cache().sonarr
+        if isValid(cached) and nowSeconds - cached.fetchedAt < upcomingEpisode.SONARR_TTL_SECONDS then return cached
+
+        calendar = { byTvdb: {}, byTmdb: {}, fetchedAt: nowSeconds }
+        if not GetSeerrConfig().enabled then return calendar
+
+        episodes = getJsonWithin(APIRequest("/Moonfin/Seerr/Sonarr/Calendar"), upcomingEpisode.LOOKUP_TIMEOUT_MS)
+        if type(episodes) <> "roArray" then return calendar
+
+        midnight = upcomingEpisode.localMidnightSeconds()
+        for each episode in episodes
+            series = episode.series ?? {}
+            tvdbId = upcomingEpisode.idText(series.tvdbId)
+            tmdbId = upcomingEpisode.idText(series.tmdbId)
+            airDate = episode.airDateUtc ?? episode.airDate
+
+            if (tvdbId <> "" or tmdbId <> "") and upcomingEpisode.isDateText(airDate)
+                airedAt = upcomingEpisode.airSeconds(airDate)
+                if airedAt >= midnight
+                    info = {
+                        seasonNumber: episode.seasonNumber ?? 1,
+                        episodeNumber: episode.episodeNumber ?? 1,
                         airDate: airDate,
-                        season: seasonNum,
-                        episode: epNum,
-                        title: title
+                        airSeconds: airedAt
                     }
+                    upcomingEpisode.keepEarliest(calendar.byTvdb, tvdbId, info)
+                    upcomingEpisode.keepEarliest(calendar.byTmdb, tmdbId, info)
                 end if
             end if
         end for
 
-        return invalid
+        stored = upcomingEpisode.cache()
+        stored.sonarr = calendar
+        m.global.upcomingEpisodeCache = stored
+        return calendar
     end function
 
-    function fetchTmdbUpcoming(tmdbId as string) as dynamic
-        ' Try Moonbase proxy endpoint first
-        data = getJson(APIRequest("/Moonfin/Tmdb/NextEpisode", { tmdbId: tmdbId }))
-        if isValid(data) and isChainValid(data, "airDate") and isValidAndNotEmpty(data.airDate)
-            return {
-                airDate: data.airDate,
-                season: data.season,
-                episode: data.episode,
-                title: data.title
-            }
-        end if
+    sub keepEarliest(index as object, key as string, info as object)
+        if key = "" then return
+        if index.DoesExist(key) and index[key].airSeconds <= info.airSeconds then return
+        index[key] = info
+    end sub
 
-        ' Fallback to Seerr TMDB proxy or direct
-        tmdbData = getJson(APIRequest(`/Moonfin/Seerr/tmdb/tv/${tmdbId}`))
-        if isValid(tmdbData) and isChainValid(tmdbData, "next_episode_to_air") and isValid(tmdbData.next_episode_to_air)
-            nextEp = tmdbData.next_episode_to_air
-            if isValidAndNotEmpty(nextEp.air_date)
-                return {
-                    airDate: nextEp.air_date,
-                    season: nextEp.season_number,
-                    episode: nextEp.episode_number,
-                    title: nextEp.name
-                }
-            end if
-        end if
+    function fromTmdb(tmdbId as string) as dynamic
+        apiKey = chainLookupReturn(m.global.session, "user.settings.`plugin.tmdb.apiKey`", "")
+        if apiKey = "" then return invalid
 
-        return invalid
+        url = "https://api.themoviedb.org/3/tv/" + tmdbId
+        req = CreateObject("roUrlTransfer")
+        req.SetCertificatesFile("common:/certs/ca-bundle.crt")
+        req.InitClientCertificates()
+
+        ' v4 tokens go in the Authorization header, v3 keys go in the query string
+        if Left(apiKey, 3) = "eyJ"
+            req.AddHeader("Authorization", "Bearer " + apiKey)
+        else
+            url = url + "?api_key=" + apiKey
+        end if
+        req.SetUrl(url)
+
+        nextEpisode = chainLookup(getJsonWithin(req, upcomingEpisode.LOOKUP_TIMEOUT_MS), "next_episode_to_air")
+        if not isChainValid(nextEpisode, "air_date") or nextEpisode.air_date = "" then return invalid
+
+        return {
+            seasonNumber: nextEpisode.season_number ?? 1,
+            episodeNumber: nextEpisode.episode_number ?? 1,
+            airDate: nextEpisode.air_date
+        }
     end function
 
-    function toNormalizedString(val as dynamic) as string
-        if not isValid(val) then return ""
-        valType = type(val)
-        if valType = "String" or valType = "roString"
-            return val
+    function fromMoonbase(tmdbId as string, itemData as object) as dynamic
+        if not moonfinPlugin.IsEnabled() then return invalid
+
+        data = getJsonWithin(upcomingEpisode.serverRequest(itemData, "/Moonfin/Tmdb/NextEpisode", { tmdbId: tmdbId }), upcomingEpisode.LOOKUP_TIMEOUT_MS)
+        if chainLookupReturn(data, "success", false) <> true or not isValidAndNotEmpty(data.airDate) then return invalid
+
+        return {
+            seasonNumber: data.seasonNumber ?? 1,
+            episodeNumber: data.episodeNumber ?? 1,
+            airDate: data.airDate
+        }
+    end function
+
+    function cache() as object
+        if not m.global.hasField("upcomingEpisodeCache") then m.global.addFields({ upcomingEpisodeCache: {} })
+
+        stored = m.global.upcomingEpisodeCache
+        if not isValid(stored.series) then stored.series = {}
+        return stored
+    end function
+
+    ' A bare date is already a day on the viewer's calendar. A timestamp is moved into
+    ' the local time zone first, so an evening airing isnt counted as the next day.
+    function localDate(airDate as string) as dynamic
+        if not upcomingEpisode.isDateText(airDate) then return invalid
+
+        date = CreateObject("roDateTime")
+        if Len(airDate) = 10
+            date.FromISO8601String(airDate + "T00:00:00Z")
+        else
+            date.FromISO8601String(airDate)
+            date.ToLocalTime()
         end if
-        if valType = "Integer" or valType = "roInt" or valType = "roInteger" or valType = "Float" or valType = "roFloat" or valType = "Double" or valType = "LongInteger"
-            return val.toStr()
+
+        return {
+            year: date.GetYear(),
+            month: date.GetMonth(),
+            day: date.GetDayOfMonth(),
+            weekday: date.GetDayOfWeek()
+        }
+    end function
+
+    ' A new roDateTime starts at the current time, so a string it cant read has to be
+    ' caught before it is parsed
+    function isDateText(value as dynamic) as boolean
+        if not isValid(value) or (type(value) <> "String" and type(value) <> "roString") or Len(value) < 10 then return false
+
+        month = Mid(value, 6, 2).toInt()
+        day = Mid(value, 9, 2).toInt()
+        return Mid(value, 5, 1) = "-" and month >= 1 and month <= 12 and day >= 1 and day <= 31
+    end function
+
+    function dayNumber(year as integer, month as integer, day as integer) as integer
+        date = CreateObject("roDateTime")
+        date.FromISO8601String(Substitute("{0}-{1}-{2}T00:00:00Z", year.toStr(), Right("0" + month.toStr(), 2), Right("0" + day.toStr(), 2)))
+        return Int(date.AsSeconds() / 86400)
+    end function
+
+    function airSeconds(airDate as string) as integer
+        date = CreateObject("roDateTime")
+        if Len(airDate) = 10
+            date.FromISO8601String(airDate + "T00:00:00Z")
+        else
+            date.FromISO8601String(airDate)
         end if
-        return ""
+        return date.AsSeconds()
+    end function
+
+    ' The moment today began where the viewer is
+    function localMidnightSeconds() as integer
+        now = CreateObject("roDateTime")
+        local = CreateObject("roDateTime")
+        local.ToLocalTime()
+        return now.AsSeconds() - (local.GetHours() * 3600 + local.GetMinutes() * 60 + local.GetSeconds())
     end function
 
 end namespace

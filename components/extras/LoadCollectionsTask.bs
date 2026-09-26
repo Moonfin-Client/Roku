@@ -1,0 +1,125 @@
+import "pkg:/components/extras/collectionLookup.bs"
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/Image.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/parentalControls.bs"
+import "pkg:/source/utils/seerrMissingCollection.bs"
+
+sub init()
+    m.top.functionName = "load"
+end sub
+
+sub load()
+    itemJson = m.top.itemJson
+    m.serverData = getServerInfoFromItem(itemJson)
+    if isValid(itemJson) and isValidAndNotEmpty(itemJson.Id)
+        if m.top.mode = "members"
+            loadMembers(itemJson)
+        else
+            loadParents(itemJson)
+        end if
+    end if
+
+    m.top.done = true
+end sub
+
+' Every collection the title is in with its titles, skipping any that hold nothing else
+sub loadParents(itemJson as object)
+    showMissing = showsMissing()
+    found = []
+
+    for each collection in findParents(itemJson)
+        ' A blocked title is left out of the list but still counts as owned, so it isnt offered as
+        ' missing
+        held = collectionTitles(collection.Id, "PremiereDate", "PrimaryImageAspectRatio,ProductionYear,ProviderIds,People")
+        members = parentalControls.WithoutBlockedItems(held)
+        if members.count() <= 1 then continue for
+
+        missing = []
+        if showMissing then missing = seerrMissingCollection.Find(collection, held)
+
+        name = collection.Name
+        if not isValidAndNotEmpty(name) then name = tr("Collection")
+
+        found.push({
+            name: name,
+            boxSet: collectionNode(collection),
+            items: cardNodes(members),
+            missing: cardNodes(missing)
+        })
+    end for
+
+    m.top.collections = found
+end sub
+
+' A collection's own page: its titles in release order, the ones the library is missing, and
+' everyone who appears in them
+sub loadMembers(boxSet as object)
+    fields = "PrimaryImageAspectRatio,ProductionYear,ProviderIds"
+    if not m.top.titlesOnly then fields += ",People"
+    held = collectionTitles(boxSet.Id, "ProductionYear", fields)
+    members = parentalControls.WithoutBlockedItems(held)
+
+    m.top.items = cardNodes(members)
+    if m.top.titlesOnly then return
+
+    missing = []
+    if showsMissing() then missing = seerrMissingCollection.Find(boxSet, held)
+    m.top.missing = cardNodes(missing)
+    m.top.people = pooledPeople(members)
+end sub
+
+' The cast and crew of every title in the collection, each person listed once
+function pooledPeople(members as object) as object
+    cast = []
+    crew = []
+    seen = {}
+
+    for each member in members
+        for each person in member.People ?? []
+            key = person.Id ?? ""
+            if key = "" then key = person.Name ?? ""
+            if key = "" or seen.DoesExist(key) then continue for
+            seen[key] = true
+
+            if (person.Type ?? "") = "Actor"
+                cast.push(personNode(person))
+            else
+                crew.push(personNode(person))
+            end if
+        end for
+    end for
+
+    return { cast: cast, crew: crew }
+end function
+
+function personNode(person as object) as object
+    node = CreateObject("roSGNode", "HomeData")
+    node.json = person
+
+    imgParams = { "maxHeight": 331, "maxWidth": 250 }
+    if isValidAndNotEmpty(person.PrimaryImageTag) then imgParams.Tag = person.PrimaryImageTag
+
+    node.imageWidth = 250
+    node.posterURL = ImageURL(person.Id, "Primary", imgParams)
+    node.labelText = person.Name
+    node.subTitle = person.Role ?? ""
+    node.type = "Person"
+    return node
+end function
+
+function collectionNode(collection as object) as object
+    node = cardNode(collection)
+    if not isValidAndNotEmpty(node.posterURL) then node.posterURL = ImageURL(collection.Id, "Primary", { "maxHeight": 360, "quality": 90 })
+    return node
+end function
+
+function fetch(path as string, params as object) as dynamic
+    if isValid(m.serverData)
+        params.userId = m.serverData.userId
+        return getJson(APIRequestForServer(m.serverData.serverUrl, m.serverData.userId, m.serverData.authToken, path, params))
+    end if
+
+    params.userId = m.global.session.user.id
+    return getJson(APIRequest(path, params))
+end function

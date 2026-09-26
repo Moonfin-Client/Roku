@@ -1,8 +1,12 @@
+import "pkg:/components/anime/animeMarkerWatch.bs"
 import "pkg:/components/details/detailButtonHost.bs"
+import "pkg:/components/details/detailCollectionHost.bs"
 import "pkg:/components/details/detailMetadataHost.bs"
 import "pkg:/components/details/detailPopulationHost.bs"
 import "pkg:/components/details/detailScreenHost.bs"
 import "pkg:/components/details/detailTrackHost.bs"
+import "pkg:/components/itemMenu/itemMenuDetailHost.bs"
+import "pkg:/components/userDataHost.bs"
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/utils/buttonLayout.bs"
@@ -11,6 +15,7 @@ import "pkg:/source/utils/detailActions.bs"
 import "pkg:/source/utils/detailButtons.bs"
 import "pkg:/source/utils/detailCompatibility.bs"
 import "pkg:/source/utils/detailMetadataLayout.bs"
+import "pkg:/source/utils/fileFacts.bs"
 import "pkg:/source/utils/fontApply.bs"
 import "pkg:/source/utils/mediaBadges.bs"
 import "pkg:/source/utils/misc.bs"
@@ -19,6 +24,7 @@ import "pkg:/source/utils/remoteSubtitles.bs"
 import "pkg:/source/utils/seerrButtons.bs"
 import "pkg:/source/utils/seerrDetailHost.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
+import "pkg:/source/utils/studioLogos.bs"
 
 import "pkg:/source/enums/AnimationControl.bs"
 import "pkg:/source/enums/AnimationState.bs"
@@ -69,8 +75,21 @@ const TAB_BAR_HEIGHT = 63
 const BUTTON_COLLAPSED_WIDTH = 75
 const BUTTON_ROW_GAP = 12
 const BUTTON_LABEL_PAD = 41
+' Where each tab sits in the bar
+const TAB_RANK_SEASONS = 0
+const TAB_RANK_EPISODES = 1
+const TAB_RANK_ITEMS = 2
+const TAB_RANK_CAST = 3
+const TAB_RANK_CREW = 4
+const TAB_RANK_STUDIOS = 5
+const TAB_RANK_CHAPTERS = 6
+const TAB_RANK_EXTRAS = 7
+const TAB_RANK_DETAILS = 8
+const TAB_RANK_COLLECTION = 9
+const TAB_RANK_OTHER = 10
 
 sub init()
+    observeUserData()
     m.top.observeField("seerrButtonsStale", "onSeerrButtonsStale")
     m.global.queueManager.callFunc("setForceTranscode", PlaybackMethod.PLAYNORMALLY)
     m.performRotationCheck = true
@@ -106,6 +125,7 @@ sub init()
     m.techChips = m.top.findNode("techChips")
     m.statusBadge = m.top.findNode("statusBadge")
     m.upcomingBadge = m.top.findNode("upcomingBadge")
+    m.upcomingIncludesSeasons = true
     m.runtimeGroup = m.top.findNode("runtimeGroup")
     m.metaRowHeight = 0
     m.techRowHeight = 0
@@ -120,10 +140,10 @@ sub init()
 
     m.buttonRow = m.top.findNode("buttonRow")
     m.buttonRowContainer = m.top.findNode("buttonRowContainer")
-    m.buttonRowExtra = m.top.findNode("buttonRowExtra")
-    m.buttonRowExtraContainer = m.top.findNode("buttonRowExtraContainer")
-    m.actionsExpanded = false
-    m.primaryCount = 0
+    m.overflowMenu = m.top.findNode("overflowMenu")
+    m.overflowMenu.observeField("chosenAction", "onOverflowAction")
+    m.overflowMenu.observeField("closed", "onOverflowClosed")
+    m.overflowActions = []
     m.currentButtonIndex = 0
     m.buttonGroups = []
 
@@ -183,8 +203,12 @@ sub init()
     m.upNextCard.observeField("selected", "onUpNextSelected")
     m.upNextCard.observeField("escape", "onUpNextEscape")
     m.upNextItem = invalid
-    m.streamGrid = m.top.findNode("streamGrid")
-    m.streamData = []
+    m.fileInfo = m.top.findNode("fileInfo")
+    m.fileInfo.observeField("focusedOffset", "onFileInfoFocusMoved")
+    m.fileInfo.observeField("retryRequested", "probeFileInfo")
+    m.fileInfoSubtitle = SubtitleSelection.NONE
+    m.top.observeField("selectedAudioStreamIndex", "onFileInfoTracksChanged")
+    m.subtitleSelector.observeField("subtitleStream", "onFileInfoTracksChanged")
     m.extrasGrid.visible = false
     m.sectionItems = []
     m.sectionSize = []
@@ -295,12 +319,19 @@ sub buildTabsFromContent(content as object)
             items.push(row.getChild(j))
         end for
 
+        ' An episode lists the whole season it sits in as rows, the way a season does
+        if row.hasField("seasonRun")
+            m.seasonEpisodes = row.seasonRun
+            m.sectionTabs.push({ label: tr("Episodes"), kind: "episodes", index: -1, rank: TAB_RANK_EPISODES })
+            continue for
+        end if
+
         ' The loader hands over one row of people, which the other clients show
         ' as two tabs
         if isStringEqual(rowTitle, tr("Cast"))
             people = splitCastAndCrewLimited(items)
-            if people.cast.count() > 0 then pushSection(people.cast, [160, 265], tr("Cast"), "cast")
-            if people.crew.count() > 0 then pushSection(people.crew, [160, 265], tr("Crew"), "cast")
+            if people.cast.count() > 0 then pushSection(people.cast, [160, 265], tr("Cast"), "cast", TAB_RANK_CAST)
+            if people.crew.count() > 0 then pushSection(people.crew, [160, 265], tr("Crew"), "cast", TAB_RANK_CREW)
             continue for
         end if
 
@@ -309,24 +340,41 @@ sub buildTabsFromContent(content as object)
 
         label = row.title
         if not isValidAndNotEmpty(label) then label = tr("More")
-        pushSection(items, sz, label, "section")
+        rowKind = row.hasField("rowKind") ? row.rowKind : ""
+        rank = TAB_RANK_OTHER
+        if rowKind = "collectionItems"
+            label = tr("Items")
+            rank = TAB_RANK_ITEMS
+            m.collectionMembers = items
+        else if rowKind = "parentCollection"
+            rank = TAB_RANK_COLLECTION
+        else if isStringEqual(rowTitle, tr("Seasons"))
+            rank = TAB_RANK_SEASONS
+        else if isStringEqual(rowTitle, tr("Special Features"))
+            label = tr("Extras")
+            rank = TAB_RANK_EXTRAS
+        end if
+        pushSection(items, sz, label, "section", rank)
     end for
 
     buildStudioData()
     if m.studioData.count() > 0
-        m.sectionTabs.push({ label: tr("Studios"), kind: "studios", index: -1 })
+        m.sectionTabs.push({ label: tr("Studios"), kind: "studios", index: -1, rank: TAB_RANK_STUDIOS })
         startStudioLogoFetch()
     end if
 
     buildChapterData()
     if m.chapterData.count() > 0
-        m.sectionTabs.push({ label: tr("Chapters"), kind: "chapters", index: -1 })
+        m.sectionTabs.push({ label: tr("Chapters"), kind: "chapters", index: -1, rank: TAB_RANK_CHAPTERS })
     end if
 
     if hasDetailsInfo()
-        m.sectionTabs.push({ label: tr("Details"), kind: "details", index: -1 })
+        m.sectionTabs.push({ label: tr("Details"), kind: "details", index: -1, rank: TAB_RANK_DETAILS })
     end if
 
+    ' The tabs run in a fixed order, whatever order the loader handed its rows over in. The sort
+    ' is stable, so tabs of one rank keep theirs.
+    m.sectionTabs.SortBy("rank")
     appendSeerrTab()
 
     showUpNextCard()
@@ -384,10 +432,10 @@ sub scrollToSeerrFocus()
 end sub
 
 ' A Seerr title arrives as a tmdb id, and the screen asks Seerr for the rest itself
-sub pushSection(items as object, size as object, label as string, kind as string)
+sub pushSection(items as object, size as object, label as string, kind as string, rank as integer)
     m.sectionItems.push(items)
     m.sectionSize.push(size)
-    m.sectionTabs.push({ label: label, kind: kind, index: m.sectionItems.count() - 1 })
+    m.sectionTabs.push({ label: label, kind: kind, index: m.sectionItems.count() - 1, rank: rank })
 end sub
 
 ' The shared split, plus what this screen's grids need: a person credited more
@@ -434,7 +482,6 @@ end function
 sub showUpNextCard()
     if not isValid(m.upNextItem)
         m.upNextCard.visible = false
-        foldButtonRow()
         centerButtonRow()
         return
     end if
@@ -467,7 +514,7 @@ sub showUpNextCard()
     m.upNextCard.progress = chainLookupReturn(ep, "json.UserData.PlayedPercentage", 0)
     m.upNextCard.visible = true
 
-    foldButtonRow()
+    ' The row has less room beside the card, so it lays itself out again
     centerButtonRow()
 end sub
 
@@ -569,33 +616,13 @@ end sub
 sub onStudioLogos()
     result = m.studioLogosTask.companies
     if not isValid(result) or result.success <> true then return
-    companies = result.data
-    if not isValidAndNotEmpty(companies) then return
-
-    byName = {}
-    for each c in companies
-        byName[normalizeStudioName(c.name)] = c
-    end for
-
+    index = studioLogos.Index(result.data)
     for each studio in m.studioData
-        c = byName[normalizeStudioName(studio.name)]
-        if isValid(c) and c.hasLogo
-            studio.logoUrl = moonfinPlugin.StudioImageURL(c.id)
-        end if
+        studio.logoUrl = studioLogos.LogoUrlFor(studio.name, index)
     end for
 
     if m.studioGrid.visible then populateStudioGrid()
 end sub
-
-function normalizeStudioName(name as string) as string
-    result = ""
-    lower = LCase(name)
-    for i = 0 to Len(lower) - 1
-        ch = lower.Mid(i, 1)
-        if (ch >= "a" and ch <= "z") or (ch >= "0" and ch <= "9") then result += ch
-    end for
-    return result
-end function
 
 sub populateStudioGrid()
     gridContent = CreateObject("roSGNode", "ContentNode")
@@ -707,6 +734,7 @@ end sub
 sub populateEpisodeRowGrid()
     if not isValid(m.seasonEpisodes) then return
     gridContent = CreateObject("roSGNode", "ContentNode")
+    gridContent.addFields({ modernRows: true })
     for each ep in m.seasonEpisodes
         gridContent.appendChild(ep)
     end for
@@ -810,48 +838,100 @@ sub onChapterSelected()
     m.global.queueManager.callFunc("playQueue")
 end sub
 
-' The Details tab lists what the file is made of, so it only earns a place
-' when the item actually carries streams
+' The Details tab lists what the file is made of, so it only earns a place on a
+' video with a real source whose streams the server listed
 function hasDetailsInfo() as boolean
-    buildStreamData()
-    return m.streamData.count() > 0
+    itemData = chainLookupReturn(m.top.itemContent, "json", invalid)
+    if not isValid(itemData) or not isStringEqual(itemData.MediaType, "Video") then return false
+    if not isValidAndNotEmpty(itemData.MediaSources) or (itemData.MediaSources[0].Type ?? "") = "Placeholder" then return false
+    return isValidAndNotEmpty(chainLookupReturn(fileInfoSource(), "MediaStreams", invalid))
 end function
 
-sub buildStreamData()
-    m.streamData = []
-    itemData = chainLookupReturn(m.top.itemContent, "json", invalid)
-    if not isValid(itemData) then return
-
-    source = invalid
-    if isValidAndNotEmpty(itemData.MediaSources) then source = itemData.MediaSources[0]
-
-    streams = invalid
-    if isValid(source) and isValidAndNotEmpty(source.MediaStreams)
-        streams = source.MediaStreams
-    else if isValidAndNotEmpty(itemData.MediaStreams)
-        streams = itemData.MediaStreams
-    end if
-    if not isValid(streams) then return
-
-    for each stream in streams
-        heading = stream.Type ?? ""
-        if heading = "" then continue for
-
-        language = stream.Language ?? ""
-        if language <> "" then heading += ` (${language})`
-
-        m.streamData.push({ heading: heading, line: stream.DisplayTitle ?? "" })
+' The version picked in the version picker, otherwise the first one
+function fileInfoSource() as dynamic
+    sources = chainLookupReturn(m.top.itemContent, "json.MediaSources", [])
+    if sources.count() = 0 then return invalid
+    for each candidate in sources
+        if isValid(candidate.Id) and candidate.Id = m.top.selectedVideoStreamId then return candidate
     end for
+    return sources[0]
+end function
+
+sub showFileInfo()
+    source = fileInfoSource()
+    video = invalid
+    audio = []
+    subtitles = []
+    for each stream in chainLookupReturn(source, "MediaStreams", [])
+        streamType = chainLookupReturn(stream, "Type", "")
+        if streamType = "Video" and not isValid(video) then video = stream
+        if streamType = "Audio" then audio.push(stream)
+        if streamType = "Subtitle" then subtitles.push(stream)
+    end for
+
+    ' The audio picker keeps a place in the stream list, while a track knows itself by its own index
+    activeAudio = m.top.selectedAudioStreamIndex
+    streams = chainLookupReturn(m.top.itemContent, "json.MediaStreams", [])
+    if activeAudio >= 0 and activeAudio < streams.count() then activeAudio = chainLookupReturn(streams[activeAudio], "Index", activeAudio)
+
+    added = fileFacts.AddedOn(chainLookupReturn(m.top.itemContent, "json.DateCreated", invalid))
+    if added <> "" then added = Substitute(tr("Date Added: {0}"), added)
+
+    m.fileInfo.callFunc("setContent", {
+        fileName: fileFacts.FileName(source),
+        sizeLine: fileFacts.SizeLine(source),
+        added: added,
+        videoLine: fileFacts.VideoLines(video).join("  •  "),
+        audioLines: fileInfoTrackLines(audio, activeAudio, false),
+        subtitleLines: fileInfoTrackLines(subtitles, m.fileInfoSubtitle, true)
+    })
+    probeFileInfo()
 end sub
 
-sub populateStreamGrid()
-    content = CreateObject("roSGNode", "ContentNode")
-    for each stream in m.streamData
-        row = content.createChild("ContentNode")
-        row.title = stream.heading
-        row.description = stream.line
+function fileInfoTrackLines(streams as object, activeIndex as integer, includeForced as boolean) as object
+    lines = []
+    for each stream in streams
+        lines.push({
+            text: fileFacts.TrackLine(stream, includeForced),
+            active: activeIndex >= 0 and chainLookupReturn(stream, "Index", -1) = activeIndex
+        })
     end for
-    m.streamGrid.content = content
+    return lines
+end function
+
+' Asked again whenever the tab opens or a pick changes what would play, since the answer
+' depends on the tracks as much as the file
+sub probeFileInfo()
+    if isValid(m.fileInfoTask) then m.fileInfoTask.unobserveField("result")
+    m.fileInfo.callFunc("setDirectPlay", { state: "loading" })
+
+    task = CreateObject("roSGNode", "DetailPlaybackInfoTask")
+    task.itemJson = m.top.itemContent.json
+    task.mediaSourceId = chainLookupReturn(fileInfoSource(), "Id", "")
+    task.audioStreamIndex = m.top.selectedAudioStreamIndex
+    task.subtitleStreamIndex = m.fileInfoSubtitle
+    task.observeField("result", "onFileInfoProbed")
+    task.control = TaskControl.RUN
+    m.fileInfoTask = task
+end sub
+
+sub onFileInfoProbed(event as object)
+    result = event.getData()
+    if isValid(result) then m.fileInfo.callFunc("setDirectPlay", result)
+end sub
+
+' The subtitle pick arrives here before the shared handler has stored it, so it is read off
+' the event rather than asked for again
+sub onFileInfoTracksChanged(event as object)
+    if event.getField() = "subtitleStream"
+        m.fileInfoSubtitle = chainLookupReturn(event.getData(), "StreamIndex", SubtitleSelection.NONE)
+    end if
+    if m.fileInfo.visible then showFileInfo()
+end sub
+
+sub onFileInfoFocusMoved()
+    if not m.fileInfo.isInFocusChain() then return
+    scrollContentTo(contentScrollOffset() - m.fileInfo.focusedOffset)
 end sub
 
 sub buildTabBar()
@@ -879,7 +959,7 @@ sub onTabSelected()
     m.episodeRowGrid.visible = false
     m.trackGrid.visible = false
     m.artistAlbumGrid.visible = false
-    m.streamGrid.visible = false
+    m.fileInfo.visible = false
     m.castGrid.visible = false
     if isValid(m.seerrBlock) then m.seerrBlock.visible = false
     m.activeGrid = invalid
@@ -888,9 +968,10 @@ sub onTabSelected()
 
     tabDef = m.sectionTabs[idx]
     if tabDef.kind = "details"
-        populateStreamGrid()
-        m.streamGrid.visible = true
-        m.activeGrid = m.streamGrid
+        m.fileInfoSubtitle = chainLookupReturn(m.global.queueManager.callFunc("getPreferredSubtitleTrack"), "StreamIndex", SubtitleSelection.NONE)
+        showFileInfo()
+        m.fileInfo.visible = true
+        m.activeGrid = m.fileInfo
     else if tabDef.kind = "episodes"
         populateEpisodeRowGrid()
         m.episodeRowGrid.visible = true
@@ -982,10 +1063,14 @@ sub onTabBarEscape()
         focusButtonsFromTabs()
     else if dir = "down"
         scrollAmount = contentScrollOffset()
-        if isValid(m.seerrBlock) and isValid(m.activeGrid) and m.activeGrid.isSameNode(m.seerrBlock)
-            if m.seerrBlock.callFunc("focusFirst")
-                m.top.lastFocus = m.seerrBlock
-                setLastFocus(m.seerrBlock)
+        ' The Seerr and Details tabs hold blocks of their own rather than a grid
+        block = invalid
+        if isValid(m.activeGrid) and isValid(m.seerrBlock) and m.activeGrid.isSameNode(m.seerrBlock) then block = m.seerrBlock
+        if isValid(m.activeGrid) and m.activeGrid.isSameNode(m.fileInfo) then block = m.fileInfo
+        if isValid(block)
+            if block.callFunc("focusFirst")
+                m.top.lastFocus = block
+                setLastFocus(block)
                 scrollContentTo(scrollAmount)
             end if
             return
@@ -1073,6 +1158,7 @@ sub renderDetailContent()
     updateButtonVisibility(itemData)
 
     if m.loadStatus = ViewLoadStatus.RELOAD
+        if isCollection() then refreshCollectionMembers()
         return
     end if
 
@@ -1109,9 +1195,11 @@ sub renderDetailContent()
 
     populateRatings(itemData)
     fetchMDBListRatings(itemData)
+    watchAnimeMarker(item, m.top.seerrOnly ? invalid : itemData)
     populateGenres(itemData)
     updateStatusBadge(itemData)
     updateUpcomingBadge(itemData)
+    updateSeerrPills()
     populateRuntime(itemData)
 
     setFieldText("title", itemData.name)
@@ -1150,6 +1238,14 @@ end sub
 ' ============================================
 ' Item type helper
 ' ============================================
+
+function collectionMembers() as object
+    return m.collectionMembers ?? []
+end function
+
+sub collectionMemberRemoved(itemId as string)
+    dropCollectionMember(itemId)
+end sub
 
 function isSeason() as boolean
     return LCase(m.top.itemType) = "season"
@@ -1340,8 +1436,7 @@ sub buildTechRow(itemData as object)
     if isValidAndNotEmpty(itemData.MediaSources) then source = itemData.MediaSources[0]
 
     if isValid(source) and not isSeries() and not isSeason()
-        bytes = source.Size
-        if isValid(bytes) and bytes > 0 then sizeNode.text = formatMediaSize(bytes)
+        sizeNode.text = fileFacts.FormatSize(source.Size)
     end if
 
     labels = mediaBadges.Build(itemData)
@@ -1411,32 +1506,6 @@ function layoutTechChips(labels as object) as float
     return rowHeight
 end function
 
-function formatMediaSize(bytes as longinteger) as string
-    megabytes = bytes / 1048576.0
-    if megabytes <= 999 then return `${Int(megabytes + 0.5)} MB`
-
-    gigabytes = megabytes / 1024.0
-    whole = Int(gigabytes)
-    hundredths = Int((gigabytes - whole) * 100 + 0.5)
-    if hundredths >= 100
-        whole += 1
-        hundredths = 0
-    end if
-
-    return `${whole}.${padLeftZero(hundredths)} GB`
-end function
-
-function padLeftZero(value as integer) as string
-    if value < 10 then return `0${value}`
-
-    return value.toStr()
-end function
-
-
-
-
-
-
 ' ============================================
 ' Layout: metadata row (horizontal positioning)
 ' ============================================
@@ -1468,6 +1537,7 @@ sub layoutContainer()
     if m.titleNode.visible then placeHeroRow(m.titleNode, m.titleNode.boundingRect().height, HERO_GAP)
 
     placeHeroRow(m.metadataRow, m.metaRowHeight, HERO_GAP)
+    if isValid(m.animePills) and m.animePills.visible then placeHeroRow(m.animePills, m.animePills.rowHeight, HERO_GAP)
     if m.techRow.visible then placeHeroRow(m.techRow, m.techRowHeight, HERO_GAP)
 
     ratingsRow = m.top.findNode("ratingsRow")
@@ -1487,12 +1557,11 @@ sub layoutContainer()
     ' gap rather than letting the column run long
     buttonGap = m.techRow.visible ? HERO_ACTIONS_TIGHT_GAP : HERO_ACTIONS_GAP
     placeHeroRow(m.buttonRowContainer, BUTTON_ROW_HEIGHT, buttonGap)
-    if m.buttonRowExtraContainer.visible then placeHeroRow(m.buttonRowExtraContainer, BUTTON_ROW_HEIGHT, BUTTON_ROW_GAP)
 
     placeHeroRow(m.tabBar, TAB_BAR_HEIGHT, HERO_TABS_GAP)
 
     contentY = m.heroY + TAB_CONTENT_GAP
-    for each id in ["streamGrid", "tabGrid", "castGrid", "studioGrid", "chaptersGrid", "episodeRowGrid", "trackGrid", "artistAlbumGrid", "seerrBlock"]
+    for each id in ["fileInfo", "tabGrid", "castGrid", "studioGrid", "chaptersGrid", "episodeRowGrid", "trackGrid", "artistAlbumGrid", "seerrBlock"]
         grid = m.top.findNode(id)
         if isValid(grid) then grid.translation = [0, contentY]
     end for
@@ -1506,6 +1575,20 @@ sub placeHeroRow(node as object, height as float, gap as float)
     node.translation = [0, m.heroY]
     m.heroY += height
     m.heroPlaced = true
+end sub
+
+' The pills for an anime episode or movie, between the facts and the technical row
+sub showAnimeMarker(marker as dynamic)
+    if not isValid(m.animePills)
+        if not animeMarkers.HasPills(marker) then return
+
+        m.animePills = m.container.createChild("AnimeMarkerPills")
+        m.animePills.pillSize = "large"
+    end if
+
+    wasShown = m.animePills.visible
+    m.animePills.marker = marker ?? {}
+    if wasShown or m.animePills.visible then layoutContainer()
 end sub
 
 ' ============================================
@@ -1549,8 +1632,11 @@ sub clearButtonRow()
     m.buttonGroups = []
 end sub
 
+' The row keeps every button and scrolls sideways, unless the viewer capped how many stay on
+' screen, in which case the rest go behind More Actions
 sub commitButtonRow()
-    foldButtonRow()
+    foldButtonsIntoMenu(cappedButtonCount(m.buttonGroups, { maxVisible: 0, overflowAsMenu: false, countCapped: false }))
+    if m.currentButtonIndex >= m.buttonGroups.count() then m.currentButtonIndex = 0
     centerButtonRow()
 end sub
 
@@ -1622,6 +1708,11 @@ end sub
 
 ' Item types that own their whole action row
 function typeSpecificButtons() as boolean
+    if isCollection()
+        addCollectionButtons()
+        return true
+    end if
+
     if isSeason()
         addSeasonButtons()
         return true
@@ -1642,130 +1733,29 @@ function markActiveButton(config as object, isActive as boolean, _ink as string)
     return config
 end function
 
-' Folds whatever does not fit under a trailing More button, the way the classic screen
-' handles a long row. The width limit leaves room beside the up next card, and holds back
-' enough for the widest label, since focusing a button grows the row by that much and
-' would otherwise push the tail behind the card.
-sub foldButtonRow()
-    unfoldButtonRow()
-    m.primaryCount = m.buttonGroups.count()
-
-    limit = CONTENT_WIDTH
-    if m.upNextCard.visible then limit = CONTENT_WIDTH - UP_NEXT_WIDTH - (BUTTON_ROW_GAP * 2)
-
-    reserve = 0
-    for each buttonGroup in m.buttonGroups
-        labelNode = buttonGroup.findNode("btnLabel")
-        if isValid(labelNode)
-            labelWidth = labelNode.boundingRect().width + BUTTON_LABEL_PAD
-            if labelWidth > reserve then reserve = labelWidth
-        end if
-    end for
-
-    stride = BUTTON_COLLAPSED_WIDTH + BUTTON_ROW_GAP
-    capacity = Int((limit - reserve + BUTTON_ROW_GAP) / stride)
-    if capacity < 2 then capacity = 2
-
-    if m.buttonGroups.count() <= capacity
-        m.actionsExpanded = false
-        m.buttonRowExtraContainer.visible = false
-        return
-    end if
-
-    for i = capacity - 1 to m.buttonGroups.count() - 1
-        buttonGroup = m.buttonGroups[i]
-        m.buttonRow.removeChild(buttonGroup)
-        m.buttonRowExtra.appendChild(buttonGroup)
-    end for
-
-    moreButton = detailButtons.createModernButton(moreButtonConfig(), 0)
-    moreButton.observeField("focusedChild", "onButtonFocusChanged")
-    m.buttonRow.appendChild(moreButton)
-
-    ' More takes the last slot on the first row, so everything after it renumbers
-    regrouped = []
-    for i = 0 to capacity - 2
-        regrouped.push(m.buttonGroups[i])
-    end for
-    regrouped.push(moreButton)
-    for i = capacity - 1 to m.buttonGroups.count() - 1
-        regrouped.push(m.buttonGroups[i])
-    end for
-    m.buttonGroups = regrouped
-    for i = 0 to m.buttonGroups.count() - 1
-        m.buttonGroups[i].buttonIndex = i
-    end for
-
-    m.primaryCount = capacity
-    m.buttonRowExtraContainer.visible = m.actionsExpanded
-
-    ' A fold can land while focus sits on a button that just moved below, so focus
-    ' retreats to More rather than staying on something hidden
-    if not m.buttonRowExtraContainer.visible
-        for i = m.primaryCount to m.buttonGroups.count() - 1
-            if m.buttonGroups[i].isInFocusChain()
-                focusButton(m.primaryCount - 1)
-                exit for
-            end if
-        end for
-        if m.currentButtonIndex >= m.primaryCount then m.currentButtonIndex = m.primaryCount - 1
-    end if
-end sub
-
-' The card can arrive after the row is first drawn, so the fold runs again with the
-' narrower limit. Undoing the previous split first keeps the fold safe to repeat.
-sub unfoldButtonRow()
-    kept = []
-    for each buttonGroup in m.buttonGroups
-        if buttonGroup.id = "moreActionsButton"
-            m.buttonRow.removeChild(buttonGroup)
-        else
-            kept.push(buttonGroup)
-        end if
-    end for
-    m.buttonGroups = kept
-
-    while m.buttonRowExtra.getChildCount() > 0
-        buttonGroup = m.buttonRowExtra.getChild(0)
-        m.buttonRowExtra.removeChild(buttonGroup)
-        m.buttonRow.appendChild(buttonGroup)
-    end while
-
-    for i = 0 to m.buttonGroups.count() - 1
-        m.buttonGroups[i].buttonIndex = i
-    end for
-end sub
-
-sub toggleMoreActions()
-    m.actionsExpanded = not m.actionsExpanded
-    m.buttonRowExtraContainer.visible = m.actionsExpanded and m.buttonRowExtra.getChildCount() > 0
-
-    moreButton = m.top.findNode("moreActionsButton")
-    if isValid(moreButton)
-        config = moreButtonConfig()
-        moreButton.iconUri = config.icon
-        moreButton.labelText = config.label
-    end if
-
-    layoutContainer()
-end sub
-
 ' Lays the pill buttons out left to right, giving the focused one room for its
 ' expanded label so the ones after it shift along.
 sub layoutButtonRow(focusIndex as integer)
     x = 0
+    focusLeft = 0
+    focusRight = 0
     for i = 0 to m.buttonGroups.count() - 1
         button = m.buttonGroups[i]
         if button = invalid then continue for
-        if i = m.primaryCount then x = 0
         button.translation = [x, 0]
         width = BUTTON_COLLAPSED_WIDTH
         if i = focusIndex
-            labelNode = button.findNode("btnLabel")
-            if isValid(labelNode) then width = BUTTON_COLLAPSED_WIDTH + labelNode.boundingRect().width + BUTTON_LABEL_PAD
+            width = BUTTON_COLLAPSED_WIDTH + button.labelWidth + BUTTON_LABEL_PAD
+            focusLeft = x
+            focusRight = x + width
         end if
         x += width + BUTTON_ROW_GAP
     end for
+
+    ' Beside the up next card the row keeps to the room the card leaves it
+    viewport = CONTENT_WIDTH
+    if m.upNextCard.visible then viewport = CONTENT_WIDTH - UP_NEXT_WIDTH - (BUTTON_ROW_GAP * 2)
+    placeButtonRow(m.buttonRowContainer, true, focusLeft, focusRight, x - BUTTON_ROW_GAP, viewport)
 end sub
 
 sub highlightButton(index as integer)
@@ -1785,7 +1775,9 @@ end sub
 ' Actions only one screen offers, the season and music rows the classic screen
 ' never draws
 sub handleScreenButtonAction(action as string)
-    if action = "seasonResume"
+    if action = "collectionPlay" or action = "collectionShuffle"
+        playCollection(action = "collectionShuffle")
+    else if action = "seasonResume"
         ep = findSeasonResumeEpisode()
         if isValid(ep) then m.top.quickPlayNode = ep
     else if action = "seasonPlay"
@@ -1836,6 +1828,7 @@ end sub
 
 sub refreshAfterVersionChange()
     layoutMetadataRow()
+    if m.fileInfo.visible then showFileInfo()
 end sub
 
 ' How far the page moves so the tab content clears the header. The description is
@@ -1851,6 +1844,7 @@ end function
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
+    if m.overflowMenu.visible then return false
 
     ' A picker left open across a screensaver can come back without focus, which
     ' would leave this screen answering the remote from behind it
@@ -1883,7 +1877,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return true
     end if
 
-    if key = KeyCode.UP and m.buttonGroups.count() > 0 and m.currentButtonIndex < m.primaryCount
+    if key = KeyCode.UP and m.buttonGroups.count() > 0
         for each btn in m.buttonGroups
             if btn.hasFocus() or btn.isInFocusChain()
                 unhighlightAllButtons()
@@ -1900,9 +1894,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end for
     end if
 
-    ' The Seerr tab holds a block of sections rather than a grid, and it has already
-    ' had its say by the time an up press reaches here
-    if key = KeyCode.UP and isValid(m.seerrBlock) and m.seerrBlock.isInFocusChain()
+    ' The Seerr and Details tabs hold blocks rather than grids, and they have
+    ' already had their say by the time an up press reaches here
+    if key = KeyCode.UP and ((isValid(m.seerrBlock) and m.seerrBlock.isInFocusChain()) or m.fileInfo.isInFocusChain())
         if isValid(m.tabBar) and m.tabsBuilt
             m.tabBar.setFocus(true)
             m.top.lastFocus = m.tabBar
@@ -1938,35 +1932,26 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     if isButtonFocused
         if key = KeyCode.LEFT
-            rowFirst = m.currentButtonIndex >= m.primaryCount ? m.primaryCount : 0
-            if m.currentButtonIndex > rowFirst
+            if m.currentButtonIndex > 0
                 focusButton(m.currentButtonIndex - 1)
             else
                 return FocusSidebar(m.top)
             end if
             return true
         else if key = KeyCode.RIGHT
-            rowLast = m.currentButtonIndex < m.primaryCount ? m.primaryCount - 1 : m.buttonGroups.count() - 1
-            if m.currentButtonIndex < rowLast
+            if m.currentButtonIndex < m.buttonGroups.count() - 1
                 focusButton(m.currentButtonIndex + 1)
+            else if m.upNextCard.visible
+                ' The next up card sits beside the row with nothing else near it, so the end of
+                ' the row is the way across
+                unhighlightAllButtons()
+                focusUpNext()
             end if
             return true
         else if key = KeyCode.OK
             handleButtonSelect()
             return true
-        else if key = KeyCode.UP and m.currentButtonIndex >= m.primaryCount
-            ' Back to the same column on the first row, or to More where the row is shorter
-            column = m.currentButtonIndex - m.primaryCount
-            if column >= m.primaryCount then column = m.primaryCount - 1
-            focusButton(column)
-            return true
         else if key = KeyCode.DOWN
-            if m.actionsExpanded and m.currentButtonIndex < m.primaryCount and m.buttonGroups.count() > m.primaryCount
-                column = m.primaryCount + m.currentButtonIndex
-                if column > m.buttonGroups.count() - 1 then column = m.buttonGroups.count() - 1
-                focusButton(column)
-                return true
-            end if
             if isValid(m.tabBar) and m.tabsBuilt
                 m.tabBar.setFocus(true)
                 m.top.lastFocus = m.tabBar
@@ -1985,6 +1970,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
 
         if isValid(m.activeGrid) and m.activeGrid.isInFocusChain()
+            if m.activeGrid.isSameNode(m.fileInfo) then m.fileInfo.callFunc("clearFocus")
             if isValid(m.tabBar) and m.tabsBuilt
                 m.tabBar.setFocus(true)
                 m.top.lastFocus = m.tabBar
@@ -2005,6 +1991,12 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
 
         return false
+    end if
+
+    if key = KeyCode.OPTIONS and isValid(m.activeGrid) and m.activeGrid.isInFocusChain()
+        if m.activeGrid.isSameNode(m.tabGrid) or m.activeGrid.isSameNode(m.episodeRowGrid) or m.activeGrid.isSameNode(m.artistAlbumGrid)
+            return showItemMenu(itemMenuGridCard(m.activeGrid), itemMenuPageOptions())
+        end if
     end if
 
     if key = KeyCode.PLAY and m.tabGrid <> invalid and m.tabGrid.isInFocusChain()

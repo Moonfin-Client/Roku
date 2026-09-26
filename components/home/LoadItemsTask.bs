@@ -13,11 +13,15 @@ import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/libraryScope.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/parentalControls.bs"
+import "pkg:/source/utils/parentalFilter.bs"
 import "pkg:/source/utils/seerrBrowseRows.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 
 ' Items a "Recently Added" row holds, both per library and after libraries are merged
-const LATEST_MEDIA_LIMIT = 25
+const LATEST_MEDIA_LIMIT = 16
+' A TV library asks for twice as many, since its episodes fold into fewer series cards
+const LATEST_TV_FETCH_LIMIT = 32
 
 ' How far ahead a calendar row looks for upcoming releases
 const CALENDAR_WINDOW_DAYS = 90
@@ -80,18 +84,23 @@ function loadLatestMedia() as object
     end if
 
     if targetParentIds.Count() > 0
+        collectionType = LCase(toNormalizedString(chainLookupReturn(m.top.metadata, "contentType", "") ?? ""))
+        isTv = collectionType = "tvshows" or collectionType = "shows"
+        fetchLimit = LATEST_MEDIA_LIMIT
+        if isTv then fetchLimit = LATEST_TV_FETCH_LIMIT
         seenIds = {}
         for each pId in targetParentIds
             params = {
                 userId: m.global.session.user.id,
-                limit: LATEST_MEDIA_LIMIT,
+                limit: fetchLimit,
                 parentId: pId,
+                groupItems: true,
                 enableImageTypes: `${ImageType.PRIMARY}, ${ImageType.BACKDROP}, ${ImageType.THUMB}`,
                 imageTypeLimit: 1,
                 enableTotalRecordCount: false,
                 fields: "Genres,DateCreated"
             }
-            libData = api.items.GetLatest(params)
+            libData = normalizeLatestItems(api.items.GetLatest(params), isTv, collectionType = "")
             if isValidAndNotEmpty(libData)
                 for each rawItem in libData
                     itemIdStr = LCase(toNormalizedString(rawItem.LookupCI("Id")))
@@ -106,16 +115,7 @@ function loadLatestMedia() as object
         ' Each library returns its own newest-first page, so a merged row arrives grouped by
         ' library. Without this an old item from the first library outranks a new one from the
         ' second, and the row ends up holding a page per library instead of a single page.
-        if targetParentIds.Count() > 1
-            data = sortByDateCreatedDescending(data)
-            if data.Count() > LATEST_MEDIA_LIMIT
-                trimmed = []
-                for i = 0 to LATEST_MEDIA_LIMIT - 1
-                    trimmed.push(data[i])
-                end for
-                data = trimmed
-            end if
-        end if
+        if targetParentIds.Count() > 1 then data = firstItems(sortByDateCreatedDescending(data), LATEST_MEDIA_LIMIT)
     end if
 
     if not isValidAndNotEmpty(data) then return results
@@ -161,6 +161,74 @@ function loadLatestMedia() as object
     end for
 
     return results
+end function
+
+' A TV library's new episodes and seasons show as one card per series, and a library of no
+' particular type does the same once anything in it is an episode or a season
+function normalizeLatestItems(items as dynamic, isTv as boolean, untyped as boolean) as object
+    if not isValidAndNotEmpty(items) then return []
+    collapse = isTv
+    if not collapse and untyped
+        for each item in items
+            itemType = item.LookupCI("Type")
+            if isStringEqual(itemType, "Episode") or isStringEqual(itemType, "Season")
+                collapse = true
+                exit for
+            end if
+        end for
+    end if
+
+    normalized = items
+    if collapse
+        normalized = []
+        seen = {}
+        ' Newest first, so each series keeps its newest entry
+        for each item in items
+            card = seriesCardForLatestItem(item) ?? item
+            cardId = LCase(toNormalizedString(card.LookupCI("Id")))
+            if seen.DoesExist(cardId) then continue for
+            seen[cardId] = true
+            normalized.push(card)
+        end for
+    end if
+
+    return firstItems(normalized, LATEST_MEDIA_LIMIT)
+end function
+
+function firstItems(items as object, limit as integer) as object
+    if items.Count() <= limit then return items
+    kept = []
+    for i = 0 to limit - 1
+        kept.push(items[i])
+    end for
+    return kept
+end function
+
+' The series an episode or season belongs to, drawn from what the entry carries, or invalid when
+' it cant say which series. Its watched state was the entry's own, so the card goes without one.
+function seriesCardForLatestItem(item as object) as dynamic
+    itemType = item.LookupCI("Type")
+    if not isStringEqual(itemType, "Episode") and not isStringEqual(itemType, "Season") then return invalid
+    seriesId = item.LookupCI("SeriesId") ?? item.LookupCI("ParentId")
+    seriesName = (item.LookupCI("SeriesName") ?? "").toStr().Trim()
+    if not isValidAndNotEmpty(seriesId) or seriesName = "" then return invalid
+
+    card = {}
+    card.Append(item)
+    card.AddReplace("Id", seriesId)
+    card.AddReplace("Type", "Series")
+    card.AddReplace("Name", seriesName)
+    seriesImage = item.LookupCI("SeriesPrimaryImageTag") ?? item.LookupCI("ParentPrimaryImageTag")
+    if isValidAndNotEmpty(seriesImage)
+        imageTags = {}
+        if isValid(item.LookupCI("ImageTags")) then imageTags.Append(item.LookupCI("ImageTags"))
+        imageTags.AddReplace("Primary", seriesImage)
+        card.AddReplace("ImageTags", imageTags)
+    end if
+    for each field in ["IndexNumber", "ParentIndexNumber", "ProviderIds", "UserData", "RunTimeTicks"]
+        card.Delete(field)
+    end for
+    return card
 end function
 
 function loadRecentlyReleased() as object
@@ -403,6 +471,7 @@ end sub
 function loadSinceYouWatchedLocal(seed as object, sourceType as string, includeWatched as boolean) as object
     baseId = seed.LookupCI("Id")
     if not isValid(baseId) then baseId = ""
+    blockFilter = parentalControls.ActiveFilter()
 
     if isValidAndNotEmpty(baseId) and moonfinPlugin.AreRecommendationsSupported()
         mfData = api.items.GetMoonfinSimilar(baseId, {
@@ -413,6 +482,7 @@ function loadSinceYouWatchedLocal(seed as object, sourceType as string, includeW
             results = []
             for each item in mfData.Items
                 if not includeWatched and isItemPlayed(item) then continue for
+                if parentalFilter.IsBlockedItem(blockFilter, item) then continue for
                 results.Push(makeHomeItem(item))
                 if results.Count() >= 15 then exit for
             end for
@@ -475,6 +545,7 @@ function loadSinceYouWatchedLocal(seed as object, sourceType as string, includeW
         candidate = candidates[id]
         if id = baseId then continue for
         if not includeWatched and isItemPlayed(candidate) then continue for
+        if parentalFilter.IsBlockedItem(blockFilter, candidate) then continue for
         scored.Push({ item: candidate, score: HomeRecommendations.scoreCandidate(candidate, ctx) })
     end for
 
@@ -497,6 +568,7 @@ function loadSinceYouWatchedLocal(seed as object, sourceType as string, includeW
                 fillerId = fillerItem.LookupCI("Id")
                 if not isValidAndNotEmpty(fillerId) or candidates.DoesExist(fillerId) or fillerId = baseId then continue for
                 if not includeWatched and isItemPlayed(fillerItem) then continue for
+                if parentalFilter.IsBlockedItem(blockFilter, fillerItem) then continue for
                 candidates[fillerId] = fillerItem
                 scored.Push({ item: fillerItem, score: HomeRecommendations.scoreCandidate(fillerItem, ctx) })
                 if scored.Count() >= 30 then exit for
@@ -703,31 +775,6 @@ function loadSinceYouWatchedServer(seed as object, includeWatched = false as boo
     return results
 end function
 
-' Hybrid leads with the server answer and tops the row up from local scoring.
-function mergeHomeItems(primary as object, secondary as object, limit as integer) as object
-    merged = []
-    seen = {}
-    sources = [primary, secondary]
-
-    for each list in sources
-        if not isValidAndNotEmpty(list) then continue for
-
-        for each node in list
-            if merged.Count() >= limit then exit for
-
-            id = chainLookupReturn(node, "json.Id", "")
-            if id <> ""
-                if seen.DoesExist(id) then continue for
-                seen[id] = true
-            end if
-
-            merged.Push(node)
-        end for
-    end for
-
-    return merged
-end function
-
 ' Builds one Since You Watched row seeded from the Nth recently watched item.
 function loadSinceYouWatched() as object
     settings = m.global.session.user.settings
@@ -761,24 +808,33 @@ function loadSinceYouWatched() as object
         serverItems = loadSinceYouWatchedServer(seed, includeWatched)
         if isValidAndNotEmpty(serverItems) then return serverItems
     else if mode = "hybrid"
-        return mergeHomeItems(loadSinceYouWatchedServer(seed, includeWatched), loadSinceYouWatchedLocal(seed, sourceType, includeWatched), 15)
+        return HomeRecommendations.mergeItems(loadSinceYouWatchedServer(seed, includeWatched), loadSinceYouWatchedLocal(seed, sourceType, includeWatched), 15)
     end if
 
     return loadSinceYouWatchedLocal(seed, sourceType, includeWatched)
 end function
 
+' How many items a query matched, from the total when the server sends one
+function matchCount(response as object) as integer
+    total = response.LookupCI("TotalRecordCount")
+    if isValid(total) then return total
+    if isChainValid(response, "Items") then return response.Items.Count()
+    return 0
+end function
+
+' The unplayed count an item already reports, or invalid when it reports none
+function reportedUnplayed(item as object) as dynamic
+    count = item.LookupCI("UnplayedItemCount")
+    if isValid(count) then return count
+    return chainLookupReturn(item, "UserData.UnplayedItemCount", invalid)
+end function
+
+' A series the list says is played gets one check for an unplayed episode. A failed check
+' keeps it.
 function isFullyWatchedSeries(series as object, userId as string) as boolean
-    userData = series.LookupCI("UserData")
-    played = false
-    unplayed = 0
-    if isValid(userData)
-        if userData.Played = true then played = true
-        unplayedCount = userData.LookupCI("UnplayedItemCount")
-        if isValid(unplayedCount) then unplayed = unplayedCount
-    end if
-    topUnplayed = series.LookupCI("UnplayedItemCount")
-    if isValid(topUnplayed) then unplayed = topUnplayed
-    if not played or unplayed > 0 then return false
+    if chainLookupReturn(series, "UserData.Played", false) <> true then return false
+    unplayed = reportedUnplayed(series)
+    if isValid(unplayed) and unplayed > 0 then return false
 
     seriesId = series.LookupCI("Id")
     if not isValidAndNotEmpty(seriesId) then return true
@@ -792,10 +848,7 @@ function isFullyWatchedSeries(series as object, userId as string) as boolean
         limit: 1
     })
     if not isValid(check) then return true
-    total = check.LookupCI("TotalRecordCount")
-    if isValid(total) then return total = 0
-    if isChainValid(check, "Items") then return check.Items.Count() = 0
-    return true
+    return matchCount(check) = 0
 end function
 
 sub addRewatchShows(watchedItems as object, seriesLastPlayed as object, userId as string, seriesFields as string)
@@ -856,36 +909,46 @@ sub addRewatchCollections(watchedItems as object, collectionLastPlayed as object
     if not isChainValid(boxData, "Items") then return
 
     for each col in boxData.Items
-        colId = col.LookupCI("Id")
-        if not isValidAndNotEmpty(colId) then continue for
-
-        childData = api.items.Get({
-            UserId: userId,
-            ParentId: colId,
-            recursive: true,
-            fields: "UserData"
-        })
-        if not isChainValid(childData, "Items") then continue for
-        if childData.Items.Count() = 0 then continue for
-
-        allPlayed = true
-        maxLastPlayed = ""
-        for each child in childData.Items
-            childUserData = child.LookupCI("UserData")
-            if not isValid(childUserData) or childUserData.Played <> true
-                allPlayed = false
-                exit for
-            end if
-            lastPlayed = childUserData.LookupCI("LastPlayedDate")
-            if isValidAndNotEmpty(lastPlayed) and lastPlayed > maxLastPlayed then maxLastPlayed = lastPlayed
-        end for
-
-        if allPlayed
+        lastPlayed = watchedCollectionLastPlayed(col, userId)
+        if isValid(lastPlayed)
             watchedItems.Push(col)
-            collectionLastPlayed[colId] = maxLastPlayed
+            collectionLastPlayed[col.LookupCI("Id")] = lastPlayed
         end if
     end for
 end sub
+
+' When every item in the collection is played, the newest play date, and otherwise invalid. The
+' list's own count settles most without a request, then one count finds any unplayed item and
+' one more finds the newest played one, which also leaves out an empty collection. A failed
+' check leaves the collection out.
+function watchedCollectionLastPlayed(col as object, userId as string) as dynamic
+    colId = col.LookupCI("Id")
+    if not isValidAndNotEmpty(colId) then return invalid
+    unplayed = reportedUnplayed(col)
+    if isValid(unplayed) and unplayed > 0 then return invalid
+
+    unplayedData = api.items.Get({
+        UserId: userId,
+        ParentId: colId,
+        recursive: true,
+        filters: "IsUnplayed",
+        limit: 1
+    })
+    if not isValid(unplayedData) or matchCount(unplayedData) <> 0 then return invalid
+
+    playedData = api.items.Get({
+        UserId: userId,
+        ParentId: colId,
+        recursive: true,
+        filters: "IsPlayed",
+        sortBy: "DatePlayed",
+        sortOrder: "Descending",
+        limit: 1,
+        fields: "UserData"
+    })
+    if not isChainValid(playedData, "Items") or playedData.Items.Count() = 0 then return invalid
+    return chainLookupReturn(playedData.Items[0], "UserData.LastPlayedDate", "") ?? ""
+end function
 
 function rewatchLastPlayed(item as object, seriesLastPlayed as object, collectionLastPlayed as object) as string
     itemId = item.LookupCI("Id")
@@ -991,7 +1054,8 @@ function loadRewatch() as object
 
     results = []
     count = 0
-    for each item in watchedItems
+    ' Judged before a series is swapped for its first episode, which has no rating of its own
+    for each item in parentalControls.WithoutBlockedItems(watchedItems)
         if count >= 15 then exit for
         resolved = resolveRewatchItem(item, userId)
         if isValid(resolved)
@@ -1976,6 +2040,8 @@ function loadPeople() as object
     return results
 end function
 
+' Libraries, genres, studios, playlists and single lookups carry no rating, so only rows of titles
+' are filtered
 sub loadItems()
     if not isValidAndNotEmpty(m.global.session.user.id)
         m.top.content = []
@@ -1986,7 +2052,7 @@ sub loadItems()
     ' the plugin proxies, so it has to be recognised before that branch claims it
     picked = homeRowLayout.SourceFromId(m.top.itemsToLoad)
     if isValid(picked)
-        m.top.content = loadPickedRow(picked)
+        m.top.content = parentalControls.WithoutBlockedItems(loadPickedRow(picked))
         return
     end if
 
@@ -1994,7 +2060,7 @@ sub loadItems()
     ' come from the server, so match the prefix case-insensitively
     lowerItemsToLoad = LCase(m.top.itemsToLoad)
     if lowerItemsToLoad.startsWith("imdb_") or lowerItemsToLoad.startsWith("tmdb_") or lowerItemsToLoad.startsWith("seerr_") or lowerItemsToLoad.startsWith("plugindynamic:")
-        m.top.content = loadCustomDynamicList(m.top.itemsToLoad, m.top.additionalData)
+        m.top.content = parentalControls.WithoutBlockedItems(loadCustomDynamicList(m.top.itemsToLoad, m.top.additionalData))
         return
     end if
 
@@ -2004,37 +2070,37 @@ sub loadItems()
     end if
 
     if isStringEqual(m.top.itemsToLoad, "latest")
-        m.top.content = loadLatestMedia()
+        m.top.content = parentalControls.WithoutBlockedItems(loadLatestMedia())
         return
     end if
 
     if isStringEqual(m.top.itemsToLoad, "recentlyReleased")
-        m.top.content = loadRecentlyReleased()
+        m.top.content = parentalControls.WithoutBlockedItems(loadRecentlyReleased())
         return
     end if
 
     if isStringEqual(m.top.itemsToLoad, "sinceYouWatched")
-        m.top.content = loadSinceYouWatched()
+        m.top.content = parentalControls.WithoutBlockedItems(loadSinceYouWatched())
         return
     end if
 
     if isStringEqual(m.top.itemsToLoad, "rewatch")
-        m.top.content = loadRewatch()
+        m.top.content = parentalControls.WithoutBlockedItems(loadRewatch())
         return
     end if
 
     if isStringEqual(m.top.itemsToLoad, "continue")
-        m.top.content = loadContinueWatching()
+        m.top.content = parentalControls.WithoutBlockedItems(loadContinueWatching())
         return
     end if
 
     if isStringEqual(m.top.itemsToLoad, "mergedContinueWatching")
-        m.top.content = loadMergedContinueWatching()
+        m.top.content = parentalControls.WithoutBlockedItems(loadMergedContinueWatching())
         return
     end if
 
     if isStringEqual(m.top.itemsToLoad, "nextUp")
-        m.top.content = loadNextUp()
+        m.top.content = parentalControls.WithoutBlockedItems(loadNextUp())
         return
     end if
 
@@ -2048,12 +2114,12 @@ sub loadItems()
     end if
 
     if isStringEqual(m.top.itemsToLoad, "favorites")
-        m.top.content = loadFavorites()
+        m.top.content = parentalControls.WithoutBlockedItems(loadFavorites())
         return
     end if
 
     if isStringEqual(m.top.itemsToLoad, "mylist")
-        m.top.content = loadMyList()
+        m.top.content = parentalControls.WithoutBlockedItems(loadMyList())
         return
     end if
 
@@ -2068,7 +2134,7 @@ sub loadItems()
     end if
 
     if isStringEqual(m.top.itemsToLoad, "collections")
-        m.top.content = loadCollections()
+        m.top.content = parentalControls.WithoutBlockedItems(loadCollections())
         return
     end if
 
@@ -2176,12 +2242,12 @@ sub loadItems()
     end if
 
     if isStringEqual(m.top.itemsToLoad, "continueListening")
-        m.top.content = loadContinueListening()
+        m.top.content = parentalControls.WithoutBlockedItems(loadContinueListening())
         return
     end if
 
     if isStringEqual(m.top.itemsToLoad, "onNow")
-        m.top.content = loadLiveTVOnNow()
+        m.top.content = parentalControls.WithoutBlockedItems(loadLiveTVOnNow())
         return
     end if
 

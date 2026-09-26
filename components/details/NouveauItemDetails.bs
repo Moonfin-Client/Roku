@@ -1,12 +1,17 @@
 import "pkg:/components/details/detailButtonHost.bs"
+import "pkg:/components/details/detailCollectionHost.bs"
 import "pkg:/components/details/detailMetadataHost.bs"
 import "pkg:/components/details/detailPopulationHost.bs"
 import "pkg:/components/details/detailScreenHost.bs"
 import "pkg:/components/details/detailTrackHost.bs"
+import "pkg:/components/itemMenu/itemMenuDetailHost.bs"
+import "pkg:/components/personCreditsHost.bs"
+import "pkg:/components/userDataHost.bs"
 
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/utils/detailButtons.bs"
 import "pkg:/source/utils/detailImages.bs"
+import "pkg:/source/utils/fileFacts.bs"
 import "pkg:/source/utils/fontApply.bs"
 import "pkg:/source/utils/mediaBadges.bs"
 import "pkg:/source/utils/misc.bs"
@@ -57,19 +62,22 @@ const NOUVEAU_ACTIONS_GAP = 36
 const NOUVEAU_SECTION_GAP = 64
 const NOUVEAU_DETAILS_GAP = 80
 const NOUVEAU_PAGE_TAIL = 80
+' How far a press past the last stop scrolls, about half a screen so what was just read stays in view
+const NOUVEAU_READ_STEP = 450
 const NOUVEAU_SEASON_BAR_HEIGHT = 63
 const NOUVEAU_SEASON_BAR_GAP = 24
 
-' The action row keeps one button carrying a word and circles after it. Past three
-' circles only two stay out, with the rest behind More.
+' The action row keeps one button carrying a word and circles after it
 const NOUVEAU_BUTTON_SIZE = 75
 const NOUVEAU_BUTTON_GAP = 12
 const NOUVEAU_PRIMARY_GAP = 18
 const NOUVEAU_BUTTON_LABEL_PAD = 41
-const NOUVEAU_MAX_INLINE = 3
-const NOUVEAU_INLINE_WITH_OVERFLOW = 2
+' A person's page asks for this much of their filmography, and draws their backdrop faintly
+const NOUVEAU_PERSON_LIMIT = 50
+const NOUVEAU_PERSON_BACKDROP_ALPHA = 0.4
 
 sub init()
+    observeUserData()
     m.loadStatus = ViewLoadStatus.INIT
     m.top.observeField("seerrButtonsStale", "onSeerrButtonsStale")
     m.global.queueManager.callFunc("setForceTranscode", PlaybackMethod.PLAYNORMALLY)
@@ -85,7 +93,13 @@ sub init()
     m.badgesRow = m.top.findNode("badgesRow")
     m.statusBadge = m.top.findNode("statusBadge")
     m.upcomingBadge = m.top.findNode("upcomingBadge")
+    m.seerrPills = m.top.findNode("seerrPills")
+    m.upcomingIncludesSeasons = true
+    ' The badges are a fixed height pill on this hero
+    m.badgeHeight = 30
+    m.badgePadH = 11
     m.metadataRow = m.top.findNode("metadataRow")
+    m.personMeta = m.top.findNode("personMeta")
     m.metaSeparators = m.top.findNode("metaSeparators")
     m.runtimeGroup = m.top.findNode("runtimeGroup")
     m.techRow = m.top.findNode("techRow")
@@ -98,7 +112,7 @@ sub init()
 
     ' The badges and the genres have rows of their own on this hero, so they take
     ' no part in the facts line
-    m.metaRowExcludes = { statusBadge: true, upcomingBadge: true, metaGenres: true }
+    m.metaRowExcludes = { statusBadge: true, upcomingBadge: true, seerrPills: true, metaGenres: true }
     m.metaRowHeight = 0
 
     m.backdrop = m.top.findNode("backdrop")
@@ -154,7 +168,6 @@ sub init()
     m.buttonGroups = []
     m.overflowActions = []
     m.currentButtonIndex = 0
-    m.actionsExpanded = false
 
     m.rails = []
     m.chain = []
@@ -170,6 +183,7 @@ sub init()
     m.seasonBarRail = -1
     m.directPlayState = "loading"
     m.directPlaySupported = false
+    m.directPlayReasons = ""
 
     m.sectionData = newSectionData()
     m.seasonNumbers = []
@@ -194,7 +208,7 @@ sub sizeHeroFonts()
     m.top.findNode("upcomingBadgeText").font.size = fontApply.ThemeTextSize(13)
 
     metaSize = fontApply.ThemeTextSize(16)
-    for each id in ["releaseYear", "officialRating", "seasonCount", "episodeNumber", "runtime", "endsAt"]
+    for each id in ["releaseYear", "officialRating", "seasonCount", "episodeNumber", "runtime", "endsAt", "personMeta"]
         node = m.top.findNode(id)
         if isValid(node) then node.font.size = metaSize
     end for
@@ -221,7 +235,9 @@ function newSectionData() as object
         nextUpId: "",
         seerrRecommendations: [],
         seerrSimilar: [],
-        seerrResolved: false
+        seerrResolved: false,
+        collection: [],
+        person: { movies: [], series: [], guest: [], music: [], appearances: [], crew: [] }
     }
 end function
 
@@ -259,7 +275,7 @@ sub renderDetailContent()
 
     loadSeerrBlock(itemData)
 
-    if isValid(m.themeMusicPlayer) and not m.top.seerrOnly
+    if isValid(m.themeMusicPlayer) and not m.top.seerrOnly and not isPerson()
         m.themeMusicPlayer.itemId = itemData.id
     end if
 
@@ -268,6 +284,7 @@ sub renderDetailContent()
     updateButtonVisibility(itemData)
 
     if m.loadStatus = ViewLoadStatus.RELOAD
+        if isCollection() then refreshCollectionMembers()
         rebuildSections()
         return
     end if
@@ -280,7 +297,9 @@ sub renderDetailContent()
     m.statusBadge.visible = false
     m.upcomingBadge.visible = false
 
-    if isEpisode()
+    if isPerson()
+        populatePersonMetadata(itemData)
+    else if isEpisode()
         populateEpisodeMetadata(itemData)
     else if isSeries()
         populateSeriesMetadata(itemData)
@@ -290,25 +309,38 @@ sub renderDetailContent()
         populateMovieMetadata(itemData)
     end if
 
-    populateRatings(itemData)
-    fetchMDBListRatings(itemData)
+    if not isPerson()
+        populateRatings(itemData)
+        fetchMDBListRatings(itemData)
+    end if
     populateGenres(itemData)
     updateStatusBadge(itemData)
     updateUpcomingBadge(itemData)
+    updateSeerrPills()
     populateRuntime(itemData)
-    setBackdropImage(itemData)
+    ' A person only has a backdrop when one was set for them, and it sits back further
+    if isPerson()
+        m.backdrop.opacity = NOUVEAU_PERSON_BACKDROP_ALPHA
+        if isValidAndNotEmpty(itemData.BackdropImageTags) then setBackdropImage(itemData)
+    else
+        setBackdropImage(itemData)
+    end if
 
     setFieldText("title", itemData.name)
+    ' The name stands in until a logo arrives, and a title with no logo keeps it
+    if not isValidAndNotEmpty(m.top.logoImageURI) then m.titleNode.visible = true
 
     hideMediaDesc = hidesMediaDescription() and (isEpisode() or LCase(m.top.itemType) = "movie")
     overviewText = itemData.overview
     if isValidAndNotEmpty(overviewText) then overviewText = stripHtmlTags(overviewText)
+    if isPerson() then overviewText = readableText(overviewText)
     m.overview.text = overviewText
     m.overview.visible = not hideMediaDesc and isValidAndNotEmpty(overviewText)
 
     m.sectionData = newSectionData()
     m.directPlayState = "loading"
     m.directPlaySupported = false
+    m.directPlayReasons = ""
     if isValidAndNotEmpty(itemData.Chapters) then m.sectionData.chapters = itemData.Chapters
 
     layoutContainer()
@@ -336,7 +368,6 @@ end sub
 ' The file facts in the tech row: what the file weighs and what it is encoded with
 sub buildStreamSummary(itemData as object)
     m.techChips.removeChildrenIndex(m.techChips.getChildCount(), 0)
-    setFieldText("techSize", "")
 
     badges = []
     if mediaBadges.Enabled() then badges = mediaBadges.Build(itemData)
@@ -344,8 +375,9 @@ sub buildStreamSummary(itemData as object)
         if isValidAndNotEmpty(badge) then addTechChip(badge)
     end for
 
-    sizeBytes = chainLookupReturn(itemData, "MediaSources[0].Size", 0)
-    if sizeBytes > 0 then setFieldText("techSize", formatFileSize(sizeBytes))
+    firstSource = invalid
+    if isValidAndNotEmpty(itemData.MediaSources) then firstSource = itemData.MediaSources[0]
+    setFieldText("techSize", fileFacts.FormatSize(chainLookupReturn(firstSource, "Size", 0)))
 
     hasSize = isValidAndNotEmpty(m.top.findNode("techSize").text)
     m.techRow.visible = hasSize or m.techChips.getChildCount() > 0
@@ -380,11 +412,33 @@ sub addTechChip(label as string)
     chip.addFields({ chipWidth: width })
 end sub
 
+function isPerson() as boolean
+    return LCase(m.top.itemType) = "person"
+end function
+
+' A person's hero is their dates and birthplace in place of the facts a title carries
+sub populatePersonMetadata(itemData as object)
+    m.personMeta.text = personMetaParts(itemData).join(` ${fontApply.ThemeSeparator()} `)
+    m.personMeta.visible = m.personMeta.text <> ""
+end sub
+
 ' ===== Section loading =====
 
 sub loadSections()
+    if isPerson()
+        loadPersonCredits()
+        return
+    end if
+
+    ' A collection's page is its titles, and nothing similar or extra to go with them
+    if isCollection()
+        m.membersTask = startCollectionMembersTask("onCollectionMembersLoaded")
+        return
+    end if
+
     loadTask = CreateObject("roSGNode", "LoadExtrasTask")
     loadTask.itemId = m.top.id
+    loadTask.itemType = m.top.itemType
 
     if isEpisode()
         loadTask.isEpisode = true
@@ -453,6 +507,11 @@ sub onExtrasLoaded(event as object)
     rebuildSections()
 end sub
 
+sub onCollectionMembersLoaded()
+    m.sectionData.collection = m.membersTask.items ?? []
+    rebuildSections()
+end sub
+
 sub onSeriesEpisodesLoaded(event as object)
     m.sectionData.episodes = event.getData()
     rebuildSections()
@@ -491,6 +550,30 @@ sub onSeerrSimilar(event as object)
     rebuildSections()
 end sub
 
+' What the library has them in, and what Seerr knows they worked on
+sub loadPersonCredits()
+    itemData = m.top.itemContent.json
+    m.personFilmTask = startPersonFilmography(m.top.id, itemData, NOUVEAU_PERSON_LIMIT, "onPersonFilmographyLoaded")
+    m.personCreditsTask = startSeerrPersonCredits(chainLookupReturn(itemData, "ProviderIds.Tmdb", ""), "onPersonSeerrCreditsLoaded")
+end sub
+
+sub onPersonFilmographyLoaded(event as object)
+    content = event.getData()
+    if not isValid(content) then return
+
+    m.sectionData.person.Append(splitFilmography(content.getChildren(-1, 0)))
+    rebuildSections()
+end sub
+
+sub onPersonSeerrCreditsLoaded(event as object)
+    response = event.getData()
+    if not isValid(response) or not response.success or not isValid(response.data) then return
+
+    m.sectionData.person.appearances = usableSeerrCredits(response.data.cast, false)
+    m.sectionData.person.crew = usableSeerrCredits(response.data.crew, true)
+    rebuildSections()
+end sub
+
 ' ===== Sections =====
 
 sub rebuildSections()
@@ -510,6 +593,10 @@ sub rebuildSections()
     for each id in nouveauLayout.SectionOrder(sectionState())
         if id = NOUVEAU_SECTION_EPISODES
             buildEpisodesSection()
+        else if id = NOUVEAU_SECTION_COLLECTION
+            buildCollectionRail()
+        else if id = NOUVEAU_SECTION_PERSON
+            buildPersonRails()
         else if id = NOUVEAU_SECTION_CHAPTERS
             buildChaptersRail()
         else if id = NOUVEAU_SECTION_EXTRAS
@@ -691,6 +778,56 @@ function extraSubtitle(extra as object) as string
     return resolution
 end function
 
+' The collection keeps the order the server gave it
+sub buildCollectionRail()
+    items = m.sectionData.collection
+    if items.count() = 0 then return
+
+    cards = []
+    for each item in items
+        cards.push({
+            imageUrl: detailImages.ItemImageUrl(item),
+            title: chainLookupReturn(item, "json.Name", ""),
+            subtitle: nouveauLayout.CollectionSubtitle(item.json)
+        })
+    end for
+
+    addRail({
+        title: tr("Collection"),
+        component: "NouveauCaptionCard",
+        gap: NOUVEAU_TV_RAIL_GAP,
+        cardSize: [m.metrics.collectionWidth, m.metrics.collectionHeight],
+        stopsPerCard: 1,
+        cards: cards,
+        leadsSection: true
+    }, "poster", items)
+end sub
+
+' Each part of the filmography that has anything in it, what the library holds leading and what
+' Seerr only knows about after
+sub buildPersonRails()
+    person = m.sectionData.person
+    for each rail in [
+            { title: tr("Movies"), items: person.movies },
+            { title: tr("Series"), items: person.series },
+            { title: tr("Guest Appearances"), items: person.guest },
+            { title: tr("Music Videos"), items: person.music },
+            { title: tr("Crew Contributions (Seerr)"), items: person.crew },
+            { title: tr("Appearances (Seerr)"), items: person.appearances }
+        ]
+        if rail.items.count() > 0 then addRail(posterSpec(rail.title, rail.items, true), "poster", rail.items)
+    end for
+end sub
+
+' The rail is drawn from the list rather than holding the cards, so it is drawn again
+sub collectionMemberRemoved(itemId as string)
+    if dropCollectionMember(itemId) then rebuildSections()
+end sub
+
+function collectionMembers() as object
+    return m.sectionData.collection
+end function
+
 ' Two rails under one heading, so what the library already holds stays ahead of
 ' what Seerr merely knows about
 sub buildDiscoveryRails()
@@ -828,9 +965,10 @@ sub buildFooter()
         studios: studios,
         seerrHeight: m.seerrBlock.visible ? m.seerrBlock.blockHeight : 0,
         hasMediaSource: isValid(source),
-        fileName: fileNameOf(source),
-        fileMeta: fileSizeLine(source),
-        videoLines: videoLines(video),
+        fileName: fileFacts.FileName(source),
+        fileMeta: fileFacts.SizeLine(source),
+        directPlayReasons: m.directPlayReasons,
+        videoLines: fileFacts.VideoLines(video),
         audioRows: trackRows(audio, m.top.selectedAudioStreamIndex, false),
         subtitleRows: trackRows(subtitles, activeSubtitle, true)
     })
@@ -840,59 +978,6 @@ sub buildFooter()
     m.footer.callFunc("setDirectPlay", m.directPlayState, m.directPlaySupported)
     m.footer.visible = true
 end sub
-
-' The name the server holds for the file, falling back to the last part of its
-' path where it only gave one of those
-function fileNameOf(source as object) as string
-    name = chainLookupReturn(source, "Name", "")
-    if isValidAndNotEmpty(name) then return name.trim()
-
-    path = chainLookupReturn(source, "Path", "")
-    if not isValidAndNotEmpty(path) then return ""
-
-    parts = path.replace("\", "/").split("/")
-    return parts[parts.count() - 1]
-end function
-
-' Both halves or neither, since one on its own reads as a sentence with a hole
-' in it
-function fileSizeLine(source as object) as string
-    size = chainLookupReturn(source, "Size", 0)
-    container = UCase(chainLookupReturn(source, "Container", ""))
-    if size <= 0 or container = "" then return ""
-
-    return substitute(tr("Size: {0}  •  Format: {1}"), formatFileSize(size), container)
-end function
-
-' The footer reports what the file says it is, so a codec stays the letters the
-' server gave and a range keeps its type beside it
-function videoLines(video as object) as object
-    if not isValid(video) then return []
-
-    lines = []
-    codec = UCase(chainLookupReturn(video, "Codec", ""))
-    if codec = "" then codec = tr("Unknown Codec")
-    profile = chainLookupReturn(video, "Profile", "")
-    lines.push(isValidAndNotEmpty(profile) ? `${codec} (${profile})` : codec)
-
-    width = chainLookupReturn(video, "Width", 0)
-    height = chainLookupReturn(video, "Height", 0)
-    if width > 0 and height > 0 then lines.push(`${width} x ${height}`)
-
-    fps = chainLookupReturn(video, "RealFrameRate", chainLookupReturn(video, "AverageFrameRate", 0))
-    if fps > 0 then lines.push(str(Int(fps * 1000) / 1000.0).trim() + " fps")
-
-    bitDepth = chainLookupReturn(video, "BitDepth", 0)
-    if bitDepth > 0 then lines.push(`${bitDepth}-bit`)
-
-    range = chainLookupReturn(video, "VideoRange", "")
-    if isValidAndNotEmpty(range)
-        rangeType = chainLookupReturn(video, "VideoRangeType", "")
-        lines.push(isValidAndNotEmpty(rangeType) ? `${range} (${rangeType})` : range)
-    end if
-
-    return lines
-end function
 
 function trackRows(streams as object, activeIndex as integer, includeForced as boolean) as object
     rows = []
@@ -926,9 +1011,9 @@ sub probeDirectPlay()
 
     if isValid(m.directPlayTask) then m.directPlayTask.unobserveField("result")
 
-    task = CreateObject("roSGNode", "NouveauDirectPlayTask")
-    task.itemId = m.top.id
-    task.mediaSourceId = chainLookupReturn(itemData, "MediaSources[0].Id", "")
+    task = CreateObject("roSGNode", "DetailPlaybackInfoTask")
+    task.itemJson = itemData
+    task.mediaSourceId = itemData.MediaSources[0].Id ?? ""
     task.audioStreamIndex = m.top.selectedAudioStreamIndex
     task.subtitleStreamIndex = chainLookupReturn(m.global.queueManager.callFunc("getPreferredSubtitleTrack"), "StreamIndex", -1)
     task.observeField("result", "onDirectPlayResult")
@@ -942,6 +1027,16 @@ sub onDirectPlayResult(event as object)
 
     m.directPlayState = result.state
     m.directPlaySupported = result.supportsDirectPlay
+
+    ' Reasons push the groups under them down, so the page is laid out again around them
+    reasons = ""
+    if result.state = "ready" and not result.supportsDirectPlay then reasons = result.shortReasons ?? ""
+    if reasons <> m.directPlayReasons
+        m.directPlayReasons = reasons
+        rebuildSections()
+        return
+    end if
+
     m.footer.callFunc("setDirectPlay", m.directPlayState, m.directPlaySupported)
 end sub
 
@@ -981,14 +1076,18 @@ sub layoutHero()
         y += m.titleNode.boundingRect().height
     end if
 
-    m.badgesRow.visible = m.statusBadge.visible or m.upcomingBadge.visible
+    m.badgesRow.visible = m.statusBadge.visible or m.upcomingBadge.visible or m.seerrPills.visible
     if m.badgesRow.visible
         y += NOUVEAU_BADGES_GAP
         m.badgesRow.translation = [0, y]
         y += layoutBadges()
     end if
 
-    if m.metaRowHeight > 0
+    if m.personMeta.visible
+        y += NOUVEAU_ROW_GAP
+        m.personMeta.translation = [0, y]
+        y += m.personMeta.boundingRect().height
+    else if m.metaRowHeight > 0
         ' With badges above it the line sits closer, since the two read as one
         ' block about the title
         y += m.badgesRow.visible ? NOUVEAU_ROW_GAP_TIGHT : NOUVEAU_ROW_GAP
@@ -1034,6 +1133,12 @@ function layoutBadges() as float
         x += bg.width + NOUVEAU_BADGE_GAP
         if bg.height > height then height = bg.height
     end for
+
+    ' Seerr's pills follow the badges on this hero rather than joining the facts line
+    if m.seerrPills.visible
+        m.seerrPills.translation = [x, 0]
+        if m.seerrPillsSize.height > height then height = m.seerrPillsSize.height
+    end if
     return height
 end function
 
@@ -1100,12 +1205,18 @@ sub pinTo(pageY as float)
     target = - (pageY - NOUVEAU_HERO_TOP)
     if target > 0 then target = 0
 
-    lowest = - (m.pageHeight - 1080)
-    if lowest > 0 then lowest = 0
+    lowest = lowestScroll()
     if target < lowest then target = lowest
 
     if m.currentScrollY <> target then scrollContentTo(target)
 end sub
+
+' Where the page sits with its end on the bottom of the screen
+function lowestScroll() as float
+    lowest = - (m.pageHeight - 1080)
+    if lowest > 0 then lowest = 0
+    return lowest
+end function
 
 ' The modern screen scrolls its hero when it runs long. Nouveau scrolls the whole
 ' page instead, so there is no offset of its own to add.
@@ -1169,10 +1280,7 @@ sub buildChain()
         chain.push({ zone: "rail", rail: i })
     end for
 
-    ' The only thing in the footer that takes focus is a retry, and only while the
-    ' direct play check has fallen over, so a stop is kept for it rather than named
-    ' in advance
-    if m.footer.visible and m.footer.focusCount > 0 then chain.push({ zone: "footer", rail: -1 })
+    if m.footer.visible then chain.push({ zone: "footer", rail: -1 })
 
     ' Seerr's chips and its collection banner take focus of their own, and they sit
     ' between the studios and the file information
@@ -1202,6 +1310,20 @@ function moveChain(direction as integer) as boolean
     end for
 
     return false
+end function
+
+' The footer can run on below the screen, so a press past the last stop scrolls the
+' rest of the page into view a step at a time
+function moveDown() as boolean
+    if moveChain(1) then return true
+
+    lowest = lowestScroll()
+    if m.currentScrollY <= lowest then return false
+
+    target = m.currentScrollY - NOUVEAU_READ_STEP
+    if target < lowest then target = lowest
+    scrollContentTo(target)
+    return true
 end function
 
 function focusChainStop(entry as object) as boolean
@@ -1263,9 +1385,9 @@ function focusChainStop(entry as object) as boolean
     end if
 
     if entry.zone = "footer"
-        if not m.footer.visible or m.footer.focusCount = 0 then return false
+        if not m.footer.visible then return false
         clearZoneFocus()
-        if not m.footer.callFunc("focusItem", 0) then return false
+        if not focusFooter(0) then return false
 
         m.focusZone = "footer"
         m.focusRail = -1
@@ -1277,6 +1399,16 @@ function focusChainStop(entry as object) as boolean
     end if
 
     return false
+end function
+
+' With no studio or retry in it, the footer holds focus itself so the page still
+' scrolls down to what it says
+function focusFooter(index as integer) as boolean
+    if m.footer.focusCount = 0
+        m.footer.setFocus(true)
+        return true
+    end if
+    return m.footer.callFunc("focusItem", index)
 end function
 
 ' A rail under the season selector is pinned to the selector, so the two arrive
@@ -1310,6 +1442,9 @@ end sub
 ' where it was rather than snapping to the front of the page
 sub restoreFocus(zone as string, rail as integer, stopIndex as integer)
     if zone = "rail" and rail >= 0 and rail < m.rails.count()
+        ' A rail that lost the card in focus, taken out of a collection, keeps focus on its new last card
+        lastStop = m.rails[rail].node.stopCount - 1
+        if stopIndex > lastStop then stopIndex = lastStop
         if m.rails[rail].node.callFunc("focusStop", stopIndex >= 0 ? stopIndex : 0)
             m.focusZone = "rail"
             m.focusRail = rail
@@ -1317,8 +1452,8 @@ sub restoreFocus(zone as string, rail as integer, stopIndex as integer)
         end if
     end if
 
-    if zone = "footer" and m.footer.visible and m.footer.focusCount > 0
-        if m.footer.callFunc("focusItem", m.footerIndex) then return
+    if zone = "footer" and m.footer.visible
+        if focusFooter(m.footerIndex) then return
     end if
 
     if zone = "seerr" and m.seerrBlock.visible
@@ -1415,7 +1550,7 @@ end sub
 
 sub appendButtonNode(config as object)
     buttonGroup = detailButtons.createModernButton(config, m.buttonGroups.count())
-    buttonGroup.leading = m.buttonGroups.count() = 0
+    buttonGroup.leading = buttonGroup.primary
     buttonGroup.observeField("focusedChild", "onButtonFocusChanged")
     m.buttonRow.appendChild(buttonGroup)
     m.buttonGroups.push(buttonGroup)
@@ -1427,37 +1562,15 @@ sub clearButtonRow()
     m.overflowActions = []
 end sub
 
-' One button leads the row carrying a word, everything after it is a circle, and
-' once there are more than three circles only two stay out with the rest behind
-' More. The row is shorter than the one the other screens keep because a page of
-' rails sits under it.
+' Play or Resume leads the row carrying a word and everything after it is a circle. The
+' row is shorter than the one the other screens keep because a page of rails sits under it.
+' A Seerr title or a person has nothing to play, so its row is circles only.
 sub commitButtonRow()
-    m.overflowActions = []
-
-    if m.buttonGroups.count() - 1 > NOUVEAU_MAX_INLINE
-        keep = 1 + NOUVEAU_INLINE_WITH_OVERFLOW
-
-        for i = keep to m.buttonGroups.count() - 1
-            button = m.buttonGroups[i]
-            m.overflowActions.push({
-                icon: button.iconUri,
-                label: button.labelText,
-                action: button.buttonAction
-            })
-        end for
-
-        while m.buttonGroups.count() > keep
-            m.buttonRow.removeChild(m.buttonGroups[m.buttonGroups.count() - 1])
-            m.buttonGroups.pop()
-        end while
-
-        appendButtonNode({
-            icon: "pkg:/images/icons/dotDotDot.png",
-            label: tr("More Actions"),
-            action: "toggleMoreActions",
-            id: "moreActionsButton"
-        })
-    end if
+    m.buttonRowScrolls = buttonRowScrolls()
+    leading = 0
+    if m.buttonGroups.count() > 0 and m.buttonGroups[0].primary then leading = 1
+    split = buttonLayout.NouveauSplit(m.buttonGroups.count() - leading, viewerButtonLimit())
+    if split.needsOverflow then foldButtonsIntoMenu(leading + split.visibleCount)
 
     if m.currentButtonIndex >= m.buttonGroups.count() then m.currentButtonIndex = 0
     layoutButtonRow(m.currentButtonIndex)
@@ -1467,20 +1580,25 @@ end sub
 ' one after it and never collapses back to a circle
 sub layoutButtonRow(focusIndex as integer)
     x = 0
+    focusLeft = 0
+    focusRight = 0
     for i = 0 to m.buttonGroups.count() - 1
         button = m.buttonGroups[i]
         if not isValid(button) then continue for
 
         button.translation = [x, 0]
         width = NOUVEAU_BUTTON_SIZE
-        if i = 0 or i = focusIndex
-            labelNode = button.findNode("btnLabel")
-            if isValid(labelNode) then width = NOUVEAU_BUTTON_SIZE + labelNode.boundingRect().width + NOUVEAU_BUTTON_LABEL_PAD
+        if button.leading or i = focusIndex then width = NOUVEAU_BUTTON_SIZE + button.labelWidth + NOUVEAU_BUTTON_LABEL_PAD
+        if i = focusIndex
+            focusLeft = x
+            focusRight = x + width
         end if
 
         x += width
-        x += i = 0 ? NOUVEAU_PRIMARY_GAP : NOUVEAU_BUTTON_GAP
+        x += button.leading ? NOUVEAU_PRIMARY_GAP : NOUVEAU_BUTTON_GAP
     end for
+
+    placeButtonRow(m.buttonRowContainer, m.buttonRowScrolls, focusLeft, focusRight, x - NOUVEAU_BUTTON_GAP, NOUVEAU_HERO_WIDTH)
 end sub
 
 sub highlightButton(index as integer)
@@ -1493,53 +1611,18 @@ sub unhighlightAllButtons()
     layoutButtonRow(-1)
 end sub
 
-sub toggleMoreActions()
-    if m.overflowActions.count() = 0 then return
-
-    m.overflowMenu.actions = m.overflowActions
-    m.overflowMenu.visible = true
-    m.overflowMenu.setFocus(true)
-end sub
-
-sub onOverflowAction(event as object)
-    action = event.getData()
-    closeOverflowMenu()
-    if not isValidAndNotEmpty(action) then return
-
-    ' The row no longer holds the button, so the action is dispatched by name the
-    ' way the host would have dispatched it
-    dispatchOverflowAction(action)
-end sub
-
-sub onOverflowClosed()
-    closeOverflowMenu()
-end sub
-
-sub closeOverflowMenu()
-    m.overflowMenu.visible = false
-    m.overflowMenu.setFocus(false)
-    focusButton(m.currentButtonIndex)
-end sub
-
-' The host's dispatcher reads whichever button has the row's focus, so a hidden
-' action is run by standing the More button in for it
-sub dispatchOverflowAction(action as string)
-    held = m.currentButtonIndex
-    more = m.buttonGroups.count() - 1
-    if more < 0 then return
-
-    standIn = m.buttonGroups[more].buttonAction
-    m.buttonGroups[more].buttonAction = action
-    m.currentButtonIndex = more
-    handleButtonSelect()
-    m.buttonGroups[more].buttonAction = standIn
-    m.currentButtonIndex = held
-end sub
-
 ' ===== Button host hooks =====
 
 function typeSpecificButtons() as boolean
-    return false
+    if isPerson()
+        addArrangedButtons([favoriteCandidate(chainLookupReturn(m.top.itemContent, "json", {}))])
+        return true
+    end if
+
+    if not isCollection() then return false
+
+    addCollectionButtons()
+    return true
 end function
 
 function markActiveButton(config as object, isActive as boolean, ink as string) as object
@@ -1552,10 +1635,8 @@ end function
 sub setToggleButtonLabel(buttonId as string, label as string, isActive as boolean)
     for each button in m.buttonGroups
         if isValid(button) and button.id = buttonId
-            labelNode = button.findNode("btnLabel")
-            if isValid(labelNode) then labelNode.text = label
-            icon = button.findNode("btnIcon")
-            if isValid(icon) then icon.blendColor = isActive ? "#CC3333" : "#FFFFFF"
+            button.labelText = label
+            button.active = isActive
         end if
     end for
 end sub
@@ -1564,7 +1645,9 @@ sub handleScreenButtonAction(action as string)
     item = m.top.itemContent
     if not isValid(item) then return
 
-    if action = "play" or action = "resume"
+    if action = "collectionPlay" or action = "collectionShuffle"
+        playCollection(action = "collectionShuffle")
+    else if action = "play" or action = "resume"
         m.global.queueManager.callFunc("clear")
         m.global.queueManager.callFunc("push", item)
         m.global.queueManager.callFunc("playQueue")
@@ -1601,6 +1684,16 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if m.overflowMenu.visible then return false
+
+    ' Chapters, extras and people have no card menu, and a Seerr card turns it down itself
+    if key = KeyCode.OPTIONS and m.focusZone = "rail" and m.focusRail >= 0 and m.focusRail < m.rails.count()
+        rail = m.rails[m.focusRail]
+        if rail.kind = "chapter" or rail.kind = "extra" or rail.kind = "person" then return false
+
+        index = rail.node.callFunc("cardIndexForStop", rail.node.focusedStop)
+        if index < 0 or index >= rail.items.count() then return false
+        return showItemMenu(rail.items[index], itemMenuPageOptions())
+    end if
 
     if m.focusZone = "overview" and m.overview.isInFocusChain()
         if key = KeyCode.UP
@@ -1646,7 +1739,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if key = KeyCode.UP
             return moveChain(-1)
         else if key = KeyCode.DOWN
-            return moveChain(1)
+            return moveDown()
         else if key = KeyCode.LEFT
             return FocusSidebar(m.top)
         end if
@@ -1682,7 +1775,7 @@ function railKey(key as string) as boolean
     else if key = KeyCode.UP
         return moveChain(-1)
     else if key = KeyCode.DOWN
-        return moveChain(1)
+        return moveDown()
     else if key = KeyCode.OK
         selectRailItem()
         return true
@@ -1708,7 +1801,7 @@ function footerKey(key as string) as boolean
     else if key = KeyCode.UP
         return moveChain(-1)
     else if key = KeyCode.DOWN
-        return moveChain(1)
+        return moveDown()
     else if key = KeyCode.OK
         chosen = m.footer.callFunc("selectedAction")
         if not isValid(chosen) then return true

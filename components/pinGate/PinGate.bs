@@ -1,0 +1,145 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/pinLockout.bs"
+import "pkg:/source/utils/signInPin.bs"
+import "pkg:/source/utils/themeApply.bs"
+
+const PIN_CARD_WIDTH = 640
+const PIN_CARD_PAD = 32
+const PIN_SUBTITLE_GAP = 10
+const PIN_KEYPAD_GAP = 20
+const PIN_ERROR_GAP = 12
+const PIN_BUTTON_GAP = 22
+const PIN_BUTTON_WIDTH = 220
+const PIN_BUTTON_HEIGHT = 64
+
+sub init()
+    m.top.optionsAvailable = false
+    ' The gate owns the whole screen, so the nav bar is hidden
+    m.top.overhangVisible = false
+    m.card = m.top.findNode("card")
+    m.cardFill = m.top.findNode("cardFill")
+    m.cardBorder = m.top.findNode("cardBorder")
+    m.title = m.top.findNode("title")
+    m.subtitle = m.top.findNode("subtitle")
+    m.keypad = m.top.findNode("keypad")
+    m.error = m.top.findNode("error")
+    m.unlock = m.top.findNode("unlock")
+
+    m.title.font.size = 48
+    m.title.text = tr("Enter PIN")
+    m.subtitle.font.size = 28
+    m.subtitle.width = PIN_CARD_WIDTH - PIN_CARD_PAD * 2
+    m.subtitle.text = tr("This profile is protected by a 4-digit PIN.")
+    m.error.font.size = 24
+    m.error.width = PIN_CARD_WIDTH - PIN_CARD_PAD * 2
+
+    m.keypad.textEditBox.secureMode = true
+    m.keypad.textEditBox.maxTextLength = 4
+    m.keypad.textEditBox.hintText = tr("4 digits")
+    m.keypad.observeField("submit", "onPinSubmit")
+    m.keypad.observeField("escape", "onKeypadEscape")
+    m.keypad.observeField("text", "onPinTyped")
+
+    m.unlock.text = tr("Unlock")
+    m.unlock.width = PIN_BUTTON_WIDTH
+    m.unlock.height = PIN_BUTTON_HEIGHT
+    m.unlock.observeField("buttonSelected", "onPinSubmit")
+
+    themeApply.ApplyToItem(m.top)
+    layoutCard()
+end sub
+
+' The keypad only knows its size once it is drawn, so the card is laid out again now
+sub OnScreenShown(_isReturning = false as boolean)
+    layoutCard()
+    m.keypad.setFocus(true)
+end sub
+
+' The error line only takes room while it has something to say, so the card is laid out again
+' each time it changes
+sub layoutCard()
+    width = PIN_CARD_WIDTH - PIN_CARD_PAD * 2
+    y = PIN_CARD_PAD
+
+    m.title.translation = [PIN_CARD_PAD, y]
+    y += m.title.boundingRect().height + PIN_SUBTITLE_GAP
+
+    m.subtitle.translation = [PIN_CARD_PAD, y]
+    y += m.subtitle.boundingRect().height + PIN_KEYPAD_GAP
+
+    keypadSize = m.keypad.boundingRect()
+    m.keypad.translation = [PIN_CARD_PAD + (width - keypadSize.width) / 2, y]
+    y += keypadSize.height
+
+    m.error.visible = m.error.text <> ""
+    if m.error.visible
+        y += PIN_ERROR_GAP
+        m.error.translation = [PIN_CARD_PAD, y]
+        y += m.error.boundingRect().height
+    end if
+
+    y += PIN_BUTTON_GAP
+    m.unlock.translation = [(PIN_CARD_WIDTH - PIN_BUTTON_WIDTH) / 2, y]
+    y += PIN_BUTTON_HEIGHT + PIN_CARD_PAD
+
+    for each layer in [m.cardFill, m.cardBorder]
+        layer.width = PIN_CARD_WIDTH
+        layer.height = y
+    end for
+    m.card.translation = [(1920 - PIN_CARD_WIDTH) / 2, (1080 - y) / 2]
+end sub
+
+sub showPinError(message as string)
+    m.error.text = message
+    m.keypad.text = ""
+    layoutCard()
+    m.keypad.setFocus(true)
+end sub
+
+' A new digit clears the error. Emptying the field after a wrong guess doesnt, or the error would
+' vanish as it appears.
+sub onPinTyped()
+    if m.error.text = "" or m.keypad.text = "" then return
+    m.error.text = ""
+    layoutCard()
+end sub
+
+sub onPinSubmit()
+    ' Asked before the guess is looked at, so waiting is the only way through and reopening the
+    ' gate hands back no fresh guesses
+    waiting = pinLockout.Remaining(pinLockout.SignInKeys())
+    if waiting > 0
+        showPinError(pinLockout.TooManyAttempts(waiting))
+        return
+    end if
+
+    entered = m.keypad.text
+    if signInPin.Matches(entered)
+        ' A correct PIN clears the count. There is no way to reset a forgotten one on a
+        ' television, so a lockout that outlived the right PIN would be a trap.
+        signInPin.Unlocked(entered)
+        m.keypad.text = ""
+        m.top.unlocked = true
+        if m.top.dismissOnUnlock then m.global.sceneManager.callFunc("popScene")
+        return
+    end if
+
+    wait = pinLockout.RegisterFailure(pinLockout.SignInKeys())
+    showPinError(wait > 0 ? pinLockout.TooManyAttempts(wait) : tr("Incorrect PIN"))
+end sub
+
+sub onKeypadEscape()
+    if m.keypad.escape = "down" then m.unlock.setFocus(true)
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = KeyCode.UP and m.unlock.hasFocus()
+        m.keypad.setFocus(true)
+        return true
+    end if
+
+    ' The gate is the only way in, so no key gets past it to the screen behind
+    return true
+end function

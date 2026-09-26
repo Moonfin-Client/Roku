@@ -1,0 +1,650 @@
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+
+' The Live TV guide's rules, kept apart from the screens that draw them: channel ordering, program
+' facts, the cell timeline each row is drawn from, the selection that vertical movement holds onto,
+' and the geometry of the guide and the channel carousel.
+'
+' Times are seconds since the epoch throughout.
+
+const GUIDE_MINUTE = 60
+const GUIDE_HALF_HOUR = 1800
+
+' Every size is written against the canvas a television lays its guide out on, which a 1080p
+' panel paints at 1.45 pixels to the point
+const GUIDE_TV_CANVAS_SCALE = 1.45
+
+' How fast a long program description scrolls, 55 ms per canvas point
+const GUIDE_DESCRIPTION_MS_PER_PIXEL = 37.93
+
+const GUIDE_ACCENT = "00A4DC"
+const GUIDE_META_SEPARATOR = " · "
+
+const GUIDE_MIN_WINDOW_MINUTES = 150
+const GUIDE_MAX_WINDOW_MINUTES = 360
+const GUIDE_SLOT_MINUTES = 30
+' Wide enough for a half hour cell to read its title at ten feet
+const GUIDE_TARGET_POINTS_PER_MINUTE = 6.2
+
+const CAROUSEL_CARD_WIDTH = 320
+const CAROUSEL_CARD_HEIGHT = 151
+const CAROUSEL_CARD_SPACING = 10
+const CAROUSEL_MIN_CARD_WIDTH = 207
+const CAROUSEL_MAX_CARD_WIDTH = 386
+const CAROUSEL_MIN_LEGIBLE_WIDTH = 166
+const CAROUSEL_MAX_CARD_COUNT = 15
+
+namespace liveTvGuide
+
+    ' ---------------------------------------------------------------------------------------------
+    ' Channels
+    ' ---------------------------------------------------------------------------------------------
+
+    function ChannelSorts() as object
+        return ["number", "name", "favoritesFirst"]
+    end function
+
+    function NormalizeSort(value as dynamic) as string
+        if isString(value) and inArray(liveTvGuide.ChannelSorts(), value) then return value
+        return "number"
+    end function
+
+    ' Channel numbers are dot separated segments ('10.10' airs after '10.2'), so they compare
+    ' segment by segment as whole numbers rather than as a decimal
+    function numberSegments(channelNumber as dynamic) as dynamic
+        if not isValid(channelNumber) then return invalid
+        text = channelNumber.toStr().Trim()
+        if text = "" then return invalid
+
+        pattern = CreateObject("roRegex", "^[+-]?\d+$", "")
+        segments = []
+        for each part in text.Split(".")
+            if not pattern.IsMatch(part) then return invalid
+            segments.push(part.toInt())
+        end for
+        return segments
+    end function
+
+    function compareNames(a as object, b as object) as integer
+        if a.sortName < b.sortName then return -1
+        if a.sortName > b.sortName then return 1
+        return 0
+    end function
+
+    function compareNumbers(a as object, b as object) as integer
+        segsA = a.sortSegments
+        segsB = b.sortSegments
+        if not isValid(segsA) or not isValid(segsB)
+            if isValid(segsA) then return -1
+            if isValid(segsB) then return 1
+            return liveTvGuide.compareNames(a, b)
+        end if
+
+        length = segsA.count()
+        if segsB.count() > length then length = segsB.count()
+        for i = 0 to length - 1
+            va = 0
+            vb = 0
+            if i < segsA.count() then va = segsA[i]
+            if i < segsB.count() then vb = segsB[i]
+            if va <> vb then return va - vb
+        end for
+        return liveTvGuide.compareNames(a, b)
+    end function
+
+    function compareChannels(a as object, b as object, sortBy as string) as integer
+        if sortBy = "name" then return liveTvGuide.compareNames(a, b)
+        if sortBy = "favoritesFirst" and a.sortFavorite <> b.sortFavorite
+            if a.sortFavorite then return -1
+            return 1
+        end if
+        return liveTvGuide.compareNumbers(a, b)
+    end function
+
+    function IsFavoriteChannel(channel as dynamic) as boolean
+        return chainLookupReturn(channel, "UserData.IsFavorite", false) = true
+    end function
+
+    ' Shared by the guide and the channel carousel, so zapping order always matches the guide. A
+    ' merge sort, since the lineup can run to hundreds and the order has to hold for equal keys.
+    function SortChannels(channels as object, sortBy as string) as object
+        keyed = []
+        for each channel in channels
+            keyed.push({
+                channel: channel,
+                sortName: LCase(chainLookupReturn(channel, "Name", "").toStr()),
+                sortSegments: liveTvGuide.numberSegments(chainLookupReturn(channel, "ChannelNumber", invalid)),
+                sortFavorite: liveTvGuide.IsFavoriteChannel(channel)
+            })
+        end for
+
+        ordered = liveTvGuide.mergeSort(keyed, sortBy)
+        sorted = []
+        for each entry in ordered
+            sorted.push(entry.channel)
+        end for
+        return sorted
+    end function
+
+    function mergeSort(items as object, sortBy as string) as object
+        if items.count() <= 1 then return items
+
+        middle = Int(items.count() / 2)
+        firstHalf = []
+        secondHalf = []
+        for i = 0 to items.count() - 1
+            if i < middle then firstHalf.push(items[i]) else secondHalf.push(items[i])
+        end for
+        firstHalf = liveTvGuide.mergeSort(firstHalf, sortBy)
+        secondHalf = liveTvGuide.mergeSort(secondHalf, sortBy)
+
+        merged = []
+        fi = 0
+        si = 0
+        while fi < firstHalf.count() and si < secondHalf.count()
+            if liveTvGuide.compareChannels(secondHalf[si], firstHalf[fi], sortBy) < 0
+                merged.push(secondHalf[si])
+                si++
+            else
+                merged.push(firstHalf[fi])
+                fi++
+            end if
+        end while
+        while fi < firstHalf.count()
+            merged.push(firstHalf[fi])
+            fi++
+        end while
+        while si < secondHalf.count()
+            merged.push(secondHalf[si])
+            si++
+        end while
+        return merged
+    end function
+
+    ' ---------------------------------------------------------------------------------------------
+    ' Programs
+    ' ---------------------------------------------------------------------------------------------
+
+    function ParseTime(value as dynamic) as integer
+        if not isString(value) or value = "" then return 0
+        parsed = CreateObject("roDateTime")
+        parsed.FromISO8601String(value)
+        return parsed.AsSeconds()
+    end function
+
+    ' Programs arrive with their times as text, and every cell and filter reads them, so they are
+    ' parsed once when a program comes in
+    sub StampTimes(program as object)
+        program.startSec = liveTvGuide.ParseTime(program.LookupCI("StartDate"))
+        program.endSec = liveTvGuide.ParseTime(program.LookupCI("EndDate"))
+    end sub
+
+    ' Some guide sources send the episode title with its quotes still backslash escaped, even where
+    ' the same program's overview doesnt, so this field alone is unescaped
+    function EpisodeTitleOf(program as dynamic) as string
+        title = chainLookupReturn(program, "EpisodeTitle", "")
+        if not isString(title) then return ""
+        return title.Replace("\" + chr(34), chr(34))
+    end function
+
+    function SeasonEpisodeLabel(program as dynamic) as string
+        season = chainLookupReturn(program, "ParentIndexNumber", invalid)
+        episode = chainLookupReturn(program, "IndexNumber", invalid)
+        if not isValid(season) or not isValid(episode) then return ""
+        return "S" + season.toStr() + ":E" + episode.toStr()
+    end function
+
+    ' The episode title and its (S1:E5) numbering, each on its own when the listing carries only one
+    ' of them. Empty when the listing carries neither.
+    function EpisodeLine(program as dynamic) as string
+        if not isValid(program) then return ""
+        title = liveTvGuide.EpisodeTitleOf(program).Trim()
+        label = liveTvGuide.SeasonEpisodeLabel(program)
+        if label <> "" then label = "(" + label + ")"
+        if title <> "" and label <> "" then return title + " " + label
+        return title + label
+    end function
+
+    function HasTimer(program as dynamic) as boolean
+        return isValid(chainLookupReturn(program, "TimerId", invalid))
+    end function
+
+    function HasSeriesTimer(program as dynamic) as boolean
+        return isValid(chainLookupReturn(program, "SeriesTimerId", invalid))
+    end function
+
+    function IsLiveAt(program as object, now as integer) as boolean
+        return now > program.startSec and now < program.endSec
+    end function
+
+    ' The program on air at a moment, counting its first instant. Used to pick what a channel is
+    ' showing, where the live check above leaves that instant out.
+    function IsAiringAt(program as object, now as integer) as boolean
+        return now >= program.startSec and now < program.endSec
+    end function
+
+    function ProgramAiringAt(programs as dynamic, now as integer) as dynamic
+        if not isValid(programs) then return invalid
+        for each program in programs
+            if liveTvGuide.IsAiringAt(program, now) then return program
+        end for
+        return invalid
+    end function
+
+    function ProgressAt(program as object, now as integer) as float
+        if now < program.startSec then return 0
+        if now > program.endSec then return 1
+        span = program.endSec - program.startSec
+        if span <= 0 then return 1
+        return (now - program.startSec) / span
+    end function
+
+    ' Where a program's artwork lives: its own art, then the matched series' poster, then the
+    ' parent's poster, and last the parent's landscape thumb. Only the last one names a Thumb image,
+    ' which the server serves from a different endpoint than a Primary.
+    function ArtworkSource(program as dynamic) as dynamic
+        own = chainLookupReturn(program, "ImageTags.Primary", invalid)
+        if isValidAndNotEmpty(own) then return { itemId: program.LookupCI("Id"), tag: own, isThumb: false }
+
+        seriesId = chainLookupReturn(program, "SeriesId", invalid)
+        seriesTag = chainLookupReturn(program, "SeriesPrimaryImageTag", invalid)
+        if isValidAndNotEmpty(seriesId) and isValidAndNotEmpty(seriesTag) then return { itemId: seriesId, tag: seriesTag, isThumb: false }
+
+        parentId = chainLookupReturn(program, "ParentPrimaryImageItemId", invalid)
+        parentTag = chainLookupReturn(program, "ParentPrimaryImageTag", invalid)
+        if isValidAndNotEmpty(parentId) and isValidAndNotEmpty(parentTag) then return { itemId: parentId, tag: parentTag, isThumb: false }
+
+        thumbId = chainLookupReturn(program, "ParentThumbItemId", invalid)
+        thumbTag = chainLookupReturn(program, "ParentThumbImageTag", invalid)
+        if isValidAndNotEmpty(thumbId) and isValidAndNotEmpty(thumbTag) then return { itemId: thumbId, tag: thumbTag, isThumb: true }
+
+        return invalid
+    end function
+
+    ' ---------------------------------------------------------------------------------------------
+    ' Genres and filters
+    ' ---------------------------------------------------------------------------------------------
+
+    function genreList() as object
+        return [
+            { flag: "IsMovie", label: "Movie", hex: "6C4BD8" },
+            { flag: "IsSports", label: "Sports", hex: "2E8B57" },
+            { flag: "IsNews", label: "News", hex: "C08A2E" },
+            { flag: "IsKids", label: "Kids", hex: "C0497A" },
+            { flag: "IsSeries", label: "Series", hex: "2E7D8A" }
+        ]
+    end function
+
+    ' A program with no genre takes the accent, which the screen supplies
+    function GenreFor(program as dynamic) as dynamic
+        if not isValid(program) then return invalid
+        for each genre in liveTvGuide.genreList()
+            if program.LookupCI(genre.flag) = true then return genre
+        end for
+        return invalid
+    end function
+
+    ' The guide's filter chips, in the order they show. The label is also what a program's category
+    ' tags read as, so the two are named once.
+    function Filters() as object
+        return [
+            { key: "all", label: "All", flag: "" },
+            { key: "movies", label: "Movies", flag: "IsMovie" },
+            { key: "series", label: "Series", flag: "IsSeries" },
+            { key: "sports", label: "Sports", flag: "IsSports" },
+            { key: "news", label: "News", flag: "IsNews" },
+            { key: "kids", label: "Kids", flag: "IsKids" },
+            { key: "premiere", label: "Premiere", flag: "IsPremiere" },
+            { key: "favorites", label: "Favorites", flag: "" }
+        ]
+    end function
+
+    function filterByKey(key as string) as object
+        for each entry in liveTvGuide.Filters()
+            if entry.key = key then return entry
+        end for
+        return liveTvGuide.Filters()[0]
+    end function
+
+    function IsCategoryFilter(key as string) as boolean
+        return key <> "all" and key <> "favorites"
+    end function
+
+    ' The categories the server can filter on itself. Premiere isnt one, so it walks the lineup in
+    ' ordinary batches and is matched here.
+    function IsServerFilteredCategory(key as string) as boolean
+        return inArray(["movies", "series", "sports", "news", "kids"], key)
+    end function
+
+    function MatchesFilter(key as string, program as dynamic) as boolean
+        flag = liveTvGuide.filterByKey(key).flag
+        if flag = "" then return true
+        return chainLookupReturn(program, flag, false) = true
+    end function
+
+    ' The program's categories in a fixed order, read the way the filter chips name them
+    function CategoryLabels(program as dynamic) as object
+        labels = []
+        if not isValid(program) then return labels
+        for each entry in liveTvGuide.Filters()
+            if entry.flag <> "" and program.LookupCI(entry.flag) = true then labels.push(tr(entry.label))
+        end for
+        return labels
+    end function
+
+    ' ---------------------------------------------------------------------------------------------
+    ' The window
+    ' ---------------------------------------------------------------------------------------------
+
+    ' Floored on the wall clock, so the guide lines up with the half hours the viewer reads
+    function FloorToHalfHour(moment as integer) as integer
+        wall = CreateObject("roDateTime")
+        wall.FromSeconds(moment)
+        wall.ToLocalTime()
+        return moment - (wall.GetMinutes() mod 30) * GUIDE_MINUTE - wall.GetSeconds()
+    end function
+
+    ' The guide's left edge, the nearest top or bottom of the hour at or before now. Looking further
+    ' back is the earlier button's job.
+    function LeftEdge(now as integer) as integer
+        return liveTvGuide.FloorToHalfHour(now)
+    end function
+
+    ' How long a window the guide shows for the width it has in canvas points, as many half hours
+    ' as fit at a readable density once the channel column takes its share
+    function WindowFor(availableWidth as float) as integer
+        width = availableWidth
+        if width < 1 then width = 1
+        column = width * 0.16
+        if column < 144 then column = 144
+        if column > 208 then column = 208
+        guideWidth = width - column
+        if guideWidth < 1 then guideWidth = 1
+
+        slots = cint(guideWidth / (GUIDE_TARGET_POINTS_PER_MINUTE * GUIDE_SLOT_MINUTES))
+        if slots < GUIDE_MIN_WINDOW_MINUTES / GUIDE_SLOT_MINUTES then slots = GUIDE_MIN_WINDOW_MINUTES / GUIDE_SLOT_MINUTES
+        if slots > GUIDE_MAX_WINDOW_MINUTES / GUIDE_SLOT_MINUTES then slots = GUIDE_MAX_WINDOW_MINUTES / GUIDE_SLOT_MINUTES
+        return slots * GUIDE_SLOT_MINUTES * GUIDE_MINUTE
+    end function
+
+    ' The smallest window, which the carousel's own data uses
+    function DefaultWindow() as integer
+        return GUIDE_MIN_WINDOW_MINUTES * GUIDE_MINUTE
+    end function
+
+    ' ---------------------------------------------------------------------------------------------
+    ' Cells
+    ' ---------------------------------------------------------------------------------------------
+
+    ' Partitions a hole at hidden program boundaries, so a real gap isnt swallowed by a filtered
+    ' program that covers only part of it
+    function fillHole(holeStart as integer, holeEnd as integer, unfiltered as object) as object
+        hidden = []
+        for each program in unfiltered
+            from = program.startSec
+            if from < holeStart then from = holeStart
+            upto = program.endSec
+            if upto > holeEnd then upto = holeEnd
+            if from < upto then hidden.push({ from: from, upto: upto })
+        end for
+        hidden.SortBy("from")
+
+        cells = []
+        cursor = holeStart
+        for each interval in hidden
+            filteredStart = interval.from
+            if filteredStart < cursor then filteredStart = cursor
+            if filteredStart > cursor then cells.push({ start: cursor, finish: filteredStart, kind: "gap" })
+            if filteredStart < interval.upto
+                cells.push({ start: filteredStart, finish: interval.upto, kind: "filtered" })
+                cursor = interval.upto
+            end if
+        end for
+        if cursor < holeEnd then cells.push({ start: cursor, finish: holeEnd, kind: "gap" })
+        return cells
+    end function
+
+    ' The continuous, non overlapping cells for one row across the window, so a vertical move
+    ' always resolves a clock time to a cell. A cell is { start, finish, kind, program }, and kind
+    ' is program, gap, filtered, or loading while the row waits on its programs.
+    function BuildRowCells(visible as dynamic, unfiltered as dynamic, windowStart as integer, windowEnd as integer, loaded as boolean) as object
+        if not loaded then return [{ start: windowStart, finish: windowEnd, kind: "loading" }]
+        if not isValid(visible) then visible = []
+        if not isValid(unfiltered) then unfiltered = []
+
+        ' Clipped and sorted here, since the server can answer out of order and clipping can leave
+        ' a program that only touches the edge with no width at all
+        clipped = []
+        for each program in visible
+            from = program.startSec
+            if from < windowStart then from = windowStart
+            upto = program.endSec
+            if upto > windowEnd then upto = windowEnd
+            if from < upto then clipped.push({ start: from, finish: upto, program: program })
+        end for
+        clipped.SortBy("start")
+
+        cells = []
+        cursor = windowStart
+        for each cell in clipped
+            ' Overlapping programs can start behind the cursor. The covered part is skipped rather
+            ' than drawn twice.
+            from = cell.start
+            if from < cursor then from = cursor
+            if from >= cell.finish then continue for
+            if from > cursor then cells.append(liveTvGuide.fillHole(cursor, from, unfiltered))
+            cells.push({ start: from, finish: cell.finish, kind: "program", program: cell.program })
+            cursor = cell.finish
+        end for
+        if cursor < windowEnd then cells.append(liveTvGuide.fillHole(cursor, windowEnd, unfiltered))
+        return cells
+    end function
+
+    function IsLoadingCells(cells as object) as boolean
+        return cells.count() = 1 and cells[0].kind = "loading"
+    end function
+
+    ' Index of the cell covering the anchor. Cells tile the window, so one always matches.
+    function ResolveCellIndexAt(cells as object, anchor as integer) as integer
+        for i = 0 to cells.count() - 1
+            if cells[i].start <= anchor and cells[i].finish > anchor then return i
+        end for
+        if anchor < cells[0].start then return 0
+        return cells.count() - 1
+    end function
+
+    ' Pulls the anchor inside the cell's half open interval
+    function ClampAnchorInto(cell as object, anchor as integer) as integer
+        if anchor < cell.start then return cell.start
+        if anchor >= cell.finish then return cell.finish - 1
+        return anchor
+    end function
+
+    function ProgramIdOf(cell as object) as string
+        if cell.kind = "program" and isValid(cell.program) then return cell.program.LookupCI("Id") ?? ""
+        return ""
+    end function
+
+    ' Re-resolves the selection against a window that just moved. The selected cell stays when it
+    ' still intersects the window, with the anchor clamped into it. Otherwise the airing cell is
+    ' taken and the anchor reset to now. The channel never changes.
+    function ReanchorSelection(current as object, cells as object, now as integer) as object
+        if cells.count() = 0 then return current
+
+        retained = invalid
+        if current.programId <> ""
+            for each cell in cells
+                if liveTvGuide.ProgramIdOf(cell) = current.programId
+                    retained = cell
+                    exit for
+                end if
+            end for
+        else if current.anchorTime >= cells[0].start and current.anchorTime < cells[cells.count() - 1].finish
+            retained = cells[liveTvGuide.ResolveCellIndexAt(cells, current.anchorTime)]
+        end if
+
+        if isValid(retained)
+            return { channelId: current.channelId, anchorTime: liveTvGuide.ClampAnchorInto(retained, current.anchorTime), programId: current.programId }
+        end if
+
+        airing = cells[liveTvGuide.ResolveCellIndexAt(cells, now)]
+        return { channelId: current.channelId, anchorTime: now, programId: liveTvGuide.ProgramIdOf(airing) }
+    end function
+
+    ' ---------------------------------------------------------------------------------------------
+    ' Channel carousel
+    ' ---------------------------------------------------------------------------------------------
+
+    ' Maps any step count onto a real channel index, wrapping both ways
+    function ChannelIndexFor(rawIndex as integer, channelCount as integer) as integer
+        if channelCount <= 0 then return 0
+        return ((rawIndex mod channelCount) + channelCount) mod channelCount
+    end function
+
+    ' Strip geometry for an available width in canvas points: the pitch, the card width and how many
+    ' pitches fit across
+    function CarouselLayoutFor(stripWidth as float) as object
+        if stripWidth <= 0 then return { pitch: CAROUSEL_CARD_WIDTH + CAROUSEL_CARD_SPACING, width: CAROUSEL_CARD_WIDTH, count: 1 }
+
+        best = 0
+        bestDistance = 1000000
+        widest = 0
+        for cards = 1 to CAROUSEL_MAX_CARD_COUNT
+            candidate = liveTvGuide.carouselPitch(stripWidth, cards) - CAROUSEL_CARD_SPACING
+            if candidate < CAROUSEL_MIN_LEGIBLE_WIDTH then exit for
+            widest = cards
+            if candidate < CAROUSEL_MIN_CARD_WIDTH or candidate > CAROUSEL_MAX_CARD_WIDTH then continue for
+            distance = abs(candidate - CAROUSEL_CARD_WIDTH)
+            if distance < bestDistance
+                bestDistance = distance
+                best = cards
+            end if
+        end for
+
+        count = best
+        if count = 0 then count = widest
+        if count < 1 then count = 1
+        pitch = liveTvGuide.carouselPitch(stripWidth, count)
+        return { pitch: pitch, width: pitch - CAROUSEL_CARD_SPACING, count: count }
+    end function
+
+    function carouselPitch(stripWidth as float, cards as integer) as float
+        return Int(stripWidth / cards * 2) / 2
+    end function
+
+    ' The run of channels around the centered one the strip can show, wrapping at both ends, so a
+    ' warm fetch asks for exactly what an open strip would
+    function CarouselNeighborhood(channels as object, centeredId as string, visibleCards as integer) as object
+        ids = []
+        if channels.count() = 0 then return ids
+
+        center = 0
+        for i = 0 to channels.count() - 1
+            if channels[i].Id = centeredId
+                center = i
+                exit for
+            end if
+        end for
+
+        radius = Int((visibleCards + 1) / 2) + 1
+        for offset = -radius to radius
+            id = channels[liveTvGuide.ChannelIndexFor(center + offset, channels.count())].Id
+            if not inArray(ids, id) then ids.push(id)
+        end for
+        return ids
+    end function
+
+    ' ---------------------------------------------------------------------------------------------
+    ' Labels
+    ' ---------------------------------------------------------------------------------------------
+
+    sub SetFont(label as object, size as float, bold as boolean)
+        if bold
+            label.font = "font:SmallestBoldSystemFont"
+        else
+            label.font = "font:SmallestSystemFont"
+        end if
+        label.font.size = size
+    end sub
+
+    ' The items that fit the width in order, dropping from the end once the line is full. Each piece
+    ' is measured on the given label once and kept in widths, since the same labels recur.
+    function FittingItems(items as object, width as float, measure as object, widths as object) as object
+        fitted = []
+        used = 0
+        for each item in items
+            piece = item
+            if fitted.count() > 0 then piece = GUIDE_META_SEPARATOR + item
+            if not widths.DoesExist(piece)
+                if widths.count() > 400 then widths.Clear()
+                measure.text = piece
+                widths[piece] = measure.boundingRect().width
+            end if
+            if used + widths[piece] > width then exit for
+            used += widths[piece]
+            fitted.push(item)
+        end for
+        return fitted
+    end function
+
+    function use24Hour() as boolean
+        if get_user_setting_bool("playback.use24hourclock", false) then return true
+        return LCase(chainLookupReturn(m.global, "device.clockFormat", "12h")) = "24h"
+    end function
+
+    function ClockTime(moment as integer) as string
+        wall = CreateObject("roDateTime")
+        wall.FromSeconds(moment)
+        wall.ToLocalTime()
+        hours = wall.GetHours()
+        minutes = leftPad(wall.GetMinutes().toStr(), "0", 2)
+        if liveTvGuide.use24Hour() then return leftPad(hours.toStr(), "0", 2) + ":" + minutes
+
+        meridian = "AM"
+        if hours >= 12 then meridian = "PM"
+        hours = hours mod 12
+        if hours = 0 then hours = 12
+        return hours.toStr() + ":" + minutes + " " + meridian
+    end function
+
+    ' Short day label such as Mon, Jan 5, for headings that sit above a set of times
+    function DayLabel(moment as integer) as string
+        wall = CreateObject("roDateTime")
+        wall.FromSeconds(moment)
+        wall.ToLocalTime()
+        weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        return tr(weekdays[wall.GetDayOfWeek()]) + ", " + tr(months[wall.GetMonth() - 1]) + " " + wall.GetDayOfMonth().toStr()
+    end function
+
+    ' Midnight on the wall clock for the day a moment falls on
+    function StartOfDay(moment as integer) as integer
+        wall = CreateObject("roDateTime")
+        wall.FromSeconds(moment)
+        wall.ToLocalTime()
+        return moment - wall.GetHours() * 3600 - wall.GetMinutes() * GUIDE_MINUTE - wall.GetSeconds()
+    end function
+
+    ' The hour on the wall clock a moment falls in, as seconds past its midnight
+    function HourOfDay(moment as integer) as integer
+        wall = CreateObject("roDateTime")
+        wall.FromSeconds(moment)
+        wall.ToLocalTime()
+        return wall.GetHours() * 3600
+    end function
+
+    function NowSeconds() as integer
+        return CreateObject("roDateTime").AsSeconds()
+    end function
+
+    ' A #RRGGBBAA color from a hex triple and an opacity
+    function Tint(hex as string, alpha as float) as string
+        value = cint(alpha * 255)
+        if value < 0 then value = 0
+        if value > 255 then value = 255
+        byte = StrI(value, 16)
+        if Len(byte) < 2 then byte = "0" + byte
+        return "#" + hex + UCase(byte)
+    end function
+
+end namespace

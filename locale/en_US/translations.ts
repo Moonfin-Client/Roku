@@ -536,6 +536,41 @@
         <translation>Recap</translation>
     </message>
     <message>
+        <source>Filler</source>
+        <extracomment>Anime marker pill for an episode that isnt part of the original story</extracomment>
+        <translation>Filler</translation>
+    </message>
+    <message>
+        <source>Mixed Canon/Filler</source>
+        <extracomment>Anime marker pill for an episode that is part story and part filler</extracomment>
+        <translation>Mixed Canon/Filler</translation>
+    </message>
+    <message>
+        <source>Manga Canon</source>
+        <extracomment>Anime marker pill for an episode adapted from the manga</extracomment>
+        <translation>Manga Canon</translation>
+    </message>
+    <message>
+        <source>Anime Canon</source>
+        <extracomment>Anime marker pill for an original anime episode that counts as part of the story</extracomment>
+        <translation>Anime Canon</translation>
+    </message>
+    <message>
+        <source>Subbed</source>
+        <extracomment>Anime marker pill for an item with the original audio and subtitles</extracomment>
+        <translation>Subbed</translation>
+    </message>
+    <message>
+        <source>Dubbed</source>
+        <extracomment>Anime marker pill for an item with dubbed audio</extracomment>
+        <translation>Dubbed</translation>
+    </message>
+    <message>
+        <source>Subbed/Dubbed</source>
+        <extracomment>Anime marker pill for an item with both the original audio and a dub</extracomment>
+        <translation>Subbed/Dubbed</translation>
+    </message>
+    <message>
         <source>Rewatches</source>
         <translation>Rewatches</translation>
     </message>
@@ -736,10 +771,6 @@
     <message>
         <source>Swap this set for a different one</source>
         <translation>Swap this set for a different one</translation>
-    </message>
-    <message>
-        <source>SyncPlay watch parties</source>
-        <translation>SyncPlay watch parties</translation>
     </message>
     <message>
         <source>There is more waiting in Settings</source>
@@ -2446,10 +2477,6 @@
         <translation>Search this library</translation>
     </message>
     <message>
-        <source>Mark As Unplayed</source>
-        <translation>Mark As Unplayed</translation>
-    </message>
-    <message>
         <source>Mark As Played</source>
         <translation>Mark As Played</translation>
     </message>
@@ -3073,14 +3100,6 @@
         <translation>Sort Order for the row - Ascending,Descending.</translation>
     </message>
     <message>
-        <source>Current Offset</source>
-        <translation>Current Offset</translation>
-    </message>
-    <message>
-        <source>Adjust Subtitle Timing</source>
-        <translation>Adjust Subtitle Timing</translation>
-    </message>
-    <message>
         <source>Display Episodes In Two Columns</source>
         <translation>Display Episodes In Two Columns</translation>
     </message>
@@ -3263,6 +3282,1901 @@
         <source>{0}d ago</source>
         <extracomment>Days since something happened</extracomment>
         <translation>{0}d ago</translation>
+    </message>
+    <message>
+        <source>Today</source>
+        <extracomment>When the next episode airs</extracomment>
+        <translation>Today</translation>
+    </message>
+    <message>
+        <source>Tomorrow</source>
+        <extracomment>When the next episode airs</extracomment>
+        <translation>Tomorrow</translation>
+    </message>
+    <message>
+        <source>Jan</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Jan</translation>
+    </message>
+    <message>
+        <source>Feb</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Feb</translation>
+    </message>
+    <message>
+        <source>Mar</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Mar</translation>
+    </message>
+    <message>
+        <source>Apr</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Apr</translation>
+    </message>
+    <message>
+        <source>May</source>
+        <extracomment>Month name, used both in short dates and in full ones, so it needs a form that works for both</extracomment>
+        <translation>May</translation>
+    </message>
+    <message>
+        <source>Jun</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Jun</translation>
+    </message>
+    <message>
+        <source>Jul</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Jul</translation>
+    </message>
+    <message>
+        <source>Aug</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Aug</translation>
+    </message>
+    <message>
+        <source>Sep</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Sep</translation>
+    </message>
+    <message>
+        <source>Oct</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Oct</translation>
+    </message>
+    <message>
+        <source>Nov</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Nov</translation>
+    </message>
+    <message>
+        <source>Dec</source>
+        <extracomment>Short month name</extracomment>
+        <translation>Dec</translation>
+    </message>
+    <message>
+        <source>Offset</source>
+        <extracomment>Subtitle track picker row that opens the subtitle offset panel</extracomment>
+        <translation>Offset</translation>
+    </message>
+    <message>
+        <source>Subtitle Offset</source>
+        <extracomment>Title of the panel that moves subtitles earlier or later</extracomment>
+        <translation>Subtitle Offset</translation>
+    </message>
+    <message>
+        <source>Press BACK to close</source>
+        <extracomment>Button that closes the subtitle offset panel</extracomment>
+        <translation>Press BACK to close</translation>
+    </message>
+    <message>
+        <source>Continue Watching &amp; Next Up</source>
+        <extracomment>Home row that merges Continue Watching with Next Up</extracomment>
+        <translation>Continue Watching &amp; Next Up</translation>
+    </message>
+    <message>
+        <source>Chapters and Extras</source>
+        <extracomment>Spotlight card that holds a title's chapters and extras</extracomment>
+        <translation>Chapters and Extras</translation>
+    </message>
+    <message>
+        <source>1 chapter</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 chapter</translation>
+    </message>
+    <message>
+        <source>{count} chapters</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} chapters</translation>
+    </message>
+    <message>
+        <source>1 extra</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 extra</translation>
+    </message>
+    <message>
+        <source>{count} extras</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} extras</translation>
+    </message>
+    <message>
+        <source>Chapter</source>
+        <extracomment>A chapter with no name of its own, followed by its number</extracomment>
+        <translation>Chapter</translation>
+    </message>
+    <message>
+        <source>Behind the Scenes</source>
+        <extracomment>A kind of extra</extracomment>
+        <translation>Behind the Scenes</translation>
+    </message>
+    <message>
+        <source>Deleted Scenes</source>
+        <extracomment>A kind of extra</extracomment>
+        <translation>Deleted Scenes</translation>
+    </message>
+    <message>
+        <source>Featurettes</source>
+        <extracomment>A kind of extra</extracomment>
+        <translation>Featurettes</translation>
+    </message>
+    <message>
+        <source>Interviews</source>
+        <extracomment>A kind of extra</extracomment>
+        <translation>Interviews</translation>
+    </message>
+    <message>
+        <source>Scenes</source>
+        <extracomment>A kind of extra</extracomment>
+        <translation>Scenes</translation>
+    </message>
+    <message>
+        <source>Shorts</source>
+        <extracomment>A kind of extra</extracomment>
+        <translation>Shorts</translation>
+    </message>
+    <message>
+        <source>Trailers</source>
+        <extracomment>A kind of extra</extracomment>
+        <translation>Trailers</translation>
+    </message>
+    <message>
+        <source>1 collection</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 collection</translation>
+    </message>
+    <message>
+        <source>{count} collections</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} collections</translation>
+    </message>
+    <message>
+        <source>Collection</source>
+        <extracomment>A collection with no name of its own</extracomment>
+        <translation>Collection</translation>
+    </message>
+    <message>
+        <source>Cast, Crew, and Studios</source>
+        <extracomment>Spotlight card that holds the people and studios behind a title</extracomment>
+        <translation>Cast, Crew, and Studios</translation>
+    </message>
+    <message>
+        <source>1 person</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 person</translation>
+    </message>
+    <message>
+        <source>{count} people</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} people</translation>
+    </message>
+    <message>
+        <source>1 studio</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 studio</translation>
+    </message>
+    <message>
+        <source>{count} studios</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} studios</translation>
+    </message>
+    <message>
+        <source>Writer</source>
+        <extracomment>A crew member credited as a writer</extracomment>
+        <translation>Writer</translation>
+    </message>
+    <message>
+        <source>Track List</source>
+        <extracomment>Spotlight card that holds an album's tracks</extracomment>
+        <translation>Track List</translation>
+    </message>
+    <message>
+        <source>1 track</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 track</translation>
+    </message>
+    <message>
+        <source>{count} tracks</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} tracks</translation>
+    </message>
+    <message>
+        <source>Playlist</source>
+        <extracomment>Spotlight card that holds a playlist's items</extracomment>
+        <translation>Playlist</translation>
+    </message>
+    <message>
+        <source>1 album</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 album</translation>
+    </message>
+    <message>
+        <source>{count} albums</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} albums</translation>
+    </message>
+    <message>
+        <source>Disc {number}</source>
+        <extracomment>Heading over the tracks on one disc of an album</extracomment>
+        <translation>Disc {number}</translation>
+    </message>
+    <message>
+        <source>Movies &amp; Shows</source>
+        <extracomment>Spotlight card that holds a collection's titles</extracomment>
+        <translation>Movies &amp; Shows</translation>
+    </message>
+    <message>
+        <source>1 movie</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 movie</translation>
+    </message>
+    <message>
+        <source>{count} movies</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} movies</translation>
+    </message>
+    <message>
+        <source>1 show</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 show</translation>
+    </message>
+    <message>
+        <source>{count} shows</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} shows</translation>
+    </message>
+    <message>
+        <source>1 item</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 item</translation>
+    </message>
+    <message>
+        <source>{count} items</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} items</translation>
+    </message>
+    <message>
+        <source>1 title</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 title</translation>
+    </message>
+    <message>
+        <source>{count} titles</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} titles</translation>
+    </message>
+    <message>
+        <source>Moonfin Recommends</source>
+        <extracomment>Recommendations scored by Moonfin</extracomment>
+        <translation>Moonfin Recommends</translation>
+    </message>
+    <message>
+        <source>TMDb</source>
+        <extracomment>Recommendations from TMDb</extracomment>
+        <translation>TMDb</translation>
+    </message>
+    <message>
+        <source>Recommendations (Seerr)</source>
+        <extracomment>Recommendations that come from Seerr</extracomment>
+        <translation>Recommendations (Seerr)</translation>
+    </message>
+    <message>
+        <source>Similar (Seerr)</source>
+        <extracomment>Similar titles that come from Seerr</extracomment>
+        <translation>Similar (Seerr)</translation>
+    </message>
+    <message>
+        <source>1 season</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 season</translation>
+    </message>
+    <message>
+        <source>{count} seasons</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} seasons</translation>
+    </message>
+    <message>
+        <source>1 episode</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 episode</translation>
+    </message>
+    <message>
+        <source>{count} episodes</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} episodes</translation>
+    </message>
+    <message>
+        <source>Show Missing Collection Items</source>
+        <extracomment>Seerr setting</extracomment>
+        <translation>Show Missing Collection Items</translation>
+    </message>
+    <message>
+        <source>Include missing items on Collection pages</source>
+        <extracomment>Seerr setting description</extracomment>
+        <translation>Include missing items on Collection pages</translation>
+    </message>
+    <message>
+        <source>Date Added: {0}</source>
+        <extracomment>When the file was added, on the File Information tab of the details screen. {0} is a date like Sep 24, 2026</extracomment>
+        <translation>Date Added: {0}</translation>
+    </message>
+    <message>
+        <source>Direct Play Capability:</source>
+        <extracomment>Label before Yes or No on the File Information tab</extracomment>
+        <translation>Direct Play Capability:</translation>
+    </message>
+    <message>
+        <source>No</source>
+        <extracomment>Direct play answer on the File Information tab</extracomment>
+        <translation>No</translation>
+    </message>
+    <message>
+        <source>Show All ({0}) Audio Tracks</source>
+        <extracomment>Opens the full audio track list on the File Information tab. {0} is how many there are</extracomment>
+        <translation>Show All ({0}) Audio Tracks</translation>
+    </message>
+    <message>
+        <source>Show All ({0}) Subtitle Tracks</source>
+        <extracomment>Opens the full subtitle track list on the File Information tab. {0} is how many there are</extracomment>
+        <translation>Show All ({0}) Subtitle Tracks</translation>
+    </message>
+    <message>
+        <source>Show Less</source>
+        <extracomment>Folds a long text or track list back</extracomment>
+        <translation>Show Less</translation>
+    </message>
+    <message>
+        <source>Container format is not supported by the player.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Container format is not supported by the player.</translation>
+    </message>
+    <message>
+        <source>Video codec is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video codec is not supported.</translation>
+    </message>
+    <message>
+        <source>Audio codec is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Audio codec is not supported.</translation>
+    </message>
+    <message>
+        <source>Subtitle format is not supported (requires burning).</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Subtitle format is not supported (requires burning).</translation>
+    </message>
+    <message>
+        <source>Audio profile is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Audio profile is not supported.</translation>
+    </message>
+    <message>
+        <source>Video profile is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video profile is not supported.</translation>
+    </message>
+    <message>
+        <source>Video level is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video level is not supported.</translation>
+    </message>
+    <message>
+        <source>Video resolution is not supported by this device.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video resolution is not supported by this device.</translation>
+    </message>
+    <message>
+        <source>Video bit depth is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video bit depth is not supported.</translation>
+    </message>
+    <message>
+        <source>Video framerate is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video framerate is not supported.</translation>
+    </message>
+    <message>
+        <source>File bitrate exceeds player streaming limit.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>File bitrate exceeds player streaming limit.</translation>
+    </message>
+    <message>
+        <source>Video bitrate exceeds streaming limit.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video bitrate exceeds streaming limit.</translation>
+    </message>
+    <message>
+        <source>Audio bitrate exceeds streaming limit.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Audio bitrate exceeds streaming limit.</translation>
+    </message>
+    <message>
+        <source>Number of audio channels is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Number of audio channels is not supported.</translation>
+    </message>
+    <message>
+        <source>Audio codec ({0}) is not supported directly.</source>
+        <extracomment>Why a file cant direct play, {0} is the codec</extracomment>
+        <translation>Audio codec ({0}) is not supported directly.</translation>
+    </message>
+    <message>
+        <source>Audio channel count ({0}ch) exceeds the player limit.</source>
+        <extracomment>Why a file cant direct play, {0} is the channel count</extracomment>
+        <translation>Audio channel count ({0}ch) exceeds the player limit.</translation>
+    </message>
+    <message>
+        <source>Tip: Adjust 'Maximum Audio Channels' in Audio Preferences.</source>
+        <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
+        <translation>Tip: Adjust 'Maximum Audio Channels' in Audio Preferences.</translation>
+    </message>
+    <message>
+        <source>Subtitle format ({0}) is not supported directly and must be burned in.</source>
+        <extracomment>Why a file cant direct play, {0} is the subtitle format</extracomment>
+        <translation>Subtitle format ({0}) is not supported directly and must be burned in.</translation>
+    </message>
+    <message>
+        <source>ASS/SSA subtitles require transcoding because direct play is turned off.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>ASS/SSA subtitles require transcoding because direct play is turned off.</translation>
+    </message>
+    <message>
+        <source>Tip: Enable 'Direct Play ASS Subtitles' in Subtitle Preferences to play directly without transcoding.</source>
+        <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
+        <translation>Tip: Enable 'Direct Play ASS Subtitles' in Subtitle Preferences to play directly without transcoding.</translation>
+    </message>
+    <message>
+        <source>PGS subtitles require transcoding because direct play is turned off.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>PGS subtitles require transcoding because direct play is turned off.</translation>
+    </message>
+    <message>
+        <source>Tip: Enable 'Direct Play PGS Subtitles' in Subtitle Preferences to play directly without transcoding.</source>
+        <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
+        <translation>Tip: Enable 'Direct Play PGS Subtitles' in Subtitle Preferences to play directly without transcoding.</translation>
+    </message>
+    <message>
+        <source>Tip: Increase 'Maximum Bitrate' in Video Playback Preferences to allow direct streaming.</source>
+        <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
+        <translation>Tip: Increase 'Maximum Bitrate' in Video Playback Preferences to allow direct streaming.</translation>
+    </message>
+    <message>
+        <source>File bitrate ({0}) exceeds the configured streaming limit ({1}).</source>
+        <extracomment>Why a file cant direct play, both are bitrates like 42.0 Mbps</extracomment>
+        <translation>File bitrate ({0}) exceeds the configured streaming limit ({1}).</translation>
+    </message>
+    <message>
+        <source>Video dynamic range (e.g. Dolby Vision / HDR) is not supported by this display.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video dynamic range (e.g. Dolby Vision / HDR) is not supported by this display.</translation>
+    </message>
+    <message>
+        <source>Audio sample rate is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Audio sample rate is not supported.</translation>
+    </message>
+    <message>
+        <source>Audio bit depth is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Audio bit depth is not supported.</translation>
+    </message>
+    <message>
+        <source>Video reference frames exceed player limits.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Video reference frames exceed player limits.</translation>
+    </message>
+    <message>
+        <source>Anamorphic video is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Anamorphic video is not supported.</translation>
+    </message>
+    <message>
+        <source>Interlaced video is not supported.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Interlaced video is not supported.</translation>
+    </message>
+    <message>
+        <source>Secondary audio stream requires transcoding.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Secondary audio stream requires transcoding.</translation>
+    </message>
+    <message>
+        <source>Direct play is not supported for this media format.</source>
+        <extracomment>Why a file cant direct play</extracomment>
+        <translation>Direct play is not supported for this media format.</translation>
+    </message>
+    <message>
+        <source>Action Buttons on Screen</source>
+        <extracomment>Details screen setting</extracomment>
+        <translation>Action Buttons on Screen</translation>
+    </message>
+    <message>
+        <source>Choose how many buttons stay on screen before the rest move into More Actions</source>
+        <extracomment>Details screen setting description</extracomment>
+        <translation>Choose how many buttons stay on screen before the rest move into More Actions</translation>
+    </message>
+    <message>
+        <source>Auto (Theme Default)</source>
+        <extracomment>Action Buttons on Screen option that leaves each details style to its own default</extracomment>
+        <translation>Auto (Theme Default)</translation>
+    </message>
+    <message>
+        <source>1 (Play only)</source>
+        <extracomment>Action Buttons on Screen option</extracomment>
+        <translation>1 (Play only)</translation>
+    </message>
+    <message>
+        <source>All (Horizontal Scroll)</source>
+        <extracomment>Action Buttons on Screen option that keeps every button in one row that scrolls sideways</extracomment>
+        <translation>All (Horizontal Scroll)</translation>
+    </message>
+    <message>
+        <source>More</source>
+        <extracomment>Button on the classic details screen that opens the actions that didnt fit, and the name of an untitled tab on the modern one</extracomment>
+        <translation>More</translation>
+    </message>
+    <message>
+        <source>Items in Collection</source>
+        <extracomment>Row of the titles in a collection on the classic details screen</extracomment>
+        <translation>Items in Collection</translation>
+    </message>
+    <message>
+        <source>Items</source>
+        <extracomment>Tab of the titles in a collection on the modern details screen, and the word after a count like 42 Items</extracomment>
+        <translation>Items</translation>
+    </message>
+    <message>
+        <source>Movie</source>
+        <extracomment>What a title in a collection is, under its card</extracomment>
+        <translation>Movie</translation>
+    </message>
+    <message>
+        <source>TV Show</source>
+        <extracomment>What a title in a collection is, under its card</extracomment>
+        <translation>TV Show</translation>
+    </message>
+    <message>
+        <source>More Episodes</source>
+        <extracomment>Spotlight card holding every episode of the show, a section per season</extracomment>
+        <translation>More Episodes</translation>
+    </message>
+    <message>
+        <source>1 fact</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 fact</translation>
+    </message>
+    <message>
+        <source>{count} facts</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} facts</translation>
+    </message>
+    <message>
+        <source>1 tag</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 tag</translation>
+    </message>
+    <message>
+        <source>{count} tags</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} tags</translation>
+    </message>
+    <message>
+        <source>Genres and Tags</source>
+        <extracomment>Chip that opens Seerr's genres, networks and keywords for a title</extracomment>
+        <translation>Genres and Tags</translation>
+    </message>
+    <message>
+        <source>Continuing</source>
+        <extracomment>Series status badge</extracomment>
+        <translation>Continuing</translation>
+    </message>
+    <message>
+        <source>Ended</source>
+        <extracomment>Series status badge, and the start of a finished program time like Ended Monday, 8:00 PM</extracomment>
+        <translation>Ended</translation>
+    </message>
+    <message>
+        <source>Declined</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Declined</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Available</translation>
+    </message>
+    <message>
+        <source>Partially Available</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Partially Available</translation>
+    </message>
+    <message>
+        <source>Requested</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Requested</translation>
+    </message>
+    <message>
+        <source>Pending</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Pending</translation>
+    </message>
+    <message>
+        <source>Blocklisted</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Blocklisted</translation>
+    </message>
+    <message>
+        <source>Deleted</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Deleted</translation>
+    </message>
+    <message>
+        <source>Not Requested</source>
+        <extracomment>Seerr availability pill</extracomment>
+        <translation>Not Requested</translation>
+    </message>
+    <message>
+        <source>Seerr Availability</source>
+        <extracomment>Metadata row item in the details screen settings</extracomment>
+        <translation>Seerr Availability</translation>
+    </message>
+    <message>
+        <source>Guest Appearances</source>
+        <extracomment>A rail or tab of episodes a person appears in outside a show they are billed on</extracomment>
+        <translation>Guest Appearances</translation>
+    </message>
+    <message>
+        <source>Crew Contributions (Seerr)</source>
+        <extracomment>A rail of titles Seerr credits a person as crew on</extracomment>
+        <translation>Crew Contributions (Seerr)</translation>
+    </message>
+    <message>
+        <source>Appearances (Seerr)</source>
+        <extracomment>A rail of titles Seerr credits a person as cast on</extracomment>
+        <translation>Appearances (Seerr)</translation>
+    </message>
+    <message>
+        <source>January</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>January</translation>
+    </message>
+    <message>
+        <source>February</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>February</translation>
+    </message>
+    <message>
+        <source>March</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>March</translation>
+    </message>
+    <message>
+        <source>April</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>April</translation>
+    </message>
+    <message>
+        <source>June</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>June</translation>
+    </message>
+    <message>
+        <source>July</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>July</translation>
+    </message>
+    <message>
+        <source>August</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>August</translation>
+    </message>
+    <message>
+        <source>September</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>September</translation>
+    </message>
+    <message>
+        <source>October</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>October</translation>
+    </message>
+    <message>
+        <source>November</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>November</translation>
+    </message>
+    <message>
+        <source>December</source>
+        <extracomment>Month in a person's birth or death date</extracomment>
+        <translation>December</translation>
+    </message>
+    <message>
+        <source>Mark as Watched</source>
+        <extracomment>Card menu entry</extracomment>
+        <translation>Mark as Watched</translation>
+    </message>
+    <message>
+        <source>Mark as Unwatched</source>
+        <extracomment>Card menu entry</extracomment>
+        <translation>Mark as Unwatched</translation>
+    </message>
+    <message>
+        <source>Hide from Continue Watching</source>
+        <extracomment>Card menu entry</extracomment>
+        <translation>Hide from Continue Watching</translation>
+    </message>
+    <message>
+        <source>Hide from Next Up</source>
+        <extracomment>Card menu entry</extracomment>
+        <translation>Hide from Next Up</translation>
+    </message>
+    <message>
+        <source>Add to Favorites</source>
+        <extracomment>Card menu entry</extracomment>
+        <translation>Add to Favorites</translation>
+    </message>
+    <message>
+        <source>Remove from Favorites</source>
+        <extracomment>Card menu entry</extracomment>
+        <translation>Remove from Favorites</translation>
+    </message>
+    <message>
+        <source>Add to Collection</source>
+        <extracomment>Card menu entry, and the title of the collection picker</extracomment>
+        <translation>Add to Collection</translation>
+    </message>
+    <message>
+        <source>Remove from Collection</source>
+        <extracomment>Card menu entry, and the title of the dialog confirming it</extracomment>
+        <translation>Remove from Collection</translation>
+    </message>
+    <message>
+        <source>Add to Playlist</source>
+        <extracomment>Card menu entry, and the title of the playlist picker</extracomment>
+        <translation>Add to Playlist</translation>
+    </message>
+    <message>
+        <source>Refresh Metadata</source>
+        <extracomment>Card menu entry for admins, and a button in the Identify dialog</extracomment>
+        <translation>Refresh Metadata</translation>
+    </message>
+    <message>
+        <source>Identify</source>
+        <extracomment>Card menu entry for admins, and the title of the Identify dialog</extracomment>
+        <translation>Identify</translation>
+    </message>
+    <message>
+        <source>Change Artwork</source>
+        <extracomment>Card menu entry for admins, the details screen button and the title of the artwork picker</extracomment>
+        <translation>Change Artwork</translation>
+    </message>
+    <message>
+        <source>Artwork updated successfully</source>
+        <extracomment>Note after new artwork was picked</extracomment>
+        <translation>Artwork updated successfully</translation>
+    </message>
+    <message>
+        <source>Create New Collection</source>
+        <extracomment>First row of the collection picker</extracomment>
+        <translation>Create New Collection</translation>
+    </message>
+    <message>
+        <source>No collections found</source>
+        <extracomment>Collection picker with nothing to pick</extracomment>
+        <translation>No collections found</translation>
+    </message>
+    <message>
+        <source>New Collection</source>
+        <extracomment>Title of the keyboard naming a new collection</extracomment>
+        <translation>New Collection</translation>
+    </message>
+    <message>
+        <source>Collection name</source>
+        <extracomment>Hint in the keyboard naming a new collection</extracomment>
+        <translation>Collection name</translation>
+    </message>
+    <message>
+        <source>Added to collection</source>
+        <extracomment>Note after adding an item to a collection</extracomment>
+        <translation>Added to collection</translation>
+    </message>
+    <message>
+        <source>Created &quot;{name}&quot; and added item</source>
+        <extracomment>Note after creating a collection or playlist with the item in it. {name} is what it was called</extracomment>
+        <translation>Created &quot;{name}&quot; and added item</translation>
+    </message>
+    <message>
+        <source>Remove {item} from {collection}? The item stays in your library.</source>
+        <extracomment>Confirming taking a title out of a collection. {item} is the title and {collection} the collection</extracomment>
+        <translation>Remove {item} from {collection}? The item stays in your library.</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <extracomment>Button confirming a removal</extracomment>
+        <translation>Remove</translation>
+    </message>
+    <message>
+        <source>Failed to remove from collection: {error}</source>
+        <extracomment>Note when the server refuses a removal. {error} is the reason</extracomment>
+        <translation>Failed to remove from collection: {error}</translation>
+    </message>
+    <message>
+        <source>Create New Playlist</source>
+        <extracomment>Starts a new playlist, as the first row of the playlist picker or a keyboard title</extracomment>
+        <translation>Create New Playlist</translation>
+    </message>
+    <message>
+        <source>No playlists found</source>
+        <extracomment>Playlist picker with nothing to pick</extracomment>
+        <translation>No playlists found</translation>
+    </message>
+    <message>
+        <source>New Playlist</source>
+        <extracomment>Names a new playlist, as a keyboard title or a menu option</extracomment>
+        <translation>New Playlist</translation>
+    </message>
+    <message>
+        <source>Playlist name</source>
+        <extracomment>Hint in the keyboard naming a new playlist</extracomment>
+        <translation>Playlist name</translation>
+    </message>
+    <message>
+        <source>Added to playlist</source>
+        <extracomment>Note after adding an item to a playlist</extracomment>
+        <translation>Added to playlist</translation>
+    </message>
+    <message>
+        <source>Metadata refresh requested</source>
+        <extracomment>Note after asking the server to refresh an item</extracomment>
+        <translation>Metadata refresh requested</translation>
+    </message>
+    <message>
+        <source>Failed to refresh metadata: {error}</source>
+        <extracomment>Note when the server refuses a refresh. {error} is the reason</extracomment>
+        <translation>Failed to refresh metadata: {error}</translation>
+    </message>
+    <message>
+        <source>Unauthorized</source>
+        <extracomment>Reason a card menu request failed, when the server wants the viewer signed in again</extracomment>
+        <translation>Unauthorized</translation>
+    </message>
+    <message>
+        <source>Forbidden</source>
+        <extracomment>Reason a card menu request failed, when the viewer isnt allowed to do it</extracomment>
+        <translation>Forbidden</translation>
+    </message>
+    <message>
+        <source>HTTP error</source>
+        <extracomment>Reason a card menu request failed, when the server gave nothing more specific</extracomment>
+        <translation>HTTP error</translation>
+    </message>
+    <message>
+        <source>Metadata updated</source>
+        <extracomment>Note after an item was matched with Identify</extracomment>
+        <translation>Metadata updated</translation>
+    </message>
+    <message>
+        <source>Refreshing metadata</source>
+        <extracomment>Note after a refresh was asked for from the Identify dialog</extracomment>
+        <translation>Refreshing metadata</translation>
+    </message>
+    <message>
+        <source>Enter PIN</source>
+        <extracomment>Title of the screen that holds the app shut until the PIN is entered</extracomment>
+        <translation>Enter PIN</translation>
+    </message>
+    <message>
+        <source>This profile is protected by a 4-digit PIN.</source>
+        <extracomment>Line under Enter PIN on the PIN screen</extracomment>
+        <translation>This profile is protected by a 4-digit PIN.</translation>
+    </message>
+    <message>
+        <source>4 digits</source>
+        <extracomment>Hint in the empty PIN field</extracomment>
+        <translation>4 digits</translation>
+    </message>
+    <message>
+        <source>Unlock</source>
+        <extracomment>Button that checks the PIN typed on the PIN screen</extracomment>
+        <translation>Unlock</translation>
+    </message>
+    <message>
+        <source>PIN Code Protection</source>
+        <extracomment>Setting that asks for a PIN after signing in</extracomment>
+        <translation>PIN Code Protection</translation>
+    </message>
+    <message>
+        <source>Require a PIN to access your account</source>
+        <extracomment>Description of the PIN Code Protection setting</extracomment>
+        <translation>Require a PIN to access your account</translation>
+    </message>
+    <message>
+        <source>PIN Code</source>
+        <extracomment>Setting that chooses the PIN the PIN screen asks for</extracomment>
+        <translation>PIN Code</translation>
+    </message>
+    <message>
+        <source>Default PIN: 0000</source>
+        <extracomment>Description of the PIN Code setting before a PIN has been chosen</extracomment>
+        <translation>Default PIN: 0000</translation>
+    </message>
+    <message>
+        <source>Enter a 4-digit PIN used to unlock the app when PIN protection is enabled.</source>
+        <extracomment>Shown beside the keypad when choosing the PIN the PIN screen asks for</extracomment>
+        <translation>Enter a 4-digit PIN used to unlock the app when PIN protection is enabled.</translation>
+    </message>
+    <message>
+        <source>Configured 4-digit PIN</source>
+        <extracomment>Description of the PIN Code setting once a PIN has been chosen</extracomment>
+        <translation>Configured 4-digit PIN</translation>
+    </message>
+    <message>
+        <source>Blocked Ratings</source>
+        <extracomment>Setting that opens the list of content ratings to block</extracomment>
+        <translation>Blocked Ratings</translation>
+    </message>
+    <message>
+        <source>Content rating restrictions</source>
+        <extracomment>Description of the Blocked Ratings setting</extracomment>
+        <translation>Content rating restrictions</translation>
+    </message>
+    <message>
+        <source>Parental Controls</source>
+        <extracomment>Title over the list of content ratings to block</extracomment>
+        <translation>Parental Controls</translation>
+    </message>
+    <message>
+        <source>Block content with the following ratings:</source>
+        <extracomment>Line at the top of the Blocked Ratings list</extracomment>
+        <translation>Block content with the following ratings:</translation>
+    </message>
+    <message>
+        <source>Blocking a rating also blocks everything stronger than it.</source>
+        <extracomment>Follows Block content with the following ratings: in the Blocked Ratings list</extracomment>
+        <translation>Blocking a rating also blocks everything stronger than it.</translation>
+    </message>
+    <message>
+        <source>Ratings</source>
+        <extracomment>Heading over the ratings in the Blocked Ratings list that can be ranked by strength</extracomment>
+        <translation>Ratings</translation>
+    </message>
+    <message>
+        <source>Only blocks itself</source>
+        <extracomment>Heading over ratings in the Blocked Ratings list that cant be ranked, so blocking one blocks nothing else</extracomment>
+        <translation>Only blocks itself</translation>
+    </message>
+    <message>
+        <source>Could not load server ratings. Showing saved ratings only.</source>
+        <extracomment>Blocked Ratings list when the server couldnt be read and nothing was blocked before</extracomment>
+        <translation>Could not load server ratings. Showing saved ratings only.</translation>
+    </message>
+    <message>
+        <source>No content ratings were found on this server yet.</source>
+        <extracomment>Blocked Ratings list when the library has no rated titles</extracomment>
+        <translation>No content ratings were found on this server yet.</translation>
+    </message>
+    <message>
+        <source>Could not refresh ratings from server. Showing saved ratings.</source>
+        <extracomment>Top of the Blocked Ratings list when the server couldnt be read</extracomment>
+        <translation>Could not refresh ratings from server. Showing saved ratings.</translation>
+    </message>
+    <message>
+        <source>This isn't available</source>
+        <extracomment>Shown with a lock in place of a title a blocked rating keeps out</extracomment>
+        <translation>This isn't available</translation>
+    </message>
+    <message>
+        <source>Now</source>
+        <extracomment>Guide button that takes the guide back to the current time</extracomment>
+        <translation>Now</translation>
+    </message>
+    <message>
+        <source>Recordings</source>
+        <extracomment>Guide button that opens recorded and scheduled programs, and the title of that screen</extracomment>
+        <translation>Recordings</translation>
+    </message>
+    <message>
+        <source>Guide Timeline</source>
+        <extracomment>Guide header title while no channel is focused</extracomment>
+        <translation>Guide Timeline</translation>
+    </message>
+    <message>
+        <source>No program data</source>
+        <extracomment>Guide cell for a stretch of time a channel has nothing listed for</extracomment>
+        <translation>No program data</translation>
+    </message>
+    <message>
+        <source>Failed to load guide: {error}</source>
+        <extracomment>Shown in place of the guide when it couldnt load, {error} is the reason</extracomment>
+        <translation>Failed to load guide: {error}</translation>
+    </message>
+    <message>
+        <source>No channels found</source>
+        <extracomment>Shown in place of the guide when no channel matches the filter</extracomment>
+        <translation>No channels found</translation>
+    </message>
+    <message>
+        <source>Sort By</source>
+        <extracomment>Title of the picker that chooses the order of guide channels</extracomment>
+        <translation>Sort By</translation>
+    </message>
+    <message>
+        <source>Channel Number</source>
+        <extracomment>Guide sort option that orders channels by number</extracomment>
+        <translation>Channel Number</translation>
+    </message>
+    <message>
+        <source>Favorites First</source>
+        <extracomment>Guide sort option that puts favorite channels at the top</extracomment>
+        <translation>Favorites First</translation>
+    </message>
+    <message>
+        <source>Select date</source>
+        <extracomment>Title of the picker that moves the guide to another day</extracomment>
+        <translation>Select date</translation>
+    </message>
+    <message>
+        <source>Sports</source>
+        <extracomment>Guide filter and program tag for sports</extracomment>
+        <translation>Sports</translation>
+    </message>
+    <message>
+        <source>News</source>
+        <extracomment>Guide filter and program tag for news</extracomment>
+        <translation>News</translation>
+    </message>
+    <message>
+        <source>Kids</source>
+        <extracomment>Guide filter and program tag for children's programs</extracomment>
+        <translation>Kids</translation>
+    </message>
+    <message>
+        <source>Premiere</source>
+        <extracomment>Guide filter and program tag for a program's first airing</extracomment>
+        <translation>Premiere</translation>
+    </message>
+    <message>
+        <source>Sun</source>
+        <extracomment>Short name for Sunday in the guide's date heading</extracomment>
+        <translation>Sun</translation>
+    </message>
+    <message>
+        <source>Mon</source>
+        <extracomment>Short name for Monday in the guide's date heading</extracomment>
+        <translation>Mon</translation>
+    </message>
+    <message>
+        <source>Tue</source>
+        <extracomment>Short name for Tuesday in the guide's date heading</extracomment>
+        <translation>Tue</translation>
+    </message>
+    <message>
+        <source>Wed</source>
+        <extracomment>Short name for Wednesday in the guide's date heading</extracomment>
+        <translation>Wed</translation>
+    </message>
+    <message>
+        <source>Thu</source>
+        <extracomment>Short name for Thursday in the guide's date heading</extracomment>
+        <translation>Thu</translation>
+    </message>
+    <message>
+        <source>Fri</source>
+        <extracomment>Short name for Friday in the guide's date heading</extracomment>
+        <translation>Fri</translation>
+    </message>
+    <message>
+        <source>Sat</source>
+        <extracomment>Short name for Saturday in the guide's date heading</extracomment>
+        <translation>Sat</translation>
+    </message>
+    <message>
+        <source>Watch</source>
+        <extracomment>Program popup button that plays a program on air now</extracomment>
+        <translation>Watch</translation>
+    </message>
+    <message>
+        <source>Watch channel live</source>
+        <extracomment>Program popup button that tunes the channel when the program isnt on air now</extracomment>
+        <translation>Watch channel live</translation>
+    </message>
+    <message>
+        <source>Favorite Channel</source>
+        <extracomment>Program popup button that adds the channel to favorites</extracomment>
+        <translation>Favorite Channel</translation>
+    </message>
+    <message>
+        <source>Unfavorite Channel</source>
+        <extracomment>Program popup button that removes the channel from favorites</extracomment>
+        <translation>Unfavorite Channel</translation>
+    </message>
+    <message>
+        <source>Program set to record</source>
+        <extracomment>Guide notice once a recording is scheduled</extracomment>
+        <translation>Program set to record</translation>
+    </message>
+    <message>
+        <source>Unable to create recording</source>
+        <extracomment>Guide notice when a recording couldnt be scheduled</extracomment>
+        <translation>Unable to create recording</translation>
+    </message>
+    <message>
+        <source>Recording cancelled</source>
+        <extracomment>Guide notice once a scheduled recording is cancelled</extracomment>
+        <translation>Recording cancelled</translation>
+    </message>
+    <message>
+        <source>Failed to cancel recording</source>
+        <extracomment>Guide notice when a scheduled recording couldnt be cancelled</extracomment>
+        <translation>Failed to cancel recording</translation>
+    </message>
+    <message>
+        <source>Series set to record</source>
+        <extracomment>Guide notice once every episode of a series is scheduled to record</extracomment>
+        <translation>Series set to record</translation>
+    </message>
+    <message>
+        <source>Unable to create series recording</source>
+        <extracomment>Guide notice when a series recording couldnt be scheduled</extracomment>
+        <translation>Unable to create series recording</translation>
+    </message>
+    <message>
+        <source>Series recording cancelled</source>
+        <extracomment>Guide notice once a series recording is cancelled</extracomment>
+        <translation>Series recording cancelled</translation>
+    </message>
+    <message>
+        <source>Failed to cancel series recording</source>
+        <extracomment>Guide notice when a series recording couldnt be cancelled</extracomment>
+        <translation>Failed to cancel series recording</translation>
+    </message>
+    <message>
+        <source>Added to favorite channels</source>
+        <extracomment>Guide notice once a channel is made a favorite</extracomment>
+        <translation>Added to favorite channels</translation>
+    </message>
+    <message>
+        <source>Removed from favorite channels</source>
+        <extracomment>Guide notice once a channel is no longer a favorite</extracomment>
+        <translation>Removed from favorite channels</translation>
+    </message>
+    <message>
+        <source>Failed to update favorite channel</source>
+        <extracomment>Guide notice when a channel's favorite state couldnt be changed</extracomment>
+        <translation>Failed to update favorite channel</translation>
+    </message>
+    <message>
+        <source>LIVE</source>
+        <extracomment>End of the live TV timeline in the player when nothing is listed for the channel</extracomment>
+        <translation>LIVE</translation>
+    </message>
+    <message>
+        <source>Failed to play {name}</source>
+        <extracomment>Channel changer notice when a channel wouldnt play, {name} is the channel</extracomment>
+        <translation>Failed to play {name}</translation>
+    </message>
+    <message>
+        <source>Schedule</source>
+        <extracomment>Recordings screen tab that lists scheduled recordings</extracomment>
+        <translation>Schedule</translation>
+    </message>
+    <message>
+        <source>Series Recordings</source>
+        <extracomment>Recordings screen tab that lists series recordings</extracomment>
+        <translation>Series Recordings</translation>
+    </message>
+    <message>
+        <source>Scheduled in Next 24 Hours</source>
+        <extracomment>Recordings row of recordings due to start within a day</extracomment>
+        <translation>Scheduled in Next 24 Hours</translation>
+    </message>
+    <message>
+        <source>Recent Recordings</source>
+        <extracomment>Recordings row of the newest recordings</extracomment>
+        <translation>Recent Recordings</translation>
+    </message>
+    <message>
+        <source>TV Series</source>
+        <extracomment>Recordings row of recorded episodes</extracomment>
+        <translation>TV Series</translation>
+    </message>
+    <message>
+        <source>Yesterday</source>
+        <extracomment>Recordings heading for scheduled recordings from the day before</extracomment>
+        <translation>Yesterday</translation>
+    </message>
+    <message>
+        <source>All channels</source>
+        <extracomment>Series recording card when it records the series on any channel</extracomment>
+        <translation>All channels</translation>
+    </message>
+    <message>
+        <source>No recordings found</source>
+        <extracomment>Recordings tab with nothing recorded yet</extracomment>
+        <translation>No recordings found</translation>
+    </message>
+    <message>
+        <source>No scheduled recordings</source>
+        <extracomment>Schedule tab with nothing set to record</extracomment>
+        <translation>No scheduled recordings</translation>
+    </message>
+    <message>
+        <source>No series recordings</source>
+        <extracomment>Series Recordings tab with no series set to record</extracomment>
+        <translation>No series recordings</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <extracomment>Recording popup button that deletes the recording</extracomment>
+        <translation>Delete</translation>
+    </message>
+    <message>
+        <source>Cancel Recording?</source>
+        <extracomment>Title of the question asked before a scheduled recording is cancelled</extracomment>
+        <translation>Cancel Recording?</translation>
+    </message>
+    <message>
+        <source>Cancel Series Recording?</source>
+        <extracomment>Title of the question asked before a series recording is cancelled</extracomment>
+        <translation>Cancel Series Recording?</translation>
+    </message>
+    <message>
+        <source>Stop recording {name}?</source>
+        <extracomment>Asked before a series recording is cancelled, {name} is the series</extracomment>
+        <translation>Stop recording {name}?</translation>
+    </message>
+    <message>
+        <source>Cancel scheduled recording of {name}?</source>
+        <extracomment>Asked before a scheduled recording is cancelled, {name} is the program</extracomment>
+        <translation>Cancel scheduled recording of {name}?</translation>
+    </message>
+    <message>
+        <source>Yes, Cancel</source>
+        <extracomment>Button that goes ahead with cancelling a recording</extracomment>
+        <translation>Yes, Cancel</translation>
+    </message>
+    <message>
+        <source>Show Live TV Button</source>
+        <extracomment>Setting that shows the Live TV button in the navigation bar</extracomment>
+        <translation>Show Live TV Button</translation>
+    </message>
+    <message>
+        <source>Show the Live TV button in the navigation bar when the server has a Live TV library</source>
+        <extracomment>Description of the Show Live TV Button setting</extracomment>
+        <translation>Show the Live TV button in the navigation bar when the server has a Live TV library</translation>
+    </message>
+    <message>
+        <source>Trick Play</source>
+        <extracomment>Setting that shows preview thumbnails while seeking</extracomment>
+        <translation>Trick Play</translation>
+    </message>
+    <message>
+        <source>Show preview thumbnails when seeking</source>
+        <extracomment>Description of the Trick Play setting</extracomment>
+        <translation>Show preview thumbnails when seeking</translation>
+    </message>
+    <message>
+        <source>Pause While Scrubbing</source>
+        <extracomment>Setting that pauses playback while scrubbing the progress bar</extracomment>
+        <translation>Pause While Scrubbing</translation>
+    </message>
+    <message>
+        <source>Playback pauses while you seek and resumes when you press play. Turn this off to keep playing and jump straight to the new spot</source>
+        <extracomment>Description of the Pause While Scrubbing setting</extracomment>
+        <translation>Playback pauses while you seek and resumes when you press play. Turn this off to keep playing and jump straight to the new spot</translation>
+    </message>
+    <message>
+        <source>Seek Step</source>
+        <extracomment>Setting for how far each press moves while scrubbing the progress bar</extracomment>
+        <translation>Seek Step</translation>
+    </message>
+    <message>
+        <source>How far each press moves while scrubbing the progress bar</source>
+        <extracomment>Description of the Seek Step setting</extracomment>
+        <translation>How far each press moves while scrubbing the progress bar</translation>
+    </message>
+    <message>
+        <source>5 seconds</source>
+        <extracomment>How far each press moves while scrubbing the progress bar</extracomment>
+        <translation>5 seconds</translation>
+    </message>
+    <message>
+        <source>10 seconds</source>
+        <extracomment>How far each press moves while scrubbing the progress bar</extracomment>
+        <translation>10 seconds</translation>
+    </message>
+    <message>
+        <source>20 seconds</source>
+        <extracomment>How far each press moves while scrubbing the progress bar</extracomment>
+        <translation>20 seconds</translation>
+    </message>
+    <message>
+        <source>30 seconds</source>
+        <extracomment>How far each press moves while scrubbing the progress bar</extracomment>
+        <translation>30 seconds</translation>
+    </message>
+    <message>
+        <source>Chapter Marks</source>
+        <extracomment>Setting that marks chapter starts on the seek bar</extracomment>
+        <translation>Chapter Marks</translation>
+    </message>
+    <message>
+        <source>Mark where each chapter starts on the seek bar</source>
+        <extracomment>Description of the Chapter Marks setting</extracomment>
+        <translation>Mark where each chapter starts on the seek bar</translation>
+    </message>
+    <message>
+        <source>Subtitle Customization</source>
+        <extracomment>Heading over the subtitle style settings</extracomment>
+        <translation>Subtitle Customization</translation>
+    </message>
+    <message>
+        <source>Subtitle Size</source>
+        <extracomment>Setting for how big subtitles are</extracomment>
+        <translation>Subtitle Size</translation>
+    </message>
+    <message>
+        <source>Small</source>
+        <extracomment>How big subtitles are, a subtitle style choice</extracomment>
+        <translation>Small</translation>
+    </message>
+    <message>
+        <source>Medium</source>
+        <extracomment>How big subtitles are, a subtitle style choice</extracomment>
+        <translation>Medium</translation>
+    </message>
+    <message>
+        <source>Large</source>
+        <extracomment>How big subtitles are, a subtitle style choice</extracomment>
+        <translation>Large</translation>
+    </message>
+    <message>
+        <source>Extra Large</source>
+        <extracomment>How big subtitles are, a subtitle style choice</extracomment>
+        <translation>Extra Large</translation>
+    </message>
+    <message>
+        <source>Subtitle Position</source>
+        <extracomment>Setting for where subtitles sit on screen</extracomment>
+        <translation>Subtitle Position</translation>
+    </message>
+    <message>
+        <source>Position</source>
+        <extracomment>Row in the subtitle appearance panel during playback for where subtitles sit</extracomment>
+        <translation>Position</translation>
+    </message>
+    <message>
+        <source>Bottom</source>
+        <extracomment>Where subtitles sit on screen, a subtitle style choice</extracomment>
+        <translation>Bottom</translation>
+    </message>
+    <message>
+        <source>Lower</source>
+        <extracomment>Where subtitles sit on screen, a subtitle style choice</extracomment>
+        <translation>Lower</translation>
+    </message>
+    <message>
+        <source>Middle</source>
+        <extracomment>Where subtitles sit on screen, a subtitle style choice, and where the loading animation sits</extracomment>
+        <translation>Middle</translation>
+    </message>
+    <message>
+        <source>Higher</source>
+        <extracomment>Where subtitles sit on screen, a subtitle style choice</extracomment>
+        <translation>Higher</translation>
+    </message>
+    <message>
+        <source>Absolute</source>
+        <extracomment>Where subtitles sit on screen, a subtitle style choice, placed by a percentage</extracomment>
+        <translation>Absolute</translation>
+    </message>
+    <message>
+        <source>Absolute Position</source>
+        <extracomment>Setting for how far up the screen subtitles sit, as a percentage</extracomment>
+        <translation>Absolute Position</translation>
+    </message>
+    <message>
+        <source>Text Opacity</source>
+        <extracomment>Setting for how see-through subtitle text is</extracomment>
+        <translation>Text Opacity</translation>
+    </message>
+    <message>
+        <source>Text Fill Color</source>
+        <extracomment>Setting for the color of subtitle text</extracomment>
+        <translation>Text Fill Color</translation>
+    </message>
+    <message>
+        <source>White</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>White</translation>
+    </message>
+    <message>
+        <source>Light Gray</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Light Gray</translation>
+    </message>
+    <message>
+        <source>Gray</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Gray</translation>
+    </message>
+    <message>
+        <source>Dark Gray</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Dark Gray</translation>
+    </message>
+    <message>
+        <source>Black</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Black</translation>
+    </message>
+    <message>
+        <source>Yellow</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Yellow</translation>
+    </message>
+    <message>
+        <source>Green</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Green</translation>
+    </message>
+    <message>
+        <source>Cyan</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Cyan</translation>
+    </message>
+    <message>
+        <source>Blue</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Blue</translation>
+    </message>
+    <message>
+        <source>Magenta</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Magenta</translation>
+    </message>
+    <message>
+        <source>Red</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Red</translation>
+    </message>
+    <message>
+        <source>Navy</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Navy</translation>
+    </message>
+    <message>
+        <source>Transparent</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback, where nothing is drawn</extracomment>
+        <translation>Transparent</translation>
+    </message>
+    <message>
+        <source>Semi-transparent Black</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Semi-transparent Black</translation>
+    </message>
+    <message>
+        <source>Semi-transparent White</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Semi-transparent White</translation>
+    </message>
+    <message>
+        <source>Shadow Color</source>
+        <extracomment>Setting for the color of the outline around subtitle text</extracomment>
+        <translation>Shadow Color</translation>
+    </message>
+    <message>
+        <source>Shadow Opacity</source>
+        <extracomment>Setting for how see-through the outline around subtitle text is</extracomment>
+        <translation>Shadow Opacity</translation>
+    </message>
+    <message>
+        <source>Shadow Size (Blur)</source>
+        <extracomment>Setting for how thick the outline around subtitle text is</extracomment>
+        <translation>Shadow Size (Blur)</translation>
+    </message>
+    <message>
+        <source>Background Color</source>
+        <extracomment>Setting for the color of the box behind subtitle text</extracomment>
+        <translation>Background Color</translation>
+    </message>
+    <message>
+        <source>Background Opacity</source>
+        <extracomment>Setting for how see-through the box behind subtitle text is</extracomment>
+        <translation>Background Opacity</translation>
+    </message>
+    <message>
+        <source>HDR Subtitles</source>
+        <extracomment>Settings page for a subtitle style used while HDR plays</extracomment>
+        <translation>HDR Subtitles</translation>
+    </message>
+    <message>
+        <source>A separate style used while HDR is playing</source>
+        <extracomment>Description of the HDR Subtitles settings page</extracomment>
+        <translation>A separate style used while HDR is playing</translation>
+    </message>
+    <message>
+        <source>Separate HDR Style</source>
+        <extracomment>Setting that turns on a separate subtitle style for HDR</extracomment>
+        <translation>Separate HDR Style</translation>
+    </message>
+    <message>
+        <source>Use the style below whenever HDR content is playing. White is much brighter in HDR than in SDR, so a dimmer color here avoids the glare.</source>
+        <extracomment>Description of the Separate HDR Style setting</extracomment>
+        <translation>Use the style below whenever HDR content is playing. White is much brighter in HDR than in SDR, so a dimmer color here avoids the glare.</translation>
+    </message>
+    <message>
+        <source>Subtitle Appearance</source>
+        <extracomment>Title of the panel that changes the subtitle style during playback</extracomment>
+        <translation>Subtitle Appearance</translation>
+    </message>
+    <message>
+        <source>Loading Animation</source>
+        <extracomment>Settings page for the animation shown while something loads</extracomment>
+        <translation>Loading Animation</translation>
+    </message>
+    <message>
+        <source>Customize the loading animations used throughout Moonfin</source>
+        <extracomment>Description of the Loading Animation settings page</extracomment>
+        <translation>Customize the loading animations used throughout Moonfin</translation>
+    </message>
+    <message>
+        <source>Loading Animation Configuration</source>
+        <extracomment>Heading over the loading animation settings</extracomment>
+        <translation>Loading Animation Configuration</translation>
+    </message>
+    <message>
+        <source>Image</source>
+        <extracomment>Setting for which image the loading animation shows</extracomment>
+        <translation>Image</translation>
+    </message>
+    <message>
+        <source>Moonfin Logo</source>
+        <extracomment>An image the loading animation can show</extracomment>
+        <translation>Moonfin Logo</translation>
+    </message>
+    <message>
+        <source>Spinner</source>
+        <extracomment>An image the loading animation can show</extracomment>
+        <translation>Spinner</translation>
+    </message>
+    <message>
+        <source>Runner</source>
+        <extracomment>An image the loading animation can show</extracomment>
+        <translation>Runner</translation>
+    </message>
+    <message>
+        <source>Moon Phases</source>
+        <extracomment>An image the loading animation can show</extracomment>
+        <translation>Moon Phases</translation>
+    </message>
+    <message>
+        <source>Moonfin Phases</source>
+        <extracomment>An image the loading animation can show</extracomment>
+        <translation>Moonfin Phases</translation>
+    </message>
+    <message>
+        <source>Neonfin Phases</source>
+        <extracomment>An image the loading animation can show</extracomment>
+        <translation>Neonfin Phases</translation>
+    </message>
+    <message>
+        <source>Animation Size</source>
+        <extracomment>Setting for how big the loading animation is</extracomment>
+        <translation>Animation Size</translation>
+    </message>
+    <message>
+        <source>Thumbnail</source>
+        <extracomment>The smallest loading animation size</extracomment>
+        <translation>Thumbnail</translation>
+    </message>
+    <message>
+        <source>Animation Position</source>
+        <extracomment>Setting for where the loading animation sits on screen</extracomment>
+        <translation>Animation Position</translation>
+    </message>
+    <message>
+        <source>Top-Left</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Top-Left</translation>
+    </message>
+    <message>
+        <source>Top-Center</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Top-Center</translation>
+    </message>
+    <message>
+        <source>Top-Right</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Top-Right</translation>
+    </message>
+    <message>
+        <source>Middle-Left</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Middle-Left</translation>
+    </message>
+    <message>
+        <source>Middle-Right</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Middle-Right</translation>
+    </message>
+    <message>
+        <source>Bottom-Left</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Bottom-Left</translation>
+    </message>
+    <message>
+        <source>Bottom-Center</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Bottom-Center</translation>
+    </message>
+    <message>
+        <source>Bottom-Right</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Bottom-Right</translation>
+    </message>
+    <message>
+        <source>Bouncing</source>
+        <extracomment>Where the loading animation sits on screen, drifting around and bouncing off the edges</extracomment>
+        <translation>Bouncing</translation>
+    </message>
+    <message>
+        <source>Animation Speed</source>
+        <extracomment>Setting for how fast the loading animation moves</extracomment>
+        <translation>Animation Speed</translation>
+    </message>
+    <message>
+        <source>Slow</source>
+        <extracomment>How fast the loading animation moves</extracomment>
+        <translation>Slow</translation>
+    </message>
+    <message>
+        <source>Moderate</source>
+        <extracomment>How fast the loading animation moves</extracomment>
+        <translation>Moderate</translation>
+    </message>
+    <message>
+        <source>Fast</source>
+        <extracomment>How fast the loading animation moves</extracomment>
+        <translation>Fast</translation>
+    </message>
+    <message>
+        <source>Ultra</source>
+        <extracomment>How fast the loading animation moves</extracomment>
+        <translation>Ultra</translation>
+    </message>
+    <message>
+        <source>Show Text?</source>
+        <extracomment>Setting that shows the label under the loading animation</extracomment>
+        <translation>Show Text?</translation>
+    </message>
+    <message>
+        <source>Loading Stream...</source>
+        <extracomment>Shown under the loading animation while a video starts</extracomment>
+        <translation>Loading Stream...</translation>
+    </message>
+    <message>
+        <source>You do not have permission to search for subtitles</source>
+        <extracomment>Shown when the server refuses a subtitle search</extracomment>
+        <translation>You do not have permission to search for subtitles</translation>
+    </message>
+    <message>
+        <source>No subtitle provider is set up on the server</source>
+        <extracomment>Shown when the server has nothing to search subtitles with</extracomment>
+        <translation>No subtitle provider is set up on the server</translation>
+    </message>
+    <message>
+        <source>You do not have permission to download subtitles</source>
+        <extracomment>Shown when the server refuses a subtitle download</extracomment>
+        <translation>You do not have permission to download subtitles</translation>
+    </message>
+    <message>
+        <source>That subtitle is no longer available</source>
+        <extracomment>Shown when a subtitle picked from the search results is gone</extracomment>
+        <translation>That subtitle is no longer available</translation>
+    </message>
+    <message>
+        <source>Subtitle download failed</source>
+        <extracomment>Shown when a subtitle download fails for any other reason</extracomment>
+        <translation>Subtitle download failed</translation>
+    </message>
+    <message>
+        <source>The subtitle was downloaded but has not appeared yet</source>
+        <extracomment>Shown when a downloaded subtitle hasnt shown up on the video after waiting for it</extracomment>
+        <translation>The subtitle was downloaded but has not appeared yet</translation>
+    </message>
+    <message>
+        <source>Show Clock</source>
+        <extracomment>Setting that shows or hides the clock in the top bar and the sidebar</extracomment>
+        <translation>Show Clock</translation>
+    </message>
+    <message>
+        <source>Show or hide the clock in the top bar and the sidebar</source>
+        <extracomment>Description of the Show Clock setting</extracomment>
+        <translation>Show or hide the clock in the top bar and the sidebar</translation>
+    </message>
+    <message>
+        <source>Group by Type</source>
+        <extracomment>Library setting that lists a playlist library as one row per kind of playlist</extracomment>
+        <translation>Group by Type</translation>
+    </message>
+    <message>
+        <source>Video Playlists</source>
+        <extracomment>Row title for playlists of movies, episodes and other videos</extracomment>
+        <translation>Video Playlists</translation>
+    </message>
+    <message>
+        <source>Music Video Playlists</source>
+        <extracomment>Row title for playlists of music videos</extracomment>
+        <translation>Music Video Playlists</translation>
+    </message>
+    <message>
+        <source>Audio Playlists</source>
+        <extracomment>Row title for playlists of songs</extracomment>
+        <translation>Audio Playlists</translation>
+    </message>
+    <message>
+        <source>Audiobook Playlists</source>
+        <extracomment>Row title for playlists of audiobooks</extracomment>
+        <translation>Audiobook Playlists</translation>
+    </message>
+    <message>
+        <source>Book Playlists</source>
+        <extracomment>Row title for playlists of books</extracomment>
+        <translation>Book Playlists</translation>
+    </message>
+    <message>
+        <source>Photo Playlists</source>
+        <extracomment>Row title for playlists of photos</extracomment>
+        <translation>Photo Playlists</translation>
+    </message>
+    <message>
+        <source>Mixed Playlists</source>
+        <extracomment>Row title for playlists that hold more than one kind of item, or nothing yet</extracomment>
+        <translation>Mixed Playlists</translation>
+    </message>
+    <message>
+        <source>No items found</source>
+        <extracomment>Shown in a library when nothing matches</extracomment>
+        <translation>No items found</translation>
+    </message>
+    <message>
+        <source>Download subtitles...</source>
+        <extracomment>Subtitle track menu entry that opens the subtitle search</extracomment>
+        <translation>Download subtitles...</translation>
+    </message>
+    <message>
+        <source>Search using the OpenSubtitles plugin</source>
+        <extracomment>Description under the subtitle search entry in the subtitle track menu</extracomment>
+        <translation>Search using the OpenSubtitles plugin</translation>
+    </message>
+    <message>
+        <source>Download Subtitles</source>
+        <extracomment>Title of the subtitle search dialog</extracomment>
+        <translation>Download Subtitles</translation>
+    </message>
+    <message>
+        <source>Searching...</source>
+        <extracomment>Shown while a search is running</extracomment>
+        <translation>Searching...</translation>
+    </message>
+    <message>
+        <source>No remote subtitles found</source>
+        <extracomment>Shown when a subtitle search comes back empty</extracomment>
+        <translation>No remote subtitles found</translation>
+    </message>
+    <message>
+        <source>Subtitle search failed</source>
+        <extracomment>Shown when a subtitle search fails for any other reason</extracomment>
+        <translation>Subtitle search failed</translation>
+    </message>
+    <message>
+        <source>Downloading subtitle…</source>
+        <extracomment>Shown while a subtitle picked from the search results downloads</extracomment>
+        <translation>Downloading subtitle…</translation>
+    </message>
+    <message>
+        <source>AI Translated</source>
+        <extracomment>Badge on a subtitle search result that was translated by AI</extracomment>
+        <translation>AI Translated</translation>
+    </message>
+    <message>
+        <source>Machine Translated</source>
+        <extracomment>Badge on a subtitle search result that was machine translated</extracomment>
+        <translation>Machine Translated</translation>
+    </message>
+    <message>
+        <source>SDH</source>
+        <extracomment>Badge on a subtitle made for the deaf and hard of hearing</extracomment>
+        <translation>SDH</translation>
+    </message>
+    <message>
+        <source>Perfect match</source>
+        <extracomment>Badge on a subtitle search result made for this exact file</extracomment>
+        <translation>Perfect match</translation>
+    </message>
+    <message>
+        <source>1 download</source>
+        <extracomment>Download count on a subtitle search result that was downloaded once</extracomment>
+        <translation>1 download</translation>
+    </message>
+    <message>
+        <source>{count} downloads</source>
+        <extracomment>Download count on a subtitle search result. {count} is the number of downloads</extracomment>
+        <translation>{count} downloads</translation>
+    </message>
+    <message>
+        <source>{fps} fps</source>
+        <extracomment>Frame rate a subtitle search result was timed for. {fps} is the rate</extracomment>
+        <translation>{fps} fps</translation>
+    </message>
+    <message>
+        <source>Trailers played behind the media bar</source>
+        <extracomment>Description of the media bar settings section for trailers</extracomment>
+        <translation>Trailers played behind the media bar</translation>
+    </message>
+    <message>
+        <source>Trailer Preview</source>
+        <extracomment>Setting that plays the current title's trailer behind the media bar</extracomment>
+        <translation>Trailer Preview</translation>
+    </message>
+    <message>
+        <source>Auto-play trailers in the media bar after 3 seconds</source>
+        <extracomment>Description of the Trailer Preview setting</extracomment>
+        <translation>Auto-play trailers in the media bar after 3 seconds</translation>
+    </message>
+    <message>
+        <source>Mute Trailer Audio</source>
+        <extracomment>Setting that silences trailer previews and the trailer overlay</extracomment>
+        <translation>Mute Trailer Audio</translation>
+    </message>
+    <message>
+        <source>Mute trailer previews in the featured media bar and details screen trailer overlay</source>
+        <extracomment>Description of the Mute Trailer Audio setting</extracomment>
+        <translation>Mute trailer previews in the featured media bar and details screen trailer overlay</translation>
+    </message>
+    <message>
+        <source>Trailer Captions</source>
+        <extracomment>Setting that shows YouTube captions on media bar trailers</extracomment>
+        <translation>Trailer Captions</translation>
+    </message>
+    <message>
+        <source>Show captions on media bar trailer previews when YouTube has them</source>
+        <extracomment>Description of the Trailer Captions setting</extracomment>
+        <translation>Show captions on media bar trailer previews when YouTube has them</translation>
+    </message>
+    <message>
+        <source>Loading trailer...</source>
+        <extracomment>Shown while a YouTube trailer is being found</extracomment>
+        <translation>Loading trailer...</translation>
+    </message>
+    <message>
+        <source>Trailer Not Available</source>
+        <extracomment>Title of the message shown when a trailer cant be played</extracomment>
+        <translation>Trailer Not Available</translation>
+    </message>
+    <message>
+        <source>This trailer is a link to a web page, which cant be opened here.</source>
+        <extracomment>Shown when a title's trailer link isnt a YouTube video</extracomment>
+        <translation>This trailer is a link to a web page, which cant be opened here.</translation>
     </message>
 </context>
 </TS>

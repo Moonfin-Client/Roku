@@ -1,0 +1,113 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/seerrMissingCollection.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
+
+' Finding the collections a title is in, shared by the tasks that load a details screen. These
+' run in the host task's scope.
+'
+' Hooks each task provides:
+'   function fetch(path as string, params as object) as dynamic
+'   m.serverData, the server a title from another server came from, or invalid
+
+' How many collections are read when the server cant say which ones hold a title
+const MAX_COLLECTIONS = 500
+
+' Jellyfin 12 answers outright. Older servers are asked for every collection, then which one
+' the title names as its own, and only then what each collection holds.
+function findParents(itemJson as object) as object
+    direct = fetch(`/Items/${itemJson.Id}/Collections`, { Fields: "ProviderIds" })
+    if isChainValid(direct, "Items") then return namedFirst(itemJson, direct.Items)
+
+    all = fetch("/Items", {
+        IncludeItemTypes: "BoxSet",
+        Recursive: "true",
+        Limit: MAX_COLLECTIONS,
+        Fields: "ProviderIds",
+        EnableImages: "false",
+        EnableUserData: "false",
+        EnableTotalRecordCount: "false"
+    })
+    collections = chainLookupReturn(all, "Items", [])
+    if collections.count() = 0 then return []
+
+    named = namedCollection(itemJson, collections)
+    if isValid(named) then return [named]
+
+    owners = membership(collections)
+    return owners[itemJson.Id] ?? []
+end function
+
+' A collection's titles, oldest first by whichever date sortBy names
+function collectionTitles(collectionId as string, sortBy as string, fields as string) as object
+    data = fetch("/Items", { ParentId: collectionId, SortBy: sortBy + ",SortName", SortOrder: "Ascending", Fields: fields })
+    return chainLookupReturn(data, "Items", [])
+end function
+
+function namedCollection(itemJson as object, collections as object) as dynamic
+    wanted = seerrMissingCollection.ProviderId(itemJson, "TmdbCollection")
+    if wanted = "" then return invalid
+
+    for each collection in collections
+        if seerrMissingCollection.ProviderId(collection, "Tmdb") = wanted then return collection
+    end for
+    return invalid
+end function
+
+' The collection a title names is the one it most belongs to, so it leads
+function namedFirst(itemJson as object, collections as object) as object
+    named = namedCollection(itemJson, collections)
+    if not isValid(named) then return collections
+
+    ordered = [named]
+    for each collection in collections
+        if collection.Id <> named.Id then ordered.push(collection)
+    end for
+    return ordered
+end function
+
+' Which collections hold each title, read once and kept for the rest of the session
+function membership(collections as object) as object
+    if m.global.hasField("collectionOwners") and isValid(m.global.collectionOwners) then return m.global.collectionOwners
+
+    owners = {}
+    for each collection in collections
+        data = fetch("/Items", { ParentId: collection.Id, EnableImages: "false", EnableUserData: "false", EnableTotalRecordCount: "false" })
+        for each member in chainLookupReturn(data, "Items", [])
+            if not isValidAndNotEmpty(member.Id) then continue for
+            if not owners.DoesExist(member.Id) then owners[member.Id] = []
+            owners[member.Id].push(collection)
+        end for
+    end for
+
+    if not m.global.hasField("collectionOwners") then m.global.addFields({ collectionOwners: {} })
+    m.global.collectionOwners = owners
+    return owners
+end function
+
+function cardNodes(items as object) as object
+    nodes = []
+    for each item in items
+        nodes.push(cardNode(item))
+    end for
+    return nodes
+end function
+
+' A title from another server carries that server with it, so opening it goes back there
+function cardNode(json as object) as object
+    if isValid(m.serverData) and not isValid(json.SeerrItem)
+        json._serverUrl = m.serverData.serverUrl
+        json._userId = m.serverData.userId
+        json._authToken = m.serverData.authToken
+    end if
+
+    node = CreateObject("roSGNode", "HomeData")
+    node.json = json
+    return node
+end function
+
+function showsMissing() as boolean
+    if not GetSeerrConfig().enabled then return false
+
+    setting = chainLookupReturn(m.global.session, "user.settings.`seerr.showMissingCollectionItems`", true)
+    return LCase(setting.toStr()) <> "false"
+end function

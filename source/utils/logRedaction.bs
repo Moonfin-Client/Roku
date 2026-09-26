@@ -1,0 +1,55 @@
+' Reports get pasted into public issues, so anything saying where a server lives or how to
+' reach it comes out before the entry is kept. Redaction stops at the path and keeps the name
+' of a credential, because a report of bare hosts cant say which call misbehaved.
+namespace logRedaction
+
+    const CACHE_KEY = "moonfin.logRedaction"
+
+    ' Compiled once per thread rather than on every entry
+    function rules() as object
+        context = GetGlobalAA()
+        compiled = context[logRedaction.CACHE_KEY]
+        if compiled <> invalid then return compiled
+
+        compiled = {
+            urlHost: CreateObject("roRegex", "((?:https?|wss?)://)[^\s/<>""',;()\]}]+", "i"),
+            hostLookup: CreateObject("roRegex", "((?:Failed host lookup|Unable to resolve host):? ['""])[^'""]+", "i"),
+            ' A name that says it holds an address, followed by something shaped like one
+            labelledHost: CreateObject("roRegex", "\b(host(?:name)?|address|ip|server|url|uri|domain|origin)(\s*""?\s*[:=]\s*""?\s*)([^\s,;()<>""{}[\]']*[.0-9][^\s,;()<>""{}[\]']*)(""?)", "i"),
+            ' Only the value goes, since knowing auth was sent is worth keeping. A quoted tail
+            ' counts as the value because the token goes out as Token="...", and stopping at
+            ' the opening quote would leave the secret sitting there.
+            credential: CreateObject("roRegex", "\b(api[_-]?key|access[_-]?token|auth[_-]?token|authorization|token)(\s*[:=]\s*""?)((?:(?:Bearer|Basic|MediaBrowser)\s+)?[^\s&""',;<>{}[\]]*(?:""[^""]*"")?)", "i"),
+            ipv4: CreateObject("roRegex", "\b(?:\d{1,3}\.){3}\d{1,3}\b", ""),
+            ipv6: CreateObject("roRegex", "(^|[^:.\w])((?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}|[A-Fa-f0-9:]*::[A-Fa-f0-9:]*)(?![:.\w])", "")
+        }
+        context[logRedaction.CACHE_KEY] = compiled
+        return compiled
+    end function
+
+    function mentions(text as string, words as object) as boolean
+        for each word in words
+            if Instr(1, text, word) > 0 then return true
+        end for
+        return false
+    end function
+
+    ' This runs on every entry, so each pass goes only when the text holds the word it looks for
+    function Redact(text as string) as string
+        if text = "" then return text
+
+        compiled = logRedaction.rules()
+        result = text
+        lower = LCase(text)
+        if logRedaction.mentions(lower, ["host", "address", "ip", "server", "url", "uri", "domain", "origin"])
+            result = compiled.labelledHost.ReplaceAll(result, "\1\2[REDACTED]\4")
+            if Instr(1, lower, "host") > 0 then result = compiled.hostLookup.ReplaceAll(result, "\1[REDACTED]")
+        end if
+        if Instr(1, lower, "://") > 0 then result = compiled.urlHost.ReplaceAll(result, "\1[REDACTED]")
+        if logRedaction.mentions(lower, ["key", "token", "auth"]) then result = compiled.credential.ReplaceAll(result, "\1\2[REDACTED]")
+        if Instr(1, result, ".") > 0 then result = compiled.ipv4.ReplaceAll(result, "[REDACTED]")
+        if Instr(1, result, ":") > 0 then result = compiled.ipv6.ReplaceAll(result, "\1[REDACTED]")
+        return result
+    end function
+
+end namespace

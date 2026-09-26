@@ -8,6 +8,7 @@ import "pkg:/source/enums/MediaSegmentType.bs"
 import "pkg:/source/enums/PlaybackMethod.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/enums/SubtitleSelection.bs"
+import "pkg:/source/utils/blockedContent.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/embyFeatures.bs"
@@ -92,6 +93,12 @@ sub loadItems()
     ' Reset intro tracker in case task gets reused
     m.top.isIntro = false
 
+    ' Refused before an intro is lined up for it
+    if blockedContent.IsBlocked(m.global.queueManager.callFunc("getCurrentItem"))
+        m.top.content = [{ blocked: true }]
+        return
+    end if
+
     ' Only show preroll once per queue
     if m.global.queueManager.callFunc("isPrerollActive")
         currentItem = m.global.queueManager.callFunc("getCurrentItem")
@@ -167,7 +174,24 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
         return
     end if
 
+    ' Checked again on the full record, since the queue entry may not carry a rating
+    if blockedContent.IsBlocked(meta.json)
+        video.blocked = true
+        return
+    end if
+
     videotype = LCase(meta.type)
+
+    ' A channel gets the live title and the channel carousel in the player
+    if isStringEqual(meta.json.LookupCI("Type"), "TvChannel")
+        video.liveChannel = {
+            id: meta.json.LookupCI("Id"),
+            name: meta.json.LookupCI("Name") ?? "",
+            number: meta.json.LookupCI("ChannelNumber") ?? "",
+            imageTags: meta.json.LookupCI("ImageTags") ?? {},
+            serverUrl: m.top.serverUrl ?? ""
+        }
+    end if
 
     ' Check for any Live TV streams or Recordings coming from other places other than the TV Guide
     if videotype = "recording" or (isValid(meta.json) and isValid(meta.json.ChannelId))
@@ -217,7 +241,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
 
         video.seasonNumber = meta.json.ParentIndexNumber
         video.episodeNumber = meta.json.IndexNumber
-        video.episodeNumberEnd = meta.json.IndexNumberEnd
+        video.seriesName = meta.json.LookupCI("SeriesName") ?? ""
 
         if isValid(meta.showID)
             logoLookupID = meta.showID
@@ -287,7 +311,8 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     logoSource = isStringEqual(videotype, ItemType.TVCHANNEL) ? ImageType.PRIMARY : ImageType.LOGO ' TV Channel logos are stored under '/primary' instead of '/logo'
     logoImageExists = api.items.HeadImageURLByName(logoLookupID, logoSource)
     if logoImageExists
-        video.logoImage = api.items.GetImageURL(logoLookupID, logoSource, 0, { "format": "Png", "maxHeight": 65, "maxWidth": 300, "quality": "90" })
+        ' The server trims the empty margin a logo is often padded with, where it knows how
+        video.logoImage = api.items.GetImageURL(logoLookupID, logoSource, 0, { "format": "Png", "maxWidth": 800, "quality": "90", "cropWhitespace": "true" })
     end if
 
     additionalParts = api.videos.GetAdditionalParts(video.id)
@@ -430,6 +455,8 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
             end if
         end if
     end if
+
+    video.isHdr = isHdrSource(m.playbackInfo.MediaSources[0])
 
     ' Direct play video
     if video.directPlaySupported
@@ -574,6 +601,29 @@ sub addVideoContentURL(video, mediaSourceId, audio_stream_idx)
 end sub
 
 
+' Whether the source's first video stream is HDR, in any of the ways servers name it. Dolby
+' Vision, HDR10, HDR10+ and HLG all count.
+function isHdrSource(source as dynamic) as boolean
+    for each stream in chainLookupReturn(source, "MediaStreams", [])
+        if isStringEqual(stream.LookupCI("Type"), "Video")
+            label = ""
+            for each field in ["VideoRangeType", "ExtendedVideoType", "VideoRange"]
+                value = stream.LookupCI(field)
+                if isValidAndNotEmpty(value)
+                    label = value.toStr()
+                    exit for
+                end if
+            end for
+            label = CreateObject("roRegex", "[^A-Z0-9]", "").ReplaceAll(UCase(label), "")
+            for each marker in ["DOVI", "DOLBYVISION", "HLG", "HYPERLOGGAMMA", "HDR"]
+                if Instr(1, label, marker) > 0 then return true
+            end for
+            return false
+        end if
+    end for
+    return false
+end function
+
 ' addAudioStreamsToVideo: Add audio stream data to video
 '
 ' @param {dynamic} video component to add fullAudioData to
@@ -600,7 +650,7 @@ sub addSubtitlesToVideo(video, meta)
     if not isValidAndNotEmpty(m.playbackInfo.MediaSources) then return
     if not isValid(m.playbackInfo.MediaSources[0].MediaStreams) then return
 
-    subtitles = sortSubtitles(m.playbackInfo.MediaSources[0].MediaStreams)
+    subtitles = sortSubtitles(m.playbackInfo.MediaSources[0].MediaStreams, m.playbackInfo.MediaSources[0], video.id)
     safesubs = subtitles["all"]
     subtitleTracks = []
 
@@ -608,8 +658,9 @@ sub addSubtitlesToVideo(video, meta)
         safesubs = subtitles["text"]
     end if
 
+    ' A track the device reads from the stream itself is already in it
     for each subtitle in safesubs
-        subtitleTracks.push(subtitle.track)
+        if not subtitle.IsEmbeddedNative then subtitleTracks.push(subtitle.track)
     end for
 
     video.content.SubtitleTracks = subtitleTracks
@@ -789,7 +840,7 @@ sub addEpisodeToShowAtFinish(showID)
 end sub
 
 'Checks available subtitle tracks and puts subtitles in forced, default, and non-default/forced but preferred language at the top
-function sortSubtitles(MediaStreams)
+function sortSubtitles(MediaStreams, source = invalid as dynamic, videoId = "" as string)
     tracks = { "forced": [], "default": [], "normal": [], "text": [] }
     'Too many args for using substitute
     prefered_lang = getPreferredLanguage("playback.subs.language") ?? ""
@@ -799,8 +850,20 @@ function sortSubtitles(MediaStreams)
         if stream.type = "Subtitle"
 
             url = ""
-            if isValid(stream.DeliveryUrl)
-                url = playbackResourceURL(stream.DeliveryUrl)
+            deliveryUrl = stream.DeliveryUrl
+            embeddedNative = false
+            if not isValid(deliveryUrl) and isStringEqual(stream.LookupCI("DeliveryMethod"), "Embed") and stream.IsExternal <> true
+                codec = LCase(stream.LookupCI("Codec") ?? "")
+                if (codec = "srt" or codec = "subrip") and chainLookupReturn(source, "SupportsTranscoding", true) <> false
+                    ' Left in the file, but the server can still pull the text out as its own file
+                    deliveryUrl = `/Videos/${videoId}/${chainLookupReturn(source, "Id", videoId)}/Subtitles/${stream.index}/0/Stream.vtt`
+                else
+                    ' Nothing can pull the track out, so the device reads it from the stream
+                    embeddedNative = true
+                end if
+            end if
+            if isValid(deliveryUrl)
+                url = playbackResourceURL(deliveryUrl)
                 target = get_url() ?? ""
                 token = ""
                 if isValidAndNotEmpty(m.top.serverUrl)
@@ -811,7 +874,8 @@ function sortSubtitles(MediaStreams)
             end if
 
             ' stream is rebuilt below without these fields, so read them while they are still here
-            isSdhTrack = toBoolean(chainLookupReturn(stream, "IsHearingImpaired", false)) or instr(1, LCase(chainLookupReturn(stream, "displaytitle", "")), "sdh") > 0
+            hearingImpaired = toBoolean(chainLookupReturn(stream, "IsHearingImpaired", false)) = true
+            isSdhTrack = hearingImpaired or instr(1, LCase(chainLookupReturn(stream, "displaytitle", "")), "sdh") > 0
 
             stream = {
                 "Track": { "Language": stream.language, "Description": stream.displaytitle, "TrackName": url },
@@ -820,7 +884,11 @@ function sortSubtitles(MediaStreams)
                 "IsDefault": stream.IsDefault,
                 "IsForced": stream.IsForced,
                 "IsExternal": stream.IsExternal,
-                "IsEncoded": stream.DeliveryMethod = "Encode"
+                "IsEncoded": stream.DeliveryMethod = "Encode",
+                "IsHearingImpaired": hearingImpaired,
+                "IsEmbeddedNative": embeddedNative,
+                "Codec": stream.LookupCI("Codec") ?? "",
+                "DeliveryMethod": stream.LookupCI("DeliveryMethod") ?? ""
             }
 
             if stream.isForced

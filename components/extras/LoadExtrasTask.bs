@@ -1,13 +1,19 @@
+import "pkg:/components/extras/collectionLookup.bs"
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/Items.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/api/sdk.bs"
 import "pkg:/source/enums/ItemType.bs"
+import "pkg:/source/utils/blockedContent.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/HomeRecommendations.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/parentalControls.bs"
+
+' How many similar titles a details screen asks for
+const SIMILAR_LIMIT = 20
 
 ' Fast parallel loading task for TV show details
 ' Loads seasons, next up, people, and similar items simultaneously
@@ -95,8 +101,8 @@ end function
 
 ' Main function that loads all extras data in parallel
 sub loadAllExtras()
-    if isMultiServer()
-    end if
+    m.serverData = invalid
+    if isMultiServer() then m.serverData = getServerData()
 
     ' Create ContentNode to hold all results
     resultsNode = CreateObject("roSGNode", "ContentNode")
@@ -106,10 +112,22 @@ sub loadAllExtras()
         return
     end if
 
+    ' A collection's page is its titles, with nothing similar, no extras and no collection of its own
+    itemKind = LCase(m.top.itemType)
+    if itemKind = "boxset"
+        membersNode = resultsNode.createChild("ContentNode")
+        membersNode.title = "collectionItems"
+        for each item in parentalControls.WithoutBlockedItems(collectionTitles(m.top.itemId, "ProductionYear", "PrimaryImageAspectRatio,ProductionYear,ProviderIds"))
+            membersNode.appendChild(collectionCard(item))
+        end for
+        m.top.content = resultsNode
+        return
+    end if
+
     ' Check if this is person mode
     if isValid(m.top.isPersonMode) and m.top.isPersonMode = true
         ' Load person videos (movies and TV shows)
-        personVideosData = loadPersonVideos()
+        personVideosData = parentalControls.WithoutBlockedItems(loadPersonVideos())
         for each item in personVideosData
             resultsNode.appendChild(item)
         end for
@@ -140,14 +158,16 @@ sub loadAllExtras()
     specialsNode = resultsNode.createChild("ContentNode")
     specialsNode.title = "specials"
 
+    seriesRating = blockedContent.SeriesRating(m.top.showID)
+
     ' Launch all API calls - BrightScript will execute them as fast as possible
     if isTVShow
-        seasonData = loadSeasons()
+        seasonData = parentalControls.WithoutBlockedItems(loadSeasons(), seriesRating)
         for each item in seasonData
             seasonsNode.appendChild(item)
         end for
 
-        nextupData = loadNextUp()
+        nextupData = parentalControls.WithoutBlockedItems(loadNextUp(), seriesRating)
         for each item in nextupData
             nextupNode.appendChild(item)
         end for
@@ -155,7 +175,7 @@ sub loadAllExtras()
 
     ' Load same-season episodes for episode detail views
     if isEpisodeMode and isValidAndNotEmpty(m.top.showID) and isValidAndNotEmpty(m.top.seasonID)
-        episodeData = loadSeasonEpisodes()
+        episodeData = parentalControls.WithoutBlockedItems(loadSeasonEpisodes(), seriesRating)
         for each item in episodeData
             episodesNode.appendChild(item)
         end for
@@ -166,18 +186,74 @@ sub loadAllExtras()
         peopleNode.appendChild(item)
     end for
 
-    similarData = loadSimilar()
+    similarData = parentalControls.WithoutBlockedItems(loadSimilar())
     for each item in similarData
         similarNode.appendChild(item)
     end for
+    similarNode.addFields({ similarSource: m.similarSource })
 
-    specialsData = loadSpecials()
+    specialsData = parentalControls.WithoutBlockedItems(loadSpecials())
     for each item in specialsData
         specialsNode.appendChild(item)
     end for
 
+    if m.top.includeCollections and (itemKind = "movie" or itemKind = "video") then loadParentCollection(resultsNode)
+
     m.top.content = resultsNode
 end sub
+
+' The first collection the film is in that holds anything else, with the titles the library is
+' missing slotted in by release
+sub loadParentCollection(resultsNode as object)
+    for each collection in findParents({ Id: m.top.itemId, ProviderIds: m.top.providerIds })
+        ' A blocked title is left out of the row but still counts as owned, so it isnt offered as
+        ' missing
+        held = collectionTitles(collection.Id, "PremiereDate", "PrimaryImageAspectRatio,ProductionYear,ProviderIds")
+        members = parentalControls.WithoutBlockedItems(held)
+        if members.count() <= 1 then continue for
+
+        missing = []
+        if showsMissing() then missing = seerrMissingCollection.Find(collection, held)
+
+        parentNode = resultsNode.createChild("ContentNode")
+        parentNode.title = "parentCollection"
+        parentNode.addFields({ collectionName: isValidAndNotEmpty(collection.Name) ? collection.Name : tr("Collection") })
+        for each item in seerrMissingCollection.MergeByRelease(members, missing)
+            parentNode.appendChild(collectionCard(item))
+        end for
+        return
+    end for
+end sub
+
+' A poster card the extras rows can draw. A title the library is missing shows Seerr's poster.
+function collectionCard(json as object) as object
+    node = cardNode(json)
+    node.imageWidth = 180
+    node.labelText = json.Name ?? ""
+    node.type = json.Type ?? ""
+
+    if isValid(json.SeerrItem)
+        node.posterURL = json.SeerrPosterURL ?? ""
+        return node
+    end if
+
+    imgParams = { "maxHeight": 270, "maxWidth": 180 }
+    if hasImageTagPrimary(json) then imgParams.Tag = json.ImageTags.Primary
+    if isMultiServer()
+        node.posterURL = multiServerExtrasImageURL(json.Id, "Primary", imgParams)
+    else
+        node.posterURL = ImageURL(json.Id, "Primary", imgParams)
+    end if
+    return node
+end function
+
+function fetch(path as string, params as object) as dynamic
+    params.userId = getUserId()
+    if isMultiServer()
+        return getJson(APIRequestForServer(m.top.serverUrl, m.top.serverUserId, m.top.serverAuthToken, path, params))
+    end if
+    return getJson(APIRequest(path, params))
+end function
 
 function loadSeasons() as object
     seasons = []
@@ -317,25 +393,16 @@ end function
 function loadPersonVideos() as object
     videos = []
 
-    ' Normalize server URL once if multi-server
-    normalizedServerUrl = ""
-    if isMultiServer()
-        normalizedServerUrl = m.top.serverUrl
-        if normalizedServerUrl.right(1) = "/"
-            normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
-        end if
-    end if
-
     params = {
         "userid": getUserId(),
         "PersonIds": m.top.itemId,
         "Recursive": true,
         "SortBy": "PremiereDate",
         "SortOrder": "Descending",
-        "IncludeItemTypes": "Movie,Series",
+        "IncludeItemTypes": "Movie,Series,MusicVideo,Episode",
         "ImageTypeLimit": 1,
         "EnableImageTypes": "Primary,Backdrop,Thumb",
-        "Limit": 100
+        "Limit": m.top.personLimit
     }
 
     data = apiItemsGet(params)
@@ -348,6 +415,8 @@ function loadPersonVideos() as object
             tmp = CreateObject("roSGNode", "MovieData")
         else if item.Type = "Series"
             tmp = CreateObject("roSGNode", "SeriesData")
+        else if item.Type = "Episode" or item.Type = "MusicVideo"
+            tmp = CreateObject("roSGNode", "HomeData")
         end if
 
         if tmp <> invalid
@@ -361,8 +430,8 @@ function loadPersonVideos() as object
             tmp.json = item
 
             ' Add custom fields
-            tmp.addField("imageWidth", "integer", false)
-            tmp.addField("labelText", "string", false)
+            if not tmp.hasField("imageWidth") then tmp.addField("imageWidth", "integer", false)
+            if not tmp.hasField("labelText") then tmp.addField("labelText", "string", false)
 
             tmp.imageWidth = 180
 
@@ -578,7 +647,16 @@ function loadPeople() as object
     return people
 end function
 
+' Which list fills the similar row follows the recommendation source setting, and every choice
+' falls back to the server's similar titles when it has nothing. The source that actually
+' filled it is kept so a card can be named for where the list came from.
 function loadSimilar() as object
+    m.similarSource = "jellyfin"
+
+    ' Music albums and artists take the plain similar list
+    itemType = LCase(m.top.itemType)
+    if itemType = "musicalbum" or itemType = "musicartist" then return loadJellyfinSimilar(15, false)
+
     settings = m.global.session.user.settings
     recSource = kidsMode.RecommendationSource(settings["ui.home.recommendationSource"] ?? "")
     if recSource = ""
@@ -586,24 +664,39 @@ function loadSimilar() as object
     end if
 
     mode = LCase(recSource)
+    canScore = moonfinPlugin.AreRecommendationsSupported()
+
+    if mode = "server" then return loadJellyfinSimilar(SIMILAR_LIMIT, true)
 
     if mode = "online"
         onlineItems = loadOnlineSimilar()
-        if isValidAndNotEmpty(onlineItems) then return onlineItems
-    else if mode = "local"
-        localItems = loadLocalSimilar()
-        if isValidAndNotEmpty(localItems) then return localItems
-    else if mode = "server"
-        serverItems = loadJellyfinSimilar()
-        if isValidAndNotEmpty(serverItems) then return serverItems
+        if onlineItems.count() > 0
+            m.similarSource = "tmdb"
+            return onlineItems
+        end if
     else if mode = "hybrid"
-        serverItems = loadJellyfinSimilar()
-        if isValidAndNotEmpty(serverItems) then return serverItems
-
-        return loadLocalSimilar()
+        ' The server's list leads and the scored one tops it up
+        if canScore
+            secondary = loadMoonfinScoredSimilar()
+        else
+            secondary = loadClientScoredSimilar()
+        end if
+        merged = HomeRecommendations.mergeItems(loadJellyfinSimilar(SIMILAR_LIMIT, true), secondary, SIMILAR_LIMIT)
+        if merged.count() > 0
+            m.similarSource = "moonfin"
+            return merged
+        end if
+    else if mode = "local"
+        scoredItems = []
+        if canScore then scoredItems = loadMoonfinScoredSimilar()
+        if scoredItems.count() = 0 then scoredItems = loadClientScoredSimilar()
+        if scoredItems.count() > 0
+            m.similarSource = "moonfin"
+            return scoredItems
+        end if
     end if
 
-    return loadLocalSimilar()
+    return loadJellyfinSimilar(SIMILAR_LIMIT, false)
 end function
 
 function loadOnlineSimilar() as object
@@ -675,23 +768,15 @@ function loadOnlineSimilar() as object
     return results
 end function
 
-function loadLocalSimilar() as object
-    mfData = invalid
-    if moonfinPlugin.AreRecommendationsSupported() then mfData = apiItemsGetMoonfinSimilar(m.top.itemId, { limit: 20, userId: getUserId() })
+' The plugin's own scored list, for a server that can score
+function loadMoonfinScoredSimilar() as object
+    mfData = apiItemsGetMoonfinSimilar(m.top.itemId, { limit: SIMILAR_LIMIT, userId: getUserId() })
 
+    results = []
     if isChainValid(mfData, "Items") and mfData.Items.Count() > 0
-        results = []
         count = 0
-        normalizedServerUrl = ""
-        if isMultiServer()
-            normalizedServerUrl = m.top.serverUrl
-            if normalizedServerUrl.right(1) = "/"
-                normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
-            end if
-        end if
-
         for each item in mfData.Items
-            if count >= 20 then exit for
+            if count >= SIMILAR_LIMIT then exit for
             tmp = createSGNode("HomeData")
             if isMultiServer()
                 item._serverUrl = m.top.serverUrl
@@ -712,8 +797,13 @@ function loadLocalSimilar() as object
             results.push(tmp)
             count = count + 1
         end for
-        if results.Count() > 0 then return results
     end if
+    return results
+end function
+
+' Titles scored here against the one on screen, from candidates that share its genres
+function loadClientScoredSimilar() as object
+    if not HomeRecommendations.canScoreSeedLocally(m.top.itemType) then return []
 
     baseItem = invalid
     if isMultiServer()
@@ -743,7 +833,7 @@ function loadLocalSimilar() as object
 
     candidates = {}
     if isChainValid(data, "Items")
-        for each item in data.Items
+        for each item in parentalControls.WithoutBlockedItems(data.Items)
             if isValid(item.Id) and item.Id <> m.top.itemId then candidates[item.Id] = item
         end for
     end if
@@ -762,7 +852,7 @@ function loadLocalSimilar() as object
     results = []
     count = 0
     for each entry in scored
-        if count >= 20 then exit for
+        if count >= SIMILAR_LIMIT then exit for
         item = entry.item
         tmp = createSGNode("HomeData")
         if isMultiServer()
@@ -775,8 +865,6 @@ function loadLocalSimilar() as object
         imgParams = { "maxHeight": 270, "maxWidth": 180 }
         if hasImageTagPrimary(item) then imgParams.Tag = item.ImageTags.Primary
         if isMultiServer()
-            normalizedServerUrl = m.top.serverUrl
-            if normalizedServerUrl.right(1) = "/" then normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
             tmp.posterURL = multiServerExtrasImageURL(item.Id, "Primary", imgParams)
         else
             tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
@@ -789,24 +877,17 @@ function loadLocalSimilar() as object
     return results
 end function
 
-function loadJellyfinSimilar() as object
+' The server's similar titles. Bypassing Moonfin asks for the server's own engine, and leaving it
+' in lets the plugin's provider answer.
+function loadJellyfinSimilar(limit as integer, bypass as boolean) as object
     similar = []
-
-    ' Normalize server URL once if multi-server
-    normalizedServerUrl = ""
-    if isMultiServer()
-        normalizedServerUrl = m.top.serverUrl
-        if normalizedServerUrl.right(1) = "/"
-            normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
-        end if
-    end if
 
     params = {
         userId: getUserId(),
-        limit: 20,
-        bypass: "moonfin",
+        limit: limit,
         Fields: "PrimaryImageAspectRatio,MediaSources,UserData,OfficialRating,ProductionYear,PremiereDate,ImageTags"
     }
+    if bypass then params.bypass = "moonfin"
 
     data = apiItemsGetSimilar(m.top.itemId, params)
 
@@ -814,7 +895,7 @@ function loadJellyfinSimilar() as object
 
     count = 0
     for each item in data.Items
-        if count >= 20 then exit for
+        if count >= limit then exit for
         tmp = createSGNode("HomeData")
 
         ' Add server metadata to item JSON for multi-server navigation
@@ -854,23 +935,11 @@ end function
 
 function loadSpecials() as object
     specials = []
+    for each item in responseItems(fetch(`/Items/${m.top.itemId}/SpecialFeatures`, {}))
+        ' Some servers list the title among its own extras
+        if item.Id = m.top.itemId then continue for
 
-    ' Skip specials for multi-server items (requires server-specific API)
-    if isMultiServer() then return specials
-
-    params = {
-        userId: getUserId(),
-        SpecialFeatureTypes: "Trailer,AdditionalPart,BehindTheScenes,DeletedScene,Clip,Interview,Scene"
-    }
-
-    data = api.items.GetSpecialFeatures(m.top.itemId, params)
-
-    if not isValidAndNotEmpty(data) then return specials
-
-    for each item in data
-        tmp = createSGNode("HomeData")
-        tmp.json = item
-
+        tmp = cardNode(item)
         tmp.imageWidth = 180
         imgParams = { "maxHeight": 270, "maxWidth": 180 }
 
@@ -878,7 +947,11 @@ function loadSpecials() as object
             imgParams.Tag = item.ImageTags.Primary
         end if
 
-        tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+        if isMultiServer()
+            tmp.posterURL = multiServerExtrasImageURL(item.Id, "Primary", imgParams)
+        else
+            tmp.posterURL = ImageURL(item.Id, "Primary", imgParams)
+        end if
         specials.push(tmp)
     end for
 

@@ -200,6 +200,10 @@ sub onSelectSubtitlePressed()
                     "IsEncoded": item.LookupCI("IsEncoded"),
                     "Language": chainLookupReturn(item, "Track.Language", ""),
                     "IsForced": item.LookupCI("IsForced"),
+                    "IsHearingImpaired": item.LookupCI("IsHearingImpaired"),
+                    "Codec": item.LookupCI("Codec"),
+                    "DeliveryMethod": item.LookupCI("DeliveryMethod"),
+                    "IsEmbeddedNative": item.LookupCI("IsEmbeddedNative"),
                     "Track": item.Track
                 }
             }
@@ -208,13 +212,38 @@ sub onSelectSubtitlePressed()
         end for
     end if
 
+    ' None reads as the pick whenever no track is
+    anySelected = false
+    for each track in subtitleTracks
+        if track.Selected then anySelected = true
+    end for
+    subtitleTracks[0].Selected = not anySelected
+
     m.subtitleSelector = m.view.findNode("subtitleSelector")
+    ' The offset moves subtitles the player draws itself, and does nothing for ones Roku draws
+    m.subtitleSelector.showOffset = m.view.suppressCaptions = true
     m.subtitleSelector.subtitleTracks = subtitleTracks
     m.subtitleSelector.visible = true
     m.subtitleSelector.setFocus(true)
     m.subtitleSelector.observeField("subtitleStream", "onSubtitleSelectorStreamChanged")
     m.subtitleSelector.observeField("visible", "onSubtitleSelectorVisibleChanged")
     m.subtitleSelector.observeField("downloadRequested", "onSubtitleDownloadRequested")
+    m.subtitleSelector.observeField("offsetRequested", "onSubtitleOffsetRequested")
+    m.subtitleSelector.observeField("appearanceRequested", "onSubtitleAppearanceRequested")
+end sub
+
+sub onSubtitleOffsetRequested()
+    if not m.subtitleSelector.offsetRequested then return
+
+    m.subtitleSelector.offsetRequested = false
+    m.view.findNode("osd").action = "showsyncmenu"
+end sub
+
+sub onSubtitleAppearanceRequested()
+    if not m.subtitleSelector.appearanceRequested then return
+
+    m.subtitleSelector.appearanceRequested = false
+    m.view.findNode("osd").action = "showsubtitleappearance"
 end sub
 
 sub onAudioSelectorIndexChanged()
@@ -283,7 +312,9 @@ sub onSubtitleSelectorStreamChanged()
         return
     end if
 
-    if m.selectedSubtitle.IsEncoded
+    if m.selectedSubtitle.IsEmbeddedNative = true
+        m.view.callFunc("selectEmbeddedSubtitle", m.selectedSubtitle.Index)
+    else if m.selectedSubtitle.IsEncoded
         m.view.globalCaptionMode = "Off"
     else
         m.view.globalCaptionMode = "On"
@@ -312,11 +343,49 @@ sub onSubtitleDownloadRequested()
 
     dialog.unobserveField("visible")
     dialog.observeField("visible", "onSubtitleDownloadDialogVisibleChanged")
+    dialog.unobserveField("downloadedIndex")
+    dialog.observeField("downloadedIndex", "onSubtitleDownloaded")
     dialog.itemId = currentItem.id
-    dialog.language = remoteSubtitles.LanguageFor(m.view.fullSubtitleData, m.view.selectedSubtitle, m.view.audioIndex)
+    dialog.language = remoteSubtitles.Language(playerSearchLanguages())
+    known = []
+    for each stream in m.view.fullSubtitleData ?? []
+        known.push(stream.LookupCI("Index"))
+    end for
+    dialog.findNewTrack = true
+    dialog.existingIndexes = known
+    dialog.mediaSourceId = m.view.mediaSourceId
     dialog.visible = true
     dialog.setFocus(true)
     dialog.callFunc("startSearch")
+end sub
+
+' The subtitle playing, then the audio playing, then the file's first subtitle and first audio.
+' The player keeps subtitles in its own mapped shape, with the language under Track.
+function playerSearchLanguages() as object
+    subtitles = m.view.fullSubtitleData ?? []
+    audio = m.view.fullAudioData ?? []
+    chosenSubtitle = ""
+    firstSubtitle = ""
+    firstSubtitleIndex = invalid
+    for each stream in subtitles
+        index = stream.LookupCI("Index")
+        if index = m.view.selectedSubtitle then chosenSubtitle = chainLookupReturn(stream, "Track.Language", "")
+        if not isValid(firstSubtitleIndex) or index < firstSubtitleIndex
+            firstSubtitleIndex = index
+            firstSubtitle = chainLookupReturn(stream, "Track.Language", "")
+        end if
+    end for
+    chosenAudio = ""
+    for each stream in audio
+        if stream.LookupCI("Index") = m.view.audioIndex then chosenAudio = stream.LookupCI("Language") ?? ""
+    end for
+    firstAudio = ""
+    if audio.count() > 0 then firstAudio = audio[0].LookupCI("Language") ?? ""
+    return [chosenSubtitle, chosenAudio, firstSubtitle, firstAudio]
+end function
+
+sub onSubtitleDownloaded(event as object)
+    m.view.callFunc("reloadWithSubtitle", event.getData())
 end sub
 
 sub onSubtitleDownloadDialogVisibleChanged()
@@ -325,11 +394,18 @@ sub onSubtitleDownloadDialogVisibleChanged()
 end sub
 
 sub onSubtitleSelectorVisibleChanged()
-    if not m.subtitleSelector.visible
-        m.subtitleSelector.unobserveField("subtitleStream")
-        m.subtitleSelector.unobserveField("downloadRequested")
-        m.view.setFocus(true)
-    end if
+    if m.subtitleSelector.visible then return
+
+    m.subtitleSelector.unobserveField("subtitleStream")
+    m.subtitleSelector.unobserveField("downloadRequested")
+    m.subtitleSelector.unobserveField("offsetRequested")
+    m.subtitleSelector.unobserveField("appearanceRequested")
+
+    ' Offset, appearance and download open their own panel as the picker closes, and that panel keeps focus
+    for each id in ["subtitleOffsetOverlay", "subtitleAppearance", "subtitleDownloadDialog"]
+        if m.view.findNode(id).visible then return
+    end for
+    m.view.setFocus(true)
 end sub
 
 ' User requested playback info
@@ -448,6 +524,8 @@ end sub
 ' This function translates between our internel selected subtitle index
 ' and the corresponding index in availableSubtitleTracks.
 function availSubtitleTrackIdx(tracknameToFind as string) as integer
+    ' A track with nothing to look for would match whatever comes first
+    if tracknameToFind = "" then return SubtitleSelection.NONE
     idx = 0
     for each availTrack in m.view.availableSubtitleTracks
         ' The TrackName must contain the URL we supplied originally, though

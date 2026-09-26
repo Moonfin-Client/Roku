@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, rm, glob } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Writable } from 'node:stream';
@@ -25,10 +25,32 @@ brs.types.RoString.prototype.getMethod = function (name) {
     return originalGetMethod.call(this, name);
 };
 
+// brs hands ReplaceAll its replacement untouched, where the device reads \1 as a captured group.
+const originalRegexMethod = brs.types.RoRegex.prototype.getMethod;
+brs.types.RoRegex.prototype.getMethod = function (name) {
+    if (name.toLowerCase() !== 'replaceall') return originalRegexMethod.call(this, name);
+    return new brs.types.Callable(name, {
+        signature: {
+            args: [
+                new brs.types.StdlibArgument('str', brs.types.ValueKind.String),
+                new brs.types.StdlibArgument('replacement', brs.types.ValueKind.String),
+            ],
+            returns: brs.types.ValueKind.String,
+        },
+        impl: (_interpreter, str, replacement) => {
+            const global = new RegExp(this.jsRegex.source, this.jsRegex.flags.replace('g', '') + 'g');
+            return new brs.types.BrsString(str.value.replace(global, replacement.value.replace(/\\(\d)/g, '$$$1')));
+        },
+    });
+};
+
 // Execute production functions after BrighterScript transpilation. Only the
 // device registry and authentication context are replaced with deterministic fixtures.
 const selections = {
     'source/utils/serverCompatibility.bs': null,
+    'source/utils/accentFolding.bs': null,
+    'source/utils/logRedaction.bs': null,
+    'source/utils/youtubeTrailer.bs': null,
     'source/utils/detailCompatibility.bs': null,
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions'],
     'source/enums/VideoType.bs': null,
@@ -39,7 +61,7 @@ const selections = {
     'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL'],
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError'],
-    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements'],
+    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'toString'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer'],
     'source/api/Items.bs': ['ItemMetaData'],
@@ -71,6 +93,9 @@ source += '\n' + await readFile('test/emby-media-routes.bs', 'utf8');
 source += '\n' + await readFile('test/emby-details.bs', 'utf8');
 source += '\n' + await readFile('test/server-compatibility.bs', 'utf8');
 source += '\n' + await readFile('test/review-regressions.bs', 'utf8');
+source += '\n' + await readFile('test/accent-folding.bs', 'utf8');
+source += '\n' + await readFile('test/log-redaction.bs', 'utf8');
+source += '\n' + await readFile('test/youtube-trailer.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
@@ -175,6 +200,18 @@ assert.match(homeRows, /task\.endpoint = "\/UserItems\/Resume"/, 'Continue Watch
 assert.match(homeRows, /task\.endpoint = "\/UserViews"/, 'Library discovery uses the canonical user-views route');
 assert.doesNotMatch(homeRows, /baseUrl \+ "\/Items\//, 'Remote row artwork uses the shared builder');
 
+const legacyUserRoute = /["`]\/?Users\/(?:\{0\}|\{userId\}|\$\{[^}]+\})\/(?:Items|Views|FavoriteItems|PlayedItems)\b/i;
+let scannedRoutes = 0;
+for await (const file of glob('{components,source}/**/*.{bs,xml}')) {
+    scannedRoutes++;
+    assert.doesNotMatch(await readFile(file, 'utf8'), legacyUserRoute, `${file} uses the flat user routes`);
+}
+assert.ok(scannedRoutes > 100, 'The route scan found the app sources');
+
+// The device lowercases a bare key in a literal, which the player API turns away, and brs doesnt.
+const youtubeSource = await readFile('source/utils/youtubeTrailer.bs', 'utf8');
+assert.ok(['"videoId":', '"clientName":', '"clientVersion":', '"contentCheckOk":', '"racyCheckOk":', '"embedUrl":'].every(key => youtubeSource.includes(key)), 'The YouTube request keeps its camelCase keys');
+
 const seerrTask = await readFile('components/seerr/SeerrAPITask.bs', 'utf8');
 assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParams\)/, 'Plugin proxy preserves saved server query through shared compositor');
 
@@ -201,4 +238,4 @@ assert.match(trailerAction, /trailerItemId = chainLookupReturn\(itemContent, "id
 assert.match(trailerAction, /getServerInfoFromItem\(itemContent\)/, 'Trailer lookup reads the detail item server');
 assert.match(trailerAction, /GetLocalTrailers\(trailerItemId, trailerParams, trailerServerData\)/, 'Trailer lookup passes destination server context');
 assert.match(trailerAction, /trailer\["_serverUrl"\] = trailerServerData\.serverUrl/, 'Remote trailers keep destination metadata for playback');
-process.stdout.write('PASS: Jellyfin review regressions (31 checks)\n');
+process.stdout.write('PASS: Jellyfin review regressions (33 checks)\n');

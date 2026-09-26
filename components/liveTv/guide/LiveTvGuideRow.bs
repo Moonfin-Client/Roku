@@ -1,0 +1,385 @@
+import "pkg:/source/utils/liveTvGuide.bs"
+import "pkg:/source/utils/misc.bs"
+
+const ROW_HEIGHT = 87
+const CHANNEL_TEXT_WIDTH = 154
+const CELL_TOP = 3
+const CELL_HEIGHT = 81
+' Every horizontal padding a cell's text sits inside: the cell gap, the text inset, and the right
+' hand inset
+const CELL_TEXT_INSET = 30.5
+' Below this a cell drops its metadata line and keeps its title on one line
+const MIN_META_WIDTH = 139
+' A continuation cell this narrow gives up its inset so the arrow still fits
+const NARROW_MARKER_WIDTH = 70
+const TITLE_LINE_HEIGHT = 30.4
+const PROGRESS_INSET = 16
+
+sub init()
+    m.channelFill = m.top.findNode("channelFill")
+    m.channelBorder = m.top.findNode("channelBorder")
+    m.logo = m.top.findNode("logo")
+    m.logoFallback = m.top.findNode("logoFallback")
+    m.favorite = m.top.findNode("favorite")
+    m.numberChip = m.top.findNode("numberChip")
+    m.numberLabel = m.top.findNode("numberLabel")
+    m.channelName = m.top.findNode("channelName")
+    m.channelNameScroll = m.top.findNode("channelNameScroll")
+    m.programs = m.top.findNode("programs")
+    m.measure = m.top.findNode("measure")
+
+    liveTvGuide.SetFont(m.numberLabel, 19, true)
+    liveTvGuide.SetFont(m.channelName, 17.5, false)
+    liveTvGuide.SetFont(m.channelNameScroll, 17.5, true)
+    liveTvGuide.SetFont(m.measure, 20, false)
+    m.channelNameScroll.scrollSpeed = 40
+
+    m.logo.observeField("loadStatus", "onLogoStatus")
+
+    m.pool = []
+    m.cellInfo = []
+    m.widths = {}
+    m.shownFocus = -1
+end sub
+
+sub onLogoStatus()
+    failed = m.logo.loadStatus = "failed" or m.logo.uri = ""
+    m.logo.visible = not failed
+    m.logoFallback.visible = failed
+end sub
+
+sub render()
+    model = m.top.model
+    if not isValid(model) then return
+
+    renderChannel(model.channel, model.logoUri ?? "")
+
+    cells = model.cells ?? []
+    while m.pool.count() < cells.count()
+        visuals = createCell()
+        m.programs.appendChild(visuals.group)
+        m.pool.push(visuals)
+    end while
+
+    m.cellInfo = []
+    for i = 0 to m.pool.count() - 1
+        visuals = m.pool[i]
+        if i >= cells.count()
+            visuals.group.visible = false
+            continue for
+        end if
+        visuals.group.visible = true
+        m.cellInfo.push(drawCell(visuals, cells[i], model))
+    end for
+
+    m.shownFocus = -1
+    applyFocus()
+end sub
+
+function createCell() as object
+    group = CreateObject("roSGNode", "Group")
+
+    fill = CreateObject("roSGNode", "Poster")
+    fill.uri = "pkg:/images/playback/surface9.9.png"
+    fill.height = CELL_HEIGHT
+    group.appendChild(fill)
+
+    ' The focus ring is an inset border, over the fill but under everything the cell holds
+    ring = CreateObject("roSGNode", "Poster")
+    ring.uri = "pkg:/images/livetv/stroke9w3.9.png"
+    ring.height = CELL_HEIGHT
+    ring.blendColor = "#" + GUIDE_ACCENT
+    ring.visible = false
+    group.appendChild(ring)
+
+    bar = CreateObject("roSGNode", "Poster")
+    bar.uri = "pkg:/images/livetv/genrebar4r9.9.png"
+    bar.width = 4
+    bar.height = CELL_HEIGHT
+    group.appendChild(bar)
+
+    marker = CreateObject("roSGNode", "Poster")
+    marker.uri = "pkg:/images/livetv/continues.png"
+    marker.width = 21
+    marker.height = 21
+    marker.blendColor = "#FFFFFFB3"
+    group.appendChild(marker)
+
+    title = CreateObject("roSGNode", "Label")
+    liveTvGuide.SetFont(title, 26, false)
+    title.color = "#FFFFFF"
+    group.appendChild(title)
+
+    titleScroll = CreateObject("roSGNode", "ScrollingText")
+    liveTvGuide.SetFont(titleScroll, 26, false)
+    titleScroll.color = "#FFFFFF"
+    titleScroll.scrollSpeed = 40
+    titleScroll.repeatCount = -1
+    titleScroll.visible = false
+    group.appendChild(titleScroll)
+
+    timerDot = CreateObject("roSGNode", "Poster")
+    timerDot.uri = "pkg:/images/livetv/record.png"
+    timerDot.width = 21
+    timerDot.height = 21
+    timerDot.blendColor = "#E0685C"
+    group.appendChild(timerDot)
+
+    meta = CreateObject("roSGNode", "Label")
+    liveTvGuide.SetFont(meta, 20, false)
+    meta.color = "#FFFFFF8C"
+    group.appendChild(meta)
+
+    gap = CreateObject("roSGNode", "Label")
+    liveTvGuide.SetFont(gap, 26, false)
+    gap.color = "#FFFFFF8C"
+    gap.horizAlign = "center"
+    gap.vertAlign = "center"
+    gap.height = CELL_HEIGHT
+    group.appendChild(gap)
+
+    track = CreateObject("roSGNode", "Poster")
+    track.uri = "pkg:/images/livetv/trackr9.9.png"
+    track.height = 6
+    track.blendColor = "#404040"
+    track.translation = [PROGRESS_INSET, CELL_HEIGHT - 6]
+    group.appendChild(track)
+
+    progress = CreateObject("roSGNode", "Rectangle")
+    progress.height = 6
+    progress.color = "#" + GUIDE_ACCENT
+    progress.translation = [PROGRESS_INSET, CELL_HEIGHT - 6]
+    group.appendChild(progress)
+
+    spinner = CreateObject("roSGNode", "Spinner")
+    spinner.poster.width = 36
+    spinner.poster.height = 36
+    spinner.visible = false
+    group.appendChild(spinner)
+
+    return { group: group, fill: fill, bar: bar, marker: marker, title: title, titleScroll: titleScroll, timerDot: timerDot, meta: meta, gap: gap, track: track, progress: progress, ring: ring, spinner: spinner }
+end function
+
+' Logo on the left, the number chip and the name right aligned against the trailing edge
+sub renderChannel(channel as dynamic, logoUri as string)
+    number = chainLookupReturn(channel, "ChannelNumber", "")
+    if not isString(number) then number = number.toStr()
+    isFavorite = liveTvGuide.IsFavoriteChannel(channel)
+
+    if m.logo.uri <> logoUri then m.logo.uri = logoUri
+    onLogoStatus()
+
+    name = chainLookupReturn(channel, "Name", "")
+    m.channelName.text = name
+    m.channelNameScroll.text = name
+
+    m.numberLabel.text = number
+    hasTopRow = number <> "" or isFavorite
+    m.numberChip.visible = number <> ""
+    m.numberLabel.visible = number <> ""
+    m.favorite.visible = isFavorite
+
+    nameHeight = m.channelName.boundingRect().height
+    if hasTopRow
+        topHeight = 23
+        blockTop = Int((ROW_HEIGHT - topHeight - 4 - nameHeight) / 2)
+        chipRight = CHANNEL_TEXT_WIDTH
+        if number <> ""
+            chipWidth = m.numberLabel.boundingRect().width + 18
+            m.numberChip.width = chipWidth
+            m.numberChip.height = topHeight
+            m.numberChip.translation = [chipRight - chipWidth, blockTop]
+            m.numberLabel.translation = [chipRight - chipWidth + 9, blockTop + (topHeight - m.numberLabel.boundingRect().height) / 2]
+            chipRight -= chipWidth + 6
+        end if
+        m.favorite.translation = [chipRight - 15, blockTop + 4]
+        nameTop = blockTop + topHeight + 4
+    else
+        nameTop = Int((ROW_HEIGHT - nameHeight) / 2)
+    end if
+    m.channelName.translation = [0, nameTop]
+    m.channelNameScroll.translation = [0, nameTop]
+end sub
+
+function drawCell(visuals as object, cell as object, model as object) as object
+    pxPerSec = model.pxPerSec
+    slotWidth = (cell.finish - cell.start) * pxPerSec
+    cellWidth = slotWidth - 1.5
+    if cellWidth < 1 then cellWidth = 1
+    visuals.group.translation = [(cell.start - model.windowStart) * pxPerSec, CELL_TOP]
+    ' A sliver of a program at the window's edge is narrower than its own arrow
+    visuals.group.clippingRect = [0, 0, cellWidth, CELL_HEIGHT]
+
+    program = invalid
+    if cell.kind = "program" then program = cell.program
+    isGap = cell.kind = "gap"
+    loading = cell.kind = "loading"
+    genre = liveTvGuide.GenreFor(program)
+
+    for each layer in [visuals.fill, visuals.ring]
+        layer.width = cellWidth
+    end for
+    visuals.bar.visible = not loading
+    visuals.bar.blendColor = "#FFFFFF2E"
+    if isValid(program)
+        tint = GUIDE_ACCENT
+        if isValid(genre) then tint = genre.hex
+        visuals.bar.blendColor = "#" + tint
+    end if
+
+    visuals.spinner.visible = loading
+    if loading then visuals.spinner.translation = [(cellWidth - 36) / 2, (CELL_HEIGHT - 36) / 2]
+
+    visuals.gap.visible = isGap
+    if isGap
+        visuals.gap.text = tr("No program data")
+        visuals.gap.width = cellWidth - 24
+        visuals.gap.translation = [12, 0]
+    end if
+
+    showsText = not isGap and not loading
+    innerWidth = slotWidth - CELL_TEXT_INSET
+    startsBeforeWindow = isValid(program) and program.startSec < model.windowStart
+    showMarker = startsBeforeWindow
+    narrowMarker = showMarker and slotWidth < NARROW_MARKER_WIDTH
+    hasTimer = liveTvGuide.HasTimer(program)
+
+    metaItems = []
+    if showsText and innerWidth >= MIN_META_WIDTH
+        candidates = []
+        rating = chainLookupReturn(program, "OfficialRating", "")
+        if isString(rating) and rating.Trim() <> "" then candidates.push(rating.Trim())
+        candidates.append(liveTvGuide.CategoryLabels(program))
+        metaItems = liveTvGuide.FittingItems(candidates, innerWidth, m.measure, m.widths)
+    end if
+    showMeta = metaItems.count() > 0
+    ' The row has room for a second title line only when no metadata line sits under it
+    wrapTitle = showsText and innerWidth >= MIN_META_WIDTH and not showMeta
+
+    textLeft = 17
+    textRight = cellWidth - 12
+    if narrowMarker
+        textLeft = 3
+        textRight = cellWidth - 3
+    end if
+
+    titleLeft = textLeft
+    visuals.marker.visible = showsText and showMarker
+    if visuals.marker.visible
+        visuals.marker.translation = [textLeft, 6 + 5]
+        titleLeft += 27
+    end if
+    titleRight = textRight
+    visuals.timerDot.visible = showsText and hasTimer
+    if visuals.timerDot.visible
+        visuals.timerDot.translation = [textRight - 21, 6 + 3]
+        titleRight -= 30
+    end if
+
+    titleWidth = titleRight - titleLeft
+    visuals.title.visible = showsText and titleWidth > 0
+    visuals.titleScroll.visible = false
+    if visuals.title.visible
+        name = chainLookupReturn(program, "Name", "")
+        visuals.title.text = name
+        visuals.title.wrap = wrapTitle
+        visuals.title.maxLines = 1
+        if wrapTitle then visuals.title.maxLines = 2
+        visuals.title.width = titleWidth
+        visuals.title.translation = [titleLeft, 6]
+        visuals.titleScroll.text = name
+        visuals.titleScroll.maxWidth = titleWidth
+        visuals.titleScroll.translation = [titleLeft, 6]
+    end if
+
+    visuals.meta.visible = showMeta
+    if showMeta
+        visuals.meta.text = metaItems.join(GUIDE_META_SEPARATOR)
+        visuals.meta.width = textRight - textLeft
+        visuals.meta.translation = [textLeft, 6 + TITLE_LINE_HEIGHT]
+    end if
+
+    visuals.track.width = cellWidth - PROGRESS_INSET
+
+    return { cell: cell, program: program, genre: genre, cellWidth: cellWidth, wrapTitle: wrapTitle, hasTitle: visuals.title.visible }
+end function
+
+' The drawing that depends on focus or the clock, so either can change without laying the row
+' out again
+sub applyCellState(index as integer)
+    if index < 0 or index >= m.cellInfo.count() then return
+    info = m.cellInfo[index]
+    visuals = m.pool[index]
+    now = m.top.now
+    focused = index = m.top.focusCell
+    program = info.program
+
+    live = false
+    past = false
+    if isValid(program)
+        live = liveTvGuide.IsLiveAt(program, now)
+        past = program.endSec < now
+    end if
+
+    tint = GUIDE_ACCENT
+    if isValid(info.genre) then tint = info.genre.hex
+    if focused
+        visuals.fill.blendColor = "#1C2C3CFF"
+    else if live
+        visuals.fill.blendColor = liveTvGuide.Tint(tint, 0.14)
+    else
+        visuals.fill.blendColor = "#1A1A1A80"
+    end if
+
+    visuals.ring.visible = focused
+    visuals.bar.opacity = 0.5
+    if focused or live then visuals.bar.opacity = 0.9
+    visuals.group.opacity = 1
+    if past then visuals.group.opacity = 0.55
+
+    progress = 0
+    if live then progress = liveTvGuide.ProgressAt(program, now)
+    visuals.track.visible = live and progress > 0
+    visuals.progress.visible = visuals.track.visible
+    if visuals.track.visible
+        trackWidth = info.cellWidth - PROGRESS_INSET
+        fillWidth = trackWidth * progress
+        ' The track's end is rounded into the cell's corner, which a square fill cant follow
+        if fillWidth > trackWidth - 9 then fillWidth = trackWidth - 9
+        if fillWidth < 0 then fillWidth = 0
+        visuals.progress.width = fillWidth
+    end if
+
+    ' A focused title that doesnt fit scrolls, unless it already has a second line to wrap onto
+    marquee = focused and info.hasTitle and not info.wrapTitle
+    visuals.titleScroll.visible = marquee
+    visuals.title.visible = info.hasTitle and not marquee
+end sub
+
+sub applyFocus()
+    channelFocused = m.top.focusChannel
+    if channelFocused
+        m.channelFill.blendColor = "#00A4DC29"
+        m.numberChip.blendColor = "#00A4DC"
+        m.numberLabel.color = "#062430"
+    else
+        m.channelFill.blendColor = "#353940F0"
+        m.numberChip.blendColor = "#FFFFFF1F"
+        m.numberLabel.color = "#FFFFFFD9"
+    end if
+    m.channelBorder.visible = channelFocused
+    m.channelName.visible = not channelFocused
+    m.channelNameScroll.visible = channelFocused
+
+    previous = m.shownFocus
+    m.shownFocus = m.top.focusCell
+    for i = 0 to m.cellInfo.count() - 1
+        if previous = -1 or i = previous or i = m.shownFocus then applyCellState(i)
+    end for
+end sub
+
+sub applyClock()
+    for i = 0 to m.cellInfo.count() - 1
+        applyCellState(i)
+    end for
+end sub

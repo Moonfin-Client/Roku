@@ -1,0 +1,196 @@
+import "pkg:/source/utils/misc.bs"
+
+' Blocked ratings, decided here rather than on the server. The server's MaxOfficialRating only
+' exists on its item query, so resume, next up, episodes, similar items and search would all go
+' unfiltered, and it cant let unrated items through.
+
+' How strong a rating is, lower being milder
+const PARENTAL_ALL_AGES = 10
+const PARENTAL_YOUNG_CHILDREN = 20
+const PARENTAL_GUIDANCE = 30
+const PARENTAL_TEEN = 40
+const PARENTAL_MATURE = 50
+const PARENTAL_ADULTS_ONLY = 60
+
+' A rating the table doesnt know sorts after everything recognized but before the explicitly
+' unrated bucket, so an unfamiliar board still lands somewhere stable
+const PARENTAL_UNRECOGNIZED = 500
+const PARENTAL_UNRATED = 999
+
+namespace parentalFilter
+
+    ' Built once for each thread, since every item on a filtered screen is looked up in it
+    function severityTable() as object
+        if isValid(m.parentalSeverityTable) then return m.parentalSeverityTable
+
+        m.parentalSeverityTable = {
+            "UNRATED": PARENTAL_UNRATED, "NOT RATED": PARENTAL_UNRATED, "NR": PARENTAL_UNRATED, "UR": PARENTAL_UNRATED,
+            "UNKNOWN": PARENTAL_UNRATED, "OTHER": PARENTAL_UNRATED,
+
+            "G": PARENTAL_ALL_AGES, "TV-G": PARENTAL_ALL_AGES, "TV-Y": PARENTAL_ALL_AGES, "Y": PARENTAL_ALL_AGES,
+            "E": PARENTAL_ALL_AGES, "EC": PARENTAL_ALL_AGES, "U": PARENTAL_ALL_AGES, "AL": PARENTAL_ALL_AGES,
+            "APPROVED": PARENTAL_ALL_AGES, "PASSED": PARENTAL_ALL_AGES,
+
+            "PG": PARENTAL_YOUNG_CHILDREN, "TV-Y7": PARENTAL_YOUNG_CHILDREN, "TV-Y7-FV": PARENTAL_YOUNG_CHILDREN,
+            "E10+": PARENTAL_YOUNG_CHILDREN, "6": PARENTAL_YOUNG_CHILDREN, "7": PARENTAL_YOUNG_CHILDREN,
+
+            "TV-PG": PARENTAL_GUIDANCE, "PG-12": PARENTAL_GUIDANCE, "10": PARENTAL_GUIDANCE, "12": PARENTAL_GUIDANCE,
+            "12A": PARENTAL_GUIDANCE,
+
+            "PG-13": PARENTAL_TEEN, "TV-14": PARENTAL_TEEN, "T": PARENTAL_TEEN, "13": PARENTAL_TEEN, "14": PARENTAL_TEEN,
+            "14A": PARENTAL_TEEN, "15": PARENTAL_TEEN, "15A": PARENTAL_TEEN, "16": PARENTAL_TEEN,
+
+            "R": PARENTAL_MATURE, "TV-MA": PARENTAL_MATURE, "M": PARENTAL_MATURE, "MA": PARENTAL_MATURE,
+            "MA15+": PARENTAL_MATURE, "18": PARENTAL_MATURE, "18+": PARENTAL_MATURE, "R18": PARENTAL_MATURE,
+
+            "NC-17": PARENTAL_ADULTS_ONLY, "R-18": PARENTAL_ADULTS_ONLY, "AO": PARENTAL_ADULTS_ONLY,
+            "X": PARENTAL_ADULTS_ONLY, "XXX": PARENTAL_ADULTS_ONLY
+        }
+        return m.parentalSeverityTable
+    end function
+
+    function Normalize(rating as dynamic) as string
+        if not isValid(rating) then return ""
+        return UCase(rating.toStr().Trim())
+    end function
+
+    ' Ratings the table misses fall back to the minimum age named in the string, and then to the
+    ' unrecognized slot
+    function Severity(rating as dynamic) as integer
+        normalized = parentalFilter.Normalize(rating)
+        if normalized = "" then return PARENTAL_UNRATED
+
+        exact = parentalFilter.severityTable()[normalized]
+        if isValid(exact) then return exact
+
+        ' Board variants the table cant enumerate. Y7 is checked first so it doesnt read as TV-Y.
+        if normalized.Instr("Y7") >= 0 then return PARENTAL_YOUNG_CHILDREN
+        if normalized.Instr("TV-Y") >= 0 then return PARENTAL_ALL_AGES
+        if normalized.Instr("TV-MA") >= 0 or normalized.Instr("RESTRICTED") >= 0 then return PARENTAL_MATURE
+
+        ' Numeric boards name the minimum age outright, so they slot between the named tiers
+        ' rather than lumping together
+        digits = CreateObject("roRegex", "\d+", "").Match(normalized)
+        if digits.count() > 0
+            age = digits[0].toInt()
+            if age <= 6 then return PARENTAL_ALL_AGES + 5
+            if age <= 10 then return PARENTAL_YOUNG_CHILDREN + 5
+            if age <= 12 then return PARENTAL_GUIDANCE + 2
+            if age <= 15 then return PARENTAL_TEEN + 2
+            if age <= 17 then return PARENTAL_MATURE + 2
+            return PARENTAL_ADULTS_ONLY + 2
+        end if
+
+        return PARENTAL_UNRECOGNIZED
+    end function
+
+    ' The unrecognized and unrated slots only exist so those labels sort somewhere stable. They say
+    ' nothing about how strong a rating is, so anything deciding by severity leaves them out.
+    function IsRankedSeverity(strength as integer) as boolean
+        return strength <> PARENTAL_UNRECOGNIZED and strength <> PARENTAL_UNRATED
+    end function
+
+    function RatingIsRanked(rating as dynamic) as boolean
+        return parentalFilter.IsRankedSeverity(parentalFilter.Severity(rating))
+    end function
+
+    ' Blocking a rating blocks everything at or above it, so the picked set collapses to one
+    ' ceiling, the mildest severity chosen. Ratings that cant be ranked are only ever matched by
+    ' name.
+    function FromRatings(ratings as dynamic) as object
+        literals = {}
+        ceiling = invalid
+        for each raw in ratings ?? []
+            normalized = parentalFilter.Normalize(raw)
+            if normalized = "" then continue for
+
+            literals[normalized] = true
+            strength = parentalFilter.Severity(normalized)
+            ' Letting an unranked label set the ceiling would put it above every real rating and
+            ' empty the library
+            if not parentalFilter.IsRankedSeverity(strength) then continue for
+            if not isValid(ceiling) or strength < ceiling then ceiling = strength
+        end for
+
+        return { active: literals.count() > 0, literals: literals, ceiling: ceiling }
+    end function
+
+    function IsBlockedRating(filter as object, rating as dynamic) as boolean
+        if not filter.active then return false
+
+        normalized = parentalFilter.Normalize(rating)
+        ' A server that rates nothing cant be told apart from an item nobody rated, so unrated
+        ' items always pass
+        if normalized = "" then return false
+        if filter.literals.DoesExist(normalized) then return true
+
+        strength = parentalFilter.Severity(normalized)
+        if not parentalFilter.IsRankedSeverity(strength) then return false
+        return isValid(filter.ceiling) and strength >= filter.ceiling
+    end function
+
+    function IsBlockedItem(filter as object, entry as dynamic) as boolean
+        return parentalFilter.IsBlockedRating(filter, parentalFilter.OwnRating(entry))
+    end function
+
+    ' An item's own rating wins over the fallback, so an episode rated milder than its series is
+    ' judged on its own. Items are server json or nodes carrying it. The same array comes back
+    ' when nothing was dropped.
+    function WithoutBlocked(items as dynamic, filter as object, fallbackRating = "" as dynamic) as dynamic
+        if not filter.active or type(items) <> "roArray" then return items
+
+        kept = []
+        for each entry in items
+            own = parentalFilter.Normalize(parentalFilter.OwnRating(entry))
+            if own = "" then own = fallbackRating
+            if not parentalFilter.IsBlockedRating(filter, own) then kept.push(entry)
+        end for
+
+        if kept.count() = items.count() then return items
+        return kept
+    end function
+
+    ' The rating a json item or a node holding one carries, or invalid
+    function OwnRating(entry as dynamic) as dynamic
+        if type(entry) = "roSGNode"
+            if entry.hasField("json") then return chainLookupReturn(entry.json, "OfficialRating", invalid)
+            return invalid
+        end if
+        if type(entry) = "roAssociativeArray" then return entry.LookupCI("OfficialRating")
+        return invalid
+    end function
+
+    function NormalizeList(ratings as dynamic) as object
+        seen = []
+        seenLookup = {}
+        if type(ratings) <> "roArray" then return seen
+
+        for each raw in ratings
+            normalized = parentalFilter.Normalize(raw)
+            if normalized = "" or seenLookup.DoesExist(normalized) then continue for
+            seenLookup[normalized] = true
+            seen.push(normalized)
+        end for
+        return seen
+    end function
+
+    ' Mildest first, so blocking reads down the list as "everything from here"
+    function SortBySeverity(ratings as object) as object
+        keyed = []
+        for each rating in ratings
+            keyed.push({ rating: rating, severity: parentalFilter.Severity(rating) })
+        end for
+
+        ' SortBy is stable, so sorting by name and then by severity keeps names in order within
+        ' a severity
+        keyed.SortBy("rating")
+        keyed.SortBy("severity")
+
+        sorted = []
+        for each entry in keyed
+            sorted.push(entry.rating)
+        end for
+        return sorted
+    end function
+
+end namespace

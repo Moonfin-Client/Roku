@@ -1,3 +1,4 @@
+import "pkg:/components/home/mediaBarTrailer.bs"
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/enums/KeyCode.bs"
@@ -224,10 +225,13 @@ sub init()
     ' Observe overlay settings changes
     if isValid(m.global)
         m.global.observeFieldScoped("overlaySettingsChanged", "onOverlaySettingsChanged")
+        ' A newly blocked rating takes its titles off the bar straight away
+        if m.global.hasField("parentalBlockedRatings") then m.global.observeFieldScoped("parentalBlockedRatings", "loadMediaBarItems")
     end if
 
     ' Apply UI overlay settings
     applyOverlaySettings()
+    trailerInit()
 
     ' Load media items
     loadMediaBarItems()
@@ -237,6 +241,8 @@ end sub
 
 ' React to media bar mode changes by re-applying style and refreshing display
 sub onMediaBarModeChanged(_event as object)
+    ' The old style puts back what the trailer cleared before the new one lays itself out
+    stopTrailer()
     applyCurrentStyle()
     applyOverlaySettings()
     refreshMediaBarBackdropUrls()
@@ -490,6 +496,7 @@ sub onVisibilityChanged(event as object)
     if isVisible and m.mediaBarItems.count() > 0
         refreshDisplay()
     end if
+    refreshTrailer()
 end sub
 
 ' Mode-aware display refresh
@@ -531,6 +538,8 @@ end sub
 
 ' Fetch and prepare media items
 sub loadMediaBarItems()
+    ' A reload can start while the last one is out, and only the newest may fill the bar
+    if isValid(m.mediaBarTask) then m.mediaBarTask.unobserveFieldScoped("mediaBarData")
     m.mediaBarTask = createObject("roSGNode", "MediaBarTask")
     m.mediaBarTask.userId = m.global.session.user.id
     m.mediaBarTask.contentType = m.global.session.user.settings["ui.home.mediaBarContentType"] ?? "both"
@@ -610,7 +619,8 @@ function processItem(item as object) as object
         director: "",
         hasLogo: false,
         tmdbId: "",
-        people: invalid
+        people: invalid,
+        remoteTrailers: item.remoteTrailers ?? []
     }
 
     if isChainValid(item, "backdropImageTags") and item.backdropImageTags.count() > 0
@@ -702,7 +712,8 @@ function createItemContentNode(item as object, extraFields = {} as object) as ob
         rating: item.rating,
         runtimeDisplay: item.runtimeDisplay,
         communityRatingDisplay: item.communityRatingDisplay,
-        itemType: item.itemType
+        itemType: item.itemType,
+        trailerActive: false
     }
     for each key in extraFields
         fields[key] = extraFields[key]
@@ -754,6 +765,7 @@ sub showGalleryPage(pageIndex as integer)
 
     m.galleryGrid.content = pageContent
     setGalleryColumnWidths(m.galleryActiveIndex)
+    refreshTrailer()
 end sub
 
 ' Set column widths based on active index
@@ -1539,6 +1551,7 @@ sub showMediaBarItem(index as integer)
     if index < 0 or index >= m.mediaBarItems.count() then return
 
     item = m.mediaBarItems[index]
+    refreshTrailer()
 
     ' Update backdrop (single set, parent handles transitions)
     if item.backdropUrl <> ""
@@ -1701,6 +1714,8 @@ end function
 ' Auto-advance handler
 sub onAutoAdvance()
     if not getMediaBarAutoAdvanceEnabled() then return
+    ' A playing trailer moves the bar on itself once it ends
+    if m.trailerHolding then return
 
     if not m.isPaused and m.mediaBarItems.count() > 1
         if m.mediaBarMode = "gallery"
