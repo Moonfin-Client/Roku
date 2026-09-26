@@ -210,7 +210,7 @@ assert.ok(scannedRoutes > 100, 'The route scan found the app sources');
 
 // The device lowercases a bare key in a literal, which the player API turns away, and brs doesnt.
 const youtubeSource = await readFile('source/utils/youtubeTrailer.bs', 'utf8');
-assert.ok(['"videoId":', '"clientName":', '"clientVersion":', '"contentCheckOk":', '"racyCheckOk":', '"embedUrl":'].every(key => youtubeSource.includes(key)), 'The YouTube request keeps its camelCase keys');
+assert.ok(['"videoId":', '"clientName":', '"clientVersion":', '"contentCheckOk":', '"racyCheckOk":', '["visitorData"]'].every(key => youtubeSource.includes(key)), 'The YouTube request keeps its camelCase keys');
 
 const seerrTask = await readFile('components/seerr/SeerrAPITask.bs', 'utf8');
 assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParams\)/, 'Plugin proxy preserves saved server query through shared compositor');

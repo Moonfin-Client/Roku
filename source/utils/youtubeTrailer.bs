@@ -1,78 +1,72 @@
 import "pkg:/source/utils/misc.bs"
 
-' Finds a playable stream for a title's YouTube trailer. YouTube's own player API is asked
-' first as each of several apps, since which of them it answers changes over time, and two
-' public mirror services stand behind it.
+' Finds a playable stream for a title's YouTube trailer. YouTube's own player API is asked as
+' the Vision Pro app first, which hands over a manifest with every resolution in it, then as
+' the Android app, whose one muxed file stops at 360p but still plays what the other refuses.
 namespace youtubeTrailer
 
     const PLAYER_URL = "https://www.youtube.com/youtubei/v1/player"
-    const REFERER = "https://www.youtube.com/"
     const SPONSOR_URL = "https://sponsor.ajay.app/api/skipSegments"
     ' What counts as good enough to stop looking for a sharper stream
     const HIGH_QUALITY_FLOOR = 720
-    const FIREFOX_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
 
+    ' A client marked needsVisitor turns away a request that carries no visitor id
     function Clients() as object
         return [
             {
-                name: "ANDROID", version: "20.10.41", platform: "MOBILE",
+                name: "VISIONOS", version: "1.02", platform: "", needsVisitor: true,
+                userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+                apiKey: "",
+                extra: { "deviceMake": "Apple", "deviceModel": "RealityDevice17,1", "osName": "visionOS", "osVersion": "26.5.23O471" }
+            },
+            {
+                name: "ANDROID", version: "20.10.41", platform: "MOBILE", needsVisitor: false,
                 userAgent: "com.google.android.youtube/20.10.41 (Linux; U; Android 11) gzip",
                 apiKey: "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
                 extra: { "deviceMake": "Google", "deviceModel": "Pixel 5", "osName": "Android", "osVersion": "11", "androidSdkVersion": "30" }
-            },
-            {
-                name: "ANDROID_VR", version: "1.60.19", platform: "MOBILE",
-                userAgent: "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; Quest 3 Build/SQ3A.220605.009.A1) gzip",
-                apiKey: "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
-                extra: { "deviceMake": "Oculus", "deviceModel": "Quest 3", "osName": "Android", "osVersion": "12L", "androidSdkVersion": "32" }
-            },
-            {
-                name: "TVHTML5_SIMPLY_EMBEDDED_PLAYER", version: "2.0", platform: "TV", embedContext: true,
-                userAgent: "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1",
-                apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
-                extra: {}
-            },
-            {
-                name: "IOS", version: "20.10.4", platform: "MOBILE",
-                userAgent: "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
-                apiKey: "AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUAc",
-                extra: { "deviceMake": "Apple", "deviceModel": "iPhone16,2", "osName": "iOS", "osVersion": "18.3.2.22D82" }
-            },
-            {
-                name: "WEB", version: "2.20250312.04.00", platform: "DESKTOP",
-                userAgent: youtubeTrailer.FIREFOX_UA,
-                apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
-                extra: {}
             }
         ]
     end function
 
-    function PipedBases() as object
-        return ["https://pipedapi.kavin.rocks", "https://pipedapi.moomoo.me"]
-    end function
-
-    function InvidiousBases() as object
-        return ["https://invidious.fdn.fr", "https://invidious.privacyredirect.com", "https://invidious.projectsegfau.lt"]
-    end function
-
     function PlayerRequestUrl(client as object) as string
+        if client.apiKey = "" then return youtubeTrailer.PLAYER_URL + "?prettyPrint=false"
         return youtubeTrailer.PLAYER_URL + "?key=" + client.apiKey + "&prettyPrint=false"
     end function
 
     ' The keys are quoted because the API wants them in camelCase, and a bare key is lowercased
-    function PlayerRequestBody(videoId as string, client as object) as string
+    function PlayerRequestBody(videoId as string, client as object, visitorId = "" as string) as string
         context = {
             "clientName": client.name,
             "clientVersion": client.version,
             "hl": "en",
-            "gl": "US",
-            "platform": client.platform
+            "gl": "US"
         }
+        if client.platform <> "" then context["platform"] = client.platform
+        if visitorId <> "" then context["visitorData"] = visitorId
         context.Append(client.extra)
 
         payload = { "videoId": videoId, "context": { "client": context }, "contentCheckOk": true, "racyCheckOk": true }
-        if client.embedContext = true then payload.context["thirdParty"] = { "embedUrl": youtubeTrailer.REFERER }
         return FormatJson(payload)
+    end function
+
+    ' Every answer carries a visitor id, even one that turned the request away for lacking it
+    function VisitorData(response as dynamic) as string
+        return toString(chainLookupReturn(response, "responseContext.visitorData", ""))
+    end function
+
+    ' Asking again is only worth it when YouTube handed back an id the request didnt carry
+    function ShouldRetryWithVisitor(response as dynamic, sentVisitorData as string) as boolean
+        if chainLookupReturn(response, "playabilityStatus.status", "") = "OK" then return false
+        fresh = youtubeTrailer.VisitorData(response)
+        return fresh <> "" and fresh <> sentVisitorData
+    end function
+
+    ' YouTube turned the sent id away and handed the same one back, so asking again with it gets
+    ' nowhere
+    function StaleVisitor(response as dynamic, sentVisitorData as string) as boolean
+        if sentVisitorData = "" then return false
+        if chainLookupReturn(response, "playabilityStatus.status", "") <> "LOGIN_REQUIRED" then return false
+        return youtubeTrailer.VisitorData(response) = sentVisitorData
     end function
 
     ' The first trailer with a YouTube id on it
@@ -124,25 +118,21 @@ namespace youtubeTrailer
     end function
 
     function HasAudio(stream as object) as boolean
-        if stream.LookupCI("videoOnly") = false then return true
         mime = LCase(toString(stream.LookupCI("mimeType") ?? ""))
         for each codec in ["mp4a", "opus", "vorbis", "audio"]
             if Instr(1, mime, codec) > 0 then return true
         end for
-        return toString(stream.LookupCI("audioCodec") ?? "") <> ""
+        return false
     end function
 
-    ' H.264 in MP4 with sound wins, then the resolution the caller leans toward
+    ' H.264 in MP4 wins, then the resolution the caller leans toward
     function Score(stream as object, preferHighQuality as boolean) as integer
         mime = LCase(toString(stream.LookupCI("mimeType") ?? ""))
-        container = LCase(toString(stream.LookupCI("container") ?? ""))
         points = 0
-        if youtubeTrailer.HasAudio(stream) then points += 5000
-        if Instr(1, mime, "video/mp4") > 0 or container = "mp4" then points += 2500
-        if Instr(1, mime, "avc1") > 0 or Instr(1, mime, "h264") > 0 then points += 2500
+        if Instr(1, mime, "video/mp4") > 0 then points += 2500
+        if Instr(1, mime, "avc1") > 0 then points += 2500
         if Instr(1, mime, "vp9") > 0 or Instr(1, mime, "vp09") > 0 then points -= 1500
-        if Instr(1, mime, "av01") > 0 or Instr(1, mime, "av1") > 0 then points -= 2500
-        if stream.LookupCI("hls") = true or stream.LookupCI("isHLS") = true then points += 500
+        if Instr(1, mime, "av01") > 0 then points -= 2500
 
         resolution = youtubeTrailer.Quality(stream)
         clamped = 480
@@ -196,6 +186,39 @@ namespace youtubeTrailer
         return best
     end function
 
+    ' The language of the trailer's own soundtrack, when YouTube lists machine dubbed ones
+    ' beside it. A manifest names every one of them and flags none as the default, so a player
+    ' left to choose takes the first, which is usually a dub.
+    function OriginalAudioLanguage(response as dynamic) as string
+        formats = chainLookupReturn(response, "streamingData.adaptiveFormats", invalid)
+        if type(formats) <> "roArray" then return ""
+        for each format in formats
+            track = chainLookupReturn(format, "audioTrack", invalid)
+            if type(track) = "roAssociativeArray" and track.LookupCI("audioIsDefault") = true
+                return toString(track.LookupCI("id") ?? "").Split(".")[0]
+            end if
+        end for
+        return ""
+    end function
+
+    ' The Track id of the original soundtrack among a Video node's availableAudioTracks, found by
+    ' the "original" in its name or failing that its language. YouTube lists every soundtrack
+    ' once per audio group and only 240p and below play from the first, so the last match wins.
+    ' Without a language nothing comes back, which leaves a local trailer's own tracks alone.
+    function OriginalAudioTrack(tracks as dynamic, language as string) as string
+        if language = "" or type(tracks) <> "roArray" or tracks.count() < 2 then return ""
+        named = ""
+        spoken = ""
+        wanted = LCase(Left(language, 2))
+        for each track in tracks
+            trackId = toString(track.LookupCI("Track") ?? "")
+            if Instr(1, LCase(toString(track.LookupCI("Name") ?? "")), "original") > 0 then named = trackId
+            if LCase(Left(toString(track.LookupCI("Language") ?? ""), 2)) = wanted then spoken = trackId
+        end for
+        if named <> "" then return named
+        return spoken
+    end function
+
     ' The caption track for the viewer's language as a WebVTT url. Machine made tracks only
     ' stand in when nothing was written by hand, and English backs an unmatched language the
     ' way YouTube itself does.
@@ -235,30 +258,6 @@ namespace youtubeTrailer
         if base.Right(1) = "?" or base.Right(1) = "&" then base = base.Left(base.Len() - 1)
         separator = Instr(1, base, "?") > 0 ? "&" : "?"
         return base + separator + "fmt=vtt"
-    end function
-
-    function PipedStream(response as dynamic, preferHighQuality as boolean) as dynamic
-        if type(response) <> "roAssociativeArray" then return invalid
-        hls = response.LookupCI("hls")
-        if isValidAndNotEmpty(hls) and (type(hls) = "roString" or type(hls) = "String") then return { url: hls, format: "hls" }
-
-        streams = response.LookupCI("videoStreams")
-        if type(streams) <> "roArray" then return invalid
-        muxed = []
-        for each stream in streams
-            if type(stream) = "roAssociativeArray" and stream.LookupCI("videoOnly") = false then muxed.push(stream)
-        end for
-
-        best = youtubeTrailer.PickBest(muxed, preferHighQuality)
-        if not isValid(best) then best = youtubeTrailer.PickBest(streams, preferHighQuality)
-        if isValid(best) then best.format = "mp4"
-        return best
-    end function
-
-    function InvidiousStream(response as dynamic, preferHighQuality as boolean) as dynamic
-        best = youtubeTrailer.PickBest(chainLookupReturn(response, "formatStreams", invalid), preferHighQuality)
-        if isValid(best) then best.format = "mp4"
-        return best
     end function
 
     ' The cues of a WebVTT file as { start, finish, text } in seconds, tags and all styling

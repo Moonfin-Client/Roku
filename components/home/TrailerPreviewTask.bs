@@ -1,4 +1,5 @@
 import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/serverCompatibility.bs"
 import "pkg:/source/utils/youtubeTrailer.bs"
@@ -6,6 +7,8 @@ import "pkg:/source/utils/youtubeTrailer.bs"
 ' The whole YouTube lookup gives up after this long, and each request inside it after less
 const RESOLVE_TIMEOUT_MS = 8000
 const REQUEST_TIMEOUT_MS = 5000
+' YouTube's visitor id outlives a single lookup, and each lookup runs on a fresh task
+const VISITOR_DATA_KEY = "youtubeVisitorData"
 
 sub init()
     m.top.functionName = "resolve"
@@ -22,7 +25,7 @@ sub resolve()
     else
         attempts = trailerAttempts(request.item)
     end if
-    answer = { requestId: request.requestId, index: index, count: attempts.count(), url: "", format: "", startTime: 0.0, segments: [], cues: [] }
+    answer = { requestId: request.requestId, index: index, count: attempts.count(), url: "", format: "", audioLanguage: "", startTime: 0.0, segments: [], cues: [] }
 
     if index < attempts.count()
         attempt = attempts[index]
@@ -128,11 +131,11 @@ sub resolveYoutube(videoId as string, request as object, answer as object)
     sponsor = startGet(youtubeTrailer.SponsorRequestUrl(videoId))
 
     stream = playerStream(videoId, request.language ?? "", deadline)
-    if not isValid(stream) then stream = mirrorStream(videoId, deadline)
     if not isValid(stream) then return
 
     answer.url = stream.url
     answer.format = stream.format
+    answer.audioLanguage = stream.audioLanguage
     ' Still waiting once the stream is found, the skip segments get what is left of the lookup
     answer.segments = youtubeTrailer.SponsorSegments(parsedBody(finishGet(sponsor, RESOLVE_TIMEOUT_MS - deadline.TotalMilliseconds())))
     answer.startTime = youtubeTrailer.StartTime(answer.segments)
@@ -157,19 +160,18 @@ function externalRequest(url as string, userAgent = "" as string) as object
     return req
 end function
 
-' The first answer usually only carries a small muxed file, so the search goes on through
-' the other apps until one offers 720p or better, keeping the best so far to fall back on
+' An app that only offers a small muxed file doesnt end the search, which goes on until one
+' offers 720p or better and keeps the best so far to fall back on
 function playerStream(videoId as string, language as string, deadline as object) as dynamic
     best = invalid
     for each client in youtubeTrailer.Clients()
         if timeLeft(deadline) <= 0 then exit for
-        req = externalRequest(youtubeTrailer.PlayerRequestUrl(client), client.userAgent)
-        req.AddHeader("Content-Type", "application/json")
-        response = requestResponse(req, "POST", youtubeTrailer.PlayerRequestBody(videoId, client), timeLeft(deadline)).data
+        response = playerResponse(videoId, client, deadline)
 
         stream = youtubeTrailer.PlayerStream(response, true)
         if isValid(stream)
             stream.captionsUrl = youtubeTrailer.CaptionTrackUrl(response, language)
+            stream.audioLanguage = youtubeTrailer.OriginalAudioLanguage(response)
             if stream.quality >= youtubeTrailer.HIGH_QUALITY_FLOOR then return stream
             if not isValid(best) or stream.quality > best.quality then best = stream
         end if
@@ -177,28 +179,34 @@ function playerStream(videoId as string, language as string, deadline as object)
     return best
 end function
 
-' The mirrors answer with a bare stream, so no captions ride along
-function mirrorStream(videoId as string, deadline as object) as dynamic
-    for each base in youtubeTrailer.PipedBases()
-        if timeLeft(deadline) <= 0 then return invalid
-        response = parsedBody(finishGet(startGet(base + "/streams/" + videoId, youtubeTrailer.FIREFOX_UA), timeLeft(deadline)))
-        stream = youtubeTrailer.PipedStream(response, true)
-        if isValid(stream) then return stream
-    end for
+' A client that wants a visitor id and has none saved gets turned away with a fresh one, so
+' it asks once more with that and keeps it for the lookups after. A saved id YouTube stops
+' taking is dropped, so the next lookup starts over.
+function playerResponse(videoId as string, client as object, deadline as object) as dynamic
+    if not client.needsVisitor then return postPlayer(videoId, client, "", deadline)
 
-    for each base in youtubeTrailer.InvidiousBases()
-        if timeLeft(deadline) <= 0 then return invalid
-        response = parsedBody(finishGet(startGet(base + "/api/v1/videos/" + videoId), timeLeft(deadline)))
-        stream = youtubeTrailer.InvidiousStream(response, true)
-        if isValid(stream) then return stream
-    end for
-    return invalid
+    visitorData = toString(get_setting(VISITOR_DATA_KEY, ""))
+    response = postPlayer(videoId, client, visitorData, deadline)
+    if youtubeTrailer.ShouldRetryWithVisitor(response, visitorData) and timeLeft(deadline) > 0
+        visitorData = youtubeTrailer.VisitorData(response)
+        set_setting(VISITOR_DATA_KEY, visitorData)
+        response = postPlayer(videoId, client, visitorData, deadline)
+    else if youtubeTrailer.StaleVisitor(response, visitorData)
+        unset_setting(VISITOR_DATA_KEY)
+    end if
+    return response
+end function
+
+function postPlayer(videoId as string, client as object, visitorData as string, deadline as object) as dynamic
+    req = externalRequest(youtubeTrailer.PlayerRequestUrl(client), client.userAgent)
+    req.AddHeader("Content-Type", "application/json")
+    return requestResponse(req, "POST", youtubeTrailer.PlayerRequestBody(videoId, client, visitorData), timeLeft(deadline)).data
 end function
 
 ' A GET that runs while the next request goes ahead, collected with finishGet
-function startGet(url as string, userAgent = "" as string) as dynamic
+function startGet(url as string) as dynamic
     port = CreateObject("roMessagePort")
-    req = externalRequest(url, userAgent)
+    req = externalRequest(url)
     req.SetMessagePort(port)
     if not req.AsyncGetToString() then return invalid
     return { req: req, port: port }
@@ -217,7 +225,7 @@ function finishGet(pending as dynamic, waitMs as integer) as string
     return event.GetString()
 end function
 
-' A mirror that has shut down answers in plain text, which isnt worth handing to the parser
+' Anything that isnt JSON, like an error page, isnt worth handing to the parser
 function parsedBody(text as string) as dynamic
     first = Left(text.Trim(), 1)
     if first <> "{" and first <> "[" then return invalid
