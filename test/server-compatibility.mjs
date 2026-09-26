@@ -238,4 +238,24 @@ assert.match(trailerAction, /trailerItemId = chainLookupReturn\(itemContent, "id
 assert.match(trailerAction, /getServerInfoFromItem\(itemContent\)/, 'Trailer lookup reads the detail item server');
 assert.match(trailerAction, /GetLocalTrailers\(trailerItemId, trailerParams, trailerServerData\)/, 'Trailer lookup passes destination server context');
 assert.match(trailerAction, /trailer\["_serverUrl"\] = trailerServerData\.serverUrl/, 'Remote trailers keep destination metadata for playback');
-process.stdout.write('PASS: Jellyfin review regressions (33 checks)\n');
+
+const quickplaySource = await readFile('source/utils/quickplay.bs', 'utf8');
+const resumeHelper = quickplaySource.match(/sub applyResumeStartingPoint\([^]*?end sub/)[0];
+assert.match(resumeHelper, /positionTicks <= 0 then return[^]*?item\.startingPoint = positionTicks/, 'Resume helper only copies positive playback positions');
+
+const seriesLocal = quickplaySource.match(/sub seriesLocal\([^]*?end sub/)[0];
+assert.match(seriesLocal, /if quickplayFromResume[^]*?GetResumeItems\([^]*?applyResumeStartingPoint\(data\.Items\[0\]\)/, 'Local series Resume prefers a resumable episode and copies its position');
+assert.match(seriesLocal, /GetNextUp\([^]*?if quickplayFromResume then quickplay\.applyResumeStartingPoint\(data\.Items\[0\]\)/, 'Local Next Up fallback preserves a resume position when present');
+
+const seriesRemoteStart = quickplaySource.indexOf('    sub seriesForServer(');
+const seriesRemoteEnd = quickplaySource.indexOf("    ' More than one TV Show Series.", seriesRemoteStart);
+assert.ok(seriesRemoteStart >= 0 && seriesRemoteEnd > seriesRemoteStart, 'Remote series quick-play block is present');
+const seriesRemote = quickplaySource.slice(seriesRemoteStart, seriesRemoteEnd);
+assert.match(seriesRemote, /quickplayFromResume[^]*?resumeUrl = "UserItems\/Resume"[^]*?if quickplayFromResume[^]*?APIRequestForServer\([^]*?resumeUrl/, 'Remote series Resume queries the resumable endpoint first');
+assert.match(seriesRemote, /applyResumeStartingPoint\(data\.Items\[0\]\)/, 'Remote series Resume copies the saved playback position');
+
+const videoLoader = await readFile('components/ItemGrid/LoadVideoContentTask.bs', 'utf8');
+const episodeWindow = videoLoader.match(/sub addNextEpisodesToQueue\([^]*?end sub/)[0];
+assert.match(episodeWindow, /if i = targetIndex and isValid\(playingItem\)\s+windowQueue\.push\(playingItem\)/, 'The rebuilt episode queue keeps the playing item and its start position');
+
+process.stdout.write('PASS: Jellyfin review regressions (39 checks)\n');
