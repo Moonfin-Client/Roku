@@ -86,7 +86,21 @@ sub init()
     m.LoadMetaDataTask.control = TaskControl.RUN
 
     m.PreloadTrickplayImagesTask = CreateObject("roSGNode", "PreloadTrickplayImagesTask")
-    m.PreloadTrickplayImagesTask.videoID = currentItem.id
+    m.PreloadTrickplayImagesTask.observeField("loaded", "onSheetsLoaded")
+    m.PreloadTrickplayImagesTask.observeField("state", "onSheetTaskState")
+    m.sheetState = {}
+    m.sheetQueue = []
+    m.scrubHold = { active: false, wasPlaying: false, target: invalid }
+    m.pendingSeek = invalid
+    m.pendingPreview = invalid
+    m.previewSheet = -1
+    m.seekPreview = m.top.findNode("seekPreview")
+    m.seekPreviewFrame = m.top.findNode("seekPreviewFrame")
+    m.seekPreviewTime = m.top.findNode("seekPreviewTime")
+    playbackOverlay.SetFont(m.seekPreviewTime, 20, true)
+    m.seekSettleTimer = m.top.findNode("seekSettleTimer")
+    m.seekSettleTimer.observeField("fire", "onSeekSettled")
+
 
     m.canUseFastReplace = false
     m.positionTranslation = m.top.trickPlayBar.getChild(3)
@@ -350,6 +364,7 @@ end sub
 '
 sub startScrubbing(direction as integer)
     if m.scrubActive then return
+    dropScrub()
 
     m.scrubActive = true
     m.scrubDirection = direction
@@ -422,6 +437,7 @@ sub onScrubTimer()
     setVideoEndingTime(m.scrubPosition)
 
     ' Show the trickplay frame at the scrub position
+    prefetchSheets(m.scrubPosition * 1000, speed > 0)
     displayTrickplayImage(m.scrubPosition)
 end sub
 
@@ -430,6 +446,7 @@ end sub
 ' @param {boolean} resume - controls whether or not to resume video playback when sub is called
 '
 sub handleHideAction(resume as boolean)
+    settleHeldScrub()
     m.osd.visible = false
     m.chapterList.visible = false
     m.osd.showChapterList = false
@@ -488,6 +505,8 @@ end function
 ' handleVideoPlayPauseAction: Handles action to either play or pause the video content
 '
 sub handleVideoPlayPauseAction()
+    if resumeHeldScrub() then return
+
     ' If video is paused, resume it
     if m.top.state = "paused"
         handleHideAction(true)
@@ -603,10 +622,18 @@ sub onOSDAction()
         return
     end if
 
-    ' Handle seek action with position
-    if action.Left(5) = "seek,"
-        seekPosition = action.Mid(5).ToFloat()
-        m.top.seek = seekPosition
+    if action.Left(6) = "scrub,"
+        scrubBy(action.Mid(6).ToInt())
+        return
+    end if
+
+    if action = "scrubcommit"
+        if not resumeHeldScrub() then handleVideoPlayPauseAction()
+        return
+    end if
+
+    if action = "scrubsettle"
+        settleHeldScrub()
         return
     end if
 
@@ -909,27 +936,27 @@ sub onVideoContentLoaded()
 
     startEmbyPreview(isLiveStream)
 
+    ' A new item starts its scrub state and sheets over
+    m.scrubHold = { active: false, wasPlaying: false, target: invalid }
+    hideSeekPreview()
+    if m.sheetsFor <> m.top.id
+        m.sheetState = {}
+        m.sheetQueue = []
+        m.previewSheet = -1
+        m.sheetsFor = m.top.id
+    end if
+
     if isValidAndNotEmpty(m.trickplay) and not isLiveStream
-        trickplayData = m.trickplay.LookupCI(m.top.id)
+        ' Keyed by media source, which is the item itself unless it has more than one version
+        trickplayData = m.trickplay.LookupCI(m.top.mediaSourceId) ?? m.trickplay.LookupCI(m.top.id)
         if isValidAndNotEmpty(trickplayData)
-            m.trickplayDataFinal = trickplayData.lookupCI(trickplayData.keys()[0])
+            m.trickplayDataFinal = trickplayData.lookupCI(trickplayWidthFor(trickplayData))
 
             if isValidAndNotEmpty(m.trickplayDataFinal)
                 ' Convert interval to seconds
                 m.iconInterval = m.trickplayDataFinal.Interval / 1000
 
                 m.canUseFastReplace = (m.trickplayDataFinal.TileHeight * m.trickplayDataFinal.Height) * (m.trickplayDataFinal.TileWidth * m.trickplayDataFinal.Width) < 2000000
-
-                numImages = fix(m.trickplayDataFinal.ThumbnailCount / (m.trickplayDataFinal.TileHeight * m.trickplayDataFinal.TileWidth))
-                ' Limit trickplay images to prevent memory issues (max 50 images)
-                if numImages > 50
-                    numImages = 50
-                end if
-
-                m.PreloadTrickplayImagesTask.numImagesToLoad = numImages
-                m.PreloadTrickplayImagesTask.trickplayWidth = m.trickplayDataFinal.Width
-                m.PreloadTrickplayImagesTask.method = "ADD"
-                m.PreloadTrickplayImagesTask.control = TaskControl.RUN
             end if
         end if
     end if
@@ -1046,6 +1073,7 @@ sub onStartDelayElapsed()
 end sub
 
 sub displayTrickplayImage(trickPosition as integer)
+    if m.global.session.user.settings["playback.trickplay.enabled"] = false then return
     if displayEmbyPreview(trickPosition) then return
     if not isValid(m.trickplayDataFinal) then return
 
@@ -1914,6 +1942,8 @@ sub showOSD(focusTarget = "seekbar" as string)
     m.osd.hasFocus = true
     m.osd.setFocus(true)
     m.pauseOverlay.visible = true
+    ' The controls coming up is the cue that a scrub may follow, so the sheets ahead start loading
+    if not m.scrubHold.active then prefetchSheets(m.top.position * 1000, true)
 end sub
 
 sub positionChapterList()
@@ -1936,6 +1966,234 @@ sub positionChapterList()
     end if
 
     chapterList.translation = [secondaryPosition[0], chapterListY]
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Scrubbing on the seek bar
+' ------------------------------------------------------------------------------------------------
+
+function seekStepSeconds() as integer
+    seconds = (m.global.session.user.settings["playback.seekStep"] ?? "10").toStr().toInt()
+    if seconds <= 0 then seconds = 10
+    return seconds
+end function
+
+function trickplayPreviewOn() as boolean
+    return m.global.session.user.settings["playback.trickplay.enabled"] <> false and isValid(m.trickplayDataFinal)
+end function
+
+' The widest sheet that is no wider than 320, or the narrowest there is
+function trickplayWidthFor(widths as object) as string
+    best = invalid
+    smallest = invalid
+    for each key in widths
+        width = key.toInt()
+        if not isValid(smallest) or width < smallest then smallest = width
+        if width <= 320 and (not isValid(best) or width > best) then best = width
+    end for
+    if not isValid(best) then best = smallest
+    return best.toStr()
+end function
+
+' Each press moves by the seek step. With pause while scrubbing on and a preview to scrub by, the
+' first press pauses and later ones only move the target. Otherwise every press seeks.
+sub scrubBy(direction as integer)
+    duration = m.top.duration
+    if duration <= 0 then return
+    limit = duration - 1
+    delta = direction * seekStepSeconds()
+
+    pauseSetting = m.global.session.user.settings["playback.trickplay.pauseWhileScrubbing"]
+    if not m.scrubHold.active and pauseSetting <> false and trickplayPreviewOn()
+        wasPlaying = isStringEqual(m.top.state, MediaPlaybackState.PLAYING)
+        m.scrubHold = { active: true, wasPlaying: wasPlaying, target: invalid }
+        if wasPlaying then m.top.control = VideoControl.PAUSE
+    end if
+    m.seekSettleTimer.control = "stop"
+
+    if m.scrubHold.active
+        target = clampSeconds((m.scrubHold.target ?? m.top.position) + delta, limit)
+        m.scrubHold.target = target
+    else
+        ' A seek is still landing while the presses come, so each builds on where the last one aimed
+        target = clampSeconds((m.pendingSeek ?? m.top.position) + delta, limit)
+        m.pendingSeek = target
+        m.top.seek = target
+        m.seekSettleTimer.control = "start"
+    end if
+
+    m.osd.scrubPosition = target
+    showSeekPreview(target)
+    prefetchSheets(target * 1000, direction > 0)
+end sub
+
+function clampSeconds(value as float, limit as float) as float
+    if value < 0 then return 0
+    if value > limit then return limit
+    return value
+end function
+
+sub onSeekSettled()
+    m.pendingSeek = invalid
+    hideSeekPreview()
+end sub
+
+' Lands a paused scrub and plays from there, even when playback was paused before it
+function resumeHeldScrub() as boolean
+    if not m.scrubHold.active then return false
+    target = m.scrubHold.target
+    m.scrubHold = { active: false, wasPlaying: false, target: invalid }
+    if isValid(target) then m.top.seek = target
+    hideSeekPreview()
+    ' The scrub made this pause, so the unpause rewind has nothing to undo
+    m.wasPaused = false
+    m.top.control = VideoControl.RESUME
+    return true
+end function
+
+' Seeks to where the scrub was aiming but stays paused, so play picks up from there
+sub settleHeldScrub()
+    if not m.scrubHold.active or not isValid(m.scrubHold.target) then return
+    m.top.seek = m.scrubHold.target
+    m.scrubHold.target = invalid
+    hideSeekPreview()
+end sub
+
+' Gives up on the scrub without seeking, and plays on when it was the scrub that paused
+sub dropScrub()
+    m.seekSettleTimer.control = "stop"
+    m.pendingSeek = invalid
+    wasPlaying = m.scrubHold.active and m.scrubHold.wasPlaying
+    m.scrubHold = { active: false, wasPlaying: false, target: invalid }
+    hideSeekPreview()
+    if wasPlaying then m.top.control = VideoControl.RESUME
+end sub
+
+' The frame nearest the target in a box centered over the bar. Until a sheet arrives the frame
+' already showing stays.
+sub showSeekPreview(target as float)
+    if not trickplayPreviewOn() then return
+    info = m.trickplayDataFinal
+    thumb = Int(target * 1000 / info.Interval)
+    if thumb < 0 or thumb >= info.ThumbnailCount
+        m.seekPreview.visible = false
+        return
+    end if
+    perSheet = info.TileWidth * info.TileHeight
+    sheet = Int(thumb / perSheet)
+    inSheet = thumb mod perSheet
+
+    m.seekPreviewTime.text = secondsToHuman(Int(target), false)
+    if m.sheetState[sheet.toStr()] = "loaded"
+        m.pendingPreview = invalid
+        if m.previewSheet <> sheet
+            ' A new sheet goes in a new poster, since changing a large poster's uri can fail to load
+            m.seekPreviewFrame.removeChildrenIndex(m.seekPreviewFrame.getChildCount(), 0)
+            poster = m.seekPreviewFrame.createChild("Poster")
+            poster.loadDisplayMode = "noScale"
+            poster.width = info.Width * info.TileWidth
+            poster.height = info.Height * info.TileHeight
+            poster.uri = `tmp:/${m.top.id}-${sheet}.jpg`
+            m.previewSheet = sheet
+        end if
+        m.seekPreviewFrame.getChild(0).translation = [- (inSheet mod info.TileWidth) * info.Width, -Int(inSheet / info.TileWidth) * info.Height]
+    else
+        m.pendingPreview = target
+    end if
+
+    if m.seekPreview.visible then return
+    layoutSeekPreview()
+    m.seekPreview.visible = true
+    m.top.findNode("seekPreviewEntrance").control = "start"
+end sub
+
+' 160 above the bar, with 8 of padding inside a 2 border, and the time under the frame
+sub layoutSeekPreview()
+    info = m.trickplayDataFinal
+    m.seekPreviewFrame.clippingRect = [0, 0, info.Width, info.Height]
+    timeHeight = m.seekPreviewTime.boundingRect().height
+    m.seekPreviewTime.width = info.Width
+    m.seekPreviewTime.translation = [10, 10 + info.Height + 8]
+    width = info.Width + 20
+    height = 10 + info.Height + 8 + timeHeight + 10
+    for each id in ["seekPreviewFill", "seekPreviewBorder"]
+        m.top.findNode(id).width = width
+        m.top.findNode(id).height = height
+    end for
+    left = 960 - width / 2
+    top = 828 - 160 - height
+    m.top.findNode("seekPreviewSlide").keyValue = [[left, top + 10], [left, top]]
+end sub
+
+sub hideSeekPreview()
+    m.pendingPreview = invalid
+    m.seekPreview.visible = false
+    m.osd.scrubPosition = -1
+end sub
+
+' The sheet at the position, the next six steps the way things are moving, and two steps back
+sub prefetchSheets(positionMs as float, forward as boolean)
+    if not trickplayPreviewOn() then return
+    info = m.trickplayDataFinal
+    perSheet = info.TileWidth * info.TileHeight
+    stepMs = seekStepSeconds() * 1000
+    direction = forward ? 1 : -1
+    lastMs = (info.ThumbnailCount - 1) * info.Interval
+    endMs = (m.top.duration - 1) * 1000
+    if endMs < lastMs then lastMs = endMs
+
+    targets = [positionMs]
+    for k = 1 to 6
+        targets.push(positionMs + direction * k * stepMs)
+    end for
+    for k = 1 to 2
+        targets.push(positionMs - direction * k * stepMs)
+    end for
+
+    for each moment in targets
+        if moment < 0 then moment = 0
+        if moment > lastMs then moment = lastMs
+        sheet = Int(Int(moment / info.Interval) / perSheet)
+        if not m.sheetState.DoesExist(sheet.toStr())
+            m.sheetState[sheet.toStr()] = "pending"
+            m.sheetQueue.push(sheet)
+        end if
+    end for
+    runSheetTask()
+end sub
+
+sub runSheetTask()
+    task = m.PreloadTrickplayImagesTask
+    if m.sheetQueue.count() = 0 or task.state = "run" then return
+    task.videoID = m.top.id
+    task.trickplayWidth = m.trickplayDataFinal.Width
+    task.method = "ADD"
+    task.sheets = m.sheetQueue
+    m.sheetQueue = []
+    task.control = TaskControl.RUN
+end sub
+
+' A sheet that failed to load is forgotten, so a later pass asks for it again
+sub onSheetsLoaded()
+    task = m.PreloadTrickplayImagesTask
+    if task.videoID <> m.top.id then return
+    loaded = {}
+    for each sheet in task.loaded
+        loaded[sheet.toStr()] = true
+    end for
+    for each sheet in task.sheets
+        if loaded.DoesExist(sheet.toStr())
+            m.sheetState[sheet.toStr()] = "loaded"
+        else
+            m.sheetState.Delete(sheet.toStr())
+        end if
+    end for
+    if isValid(m.pendingPreview) then showSeekPreview(m.pendingPreview)
+end sub
+
+' Sheets asked for while a fetch was running go once it finishes
+sub onSheetTaskState()
+    if m.PreloadTrickplayImagesTask.state = "stop" then runSheetTask()
 end sub
 
 ' ------------------------------------------------------------------------------------------------
@@ -2391,6 +2649,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     if not m.LoadMetaDataTask.isIntro
         if key = KeyCode.PLAY and not m.top.trickPlayBar.visible
+            if resumeHeldScrub() then return true
             if not stateAllowsOSD() then return true
 
             if m.top.state = "paused"
@@ -2425,6 +2684,12 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
 
         resetEmbyPreview()
+        sheets = []
+        for each sheetKey in m.sheetState
+            sheets.push(sheetKey.toInt())
+        end for
+        m.PreloadTrickplayImagesTask.videoID = m.top.id
+        m.PreloadTrickplayImagesTask.sheets = sheets
         m.PreloadTrickplayImagesTask.method = "REMOVE"
         m.PreloadTrickplayImagesTask.control = TaskControl.RUN
 

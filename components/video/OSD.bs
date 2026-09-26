@@ -53,9 +53,6 @@ sub init()
     liveTvGuide.SetFont(m.liveStartLabel, 18, false)
     liveTvGuide.SetFont(m.liveEndLabel, 18, false)
 
-    m.isSeeking = false
-    m.seekPercentage = 0
-
     m.top.observeField("visible", "onVisibleChanged")
     m.top.observeField("hasFocus", "onFocusChanged")
     m.top.observeField("progressPercentage", "onProgressPercentageChanged")
@@ -257,12 +254,18 @@ function formatOSDTimeSlot(slotKey as string, previewPosition as float) as strin
     position = previewPosition >= 0 ? previewPosition : m.top.positionTime
 
     if slotMode = "elapsed" then return secondsToHuman(position, true)
-    if slotMode = "endsAt" then return "Ends at " + m.top.videoEndingTime
+    if slotMode = "endsAt" then return tr("Ends at") + " " + endingTimeAt(previewPosition, totalTime - position)
     if slotMode = "time" then return m.clock.callFunc("getFormattedTime", m.clock.callFunc("getCurrentTime"), true)
     ' Both spellings are accepted because either can be the stored value
     if slotMode = "timeRemaining" or slotMode = "remaining" then return "-" + secondsToHuman(totalTime - position, true)
     if slotMode = "totalDuration" or slotMode = "totalTime" then return secondsToHuman(totalTime, true)
     return ""
+end function
+
+' A scrub moves the end with it, working from where it aims rather than where playback is
+function endingTimeAt(previewPosition as float, remaining as float) as string
+    if previewPosition < 0 then return m.top.videoEndingTime
+    return m.clock.callFunc("getFormattedTime", m.clock.callFunc("getCurrentTime") + Int(remaining), true)
 end function
 
 ' Every slot is assigned so that switching one to None clears whatever it was holding
@@ -283,23 +286,34 @@ end sub
 ' onProgressPercentageChanged: Handler for changes to m.top.progressPercentage param
 '
 sub onProgressPercentageChanged()
-    m.progressBar.width = m.progressBarBackground.width * m.top.progressPercentage
+    ' A scrub keeps the bar on where it is aiming until it lands
+    if m.top.scrubPosition >= 0 then return
+    drawBarAt(m.top.progressPercentage)
     updateOSDTime()
-
-    ' Update circle indicator position (centered on progress, offset by circle radius)
-    indicatorX = 103 + (m.progressBarBackground.width * m.top.progressPercentage) - 10
-    m.progressIndicator.translation = [indicatorX, 812]
 end sub
 
-sub updateSeekPreview(totalTime as float)
-    newPosition = totalTime * m.seekPercentage
-    m.progressBar.width = m.progressBarBackground.width * m.seekPercentage
-    renderOSDTimeSlots(newPosition)
-
-    indicatorX = 103 + (m.progressBarBackground.width * m.seekPercentage) - 10
-    m.progressIndicator.translation = [indicatorX, 812]
-    m.top.action = "seek," + newPosition.ToStr()
+sub onScrubPositionChanged()
+    if m.top.scrubPosition < 0
+        drawBarAt(m.top.progressPercentage)
+        updateOSDTime()
+        return
+    end if
+    duration = osdDurationSeconds()
+    fraction = 0
+    if duration > 0 then fraction = m.top.scrubPosition / duration
+    drawBarAt(fraction)
+    renderOSDTimeSlots(m.top.scrubPosition)
 end sub
+
+' The fill and the thumb, the thumb centered on the end of the fill
+sub drawBarAt(fraction as float)
+    m.progressBar.width = m.progressBarBackground.width * fraction
+    m.progressIndicator.translation = [103 + m.progressBarBackground.width * fraction - 10, 812]
+end sub
+
+function osdDurationSeconds() as float
+    return m.top.positionTime + m.top.remainingPositionTime
+end function
 
 
 ' onPlaybackStateChanged: Handler for changes to m.top.playbackState param
@@ -501,7 +515,6 @@ sub clearAllButtonFocus()
     m.transportControls.setFocus(false)
     m.secondaryControls.setFocus(false)
     m.seekbarGroup.setFocus(false)
-    m.isSeeking = false
 end sub
 
 sub focusControlGroup(groupName as string, targetIndex as integer, fallbackDirection as integer)
@@ -641,8 +654,9 @@ end sub
 ' onButtonSelected: Handler for selection of buttons from the menu.
 '
 sub onButtonSelected()
+    ' OK on the bar lands a paused scrub and plays, or toggles playback when theres none
     if m.currentButtonGroup = "seekbar"
-        m.top.action = "videoplaypause"
+        m.top.action = "scrubcommit"
         return
     end if
 
@@ -715,20 +729,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if key = "right"
-        ' Handle seeking if on seekbar
         if m.currentButtonGroup = "seekbar"
-            totalTime = m.top.positionTime + m.top.remainingPositionTime
-
-            ' If just entered seeking mode, initialize with current position
-            if not m.isSeeking
-                m.isSeeking = true
-                m.seekPercentage = m.top.progressPercentage
-            end if
-
-            m.seekPercentage = m.seekPercentage + 0.01
-            if m.seekPercentage > 1.0 then m.seekPercentage = 1.0
-
-            updateSeekPreview(totalTime)
+            m.top.action = "scrub,1"
             return true
         end if
 
@@ -750,20 +752,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if key = "left"
-        ' Handle seeking if on seekbar
         if m.currentButtonGroup = "seekbar"
-            totalTime = m.top.positionTime + m.top.remainingPositionTime
-
-            ' If just entered seeking mode, initialize with current position
-            if not m.isSeeking
-                m.isSeeking = true
-                m.seekPercentage = m.top.progressPercentage
-            end if
-
-            m.seekPercentage = m.seekPercentage - 0.01
-            if m.seekPercentage < 0 then m.seekPercentage = 0
-
-            updateSeekPreview(totalTime)
+            m.top.action = "scrub,-1"
             return true
         end if
 
@@ -784,6 +774,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     if key = "down"
         if m.currentButtonGroup = "seekbar"
+            ' Leaving the bar lands a paused scrub where it was aiming, still paused
+            m.top.action = "scrubsettle"
             focusOnTransportControls()
         else if m.currentButtonGroup = "transport"
             checkDisplaySiblingItem("")
