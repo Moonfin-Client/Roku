@@ -1,5 +1,9 @@
-import "pkg:/source/api/sdk.bs"
+import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+
+' How long to wait before each look for the new track, about twenty seconds in all
+const NEW_TRACK_WAITS_MS = [300, 300, 500, 700, 1000, 1000, 1500, 2000, 2000, 3000, 3000, 4000]
 
 sub init()
     m.top.functionName = "runTask"
@@ -17,9 +21,10 @@ sub runTask()
 end sub
 
 sub search()
-    results = api.items.SearchRemoteSubtitles(m.top.itemId, m.top.language)
+    answer = requestResponse(APIRequest(Substitute("/items/{0}/remotesearch/subtitles/{1}", m.top.itemId, m.top.language)))
+    results = answer.data
     if not isValid(results)
-        m.top.result = { kind: "search", failed: true }
+        m.top.result = { kind: "search", failed: true, status: answer.status }
         return
     end if
 
@@ -32,6 +37,44 @@ sub search()
 end sub
 
 sub download()
-    api.items.DownloadRemoteSubtitles(m.top.itemId, m.top.subtitleId)
-    m.top.result = { kind: "download" }
+    status = requestResponse(APIRequest(Substitute("/items/{0}/remotesearch/subtitles/{1}", m.top.itemId, m.top.subtitleId)), "POST", "").status
+    if status < 200 or status >= 300
+        m.top.result = { kind: "download", failed: true, status: status }
+        return
+    end if
+    if not m.top.findNewTrack
+        m.top.result = { kind: "download", failed: false, index: -1 }
+        return
+    end if
+
+    known = {}
+    for each index in m.top.existingIndexes
+        known[index.toStr()] = true
+    end for
+    index = newSubtitleIndex(known)
+    for each wait in NEW_TRACK_WAITS_MS
+        if index >= 0 then exit for
+        sleep(wait)
+        index = newSubtitleIndex(known)
+    end for
+    m.top.result = { kind: "download", failed: false, index: index }
 end sub
+
+' The first subtitle the item lists that wasnt there before the download, or -1. A lookup that
+' fails counts as not there yet.
+function newSubtitleIndex(known as object) as integer
+    userId = chainLookupReturn(m.global.session, "user.id", "")
+    item = getJson(APIRequest(serverItemMetadataPath(m.top.itemId, userId, isEmbyServer()), { userid: userId, fields: "MediaSources,MediaStreams" }))
+    sources = chainLookupReturn(item, "MediaSources", [])
+    if sources.count() = 0 then return -1
+
+    source = sources[0]
+    for each candidate in sources
+        if isStringEqual(candidate.LookupCI("Id"), m.top.mediaSourceId) then source = candidate
+    end for
+    for each stream in source.LookupCI("MediaStreams") ?? []
+        index = stream.LookupCI("Index")
+        if isStringEqual(stream.LookupCI("Type"), "Subtitle") and isValid(index) and not known.DoesExist(index.toStr()) then return index
+    end for
+    return -1
+end function

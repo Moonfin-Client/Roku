@@ -625,7 +625,7 @@ sub addSubtitlesToVideo(video, meta)
     if not isValidAndNotEmpty(m.playbackInfo.MediaSources) then return
     if not isValid(m.playbackInfo.MediaSources[0].MediaStreams) then return
 
-    subtitles = sortSubtitles(m.playbackInfo.MediaSources[0].MediaStreams)
+    subtitles = sortSubtitles(m.playbackInfo.MediaSources[0].MediaStreams, m.playbackInfo.MediaSources[0], video.id)
     safesubs = subtitles["all"]
     subtitleTracks = []
 
@@ -633,8 +633,9 @@ sub addSubtitlesToVideo(video, meta)
         safesubs = subtitles["text"]
     end if
 
+    ' A track the device reads from the stream itself is already in it
     for each subtitle in safesubs
-        subtitleTracks.push(subtitle.track)
+        if not subtitle.IsEmbeddedNative then subtitleTracks.push(subtitle.track)
     end for
 
     video.content.SubtitleTracks = subtitleTracks
@@ -814,7 +815,7 @@ sub addEpisodeToShowAtFinish(showID)
 end sub
 
 'Checks available subtitle tracks and puts subtitles in forced, default, and non-default/forced but preferred language at the top
-function sortSubtitles(MediaStreams)
+function sortSubtitles(MediaStreams, source = invalid as dynamic, videoId = "" as string)
     tracks = { "forced": [], "default": [], "normal": [], "text": [] }
     'Too many args for using substitute
     prefered_lang = getPreferredLanguage("playback.subs.language") ?? ""
@@ -824,8 +825,20 @@ function sortSubtitles(MediaStreams)
         if stream.type = "Subtitle"
 
             url = ""
-            if isValid(stream.DeliveryUrl)
-                url = playbackResourceURL(stream.DeliveryUrl)
+            deliveryUrl = stream.DeliveryUrl
+            embeddedNative = false
+            if not isValid(deliveryUrl) and isStringEqual(stream.LookupCI("DeliveryMethod"), "Embed") and stream.IsExternal <> true
+                codec = LCase(stream.LookupCI("Codec") ?? "")
+                if (codec = "srt" or codec = "subrip") and chainLookupReturn(source, "SupportsTranscoding", true) <> false
+                    ' Left in the file, but the server can still pull the text out as its own file
+                    deliveryUrl = `/Videos/${videoId}/${chainLookupReturn(source, "Id", videoId)}/Subtitles/${stream.index}/0/Stream.vtt`
+                else
+                    ' Nothing can pull the track out, so the device reads it from the stream
+                    embeddedNative = true
+                end if
+            end if
+            if isValid(deliveryUrl)
+                url = playbackResourceURL(deliveryUrl)
                 target = get_url() ?? ""
                 token = ""
                 if isValidAndNotEmpty(m.top.serverUrl)
@@ -836,7 +849,8 @@ function sortSubtitles(MediaStreams)
             end if
 
             ' stream is rebuilt below without these fields, so read them while they are still here
-            isSdhTrack = toBoolean(chainLookupReturn(stream, "IsHearingImpaired", false)) or instr(1, LCase(chainLookupReturn(stream, "displaytitle", "")), "sdh") > 0
+            hearingImpaired = toBoolean(chainLookupReturn(stream, "IsHearingImpaired", false)) = true
+            isSdhTrack = hearingImpaired or instr(1, LCase(chainLookupReturn(stream, "displaytitle", "")), "sdh") > 0
 
             stream = {
                 "Track": { "Language": stream.language, "Description": stream.displaytitle, "TrackName": url },
@@ -845,7 +859,11 @@ function sortSubtitles(MediaStreams)
                 "IsDefault": stream.IsDefault,
                 "IsForced": stream.IsForced,
                 "IsExternal": stream.IsExternal,
-                "IsEncoded": stream.DeliveryMethod = "Encode"
+                "IsEncoded": stream.DeliveryMethod = "Encode",
+                "IsHearingImpaired": hearingImpaired,
+                "IsEmbeddedNative": embeddedNative,
+                "Codec": stream.LookupCI("Codec") ?? "",
+                "DeliveryMethod": stream.LookupCI("DeliveryMethod") ?? ""
             }
 
             if stream.isForced
