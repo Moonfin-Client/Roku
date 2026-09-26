@@ -303,4 +303,24 @@ const audioPlayerView = await readFile('components/music/AudioPlayerView.bs', 'u
 assert.match(audioPlayerView, /setTaskServerFromItem\(m\.LoadMetaDataTask, currentItem\)/, 'Audio metadata task follows the queue-item server');
 assert.match(audioPlayerView, /audioArtworkURL\(currentItem[^]*?ImageType\.PRIMARY/, 'Audio artwork uses the queue-item server');
 
-process.stdout.write('PASS: Jellyfin review regressions (58 checks)\n');
+const detailApiTask = await readFile('components/JellyfinAPITask.bs', 'utf8');
+assert.match(detailApiTask, /request\.serverData[^]*?APIRequestForServer\(serverData\.serverUrl, serverData\.userId, serverData\.authToken/, 'Detail API task can target the item server');
+assert.match(detailApiTask, /LookupCI\("UserId"\)[^]*?targetParams\.UserId = serverData\.userId/, 'Remote detail requests replace active-session user ids');
+
+const detailActions = await readFile('source/utils/detailActions.bs', 'utf8');
+assert.match(detailActions, /function detailActionServerData\([^]*?getServerInfoFromItem\(m\.top\.itemContent\)[^]*?function withDetailActionServer\([^]*?request\.serverData = serverData/, 'Detail rating and delete actions carry the item server context');
+assert.match(detailActions, /task\.request = withDetailActionServer\(request\)/, 'Detail action tasks use the item server wrapper');
+
+const itemMenuHost = await readFile('components/itemMenu/itemMenuHost.bs', 'utf8');
+assert.match(itemMenuHost, /itemMenuShowIdentify\([^]*?itemMenuServer\(subject\.json\)[^]*?itemMenuDialog\.serverData = serverData[^]*?itemMenuShowArtwork\([^]*?itemMenuServer\(subject\.json\)[^]*?itemMenuDialog\.serverData = serverData/, 'Artwork and identify dialogs inherit the remote item server');
+
+const artworkDialog = await readFile('components/ArtworkPickerDialog.bs', 'utf8');
+assert.match(artworkDialog, /serverData: m\.top\.serverData[^]*?RemoteImages[^]*?serverData: m\.top\.serverData[^]*?RemoteImages\/Download/, 'Artwork requests stay on the item server');
+
+const identifyDialog = await readFile('components/IdentifyDialog.bs', 'utf8');
+assert.match(identifyDialog, /serverData: m\.top\.serverData[^]*?Items\/RemoteSearch[^]*?serverData: m\.top\.serverData[^]*?Items\/RemoteSearch\/Apply/, 'Identify requests stay on the item server');
+
+const compatibilityRoutes = await readFile('source/utils/serverCompatibility.bs', 'utf8');
+assert.match(compatibilityRoutes, /segments\.Count\(\) = 3 and LCase\(segments\[0\]\) = "useritems"[^]*?action = "rating" or action = "userdata"[^]*?prefix \+ "Items\/" \+ segments\[1\]/, 'Emby personal rating routes map to the user-scoped item path');
+
+process.stdout.write('PASS: Jellyfin review regressions (66 checks)\n');
