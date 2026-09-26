@@ -181,4 +181,10 @@ assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParam
 const extrasTask = await readFile('components/extras/LoadExtrasTask.bs', 'utf8');
 assert.match(extrasTask, /function multiServerExtrasImageURL\([^]*?return buildURLForServer\(/, 'Remote detail extras images use the shared builder');
 assert.doesNotMatch(extrasTask, /normalizedServerUrl \+ "\/Items\//, 'Remote detail extras do not concatenate server URLs');
-process.stdout.write('PASS: Jellyfin review regressions (24 checks)\n');
+
+const playbackInfoTask = await readFile('components/GetPlaybackInfoTask.bs', 'utf8');
+const playbackSessions = playbackInfoTask.match(/function playbackSessions\([^]*?end function/)[0];
+assert.match(playbackSessions, /APIRequestForServer\(serverUrl, serverUserId, serverAuthToken, "Sessions"\)/, 'Remote playback stats query the owning server session list');
+assert.match(playbackInfoTask, /function findPlaybackSession\([^]*?sessions = playbackSessions\(\)/, 'Playback stats use the server-aware session lookup');
+
+process.stdout.write('PASS: Jellyfin review regressions (26 checks)\n');
