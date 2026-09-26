@@ -1,0 +1,125 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Carries a watched or favorite change the user makes to every list already holding that item.
+' A change goes out only once the server has taken it, and a list only lays it over its own
+' copies. Nothing leaves a list because of it.
+namespace userDataSync
+
+    ' Posts to turn the flag on or deletes to turn it off, and says whether the server took it
+    function Send(req as dynamic, turnOn as boolean) as boolean
+        if req = invalid then return false
+        if turnOn
+            answer = requestResponse(req, "POST", "")
+        else
+            req.SetRequest("DELETE")
+            answer = requestResponse(req)
+        end if
+        return answer.status >= 200 and answer.status < 300
+    end function
+
+    sub Publish(itemId as string, patch as object)
+        if not isValidAndNotEmpty(itemId) or not isValid(m.global) then return
+        changes = {}
+        changes[itemId] = patch
+        m.global.userDataChanged = changes
+    end sub
+
+    ' A played or unplayed item has no progress left to show
+    function PlayedPatch(played as boolean) as object
+        return { "Played": played, "PlayedPercentage": invalid, "PlaybackPositionTicks": 0 }
+    end function
+
+    function FavoritePatch(isFavorite as boolean) as object
+        return { "IsFavorite": isFavorite }
+    end function
+
+    ' The json with the patch laid over its UserData, or invalid when it already says the same.
+    ' A value left empty in the patch takes that value away.
+    function Applied(json as dynamic, patch as object) as dynamic
+        if type(json) <> "roAssociativeArray" then return invalid
+        userData = json.LookupCI("UserData")
+        if type(userData) <> "roAssociativeArray" then userData = {}
+
+        merged = {}
+        merged.Append(userData)
+        changed = false
+        for each key in patch
+            wanted = patch[key]
+            current = userData.LookupCI(key)
+            if not isValid(wanted)
+                if isValid(current)
+                    merged.Delete(key)
+                    changed = true
+                end if
+            else if userDataSync.differs(current, wanted)
+                merged.AddReplace(key, wanted)
+                changed = true
+            end if
+        end for
+        if not changed then return invalid
+
+        json.AddReplace("UserData", merged)
+        return json
+    end function
+
+    ' Compared within a kind of value, since a boolean against a number would stop the app
+    function differs(current as dynamic, wanted as dynamic) as boolean
+        if not isValid(current) then return true
+        currentKind = userDataSync.kindOf(current)
+        if currentKind <> userDataSync.kindOf(wanted) or currentKind = "" then return true
+        return current <> wanted
+    end function
+
+    function kindOf(value as dynamic) as string
+        valueType = LCase(type(value))
+        if valueType = "boolean" or valueType = "roboolean" then return "boolean"
+        for each numeric in ["integer", "rointeger", "longinteger", "rolonginteger", "float", "rofloat", "double", "rodouble"]
+            if valueType = numeric then return "number"
+        end for
+        return ""
+    end function
+
+    ' Lays any change meant for this node over its json and the flags its card reads, and says
+    ' whether anything changed
+    function ApplyToNode(node as object, changes as object) as boolean
+        if not node.hasField("json") then return false
+        json = node.json
+        if type(json) <> "roAssociativeArray" then return false
+        patch = changes[toString(json.LookupCI("Id"))]
+        if not isValid(patch) then return false
+
+        updated = userDataSync.Applied(json, patch)
+        if not isValid(updated) then return false
+        node.json = updated
+
+        played = patch.LookupCI("Played")
+        if isValid(played)
+            if node.hasField("watched") then node.watched = played
+            if node.hasField("isWatched") then node.isWatched = played
+            if node.hasField("PlayedPercentage") then node.PlayedPercentage = 0
+        end if
+        isFavorite = patch.LookupCI("IsFavorite")
+        if isValid(isFavorite) and node.hasField("favorite") then node.favorite = isFavorite
+        return true
+    end function
+
+    sub ApplyToTree(node as object, changes as object)
+        userDataSync.ApplyToNode(node, changes)
+        for each child in node.getChildren(-1, 0)
+            userDataSync.ApplyToTree(child, changes)
+        end for
+    end sub
+
+    ' Every list on the screen, found through the content each one draws
+    sub ApplyToLists(screen as object, changes as object)
+        for each child in screen.getChildren(-1, 0)
+            if child.hasField("content")
+                content = child.content
+                if type(content) = "roSGNode" then userDataSync.ApplyToTree(content, changes)
+            end if
+            userDataSync.ApplyToLists(child, changes)
+        end for
+    end sub
+
+end namespace
