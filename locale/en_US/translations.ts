@@ -5128,5 +5128,40 @@
         <extracomment>Frame rate a subtitle search result was timed for. {fps} is the rate</extracomment>
         <translation>{fps} fps</translation>
     </message>
+    <message>
+        <source>Trailers played behind the media bar</source>
+        <extracomment>Description of the media bar settings section for trailers</extracomment>
+        <translation>Trailers played behind the media bar</translation>
+    </message>
+    <message>
+        <source>Trailer Preview</source>
+        <extracomment>Setting that plays the current title's trailer behind the media bar</extracomment>
+        <translation>Trailer Preview</translation>
+    </message>
+    <message>
+        <source>Auto-play trailers in the media bar after 3 seconds</source>
+        <extracomment>Description of the Trailer Preview setting</extracomment>
+        <translation>Auto-play trailers in the media bar after 3 seconds</translation>
+    </message>
+    <message>
+        <source>Mute Trailer Audio</source>
+        <extracomment>Setting that silences trailer previews and the trailer overlay</extracomment>
+        <translation>Mute Trailer Audio</translation>
+    </message>
+    <message>
+        <source>Mute trailer previews in the featured media bar and details screen trailer overlay</source>
+        <extracomment>Description of the Mute Trailer Audio setting</extracomment>
+        <translation>Mute trailer previews in the featured media bar and details screen trailer overlay</translation>
+    </message>
+    <message>
+        <source>Trailer Captions</source>
+        <extracomment>Setting that shows YouTube captions on media bar trailers</extracomment>
+        <translation>Trailer Captions</translation>
+    </message>
+    <message>
+        <source>Show captions on media bar trailer previews when YouTube has them</source>
+        <extracomment>Description of the Trailer Captions setting</extracomment>
+        <translation>Show captions on media bar trailer previews when YouTube has them</translation>
+    </message>
 </context>
 </TS>

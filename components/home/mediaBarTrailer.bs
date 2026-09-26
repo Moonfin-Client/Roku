@@ -1,0 +1,285 @@
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Plays the current title's trailer behind the media bar's artwork. It stays hidden for its
+' first few seconds, the carousel holds while it plays, and the next title comes up when it
+' ends. These run in MediaBar's scope, so m is the bar.
+
+' Home sits the bar this far down the screen, so a full screen trailer starts above it
+const TRAILER_BAR_TOP = 223
+const TRAILER_CAPTION_SIZE = 32
+
+sub trailerInit()
+    m.trailerVideo = m.top.findNode("trailerVideo")
+    m.ayaFrameBg = m.top.findNode("ayaFrameBg")
+    m.trailerCaptions = m.top.findNode("trailerCaptions")
+    m.trailerCaption = m.top.findNode("trailerCaption")
+    m.trailerCaptionShadow = m.top.findNode("trailerCaptionShadow")
+    m.trailerCaption.font.size = TRAILER_CAPTION_SIZE
+    m.trailerCaptionShadow.font.size = TRAILER_CAPTION_SIZE
+
+    m.trailerVideo.notificationInterval = 0.25
+    m.trailerVideo.observeFieldScoped("state", "onTrailerVideoState")
+    m.trailerVideo.observeFieldScoped("position", "onTrailerPosition")
+
+    m.trailerRevealTimer = m.top.findNode("trailerRevealTimer")
+    m.trailerRevealTimer.observeFieldScoped("fire", "onTrailerReveal")
+
+    m.trailerRequestId = 0
+    m.trailerPhase = "idle"
+    m.trailerItemId = ""
+    m.trailerHolding = false
+    m.trailerActive = false
+    m.trailerCovered = false
+
+    if isValid(m.global.sceneManager) then m.global.sceneManager.observeFieldScoped("settingsOpen", "refreshTrailer")
+end sub
+
+' Home is hidden behind another screen, or back in front
+sub setTrailerCovered(covered as boolean)
+    m.trailerCovered = covered
+    refreshTrailer()
+end sub
+
+function trailerAllowed() as boolean
+    if not get_user_setting_bool("ui.home.mediaBarTrailerPreview", true) then return false
+    mode = m.mediaBarMode ?? ""
+    if mode <> "moonfin" and mode <> "makd" and mode <> "aya" and mode <> "gallery" then return false
+    if not m.top.visible or m.trailerCovered then return false
+    if m.global.sceneManager.settingsOpen = true then return false
+    ' Music holds the one media pipeline, and it came first
+    return chainLookupReturn(m.global, "audioPlayer.state", "") <> "playing"
+end function
+
+function trailerCurrentItem() as dynamic
+    if m.mediaBarMode = "gallery" then return getGalleryActiveItem()
+    if m.currentIndex < 0 or m.currentIndex >= m.mediaBarItems.count() then return invalid
+    return m.mediaBarItems[m.currentIndex]
+end function
+
+' Starts the current title's trailer, or stops whatever plays when there is nothing to show.
+' The same title asked for again carries on rather than starting over.
+sub refreshTrailer()
+    item = trailerCurrentItem()
+    if not isValid(item) or not trailerAllowed()
+        stopTrailer()
+        return
+    end if
+    if item.id = m.trailerItemId then return
+
+    stopTrailer()
+    m.trailerItemId = item.id
+    m.trailerPhase = "resolving"
+    requestTrailerAttempt(item, 0)
+end sub
+
+sub requestTrailerAttempt(item as object, index as integer)
+    if isValid(m.trailerTask) then m.trailerTask.unobserveFieldScoped("answer")
+
+    language = m.global.session.user.settings["ui.language"] ?? ""
+    if language = "" then language = chainLookupReturn(m.global, "device.locale", "en")
+
+    m.trailerTask = CreateObject("roSGNode", "TrailerPreviewTask")
+    m.trailerTask.observeFieldScoped("answer", "onTrailerAnswer")
+    m.trailerTask.request = {
+        requestId: m.trailerRequestId,
+        item: { Id: item.id, RemoteTrailers: item.remoteTrailers ?? [] },
+        index: index,
+        captions: get_user_setting_bool("ui.home.mediaBarTrailerCaptions", false),
+        language: language.Replace("_", "-")
+    }
+    m.trailerTask.control = "RUN"
+end sub
+
+sub onTrailerAnswer(event as object)
+    answer = event.getData()
+    if answer.requestId <> m.trailerRequestId or m.trailerPhase <> "resolving" then return
+
+    m.trailerAttempt = answer
+    if answer.url = ""
+        tryNextTrailerAttempt()
+        return
+    end if
+
+    content = CreateObject("roSGNode", "ContentNode")
+    content.url = answer.url
+    content.streamFormat = answer.format
+    if answer.startTime > 0 then content.playStart = answer.startTime
+
+    layoutTrailer()
+    m.trailerVideo.content = content
+    m.trailerVideo.mute = get_user_setting_bool("ui.home.mediaBarTrailerMuted", false)
+    m.trailerVideo.control = "play"
+end sub
+
+' A trailer that wont play before it starts gives way to the next one there is
+sub tryNextTrailerAttempt()
+    attempt = m.trailerAttempt
+    item = trailerCurrentItem()
+    if isValid(attempt) and isValid(item) and attempt.index + 1 < attempt.count
+        m.trailerVideo.control = "stop"
+        requestTrailerAttempt(item, attempt.index + 1)
+        return
+    end if
+    markTrailerUnavailable()
+end sub
+
+' Nothing more to try, so the artwork stays and the title isnt asked about again
+sub markTrailerUnavailable()
+    itemId = m.trailerItemId
+    stopTrailer()
+    m.trailerItemId = itemId
+    m.trailerPhase = "unavailable"
+end sub
+
+sub onTrailerVideoState()
+    state = m.trailerVideo.state
+    if state = "playing" and m.trailerPhase = "resolving"
+        ' The carousel holds from here, a few seconds before the trailer shows
+        m.trailerPhase = "playing"
+        m.trailerHolding = true
+        m.trailerRevealTimer.control = "start"
+    else if state = "error"
+        if m.trailerPhase = "resolving"
+            tryNextTrailerAttempt()
+        else if m.trailerPhase = "playing"
+            markTrailerUnavailable()
+        end if
+    else if state = "finished" and m.trailerPhase = "playing"
+        ' A single title isnt played again, its artwork just comes back
+        markTrailerUnavailable()
+        if m.mediaBarMode = "gallery"
+            if m.mediaBarItems.count() > 1 then galleryAdvance(1)
+        else
+            nextSlide()
+        end if
+    end if
+end sub
+
+sub onTrailerReveal()
+    if m.trailerPhase <> "playing" then return
+    m.trailerActive = true
+    m.trailerVideo.visible = true
+    applyTrailerChrome(true)
+end sub
+
+' Skips anything marked as filler and keeps the caption in step with the picture
+sub onTrailerPosition()
+    if m.trailerPhase <> "playing" or not isValid(m.trailerAttempt) then return
+    position = m.trailerVideo.position
+
+    for each segment in m.trailerAttempt.segments
+        if position >= segment.start and position < segment.finish - 0.5
+            m.trailerVideo.seek = segment.finish
+            exit for
+        end if
+    end for
+
+    spoken = ""
+    if m.trailerActive
+        for each cue in m.trailerAttempt.cues
+            if position >= cue.start and position < cue.finish
+                spoken = cue.text
+                exit for
+            end if
+        end for
+    end if
+    if m.trailerCaption.text <> spoken
+        m.trailerCaption.text = spoken
+        m.trailerCaptionShadow.text = spoken
+    end if
+    m.trailerCaptions.visible = spoken <> ""
+end sub
+
+sub stopTrailer()
+    m.trailerRequestId++
+    m.trailerRevealTimer.control = "stop"
+    if isValid(m.trailerTask)
+        m.trailerTask.unobserveFieldScoped("answer")
+        m.trailerTask = invalid
+    end if
+
+    if m.trailerPhase = "resolving" or m.trailerPhase = "playing"
+        m.trailerVideo.control = "stop"
+        m.trailerVideo.content = invalid
+    end if
+    m.trailerVideo.visible = false
+    m.trailerCaptions.visible = false
+    m.trailerCaption.text = ""
+    m.trailerCaptionShadow.text = ""
+    if m.trailerActive then applyTrailerChrome(false)
+
+    m.trailerActive = false
+    m.trailerHolding = false
+    m.trailerAttempt = invalid
+    m.trailerPhase = "idle"
+    m.trailerItemId = ""
+end sub
+
+' Full screen behind the bar's own styles, the frame in Aya, and the open panel in Gallery.
+' The picture is fitted inside, since the device draws video on its own plane and cant crop it.
+sub layoutTrailer()
+    rect = { x: 0, y: -TRAILER_BAR_TOP, width: 1920, height: 1080 }
+    if m.mediaBarMode = "aya"
+        rect = { x: m.ayaGroup.translation[0], y: m.ayaGroup.translation[1], width: m.ayaFrameBg.width, height: m.ayaFrameBg.height }
+    else if m.mediaBarMode = "gallery"
+        rect = galleryTrailerRect()
+    end if
+
+    m.trailerVideo.translation = [rect.x, rect.y]
+    m.trailerVideo.width = rect.width
+    m.trailerVideo.height = rect.height
+
+    ' Captions sit a little above the foot of the picture, inset a tenth from either side
+    captionWidth = rect.width * 0.8
+    m.trailerCaption.width = captionWidth
+    m.trailerCaptionShadow.width = captionWidth
+    m.trailerCaption.height = rect.height * 0.3
+    m.trailerCaptionShadow.height = rect.height * 0.3
+    m.trailerCaptions.translation = [rect.x + rect.width * 0.1, rect.y + rect.height * 0.63]
+end sub
+
+' What each style clears away so the trailer shows through, and puts back after
+sub applyTrailerChrome(active as boolean)
+    shown = not active
+    if m.mediaBarMode = "moonfin"
+        m.featuredGradient.opacity = shown ? 1 : 0
+        m.infoBackground.visible = shown
+        m.dotsBackground.opacity = shown ? 1 : 0
+        m.indicatorDots.opacity = shown ? 1 : 0
+        ' The facts row stays and drops to the foot of the box the ratings and overview leave
+        if active
+            m.trailerRatingsShown = m.ratingsRow.visible
+            m.ratingsRow.visible = false
+            m.overviewLabel.visible = false
+            m.infoOverlayContent.translation = [m.infoOverlayContent.translation[0], m.infoBottomAnchor - FEATURED_BOX_PAD_Y - m.metadataRow.boundingRect().height]
+        else
+            m.ratingsRow.visible = m.trailerRatingsShown
+            m.overviewLabel.visible = true
+            updateInfoBackgroundSize()
+        end if
+    else if m.mediaBarMode = "makd"
+        m.makdGroup.opacity = shown ? 1 : 0
+    else if m.mediaBarMode = "aya"
+        m.ayaFrameBg.visible = shown
+        m.ayaBackdrop.visible = shown
+        m.ayaBackdropNext.visible = shown
+    else if m.mediaBarMode = "gallery"
+        m.galleryGlow.visible = shown
+        ' The panel cleared is the one put back, even once another has opened in its place
+        if active then m.trailerPanel = galleryActiveContent()
+        if isValid(m.trailerPanel) then m.trailerPanel.trailerActive = active
+        if not active then m.trailerPanel = invalid
+    end if
+end sub
+
+' The open panel sits past the narrow ones before it, in the grid's own place on the page
+function galleryTrailerRect() as object
+    panelX = m.galleryGroup.translation[0] + m.galleryActiveIndex * (GALLERY_NARROW_COLUMN + m.galleryGrid.itemSpacing[0])
+    return { x: panelX, y: m.galleryGroup.translation[1], width: GALLERY_WIDE_COLUMN, height: m.galleryGrid.rowHeights[0] }
+end function
+
+function galleryActiveContent() as dynamic
+    if m.galleryCurrentPage < 0 or m.galleryCurrentPage >= m.galleryPageContentNodes.count() then return invalid
+    return m.galleryPageContentNodes[m.galleryCurrentPage].getChild(m.galleryActiveIndex)
+end function
