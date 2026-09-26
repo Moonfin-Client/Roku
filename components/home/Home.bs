@@ -68,7 +68,8 @@ sub init()
 
     ' Modern rows focused card overlay
     m.modernFocusCard = m.top.findNode("modernFocusCard")
-    m.mfImage = m.top.findNode("mfImage")
+    m.mfImageA = m.top.findNode("mfImageA")
+    m.mfImageB = m.top.findNode("mfImageB")
     m.mfBackdrop = m.top.findNode("mfBackdrop")
     m.mfInfo = m.top.findNode("mfInfo")
     m.mfTitle = m.top.findNode("mfTitle")
@@ -77,14 +78,37 @@ sub init()
     m.mfOverview = m.top.findNode("mfOverview")
     m.mfInfoFadeIn = m.top.findNode("mfInfoFadeIn")
     m.mfInfoOp = m.top.findNode("mfInfoOp")
-    m.mfImagePrev = m.top.findNode("mfImagePrev")
-    m.mfImageFadeIn = m.top.findNode("mfImageFadeIn")
-    m.mfImageFadeInInterp = m.top.findNode("mfImageFadeInInterp")
-    m.mfImagePrevFadeOut = m.top.findNode("mfImagePrevFadeOut")
-    m.mfImagePrevFadeOutInterp = m.top.findNode("mfImagePrevFadeOutInterp")
+    m.mfInfoFadeOut = m.top.findNode("mfInfoFadeOut")
+    m.mfInfoFadeOutOp = m.top.findNode("mfInfoFadeOutOp")
+    m.mfInfoSwapIn = m.top.findNode("mfInfoSwapIn")
+    m.mfInfoSwapInOp = m.top.findNode("mfInfoSwapInOp")
+    m.mfDetails = m.top.findNode("mfDetails")
+    m.mfDetailsFadeIn = m.top.findNode("mfDetailsFadeIn")
+    m.mfDetailsOp = m.top.findNode("mfDetailsOp")
+    if isValid(m.mfInfoFadeOut) then m.mfInfoFadeOut.observeField("state", "onModernInfoFadedOut")
+    m.mfCardItem = invalid
+    m.mfInfoPending = invalid
+    m.mfInfoPendingDetails = invalid
+    m.mfInfoPendingRatings = invalid
+    m.mfCrossfades = {}
+    for each poster in [m.mfImageA, m.mfImageB]
+        fade = {
+            anim: m.top.findNode(poster.id + "Crossfade"),
+            fadeIn: m.top.findNode(poster.id + "In"),
+            fadeOut: m.top.findNode(poster.id + "Out"),
+            backdrop: m.top.findNode(poster.id + "Backdrop")
+        }
+        fade.anim.observeField("state", "onModernImageFaded")
+        poster.observeField("loadStatus", "onModernImageLoadStatusChange")
+        m.mfCrossfades[poster.id] = fade
+    end for
+    m.mfShown = m.mfImageA
+    m.mfNext = m.mfImageB
+    m.mfFading = false
+    m.mfPendingDisplayMode = "scaleToZoom"
+    m.mfPendingBackdrop = 0.0
     m.mfImageSettle = m.top.findNode("mfImageSettle")
     if isValid(m.mfImageSettle) then m.mfImageSettle.observeField("fire", "onModernImageSettled")
-    if isValid(m.mfImage) then m.mfImage.observeField("loadStatus", "onModernImageLoadStatusChange")
     m.mfPendingUri = ""
     m.mfCrossfading = false
     m.mfSettling = false
@@ -129,6 +153,7 @@ sub init()
     ' Observe when key is pressed inside homeRows
     m.keyPressedNotifier = false
     m.homeRows.observeField("keyPressedNotifier", "onHomeRowsKeyPressed")
+    m.homeRows.observeField("moveTarget", "onHomeRowsMoveTarget")
 
     ' Observe when home rows content is loaded
     m.homeRows.observeField("contentLoaded", "onHomeRowsContentLoaded")
@@ -494,6 +519,22 @@ sub onHomeRowsKeyPressed(event as object)
             hideModernFocusCard()
         end if
     end if
+end sub
+
+' The row only reports its new focus once it has finished scrolling, so the card and cells
+' start changing as the key is pressed. Otherwise the incoming cell slides in under the card
+' still showing its own poster and title, and the card changes a beat late.
+sub onHomeRowsMoveTarget(event as object)
+    if not m.modernHomeRows or not isValid(m.homeRows.content) then return
+    target = event.getData()
+    if not isValid(target) or target.count() < 2 then return
+
+    row = m.homeRows.content.getChild(target[0])
+    if not isValid(row) or not useModernCardsForRow(row.id) then return
+    applyModernReflow(target[0], target[1])
+
+    item = row.getChild(target[1])
+    if isValid(item) and m.modernCardShown then showModernFocusCard(item)
 end sub
 
 ' Navigate to genres screen
@@ -1180,9 +1221,24 @@ sub applyFocusedItemDetails(json as object, item as object)
     end if
 
     if m.modernHomeRows and isValid(m.modernFocusCard)
-        if isValid(m.mfMeta) then m.mfMeta.text = buildModernMeta(json, item)
-        if isValid(m.mfOverview) then m.mfOverview.text = overview
+        meta = buildModernMeta(json, item)
+        if isValid(m.mfInfoPending)
+            m.mfInfoPendingDetails = { meta: meta, overview: overview }
+        else
+            if isValid(m.mfMeta) then m.mfMeta.text = meta
+            if isValid(m.mfOverview) then m.mfOverview.text = overview
+            fadeInModernDetails()
+        end if
     end if
+end sub
+
+sub fadeInModernDetails()
+    if not isAllValid([m.mfDetails, m.mfDetailsFadeIn, m.mfDetailsOp]) then return
+    if m.mfDetails.opacity >= 1 then return
+
+    m.mfDetailsFadeIn.control = "stop"
+    m.mfDetailsOp.keyValue = [m.mfDetails.opacity, 1.0]
+    m.mfDetailsFadeIn.control = "start"
 end sub
 
 sub onItemDetailsLoaded()
@@ -1263,15 +1319,11 @@ end sub
 ' The rest of the info arrives once the details and ratings tasks finish.
 sub showModernFocusCard(focusedItem as object)
     if not isValid(m.modernFocusCard) then return
+    ' A key press brings the card in before the row settles, and the focus change after it
+    ' mustnt start the same card over
+    if m.modernCardShown and isValid(m.mfCardItem) and m.mfCardItem.isSameNode(focusedItem) then return
+    m.mfCardItem = focusedItem
 
-    if isValid(m.mfTitle) then m.mfTitle.text = focusedItem.title ?? ""
-    if isValid(m.mfMeta) then m.mfMeta.text = ""
-    if isValid(m.mfOverview) then m.mfOverview.text = ""
-    if isValid(m.mfRatings)
-        m.mfRatings.ratingsData = invalid
-        m.mfRatings.visible = false
-    end if
-    updateModernOverviewPosition()
     watchAnimeMarker(focusedItem, focusedItem.json, true)
 
     m.modernFocusCard.visible = true
@@ -1281,17 +1333,16 @@ sub showModernFocusCard(focusedItem as object)
 
         ' The frame starts empty so the wide image fades into it rather than replacing
         ' whichever row was open before
-        if isValid(m.mfImage)
-            m.mfImage.uri = ""
-            m.mfImage.opacity = 0
-        end if
-        if isValid(m.mfImagePrev)
-            m.mfImagePrev.uri = ""
-            m.mfImagePrev.opacity = 0
-        end if
+        for each poster in [m.mfImageA, m.mfImageB]
+            poster.uri = ""
+            poster.opacity = 0
+        end for
         m.mfCrossfading = false
 
+        setModernInfo(focusedItem)
         fadeInModernInfo()
+    else
+        queueModernInfo(focusedItem)
     end if
 
     m.mfPendingUri = homeLandscapeUri(focusedItem)
@@ -1302,13 +1353,11 @@ sub showModernFocusCard(focusedItem as object)
     browseType = LCase(chainLookupReturn(focusedItem, "json.SeerrBrowseType", ""))
     isLogoTile = itemDataType = "seerrbrowse" and (browseType = "studio" or browseType = "network")
     if isLogoTile
-        m.mfImage.loadDisplayMode = "scaleToFit"
-        m.mfImagePrev.loadDisplayMode = "scaleToFit"
-        m.mfBackdrop.opacity = 1.0
+        m.mfPendingDisplayMode = "scaleToFit"
+        m.mfPendingBackdrop = 1.0
     else
-        m.mfImage.loadDisplayMode = "scaleToZoom"
-        m.mfImagePrev.loadDisplayMode = "scaleToZoom"
-        m.mfBackdrop.opacity = 0
+        m.mfPendingDisplayMode = "scaleToZoom"
+        m.mfPendingBackdrop = 0.0
     end if
 
     if isValid(m.mfImageSettle)
@@ -1324,8 +1373,7 @@ sub showModernFocusCard(focusedItem as object)
     end if
 end sub
 
-' Brings the title and meta up from wherever they currently sit, so a move that lands mid
-' fade carries on rather than restarting from nothing
+' The info comes up with the card when a modern row takes focus
 sub fadeInModernInfo()
     if not isAllValid([m.mfInfoFadeIn, m.mfInfoOp, m.mfInfo]) then return
 
@@ -1334,45 +1382,142 @@ sub fadeInModernInfo()
     m.mfInfoFadeIn.control = "start"
 end sub
 
+sub setModernInfo(item as object)
+    if isValid(m.mfTitle) then m.mfTitle.text = item.title ?? ""
+    if isValid(m.mfDetailsFadeIn) then m.mfDetailsFadeIn.control = "stop"
+    if isValid(m.mfDetails) then m.mfDetails.opacity = 0
+    if isValid(m.mfMeta) then m.mfMeta.text = ""
+    if isValid(m.mfOverview) then m.mfOverview.text = ""
+    if isValid(m.mfRatings)
+        m.mfRatings.ratingsData = invalid
+        m.mfRatings.visible = false
+    end if
+    updateModernOverviewPosition()
+end sub
+
+' A move that lands while the old info is still fading out only changes which card comes in
+' next, so holding a direction doesnt flicker through every title
+sub queueModernInfo(item as object)
+    m.mfInfoPending = item
+    m.mfInfoPendingDetails = invalid
+    m.mfInfoPendingRatings = invalid
+    if not isAllValid([m.mfInfo, m.mfInfoFadeOut, m.mfInfoFadeOutOp]) then return
+    if m.mfInfoFadeOut.state = "running" then return
+
+    if isValid(m.mfInfoFadeIn) then m.mfInfoFadeIn.control = "stop"
+    if isValid(m.mfInfoSwapIn) then m.mfInfoSwapIn.control = "stop"
+    if m.mfInfo.opacity <= 0
+        tryModernInfoSwap()
+        return
+    end if
+
+    m.mfInfoFadeOutOp.keyValue = [m.mfInfo.opacity, 0.0]
+    m.mfInfoFadeOut.control = "start"
+end sub
+
+sub onModernInfoFadedOut(event as object)
+    if isStringEqual(event.getData(), "stopped") then tryModernInfoSwap()
+end sub
+
+' The new info comes in with the new image, so a title never sits under the last card's art
+sub tryModernInfoSwap()
+    if not isValid(m.mfInfoPending) then return
+    if isValid(m.mfInfoFadeOut) and m.mfInfoFadeOut.state = "running" then return
+    if modernImagePending() then return
+    swapModernInfo()
+end sub
+
+' True until the focused card's image has started crossfading in
+function modernImagePending() as boolean
+    if m.mfCrossfading then return true
+    if not isValidAndNotEmpty(m.mfPendingUri) then return false
+    return not isStringEqual(m.mfShown.uri, m.mfPendingUri)
+end function
+
+' Details that came back while the old card was fading out are held until here, so they
+' never show under the wrong title
+sub swapModernInfo()
+    item = m.mfInfoPending
+    if not isValid(item) then return
+    m.mfInfoPending = invalid
+
+    setModernInfo(item)
+    if isValid(m.mfInfoPendingDetails)
+        if isValid(m.mfMeta) then m.mfMeta.text = m.mfInfoPendingDetails.meta
+        if isValid(m.mfOverview) then m.mfOverview.text = m.mfInfoPendingDetails.overview
+        if isValid(m.mfDetails) then m.mfDetails.opacity = 1
+    end if
+    if isValid(m.mfInfoPendingRatings) then showModernRatings(m.mfInfoPendingRatings)
+    m.mfInfoPendingDetails = invalid
+    m.mfInfoPendingRatings = invalid
+
+    if not isAllValid([m.mfInfoSwapIn, m.mfInfoSwapInOp]) then return
+    m.mfInfoSwapInOp.keyValue = [m.mfInfo.opacity, 1.0]
+    m.mfInfoSwapIn.control = "start"
+end sub
+
+sub showModernRatings(result as object)
+    m.mfRatings.ratingsData = result
+    m.mfRatings.visible = true
+    updateModernOverviewPosition()
+end sub
+
 sub onModernImageSettled()
     m.mfSettling = false
     swapModernImage()
 end sub
 
+' A crossfade already under way finishes before the next image loads, so a quick run of
+' moves eases from card to card rather than cutting partway
 sub swapModernImage()
-    if not isValid(m.mfImage) then return
-    if not isValidAndNotEmpty(m.mfPendingUri) then return
-    if isStringEqual(m.mfImage.uri, m.mfPendingUri) then return
+    if m.mfFading then return
+    uri = m.mfPendingUri
+    if not isValidAndNotEmpty(uri) then return
 
-    if isValid(m.mfImageFadeIn) then m.mfImageFadeIn.control = "stop"
-    if isValid(m.mfImagePrevFadeOut) then m.mfImagePrevFadeOut.control = "stop"
-
-    ' Hold what is on screen underneath while the new image loads
-    if isValid(m.mfImagePrev) and isValidAndNotEmpty(m.mfImage.uri)
-        m.mfImagePrev.uri = m.mfImage.uri
-        m.mfImagePrev.opacity = 1
+    if isStringEqual(m.mfShown.uri, uri)
+        if m.mfCrossfading
+            m.mfCrossfading = false
+            m.mfNext.uri = ""
+        end if
+        tryModernInfoSwap()
+        return
     end if
+    if m.mfCrossfading and isStringEqual(m.mfNext.uri, uri) then return
 
-    m.mfImage.opacity = 0
+    m.mfNext.opacity = 0
+    m.mfNext.loadDisplayMode = m.mfPendingDisplayMode
 
     ' Armed before the uri is set, since an image already in the cache reports itself ready
     ' straight away and the fade would otherwise be skipped, leaving an empty frame
     m.mfCrossfading = true
-    m.mfImage.uri = m.mfPendingUri
+    m.mfNext.uri = uri
     onModernImageLoadStatusChange()
 end sub
 
+' Art that fails to load still crossfades, so the last card's image doesnt stay up
 sub onModernImageLoadStatusChange()
     if not m.mfCrossfading then return
-    if not isValid(m.mfImage) or m.mfImage.loadStatus <> "ready" then return
-    if not isAllValid([m.mfImagePrev, m.mfImageFadeIn, m.mfImageFadeInInterp, m.mfImagePrevFadeOut, m.mfImagePrevFadeOutInterp]) then return
-
-    m.mfImageFadeInInterp.keyValue = [m.mfImage.opacity, 1.0]
-    m.mfImagePrevFadeOutInterp.keyValue = [m.mfImagePrev.opacity, 0.0]
-    m.mfImageFadeIn.control = "start"
-    m.mfImagePrevFadeOut.control = "start"
-
+    status = m.mfNext.loadStatus
+    if status <> "ready" and status <> "failed" then return
     m.mfCrossfading = false
+
+    fade = m.mfCrossfades[m.mfNext.id]
+    fade.fadeIn.keyValue = [m.mfNext.opacity, 1.0]
+    fade.fadeOut.keyValue = [m.mfShown.opacity, 0.0]
+    fade.backdrop.keyValue = [m.mfBackdrop.opacity, m.mfPendingBackdrop]
+    m.mfFading = true
+    fade.anim.control = "start"
+
+    incoming = m.mfNext
+    m.mfNext = m.mfShown
+    m.mfShown = incoming
+    tryModernInfoSwap()
+end sub
+
+sub onModernImageFaded(event as object)
+    if not isStringEqual(event.getData(), "stopped") then return
+    m.mfFading = false
+    swapModernImage()
 end sub
 
 function homeLandscapeUri(node as object) as string
@@ -1390,11 +1535,23 @@ end function
 
 sub hideModernFocusCard()
     watchAnimeMarker(invalid, invalid)
+    m.mfCardItem = invalid
+    m.mfInfoPending = invalid
+    m.mfInfoPendingDetails = invalid
+    m.mfInfoPendingRatings = invalid
     if isValid(m.mfInfoFadeIn) then m.mfInfoFadeIn.control = "stop"
+    if isValid(m.mfInfoFadeOut) then m.mfInfoFadeOut.control = "stop"
+    if isValid(m.mfInfoSwapIn) then m.mfInfoSwapIn.control = "stop"
+    if isValid(m.mfDetailsFadeIn) then m.mfDetailsFadeIn.control = "stop"
+    if isValid(m.mfInfo) then m.mfInfo.opacity = 0
     if isValid(m.mfImageSettle) then m.mfImageSettle.control = "stop"
-    m.mfCrossfading = false
-    m.mfSettling = false
     m.mfPendingUri = ""
+    for each fade in m.mfCrossfades.Items()
+        fade.value.anim.control = "stop"
+    end for
+    m.mfCrossfading = false
+    m.mfFading = false
+    m.mfSettling = false
     m.mfBackdrop.opacity = 0
 
     if isValid(m.modernFocusCard) then m.modernFocusCard.visible = false
@@ -1408,9 +1565,9 @@ end sub
 
 ' The focused card carries the same pill as its cell in the row, over the wide artwork
 sub showAnimeMarker(marker as dynamic)
-    if not isValid(m.mfImage) then return
+    if not isValid(m.mfImageA) then return
 
-    m.mfAnimePill = drawAnimeCardPill(m.mfAnimePill, m.mfImage.getParent(), marker, m.mfImage.width, m.mfImage.height, false)
+    m.mfAnimePill = drawAnimeCardPill(m.mfAnimePill, m.mfImageA.getParent(), marker, m.mfImageA.width, m.mfImageA.height, false)
 end sub
 
 ' Slides the items after the focused one to the right so the focused landscape
@@ -1862,9 +2019,11 @@ sub onHomeRatingsLoaded(event as object)
     end if
 
     if m.modernHomeRows and isValid(m.mfRatings)
-        m.mfRatings.ratingsData = result
-        m.mfRatings.visible = true
-        updateModernOverviewPosition()
+        if isValid(m.mfInfoPending)
+            m.mfInfoPendingRatings = result
+        else
+            showModernRatings(result)
+        end if
     end if
 
     if not isValid(ratingsContainer) then return
