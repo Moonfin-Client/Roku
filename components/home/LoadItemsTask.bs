@@ -19,7 +19,9 @@ import "pkg:/source/utils/seerrBrowseRows.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 
 ' Items a "Recently Added" row holds, both per library and after libraries are merged
-const LATEST_MEDIA_LIMIT = 25
+const LATEST_MEDIA_LIMIT = 16
+' A TV library asks for twice as many, since its episodes fold into fewer series cards
+const LATEST_TV_FETCH_LIMIT = 32
 
 ' How far ahead a calendar row looks for upcoming releases
 const CALENDAR_WINDOW_DAYS = 90
@@ -82,18 +84,23 @@ function loadLatestMedia() as object
     end if
 
     if targetParentIds.Count() > 0
+        collectionType = LCase(toNormalizedString(chainLookupReturn(m.top.metadata, "contentType", "") ?? ""))
+        isTv = collectionType = "tvshows" or collectionType = "shows"
+        fetchLimit = LATEST_MEDIA_LIMIT
+        if isTv then fetchLimit = LATEST_TV_FETCH_LIMIT
         seenIds = {}
         for each pId in targetParentIds
             params = {
                 userId: m.global.session.user.id,
-                limit: LATEST_MEDIA_LIMIT,
+                limit: fetchLimit,
                 parentId: pId,
+                groupItems: true,
                 enableImageTypes: `${ImageType.PRIMARY}, ${ImageType.BACKDROP}, ${ImageType.THUMB}`,
                 imageTypeLimit: 1,
                 enableTotalRecordCount: false,
                 fields: "Genres,DateCreated"
             }
-            libData = api.items.GetLatest(params)
+            libData = normalizeLatestItems(api.items.GetLatest(params), isTv, collectionType = "")
             if isValidAndNotEmpty(libData)
                 for each rawItem in libData
                     itemIdStr = LCase(toNormalizedString(rawItem.LookupCI("Id")))
@@ -108,16 +115,7 @@ function loadLatestMedia() as object
         ' Each library returns its own newest-first page, so a merged row arrives grouped by
         ' library. Without this an old item from the first library outranks a new one from the
         ' second, and the row ends up holding a page per library instead of a single page.
-        if targetParentIds.Count() > 1
-            data = sortByDateCreatedDescending(data)
-            if data.Count() > LATEST_MEDIA_LIMIT
-                trimmed = []
-                for i = 0 to LATEST_MEDIA_LIMIT - 1
-                    trimmed.push(data[i])
-                end for
-                data = trimmed
-            end if
-        end if
+        if targetParentIds.Count() > 1 then data = firstItems(sortByDateCreatedDescending(data), LATEST_MEDIA_LIMIT)
     end if
 
     if not isValidAndNotEmpty(data) then return results
@@ -163,6 +161,74 @@ function loadLatestMedia() as object
     end for
 
     return results
+end function
+
+' A TV library's new episodes and seasons show as one card per series, and a library of no
+' particular type does the same once anything in it is an episode or a season
+function normalizeLatestItems(items as dynamic, isTv as boolean, untyped as boolean) as object
+    if not isValidAndNotEmpty(items) then return []
+    collapse = isTv
+    if not collapse and untyped
+        for each item in items
+            itemType = item.LookupCI("Type")
+            if isStringEqual(itemType, "Episode") or isStringEqual(itemType, "Season")
+                collapse = true
+                exit for
+            end if
+        end for
+    end if
+
+    normalized = items
+    if collapse
+        normalized = []
+        seen = {}
+        ' Newest first, so each series keeps its newest entry
+        for each item in items
+            card = seriesCardForLatestItem(item) ?? item
+            cardId = LCase(toNormalizedString(card.LookupCI("Id")))
+            if seen.DoesExist(cardId) then continue for
+            seen[cardId] = true
+            normalized.push(card)
+        end for
+    end if
+
+    return firstItems(normalized, LATEST_MEDIA_LIMIT)
+end function
+
+function firstItems(items as object, limit as integer) as object
+    if items.Count() <= limit then return items
+    kept = []
+    for i = 0 to limit - 1
+        kept.push(items[i])
+    end for
+    return kept
+end function
+
+' The series an episode or season belongs to, drawn from what the entry carries, or invalid when
+' it cant say which series. Its watched state was the entry's own, so the card goes without one.
+function seriesCardForLatestItem(item as object) as dynamic
+    itemType = item.LookupCI("Type")
+    if not isStringEqual(itemType, "Episode") and not isStringEqual(itemType, "Season") then return invalid
+    seriesId = item.LookupCI("SeriesId") ?? item.LookupCI("ParentId")
+    seriesName = (item.LookupCI("SeriesName") ?? "").toStr().Trim()
+    if not isValidAndNotEmpty(seriesId) or seriesName = "" then return invalid
+
+    card = {}
+    card.Append(item)
+    card.AddReplace("Id", seriesId)
+    card.AddReplace("Type", "Series")
+    card.AddReplace("Name", seriesName)
+    seriesImage = item.LookupCI("SeriesPrimaryImageTag") ?? item.LookupCI("ParentPrimaryImageTag")
+    if isValidAndNotEmpty(seriesImage)
+        imageTags = {}
+        if isValid(item.LookupCI("ImageTags")) then imageTags.Append(item.LookupCI("ImageTags"))
+        imageTags.AddReplace("Primary", seriesImage)
+        card.AddReplace("ImageTags", imageTags)
+    end if
+    for each field in ["IndexNumber", "ParentIndexNumber", "ProviderIds", "UserData", "RunTimeTicks"]
+        card.Delete(field)
+    end for
+    return card
 end function
 
 function loadRecentlyReleased() as object
