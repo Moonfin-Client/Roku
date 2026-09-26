@@ -136,7 +136,9 @@ assert.match(entry, /id="addServerButton"\s+text="Enter Server URL"/);
 assert.match(entry, /id="embyConnectButton"\s+text="Emby Connect"/);
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if CreateEmbyConnectGroup\(\)/);
 assert.match(await readFile('components/embyConnect/EmbyConnectScene.xml', 'utf8'), /extends="SigninScene"/);
-process.stdout.write('PASS: sign-in entry wiring (4 checks)\n');
+const signinShown = (await readFile('components/config/SigninScene.bs', 'utf8')).match(/sub OnScreenShown\([^]*?end sub/)[0];
+assert.match(signinShown, /m\.top\.lastFocus\.setFocus\(true\)\s+else if not m\.quickConnectGroup\.visible\s+m\.config\.setFocus\(true\)/, 'Sign-in hands the form focus when Quick Connect has not');
+process.stdout.write('PASS: sign-in entry wiring (5 checks)\n');
 
 for (const detailStyle of ['components/details/SpotlightItemDetails.bs', 'components/details/MinimalistItemDetails.bs']) {
     const detailSource = await readFile(detailStyle, 'utf8');
