@@ -1,0 +1,333 @@
+import "pkg:/source/utils/misc.bs"
+
+' Finds a playable stream for a title's YouTube trailer. YouTube's own player API is asked
+' first as each of several apps, since which of them it answers changes over time, and two
+' public mirror services stand behind it.
+namespace youtubeTrailer
+
+    const PLAYER_URL = "https://www.youtube.com/youtubei/v1/player"
+    const REFERER = "https://www.youtube.com/"
+    const SPONSOR_URL = "https://sponsor.ajay.app/api/skipSegments"
+    ' What counts as good enough to stop looking for a sharper stream
+    const HIGH_QUALITY_FLOOR = 720
+    const FIREFOX_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+
+    function Clients() as object
+        return [
+            {
+                name: "ANDROID", version: "20.10.41", platform: "MOBILE",
+                userAgent: "com.google.android.youtube/20.10.41 (Linux; U; Android 11) gzip",
+                apiKey: "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
+                extra: { "deviceMake": "Google", "deviceModel": "Pixel 5", "osName": "Android", "osVersion": "11", "androidSdkVersion": "30" }
+            },
+            {
+                name: "ANDROID_VR", version: "1.60.19", platform: "MOBILE",
+                userAgent: "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; Quest 3 Build/SQ3A.220605.009.A1) gzip",
+                apiKey: "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
+                extra: { "deviceMake": "Oculus", "deviceModel": "Quest 3", "osName": "Android", "osVersion": "12L", "androidSdkVersion": "32" }
+            },
+            {
+                name: "TVHTML5_SIMPLY_EMBEDDED_PLAYER", version: "2.0", platform: "TV", embedContext: true,
+                userAgent: "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1",
+                apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+                extra: {}
+            },
+            {
+                name: "IOS", version: "20.10.4", platform: "MOBILE",
+                userAgent: "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+                apiKey: "AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUAc",
+                extra: { "deviceMake": "Apple", "deviceModel": "iPhone16,2", "osName": "iOS", "osVersion": "18.3.2.22D82" }
+            },
+            {
+                name: "WEB", version: "2.20250312.04.00", platform: "DESKTOP",
+                userAgent: youtubeTrailer.FIREFOX_UA,
+                apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+                extra: {}
+            }
+        ]
+    end function
+
+    function PipedBases() as object
+        return ["https://pipedapi.kavin.rocks", "https://pipedapi.moomoo.me"]
+    end function
+
+    function InvidiousBases() as object
+        return ["https://invidious.fdn.fr", "https://invidious.privacyredirect.com", "https://invidious.projectsegfau.lt"]
+    end function
+
+    function PlayerRequestUrl(client as object) as string
+        return youtubeTrailer.PLAYER_URL + "?key=" + client.apiKey + "&prettyPrint=false"
+    end function
+
+    ' The keys are quoted because the API wants them in camelCase, and a bare key is lowercased
+    function PlayerRequestBody(videoId as string, client as object) as string
+        context = {
+            "clientName": client.name,
+            "clientVersion": client.version,
+            "hl": "en",
+            "gl": "US",
+            "platform": client.platform
+        }
+        context.Append(client.extra)
+
+        payload = { "videoId": videoId, "context": { "client": context }, "contentCheckOk": true, "racyCheckOk": true }
+        if client.embedContext = true then payload.context["thirdParty"] = { "embedUrl": youtubeTrailer.REFERER }
+        return FormatJson(payload)
+    end function
+
+    ' The first trailer with a YouTube id on it
+    function ExtractId(item as dynamic) as string
+        trailers = chainLookupReturn(item, "RemoteTrailers", invalid)
+        if type(trailers) <> "roArray" then return ""
+        for each trailer in trailers
+            if type(trailer) = "roAssociativeArray"
+                videoId = youtubeTrailer.ExtractIdFromUrl(toString(trailer.LookupCI("Url") ?? ""))
+                if videoId <> "" then return videoId
+            end if
+        end for
+        return ""
+    end function
+
+    function ExtractIdFromUrl(url as string) as string
+        if url = "" then return ""
+
+        parsed = CreateObject("roRegex", "^[a-z]+://([^/?#]+)([^?#]*)(?:\?([^#]*))?", "i").Match(url)
+        if parsed.count() > 1
+            host = LCase(parsed[1])
+            parts = []
+            for each part in (parsed[2] ?? "").Split("/")
+                if part <> "" then parts.push(part)
+            end for
+
+            if Instr(1, host, "youtu.be") > 0 and parts.count() > 0 and Len(parts[0]) = 11 then return parts[0]
+
+            if Instr(1, host, "youtube.com") > 0 or Instr(1, host, "youtube-nocookie.com") > 0
+                for each pair in (parsed[3] ?? "").Split("&")
+                    if Left(pair, 2) = "v=" and Len(pair) = 13 then return Mid(pair, 3)
+                end for
+                for i = 0 to parts.count() - 2
+                    if (parts[i] = "embed" or parts[i] = "shorts" or parts[i] = "v") and Len(parts[i + 1]) = 11 then return parts[i + 1]
+                end for
+            end if
+        end if
+
+        match = CreateObject("roRegex", "(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})", "").Match(url)
+        if match.count() > 1 then return match[1]
+        return ""
+    end function
+
+    function Quality(stream as object) as integer
+        label = toString(stream.LookupCI("qualityLabel") ?? stream.LookupCI("quality") ?? "")
+        match = CreateObject("roRegex", "(\d{3,4})", "").Match(label)
+        if match.count() > 1 then return match[1].ToInt()
+        return 0
+    end function
+
+    function HasAudio(stream as object) as boolean
+        if stream.LookupCI("videoOnly") = false then return true
+        mime = LCase(toString(stream.LookupCI("mimeType") ?? ""))
+        for each codec in ["mp4a", "opus", "vorbis", "audio"]
+            if Instr(1, mime, codec) > 0 then return true
+        end for
+        return toString(stream.LookupCI("audioCodec") ?? "") <> ""
+    end function
+
+    ' H.264 in MP4 with sound wins, then the resolution the caller leans toward
+    function Score(stream as object, preferHighQuality as boolean) as integer
+        mime = LCase(toString(stream.LookupCI("mimeType") ?? ""))
+        container = LCase(toString(stream.LookupCI("container") ?? ""))
+        points = 0
+        if youtubeTrailer.HasAudio(stream) then points += 5000
+        if Instr(1, mime, "video/mp4") > 0 or container = "mp4" then points += 2500
+        if Instr(1, mime, "avc1") > 0 or Instr(1, mime, "h264") > 0 then points += 2500
+        if Instr(1, mime, "vp9") > 0 or Instr(1, mime, "vp09") > 0 then points -= 1500
+        if Instr(1, mime, "av01") > 0 or Instr(1, mime, "av1") > 0 then points -= 2500
+        if stream.LookupCI("hls") = true or stream.LookupCI("isHLS") = true then points += 500
+
+        resolution = youtubeTrailer.Quality(stream)
+        clamped = 480
+        if resolution > 0
+            clamped = resolution
+            if clamped < 144 then clamped = 144
+            if clamped > 1080 then clamped = 1080
+        end if
+
+        if preferHighQuality then return points + clamped
+        return points + 1000 - Abs(clamped - 480)
+    end function
+
+    function PickBest(streams as dynamic, preferHighQuality as boolean) as dynamic
+        if type(streams) <> "roArray" then return invalid
+        best = invalid
+        bestScore = -1000000000
+        for each stream in streams
+            if type(stream) = "roAssociativeArray" and isValidAndNotEmpty(stream.LookupCI("url"))
+                points = youtubeTrailer.Score(stream, preferHighQuality)
+                if points > bestScore
+                    bestScore = points
+                    best = { url: stream.LookupCI("url"), quality: youtubeTrailer.Quality(stream) }
+                end if
+            end if
+        end for
+        return best
+    end function
+
+    ' A manifest carries every variant, so nothing else beats it on quality
+    function PlayerStream(response as dynamic, preferHighQuality as boolean) as dynamic
+        if type(response) <> "roAssociativeArray" then return invalid
+        status = chainLookupReturn(response, "playabilityStatus.status", "")
+        if status <> "" and status <> "OK" then return invalid
+
+        streaming = response.LookupCI("streamingData")
+        if type(streaming) <> "roAssociativeArray" then return invalid
+        if isValidAndNotEmpty(streaming.LookupCI("hlsManifestUrl")) then return { url: streaming.LookupCI("hlsManifestUrl"), quality: youtubeTrailer.HIGH_QUALITY_FLOOR, format: "hls" }
+        if isValidAndNotEmpty(streaming.LookupCI("dashManifestUrl")) then return { url: streaming.LookupCI("dashManifestUrl"), quality: youtubeTrailer.HIGH_QUALITY_FLOOR, format: "dash" }
+
+        muxed = []
+        formats = streaming.LookupCI("formats")
+        if type(formats) = "roArray"
+            for each stream in formats
+                if type(stream) = "roAssociativeArray" and isValidAndNotEmpty(stream.LookupCI("url")) and youtubeTrailer.HasAudio(stream) then muxed.push(stream)
+            end for
+        end if
+
+        best = youtubeTrailer.PickBest(muxed, preferHighQuality)
+        if isValid(best) then best.format = "mp4"
+        return best
+    end function
+
+    ' The caption track for the viewer's language as a WebVTT url. Machine made tracks only
+    ' stand in when nothing was written by hand, and English backs an unmatched language the
+    ' way YouTube itself does.
+    function CaptionTrackUrl(response as dynamic, language as string) as string
+        tracks = chainLookupReturn(response, "captions.playerCaptionsTracklistRenderer.captionTracks", invalid)
+        if type(tracks) <> "roArray" or tracks.count() = 0 then return ""
+
+        lang = LCase(language)
+        if lang = "" then lang = "en"
+        lang = lang.Split("-")[0]
+
+        written = []
+        anyTrack = []
+        for each track in tracks
+            if type(track) = "roAssociativeArray" and isValidAndNotEmpty(track.LookupCI("baseUrl"))
+                anyTrack.push(track)
+                if track.LookupCI("kind") <> "asr" then written.push(track)
+            end if
+        end for
+        pool = written.count() > 0 ? written : anyTrack
+        if pool.count() = 0 then return ""
+
+        chosen = invalid
+        for each wanted in [lang, "en"]
+            for each track in pool
+                if Left(LCase(toString(track.LookupCI("languageCode") ?? "")), Len(wanted)) = wanted
+                    chosen = track
+                    exit for
+                end if
+            end for
+            if isValid(chosen) then exit for
+        end for
+        if not isValid(chosen) then chosen = pool[0]
+
+        ' The track url pins its own format, which outranks an appended one, so it comes out first
+        base = CreateObject("roRegex", "([?&])fmt=[^&]*&?", "").ReplaceAll(chosen.LookupCI("baseUrl"), "\1")
+        if base.Right(1) = "?" or base.Right(1) = "&" then base = base.Left(base.Len() - 1)
+        separator = Instr(1, base, "?") > 0 ? "&" : "?"
+        return base + separator + "fmt=vtt"
+    end function
+
+    function PipedStream(response as dynamic, preferHighQuality as boolean) as dynamic
+        if type(response) <> "roAssociativeArray" then return invalid
+        hls = response.LookupCI("hls")
+        if isValidAndNotEmpty(hls) and (type(hls) = "roString" or type(hls) = "String") then return { url: hls, format: "hls" }
+
+        streams = response.LookupCI("videoStreams")
+        if type(streams) <> "roArray" then return invalid
+        muxed = []
+        for each stream in streams
+            if type(stream) = "roAssociativeArray" and stream.LookupCI("videoOnly") = false then muxed.push(stream)
+        end for
+
+        best = youtubeTrailer.PickBest(muxed, preferHighQuality)
+        if not isValid(best) then best = youtubeTrailer.PickBest(streams, preferHighQuality)
+        if isValid(best) then best.format = "mp4"
+        return best
+    end function
+
+    function InvidiousStream(response as dynamic, preferHighQuality as boolean) as dynamic
+        best = youtubeTrailer.PickBest(chainLookupReturn(response, "formatStreams", invalid), preferHighQuality)
+        if isValid(best) then best.format = "mp4"
+        return best
+    end function
+
+    ' The cues of a WebVTT file as { start, finish, text } in seconds, tags and all styling
+    ' left out, since the preview draws its captions as plain text
+    function VttCues(text as string) as object
+        cues = []
+        timing = CreateObject("roRegex", "^\s*(\S+)\s+-->\s+(\S+)", "")
+        tags = CreateObject("roRegex", "<[^>]*>", "")
+        lines = text.Replace(Chr(13), "").Split(Chr(10))
+        cue = invalid
+        for each line in lines
+            match = timing.Match(line)
+            if match.count() > 2
+                if isValid(cue) and cue.text <> "" then cues.push(cue)
+                cue = { start: youtubeTrailer.VttSeconds(match[1]), finish: youtubeTrailer.VttSeconds(match[2]), text: "" }
+            else if isValid(cue)
+                spoken = tags.ReplaceAll(line, "").Trim()
+                if spoken = ""
+                    if cue.text <> "" then cues.push(cue)
+                    cue = invalid
+                else if cue.text = ""
+                    cue.text = spoken
+                else
+                    cue.text = cue.text + Chr(10) + spoken
+                end if
+            end if
+        end for
+        if isValid(cue) and cue.text <> "" then cues.push(cue)
+        return cues
+    end function
+
+    ' A WebVTT timestamp, with or without its hours
+    function VttSeconds(stamp as string) as float
+        parts = stamp.Split(":")
+        seconds = 0.0
+        for each part in parts
+            seconds = seconds * 60 + Val(part)
+        end for
+        return seconds
+    end function
+
+    function SponsorRequestUrl(videoId as string) as string
+        categories = `["sponsor","selfpromo","intro","outro","interaction","music_offtopic"]`
+        return youtubeTrailer.SPONSOR_URL + "?videoID=" + videoId + "&categories=" + categories.EncodeUriComponent()
+    end function
+
+    function SponsorSegments(response as dynamic) as object
+        segments = []
+        if type(response) <> "roArray" then return segments
+        for each entry in response
+            span = chainLookupReturn(entry, "segment", invalid)
+            if type(span) = "roArray" and span.count() = 2 then segments.push({ start: span[0], finish: span[1] })
+        end for
+        return segments
+    end function
+
+    ' Where a trailer starts once any skipped opening is behind it. A trailer with anything
+    ' marked on it also starts at least five seconds in.
+    function StartTime(segments as object) as float
+        startAt = 0.0
+        if segments.count() = 0 then return startAt
+        sorted = []
+        sorted.Append(segments)
+        sorted.SortBy("start")
+        for each segment in sorted
+            if segment.start <= startAt + 1 and segment.finish > startAt then startAt = segment.finish * 1.0
+        end for
+        if startAt < 5 then startAt = 5.0
+        return startAt
+    end function
+
+end namespace

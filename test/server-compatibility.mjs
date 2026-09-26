@@ -50,6 +50,7 @@ const selections = {
     'source/utils/serverCompatibility.bs': null,
     'source/utils/accentFolding.bs': null,
     'source/utils/logRedaction.bs': null,
+    'source/utils/youtubeTrailer.bs': null,
     'source/utils/detailCompatibility.bs': null,
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions'],
     'source/enums/VideoType.bs': null,
@@ -60,7 +61,7 @@ const selections = {
     'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL'],
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError'],
-    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements'],
+    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'toString'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer'],
     'source/api/Items.bs': ['ItemMetaData'],
@@ -94,6 +95,7 @@ source += '\n' + await readFile('test/server-compatibility.bs', 'utf8');
 source += '\n' + await readFile('test/review-regressions.bs', 'utf8');
 source += '\n' + await readFile('test/accent-folding.bs', 'utf8');
 source += '\n' + await readFile('test/log-redaction.bs', 'utf8');
+source += '\n' + await readFile('test/youtube-trailer.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
@@ -206,10 +208,14 @@ for await (const file of glob('{components,source}/**/*.{bs,xml}')) {
 }
 assert.ok(scannedRoutes > 100, 'The route scan found the app sources');
 
+// The device lowercases a bare key in a literal, which the player API turns away, and brs doesnt.
+const youtubeSource = await readFile('source/utils/youtubeTrailer.bs', 'utf8');
+assert.ok(['"videoId":', '"clientName":', '"clientVersion":', '"contentCheckOk":', '"racyCheckOk":', '"embedUrl":'].every(key => youtubeSource.includes(key)), 'The YouTube request keeps its camelCase keys');
+
 const seerrTask = await readFile('components/seerr/SeerrAPITask.bs', 'utf8');
 assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParams\)/, 'Plugin proxy preserves saved server query through shared compositor');
 
 const extrasTask = await readFile('components/extras/LoadExtrasTask.bs', 'utf8');
 assert.match(extrasTask, /function multiServerExtrasImageURL\([^]*?return buildURLForServer\(/, 'Remote detail extras images use the shared builder');
 assert.doesNotMatch(extrasTask, /normalizedServerUrl \+ "\/Items\//, 'Remote detail extras do not concatenate server URLs');
-process.stdout.write('PASS: Jellyfin review regressions (25 checks)\n');
+process.stdout.write('PASS: Jellyfin review regressions (26 checks)\n');

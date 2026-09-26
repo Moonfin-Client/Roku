@@ -1,0 +1,225 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+import "pkg:/source/utils/youtubeTrailer.bs"
+
+' The whole YouTube lookup gives up after this long, and each request inside it after less
+const RESOLVE_TIMEOUT_MS = 8000
+const REQUEST_TIMEOUT_MS = 5000
+
+sub init()
+    m.top.functionName = "resolve"
+end sub
+
+sub resolve()
+    request = m.top.request
+    if not isValid(request) then return
+    index = request.index ?? 0
+
+    ' A caller that already knows the YouTube id skips the search for anything else
+    if isValidAndNotEmpty(request.videoId)
+        attempts = [{ videoId: request.videoId }]
+    else
+        attempts = trailerAttempts(request.item)
+    end if
+    answer = { requestId: request.requestId, index: index, count: attempts.count(), url: "", format: "", startTime: 0.0, segments: [], cues: [] }
+
+    if index < attempts.count()
+        attempt = attempts[index]
+        if isValidAndNotEmpty(attempt.url)
+            answer.url = attempt.url
+            answer.format = attempt.format
+        else
+            resolveYoutube(attempt.videoId, request, answer)
+        end if
+    end if
+
+    m.top.answer = answer
+end sub
+
+' What there is to try, in order: the server's own trailer file, then a trailer link that
+' isnt YouTube, then YouTube. The server is only asked for its links when the item came
+' without either.
+function trailerAttempts(item as object) as object
+    attempts = []
+    server = serverFor(item)
+
+    directUrl = ""
+    directFormat = "mp4"
+    found = localTrailerUrl(item, server)
+    if isValid(found)
+        directUrl = found.url
+        directFormat = found.format
+    end if
+
+    videoId = youtubeTrailer.ExtractId(item)
+    if directUrl = "" and videoId = ""
+        for each trailer in remoteTrailers(item, server)
+            url = toString(chainLookupReturn(trailer, "Url", ""))
+            candidate = youtubeTrailer.ExtractIdFromUrl(url)
+            if candidate <> ""
+                videoId = candidate
+                exit for
+            end if
+            if directUrl = "" and url <> "" then directUrl = url
+        end for
+    end if
+
+    if directUrl <> "" then attempts.push({ url: directUrl, format: directFormat })
+    if videoId <> "" then attempts.push({ videoId: videoId })
+    return attempts
+end function
+
+' A title from another server carries that server's address and credentials with it
+function serverFor(item as object) as object
+    serverUrl = toString(chainLookupReturn(item, "_serverUrl", ""))
+    if serverUrl <> ""
+        return { url: serverUrl, userId: toString(chainLookupReturn(item, "_userId", "")), token: toString(chainLookupReturn(item, "_authToken", "")), remote: true }
+    end if
+    return { url: toString(get_url() ?? ""), userId: currentSessionUserId(), token: toString(getAuthTokenFromRegistry() ?? ""), remote: false }
+end function
+
+function serverRequest(server as object, path as string, params as object) as dynamic
+    if server.remote then return APIRequestForServer(server.url, server.userId, server.token, path, params)
+    return APIRequest(path, params)
+end function
+
+' The file plays straight from the server, with no transcode
+function localTrailerUrl(item as object, server as object) as dynamic
+    itemId = toString(chainLookupReturn(item, "Id", ""))
+    if itemId = "" or server.url = "" then return invalid
+
+    path = serverItemMetadataPath(itemId, server.userId, isEmbyServer(server.url)) + "/LocalTrailers"
+    trailers = requestResponse(serverRequest(server, path, { UserId: server.userId }), "GET", "", REQUEST_TIMEOUT_MS).data
+    if type(trailers) <> "roArray" then return invalid
+
+    for each trailer in trailers
+        trailerId = toString(chainLookupReturn(trailer, "Id", ""))
+        if trailerId <> ""
+            url = buildURLForServer(server.url, "Videos/" + trailerId + "/stream", { Static: "true", ApiKey: server.token })
+            return { url: url, format: streamFormatFor(trailer) }
+        end if
+    end for
+    return invalid
+end function
+
+function streamFormatFor(trailer as object) as string
+    container = LCase(toString(chainLookupReturn(trailer, "Container", "")))
+    if container = "" then container = LCase(toString(chainLookupReturn(trailer, "Path", ""))).Split(".").Peek() ?? ""
+    if Instr(1, container, "mkv") > 0 then return "mkv"
+    return "mp4"
+end function
+
+function remoteTrailers(item as object, server as object) as object
+    trailers = chainLookupReturn(item, "RemoteTrailers", invalid)
+    if type(trailers) = "roArray" and trailers.count() > 0 then return trailers
+
+    itemId = toString(chainLookupReturn(item, "Id", ""))
+    if itemId = "" or server.url = "" then return []
+    detail = requestResponse(serverRequest(server, serverItemMetadataPath(itemId, server.userId, isEmbyServer(server.url)), { UserId: server.userId }), "GET", "", REQUEST_TIMEOUT_MS).data
+    trailers = chainLookupReturn(detail, "RemoteTrailers", invalid)
+    if type(trailers) = "roArray" then return trailers
+    return []
+end function
+
+' The skip segments are asked for alongside the stream rather than after it
+sub resolveYoutube(videoId as string, request as object, answer as object)
+    deadline = CreateObject("roTimespan")
+    sponsor = startGet(youtubeTrailer.SponsorRequestUrl(videoId))
+
+    stream = playerStream(videoId, request.language ?? "", deadline)
+    if not isValid(stream) then stream = mirrorStream(videoId, deadline)
+    if not isValid(stream) then return
+
+    answer.url = stream.url
+    answer.format = stream.format
+    ' Still waiting once the stream is found, the skip segments get what is left of the lookup
+    answer.segments = youtubeTrailer.SponsorSegments(parsedBody(finishGet(sponsor, RESOLVE_TIMEOUT_MS - deadline.TotalMilliseconds())))
+    answer.startTime = youtubeTrailer.StartTime(answer.segments)
+    if request.captions = true and isValidAndNotEmpty(stream.captionsUrl)
+        answer.cues = youtubeTrailer.VttCues(finishGet(startGet(stream.captionsUrl), timeLeft(deadline)))
+    end if
+end sub
+
+function timeLeft(deadline as object) as integer
+    remaining = RESOLVE_TIMEOUT_MS - deadline.TotalMilliseconds()
+    if remaining > REQUEST_TIMEOUT_MS then remaining = REQUEST_TIMEOUT_MS
+    return remaining
+end function
+
+function externalRequest(url as string, userAgent = "" as string) as object
+    req = CreateObject("roUrlTransfer")
+    req.SetUrl(url)
+    req.SetCertificatesFile("common:/certs/ca-bundle.crt")
+    req.InitClientCertificates()
+    req.EnableEncodings(true)
+    if userAgent <> "" then req.AddHeader("User-Agent", userAgent)
+    return req
+end function
+
+' The first answer usually only carries a small muxed file, so the search goes on through
+' the other apps until one offers 720p or better, keeping the best so far to fall back on
+function playerStream(videoId as string, language as string, deadline as object) as dynamic
+    best = invalid
+    for each client in youtubeTrailer.Clients()
+        if timeLeft(deadline) <= 0 then exit for
+        req = externalRequest(youtubeTrailer.PlayerRequestUrl(client), client.userAgent)
+        req.AddHeader("Content-Type", "application/json")
+        response = requestResponse(req, "POST", youtubeTrailer.PlayerRequestBody(videoId, client), timeLeft(deadline)).data
+
+        stream = youtubeTrailer.PlayerStream(response, true)
+        if isValid(stream)
+            stream.captionsUrl = youtubeTrailer.CaptionTrackUrl(response, language)
+            if stream.quality >= youtubeTrailer.HIGH_QUALITY_FLOOR then return stream
+            if not isValid(best) or stream.quality > best.quality then best = stream
+        end if
+    end for
+    return best
+end function
+
+' The mirrors answer with a bare stream, so no captions ride along
+function mirrorStream(videoId as string, deadline as object) as dynamic
+    for each base in youtubeTrailer.PipedBases()
+        if timeLeft(deadline) <= 0 then return invalid
+        response = parsedBody(finishGet(startGet(base + "/streams/" + videoId, youtubeTrailer.FIREFOX_UA), timeLeft(deadline)))
+        stream = youtubeTrailer.PipedStream(response, true)
+        if isValid(stream) then return stream
+    end for
+
+    for each base in youtubeTrailer.InvidiousBases()
+        if timeLeft(deadline) <= 0 then return invalid
+        response = parsedBody(finishGet(startGet(base + "/api/v1/videos/" + videoId), timeLeft(deadline)))
+        stream = youtubeTrailer.InvidiousStream(response, true)
+        if isValid(stream) then return stream
+    end for
+    return invalid
+end function
+
+' A GET that runs while the next request goes ahead, collected with finishGet
+function startGet(url as string, userAgent = "" as string) as dynamic
+    port = CreateObject("roMessagePort")
+    req = externalRequest(url, userAgent)
+    req.SetMessagePort(port)
+    if not req.AsyncGetToString() then return invalid
+    return { req: req, port: port }
+end function
+
+' The body of a started GET, or nothing once it fails or the wait runs out. It always gets a
+' second, however little of the lookup is left.
+function finishGet(pending as dynamic, waitMs as integer) as string
+    if not isValid(pending) then return ""
+    if waitMs < 1000 then waitMs = 1000
+    event = wait(waitMs, pending.port)
+    if type(event) <> "roUrlEvent" or event.GetResponseCode() <> 200
+        pending.req.AsyncCancel()
+        return ""
+    end if
+    return event.GetString()
+end function
+
+' A mirror that has shut down answers in plain text, which isnt worth handing to the parser
+function parsedBody(text as string) as dynamic
+    first = Left(text.Trim(), 1)
+    if first <> "{" and first <> "[" then return invalid
+    return ParseJson(text)
+end function
