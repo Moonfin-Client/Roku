@@ -748,18 +748,27 @@ function loadSinceYouWatched() as object
     return loadSinceYouWatchedLocal(seed, sourceType, includeWatched)
 end function
 
+' How many items a query matched, from the total when the server sends one
+function matchCount(response as object) as integer
+    total = response.LookupCI("TotalRecordCount")
+    if isValid(total) then return total
+    if isChainValid(response, "Items") then return response.Items.Count()
+    return 0
+end function
+
+' The unplayed count an item already reports, or invalid when it reports none
+function reportedUnplayed(item as object) as dynamic
+    count = item.LookupCI("UnplayedItemCount")
+    if isValid(count) then return count
+    return chainLookupReturn(item, "UserData.UnplayedItemCount", invalid)
+end function
+
+' A series the list says is played gets one check for an unplayed episode. A failed check
+' keeps it.
 function isFullyWatchedSeries(series as object, userId as string) as boolean
-    userData = series.LookupCI("UserData")
-    played = false
-    unplayed = 0
-    if isValid(userData)
-        if userData.Played = true then played = true
-        unplayedCount = userData.LookupCI("UnplayedItemCount")
-        if isValid(unplayedCount) then unplayed = unplayedCount
-    end if
-    topUnplayed = series.LookupCI("UnplayedItemCount")
-    if isValid(topUnplayed) then unplayed = topUnplayed
-    if not played or unplayed > 0 then return false
+    if chainLookupReturn(series, "UserData.Played", false) <> true then return false
+    unplayed = reportedUnplayed(series)
+    if isValid(unplayed) and unplayed > 0 then return false
 
     seriesId = series.LookupCI("Id")
     if not isValidAndNotEmpty(seriesId) then return true
@@ -773,10 +782,7 @@ function isFullyWatchedSeries(series as object, userId as string) as boolean
         limit: 1
     })
     if not isValid(check) then return true
-    total = check.LookupCI("TotalRecordCount")
-    if isValid(total) then return total = 0
-    if isChainValid(check, "Items") then return check.Items.Count() = 0
-    return true
+    return matchCount(check) = 0
 end function
 
 sub addRewatchShows(watchedItems as object, seriesLastPlayed as object, userId as string, seriesFields as string)
@@ -837,36 +843,46 @@ sub addRewatchCollections(watchedItems as object, collectionLastPlayed as object
     if not isChainValid(boxData, "Items") then return
 
     for each col in boxData.Items
-        colId = col.LookupCI("Id")
-        if not isValidAndNotEmpty(colId) then continue for
-
-        childData = api.items.Get({
-            UserId: userId,
-            ParentId: colId,
-            recursive: true,
-            fields: "UserData"
-        })
-        if not isChainValid(childData, "Items") then continue for
-        if childData.Items.Count() = 0 then continue for
-
-        allPlayed = true
-        maxLastPlayed = ""
-        for each child in childData.Items
-            childUserData = child.LookupCI("UserData")
-            if not isValid(childUserData) or childUserData.Played <> true
-                allPlayed = false
-                exit for
-            end if
-            lastPlayed = childUserData.LookupCI("LastPlayedDate")
-            if isValidAndNotEmpty(lastPlayed) and lastPlayed > maxLastPlayed then maxLastPlayed = lastPlayed
-        end for
-
-        if allPlayed
+        lastPlayed = watchedCollectionLastPlayed(col, userId)
+        if isValid(lastPlayed)
             watchedItems.Push(col)
-            collectionLastPlayed[colId] = maxLastPlayed
+            collectionLastPlayed[col.LookupCI("Id")] = lastPlayed
         end if
     end for
 end sub
+
+' When every item in the collection is played, the newest play date, and otherwise invalid. The
+' list's own count settles most without a request, then one count finds any unplayed item and
+' one more finds the newest played one, which also leaves out an empty collection. A failed
+' check leaves the collection out.
+function watchedCollectionLastPlayed(col as object, userId as string) as dynamic
+    colId = col.LookupCI("Id")
+    if not isValidAndNotEmpty(colId) then return invalid
+    unplayed = reportedUnplayed(col)
+    if isValid(unplayed) and unplayed > 0 then return invalid
+
+    unplayedData = api.items.Get({
+        UserId: userId,
+        ParentId: colId,
+        recursive: true,
+        filters: "IsUnplayed",
+        limit: 1
+    })
+    if not isValid(unplayedData) or matchCount(unplayedData) <> 0 then return invalid
+
+    playedData = api.items.Get({
+        UserId: userId,
+        ParentId: colId,
+        recursive: true,
+        filters: "IsPlayed",
+        sortBy: "DatePlayed",
+        sortOrder: "Descending",
+        limit: 1,
+        fields: "UserData"
+    })
+    if not isChainValid(playedData, "Items") or playedData.Items.Count() = 0 then return invalid
+    return chainLookupReturn(playedData.Items[0], "UserData.LastPlayedDate", "") ?? ""
+end function
 
 function rewatchLastPlayed(item as object, seriesLastPlayed as object, collectionLastPlayed as object) as string
     itemId = item.LookupCI("Id")
