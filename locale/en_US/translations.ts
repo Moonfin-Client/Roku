@@ -4613,5 +4613,15 @@
         <extracomment>How far each press moves while scrubbing the progress bar</extracomment>
         <translation>30 seconds</translation>
     </message>
+    <message>
+        <source>Chapter Marks</source>
+        <extracomment>Setting that marks chapter starts on the seek bar</extracomment>
+        <translation>Chapter Marks</translation>
+    </message>
+    <message>
+        <source>Mark where each chapter starts on the seek bar</source>
+        <extracomment>Description of the Chapter Marks setting</extracomment>
+        <translation>Mark where each chapter starts on the seek bar</translation>
+    </message>
 </context>
 </TS>
