@@ -5058,5 +5058,75 @@
         <extracomment>Shown in a library when nothing matches</extracomment>
         <translation>No items found</translation>
     </message>
+    <message>
+        <source>Download subtitles...</source>
+        <extracomment>Subtitle track menu entry that opens the subtitle search</extracomment>
+        <translation>Download subtitles...</translation>
+    </message>
+    <message>
+        <source>Search using the OpenSubtitles plugin</source>
+        <extracomment>Description under the subtitle search entry in the subtitle track menu</extracomment>
+        <translation>Search using the OpenSubtitles plugin</translation>
+    </message>
+    <message>
+        <source>Download Subtitles</source>
+        <extracomment>Title of the subtitle search dialog</extracomment>
+        <translation>Download Subtitles</translation>
+    </message>
+    <message>
+        <source>Searching...</source>
+        <extracomment>Shown while a search is running</extracomment>
+        <translation>Searching...</translation>
+    </message>
+    <message>
+        <source>No remote subtitles found</source>
+        <extracomment>Shown when a subtitle search comes back empty</extracomment>
+        <translation>No remote subtitles found</translation>
+    </message>
+    <message>
+        <source>Subtitle search failed</source>
+        <extracomment>Shown when a subtitle search fails for any other reason</extracomment>
+        <translation>Subtitle search failed</translation>
+    </message>
+    <message>
+        <source>Downloading subtitle…</source>
+        <extracomment>Shown while a subtitle picked from the search results downloads</extracomment>
+        <translation>Downloading subtitle…</translation>
+    </message>
+    <message>
+        <source>AI Translated</source>
+        <extracomment>Badge on a subtitle search result that was translated by AI</extracomment>
+        <translation>AI Translated</translation>
+    </message>
+    <message>
+        <source>Machine Translated</source>
+        <extracomment>Badge on a subtitle search result that was machine translated</extracomment>
+        <translation>Machine Translated</translation>
+    </message>
+    <message>
+        <source>SDH</source>
+        <extracomment>Badge on a subtitle made for the deaf and hard of hearing</extracomment>
+        <translation>SDH</translation>
+    </message>
+    <message>
+        <source>Perfect match</source>
+        <extracomment>Badge on a subtitle search result made for this exact file</extracomment>
+        <translation>Perfect match</translation>
+    </message>
+    <message>
+        <source>1 download</source>
+        <extracomment>Download count on a subtitle search result that was downloaded once</extracomment>
+        <translation>1 download</translation>
+    </message>
+    <message>
+        <source>{count} downloads</source>
+        <extracomment>Download count on a subtitle search result. {count} is the number of downloads</extracomment>
+        <translation>{count} downloads</translation>
+    </message>
+    <message>
+        <source>{fps} fps</source>
+        <extracomment>Frame rate a subtitle search result was timed for. {fps} is the rate</extracomment>
+        <translation>{fps} fps</translation>
+    </message>
 </context>
 </TS>
