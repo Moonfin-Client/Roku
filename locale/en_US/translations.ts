@@ -4178,5 +4178,110 @@
         <extracomment>Note after a refresh was asked for from the Identify dialog</extracomment>
         <translation>Refreshing metadata</translation>
     </message>
+    <message>
+        <source>Enter PIN</source>
+        <extracomment>Title of the screen that holds the app shut until the PIN is entered</extracomment>
+        <translation>Enter PIN</translation>
+    </message>
+    <message>
+        <source>This profile is protected by a 4-digit PIN.</source>
+        <extracomment>Line under Enter PIN on the PIN screen</extracomment>
+        <translation>This profile is protected by a 4-digit PIN.</translation>
+    </message>
+    <message>
+        <source>4 digits</source>
+        <extracomment>Hint in the empty PIN field</extracomment>
+        <translation>4 digits</translation>
+    </message>
+    <message>
+        <source>Unlock</source>
+        <extracomment>Button that checks the PIN typed on the PIN screen</extracomment>
+        <translation>Unlock</translation>
+    </message>
+    <message>
+        <source>PIN Code Protection</source>
+        <extracomment>Setting that asks for a PIN after signing in</extracomment>
+        <translation>PIN Code Protection</translation>
+    </message>
+    <message>
+        <source>Require a PIN to access your account</source>
+        <extracomment>Description of the PIN Code Protection setting</extracomment>
+        <translation>Require a PIN to access your account</translation>
+    </message>
+    <message>
+        <source>PIN Code</source>
+        <extracomment>Setting that chooses the PIN the PIN screen asks for</extracomment>
+        <translation>PIN Code</translation>
+    </message>
+    <message>
+        <source>Default PIN: 0000</source>
+        <extracomment>Description of the PIN Code setting before a PIN has been chosen</extracomment>
+        <translation>Default PIN: 0000</translation>
+    </message>
+    <message>
+        <source>Enter a 4-digit PIN used to unlock the app when PIN protection is enabled.</source>
+        <extracomment>Shown beside the keypad when choosing the PIN the PIN screen asks for</extracomment>
+        <translation>Enter a 4-digit PIN used to unlock the app when PIN protection is enabled.</translation>
+    </message>
+    <message>
+        <source>Configured 4-digit PIN</source>
+        <extracomment>Description of the PIN Code setting once a PIN has been chosen</extracomment>
+        <translation>Configured 4-digit PIN</translation>
+    </message>
+    <message>
+        <source>Blocked Ratings</source>
+        <extracomment>Setting that opens the list of content ratings to block</extracomment>
+        <translation>Blocked Ratings</translation>
+    </message>
+    <message>
+        <source>Content rating restrictions</source>
+        <extracomment>Description of the Blocked Ratings setting</extracomment>
+        <translation>Content rating restrictions</translation>
+    </message>
+    <message>
+        <source>Parental Controls</source>
+        <extracomment>Title over the list of content ratings to block</extracomment>
+        <translation>Parental Controls</translation>
+    </message>
+    <message>
+        <source>Block content with the following ratings:</source>
+        <extracomment>Line at the top of the Blocked Ratings list</extracomment>
+        <translation>Block content with the following ratings:</translation>
+    </message>
+    <message>
+        <source>Blocking a rating also blocks everything stronger than it.</source>
+        <extracomment>Follows Block content with the following ratings: in the Blocked Ratings list</extracomment>
+        <translation>Blocking a rating also blocks everything stronger than it.</translation>
+    </message>
+    <message>
+        <source>Ratings</source>
+        <extracomment>Heading over the ratings in the Blocked Ratings list that can be ranked by strength</extracomment>
+        <translation>Ratings</translation>
+    </message>
+    <message>
+        <source>Only blocks itself</source>
+        <extracomment>Heading over ratings in the Blocked Ratings list that cant be ranked, so blocking one blocks nothing else</extracomment>
+        <translation>Only blocks itself</translation>
+    </message>
+    <message>
+        <source>Could not load server ratings. Showing saved ratings only.</source>
+        <extracomment>Blocked Ratings list when the server couldnt be read and nothing was blocked before</extracomment>
+        <translation>Could not load server ratings. Showing saved ratings only.</translation>
+    </message>
+    <message>
+        <source>No content ratings were found on this server yet.</source>
+        <extracomment>Blocked Ratings list when the library has no rated titles</extracomment>
+        <translation>No content ratings were found on this server yet.</translation>
+    </message>
+    <message>
+        <source>Could not refresh ratings from server. Showing saved ratings.</source>
+        <extracomment>Top of the Blocked Ratings list when the server couldnt be read</extracomment>
+        <translation>Could not refresh ratings from server. Showing saved ratings.</translation>
+    </message>
+    <message>
+        <source>This isn't available</source>
+        <extracomment>Shown with a lock in place of a title a blocked rating keeps out</extracomment>
+        <translation>This isn't available</translation>
+    </message>
 </context>
 </TS>

@@ -12,9 +12,12 @@ import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/parentalControls.bs"
+import "pkg:/source/utils/parentalFilter.bs"
 import "pkg:/source/utils/pinLockout.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/settingsSync.bs"
+import "pkg:/source/utils/signInPin.bs"
 import "pkg:/source/utils/themeApply.bs"
 import "pkg:/source/utils/themeRegistry.bs"
 import "pkg:/source/utils/tvKeyboard.bs"
@@ -97,6 +100,8 @@ end sub
 sub hideEditingControls()
     m.settingDesc.visible = false
     m.integerSetting.visible = false
+    m.integerSetting.textEditBox.secureMode = false
+    m.integerSetting.textEditBox.hintText = ""
     m.radioSetting.visible = false
     m.colorgrid.visible = false
     m.slider.visible = false
@@ -571,16 +576,26 @@ sub refreshCurrentItemValue(settingItem = invalid as dynamic)
     contentItem.currentValue = getSettingCurrentValueLabel(settingItem)
 
     if isValid(settingItem.type) and settingItem.type = SettingType.BOOL
-        rawVal = get_user_setting(settingItem.settingName)
-        if not isValid(rawVal) and isValid(m.global.session.user.settings[settingItem.settingName])
-            rawVal = m.global.session.user.settings[settingItem.settingName]
-        end if
-        if not isValid(rawVal)
-            rawVal = settingItem.default
-        end if
-        contentItem.boolValue = LCase(dynamicToDisplayString(rawVal))
+        contentItem.boolValue = boolSettingDisplay(settingItem)
     end if
 end sub
+
+' "true" or "false" for a switch row. A rating's switch shows whether it is on the blocked list
+' rather than a stored setting.
+function boolSettingDisplay(settingItem as object) as string
+    if isStringEqual(settingItem.settingName, "parental.rating")
+        return inArray(parentalControls.BlockedRatings(), settingItem.rating) ? "true" : "false"
+    end if
+
+    rawVal = get_user_setting(settingItem.settingName)
+    if not isValid(rawVal) and isValid(m.global.session.user.settings[settingItem.settingName])
+        rawVal = m.global.session.user.settings[settingItem.settingName]
+    end if
+    if not isValid(rawVal)
+        rawVal = settingItem.default
+    end if
+    return LCase(dynamicToDisplayString(rawVal))
+end function
 
 ' The details row and the player row are arranged the same way, so they share the editor and
 ' differ only in which catalogue and which pair of keys they carry
@@ -1109,10 +1124,16 @@ sub onColorSelected()
     m.settingsMenu.setFocus(true)
 end sub
 
-' The one keypad the screen has, borrowed for the four digits that hold Kids Mode shut
+' The one keypad the screen has, borrowed for the four digits that hold Kids Mode or the app shut
 sub openKidsPin(mode as string)
     m.kidsPinMode = mode
-    m.settingDesc.visible = false
+    signingIn = mode = "signIn"
+    m.integerSetting.textEditBox.secureMode = signingIn
+    if signingIn
+        m.integerSetting.textEditBox.hintText = tr("4 digits")
+        m.settingDesc.text = tr("Enter a 4-digit PIN used to unlock the app when PIN protection is enabled.")
+    end if
+    m.settingDesc.visible = signingIn
     m.integerSetting.text = ""
     m.integerSetting.visible = true
     m.integerSetting.setFocus(true)
@@ -1121,6 +1142,11 @@ end sub
 sub submitKidsPin()
     entered = m.integerSetting.text
 
+    if m.kidsPinMode = "signIn"
+        submitSignInPin(entered)
+        return
+    end if
+
     if m.kidsPinMode = "set"
         if not pinLockout.IsPinShaped(entered)
             ShowToast(tr("PIN must be exactly 4 digits."))
@@ -1128,14 +1154,14 @@ sub submitKidsPin()
         end if
 
         kidsMode.TurnOn(pinLockout.HashPin(entered))
-        pinLockout.ClearLockout()
+        pinLockout.ClearLockout(pinLockout.KidsKeys())
         leaveKidsPin()
         return
     end if
 
     ' Asked before the guess is looked at, so waiting is the only way through and reopening the
     ' keypad hands back no fresh guesses
-    waiting = pinLockout.Remaining()
+    waiting = pinLockout.Remaining(pinLockout.KidsKeys())
     if waiting > 0
         ShowToast(pinLockout.TooManyAttempts(waiting))
         m.integerSetting.text = ""
@@ -1143,16 +1169,126 @@ sub submitKidsPin()
     end if
 
     if kidsMode.NeedsPin() and not pinLockout.Matches(entered, kidsMode.PinHash())
-        wait = pinLockout.RegisterFailure()
+        wait = pinLockout.RegisterFailure(pinLockout.KidsKeys())
         ShowToast(wait > 0 ? pinLockout.TooManyAttempts(wait) : tr("Incorrect PIN"))
         m.integerSetting.text = ""
         return
     end if
 
     kidsMode.TurnOff()
-    pinLockout.ClearLockout()
+    pinLockout.ClearLockout(pinLockout.KidsKeys())
     leaveKidsPin()
 end sub
+
+' Read on every open, so a rating the server picked up since shows without a restart
+sub openBlockedRatings(section as object)
+    m.blockedRatingsSection = section
+    if isValid(m.serverRatingsTask) then m.serverRatingsTask.unobserveField("result")
+
+    startLoadingSpinner()
+    m.serverRatingsTask = createObject("roSGNode", "ServerRatingsTask")
+    m.serverRatingsTask.observeField("result", "onServerRatingsLoaded")
+    m.serverRatingsTask.control = "RUN"
+end sub
+
+sub onServerRatingsLoaded(event as object)
+    event.getRoSGNode().unobserveField("result")
+    m.serverRatingsTask = invalid
+    stopLoadingSpinner()
+
+    result = event.getData()
+    ' What was blocked before stays listed even when the library no longer has it, so it can
+    ' still be let go
+    offered = []
+    offered.append(chainLookupReturn(result, "ratings", []))
+    offered.append(parentalControls.BlockedRatings())
+    ratings = parentalFilter.SortBySeverity(parentalFilter.NormalizeList(offered))
+
+    section = m.blockedRatingsSection
+    section.pathTitle = "Parental Controls"
+    section.children = blockedRatingRows(ratings, chainLookupReturn(result, "failed", false) = true)
+    LoadMenu(section)
+    m.settingsMenu.setFocus(true)
+end sub
+
+' Ratings that cant be ranked sit apart, since they only ever block themselves
+function blockedRatingRows(ratings as object, loadFailed as boolean) as object
+    rows = [{ title: "Block content with the following ratings:", description: "Blocking a rating also blocks everything stronger than it.", type: SettingType.NOTE }]
+    if ratings.count() = 0
+        message = loadFailed ? "Could not load server ratings. Showing saved ratings only." : "No content ratings were found on this server yet."
+        rows.push({ title: message, type: SettingType.NOTE })
+        return rows
+    end if
+
+    if loadFailed then rows.push({ title: "Could not refresh ratings from server. Showing saved ratings.", type: SettingType.NOTE, tone: "error" })
+
+    ranked = []
+    unranked = []
+    for each rating in ratings
+        row = { title: rating, settingName: "parental.rating", rating: rating, type: SettingType.BOOL, icon: "family_restroom.png" }
+        if parentalFilter.RatingIsRanked(rating)
+            ranked.push(row)
+        else
+            unranked.push(row)
+        end if
+    end for
+
+    if ranked.count() > 0
+        rows.push({ title: "Ratings", type: SettingType.SECTION })
+        rows.append(ranked)
+    end if
+    if unranked.count() > 0
+        rows.push({ title: "Only blocks itself", type: SettingType.SECTION })
+        rows.append(unranked)
+    end if
+    return rows
+end function
+
+' Written straight through, the way a switch is, and read from the store so two quick presses
+' cant drop each other's change
+sub toggleBlockedRating(ratingRow as object)
+    current = parentalControls.BlockedRatings()
+    if inArray(current, ratingRow.rating)
+        kept = []
+        for each rating in current
+            if rating <> ratingRow.rating then kept.push(rating)
+        end for
+        parentalControls.SetBlockedRatings(kept)
+    else
+        current.push(ratingRow.rating)
+        parentalControls.SetBlockedRatings(current)
+    end if
+
+    m.blockedRatingsChanged = true
+    refreshCurrentItemValue(ratingRow)
+    hideEditingControls()
+    m.settingsMenu.setFocus(true)
+end sub
+
+' Choosing a PIN forgets the guesses that came before it, and the row says one is set from here on
+sub submitSignInPin(entered as string)
+    if not pinLockout.IsPinShaped(entered)
+        ShowToast(tr("PIN must be exactly 4 digits."))
+        return
+    end if
+
+    signInPin.Save(entered)
+    m.kidsPinMode = ""
+    hideEditingControls()
+
+    pinRow = getFocusedSetting()
+    focusedRow = m.settingsMenu.content.getChild(m.settingsMenu.itemFocused)
+    if isValid(pinRow) and isValid(focusedRow)
+        pinRow.description = signInPinDescription()
+        focusedRow.Description = tr(pinRow.description)
+    end if
+    m.settingsMenu.setFocus(true)
+end sub
+
+function signInPinDescription() as string
+    if signInPin.IsConfigured() then return "Configured 4-digit PIN"
+    return "Default PIN: 0000"
+end function
 
 ' The settings screen is standing on entries the mode has just taken away, and the home screen
 ' behind it is holding rows it either lost or got back
@@ -1610,6 +1746,17 @@ sub dismissPanel()
 
     OnScreenHidden()
 
+    ' The rows behind the panel read themselves again once, rather than on every rating toggled.
+    ' Any other screen leaves it to the home screen to do on the way back.
+    if m.blockedRatingsChanged = true
+        m.blockedRatingsChanged = false
+        behind = m.global.sceneManager.callFunc("getActiveScene")
+        if isValid(behind) and behind.isSubtype("Home")
+            m.global.homeNeedsRefresh = false
+            behind.callFunc("refresh")
+        end if
+    end if
+
     if isValid(scene)
         scene.removeChild(m.top)
 
@@ -1930,6 +2077,8 @@ sub LoadMenu(configSection, appendPath = true as boolean)
         ' Add to visible items mapping
         m.visibleItemsMap.push(item)
 
+        if isStringEqual(item.settingName, "pin.setCode") then item.description = signInPinDescription()
+
         listItem = result.CreateChild("ContentNode")
         listItem.title = tr(item.title)
         listItem.Description = tr(chainLookupReturn(item, "description", ""))
@@ -1943,15 +2092,9 @@ sub LoadMenu(configSection, appendPath = true as boolean)
         if item.type <> invalid
             extraFields.settingType = item.type
             if item.type = SettingType.BOOL
-                rawVal = get_user_setting(item.settingName)
-                if not isValid(rawVal) and isValid(m.global.session.user.settings[item.settingName])
-                    rawVal = m.global.session.user.settings[item.settingName]
-                end if
-                if not isValid(rawVal)
-                    rawVal = item.default
-                end if
-                extraFields.boolValue = LCase(dynamicToDisplayString(rawVal))
+                extraFields.boolValue = boolSettingDisplay(item)
             end if
+            if isValid(item.tone) then extraFields.noteTone = item.tone
         end if
         listItem.addFields(extraFields)
     end for
@@ -1961,10 +2104,10 @@ sub LoadMenu(configSection, appendPath = true as boolean)
     if configSection.selectedIndex <> invalid and configSection.selectedIndex > -1
         m.lastFocusIndex = configSection.selectedIndex
         m.settingsMenu.jumpToItem = configSection.selectedIndex
-    else if isSectionRow(0)
+    else if isTextOnlyRow(0)
         ' A menu that opens on a heading starts on the first setting under it
         firstSetting = 0
-        while isSectionRow(firstSetting)
+        while isTextOnlyRow(firstSetting)
             firstSetting++
         end while
         if firstSetting < m.visibleItemsMap.count()
@@ -1976,27 +2119,30 @@ sub LoadMenu(configSection, appendPath = true as boolean)
     ' Set Path display
     if appendPath
         if m.userLocation.Count() > 0 and m.userLocation.peek().title <> invalid
-            m.path.text = tr(m.userLocation.peek().title)
+            ' A menu can name itself apart from the row that opens it
+            m.path.text = tr(m.userLocation.peek().pathTitle ?? m.userLocation.peek().title)
         else
             m.path.text = tr("Settings")
         end if
     end if
 end sub
 
-function isSectionRow(index as integer) as boolean
+' Headings and notes are only there to be read
+function isTextOnlyRow(index as integer) as boolean
     if index < 0 or index >= m.visibleItemsMap.count() then return false
 
-    return chainLookupReturn(m.visibleItemsMap[index], "type", "") = SettingType.SECTION
+    rowType = chainLookupReturn(m.visibleItemsMap[index], "type", "")
+    return rowType = SettingType.SECTION or rowType = SettingType.NOTE
 end function
 
 ' Headings are rows like any other, so focus is carried past them. The jump has
 ' to run outside this callback or the list keeps drawing the row it came from.
 sub settingFocused()
     focused = m.settingsMenu.itemFocused
-    if isSectionRow(focused)
+    if isTextOnlyRow(focused)
         direction = focused >= m.lastFocusIndex ? 1 : -1
         target = focused + direction
-        while isSectionRow(target)
+        while isTextOnlyRow(target)
             target += direction
         end while
 
@@ -2072,6 +2218,23 @@ sub settingSelected()
         openKidsPin("exit")
         return
     end if
+
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "pin.setCode"
+        openKidsPin("signIn")
+        return
+    end if
+
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "parental.blockedRatings"
+        openBlockedRatings(selectedItem)
+        return
+    end if
+
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "parental.rating"
+        toggleBlockedRating(selectedItem)
+        return
+    end if
+
+    if isStringEqual(selectedItem.type, SettingType.NOTE) then return
 
     if isValid(selectedItem.settingName) and selectedItem.settingName = "achievements.open"
         m.settingDesc.visible = false
@@ -2358,6 +2521,16 @@ sub boolSettingChanged(selectedSetting as object)
     refreshCurrentItemValue(selectedSetting)
     hideEditingControls()
     m.settingsMenu.setFocus(true)
+
+    if selectedSetting.settingName = SIGN_IN_PIN_ENABLED_KEY and newValue = "true" then lockBehindPin()
+end sub
+
+' Turning the PIN on locks the app straight away, the same as signing in with it on would
+sub lockBehindPin()
+    dismissPanel()
+    gate = CreateObject("roSGNode", "PinGate")
+    gate.dismissOnUnlock = true
+    m.global.sceneManager.callFunc("pushScene", gate)
 end sub
 
 sub radioSettingChanged()
