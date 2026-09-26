@@ -1,0 +1,336 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/playbackOverlay.bs"
+
+const PANEL_WIDTH = 700
+const PANEL_PAD = 50
+const PANEL_MAX_HEIGHT = 864
+const VIEWPORT_MAX_HEIGHT = 648
+const ROW_LEFT = 10
+const ROW_WIDTH = 580
+const ROW_PAD_X = 30
+const TEXT_SIZE = 24
+
+sub init()
+    m.panel = m.top.findNode("panel")
+    m.viewport = m.top.findNode("viewport")
+    m.rows = m.top.findNode("rows")
+    m.close = m.top.findNode("close")
+    m.closeFill = m.top.findNode("closeFill")
+    m.closeLabel = m.top.findNode("closeLabel")
+
+    title = m.top.findNode("title")
+    playbackOverlay.SetFont(title, 40, true)
+    title.text = tr("Subtitle Appearance")
+    playbackOverlay.SetFont(m.closeLabel, 18, false)
+    m.closeLabel.text = tr("Press BACK to close")
+    ' Measured before the label gets a size, since after that the bounds are the size
+    m.closeTextSize = m.closeLabel.boundingRect()
+
+    m.palette = playbackOverlay.Palette()
+    m.visuals = []
+    m.focusIndex = 0
+    m.scrollTop = 0
+end sub
+
+function colorOptions(withTransparent as boolean) as object
+    colors = [["#ffffff", "White"], ["#cccccc", "Light Gray"], ["#808080", "Gray"], ["#404040", "Dark Gray"], ["#000000", "Black"], ["#ffff00", "Yellow"], ["#00ff00", "Green"], ["#00ffff", "Cyan"], ["#0000ff", "Blue"], ["#ff00ff", "Magenta"], ["#ff0000", "Red"], ["#000080", "Navy"]]
+    if withTransparent then colors.push(["#00000000", "Transparent"])
+    colors.push(["#00000080", "Semi-transparent Black"])
+    colors.push(["#ffffff80", "Semi-transparent White"])
+    return colors
+end function
+
+' Text, then shadow, then background, each group set off by a rule. Absolute Position only shows
+' while the position is Absolute.
+function rowSpecs() as object
+    specs = [
+        { kind: "cycle", key: "size", label: "Size", fallback: "Medium", options: [["small", "Small"], ["medium", "Medium"], ["large", "Large"], ["xlarge", "Extra Large"]] },
+        { kind: "cycle", key: "position", label: "Position", fallback: "Bottom", options: [["bottom", "Bottom"], ["lower", "Lower"], ["middle", "Middle"], ["higher", "Higher"], ["absolute", "Absolute"]] }
+    ]
+    if styleValue("position", "bottom") = "absolute"
+        specs.push({ kind: "slider", key: "positionAbsolute", label: "Absolute Position", min: 0, max: 100, stepSize: 5, fallback: "90" })
+    end if
+    specs.append([
+        { kind: "rule" },
+        { kind: "slider", key: "opacity", label: "Text Opacity", min: 0, max: 100, stepSize: 5, fallback: "100" },
+        { kind: "cycle", key: "color", label: "Text Fill Color", fallback: "White", options: colorOptions(false) },
+        { kind: "rule" },
+        { kind: "cycle", key: "shadowColor", label: "Shadow Color", fallback: "Black", options: colorOptions(true) },
+        { kind: "slider", key: "shadowOpacity", label: "Shadow Opacity", min: 0, max: 100, stepSize: 5, fallback: "100" },
+        { kind: "slider", key: "shadowBlur", label: "Shadow Size (Blur)", min: 0, max: 1, stepSize: 0.1, fallback: "0.1" },
+        { kind: "rule" },
+        { kind: "cycle", key: "backgroundColor", label: "Background Color", fallback: "Black", options: colorOptions(true) },
+        { kind: "slider", key: "background", label: "Background Opacity", min: 0, max: 100, stepSize: 5, fallback: "0" }
+    ])
+    return specs
+end function
+
+function styleSettingKey(name as string) as string
+    suffix = ""
+    if m.top.isHdr and m.global.session.user.settings["playback.subs.style.hdrSeparate"] = true then suffix = "Hdr"
+    return "playback.subs.style." + name + suffix
+end function
+
+function styleValue(name as string, fallback as string) as string
+    value = m.global.session.user.settings[styleSettingKey(name)]
+    if not isValid(value) then return fallback
+    return value.toStr()
+end function
+
+sub open()
+    m.focusIndex = 0
+    m.scrollTop = 0
+    build()
+end sub
+
+sub build()
+    m.rows.removeChildrenIndex(m.rows.getChildCount(), 0)
+    m.visuals = []
+    y = 0
+    for each spec in rowSpecs()
+        visual = buildRow(spec, y)
+        m.visuals.push(visual)
+        y += visual.pitch
+    end for
+
+    titleBottom = PANEL_PAD + m.top.findNode("title").boundingRect().height + 35
+    viewportHeight = y
+    closeHeight = m.closeTextSize.height + 20
+    room = PANEL_MAX_HEIGHT - titleBottom - closeHeight - PANEL_PAD
+    if viewportHeight > VIEWPORT_MAX_HEIGHT then viewportHeight = VIEWPORT_MAX_HEIGHT
+    if viewportHeight > room then viewportHeight = room
+    m.viewportHeight = viewportHeight
+    m.viewport.translation = [PANEL_PAD, titleBottom]
+    m.viewport.clippingRect = [0, 0, PANEL_WIDTH - PANEL_PAD * 2, viewportHeight]
+
+    closeWidth = m.closeTextSize.width + 40
+    m.closeLabel.width = closeWidth
+    m.closeLabel.height = closeHeight
+    m.closeFill.width = closeWidth
+    m.closeFill.height = closeHeight
+    m.close.translation = [PANEL_PAD, titleBottom + viewportHeight]
+
+    panelHeight = titleBottom + viewportHeight + closeHeight + PANEL_PAD
+    m.top.findNode("panelBg").height = panelHeight
+    m.top.findNode("panelBorder").height = panelHeight
+    m.panel.translation = [(1920 - PANEL_WIDTH) / 2, Int((1080 - panelHeight) / 2)]
+
+    ' Rows came and went, so focus goes back to the same setting
+    focusable = focusableIndexes()
+    if m.focusIndex >= focusable.count() then m.focusIndex = focusable.count() - 1
+    applyFocus()
+end sub
+
+function buildRow(spec as object, top as integer) as object
+    if spec.kind = "rule"
+        rule = m.rows.createChild("Rectangle")
+        rule.color = "#FFFFFF1A"
+        rule.width = ROW_LEFT * 2 + ROW_WIDTH
+        rule.height = 1
+        rule.translation = [0, top + 10]
+        return { spec: spec, pitch: 21 }
+    end if
+
+    group = m.rows.createChild("Group")
+    fill = group.createChild("Poster")
+    fill.uri = "pkg:/images/livetv/fill10.9.png"
+    border = group.createChild("Poster")
+    border.uri = "pkg:/images/playback/stroke10w2.9.png"
+    label = group.createChild("Label")
+    playbackOverlay.SetFont(label, TEXT_SIZE, false)
+    label.color = "#FFFFFF"
+    label.text = tr(spec.label)
+    value = group.createChild("Label")
+    playbackOverlay.SetFont(value, TEXT_SIZE, true)
+    value.color = m.palette.accent
+    value.horizAlign = "right"
+    value.width = ROW_WIDTH - ROW_PAD_X * 2
+    lineHeight = label.boundingRect().height
+    visual = { spec: spec, group: group, fill: fill, border: border, label: label, value: value }
+
+    if spec.kind = "cycle"
+        height = lineHeight + 40 + 4
+        label.translation = [ROW_PAD_X + 2, 22]
+        value.translation = [ROW_PAD_X + 2, 22]
+        visual.pitch = 5 + height + 15
+    else
+        trackTop = 17 + lineHeight + 15
+        height = trackTop + 21 + 17
+        label.translation = [ROW_PAD_X + 2, 17]
+        value.translation = [ROW_PAD_X + 2, 17]
+        track = group.createChild("Rectangle")
+        track.color = "#FFFFFF4D"
+        track.width = ROW_WIDTH - ROW_PAD_X * 2
+        track.height = 6
+        track.translation = [ROW_PAD_X + 2, trackTop + 7.5]
+        knobFill = group.createChild("Rectangle")
+        knobFill.color = m.palette.accent
+        knobFill.height = 6
+        knobFill.translation = [ROW_PAD_X + 2, trackTop + 7.5]
+        knob = group.createChild("Poster")
+        knob.uri = "pkg:/images/icons/circle.png"
+        knob.width = 21
+        knob.height = 21
+        visual.track = track
+        visual.knobFill = knobFill
+        visual.knob = knob
+        visual.trackTop = trackTop
+        visual.pitch = 5 + height + 15
+    end if
+
+    group.translation = [ROW_LEFT, top + 5]
+    group.scaleRotateCenter = [ROW_WIDTH / 2, height / 2]
+    fill.width = ROW_WIDTH
+    fill.height = height
+    border.width = ROW_WIDTH
+    border.height = height
+    drawValue(visual)
+    return visual
+end function
+
+sub drawValue(visual as object)
+    spec = visual.spec
+    current = styleValue(spec.key, "")
+    if spec.kind = "cycle"
+        text = tr(spec.fallback)
+        for each option in spec.options
+            if isStringEqual(option[0], current) then text = tr(option[1])
+        end for
+        visual.value.text = text
+        return
+    end if
+
+    number = sliderValue(spec)
+    if spec.key = "shadowBlur"
+        visual.value.text = oneDecimal(number)
+    else
+        visual.value.text = `${Int(number + 0.5)}%`
+    end if
+    fraction = (number - spec.min) / (spec.max - spec.min)
+    visual.knobFill.width = visual.track.width * fraction
+    visual.knob.translation = [ROW_PAD_X + 2 + visual.track.width * fraction - 10.5, visual.trackTop]
+end sub
+
+' A blur of nothing reads the same as the smallest, so it shows as 0.1
+function sliderValue(spec as object) as float
+    number = Val(styleValue(spec.key, spec.fallback))
+    if spec.key = "shadowBlur" and number <= 0 then number = 0.1
+    return number
+end function
+
+function oneDecimal(value as float) as string
+    tenths = Int(value * 10 + 0.5)
+    return `${Int(tenths / 10)}.${tenths mod 10}`
+end function
+
+' The rows focus can land on, the close button last
+function focusableIndexes() as object
+    indexes = []
+    for i = 0 to m.visuals.count() - 1
+        if m.visuals[i].spec.kind <> "rule" then indexes.push(i)
+    end for
+    indexes.push(-1)
+    return indexes
+end function
+
+sub applyFocus()
+    focusable = focusableIndexes()
+    focused = focusable[m.focusIndex]
+    accent = m.palette.accent
+    for i = 0 to m.visuals.count() - 1
+        visual = m.visuals[i]
+        if visual.spec.kind = "rule" then continue for
+        isFocused = i = focused
+        if isFocused and visual.spec.kind = "cycle"
+            visual.fill.blendColor = playbackOverlay.WithAlpha(accent, 77)
+        else if isFocused
+            visual.fill.blendColor = playbackOverlay.WithAlpha(accent, 38)
+        else
+            visual.fill.blendColor = "#FFFFFF14"
+        end if
+        visual.border.blendColor = isFocused ? accent : "#FFFFFF26"
+        scale = 1.0
+        if isFocused and visual.spec.kind = "cycle" then scale = 1.02
+        visual.group.scale = [scale, scale]
+    end for
+
+    closeFocused = focused = -1
+    m.closeFill.visible = closeFocused
+    m.closeLabel.color = closeFocused ? "#FFFFFF" : "#FFFFFF99"
+
+    if focused >= 0
+        rowTop = 0
+        for i = 0 to focused - 1
+            rowTop += m.visuals[i].pitch
+        end for
+        rowBottom = rowTop + m.visuals[focused].pitch
+        if rowTop < m.scrollTop then m.scrollTop = rowTop
+        if rowBottom > m.scrollTop + m.viewportHeight then m.scrollTop = rowBottom - m.viewportHeight
+    end if
+    m.rows.translation = [0, -m.scrollTop]
+end sub
+
+' Saved as it changes, so the next cue and the settings screen both see it
+sub save(key as string, value as string)
+    set_user_setting(styleSettingKey(key), value)
+    m.top.changed = m.top.changed + 1
+end sub
+
+' The next option along, where a value the list doesnt know counts as the first
+sub cycle(visual as object)
+    spec = visual.spec
+    current = styleValue(spec.key, "")
+    index = -1
+    for i = 0 to spec.options.count() - 1
+        if isStringEqual(spec.options[i][0], current) then index = i
+    end for
+    if index < 0 then index = 0
+    save(spec.key, spec.options[(index + 1) mod spec.options.count()][0])
+    if spec.key = "position"
+        build()
+    else
+        drawValue(visual)
+    end if
+end sub
+
+sub nudge(visual as object, direction as integer)
+    spec = visual.spec
+    number = sliderValue(spec) + direction * spec.stepSize
+    if number < spec.min then number = spec.min
+    if number > spec.max then number = spec.max
+    if spec.key = "shadowBlur"
+        save(spec.key, oneDecimal(number))
+    else
+        save(spec.key, Int(number + 0.5).toStr())
+    end if
+    drawValue(visual)
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return true
+    focusable = focusableIndexes()
+    focused = focusable[m.focusIndex]
+
+    if key = KeyCode.BACK
+        m.top.closed = true
+    else if key = KeyCode.UP and m.focusIndex > 0
+        m.focusIndex--
+        applyFocus()
+    else if key = KeyCode.DOWN and m.focusIndex < focusable.count() - 1
+        m.focusIndex++
+        applyFocus()
+    else if key = KeyCode.OK
+        if focused < 0
+            m.top.closed = true
+        else if m.visuals[focused].spec.kind = "cycle"
+            cycle(m.visuals[focused])
+        end if
+    else if (key = KeyCode.LEFT or key = KeyCode.RIGHT) and focused >= 0 and m.visuals[focused].spec.kind = "slider"
+        direction = 1
+        if key = KeyCode.LEFT then direction = -1
+        nudge(m.visuals[focused], direction)
+    end if
+    return true
+end function

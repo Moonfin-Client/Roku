@@ -4624,6 +4624,16 @@
         <translation>Mark where each chapter starts on the seek bar</translation>
     </message>
     <message>
+        <source>Subtitle Customization</source>
+        <extracomment>Heading over the subtitle style settings</extracomment>
+        <translation>Subtitle Customization</translation>
+    </message>
+    <message>
+        <source>Subtitle Size</source>
+        <extracomment>Setting for how big subtitles are</extracomment>
+        <translation>Subtitle Size</translation>
+    </message>
+    <message>
         <source>Small</source>
         <extracomment>How big subtitles are, a subtitle style choice</extracomment>
         <translation>Small</translation>
@@ -4639,9 +4649,184 @@
         <translation>Large</translation>
     </message>
     <message>
+        <source>Extra Large</source>
+        <extracomment>How big subtitles are, a subtitle style choice</extracomment>
+        <translation>Extra Large</translation>
+    </message>
+    <message>
+        <source>Subtitle Position</source>
+        <extracomment>Setting for where subtitles sit on screen</extracomment>
+        <translation>Subtitle Position</translation>
+    </message>
+    <message>
+        <source>Position</source>
+        <extracomment>Row in the subtitle appearance panel during playback for where subtitles sit</extracomment>
+        <translation>Position</translation>
+    </message>
+    <message>
+        <source>Bottom</source>
+        <extracomment>Where subtitles sit on screen, a subtitle style choice</extracomment>
+        <translation>Bottom</translation>
+    </message>
+    <message>
+        <source>Lower</source>
+        <extracomment>Where subtitles sit on screen, a subtitle style choice</extracomment>
+        <translation>Lower</translation>
+    </message>
+    <message>
         <source>Middle</source>
         <extracomment>Where subtitles sit on screen, a subtitle style choice, and where the loading animation sits</extracomment>
         <translation>Middle</translation>
+    </message>
+    <message>
+        <source>Higher</source>
+        <extracomment>Where subtitles sit on screen, a subtitle style choice</extracomment>
+        <translation>Higher</translation>
+    </message>
+    <message>
+        <source>Absolute</source>
+        <extracomment>Where subtitles sit on screen, a subtitle style choice, placed by a percentage</extracomment>
+        <translation>Absolute</translation>
+    </message>
+    <message>
+        <source>Absolute Position</source>
+        <extracomment>Setting for how far up the screen subtitles sit, as a percentage</extracomment>
+        <translation>Absolute Position</translation>
+    </message>
+    <message>
+        <source>Text Opacity</source>
+        <extracomment>Setting for how see-through subtitle text is</extracomment>
+        <translation>Text Opacity</translation>
+    </message>
+    <message>
+        <source>Text Fill Color</source>
+        <extracomment>Setting for the color of subtitle text</extracomment>
+        <translation>Text Fill Color</translation>
+    </message>
+    <message>
+        <source>White</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>White</translation>
+    </message>
+    <message>
+        <source>Light Gray</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Light Gray</translation>
+    </message>
+    <message>
+        <source>Gray</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Gray</translation>
+    </message>
+    <message>
+        <source>Dark Gray</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Dark Gray</translation>
+    </message>
+    <message>
+        <source>Black</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Black</translation>
+    </message>
+    <message>
+        <source>Yellow</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Yellow</translation>
+    </message>
+    <message>
+        <source>Green</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Green</translation>
+    </message>
+    <message>
+        <source>Cyan</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Cyan</translation>
+    </message>
+    <message>
+        <source>Blue</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Blue</translation>
+    </message>
+    <message>
+        <source>Magenta</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Magenta</translation>
+    </message>
+    <message>
+        <source>Red</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Red</translation>
+    </message>
+    <message>
+        <source>Navy</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Navy</translation>
+    </message>
+    <message>
+        <source>Transparent</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback, where nothing is drawn</extracomment>
+        <translation>Transparent</translation>
+    </message>
+    <message>
+        <source>Semi-transparent Black</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Semi-transparent Black</translation>
+    </message>
+    <message>
+        <source>Semi-transparent White</source>
+        <extracomment>A color subtitles can use, in the subtitle style settings and during playback</extracomment>
+        <translation>Semi-transparent White</translation>
+    </message>
+    <message>
+        <source>Shadow Color</source>
+        <extracomment>Setting for the color of the outline around subtitle text</extracomment>
+        <translation>Shadow Color</translation>
+    </message>
+    <message>
+        <source>Shadow Opacity</source>
+        <extracomment>Setting for how see-through the outline around subtitle text is</extracomment>
+        <translation>Shadow Opacity</translation>
+    </message>
+    <message>
+        <source>Shadow Size (Blur)</source>
+        <extracomment>Setting for how thick the outline around subtitle text is</extracomment>
+        <translation>Shadow Size (Blur)</translation>
+    </message>
+    <message>
+        <source>Background Color</source>
+        <extracomment>Setting for the color of the box behind subtitle text</extracomment>
+        <translation>Background Color</translation>
+    </message>
+    <message>
+        <source>Background Opacity</source>
+        <extracomment>Setting for how see-through the box behind subtitle text is</extracomment>
+        <translation>Background Opacity</translation>
+    </message>
+    <message>
+        <source>HDR Subtitles</source>
+        <extracomment>Settings page for a subtitle style used while HDR plays</extracomment>
+        <translation>HDR Subtitles</translation>
+    </message>
+    <message>
+        <source>A separate style used while HDR is playing</source>
+        <extracomment>Description of the HDR Subtitles settings page</extracomment>
+        <translation>A separate style used while HDR is playing</translation>
+    </message>
+    <message>
+        <source>Separate HDR Style</source>
+        <extracomment>Setting that turns on a separate subtitle style for HDR</extracomment>
+        <translation>Separate HDR Style</translation>
+    </message>
+    <message>
+        <source>Use the style below whenever HDR content is playing. White is much brighter in HDR than in SDR, so a dimmer color here avoids the glare.</source>
+        <extracomment>Description of the Separate HDR Style setting</extracomment>
+        <translation>Use the style below whenever HDR content is playing. White is much brighter in HDR than in SDR, so a dimmer color here avoids the glare.</translation>
+    </message>
+    <message>
+        <source>Subtitle Appearance</source>
+        <extracomment>Title of the panel that changes the subtitle style during playback</extracomment>
+        <translation>Subtitle Appearance</translation>
     </message>
     <message>
         <source>Loading Animation</source>
