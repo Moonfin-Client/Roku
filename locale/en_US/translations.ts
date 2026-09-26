@@ -5013,5 +5013,50 @@
         <extracomment>Description of the Show Clock setting</extracomment>
         <translation>Show or hide the clock in the top bar and the sidebar</translation>
     </message>
+    <message>
+        <source>Group by Type</source>
+        <extracomment>Library setting that lists a playlist library as one row per kind of playlist</extracomment>
+        <translation>Group by Type</translation>
+    </message>
+    <message>
+        <source>Video Playlists</source>
+        <extracomment>Row title for playlists of movies, episodes and other videos</extracomment>
+        <translation>Video Playlists</translation>
+    </message>
+    <message>
+        <source>Music Video Playlists</source>
+        <extracomment>Row title for playlists of music videos</extracomment>
+        <translation>Music Video Playlists</translation>
+    </message>
+    <message>
+        <source>Audio Playlists</source>
+        <extracomment>Row title for playlists of songs</extracomment>
+        <translation>Audio Playlists</translation>
+    </message>
+    <message>
+        <source>Audiobook Playlists</source>
+        <extracomment>Row title for playlists of audiobooks</extracomment>
+        <translation>Audiobook Playlists</translation>
+    </message>
+    <message>
+        <source>Book Playlists</source>
+        <extracomment>Row title for playlists of books</extracomment>
+        <translation>Book Playlists</translation>
+    </message>
+    <message>
+        <source>Photo Playlists</source>
+        <extracomment>Row title for playlists of photos</extracomment>
+        <translation>Photo Playlists</translation>
+    </message>
+    <message>
+        <source>Mixed Playlists</source>
+        <extracomment>Row title for playlists that hold more than one kind of item, or nothing yet</extracomment>
+        <translation>Mixed Playlists</translation>
+    </message>
+    <message>
+        <source>No items found</source>
+        <extracomment>Shown in a library when nothing matches</extracomment>
+        <translation>No items found</translation>
+    </message>
 </context>
 </TS>
