@@ -4623,5 +4623,170 @@
         <extracomment>Description of the Chapter Marks setting</extracomment>
         <translation>Mark where each chapter starts on the seek bar</translation>
     </message>
+    <message>
+        <source>Small</source>
+        <extracomment>How big subtitles are, a subtitle style choice</extracomment>
+        <translation>Small</translation>
+    </message>
+    <message>
+        <source>Medium</source>
+        <extracomment>How big subtitles are, a subtitle style choice</extracomment>
+        <translation>Medium</translation>
+    </message>
+    <message>
+        <source>Large</source>
+        <extracomment>How big subtitles are, a subtitle style choice</extracomment>
+        <translation>Large</translation>
+    </message>
+    <message>
+        <source>Middle</source>
+        <extracomment>Where subtitles sit on screen, a subtitle style choice, and where the loading animation sits</extracomment>
+        <translation>Middle</translation>
+    </message>
+    <message>
+        <source>Loading Animation</source>
+        <extracomment>Settings page for the animation shown while something loads</extracomment>
+        <translation>Loading Animation</translation>
+    </message>
+    <message>
+        <source>Customize the loading animations used throughout Moonfin</source>
+        <extracomment>Description of the Loading Animation settings page</extracomment>
+        <translation>Customize the loading animations used throughout Moonfin</translation>
+    </message>
+    <message>
+        <source>Loading Animation Configuration</source>
+        <extracomment>Heading over the loading animation settings</extracomment>
+        <translation>Loading Animation Configuration</translation>
+    </message>
+    <message>
+        <source>Image</source>
+        <extracomment>Setting for which image the loading animation shows</extracomment>
+        <translation>Image</translation>
+    </message>
+    <message>
+        <source>Moonfin Logo</source>
+        <extracomment>An image the loading animation can show</extracomment>
+        <translation>Moonfin Logo</translation>
+    </message>
+    <message>
+        <source>Spinner</source>
+        <extracomment>An image the loading animation can show</extracomment>
+        <translation>Spinner</translation>
+    </message>
+    <message>
+        <source>Runner</source>
+        <extracomment>An image the loading animation can show</extracomment>
+        <translation>Runner</translation>
+    </message>
+    <message>
+        <source>Moon Phases</source>
+        <extracomment>An image the loading animation can show</extracomment>
+        <translation>Moon Phases</translation>
+    </message>
+    <message>
+        <source>Moonfin Phases</source>
+        <extracomment>An image the loading animation can show</extracomment>
+        <translation>Moonfin Phases</translation>
+    </message>
+    <message>
+        <source>Neonfin Phases</source>
+        <extracomment>An image the loading animation can show</extracomment>
+        <translation>Neonfin Phases</translation>
+    </message>
+    <message>
+        <source>Animation Size</source>
+        <extracomment>Setting for how big the loading animation is</extracomment>
+        <translation>Animation Size</translation>
+    </message>
+    <message>
+        <source>Thumbnail</source>
+        <extracomment>The smallest loading animation size</extracomment>
+        <translation>Thumbnail</translation>
+    </message>
+    <message>
+        <source>Animation Position</source>
+        <extracomment>Setting for where the loading animation sits on screen</extracomment>
+        <translation>Animation Position</translation>
+    </message>
+    <message>
+        <source>Top-Left</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Top-Left</translation>
+    </message>
+    <message>
+        <source>Top-Center</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Top-Center</translation>
+    </message>
+    <message>
+        <source>Top-Right</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Top-Right</translation>
+    </message>
+    <message>
+        <source>Middle-Left</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Middle-Left</translation>
+    </message>
+    <message>
+        <source>Middle-Right</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Middle-Right</translation>
+    </message>
+    <message>
+        <source>Bottom-Left</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Bottom-Left</translation>
+    </message>
+    <message>
+        <source>Bottom-Center</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Bottom-Center</translation>
+    </message>
+    <message>
+        <source>Bottom-Right</source>
+        <extracomment>Where the loading animation sits on screen</extracomment>
+        <translation>Bottom-Right</translation>
+    </message>
+    <message>
+        <source>Bouncing</source>
+        <extracomment>Where the loading animation sits on screen, drifting around and bouncing off the edges</extracomment>
+        <translation>Bouncing</translation>
+    </message>
+    <message>
+        <source>Animation Speed</source>
+        <extracomment>Setting for how fast the loading animation moves</extracomment>
+        <translation>Animation Speed</translation>
+    </message>
+    <message>
+        <source>Slow</source>
+        <extracomment>How fast the loading animation moves</extracomment>
+        <translation>Slow</translation>
+    </message>
+    <message>
+        <source>Moderate</source>
+        <extracomment>How fast the loading animation moves</extracomment>
+        <translation>Moderate</translation>
+    </message>
+    <message>
+        <source>Fast</source>
+        <extracomment>How fast the loading animation moves</extracomment>
+        <translation>Fast</translation>
+    </message>
+    <message>
+        <source>Ultra</source>
+        <extracomment>How fast the loading animation moves</extracomment>
+        <translation>Ultra</translation>
+    </message>
+    <message>
+        <source>Show Text?</source>
+        <extracomment>Setting that shows the label under the loading animation</extracomment>
+        <translation>Show Text?</translation>
+    </message>
+    <message>
+        <source>Loading Stream...</source>
+        <extracomment>Shown under the loading animation while a video starts</extracomment>
+        <translation>Loading Stream...</translation>
+    </message>
 </context>
 </TS>

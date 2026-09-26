@@ -1,0 +1,326 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/playbackOverlay.bs"
+
+const TWO_PI = 6.2831853
+' Frames per turn the logo's spin is keyed at, enough that its width follows a cosine
+const LOGO_KEYS = 32
+const RUNNER_FRAMES = 24
+const RUNNER_COLUMNS = 6
+const MOON_FRAMES = 48
+const MOON_COLUMNS = 8
+' The label's fill runs purple to blue across it, drawn as this many bands
+const LABEL_BANDS = 8
+const BOUNCE_PADDING = 40
+
+sub init()
+    m.dim = m.top.findNode("dim")
+    m.box = m.top.findNode("box")
+    m.art = m.top.findNode("art")
+    m.labelGroup = m.top.findNode("loadingLabel")
+    m.bounceTimer = m.top.findNode("bounceTimer")
+    m.bounceTimer.observeField("fire", "onBounce")
+    m.animations = []
+    m.clock = CreateObject("roTimespan")
+end sub
+
+function sizeLayout(size as string) as object
+    layouts = {
+        thumbnail: { px: 36, spacing: 8, fontSize: 10 },
+        small: { px: 64, spacing: 14, fontSize: 12 },
+        medium: { px: 110, spacing: 24, fontSize: 14 },
+        large: { px: 170, spacing: 40, fontSize: 16 }
+    }
+    return layouts[size] ?? layouts.medium
+end function
+
+function speedMultiplier(speed as string) as float
+    speeds = { slow: 0.45, moderate: 0.70, fast: 1.0, ultra: 1.60 }
+    return speeds[speed] ?? 1.0
+end function
+
+' Which way each place pulls the box, and the padding around it as top, right, bottom and left
+function positionLayout(position as string) as object
+    layouts = {
+        topLeft: { x: -1, y: -1, pad: [40, 40, 40, 40] },
+        topCenter: { x: 0, y: -1, pad: [40, 24, 0, 24] },
+        topRight: { x: 1, y: -1, pad: [40, 40, 40, 40] },
+        middleLeft: { x: -1, y: 0, pad: [24, 0, 24, 40] },
+        middle: { x: 0, y: 0, pad: [0, 0, 0, 0] },
+        middleRight: { x: 1, y: 0, pad: [24, 40, 24, 0] },
+        bottomLeft: { x: -1, y: 1, pad: [40, 40, 40, 40] },
+        bottomCenter: { x: 0, y: 1, pad: [0, 24, 40, 24] },
+        bottomRight: { x: 1, y: 1, pad: [40, 40, 40, 40] }
+    }
+    return layouts[position] ?? layouts.middle
+end function
+
+function loadingSetting(key as string, fallback as string) as string
+    value = m.global.session.user.settings[key]
+    if not isValid(value) then return fallback
+    return value.toStr()
+end function
+
+sub onActiveChanged()
+    stopAll()
+    m.top.visible = m.top.active
+    if m.top.active then build()
+end sub
+
+sub stopAll()
+    m.bounceTimer.control = "stop"
+    for each animation in m.animations
+        animation.control = "stop"
+        m.top.removeChild(animation)
+    end for
+    m.animations = []
+end sub
+
+sub build()
+    m.art.removeChildrenIndex(m.art.getChildCount(), 0)
+    m.labelGroup.removeChildrenIndex(m.labelGroup.getChildCount(), 0)
+    m.dim.visible = m.top.dimmed
+
+    m.image = loadingSetting("ui.loadingAnimation.image", "moonfinLogo")
+    layout = sizeLayout(loadingSetting("ui.loadingAnimation.size", "medium"))
+    m.position = loadingSetting("ui.loadingAnimation.position", "middle")
+    m.speed = speedMultiplier(loadingSetting("ui.loadingAnimation.speed", "fast"))
+    m.px = layout.px
+
+    hasArt = m.image <> "none"
+    if hasArt then buildArt(m.image, positionLayout(m.position).x = 1)
+
+    labelWidth = 0
+    labelHeight = 0
+    showText = loadingSetting("ui.loadingAnimation.showText", "true") <> "false"
+    if showText and isValidAndNotEmpty(m.top.label)
+        size = buildLabel(UCase(m.top.label), layout.fontSize)
+        labelWidth = size.width
+        labelHeight = size.height
+    end if
+
+    artSize = 0
+    if hasArt then artSize = m.px
+    m.boxWidth = artSize
+    if labelWidth > m.boxWidth then m.boxWidth = labelWidth
+    m.boxHeight = artSize + labelHeight
+    labelTop = 0
+    if hasArt and labelHeight > 0
+        labelTop = artSize + layout.spacing
+        m.boxHeight += layout.spacing
+    end if
+    m.art.translation = [(m.boxWidth - artSize) / 2, 0]
+    m.labelGroup.translation = [(m.boxWidth - labelWidth) / 2, labelTop]
+
+    if m.position = "bouncing"
+        m.bounce = { x: -0.5, y: -0.3, vx: 0.42, vy: 0.54 }
+        placeBouncing()
+        m.clock.Mark()
+        m.bounceTimer.control = "start"
+    else
+        placeStatic(positionLayout(m.position))
+    end if
+
+    for each animation in m.animations
+        animation.control = "start"
+    end for
+end sub
+
+sub placeStatic(layout as object)
+    pad = layout.pad
+    left = pad[3] + (1920 - pad[1] - pad[3] - m.boxWidth) / 2
+    if layout.x < 0 then left = pad[3]
+    if layout.x > 0 then left = 1920 - pad[1] - m.boxWidth
+    top = pad[0] + (1080 - pad[0] - pad[2] - m.boxHeight) / 2
+    if layout.y < 0 then top = pad[0]
+    if layout.y > 0 then top = 1080 - pad[2] - m.boxHeight
+    m.box.translation = [Int(left), Int(top)]
+end sub
+
+sub placeBouncing()
+    areaWidth = 1920 - BOUNCE_PADDING * 2 - m.boxWidth
+    areaHeight = 1080 - BOUNCE_PADDING * 2 - m.boxHeight
+    m.box.translation = [BOUNCE_PADDING + Int((m.bounce.x + 1) / 2 * areaWidth + 0.5), BOUNCE_PADDING + Int((m.bounce.y + 1) / 2 * areaHeight + 0.5)]
+end sub
+
+' The box drifts corner to corner and turns back off each edge. A runner faces the way it goes.
+sub onBounce()
+    elapsed = m.clock.TotalMilliseconds() / 1000
+    m.clock.Mark()
+    if elapsed > 0.05 then elapsed = 0.05
+    wasLeft = m.bounce.vx < 0
+    m.bounce.x += m.bounce.vx * m.speed * elapsed
+    m.bounce.y += m.bounce.vy * m.speed * elapsed
+    if m.bounce.x > 1
+        m.bounce.x = 1
+        m.bounce.vx = -Abs(m.bounce.vx)
+    else if m.bounce.x < -1
+        m.bounce.x = -1
+        m.bounce.vx = Abs(m.bounce.vx)
+    end if
+    if m.bounce.y > 1
+        m.bounce.y = 1
+        m.bounce.vy = -Abs(m.bounce.vy)
+    else if m.bounce.y < -1
+        m.bounce.y = -1
+        m.bounce.vy = Abs(m.bounce.vy)
+    end if
+    placeBouncing()
+    if m.image = "runner" and wasLeft <> (m.bounce.vx < 0) then pointRunner(m.bounce.vx < 0)
+end sub
+
+sub buildArt(image as string, facingLeft as boolean)
+    px = m.px
+    if image = "moonfinLogo"
+        buildLogo(px)
+    else if image = "spinner"
+        buildSpinner(px)
+    else if image = "runner"
+        m.runnerSheet = buildSheet(`pkg:/images/loading/runner_${px}.png`, RUNNER_FRAMES, RUNNER_COLUMNS, 0.62)
+        pointRunner(facingLeft)
+    else
+        palettes = { moonPhases: "natural", moonfinPhases: "moonfin", neonfinPhases: "neonfin" }
+        palette = palettes[image] ?? "natural"
+        base = m.art.createChild("Poster")
+        base.uri = `pkg:/images/loading/moon_${palette}_${px}_base.png`
+        base.width = px * 2
+        base.height = px * 2
+        base.translation = [-px / 2, -px / 2]
+        buildSheet(`pkg:/images/loading/moon_${palette}_${px}.png`, MOON_FRAMES, MOON_COLUMNS, 6)
+    end if
+end sub
+
+sub pointRunner(facingLeft as boolean)
+    suffix = ""
+    if facingLeft then suffix = "_left"
+    m.runnerSheet.uri = `pkg:/images/loading/runner_${m.px}${suffix}.png`
+end sub
+
+' Front and back of the logo narrow and widen with the cosine of the turn, one showing at a time,
+' which is how a flat logo spinning about its upright reads without perspective
+sub buildLogo(px as integer)
+    keys = []
+    frontValues = []
+    backValues = []
+    for i = 0 to LOGO_KEYS
+        angle = TWO_PI * i / LOGO_KEYS
+        keys.push(i / LOGO_KEYS)
+        frontValues.push([maxFloat(Cos(angle), 0), 1])
+        backValues.push([maxFloat(-Cos(angle), 0), 1])
+    end for
+
+    for each face in [{ id: "loadingFront", uri: "", values: frontValues }, { id: "loadingBack", uri: "_back", values: backValues }]
+        poster = m.art.createChild("Poster")
+        poster.id = face.id
+        poster.uri = `pkg:/images/loading/logo_${px}${face.uri}.png`
+        poster.width = px
+        poster.height = px
+        poster.scaleRotateCenter = [px / 2, px / 2]
+        addAnimation(8 / m.speed, "Vector2DFieldInterpolator", face.id + ".scale", keys, face.values)
+    end for
+end sub
+
+function maxFloat(a as float, b as float) as float
+    if a > b then return a
+    return b
+end function
+
+sub buildSpinner(px as integer)
+    track = m.art.createChild("Poster")
+    track.uri = `pkg:/images/loading/spinner_track_${px}.png`
+    track.width = px
+    track.height = px
+    arc = m.art.createChild("Poster")
+    arc.id = "loadingArc"
+    arc.uri = `pkg:/images/loading/spinner_arc_${px}.png`
+    arc.width = px
+    arc.height = px
+    arc.scaleRotateCenter = [px / 2, px / 2]
+    ' Negative turns clockwise, the way the arc's head leads
+    addAnimation(1.2 / m.speed, "FloatFieldInterpolator", "loadingArc.rotation", [0.0, 1.0], [0.0, -TWO_PI])
+end sub
+
+' Steps a sprite sheet through its frames inside a clip the size of one frame. Each frame holds
+' until the next rather than sliding into it.
+function buildSheet(uri as string, frames as integer, columns as integer, seconds as float) as object
+    px = m.px
+    clip = m.art.createChild("Group")
+    clip.clippingRect = [0, 0, px, px]
+    sheet = clip.createChild("Poster")
+    sheet.id = "loadingSheet"
+    sheet.uri = uri
+    sheet.width = px * columns
+    sheet.height = px * Int((frames + columns - 1) / columns)
+
+    keys = []
+    values = []
+    for k = 0 to frames - 1
+        cell = [- (k mod columns) * px, -Int(k / columns) * px]
+        keys.push(k / frames)
+        values.push(cell)
+        keys.push((k + 1) / frames - 0.0001)
+        values.push(cell)
+    end for
+    addAnimation(seconds / m.speed, "Vector2DFieldInterpolator", "loadingSheet.translation", keys, values)
+    return sheet
+end function
+
+sub addAnimation(seconds as float, interpolatorType as string, field as string, keys as object, values as object)
+    animation = CreateObject("roSGNode", "Animation")
+    animation.duration = seconds
+    animation.repeat = true
+    animation.easeFunction = "linear"
+    interpolator = animation.createChild(interpolatorType)
+    interpolator.fieldToInterp = field
+    interpolator.key = keys
+    interpolator.keyValue = values
+    m.top.appendChild(animation)
+    m.animations.push(animation)
+end sub
+
+function buildLabel(text as string, fontSize as integer) as object
+    probe = CreateObject("roSGNode", "Label")
+    playbackOverlay.SetFont(probe, fontSize, true)
+    probe.text = text
+    bounds = probe.boundingRect()
+    width = bounds.width
+    height = bounds.height
+
+    bandWidth = width / LABEL_BANDS
+    for i = 0 to LABEL_BANDS - 1
+        band = m.labelGroup.createChild("Group")
+        band.clippingRect = [i * bandWidth, 0, bandWidth + 1, height]
+        label = band.createChild("Label")
+        playbackOverlay.SetFont(label, fontSize, true)
+        label.text = text
+        label.color = gradientColor((i + 0.5) / LABEL_BANDS)
+    end for
+
+    ' Faint to full and back, easing at each end
+    m.labelGroup.scaleRotateCenter = [width / 2, height / 2]
+    keys = []
+    opacities = []
+    scales = []
+    for i = 0 to 8
+        t = i / 8
+        swing = t * 2
+        if t > 0.5 then swing = (1 - t) * 2
+        eased = swing * swing * (3 - 2 * swing)
+        keys.push(t)
+        opacities.push(0.4 + 0.6 * eased)
+        scale = 0.98 + 0.02 * eased
+        scales.push([scale, scale])
+    end for
+    addAnimation(4, "FloatFieldInterpolator", "loadingLabel.opacity", keys, opacities)
+    addAnimation(4, "Vector2DFieldInterpolator", "loadingLabel.scale", keys, scales)
+    return { width: width, height: height }
+end function
+
+function gradientColor(t as float) as string
+    start = [170, 92, 195]
+    finish = [0, 164, 220]
+    hex = "#"
+    for i = 0 to 2
+        hex += playbackOverlay.HexByte(Int(start[i] + (finish[i] - start[i]) * t + 0.5))
+    end for
+    return hex + "FF"
+end function
