@@ -29,6 +29,7 @@ brs.types.RoString.prototype.getMethod = function (name) {
 // device registry and authentication context are replaced with deterministic fixtures.
 const selections = {
     'source/utils/serverCompatibility.bs': null,
+    'source/utils/accentFolding.bs': null,
     'source/utils/detailCompatibility.bs': null,
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions'],
     'source/enums/VideoType.bs': null,
@@ -71,6 +72,7 @@ source += '\n' + await readFile('test/emby-media-routes.bs', 'utf8');
 source += '\n' + await readFile('test/emby-details.bs', 'utf8');
 source += '\n' + await readFile('test/server-compatibility.bs', 'utf8');
 source += '\n' + await readFile('test/review-regressions.bs', 'utf8');
+source += '\n' + await readFile('test/accent-folding.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
