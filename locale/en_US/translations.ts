@@ -5163,5 +5163,20 @@
         <extracomment>Description of the Trailer Captions setting</extracomment>
         <translation>Show captions on media bar trailer previews when YouTube has them</translation>
     </message>
+    <message>
+        <source>Loading trailer...</source>
+        <extracomment>Shown while a YouTube trailer is being found</extracomment>
+        <translation>Loading trailer...</translation>
+    </message>
+    <message>
+        <source>Trailer Not Available</source>
+        <extracomment>Title of the message shown when a trailer cant be played</extracomment>
+        <translation>Trailer Not Available</translation>
+    </message>
+    <message>
+        <source>This trailer is a link to a web page, which cant be opened here.</source>
+        <extracomment>Shown when a title's trailer link isnt a YouTube video</extracomment>
+        <translation>This trailer is a link to a web page, which cant be opened here.</translation>
+    </message>
 </context>
 </TS>
