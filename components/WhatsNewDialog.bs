@@ -1,69 +1,248 @@
-import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/messageMarkdown.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/playbackOverlay.bs"
+
+const PANEL_WIDTH = 1400
+const PANEL_PAD = 48
+const NOTES_MIN_HEIGHT = 300
+const NOTES_MAX_HEIGHT = 500
+const NOTES_PAD = 28
+const TEXT_SIZE = 22
+const CODE_SIZE = 20
+const CODE_PAD = 16
+' Every line in the notes takes this many times its text size
+const LINE_PITCH = 1.7
+const HEADING_COLOR = "#00A4DC"
+const LIST_INDENT = 24
+const SCROLL_GUTTER = 24
+const BUTTON_HEIGHT = 54
+const BUTTON_MIN_WIDTH = 150
 
 sub init()
-    m.content = m.top.findNode("content")
+    m.panel = m.top.findNode("panel")
+    m.panelFill = m.top.findNode("panelFill")
+    m.panelBorder = m.top.findNode("panelBorder")
+    m.title = m.top.findNode("title")
+    m.version = m.top.findNode("version")
+    m.viewport = m.top.findNode("viewport")
+    m.notes = m.top.findNode("notes")
+    m.notesFill = m.top.findNode("notesFill")
+    m.blocks = m.top.findNode("blocks")
+    m.scrollTrack = m.top.findNode("scrollTrack")
+    m.scrollThumb = m.top.findNode("scrollThumb")
+    m.okButton = m.top.findNode("okButton")
+    m.okFill = m.top.findNode("okFill")
+    m.okLabel = m.top.findNode("okLabel")
 
-    setPalette()
+    version = m.global.app.version.ToStr().Trim()
+    playbackOverlay.SetFont(m.title, 27, true)
+    m.title.text = `What's New In ${m.global.app.name}`
+    playbackOverlay.SetFont(m.version, 32, true)
+    m.version.text = tr("Version") + " " + version
+    playbackOverlay.SetFont(m.okLabel, 30, true)
+    m.okLabel.text = tr("OK")
 
-    m.top.id = "OKDialog"
-    m.top.height = 900
-    m.top.title = `What's New In ${m.global.app.name}`
-    m.top.buttons = [tr("OK")]
-    m.top.observeField("buttonSelected", "onButtonActivated")
-
-    dialogStyles = {
-        "default": {
-            "fontSize": 27,
-            "fontUri": "font:SystemFontFile",
-            "color": chainLookupReturn(m.global.session, "user.settings.colorDialogText", ColorPalette.WHITE)
-        },
-        "b": {
-            "fontSize": 27,
-            "fontUri": "font:SystemFontFile",
-            "color": chainLookupReturn(m.global.session, "user.settings.colorDialogBoldText", ColorPalette.TRIADGREEN)
-        },
-        "author": {
-            "fontSize": 27,
-            "fontUri": "font:SystemFontFile",
-            "color": chainLookupReturn(m.global.session, "user.settings.colorWhatsNewAuthor", ColorPalette.HIGHLIGHT)
-        }
-    }
-
-    whatsNewList = ParseJSON(ReadAsciiFile("pkg:/source/static/whatsNew/" + m.global.app.version.ToStr().trim() + ".json"))
-
-    for each item in whatsNewList
-        textLine = m.content.CreateChild("StdDlgMultiStyleTextItem")
-        textLine.drawingStyles = dialogStyles
-        textLine.text = "• " + item.description + " <author>" + item.author + "</author>"
-    end for
+    m.lineHeights = {}
+    m.scrollTop = 0
+    m.noteBlocks = messageMarkdown.ParseBlocks(ReadAsciiFile("pkg:/source/static/whatsNew/" + version + ".md"))
+    layout()
 end sub
 
-sub onButtonActivated()
-    m.top.whatsNewClosed = true
+sub layout()
+    contentWidth = PANEL_WIDTH - PANEL_PAD * 2
+    y = PANEL_PAD
+
+    m.title.width = contentWidth
+    m.title.translation = [PANEL_PAD, y]
+    y += m.title.boundingRect().height + 33
+
+    m.version.width = contentWidth
+    m.version.translation = [PANEL_PAD, y]
+    y += m.version.boundingRect().height + 24
+
+    ' Notes that run past the box make room for the scroll bar beside them
+    notesHeight = drawNotes(contentWidth)
+    scrolls = notesHeight > NOTES_MAX_HEIGHT
+    if scrolls then notesHeight = drawNotes(contentWidth - SCROLL_GUTTER)
+
+    viewportHeight = notesHeight
+    if viewportHeight < NOTES_MIN_HEIGHT then viewportHeight = NOTES_MIN_HEIGHT
+    if viewportHeight > NOTES_MAX_HEIGHT then viewportHeight = NOTES_MAX_HEIGHT
+    m.viewportHeight = viewportHeight
+    m.maxScroll = notesHeight - viewportHeight
+    if m.maxScroll < 0 then m.maxScroll = 0
+
+    m.viewport.translation = [PANEL_PAD, y]
+    m.viewport.clippingRect = [0, 0, contentWidth, viewportHeight]
+    m.scrollTrack.visible = scrolls
+    m.scrollThumb.visible = scrolls
+    if scrolls
+        m.scrollTrack.translation = [PANEL_PAD + contentWidth - m.scrollTrack.width, y]
+        m.scrollTrack.height = viewportHeight
+        thumbHeight = viewportHeight * viewportHeight / notesHeight
+        if thumbHeight < 40 then thumbHeight = 40
+        m.scrollThumb.height = thumbHeight
+    end if
+    m.notesTop = y
+    y += viewportHeight + 32
+
+    buttonWidth = m.okLabel.boundingRect().width + 48
+    if buttonWidth < BUTTON_MIN_WIDTH then buttonWidth = BUTTON_MIN_WIDTH
+    for each part in [m.okFill, m.okLabel]
+        part.width = buttonWidth
+        part.height = BUTTON_HEIGHT
+    end for
+    m.okButton.translation = [(PANEL_WIDTH - buttonWidth) / 2, y]
+    y += BUTTON_HEIGHT + PANEL_PAD
+
+    m.panelFill.height = y
+    m.panelBorder.height = y
+    m.panel.translation = [(1920 - PANEL_WIDTH) / 2, Int((1080 - y) / 2)]
+    applyScroll()
+end sub
+
+' Lays the notes out in a box this wide and answers its height. Each block keeps the space below
+' it, and the larger of that and the next block's space above is the gap between them.
+function drawNotes(width as float) as float
+    m.blocks.removeChildrenIndex(m.blocks.getChildCount(), 0)
+    textWidth = width - NOTES_PAD * 2
+    y = NOTES_PAD
+    below = -1
+
+    for each block in m.noteBlocks
+        isHeading = block.type = "heading" and block.level <= 3
+        ' A heading that was only a badge has nothing left to show
+        if isHeading and messageMarkdown.FlattenInlines(block.children).Trim() = "" then continue for
+        above = 0
+        if isHeading then above = 16
+        if below >= 0
+            gap = below
+            if above > gap then gap = above
+            y += gap
+        else
+            y += above
+        end if
+
+        if block.type = "list"
+            y += drawList(block, textWidth, y)
+        else if block.type = "code"
+            y += drawCode(block.text, textWidth, y)
+        else if isHeading
+            sizes = [28, 26, 24]
+            y += drawText(messageMarkdown.FlattenInlines(block.children).Trim(), sizes[block.level - 1], true, HEADING_COLOR, NOTES_PAD, y, textWidth)
+        else
+            ' Deeper headings and quotes show their marks, as the notes were written
+            text = messageMarkdown.FlattenInlines(block.children)
+            if block.type = "heading"
+                marks = ""
+                for level = 1 to block.level
+                    marks += "#"
+                end for
+                text = marks + " " + text
+            end if
+            if block.type = "quote" then text = "> " + text
+            y += drawText(text, TEXT_SIZE, false, "#FFFFFF", NOTES_PAD, y, textWidth)
+        end if
+        below = 12
+    end for
+
+    if below > 0 then y += below
+    y += NOTES_PAD
+    m.notesFill.width = width
+    m.notesFill.height = y
+    return y
+end function
+
+' Bullets or numbers sit in the margin to the left of each item, 8 apart
+function drawList(block as object, textWidth as float, top as float) as float
+    y = top
+    number = 0
+    for each item in block.items
+        if y > top then y += 8
+        number++
+        marker = "•"
+        if block.ordered then marker = number.toStr() + "."
+        markerLabel = m.blocks.createChild("Label")
+        playbackOverlay.SetFont(markerLabel, TEXT_SIZE, false)
+        markerLabel.color = "#FFFFFF"
+        markerLabel.horizAlign = "right"
+        markerLabel.width = NOTES_PAD + LIST_INDENT - 11
+        markerLabel.text = marker
+        markerLabel.translation = [0, y + halfLead(TEXT_SIZE, false)]
+        y += drawText(messageMarkdown.FlattenInlines(item), TEXT_SIZE, false, "#FFFFFF", NOTES_PAD + LIST_INDENT, y, textWidth - LIST_INDENT)
+    end for
+    return y - top
+end function
+
+function drawCode(text as string, textWidth as float, top as float) as float
+    fill = m.blocks.createChild("Poster")
+    fill.uri = "pkg:/images/details/surface8.9.png"
+    fill.blendColor = "#00000059"
+    fill.translation = [NOTES_PAD, top]
+    height = drawText(text, CODE_SIZE, false, "#FFFFFF", NOTES_PAD + CODE_PAD, top + CODE_PAD, textWidth - CODE_PAD * 2) + CODE_PAD * 2
+    fill.width = textWidth
+    fill.height = height
+    return height
+end function
+
+' A wrapped run of text whose lines sit LINE_PITCH apart, with half the extra space above the
+' first line and half below the last. Answers the height it takes.
+function drawText(text as string, size as integer, bold as boolean, color as string, x as float, top as float, width as float) as float
+    label = m.blocks.createChild("Label")
+    playbackOverlay.SetFont(label, size, bold)
+    label.color = color
+    label.wrap = true
+    label.width = width
+    lead = halfLead(size, bold)
+    label.lineSpacing = lead * 2
+    label.text = text
+    label.translation = [x, top + lead]
+    return label.boundingRect().height + lead * 2
+end function
+
+function halfLead(size as integer, bold as boolean) as float
+    key = size.toStr() + bold.toStr()
+    if not m.lineHeights.DoesExist(key)
+        probe = CreateObject("roSGNode", "Label")
+        playbackOverlay.SetFont(probe, size, bold)
+        probe.text = "Ag"
+        m.lineHeights[key] = probe.boundingRect().height
+    end if
+    lead = (size * LINE_PITCH - m.lineHeights[key]) / 2
+    if lead < 0 then lead = 0
+    return lead
+end function
+
+sub scrollBy(share as float)
+    m.scrollTop += m.viewportHeight * share
+    if m.scrollTop < 0 then m.scrollTop = 0
+    if m.scrollTop > m.maxScroll then m.scrollTop = m.maxScroll
+    applyScroll()
+end sub
+
+sub applyScroll()
+    m.notes.translation = [0, -m.scrollTop]
+    if not m.scrollThumb.visible then return
+    travel = m.viewportHeight - m.scrollThumb.height
+    offset = 0
+    if m.maxScroll > 0 then offset = travel * m.scrollTop / m.maxScroll
+    m.scrollThumb.translation = [m.scrollTrack.translation[0], m.notesTop + offset]
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
-    if not press then return false
+    if not press then return true
 
-    if key = "back"
+    if key = KeyCode.OK or key = KeyCode.BACK
         m.top.whatsNewClosed = true
-        return false
+    else if key = KeyCode.UP
+        scrollBy(-0.2)
+    else if key = KeyCode.DOWN
+        scrollBy(0.2)
+    else if key = KeyCode.REWIND
+        scrollBy(-0.66)
+    else if key = KeyCode.FASTFORWRD
+        scrollBy(0.66)
     end if
-
-    return false
+    return true
 end function
-
-sub setPalette()
-    dlgPalette = createObject("roSGNode", "RSGPalette")
-    dlgPalette.colors = {
-        DialogBackgroundColor: chainLookupReturn(m.global.session, "user.settings.colorDialogBackground", ColorPalette.ELEMENTBACKGROUND),
-        DialogFocusColor: chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT),
-        DialogFocusItemColor: chainLookupReturn(m.global.session, "user.settings.colorDialogSelectedText", ColorPalette.WHITE),
-        DialogSecondaryTextColor: ColorPalette.RED,
-        DialogSecondaryItemColor: chainLookupReturn(m.global.session, "user.settings.colorDialogBorderLine", ColorPalette.LIGHTBLUE),
-        DialogTextColor: chainLookupReturn(m.global.session, "user.settings.colorDialogText", ColorPalette.WHITE)
-    }
-
-    m.top.palette = dlgPalette
-end sub
