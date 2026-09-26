@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, rm, glob } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Writable } from 'node:stream';
@@ -175,10 +175,18 @@ assert.match(homeRows, /task\.endpoint = "\/UserItems\/Resume"/, 'Continue Watch
 assert.match(homeRows, /task\.endpoint = "\/UserViews"/, 'Library discovery uses the canonical user-views route');
 assert.doesNotMatch(homeRows, /baseUrl \+ "\/Items\//, 'Remote row artwork uses the shared builder');
 
+const legacyUserRoute = /["`]\/?Users\/(?:\{0\}|\{userId\}|\$\{[^}]+\})\/(?:Items|Views|FavoriteItems|PlayedItems)\b/i;
+let scannedRoutes = 0;
+for await (const file of glob('{components,source}/**/*.{bs,xml}')) {
+    scannedRoutes++;
+    assert.doesNotMatch(await readFile(file, 'utf8'), legacyUserRoute, `${file} uses the flat user routes`);
+}
+assert.ok(scannedRoutes > 100, 'The route scan found the app sources');
+
 const seerrTask = await readFile('components/seerr/SeerrAPITask.bs', 'utf8');
 assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParams\)/, 'Plugin proxy preserves saved server query through shared compositor');
 
 const extrasTask = await readFile('components/extras/LoadExtrasTask.bs', 'utf8');
 assert.match(extrasTask, /function multiServerExtrasImageURL\([^]*?return buildURLForServer\(/, 'Remote detail extras images use the shared builder');
 assert.doesNotMatch(extrasTask, /normalizedServerUrl \+ "\/Items\//, 'Remote detail extras do not concatenate server URLs');
-process.stdout.write('PASS: Jellyfin review regressions (24 checks)\n');
+process.stdout.write('PASS: Jellyfin review regressions (25 checks)\n');
