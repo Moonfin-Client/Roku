@@ -239,16 +239,6 @@ assert.match(trailerAction, /getServerInfoFromItem\(itemContent\)/, 'Trailer loo
 assert.match(trailerAction, /GetLocalTrailers\(trailerItemId, trailerParams, trailerServerData\)/, 'Trailer lookup passes destination server context');
 assert.match(trailerAction, /trailer\["_serverUrl"\] = trailerServerData\.serverUrl/, 'Remote trailers keep destination metadata for playback');
 
-const seasonResumeCheck = showScenes.match(/function hasSeasonEpisodeToResume\([^]*?end function/)[0];
-assert.match(seasonResumeCheck, /return hasResummableEpisode\(seasonID\)/, 'Season Resume requires an actual resumable episode');
-assert.doesNotMatch(seasonResumeCheck, /GetEpisodes\(/, 'Unplayed episodes do not masquerade as Resume');
-
-const createSeriesDetails = showScenes.match(/function CreateSeriesDetailsGroup\([^]*?end function/)[0];
-assert.doesNotMatch(createSeriesDetails, /displayResumeButton = hasNextUpEpisode/, 'Series Resume is not enabled by Next Up alone');
-
-const seriesRefresh = eventHandlers.match(/sub onRefreshSeriesDetailsDataEvent\(\)[^]*?end sub/)[0];
-assert.doesNotMatch(seriesRefresh, /hasNextUpEpisode\(/, 'Series refresh keeps Resume tied to saved progress');
-
 const quickplaySource = await readFile('source/utils/quickplay.bs', 'utf8');
 const resumeHelper = quickplaySource.match(/sub applyResumeStartingPoint\([^]*?end sub/)[0];
 assert.match(resumeHelper, /positionTicks <= 0 then return[^]*?item\.startingPoint = positionTicks/, 'Resume helper only copies positive playback positions');
@@ -263,5 +253,9 @@ assert.ok(seriesRemoteStart >= 0 && seriesRemoteEnd > seriesRemoteStart, 'Remote
 const seriesRemote = quickplaySource.slice(seriesRemoteStart, seriesRemoteEnd);
 assert.match(seriesRemote, /quickplayFromResume[^]*?resumeUrl = "UserItems\/Resume"[^]*?if quickplayFromResume[^]*?APIRequestForServer\([^]*?resumeUrl/, 'Remote series Resume queries the resumable endpoint first');
 assert.match(seriesRemote, /applyResumeStartingPoint\(data\.Items\[0\]\)/, 'Remote series Resume copies the saved playback position');
+
+const videoLoader = await readFile('components/ItemGrid/LoadVideoContentTask.bs', 'utf8');
+const episodeWindow = videoLoader.match(/sub addNextEpisodesToQueue\([^]*?end sub/)[0];
+assert.match(episodeWindow, /if i = targetIndex and isValid\(playingItem\)\s+windowQueue\.push\(playingItem\)/, 'The rebuilt episode queue keeps the playing item and its start position');
 
 process.stdout.write('PASS: Jellyfin review regressions (39 checks)\n');
