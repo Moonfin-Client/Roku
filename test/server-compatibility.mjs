@@ -25,11 +25,31 @@ brs.types.RoString.prototype.getMethod = function (name) {
     return originalGetMethod.call(this, name);
 };
 
+// brs hands ReplaceAll its replacement untouched, where the device reads \1 as a captured group.
+const originalRegexMethod = brs.types.RoRegex.prototype.getMethod;
+brs.types.RoRegex.prototype.getMethod = function (name) {
+    if (name.toLowerCase() !== 'replaceall') return originalRegexMethod.call(this, name);
+    return new brs.types.Callable(name, {
+        signature: {
+            args: [
+                new brs.types.StdlibArgument('str', brs.types.ValueKind.String),
+                new brs.types.StdlibArgument('replacement', brs.types.ValueKind.String),
+            ],
+            returns: brs.types.ValueKind.String,
+        },
+        impl: (_interpreter, str, replacement) => {
+            const global = new RegExp(this.jsRegex.source, this.jsRegex.flags.replace('g', '') + 'g');
+            return new brs.types.BrsString(str.value.replace(global, replacement.value.replace(/\\(\d)/g, '$$$1')));
+        },
+    });
+};
+
 // Execute production functions after BrighterScript transpilation. Only the
 // device registry and authentication context are replaced with deterministic fixtures.
 const selections = {
     'source/utils/serverCompatibility.bs': null,
     'source/utils/accentFolding.bs': null,
+    'source/utils/logRedaction.bs': null,
     'source/utils/detailCompatibility.bs': null,
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions'],
     'source/enums/VideoType.bs': null,
@@ -73,6 +93,7 @@ source += '\n' + await readFile('test/emby-details.bs', 'utf8');
 source += '\n' + await readFile('test/server-compatibility.bs', 'utf8');
 source += '\n' + await readFile('test/review-regressions.bs', 'utf8');
 source += '\n' + await readFile('test/accent-folding.bs', 'utf8');
+source += '\n' + await readFile('test/log-redaction.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
