@@ -5003,5 +5003,15 @@
         <extracomment>Shown when a downloaded subtitle hasnt shown up on the video after waiting for it</extracomment>
         <translation>The subtitle was downloaded but has not appeared yet</translation>
     </message>
+    <message>
+        <source>Show Clock</source>
+        <extracomment>Setting that shows or hides the clock in the top bar and the sidebar</extracomment>
+        <translation>Show Clock</translation>
+    </message>
+    <message>
+        <source>Show or hide the clock in the top bar and the sidebar</source>
+        <extracomment>Description of the Show Clock setting</extracomment>
+        <translation>Show or hide the clock in the top bar and the sidebar</translation>
+    </message>
 </context>
 </TS>
