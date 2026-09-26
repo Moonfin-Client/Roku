@@ -1,0 +1,637 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/liveTvGuide.bs"
+import "pkg:/source/utils/misc.bs"
+
+const CARD_WIDTH = 300
+const CARD_THUMB_HEIGHT = 168
+const CARD_GAP = 18
+const RAIL_PAD = 90
+const RAIL_HEIGHT = 240
+const ROW_TOP_GAP = 18
+const BODY_TOP = 95
+const BODY_BOTTOM_PAD = 36
+const PILL_HEIGHT = 44
+const RECORDING_DANGER = "#F44336"
+
+sub init()
+    m.top.optionsAvailable = false
+    m.top.overhangVisible = false
+
+    m.body = m.top.findNode("body")
+    m.title = m.top.findNode("title")
+    m.pills = m.top.findNode("pills")
+    m.empty = m.top.findNode("empty")
+    m.spinner = m.top.findNode("spinner")
+
+    liveTvGuide.SetFont(m.title, 39, true)
+    m.title.text = tr("Recordings")
+    liveTvGuide.SetFont(m.empty, 21, false)
+
+    m.rows = invalid
+    m.timers = []
+    m.seriesTimers = []
+    m.activeTab = "recordings"
+    m.area = "pills"
+    m.pillIndex = 0
+    m.rowIndex = 0
+    m.rails = []
+    m.bodyScroll = 0
+    m.dialog = invalid
+    m.selected = invalid
+    m.tasks = []
+
+    buildPills()
+    sendRequest({ kind: "recordings" })
+end sub
+
+sub OnScreenShown(_isReturning = false as boolean)
+    if isValid(m.dialog)
+        m.dialog.setFocus(true)
+    else
+        m.top.setFocus(true)
+    end if
+end sub
+
+sub sendRequest(body as object)
+    task = CreateObject("roSGNode", "LiveTvRequestTask")
+    task.request = body
+    task.observeField("response", "onResponse")
+    task.control = "RUN"
+    m.tasks.push(task)
+end sub
+
+sub onResponse(event as object)
+    task = event.getRoSGNode()
+    task.unobserveField("response")
+    kept = []
+    for each running in m.tasks
+        if not running.isSameNode(task) then kept.push(running)
+    end for
+    m.tasks = kept
+
+    response = event.getData()
+    if response.kind <> "recordings" and not response.ok
+        if isValid(m.dialog) then m.dialog.busy = false
+        return
+    end if
+
+    if response.kind = "recordings"
+        m.spinner.visible = false
+        m.rows = response.rows
+        m.timers = response.timers ?? []
+        m.seriesTimers = response.seriesTimers ?? []
+        buildPills()
+        buildBody()
+    else if response.kind = "deleteItem"
+        for each name in m.rows
+            m.rows[name] = withoutId(m.rows[name], response.tag.id)
+        end for
+        finishAction()
+    else if response.kind = "cancelTimer"
+        m.timers = withoutId(m.timers, response.tag.id)
+        finishAction()
+    else if response.kind = "cancelSeriesTimer"
+        m.seriesTimers = withoutId(m.seriesTimers, response.tag.id)
+        finishAction()
+    end if
+end sub
+
+function withoutId(items as object, id as string) as object
+    kept = []
+    for each item in items
+        if item.Id <> id then kept.push(item)
+    end for
+    return kept
+end function
+
+sub finishAction()
+    closeDialog()
+    buildPills()
+    buildBody()
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' The header
+' ------------------------------------------------------------------------------------------------
+
+function recordingsCount() as integer
+    if not isValid(m.rows) then return 0
+    total = 0
+    for each name in ["recent", "series", "movies", "sports", "kids"]
+        total += (m.rows[name] ?? []).count()
+    end for
+    return total
+end function
+
+sub buildPills()
+    m.pills.removeChildrenIndex(m.pills.getChildCount(), 0)
+    specs = [
+        { tab: "recordings", text: tr("Recordings") + " (" + recordingsCount().toStr() + ")" },
+        { tab: "schedule", text: tr("Schedule") + " (" + m.timers.count().toStr() + ")" },
+        { tab: "series", text: tr("Series Recordings") + " (" + m.seriesTimers.count().toStr() + ")" },
+        { tab: "back", text: "" }
+    ]
+    m.pillNodes = []
+    for each spec in specs
+        pill = CreateObject("roSGNode", "Group")
+        fill = CreateObject("roSGNode", "Poster")
+        fill.uri = "pkg:/images/livetv/fill22.9.png"
+        pill.appendChild(fill)
+        label = invalid
+        icon = invalid
+        if spec.tab = "back"
+            icon = CreateObject("roSGNode", "Poster")
+            icon.uri = "pkg:/images/livetv/back.png"
+            icon.width = 27
+            icon.height = 27
+            icon.translation = [21, (PILL_HEIGHT - 27) / 2]
+            pill.appendChild(icon)
+            width = 27 + 42
+        else
+            label = CreateObject("roSGNode", "Label")
+            liveTvGuide.SetFont(label, 20, false)
+            label.text = spec.text
+            label.height = PILL_HEIGHT
+            label.vertAlign = "center"
+            label.translation = [21, 0]
+            pill.appendChild(label)
+            width = label.boundingRect().width + 42
+        end if
+        fill.width = width
+        fill.height = PILL_HEIGHT
+        m.pills.appendChild(pill)
+        m.pillNodes.push({ tab: spec.tab, group: pill, fill: fill, label: label, icon: icon, width: width })
+    end for
+
+    ' Right aligned, with the back arrow further out than the gap between the tabs
+    right = 1920 - 36
+    for i = m.pillNodes.count() - 1 to 0 step -1
+        pill = m.pillNodes[i]
+        right -= pill.width
+        pill.group.translation = [right, 30 + (47 - PILL_HEIGHT) / 2]
+        if i = m.pillNodes.count() - 1 then right -= 18 else right -= 12
+    end for
+    drawPills()
+end sub
+
+sub drawPills()
+    for i = 0 to m.pillNodes.count() - 1
+        pill = m.pillNodes[i]
+        focused = m.area = "pills" and i = m.pillIndex
+        selected = pill.tab = m.activeTab
+        ink = "#FFFFFFCC"
+        if focused
+            pill.fill.blendColor = "#" + GUIDE_ACCENT
+            ink = "#FFFFFF"
+        else if selected
+            pill.fill.blendColor = liveTvGuide.Tint(GUIDE_ACCENT, 0.7)
+            ink = "#FFFFFF"
+        else
+            pill.fill.blendColor = "#FFFFFF1A"
+        end if
+        if isValid(pill.label) then pill.label.color = ink
+        if isValid(pill.icon) then pill.icon.blendColor = ink
+    end for
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' The body
+' ------------------------------------------------------------------------------------------------
+
+function joinParts(parts as object) as string
+    kept = []
+    for each part in parts
+        if isValidAndNotEmpty(part) then kept.push(part)
+    end for
+    return kept.join(" • ")
+end function
+
+' A Thumb tag goes through the backdrop endpoint, then the primary image, then the parent's
+' backdrop, and last the placeholder icon
+function recordingImageUrl(item as dynamic) as string
+    if not isValid(item) then return ""
+    if isValidAndNotEmpty(chainLookupReturn(item, "ImageTags.Thumb", "")) then return buildURL(Substitute("/Items/{0}/Images/Backdrop/0", item.Id), { maxWidth: 600 }) ?? ""
+    if isValidAndNotEmpty(chainLookupReturn(item, "ImageTags.Primary", "")) then return buildURL(Substitute("/Items/{0}/Images/Primary", item.Id), { maxHeight: 450 }) ?? ""
+    parentThumb = item.LookupCI("ParentThumbItemId")
+    if isValidAndNotEmpty(parentThumb) then return buildURL(Substitute("/Items/{0}/Images/Backdrop/0", parentThumb), { maxWidth: 600 }) ?? ""
+    return ""
+end function
+
+function friendlyDate(moment as integer) as string
+    diff = Int((liveTvGuide.StartOfDay(moment) - liveTvGuide.StartOfDay(liveTvGuide.NowSeconds()) + 43200) / 86400)
+    if diff = 0 then return tr("Today")
+    if diff = 1 then return tr("Tomorrow")
+    if diff = -1 then return tr("Yesterday")
+    return liveTvGuide.DayLabel(moment)
+end function
+
+function recordingCard(item as object) as object
+    return { kind: "recording", item: item, imageUrl: recordingImageUrl(item), title: item.LookupCI("Name") ?? "", subtitle: joinParts([item.LookupCI("ChannelName"), item.LookupCI("EpisodeTitle")]), isSeries: false }
+end function
+
+' A timer card leans on its program info for artwork and the episode line
+function timerCard(timer as object) as object
+    info = timer.LookupCI("ProgramInfo")
+    return { kind: "timer", item: timer, imageUrl: recordingImageUrl(info), title: timer.LookupCI("Name") ?? "", subtitle: joinParts([timer.LookupCI("ChannelName"), chainLookupReturn(info, "EpisodeTitle", "")]), isSeries: false }
+end function
+
+function railsForTab() as object
+    rails = []
+    if m.activeTab = "recordings"
+        ' Timers airing within a day open the recordings tab
+        cutoff = liveTvGuide.NowSeconds() + 86400
+        soon = []
+        for each timer in m.timers
+            start = liveTvGuide.ParseTime(timer.LookupCI("StartDate"))
+            if start > 0 and start < cutoff then soon.push(timerCard(timer))
+        end for
+        rails.push({ title: tr("Scheduled in Next 24 Hours"), cards: soon })
+        for each spec in [["recent", "Recent Recordings"], ["series", "TV Series"], ["movies", "Movies"], ["sports", "Sports"], ["kids", "Kids"]]
+            cards = []
+            for each item in m.rows[spec[0]] ?? []
+                cards.push(recordingCard(item))
+            end for
+            rails.push({ title: tr(spec[1]), cards: cards })
+        end for
+    else if m.activeTab = "schedule"
+        groups = {}
+        order = []
+        for each timer in m.timers
+            start = liveTvGuide.ParseTime(timer.LookupCI("StartDate"))
+            if start = 0 then continue for
+            day = liveTvGuide.StartOfDay(start)
+            key = day.toStr()
+            if not groups.DoesExist(key)
+                groups[key] = { day: day, cards: [] }
+                order.push(day)
+            end if
+            groups[key].cards.push(timerCard(timer))
+        end for
+        order.Sort()
+        for each day in order
+            rails.push({ title: friendlyDate(day), cards: groups[day.toStr()].cards })
+        end for
+    else
+        cards = []
+        for each seriesTimer in m.seriesTimers
+            channelText = seriesTimer.LookupCI("ChannelName")
+            if seriesTimer.LookupCI("RecordAnyChannel") = true then channelText = tr("All channels")
+            dayPattern = seriesTimer.LookupCI("DayPattern")
+            if not isString(dayPattern) then dayPattern = ""
+            cards.push({ kind: "seriesTimer", item: seriesTimer, imageUrl: "", title: seriesTimer.LookupCI("Name") ?? "", subtitle: joinParts([channelText, dayPattern]), isSeries: true })
+        end for
+        rails.push({ title: "", cards: cards })
+    end if
+
+    kept = []
+    for each rail in rails
+        if rail.cards.count() > 0 then kept.push(rail)
+    end for
+    return kept
+end function
+
+sub buildBody()
+    m.body.removeChildrenIndex(m.body.getChildCount(), 0)
+    m.rails = []
+    m.bodyScroll = 0
+    m.body.translation = [0, BODY_TOP]
+    if not isValid(m.rows) then return
+
+    rails = railsForTab()
+    m.empty.visible = rails.count() = 0
+    if rails.count() = 0
+        messages = { recordings: "No recordings found", schedule: "No scheduled recordings", series: "No series recordings" }
+        m.empty.text = tr(messages[m.activeTab])
+        m.empty.translation = [0, BODY_TOP + 120]
+        if m.area = "rails" then m.area = "pills"
+        drawPills()
+        return
+    end if
+
+    y = 0
+    for each rail in rails
+        y += ROW_TOP_GAP
+        rowTop = y
+        if rail.title <> ""
+            heading = CreateObject("roSGNode", "Label")
+            liveTvGuide.SetFont(heading, 27, true)
+            heading.color = "#FFFFFF"
+            heading.text = rail.title
+            heading.translation = [RAIL_PAD, y]
+            m.body.appendChild(heading)
+            y += heading.boundingRect().height + 12
+        end if
+        track = CreateObject("roSGNode", "Group")
+        track.translation = [0, y + 9]
+        m.body.appendChild(track)
+        cards = []
+        x = RAIL_PAD
+        for each card in rail.cards
+            visual = buildCard(card)
+            visual.group.translation = [x, 0]
+            track.appendChild(visual.group)
+            visual.x = x
+            cards.push(visual)
+            x += CARD_WIDTH + CARD_GAP
+        end for
+        m.rails.push({ track: track, cards: cards, top: rowTop, bottom: y + RAIL_HEIGHT, focus: 0, offset: 0 })
+        y += RAIL_HEIGHT
+    end for
+
+    if m.rowIndex >= m.rails.count() then m.rowIndex = m.rails.count() - 1
+    if m.rowIndex < 0 then m.rowIndex = 0
+    drawFocus()
+end sub
+
+function buildCard(card as object) as object
+    group = CreateObject("roSGNode", "Group")
+    group.opacity = 0.75
+    group.scaleRotateCenter = [CARD_WIDTH / 2, CARD_THUMB_HEIGHT / 2]
+
+    fill = CreateObject("roSGNode", "Poster")
+    fill.uri = "pkg:/images/livetv/fill6.9.png"
+    fill.width = CARD_WIDTH
+    fill.height = CARD_THUMB_HEIGHT
+    fill.blendColor = "#FFFFFF0F"
+    group.appendChild(fill)
+
+    icon = invalid
+    if card.imageUrl <> ""
+        mask = CreateObject("roSGNode", "MaskGroup")
+        mask.maskUri = "pkg:/images/livetv/cardmask.png"
+        mask.maskSize = [CARD_WIDTH, CARD_THUMB_HEIGHT]
+        image = CreateObject("roSGNode", "Poster")
+        image.width = CARD_WIDTH
+        image.height = CARD_THUMB_HEIGHT
+        image.loadDisplayMode = "scaleToZoom"
+        image.uri = card.imageUrl
+        mask.appendChild(image)
+        group.appendChild(mask)
+    else
+        icon = CreateObject("roSGNode", "Poster")
+        icon.width = 72
+        icon.height = 72
+        icon.translation = [(CARD_WIDTH - 72) / 2, (CARD_THUMB_HEIGHT - 72) / 2]
+        if card.isSeries
+            icon.uri = "pkg:/images/livetv/smart_record.png"
+            icon.blendColor = "#FFFFFF26"
+        else
+            icon.uri = "pkg:/images/livetv/dvr.png"
+            icon.blendColor = "#FFFFFF33"
+        end if
+        group.appendChild(icon)
+    end if
+
+    border = CreateObject("roSGNode", "Poster")
+    border.uri = "pkg:/images/livetv/stroke6w3.9.png"
+    border.width = CARD_WIDTH
+    border.height = CARD_THUMB_HEIGHT
+    border.visible = false
+    group.appendChild(border)
+
+    title = CreateObject("roSGNode", "Label")
+    liveTvGuide.SetFont(title, 20, false)
+    title.color = "#FFFFFF"
+    title.width = CARD_WIDTH
+    title.text = card.title
+    title.translation = [0, CARD_THUMB_HEIGHT + 8]
+    group.appendChild(title)
+
+    if card.subtitle <> ""
+        subtitle = CreateObject("roSGNode", "Label")
+        liveTvGuide.SetFont(subtitle, 16, false)
+        subtitle.color = "#FFFFFF80"
+        subtitle.width = CARD_WIDTH
+        subtitle.text = card.subtitle
+        subtitle.translation = [0, CARD_THUMB_HEIGHT + 8 + title.boundingRect().height + 2]
+        group.appendChild(subtitle)
+    end if
+
+    return { card: card, group: group, border: border, icon: icon, x: 0 }
+end function
+
+sub drawFocus()
+    drawPills()
+    for r = 0 to m.rails.count() - 1
+        rail = m.rails[r]
+        for c = 0 to rail.cards.count() - 1
+            visual = rail.cards[c]
+            focused = m.area = "rails" and r = m.rowIndex and c = rail.focus
+            ' Resting cards sit dimmed, and the focused one comes up to full strength
+            visual.group.opacity = 0.75
+            visual.group.scale = [1, 1]
+            if focused
+                visual.group.opacity = 1
+                visual.group.scale = [1.08, 1.08]
+            end if
+            visual.border.visible = focused
+            if isValid(visual.icon) and visual.card.isSeries
+                visual.icon.blendColor = "#FFFFFF26"
+                if focused then visual.icon.blendColor = "#FFFFFF66"
+            end if
+        end for
+    end for
+    if m.area = "rails" then scrollIntoView()
+end sub
+
+' Scrolls the nearest way, so the focused card and its row are just in view
+sub scrollIntoView()
+    rail = m.rails[m.rowIndex]
+    visual = rail.cards[rail.focus]
+    viewLeft = rail.offset + RAIL_PAD
+    viewRight = rail.offset + 1920 - RAIL_PAD
+    if visual.x < viewLeft
+        rail.offset = visual.x - RAIL_PAD
+    else if visual.x + CARD_WIDTH > viewRight
+        rail.offset = visual.x + CARD_WIDTH - (1920 - RAIL_PAD)
+    end if
+    if rail.offset < 0 then rail.offset = 0
+    rail.track.translation = [-rail.offset, rail.track.translation[1]]
+
+    viewportHeight = 1080 - BODY_TOP - BODY_BOTTOM_PAD
+    if rail.top < m.bodyScroll
+        m.bodyScroll = rail.top
+    else if rail.bottom > m.bodyScroll + viewportHeight
+        m.bodyScroll = rail.bottom - viewportHeight
+    end if
+    m.body.translation = [0, BODY_TOP - m.bodyScroll]
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Popups
+' ------------------------------------------------------------------------------------------------
+
+sub openDialog(model as object)
+    m.dialog = CreateObject("roSGNode", "LiveTvGuideDialog")
+    m.dialog.observeField("action", "onDialogAction")
+    m.dialog.observeField("dismissed", "closeDialog")
+    m.top.appendChild(m.dialog)
+    m.dialog.model = model
+    m.dialog.setFocus(true)
+end sub
+
+sub closeDialog()
+    if not isValid(m.dialog) then return
+    m.dialog.unobserveField("action")
+    m.dialog.unobserveField("dismissed")
+    m.top.removeChild(m.dialog)
+    m.dialog = invalid
+    m.selected = invalid
+    m.top.setFocus(true)
+end sub
+
+sub openCard(card as object)
+    m.selected = card
+    item = card.item
+    if card.kind = "recording"
+        runTime = item.LookupCI("RunTimeTicks")
+        duration = ""
+        if isValid(runTime) and runTime > 0 then duration = durationText(runTime)
+        openDialog({
+            type: "recording",
+            width: 840,
+            titleGap: 18,
+            dangerColor: RECORDING_DANGER.Mid(1),
+            title: item.LookupCI("Name") ?? "",
+            subtitle: item.LookupCI("EpisodeTitle") ?? "",
+            overview: item.LookupCI("Overview") ?? "",
+            meta: joinParts([item.LookupCI("ChannelName"), duration]),
+            buttons: [
+                { id: "play", label: tr("Play"), isDefault: true },
+                { id: "delete", label: tr("Delete"), danger: true },
+                { id: "close", label: tr("Close") }
+            ]
+        })
+        return
+    end if
+
+    name = card.title
+    title = tr("Cancel Series Recording?")
+    text = tr("Stop recording {name}?")
+    if card.kind = "timer"
+        title = tr("Cancel Recording?")
+        text = tr("Cancel scheduled recording of {name}?")
+    end if
+    ' No is the default target so a stray OK press cant cancel anything
+    openDialog({
+        type: "confirm",
+        width: 700,
+        titleGap: 18,
+        surfaceColor: "#1A1A2EFF",
+        dangerColor: RECORDING_DANGER.Mid(1),
+        title: title,
+        text: text.Replace("{name}", chr(34) + name + chr(34)),
+        buttons: [
+            { id: "no", label: tr("No"), isDefault: true },
+            { id: "yes", label: tr("Yes, Cancel"), danger: true }
+        ]
+    })
+end sub
+
+function durationText(ticks as dynamic) as string
+    minutes = Int(ticks / 600000000)
+    hours = Int(minutes / 60)
+    minutes = minutes mod 60
+    if hours > 0 and minutes > 0 then return hours.toStr() + "h " + minutes.toStr() + "m"
+    if hours > 0 then return hours.toStr() + "h"
+    return minutes.toStr() + "m"
+end function
+
+sub onDialogAction(event as object)
+    action = event.getData()
+    card = m.selected
+    if not isValid(card) then return
+    id = card.item.Id
+    if action.id = "close" or action.id = "no"
+        closeDialog()
+    else if action.id = "play"
+        closeDialog()
+        queue = m.global.queueManager
+        queue.callFunc("clear")
+        queue.callFunc("push", { id: id, type: "video" })
+        queue.callFunc("playQueue")
+    else if action.id = "delete"
+        m.dialog.busy = true
+        sendRequest({ kind: "deleteItem", itemId: id, tag: { id: id } })
+    else if action.id = "yes"
+        m.dialog.busy = true
+        if card.kind = "timer"
+            sendRequest({ kind: "cancelTimer", timerId: id, tag: { id: id } })
+        else
+            sendRequest({ kind: "cancelSeriesTimer", timerId: id, tag: { id: id } })
+        end if
+    end if
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Keys
+' ------------------------------------------------------------------------------------------------
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if isValid(m.dialog) then return true
+
+    if key = KeyCode.BACK
+        m.global.sceneManager.callFunc("popScene")
+        return true
+    end if
+
+    if m.area = "pills"
+        if key = KeyCode.LEFT and m.pillIndex > 0
+            m.pillIndex--
+        else if key = KeyCode.RIGHT and m.pillIndex < m.pillNodes.count() - 1
+            m.pillIndex++
+        else if key = KeyCode.DOWN and m.rails.count() > 0
+            m.area = "rails"
+            m.rowIndex = 0
+        else if key = KeyCode.OK
+            picked = m.pillNodes[m.pillIndex].tab
+            if picked = "back"
+                m.global.sceneManager.callFunc("popScene")
+                return true
+            end if
+            m.activeTab = picked
+            m.rowIndex = 0
+            buildPills()
+            buildBody()
+        end if
+        drawFocus()
+        return true
+    end if
+
+    rail = m.rails[m.rowIndex]
+    if key = KeyCode.LEFT and rail.focus > 0
+        rail.focus--
+    else if key = KeyCode.RIGHT and rail.focus < rail.cards.count() - 1
+        rail.focus++
+    else if key = KeyCode.UP
+        if m.rowIndex = 0
+            m.area = "pills"
+        else
+            m.rowIndex--
+            m.rails[m.rowIndex].focus = nearestCard(m.rails[m.rowIndex], rail.cards[rail.focus].x - rail.offset)
+        end if
+    else if key = KeyCode.DOWN and m.rowIndex < m.rails.count() - 1
+        m.rowIndex++
+        m.rails[m.rowIndex].focus = nearestCard(m.rails[m.rowIndex], rail.cards[rail.focus].x - rail.offset)
+    else if key = KeyCode.OK
+        openCard(rail.cards[rail.focus].card)
+    end if
+    drawFocus()
+    return true
+end function
+
+' The card in another rail that sits closest on screen to where focus was
+function nearestCard(rail as object, screenX as float) as integer
+    best = 0
+    bestDistance = 100000
+    for i = 0 to rail.cards.count() - 1
+        distance = abs(rail.cards[i].x - rail.offset - screenX)
+        if distance < bestDistance
+            bestDistance = distance
+            best = i
+        end if
+    end for
+    return best
+end function

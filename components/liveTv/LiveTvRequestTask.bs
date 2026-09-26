@@ -1,0 +1,199 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/liveTvGuide.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+
+' Past this many characters of channel ids some servers reject the URL outright rather than
+' answer with a shorter guide, so the batch travels in a body instead
+const CHANNEL_IDS_URL_LIMIT = 1800
+
+sub init()
+    m.top.functionName = "runRequest"
+end sub
+
+sub runRequest()
+    request = m.top.request
+    kind = chainLookupReturn(request, "kind", "")
+    result = { ok: false }
+
+    if kind = "channels"
+        result = loadChannels()
+    else if kind = "programs"
+        result = loadPrograms(request)
+    else if kind = "program"
+        result = loadProgram(request.programId)
+    else if kind = "favorite"
+        result = setFavorite(request.itemId, request.favorite = true)
+    else if kind = "createTimer"
+        result = createTimer(request.programId, false)
+    else if kind = "createSeriesTimer"
+        result = createTimer(request.programId, true)
+    else if kind = "cancelTimer"
+        result = deleteRequest(Substitute("/LiveTv/Timers/{0}", request.timerId))
+    else if kind = "cancelSeriesTimer"
+        result = deleteRequest(Substitute("/LiveTv/SeriesTimers/{0}", request.timerId))
+    else if kind = "recordings"
+        result = loadRecordings()
+    else if kind = "deleteItem"
+        result = deleteRequest(Substitute("/Items/{0}", request.itemId))
+    end if
+
+    result.kind = kind
+    result.tag = chainLookupReturn(request, "tag", invalid)
+    m.top.response = result
+end sub
+
+function sessionUserId() as string
+    return chainLookupReturn(m.global.session, "user.id", "")
+end function
+
+function isoTime(moment as integer) as string
+    stamp = CreateObject("roDateTime")
+    stamp.FromSeconds(moment)
+    return stamp.ToISOString()
+end function
+
+' Without a limit this returns the full lineup, which the guide sorts and filters itself
+function loadChannels() as object
+    req = APIRequest("/LiveTv/Channels", {
+        UserId: sessionUserId(),
+        EnableFavoriteSorting: true,
+        Fields: "ImageTags,UserData",
+        EnableTotalRecordCount: false
+    })
+    answer = requestResponse(req)
+    items = chainLookupReturn(answer, "data.Items", invalid)
+    if not isValid(items) then return { ok: false, error: answer.status.toStr() }
+    return { ok: true, items: items }
+end function
+
+' A program already under way when the guide opens starts before the window, so everything
+' overlapping it is asked for rather than only what fits inside it. User data and images stay out
+' of the answer because nothing in the guide reads them per program.
+function loadPrograms(request as object) as object
+    ids = request.ids ?? []
+    params = {
+        UserId: sessionUserId(),
+        MinEndDate: isoTime(request.from),
+        MaxStartDate: isoTime(request.upto),
+        Fields: "Overview",
+        EnableImages: false,
+        EnableUserData: false,
+        EnableTotalRecordCount: false
+    }
+    ' A category the server can match itself, so a sparse genre can be walked across the whole
+    ' lineup without pulling every channel's schedule
+    categoryFlag = categoryFlagFor(request.category ?? "")
+    if categoryFlag <> "" then params[categoryFlag] = true
+
+    joined = ids.join(",")
+    if Len(joined) > CHANNEL_IDS_URL_LIMIT
+        body = {}
+        body.append(params)
+        body.ChannelIds = ids
+        req = APIRequest("/LiveTv/Programs")
+        if isValid(req) then req.AddHeader("Content-Type", "application/json")
+        answer = requestResponse(req, "POST", FormatJson(body))
+    else
+        params.ChannelIds = joined
+        answer = requestResponse(APIRequest("/LiveTv/Programs", params))
+    end if
+
+    items = chainLookupReturn(answer, "data.Items", invalid)
+    if not isValid(items) then return { ok: false, ids: ids, error: answer.status.toStr() }
+
+    programs = []
+    for each program in items
+        if not isValidAndNotEmpty(program.LookupCI("ChannelId")) then continue for
+        if not isValidAndNotEmpty(program.LookupCI("StartDate")) or not isValidAndNotEmpty(program.LookupCI("EndDate")) then continue for
+        liveTvGuide.StampTimes(program)
+        programs.push(program)
+    end for
+    return { ok: true, ids: ids, programs: programs }
+end function
+
+function categoryFlagFor(category as string) as string
+    flags = { movies: "IsMovie", series: "IsSeries", sports: "IsSports", news: "IsNews", kids: "IsKids" }
+    return flags[category] ?? ""
+end function
+
+' The bulk guide fetch leaves images out to keep its size down, so a program's own art is asked
+' for on its own
+function loadProgram(programId as string) as object
+    answer = requestResponse(APIRequest(Substitute("/LiveTv/Programs/{0}", programId), { UserId: sessionUserId() }))
+    if not isValid(answer.data) then return { ok: false }
+    return { ok: true, program: answer.data }
+end function
+
+function setFavorite(itemId as string, favorite as boolean) as object
+    if isEmbyServer()
+        req = APIRequest(Substitute("/Users/{0}/FavoriteItems/{1}", sessionUserId(), itemId))
+    else
+        req = APIRequest(Substitute("/UserFavoriteItems/{0}", itemId), { userId: sessionUserId() })
+    end if
+    if not isValid(req) then return { ok: false }
+
+    if favorite then return { ok: statusOk(requestResponse(req, "POST", "").status) }
+    req.SetRequest("DELETE")
+    return { ok: statusOk(requestResponse(req).status) }
+end function
+
+' Both timer kinds are built from the server's own defaults for the program rather than by hand.
+' A series timer is only valid fully populated, and a single one then keeps whatever padding the
+' viewer set on the server.
+function createTimer(programId as string, series as boolean) as object
+    defaults = requestResponse(APIRequest("/LiveTv/Timers/Defaults", { ProgramId: programId })).data
+    if type(defaults) = "roAssociativeArray"
+        payload = defaults
+    else if series
+        return { ok: false }
+    else
+        ' Older servers have no defaults route but still take a bare program id
+        payload = {}
+    end if
+    if not isValid(payload.LookupCI("ProgramId")) then payload.ProgramId = programId
+
+    path = "/LiveTv/Timers"
+    if series then path = "/LiveTv/SeriesTimers"
+    req = APIRequest(path)
+    if not isValid(req) then return { ok: false }
+    req.AddHeader("Content-Type", "application/json")
+    return { ok: statusOk(requestResponse(req, "POST", FormatJson(payload)).status) }
+end function
+
+function deleteRequest(path as string) as object
+    req = APIRequest(path)
+    if not isValid(req) then return { ok: false }
+    req.SetRequest("DELETE")
+    return { ok: statusOk(requestResponse(req).status) }
+end function
+
+function statusOk(status as integer) as boolean
+    return status >= 200 and status < 300
+end function
+
+' The recordings screen asks for one category per call, and any one of them can fail on its own,
+' so a server without series flags just loses that rail
+function loadRecordings() as object
+    queries = {
+        recent: { Limit: 40 },
+        series: { Limit: 60, IsSeries: true },
+        movies: { Limit: 60, IsMovie: true },
+        sports: { Limit: 60, IsSports: true },
+        kids: { Limit: 60, IsKids: true }
+    }
+
+    rows = {}
+    for each name in ["recent", "series", "movies", "sports", "kids"]
+        params = { UserId: sessionUserId(), Fields: "ImageTags,Overview", EnableImages: true }
+        params.append(queries[name])
+        rows[name] = chainLookupReturn(requestResponse(APIRequest("/LiveTv/Recordings", params)), "data.Items", [])
+    end for
+
+    return {
+        ok: true,
+        rows: rows,
+        timers: chainLookupReturn(requestResponse(APIRequest("/LiveTv/Timers")), "data.Items", []),
+        seriesTimers: chainLookupReturn(requestResponse(APIRequest("/LiveTv/SeriesTimers")), "data.Items", [])
+    }
+end function

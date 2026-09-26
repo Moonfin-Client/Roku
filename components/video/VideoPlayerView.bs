@@ -18,6 +18,8 @@ import "pkg:/source/utils/blockedContent.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/diagnostics.bs"
 import "pkg:/source/utils/embyFeatures.bs"
+import "pkg:/source/utils/liveTvGuide.bs"
+import "pkg:/source/utils/liveTvLastChannel.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
 
@@ -37,8 +39,17 @@ sub init()
     ' Carries on through the rest of the queue, the way it does in the other clients
     m.subtitleOffset = m.global.queueManager.callFunc("getSubtitleOffset")
 
-    m.LoadProgramDetailsTask = createObject("roSGNode", "LoadProgramDetailsTask")
-    m.LoadProgramDetailsTask.observeField("programDetails", "onProgramDetailsLoaded")
+    m.liveChannel = invalid
+    m.lineup = []
+    m.carouselPrograms = {}
+    m.carousel = invalid
+    m.channelSwitch = invalid
+    m.suppressStopReport = false
+    m.selectionRevision = 0
+    m.liveTasks = []
+    m.top.findNode("liveProgramTimer").observeField("fire", "refreshLiveProgram")
+    m.top.findNode("prewarmTimer").observeField("fire", "prewarmCarousel")
+    m.top.findNode("switchTimer").observeField("fire", "onSwitchTimeout")
 
     activeNav = getActiveNav(m.top.getScene())
     if isValid(activeNav) then activeNav.visible = false
@@ -653,6 +664,16 @@ sub onOSDAction()
         handleShowsyncmenuAction()
         return
     end if
+
+    if action = "showchannels"
+        openCarousel()
+        return
+    end if
+
+    if action = "showguide"
+        openGuide()
+        return
+    end if
 end sub
 
 sub handleShowsyncmenuAction()
@@ -833,13 +854,13 @@ sub onVideoContentLoaded()
         return
     end if
 
-    ' If we have nothing to play, return to previous screen
-    if not isValid(videoContent)
-        showPlaybackErrorDialog(tr("There was an error retrieving the data for this item from the server."))
-        return
-    end if
-
-    if not isValid(videoContent[0])
+    ' If we have nothing to play, return to previous screen. A channel switch goes back to the
+    ' channel that was working instead.
+    if not isValid(videoContent) or not isValid(videoContent[0])
+        if isValid(m.channelSwitch)
+            finishChannelSwitch(false)
+            return
+        end if
         showPlaybackErrorDialog(tr("There was an error retrieving the data for this item from the server."))
         return
     end if
@@ -875,6 +896,11 @@ sub onVideoContentLoaded()
     hideSegmentSkipButton()
 
     m.osd.itemTitleText = m.top.content.title
+
+    ' A Live TV channel shows its channel and program in the controls, and gets the channel carousel
+    m.liveChannel = videoContent[0].liveChannel
+    m.osd.liveMode = isValid(m.liveChannel)
+    if isValid(m.liveChannel) then onLiveChannelTuned()
 
     resetEmbyPreview()
     m.trickplayDataFinal = invalid
@@ -923,8 +949,8 @@ sub onVideoContentLoaded()
         end if
     end if
 
-    ' Attempt to add logo to OSD
-    if isValidAndNotEmpty(videoContent[0].logoImage)
+    ' Attempt to add logo to OSD. A live channel has its badge and name there instead.
+    if isValidAndNotEmpty(videoContent[0].logoImage) and not isValid(m.liveChannel)
         m.osd.logoImage = videoContent[0].logoImage
 
         ' Don't show both the logo and the video title if this isn't an episode or trailer
@@ -1513,7 +1539,9 @@ sub onState()
         m.bufferCheckTimer.ObserveField("fire", "bufferCheck")
     else if isStringEqual(m.top.state, MediaPlaybackState.ERROR)
 
-        if not m.playReported and m.top.transcodeAvailable
+        if isValid(m.channelSwitch)
+            finishChannelSwitch(false)
+        else if not m.playReported and m.top.transcodeAvailable
             m.top.retryWithTranscoding = true ' If playback was not reported, retry with transcoding
             ' Stop playback and exit player
             m.top.control = VideoControl.STOP
@@ -1592,12 +1620,21 @@ sub onState()
             ReportPlayback()
         end if
         m.playbackTimer.control = "start"
+
+        ' The stop from a channel switch always lands before the next channel plays, so one that
+        ' never came cant swallow a later stop
+        m.suppressStopReport = false
+        if isValid(m.channelSwitch) and m.top.id = m.channelSwitch.target.Id then finishChannelSwitch(true)
     else if isStringEqual(m.top.state, MediaPlaybackState.PAUSED)
         m.playbackTimer.control = "stop"
         ReportPlayback()
     else if isStringEqual(m.top.state, MediaPlaybackState.STOPPED)
         m.playbackTimer.control = "stop"
-        ReportPlayback("stop")
+        if m.suppressStopReport
+            m.suppressStopReport = false
+        else
+            ReportPlayback("stop")
+        end if
         m.playReported = false
     else if isStringEqual(m.top.state, MediaPlaybackState.FINISHED)
         m.playbackTimer.control = "stop"
@@ -1721,7 +1758,7 @@ end sub
 
 '
 ' Report playback to server
-sub ReportPlayback(state = "update" as string)
+sub ReportPlayback(state = "update" as string, ownTask = false as boolean)
 
     if m.top.position = invalid then return
 
@@ -1752,6 +1789,11 @@ sub ReportPlayback(state = "update" as string)
 
     ' Report playstate via worker task
     playstateTask = m.global.playstateTask
+    if ownTask
+        ' Held until it finishes, or a task nothing references can be collected mid flight
+        playstateTask = CreateObject("roSGNode", "PlaystateTask")
+        m.ownReportTask = playstateTask
+    end if
     playstateTask.setFields({ status: state, params: params })
     playstateTask.control = TaskControl.RUN
 end sub
@@ -1859,36 +1901,11 @@ sub skipCurrentSegment()
     m.top.seek = seekPosition
 end sub
 
-sub onProgramDetailsLoaded()
-    ' CurrentProgram can be invalid if we're coming from search results for a show that is not currently airing
-    if not isChainValid(m.LoadProgramDetailsTask, "programDetails.json.CurrentProgram") then return
-
-    titleText = string.EMPTY
-
-    if isValidAndNotEmpty(m.LoadProgramDetailsTask.programDetails.json.CurrentProgram.ChannelNumber)
-        titleText += `${tr("CH")} ${m.LoadProgramDetailsTask.programDetails.json.CurrentProgram.ChannelNumber} `
-    end if
-
-    if isValidAndNotEmpty(m.LoadProgramDetailsTask.programDetails.json.CurrentProgram.Name)
-        titleText += m.LoadProgramDetailsTask.programDetails.json.CurrentProgram.Name
-    end if
-
-    m.osd.itemTitleText = titleText
-
-    if isValidAndNotEmpty(m.LoadProgramDetailsTask.programDetails.json.CurrentProgram.EpisodeTitle)
-        m.osd.itemSubtitleText = m.LoadProgramDetailsTask.programDetails.json.CurrentProgram.EpisodeTitle
-    else
-        m.osd.itemSubtitleText = string.EMPTY
-    end if
-
-end sub
-
 sub prepareOSD()
     setSiblingData()
     if m.skipSegmentButton.visible
         hideSegmentSkipButton()
     end if
-    refreshLiveOSDContent()
 end sub
 
 sub showOSD(focusTarget = "seekbar" as string)
@@ -1921,10 +1938,274 @@ sub positionChapterList()
     chapterList.translation = [secondaryPosition[0], chapterListY]
 end sub
 
-sub refreshLiveOSDContent()
-    if not m.top.content.live then return
-    m.LoadProgramDetailsTask.programId = m.top.id
-    m.LoadProgramDetailsTask.control = TaskControl.RUN
+' ------------------------------------------------------------------------------------------------
+' Live TV
+' ------------------------------------------------------------------------------------------------
+
+' The guide data only comes from the signed in server. A channel from another server still gets its
+' card, without a schedule.
+function liveOnSignedInServer() as boolean
+    if not isValid(m.liveChannel) then return false
+    channelServer = m.liveChannel.serverUrl ?? ""
+    if channelServer = "" then return true
+    return LCase(channelServer).Replace("/", "") = LCase(chainLookupReturn(m.global, "session.server.url", "")).Replace("/", "")
+end function
+
+function currentChannelEntry() as object
+    return { Id: m.liveChannel.id, Name: m.liveChannel.name, ChannelNumber: m.liveChannel.number, ImageTags: m.liveChannel.imageTags ?? {} }
+end function
+
+function lineupHas(lineup as dynamic, channelId as string) as boolean
+    if not isValid(lineup) then return false
+    for each channel in lineup
+        if channel.Id = channelId then return true
+    end for
+    return false
+end function
+
+sub sendLiveRequest(request as object, handler as string)
+    task = CreateObject("roSGNode", "LiveTvRequestTask")
+    task.request = request
+    task.observeField("response", handler)
+    task.control = TaskControl.RUN
+    m.liveTasks.push(task)
+end sub
+
+sub releaseLiveTask(task as object)
+    task.unobserveField("response")
+    kept = []
+    for each running in m.liveTasks
+        if not running.isSameNode(task) then kept.push(running)
+    end for
+    m.liveTasks = kept
+end sub
+
+sub onLiveChannelTuned()
+    m.osd.liveChannel = { number: m.liveChannel.number, name: m.liveChannel.name }
+    m.osd.liveProgram = {}
+    m.osd.hasAudioChoice = isValid(m.top.fullAudioData) and m.top.fullAudioData.count() > 1
+    refreshLiveProgram()
+    m.top.findNode("liveProgramTimer").control = TimerControl.START
+
+    ' Every tune is remembered, so the guide opens on it and Back from the guide returns to it
+    if liveOnSignedInServer() then liveTvLastChannel.Remember(m.liveChannel.id)
+    prepareLineup()
+end sub
+
+' The program airing on the channel, for the controls' name, episode line and progress. When
+' nothing covers now, the earliest program in the fetch stands in. A failed or empty fetch leaves
+' whatever was showing.
+sub refreshLiveProgram()
+    if not isValid(m.liveChannel) or not liveOnSignedInServer() then return
+    now = liveTvGuide.NowSeconds()
+    sendLiveRequest({ kind: "programs", ids: [m.liveChannel.id], from: now - 1800, upto: now + 10800, tag: m.liveChannel.id }, "onLiveProgramLoaded")
+end sub
+
+sub onLiveProgramLoaded(event as object)
+    releaseLiveTask(event.getRoSGNode())
+    response = event.getData()
+    if not response.ok or not isValid(m.liveChannel) or response.tag <> m.liveChannel.id then return
+    programs = response.programs
+    if programs.count() = 0 then return
+    programs.SortBy("startSec")
+    program = liveTvGuide.ProgramAiringAt(programs, liveTvGuide.NowSeconds())
+    if not isValid(program) then program = programs[0]
+    m.osd.liveProgram = program
+end sub
+
+' The lineup is the guide's, in the guide's order, when playback started there. Anywhere else it is
+' every channel in the saved sort, or just this channel when it isnt in the lineup.
+sub prepareLineup()
+    id = m.liveChannel.id
+    if lineupHas(m.lineup, id)
+        schedulePrewarm()
+        return
+    end if
+    guideLineup = m.global.queueManager.callFunc("getLiveTvLineup")
+    if lineupHas(guideLineup, id)
+        m.lineup = guideLineup
+        schedulePrewarm()
+        return
+    end if
+    m.lineup = [currentChannelEntry()]
+    if liveOnSignedInServer() then sendLiveRequest({ kind: "channels" }, "onLineupLoaded")
+end sub
+
+sub onLineupLoaded(event as object)
+    releaseLiveTask(event.getRoSGNode())
+    response = event.getData()
+    if not response.ok or not isValid(m.liveChannel) then return
+    channels = liveTvGuide.SortChannels(response.items, liveTvGuide.NormalizeSort(m.global.session.user.settings["livetv.channelSortBy"]))
+    if lineupHas(channels, m.liveChannel.id) then m.lineup = channels
+    schedulePrewarm()
+end sub
+
+' A tune is often one step of channel surfing, so the fetch waits for it to settle rather than
+' firing on every step
+sub schedulePrewarm()
+    if m.lineup.count() < 2 or not liveOnSignedInServer() then return
+    timer = m.top.findNode("prewarmTimer")
+    timer.control = TimerControl.STOP
+    timer.control = TimerControl.START
+end sub
+
+' Keeps the carousel's guide data loaded while it is closed, so the first Up press opens onto real
+' cards instead of placeholders
+sub prewarmCarousel()
+    if not isValid(m.liveChannel) then return
+    missing = []
+    for each id in liveTvGuide.CarouselNeighborhood(m.lineup, m.liveChannel.id, 4)
+        if not m.carouselPrograms.DoesExist(id) then missing.push(id)
+    end for
+    if missing.count() = 0 then return
+    start = liveTvGuide.LeftEdge(liveTvGuide.NowSeconds())
+    sendLiveRequest({ kind: "programs", ids: missing, from: start, upto: start + liveTvGuide.DefaultWindow() }, "onPrewarmLoaded")
+end sub
+
+sub onPrewarmLoaded(event as object)
+    releaseLiveTask(event.getRoSGNode())
+    response = event.getData()
+    if not response.ok then return
+    for each id in response.ids
+        m.carouselPrograms[id] = []
+    end for
+    for each program in response.programs
+        id = program.LookupCI("ChannelId")
+        list = m.carouselPrograms[id] ?? []
+        list.push(program)
+        m.carouselPrograms[id] = list
+    end for
+end sub
+
+sub openCarousel()
+    if isValid(m.carousel) or not isValid(m.liveChannel) then return
+    m.carouselPriorOsd = m.osd.visible
+    ' The strip takes every key while it shows, so nothing behind it should hold focus
+    handleHideAction(false)
+
+    m.carousel = CreateObject("roSGNode", "ChannelCarousel")
+    m.carousel.observeField("selected", "onCarouselSelected")
+    m.carousel.observeField("dismissed", "onCarouselDismissed")
+    m.carousel.observeField("showControls", "onCarouselShowControls")
+    m.top.appendChild(m.carousel)
+    m.carousel.programs = m.carouselPrograms
+    m.carousel.selectionRevision = m.selectionRevision
+    m.carousel.currentChannelId = m.liveChannel.id
+    m.carousel.model = { lineup: m.lineup, currentChannelId: m.liveChannel.id, sortBy: m.global.session.user.settings["livetv.channelSortBy"] }
+    m.carousel.setFocus(true)
+end sub
+
+' Hands back to the controls as they were, or opens them on play and pause when Down asked for them
+sub closeCarousel(revealControls = false as boolean)
+    if not isValid(m.carousel) then return
+    m.carousel.unobserveField("selected")
+    m.carousel.unobserveField("dismissed")
+    m.carousel.unobserveField("showControls")
+    ' Focus comes back to the player before the strip goes, since removing the focused node lets
+    ' the firmware put focus anywhere
+    m.top.setFocus(true)
+    m.top.removeChild(m.carousel)
+    m.carousel = invalid
+    if revealControls or m.carouselPriorOsd
+        prepareOSD()
+        showOSD("transport")
+    end if
+end sub
+
+sub onCarouselDismissed()
+    closeCarousel()
+end sub
+
+sub onCarouselShowControls()
+    closeCarousel(true)
+end sub
+
+' One switch at a time, and picking the channel already playing just closes the carousel
+sub onCarouselSelected(event as object)
+    channel = event.getData()
+    if isValid(m.channelSwitch) or not isValid(m.liveChannel) then return
+    if channel.Id = m.liveChannel.id
+        closeCarousel()
+        return
+    end if
+    startChannelSwitch(channel, currentChannelEntry())
+end sub
+
+' A channel picked in the carousel has to start playing before the carousel goes away. When it
+' doesnt, the channel that was working plays again and the carousel stays up on it. A restore has
+' no previous channel of its own, so how it ends only ends the switch.
+sub startChannelSwitch(target as object, previous as dynamic)
+    m.channelSwitch = { target: target, previous: previous }
+    timer = m.top.findNode("switchTimer")
+    timer.control = TimerControl.STOP
+    timer.control = TimerControl.START
+    tuneChannel(target)
+end sub
+
+' Loads the next channel into this same player, the way a new audio track reloads the stream
+sub tuneChannel(channel as object)
+    queue = m.global.queueManager
+    guideLineup = queue.callFunc("getLiveTvLineup")
+
+    ' Reported here, since the stop the player sends for itself would name the next channel. It
+    ' goes on a task of its own, because closing a live stream can hold the server up for a while
+    ' and the next channel's start report would be dropped behind it.
+    if m.playReported then ReportPlayback("stop", true)
+    m.suppressStopReport = true
+    m.playReported = false
+    m.playbackRetries = 0
+    m.top.control = VideoControl.STOP
+
+    queue.callFunc("clear")
+    queue.callFunc("setLiveTvLineup", guideLineup)
+    queue.callFunc("push", { id: channel.Id, type: "video" })
+    m.top.id = channel.Id
+    m.LoadMetaDataTask.itemId = channel.Id
+    m.LoadMetaDataTask.itemType = "video"
+    m.LoadMetaDataTask.observeField("content", "onVideoContentLoaded")
+    m.LoadMetaDataTask.control = TaskControl.RUN
+end sub
+
+sub finishChannelSwitch(succeeded as boolean)
+    pending = m.channelSwitch
+    if not isValid(pending) then return
+    m.top.findNode("switchTimer").control = TimerControl.STOP
+    m.channelSwitch = invalid
+    if not succeeded and isValid(m.carousel)
+        m.carousel.notice = tr("Failed to play {name}").Replace("{name}", pending.target.Name ?? "")
+    end if
+    if not isValid(pending.previous) then return
+    if succeeded
+        closeCarousel()
+        return
+    end if
+    m.selectionRevision++
+    if isValid(m.carousel)
+        m.carousel.currentChannelId = pending.previous.Id
+        m.carousel.selectionRevision = m.selectionRevision
+    end if
+    startChannelSwitch(pending.previous, invalid)
+end sub
+
+' A switch that hasnt started playing by then counts as failed
+sub onSwitchTimeout()
+    finishChannelSwitch(false)
+end sub
+
+' The guide button always lands on the guide, not wherever playback was launched from. When the
+' player was opened from the guide, going back to it drops the player so Back doesnt bounce through
+' the guide twice.
+sub openGuide()
+    closeCarousel()
+    m.top.findNode("liveProgramTimer").control = TimerControl.STOP
+    m.global.queueManager.callFunc("clear")
+    m.top.control = VideoControl.STOP
+    sceneManager = m.global.sceneManager
+    sceneManager.callFunc("popScene")
+    active = sceneManager.callFunc("getActiveScene")
+    if not isValid(active) or not active.isSubtype("LiveTvGuide")
+        sceneManager.callFunc("pushScene", CreateObject("roSGNode", "LiveTvGuide"))
+    end if
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
@@ -2083,6 +2364,12 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     else if key = KeyCode.UP and not m.top.trickPlayBar.visible
         if not m.LoadMetaDataTask.isIntro
+            ' Up during live playback opens the channel carousel, even while the stream buffers
+            if isValid(m.liveChannel)
+                openCarousel()
+                return true
+            end if
+
             if not stateAllowsOSD() then return true
 
             prepareOSD()

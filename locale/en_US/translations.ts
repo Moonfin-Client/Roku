@@ -4283,5 +4283,285 @@
         <extracomment>Shown with a lock in place of a title a blocked rating keeps out</extracomment>
         <translation>This isn't available</translation>
     </message>
+    <message>
+        <source>Now</source>
+        <extracomment>Guide button that takes the guide back to the current time</extracomment>
+        <translation>Now</translation>
+    </message>
+    <message>
+        <source>Recordings</source>
+        <extracomment>Guide button that opens recorded and scheduled programs, and the title of that screen</extracomment>
+        <translation>Recordings</translation>
+    </message>
+    <message>
+        <source>Guide Timeline</source>
+        <extracomment>Guide header title while no channel is focused</extracomment>
+        <translation>Guide Timeline</translation>
+    </message>
+    <message>
+        <source>No program data</source>
+        <extracomment>Guide cell for a stretch of time a channel has nothing listed for</extracomment>
+        <translation>No program data</translation>
+    </message>
+    <message>
+        <source>Failed to load guide: {error}</source>
+        <extracomment>Shown in place of the guide when it couldnt load, {error} is the reason</extracomment>
+        <translation>Failed to load guide: {error}</translation>
+    </message>
+    <message>
+        <source>No channels found</source>
+        <extracomment>Shown in place of the guide when no channel matches the filter</extracomment>
+        <translation>No channels found</translation>
+    </message>
+    <message>
+        <source>Sort By</source>
+        <extracomment>Title of the picker that chooses the order of guide channels</extracomment>
+        <translation>Sort By</translation>
+    </message>
+    <message>
+        <source>Channel Number</source>
+        <extracomment>Guide sort option that orders channels by number</extracomment>
+        <translation>Channel Number</translation>
+    </message>
+    <message>
+        <source>Favorites First</source>
+        <extracomment>Guide sort option that puts favorite channels at the top</extracomment>
+        <translation>Favorites First</translation>
+    </message>
+    <message>
+        <source>Select date</source>
+        <extracomment>Title of the picker that moves the guide to another day</extracomment>
+        <translation>Select date</translation>
+    </message>
+    <message>
+        <source>Sports</source>
+        <extracomment>Guide filter and program tag for sports</extracomment>
+        <translation>Sports</translation>
+    </message>
+    <message>
+        <source>News</source>
+        <extracomment>Guide filter and program tag for news</extracomment>
+        <translation>News</translation>
+    </message>
+    <message>
+        <source>Kids</source>
+        <extracomment>Guide filter and program tag for children's programs</extracomment>
+        <translation>Kids</translation>
+    </message>
+    <message>
+        <source>Premiere</source>
+        <extracomment>Guide filter and program tag for a program's first airing</extracomment>
+        <translation>Premiere</translation>
+    </message>
+    <message>
+        <source>Sun</source>
+        <extracomment>Short name for Sunday in the guide's date heading</extracomment>
+        <translation>Sun</translation>
+    </message>
+    <message>
+        <source>Mon</source>
+        <extracomment>Short name for Monday in the guide's date heading</extracomment>
+        <translation>Mon</translation>
+    </message>
+    <message>
+        <source>Tue</source>
+        <extracomment>Short name for Tuesday in the guide's date heading</extracomment>
+        <translation>Tue</translation>
+    </message>
+    <message>
+        <source>Wed</source>
+        <extracomment>Short name for Wednesday in the guide's date heading</extracomment>
+        <translation>Wed</translation>
+    </message>
+    <message>
+        <source>Thu</source>
+        <extracomment>Short name for Thursday in the guide's date heading</extracomment>
+        <translation>Thu</translation>
+    </message>
+    <message>
+        <source>Fri</source>
+        <extracomment>Short name for Friday in the guide's date heading</extracomment>
+        <translation>Fri</translation>
+    </message>
+    <message>
+        <source>Sat</source>
+        <extracomment>Short name for Saturday in the guide's date heading</extracomment>
+        <translation>Sat</translation>
+    </message>
+    <message>
+        <source>Watch</source>
+        <extracomment>Program popup button that plays a program on air now</extracomment>
+        <translation>Watch</translation>
+    </message>
+    <message>
+        <source>Watch channel live</source>
+        <extracomment>Program popup button that tunes the channel when the program isnt on air now</extracomment>
+        <translation>Watch channel live</translation>
+    </message>
+    <message>
+        <source>Favorite Channel</source>
+        <extracomment>Program popup button that adds the channel to favorites</extracomment>
+        <translation>Favorite Channel</translation>
+    </message>
+    <message>
+        <source>Unfavorite Channel</source>
+        <extracomment>Program popup button that removes the channel from favorites</extracomment>
+        <translation>Unfavorite Channel</translation>
+    </message>
+    <message>
+        <source>Program set to record</source>
+        <extracomment>Guide notice once a recording is scheduled</extracomment>
+        <translation>Program set to record</translation>
+    </message>
+    <message>
+        <source>Unable to create recording</source>
+        <extracomment>Guide notice when a recording couldnt be scheduled</extracomment>
+        <translation>Unable to create recording</translation>
+    </message>
+    <message>
+        <source>Recording cancelled</source>
+        <extracomment>Guide notice once a scheduled recording is cancelled</extracomment>
+        <translation>Recording cancelled</translation>
+    </message>
+    <message>
+        <source>Failed to cancel recording</source>
+        <extracomment>Guide notice when a scheduled recording couldnt be cancelled</extracomment>
+        <translation>Failed to cancel recording</translation>
+    </message>
+    <message>
+        <source>Series set to record</source>
+        <extracomment>Guide notice once every episode of a series is scheduled to record</extracomment>
+        <translation>Series set to record</translation>
+    </message>
+    <message>
+        <source>Unable to create series recording</source>
+        <extracomment>Guide notice when a series recording couldnt be scheduled</extracomment>
+        <translation>Unable to create series recording</translation>
+    </message>
+    <message>
+        <source>Series recording cancelled</source>
+        <extracomment>Guide notice once a series recording is cancelled</extracomment>
+        <translation>Series recording cancelled</translation>
+    </message>
+    <message>
+        <source>Failed to cancel series recording</source>
+        <extracomment>Guide notice when a series recording couldnt be cancelled</extracomment>
+        <translation>Failed to cancel series recording</translation>
+    </message>
+    <message>
+        <source>Added to favorite channels</source>
+        <extracomment>Guide notice once a channel is made a favorite</extracomment>
+        <translation>Added to favorite channels</translation>
+    </message>
+    <message>
+        <source>Removed from favorite channels</source>
+        <extracomment>Guide notice once a channel is no longer a favorite</extracomment>
+        <translation>Removed from favorite channels</translation>
+    </message>
+    <message>
+        <source>Failed to update favorite channel</source>
+        <extracomment>Guide notice when a channel's favorite state couldnt be changed</extracomment>
+        <translation>Failed to update favorite channel</translation>
+    </message>
+    <message>
+        <source>LIVE</source>
+        <extracomment>End of the live TV timeline in the player when nothing is listed for the channel</extracomment>
+        <translation>LIVE</translation>
+    </message>
+    <message>
+        <source>Failed to play {name}</source>
+        <extracomment>Channel changer notice when a channel wouldnt play, {name} is the channel</extracomment>
+        <translation>Failed to play {name}</translation>
+    </message>
+    <message>
+        <source>Schedule</source>
+        <extracomment>Recordings screen tab that lists scheduled recordings</extracomment>
+        <translation>Schedule</translation>
+    </message>
+    <message>
+        <source>Series Recordings</source>
+        <extracomment>Recordings screen tab that lists series recordings</extracomment>
+        <translation>Series Recordings</translation>
+    </message>
+    <message>
+        <source>Scheduled in Next 24 Hours</source>
+        <extracomment>Recordings row of recordings due to start within a day</extracomment>
+        <translation>Scheduled in Next 24 Hours</translation>
+    </message>
+    <message>
+        <source>Recent Recordings</source>
+        <extracomment>Recordings row of the newest recordings</extracomment>
+        <translation>Recent Recordings</translation>
+    </message>
+    <message>
+        <source>TV Series</source>
+        <extracomment>Recordings row of recorded episodes</extracomment>
+        <translation>TV Series</translation>
+    </message>
+    <message>
+        <source>Yesterday</source>
+        <extracomment>Recordings heading for scheduled recordings from the day before</extracomment>
+        <translation>Yesterday</translation>
+    </message>
+    <message>
+        <source>All channels</source>
+        <extracomment>Series recording card when it records the series on any channel</extracomment>
+        <translation>All channels</translation>
+    </message>
+    <message>
+        <source>No recordings found</source>
+        <extracomment>Recordings tab with nothing recorded yet</extracomment>
+        <translation>No recordings found</translation>
+    </message>
+    <message>
+        <source>No scheduled recordings</source>
+        <extracomment>Schedule tab with nothing set to record</extracomment>
+        <translation>No scheduled recordings</translation>
+    </message>
+    <message>
+        <source>No series recordings</source>
+        <extracomment>Series Recordings tab with no series set to record</extracomment>
+        <translation>No series recordings</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <extracomment>Recording popup button that deletes the recording</extracomment>
+        <translation>Delete</translation>
+    </message>
+    <message>
+        <source>Cancel Recording?</source>
+        <extracomment>Title of the question asked before a scheduled recording is cancelled</extracomment>
+        <translation>Cancel Recording?</translation>
+    </message>
+    <message>
+        <source>Cancel Series Recording?</source>
+        <extracomment>Title of the question asked before a series recording is cancelled</extracomment>
+        <translation>Cancel Series Recording?</translation>
+    </message>
+    <message>
+        <source>Stop recording {name}?</source>
+        <extracomment>Asked before a series recording is cancelled, {name} is the series</extracomment>
+        <translation>Stop recording {name}?</translation>
+    </message>
+    <message>
+        <source>Cancel scheduled recording of {name}?</source>
+        <extracomment>Asked before a scheduled recording is cancelled, {name} is the program</extracomment>
+        <translation>Cancel scheduled recording of {name}?</translation>
+    </message>
+    <message>
+        <source>Yes, Cancel</source>
+        <extracomment>Button that goes ahead with cancelling a recording</extracomment>
+        <translation>Yes, Cancel</translation>
+    </message>
+    <message>
+        <source>Show Live TV Button</source>
+        <extracomment>Setting that shows the Live TV button in the navigation bar</extracomment>
+        <translation>Show Live TV Button</translation>
+    </message>
+    <message>
+        <source>Show the Live TV button in the navigation bar when the server has a Live TV library</source>
+        <extracomment>Description of the Show Live TV Button setting</extracomment>
+        <translation>Show the Live TV button in the navigation bar when the server has a Live TV library</translation>
+    </message>
 </context>
 </TS>
