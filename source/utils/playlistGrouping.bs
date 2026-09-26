@@ -1,0 +1,117 @@
+import "pkg:/source/utils/misc.bs"
+
+' Sorts a playlist library into one row per kind of playlist. The server tags a music video
+' playlist as audio or as video, and calls songs and audiobooks both audio, so a playlist that
+' could be either is settled by a look at what it holds.
+namespace playlistGrouping
+
+    ' How many of a playlist's items the look covers
+    const SAMPLE_SIZE = 200
+
+    ' The rows, in the order they are listed
+    function Categories() as object
+        return ["Video", "MusicVideo", "Audio", "AudioBook", "Book", "Photo", "Mixed"]
+    end function
+
+    function Label(category as string) as string
+        if category = "Video" then return tr("Video Playlists")
+        if category = "MusicVideo" then return tr("Music Video Playlists")
+        if category = "Audio" then return tr("Audio Playlists")
+        if category = "AudioBook" then return tr("Audiobook Playlists")
+        if category = "Book" then return tr("Book Playlists")
+        if category = "Photo" then return tr("Photo Playlists")
+        return tr("Mixed Playlists")
+    end function
+
+    function forMediaType(mediaType as dynamic) as string
+        for each known in ["Video", "Audio", "Book", "Photo"]
+            if isStringEqual(mediaType, known) then return known
+        end for
+        return "Unknown"
+    end function
+
+    ' The concrete type decides before the media type does
+    function ItemCategory(item as object) as string
+        itemType = item.LookupCI("Type") ?? ""
+        if isStringEqual(itemType, "MusicVideo") then return "MusicVideo"
+        for each videoType in ["Movie", "Episode", "Video", "Trailer", "Clip"]
+            if isStringEqual(itemType, videoType) then return "Video"
+        end for
+        for each known in ["AudioBook", "Audio", "Book", "Photo"]
+            if isStringEqual(itemType, known) then return known
+        end for
+        return playlistGrouping.forMediaType(item.LookupCI("MediaType"))
+    end function
+
+    ' A playlist that reports no count may still hold something
+    function hasItems(item as object) as boolean
+        count = item.LookupCI("ChildCount") ?? item.LookupCI("RecursiveItemCount")
+        if not isValid(count) then return true
+        return count > 0
+    end function
+
+    ' What the list alone says a playlist is, with an empty one counted as mixed
+    function SummaryCategory(item as object) as string
+        if not isStringEqual(item.LookupCI("Type"), "Playlist") then return playlistGrouping.ItemCategory(item)
+        if not playlistGrouping.hasItems(item) then return "Mixed"
+        category = playlistGrouping.forMediaType(item.LookupCI("MediaType"))
+        if category = "Unknown" then return "Mixed"
+        return category
+    end function
+
+    function NeedsItemCheck(item as object) as boolean
+        if not isStringEqual(item.LookupCI("Type"), "Playlist") or not playlistGrouping.hasItems(item) then return false
+        summary = playlistGrouping.SummaryCategory(item)
+        return summary <> "Book" and summary <> "Photo"
+    end function
+
+    ' Music videos alongside songs still make a music video playlist, and anything else that
+    ' mixes kinds is mixed
+    function CategoryFromItems(items as dynamic) as string
+        if not isValidAndNotEmpty(items) then return "Mixed"
+        kinds = []
+        seen = {}
+        for each item in items
+            kind = playlistGrouping.ItemCategory(item)
+            if not seen.DoesExist(kind)
+                seen[kind] = true
+                kinds.push(kind)
+            end if
+        end for
+
+        musicOnly = true
+        for each kind in kinds
+            if kind <> "MusicVideo" and kind <> "Audio" then musicOnly = false
+        end for
+        if seen.DoesExist("MusicVideo") and musicOnly then return "MusicVideo"
+        if kinds.count() = 1 and kinds[0] <> "Unknown" then return kinds[0]
+        return "Mixed"
+    end function
+
+    ' The rows for these playlists, each holding its playlists in the order they came in, with
+    ' no empty row. A playlist sits on what the list says until its look comes back.
+    function Group(items as object, resolved as object) as object
+        buckets = {}
+        for each category in playlistGrouping.Categories()
+            buckets[category] = []
+        end for
+
+        for each item in items
+            json = item.json
+            if not isValid(json) then continue for
+            category = resolved[toString(json.LookupCI("Id"))]
+            if not isValid(category) then category = playlistGrouping.SummaryCategory(json)
+            if not buckets.DoesExist(category) then category = "Mixed"
+            buckets[category].push(item)
+        end for
+
+        groups = []
+        for each category in playlistGrouping.Categories()
+            if buckets[category].count() > 0
+                groups.push({ label: playlistGrouping.Label(category), items: buckets[category] })
+            end if
+        end for
+        return groups
+    end function
+
+end namespace

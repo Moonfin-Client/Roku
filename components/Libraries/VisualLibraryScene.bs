@@ -16,12 +16,20 @@ import "pkg:/source/utils/libraryFilters.bs"
 import "pkg:/source/utils/librarySorts.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/parentalControls.bs"
+import "pkg:/source/utils/playlistGrouping.bs"
 import "pkg:/source/utils/ratingsRow.bs"
 import "pkg:/source/utils/tvKeyboard.bs"
 
 ' The age rating and series status badges, sized around whatever they are given
 const PILL_PAD_X = 18
 const PILL_HEIGHT = 26
+
+' Grouped rows draw the square cards at this size, this far apart, with this much room
+' between rows for the next row's title
+const GROUPED_CARD_SIZE = 240
+const GROUPED_CARD_GAP = 24
+const GROUPED_ROW_GAP = 90
+const PLAYLIST_GROUPING_SETTING = "ui.library.playlistsGroupByType"
 
 ' Return parent collection type
 function getCollectionType() as string
@@ -115,6 +123,21 @@ sub init()
     m.genreData = createSGNode("ContentNode")
     m.genreGrid.observeFieldScoped("itemSelected", "onGenreItemSelected")
     m.genreGrid.content = m.genreData
+
+    m.groupRows = m.top.findNode("groupRows")
+    m.groupRows.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+    m.groupRows.rowLabelFont = "font:SmallestBoldSystemFont"
+    m.groupRows.rowLabelFont.size = 28
+    m.groupRows.observeField("rowItemFocused", "onGroupItemFocused")
+    m.groupRows.observeField("rowItemSelected", "onGroupItemSelected")
+    m.playlistGrouped = false
+    ' What each playlist was found to hold, kept across reloads since a sort doesnt change it
+    m.playlistCategories = {}
+    m.playlistAttempted = {}
+    m.playlistQueue = []
+    m.categoryTask = createObject("roSGNode", "PlaylistCategoryTask")
+    m.categoryTask.observeField("resolved", "onPlaylistCategories")
+    m.categoryTask.observeField("state", "onCategoryTaskState")
 
     ' Item sort
     m.sortField = "SortName"
@@ -519,6 +542,10 @@ sub loadInitialItems()
         end if
     end if
 
+    m.playlistGrouped = playlistGroupingOn()
+    m.itemGrid.visible = not m.playlistGrouped
+    m.groupRows.visible = m.playlistGrouped
+
     applyLetterNav()
     m.emptyText.visible = false
 
@@ -581,6 +608,13 @@ sub applyGridMetrics()
     showText = settingOr(`library_cardText_${libraryId}`, "on") <> "off"
 
     metrics = libraryCard.Metrics(imageSize, imageType, showText, m.hasCardSubtitles = true, detailedSubHeadings())
+    if m.playlistGrouped = true
+        metrics = groupedCardMetrics()
+        m.groupRows.itemSize = [libraryCard.GRID_WIDTH, metrics.cellHeight]
+        m.groupRows.rowItemSize = [[metrics.cellWidth, metrics.cellHeight]]
+        m.groupRows.rowItemSpacing = [[GROUPED_CARD_GAP - (metrics.padX * 2), 0]]
+        m.groupRows.itemSpacing = [0, GROUPED_ROW_GAP]
+    end if
     m.global.addFields({ libraryCardMetrics: metrics })
     m.global.libraryCardMetrics = metrics
 
@@ -591,6 +625,26 @@ sub applyGridMetrics()
 
     m.loadItemsTask.numberOfColumns = metrics.columns
 end sub
+
+' A grouped row draws square cards of one size with only a title under each, whatever the
+' grid is set to
+function groupedCardMetrics() as object
+    metrics = libraryCard.MetricsFor(GROUPED_CARD_SIZE, GROUPED_CARD_SIZE, "square", libraryCard.TEXT_HEIGHT_TITLE_ONLY, detailedSubHeadings(), libraryCard.GRID_WIDTH)
+    metrics.cellWidth = GROUPED_CARD_SIZE + (metrics.padX * 2)
+    metrics.posterWidth = GROUPED_CARD_SIZE
+    return metrics
+end function
+
+function isPlaylistLibrary() as boolean
+    if isValid(m.top.genreFilter) or isValid(m.top.studioFilter) then return false
+    return isStringEqual(getCollectionType(), "playlists")
+end function
+
+' A playlist library shows a row per kind of playlist, unless it is listing its folders
+function playlistGroupingOn() as boolean
+    if not isPlaylistLibrary() or m.folderView = true then return false
+    return get_user_setting_bool(PLAYLIST_GROUPING_SETTING, true)
+end function
 
 function detailedSubHeadings() as boolean
     return settingOr("ui.library.detailedSubHeadings", "true") <> "false"
@@ -660,7 +714,8 @@ sub openSettingsDialog()
         libraryName: m.libraryName.text,
         kind: isValid(m.top.genreFilter) ? tr("Genre") : isValid(m.top.studioFilter) ? tr("Studio") : tr("Libraries"),
         showImageType: not isStringEqual(defaultImageType(), "square"),
-        showFolderView: not isValid(m.top.genreFilter) and not isValid(m.top.studioFilter)
+        showFolderView: not isValid(m.top.genreFilter) and not isValid(m.top.studioFilter),
+        showGroupByType: isPlaylistLibrary()
     }
 
     libraryId = getParentItemId()
@@ -669,7 +724,8 @@ sub openSettingsDialog()
         imageType: settingOr(`library_imageType_${libraryId}`, defaultImageType()),
         cardText: settingOr(`library_cardText_${libraryId}`, "on"),
         letterNav: settingOr(`library_letterNav_${libraryId}`, "on"),
-        folderView: settingOr(`library_folderView_${libraryId}`, "off")
+        folderView: settingOr(`library_folderView_${libraryId}`, "off"),
+        groupByType: get_user_setting_bool(PLAYLIST_GROUPING_SETTING, true) ? "on" : "off"
     }
     m.settingsDialog.callFunc("showDialog")
 
@@ -691,10 +747,14 @@ sub onSettingsApplied(msg as object)
     set_user_setting(`library_letterNav_${libraryId}`, applied.letterNav)
     set_user_setting(`library_folderView_${libraryId}`, applied.folderView)
 
+    wasGrouped = get_user_setting_bool(PLAYLIST_GROUPING_SETTING, true) ? "on" : "off"
+    if isValid(applied.groupByType) then set_user_setting(PLAYLIST_GROUPING_SETTING, applied.groupByType = "on" ? "true" : "false")
+
     applyLetterNav()
 
-    ' Listing folders rather than everything inside them is a different query
-    if not isStringEqual(wasFolderView, applied.folderView)
+    ' Listing folders rather than everything inside them is a different query, and grouping
+    ' needs every playlist loaded
+    if not isStringEqual(wasFolderView, applied.folderView) or (isValid(applied.groupByType) and not isStringEqual(wasGrouped, applied.groupByType))
         resetLoadedItems()
         loadInitialItems()
         return
@@ -706,7 +766,7 @@ end sub
 ' The alphabet strip is the only toolbar item that can be turned off, so focus skips over
 ' it while it is gone
 sub applyLetterNav()
-    m.alphaPicker.visible = settingOr(`library_letterNav_${getParentItemId()}`, "on") <> "off"
+    m.alphaPicker.visible = settingOr(`library_letterNav_${getParentItemId()}`, "on") <> "off" and not m.playlistGrouped
 end sub
 
 sub openSortDialog()
@@ -870,12 +930,14 @@ sub ItemDataLoaded(msg)
     m.itemGrid.opacity = "1"
     m.genreGrid.opacity = "0"
 
-    ' A page arriving behind the open keyboard must not pull focus out of it
-    if not isValid(m.keyboard)
-        m.itemGrid.setFocus(true)
+    ' A page arriving behind the open keyboard must not pull focus out of it, and a later page
+    ' of grouped playlists leaves focus wherever it is
+    if not isValid(m.keyboard) and not (m.playlistGrouped and m.loadedItems > 0)
+        contentList = m.playlistGrouped ? m.groupRows : m.itemGrid
+        contentList.setFocus(true)
         m.genreGrid.setFocus(false)
         group = m.global.sceneManager.callFunc("getActiveScene")
-        group.lastFocus = m.itemGrid
+        group.lastFocus = contentList
     end if
 
     if m.data.getChildCount() = 0
@@ -897,6 +959,11 @@ sub ItemDataLoaded(msg)
     m.loadedItems = m.loadedItems + itemCount
     m.loadedRows = m.loadedItems / m.itemGrid.numColumns
 
+    if m.playlistGrouped
+        refreshPlaylistGroups()
+        queueCategoryChecks(itemData)
+    end if
+
     ' If there are no items to display, show message
     if m.loadedItems = 0
         m.infoGroup.visible = false
@@ -915,6 +982,9 @@ sub ItemDataLoaded(msg)
     restoreDialogFocus(m.global.sceneManager.callFunc("getActiveScene"))
 
     updateStatusBar()
+
+    ' Grouping sorts the whole library, so the rest of it loads without waiting to be scrolled to
+    if m.playlistGrouped then loadMoreData()
 end sub
 
 ' Set Selected Name
@@ -945,6 +1015,11 @@ sub onItemFocused()
         end if
     end if
 
+    showFocusedItem()
+end sub
+
+' The name, facts and backdrop of whatever card has focus
+sub showFocusedItem()
     clearLibraryPluginRatings()
 
     focusedItem = getItemFocused()
@@ -1144,13 +1219,94 @@ end sub
 
 ' Returns Focused Item
 function getItemFocused()
-    if m.itemGrid.isinFocusChain()
+    if m.groupRows.isinFocusChain()
+        return groupRowItemAt(m.groupRows.rowItemFocused)
+    else if m.itemGrid.isinFocusChain()
         return getItemGridFocusedItem(m.itemGrid)
     else if m.genreGrid.isinFocusChain() and m.genreGrid.itemFocused >= 0
         return m.genreGrid.content.getChild(m.genreGrid.itemFocused)
     end if
     return invalid
 end function
+
+sub onGroupItemFocused()
+    showFocusedItem()
+end sub
+
+sub onGroupItemSelected()
+    selected = groupRowItemAt(m.groupRows.rowItemSelected)
+    if not isValid(selected) then return
+    m.top.selectedItem = selected
+    m.top.selectedItem = invalid
+end sub
+
+function groupRowItemAt(position as dynamic) as dynamic
+    if not isValid(position) or position.count() < 2 or not isValid(m.groupRows.content) then return invalid
+    row = m.groupRows.content.getChild(position[0])
+    if not isValid(row) then return invalid
+    return row.getChild(position[1])
+end function
+
+' Each kind of playlist gets its own row, and focus stays on the playlist it was on
+sub refreshPlaylistGroups()
+    focusedId = ""
+    focusedItem = getItemFocused()
+    if isValid(focusedItem) then focusedId = chainLookupReturn(focusedItem, "json.Id", "")
+
+    root = createSGNode("ContentNode")
+    target = invalid
+    rowIndex = 0
+    for each group in playlistGrouping.Group(filteredItems(), m.playlistCategories)
+        row = root.createChild("ContentNode")
+        row.title = group.label
+        row.appendChildren(group.items)
+        if focusedId <> ""
+            for column = 0 to group.items.count() - 1
+                if isStringEqual(chainLookupReturn(group.items[column], "json.Id", ""), focusedId) then target = [rowIndex, column]
+            end for
+        end if
+        rowIndex++
+    end for
+
+    m.groupRows.content = root
+    if isValid(target) then m.groupRows.jumpToRowItem = target
+
+    m.emptyText.visible = root.getChildCount() = 0 and m.loadedItems > 0
+    if m.emptyText.visible then m.emptyText.text = tr("No items found")
+end sub
+
+' Playlists that could be more than one kind are looked into, each only once
+sub queueCategoryChecks(items as object)
+    for each item in items
+        json = item.json
+        if not isValid(json) then continue for
+        playlistId = toString(json.LookupCI("Id"))
+        if playlistGrouping.NeedsItemCheck(json) and not m.playlistAttempted.DoesExist(playlistId)
+            m.playlistAttempted[playlistId] = true
+            m.playlistQueue.push({ id: playlistId, summary: playlistGrouping.SummaryCategory(json) })
+        end if
+    end for
+    runCategoryTask()
+end sub
+
+sub runCategoryTask()
+    if m.playlistQueue.count() = 0 or m.categoryTask.state = "run" then return
+    m.categoryTask.playlists = m.playlistQueue
+    m.playlistQueue = []
+    m.categoryTask.control = TaskControl.RUN
+end sub
+
+sub onPlaylistCategories(event as object)
+    resolved = event.getData()
+    if not isValid(resolved) then return
+    m.playlistCategories.Append(resolved)
+    if m.playlistGrouped then refreshPlaylistGroups()
+end sub
+
+' Playlists that turned up while a look was running go once it finishes
+sub onCategoryTaskState()
+    if m.categoryTask.state = "stop" then runCategoryTask()
+end sub
 
 sub onGenreItemSelected()
     selectedGenre = m.genreGrid.content.getChild(m.genreGrid.itemSelected)
@@ -1182,27 +1338,28 @@ end sub
 ' The query narrows what is already loaded rather than asking the server again, so the
 ' grid answers on every keystroke
 sub applySearchFilter()
-    query = LCase(m.searchQuery)
-
     m.data = createSGNode("ContentNode")
-
-    if query = ""
-        m.data.appendChildren(m.allItems)
-    else
-        matches = []
-        for each item in m.allItems
-            if sortableName(item).instr(query) <> -1 then matches.push(item)
-        end for
-        m.data.appendChildren(matches)
-    end if
+    m.data.appendChildren(filteredItems())
 
     m.itemGrid.content = m.data
+    if m.playlistGrouped then refreshPlaylistGroups()
     updateStatusBar()
 
     ' Handing the grid new content puts focus back on it, which would send the next
     ' keystroke to a poster rather than the keyboard still standing open over it
     if isValid(m.keyboard) then m.keyboard.setFocus(true)
 end sub
+
+function filteredItems() as object
+    query = LCase(m.searchQuery)
+    if query = "" then return m.allItems
+
+    matches = []
+    for each item in m.allItems
+        if sortableName(item).instr(query) <> -1 then matches.push(item)
+    end for
+    return matches
+end function
 
 ' The server sorts on SortName, so a query is matched against that where it exists
 function sortableName(item as object) as string
@@ -1341,6 +1498,19 @@ sub focusToolbarItem(index as integer)
     end if
 end sub
 
+' The list under the toolbar, which is the grouped rows while playlists are grouped
+sub focusContent()
+    if m.loadedItems = 0 then return
+    if m.playlistGrouped
+        m.groupRows.setFocus(true)
+        setLastFocus(m.groupRows)
+        return
+    end if
+    m.itemGrid.setFocus(m.itemGrid.opacity = 1)
+    m.genreGrid.setFocus(m.genreGrid.opacity = 1)
+    setLastFocus(m.itemGrid.opacity = 1 ? m.itemGrid : m.genreGrid)
+end sub
+
 sub unfocusAllToolbarItems()
     m.searchBox.focused = false
     for each btn in m.toolbarButtons
@@ -1417,11 +1587,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
         if isStringEqual(key, KeyCode.DOWN)
             unfocusAllToolbarItems()
-            if m.loadedItems > 0
-                m.itemGrid.setFocus(m.itemGrid.opacity = 1)
-                m.genreGrid.setFocus(m.genreGrid.opacity = 1)
-                setLastFocus(m.itemGrid.opacity = 1 ? m.itemGrid : m.genreGrid)
-            end if
+            focusContent()
             return true
         end if
 
@@ -1463,11 +1629,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
         if isStringEqual(key, KeyCode.DOWN)
             unfocusAllToolbarItems()
-            if m.loadedItems > 0
-                m.itemGrid.setFocus(m.itemGrid.opacity = 1)
-                m.genreGrid.setFocus(m.genreGrid.opacity = 1)
-                setLastFocus(m.itemGrid.opacity = 1 ? m.itemGrid : m.genreGrid)
-            end if
+            focusContent()
             return true
         end if
 
@@ -1478,6 +1640,28 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
 
         return false
+    end if
+
+    ' ---- GROUPED PLAYLIST ROWS ----
+    if m.groupRows.isInFocusChain()
+        focused = m.groupRows.rowItemFocused
+        atTop = not isValid(focused) or focused.count() < 1 or focused[0] = 0
+        if isStringEqual(key, KeyCode.UP) and atTop
+            focusToolbarItem(m.toolbarFocusIndex)
+            return true
+        end if
+
+        if isStringEqual(key, KeyCode.BACK)
+            if not atTop
+                m.groupRows.jumpToRowItem = [0, 0]
+                return true
+            end if
+            reclaimResources()
+            m.global.sceneManager.callfunc("popScene")
+            return true
+        end if
+
+        return handleCardKey(key)
     end if
 
     ' ---- GRID / GENRE GRID NAVIGATION ----
@@ -1502,29 +1686,25 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         end if
 
-        if isStringEqual(key, KeyCode.PLAY)
-            itemToPlay = getItemFocused()
-
-            if isValid(itemToPlay)
-                if isStringEqual(ItemType.PHOTO, chainLookupReturn(itemToPlay, "type", string.EMPTY))
-                    m.itemGrid.itemSelected = m.itemGrid.itemFocused
-                    return true
-                end if
-
-                m.top.quickPlayNode = itemToPlay
-                return true
-            end if
-        end if
-
-        if isStringEqual(key, KeyCode.OPTIONS)
-            focusedItem = getItemFocused()
-            if not isValid(focusedItem) then return false
-
-            return showItemMenu(focusedItem)
-        end if
+        return handleCardKey(key)
     end if
 
     return false
+end function
+
+' Play starts the focused card, or opens it when it is a photo, and Options opens its menu
+function handleCardKey(key as string) as boolean
+    if not isStringEqual(key, KeyCode.PLAY) and not isStringEqual(key, KeyCode.OPTIONS) then return false
+    focusedItem = getItemFocused()
+    if not isValid(focusedItem) then return false
+    if isStringEqual(key, KeyCode.OPTIONS) then return showItemMenu(focusedItem)
+
+    if isStringEqual(ItemType.PHOTO, chainLookupReturn(focusedItem, "type", string.EMPTY))
+        m.itemGrid.itemSelected = m.itemGrid.itemFocused
+    else
+        m.top.quickPlayNode = focusedItem
+    end if
+    return true
 end function
 
 ' =====================================================================
