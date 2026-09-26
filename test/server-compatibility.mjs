@@ -181,4 +181,12 @@ assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParam
 const extrasTask = await readFile('components/extras/LoadExtrasTask.bs', 'utf8');
 assert.match(extrasTask, /function multiServerExtrasImageURL\([^]*?return buildURLForServer\(/, 'Remote detail extras images use the shared builder');
 assert.doesNotMatch(extrasTask, /normalizedServerUrl \+ "\/Items\//, 'Remote detail extras do not concatenate server URLs');
-process.stdout.write('PASS: Jellyfin review regressions (24 checks)\n');
+
+const settingsConfig = await readFile('settings/settings.json', 'utf8');
+assert.match(settingsConfig, /"title": "Server Recommends"/, 'Recommendation source label is server-neutral');
+assert.doesNotMatch(settingsConfig, /Jellyfin Recommends|stock Jellyfin server similarity|What action should Jellyfin take|when Jellyfin is updated|installed on your Jellyfin server/, 'Settings avoid Jellyfin-only wording for shared features');
+
+const settingsScreen = await readFile('components/settings/settings.bs', 'utf8');
+assert.doesNotMatch(settingsScreen, /installed on your Jellyfin server/, 'Plugin connection error is server-neutral');
+
+process.stdout.write('PASS: Jellyfin review regressions (27 checks)\n');
