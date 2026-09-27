@@ -1,5 +1,5 @@
 <h1 align="center">Moonfin for Roku</h1>
-<h3 align="center">Premium Jellyfin client for Roku TV, Roku Streaming Stick, Roku Ultra, and Roku Express devices</h3>
+<h3 align="center">Premium Jellyfin and Emby client for Roku TV, Roku Streaming Stick, Roku Ultra, and Roku Express devices</h3>
 
 ---
 
@@ -16,25 +16,7 @@
 
 > **[Back to main Moonfin project](https://github.com/Moonfin-Client)**
 
-Moonfin for Roku is an enhanced fork of the official Jellyfin Roku client. It brings the full Moonfin experience to Roku hardware. It shares its look, screens, and settings with the other Moonfin clients, and it syncs your preferences through the Moonbase server plugin.
-
-## Emby servers
-
-Connect to Emby through **Emby Connect**, local discovery, or **Enter Server URL**.
-Emby Connect accepts an Emby account and lists its linked servers; direct URL login
-uses a local server account. Reverse-proxy base paths, including `/emby`, are supported.
-Emby Connect credentials are not saved; the app stores the resulting local server
-session through the existing account system. Jellyfin Quick Connect remains available
-for Jellyfin servers.
-
-Core browsing and playback work without a server plugin. The Emby edition of the
-[Moonfin server plugin](https://github.com/Moonfin-Client/Plugin) enables its supported
-settings sync, ratings, themes, messages, diagnostic uploads and Seerr integration.
-Seek previews and intro/credits skipping use thumbnails and chapter markers supplied
-by Emby. Emby does not provide Jellyfin's lyrics API.
-
-See [Emby compatibility and validation](docs/emby-validation.md) for coverage,
-server requirements and the remaining device test matrix.
+Moonfin for Roku is an enhanced fork of the official Jellyfin Roku client that works with both Jellyfin and Emby servers. It brings the full Moonfin experience to Roku hardware. It shares its look, screens, and settings with the other Moonfin clients, and it syncs your preferences through the Moonbase server plugin.
 
 ## Features
 
@@ -43,7 +25,7 @@ server requirements and the remaining device test matrix.
 - **A featured media bar** with six styles: Moonfin, MakD, Banner, Gallery, Bookshelf, and the rounded Aya hero.
 - **A home screen full of rows** you pick and order yourself, with no cap on how many. Choose from Seerr rows, IMDb and TMDB charts, Radarr and Sonarr calendars, Favorites, Collections, Genres, Playlists, Audio, Since You Watched, Rewatch, and Recently Released, plus rows for one specific collection, genre, or playlist. The whole layout syncs.
 - **Seerr built into the detail screen.** Request in HD or 4K with smart season selection, track your requests and issues, filter NSFW content, and get Seerr results in global search. See [Seerr Setup](https://github.com/Moonfin-Client/Roku/wiki/Seerr-Setup).
-- **Multi-server support** with seamless playback across connected Jellyfin and Emby servers.
+- **Multi-server and Emby support**, including Emby Connect, Quick Connect, and seamless playback across your connected Jellyfin and Emby servers.
 - **Settings sync** through the [Moonfin server plugin](https://github.com/Moonfin-Client/Plugin). Your theme, layouts, row order, hidden items, and much more follow you between devices.
 - **Playback done right**: trickplay previews while scrubbing, pre-playback track selection, fast forward and rewind at 3x, 15x, and 50x, HDR10+ and Dolby Vision with fallbacks, manual subtitle sync, theme music, and rearrangeable player buttons.
 - **A setup wizard on first run** that shows live previews built from your own artwork, and skips anything you have already chosen.
@@ -67,7 +49,7 @@ More in the [Screenshots](https://github.com/Moonfin-Client/Roku/wiki/Screenshot
 
 **The easy way:** add [Moonfin](https://channelstore.roku.com/details/92a83c9f4112b76a7bcee3dc076254ca:3251a91bf7af7339652d5409ccfdcb39/moonfin) from the Roku Channel Store. It installs on your devices and updates itself from then on.
 
-Moonfin needs Roku OS 9.1 or newer, which covers most Roku devices from 2018 onwards. Once it's installed, [Getting Started](https://github.com/Moonfin-Client/Roku/wiki/Getting-Started) walks through connecting to your server and signing in with Quick Connect.
+Moonfin needs Roku OS 9.1 or newer, which covers most Roku devices from 2018 onwards. Once it's installed, [Getting Started](https://github.com/Moonfin-Client/Roku/wiki/Getting-Started) walks through connecting to your server and signing in with Quick Connect or Emby Connect.
 
 Seerr is optional. It connects through the [Moonfin server plugin](https://github.com/Moonfin-Client/Plugin), so there is nothing to type on the Roku. See [Seerr Setup](https://github.com/Moonfin-Client/Roku/wiki/Seerr-Setup).
 
@@ -145,6 +127,6 @@ This project inherits the GPL v2 license from the upstream Jellyfin Roku project
 ---
 
 <p align="center">
-   <strong>Moonfin for Roku</strong> is an independent fork and is not affiliated with the Jellyfin project.<br>
+   <strong>Moonfin for Roku</strong> is an independent fork and is not affiliated with the Jellyfin or Emby projects.<br>
    <a href="https://github.com/Moonfin-Client">Back to main Moonfin project</a>
 </p>
