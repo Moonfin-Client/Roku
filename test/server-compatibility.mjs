@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdtemp, rm, glob } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, rm, glob, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Writable } from 'node:stream';
@@ -323,3 +323,13 @@ const identifyDialog = await readFile('components/IdentifyDialog.bs', 'utf8');
 assert.match(identifyDialog, /serverData: m\.top\.serverData[^]*?Items\/RemoteSearch[^]*?serverData: m\.top\.serverData[^]*?Items\/RemoteSearch\/Apply/, 'Identify requests stay on the item server');
 
 process.stdout.write('PASS: Jellyfin review regressions (65 checks)\n');
+
+// Names that share a glyph share one file, so every alias needs its target and no file of its own.
+const achievementIcons = await readFile('source/utils/achievementsIcons.bs', 'utf8');
+const iconAliases = [...achievementIcons.matchAll(/"([a-z0-9_]+)": "([a-z0-9_]+)"/g)];
+assert.ok(iconAliases.length > 0, 'Achievement icon aliases are listed');
+for (const [, alias, target] of iconAliases) {
+    await access(`images/achievements/${target}.png`);
+    await assert.rejects(access(`images/achievements/${alias}.png`), undefined, `${alias} shares ${target}.png rather than keeping a copy`);
+}
+process.stdout.write(`PASS: achievement icon aliases (${iconAliases.length} checks)\n`);
