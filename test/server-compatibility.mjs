@@ -333,3 +333,18 @@ for (const [, alias, target] of iconAliases) {
     await assert.rejects(access(`images/achievements/${alias}.png`), undefined, `${alias} shares ${target}.png rather than keeping a copy`);
 }
 process.stdout.write(`PASS: achievement icon aliases (${iconAliases.length} checks)\n`);
+
+// MaskGroup ignores the tRNS transparency of a grayscale PNG and draws the whole child, so a mask
+// needs an alpha channel or a palette.
+const maskImages = new Set();
+for await (const file of glob('{components,source}/**/*.{bs,xml}')) {
+    const code = await readFile(file, 'utf8');
+    for (const [, image] of code.matchAll(/maskUri\s*=\s*"pkg:\/(images\/[^"]+\.png)"/g)) maskImages.add(image);
+    for (const [, image] of code.matchAll(/"pkg:\/(images\/[^"]*mask[^"]*\.png)"/gi)) maskImages.add(image);
+}
+assert.ok(maskImages.size > 10, 'The mask scan found the masks');
+for (const image of maskImages) {
+    const colorType = (await readFile(image))[25];
+    assert.ok([3, 4, 6].includes(colorType), `${image} keeps its transparency where MaskGroup reads it`);
+}
+process.stdout.write(`PASS: mask image formats (${maskImages.size} checks)\n`);
