@@ -115,6 +115,17 @@ sub init()
     m.sectionModal.observeField("extraChosen", "onModalExtraChosen")
     m.sectionModal.observeField("menuRequested", "onModalMenuRequested")
     m.cardBand = m.top.findNode("cardBand")
+    m.cardBandAnim = m.top.findNode("cardBandAnim")
+    m.cardBandInterp = m.top.findNode("cardBandInterp")
+    m.cardBandOffset = 0
+    m.cardBandY = 0
+    m.cardWidth = 0
+    m.cardHeight = 0
+    m.fileInfoSubtitle = SubtitleSelection.NONE
+
+    m.versionBadge = m.top.findNode("versionBadge")
+    m.versionBadgeBg = m.top.findNode("versionBadgeBg")
+    m.versionBadgeText = m.top.findNode("versionBadgeText")
 
     m.studioData = []
     m.studioLogosTask = CreateObject("roSGNode", "FetchStudioLogosTask")
@@ -152,7 +163,9 @@ sub init()
     ' just needs to be told when that happens
     m.audioSelector.observeField("audioStreamIndex", "onAudioStreamIndexChanged")
     m.audioSelector.observeField("visible", "onAudioSelectorVisibleChanged")
+    m.top.observeField("selectedAudioStreamIndex", "onAudioTrackChanged")
     m.subtitleSelector.observeField("subtitleStream", "onSubtitleStreamChanged")
+    m.subtitleSelector.observeField("subtitleStream", "onSpotlightSubtitleChanged")
     m.subtitleSelector.observeField("visible", "onSubtitleSelectorVisibleChanged")
     m.subtitleSelector.observeField("downloadRequested", "onSubtitleDownloadRequested")
     m.subtitleDownloadDialog.observeField("visible", "onSubtitleDownloadDialogVisibleChanged")
@@ -617,10 +630,15 @@ end sub
 
 ' The card builder state, everything the builders read off m.s
 function spotlightCardState(over = invalid) as object
+    itemServerInfo = getServerInfoFromItem(m.top.itemContent)
+    effectiveServerUrl = isValid(itemServerInfo) and isValidAndNotEmpty(itemServerInfo.serverUrl) ? itemServerInfo.serverUrl : chainLookupReturn(m.top, "itemContent.json._serverUrl", "")
+    userSettings = chainLookup(m.global, "session.user.settings")
+    if not isValid(userSettings) then userSettings = {}
+
     state = {
         item: m.top.itemContent,
-        serverUrl: "",
-        settings: {},
+        serverUrl: effectiveServerUrl,
+        settings: userSettings,
         seerrOnly: m.top.seerrOnly,
         seasons: [],
         episodes: isValid(m.seasonEpisodes) ? m.seasonEpisodes : [],
@@ -641,7 +659,10 @@ function spotlightCardState(over = invalid) as object
         playlistItems: [],
         seerrRecommendations: m.seerrRecommendations,
         seerrSimilar: m.seerrSimilar,
-        fallbackImageUrl: m.backdrop.uri
+        fallbackImageUrl: m.backdrop.uri,
+        selectedAudioStreamIndex: m.top.selectedAudioStreamIndex,
+        selectedVideoStreamId: m.top.selectedVideoStreamId,
+        selectedSubtitleIndex: m.fileInfoSubtitle
     }
     state.Append(spotlightSeerrState())
     if isValid(over)
@@ -651,6 +672,30 @@ function spotlightCardState(over = invalid) as object
     end if
     return state
 end function
+
+sub onAudioTrackChanged()
+    if isValid(m.cardState) and m.cardBand.getChildCount() > 0
+        updateCardState({ selectedAudioStreamIndex: m.top.selectedAudioStreamIndex })
+    end if
+end sub
+
+sub onSelectedVideoStreamIdChanged()
+    updateVersionBadge()
+    if isValid(m.cardState) and m.cardBand.getChildCount() > 0
+        updateCardState({ selectedVideoStreamId: m.top.selectedVideoStreamId })
+    end if
+end sub
+
+sub onSpotlightSubtitleChanged()
+    if isValid(m.subtitleSelector.subtitleStream)
+        m.fileInfoSubtitle = chainLookupReturn(m.subtitleSelector.subtitleStream, "StreamIndex", SubtitleSelection.NONE)
+    else
+        m.fileInfoSubtitle = SubtitleSelection.NONE
+    end if
+    if isValid(m.cardState) and m.cardBand.getChildCount() > 0
+        updateCardState({ selectedSubtitleIndex: m.fileInfoSubtitle })
+    end if
+end sub
 
 sub onSeerrRecommendations(event as object)
     m.seerrRecommendations = event.getData()
@@ -694,23 +739,21 @@ sub refreshOpenCard()
 end sub
 
 ' Draw the band: one SpotlightSummaryCard per card, sized against the screen so
-' the band fits under the hero without scrolling
+' the band fits under the hero or scrolls as a home row in 16:9 aspect ratio
 sub drawCardBand()
     m.cardBand.removeChildrenIndex(m.cardBand.getChildCount(), 0)
     if m.cards.count() = 0 then return
 
-    ' The band matches the hero column so the two line up down the left edge, and it
-    ' sits on the bottom padding the way the page splits its space
-    bandWidth = SPOTLIGHT_HERO_WIDTH
     cardHeight = SPOTLIGHT_MAX_CARD_H
     if cardHeight > 1080 * SPOTLIGHT_CARD_H_SHARE then cardHeight = 1080 * SPOTLIGHT_CARD_H_SHARE
     if cardHeight < SPOTLIGHT_MIN_CARD_H then cardHeight = SPOTLIGHT_MIN_CARD_H
-    m.cardBand.translation = [SPOTLIGHT_PAGE_PAD, 1080 - SPOTLIGHT_BOTTOM_PAD - cardHeight]
+    m.cardHeight = cardHeight
+    m.cardBandY = 1080 - SPOTLIGHT_BOTTOM_PAD - cardHeight
+    m.cardBandOffset = 0
+    m.cardBand.translation = [SPOTLIGHT_PAGE_PAD, m.cardBandY]
 
-    even = (bandWidth - (m.cards.count() - 1) * SPOTLIGHT_CARD_GAP) / m.cards.count()
-    cardWidth = even
-    maxWidth = cardHeight * SPOTLIGHT_CARD_WIDE_RATIO
-    if cardWidth > maxWidth then cardWidth = maxWidth
+    cardWidth = Int(cardHeight * SPOTLIGHT_CARD_WIDE_RATIO + 0.5)
+    m.cardWidth = cardWidth
 
     x = 0
     idx = 0
@@ -737,6 +780,7 @@ sub onCardFocusChanged(event as object)
     focused.focused = isFocused
     if isFocused
         m.openCardIndex = focused.cardIndex
+        slideCardBandTo(focused.cardIndex)
     end if
 end sub
 
@@ -1061,9 +1105,54 @@ sub focusCard(index as integer)
 
     unhighlightAllButtons()
     m.openCardIndex = index
+    slideCardBandTo(index)
     card.setFocus(true)
     m.top.lastFocus = card
     setLastFocus(card)
+end sub
+
+sub slideCardBandTo(index as integer)
+    if not isValid(m.cardBand) or m.cards.count() = 0 then return
+    if index < 0 or index >= m.cards.count() then return
+
+    cardWidth = m.cardWidth
+    if cardWidth <= 0 then cardWidth = Int(m.cardHeight * SPOTLIGHT_CARD_WIDE_RATIO + 0.5)
+    gap = SPOTLIGHT_CARD_GAP
+    totalWidth = m.cards.count() * cardWidth + (m.cards.count() - 1) * gap
+    viewport = SPOTLIGHT_ROW_WIDTH
+
+    newOffset = m.cardBandOffset ?? 0
+    if totalWidth > viewport
+        cardLeft = index * (cardWidth + gap)
+        cardRight = cardLeft + cardWidth
+
+        if cardLeft + newOffset < 0
+            newOffset = -cardLeft
+        else if cardRight + newOffset > viewport
+            newOffset = viewport - cardRight
+        end if
+
+        furthest = viewport - totalWidth
+        if newOffset < furthest then newOffset = furthest
+        if newOffset > 0 then newOffset = 0
+    else
+        newOffset = 0
+    end if
+
+    if newOffset <> m.cardBandOffset
+        m.cardBandOffset = newOffset
+        startX = m.cardBand.translation[0]
+        targetX = SPOTLIGHT_PAGE_PAD + newOffset
+        y = m.cardBandY
+
+        if isValid(m.cardBandAnim) and isValid(m.cardBandInterp)
+            m.cardBandAnim.control = "stop"
+            m.cardBandInterp.keyValue = [[startX, y], [targetX, y]]
+            m.cardBandAnim.control = "start"
+        else
+            m.cardBand.translation = [targetX, y]
+        end if
+    end if
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
@@ -1284,6 +1373,65 @@ sub layoutHero()
     ' The row moves inside its container when it scrolls, so the container is what takes the place
     if m.buttonRowContainer <> invalid
         m.buttonRowContainer.translation = [0, m.heroY]
+    end if
+
+    updateVersionBadge()
+end sub
+
+sub updateVersionBadge()
+    if not isValid(m.versionBadge) then return
+
+    m.versionBadge.visible = false
+    itemData = chainLookup(m.top, "itemContent.json")
+    if not isValid(itemData) then itemData = m.top.itemContent
+    if not isValid(itemData) or not isValid(itemData.MediaSources) or itemData.MediaSources.Count() <= 1
+        return
+    end if
+
+    selectedSource = invalid
+    selectedId = m.top.selectedVideoStreamId
+    if isValidAndNotEmpty(selectedId)
+        for each src in itemData.MediaSources
+            if src.Id = selectedId
+                selectedSource = src
+                exit for
+            end if
+        end for
+    end if
+    if not isValid(selectedSource) and itemData.MediaSources.Count() > 0
+        selectedSource = itemData.MediaSources[0]
+    end if
+    if not isValid(selectedSource) then return
+
+    versionName = selectedSource.Name
+    if not isValidAndNotEmpty(versionName) then versionName = tr("Default")
+    badgeText = "[ " + versionName + " ]"
+
+    m.versionBadgeText.text = badgeText
+    textWidth = m.versionBadgeText.boundingRect().width
+    badgeWidth = textWidth + 24
+    badgeHeight = 28
+    m.versionBadgeBg.width = badgeWidth
+    m.versionBadgeBg.height = badgeHeight
+    m.versionBadgeText.width = badgeWidth
+    m.versionBadgeText.height = badgeHeight
+    m.versionBadge.visible = true
+
+    header = m.top.findNode("episodeHeader")
+    if m.logoGroup.visible
+        logoW = m.logoImage.boundingRect().width
+        if logoW <= 0 then logoW = m.logoImage.width
+        m.versionBadge.translation = [logoW + 16, m.logoGroup.translation[1] + (m.logoImage.height - badgeHeight) / 2]
+    else if isValid(header) and header.visible
+        headerW = header.boundingRect().width
+        m.versionBadge.translation = [headerW + 16, header.translation[1] + (header.boundingRect().height - badgeHeight) / 2]
+    else if m.titleNode.visible
+        titleW = m.titleNode.boundingRect().width
+        if titleW + badgeWidth > SPOTLIGHT_HERO_WIDTH
+            m.versionBadge.translation = [0, m.titleNode.translation[1] + m.titleNode.boundingRect().height + 4]
+        else
+            m.versionBadge.translation = [titleW + 16, m.titleNode.translation[1] + (m.titleNode.boundingRect().height - badgeHeight) / 2]
+        end if
     end if
 end sub
 
