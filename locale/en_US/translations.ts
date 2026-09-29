@@ -275,6 +275,10 @@
         <translation>Forced</translation>
     </message>
     <message>
+        <source>File Details</source>
+        <translation>File Details</translation>
+    </message>
+    <message>
         <source>File Information</source>
         <translation>File Information</translation>
     </message>
