@@ -1315,7 +1315,7 @@
     </message>
     <message>
         <source>Pick a Jellyfin server from the local network</source>
-        <translation>Select an available Jellyfin server from your local network:</translation>
+        <translation>Select an available Jellyfin server from your local network</translation>
         <extracomment>Instructions on initial app launch when the user is asked to pick a server from a list</extracomment>
     </message>
     <message>
@@ -3148,8 +3148,8 @@
         <translation>Date Added</translation>
     </message>
     <message>
-        <source>You're set. Here's what else is in here.</source>
-        <translation>You're set. Here's what else is in here.</translation>
+        <source>You&apos;re set. Here&apos;s what else is in here.</source>
+        <translation>You&apos;re set. Here&apos;s what else is in here.</translation>
     </message>
     <message>
         <source>Home View</source>
