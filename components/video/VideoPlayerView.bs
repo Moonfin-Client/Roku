@@ -147,6 +147,8 @@ sub init()
     m.playbackTimer.observeField("fire", "ReportPlayback")
     m.bufferPercentage = 0 ' Track whether content is being loaded
     m.playReported = false
+    ' Unlike playReported this survives a stop, so a retry can tell a stream that never started
+    m.hasPlayed = false
     m.bufferCheckTimer.duration = 30
     m.playbackRetries = 0 ' Track retry attempts for buffering failures
     m.lastBufferError = 0 ' Timestamp of last buffering error
@@ -944,6 +946,30 @@ sub retryPlaybackFromServer()
     m.LoadMetaDataTask.control = TaskControl.RUN
 end sub
 
+' A file the device wont open is asked for as a server remux first, then with its video
+' transcoded to another codec. Empty once neither is left to try.
+function nextTranscodeStep() as string
+    if not m.isTranscoded then return PlaybackMethod.FORCETRANSCODEALLOWREMUX
+    if m.videoCodec = "" or m.LoadMetaDataTask.playbackMethod = PlaybackMethod.FORCETRANSCODEDISABLEREMUX then return string.EMPTY
+    return PlaybackMethod.FORCETRANSCODEDISABLEREMUX
+end function
+
+' What the player was handed, so the log can say what failed
+function streamSummary(video as object) as string
+    method = "direct play"
+    if video.isTranscoded = true
+        method = "transcode"
+        reasons = video.transcodeReasons ?? []
+        if reasons.Count() > 0 then method += " for " + reasons.Join(",")
+    end if
+
+    parts = [method]
+    for each part in [video.container, video.streamCodecs]
+        if isValidAndNotEmpty(part) then parts.push(part)
+    end for
+    return parts.Join(", ")
+end function
+
 sub onVideoContentLoaded()
     m.LoadMetaDataTask.unobserveField("content")
     m.LoadMetaDataTask.control = TaskControl.STOP
@@ -974,6 +1000,9 @@ sub onVideoContentLoaded()
     end if
 
     m.isTranscoded = videoContent[0].isTranscoded
+    m.videoCodec = videoContent[0].videoCodec ?? ""
+    m.streamSummary = streamSummary(videoContent[0])
+    diagnostics.Playback(`Playing ${m.streamSummary}`)
     ' A transcode leaves the picture SDR whatever the file is
     m.isHdrOutput = videoContent[0].isHdr = true and not m.isTranscoded
     if isValid(m.captionTask) then m.captionTask.isHdr = m.isHdrOutput
@@ -1636,6 +1665,8 @@ sub onState()
         m.bufferCheckTimer.control = "start"
         m.bufferCheckTimer.ObserveField("fire", "bufferCheck")
     else if isStringEqual(m.top.state, MediaPlaybackState.ERROR)
+        errorInfo = FormatJson(m.top.errorInfo ?? {})
+        diagnostics.Playback(`Player error ${m.top.errorCode} ${m.top.errorMsg}, ${m.top.errorStr}, ${errorInfo}, during ${m.streamSummary}`, diagnostics.LEVEL_WARN)
 
         if isValid(m.channelSwitch)
             finishChannelSwitch(false)
@@ -1681,7 +1712,23 @@ sub onState()
                     diagnostics.Playback(`Player error, restarting the stream, retry ${m.playbackRetries} of ${REPLAY_RETRIES}`, diagnostics.LEVEL_WARN)
                     retryPlaybackInPlace()
                 else
-                    diagnostics.Playback(`Player error, asking the server for playback again, retry ${m.playbackRetries} of ${REPLAY_RETRIES}`, diagnostics.LEVEL_WARN)
+                    ' The server hands back the same stream if asked the same way, so one that never
+                    ' started is asked for further from the file each time
+                    method = string.EMPTY
+                    if not m.hasPlayed then method = nextTranscodeStep()
+
+                    if method = PlaybackMethod.FORCETRANSCODEALLOWREMUX
+                        diagnostics.Playback(`Player error before playback started, asking the server for a remux, retry ${m.playbackRetries} of ${REPLAY_RETRIES}`, diagnostics.LEVEL_WARN)
+                    else if method = PlaybackMethod.FORCETRANSCODEDISABLEREMUX
+                        diagnostics.Playback(`Player error before playback started, asking the server to transcode the ${m.videoCodec} video, retry ${m.playbackRetries} of ${REPLAY_RETRIES}`, diagnostics.LEVEL_WARN)
+                    else
+                        diagnostics.Playback(`Player error, asking the server for playback again, retry ${m.playbackRetries} of ${REPLAY_RETRIES}`, diagnostics.LEVEL_WARN)
+                    end if
+
+                    if method <> string.EMPTY
+                        m.LoadMetaDataTask.playbackMethod = method
+                        m.LoadMetaDataTask.transcodeCodec = m.videoCodec
+                    end if
                     retryPlaybackFromServer()
                 end if
             else
@@ -1695,6 +1742,8 @@ sub onState()
             end if
         end if
     else if isStringEqual(m.top.state, MediaPlaybackState.PLAYING)
+        m.hasPlayed = true
+
         ' Reset retry counter when playback is successful
         if m.playbackRetries > 0
             diagnostics.Playback("Playback resumed after a retry")

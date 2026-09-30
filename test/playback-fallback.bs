@@ -1,0 +1,66 @@
+sub testPlaybackFallback()
+    m.global = { queueManager: { force: PlaybackMethod.PLAYNORMALLY, codec: "", callFunc: testQueueManagerCall } }
+    profile = playbackDeviceProfile({})
+    assertEqual(profile.DirectPlayProfiles.Count(), 1, "An ordinary request keeps direct play")
+    profile = playbackDeviceProfile({ playbackMethod: PlaybackMethod.FORCETRANSCODEALLOWREMUX, transcodeCodec: "hevc" })
+    assertEqual(profile.DirectPlayProfiles.Count(), 0, "A remux request drops direct play")
+    assertEqual(profile.videoCodec, "", "A remux keeps the file's codec on offer")
+    profile = playbackDeviceProfile({ playbackMethod: PlaybackMethod.FORCETRANSCODEDISABLEREMUX, transcodeCodec: "hevc" })
+    assertEqual(profile.DirectPlayProfiles.Count(), 0, "A full transcode request drops direct play")
+    assertEqual(profile.videoCodec, "hevc", "A full transcode moves off the file's codec")
+    m.global.queueManager.force = PlaybackMethod.FORCETRANSCODEDISABLEREMUX
+    m.global.queueManager.codec = "h264"
+    profile = playbackDeviceProfile({})
+    assertEqual(profile.videoCodec, "h264", "The queue's forced transcode still applies to a plain request")
+    assertEqual(profile.DirectPlayProfiles.Count(), 0, "The queue's forced transcode still drops direct play")
+
+    video = { audioIndex: 2 }
+    addSourceCodecs(video, { MediaStreams: [
+        { Type: "Video", Codec: "HEVC", Profile: "Main", Index: 0 },
+        { Type: "Audio", Codec: "aac", Profile: "LC", Index: 1 },
+        { Type: "Audio", Codec: "ac3", Index: 2 },
+        { Type: "Subtitle", Codec: "ass", Index: 3 },
+        { Type: "EmbeddedImage", Codec: "mjpeg", Index: 4 }
+    ] })
+    assertEqual(video.videoCodec, "hevc", "The file's video codec is named for a full transcode")
+    assertEqual(video.streamCodecs, "hevc main, ac3", "The log names the video and the chosen audio")
+    video = { audioIndex: 7 }
+    addSourceCodecs(video, { DefaultAudioStreamIndex: 2, MediaStreams: [
+        { Type: "Audio", Codec: "aac", Profile: "LC", Index: 1 },
+        { Type: "Audio", Codec: "truehd", Index: 2 }
+    ] })
+    assertEqual(video.streamCodecs, "truehd", "Without a chosen track the log names the server's default")
+    addSourceCodecs(video, { MediaStreams: [{ Type: "Audio", Codec: "aac", Index: 1 }] })
+    assertEqual(video.videoCodec, "", "An audio only source has no video codec")
+    assertEqual(video.streamCodecs, "aac", "An audio only source falls back to its first track")
+
+    assertEqual(streamSummary({ isTranscoded: false, container: "mkv", streamCodecs: "hevc main, aac lc" }), "direct play, mkv, hevc main, aac lc", "A direct play says what the file is")
+    assertEqual(streamSummary({ isTranscoded: true, transcodeReasons: ["ContainerNotSupported", "AudioCodecNotSupported"], container: "", streamCodecs: "h264" }), "transcode for ContainerNotSupported,AudioCodecNotSupported, h264", "A transcode says why")
+
+    m.LoadMetaDataTask = { playbackMethod: "" }
+    m.isTranscoded = false
+    m.videoCodec = "hevc"
+    assertEqual(nextTranscodeStep(), PlaybackMethod.FORCETRANSCODEALLOWREMUX, "A direct play that never started asks for a remux")
+    m.isTranscoded = true
+    m.LoadMetaDataTask.playbackMethod = PlaybackMethod.FORCETRANSCODEALLOWREMUX
+    assertEqual(nextTranscodeStep(), PlaybackMethod.FORCETRANSCODEDISABLEREMUX, "A remux that never started asks for the video transcoded")
+    m.LoadMetaDataTask.playbackMethod = ""
+    assertEqual(nextTranscodeStep(), PlaybackMethod.FORCETRANSCODEDISABLEREMUX, "A server chosen stream that never started asks for the video transcoded")
+    m.LoadMetaDataTask.playbackMethod = PlaybackMethod.FORCETRANSCODEDISABLEREMUX
+    assertEqual(nextTranscodeStep(), "", "A full transcode has no step left")
+    m.LoadMetaDataTask.playbackMethod = ""
+    m.videoCodec = ""
+    assertEqual(nextTranscodeStep(), "", "An unknown video codec cant be moved off")
+    m.LoadMetaDataTask = invalid
+end sub
+
+function testQueueManagerCall(name as string) as dynamic
+    if name = "getForceTranscode" then return m.force
+    if name = "getTranscodeCodec" then return m.codec
+    return invalid
+end function
+
+' Stands in for the device's real profile, which needs the hardware to answer
+function getDeviceProfile(videoCodec = "" as string) as object
+    return { DirectPlayProfiles: [{ Container: "mkv" }], videoCodec: videoCodec }
+end function
