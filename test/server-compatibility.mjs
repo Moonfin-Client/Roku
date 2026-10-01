@@ -362,3 +362,22 @@ for (const detailStyle of detailStyles) {
     assert.match(detailSource, /subtitleDownloadDialog\.observeField\("downloadedIndex", "onSubtitleDownloaded"\)/, `${detailStyle} picks up a downloaded subtitle`);
 }
 process.stdout.write(`PASS: detail track pickers (${detailStyles.length * 2} checks)\n`);
+
+// A card left in a selection field opens again when a favorite or watched change rewrites it, and
+// that rewrite has to leave the card's type alone.
+const extrasSelections = [
+    ['ModernItemDetails', /sub openSelectedItem\(item as object\)\s+m\.extrasGrid\.selectedItem = item\s+m\.extrasGrid\.selectedItem = invalid/],
+    ['SpotlightItemDetails', /m\.extrasGrid\.selectedItem = item\s+m\.extrasGrid\.selectedItem = invalid/],
+];
+for (const [detailStyle, clearsSelection] of extrasSelections) {
+    const detailSource = await readFile(`components/details/${detailStyle}.bs`, 'utf8');
+    assert.match(detailSource, clearsSelection, `${detailStyle} clears the extras grid selection after handing it over`);
+    assert.doesNotMatch(detailSource.replace(clearsSelection, ''), /m\.extrasGrid\.selectedItem = (?!invalid)/, `${detailStyle} has no other extras grid selection left set`);
+}
+const sectionModal = await readFile('components/details/SpotlightSectionModal.bs', 'utf8');
+const modalHandOvers = [...sectionModal.matchAll(/m\.top\.(sectionItemSelected|studioChosen|extraChosen|menuRequested) = item\s+m\.top\.(\w+) = invalid/g)];
+assert.equal(modalHandOvers.length, 5, 'The Spotlight section popup clears every card it hands to the page');
+for (const [, field, cleared] of modalHandOvers) assert.equal(cleared, field, `The Spotlight section popup clears ${field} itself`);
+const applyToNode = (await readFile('source/utils/userDataSync.bs', 'utf8')).match(/function ApplyToNode\([^]*?end function/)[0];
+assert.match(applyToNode, /cardType = node\.type\s+node\.json = updated\s+if isValid\(cardType\) then node\.type = cardType/, 'A user data change keeps the type a card was built with');
+process.stdout.write(`PASS: card selections (${extrasSelections.length * 2 + modalHandOvers.length + 2} checks)\n`);
