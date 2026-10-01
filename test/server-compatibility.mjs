@@ -56,13 +56,14 @@ const selections = {
     'source/enums/VideoType.bs': null,
     'source/enums/MediaStreamType.bs': null,
     'source/enums/PlaybackMethod.bs': null,
+    'source/enums/SubtitleSelection.bs': null,
     'source/utils/embyFeatures.bs': null,
     'components/embyPreview/EmbyPreviewTask.bs': ['loadPreviewData'],
     'components/PlaystateTask.bs': ['closeEmbyPlayback'],
-    'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL', 'addSourceCodecs'],
+    'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL', 'addSourceCodecs', 'shouldBurnInSubtitle', 'transcodeCopiesVideo'],
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError'],
-    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'toString', 'getHomeBackdropBlurAmount'],
+    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'toString', 'getHomeBackdropBlurAmount', 'inArray'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile'],
@@ -100,6 +101,7 @@ source += '\n' + await readFile('test/log-redaction.bs', 'utf8');
 source += '\n' + await readFile('test/youtube-trailer.bs', 'utf8');
 source += '\n' + await readFile('test/playback-fallback.bs', 'utf8');
 source += '\n' + await readFile('test/home-backdrop-blur.bs', 'utf8');
+source += '\n' + await readFile('test/subtitle-burn-in.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
@@ -381,3 +383,8 @@ for (const [, field, cleared] of modalHandOvers) assert.equal(cleared, field, `T
 const applyToNode = (await readFile('source/utils/userDataSync.bs', 'utf8')).match(/function ApplyToNode\([^]*?end function/)[0];
 assert.match(applyToNode, /cardType = node\.type\s+node\.json = updated\s+if isValid\(cardType\) then node\.type = cardType/, 'A user data change keeps the type a card was built with');
 process.stdout.write(`PASS: card selections (${extrasSelections.length * 2 + modalHandOvers.length + 2} checks)\n`);
+
+// Only a transcode the task asked to burn in drops the player's own subtitle tracks
+assert.match(videoLoader, /and shouldBurnInSubtitle\(video\.SelectedSubtitle\)[^]*?emptySubtitleProfiles: true[^]*?video\.subtitlesBurnedIn = true/, 'The task only marks a transcode burned in when it asked for that');
+assert.doesNotMatch(await readFile('components/video/VideoPlayerView.bs', 'utf8'), /playback\.subs\.burnin/, 'The player goes by what the task burned in, not the setting');
+process.stdout.write('PASS: subtitle burn-in wiring (2 checks)\n');

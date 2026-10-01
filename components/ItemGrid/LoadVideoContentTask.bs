@@ -562,8 +562,9 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
         return
     end if
 
-    ' If transcoding and burnInSubtitlesIfTrancoding is enabled, zero out SubtitleProfiles
-    if chainLookupReturn(m.global, "session.user.settings.`playback.subs.burnin`", true) and meta.live = false
+    ' Asking again with no subtitle profiles leaves the server nothing to do but draw the subtitle in
+    video.subtitlesBurnedIn = false
+    if chainLookupReturn(m.global, "session.user.settings.`playback.subs.burnin`", true) and meta.live = false and shouldBurnInSubtitle(video.SelectedSubtitle)
         m.playbackInfo = getPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, m.top.selectedSubtitleIndex, playbackPosition, {
             emptySubtitleProfiles: true
         })
@@ -579,6 +580,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
         end if
         ' Re-posting playback info will generate a new PlaysessionId
         video.PlaySessionId = m.playbackInfo.PlaySessionId
+        video.subtitlesBurnedIn = true
     end if
 
     ' Get transcoding reason
@@ -617,6 +619,50 @@ function isSubtitleStreamText(subtitleIndex as integer) as boolean
     end for
 
     return false
+end function
+
+' shouldBurnInSubtitle: Reports if a transcode has to draw its subtitles into the picture
+'
+' A transcode that encodes the video again burns them in as it always has. One that copies the video
+' leaves a text subtitle the server sends as its own file for the device to show, since burning it in
+' would make the server encode the whole picture just for the text.
+'
+' @param {integer} subtitleIndex - server-side index of the chosen subtitle stream
+' @return {boolean} true when the subtitles have to be burned in, false when the device can show them
+function shouldBurnInSubtitle(subtitleIndex as integer) as boolean
+    if not isValidAndNotEmpty(m.playbackInfo.MediaSources) then return true
+    if not transcodeCopiesVideo(m.playbackInfo.MediaSources[0].TranscodingUrl) then return true
+    if subtitleIndex = SubtitleSelection.NONE then return false
+
+    for each stream in m.playbackInfo.MediaSources[0].MediaStreams ?? []
+        if stream.Index = subtitleIndex
+            if isStringEqual(stream.DeliveryMethod, "External") then return false
+            return stream.IsTextSubtitleStream <> true or isStringEqual(stream.DeliveryMethod, "Encode")
+        end if
+    end for
+
+    return true
+end function
+
+' transcodeCopiesVideo: Reports if the server can keep the video as it is while it transcodes
+'
+' These are the reasons Jellyfin still copies the video for. Any other reason means it encodes the
+' video again, and then it burns the subtitle in by itself, so the device mustnt show it too.
+'
+' @param {string} transcodingUrl - the TranscodingUrl the server answered with
+' @return {boolean} true when every reason the server gave leaves the video alone
+function transcodeCopiesVideo(transcodingUrl as string) as boolean
+    if isStringEqual(m.global.queueManager.callFunc("getForceTranscode"), PlaybackMethod.FORCETRANSCODEDISABLEREMUX) then return false
+
+    reasons = getTranscodeReasons(transcodingUrl)
+    if reasons.Count() = 0 then return false
+
+    copyReasons = ["AudioCodecNotSupported", "AudioBitrateNotSupported", "AudioChannelsNotSupported", "AudioProfileNotSupported", "AudioSampleRateNotSupported", "AudioBitDepthNotSupported", "SecondaryAudioNotSupported", "AudioIsExternal", "ContainerNotSupported", "VideoCodecTagNotSupported"]
+    for each reason in reasons
+        if not inArray(copyReasons, reason) then return false
+    end for
+
+    return true
 end function
 
 sub addVideoContentURL(video, mediaSourceId, audio_stream_idx)
