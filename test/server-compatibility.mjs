@@ -350,3 +350,13 @@ for (const image of maskImages) {
     assert.ok([3, 4, 6].includes(colorType), `${image} keeps its transparency where MaskGroup reads it`);
 }
 process.stdout.write(`PASS: mask image formats (${maskImages.size} checks)\n`);
+
+// Every details style fills its pickers before a reload returns early, so the lists are there on a
+// first visit, and each style takes in a subtitle downloaded from it.
+const detailStyles = ['ItemDetails', 'ModernItemDetails', 'MinimalistItemDetails', 'NouveauItemDetails', 'SpotlightItemDetails'];
+for (const detailStyle of detailStyles) {
+    const detailSource = await readFile(`components/details/${detailStyle}.bs`, 'utf8');
+    assert.match(detailSource, /then SetUpTrackOptions\(itemData\)\s+if m\.loadStatus = ViewLoadStatus\.RELOAD/, `${detailStyle} fills the track pickers before a reload returns`);
+    assert.match(detailSource, /subtitleDownloadDialog\.observeField\("downloadedIndex", "onSubtitleDownloaded"\)/, `${detailStyle} picks up a downloaded subtitle`);
+}
+process.stdout.write(`PASS: detail track pickers (${detailStyles.length * 2} checks)\n`);
