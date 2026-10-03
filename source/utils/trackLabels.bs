@@ -1,3 +1,4 @@
+import "pkg:/source/enums/SubtitleSelection.bs"
 import "pkg:/source/utils/misc.bs"
 
 ' A file carrying pt-BR, pt-BR closed caption and pt-PT offers three rows all
@@ -110,6 +111,130 @@ namespace trackLabels
 
     function Flag(stream as dynamic, fieldName as string) as boolean
         return isStringEqual(trackLabels.Field(stream, fieldName), "true")
+    end function
+
+    function Setting(settings as object, key as string, defaultVal = invalid as dynamic) as dynamic
+        if not isValid(settings) then return defaultVal
+
+        if type(settings) = "roAssociativeArray"
+            val = settings.LookupCI(key)
+            if isValid(val) then return val
+        end if
+
+        val = chainLookupReturn(settings, "user.settings.`" + key + "`", invalid)
+        if isValid(val) then return val
+
+        val = chainLookupReturn(settings, "`" + key + "`", invalid)
+        if isValid(val) then return val
+
+        return defaultVal
+    end function
+
+    function ScoreSubtitle(stream as dynamic, settings as object) as integer
+        if not isValid(stream) or not isValid(settings) then return -99999
+
+        rawLang = LCase(trackLabels.Setting(settings, "playback.subs.language", ""))
+        userPrefLang = (rawLang = "anylanguage" or rawLang = "none") ? "" : rawLang
+
+        rawFallback = LCase(trackLabels.Setting(settings, "playback.subs.fallbackLanguage", ""))
+        userFallbackLang = (rawFallback = "anylanguage" or rawFallback = "none") ? "" : rawFallback
+
+        preferSdh = toBoolean(trackLabels.Setting(settings, "playback.preferSdhSubtitles", false))
+        preferText = toBoolean(trackLabels.Setting(settings, "playback.preferTextSubtitles", false))
+        preferExternal = toBoolean(trackLabels.Setting(settings, "playback.preferExternalSubtitles", false))
+
+        codec = LCase(trackLabels.Field(stream, "Codec"))
+        title = LCase(trackLabels.Field(stream, "Title"))
+        if title = "" then title = LCase(trackLabels.Field(stream, "DisplayTitle"))
+
+        isSdh = trackLabels.Flag(stream, "IsHearingImpaired") or trackLabels.SaysSdh(title)
+        isExternalTrack = trackLabels.IsExternal(stream)
+        isText = trackLabels.Flag(stream, "IsTextSubtitleStream") or (codec = "srt" or codec = "subrip" or codec = "vtt" or codec = "ass" or codec = "ssa" or codec = "ttml")
+        isCommentary = trackLabels.Flag(stream, "IsCommentary") or instr(1, title, "commentary") > 0
+        lang = LCase(trackLabels.Field(stream, "Language"))
+
+        score = 0
+        ' 1. Language matching
+        if userPrefLang <> "" and (lang = userPrefLang or (len(userPrefLang) >= 2 and Left(lang, 2) = Left(userPrefLang, 2)))
+            score += 10000
+        else if userFallbackLang <> "" and (lang = userFallbackLang or (len(userFallbackLang) >= 2 and Left(lang, 2) = Left(userFallbackLang, 2)))
+            score += 8000
+        else if userPrefLang = "" and userFallbackLang = ""
+            score += 6000
+        end if
+
+        ' 2. Demote commentary
+        if isCommentary
+            score -= 5000
+        end if
+
+        ' 3. SDH preference
+        if preferSdh
+            if isSdh then score += 400
+        else
+            if not isSdh then score += 400
+        end if
+
+        ' 4. Text preference
+        if preferText
+            if isText then score += 200
+        end if
+
+        ' 5. External preference
+        if preferExternal
+            if isExternalTrack then score += 100
+        else
+            if not isExternalTrack then score += 100
+        end if
+
+        ' 6. Default flag tiebreaker
+        if trackLabels.Flag(stream, "IsDefault")
+            score += 50
+        end if
+
+        return score
+    end function
+
+    function ResolveBestSubtitleIndex(streams as dynamic, settings as object) as integer
+        if not isValid(streams) or not isValid(settings) then return SubtitleSelection.NONE
+
+        subMode = LCase(trackLabels.Setting(settings, "playback.subs.mode", "default"))
+        if subMode = "none" then return SubtitleSelection.NONE
+        onlyText = toBoolean(trackLabels.Setting(settings, "playback.subs.onlytext", false))
+
+        bestScore = -99999
+        bestIndex = SubtitleSelection.NONE
+
+        for i = 0 to streams.Count() - 1
+            stream = streams[i]
+            streamType = trackLabels.Field(stream, "Type")
+            if isStringEqual(streamType, "Subtitle")
+                isForced = trackLabels.Flag(stream, "IsForced")
+
+                if subMode = "onlyforced" and not isForced
+                    continue for
+                end if
+
+                codec = LCase(trackLabels.Field(stream, "Codec"))
+                isText = trackLabels.Flag(stream, "IsTextSubtitleStream") or (codec = "srt" or codec = "subrip" or codec = "vtt" or codec = "ass" or codec = "ssa" or codec = "ttml")
+                if onlyText and not isText
+                    continue for
+                end if
+
+                score = trackLabels.ScoreSubtitle(stream, settings)
+                if isForced and subMode <> "onlyforced"
+                    score -= 2000
+                end if
+
+                if score > bestScore
+                    bestScore = score
+                    idxVal = trackLabels.Field(stream, "Index")
+                    bestIndex = idxVal <> "" ? idxVal.ToInt() : i
+                end if
+            end if
+        end for
+
+        return bestIndex
     end function
 
 end namespace
