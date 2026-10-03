@@ -13,6 +13,7 @@ import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/embyFeatures.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/trackLabels.bs"
 
 sub init()
     m.top.filter = "All"
@@ -458,21 +459,20 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
 
     ' Use either the user's selected subtitles, or the default track
     if m.top.selectedSubtitleIndex = SubtitleSelection.NOTSET
-        defaultSubtitleIndex = SubtitleSelection.NONE
-        if isValidAndNotEmpty(m.playbackInfo.MediaSources)
-            defaultSubtitleIndex = m.playbackInfo.MediaSources[0].LookupCI("DefaultSubtitleStreamIndex") ?? SubtitleSelection.NONE
+        settings = isValid(m.global) and isValid(m.global.session) ? m.global.session.user.settings : {}
+        subMode = LCase(trackLabels.Setting(settings, "playback.subs.mode", "default"))
+
+        if subMode = "none"
+            defaultSubtitleIndex = SubtitleSelection.NONE
+        else
+            defaultSubtitleIndex = trackLabels.ResolveBestSubtitleIndex(m.playbackInfo.MediaSources[0].MediaStreams, settings)
         end if
 
-        ' Ignore the server's default track if the user only wants text subtitles and it isn't one
-        if defaultSubtitleIndex <> SubtitleSelection.NONE and m.global.session.user.settings["playback.subs.onlytext"] = true
+        ' Ignore the track if the user only wants text subtitles and it isn't one
+        if defaultSubtitleIndex <> SubtitleSelection.NONE and toBoolean(trackLabels.Setting(settings, "playback.subs.onlytext", false))
             if not isSubtitleStreamText(defaultSubtitleIndex)
                 defaultSubtitleIndex = SubtitleSelection.NONE
             end if
-        end if
-
-        ' Pick the highest scored subtitle track matching client preferences
-        if defaultSubtitleIndex <> SubtitleSelection.NONE and isValidAndNotEmpty(video.fullSubtitleData)
-            defaultSubtitleIndex = video.fullSubtitleData[0].Index
         end if
 
         video.SelectedSubtitle = defaultSubtitleIndex
@@ -709,7 +709,7 @@ sub addSubtitlesToVideo(video, meta)
     safesubs = subtitles["all"]
     subtitleTracks = []
 
-    if m.global.session.user.settings["playback.subs.onlytext"] = true
+    if toBoolean(trackLabels.Setting(m.global.session.user.settings, "playback.subs.onlytext", false))
         safesubs = subtitles["text"]
     end if
 
@@ -906,15 +906,11 @@ sub addEpisodeToShowAtFinish(showID, serverData = invalid as dynamic)
     end if
 end sub
 
-'Checks available subtitle tracks and puts subtitles in forced, default, and non-default/forced but preferred language at the top
+'Checks available subtitle tracks and sorts them by user preference scoring
 function sortSubtitles(MediaStreams, source = invalid as dynamic, videoId = "" as string)
-    tracks = { "forced": [], "default": [], "normal": [], "text": [] }
-    'Too many args for using substitute
-    prefered_lang = getPreferredLanguage("playback.subs.language") ?? ""
-    fallback_lang = getPreferredLanguage("playback.subs.fallbackLanguage") ?? ""
-    preferSdh = toBoolean(chainLookupReturn(m.global.session, "user.settings.`playback.preferSdhSubtitles`", false))
-    preferText = toBoolean(chainLookupReturn(m.global.session, "user.settings.`playback.preferTextSubtitles`", false))
-    preferExternal = toBoolean(chainLookupReturn(m.global.session, "user.settings.`playback.preferExternalSubtitles`", false))
+    allTracks = []
+    textTracks = []
+    settings = isValid(m.global) and isValid(m.global.session) ? m.global.session.user.settings : {}
 
     for each stream in MediaStreams
         if stream.type = "Subtitle"
@@ -946,11 +942,8 @@ function sortSubtitles(MediaStreams, source = invalid as dynamic, videoId = "" a
             ' stream is rebuilt below without these fields, so read them while they are still here
             hearingImpaired = toBoolean(chainLookupReturn(stream, "IsHearingImpaired", false)) = true
             displayTitle = chainLookupReturn(stream, "displaytitle", "")
-            lowerTitle = LCase(displayTitle)
-            isSdhTrack = hearingImpaired or instr(1, lowerTitle, "sdh") > 0
             isExternalTrack = toBoolean(stream.IsExternal) = true
             isTextTrack = toBoolean(stream.IsTextSubtitleStream) = true or (codec = "srt" or codec = "subrip" or codec = "vtt" or codec = "ass" or codec = "ssa" or codec = "ttml")
-            isCommentary = toBoolean(chainLookupReturn(stream, "IsCommentary", false)) = true or instr(1, lowerTitle, "commentary") > 0
 
             streamObj = {
                 "Track": { "Language": stream.language, "Description": displayTitle, "TrackName": url },
@@ -966,79 +959,23 @@ function sortSubtitles(MediaStreams, source = invalid as dynamic, videoId = "" a
                 "DeliveryMethod": stream.LookupCI("DeliveryMethod") ?? ""
             }
 
-            score = 0
-            ' 1. Language matching
-            trackLang = stream.language ?? ""
-            if prefered_lang <> "" and isStringEqual(trackLang, prefered_lang)
-                score += 10000
-            else if fallback_lang <> "" and isStringEqual(trackLang, fallback_lang)
-                score += 8000
-            else if prefered_lang = "" and fallback_lang = ""
-                score += 6000
-            end if
+            score = trackLabels.ScoreSubtitle(stream, settings)
+            streamObj.score = score
 
-            ' 2. Demote commentary
-            if isCommentary
-                score -= 5000
-            end if
-
-            ' 3. SDH preference
-            if preferSdh
-                if isSdhTrack then score += 400
-            else
-                if not isSdhTrack then score += 400
-            end if
-
-            ' 4. Text preference
-            if preferText
-                if isTextTrack then score += 200
-            end if
-
-            ' 5. External preference
-            if preferExternal
-                if isExternalTrack then score += 100
-            else
-                if not isExternalTrack then score += 100
-            end if
-
-            ' 6. Default flag tiebreaker
-            if streamObj.IsDefault
-                score += 50
-            end if
-
-            if streamObj.IsForced
-                trackType = "forced"
-            else
-                trackType = "normal"
-            end if
-
-            insertSortedSubtitle(tracks[trackType], streamObj, score)
+            allTracks.push(streamObj)
 
             if isTextTrack
-                insertSortedSubtitle(tracks["text"], streamObj, score)
+                textTracks.push(streamObj)
             end if
         end if
     end for
 
-    tracks["forced"].append(tracks["normal"])
+    allTracks.sortBy("score", "r")
+    textTracks.sortBy("score", "r")
 
-    return { "all": tracks["forced"], "text": tracks["text"] }
+    return { "all": allTracks, "text": textTracks }
 end function
 
-sub insertSortedSubtitle(trackList as object, stream as object, score as integer)
-    stream.score = score
-    inserted = false
-    for i = 0 to trackList.count() - 1
-        if score > trackList[i].score
-            trackList.insert(i, stream)
-            inserted = true
-            exit for
-        end if
-    end for
-    if not inserted
-        trackList.push(stream)
-    end if
-end sub
 
 function FindPreferredAudioStream(streams as dynamic) as integer
     preferredAudioTrackIndex = m.global.queueManager.callFunc("getPreferredAudioTrackIndex")
