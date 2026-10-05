@@ -15,6 +15,7 @@ import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/parentalFilter.bs"
 import "pkg:/source/utils/pinLockout.bs"
+import "pkg:/source/utils/seasonalRow.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/settingsSync.bs"
 import "pkg:/source/utils/signInPin.bs"
@@ -75,6 +76,7 @@ sub init()
     m.stringInputDialog = invalid
     m.mediaBarSelectorSettingName = invalid
     m.mediaBarSelectorDialogOptions = []
+    m.mediaBarSelectorStoresUnchecked = false
     m.mediaBarPickerTask = invalid
     m.pendingMediaBarSettingItem = invalid
 
@@ -188,6 +190,57 @@ function getMediaBarSelectorSummary(settingName as string, currentValue as dynam
     if selectedCount = 0 then return tr("None")
     return `${selectedCount.toStr()} ${tr("excluded")}`
 end function
+
+function seasonalHolidaysSummary(currentValue as dynamic) as string
+    hiddenCount = seasonalRow.HiddenHolidays(currentValue).Count()
+    if hiddenCount = 0 then return tr("All holidays")
+    return `${(seasonalRow.Holidays().Count() - hiddenCount).toStr()} ${tr("selected")}`
+end function
+
+sub showSeasonalHolidaysDialog(settingItem as object)
+    options = []
+    for each holiday in seasonalRow.Holidays()
+        options.push({ id: holiday.id, title: tr(holiday.title) })
+    end for
+    showMediaBarSelectorDialog(settingItem, options, true)
+end sub
+
+' The switch also places the row in the layout, since the pulled layout drives the switch on
+' the next sync and one without the row would turn it back off. A row turned on for the
+' first time sits after Continue Watching and Next Up.
+sub placeSeasonalRow(enabled as boolean)
+    homeRowLayout.MigrateLegacySlots()
+    order = buttonLayout.ToIds(get_user_setting(homeRowLayout.ORDER_SETTING))
+    hidden = buttonLayout.ToIds(get_user_setting(homeRowLayout.HIDDEN_SETTING))
+    if enabled and inArray(order, "seasonal") and not inArray(hidden, "seasonal") then return
+
+    kept = []
+    insertAt = 0
+    for each id in order
+        if id = "seasonal" then continue for
+        kept.push(id)
+        if id = "resume" or id = "nextup" then insertAt = kept.Count()
+    end for
+
+    remaining = []
+    for each id in hidden
+        if id <> "seasonal" then remaining.push(id)
+    end for
+
+    if enabled
+        placed = []
+        for i = 0 to kept.Count() - 1
+            if i = insertAt then placed.push("seasonal")
+            placed.push(kept[i])
+        end for
+        if insertAt >= kept.Count() then placed.push("seasonal")
+        kept = placed
+    else
+        remaining.push("seasonal")
+    end if
+
+    saveHomeRowLayout(kept, remaining)
+end sub
 
 sub loadMediaBarPickerOptions(settingItem as object)
     if not isValid(settingItem) then return
@@ -408,7 +461,9 @@ sub clearThemeTasks(clearPending = true as boolean)
     if clearPending then m.pendingThemeSettingItem = invalid
 end sub
 
-sub showMediaBarSelectorDialog(settingItem as object, options as object)
+' A checklist over a stored list of ids. The media bar lists store what is ticked, the
+' holiday list what is unticked, since there every holiday starts on.
+sub showMediaBarSelectorDialog(settingItem as object, options as object, storesUnchecked = false as boolean)
     if not isValidAndNotEmpty(options)
         ShowToast("No options available for this setting right now.", "error")
         m.settingsMenu.setFocus(true)
@@ -433,7 +488,7 @@ sub showMediaBarSelectorDialog(settingItem as object, options as object)
     for each option in options
         listItem = checklistContent.CreateChild("ContentNode")
         listItem.title = option.title
-        checkedState.push(isGuidInArray(option.id, selectedIds))
+        checkedState.push(isGuidInArray(option.id, selectedIds) <> storesUnchecked)
     end for
 
     checklist.content = checklistContent
@@ -441,6 +496,7 @@ sub showMediaBarSelectorDialog(settingItem as object, options as object)
 
     m.mediaBarSelectorSettingName = settingItem.settingName
     m.mediaBarSelectorDialogOptions = options
+    m.mediaBarSelectorStoresUnchecked = storesUnchecked
     showPickerPanel(dialog)
 end sub
 
@@ -457,7 +513,8 @@ sub onMediaBarSelectorDialogButton(event as object)
 
         selectedIds = []
         for i = 0 to m.mediaBarSelectorDialogOptions.Count() - 1
-            if i < checkedState.Count() and checkedState[i]
+            checked = i < checkedState.Count() and checkedState[i]
+            if checked <> m.mediaBarSelectorStoresUnchecked
                 selectedIds.push(m.mediaBarSelectorDialogOptions[i].id)
             end if
         end for
@@ -505,6 +562,10 @@ function getSettingCurrentValueLabel(settingItem as dynamic) as string
 
     if isMediaBarMultiSelectSetting(settingItem.settingName)
         return getMediaBarSelectorSummary(settingItem.settingName, currentValue)
+    end if
+
+    if isStringEqual(settingItem.settingName, seasonalRow.HIDDEN_HOLIDAYS_SETTING)
+        return seasonalHolidaysSummary(currentValue)
     end if
 
     if isStringEqual(settingItem.type, SettingType.BOOL)
@@ -2318,6 +2379,11 @@ sub settingSelected()
         return
     end if
 
+    if isValid(selectedItem.settingName) and isStringEqual(selectedItem.settingName, seasonalRow.HIDDEN_HOLIDAYS_SETTING)
+        m.settingDesc.visible = false
+        showSeasonalHolidaysDialog(selectedItem)
+        return
+    end if
 
     if selectedItem.type <> invalid
         if isValid(selectedItem.Description)
@@ -2518,6 +2584,7 @@ sub boolSettingChanged(selectedSetting as object)
         if selectedSetting.settingName = "ui.showClock" and isValid(m.global)
             m.global.overlaySettingsChanged = m.global.overlaySettingsChanged + 1
         end if
+        if selectedSetting.settingName = "seasonal.row.enabled" then placeSeasonalRow(newValue = "true")
     end if
 
     if isStringEqual(selectedSetting.settingName, "playback.playDefaultAudioTrack")

@@ -5178,5 +5178,50 @@
         <extracomment>Shown when a title's trailer link isnt a YouTube video</extracomment>
         <translation>This trailer is a link to a web page, which cant be opened here.</translation>
     </message>
+    <message>
+        <source>Seasonal Row</source>
+        <extracomment>Home row of holiday movies, and the settings section that configures it</extracomment>
+        <translation>Seasonal Row</translation>
+    </message>
+    <message>
+        <source>New Year&apos;s</source>
+        <extracomment>Seasonal row title around New Year</extracomment>
+        <translation>New Year&apos;s</translation>
+    </message>
+    <message>
+        <source>Valentine&apos;s Day</source>
+        <extracomment>Seasonal row title in the run up to February 14</extracomment>
+        <translation>Valentine&apos;s Day</translation>
+    </message>
+    <message>
+        <source>Easter</source>
+        <extracomment>Seasonal row title in the week before Easter</extracomment>
+        <translation>Easter</translation>
+    </message>
+    <message>
+        <source>Pride</source>
+        <extracomment>Seasonal row title during June</extracomment>
+        <translation>Pride</translation>
+    </message>
+    <message>
+        <source>Halloween</source>
+        <extracomment>Seasonal row title during October</extracomment>
+        <translation>Halloween</translation>
+    </message>
+    <message>
+        <source>Thanksgiving</source>
+        <extracomment>Seasonal row title in the week up to Thanksgiving</extracomment>
+        <translation>Thanksgiving</translation>
+    </message>
+    <message>
+        <source>Christmas Movies</source>
+        <extracomment>Seasonal row title from the day after US Thanksgiving to Boxing Day</extracomment>
+        <translation>Christmas Movies</translation>
+    </message>
+    <message>
+        <source>All holidays</source>
+        <extracomment>Summary of the holiday picker when none is hidden</extracomment>
+        <translation>All holidays</translation>
+    </message>
 </context>
 </TS>

@@ -15,6 +15,7 @@ import "pkg:/source/utils/libraryScope.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/parentalFilter.bs"
+import "pkg:/source/utils/seasonalRow.bs"
 import "pkg:/source/utils/seerrBrowseRows.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 
@@ -709,6 +710,7 @@ function addCardDetails(json as object, source as object) as object
     rating = toNormalizedString(source.LookupCI("voteAverage"))
     if rating = "" then rating = toNormalizedString(source.LookupCI("vote_average"))
     if rating = "" then rating = toNormalizedString(source.LookupCI("communityRating"))
+    if rating = "" then rating = toNormalizedString(source.LookupCI("rating"))
 
     score = Val(rating)
     if score > 0 then json.CommunityRating = score
@@ -716,6 +718,20 @@ function addCardDetails(json as object, source as object) as object
     year = toNormalizedString(source.LookupCI("productionYear")).ToInt()
     if year = 0 then year = cardReleaseYear(source)
     if year > 0 then json.ProductionYear = year
+
+    certification = toNormalizedString(source.LookupCI("officialRating"))
+    if certification <> "" then json.OfficialRating = certification
+
+    genres = source.LookupCI("genres")
+    if type(genres) = "roArray" and genres.count() > 0 then json.Genres = genres
+
+    ' The home screen only reads a LongInteger here, and a short runtime parses as an Integer
+    ticks = source.LookupCI("runTimeTicks")
+    if type(ticks) = "LongInteger"
+        json.RunTimeTicks = ticks
+    else if type(ticks) = "Integer" or type(ticks) = "roInt" or type(ticks) = "roInteger"
+        json.RunTimeTicks = 0& + ticks
+    end if
 
     tmdbId = toNormalizedString(source.LookupCI("tmdbId"))
     if tmdbId = "" then tmdbId = toNormalizedString(source.LookupCI("id"))
@@ -2149,7 +2165,20 @@ sub loadItems()
     ' Row ids reach us lowercased when they come from settings and camel cased when they
     ' come from the server, so match the prefix case-insensitively
     lowerItemsToLoad = LCase(m.top.itemsToLoad)
-    if lowerItemsToLoad.startsWith("imdb_") or lowerItemsToLoad.startsWith("tmdb_") or lowerItemsToLoad.startsWith("seerr_") or lowerItemsToLoad.startsWith("plugindynamic:")
+    if lowerItemsToLoad = "seasonal"
+        m.top.content = loadSeasonalRow()
+        return
+    end if
+
+    ' A chart's titles come from outside the library, so one with no rating was never looked
+    ' up and stays out once a rating is blocked. Seerr carries no ratings at all, so its rows
+    ' keep the usual filter.
+    if lowerItemsToLoad.startsWith("imdb_") or lowerItemsToLoad.startsWith("tmdb_") or lowerItemsToLoad.startsWith("plugindynamic:")
+        m.top.content = parentalControls.WithoutUnratedOrBlockedItems(loadCustomDynamicList(m.top.itemsToLoad, m.top.additionalData))
+        return
+    end if
+
+    if lowerItemsToLoad.startsWith("seerr_")
         m.top.content = parentalControls.WithoutBlockedItems(loadCustomDynamicList(m.top.itemsToLoad, m.top.additionalData))
         return
     end if
@@ -2529,48 +2558,12 @@ function loadCustomDynamicList(listName as string, additionalData as dynamic) as
                     posterPath = resItem.LookupCI("posterPath")
                     if not isValidAndNotEmpty(posterPath) then posterPath = resItem.LookupCI("poster_path")
 
-                    posterUrl = ""
-                    if isValidAndNotEmpty(posterPath)
-                        if posterPath.startsWith("http")
-                            posterUrl = posterPath
-                        else
-                            tmdbUrls = GetTmdbImageBaseUrls()
-                            posterUrl = tmdbUrls.posterW342 + posterPath
-                        end if
-                    end if
-
                     backdropPath = resItem.LookupCI("backdropPath")
                     if not isValidAndNotEmpty(backdropPath) then backdropPath = resItem.LookupCI("backdrop_path")
 
-                    backdropUrl = ""
-                    if isValidAndNotEmpty(backdropPath)
-                        if backdropPath.startsWith("http")
-                            backdropUrl = backdropPath
-                        else
-                            tmdbUrls = GetTmdbImageBaseUrls()
-                            backdropUrl = tmdbUrls.backdropW1280 + backdropPath
-                        end if
-                    end if
-
                     resItem.mediaType = mediaType
 
-                    tmp = createSGNode("HomeData")
-                    tmp.name = title
-                    tmp.type = (mediaType = "tv") ? "Series" : "Movie"
-                    tmp.usePoster = true
-                    if posterUrl <> "" then tmp.posterURL = posterUrl
-                    if backdropUrl <> "" then tmp.backdropURL = backdropUrl
-
-                    tmp.json = addCardDetails({
-                        Id: toNormalizedString(tmdbId),
-                        name: title,
-                        Type: tmp.type,
-                        SeerrTmdbId: toNormalizedString(tmdbId),
-                        SeerrMediaType: mediaType,
-                        SeerrPosterURL: posterUrl,
-                        SeerrItem: resItem
-                    }, resItem)
-                    results.push(tmp)
+                    results.push(seerrCardNode(toNormalizedString(tmdbId), title, mediaType, posterPath, backdropPath, resItem))
                 end for
             end if
         end if
@@ -2583,99 +2576,146 @@ function loadCustomDynamicList(listName as string, additionalData as dynamic) as
 
         if data <> invalid and chainLookupReturn(data, "success", false) = true and isChainValid(data, "items")
             for each item in data.items
-                if not isValid(item) then continue for
-
-                jellyfinId = item.LookupCI("Id")
-                if not isValidAndNotEmpty(jellyfinId) then jellyfinId = item.LookupCI("id")
-
-                ' If this is a native Jellyfin item (e.g., from a dynamic genre or collection row), process via internalRowNode
-                if isValidAndNotEmpty(jellyfinId) and (isChainValid(item, "ImageTags") or isChainValid(item, "PrimaryImageTag") or isChainValid(item, "ServerId") or isChainValid(item, "CollectionType") or not isChainValid(item, "providerIds"))
-                    itemType = item.LookupCI("Type")
-                    if not isValidAndNotEmpty(itemType) then itemType = item.LookupCI("type")
-                    if not isValidAndNotEmpty(itemType) then itemType = "Movie"
-                    results.push(internalRowNode(item, itemType))
-                    continue for
-                end if
-
-                tmdbId = item.LookupCI("tmdbId")
-                if not isValidAndNotEmpty(tmdbId) then tmdbId = item.LookupCI("id")
-
-                imdbId = ""
-                providerIds = item.LookupCI("providerIds")
-                if isValid(providerIds)
-                    imdbId = providerIds.LookupCI("imdb")
-                    if not isValidAndNotEmpty(tmdbId) then tmdbId = providerIds.LookupCI("tmdb")
-                end if
-
-                if not isValidAndNotEmpty(tmdbId) and not isValidAndNotEmpty(imdbId)
-                    continue for
-                end if
-
-                title = item.LookupCI("name")
-                if not isValidAndNotEmpty(title) then title = item.LookupCI("title")
-                title = toNormalizedString(title)
-                if title = "" then title = "Unknown"
-
-                itemType = item.LookupCI("type")
-                if not isValidAndNotEmpty(itemType) then itemType = "Movie"
-
-                posterPath = item.LookupCI("posterUrl")
-                if not isValidAndNotEmpty(posterPath) then posterPath = item.LookupCI("poster_path")
-
-                posterUrl = ""
-                if isValidAndNotEmpty(posterPath)
-                    if posterPath.startsWith("http")
-                        posterUrl = posterPath
-                    else
-                        tmdbUrls = GetTmdbImageBaseUrls()
-                        posterUrl = tmdbUrls.posterW342 + posterPath
-                    end if
-                end if
-
-                backdropPath = item.LookupCI("backdropUrl")
-                if not isValidAndNotEmpty(backdropPath) then backdropPath = item.LookupCI("backdrop_path")
-
-                backdropUrl = ""
-                if isValidAndNotEmpty(backdropPath)
-                    if backdropPath.startsWith("http")
-                        backdropUrl = backdropPath
-                    else
-                        tmdbUrls = GetTmdbImageBaseUrls()
-                        backdropUrl = tmdbUrls.backdropW1280 + backdropPath
-                    end if
-                end if
-
-                seerrItem = {
-                    id: tmdbId,
-                    title: title,
-                    type: (itemType = "Series") ? "tv" : "movie",
-                    mediaType: (itemType = "Series") ? "tv" : "movie",
-                    posterPath: posterPath,
-                    backdropPath: backdropPath,
-                    productionYear: item.LookupCI("productionYear")
-                }
-
-                tmp = createSGNode("HomeData")
-                tmp.name = title
-                tmp.type = (itemType = "Series") ? "Series" : "Movie"
-                tmp.usePoster = true
-                if posterUrl <> "" then tmp.posterURL = posterUrl
-                if backdropUrl <> "" then tmp.backdropURL = backdropUrl
-
-                tmp.json = addCardDetails({
-                    Id: toNormalizedString(tmdbId),
-                    name: title,
-                    Type: tmp.type,
-                    SeerrTmdbId: toNormalizedString(tmdbId),
-                    SeerrMediaType: seerrItem.mediaType,
-                    SeerrPosterURL: posterUrl,
-                    SeerrItem: seerrItem
-                }, item)
-                results.push(tmp)
+                card = customRowCard(item)
+                if isValid(card) then results.push(card)
             end for
         end if
     end if
 
+    return results
+end function
+
+' customRowCard: One card for an item the plugin's list endpoints return. A title the server
+' holds is a library item, anything else opens in Seerr by its TMDB id.
+'
+' @param {dynamic} item - Item as the plugin returned it
+' @return {dynamic} a HomeData node, or invalid when the item names nothing playable
+function customRowCard(item as dynamic) as dynamic
+    if not isValid(item) then return invalid
+
+    jellyfinId = item.LookupCI("Id")
+    if isValidAndNotEmpty(jellyfinId) and (isChainValid(item, "ImageTags") or isChainValid(item, "PrimaryImageTag") or isChainValid(item, "ServerId") or isChainValid(item, "CollectionType") or not isChainValid(item, "providerIds"))
+        itemType = item.LookupCI("Type")
+        if not isValidAndNotEmpty(itemType) then itemType = "Movie"
+        return internalRowNode(item, itemType)
+    end if
+
+    tmdbId = item.LookupCI("tmdbId")
+    if not isValidAndNotEmpty(tmdbId) then tmdbId = item.LookupCI("id")
+
+    imdbId = ""
+    providerIds = item.LookupCI("providerIds")
+    if isValid(providerIds)
+        imdbId = providerIds.LookupCI("imdb")
+        if not isValidAndNotEmpty(tmdbId) then tmdbId = providerIds.LookupCI("tmdb")
+    end if
+
+    if not isValidAndNotEmpty(tmdbId) and not isValidAndNotEmpty(imdbId) then return invalid
+
+    title = item.LookupCI("name")
+    if not isValidAndNotEmpty(title) then title = item.LookupCI("title")
+    title = toNormalizedString(title)
+    if title = "" then title = "Unknown"
+
+    itemType = item.LookupCI("type")
+    if not isValidAndNotEmpty(itemType) then itemType = "Movie"
+    mediaType = (itemType = "Series") ? "tv" : "movie"
+
+    posterPath = item.LookupCI("posterUrl")
+    if not isValidAndNotEmpty(posterPath) then posterPath = item.LookupCI("poster_path")
+
+    backdropPath = item.LookupCI("backdropUrl")
+    if not isValidAndNotEmpty(backdropPath) then backdropPath = item.LookupCI("backdrop_path")
+
+    seerrItem = {
+        id: tmdbId,
+        title: title,
+        type: mediaType,
+        mediaType: mediaType,
+        posterPath: posterPath,
+        backdropPath: backdropPath,
+        productionYear: item.LookupCI("productionYear")
+    }
+
+    return seerrCardNode(toNormalizedString(tmdbId), title, mediaType, posterPath, backdropPath, seerrItem, item)
+end function
+
+' seerrCardNode: A card for a title the server does not hold, which opens in Seerr
+'
+' @param {string} tmdbId - TMDB id of the title
+' @param {string} title - Display name
+' @param {string} mediaType - "movie" or "tv"
+' @param {dynamic} posterPath - TMDB path or full URL, or invalid
+' @param {dynamic} backdropPath - TMDB path or full URL, or invalid
+' @param {object} seerrItem - What the Seerr screens read when the card is selected
+' @param {dynamic} details - Where the card's overview, rating and year are read from, seerrItem when left out
+' @return {object} a HomeData node ready to append to a row
+function seerrCardNode(tmdbId as string, title as string, mediaType as string, posterPath as dynamic, backdropPath as dynamic, seerrItem as object, details = invalid as dynamic) as object
+    posterUrl = tmdbImageUrl(posterPath, "posterW342")
+    backdropUrl = tmdbImageUrl(backdropPath, "backdropW1280")
+
+    tmp = createSGNode("HomeData")
+    tmp.name = title
+    tmp.type = (mediaType = "tv") ? "Series" : "Movie"
+    tmp.usePoster = true
+    if posterUrl <> "" then tmp.posterURL = posterUrl
+    if backdropUrl <> "" then tmp.backdropURL = backdropUrl
+
+    tmp.json = addCardDetails({
+        Id: tmdbId,
+        name: title,
+        Type: tmp.type,
+        SeerrTmdbId: tmdbId,
+        SeerrMediaType: mediaType,
+        SeerrPosterURL: posterUrl,
+        SeerrBackdropURL: backdropUrl,
+        SeerrItem: seerrItem
+    }, details ?? seerrItem)
+    return tmp
+end function
+
+' A TMDB image path becomes a full URL at the given size, and a path that already is one is kept
+function tmdbImageUrl(path as dynamic, sizeKey as string) as string
+    if not isValidAndNotEmpty(path) then return ""
+    if path.startsWith("http") then return path
+    return GetTmdbImageBaseUrls()[sizeKey] + path
+end function
+
+' loadSeasonalRow: The holiday row the plugin builds, owned movies first and then Seerr
+' suggestions. The plugin applies the server's parental limits and the viewer's own blocked
+' list is applied here, strictly for the suggestions since a missing rating on one of those
+' means nobody looked it up.
+'
+' @return {object} HomeData nodes, empty when no holiday is on or the row would be bare
+function loadSeasonalRow() as object
+    m.top.rowKey = ""
+
+    params = {}
+    country = seasonalRow.CountryParam(get_user_setting(seasonalRow.COUNTRY_SETTING), m.global.device.countryCode)
+    if country <> "" then params.country = country
+
+    data = getJson(APIRequest("/Moonfin/Seasonal/Row", params))
+    if not isValid(data) then return []
+
+    holiday = toNormalizedString(data.LookupCI("holiday"))
+    if holiday = "" then return []
+    if inArray(seasonalRow.HiddenHolidays(get_user_setting(seasonalRow.HIDDEN_HOLIDAYS_SETTING)), holiday) then return []
+
+    owned = []
+    for each item in chainLookupReturn(data, "items", [])
+        if isValid(item) and isValidAndNotEmpty(item.LookupCI("Id")) then owned.push(internalRowNode(item, "Movie"))
+    end for
+
+    suggestions = []
+    for each item in chainLookupReturn(data, "suggestions", [])
+        card = customRowCard(item)
+        if isValid(card) then suggestions.push(card)
+    end for
+
+    results = []
+    results.append(parentalControls.WithoutBlockedItems(owned))
+    results.append(parentalControls.WithoutUnratedOrBlockedItems(suggestions))
+    if results.count() > 0 then m.top.rowKey = holiday
     return results
 end function
 

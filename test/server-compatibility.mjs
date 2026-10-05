@@ -52,6 +52,8 @@ const selections = {
     'source/utils/logRedaction.bs': null,
     'source/utils/youtubeTrailer.bs': null,
     'source/utils/detailCompatibility.bs': null,
+    'source/utils/parentalFilter.bs': null,
+    'source/utils/seasonalRow.bs': null,
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions'],
     'source/enums/VideoType.bs': null,
     'source/enums/MediaStreamType.bs': null,
@@ -102,6 +104,7 @@ source += '\n' + await readFile('test/youtube-trailer.bs', 'utf8');
 source += '\n' + await readFile('test/playback-fallback.bs', 'utf8');
 source += '\n' + await readFile('test/home-backdrop-blur.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-burn-in.bs', 'utf8');
+source += '\n' + await readFile('test/seasonal-row.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
@@ -388,3 +391,21 @@ process.stdout.write(`PASS: card selections (${extrasSelections.length * 2 + mod
 assert.match(videoLoader, /and shouldBurnInSubtitle\(video\.SelectedSubtitle\)[^]*?emptySubtitleProfiles: true[^]*?video\.subtitlesBurnedIn = true/, 'The task only marks a transcode burned in when it asked for that');
 assert.doesNotMatch(await readFile('components/video/VideoPlayerView.bs', 'utf8'), /playback\.subs\.burnin/, 'The player goes by what the task burned in, not the setting');
 process.stdout.write('PASS: subtitle burn-in wiring (2 checks)\n');
+
+// The row's sync keys, layout slot and strict filter live in files the harness cant load
+// whole, so they are checked where they are declared.
+const settingsSyncSource = await readFile('source/utils/settingsSync.bs', 'utf8');
+assert.match(settingsSyncSource, /\{ pluginKey: "seasonalRowEnabled", rokuKey: "seasonal\.row\.enabled", type: "bool" \}/, 'The seasonal switch syncs as a bool');
+assert.match(settingsSyncSource, /\{ pluginKey: "seasonalRowCountry", rokuKey: "seasonal\.row\.country", type: "direct" \}/, 'The seasonal country syncs as text');
+assert.match(settingsSyncSource, /\{ pluginKey: "seasonalRowHiddenHolidays", rokuKey: "seasonal\.row\.hiddenHolidays", type: "jsonArray" \}/, 'The hidden holidays sync as a list');
+assert.match(settingsSyncSource.match(/function GetRowToggleMappings\([^]*?end function/)[0], /"rewatch", "seasonal"/, 'The pulled layout drives the seasonal switch');
+const rowLayoutSource = await readFile('source/utils/homeRowLayout.bs', 'utf8');
+assert.match(rowLayoutSource, /\{ id: "nextup", label: "Next Up" \},\s*\{ id: "seasonal", label: "Seasonal Row" \}/, 'An unarranged seasonal row sits after Next Up');
+assert.match(rowLayoutSource, /seasonal: "seasonal\.row\.enabled"/, 'The seasonal row answers to its own switch');
+assert.match(rowLayoutSource.match(/function IsEnabled\([^]*?end function/)[0], /if id = "seasonal" then return homeRowLayout\.RowToggleOn\(id\)/, 'A layout without the seasonal row leaves it to the switch');
+const loadItemsSource = await readFile('components/home/LoadItemsTask.bs', 'utf8');
+assert.match(loadItemsSource, /startsWith\("plugindynamic:"\)\s+m\.top\.content = parentalControls\.WithoutUnratedOrBlockedItems\(/, 'Chart rows drop unrated titles once a rating is blocked');
+assert.match(loadItemsSource, /startsWith\("seerr_"\)\s+m\.top\.content = parentalControls\.WithoutBlockedItems\(/, 'Seerr rows keep the usual filter');
+assert.match(loadItemsSource.match(/function loadSeasonalRow\([^]*?end function/)[0], /WithoutBlockedItems\(owned\)[^]*?WithoutUnratedOrBlockedItems\(suggestions\)/, 'Owned titles keep the usual filter and suggestions the strict one');
+assert.match(await readFile('components/home/LoadItemsTask.xml', 'utf8'), /<field id="rowKey" type="string"/, 'The row task reports which holiday it loaded');
+process.stdout.write('PASS: seasonal row wiring (11 checks)\n');
