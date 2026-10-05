@@ -5219,6 +5219,16 @@
         <translation>Christmas Movies</translation>
     </message>
     <message>
+        <source>Lunar New Year</source>
+        <extracomment>Seasonal row title around Lunar New Year</extracomment>
+        <translation>Lunar New Year</translation>
+    </message>
+    <message>
+        <source>Diwali</source>
+        <extracomment>Seasonal row title in the week up to Diwali</extracomment>
+        <translation>Diwali</translation>
+    </message>
+    <message>
         <source>All holidays</source>
         <extracomment>Summary of the holiday picker when none is hidden</extracomment>
         <translation>All holidays</translation>
