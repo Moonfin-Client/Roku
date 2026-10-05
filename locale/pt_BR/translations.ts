@@ -2339,7 +2339,7 @@
     </message>
     <message>
         <source>Use the replay button to slowly animate to the first item in the folder. (If disabled, the folder will reset to the first item immediately).</source>
-        <translation>Use o botão de repetição para animar lentamente até o primeiro item da pasta. (Se estiver desativado, a pasta voltará imediatamente para o primeiro item).</translation>
+        <translation>Use o botão de replay para animar devagar o primeiro item da pasta. (Se desabilitado, a pasta será redefinida para o primeiro item imediatamente).</translation>
         <extracomment>Description for option in Setting Screen</extracomment>
     </message>
     <message>
