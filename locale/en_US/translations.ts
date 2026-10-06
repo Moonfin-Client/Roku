@@ -4470,8 +4470,13 @@
     </message>
     <message>
         <source>Failed to play {name}</source>
-        <extracomment>Channel changer notice when a channel wouldnt play, {name} is the channel</extracomment>
+        <extracomment>Channel changer notice, and the card over the player, when a channel wouldnt play, {name} is the channel</extracomment>
         <translation>Failed to play {name}</translation>
+    </message>
+    <message>
+        <source>Reconnecting… ({attempt} of {total})</source>
+        <extracomment>Loading label while the player asks for a live channel again after it stalled, {attempt} is the try and {total} how many it gets</extracomment>
+        <translation>Reconnecting… ({attempt} of {total})</translation>
     </message>
     <message>
         <source>Schedule</source>

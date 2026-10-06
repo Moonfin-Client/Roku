@@ -54,6 +54,7 @@ const selections = {
     'source/utils/detailCompatibility.bs': null,
     'source/utils/parentalFilter.bs': null,
     'source/utils/seasonalRow.bs': null,
+    'source/utils/liveRecovery.bs': null,
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions'],
     'source/enums/VideoType.bs': null,
     'source/enums/MediaStreamType.bs': null,
@@ -68,8 +69,8 @@ const selections = {
     'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'toString', 'getHomeBackdropBlurAmount', 'inArray'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer'],
-    'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile'],
-    'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'streamSummary'],
+    'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream'],
+    'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel'],
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
@@ -105,6 +106,7 @@ source += '\n' + await readFile('test/playback-fallback.bs', 'utf8');
 source += '\n' + await readFile('test/home-backdrop-blur.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-burn-in.bs', 'utf8');
 source += '\n' + await readFile('test/seasonal-row.bs', 'utf8');
+source += '\n' + await readFile('test/live-recovery.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
@@ -193,7 +195,7 @@ const remoteItems = await readFile('source/api/Items.bs', 'utf8');
 const remoteMetadata = remoteItems.match(/function ItemMetaDataForServer\([^]*?end function/)[0];
 assert.match(remoteMetadata, /serverItemMetadataPath\(id, serverData\.userId, isEmbyServer\(serverData\.serverUrl\)\)/, 'Remote metadata uses server-specific canonical path');
 const remotePlaybackInfo = remoteItems.match(/function ItemPostPlaybackInfoForServer\([^]*?end function/)[0];
-assert.match(remotePlaybackInfo, /PlaybackMethod\.FORCELIVETVREMUX[^]*?params\.EnableDirectPlay = false/, 'Remote Live TV retry disables direct play to request a remux');
+assert.match(remotePlaybackInfo, /if asksForServerStream\(options, [^\n]*\)\s+(?:'[^\n]*\s+)*params\.EnableDirectPlay = false/, 'Remote Live TV retry disables direct play to request a remux');
 
 const favoriteWrites = await readFile('components/ItemGrid/FavoriteItemsTask.bs', 'utf8');
 assert.match(favoriteWrites, /APIRequestForServer\([^]*?"UserFavoriteItems\/" \+ itemId/, 'Remote favorites use the shared request builder');

@@ -1,0 +1,342 @@
+' A live stream that stalls, ends or errors is recovered within a budget of
+' three attempts: the first two re-resolve the channel, and the third escalates
+' one step past the route it is on. A direct played channel hands the stream to
+' the server, which normally means a remux, and a channel the server already
+' serves is forced to transcode. The next failure gives the channel up. A clean
+' minute since the last attempt restores the budget, and so does a recovered
+' channel playing for 20s.
+'
+' Gaps are measured from the end of the previous attempt, since a tune can
+' itself take 17s or more: 4s before attempt 1 and the give up, then 10s and
+' 20s so a restarting server can come back.
+'
+' A live stream can open and keep receiving bytes without ever showing a frame,
+' since weak reception trickles data and nothing ever times out or errors. So a
+' fresh stream that shows no frame in 30s counts as stalled, and so does one
+' that stops showing frames for 8s after it played. The first frame gets the
+' long wait because a tune through a relaying tuner and then the server's own
+' remux can take 17s or more.
+'
+' Nothing here runs on its own. The player owns the timers and the requests: it
+' runs the timers this asks for (retry, proven and watchdog, each with the time
+' it falls due), calls Fire when one goes off, carries out the actions TakeActions
+' hands back, and reports how a re-resolve or a release went with ReResolveDone and
+' ReleaseDone. Times are milliseconds on any clock that only moves forward.
+namespace liveRecovery
+
+    const MAX_ATTEMPTS = 3
+    const RECOVERY_DEBOUNCE_MS = 4000
+    const GAP_BEFORE_ATTEMPT_2_MS = 10000
+    const GAP_BEFORE_ATTEMPT_3_MS = 20000
+    const RECOVERY_WINDOW_MS = 60000
+    const PROVEN_AFTER_MS = 20000
+    const FIRST_FRAME_TIMEOUT_MS = 30000
+    const MID_STREAM_STALL_TIMEOUT_MS = 8000
+
+    ' One recovery for one player. directPlay is the player's to keep current.
+    function Create() as object
+        return {
+            attempts: 0,
+            lastAt: invalid,
+            inFlight: false,
+            ' The re-resolve or release under way, which the player reports back on
+            pending: invalid,
+            retry: invalid,
+            proven: invalid,
+            watchdog: invalid,
+            timerSeq: 0,
+            watchActive: false,
+            frameSeen: false,
+            status: invalid,
+            ' Bumped whenever the viewer moves on. A recovery carries it across its own
+            ' requests, so it can tell the viewer leaving from its own restart of the stream.
+            intent: 0,
+            ' What the player reports. Playing stays true through a stall while buffering
+            ' is what flips.
+            playing: false,
+            buffering: false,
+            ' Only a pause the viewer asked for tells a stall from a pause
+            viewerPaused: false,
+            directPlay: false,
+            actions: []
+        }
+    end function
+
+    ' A channel was opened afresh, by a tune or by Retry, so it gets the whole
+    ' budget back and its first frame window starts.
+    sub Tuned(s as object, now as dynamic)
+        resetBudget(s)
+        openStream(s, now)
+    end sub
+
+    ' What the player reports about itself. Either one left invalid keeps its last value.
+    sub Update(s as object, playing as dynamic, buffering as dynamic, now as dynamic)
+        if playing <> invalid then s.playing = playing
+        if buffering <> invalid then s.buffering = buffering
+        if actuallyPlaying(s)
+            s.frameSeen = true
+            setStatus(s, invalid)
+            if s.retry <> invalid
+                note(s, "Live recovery: playback resumed, dropping a held retry")
+                s.retry = invalid
+            end if
+            armProven(s, now)
+        end if
+        evaluate(s, now)
+    end sub
+
+    sub SetPaused(s as object, paused as boolean, now as dynamic)
+        s.viewerPaused = paused
+        evaluate(s, now)
+    end sub
+
+    ' Starts a recovery, held for its gap when one ran too recently. The trigger is what
+    ' asked, for the log.
+    sub Recover(s as object, trigger as string, now as dynamic)
+        recoverFor(s, trigger, invalid, now)
+    end sub
+
+    ' Whether this channel is past its tune, so a failure belongs to the recovery
+    function Engaged(s as object) as boolean
+        return s.frameSeen or s.attempts > 0 or s.inFlight or s.retry <> invalid
+    end function
+
+    ' The viewer moved on, by a stop or by tuning somewhere else, so nothing held or
+    ' under way may touch the player again
+    sub Abandon(s as object, reason as string)
+        s.intent++
+        endWatch(s)
+        if s.retry <> invalid then note(s, `Live recovery: dropping a held retry, ${reason}`)
+        resetBudget(s)
+    end sub
+
+    ' One of the timers went off: "retry", "proven" or "watchdog". A timer that was
+    ' replaced or cancelled since has nothing left to run.
+    sub Fire(s as object, which as string, now as dynamic)
+        timer = s[which]
+        if timer = invalid then return
+        s[which] = invalid
+        if which = "retry"
+            recoverFor(s, timer.trigger, timer.armedFor, now)
+        else if which = "proven"
+            if timer.armedFor <> s.intent or s.inFlight or not actuallyPlaying(s) then return
+            note(s, `Live recovery: playing for ${PROVEN_AFTER_MS / 1000}s after attempt ${s.attempts}, budget restored`)
+            s.attempts = 0
+            s.lastAt = invalid
+        else if which = "watchdog"
+            if not s.watchActive or timer.armedFor <> s.intent or not stallSuspected(s) then return
+            note(s, `Live stall watchdog: no frame for ${timer.timeout / 1000}s, recovering`)
+            recoverFor(s, "stalled", invalid, now)
+        end if
+    end sub
+
+    ' The re-resolve a "reResolve" action asked for came back: ok when the new stream was
+    ' handed to the player, otherwise why the channel couldnt be had
+    sub ReResolveDone(s as object, ok as boolean, reason as string, now as dynamic)
+        pending = s.pending
+        if pending = invalid or pending.kind <> "reResolve" then return
+        s.pending = invalid
+        if ok
+            if pending.armedFor = s.intent then openStream(s, now)
+            finish(s, now)
+            return
+        end if
+        ' The source is gone rather than stalled. Only the last attempt gives up, and the
+        ' channel may come back before the budget is spent.
+        if pending.attempt < MAX_ATTEMPTS and pending.armedFor = s.intent
+            note(s, `Live recovery: attempt ${pending.attempt} failed to re-resolve, retrying: ${reason}`)
+            scheduleRetry(s, gapBefore(pending.attempt + 1), "retry-after-failure", pending.armedFor, now)
+            finish(s, now)
+            return
+        end if
+        note(s, `Live recovery: attempt ${pending.attempt} failed, giving the channel up: ${reason}`)
+        giveUp(s, pending.armedFor, now)
+    end sub
+
+    ' The stop a "release" action sent has been answered
+    sub ReleaseDone(s as object, now as dynamic)
+        release = s.pending
+        if release = invalid or release.kind <> "release" then return
+        s.pending = invalid
+        if release.armedFor = s.intent then s.actions.push({ kind: "lost" })
+        finish(s, now)
+    end sub
+
+    ' What the player has to do, oldest first:
+    '   { kind: "status", status: { attempt, maxAttempts } or invalid once it plays or is given up }
+    '   { kind: "reResolve", disableDirectPlay, forceTranscode }, answered with ReResolveDone
+    '   { kind: "release" }, stop the player and report the stop, answered with ReleaseDone
+    '   { kind: "lost" }, show that the channel is gone and offer Retry
+    '   { kind: "log", message }
+    function TakeActions(s as object) as object
+        actions = s.actions
+        s.actions = []
+        return actions
+    end function
+
+    function gapBefore(attempt as integer) as integer
+        if attempt = 2 then return GAP_BEFORE_ATTEMPT_2_MS
+        if attempt = 3 then return GAP_BEFORE_ATTEMPT_3_MS
+        return RECOVERY_DEBOUNCE_MS
+    end function
+
+    function actuallyPlaying(s as object) as boolean
+        return s.playing and not s.buffering
+    end function
+
+    ' Short of a viewer pause, only buffering or no frame yet counts. Not playing with
+    ' frames already shown cant be told apart from a pause made outside the app.
+    function stallSuspected(s as object) as boolean
+        return not actuallyPlaying(s) and not s.viewerPaused and (s.buffering or not s.frameSeen)
+    end function
+
+    sub note(s as object, message as string)
+        s.actions.push({ kind: "log", message: message })
+    end sub
+
+    sub setStatus(s as object, nextStatus as dynamic)
+        if s.status = invalid and nextStatus = invalid then return
+        if s.status <> invalid and nextStatus <> invalid
+            if s.status.attempt = nextStatus.attempt then return
+        end if
+        s.status = nextStatus
+        s.actions.push({ kind: "status", status: nextStatus })
+    end sub
+
+    function timerAt(s as object, now as dynamic, wait as integer, fields as object) as object
+        s.timerSeq++
+        fields.id = s.timerSeq
+        fields.due = now + wait
+        return fields
+    end function
+
+    sub resetBudget(s as object)
+        s.proven = invalid
+        s.attempts = 0
+        s.lastAt = invalid
+        s.retry = invalid
+        setStatus(s, invalid)
+    end sub
+
+    sub endWatch(s as object)
+        s.watchActive = false
+        s.watchdog = invalid
+    end sub
+
+    ' Once a recovery has the channel playing again, the budget comes back after 20s unless
+    ' another attempt starts first. A channel that never plays still gives up after the
+    ' full budget.
+    sub armProven(s as object, now as dynamic)
+        if s.attempts = 0 or s.proven <> invalid then return
+        s.proven = timerAt(s, now, PROVEN_AFTER_MS, { armedFor: s.intent })
+    end sub
+
+    sub arm(s as object, now as dynamic)
+        s.watchdog = invalid
+        if not s.watchActive then return
+        timeout = FIRST_FRAME_TIMEOUT_MS
+        if s.frameSeen then timeout = MID_STREAM_STALL_TIMEOUT_MS
+        s.watchdog = timerAt(s, now, timeout, { armedFor: s.intent, timeout: timeout })
+    end sub
+
+    sub openStream(s as object, now as dynamic)
+        s.frameSeen = false
+        s.playing = false
+        s.buffering = false
+        s.viewerPaused = false
+        s.watchActive = true
+        arm(s, now)
+    end sub
+
+    ' A buffering flicker must not keep restarting the window
+    sub evaluate(s as object, now as dynamic)
+        if not s.watchActive then return
+        if not stallSuspected(s)
+            s.watchdog = invalid
+            return
+        end if
+        if s.watchdog = invalid then arm(s, now)
+    end sub
+
+    sub scheduleRetry(s as object, wait as integer, trigger as string, armedFor as integer, now as dynamic)
+        s.retry = timerAt(s, now, wait, { trigger: trigger, armedFor: armedFor })
+    end sub
+
+    ' Stamped again at the end, so a slow re-resolve doesnt eat the next attempt's gap
+    sub finish(s as object, now as dynamic)
+        s.lastAt = now
+        s.inFlight = false
+    end sub
+
+    ' The stop report frees the tuner, and the channel is reported lost only when the
+    ' viewer is still on it once that is done
+    sub giveUp(s as object, armedFor as integer, now as dynamic)
+        setStatus(s, invalid)
+        endWatch(s)
+        if armedFor <> s.intent
+            note(s, "Live recovery: the viewer moved on before the channel was given up")
+            finish(s, now)
+            return
+        end if
+        s.pending = { kind: "release", armedFor: armedFor }
+        s.actions.push({ kind: "release" })
+    end sub
+
+    sub recoverFor(s as object, trigger as string, heldFor as dynamic, now as dynamic)
+        ' A held retry that comes due in the same turn playback resumed has nothing left to fix
+        if heldFor <> invalid and actuallyPlaying(s)
+            note(s, `Live recovery: playback already resumed, dropping a held ${trigger}`)
+            return
+        end if
+        ' A recovery belongs to the channel that asked for it, and re-resolving after the
+        ' viewer tuned elsewhere would take the tuner from the channel they asked for instead
+        armedFor = s.intent
+        if heldFor <> invalid then armedFor = heldFor
+        if armedFor <> s.intent
+            note(s, `Live recovery: the viewer moved on, abandoning a held ${trigger}`)
+            return
+        end if
+        sinceLast = invalid
+        if s.lastAt <> invalid then sinceLast = now - s.lastAt
+        windowExpired = sinceLast <> invalid and sinceLast >= RECOVERY_WINDOW_MS
+        gap = gapBefore(1)
+        if sinceLast <> invalid and not windowExpired then gap = gapBefore(s.attempts + 1)
+        ' A burst is held, never dropped. By the time a second failure arrives the player is
+        ' usually stopped, and nothing else would ever ask again.
+        if s.inFlight or (sinceLast <> invalid and not windowExpired and sinceLast < gap)
+            wait = gap
+            if not s.inFlight then wait = gap - sinceLast
+            note(s, `Live recovery: holding a ${trigger} for ${wait}ms`)
+            scheduleRetry(s, wait, trigger, armedFor, now)
+            return
+        end if
+        if windowExpired then s.attempts = 0
+        s.proven = invalid
+        s.lastAt = now
+        s.attempts++
+        attempt = s.attempts
+        s.inFlight = true
+        if attempt > MAX_ATTEMPTS
+            note(s, `Live recovery: ${trigger}, budget spent after ${MAX_ATTEMPTS} attempts, giving the channel up`)
+            giveUp(s, armedFor, now)
+            return
+        end if
+        setStatus(s, { attempt: attempt, maxAttempts: MAX_ATTEMPTS })
+        ' The attempt tears the old stream down, and the player doesnt say so, so what it
+        ' last reported would read as still playing
+        s.playing = false
+        s.buffering = false
+        serverServed = attempt >= MAX_ATTEMPTS
+        forceTranscode = serverServed and not s.directPlay
+        route = ""
+        if forceTranscode
+            route = ", forcing a transcode since the server already serves it"
+        else if serverServed
+            route = " without direct play, letting the server serve it"
+        end if
+        note(s, `Live recovery: ${trigger}, attempt ${attempt} of ${MAX_ATTEMPTS}, re-resolving the channel${route}`)
+        s.pending = { kind: "reResolve", armedFor: armedFor, attempt: attempt }
+        s.actions.push({ kind: "reResolve", disableDirectPlay: serverServed, forceTranscode: forceTranscode })
+    end sub
+
+end namespace

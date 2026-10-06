@@ -1,0 +1,358 @@
+' The live recovery against a stand-in player that answers each request once the call that
+' asked for it has returned, the way an await resumes. Timers fire in the order they fall due.
+sub testLiveRecovery()
+    testLiveRecoveryBudget()
+    testLiveRecoveryWatchdog()
+    testLiveRecoveryEngaged()
+    testLiveRecoveryPlayer()
+end sub
+
+function liveSetup() as object
+    t = { clock: 1000000, calls: [], failWith: "", holdRelease: false, s: liveRecovery.Create() }
+    liveRecovery.Tuned(t.s, t.clock)
+    liveDrain(t)
+    return t
+end function
+
+sub liveDrain(t as object)
+    while true
+        actions = liveRecovery.TakeActions(t.s)
+        if actions.count() = 0 then return
+        answer = ""
+        for each action in actions
+            if action.kind = "status"
+                attempt = invalid
+                if action.status <> invalid then attempt = action.status.attempt
+                t.calls.push({ name: "status", attempt: attempt })
+            else if action.kind = "reResolve"
+                t.calls.push({ name: "reResolve", disableDirectPlay: action.disableDirectPlay, forceTranscode: action.forceTranscode })
+                answer = "reResolve"
+            else if action.kind = "release"
+                t.calls.push({ name: "release" })
+                if not t.holdRelease then answer = "release"
+            else if action.kind = "lost"
+                t.calls.push({ name: "lost" })
+            end if
+        end for
+        if answer = "reResolve"
+            liveRecovery.ReResolveDone(t.s, t.failWith = "", t.failWith, t.clock)
+        else if answer = "release"
+            liveRecovery.ReleaseDone(t.s, t.clock)
+        end if
+    end while
+end sub
+
+sub liveAdvance(t as object, ms as integer)
+    target = t.clock + ms
+    while true
+        due = invalid
+        for each which in ["retry", "proven", "watchdog"]
+            timer = t.s[which]
+            if timer <> invalid and timer.due <= target
+                if due = invalid or timer.due < due.at or (timer.due = due.at and timer.id < due.id)
+                    due = { which: which, at: timer.due, id: timer.id }
+                end if
+            end if
+        end for
+        if due = invalid then exit while
+        if due.at > t.clock then t.clock = due.at
+        liveRecovery.Fire(t.s, due.which, t.clock)
+        liveDrain(t)
+    end while
+    t.clock = target
+end sub
+
+sub liveRecover(t as object, trigger as string)
+    liveRecovery.Recover(t.s, trigger, t.clock)
+    liveDrain(t)
+end sub
+
+sub liveUpdate(t as object, playing as dynamic, buffering as dynamic)
+    liveRecovery.Update(t.s, playing, buffering, t.clock)
+    liveDrain(t)
+end sub
+
+sub livePlaying(t as object)
+    liveUpdate(t, true, false)
+end sub
+
+function liveReResolves(t as object) as object
+    found = []
+    for each call in t.calls
+        if call.name = "reResolve" then found.push(call)
+    end for
+    return found
+end function
+
+function liveAttempts(t as object) as string
+    attempts = []
+    for each call in t.calls
+        if call.name = "status" and call.attempt <> invalid then attempts.push(call.attempt.toStr())
+    end for
+    return attempts.join(",")
+end function
+
+function liveHas(t as object, name as string) as boolean
+    for each call in t.calls
+        if call.name = name then return true
+    end for
+    return false
+end function
+
+function liveTail(t as object, count as integer) as object
+    tail = []
+    for i = t.calls.count() - count to t.calls.count() - 1
+        tail.push(t.calls[i])
+    end for
+    return tail
+end function
+
+' A status call reads status:none when it clears the attempt
+function liveCall(call as object) as string
+    if call.name <> "status" then return call.name
+    if call.attempt = invalid then return "status:none"
+    return "status:" + call.attempt.toStr()
+end function
+
+function liveRoute(call as object) as string
+    return `${call.disableDirectPlay},${call.forceTranscode}`
+end function
+
+sub testLiveRecoveryBudget()
+    t = liveSetup()
+    liveRecover(t, "completed")
+    assertEqual(liveReResolves(t).count(), 1, "The first live failure re-resolves right away")
+    assertEqual(liveRoute(liveReResolves(t)[0]), "false,false", "The first attempt asks for the channel the way it was tuned")
+    assertEqual(liveAttempts(t), "1", "The first attempt says which attempt it is")
+
+    t = liveSetup()
+    liveRecover(t, "completed")
+    liveRecover(t, "completed")
+    liveAdvance(t, 9999)
+    assertEqual(liveReResolves(t).count(), 1, "A second failure waits 10s after the first attempt")
+    liveAdvance(t, 1)
+    assertEqual(liveReResolves(t).count(), 2, "The second attempt runs once its 10s are up")
+    liveRecover(t, "completed")
+    liveAdvance(t, 19999)
+    assertEqual(liveReResolves(t).count(), 2, "A third failure waits 20s after the second attempt")
+    liveAdvance(t, 1)
+    assertEqual(liveReResolves(t).count(), 3, "The third attempt runs once its 20s are up")
+
+    t = liveSetup()
+    t.s.directPlay = true
+    liveRecover(t, "completed")
+    liveAdvance(t, 10000)
+    liveRecover(t, "completed")
+    liveAdvance(t, 20000)
+    liveRecover(t, "completed")
+    assertEqual(liveRoute(liveReResolves(t)[2]), "true,false", "The last attempt asks the server to serve a direct played channel")
+
+    t = liveSetup()
+    liveRecover(t, "completed")
+    liveAdvance(t, 10000)
+    liveRecover(t, "completed")
+    liveAdvance(t, 20000)
+    liveRecover(t, "completed")
+    assertEqual(liveRoute(liveReResolves(t)[2]), "true,true", "The last attempt forces a transcode on a channel the server already serves")
+    liveRecover(t, "completed")
+    liveAdvance(t, 3999)
+    assertEqual(liveHas(t, "lost"), false, "A failure past the budget waits 4s before giving up")
+    liveAdvance(t, 1)
+    assertEqual(liveReResolves(t).count(), 3, "Giving up asks for no fourth attempt")
+    tail = liveTail(t, 3)
+    assertEqual(`${liveCall(tail[0])},${liveCall(tail[1])},${liveCall(tail[2])}`, "status:none,release,lost", "Giving up clears the status, releases the tuner, then reports the channel lost")
+
+    t = liveSetup()
+    t.failWith = "no tuner"
+    liveRecover(t, "completed")
+    liveAdvance(t, 10000)
+    assertEqual(liveReResolves(t).count(), 2, "A re-resolve that fails schedules the next attempt")
+    liveAdvance(t, 20000)
+    assertEqual(liveReResolves(t).count(), 3, "The third attempt follows a second failure after 20s")
+    tail = liveTail(t, 2)
+    assertEqual(`${tail[0].name},${tail[1].name}`, "release,lost", "The last failed re-resolve gives the channel up")
+
+    t = liveSetup()
+    livePlaying(t)
+    t.failWith = "Unable to find host to play channel"
+    liveRecover(t, "source-error")
+    t.failWith = ""
+    liveAdvance(t, 10000)
+    assertEqual(liveReResolves(t).count(), 2, "A retry held after a failed re-resolve still runs on a stream that was playing")
+
+    ' Paused by the viewer in between, so no watchdog runs an attempt of its own meanwhile
+    t = liveSetup()
+    liveRecover(t, "completed")
+    liveAdvance(t, 10000)
+    liveRecover(t, "completed")
+    liveRecovery.SetPaused(t.s, true, t.clock)
+    liveAdvance(t, 60000)
+    liveRecovery.SetPaused(t.s, false, t.clock)
+    liveRecover(t, "completed")
+    assertEqual(liveAttempts(t), "1,2,1", "A clean minute since the last attempt starts the budget over")
+
+    t = liveSetup()
+    liveRecover(t, "completed")
+    liveAdvance(t, 10000)
+    liveRecover(t, "completed")
+    livePlaying(t)
+    liveAdvance(t, 20000)
+    liveUpdate(t, invalid, true)
+    liveRecover(t, "completed")
+    assertEqual(liveAttempts(t), "1,2,1", "Playing for 20s after a recovery gives the budget back")
+
+    t = liveSetup()
+    liveRecover(t, "completed")
+    livePlaying(t)
+    liveAdvance(t, 10000)
+    liveUpdate(t, invalid, true)
+    liveRecover(t, "completed")
+    assertEqual(liveAttempts(t), "1,2", "A channel that stops playing before 20s keeps the attempts it spent")
+
+    t = liveSetup()
+    liveRecover(t, "completed")
+    liveRecover(t, "completed")
+    livePlaying(t)
+    liveAdvance(t, 10000)
+    assertEqual(liveReResolves(t).count(), 1, "Playback resuming drops a held retry")
+    assertEqual(liveCall(t.calls.peek()), "status:none", "Playback resuming clears the status")
+
+    t = liveSetup()
+    liveRecover(t, "completed")
+    liveRecover(t, "completed")
+    liveRecovery.Abandon(t.s, "tuned elsewhere")
+    liveDrain(t)
+    liveAdvance(t, 10000)
+    assertEqual(liveReResolves(t).count(), 1, "The viewer moving on drops a held retry")
+    liveRecovery.Tuned(t.s, t.clock)
+    liveDrain(t)
+    liveRecover(t, "completed")
+    assertEqual(liveAttempts(t), "1,1", "The next channel starts with the whole budget")
+
+    t = liveSetup()
+    t.failWith = "gone"
+    t.holdRelease = true
+    liveRecover(t, "completed")
+    liveAdvance(t, 10000)
+    liveAdvance(t, 20000)
+    assertEqual(liveHas(t, "release"), true, "The spent budget starts releasing the tuner")
+    liveRecovery.Abandon(t.s, "stopped")
+    liveDrain(t)
+    liveRecovery.ReleaseDone(t.s, t.clock)
+    liveDrain(t)
+    assertEqual(liveHas(t, "lost"), false, "The channel is not reported lost when the viewer leaves while it is released")
+end sub
+
+sub testLiveRecoveryWatchdog()
+    t = liveSetup()
+    liveRecover(t, "completed")
+    liveAdvance(t, 29999)
+    assertEqual(liveReResolves(t).count(), 1, "A re-resolved stream gets a fresh 30s for its first frame")
+    liveAdvance(t, 1)
+    assertEqual(liveReResolves(t).count(), 2, "A re-resolved stream that shows nothing in 30s is recovered again")
+
+    t = liveSetup()
+    liveAdvance(t, 29999)
+    assertEqual(liveReResolves(t).count(), 0, "A fresh tune gets 30s for its first frame")
+    liveAdvance(t, 1)
+    assertEqual(liveReResolves(t).count(), 1, "A stream that shows no frame in 30s is recovered")
+
+    t = liveSetup()
+    liveAdvance(t, 10000)
+    livePlaying(t)
+    liveAdvance(t, 30000)
+    assertEqual(liveReResolves(t).count(), 0, "A first frame stops the first frame watch")
+
+    t = liveSetup()
+    livePlaying(t)
+    liveUpdate(t, invalid, true)
+    liveAdvance(t, 7999)
+    assertEqual(liveReResolves(t).count(), 0, "A stall after playing gets 8s")
+    liveAdvance(t, 1)
+    assertEqual(liveReResolves(t).count(), 1, "A stall after playing is recovered after 8s")
+
+    t = liveSetup()
+    livePlaying(t)
+    liveUpdate(t, invalid, true)
+    liveAdvance(t, 5000)
+    liveUpdate(t, invalid, true)
+    liveAdvance(t, 3000)
+    assertEqual(liveReResolves(t).count(), 1, "A buffering flicker does not restart the stall window")
+
+    t = liveSetup()
+    livePlaying(t)
+    liveRecovery.SetPaused(t.s, true, t.clock)
+    liveUpdate(t, false, invalid)
+    liveAdvance(t, 60000)
+    assertEqual(liveReResolves(t).count(), 0, "A pause the viewer asked for is not a stall")
+
+    t = liveSetup()
+    liveUpdate(t, false, invalid)
+    liveAdvance(t, 30000)
+    assertEqual(liveReResolves(t).count(), 1, "A stream that fails to open counts as stalled")
+
+    t = liveSetup()
+    livePlaying(t)
+    liveUpdate(t, false, invalid)
+    liveAdvance(t, 60000)
+    assertEqual(liveReResolves(t).count(), 0, "Not playing after frames, with no buffering and no viewer pause, is left alone")
+
+    t = liveSetup()
+    livePlaying(t)
+    liveRecovery.SetPaused(t.s, true, t.clock)
+    liveUpdate(t, false, invalid)
+    liveAdvance(t, 60000)
+    liveRecovery.SetPaused(t.s, false, t.clock)
+    liveUpdate(t, invalid, true)
+    liveAdvance(t, 8000)
+    assertEqual(liveReResolves(t).count(), 1, "Resuming starts the watch again")
+
+    t = liveSetup()
+    liveRecovery.Abandon(t.s, "stopped")
+    liveAdvance(t, 60000)
+    assertEqual(liveReResolves(t).count(), 0, "The watch ends when the viewer moves on")
+end sub
+
+sub testLiveRecoveryEngaged()
+    t = liveSetup()
+    assertEqual(liveRecovery.Engaged(t.s), false, "A fresh tune isnt the recovery's yet")
+    livePlaying(t)
+    assertEqual(liveRecovery.Engaged(t.s), true, "A channel that showed a frame is the recovery's")
+    liveRecovery.Tuned(t.s, t.clock)
+    liveDrain(t)
+    assertEqual(liveRecovery.Engaged(t.s), false, "A new tune hands the failure back to the fallback")
+    liveRecover(t, "stalled")
+    assertEqual(liveRecovery.Engaged(t.s), true, "A channel is the recovery's once an attempt has started")
+end sub
+
+sub testLiveRecoveryPlayer()
+    asked = liveReResolveRequest({ disableDirectPlay: false, forceTranscode: false }, "h264")
+    assertEqual(`${asked.playbackMethod}|${asked.transcodeCodec}`, "|", "The early attempts ask for the channel the way it was tuned")
+    asked = liveReResolveRequest({ disableDirectPlay: true, forceTranscode: false }, "h264")
+    assertEqual(`${asked.playbackMethod}|${asked.transcodeCodec}`, PlaybackMethod.FORCELIVETVREMUX + "|", "The last attempt on a direct played channel lets the server serve it")
+    asked = liveReResolveRequest({ disableDirectPlay: true, forceTranscode: true }, "mpeg2video")
+    assertEqual(`${asked.playbackMethod}|${asked.transcodeCodec}`, PlaybackMethod.FORCETRANSCODEDISABLEREMUX + "|mpeg2video", "The last attempt on a channel the server serves forces a transcode off its codec")
+
+    m.LoadMetaDataTask = { playbackMethod: "" }
+    m.isTranscoded = false
+    m.videoCodec = "h264"
+    assertEqual(liveFallbackMethod(), PlaybackMethod.FORCELIVETVREMUX, "A direct played channel that never started asks the server for it")
+    m.isTranscoded = true
+    m.LoadMetaDataTask.playbackMethod = PlaybackMethod.FORCELIVETVREMUX
+    assertEqual(liveFallbackMethod(), PlaybackMethod.FORCETRANSCODEDISABLEREMUX, "A served channel that never started is transcoded")
+    m.LoadMetaDataTask.playbackMethod = PlaybackMethod.FORCETRANSCODEDISABLEREMUX
+    assertEqual(liveFallbackMethod(), "", "A transcode that never started has no step left")
+    m.LoadMetaDataTask.playbackMethod = ""
+    m.videoCodec = ""
+    assertEqual(liveFallbackMethod(), "", "A served channel with an unknown codec cant be moved off it")
+    m.LoadMetaDataTask = invalid
+
+    assertEqual(asksForServerStream({ playbackMethod: PlaybackMethod.FORCELIVETVREMUX }, PlaybackMethod.PLAYNORMALLY), true, "One request for the server's stream turns direct play off")
+    assertEqual(asksForServerStream({}, PlaybackMethod.FORCELIVETVREMUX), true, "The queue's Live TV remux still turns direct play off")
+    assertEqual(asksForServerStream({}, PlaybackMethod.PLAYNORMALLY), false, "An ordinary request leaves direct play on")
+    assertEqual(asksForServerStream({ playbackMethod: PlaybackMethod.FORCETRANSCODEALLOWREMUX }, PlaybackMethod.PLAYNORMALLY), false, "Only the Live TV remux asks it this way")
+
+    label = liveReconnectingLabel({ attempt: 2, maxAttempts: 3 })
+    assertEqual(label, "Reconnecting… (2 of 3)", "The reconnecting label counts the attempt")
+    assertEqual(liveReconnectingLabel(invalid), "", "No attempt under way has no label")
+end sub

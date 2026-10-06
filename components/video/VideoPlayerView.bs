@@ -18,6 +18,7 @@ import "pkg:/source/utils/blockedContent.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/diagnostics.bs"
 import "pkg:/source/utils/embyFeatures.bs"
+import "pkg:/source/utils/liveRecovery.bs"
 import "pkg:/source/utils/liveTvGuide.bs"
 import "pkg:/source/utils/liveTvLastChannel.bs"
 import "pkg:/source/utils/misc.bs"
@@ -50,6 +51,33 @@ sub init()
     m.top.findNode("liveProgramTimer").observeField("fire", "refreshLiveProgram")
     m.top.findNode("prewarmTimer").observeField("fire", "prewarmCarousel")
     m.top.findNode("switchTimer").observeField("fire", "onSwitchTimeout")
+
+    ' A channel's live recovery, made when the first one tunes. Each load says what it was for: a
+    ' tune opens the channel afresh, a reResolve is one of the recovery's attempts, and a reload
+    ' asks for the same stream again with another track.
+    m.liveRecovery = invalid
+    m.liveClock = CreateObject("roTimespan")
+    m.liveTimers = { retry: m.top.findNode("liveRetryTimer"), proven: m.top.findNode("liveProvenTimer"), watchdog: m.top.findNode("liveWatchdogTimer") }
+    m.liveTimerIds = { retry: 0, proven: 0, watchdog: 0 }
+    for each which in m.liveTimers
+        m.liveTimers[which].observeField("fire", "onLiveRecoveryTimer")
+    end for
+    m.liveStopWaitTimer = m.top.findNode("liveStopWaitTimer")
+    m.liveStopWaitTimer.observeField("fire", "onLiveStopWaitOver")
+    m.liveLoad = "tune"
+    m.liveReResolve = invalid
+    m.liveStopWait = invalid
+    m.liveReleaseTask = invalid
+    m.liveLastState = ""
+    m.liveReconnecting = ""
+    m.liveLost = false
+    ' The session holding the channel's stream, and the one a reload replaced, which keeps its
+    ' stream until the new one is back. Each is stopped once.
+    m.liveSession = invalid
+    m.replacedLiveSession = invalid
+    m.ownReportTasks = []
+    m.liveFailedCard = m.top.findNode("liveFailedCard")
+    m.liveFailedCard.observeField("retry", "onLiveRetry")
 
     activeNav = getActiveNav(m.top.getScene())
     if isValid(activeNav) then activeNav.visible = false
@@ -233,7 +261,7 @@ sub onAvailableAudioTracksChanged()
                 m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
             end if
 
-            m.top.control = VideoControl.STOP
+            stopForReload()
 
             m.LoadMetaDataTask.selectedAudioStreamIndex = m.top.audioIndex
             m.LoadMetaDataTask.itemId = m.top.id
@@ -872,7 +900,7 @@ end sub
 sub reloadWithSubtitle(index as integer)
     m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
 
-    m.top.control = VideoControl.STOP
+    stopForReload()
 
     m.LoadMetaDataTask.selectedSubtitleIndex = index
     m.LoadMetaDataTask.itemId = m.top.id
@@ -888,7 +916,7 @@ sub onAudioIndexChange()
     ' Save the current video position
     m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
 
-    m.top.control = VideoControl.STOP
+    stopForReload()
 
     m.LoadMetaDataTask.selectedAudioStreamIndex = m.top.audioIndex
     m.LoadMetaDataTask.itemId = m.top.id
@@ -977,22 +1005,38 @@ sub onVideoContentLoaded()
     videoContent = m.LoadMetaDataTask.content
     m.LoadMetaDataTask.content = []
 
+    ' What this load was for, and the next one is a tune unless whatever starts it says otherwise
+    load = m.liveLoad
+    m.liveLoad = "tune"
+
     stopLoadingSpinner()
 
     hidesyncmenuAction()
 
     ' A blocked rating ends it before anything plays, and quietly, the same as backing out
     if isValid(videoContent) and chainLookupReturn(videoContent[0], "blocked", false) = true
+        releaseLiveSessions()
         m.global.queueManager.callFunc("clear")
         m.global.sceneManager.callFunc("popScene")
         return
     end if
 
     ' If we have nothing to play, return to previous screen. A channel switch goes back to the
-    ' channel that was working instead.
+    ' channel that was working instead, a recovery attempt that couldnt have the channel tries
+    ' again, and a channel that was playing offers Retry.
     if not isValid(videoContent) or not isValid(videoContent[0])
+        if load = "reResolve"
+            liveRecovery.ReResolveDone(m.liveRecovery, false, "No playable stream for the channel", liveNow())
+            runLiveRecovery()
+            return
+        end if
+        releaseLiveSessions()
         if isValid(m.channelSwitch)
             finishChannelSwitch(false)
+            return
+        end if
+        if isValid(m.liveChannel)
+            onLiveChannelLost()
             return
         end if
         showPlaybackErrorDialog(tr("There was an error retrieving the data for this item from the server."))
@@ -1044,7 +1088,9 @@ sub onVideoContentLoaded()
     ' A Live TV channel shows its channel and program in the controls, and gets the channel carousel
     m.liveChannel = videoContent[0].liveChannel
     m.osd.liveMode = isValid(m.liveChannel)
+    m.top.isLiveChannel = isValid(m.liveChannel)
     if isValid(m.liveChannel) then onLiveChannelTuned()
+    onLiveStreamLoaded(load)
 
     resetEmbyPreview()
     m.trickplayDataFinal = invalid
@@ -1610,6 +1656,9 @@ end sub
 '
 ' When Video Player state changes
 sub onState()
+    ' Kept as it arrived, since handling an error can stop the player before the recovery hears of it
+    state = m.top.state
+
     if isValid(m.captionTask)
         m.captionTask.playerState = m.top.state + m.top.globalCaptionMode
     end if
@@ -1666,7 +1715,9 @@ sub onState()
         errorInfo = FormatJson(m.top.errorInfo ?? {})
         diagnostics.Playback(`Player error ${m.top.errorCode} ${m.top.errorMsg}, ${m.top.errorStr}, ${errorInfo}, during ${m.streamSummary}`, diagnostics.LEVEL_WARN)
 
-        if isValid(m.channelSwitch)
+        if isValid(m.liveChannel)
+            onLiveChannelError()
+        else if isValid(m.channelSwitch)
             finishChannelSwitch(false)
         else if not m.playReported and m.top.transcodeAvailable
             m.top.retryWithTranscoding = true ' If playback was not reported, retry with transcoding
@@ -1775,7 +1826,13 @@ sub onState()
         ReportPlayback()
     else if isStringEqual(m.top.state, MediaPlaybackState.STOPPED)
         m.playbackTimer.control = "stop"
-        if m.suppressStopReport
+        if isValid(m.liveChannel)
+            ' A channel's stop goes out once per session, whichever way it stopped, and a replaced
+            ' session waits for the stream that takes over from it
+            m.suppressStopReport = false
+            restoreCaptionMode()
+            stopCurrentLiveSession()
+        else if m.suppressStopReport
             m.suppressStopReport = false
         else
             ReportPlayback("stop")
@@ -1783,9 +1840,13 @@ sub onState()
         m.playReported = false
     else if isStringEqual(m.top.state, MediaPlaybackState.FINISHED)
         m.playbackTimer.control = "stop"
-        ReportPlayback("stop")
+        ' A live stream has no end, so reaching one means the source starved, and the live recovery
+        ' asks for the channel again
+        if not isValid(m.liveChannel) then ReportPlayback("stop")
         m.playReported = false
     end if
+
+    feedLiveRecovery(state)
 end sub
 
 sub onTrickPlayBarVisibleChange()
@@ -1907,6 +1968,17 @@ sub ReportPlayback(state = "update" as string, ownTask = false as boolean)
 
     if m.top.position = invalid then return
 
+    params = playbackReportParams()
+    if isValid(m.top.content) and isValid(m.top.content.live) and m.top.content.live
+        m.bufferCheckTimer.duration = 30
+    end if
+
+    if inArray(["stop", "finished"], state) then restoreCaptionMode()
+
+    sendPlaystate(state, params, ownTask)
+end sub
+
+function playbackReportParams() as object
     params = {
         "ItemId": m.top.id,
         "PlaySessionId": m.top.PlaySessionId,
@@ -1924,23 +1996,45 @@ sub ReportPlayback(state = "update" as string, ownTask = false as boolean)
             "MediaSourceId": m.top.transcodeParams.MediaSourceId,
             "LiveStreamId": m.top.transcodeParams.LiveStreamId
         })
-        m.bufferCheckTimer.duration = 30
     end if
+    return params
+end function
 
-    if inArray(["stop", "finished"], state) and isValid(m.originalClosedCaptionState)
-        m.top.globalCaptionMode = m.originalClosedCaptionState
-        m.originalClosedCaptionState = invalid
-    end if
+sub restoreCaptionMode()
+    if not isValid(m.originalClosedCaptionState) then return
+    m.top.globalCaptionMode = m.originalClosedCaptionState
+    m.originalClosedCaptionState = invalid
+end sub
 
-    ' Report playstate via worker task
+function sendPlaystate(state as string, params as object, ownTask as boolean) as object
     playstateTask = m.global.playstateTask
     if ownTask
         ' Held until it finishes, or a task nothing references can be collected mid flight
         playstateTask = CreateObject("roSGNode", "PlaystateTask")
-        m.ownReportTask = playstateTask
+        m.ownReportTasks.push(playstateTask)
+        playstateTask.observeField("state", "onOwnReportTaskState")
     end if
     playstateTask.setFields({ status: state, params: params })
     playstateTask.control = TaskControl.RUN
+    return playstateTask
+end function
+
+sub onOwnReportTaskState(event as object)
+    task = event.getRoSGNode()
+    if not inArray(["stop", "done"], task.state) then return
+    task.unobserveField("state")
+    kept = []
+    for each running in m.ownReportTasks
+        if not running.isSameNode(task) then kept.push(running)
+    end for
+    m.ownReportTasks = kept
+
+    if isValid(m.liveStopWait) and task.isSameNode(m.liveStopWait) then requestLiveReResolve()
+    if isValid(m.liveReleaseTask) and task.isSameNode(m.liveReleaseTask)
+        m.liveReleaseTask = invalid
+        liveRecovery.ReleaseDone(m.liveRecovery, liveNow())
+        runLiveRecovery()
+    end if
 end sub
 
 '
@@ -1965,7 +2059,8 @@ sub bufferCheck()
                 m.bufferCheckTimer.duration = 30
             end if
         else if m.top.content.live = true
-            m.top.callFunc("refresh")
+            ' A channel that stalls is the live recovery's, which goes by frames rather than the buffer
+            return
         else
             ' Reset retry counter if more than 30 seconds have passed since last error
             currentTime = CreateObject("roDateTime").AsSeconds()
@@ -2130,17 +2225,23 @@ end sub
 
 ' Dimmed over the screen until a stream first plays, and plain while it buffers after that. A seek
 ' with a preview to look at keeps buffering quiet while the preview shows and a moment after.
+' While a live recovery attempt runs, the label says which one and the picture stays as it is.
 sub updateLoadingLayer()
     behindPreview = trickplayPreviewOn() and (m.seekPreview.visible or (m.seekNoted and m.seekClock.TotalMilliseconds() < m.seekGraceTimer.duration * 1000))
     buffering = isStringEqual(m.top.state, MediaPlaybackState.BUFFERING) and not behindPreview
-    show = m.streamLoading or buffering
+    reconnecting = m.liveReconnecting <> string.EMPTY
+    show = (m.streamLoading or buffering or reconnecting) and not m.liveLost
     if not show
         if m.loadingLayer.active then m.loadingLayer.active = false
         return
     end if
-    if m.loadingLayer.active and m.loadingLayer.dimmed = m.streamLoading then return
+    dimmed = m.streamLoading and not reconnecting
+    label = tr("Loading Stream...")
+    if reconnecting then label = m.liveReconnecting
+    if m.loadingLayer.active and m.loadingLayer.dimmed = dimmed and m.loadingLayer.label = label then return
     m.loadingLayer.active = false
-    m.loadingLayer.dimmed = m.streamLoading
+    m.loadingLayer.dimmed = dimmed
+    m.loadingLayer.label = label
     m.loadingLayer.active = true
 end sub
 
@@ -2516,6 +2617,8 @@ sub openCarousel()
     m.carouselPriorOsd = m.osd.visible
     ' The strip takes every key while it shows, so nothing behind it should hold focus
     handleHideAction(false)
+    ' A failed channel's card waits behind the strip and comes back if nothing else gets picked
+    m.liveFailedCard.visible = false
 
     m.carousel = CreateObject("roSGNode", "ChannelCarousel")
     m.carousel.observeField("selected", "onCarouselSelected")
@@ -2540,6 +2643,10 @@ sub closeCarousel(revealControls = false as boolean)
     m.top.setFocus(true)
     m.top.removeChild(m.carousel)
     m.carousel = invalid
+    if m.liveLost
+        showLiveFailedCard()
+        return
+    end if
     if revealControls or m.carouselPriorOsd
         prepareOSD()
         showOSD("transport")
@@ -2581,10 +2688,14 @@ sub tuneChannel(channel as object)
     queue = m.global.queueManager
     guideLineup = queue.callFunc("getLiveTvLineup")
 
+    ' Whatever the recovery held or had under way belongs to the channel being left
+    abandonLiveRecovery("the viewer tuned elsewhere")
+    hideLiveFailedCard()
+
     ' Reported here, since the stop the player sends for itself would name the next channel. It
     ' goes on a task of its own, because closing a live stream can hold the server up for a while
     ' and the next channel's start report would be dropped behind it.
-    if m.playReported then ReportPlayback("stop", true)
+    releaseLiveSessions()
     m.suppressStopReport = true
     m.playReported = false
     m.playbackRetries = 0
@@ -2594,8 +2705,17 @@ sub tuneChannel(channel as object)
     queue.callFunc("setLiveTvLineup", guideLineup)
     queue.callFunc("push", { id: channel.Id, type: "video" })
     m.top.id = channel.Id
-    m.LoadMetaDataTask.itemId = channel.Id
     m.LoadMetaDataTask.itemType = "video"
+    ' A new channel starts on its ordinary route, whatever the last one stepped down to
+    m.LoadMetaDataTask.playbackMethod = string.EMPTY
+    m.LoadMetaDataTask.transcodeCodec = string.EMPTY
+    loadChannel("tune")
+end sub
+
+' Asks for the channel playing, or the one just tuned, with the tracks the last load asked for
+sub loadChannel(purpose as string)
+    m.liveLoad = purpose
+    m.LoadMetaDataTask.itemId = m.top.id
     m.LoadMetaDataTask.observeField("content", "onVideoContentLoaded")
     m.LoadMetaDataTask.control = TaskControl.RUN
 end sub
@@ -2626,11 +2746,325 @@ sub onSwitchTimeout()
     finishChannelSwitch(false)
 end sub
 
+' ------------------------------------------------------------------------------------------------
+' Live recovery
+' ------------------------------------------------------------------------------------------------
+
+function liveNow() as integer
+    return m.liveClock.TotalMilliseconds()
+end function
+
+' Every load of a channel tells the recovery: a tune opens it afresh with the whole budget, and an
+' attempt's own load hands it the new stream. A track reload is the same stream asked for again.
+' The session a reload replaced lets its stream go only now that the new one is back.
+sub onLiveStreamLoaded(load as string)
+    if not isValid(m.liveChannel)
+        if load = "reResolve"
+            liveRecovery.ReResolveDone(m.liveRecovery, false, "The channel came back as something else", liveNow())
+            runLiveRecovery()
+        end if
+        return
+    end if
+
+    closeReplacedLiveSession()
+    m.liveSession = playbackReportParams()
+    hideLiveFailedCard()
+    if not isValid(m.liveRecovery) then m.liveRecovery = liveRecovery.Create()
+    m.liveRecovery.directPlay = not m.isTranscoded
+    m.liveLastState = ""
+    if load = "reResolve"
+        liveRecovery.ReResolveDone(m.liveRecovery, true, "", liveNow())
+    else if load = "tune"
+        liveRecovery.Tuned(m.liveRecovery, liveNow())
+    end if
+    runLiveRecovery()
+end sub
+
+' What the player reports goes to the recovery: the frames it shows, a stall, the viewer's own
+' pause, and a stream that ends. Only the viewer pauses the player, and only their resume takes
+' it out of a pause. The device also reports a failed stream as finished right after its error,
+' which the error has already dealt with.
+sub feedLiveRecovery(state as string)
+    if not isValid(m.liveChannel) then return
+    now = liveNow()
+    resumed = m.liveLastState = MediaPlaybackState.PAUSED and (state = MediaPlaybackState.BUFFERING or state = MediaPlaybackState.PLAYING)
+    afterError = m.liveLastState = MediaPlaybackState.ERROR
+    m.liveLastState = state
+    if state = MediaPlaybackState.FINISHED and afterError then return
+    if resumed then liveRecovery.SetPaused(m.liveRecovery, false, now)
+    if state = MediaPlaybackState.BUFFERING
+        liveRecovery.Update(m.liveRecovery, invalid, true, now)
+    else if state = MediaPlaybackState.PLAYING
+        liveRecovery.Update(m.liveRecovery, true, false, now)
+    else if state = MediaPlaybackState.PAUSED
+        liveRecovery.SetPaused(m.liveRecovery, true, now)
+        liveRecovery.Update(m.liveRecovery, false, invalid, now)
+    else if state = MediaPlaybackState.FINISHED
+        liveRecovery.Recover(m.liveRecovery, "completed", now)
+    else
+        return
+    end if
+    runLiveRecovery()
+end sub
+
+' A channel past its tune is the recovery's to bring back. Before its first frame it steps down
+' the routes once each instead, the way any stream does, and gives up when none is left.
+sub onLiveChannelError()
+    if liveRecovery.Engaged(m.liveRecovery)
+        liveRecovery.Recover(m.liveRecovery, "source-error", liveNow())
+        runLiveRecovery()
+        return
+    end if
+
+    method = liveFallbackMethod()
+    if method = string.EMPTY
+        diagnostics.Playback(`Live TV playback failed on every route for ${m.liveChannel.name}, giving the channel up`, diagnostics.LEVEL_ERROR)
+        releaseLiveSessions()
+        m.top.control = VideoControl.STOP
+        onLiveChannelLost()
+        return
+    end if
+
+    if method = PlaybackMethod.FORCELIVETVREMUX
+        diagnostics.Playback("Live TV direct play failed before playback started, asking the server for the channel", diagnostics.LEVEL_WARN)
+        m.LoadMetaDataTask.transcodeCodec = string.EMPTY
+    else
+        diagnostics.Playback(`Live TV stream failed before playback started, asking the server to transcode the ${m.videoCodec} video`, diagnostics.LEVEL_WARN)
+        m.LoadMetaDataTask.transcodeCodec = m.videoCodec
+    end if
+    m.LoadMetaDataTask.playbackMethod = method
+    stopForReload()
+    loadChannel("tune")
+end sub
+
+' The next step down for a channel that failed before its first frame: the server's own stream for
+' a direct played one, then its video transcoded. Empty once neither is left.
+function liveFallbackMethod() as string
+    if not m.isTranscoded then return PlaybackMethod.FORCELIVETVREMUX
+    if m.videoCodec = "" or m.LoadMetaDataTask.playbackMethod = PlaybackMethod.FORCETRANSCODEDISABLEREMUX then return string.EMPTY
+    return PlaybackMethod.FORCETRANSCODEDISABLEREMUX
+end function
+
+' What an attempt asks the server for: the channel the way it was tuned, the server's own stream
+' for a direct played one, or a channel the server already serves transcoded off its codec
+function liveReResolveRequest(route as object, videoCodec as string) as object
+    if route.forceTranscode then return { playbackMethod: PlaybackMethod.FORCETRANSCODEDISABLEREMUX, transcodeCodec: videoCodec }
+    if route.disableDirectPlay then return { playbackMethod: PlaybackMethod.FORCELIVETVREMUX, transcodeCodec: "" }
+    return { playbackMethod: "", transcodeCodec: "" }
+end function
+
+function liveReconnectingLabel(status as dynamic) as string
+    if not isValid(status) then return ""
+    return tr("Reconnecting… ({attempt} of {total})").Replace("{attempt}", status.attempt.toStr()).Replace("{total}", status.maxAttempts.toStr())
+end function
+
+' Carries out what the recovery asks for, oldest first, and runs the timers it wants
+sub runLiveRecovery()
+    while true
+        actions = liveRecovery.TakeActions(m.liveRecovery)
+        if actions.count() = 0 then exit while
+        for each action in actions
+            if action.kind = "log"
+                diagnostics.Playback(action.message, diagnostics.LEVEL_WARN)
+            else if action.kind = "status"
+                m.liveReconnecting = liveReconnectingLabel(action.status)
+                updateLoadingLayer()
+            else if action.kind = "reResolve"
+                reResolveLiveChannel(action)
+            else if action.kind = "release"
+                releaseLiveChannel()
+            else if action.kind = "lost"
+                onLiveChannelLost()
+            end if
+        end for
+    end while
+    syncLiveTimers()
+end sub
+
+' Starts, moves or stops each timer to match the time the recovery wants it to go off
+sub syncLiveTimers()
+    now = liveNow()
+    for each which in m.liveTimers
+        wanted = m.liveRecovery[which]
+        id = 0
+        if isValid(wanted) then id = wanted.id
+        if m.liveTimerIds[which] <> id
+            m.liveTimerIds[which] = id
+            timer = m.liveTimers[which]
+            timer.control = TimerControl.STOP
+            if id <> 0
+                wait = (wanted.due - now) / 1000
+                if wait < 0.001 then wait = 0.001
+                timer.duration = wait
+                timer.control = TimerControl.START
+            end if
+        end if
+    end for
+end sub
+
+sub onLiveRecoveryTimer(event as object)
+    which = invalid
+    timer = event.getRoSGNode()
+    for each kind in m.liveTimers
+        if m.liveTimers[kind].isSameNode(timer) then which = kind
+    end for
+    if not isValid(which) then return
+    m.liveTimerIds[which] = 0
+    liveRecovery.Fire(m.liveRecovery, which, liveNow())
+    runLiveRecovery()
+end sub
+
+' The viewer moved on. An attempt still waiting on its stop or its request belonged to the channel
+' being left, so it ends here instead of opening that channel again.
+sub abandonLiveRecovery(reason as string)
+    if not isValid(m.liveRecovery) then return
+    liveRecovery.Abandon(m.liveRecovery, reason)
+    if m.liveLoad = "reResolve" or isValid(m.liveStopWait)
+        m.liveStopWait = invalid
+        m.liveStopWaitTimer.control = TimerControl.STOP
+        m.liveReResolve = invalid
+        m.liveLoad = "tune"
+        liveRecovery.ReResolveDone(m.liveRecovery, false, reason, liveNow())
+    end if
+    runLiveRecovery()
+end sub
+
+' Gives the channel back and asks the server for it again on the route the attempt picked. The
+' stop frees the tuner and ends the server's job, and direct play has no job to wait on.
+sub reResolveLiveChannel(route as object)
+    m.liveReResolve = liveReResolveRequest(route, m.videoCodec)
+    m.liveLoad = "reResolve"
+    stopTask = releaseLiveSessions()
+    m.top.control = VideoControl.STOP
+    if m.isTranscoded and isValid(stopTask)
+        m.liveStopWait = stopTask
+        m.liveStopWaitTimer.control = TimerControl.STOP
+        m.liveStopWaitTimer.control = TimerControl.START
+        return
+    end if
+    requestLiveReResolve()
+end sub
+
+sub onLiveStopWaitOver()
+    if isValid(m.liveStopWait) then requestLiveReResolve()
+end sub
+
+sub requestLiveReResolve()
+    m.liveStopWait = invalid
+    m.liveStopWaitTimer.control = TimerControl.STOP
+    request = m.liveReResolve
+    m.liveReResolve = invalid
+    if not isValid(request) then return
+    m.LoadMetaDataTask.playbackMethod = request.playbackMethod
+    m.LoadMetaDataTask.transcodeCodec = request.transcodeCodec
+    loadChannel("reResolve")
+end sub
+
+' Stops the player and reports the stop, which frees the tuner, and tells the recovery once the
+' server has it
+sub releaseLiveChannel()
+    m.top.control = VideoControl.STOP
+    stopTask = releaseLiveSessions()
+    if isValid(stopTask)
+        m.liveReleaseTask = stopTask
+        return
+    end if
+    liveRecovery.ReleaseDone(m.liveRecovery, liveNow())
+end sub
+
+' A channel switch goes back to the channel that was working. Otherwise the card offers Retry,
+' waiting behind the channel changer while that is up.
+sub onLiveChannelLost()
+    m.streamLoading = false
+    updateLoadingLayer()
+    if isValid(m.channelSwitch)
+        finishChannelSwitch(false)
+        return
+    end if
+    m.liveLost = true
+    showLiveFailedCard()
+end sub
+
+sub showLiveFailedCard()
+    if not m.liveLost or isValid(m.carousel) then return
+    handleHideAction(false)
+    m.pauseOverlay.visible = false
+    m.liveFailedCard.channelName = m.liveChannel.name
+    m.liveFailedCard.visible = true
+    m.liveFailedCard.setFocus(true)
+end sub
+
+' The card holds focus whenever it shows, and the player under it is already in the focus chain,
+' so the card has to let go before focus can come back. Behind the channel changer it is already
+' hidden and the changer keeps focus.
+sub hideLiveFailedCard()
+    m.liveLost = false
+    if not m.liveFailedCard.visible then return
+    m.liveFailedCard.visible = false
+    m.liveFailedCard.setFocus(false)
+    m.top.setFocus(true)
+end sub
+
+' Retry opens the channel afresh, with the whole budget and on its ordinary route
+sub onLiveRetry()
+    if not m.liveLost then return
+    abandonLiveRecovery("the viewer retried the channel")
+    hideLiveFailedCard()
+    m.LoadMetaDataTask.playbackMethod = string.EMPTY
+    m.LoadMetaDataTask.transcodeCodec = string.EMPTY
+    loadChannel("tune")
+end sub
+
+' A channel asked for again keeps its stream until the new one is back, since closing it first
+' leaves a shared stream with no viewers and makes it reconnect to its source
+sub stopForReload()
+    m.liveLoad = "reload"
+    if isValid(m.liveSession)
+        m.replacedLiveSession = m.liveSession
+        m.liveSession = invalid
+    end if
+    m.top.control = VideoControl.STOP
+end sub
+
+function closeReplacedLiveSession() as object
+    if not isValid(m.replacedLiveSession) then return invalid
+    replaced = m.replacedLiveSession
+    m.replacedLiveSession = invalid
+    return stopLiveSession(replaced)
+end function
+
+function stopCurrentLiveSession() as object
+    if not isValid(m.liveSession) then return invalid
+    current = m.liveSession
+    m.liveSession = invalid
+    current.PositionTicks = int(m.top.position) * 10000000&
+    return stopLiveSession(current)
+end function
+
+' Lets go of every stream the channel holds, the replaced one and the current one, and hands back
+' the stop that went out last so a caller can wait on the server
+function releaseLiveSessions() as object
+    task = closeReplacedLiveSession()
+    current = stopCurrentLiveSession()
+    if isValid(current) then task = current
+    return task
+end function
+
+' Each stop goes on a task of its own, because closing a live stream can hold the server up for a
+' while and a report behind it on the shared task would be dropped
+function stopLiveSession(params as object) as object
+    return sendPlaystate("stop", params, true)
+end function
+
 ' The guide button always lands on the guide, not wherever playback was launched from. When the
 ' player was opened from the guide, going back to it drops the player so Back doesnt bounce through
 ' the guide twice.
 sub openGuide()
+    abandonLiveRecovery("the viewer opened the guide")
+    hideLiveFailedCard()
     closeCarousel()
+    releaseLiveSessions()
+    m.LoadMetaDataTask.unobserveField("content")
     m.top.findNode("liveProgramTimer").control = TimerControl.STOP
     m.global.queueManager.callFunc("clear")
     m.top.control = VideoControl.STOP
@@ -2643,6 +3077,13 @@ sub openGuide()
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
+    ' While a failed channel's card is up the remote belongs to Retry, apart from Up for the channel
+    ' changer and Back to leave
+    if m.liveLost and not isValid(m.carousel) and key <> KeyCode.BACK
+        if press and key = KeyCode.UP then openCarousel()
+        return true
+    end if
+
     ' The OK that picks Offset in the subtitle picker carries on up to here once the picker has
     ' closed, so the offset panel takes the remote back rather than letting it open the controls
     if m.subtitleOffsetOverlay.visible
@@ -2851,6 +3292,12 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
         currentTimeTimer = m.clock.findNode("currentTimeTimer")
         if isValid(currentTimeTimer) then currentTimeTimer.control = TimerControl.STOP
+
+        ' Leaving lets the channel go, and nothing the recovery held may touch the player again,
+        ' a load still under way included
+        abandonLiveRecovery("the viewer left the channel")
+        releaseLiveSessions()
+        if isValid(m.liveRecovery) then m.LoadMetaDataTask.unobserveField("content")
 
         m.global.queueManager.callFunc("bypassNextPreferredAudioTrackIndexReset")
         m.global.queueManager.callFunc("clear")
