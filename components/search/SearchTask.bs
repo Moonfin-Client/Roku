@@ -8,6 +8,11 @@ import "pkg:/source/utils/multiserver.bs"
 import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 
+' How long the rest of the results wait for people before showing without them, and how long
+' people get in all before they are given up on
+const PEOPLE_GRACE_MS = 1000
+const PEOPLE_TIMEOUT_MS = 10000
+
 sub init()
     m.top.functionName = "search"
 end sub
@@ -28,12 +33,37 @@ sub search()
     end if
 
     if allSessions.Count() = 0
+        ' A server with hints answers people along with everything else
+        people = invalid
+        if not serverSupportsSearchHints() then people = startPeopleSearch(query)
+        clock = CreateObject("roTimespan")
         results = normalizeSearchResults(searchMedia(query))
-        publishSearchResults(results, query, requestToken, false)
 
+        if isValid(people)
+            ' With nothing else to show, the results wait for people instead of coming up empty
+            allowance = PEOPLE_TIMEOUT_MS - clock.TotalMilliseconds()
+            if results.Items.Count() > 0 and allowance > PEOPLE_GRACE_MS then allowance = PEOPLE_GRACE_MS
+            found = peopleSearchResults(people, allowance)
+            if isValid(found)
+                appendSearchResults(results, found)
+                people = invalid
+            end if
+        end if
+
+        publishSearchResults(results, query, requestToken, false)
         if isSearchRequestStale(requestToken) then return
+        shown = results.Items.Count()
         appendSeerrResults(results, query)
         if isSearchRequestStale(requestToken) then return
+
+        if isValid(people)
+            ' Seerr results dont wait on people either
+            if results.Items.Count() > shown then publishSearchResults(results, query, requestToken, false)
+            found = peopleSearchResults(people, PEOPLE_TIMEOUT_MS - clock.TotalMilliseconds())
+            if not isValid(found) then people.AsyncCancel()
+            if isSearchRequestStale(requestToken) then return
+            if isValidAndNotEmpty(found) then appendSearchResults(results, found)
+        end if
 
         publishSearchResults(results, query, requestToken, true)
         return
@@ -146,6 +176,11 @@ sub search()
     if isSearchRequestStale(requestToken) then return
 
     publishSearchResults(results, query, requestToken, true)
+end sub
+
+sub appendSearchResults(results as object, items as object)
+    results.Items.Append(items)
+    results.TotalRecordCount = results.Items.Count()
 end sub
 
 sub appendSeerrResults(results as object, query as string)

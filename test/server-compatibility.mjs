@@ -406,6 +406,13 @@ assert.doesNotMatch(captionTask, /[^c]GetToString\(\)/, 'No caption download wai
 assert.equal((captionTask.match(/CreateObject\("roUrlTransfer"\)/g) || []).length, (loadTrack.match(/CreateObject\("roUrlTransfer"\)/g) || []).length, 'The caption transfer is only made inside the task');
 process.stdout.write('PASS: caption download wiring (3 checks)\n');
 
+// Media results reach the screen before people, which get their own request with a limit
+const itemsSearch = (await readFile('source/api/Items.bs', 'utf8')).match(/function searchViaItems\([^]*?end function/)[0];
+assert.doesNotMatch(itemsSearch, /persons/i, 'The items search no longer waits on people');
+const searchTask = await readFile('components/search/SearchTask.bs', 'utf8');
+assert.match(searchTask, /people = startPeopleSearch\(query\)[^]*?searchMedia\(query\)[^]*?publishSearchResults\(results, query, requestToken, false\)[^]*?peopleSearchResults\(people, PEOPLE_TIMEOUT_MS - clock\.TotalMilliseconds\(\)\)/, 'People start before the media search, media is published first and the late wait is bounded');
+process.stdout.write('PASS: search people wiring (2 checks)\n');
+
 // The row's sync keys, layout slot and strict filter live in files the harness cant load
 // whole, so they are checked where they are declared.
 const settingsSyncSource = await readFile('source/utils/settingsSync.bs', 'utf8');
