@@ -31,6 +31,12 @@ const PICKED_ROW_FIELDS = "PrimaryImageAspectRatio,ProductionYear,PremiereDate,I
 ' Enough to hold a whole collection laid out flat, which a stored order is sorted against
 const FLAT_COLLECTION_LIMIT = 500
 
+' How many chart titles are matched against the library per request
+const MATCH_CHUNK = 40
+' How the library's provider ids are read on Jellyfin, a page at a time and kept for a while
+const LIBRARY_INDEX_PAGE = 1000
+const LIBRARY_INDEX_TTL_SECONDS = 30 * 60
+
 const FIELDS = "DateCreated,Type,UserData,Overview,Genres,CommunityRating,CriticRating,OfficialRating,RunTimeTicks,ProductionYear,SeriesName,ParentIndexNumber,IndexNumber,Status,ImageTags,BackdropImageTags,ParentBackdropItemId,ParentBackdropImageTags,ParentThumbItemId,ParentThumbImageTag,SeriesId,SeriesPrimaryImageTag,ParentLogoItemId,ParentLogoImageTag,PrimaryImageTag,PrimaryImageAspectRatio"
 
 sub init()
@@ -2583,8 +2589,19 @@ function loadCustomDynamicList(listName as string, additionalData as dynamic) as
         }))
 
         if data <> invalid and chainLookupReturn(data, "success", false) = true and isChainValid(data, "items")
+            rowType = ""
+            if source = "tmdb_chart" then rowType = chartItemType(chartType)
+            items = []
             for each item in data.items
-                card = customRowCard(item)
+                if isValid(item)
+                    if rowType <> "" then item.AddReplace("type", rowType)
+                    items.push(item)
+                end if
+            end for
+
+            owned = libraryMatches(items)
+            for each item in items
+                card = customRowCard(item, owned)
                 if isValid(card) then results.push(card)
             end for
         end if
@@ -2593,12 +2610,180 @@ function loadCustomDynamicList(listName as string, additionalData as dynamic) as
     return results
 end function
 
+' TMDB's movie and TV charts dont say what each result is, so the chart's path decides. Trending
+' says per result, which matters for the list that mixes both
+function chartItemType(path as string) as string
+    route = LCase(path)
+    if route.startsWith("trending/") then route = route.Mid(9)
+    if route.startsWith("tv/") then return "Series"
+    if route.startsWith("movie/") then return "Movie"
+    return ""
+end function
+
+' TMDB numbers movies and shows separately, so its id only names a title together with the
+' type. IMDb ids are unique on their own
+function providerKeys(item as object) as object
+    keys = []
+    ids = item.LookupCI("ProviderIds")
+    if not isValid(ids) then return keys
+
+    itemType = item.LookupCI("Type") ?? ""
+    tmdbId = toNormalizedString(ids.LookupCI("Tmdb"))
+    if tmdbId <> "" and (itemType = "Movie" or itemType = "Series") then keys.push("tmdb." + itemType + "." + tmdbId)
+    imdbId = toNormalizedString(ids.LookupCI("Imdb"))
+    if imdbId <> "" then keys.push("imdb." + imdbId)
+    return keys
+end function
+
+sub indexByProviderIds(index as object, item as object, value as dynamic)
+    for each key in providerKeys(item)
+        if not index.DoesExist(key) then index[key] = value
+    end for
+end sub
+
+' The library items behind a chart's titles, keyed the way providerKeys names them
+function libraryMatches(items as object) as object
+    wanted = []
+    for each item in items
+        if providerKeys(item).Count() > 0 then wanted.push(item)
+    end for
+    if wanted.Count() = 0 then return {}
+    if isEmbyServer() then return matchOnEmby(wanted)
+    return matchOnJellyfin(wanted)
+end function
+
+' Emby can filter by provider id itself, so it is asked for every id the titles carry
+function matchOnEmby(wanted as object) as object
+    tokens = []
+    seen = {}
+    for each item in wanted
+        ids = item.LookupCI("ProviderIds")
+        for each name in ["Tmdb", "Imdb"]
+            id = toNormalizedString(ids.LookupCI(name))
+            if id <> ""
+                token = LCase(name) + "." + id
+                if not seen.DoesExist(token)
+                    seen[token] = true
+                    tokens.push(token)
+                end if
+            end if
+        end for
+    end for
+
+    found = {}
+    for start = 0 to tokens.Count() - 1 step MATCH_CHUNK
+        chunk = chunkFrom(tokens, start)
+        data = api.items.Get({
+            UserId: m.global.session.user.id,
+            Recursive: true,
+            IncludeItemTypes: "Movie,Series",
+            AnyProviderIdEquals: chunk.Join(","),
+            Fields: FIELDS + ",ProviderIds",
+            Limit: chunk.Count() * 2
+        })
+        for each item in chainLookupReturn(data, "Items", [])
+            indexByProviderIds(found, item, item)
+        end for
+    end for
+    return found
+end function
+
+' Jellyfin ignores a provider id filter and answers with the whole library, so the library's ids
+' are read once and the titles found in them are fetched by id
+function matchOnJellyfin(wanted as object) as object
+    index = libraryIndex()
+    ids = []
+    seen = {}
+    for each item in wanted
+        for each key in providerKeys(item)
+            id = index[key]
+            if isValid(id) and not seen.DoesExist(id)
+                seen[id] = true
+                ids.push(id)
+            end if
+        end for
+    end for
+
+    found = {}
+    for start = 0 to ids.Count() - 1 step MATCH_CHUNK
+        chunk = chunkFrom(ids, start)
+        data = api.items.Get({ UserId: m.global.session.user.id, Ids: chunk.Join(","), Fields: FIELDS + ",ProviderIds" })
+        for each item in chainLookupReturn(data, "Items", [])
+            indexByProviderIds(found, item, item)
+        end for
+    end for
+    return found
+end function
+
+function chunkFrom(values as object, start as integer) as object
+    chunk = []
+    for i = start to start + MATCH_CHUNK - 1
+        if i >= values.Count() then exit for
+        chunk.push(values[i])
+    end for
+    return chunk
+end function
+
+' The library's provider ids, read a page at a time and kept for a while per server and user.
+' A row loading while another row reads them waits for that read rather than starting its own
+function libraryIndex() as object
+    key = m.global.session.server.url + " " + m.global.session.user.id
+    now = CreateObject("roDateTime").AsSeconds()
+    held = m.global.libraryIndex
+    if isValid(held) and held.key = key and now - held.at < LIBRARY_INDEX_TTL_SECONDS
+        for i = 1 to 120
+            if isValid(held.index) then return held.index
+            sleep(250)
+            held = m.global.libraryIndex
+            if not isValid(held) or held.key <> key then exit for
+        end for
+    end if
+
+    if not m.global.hasField("libraryIndex") then m.global.addFields({ libraryIndex: {} })
+    m.global.libraryIndex = { key: key, at: now }
+    index = readLibraryIndex()
+    if not isValid(index)
+        ' A failed read isnt kept, so the next home load tries again
+        m.global.libraryIndex = { key: "" }
+        return {}
+    end if
+    m.global.libraryIndex = { key: key, at: now, index: index }
+    return index
+end function
+
+function readLibraryIndex() as dynamic
+    index = {}
+    start = 0
+    pageFull = true
+    while pageFull
+        data = api.items.Get({
+            UserId: m.global.session.user.id,
+            Recursive: true,
+            IncludeItemTypes: "Movie,Series",
+            Fields: "ProviderIds",
+            EnableImages: false,
+            EnableUserData: false,
+            EnableTotalRecordCount: false,
+            StartIndex: start,
+            Limit: LIBRARY_INDEX_PAGE
+        })
+        if not isChainValid(data, "Items") then return invalid
+        for each item in data.Items
+            indexByProviderIds(index, item, item.LookupCI("Id"))
+        end for
+        pageFull = data.Items.Count() = LIBRARY_INDEX_PAGE
+        start += LIBRARY_INDEX_PAGE
+    end while
+    return index
+end function
+
 ' customRowCard: One card for an item the plugin's list endpoints return. A title the server
 ' holds is a library item, anything else opens in Seerr by its TMDB id.
 '
 ' @param {dynamic} item - Item as the plugin returned it
+' @param {object} owned - The library items behind the row's titles, from libraryMatches
 ' @return {dynamic} a HomeData node, or invalid when the item names nothing playable
-function customRowCard(item as dynamic) as dynamic
+function customRowCard(item as dynamic, owned = {} as object) as dynamic
     if not isValid(item) then return invalid
 
     jellyfinId = item.LookupCI("Id")
@@ -2607,6 +2792,10 @@ function customRowCard(item as dynamic) as dynamic
         if not isValidAndNotEmpty(itemType) then itemType = "Movie"
         return internalRowNode(item, itemType)
     end if
+
+    for each key in providerKeys(item)
+        if owned.DoesExist(key) then return internalRowNode(owned[key], owned[key].LookupCI("Type"))
+    end for
 
     tmdbId = item.LookupCI("tmdbId")
     if not isValidAndNotEmpty(tmdbId) then tmdbId = item.LookupCI("id")
