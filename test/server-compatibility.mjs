@@ -56,6 +56,8 @@ const selections = {
     'source/utils/seasonalRow.bs': null,
     'source/utils/liveRecovery.bs': null,
     'source/utils/deviceCapabilities.bs': ['getSubtitleProfiles'],
+    'source/utils/seerrMissingCollection.bs': null,
+    'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions'],
     'source/enums/VideoType.bs': null,
     'source/enums/MediaStreamType.bs': null,
@@ -111,6 +113,9 @@ source += '\n' + await readFile('test/seasonal-row.bs', 'utf8');
 source += '\n' + await readFile('test/live-recovery.bs', 'utf8');
 source += '\n' + await readFile('test/caption-download.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-profiles.bs', 'utf8');
+source += '\n' + (await readFile('components/extras/collectionLookup.bs', 'utf8')).match(/^const MAX_COLLECTIONS = .+$/m)[0];
+source += '\n' + await readFile('test/collection-lookup.bs', 'utf8');
+source += '\n' + await readFile('test/seerr-missing-collection.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
@@ -412,6 +417,13 @@ assert.doesNotMatch(itemsSearch, /persons/i, 'The items search no longer waits o
 const searchTask = await readFile('components/search/SearchTask.bs', 'utf8');
 assert.match(searchTask, /people = startPeopleSearch\(query\)[^]*?searchMedia\(query\)[^]*?publishSearchResults\(results, query, requestToken, false\)[^]*?peopleSearchResults\(people, PEOPLE_TIMEOUT_MS - clock\.TotalMilliseconds\(\)\)/, 'People start before the media search, media is published first and the late wait is bounded');
 process.stdout.write('PASS: search people wiring (2 checks)\n');
+
+// Modern and Classic list every collection a film is in
+const parentCollection = extrasTask.match(/sub loadParentCollection\([^]*?end sub/)[0];
+assert.doesNotMatch(parentCollection, /^\s*return\s*$/m, 'The extras task keeps going after the first collection');
+assert.match(await readFile('components/extras/ExtrasRowList.bs', 'utf8'), /for each collectionNode in parentCollectionNodes/, 'Classic draws a row per collection');
+assert.match(await readFile('components/details/ModernItemDetails.bs', 'utf8'), /label: tr\("Collections"\), kind: "collections"/, 'Modern puts more than one collection under a Collections tab');
+process.stdout.write('PASS: parent collections wiring (3 checks)\n');
 
 // The row's sync keys, layout slot and strict filter live in files the harness cant load
 // whole, so they are checked where they are declared.
