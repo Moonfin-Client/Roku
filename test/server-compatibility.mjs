@@ -72,7 +72,7 @@ const selections = {
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError'],
     'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'toString', 'getHomeBackdropBlurAmount', 'inArray', 'guidKey'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
-    'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer'],
+    'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream'],
     'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel'],
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
@@ -120,6 +120,7 @@ source += '\n' + await readFile('test/collection-lookup.bs', 'utf8');
 source += '\n' + await readFile('test/seerr-missing-collection.bs', 'utf8');
 source += '\n' + await readFile('test/collection-row.bs', 'utf8');
 source += '\n' + await readFile('test/external-rows.bs', 'utf8');
+source += '\n' + await readFile('test/library-order.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
@@ -462,3 +463,13 @@ assert.match(loadItemsSource.match(/function readLibraryIndex\([^]*?end function
 assert.match(loadItemsSource.match(/function customRowCard\([^]*?end function/)[0], /for each key in providerKeys\(item\)\s+if owned\.DoesExist\(key\)/, 'An owned chart title becomes its library card');
 assert.match(loadItemsSource, /if source = "tmdb_chart" then rowType = chartItemType\(chartType\)/, 'A TMDB chart types its titles from the path');
 process.stdout.write('PASS: external rows wiring (4 checks)\n');
+
+// Library lists keep each server's order and leave out what an Emby user hid from My Media
+assert.match(await readFile('components/tasks/MultiServerTask.bs', 'utf8'), /itemsArray = withoutHiddenViews\(itemsArray, embyHiddenViews\(reqInfo\.userSession\)\)/, 'Multi-server views drop the libraries an Emby user hid');
+for (const nav of ['components/Sidebar.bs', 'components/JFOverhang.bs']) {
+    const navSource = await readFile(nav, 'utf8');
+    assert.match(navSource, /for each lib in librariesByServer\(allLibs\)/, `${nav} keeps each server's library order`);
+    assert.doesNotMatch(navSource, /sortLibrariesAlphabetically/, `${nav} no longer sorts libraries A to Z`);
+}
+assert.match(await readFile('components/Sidebar.bs', 'utf8'), /if isEmbyServer\(\) then views = withoutHiddenViews\(views, chainLookupReturn\(m\.global, "session\.user\.configuration\.MyMediaExcludes", \[\]\)\)/, 'The nav list drops the libraries an Emby user hid');
+process.stdout.write('PASS: library order wiring (6 checks)\n');
