@@ -121,6 +121,13 @@ source += '\n' + await readFile('test/seerr-missing-collection.bs', 'utf8');
 source += '\n' + await readFile('test/collection-row.bs', 'utf8');
 source += '\n' + await readFile('test/external-rows.bs', 'utf8');
 source += '\n' + await readFile('test/library-order.bs', 'utf8');
+const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
+source += '\nnamespace settingsSync\n';
+for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin']) {
+    source += '\n' + settingsSyncFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
+}
+source += '\nend namespace\n';
+source += '\n' + await readFile('test/settings-sync-values.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
