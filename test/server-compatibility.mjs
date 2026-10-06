@@ -473,3 +473,17 @@ for (const nav of ['components/Sidebar.bs', 'components/JFOverhang.bs']) {
 }
 assert.match(await readFile('components/Sidebar.bs', 'utf8'), /if isEmbyServer\(\) then views = withoutHiddenViews\(views, chainLookupReturn\(m\.global, "session\.user\.configuration\.MyMediaExcludes", \[\]\)\)/, 'The nav list drops the libraries an Emby user hid');
 process.stdout.write('PASS: library order wiring (6 checks)\n');
+
+// Deleting from a playlist names the row's entry id, which Emby keeps apart from the item's id,
+// and goes through the screen that lists the rows
+assert.match(await readFile('source/api/Items.bs', 'utf8'), /tmp\.playlistItemId = \(item\.LookupCI\("PlaylistItemId"\) \?\? ""\)\.ToStr\(\)/, 'Each playlist row keeps its entry id');
+const playlistScreen = await readFile('components/music/PlaylistDetails.bs', 'utf8');
+assert.match(playlistScreen, /confirmPlaylistAccess\(pageContent\.id, focusedItem\.playlistItemId, focusedItem\.title\)/, 'The options menu offers the row by its entry id');
+const playlistHandler = (await readFile('source/MainEventHandlers.bs', 'utf8')).match(/if isStringEqual\(selectedPopupButton, tr\("Delete from Playlist"\)\)[^]*?return\s+end if/)[0];
+assert.match(playlistHandler, /activeScene\.callFunc\("removePlaylistEntry", itemID\)[^]*?mainAction\.removeItemFromPlaylist\([^]*?activeScene\.callFunc\("finishPlaylistRemoval", removed, removedOk\)/, 'The row goes at once and comes back if the server keeps it');
+assert.match(mainActions, /APIRequest\(`\/Playlists\/\$\{playlistID\}\/Items`, \{ EntryIds: entryID \}\)[^]*?req\.SetRequest\("DELETE"\)/, 'The delete names the entry id');
+assert.match(mainActions.match(/sub removeItemFromMyList\([^]*?end sub/)[0], /MainAction\.removeItemFromPlaylist\(playlistID, MainAction\.playlistEntryId\(playlistID, itemID\)\)/, 'My List takes a title out by its entry id too');
+for (const name of ['removePlaylistEntry', 'finishPlaylistRemoval']) {
+    assert.match(await readFile('components/music/PlaylistDetails.xml', 'utf8'), new RegExp(`<function name="${name}" />`), `The playlist screen offers ${name}`);
+}
+process.stdout.write('PASS: playlist removal wiring (7 checks)\n');

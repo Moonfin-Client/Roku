@@ -4109,6 +4109,16 @@
         <translation>Remove</translation>
     </message>
     <message>
+        <source>Delete from Playlist</source>
+        <extracomment>Option on a playlist row that takes it out of the playlist</extracomment>
+        <translation>Delete from Playlist</translation>
+    </message>
+    <message>
+        <source>Removed from playlist</source>
+        <extracomment>Note once the server has taken a row out of a playlist</extracomment>
+        <translation>Removed from playlist</translation>
+    </message>
+    <message>
         <source>Failed to remove from collection: {error}</source>
         <extracomment>Note when the server refuses a removal. {error} is the reason</extracomment>
         <translation>Failed to remove from collection: {error}</translation>
