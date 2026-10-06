@@ -3148,6 +3148,11 @@
         <translation>Date Added</translation>
     </message>
     <message>
+        <source>Playlist Order</source>
+        <extracomment>A sort choice for a collection row: the order its titles were arranged in</extracomment>
+        <translation>Playlist Order</translation>
+    </message>
+    <message>
         <source>You&apos;re set. Here&apos;s what else is in here.</source>
         <translation>You&apos;re set. Here&apos;s what else is in here.</translation>
     </message>

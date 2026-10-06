@@ -70,12 +70,14 @@ const selections = {
     'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL', 'addSourceCodecs', 'shouldBurnInSubtitle', 'transcodeCopiesVideo'],
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError'],
-    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'toString', 'getHomeBackdropBlurAmount', 'inArray'],
+    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'toString', 'getHomeBackdropBlurAmount', 'inArray', 'guidKey'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream'],
     'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel'],
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
+    'components/home/HomeRows.bs': ['toNormalizedString'],
+    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'arrangeByStoredOrder', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
     'components/config/SigninScene.bs': ['checkQuickConnectEnabled'],
@@ -116,6 +118,7 @@ source += '\n' + await readFile('test/subtitle-profiles.bs', 'utf8');
 source += '\n' + (await readFile('components/extras/collectionLookup.bs', 'utf8')).match(/^const MAX_COLLECTIONS = .+$/m)[0];
 source += '\n' + await readFile('test/collection-lookup.bs', 'utf8');
 source += '\n' + await readFile('test/seerr-missing-collection.bs', 'utf8');
+source += '\n' + await readFile('test/collection-row.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
@@ -442,3 +445,11 @@ assert.match(loadItemsSource, /startsWith\("seerr_"\)\s+m\.top\.content = parent
 assert.match(loadItemsSource.match(/function loadSeasonalRow\([^]*?end function/)[0], /WithoutBlockedItems\(owned\)[^]*?WithoutUnratedOrBlockedItems\(suggestions\)/, 'Owned titles keep the usual filter and suggestions the strict one');
 assert.match(await readFile('components/home/LoadItemsTask.xml', 'utf8'), /<field id="rowKey" type="string"/, 'The row task reports which holiday it loaded');
 process.stdout.write('PASS: seasonal row wiring (11 checks)\n');
+
+// A picked collection row asks for its members alone, follows a stored Playlist Order and opens
+// a series into its episodes in order when asked
+assert.match(loadItemsSource.match(/function loadPickedRow\([^]*?end function/)[0], /else if isStringEqual\(picked\.source, "collections"\)\s+params\.ParentId = itemId\s+items = collectionRowItems\(params, settings\)/, 'A collection is asked for its members without Recursive');
+assert.match(loadItemsSource.match(/function collectionRowItems\([^]*?end function/)[0], /\/Moonfin\/Collections\/\$\{params\.ParentId\}\/Order[^]*?Recursive: true,\s+Limit: FLAT_COLLECTION_LIMIT/, 'A stored order reads the collection flat');
+assert.match(loadItemsSource.match(/function expandSeriesToEpisodes\([^]*?end function/)[0], /SortBy: "ParentIndexNumber,IndexNumber",\s+SortOrder: "Ascending"/, 'A series opens into its episodes in order');
+assert.match(await readFile('settings/settings.json', 'utf8'), /"settingName": "ui\.home\.collectionsRowSortBy"[^]*?"id": "playlistOrder"/, 'Playlist Order is offered for the collection rows');
+process.stdout.write('PASS: collection row wiring (4 checks)\n');
