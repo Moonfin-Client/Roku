@@ -55,6 +55,7 @@ const selections = {
     'source/utils/parentalFilter.bs': null,
     'source/utils/seasonalRow.bs': null,
     'source/utils/liveRecovery.bs': null,
+    'source/utils/deviceCapabilities.bs': ['getSubtitleProfiles'],
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions'],
     'source/enums/VideoType.bs': null,
     'source/enums/MediaStreamType.bs': null,
@@ -63,6 +64,7 @@ const selections = {
     'source/utils/embyFeatures.bs': null,
     'components/embyPreview/EmbyPreviewTask.bs': ['loadPreviewData'],
     'components/PlaystateTask.bs': ['closeEmbyPlayback'],
+    'components/captionTask.bs': ['trackAddress'],
     'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL', 'addSourceCodecs', 'shouldBurnInSubtitle', 'transcodeCopiesVideo'],
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError'],
@@ -107,6 +109,8 @@ source += '\n' + await readFile('test/home-backdrop-blur.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-burn-in.bs', 'utf8');
 source += '\n' + await readFile('test/seasonal-row.bs', 'utf8');
 source += '\n' + await readFile('test/live-recovery.bs', 'utf8');
+source += '\n' + await readFile('test/caption-download.bs', 'utf8');
+source += '\n' + await readFile('test/subtitle-profiles.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
@@ -393,6 +397,14 @@ process.stdout.write(`PASS: card selections (${extrasSelections.length * 2 + mod
 assert.match(videoLoader, /and shouldBurnInSubtitle\(video\.SelectedSubtitle\)[^]*?emptySubtitleProfiles: true[^]*?video\.subtitlesBurnedIn = true/, 'The task only marks a transcode burned in when it asked for that');
 assert.doesNotMatch(await readFile('components/video/VideoPlayerView.bs', 'utf8'), /playback\.subs\.burnin/, 'The player goes by what the task burned in, not the setting');
 process.stdout.write('PASS: subtitle burn-in wiring (2 checks)\n');
+
+// A custom subtitle track downloads on the task's own thread, never in an observer the render thread runs
+const captionTask = await readFile('components/captionTask.bs', 'utf8');
+const loadTrack = captionTask.match(/sub loadTrack\(\)[^]*?end sub/)[0];
+assert.match(captionTask, /m\.top\.functionName = "loadTrack"/, 'The caption task runs its download as a task');
+assert.doesNotMatch(captionTask, /[^c]GetToString\(\)/, 'No caption download waits on the server');
+assert.equal((captionTask.match(/CreateObject\("roUrlTransfer"\)/g) || []).length, (loadTrack.match(/CreateObject\("roUrlTransfer"\)/g) || []).length, 'The caption transfer is only made inside the task');
+process.stdout.write('PASS: caption download wiring (3 checks)\n');
 
 // The row's sync keys, layout slot and strict filter live in files the harness cant load
 // whole, so they are checked where they are declared.

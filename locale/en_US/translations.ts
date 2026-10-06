@@ -3744,16 +3744,6 @@
         <translation>Tip: Enable 'Direct Play ASS Subtitles' in Subtitle Preferences to play directly without transcoding.</translation>
     </message>
     <message>
-        <source>PGS subtitles require transcoding because direct play is turned off.</source>
-        <extracomment>Why a file cant direct play</extracomment>
-        <translation>PGS subtitles require transcoding because direct play is turned off.</translation>
-    </message>
-    <message>
-        <source>Tip: Enable 'Direct Play PGS Subtitles' in Subtitle Preferences to play directly without transcoding.</source>
-        <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
-        <translation>Tip: Enable 'Direct Play PGS Subtitles' in Subtitle Preferences to play directly without transcoding.</translation>
-    </message>
-    <message>
         <source>Tip: Increase 'Maximum Bitrate' in Video Playback Preferences to allow direct streaming.</source>
         <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
         <translation>Tip: Increase 'Maximum Bitrate' in Video Playback Preferences to allow direct streaming.</translation>

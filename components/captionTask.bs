@@ -9,10 +9,13 @@ import "pkg:/source/utils/playbackOverlay.bs"
 const SHADOW_OFFSET = 2
 ' Subtitles never run wider than this share of the screen
 const MAX_WIDTH_PERCENT = 90
+' A track the server never answers for is let go after this long
+const DOWNLOAD_TIMEOUT_MS = 300000
 
 sub init()
+    m.top.functionName = "loadTrack"
     m.top.playerState = MediaPlaybackState.STOPPED
-    m.top.observeField("url", "fetchCaption")
+    m.top.observeField("state", "onTaskState")
     m.top.currentCaption = []
     m.top.currentPos = 0
 
@@ -20,8 +23,7 @@ sub init()
     m.captionTimer.ObserveField("fire", "updateCaption")
 
     m.captionList = []
-    m.reader = createObject("roUrlTransfer")
-    m.tags = CreateObject("roRegex", "{\\an\d*}|&lt;.*?&gt;|<.*?>", "s")
+    m.loadedUrl = ""
     ' The fallback font for scripts the system font lacks. Style changes cant open the file system,
     ' so it gets checked once here.
     m.fontUri = ""
@@ -88,18 +90,84 @@ function getCues() as object
     return cues
 end function
 
-sub fetchCaption()
+' The device wraps the name of a track it was handed, so the address sits somewhere inside it
+function trackAddress(trackName as string) as string
+    found = CreateObject("roRegex", "(http.*?\.vtt)", "s").match(trackName)
+    if found.count() = 0 then return ""
+    return found[0]
+end function
+
+' A new pick clears the old track's lines straight away, and the new ones fill in once they land
+sub onUrlChanged()
     m.captionTimer.control = "stop"
-    re = CreateObject("roRegex", "(http.*?\.vtt)", "s")
-    url = re.match(m.top.url)[0]
-    if url <> invalid
-        m.reader.setUrl(url)
-        text = m.reader.GetToString()
-        m.captionList = parseVTT(text)
-        m.captionTimer.control = "start"
-    else
-        m.captionTimer.control = "stop"
-    end if
+    m.captionList = []
+    m.cueNodes = {}
+    m.top.currentCaption = []
+    if trackAddress(m.top.url) <> "" then m.top.control = "RUN"
+end sub
+
+' A pick that came in as the download finished is asked for again
+sub onTaskState()
+    if m.top.state = "run" then return
+    if m.top.url <> m.loadedUrl and trackAddress(m.top.url) <> "" then m.top.control = "RUN"
+end sub
+
+' An answer about a track the viewer has since moved off is dropped
+sub onCuesLoaded()
+    loaded = m.top.loaded
+    if loaded.url <> m.top.url then return
+    m.loadedUrl = loaded.url
+    m.captionList = loaded.cues
+    m.cueNodes = {}
+    m.captionTimer.control = "start"
+end sub
+
+' The server pulls an embedded text track out of the file before it can answer, which takes a while
+' on a big file and on Emby means reading the whole file through. So the download runs here, off
+' the render thread, and starts over on whatever track gets picked while it runs.
+sub loadTrack()
+    m.tags = CreateObject("roRegex", "{\\an\d*}|&lt;.*?&gt;|<.*?>", "s")
+    port = CreateObject("roMessagePort")
+    m.top.observeField("url", port)
+    clock = CreateObject("roTimespan")
+    transfer = invalid
+    askedFor = invalid
+
+    while true
+        if askedFor <> m.top.url
+            if isValid(transfer) then transfer.AsyncCancel()
+            askedFor = m.top.url
+            address = trackAddress(askedFor)
+            if address = "" then exit while
+            transfer = CreateObject("roUrlTransfer")
+            transfer.SetMessagePort(port)
+            transfer.SetUrl(address)
+            setCertificateAuthority(transfer)
+            transfer.AsyncGetToString()
+            clock.Mark()
+        end if
+
+        msg = wait(1000, port)
+        if type(msg) = "roUrlEvent" and msg.GetSourceIdentity() = transfer.GetIdentity() and msg.GetInt() = 1
+            text = ""
+            if msg.GetResponseCode() = 200
+                text = msg.GetString()
+            else
+                diagnostics.Playback(`Subtitle track download failed with ${msg.GetResponseCode()} ${msg.GetFailureReason()}`, diagnostics.LEVEL_WARN)
+            end if
+            m.top.loaded = { url: askedFor, cues: parseVTT(text) }
+            exit while
+        end if
+
+        if clock.TotalMilliseconds() > DOWNLOAD_TIMEOUT_MS
+            transfer.AsyncCancel()
+            diagnostics.Playback("Subtitle track download timed out", diagnostics.LEVEL_WARN)
+            m.top.loaded = { url: askedFor, cues: [] }
+            exit while
+        end if
+    end while
+
+    m.top.unobserveField("url")
 end sub
 
 function styledLabel(txt as string, color as string) as object
