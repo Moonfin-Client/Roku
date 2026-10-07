@@ -23,7 +23,8 @@ const ITEM_MENU_LOAD_SECONDS = 10
 ' ===== Opening =====
 
 ' card is a content node carrying json, or the json itself. options.inCollection, with
-' collectionId and collectionName, offers taking the item out of that collection. Answers false
+' collectionId and collectionName, offers taking the item out of that collection, and
+' options.playlist, from playlistRowOptions, gives a playlist row its own entries. Answers false
 ' when the card has no menu, so the key can go on to whatever else wants it.
 function showItemMenu(card as dynamic, options = {} as object) as boolean
     menuJson = itemMenuCardJson(card)
@@ -126,6 +127,7 @@ function itemMenuFlags(menuJson as object, options as object) as object
         isJellyfin: activeIsJellyfin,
         canManageCollections: canManageCollections,
         inCollection: itemMenu.IsTrue(options.inCollection) and isValidAndNotEmpty(options.collectionId),
+        playlist: options.playlist,
         foreign: foreign,
         inMyList: false
     }
@@ -230,8 +232,15 @@ sub runItemMenuEntry(entryId as string)
     if not isValid(subject) then return
     menuJson = subject.json
 
-    if entryId = "play"
+    if entryId = "play" and isValid(subject.options.playlist)
+        ' From a playlist row, Play means the playlist from that row on
+        m.top.playlistItemSelected = playlistRowIndex(subject.card)
+    else if entryId = "play"
         itemMenuPlay(subject)
+    else if entryId = "viewDetails"
+        m.global.sceneManager.itemMenuRequest = { action: "openItem", item: menuJson }
+    else if entryId = "removeFromPlaylist" or entryId = "moveUp" or entryId = "moveDown"
+        itemMenuChangePlaylist(subject, entryId)
     else if entryId = "watched"
         played = itemMenu.IsTrue(chainLookupReturn(menuJson, "UserData.Played", false))
         runItemMenuTask(itemMenuRequest(subject, "played", { value: not played }), "onItemMenuPlayedSaved")
@@ -327,9 +336,11 @@ sub itemMenuPatchUserData(subject as object, patch as object)
     subject.json.UserData = userData
 end sub
 
-' Home reads its rows again when it comes back, since a change here can show on it
+' Home reads its rows again when it comes back, since a change here can show on it. A playlist
+' row carries its own watched mark.
 sub itemMenuNotify(action as string, subject as object)
     if not m.top.isSubType("Home") then m.global.homeNeedsRefresh = true
+    if isValid(subject.options.playlist) then subject.card.played = itemMenu.IsTrue(chainLookupReturn(subject.json, "UserData.Played", false))
     itemMenuChanged(action, subject.card, subject.json)
 end sub
 
@@ -579,6 +590,84 @@ sub onItemMenuRemoved(event as object)
     removal = response.request.removal
     if isValid(removal) then removal.parent.insertChild(removal.card, removal.index)
     showItemMenuToast(tr("Failed to remove from collection: {error}").Replace("{error}", itemMenu.DescribeError(response.status, response.message)))
+end sub
+
+' ===== Playlist rows =====
+
+' What the menu on a playlist row needs, for the options showItemMenu takes. The row is a child
+' of the list the page plays from. Moving or deleting needs an entry id on every row, which only
+' a real playlist carries.
+function playlistRowOptions(row as object, playlistId as string) as object
+    rows = row.getParent()
+    index = playlistRowIndex(row)
+    canManage = isValidAndNotEmpty(playlistId)
+    for each entry in rows.getChildren(-1, 0)
+        if not canManage then exit for
+        canManage = isValidAndNotEmpty(entry.playlistItemId)
+    end for
+
+    return {
+        playlist: {
+            playlistId: playlistId,
+            canManage: canManage,
+            first: index <= 0,
+            last: index >= rows.getChildCount() - 1
+        }
+    }
+end function
+
+function playlistRowIndex(row as object) as integer
+    rows = row.getParent()
+    if not isValid(rows) then return -1
+
+    for i = 0 to rows.getChildCount() - 1
+        if rows.getChild(i).isSameNode(row) then return i
+    end for
+    return -1
+end function
+
+' The row moves or goes at once and comes back if the server refuses. The page that holds the
+' rows declares playlistRowsChanged, which redraws them with the cursor on the given row.
+sub itemMenuChangePlaylist(subject as object, entryId as string)
+    row = subject.card
+    from = playlistRowIndex(row)
+    if from < 0 then return
+    rows = row.getParent()
+
+    rows.removeChildIndex(from)
+    op = "removeFromPlaylist"
+    target = from
+    if entryId <> "removeFromPlaylist"
+        op = "movePlaylistItem"
+        target = entryId = "moveUp" ? from - 1 : from + 1
+        rows.insertChild(row, target)
+    end if
+
+    m.top.callFunc("playlistRowsChanged", target)
+    runItemMenuTask(itemMenuRequest(subject, op, {
+        playlistId: subject.options.playlist.playlistId,
+        entryId: row.playlistItemId,
+        newIndex: target,
+        rows: rows,
+        from: from
+    }), "onItemMenuPlaylistChanged")
+end sub
+
+sub onItemMenuPlaylistChanged(event as object)
+    response = event.getData()
+    releaseItemMenuTask(event.getRoSGNode(), "response")
+    request = response.request
+
+    if response.success
+        if request.op = "removeFromPlaylist" then showItemMenuToast(tr("Removed from playlist"))
+        return
+    end if
+
+    row = request.subject.card
+    rows = request.rows
+    if request.op = "movePlaylistItem" then rows.removeChildIndex(playlistRowIndex(row))
+    rows.insertChild(row, request.from)
+    m.top.callFunc("playlistRowsChanged", request.from)
 end sub
 
 ' ===== Admin =====

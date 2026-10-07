@@ -50,6 +50,7 @@ const selections = {
     'source/utils/serverCompatibility.bs': null,
     'source/utils/accentFolding.bs': null,
     'source/utils/libraryFilters.bs': null,
+    'source/utils/itemMenu.bs': null,
     'source/utils/logRedaction.bs': null,
     'source/utils/youtubeTrailer.bs': null,
     'source/utils/detailCompatibility.bs': null,
@@ -75,7 +76,7 @@ const selections = {
     'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL', 'addSourceCodecs', 'shouldBurnInSubtitle', 'transcodeCopiesVideo'],
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError'],
-    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'toString', 'getHomeBackdropBlurAmount', 'inArray', 'guidKey'],
+    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'toString', 'getHomeBackdropBlurAmount', 'inArray', 'guidKey', 'isString'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream'],
@@ -128,6 +129,7 @@ source += '\n' + await readFile('test/external-rows.bs', 'utf8');
 source += '\n' + await readFile('test/library-order.bs', 'utf8');
 source += '\n' + await readFile('test/detail-sections.bs', 'utf8');
 source += '\n' + await readFile('test/library-filters.bs', 'utf8');
+source += '\n' + await readFile('test/item-menu.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n';
 for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin']) {
@@ -502,16 +504,18 @@ for (const nav of ['components/Sidebar.bs', 'components/JFOverhang.bs']) {
 assert.match(await readFile('components/Sidebar.bs', 'utf8'), /if isEmbyServer\(\) then views = withoutHiddenViews\(views, chainLookupReturn\(m\.global, "session\.user\.configuration\.MyMediaExcludes", \[\]\)\)/, 'The nav list drops the libraries an Emby user hid');
 process.stdout.write('PASS: library order wiring (6 checks)\n');
 
-// Deleting from a playlist names the row's entry id, which Emby keeps apart from the item's id,
-// and goes through the screen that lists the rows
+// Deleting or moving a playlist row names its entry id, which Emby keeps apart from the item's id
 assert.match(await readFile('source/api/Items.bs', 'utf8'), /tmp\.playlistItemId = \(item\.LookupCI\("PlaylistItemId"\) \?\? ""\)\.ToStr\(\)/, 'Each playlist row keeps its entry id');
-const playlistScreen = await readFile('components/music/PlaylistDetails.bs', 'utf8');
-assert.match(playlistScreen, /confirmPlaylistAccess\(pageContent\.id, focusedItem\.playlistItemId, focusedItem\.title\)/, 'The options menu offers the row by its entry id');
-const playlistHandler = (await readFile('source/MainEventHandlers.bs', 'utf8')).match(/if isStringEqual\(selectedPopupButton, tr\("Delete from Playlist"\)\)[^]*?return\s+end if/)[0];
-assert.match(playlistHandler, /activeScene\.callFunc\("removePlaylistEntry", itemID\)[^]*?mainAction\.removeItemFromPlaylist\([^]*?activeScene\.callFunc\("finishPlaylistRemoval", removed, removedOk\)/, 'The row goes at once and comes back if the server keeps it');
+const itemMenuTask = await readFile('components/itemMenu/ItemMenuTask.bs', 'utf8');
+assert.match(itemMenuTask, /taskRequest\(`Playlists\/\$\{request\.playlistId\}\/Items`, \{ EntryIds: request\.entryId \}\), "DELETE"\)/, 'The row menu deletes by entry id');
+assert.match(itemMenuTask, /taskRequest\(`Playlists\/\$\{request\.playlistId\}\/Items\/\$\{request\.entryId\}\/Move\/\$\{request\.newIndex\.toStr\(\)\}`, \{\}\), "POST"\)/, 'The move names the entry id and where it goes');
+const itemMenuHostSource = await readFile('components/itemMenu/itemMenuHost.bs', 'utf8');
+assert.match(itemMenuHostSource.match(/sub itemMenuChangePlaylist\([^]*?end sub/)[0], /rows\.removeChildIndex\(from\)[^]*?m\.top\.callFunc\("playlistRowsChanged", target\)[^]*?runItemMenuTask/, 'The row goes before the server answers');
+assert.match(itemMenuHostSource.match(/sub onItemMenuPlaylistChanged\([^]*?end sub/)[0], /rows\.insertChild\(row, request\.from\)/, 'And comes back if the server refuses');
 assert.match(mainActions, /APIRequest\(`\/Playlists\/\$\{playlistID\}\/Items`, \{ EntryIds: entryID \}\)[^]*?req\.SetRequest\("DELETE"\)/, 'The delete names the entry id');
 assert.match(mainActions.match(/sub removeItemFromMyList\([^]*?end sub/)[0], /MainAction\.removeItemFromPlaylist\(playlistID, MainAction\.playlistEntryId\(playlistID, itemID\)\)/, 'My List takes a title out by its entry id too');
-for (const name of ['removePlaylistEntry', 'finishPlaylistRemoval']) {
-    assert.match(await readFile('components/music/PlaylistDetails.xml', 'utf8'), new RegExp(`<function name="${name}" />`), `The playlist screen offers ${name}`);
+assert.match(await readFile('components/music/PlaylistDetails.bs', 'utf8'), /m\.itemList\.content = listData/, 'The playlist screen lists the rows playback reads');
+for (const screen of ['components/music/PlaylistDetails.xml', 'components/details/ModernItemDetails.xml', 'components/details/SpotlightItemDetails.xml']) {
+    assert.match(await readFile(screen, 'utf8'), /<function name="playlistRowsChanged" \/>/, `${screen} redraws its rows after the menu changes them`);
 }
-process.stdout.write('PASS: playlist removal wiring (7 checks)\n');
+process.stdout.write('PASS: playlist row wiring (11 checks)\n');

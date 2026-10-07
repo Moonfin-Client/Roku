@@ -5433,5 +5433,20 @@
         <extracomment>Under a Sort and Filter search that matches nothing</extracomment>
         <translation>No results</translation>
     </message>
+    <message>
+        <source>View Details</source>
+        <extracomment>Playlist row menu entry that opens the title's page</extracomment>
+        <translation>View Details</translation>
+    </message>
+    <message>
+        <source>Move Up</source>
+        <extracomment>Playlist row menu entry that moves the row one place earlier</extracomment>
+        <translation>Move Up</translation>
+    </message>
+    <message>
+        <source>Move Down</source>
+        <extracomment>Playlist row menu entry that moves the row one place later</extracomment>
+        <translation>Move Down</translation>
+    </message>
 </context>
 </TS>
