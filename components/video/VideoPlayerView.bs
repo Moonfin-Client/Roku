@@ -35,7 +35,7 @@ const NEXT_UP_PLAY = 0
 const NEXT_UP_DISMISS = 1
 
 sub init()
-    m.top.observeField("availableAudioTracks", "onAvailableAudioTracksChanged")
+    m.top.observeField("availableAudioTracks", "applyChosenAudioTrack")
 
     ' Carries on through the rest of the queue, the way it does in the other clients
     m.subtitleOffset = m.global.queueManager.callFunc("getSubtitleOffset")
@@ -246,32 +246,47 @@ sub init()
     m.top.enableTrickPlay = false
 end sub
 
-sub onAvailableAudioTracksChanged()
-    if not isValidAndNotEmpty(m.top.availableAudioTracks) then return
+' Direct play hands the Roku the whole file, and it can start on a different track than the one
+' chosen. It numbers its tracks its own way, so the chosen stream is set once the tracks are
+' known, and only when the Roku isnt already playing it
+sub applyChosenAudioTrack()
+    if m.isTranscoded ?? true then return
 
-    preferredAudioTrackName = m.global.queueManager.callFunc("getPreferredAudioTrackName")
+    stream = chosenAudioStream()
+    if not isValid(stream) then return
+    if stream.Index <> m.top.audioIndex then m.top.audioIndex = stream.Index
 
-    for each audioTrack in m.top.availableAudioTracks
-        if isStringEqual(audioTrack.LookupCI("name"), preferredAudioTrackName)
-            m.global.queueManager.callFunc("setPreferredAudioTrackIndex", audioTrack.LookupCI("Track").toint())
-            m.top.audioIndex = audioTrack.LookupCI("Track")
-
-            ' Save the current video position
-            if m.top.position <> 0
-                m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
-            end if
-
-            stopForReload()
-
-            m.LoadMetaDataTask.selectedAudioStreamIndex = m.top.audioIndex
-            m.LoadMetaDataTask.itemId = m.top.id
-            m.LoadMetaDataTask.observeField("content", "onVideoContentLoaded")
-            m.LoadMetaDataTask.control = TaskControl.RUN
-
-            exit for
-        end if
-    end for
+    track = rokuAudioTrack(stream, m.top.availableAudioTracks, m.top.fullAudioData)
+    if track <> "" and track <> m.top.currentAudioTrack then m.top.audioTrack = track
 end sub
+
+' A track picked by name earlier in the queue wins, so the next episode keeps it even when the
+' file lays its tracks out differently
+function chosenAudioStream() as dynamic
+    remembered = m.global.queueManager.callFunc("getPreferredAudioTrackName")
+    chosen = invalid
+    for each stream in m.top.fullAudioData ?? []
+        if remembered <> "" and isStringEqual(stream.RokuTrackName, remembered) then return stream
+        if stream.Index = m.top.audioIndex then chosen = stream
+    end for
+    return chosen
+end function
+
+' The Roku's own id for a Jellyfin audio stream: by the name the Roku gives the track, or by its
+' place among the audio tracks when both list the same number
+function rokuAudioTrack(stream as object, tracks as dynamic, streams as dynamic) as string
+    if not isValidAndNotEmpty(tracks) or not isValidAndNotEmpty(streams) then return ""
+
+    for each track in tracks
+        if isStringEqual(track.LookupCI("Name"), stream.RokuTrackName) then return track.LookupCI("Track")
+    end for
+
+    if tracks.count() <> streams.count() then return ""
+    for i = 0 to streams.count() - 1
+        if streams[i].Index = stream.Index then return tracks[i].LookupCI("Track")
+    end for
+    return ""
+end function
 
 ' setSiblingData: Set the icon and title text for the previous and next items
 '
@@ -913,6 +928,13 @@ sub onAudioIndexChange()
     ' Skip initial audio index setting
     if m.top.position = 0 then return
 
+    ' Direct play already holds every track, so it switches without loading the stream again
+    if not m.isTranscoded
+        m.LoadMetaDataTask.selectedAudioStreamIndex = m.top.audioIndex
+        applyChosenAudioTrack()
+        return
+    end if
+
     ' Save the current video position
     m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
 
@@ -1195,12 +1217,6 @@ sub onVideoContentLoaded()
     end if
 
     m.top.observeField("selectedSubtitle", "onSubtitleChange")
-
-    if isValid(m.top.audioIndex)
-        m.top.audioTrack = m.top.audioIndex.toStr()
-    else
-        m.top.audioTrack = "2"
-    end if
 
     m.top.setFocus(true)
 
@@ -1685,6 +1701,10 @@ sub onState()
         ' Show dark overlay when paused
         m.pauseOverlay.visible = true
     else if isStringEqual(m.top.state, MediaPlaybackState.PLAYING)
+        ' The Roku can still be settling on its own default when the track list arrives, so the
+        ' chosen track is checked again once playback starts
+        applyChosenAudioTrack()
+
         ' Enable auto-hide timer when playing (5 seconds)
         m.osd.inactiveTimeout = 5
         ' Hide dark overlay when playing

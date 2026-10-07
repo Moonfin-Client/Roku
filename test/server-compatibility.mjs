@@ -74,7 +74,7 @@ const selections = {
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream'],
-    'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel'],
+    'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel', 'rokuAudioTrack'],
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
     'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'arrangeByStoredOrder', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'chartItemType', 'providerKeys', 'indexByProviderIds'],
@@ -128,6 +128,7 @@ for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin']) {
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/settings-sync-values.bs', 'utf8');
+source += '\n' + await readFile('test/audio-track.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
