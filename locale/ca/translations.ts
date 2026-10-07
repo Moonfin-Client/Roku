@@ -2270,5 +2270,9 @@
         <source>Display Episodes In Two Columns</source>
         <translation>Mostra els episodis en dues columnes</translation>
     </message>
+    <message>
+        <source>Since you watched %1</source>
+        <translation>Ja que vas veure %1</translation>
+    </message>
 </context>
 </TS>

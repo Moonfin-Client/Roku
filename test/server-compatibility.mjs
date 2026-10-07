@@ -63,6 +63,8 @@ const selections = {
     'source/enums/MediaStreamType.bs': null,
     'source/enums/PlaybackMethod.bs': null,
     'source/enums/SubtitleSelection.bs': null,
+    'source/enums/ItemType.bs': null,
+    'source/MainEventHandlers.bs': ['isLiveTvChannel'],
     'source/utils/embyFeatures.bs': null,
     'components/embyPreview/EmbyPreviewTask.bs': ['loadPreviewData'],
     'components/PlaystateTask.bs': ['closeEmbyPlayback'],
@@ -228,6 +230,15 @@ assert.match(playstateWrites, /APIRequestForServer\([^]*?"UserPlayedItems\/" \+ 
 assert.doesNotMatch(playstateWrites, /normalizedUrl \+ "\/Users\//, 'Remote playstate writes do not concatenate legacy routes');
 assert.match(playstateWrites, /resp\.AddHeader\("Content-Type", "application\/json"\)\s+code = requestResponse\(resp, "POST", params\)\.status\s+closeEmbyPlayback\(serverData, requestParams, code >= 200 and code < 300\)/, 'A stop the server took isnt followed by a second close of its live stream');
 assert.match(await readFile('components/video/VideoPlayerView.bs', 'utf8'), /sendPlaystate\(state, params, state = "stop" and isValidAndNotEmpty\(params\.LiveStreamId\)\)/, 'A live stop goes on a task of its own');
+
+const signOut = (await readFile('source/api/userauth.bs', 'utf8')).match(/sub SignOut\([^]*?end sub/)[0];
+assert.match(signOut, /m\.global\.removeField\("collectionOwners"\)/, 'Signing out drops the collections the last account was told about');
+const handlers = await readFile('source/MainEventHandlers.bs', 'utf8');
+assert.equal(handlers.match(/isLiveTvChannel\((selectedItemType|node\.type)\)/g).length, 3, 'Quick play and both selection paths tune either channel type');
+assert.match(await readFile('components/home/HomeRows.bs', 'utf8'), /tr\("Since you watched %1"\)\.Replace\("%1", seedName\)/, 'The Since you watched title is translated whole, so a language can put the title where it reads right');
+for (const locale of ['en_US', 'ca', 'de_DE', 'fr', 'fr_CA', 'pt_BR']) {
+    assert.match(await readFile(`locale/${locale}/translations.ts`, 'utf8'), /<source>Since you watched %1<\/source>[^]*?<translation>[^<]*%1[^<]*<\/translation>/, `${locale} has the Since you watched title`);
+}
 
 const multiServerUtils = await readFile('source/utils/multiserver.bs', 'utf8');
 const imageBuilder = multiServerUtils.match(/function buildImageURLForServer\([^]*?end function/)[0];

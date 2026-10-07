@@ -5243,5 +5243,10 @@
         <extracomment>Summary of the holiday picker when none is hidden</extracomment>
         <translation>All holidays</translation>
     </message>
+    <message>
+        <source>Since you watched %1</source>
+        <extracomment>Home row title, %1 is the title the recommendations come from</extracomment>
+        <translation>Since you watched %1</translation>
+    </message>
 </context>
 </TS>

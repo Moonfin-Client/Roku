@@ -2547,5 +2547,9 @@
         <source>Unable to load item details. Check the server connection and try again.</source>
         <translation>Details konnten nicht geladen werden. Prüfe die Serververbindung und versuche es erneut.</translation>
     </message>
+    <message>
+        <source>Since you watched %1</source>
+        <translation>Weil du %1 gesehen hast</translation>
+    </message>
 </context>
 </TS>

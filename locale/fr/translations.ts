@@ -2269,5 +2269,9 @@
         <source>Screen Settings</source>
         <translation>Configuration d’écran</translation>
     </message>
+    <message>
+        <source>Since you watched %1</source>
+        <translation>Depuis que vous avez regardé %1</translation>
+    </message>
 </context>
 </TS>

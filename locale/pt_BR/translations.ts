@@ -2355,5 +2355,9 @@
         <translation>Pesquisar</translation>
         <extracomment>Help text in search Box</extracomment>
     </message>
+    <message>
+        <source>Since you watched %1</source>
+        <translation>Desde que você assistiu %1</translation>
+    </message>
 </context>
 </TS>
