@@ -7,13 +7,16 @@ import "pkg:/source/utils/misc.bs"
 '
 ' Nothing here throws. A server without the plugin answers 404 on every route, and a panel that
 ' asked for everything at once and got nothing back wants an empty screen rather than a pile of
-' errors, so a failed call reads as no answer. Nothing here polls, and the login ping, the quest
-' reroll, spending a power-up, buying one and changing what the profile wears are the only
-' writes.
+' errors, so a failed call reads as no answer. The login ping, the quest reroll, spending a
+' power-up, buying one, changing what the profile wears and the unlock notification switch are
+' the only writes.
 
 const ACHIEVEMENTS_ROOT = "/Plugins/AchievementBadges"
 ' What the panel opens on, so the screen that can change it knows what it was handed
 const ACHIEVEMENTS_DEFAULT_PERIOD = "month"
+' The user's unlock notification settings are trusted for as long as jellyfin-web trusts them, in
+' seconds, so a change made there lands here
+const UNLOCK_SETTINGS_MAX_AGE = 300
 
 namespace achievements
 
@@ -44,10 +47,11 @@ namespace achievements
         return info
     end function
 
-    ' What a server that has not answered is taken to allow, which is everything but the one
-    ' switch that hides other people's figures
+    ' What a server that hasnt answered is taken to allow, which is everything but the switch
+    ' that hides other people's figures and the unlock notifications, which need a route an older
+    ' plugin doesnt have
     function DefaultFlags() as object
-        return { available: false, leaderboardEnabled: true, questsEnabled: true, activityEnabled: true, privacyMode: false }
+        return { available: false, leaderboardEnabled: true, questsEnabled: true, activityEnabled: true, privacyMode: false, unlockToastsEnabled: false }
     end function
 
     function IsAvailable() as boolean
@@ -60,13 +64,95 @@ namespace achievements
         config = GetMap("public-config")
         if not isValid(config) then return DefaultFlags()
 
+        features = GetMap("admin/ui-features")
         return {
             available: true,
             leaderboardEnabled: achievementsModel.Field(config, "LeaderboardEnabled") <> false,
             questsEnabled: achievementsModel.Field(config, "QuestsEnabled") <> false,
             activityEnabled: achievementsModel.Field(config, "ActivityFeedEnabled") <> false,
-            privacyMode: achievementsModel.Field(config, "ForcePrivacyMode") = true
+            privacyMode: achievementsModel.Field(config, "ForcePrivacyMode") = true,
+            unlockToastsEnabled: isValid(features) and achievementsModel.Field(features, "EnableUnlockToasts") <> false
         }
+    end function
+
+    function FetchUnlockToastSettings() as dynamic
+        userId = chainLookupReturn(m.global, "session.user.id", "")
+        if not isValidAndNotEmpty(userId) then return invalid
+
+        json = GetMap(`users/${userId}/preferences`)
+        if not isValid(json) then return invalid
+
+        return achievementsModel.ParseUnlockToastSettings(json)
+    end function
+
+    ' Turns the plugin's unlock notifications on or off for this user, which jellyfin-web follows
+    ' too. The plugin replaces its whole preferences object on save, so this writes over a fresh
+    ' copy of it. Answers the settings it saved, or invalid when it couldnt.
+    function SaveUnlockToasts(enabled as boolean) as dynamic
+        userId = chainLookupReturn(m.global, "session.user.id", "")
+        if not isValidAndNotEmpty(userId) then return invalid
+
+        preferences = GetMap(`users/${userId}/preferences`)
+        if not isValid(preferences) then return invalid
+
+        preferences.AddReplace("EnableUnlockToasts", enabled)
+        written = Post(`users/${userId}/preferences`, 400, preferences)
+        if not isValid(written.body) then return invalid
+
+        return achievementsModel.ParseUnlockToastSettings(preferences)
+    end function
+
+    ' What carries over from one unlocks read to the next. The cursor is the server's clock from
+    ' the last read, handed back as the next cutoff so a device clock that is off cant skip or
+    ' repeat unlocks, and it stays empty until the first read, which only records it.
+    function NewUnlockState() as object
+        return { cursor: "", settings: invalid, settingsReadAt: 0, shown: { keys: [], seen: {} } }
+    end function
+
+    sub AdoptUnlockSettings(state as object, toastSettings as object)
+        state.settings = toastSettings
+        state.settingsReadAt = UpTime(0)
+    end sub
+
+    ' Reads the badges unlocked since the last read and hands back the ones the user's plugin
+    ' settings want shown, with how to show them, or invalid when there is nothing to say. The
+    ' first read only records the server's clock, so badges earned before the app started dont
+    ' all pop up at once.
+    function ReadUnlocks(state as object) as dynamic
+        userId = chainLookupReturn(m.global, "session.user.id", "")
+        if not isValidAndNotEmpty(userId) then return invalid
+
+        if state.settingsReadAt = 0 or UpTime(0) - state.settingsReadAt >= UNLOCK_SETTINGS_MAX_AGE
+            ' A failed read keeps the last settings rather than dropping the cursor and every
+            ' unlock earned before the next good read
+            fresh = FetchUnlockToastSettings()
+            if isValid(fresh) then AdoptUnlockSettings(state, fresh)
+        end if
+
+        toastSettings = state.settings
+        if not isValid(toastSettings) then return invalid
+        if not toastSettings.enabled
+            ' Turning them back on starts from then, not from before they were off
+            state.cursor = ""
+            return invalid
+        end if
+
+        cursor = state.cursor
+        since = cursor
+        if since = "" then since = CreateObject("roDateTime").ToISOString()
+        ' The device id lets the plugin hold back unlocks earned on another device when the user
+        ' only wants them where they happened
+        json = GetMap(`users/${userId}/unlocks-since`, { since: since, deviceId: chainLookupReturn(m.global, "device.serverDeviceName", "") })
+        if not isValid(json) then return invalid
+
+        now = achievementsModel.AsString(achievementsModel.Field(json, "Now"))
+        if now <> "" then state.cursor = now
+        if cursor = "" then return invalid
+
+        badges = achievementsModel.FreshUnlocks(json, state.shown, toastSettings)
+        if badges.count() = 0 then return invalid
+
+        return { badges: badges, grouped: toastSettings.grouped, muteDuringPlayback: toastSettings.muteDuringPlayback }
     end function
 
     ' Writes to a path and tells a refusal apart from a fault. refusedWith is the status the
@@ -306,7 +392,8 @@ namespace achievements
             cosmetics: FetchCosmetics(),
             leaderboardEnabled: config.leaderboardEnabled,
             questsEnabled: config.questsEnabled,
-            activityEnabled: config.activityEnabled
+            activityEnabled: config.activityEnabled,
+            unlockToastsEnabled: config.unlockToastsEnabled
         }
     end function
 

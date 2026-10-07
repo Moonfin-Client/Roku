@@ -138,6 +138,13 @@ for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin']) {
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/settings-sync-values.bs', 'utf8');
 source += '\n' + await readFile('test/audio-track.bs', 'utf8');
+const achievementsModelFile = await readFile('source/utils/achievementsModel.bs', 'utf8');
+source += '\nnamespace achievementsModel\n';
+for (const name of ['IsObject', 'Field', 'AsInt', 'AsString', 'AsBool', 'AsSeconds', 'ScoreForRarity', 'Clamp', 'Ratio', 'ParseBadge', 'RarityRank', 'ParseUnlockToastSettings', 'AllowsRarity', 'FreshUnlocks']) {
+    source += '\n' + achievementsModelFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
+}
+source += '\nend namespace\n';
+source += '\n' + await readFile('test/achievement-unlocks.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
@@ -519,3 +526,22 @@ for (const screen of ['components/music/PlaylistDetails.xml', 'components/detail
     assert.match(await readFile(screen, 'utf8'), /<function name="playlistRowsChanged" \/>/, `${screen} redraws its rows after the menu changes them`);
 }
 process.stdout.write('PASS: playlist row wiring (11 checks)\n');
+
+// Unlock notifications only run against a plugin that serves them, read in the background for as
+// long as the account is signed in, and follow the switch on the achievements screen straight away
+const achievementsApi = await readFile('source/api/Achievements.bs', 'utf8');
+assert.match(achievementsApi.match(/function Probe\([^]*?end function/)[0], /features = GetMap\("admin\/ui-features"\)[^]*?unlockToastsEnabled: isValid\(features\) and/, 'Unlock notifications are only on when the plugin says it serves them');
+const readUnlocks = achievementsApi.match(/function ReadUnlocks\([^]*?end function/)[0];
+assert.match(readUnlocks, /if not toastSettings\.enabled\s+' [^\n]*\s+state\.cursor = ""\s+return invalid/, 'Switched off, nothing is read and the cursor starts again');
+assert.match(readUnlocks, /if now <> "" then state\.cursor = now\s+if cursor = "" then return invalid/, 'The first read only records the server clock');
+assert.match(achievementsApi.match(/function SaveUnlockToasts\([^]*?end function/)[0], /preferences = GetMap\([^]*?preferences\.AddReplace\("EnableUnlockToasts", enabled\)\s+written = Post\(`users\/\$\{userId\}\/preferences`, 400, preferences\)/, 'The switch writes over a fresh copy of the preferences');
+const mainSource = await readFile('source/Main.bs', 'utf8');
+assert.match(mainSource, /app_start:\s+stopAchievementUnlocks\(\)/, 'The reads stop on the way out of an account');
+assert.match(mainSource, /startServerMessages\(\)\s+startAchievementUnlocks\(\)/, 'And start once the next one is in');
+assert.match(mainSource.match(/sub onAchievementUnlocks\([^]*?end sub/)[0], /if unlocks\.muteDuringPlayback[^]*?isSubType\("VideoPlayerView"\) then return/, 'Unlocks are held back during playback when the user asked');
+const unlocksTask = await readFile('components/achievements/AchievementUnlocksTask.bs', 'utf8');
+assert.match(unlocksTask, /m\.global\.observeFieldScoped\("unlockToastSettings", port\)[^]*?achievements\.AdoptUnlockSettings\(state, msg\.getData\(\)\)/, 'The reads take the settings the switch saved');
+assert.match(await readFile('components/achievements/AchievementsScreen.bs', 'utf8'), /m\.global\.unlockToastSettings = result\.settings/, 'The switch hands its saved settings over');
+assert.match(await readFile('components/BaseScene.xml', 'utf8'), /<NotificationBanner id="notificationBanner" \/>/, 'The banner sits on the scene');
+await access('images/achievements/notifications_active.png');
+process.stdout.write('PASS: achievement unlock wiring (11 checks)\n');

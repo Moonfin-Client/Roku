@@ -79,6 +79,8 @@ sub init()
 
     m.loadTask = m.top.findNode("loadTask")
     m.loadTask.observeField("result", "onLoadResult")
+    m.unlockToastsTask = m.top.findNode("unlockToastsTask")
+    m.unlockToastsTask.observeField("result", "onUnlockToastsResult")
 
     m.chipFont.font.size = 22
     m.rankName.font.size = 34
@@ -116,6 +118,10 @@ sub init()
     m.rerollWeekly = false
     m.spendPrompt = invalid
     m.spendIndex = -1
+    ' Left invalid until the plugin says which way the switch is
+    m.unlockToasts = invalid
+    m.unlockToastsBusy = false
+    m.unlockToastsProblem = ""
 
     m.top.optionsAvailable = false
     themeApply.ApplyToItem(m.top)
@@ -171,6 +177,7 @@ sub onLoadResult(event as object)
         if isValid(m.overview)
             m.boardEntries = m.overview.leaderboard
             m.recap = m.overview.recap
+            if m.overview.unlockToastsEnabled then startUnlockToastsTask({ kind: "unlockToasts" })
         end if
     end if
 
@@ -575,6 +582,11 @@ function overviewRows() as object
         if badge.unlocked then unlocked++
     end for
 
+    if m.overview.unlockToastsEnabled
+        rows.push(unlockToastsRow())
+        if m.unlockToastsProblem <> "" then rows.push(headingRow(m.unlockToastsProblem))
+    end if
+
     rows.push(navRow("badges", tr("Badges"), substitute(tr("{0} of {1} badges"), unlocked.toStr(), m.overview.badges.count().toStr()), "military_tech", m.overview.badges.count() > 0))
 
     if m.overview.questsEnabled and isValid(m.overview.quests) and not m.overview.quests.isEmpty
@@ -612,6 +624,20 @@ function overviewRows() as object
     end if
 
     return rows
+end function
+
+' The plugin's own unlock notification switch, which jellyfin-web follows too, so flipping it here
+' changes it for every client the user signs in on
+function unlockToastsRow() as object
+    return {
+        kind: "toggle",
+        title: tr("Unlock notifications"),
+        caption: tr("Show a notification when you unlock a badge"),
+        icon: "notifications_active",
+        tint: m.accent,
+        toggleOn: m.unlockToasts = true,
+        height: 120
+    }
 end function
 
 function navRow(view as string, title as string, caption as string, icon as string, enabled as boolean) as object
@@ -1473,6 +1499,57 @@ sub applyReroll(weekly as boolean, result as object)
     end if
 end sub
 
+' ===== Unlock notifications =====
+
+sub startUnlockToastsTask(request as object)
+    m.unlockToastsTask.control = TaskControl.STOP
+    m.unlockToastsTask.request = request
+    m.unlockToastsTask.control = TaskControl.RUN
+end sub
+
+' The switch flips straight away and goes back if the plugin wont take it. It does nothing until
+' the plugin says which way it is, so it cant flip the wrong way.
+sub toggleUnlockToasts(index as integer)
+    if not isValid(m.unlockToasts) or m.unlockToastsBusy then return
+
+    m.unlockToasts = not m.unlockToasts
+    m.unlockToastsBusy = true
+    m.unlockToastsProblem = ""
+    render()
+    focusRow(index)
+    startUnlockToastsTask({ kind: "saveUnlockToasts", enabled: m.unlockToasts })
+end sub
+
+sub onUnlockToastsResult(event as object)
+    result = event.getData()
+    if not isValid(result) then return
+
+    if result.kind = "unlockToasts"
+        if not isValid(result.settings) then return
+        m.unlockToasts = result.settings.enabled
+        ' The switch is drawn off until the plugin answers
+        if not m.unlockToasts then return
+    else
+        m.unlockToastsBusy = false
+        if isValid(result.settings)
+            ' The unlock reads pick the new settings up from here rather than waiting to read them
+            m.global.unlockToastSettings = result.settings
+            return
+        end if
+        m.unlockToasts = not m.unlockToasts
+        m.unlockToastsProblem = tr("Could not save your settings.")
+    end if
+
+    if m.view <> "overview" or m.loading or not isValid(m.overview) then return
+
+    ' The note under the switch comes and goes, so a row further down keeps the cursor
+    index = m.rowList.itemFocused
+    count = m.rows.count()
+    render()
+    if index > 0 then index += m.rows.count() - count
+    focusRow(index)
+end sub
+
 ' ===== Input =====
 
 sub onTabActivated()
@@ -1617,6 +1694,11 @@ sub onRowSelected()
         else if isValidAndNotEmpty(row.view)
             pushView(row.view)
         end if
+        return
+    end if
+
+    if row.kind = "toggle"
+        toggleUnlockToasts(index)
         return
     end if
 

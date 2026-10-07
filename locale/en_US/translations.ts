@@ -5508,5 +5508,35 @@
         <extracomment>Describes the Default subtitle mode</extracomment>
         <translation>Plays tracks internally flagged in the media file's metadata as "default" or "forced".</translation>
     </message>
+    <message>
+        <source>Unlock notifications</source>
+        <extracomment>Achievements screen switch for the Achievement Badges plugin's unlock banners</extracomment>
+        <translation>Unlock notifications</translation>
+    </message>
+    <message>
+        <source>Show a notification when you unlock a badge</source>
+        <extracomment>Under the Unlock notifications switch on the achievements screen</extracomment>
+        <translation>Show a notification when you unlock a badge</translation>
+    </message>
+    <message>
+        <source>Could not save your settings.</source>
+        <extracomment>Shown under the Unlock notifications switch when the plugin wouldnt save it</extracomment>
+        <translation>Could not save your settings.</translation>
+    </message>
+    <message>
+        <source>Achievement unlocked</source>
+        <extracomment>Banner heading for one badge the user just unlocked</extracomment>
+        <translation>Achievement unlocked</translation>
+    </message>
+    <message>
+        <source>{0} achievements unlocked</source>
+        <extracomment>Banner heading for several badges unlocked at once</extracomment>
+        <translation>{0} achievements unlocked</translation>
+    </message>
+    <message>
+        <source>+{0} more</source>
+        <extracomment>After the first few badge names in a banner, how many more there are</extracomment>
+        <translation>+{0} more</translation>
+    </message>
 </context>
 </TS>
