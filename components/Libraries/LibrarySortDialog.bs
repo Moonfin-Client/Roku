@@ -4,6 +4,7 @@ import "pkg:/source/utils/libraryPanel.bs"
 import "pkg:/source/utils/librarySorts.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/trackDialog.bs"
+import "pkg:/source/utils/tvKeyboard.bs"
 
 ' How many values a facet opens on, since a tag list can run to thousands of entries and
 ' each one costs a focusable row
@@ -29,12 +30,40 @@ sub init()
 
     m.expanded = SORT_SECTION
     m.facetLimit = FACET_PAGE
+    m.facetQuery = ""
+    m.lastFocused = 0
+    m.rowMenu.observeField("itemFocused", "onRowFocused")
+    m.skipNoteTimer = m.top.findNode("skipNoteTimer")
+    m.skipNoteTimer.observeField("fire", "onSkipNoteTimer")
+end sub
+
+' A note is only there to be read, so the cursor steps over it the way it was going. The list
+' ignores a move made while it is still landing, so the step waits a frame.
+sub onRowFocused(event as object)
+    index = event.getData()
+    rows = m.rowMenu.content
+    if isValid(rows)
+        row = rows.getChild(index)
+        if isValid(row) and row.kind = "note"
+            direction = index > m.lastFocused ? 1 : -1
+            if index + direction >= rows.getChildCount() then direction = -1
+            m.pendingFocus = index + direction
+            m.skipNoteTimer.control = "start"
+            return
+        end if
+    end if
+    m.lastFocused = index
+end sub
+
+sub onSkipNoteTimer()
+    m.rowMenu.jumpToItem = m.pendingFocus
 end sub
 
 sub showDialog()
     m.working = m.top.state
     m.expanded = SORT_SECTION
     m.facetLimit = FACET_PAGE
+    m.facetQuery = ""
 
     ' Favorites opens the same panel with only the sorts in it, so it names itself
     title = m.top.context.title
@@ -54,6 +83,15 @@ end sub
 sub focusDialog()
     m.rowMenu.setFocus(true)
 end sub
+
+function headerOf(section as string) as integer
+    rows = m.rowMenu.content
+    for i = 0 to rows.getChildCount() - 1
+        row = rows.getChild(i)
+        if isStringEqual(row.section, section) and row.kind = "header" then return i
+    end for
+    return 0
+end function
 
 function firstRowIn(section as string) as integer
     rows = m.rowMenu.content
@@ -310,22 +348,28 @@ end sub
 sub addSectionBody(content as object, section as object)
     options = section.options
 
-    ' Anything already picked stays on screen however far down it sits, otherwise the page
-    ' limit could hide the only way to clear it
+    ' A group that takes several choices can be emptied on its own. Favorites is a single switch
+    if section.kind = "check" and section.key <> "favorites" and isValidAndNotEmpty(section.selected)
+        row = content.createChild("LibraryPanelRowData")
+        row.kind = "clear"
+        row.section = section.key
+        row.title = tr("Clear")
+    end if
+
     remaining = 0
+    noMatches = false
     if section.facet = true
-        room = m.facetLimit
-        visible = []
-        for each option in options
-            if isChosen(section, option.value)
-                visible.push(option)
-            else if room > 0
-                visible.push(option)
-                room -= 1
-            end if
-        end for
-        remaining = options.count() - visible.count()
-        options = visible
+        facet = libraryFilters.FacetRows(options, section.selected, m.facetQuery, m.facetLimit)
+        if facet.searchable
+            row = content.createChild("LibraryPanelRowData")
+            row.kind = "search"
+            row.section = section.key
+            row.title = section.title
+            row.value = m.facetQuery
+        end if
+        options = facet.visible
+        remaining = facet.remaining
+        noMatches = facet.noMatches
     end if
 
     for each option in options
@@ -342,6 +386,13 @@ sub addSectionBody(content as object, section as object)
             row.sortOrder = isValidAndNotEmpty(m.working.sortOrder) ? m.working.sortOrder : option.order
         end if
     end for
+
+    if noMatches
+        row = content.createChild("LibraryPanelRowData")
+        row.kind = "note"
+        row.section = section.key
+        row.title = tr("No results")
+    end if
 
     if remaining > 0
         row = content.createChild("LibraryPanelRowData")
@@ -384,7 +435,24 @@ sub applyRow(row as object)
     if row.kind = "header"
         m.expanded = isStringEqual(m.expanded, row.section) ? "" : row.section
         m.facetLimit = FACET_PAGE
+        m.facetQuery = ""
         rebuild()
+        return
+    end if
+
+    if row.kind = "note" then return
+
+    if row.kind = "search"
+        openFacetSearch(row)
+        return
+    end if
+
+    ' The row goes once its group is empty, so focus moves to the heading rather than onto nothing
+    if row.kind = "clear"
+        m.working.filters[row.section] = []
+        notifyScene()
+        rebuild()
+        m.rowMenu.jumpToItem = headerOf(row.section)
         return
     end if
 
@@ -448,17 +516,62 @@ sub applyRadio(row as object)
     m.working.filters[row.section] = row.value
 end sub
 
+' Typing narrows the list as each letter lands. The keyboard covers the bottom half of the
+' screen, so the search row is pinned to the top of the list to keep the matches above it.
+sub openFacetSearch(row as object)
+    m.keyboard = tvKeyboard.Open(m.top.getScene(), {
+        hint: row.title,
+        text: m.facetQuery,
+        showScrim: false
+    })
+    if not isValid(m.keyboard) then return
+
+    m.rowMenu.vertFocusAnimationStyle = "fixedFocus"
+    m.rowMenu.jumpToItem = m.rowMenu.itemFocused
+    m.keyboard.observeField("text", "onFacetQueryChanged")
+    m.keyboard.observeField("submitted", "closeFacetSearch")
+    m.keyboard.observeField("cancelled", "closeFacetSearch")
+end sub
+
+sub onFacetQueryChanged(event as object)
+    m.facetQuery = event.getData()
+    rebuild(false)
+end sub
+
+sub closeFacetSearch(_event as object)
+    tvKeyboard.Release(m.keyboard, ["text", "submitted", "cancelled"])
+    m.keyboard = invalid
+    m.rowMenu.vertFocusAnimationStyle = "floatingFocus"
+    m.rowMenu.jumpToItem = m.rowMenu.itemFocused
+    m.rowMenu.setFocus(true)
+end sub
+
 ' The list rebuilds under the cursor, so the group just opened or the row just ticked is
-' still the one in hand
-sub rebuild()
+' still the one in hand. It is found again by what it is rather than where it was, since a
+' Clear row coming or going moves everything under it. While the keyboard is up the list
+' changes behind it without taking the focus back.
+sub rebuild(takeFocus = true as boolean)
     focused = m.rowMenu.itemFocused
+    held = invalid
+    if isValid(m.rowMenu.content) then held = m.rowMenu.content.getChild(focused)
     buildRows()
 
-    last = m.rowMenu.content.getChildCount() - 1
+    rows = m.rowMenu.content
+    if isValid(held)
+        for i = 0 to rows.getChildCount() - 1
+            row = rows.getChild(i)
+            if row.kind = held.kind and row.section = held.section and row.value = held.value
+                focused = i
+                exit for
+            end if
+        end for
+    end if
+
+    last = rows.getChildCount() - 1
     if focused > last then focused = last
     if focused < 0 then focused = 0
     m.rowMenu.jumpToItem = focused
-    m.rowMenu.setFocus(true)
+    if takeFocus then m.rowMenu.setFocus(true)
 end sub
 
 sub notifyScene()

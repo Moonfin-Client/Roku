@@ -5423,5 +5423,15 @@
         <extracomment>Person page section</extracomment>
         <translation>Music videos</translation>
     </message>
+    <message>
+        <source>Clear</source>
+        <extracomment>Sort and Filter row that empties one filter group</extracomment>
+        <translation>Clear</translation>
+    </message>
+    <message>
+        <source>No results</source>
+        <extracomment>Under a Sort and Filter search that matches nothing</extracomment>
+        <translation>No results</translation>
+    </message>
 </context>
 </TS>

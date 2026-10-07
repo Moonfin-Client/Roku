@@ -49,6 +49,7 @@ brs.types.RoRegex.prototype.getMethod = function (name) {
 const selections = {
     'source/utils/serverCompatibility.bs': null,
     'source/utils/accentFolding.bs': null,
+    'source/utils/libraryFilters.bs': null,
     'source/utils/logRedaction.bs': null,
     'source/utils/youtubeTrailer.bs': null,
     'source/utils/detailCompatibility.bs': null,
@@ -126,6 +127,7 @@ source += '\n' + await readFile('test/collection-row.bs', 'utf8');
 source += '\n' + await readFile('test/external-rows.bs', 'utf8');
 source += '\n' + await readFile('test/library-order.bs', 'utf8');
 source += '\n' + await readFile('test/detail-sections.bs', 'utf8');
+source += '\n' + await readFile('test/library-filters.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n';
 for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin']) {
