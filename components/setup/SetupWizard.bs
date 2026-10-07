@@ -1,10 +1,30 @@
 import "pkg:/components/setup/setupPreviewDraw.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/playbackOverlay.bs"
 import "pkg:/source/utils/settingsSync.bs"
 import "pkg:/source/utils/setupWizardGate.bs"
 import "pkg:/source/utils/themeApply.bs"
 import "pkg:/source/utils/themeRegistry.bs"
+import "pkg:/source/utils/userConfigSync.bs"
+
+const AUDIO_LANGUAGE_KEY = "playback.audioPreferredLanguage"
+const DEFAULT_TRACK_KEY = "playback.playDefaultAudioTrack"
+const SUBTITLE_MODE_KEY = "playback.subs.mode"
+const SUBTITLE_LANGUAGE_KEY = "playback.subs.language"
+
+' The tour is the one step tall enough to scroll, so its body shows through this band
+const TOUR_VIEW_TOP = 240
+const TOUR_VIEW_BOTTOM = 900
+
+const PLAYBACK_LEFT = 216
+const PLAYBACK_TOP = 600
+const PLAYBACK_WIDTH = 940
+const PLAYBACK_HEADER_FOLDED = 108
+const PLAYBACK_HEADER_OPEN = 76
+const PLAYBACK_ROW_GAP = 12
+const PLAYBACK_ROW_HEIGHT = 80
+const PLAYBACK_HINT_ROW_HEIGHT = 112
 
 ' The first thing a new user sees after signing in: a few questions about how
 ' the app should look, each shown as preview cards, then a look at what else
@@ -23,6 +43,9 @@ sub init()
     m.cardIndex = 0
     m.swatchIndex = 0
     m.lastContentZone = "cards"
+    m.playbackExpanded = false
+    m.playbackIndex = 0
+    m.playbackItems = []
 
     m.itemsTask = createObject("roSGNode", "SetupPreviewItemsTask")
     m.itemsTask.observeFieldScoped("items", "onPreviewItemsLoaded")
@@ -171,6 +194,8 @@ sub buildStep()
     end while
     m.cards = []
     m.swatches = []
+    m.playbackItems = []
+    m.tourBody = invalid
 
     palette = setupPreviewDraw.Palette()
     stepName = m.steps[m.stepIndex]
@@ -242,10 +267,17 @@ sub buildCards(stepName as string)
     end for
 end sub
 
+' Pick a look, the optional playback languages, then what else lives in Settings. Only the theme
+' writes anything here, the languages go out with the rest of the answers.
 sub buildTour()
     palette = setupPreviewDraw.Palette()
 
-    pickLabel = m.stepHolder.createChild("Label")
+    tourView = m.stepHolder.createChild("Group")
+    tourView.clippingRect = [0, TOUR_VIEW_TOP, 1920, TOUR_VIEW_BOTTOM - TOUR_VIEW_TOP]
+    m.tourBody = tourView.createChild("Group")
+    m.tourScroll = 0
+
+    pickLabel = m.tourBody.createChild("Label")
     pickLabel.font = "font:SmallSystemFont"
     pickLabel.color = palette.onSurfaceDim
     pickLabel.text = tr("Pick a look")
@@ -259,7 +291,7 @@ sub buildTour()
     for each themeId in themeRegistry.BuiltInIds()
         theme = themeRegistry.ReadBundledTheme(themeId)
         if isValid(theme)
-            swatch = m.stepHolder.createChild("SetupThemeSwatch")
+            swatch = m.tourBody.createChild("SetupThemeSwatch")
             swatch.themeName = theme.displayName ?? themeId
             swatch.themeId = themeId
             swatch.translation = [216 + index * 320, 320]
@@ -270,10 +302,14 @@ sub buildTour()
         end if
     end for
 
-    setupPreviewDraw.Rect(m.stepHolder, 1176, 316, 628, 468, palette.onSurfaceFaint)
-    setupPreviewDraw.Rect(m.stepHolder, 1180, 320, 620, 460, palette.surface)
+    m.playbackGroup = m.tourBody.createChild("Group")
+    m.playbackGroup.translation = [PLAYBACK_LEFT, PLAYBACK_TOP]
+    drawPlayback()
 
-    header = m.stepHolder.createChild("Label")
+    setupPreviewDraw.Rect(m.tourBody, 1176, 316, 628, 468, palette.onSurfaceFaint)
+    setupPreviewDraw.Rect(m.tourBody, 1180, 320, 620, 460, palette.surface)
+
+    header = m.tourBody.createChild("Label")
     header.font = "font:MediumBoldSystemFont"
     header.color = palette.onSurface
     header.width = 540
@@ -284,13 +320,264 @@ sub buildTour()
     bullets = [tr("Seerr requests"), tr("Live TV"), tr("Custom themes"), tr("And plenty more")]
     index = 0
     for each bullet in bullets
-        line = m.stepHolder.createChild("Label")
+        line = m.tourBody.createChild("Label")
         line.font = "font:SmallSystemFont"
         line.color = palette.onSurfaceDim
         line.text = `• ${bullet}`
         line.translation = [1220, 470 + index * 54]
         index++
     end for
+end sub
+
+' ===== Playback languages =====
+
+' The held answer when there is one, the current setting otherwise. Sign in has already filled
+' these in from the server.
+function playbackValue(rokuKey as string) as string
+    held = m.answers[rokuKey]
+    if isValidAndNotEmpty(held) then return held
+    return toString(m.global.session.user.settings[rokuKey])
+end function
+
+' The same lists the audio and subtitle settings offer, read once
+function playbackChoices(settingName as string) as object
+    if not isValid(m.playbackChoices)
+        tree = GetConfigTree()
+        m.playbackChoices = {}
+        for each key in [AUDIO_LANGUAGE_KEY, SUBTITLE_MODE_KEY, SUBTITLE_LANGUAGE_KEY]
+            m.playbackChoices[key] = settingOptions(tree, key)
+        end for
+    end if
+    return m.playbackChoices[settingName]
+end function
+
+function settingOptions(entries as object, settingName as string) as dynamic
+    for each entry in entries
+        if isStringEqual(entry.settingName, settingName) then return entry.options ?? []
+        if isValid(entry.children)
+            found = settingOptions(entry.children, settingName)
+            if isValid(found) then return found
+        end if
+    end for
+    return invalid
+end function
+
+' A language the server brought in that isnt in the list shows as its code
+function choiceLabel(choices as object, value as string, fallback as string) as string
+    for each choice in choices
+        if isStringEqual(choice.id, value) then return tr(choice.title)
+    end for
+    return fallback
+end function
+
+function subtitleModeDescription(mode as string) as string
+    if isStringEqual(mode, "Always") then return tr("Automatically loads and displays subtitles every time a video starts.")
+    if isStringEqual(mode, "Smart") then return tr("Automatically turns on subtitles if the default audio track is in a foreign language.")
+    if isStringEqual(mode, "OnlyForced") then return tr("Only loads subtitles explicitly tagged with the forced metadata flag.")
+    if isStringEqual(mode, "None") then return tr("Completely disables automatic subtitle loading.")
+    return tr("Plays tracks internally flagged in the media file's metadata as ""default"" or ""forced"".")
+end function
+
+' A header that shows the current answers while folded, opening downwards into its rows when
+' pressed. It starts folded since the answers are already filled in.
+sub drawPlayback()
+    group = m.playbackGroup
+    while group.getChildCount() > 0
+        group.removeChildIndex(0)
+    end while
+    m.playbackItems = []
+
+    palette = setupPreviewDraw.Palette()
+    audioChoices = playbackChoices(AUDIO_LANGUAGE_KEY)
+    modeChoices = playbackChoices(SUBTITLE_MODE_KEY)
+    subtitleChoices = playbackChoices(SUBTITLE_LANGUAGE_KEY)
+    audio = playbackValue(AUDIO_LANGUAGE_KEY)
+    mode = playbackValue(SUBTITLE_MODE_KEY)
+    subtitle = playbackValue(SUBTITLE_LANGUAGE_KEY)
+    audioLabel = choiceLabel(audioChoices, audio, audio)
+    modeLabel = choiceLabel(modeChoices, mode, choiceLabel(modeChoices, "Default", mode))
+    subtitleLabel = choiceLabel(subtitleChoices, subtitle, subtitle)
+    subtitlesOn = not isStringEqual(mode, "None")
+
+    expanded = m.playbackExpanded
+    headerHeight = expanded ? PLAYBACK_HEADER_OPEN : PLAYBACK_HEADER_FOLDED
+    m.playbackItems.push(drawPlaybackPanel(0, headerHeight, palette))
+
+    playbackIcon("pkg:/images/icons/translate.png", 30, 24, (headerHeight - 30) / 2, palette.onSurface)
+    titleTop = expanded ? (headerHeight - 36) / 2 : 20
+    title = playbackLabel(tr("Playback languages"), 70, titleTop, 28, palette.onSurface, true)
+    playbackLabel(tr("Optional"), 70 + title.boundingRect().width + 16, titleTop + 4, 24, playbackOverlay.WithAlpha(palette.onSurface, 140), false)
+
+    if not expanded
+        summaryParts = [audioLabel]
+        if subtitlesOn then summaryParts.push(subtitleLabel)
+        summaryParts.push(modeLabel)
+        summary = playbackLabel(summaryParts.join(" · "), 70, 62, 24, playbackOverlay.WithAlpha(palette.onSurface, 166), false)
+        summary.width = PLAYBACK_WIDTH - 70 - 88
+    end if
+
+    chevron = playbackIcon("pkg:/images/icons/keyboard_arrow_down.png", 40, PLAYBACK_WIDTH - 64, (headerHeight - 40) / 2, playbackOverlay.WithAlpha(palette.onSurface, 179))
+    if expanded
+        chevron.scaleRotateCenter = [20, 20]
+        chevron.rotation = 3.14159
+    end if
+
+    m.playbackRows = []
+    if not expanded then return
+
+    m.playbackRows.push({ key: AUDIO_LANGUAGE_KEY, label: tr("Default Audio Language"), choices: audioChoices, value: audioLabel })
+    m.playbackRows.push({ key: DEFAULT_TRACK_KEY, label: tr("Prefer Default Audio Track"), hint: tr("Pick the track the file marks as default before matching languages") })
+    ' Mode stays above the language so hiding the language doesnt move the focused row
+    m.playbackRows.push({ key: SUBTITLE_MODE_KEY, label: tr("Subtitle Mode"), choices: modeChoices, value: modeLabel, described: true })
+    if subtitlesOn then m.playbackRows.push({ key: SUBTITLE_LANGUAGE_KEY, label: tr("Default Subtitle Language"), choices: subtitleChoices, value: subtitleLabel })
+
+    top = headerHeight
+    for each row in m.playbackRows
+        top += PLAYBACK_ROW_GAP
+        height = isValid(row.hint) ? PLAYBACK_HINT_ROW_HEIGHT : PLAYBACK_ROW_HEIGHT
+        m.playbackItems.push(drawPlaybackPanel(top, height, palette))
+
+        trailingWidth = 72
+        if isValid(row.choices)
+            playbackIcon("pkg:/images/icons/chevron-right.png", 32, PLAYBACK_WIDTH - 64, top + (height - 32) / 2, playbackOverlay.WithAlpha(palette.onSurface, 140))
+            value = playbackLabel(row.value, PLAYBACK_WIDTH - 472, top, 28, palette.onSurface, true)
+            value.width = 400
+            value.height = height
+            value.horizAlign = "right"
+            value.vertAlign = "center"
+            trailingWidth = 440
+        else
+            drawPlaybackSwitch(toBoolean(playbackValue(row.key)) = true, PLAYBACK_WIDTH - 104, top + (height - 40) / 2, palette)
+        end if
+
+        label = playbackLabel(row.label, 32, top, 28, playbackOverlay.WithAlpha(palette.onSurface, 179), false)
+        label.width = PLAYBACK_WIDTH - 32 - trailingWidth - 56
+        if isValid(row.hint)
+            label.translation = [32, top + 20]
+            hint = playbackLabel(row.hint, 32, top + 60, 24, playbackOverlay.WithAlpha(palette.onSurface, 128), false)
+            hint.width = label.width
+        else
+            label.height = height
+            label.vertAlign = "center"
+        end if
+
+        top += height
+    end for
+end sub
+
+' The box a header or a row sits in, lit up while focused
+function drawPlaybackPanel(top as integer, height as integer, palette as object) as object
+    border = setupPreviewDraw.Rect(m.playbackGroup, 0, top, PLAYBACK_WIDTH, height, playbackOverlay.WithAlpha(palette.onSurface, 36))
+    setupPreviewDraw.Rect(m.playbackGroup, 2, top + 2, PLAYBACK_WIDTH - 4, height - 4, palette.background)
+    fill = setupPreviewDraw.Rect(m.playbackGroup, 2, top + 2, PLAYBACK_WIDTH - 4, height - 4, playbackOverlay.WithAlpha(palette.onSurface, 10))
+    return { top: top, height: height, border: border, fill: fill }
+end function
+
+' The row takes the press and the focus, the switch only shows the state
+sub drawPlaybackSwitch(isOn as boolean, left as integer, top as integer, palette as object)
+    trackInk = isOn ? palette.accent : playbackOverlay.WithAlpha(palette.onSurface, 64)
+    track = playbackIcon("pkg:/images/details/btnfill.9.png", 40, left, top, trackInk)
+    track.width = 72
+    knobLeft = isOn ? left + 32 : left + 4
+    playbackIcon("pkg:/images/icons/circle.png", 32, knobLeft, top + 4, isOn ? palette.onAccent : palette.onSurface)
+end sub
+
+function playbackLabel(text as string, left as integer, top as integer, size as integer, color as string, bold as boolean) as object
+    label = m.playbackGroup.createChild("Label")
+    label.font = bold ? "font:SmallBoldSystemFont" : "font:SmallSystemFont"
+    label.font.size = size
+    label.color = color
+    label.text = text
+    label.translation = [left, top]
+    return label
+end function
+
+function playbackIcon(uri as string, size as integer, left as integer, top as integer, color as string) as object
+    icon = m.playbackGroup.createChild("Poster")
+    icon.uri = uri
+    icon.width = size
+    icon.height = size
+    icon.blendColor = color
+    icon.translation = [left, top]
+    return icon
+end function
+
+' The header folds and unfolds, the switch flips, and a list row opens its picker
+sub selectPlaybackRow()
+    if m.playbackIndex = 0
+        m.playbackExpanded = not m.playbackExpanded
+        drawPlayback()
+        return
+    end if
+
+    row = m.playbackRows[m.playbackIndex - 1]
+    if not isValid(row.choices)
+        m.answers[row.key] = toBoolean(playbackValue(row.key)) = true ? "false" : "true"
+        drawPlayback()
+        return
+    end if
+
+    current = playbackValue(row.key)
+    labels = []
+    details = []
+    selected = -1
+    for each choice in row.choices
+        if isStringEqual(choice.id, current) then selected = labels.count()
+        labels.push(tr(choice.title))
+        if row.described = true then details.push(subtitleModeDescription(choice.id))
+    end for
+
+    m.pickerRow = row
+    m.picker = CreateObject("roSGNode", "ListPromptDialog")
+    m.picker.dialogTitle = row.label
+    m.picker.options = labels
+    m.picker.optionDetails = details
+    m.picker.selectedOption = selected
+    m.picker.openOnSelected = true
+    m.picker.returnFocus = m.top
+    m.picker.observeField("optionSelected", "onPlaybackPicked")
+    m.top.getScene().appendChild(m.picker)
+    m.picker.callFunc("showDialog")
+end sub
+
+sub onPlaybackPicked(event as object)
+    index = event.getData()
+    m.picker.unobserveField("optionSelected")
+    m.top.getScene().removeChild(m.picker)
+    m.picker = invalid
+
+    row = m.pickerRow
+    if index >= 0 and index < row.choices.count()
+        value = row.choices[index].id
+        if not isStringEqual(value, playbackValue(row.key)) then m.answers[row.key] = value
+    end if
+
+    drawPlayback()
+    applyFocus()
+end sub
+
+' The focused part is brought into view, and the band goes back to the top for the themes
+sub scrollTourToFocus()
+    if not isValid(m.tourBody) then return
+
+    target = m.tourScroll
+    if isStringEqual(m.focusZone, "swatches")
+        target = 0
+    else if isStringEqual(m.focusZone, "playback") and m.playbackIndex < m.playbackItems.count()
+        item = m.playbackItems[m.playbackIndex]
+        itemTop = PLAYBACK_TOP + item.top
+        itemBottom = itemTop + item.height
+        if itemBottom - target > TOUR_VIEW_BOTTOM then target = itemBottom - TOUR_VIEW_BOTTOM
+        if itemTop - target < TOUR_VIEW_TOP then target = itemTop - TOUR_VIEW_TOP
+    end if
+
+    last = m.playbackItems[m.playbackItems.count() - 1]
+    maxScroll = PLAYBACK_TOP + last.top + last.height - TOUR_VIEW_BOTTOM
+    if target > maxScroll then target = maxScroll
+    if target < 0 then target = 0
+
+    m.tourScroll = target
+    m.tourBody.translation = [0, -target]
 end sub
 
 sub applyFocus()
@@ -306,6 +593,16 @@ sub applyFocus()
         swatch.focused = isStringEqual(m.focusZone, "swatches") and index = m.swatchIndex
         index++
     end for
+
+    if m.playbackIndex >= m.playbackItems.count() then m.playbackIndex = m.playbackItems.count() - 1
+    index = 0
+    for each item in m.playbackItems
+        focused = isStringEqual(m.focusZone, "playback") and index = m.playbackIndex
+        item.border.color = focused ? palette.onSurface : playbackOverlay.WithAlpha(palette.onSurface, 36)
+        item.fill.color = playbackOverlay.WithAlpha(palette.onSurface, focused ? 26 : 10)
+        index++
+    end for
+    scrollTourToFocus()
 
     skipFocused = isStringEqual(m.focusZone, "skip")
     m.skipLabel.color = skipFocused ? palette.onSurface : palette.onSurfaceDim
@@ -359,6 +656,9 @@ sub handleSelect()
         selectCard(m.cardIndex)
     else if isStringEqual(m.focusZone, "swatches")
         applySwatchTheme(m.swatchIndex)
+    else if isStringEqual(m.focusZone, "playback")
+        selectPlaybackRow()
+        applyFocus()
     else if isStringEqual(m.focusZone, "skip")
         doSkip()
     else if isStringEqual(m.focusZone, "back")
@@ -397,6 +697,17 @@ sub handleArrow(key as string)
         else if key = "up"
             m.focusZone = "skip"
         else if key = "down"
+            m.focusZone = "playback"
+            m.playbackIndex = 0
+        end if
+    else if isStringEqual(zone, "playback")
+        if key = "up" and m.playbackIndex > 0
+            m.playbackIndex--
+        else if key = "up"
+            m.focusZone = "swatches"
+        else if key = "down" and m.playbackIndex < m.playbackItems.count() - 1
+            m.playbackIndex++
+        else if key = "down"
             m.focusZone = "next"
         end if
     else if isStringEqual(zone, "skip")
@@ -414,6 +725,9 @@ sub handleArrow(key as string)
             m.focusZone = m.lastContentZone
         end if
     end if
+
+    ' The way back up from the actions lands where the viewer last was
+    if isStringEqual(m.focusZone, "swatches") or isStringEqual(m.focusZone, "playback") then m.lastContentZone = m.focusZone
     applyFocus()
 end sub
 
@@ -475,6 +789,9 @@ sub doSkip()
 end sub
 
 sub finish()
+    ' With subtitles off the language stays as it was
+    if isStringEqual(playbackValue(SUBTITLE_MODE_KEY), "None") then m.answers.Delete(SUBTITLE_LANGUAGE_KEY)
+
     for each key in m.answers
         set_user_setting(key, m.answers[key])
     end for
@@ -498,6 +815,7 @@ sub finish()
             m.profilePushTask.control = "RUN"
         end if
     end if
+    m.userConfigTask = userConfigSync.Push(m.answers)
 
     setupWizardGate.MarkComplete()
     if m.top.rerun then applyLiveChanges()

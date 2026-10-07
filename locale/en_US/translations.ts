@@ -5448,5 +5448,65 @@
         <extracomment>Playlist row menu entry that moves the row one place later</extracomment>
         <translation>Move Down</translation>
     </message>
+    <message>
+        <source>Playback languages</source>
+        <extracomment>Setup wizard section with the audio and subtitle language choices</extracomment>
+        <translation>Playback languages</translation>
+    </message>
+    <message>
+        <source>Optional</source>
+        <extracomment>Tag beside a setup wizard section that can be left as it is</extracomment>
+        <translation>Optional</translation>
+    </message>
+    <message>
+        <source>Default Audio Language</source>
+        <extracomment>Setup wizard row for the preferred audio language</extracomment>
+        <translation>Default Audio Language</translation>
+    </message>
+    <message>
+        <source>Prefer Default Audio Track</source>
+        <extracomment>Setup wizard switch for playing the track the file marks as default</extracomment>
+        <translation>Prefer Default Audio Track</translation>
+    </message>
+    <message>
+        <source>Pick the track the file marks as default before matching languages</source>
+        <extracomment>Under the Prefer Default Audio Track switch in the setup wizard</extracomment>
+        <translation>Pick the track the file marks as default before matching languages</translation>
+    </message>
+    <message>
+        <source>Subtitle Mode</source>
+        <extracomment>Setup wizard row for when subtitles turn on</extracomment>
+        <translation>Subtitle Mode</translation>
+    </message>
+    <message>
+        <source>Default Subtitle Language</source>
+        <extracomment>Setup wizard row for the preferred subtitle language</extracomment>
+        <translation>Default Subtitle Language</translation>
+    </message>
+    <message>
+        <source>Automatically loads and displays subtitles every time a video starts.</source>
+        <extracomment>Describes the Always Play subtitle mode</extracomment>
+        <translation>Automatically loads and displays subtitles every time a video starts.</translation>
+    </message>
+    <message>
+        <source>Automatically turns on subtitles if the default audio track is in a foreign language.</source>
+        <extracomment>Describes the Smart subtitle mode</extracomment>
+        <translation>Automatically turns on subtitles if the default audio track is in a foreign language.</translation>
+    </message>
+    <message>
+        <source>Only loads subtitles explicitly tagged with the forced metadata flag.</source>
+        <extracomment>Describes the Only Forced subtitle mode</extracomment>
+        <translation>Only loads subtitles explicitly tagged with the forced metadata flag.</translation>
+    </message>
+    <message>
+        <source>Completely disables automatic subtitle loading.</source>
+        <extracomment>Describes the None subtitle mode</extracomment>
+        <translation>Completely disables automatic subtitle loading.</translation>
+    </message>
+    <message>
+        <source>Plays tracks internally flagged in the media file's metadata as "default" or "forced".</source>
+        <extracomment>Describes the Default subtitle mode</extracomment>
+        <translation>Plays tracks internally flagged in the media file's metadata as "default" or "forced".</translation>
+    </message>
 </context>
 </TS>
