@@ -1,0 +1,88 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/libraryOrder.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/multiserver.bs"
+import "pkg:/source/utils/session.bs"
+
+function orderSessions(unified as boolean) as object
+    if unified then return getAllServerSessions()
+    current = getCurrentServerSession()
+    if not isValid(current) then return []
+    return [current]
+end function
+
+function userRequest(userSession as object, path as string, params = {} as object) as dynamic
+    return APIRequestForServer(userSession.serverUrl, userSession.userId, userSession.authToken, path, params)
+end function
+
+' The libraries hidden from My Media are listed too, since the order covers them as well. With
+' several servers one that cant be reached is left out, where a single server failing fails the list
+sub loadOrder()
+    unified = isMultiServerEnabled() and hasMultipleLoggedInServers()
+    sessions = orderSessions(unified)
+    libraries = []
+    configurations = []
+    for each userSession in sessions
+        views = getJson(userRequest(userSession, "/UserViews", { userId: userSession.userId, includeHidden: true }))
+        user = getJson(userRequest(userSession, "/Users/" + userSession.userId))
+        if isChainValid(views, "Items") and isValid(user)
+            configurations.push(user.Configuration)
+            for each view in views.Items
+                libraries.push({
+                    Id: view.Id,
+                    Name: view.Name,
+                    CollectionType: view.LookupCI("CollectionType"),
+                    serverUrl: unified ? userSession.serverUrl : "",
+                    serverName: userSession.serverName
+                })
+            end for
+        else if not unified
+            m.top.result = { ok: false }
+            return
+        end if
+    end for
+
+    if unified then libraries = librariesByServer(libraries)
+    m.top.result = { ok: sessions.Count() > 0, unified: unified, libraries: libraries, hidden: libraryOrder.HiddenIds(configurations) }
+end sub
+
+' The server replaces the whole configuration on every write, so each save starts from the
+' configuration as it is now. Anything changed elsewhere since the list opened would otherwise be
+' put back. Every server is read before any is written, so one that cant be reached stops the save
+sub saveOrder()
+    groups = libraryOrder.ByServer(m.top.libraries)
+    sessions = orderSessions(m.top.unified)
+    activeUrl = chainLookupReturn(m.global, "session.server.url", "")
+    writes = []
+    for each group in groups
+        for each userSession in sessions
+            if not m.top.unified or userSession.serverUrl = group.serverUrl
+                user = getJson(userRequest(userSession, "/Users/" + userSession.userId))
+                if isChainValid(user, "Configuration") then writes.push({ userSession: userSession, configuration: user.Configuration, order: group.ids })
+                exit for
+            end if
+        end for
+    end for
+
+    if writes.Count() = 0 or writes.Count() <> groups.Count()
+        m.top.result = { ok: false }
+        return
+    end if
+
+    for each write in writes
+        write.configuration.OrderedViews = write.order
+        req = userRequest(write.userSession, "/Users/Configuration", { userId: write.userSession.userId })
+        req.AddHeader("Content-Type", "application/json")
+        status = requestResponse(req, "POST", FormatJson(write.configuration)).status
+        if status < 200 or status >= 300
+            m.top.result = { ok: false }
+            return
+        end if
+
+        ' The settings screen posts this copy back whole when a playback preference changes, so
+        ' it takes the new order or that would put the old one back
+        if write.userSession.serverUrl = activeUrl then session.user.Update("Configuration", write.configuration)
+    end for
+
+    m.top.result = { ok: true }
+end sub

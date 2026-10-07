@@ -5248,5 +5248,45 @@
         <extracomment>Home row title, %1 is the title the recommendations come from</extracomment>
         <translation>Since you watched %1</translation>
     </message>
+    <message>
+        <source>Library Order</source>
+        <extracomment>Settings entry and panel title for arranging the libraries</extracomment>
+        <translation>Library Order</translation>
+    </message>
+    <message>
+        <source>Choose the order of your libraries</source>
+        <extracomment>Description of the Library Order setting</extracomment>
+        <translation>Choose the order of your libraries</translation>
+    </message>
+    <message>
+        <source>Your libraries appear in this order on My Media, the recently added rows and the navigation bar. The order is saved to your server account, so other apps you sign in to use it too.</source>
+        <extracomment>Explains the Library Order panel</extracomment>
+        <translation>Your libraries appear in this order on My Media, the recently added rows and the navigation bar. The order is saved to your server account, so other apps you sign in to use it too.</translation>
+    </message>
+    <message>
+        <source>Press left or right to move the highlighted library.</source>
+        <extracomment>Hint on the Library Order panel</extracomment>
+        <translation>Press left or right to move the highlighted library.</translation>
+    </message>
+    <message>
+        <source>Failed to load libraries</source>
+        <extracomment>The Library Order panel could not read the libraries</extracomment>
+        <translation>Failed to load libraries</translation>
+    </message>
+    <message>
+        <source>No libraries found</source>
+        <extracomment>The Library Order panel has nothing to arrange</extracomment>
+        <translation>No libraries found</translation>
+    </message>
+    <message>
+        <source>Hidden</source>
+        <extracomment>Under a library hidden from My Media in the Library Order panel</extracomment>
+        <translation>Hidden</translation>
+    </message>
+    <message>
+        <source>Couldn't save the library order</source>
+        <extracomment>Note shown when the server refused a new library order</extracomment>
+        <translation>Couldn't save the library order</translation>
+    </message>
 </context>
 </TS>

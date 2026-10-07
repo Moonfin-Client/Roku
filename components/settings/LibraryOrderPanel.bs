@@ -1,0 +1,261 @@
+import "pkg:/components/itemMenu/itemMenuToastHost.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/libraryOrder.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/trackDialog.bs"
+
+const TEXT_SIZE = 20
+const TEXT_GAP = 12
+const HINT_GAP = 4
+const HINT_LINE = 26
+' Room the list keeps while it loads, so the panel doesnt jump when the libraries arrive
+const LOADING_ROWS = 3
+
+sub init()
+    m.list = m.top.findNode("checklist")
+    m.list.observeField("itemSelected", "onItemSelected")
+
+    m.description = m.top.findNode("description")
+    m.hint = m.top.findNode("hint")
+    m.loading = m.top.findNode("loading")
+
+    m.saveTimer = m.top.findNode("saveTimer")
+    m.saveTimer.duration = libraryOrder.SAVE_DELAY
+    m.saveTimer.observeField("fire", "onSaveTimer")
+
+    m.parts = {
+        panel: m.top.findNode("panel"),
+        panelBg: m.top.findNode("panelBg"),
+        panelBorder: m.top.findNode("panelBorder"),
+        title: m.top.findNode("title"),
+        titleRule: m.top.findNode("titleRule"),
+        list: m.list
+    }
+
+    m.parts.title.text = tr("Library Order")
+    m.description.text = tr("Your libraries appear in this order on My Media, the recently added rows and the navigation bar. The order is saved to your server account, so other apps you sign in to use it too.")
+    m.hint.text = tr("Press left or right to move the highlighted library.")
+    for each label in [m.description, m.hint]
+        label.font.size = TEXT_SIZE
+        label.width = trackDialog.PANEL_WIDTH - (trackDialog.ROW_PAD_X * 2)
+    end for
+
+    m.libraries = []
+    m.unified = false
+    m.hidden = {}
+    ' The order the servers last took, which a failed write goes back to
+    m.savedOrder = []
+    m.savePending = false
+    m.saveQueued = false
+    m.isClosed = false
+    m.laidOutCount = -1
+end sub
+
+sub showDialog()
+    load()
+end sub
+
+sub load()
+    m.libraries = []
+    layoutPanel(LOADING_ROWS)
+    m.list.content = CreateObject("roSGNode", "ContentNode")
+    m.list.setFocus(true)
+    m.loading.active = true
+
+    m.loadTask = CreateObject("roSGNode", "LibraryOrderTask")
+    m.loadTask.functionName = "loadOrder"
+    m.loadTask.observeField("result", "onLoaded")
+    m.loadTask.control = "RUN"
+end sub
+
+sub onLoaded(event as object)
+    result = event.getData()
+    m.loadTask = invalid
+    m.loading.active = false
+
+    if result.ok <> true
+        showMessage(tr("Failed to load libraries"), tr("Retry"))
+        return
+    end if
+
+    m.unified = result.unified = true
+    m.hidden = result.hidden
+    m.libraries = result.libraries
+    m.savedOrder = result.libraries
+    if m.libraries.Count() = 0
+        showMessage(tr("No libraries found"), "")
+        return
+    end if
+
+    showLibraries(0)
+end sub
+
+sub showLibraries(focusIndex as integer)
+    content = CreateObject("roSGNode", "ContentNode")
+    for i = 0 to m.libraries.Count() - 1
+        library = m.libraries[i]
+        row = content.CreateChild("LibraryOrderData")
+        row.title = library.Name
+        if m.unified and isValidAndNotEmpty(library.serverName) then row.title += " (" + library.serverName + ")"
+        if m.hidden.DoesExist(library.Id) then row.description = tr("Hidden")
+        row.icon = libraryOrder.Icon(library)
+        row.reorderable = true
+        row.moveHints = true
+        row.canMoveLeft = not libraryOrder.IsFirstOfServer(m.libraries, i)
+        row.canMoveRight = not libraryOrder.IsLastOfServer(m.libraries, i)
+    end for
+
+    layoutPanel(m.libraries.Count())
+    m.list.content = content
+    m.list.jumpToItem = focusIndex
+    m.list.setFocus(true)
+end sub
+
+sub showMessage(message as string, action as string)
+    content = CreateObject("roSGNode", "ContentNode")
+    note = content.CreateChild("LibraryOrderData")
+    note.title = message
+    note.noIndicator = true
+    note.paragraph = true
+
+    if action <> ""
+        button = content.CreateChild("LibraryOrderData")
+        button.title = action
+        button.action = "retry"
+        button.noIndicator = true
+    end if
+
+    layoutPanel(content.getChildCount())
+    m.list.content = content
+    m.list.jumpToItem = content.getChildCount() - 1
+    m.list.setFocus(true)
+end sub
+
+' The description and the hint sit between the title and its rule, so everything below them moves
+' down by what they take, and the list gives up rows to keep the panel on screen. A move keeps the
+' row count, so the panel is only laid out again when that changes
+sub layoutPanel(count as integer)
+    if count = m.laidOutCount then return
+    m.laidOutCount = count
+
+    textTop = trackDialog.PANEL_PAD_Y + trackDialog.TITLE_LINE + TEXT_GAP
+    descriptionHeight = m.description.boundingRect().height
+    block = TEXT_GAP + descriptionHeight + HINT_GAP + HINT_LINE
+
+    room = trackDialog.PANEL_MAX_HEIGHT - (trackDialog.PANEL_PAD_Y * 2) - trackDialog.TitleBlock() - block
+    rows = Int(room / trackDialog.RowHeight())
+    if count < rows then rows = count
+    if rows < 1 then rows = 1
+    trackDialog.Layout(m.parts, rows)
+
+    m.description.translation = [trackDialog.ROW_PAD_X, textTop]
+    m.hint.translation = [trackDialog.ROW_PAD_X, textTop + descriptionHeight + HINT_GAP]
+
+    for each part in [m.parts.titleRule, m.list]
+        part.translation = [part.translation[0], part.translation[1] + block]
+    end for
+    m.parts.panel.translation = [m.parts.panel.translation[0], m.parts.panel.translation[1] - (block / 2)]
+    for each layer in [m.parts.panelBg, m.parts.panelBorder]
+        layer.height = layer.height + block
+    end for
+end sub
+
+sub onItemSelected()
+    row = m.list.content.getChild(m.list.itemSelected)
+    if isValid(row) and row.action = "retry" then load()
+end sub
+
+' Left and right move the focused library, since up and down already move the focus
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if isStringEqual(key, KeyCode.BACK)
+        close()
+        return true
+    end if
+
+    if isStringEqual(key, KeyCode.LEFT) then return moveFocused(-1)
+    if isStringEqual(key, KeyCode.RIGHT) then return moveFocused(1)
+    return false
+end function
+
+function moveFocused(direction as integer) as boolean
+    index = m.list.itemFocused
+    moved = libraryOrder.Move(m.libraries, index, index + direction)
+    if not isValid(moved) then return true
+
+    m.libraries = moved
+    showLibraries(index + direction)
+
+    m.savePending = true
+    m.top.saving = true
+    m.saveTimer.control = "stop"
+    m.saveTimer.control = "start"
+    return true
+end function
+
+sub onSaveTimer()
+    m.savePending = false
+    saveOrder()
+end sub
+
+' Queued so writes land in the order they were made and a slow one cant undo a later move
+sub saveOrder()
+    if isValid(m.saveTask)
+        m.saveQueued = true
+        return
+    end if
+
+    m.saveQueued = false
+    m.sending = m.libraries
+    m.saveTask = CreateObject("roSGNode", "LibraryOrderTask")
+    m.saveTask.unified = m.unified
+    m.saveTask.libraries = m.sending
+    m.saveTask.functionName = "saveOrder"
+    m.saveTask.observeField("result", "onSaved")
+    m.saveTask.control = "RUN"
+end sub
+
+sub onSaved(event as object)
+    m.saveTask = invalid
+
+    if event.getData().ok = true
+        m.savedOrder = m.sending
+        ' Home and the nav draw the libraries again straight away, rather than on the next launch
+        m.global.librariesChanged = m.global.librariesChanged + 1
+    else if not m.saveQueued and not m.isClosed
+        ' Only the latest save puts the list back, since a later one still carries what was moved
+        m.saveTimer.control = "stop"
+        m.savePending = false
+        focusedId = chainLookupReturn(m.libraries[m.list.itemFocused], "Id", "")
+        m.libraries = m.savedOrder
+        showLibraries(indexOfLibrary(focusedId))
+        showItemMenuToast(tr("Couldn't save the library order"))
+    end if
+
+    if m.saveQueued
+        saveOrder()
+        return
+    end if
+    if not m.savePending then m.top.saving = false
+end sub
+
+' The focus stays on the library it was on wherever that library lands
+function indexOfLibrary(id as string) as integer
+    for i = 0 to m.libraries.Count() - 1
+        if m.libraries[i].Id = id then return i
+    end for
+    return 0
+end function
+
+' Backing out right after a move still keeps the move
+sub close()
+    m.isClosed = true
+    if m.savePending
+        m.saveTimer.control = "stop"
+        m.savePending = false
+        saveOrder()
+    end if
+    if isValid(m.loadTask) then m.loadTask.unobserveField("result")
+    m.top.closed = true
+end sub
