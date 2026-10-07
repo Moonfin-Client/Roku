@@ -226,6 +226,8 @@ assert.doesNotMatch(favoriteWrites, /Substitute\([^\n]*favoriteitems|serverData\
 const playstateWrites = await readFile('components/PlaystateTask.bs', 'utf8');
 assert.match(playstateWrites, /APIRequestForServer\([^]*?"UserPlayedItems\/" \+ itemId/, 'Remote playstate writes use canonical routes');
 assert.doesNotMatch(playstateWrites, /normalizedUrl \+ "\/Users\//, 'Remote playstate writes do not concatenate legacy routes');
+assert.match(playstateWrites, /resp\.AddHeader\("Content-Type", "application\/json"\)\s+code = requestResponse\(resp, "POST", params\)\.status\s+closeEmbyPlayback\(serverData, requestParams, code >= 200 and code < 300\)/, 'A stop the server took isnt followed by a second close of its live stream');
+assert.match(await readFile('components/video/VideoPlayerView.bs', 'utf8'), /sendPlaystate\(state, params, state = "stop" and isValidAndNotEmpty\(params\.LiveStreamId\)\)/, 'A live stop goes on a task of its own');
 
 const multiServerUtils = await readFile('source/utils/multiserver.bs', 'utf8');
 const imageBuilder = multiServerUtils.match(/function buildImageURLForServer\([^]*?end function/)[0];
