@@ -5288,5 +5288,140 @@
         <extracomment>Note shown when the server refused a new library order</extracomment>
         <translation>Couldn't save the library order</translation>
     </message>
+    <message>
+        <source>Sections</source>
+        <extracomment>Details screen setting that hides parts of the screen, and the group of sections under it</extracomment>
+        <translation>Sections</translation>
+    </message>
+    <message>
+        <source>Choose which parts of the Details screen to show</source>
+        <extracomment>Description of the Sections setting</extracomment>
+        <translation>Choose which parts of the Details screen to show</translation>
+    </message>
+    <message>
+        <source>Only the sections the current Details screen style can show</source>
+        <extracomment>First line of the note over the Sections list, which runs on into the next line</extracomment>
+        <translation>Only the sections the current Details screen style can show</translation>
+    </message>
+    <message>
+        <source>are listed. Hiding one hides it in every style that has it.</source>
+        <extracomment>Second line of the note over the Sections list</extracomment>
+        <translation>are listed. Hiding one hides it in every style that has it.</translation>
+    </message>
+    <message>
+        <source>Header</source>
+        <extracomment>Group of details screen sections at the top of the screen</extracomment>
+        <translation>Header</translation>
+    </message>
+    <message>
+        <source>Person pages</source>
+        <extracomment>Group of details screen sections on a person page</extracomment>
+        <translation>Person pages</translation>
+    </message>
+    <message>
+        <source>Logo</source>
+        <extracomment>Details screen section, the title logo</extracomment>
+        <translation>Logo</translation>
+    </message>
+    <message>
+        <source>Shows the title as text when off</source>
+        <extracomment>Under the Logo section switch</extracomment>
+        <translation>Shows the title as text when off</translation>
+    </message>
+    <message>
+        <source>Tagline</source>
+        <extracomment>Details screen section</extracomment>
+        <translation>Tagline</translation>
+    </message>
+    <message>
+        <source>Poster</source>
+        <extracomment>Details screen section</extracomment>
+        <translation>Poster</translation>
+    </message>
+    <message>
+        <source>Also on collection pages</source>
+        <extracomment>Under the Cast section switch</extracomment>
+        <translation>Also on collection pages</translation>
+    </message>
+    <message>
+        <source>Directors &amp; writers</source>
+        <extracomment>Details screen section</extracomment>
+        <translation>Directors &amp; writers</translation>
+    </message>
+    <message>
+        <source>Also similar albums and artists</source>
+        <extracomment>Under the More Like This section switch</extracomment>
+        <translation>Also similar albums and artists</translation>
+    </message>
+    <message>
+        <source>More episodes</source>
+        <extracomment>Details screen section, the other episodes on an episode page</extracomment>
+        <translation>More episodes</translation>
+    </message>
+    <message>
+        <source>On episode pages</source>
+        <extracomment>Under the More episodes section switch</extracomment>
+        <translation>On episode pages</translation>
+    </message>
+    <message>
+        <source>Media info</source>
+        <extracomment>Details screen section</extracomment>
+        <translation>Media info</translation>
+    </message>
+    <message>
+        <source>File, streams and Direct Play check</source>
+        <extracomment>Under the Media info section switch</extracomment>
+        <translation>File, streams and Direct Play check</translation>
+    </message>
+    <message>
+        <source>Genres &amp; tags</source>
+        <extracomment>Seerr section on the details screen</extracomment>
+        <translation>Genres &amp; tags</translation>
+    </message>
+    <message>
+        <source>Similar titles</source>
+        <extracomment>Seerr section on the details screen</extracomment>
+        <translation>Similar titles</translation>
+    </message>
+    <message>
+        <source>Collection banner</source>
+        <extracomment>Seerr section on the details screen</extracomment>
+        <translation>Collection banner</translation>
+    </message>
+    <message>
+        <source>Appearances</source>
+        <extracomment>Seerr section on a person page</extracomment>
+        <translation>Appearances</translation>
+    </message>
+    <message>
+        <source>On person pages</source>
+        <extracomment>Under the Seerr person section switches</extracomment>
+        <translation>On person pages</translation>
+    </message>
+    <message>
+        <source>Crew credits</source>
+        <extracomment>Seerr section on a person page</extracomment>
+        <translation>Crew credits</translation>
+    </message>
+    <message>
+        <source>Biography</source>
+        <extracomment>Person page section</extracomment>
+        <translation>Biography</translation>
+    </message>
+    <message>
+        <source>Birthplace</source>
+        <extracomment>Person page section</extracomment>
+        <translation>Birthplace</translation>
+    </message>
+    <message>
+        <source>Guest appearances</source>
+        <extracomment>Person page section</extracomment>
+        <translation>Guest appearances</translation>
+    </message>
+    <message>
+        <source>Music videos</source>
+        <extracomment>Person page section</extracomment>
+        <translation>Music videos</translation>
+    </message>
 </context>
 </TS>

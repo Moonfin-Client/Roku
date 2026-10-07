@@ -336,7 +336,7 @@ sub renderDetailContent()
     hideMediaDesc = hidesMediaDescription() and (isEpisode() or LCase(m.top.itemType) = "movie")
     overviewText = itemData.overview
     if isValidAndNotEmpty(overviewText) then overviewText = stripHtmlTags(overviewText)
-    if isPerson() then overviewText = readableText(overviewText)
+    if isPerson() then overviewText = detailSectionLayout.Shows("biography") ? readableText(overviewText) : ""
     m.overview.text = overviewText
     m.overview.visible = not hideMediaDesc and isValidAndNotEmpty(overviewText)
 
@@ -344,7 +344,7 @@ sub renderDetailContent()
     m.directPlayState = "loading"
     m.directPlaySupported = false
     m.directPlayReasons = ""
-    if isValidAndNotEmpty(itemData.Chapters) then m.sectionData.chapters = itemData.Chapters
+    if isValidAndNotEmpty(itemData.Chapters) and detailSectionLayout.Shows("chapters") then m.sectionData.chapters = itemData.Chapters
 
     layoutContainer()
     loadSections()
@@ -572,8 +572,9 @@ sub onPersonSeerrCreditsLoaded(event as object)
     response = event.getData()
     if not isValid(response) or not response.success or not isValid(response.data) then return
 
-    m.sectionData.person.appearances = usableSeerrCredits(response.data.cast, false)
-    m.sectionData.person.crew = usableSeerrCredits(response.data.crew, true)
+    credits = shownSeerrCredits(response.data)
+    m.sectionData.person.appearances = credits.appearances
+    m.sectionData.person.crew = credits.crew
     rebuildSections()
 end sub
 
@@ -622,6 +623,9 @@ function sectionState() as object
     itemData = m.top.itemContent.json
     hasProviderId = isValidAndNotEmpty(chainLookupReturn(itemData, "ProviderIds.Tmdb", "")) or isValidAndNotEmpty(chainLookupReturn(itemData, "ProviderIds.Imdb", ""))
     seerrAvailable = GetSeerrConfig().enabled or m.top.seerrOnly
+    ' With both Seerr lists hidden there is nothing to hold the rail open for
+    hidden = detailSectionLayout.HiddenIds()
+    seerrListed = not hidden.DoesExist("seerrSimilar") or not hidden.DoesExist("seerrRecommendations")
 
     return {
         itemType: LCase(m.top.itemType),
@@ -631,7 +635,7 @@ function sectionState() as object
         crewCount: m.sectionData.crew.count(),
         similarLoaded: m.sectionData.similarLoaded,
         similarCount: m.sectionData.similar.count(),
-        seerrExpected: nouveauLayout.SeerrDiscoveryExpected(LCase(m.top.itemType), seerrAvailable, hasProviderId),
+        seerrExpected: seerrListed and nouveauLayout.SeerrDiscoveryExpected(LCase(m.top.itemType), seerrAvailable, hasProviderId),
         seerrResolved: m.sectionData.seerrResolved,
         seerrSimilarCount: m.sectionData.seerrSimilar.count(),
         seerrRecommendationCount: m.sectionData.seerrRecommendations.count()
@@ -926,17 +930,21 @@ end function
 
 ' ===== Footer =====
 
+' Studios, the Seerr pieces and the media info each have a switch, and a hidden one reads as
+' empty. With nothing left the footer is left out, and the focus walk steps past it
 sub buildFooter()
     itemData = m.top.itemContent.json
+    hidden = detailSectionLayout.HiddenIds()
 
     source = invalid
-    if isValidAndNotEmpty(itemData.MediaSources) then source = itemData.MediaSources[0]
-
     streams = []
-    if isValid(source) and isValidAndNotEmpty(source.MediaStreams)
-        streams = source.MediaStreams
-    else if isValidAndNotEmpty(itemData.MediaStreams)
-        streams = itemData.MediaStreams
+    if not hidden.DoesExist("mediaInfo")
+        if isValidAndNotEmpty(itemData.MediaSources) then source = itemData.MediaSources[0]
+        if isValid(source) and isValidAndNotEmpty(source.MediaStreams)
+            streams = source.MediaStreams
+        else if isValidAndNotEmpty(itemData.MediaStreams)
+            streams = itemData.MediaStreams
+        end if
     end if
 
     video = invalid
@@ -957,16 +965,17 @@ sub buildFooter()
     activeSubtitle = chainLookupReturn(preferredSubtitle, "StreamIndex", -1)
 
     studios = []
-    if isValidAndNotEmpty(itemData.Studios)
+    if isValidAndNotEmpty(itemData.Studios) and not hidden.DoesExist("studios")
         for each studio in itemData.Studios
             name = chainLookupReturn(studio, "Name", "")
             if isValidAndNotEmpty(name) then studios.push({ id: chainLookupReturn(studio, "Id", ""), name: name })
         end for
     end if
 
+    seerrHeight = m.seerrBlock.visible ? m.seerrBlock.blockHeight : 0
     m.footer.callFunc("setContent", {
         studios: studios,
-        seerrHeight: m.seerrBlock.visible ? m.seerrBlock.blockHeight : 0,
+        seerrHeight: seerrHeight,
         hasMediaSource: isValid(source),
         fileName: fileFacts.FileName(source),
         fileMeta: fileFacts.SizeLine(source),
@@ -979,7 +988,7 @@ sub buildFooter()
     ' The footer is built again whenever a section lands, so the answer already in
     ' hand is put back rather than the line dropping to asking again
     m.footer.callFunc("setDirectPlay", m.directPlayState, m.directPlaySupported)
-    m.footer.visible = true
+    m.footer.visible = studios.count() > 0 or seerrHeight > 0 or isValid(source) or streams.count() > 0
 end sub
 
 function trackRows(streams as object, activeIndex as integer, includeForced as boolean) as object
@@ -1010,7 +1019,7 @@ end function
 
 sub probeDirectPlay()
     itemData = m.top.itemContent.json
-    if not isValidAndNotEmpty(itemData.MediaSources) then return
+    if not isValidAndNotEmpty(itemData.MediaSources) or not detailSectionLayout.Shows("mediaInfo") then return
 
     if isValid(m.directPlayTask) then m.directPlayTask.unobserveField("result")
 

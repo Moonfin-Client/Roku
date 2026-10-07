@@ -58,6 +58,7 @@ const selections = {
     'source/utils/deviceCapabilities.bs': ['getSubtitleProfiles'],
     'source/utils/seerrMissingCollection.bs': null,
     'source/utils/libraryOrder.bs': null,
+    'source/utils/detailSectionLayout.bs': null,
     'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions'],
     'source/enums/VideoType.bs': null,
@@ -124,6 +125,7 @@ source += '\n' + await readFile('test/seerr-missing-collection.bs', 'utf8');
 source += '\n' + await readFile('test/collection-row.bs', 'utf8');
 source += '\n' + await readFile('test/external-rows.bs', 'utf8');
 source += '\n' + await readFile('test/library-order.bs', 'utf8');
+source += '\n' + await readFile('test/detail-sections.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n';
 for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin']) {
@@ -240,6 +242,8 @@ assert.match(await readFile('components/home/HomeRows.bs', 'utf8'), /tr\("Since 
 for (const locale of ['en_US', 'ca', 'de_DE', 'fr', 'fr_CA', 'pt_BR']) {
     assert.match(await readFile(`locale/${locale}/translations.ts`, 'utf8'), /<source>Since you watched %1<\/source>[^]*?<translation>[^<]*%1[^<]*<\/translation>/, `${locale} has the Since you watched title`);
 }
+
+assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /pluginKey: "hiddenDetailSectionsTv", rokuKey: "ui\.itemdetail\.hiddenSections", type: "jsonArray"/, 'The hidden detail sections travel with the other clients');
 
 const multiServerUtils = await readFile('source/utils/multiserver.bs', 'utf8');
 const imageBuilder = multiServerUtils.match(/function buildImageURLForServer\([^]*?end function/)[0];
