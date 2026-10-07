@@ -1,0 +1,73 @@
+import "pkg:/source/api/Achievements.bs"
+import "pkg:/source/utils/misc.bs"
+
+' How often newly unlocked badges, the friends list and the chats are asked for. The plugin gives
+' each user 60 requests a minute across all of its routes, and a read is a few of them.
+const ACHIEVEMENTS_POLL_MS = 30000
+
+sub init()
+    m.top.functionName = "pollAchievements"
+end sub
+
+' Reads once straight away and then on every interval until the task is stopped. The switch on
+' the achievements screen hands over the settings it saved, so the reads follow it without
+' waiting for the settings to be read again, and the friends screens can ask for a read now.
+sub pollAchievements()
+    port = CreateObject("roMessagePort")
+    m.top.observeField("control", port)
+    m.global.observeFieldScoped("unlockToastSettings", port)
+    m.global.observeFieldScoped("socialRequest", port)
+
+    unlocksOn = achievements.Flags().unlockToastsEnabled
+    socialOn = achievements.SocialAvailable()
+    unlockState = achievements.NewUnlockState()
+    m.socialState = achievements.NewSocialState()
+    if socialOn
+        privacy = achievements.FetchSocialPrivacy()
+        if isValid(privacy) then m.socialState.messageNotifications = privacy.messageNotifications
+    end if
+
+    clock = CreateObject("roTimespan")
+    while true
+        if unlocksOn
+            found = achievements.ReadUnlocks(unlockState)
+            if isValid(found) then m.top.unlocks = found
+        end if
+        if socialOn then readSocial()
+
+        clock.Mark()
+        remaining = ACHIEVEMENTS_POLL_MS
+        while remaining > 0
+            msg = wait(remaining, port)
+            if type(msg) = "roSGNodeEvent"
+                field = msg.getField()
+                if field = "control" and LCase(msg.getData()) = "stop"
+                    m.global.unobserveFieldScoped("unlockToastSettings")
+                    m.global.unobserveFieldScoped("socialRequest")
+                    return
+                end if
+                if field = "unlockToastSettings" then achievements.AdoptUnlockSettings(unlockState, msg.getData())
+                if field = "socialRequest" and socialOn then onSocialRequest(msg.getData())
+            end if
+            remaining = ACHIEVEMENTS_POLL_MS - clock.TotalMilliseconds()
+        end while
+    end while
+end sub
+
+' A screen asks for a read now, says which chat is open so a message landing there doesnt pop a
+' banner, or passes on the message notification switch it just saved
+sub onSocialRequest(request as object)
+    if request.kind = "refresh"
+        readSocial()
+    else if request.kind = "openConversation"
+        m.socialState.openConversation = request.conversationId
+    else if request.kind = "messageNotifications"
+        m.socialState.messageNotifications = request.enabled
+    end if
+end sub
+
+sub readSocial()
+    incoming = achievements.ReadSocial(m.socialState)
+    m.global.social = { friends: m.socialState.friends, threads: m.socialState.threads, friendsRead: m.socialState.friendsRead }
+    if incoming.count() > 0 then m.top.incoming = incoming
+end sub

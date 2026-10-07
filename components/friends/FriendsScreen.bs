@@ -1,0 +1,1779 @@
+import "pkg:/components/achievements/achievementShowcase.bs"
+import "pkg:/source/utils/achievementsIcons.bs"
+import "pkg:/source/utils/achievementsModel.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/relativeTime.bs"
+import "pkg:/source/utils/themeApply.bs"
+import "pkg:/source/utils/themeChrome.bs"
+import "pkg:/source/utils/tvKeyboard.bs"
+
+import "pkg:/source/enums/KeyCode.bs"
+
+' Friends and chat from the Achievement Badges plugin. The friends list and the chats come from
+' the reads that run while the user is signed in, and everything else is asked for by the view
+' that shows it. The panel keeps its own stack of views, so BACK walks back through them one at a
+' time and lands on whatever opened it.
+
+const FRIENDS_WIDTH = 747
+const FRIENDS_VIEW_HEIGHT = 976
+const FRIENDS_ROW_GAP = 10
+const FRIENDS_PAD = 20
+const FRIENDS_CARD_HEIGHT = 120
+const FRIENDS_HEADING_HEIGHT = 70
+const FRIENDS_BUTTON_HEIGHT = 64
+const FRIENDS_BUTTON_PAD = 28
+const FRIENDS_BUTTON_GAP = 12
+const FRIENDS_FIELD_HEIGHT = 72
+const FRIENDS_FIELD_LABEL_HEIGHT = 34
+const FRIENDS_ICON_TILE = 48
+const FRIENDS_ICON = 24
+const FRIENDS_AVATAR = 56
+const FRIENDS_AVATAR_LARGE = 88
+const FRIENDS_PRESENCE = 16
+const FRIENDS_TOGGLE = 80
+const FRIENDS_UNREAD_HEIGHT = 36
+const FRIENDS_BUBBLE_MAX = 598
+const FRIENDS_BUBBLE_PAD_X = 20
+const FRIENDS_BUBBLE_PAD_Y = 14
+const FRIENDS_BUBBLE_LINE_GAP = 6
+const FRIENDS_PHOTO_HEIGHT = 360
+const FRIENDS_STAT_HEIGHT = 40
+const FRIENDS_STAT_PAD = 16
+const FRIENDS_STAT_GAP = 16
+const FRIENDS_RESTING_FILL = "#181818FF"
+const FRIENDS_PRESENCE_ONLINE = "#4CAF50FF"
+
+sub init()
+    m.path = m.top.findNode("path")
+    m.list = m.top.findNode("list")
+    m.scrollAnimation = m.top.findNode("scrollAnimation")
+    m.scrollInterp = m.top.findNode("scrollInterp")
+    m.chatTimer = m.top.findNode("chatTimer")
+    m.chatTimer.observeField("fire", "loadMessages")
+
+    m.fonts = {}
+    for each entry in [["title", 26], ["caption", 22], ["body", 24], ["button", 24], ["meta", 18], ["sender", 20], ["name", 34], ["avatar", 26], ["avatarLarge", 40]]
+        label = m.top.findNode(entry[0] + "Font")
+        label.font.size = entry[1]
+        m.fonts[entry[0]] = label.font
+    end for
+
+    m.accent = themeChrome.Accent()
+    ' A focused row or button deepens the cursor colour far enough to carry light text, and a
+    ' button that does the thing asked about wears it at rest too
+    m.focusFill = themeChrome.DeepenForLightInk(chainLookupReturn(m.global.session, "user.settings.colorCursor", "#00A4DCFF"))
+    m.myId = chainLookupReturn(m.global, "session.user.id", "")
+    m.social = m.global.social
+    m.global.observeFieldScoped("social", "onSocialChanged")
+
+    m.view = invalid
+    m.stack = []
+    m.rows = []
+    m.focusIndex = -1
+    m.scrollY = 0
+    m.contentHeight = 0
+    m.token = 0
+    m.tasks = []
+    m.attachments = {}
+    m.pendingFocusKey = ""
+
+    m.top.optionsAvailable = false
+    themeApply.ApplyToItem(m.top)
+end sub
+
+sub OnScreenShown(_isReturning = false as boolean)
+    if not isValid(m.view) then openView("friends", {})
+end sub
+
+sub close()
+    leaveView()
+    m.global.unobserveFieldScoped("social")
+    m.top.closed = true
+end sub
+
+' ===== Views =====
+
+sub openView(name as string, params as object)
+    if isValid(m.view)
+        leaveView()
+        m.stack.push({ name: m.view.name, params: m.view.params, focusKey: focusedKey() })
+    end if
+    enterView(name, params, "")
+end sub
+
+function popView() as boolean
+    if m.stack.count() = 0 then return false
+
+    leaveView()
+    held = m.stack.pop()
+    enterView(held.name, held.params, held.focusKey)
+    return true
+end function
+
+' Each view starts afresh whenever it is shown
+sub enterView(name as string, params as object, focusKey as string)
+    m.token++
+    m.view = { name: name, params: params, state: { problem: "", busy: false } }
+    m.pendingFocusKey = focusKey
+    m.scrollY = 0
+    state = m.view.state
+
+    if name = "friends"
+        state.failed = false
+        requestSocial({ kind: "refresh" })
+    else if name = "friendProfile"
+        state.profileLoaded = false
+        state.profile = invalid
+        state.blockKnown = false
+        state.blocked = false
+        state.confirm = ""
+        runTask({ kind: "profile", userId: params.userId })
+    else if name = "friendsRequests"
+        state.cancelling = ""
+    else if name = "friendsAdd"
+        state.people = invalid
+        state.query = ""
+        state.sent = ""
+        runTask({ kind: "people" })
+    else if name = "friendsPrivacy"
+        state.privacyLoaded = false
+        state.privacy = invalid
+        state.blocked = []
+        state.unblocking = ""
+        runTask({ kind: "privacy" })
+    else if name = "friendsMessages"
+        requestSocial({ kind: "refresh" })
+    else if name = "chatNewGroup"
+        state.title = ""
+        state.picked = []
+    else if name = "chat"
+        state.messages = invalid
+        state.signature = ""
+        state.text = ""
+        state.editing = invalid
+        state.options = ""
+        state.confirmDelete = ""
+        state.loading = false
+        ' A message landing in the chat on screen doesnt pop a banner, and reading the chat is
+        ' what marks it read, so it only asks while it is on screen
+        requestSocial({ kind: "openConversation", conversationId: params.conversationId })
+        loadMessages()
+        m.chatTimer.control = "start"
+    else if name = "chatGroupInfo"
+        state.groupLoaded = false
+        state.group = invalid
+        state.title = ""
+        state.confirm = ""
+        state.memberMenu = ""
+        runTask({ kind: "conversation", conversationId: params.conversationId })
+    else if name = "chatAddMembers"
+        state.group = invalid
+        runTask({ kind: "conversation", conversationId: params.conversationId })
+    end if
+
+    render()
+end sub
+
+sub leaveView()
+    if not isValid(m.view) then return
+    if m.view.name <> "chat" then return
+
+    m.chatTimer.control = "stop"
+    requestSocial({ kind: "openConversation", conversationId: "" })
+end sub
+
+function viewTitle(name as string, params as object) as string
+    if name = "friendProfile" or name = "chat" then return params.name
+    if name = "friendsRequests" then return tr("Friend requests")
+    if name = "friendsAdd" then return tr("Add friends")
+    if name = "friendsPrivacy" then return tr("Privacy")
+    if name = "friendsMessages" then return tr("Messages")
+    if name = "chatPick" then return tr("New message")
+    if name = "chatNewGroup" then return tr("New group")
+    if name = "chatGroupInfo" then return tr("Group info")
+    if name = "chatAddMembers" then return tr("Add people")
+    return tr("Friends")
+end function
+
+function breadcrumb() as string
+    titles = []
+    for each held in m.stack
+        titles.push(viewTitle(held.name, held.params))
+    end for
+    titles.push(viewTitle(m.view.name, m.view.params))
+    return titles.join(" / ")
+end function
+
+' ===== Reads and writes =====
+
+sub requestSocial(request as object)
+    m.global.socialRequest = request
+end sub
+
+function friendsList() as dynamic
+    return chainLookupReturn(m.social, "friends", invalid)
+end function
+
+function friendsOf() as object
+    list = friendsList()
+    if not isValid(list) then return []
+    return list.friends
+end function
+
+function socialThreads() as object
+    threads = chainLookupReturn(m.social, "threads", invalid)
+    if not isValid(threads) then return []
+    return threads
+end function
+
+sub onSocialChanged()
+    m.social = m.global.social
+    if not isValid(m.view) then return
+
+    name = m.view.name
+    if name = "friends" then m.view.state.failed = not isValid(friendsList()) and chainLookupReturn(m.social, "friendsRead", true) = false
+    ' The chat reads its own messages, and only falls back on these for a sender's name
+    if name <> "chat" then render()
+end sub
+
+' Every read and write runs on a task of its own, so a slow one never holds up the next
+sub runTask(request as object)
+    request.token = m.token
+    task = CreateObject("roSGNode", "FriendsTask")
+    task.request = request
+    task.observeField("result", "onTaskResult")
+    task.control = "RUN"
+    m.tasks.push(task)
+end sub
+
+sub startWrite(request as object)
+    m.view.state.busy = true
+    m.view.state.problem = ""
+    request.kind = "write"
+    runTask(request)
+    render()
+end sub
+
+sub onTaskResult(event as object)
+    task = event.getRoSGNode()
+    for i = 0 to m.tasks.count() - 1
+        if m.tasks[i].isSameNode(task)
+            m.tasks.delete(i)
+            exit for
+        end if
+    end for
+
+    result = event.getData()
+    request = result.request
+    ' A photo belongs to its message wherever it shows next, so it is kept whichever view asked
+    if request.kind = "attachment"
+        onAttachment(request.attachmentId, result.path)
+        return
+    end if
+    ' An answer for a view that has since been left has nowhere to go
+    if request.token <> m.token then return
+
+    state = m.view.state
+    if request.kind = "profile"
+        state.profileLoaded = true
+        state.profile = result.profile
+        state.blockKnown = true
+        state.blocked = containsUser(result.blocked, m.view.params.userId)
+    else if request.kind = "people"
+        people = []
+        for each person in result.people
+            if not achievementsModel.SameUserId(person.userId, m.myId) then people.push(person)
+        end for
+        state.people = people
+    else if request.kind = "privacy"
+        ' The mute switch is all there is to land on while the rest loads, so the cursor moves up
+        ' to the first of them once they are in
+        if focusedKey() = "mute" then m.pendingFocusKey = "privacy-appearOffline"
+        state.privacyLoaded = true
+        state.privacy = result.privacy
+        state.blocked = result.blocked
+    else if request.kind = "savePrivacy"
+        onPrivacySaved(request, result.saved)
+    else if request.kind = "conversation"
+        state.groupLoaded = true
+        state.group = result.conversation
+        if isValid(state.group) and m.view.name = "chatGroupInfo" then state.title = state.group.title
+    else if request.kind = "messages"
+        state.loading = false
+        if not onMessages(result.messages) then return
+    else if request.kind = "openDirect"
+        if result.conversationId <> "" then openView("chat", { conversationId: result.conversationId, name: request.name, isGroup: false })
+        return
+    else if request.kind = "write"
+        state.busy = false
+        written = result.write
+        if not written.ok
+            state.problem = written.message
+            if state.problem = "" then state.problem = tr("That didn't work. Try again in a moment.")
+        else
+            if afterWrite(request, written) then return
+        end if
+    end if
+
+    render()
+end sub
+
+' What a write that went through leads to. Answers true when it moved to another view, which
+' draws itself.
+function afterWrite(request as object, written as object) as boolean
+    op = request.op
+    state = m.view.state
+    name = m.view.name
+
+    if op = "removeFriend" and name = "friendProfile"
+        requestSocial({ kind: "refresh" })
+        popView()
+        return true
+    end if
+    if op = "setBlocked"
+        if name = "friendProfile" then state.blocked = request.blocked
+        if name = "friendsPrivacy" then state.blocked = withoutUser(state.blocked, request.userId)
+        return false
+    end if
+    if op = "friendRequest" and name = "friendsAdd" then state.sent = substitute(tr("Request sent to {0}"), request.name)
+    if op = "friendRequest" or op = "acceptFriend" or op = "removeFriend"
+        requestSocial({ kind: "refresh" })
+        return false
+    end if
+
+    if op = "createGroup"
+        requestSocial({ kind: "refresh" })
+        conversation = written.conversation
+        if not isValid(conversation) then return false
+        title = conversation.title
+        if title = "" then title = tr("New group")
+        ' The chat takes the place of the screen that made it, so BACK leads to the chats
+        leaveView()
+        m.view = invalid
+        enterView("chat", { conversationId: conversation.id, name: title, isGroup: true }, "")
+        return true
+    end if
+
+    if op = "sendMessage" or op = "editMessage"
+        state.text = ""
+        state.editing = invalid
+        focusComposer()
+        loadMessages()
+        requestSocial({ kind: "refresh" })
+        return false
+    end if
+    if op = "deleteMessage"
+        loadMessages()
+        return false
+    end if
+
+    if op = "removeMember" and achievementsModel.SameUserId(request.userId, m.myId)
+        ' Out of the group info and the chat it belonged to
+        requestSocial({ kind: "refresh" })
+        m.stack.pop()
+        popView()
+        return true
+    end if
+    if op = "clearConversation"
+        requestSocial({ kind: "refresh" })
+        popView()
+        return true
+    end if
+    if op = "addMember" and name = "chatAddMembers"
+        popView()
+        return true
+    end if
+    if op = "renameGroup" then requestSocial({ kind: "refresh" })
+    if op = "renameGroup" or op = "setAdmin" or op = "removeMember"
+        runTask({ kind: "conversation", conversationId: m.view.params.conversationId })
+    end if
+    return false
+end function
+
+function containsUser(ids as object, userId as string) as boolean
+    for each id in ids
+        if achievementsModel.SameUserId(id, userId) then return true
+    end for
+    return false
+end function
+
+function withoutUser(ids as object, userId as string) as object
+    kept = []
+    for each id in ids
+        if not achievementsModel.SameUserId(id, userId) then kept.push(id)
+    end for
+    return kept
+end function
+
+' ===== Wording =====
+
+function mediaTitle(media as object) as string
+    if media.seriesName <> "" then return `${media.seriesName}: ${media.name}`
+    return media.name
+end function
+
+' What a friend is up to, in the order the list reads best: what they watch now, that they are
+' on, what they watched last, when they were last here, or nothing
+function friendCaption(friend as object) as string
+    if friend.online
+        if isValid(friend.nowPlaying) then return substitute(tr("Watching {0}"), mediaTitle(friend.nowPlaying))
+        return tr("Online")
+    end if
+    if isValid(friend.lastWatched) then return substitute(tr("Last watched {0}"), mediaTitle(friend.lastWatched))
+    if friend.lastSeen > 0 then return substitute(tr("Last seen {0}"), relativeTime.Label(friend.lastSeen))
+    return tr("Offline")
+end function
+
+function plural(count as integer, one as string, many as string) as string
+    if count = 1 then return one
+    return substitute(many, count.toStr())
+end function
+
+function unreadLabel(count as integer) as string
+    if count = 0 then return tr("No unread messages")
+    return plural(count, tr("1 unread message"), tr("{0} unread messages"))
+end function
+
+function requestLabel(count as integer) as string
+    if count = 0 then return tr("Nothing waiting")
+    return plural(count, tr("1 waiting for you"), tr("{0} waiting for you"))
+end function
+
+function threadPreview(thread as object) as string
+    text = thread.lastMessage
+    if achievementsModel.ThreadIsPhoto(thread) then text = tr("Photo")
+    if thread.lastFromMe then return substitute(tr("You: {0}"), text)
+    return text
+end function
+
+' ===== Rows =====
+
+function buildRows() as object
+    name = m.view.name
+    if name = "friendProfile" then return profileRows()
+    if name = "friendsRequests" then return requestRows()
+    if name = "friendsAdd" then return findPeopleRows()
+    if name = "friendsPrivacy" then return privacyRows()
+    if name = "friendsMessages" then return messagesRows()
+    if name = "chatPick" then return pickFriendRows()
+    if name = "chatNewGroup" then return newGroupRows()
+    if name = "chat" then return chatRows()
+    if name = "chatGroupInfo" then return groupInfoRows()
+    if name = "chatAddMembers" then return addMemberRows()
+    return friendsRows()
+end function
+
+function navRow(key as string, title as string, caption as string, icon as string, action as string, arg = invalid as dynamic) as object
+    return { kind: "card", key: key, title: title, caption: caption, icon: icon, focusable: action <> "", action: action, arg: arg }
+end function
+
+function personRow(key as string, name as string, caption as string, presence as string, action as string, arg = invalid as dynamic) as object
+    return { kind: "card", key: key, title: name, caption: caption, avatar: name, presence: presence, focusable: action <> "", action: action, arg: arg }
+end function
+
+function friendPersonRow(key as string, friend as object, action as string) as object
+    return personRow(key, friend.userName, friendCaption(friend), friend.online ? "online" : "offline", action, friend)
+end function
+
+function headingRow(text as string) as object
+    return { kind: "heading", text: text, focusable: false }
+end function
+
+function messageRow(text as string) as object
+    return { kind: "message", text: text, focusable: false }
+end function
+
+function noteRow(text as string) as object
+    return { kind: "note", text: text, focusable: false }
+end function
+
+' Buttons laid side by side. LEFT and RIGHT move between them, and the focus starts on the first.
+function actionsRow(key as string, buttons as object, align = "left" as string) as object
+    return { kind: "actions", key: key, buttons: buttons, align: align, button: 0, focusable: true }
+end function
+
+function button(label as string, action as string, strong = false as boolean, arg = invalid as dynamic) as object
+    return { label: label, action: action, strong: strong, arg: arg }
+end function
+
+' A question with two answers in place of a dialog. Whatever asks it puts the focus on it, which
+' lands on the safe answer.
+sub pushConfirm(rows as object, message as string, confirmLabel as string, action as string, arg = invalid as dynamic)
+    rows.push(messageRow(message))
+    rows.push(actionsRow("confirm", [button(tr("Cancel"), "confirmCancel"), button(confirmLabel, action, true, arg)], "right"))
+end sub
+
+sub pushProblem(rows as object)
+    if m.view.state.problem <> "" then rows.push(messageRow(m.view.state.problem))
+end sub
+
+sub pushLoadFailed(rows as object)
+    rows.push(messageRow(tr("Could not load this. Check your connection and try again.")))
+    rows.push(actionsRow("retry", [button(tr("Retry"), "retry")], "center"))
+end sub
+
+' ---------- Friends ----------
+
+function friendsRows() as object
+    rows = []
+    list = friendsList()
+    if not isValid(list)
+        if m.view.state.failed
+            pushLoadFailed(rows)
+        else
+            rows.push(messageRow(tr("Loading...")))
+        end if
+        return rows
+    end if
+
+    unread = 0
+    for each thread in socialThreads()
+        unread += thread.unreadCount
+    end for
+
+    rows.push(navRow("messages", tr("Messages"), unreadLabel(unread), "forum", "open", { view: "friendsMessages" }))
+    if not list.simpleMode
+        rows.push(navRow("requests", tr("Friend requests"), requestLabel(list.incoming.count()), "group_work", "open", { view: "friendsRequests" }))
+    end if
+    rows.push(navRow("add", tr("Add friends"), tr("Find people on this server"), "person", "open", { view: "friendsAdd" }))
+    rows.push(navRow("privacy", tr("Privacy"), tr("What your friends can see"), "privacy_tip", "open", { view: "friendsPrivacy" }))
+
+    if list.friends.count() = 0 then rows.push(messageRow(tr("No friends yet. Add people from this server to see them here.")))
+
+    for each online in [true, false]
+        section = []
+        for each friend in list.friends
+            if friend.online = online then section.push(friendPersonRow(`friend-${friend.userId}`, friend, "profile"))
+        end for
+        if section.count() > 0
+            rows.push(headingRow(online ? tr("Online") : tr("Offline")))
+            rows.append(section)
+        end if
+    end for
+    return rows
+end function
+
+' ---------- One person ----------
+
+function profileFriend() as dynamic
+    return achievementsModel.FindUser(friendsOf(), m.view.params.userId)
+end function
+
+function profileName() as string
+    state = m.view.state
+    if isValid(state.profile) and state.profile.userName <> "" then return state.profile.userName
+
+    friend = profileFriend()
+    if isValid(friend) and friend.userName <> "" then return friend.userName
+    return m.view.params.name
+end function
+
+function profileRows() as object
+    state = m.view.state
+    rows = []
+    friend = profileFriend()
+    name = profileName()
+    list = friendsList()
+    simpleMode = isValid(list) and list.simpleMode
+
+    header = { kind: "profile", name: name, focusable: false, presence: "", title: "", caption: "" }
+    if isValid(friend)
+        header.presence = friend.online ? "online" : "offline"
+        header.caption = friendCaption(friend)
+    end if
+    if isValid(state.profile) then header.title = state.profile.customTitle
+    rows.push(header)
+
+    if not state.profileLoaded
+        rows.push(messageRow(tr("Loading...")))
+    else if not isValid(state.profile)
+        rows.push(messageRow(substitute(tr("{0} keeps their profile private."), name)))
+    else
+        profile = state.profile
+        rows.push({ kind: "stats", focusable: false, stats: [
+            substitute(tr("{0} of {1} badges"), profile.unlocked.toStr(), profile.total.toStr()),
+            substitute(tr("{0} points"), profile.score.toStr()),
+            substitute(tr("Best streak: {0} days"), profile.bestWatchStreak.toStr())
+        ] })
+        if profile.equipped.count() > 0
+            rows.push(headingRow(tr("Showcase")))
+            rows.push({ kind: "showcase", badges: profile.equipped, focusable: false })
+        end if
+    end if
+
+    if state.confirm = "remove"
+        pushConfirm(rows, substitute(tr("Remove {0} from your friends? You can add them again later."), name), tr("Remove friend"), "removeFriend")
+    else if state.confirm = "block"
+        if state.blocked
+            pushConfirm(rows, substitute(tr("Unblock {0}?"), name), tr("Unblock"), "setBlocked")
+        else
+            pushConfirm(rows, substitute(tr("Block {0}? Neither of you will be able to message the other directly. Group chats you share stay open."), name), tr("Block"), "setBlocked")
+        end if
+    end if
+    pushProblem(rows)
+    if state.confirm <> "" or state.busy then return rows
+
+    if isValid(friend) and not state.blocked
+        rows.push(navRow("message", tr("Send message"), "", "forum", "message"))
+    end if
+    if isValid(friend) and friend.online and isValid(friend.nowPlaying)
+        rows.push(navRow("openPlaying", substitute(tr("Open {0}"), mediaTitle(friend.nowPlaying)), "", "play_arrow", "openPlaying", friend.nowPlaying))
+    end if
+    if not simpleMode and isValid(friend)
+        rows.push(navRow("remove", tr("Remove friend"), "", "group_work", "askConfirm", "remove"))
+    end if
+    if not simpleMode and not isValid(friend) and not achievementsModel.IsPending(list, m.view.params.userId) and not state.blocked
+        rows.push(navRow("request", tr("Add as friend"), "", "person", "friendRequest"))
+    end if
+    if state.blockKnown
+        rows.push(navRow("block", state.blocked ? tr("Unblock") : tr("Block"), "", "gpp_maybe", "askConfirm", "block"))
+    end if
+    return rows
+end function
+
+' ---------- Requests ----------
+
+function requestRows() as object
+    state = m.view.state
+    rows = []
+    list = friendsList()
+    incoming = []
+    outgoing = []
+    if isValid(list)
+        incoming = list.incoming
+        outgoing = list.outgoing
+    end if
+
+    pushProblem(rows)
+    if incoming.count() = 0 and outgoing.count() = 0 then rows.push(messageRow(tr("No friend requests.")))
+
+    if incoming.count() > 0 then rows.push(headingRow(tr("Waiting for you")))
+    for each user in incoming
+        rows.push(personRow(`request-${user.userId}`, user.userName, substitute(tr("{0} wants to be friends"), user.userName), "", ""))
+        rows.push(actionsRow(`request-${user.userId}-actions`, [
+            button(tr("Decline"), "decline", false, user),
+            button(tr("Accept"), "accept", true, user)
+        ]))
+    end for
+
+    if outgoing.count() > 0 then rows.push(headingRow(tr("Sent by you")))
+    for each user in outgoing
+        rows.push(personRow(`request-${user.userId}`, user.userName, tr("Cancel request"), "", "askCancel", user))
+        if state.cancelling = user.userId
+            pushConfirm(rows, substitute(tr("Take back the request you sent to {0}?"), user.userName), tr("Cancel request"), "cancelRequest", user)
+        end if
+    end for
+    return rows
+end function
+
+' ---------- Find people ----------
+
+function findPeopleRows() as object
+    state = m.view.state
+    rows = []
+    rows.push({ kind: "field", key: "search", value: state.query, placeholder: tr("Search people"), label: "", focusable: true, action: "search" })
+
+    if state.problem <> ""
+        rows.push(messageRow(state.problem))
+    else if state.sent <> ""
+        rows.push(messageRow(state.sent))
+    end if
+
+    if not isValid(state.people)
+        rows.push(messageRow(tr("Loading...")))
+        return rows
+    end if
+
+    needle = LCase(state.query.Trim())
+    list = friendsList()
+    matches = 0
+    for each person in state.people
+        if needle = "" or Instr(1, LCase(person.userName), needle) > 0
+            matches++
+            caption = tr("Add as friend")
+            action = "addPerson"
+            if achievementsModel.IsFriend(list, person.userId)
+                caption = tr("Friends")
+                action = ""
+            else if achievementsModel.IsPending(list, person.userId)
+                caption = substitute(tr("Request sent to {0}"), person.userName)
+                action = ""
+            end if
+            ' Every person can take the focus so the list scrolls, though only some can be added
+            row = personRow(`person-${person.userId}`, person.userName, caption, "", action, person)
+            row.focusable = true
+            rows.push(row)
+        end if
+    end for
+    if matches = 0 then rows.push(messageRow(tr("No one matches that name.")))
+    return rows
+end function
+
+' ---------- Privacy ----------
+
+function privacyRows() as object
+    state = m.view.state
+    rows = []
+    if not state.privacyLoaded
+        rows.push(messageRow(tr("Loading...")))
+    else if not isValid(state.privacy)
+        pushLoadFailed(rows)
+    else
+        for each entry in privacyEntries()
+            rows.push(toggleRow(`privacy-${entry.key}`, entry.title, entry.caption, entry.icon, state.privacy[entry.key], "flipPrivacy", entry.key))
+        end for
+    end if
+
+    rows.push(toggleRow("mute", tr("Mute during playback"), tr("No message banners while a video is playing"), "pause_circle", get_user_setting_bool("friends.muteChatBanners", true), "flipMute"))
+    pushProblem(rows)
+
+    if state.blocked.count() > 0 then rows.push(headingRow(tr("Blocked users")))
+    for each userId in state.blocked
+        blockedName = achievementsModel.DisplayNameFor(m.social, userId)
+        if blockedName = "" then blockedName = userId
+        rows.push(personRow(`blocked-${userId}`, blockedName, tr("Unblock"), "", "askUnblock", userId))
+        if state.unblocking = userId
+            pushConfirm(rows, substitute(tr("Unblock {0}?"), blockedName), tr("Unblock"), "unblock", userId)
+        end if
+    end for
+    return rows
+end function
+
+function privacyEntries() as object
+    return [
+        { key: "appearOffline", title: tr("Appear offline"), caption: tr("Friends always see you as offline"), icon: "visibility_off" },
+        { key: "hideNowPlaying", title: tr("Hide what I'm watching"), caption: tr("Friends still see you online, but not what's playing"), icon: "hide" },
+        { key: "hideLastWatched", title: tr("Hide my last watched"), caption: tr("Friends won't see what you watched last while you're offline"), icon: "history" },
+        { key: "messageNotifications", title: tr("Message notifications"), caption: tr("Show a banner when a friend messages you"), icon: "notifications_active" }
+    ]
+end function
+
+function toggleRow(key as string, title as string, caption as string, icon as string, isOn as boolean, action as string, arg = invalid as dynamic) as object
+    row = navRow(key, title, caption, icon, action, arg)
+    row.toggleOn = isOn
+    return row
+end function
+
+' ---------- Messages ----------
+
+function messagesRows() as object
+    rows = []
+    rows.push(navRow("newMessage", tr("New message"), tr("Start a chat with a friend"), "forum", "open", { view: "chatPick" }))
+    rows.push(navRow("newGroup", tr("New group"), tr("Chat with several friends at once"), "groups", "open", { view: "chatNewGroup" }))
+
+    threads = socialThreads()
+    if threads.count() = 0 then rows.push(messageRow(tr("No messages yet.")))
+    for each thread in threads
+        row = personRow(`thread-${thread.conversationId}`, thread.name, threadPreview(thread), "", "openThread", thread)
+        row.unread = thread.unreadCount
+        rows.push(row)
+    end for
+    return rows
+end function
+
+' Picks the friend a new direct chat goes to
+function pickFriendRows() as object
+    rows = []
+    friends = friendsOf()
+    if friends.count() = 0 then rows.push(messageRow(tr("No friends yet. Add people from this server to see them here.")))
+    for each friend in friends
+        rows.push(friendPersonRow(`pick-${friend.userId}`, friend, "message"))
+    end for
+    return rows
+end function
+
+' Picks the friends a new group starts with. The plugin wants at least two.
+function newGroupRows() as object
+    state = m.view.state
+    rows = []
+    rows.push({ kind: "field", key: "groupName", value: state.title, placeholder: "", label: tr("Group name"), focusable: true, action: "groupName" })
+    rows.push(noteRow(tr("Pick at least two friends")))
+
+    for each friend in friendsOf()
+        row = personRow(`groupPick-${friend.userId}`, friend.userName, "", friend.online ? "online" : "offline", "groupPick", friend.userId)
+        row.toggleOn = containsUser(state.picked, friend.userId)
+        rows.push(row)
+    end for
+
+    pushProblem(rows)
+    if state.picked.count() >= 2 and not state.busy
+        rows.push(actionsRow("create", [button(tr("Create group"), "createGroup", true)], "right"))
+    end if
+    return rows
+end function
+
+' ---------- One chat ----------
+
+sub loadMessages()
+    if not isValid(m.view) or m.view.name <> "chat" or m.view.state.loading then return
+
+    m.view.state.loading = true
+    runTask({ kind: "messages", conversationId: m.view.params.conversationId })
+end sub
+
+' Keeps a read that changed nothing from drawing the chat again. Answers whether it changed.
+function onMessages(messages as dynamic) as boolean
+    state = m.view.state
+    if not isValid(messages)
+        if isValid(state.messages) then return false
+        messages = []
+    end if
+
+    signature = ""
+    for each message in messages
+        signature += `${message.id}|${message.editedAt}|${message.isRead};`
+    end for
+    firstRead = not isValid(state.messages)
+    if not firstRead and signature = state.signature then return false
+
+    state.messages = messages
+    state.signature = signature
+    ' Opening the chat marks it read, so the unread count follows
+    if firstRead then requestSocial({ kind: "refresh" })
+    ' A chat reads from the bottom, so new messages keep it there while the cursor is on the box
+    if firstRead or focusedKey() = "composer" then m.pendingFocusKey = "composer"
+    return true
+end function
+
+function chatRows() as object
+    state = m.view.state
+    params = m.view.params
+    rows = []
+    if params.isGroup then rows.push(navRow("groupInfo", tr("Group info"), "", "groups", "open", { view: "chatGroupInfo", params: { conversationId: params.conversationId, name: params.name } }))
+
+    if not isValid(state.messages)
+        rows.push(messageRow(tr("Loading...")))
+    else if state.messages.count() = 0
+        rows.push(messageRow(tr("No messages yet.")))
+    end if
+
+    lastMine = ""
+    if isValid(state.messages)
+        for i = state.messages.count() - 1 to 0 step -1
+            if achievementsModel.SameUserId(state.messages[i].fromUserId, m.myId)
+                lastMine = state.messages[i].id
+                exit for
+            end if
+        end for
+
+        for each message in state.messages
+            own = achievementsModel.SameUserId(message.fromUserId, m.myId)
+            meta = relativeTime.Label(message.sentAt)
+            if message.editedAt > 0 then meta = `${meta} · ${tr("edited")}`
+            if own and message.id = lastMine
+                meta = `${meta} · ${message.isRead ? tr("Seen") : tr("Sent")}`
+            end if
+
+            sender = ""
+            if params.isGroup and not own
+                sender = message.fromUserName
+                if sender = "" then sender = achievementsModel.DisplayNameFor(m.social, message.fromUserId)
+            end if
+
+            rows.push({ kind: "bubble", key: `message-${message.id}`, message: message, own: own, sender: sender, meta: meta, focusable: true, action: own ? "messageOptions" : "", arg: message })
+
+            if state.options = message.id and state.confirmDelete = ""
+                rows.push(actionsRow("messageActions", [button(tr("Edit"), "editMessage", false, message), button(tr("Delete"), "askDelete", true, message)], "right"))
+            end if
+            if state.confirmDelete = message.id
+                pushConfirm(rows, tr("Delete this message for everyone?"), tr("Delete"), "deleteMessage", message)
+            end if
+        end for
+    end if
+
+    pushProblem(rows)
+    if isValid(state.editing) then rows.push(noteRow(tr("Editing message")))
+
+    composer = [{ field: true, value: state.text, placeholder: tr("Write a message"), action: "compose" }]
+    composer.push(button(isValid(state.editing) ? tr("Save") : tr("Send"), state.busy ? "" : "send", true))
+    if isValid(state.editing) then composer.push(button(tr("Cancel"), "cancelEdit"))
+    rows.push(actionsRow("composer", composer))
+    return rows
+end function
+
+' ---------- Group info ----------
+
+function groupInfoRows() as object
+    state = m.view.state
+    rows = []
+    if not state.groupLoaded
+        rows.push(messageRow(tr("Loading...")))
+        return rows
+    end if
+    group = state.group
+    if not isValid(group)
+        pushLoadFailed(rows)
+        return rows
+    end if
+
+    admin = achievementsModel.IsGroupAdmin(group, m.myId)
+    rows.push({ kind: "field", key: "groupName", value: state.title, placeholder: "", label: tr("Group name"), focusable: admin, action: "groupName" })
+    if admin and state.title.Trim() <> group.title
+        rows.push(actionsRow("renameSave", [button(tr("Save"), "renameGroup", true)], "right"))
+    end if
+    pushProblem(rows)
+
+    rows.push(headingRow(plural(group.participantIds.count(), tr("1 member"), tr("{0} members"))))
+    for each memberId in group.participantIds
+        isSelf = achievementsModel.SameUserId(memberId, m.myId)
+        memberName = tr("You")
+        if not isSelf
+            memberName = achievementsModel.DisplayNameFor(m.social, memberId)
+            if memberName = "" then memberName = memberId
+        end if
+        tag = ""
+        if achievementsModel.IsGroupOwner(group, memberId)
+            tag = tr("Owner")
+        else if achievementsModel.IsGroupAdmin(group, memberId)
+            tag = tr("Admin")
+        end if
+
+        canManage = admin and not isSelf and not achievementsModel.IsGroupOwner(group, memberId)
+        rows.push(personRow(`member-${memberId}`, memberName, tag, "", canManage ? "memberMenu" : "", memberId))
+        if state.memberMenu = memberId
+            isAdmin = achievementsModel.IsGroupAdmin(group, memberId)
+            rows.push(actionsRow("memberActions", [
+                button(isAdmin ? tr("Remove admin") : tr("Make admin"), "setAdmin", false, { userId: memberId, admin: not isAdmin }),
+                button(tr("Remove from group"), "removeMember", true, memberId)
+            ]))
+        end if
+    end for
+
+    if admin
+        canAdd = false
+        for each friend in friendsOf()
+            if not achievementsModel.IsGroupMember(group, friend.userId) then canAdd = true
+        end for
+        rows.push(navRow("addPeople", tr("Add people"), canAdd ? "" : tr("No one left to add."), "person", canAdd ? "open" : "", { view: "chatAddMembers", params: { conversationId: m.view.params.conversationId } }))
+        rows.push(navRow("clear", tr("Clear conversation"), "", "content_cut", "askConfirm", "clear"))
+    end if
+    rows.push(navRow("leave", tr("Leave group"), "", "exit_to_app", "askConfirm", "leave"))
+
+    if state.confirm = "leave"
+        pushConfirm(rows, tr("Leave this group? Someone will have to add you back to rejoin."), tr("Leave group"), "leaveGroup")
+    else if state.confirm = "clear"
+        pushConfirm(rows, tr("Delete every message in this chat for everyone in it?"), tr("Clear conversation"), "clearConversation")
+    end if
+    return rows
+end function
+
+' Friends not yet in the group, each a press away from joining it
+function addMemberRows() as object
+    state = m.view.state
+    rows = []
+    pushProblem(rows)
+    if not isValid(state.group) then return rows
+
+    candidates = 0
+    for each friend in friendsOf()
+        if not achievementsModel.IsGroupMember(state.group, friend.userId)
+            candidates++
+            rows.push(personRow(`addMember-${friend.userId}`, friend.userName, "", friend.online ? "online" : "offline", "addMember", friend.userId))
+        end if
+    end for
+    if candidates = 0 then rows.push(messageRow(tr("No one left to add.")))
+    return rows
+end function
+
+' ===== Actions =====
+
+sub runAction(action as string, arg as dynamic)
+    state = m.view.state
+    params = m.view.params
+
+    if action = "open"
+        viewParams = arg.params
+        if not isValid(viewParams) then viewParams = {}
+        openView(arg.view, viewParams)
+    else if action = "retry"
+        enterView(m.view.name, params, "")
+    else if action = "profile"
+        openView("friendProfile", { userId: arg.userId, name: arg.userName })
+    else if action = "message"
+        friend = arg
+        if not isValid(friend) then friend = { userId: params.userId, userName: profileName() }
+        runTask({ kind: "openDirect", userId: friend.userId, name: friend.userName })
+    else if action = "openPlaying"
+        m.top.openItem = { Id: arg.id, Name: arg.name }
+    else if action = "askConfirm"
+        state.confirm = arg
+        m.pendingFocusKey = "confirm"
+        render()
+    else if action = "confirmCancel"
+        state.confirm = ""
+        state.cancelling = ""
+        state.unblocking = ""
+        state.confirmDelete = ""
+        render()
+    else if action = "removeFriend"
+        state.confirm = ""
+        startWrite({ op: "removeFriend", userId: params.userId })
+    else if action = "friendRequest"
+        startWrite({ op: "friendRequest", userId: params.userId, name: profileName() })
+    else if action = "setBlocked"
+        state.confirm = ""
+        startWrite({ op: "setBlocked", userId: params.userId, blocked: not state.blocked })
+    else if action = "decline"
+        startWrite({ op: "removeFriend", userId: arg.userId })
+    else if action = "accept"
+        startWrite({ op: "acceptFriend", userId: arg.userId })
+    else if action = "askCancel"
+        state.cancelling = arg.userId
+        m.pendingFocusKey = "confirm"
+        render()
+    else if action = "cancelRequest"
+        state.cancelling = ""
+        startWrite({ op: "removeFriend", userId: arg.userId })
+    else if action = "search"
+        openKeyboard(tr("Search people"), "query")
+    else if action = "addPerson"
+        state.sent = ""
+        startWrite({ op: "friendRequest", userId: arg.userId, name: arg.userName })
+    else if action = "flipPrivacy"
+        flipPrivacy(arg)
+    else if action = "flipMute"
+        set_user_setting("friends.muteChatBanners", get_user_setting_bool("friends.muteChatBanners", true) ? "false" : "true")
+        render()
+    else if action = "askUnblock"
+        state.unblocking = arg
+        m.pendingFocusKey = "confirm"
+        render()
+    else if action = "unblock"
+        state.unblocking = ""
+        startWrite({ op: "setBlocked", userId: arg, blocked: false })
+    else if action = "openThread"
+        openView("chat", { conversationId: arg.conversationId, name: arg.name, isGroup: arg.isGroup })
+    else if action = "groupName"
+        openKeyboard(tr("Group name"), "title")
+    else if action = "groupPick"
+        if containsUser(state.picked, arg)
+            state.picked = withoutUser(state.picked, arg)
+        else
+            state.picked.push(arg)
+        end if
+        render()
+    else if action = "createGroup"
+        startWrite({ op: "createGroup", title: state.title.Trim(), memberIds: state.picked })
+    else if action = "messageOptions"
+        if state.options = arg.id then state.options = "" else state.options = arg.id
+        if state.options <> "" then m.pendingFocusKey = "messageActions"
+        render()
+    else if action = "editMessage"
+        state.options = ""
+        state.editing = arg
+        state.text = arg.text
+        focusComposer()
+        render()
+    else if action = "askDelete"
+        state.confirmDelete = arg.id
+        m.pendingFocusKey = "confirm"
+        render()
+    else if action = "deleteMessage"
+        state.confirmDelete = ""
+        state.options = ""
+        startWrite({ op: "deleteMessage", messageId: arg.id })
+    else if action = "compose"
+        openKeyboard(tr("Write a message"), "text")
+    else if action = "send"
+        sendMessage()
+    else if action = "cancelEdit"
+        state.editing = invalid
+        state.text = ""
+        focusComposer()
+        render()
+    else if action = "renameGroup"
+        startWrite({ op: "renameGroup", conversationId: params.conversationId, title: state.title.Trim() })
+    else if action = "memberMenu"
+        if state.memberMenu = arg then state.memberMenu = "" else state.memberMenu = arg
+        if state.memberMenu <> "" then m.pendingFocusKey = "memberActions"
+        render()
+    else if action = "setAdmin"
+        state.memberMenu = ""
+        startWrite({ op: "setAdmin", conversationId: params.conversationId, userId: arg.userId, admin: arg.admin })
+    else if action = "removeMember"
+        state.memberMenu = ""
+        startWrite({ op: "removeMember", conversationId: params.conversationId, userId: arg })
+    else if action = "leaveGroup"
+        state.confirm = ""
+        startWrite({ op: "removeMember", conversationId: params.conversationId, userId: m.myId })
+    else if action = "clearConversation"
+        state.confirm = ""
+        startWrite({ op: "clearConversation", conversationId: params.conversationId })
+    else if action = "addMember"
+        startWrite({ op: "addMember", conversationId: params.conversationId, userId: arg })
+    end if
+end sub
+
+' The box takes the cursor rather than the button beside it, ready for the next message
+sub focusComposer()
+    m.pendingFocusKey = "composer"
+    row = rowIn(m.rows, "composer")
+    if isValid(row) then row.button = 0
+end sub
+
+sub sendMessage()
+    state = m.view.state
+    text = state.text.Trim()
+    if text = "" then return
+
+    if isValid(state.editing)
+        startWrite({ op: "editMessage", messageId: state.editing.id, text: text })
+    else
+        startWrite({ op: "sendMessage", conversationId: m.view.params.conversationId, text: text })
+    end if
+end sub
+
+' The switch flips straight away and goes back if the plugin wont take it
+sub flipPrivacy(key as string)
+    state = m.view.state
+    before = state.privacy
+    after = {}
+    after.append(before)
+    after[key] = not before[key]
+    state.privacy = after
+    state.problem = ""
+    runTask({ kind: "savePrivacy", privacy: after, before: before, key: key })
+    render()
+end sub
+
+sub onPrivacySaved(request as object, saved as boolean)
+    if saved
+        if request.key = "messageNotifications" then requestSocial({ kind: "messageNotifications", enabled: request.privacy.messageNotifications })
+        return
+    end if
+
+    m.view.state.privacy = request.before
+    m.view.state.problem = tr("Could not save your settings.")
+end sub
+
+' ===== Typing =====
+
+' Types into the view's state under the name given
+sub openKeyboard(title as string, field as string)
+    m.keyboardField = field
+    m.keyboard = tvKeyboard.Open(m.top.getScene(), { title: title, text: m.view.state[field] })
+    if not isValid(m.keyboard) then return
+
+    m.keyboard.observeField("submitted", "onKeyboardSubmitted")
+    m.keyboard.observeField("cancelled", "onKeyboardCancelled")
+end sub
+
+sub onKeyboardSubmitted()
+    text = m.keyboard.text
+    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled"])
+    m.keyboard = invalid
+    if not isValid(m.view) then return
+
+    state = m.view.state
+    state[m.keyboardField] = text
+    if m.keyboardField = "text"
+        state.problem = ""
+        ' The next press sends it
+        row = rowIn(m.rows, "composer")
+        if isValid(row) then row.button = 1
+    end if
+    render()
+end sub
+
+sub onKeyboardCancelled()
+    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled"])
+    m.keyboard = invalid
+end sub
+
+' ===== Photos =====
+
+' A photo is fetched once and kept for as long as the panel is open, with its size once the
+' poster has read it
+sub requestAttachment(attachmentId as string)
+    if m.attachments.DoesExist(attachmentId) then return
+
+    m.attachments[attachmentId] = { path: "", width: 0, height: 0 }
+    runTask({ kind: "attachment", attachmentId: attachmentId })
+end sub
+
+sub onAttachment(attachmentId as string, path as string)
+    entry = m.attachments[attachmentId]
+    if not isValid(entry) or path = "" then return
+
+    entry.path = path
+    if isValid(m.view) and m.view.name = "chat" then render()
+end sub
+
+sub onPhotoLoaded(event as object)
+    poster = event.getRoSGNode()
+    if event.getData() <> "ready" then return
+
+    entry = m.attachments[poster.id]
+    if not isValid(entry) or entry.width > 0 then return
+
+    entry.width = poster.bitmapWidth
+    entry.height = poster.bitmapHeight
+    if isValid(m.view) and m.view.name = "chat" then render()
+end sub
+
+' ===== Drawing =====
+
+sub render()
+    if not isValid(m.view) then return
+
+    m.path.text = breadcrumb()
+    key = m.pendingFocusKey
+    if key = "" then key = focusedKey()
+    m.pendingFocusKey = ""
+    previous = rowIn(m.rows, key)
+    m.rows = buildRows()
+
+    ' The focused row keeps the button it had, so drawing again doesnt throw the cursor back to
+    ' the start
+    current = rowIn(m.rows, key)
+    if isValid(previous) and isValid(current) and current.kind = "actions" and previous.kind = "actions"
+        if previous.button < current.buttons.count() then current.button = previous.button
+    end if
+
+    drawRows()
+
+    m.focusIndex = -1
+    for i = 0 to m.rows.count() - 1
+        if m.rows[i].focusable and m.rows[i].key = key
+            m.focusIndex = i
+            exit for
+        end if
+    end for
+    if m.focusIndex < 0 then m.focusIndex = nextFocusable(-1, 1)
+
+    for i = 0 to m.rows.count() - 1
+        showFocus(m.rows[i], i = m.focusIndex)
+    end for
+    scrollToFocus(false)
+end sub
+
+function rowIn(rows as object, key as string) as dynamic
+    for each row in rows
+        if isValid(row.key) and row.key = key then return row
+    end for
+    return invalid
+end function
+
+function focusedKey() as string
+    if m.focusIndex < 0 or m.focusIndex >= m.rows.count() then return ""
+    return m.rows[m.focusIndex].key
+end function
+
+sub drawRows()
+    m.list.removeChildrenIndex(m.list.getChildCount(), 0)
+
+    y = 0
+    for each row in m.rows
+        if not isValid(row.key) then row.key = ""
+        row.y = y
+        row.node = m.list.createChild("Group")
+        row.node.translation = [0, y]
+        row.height = drawRow(row)
+        y += row.height + FRIENDS_ROW_GAP
+    end for
+    m.contentHeight = y - FRIENDS_ROW_GAP
+
+    themeApply.ApplyToItem(m.list)
+end sub
+
+function drawRow(row as object) as float
+    if row.kind = "card" then return drawCard(row)
+    if row.kind = "heading" then return drawHeading(row)
+    if row.kind = "message" then return drawText(row, m.fonts.body, "#FFFFFFB3", "center", 24)
+    if row.kind = "note" then return drawText(row, m.fonts.caption, "#FFFFFF99", "left", 8)
+    if row.kind = "actions" then return drawActions(row)
+    if row.kind = "field" then return drawField(row)
+    if row.kind = "bubble" then return drawBubble(row)
+    if row.kind = "profile" then return drawProfile(row)
+    if row.kind = "stats" then return drawStats(row)
+    if row.kind = "showcase" then return drawAchievementShowcase(row.node.createChild("Group"), row.badges, m.fonts.caption, FRIENDS_WIDTH)
+    return 0
+end function
+
+function addLabel(parent as object, text as string, font as object, color as string) as object
+    label = parent.createChild("Label")
+    label.font = font
+    label.color = color
+    label.text = text
+    return label
+end function
+
+function addPoster(parent as object, uri as string, width as float, height as float, blend as string) as object
+    poster = parent.createChild("Poster")
+    poster.uri = uri
+    poster.width = width
+    poster.height = height
+    if blend <> "" then poster.blendColor = blend
+    return poster
+end function
+
+' The tile the settings rows rest on, with a deeper fill and an outline while focused
+function drawCard(row as object) as float
+    node = row.node
+    height = FRIENDS_CARD_HEIGHT
+    row.fill = addPoster(node, "pkg:/images/hd_focus_filled.9.png", FRIENDS_WIDTH, height, FRIENDS_RESTING_FILL)
+    row.outline = addPoster(node, "pkg:/images/hd_focus.9.png", FRIENDS_WIDTH, height, "")
+    row.outline.visible = false
+
+    x = FRIENDS_PAD
+    if isValidAndNotEmpty(row.icon)
+        tile = node.createChild("Group")
+        tile.translation = [FRIENDS_PAD, (height - FRIENDS_ICON_TILE) / 2]
+        addPoster(tile, "pkg:/images/details/surface12.9.png", FRIENDS_ICON_TILE, FRIENDS_ICON_TILE, themeChrome.WithAlpha(m.accent, "2E"))
+        addPoster(tile, "pkg:/images/details/cardborder12.9.png", FRIENDS_ICON_TILE, FRIENDS_ICON_TILE, themeChrome.WithAlpha(m.accent, "73"))
+        icon = addPoster(tile, achievementsIcons.PathFor(row.icon), FRIENDS_ICON, FRIENDS_ICON, themeChrome.WithAlpha(m.accent, "FF"))
+        icon.translation = [(FRIENDS_ICON_TILE - FRIENDS_ICON) / 2, (FRIENDS_ICON_TILE - FRIENDS_ICON) / 2]
+        x = FRIENDS_PAD + FRIENDS_ICON_TILE + FRIENDS_PAD
+    else if isValid(row.avatar)
+        avatar = drawAvatar(node, row.avatar, row.presence, FRIENDS_AVATAR, m.fonts.avatar)
+        avatar.translation = [FRIENDS_PAD, (height - FRIENDS_AVATAR) / 2]
+        x = FRIENDS_PAD + FRIENDS_AVATAR + FRIENDS_PAD
+    end if
+
+    trailing = 0
+    if isValid(row.toggleOn)
+        toggle = addPoster(node, row.toggleOn ? "pkg:/images/icons/settings/toggle_on.png" : "pkg:/images/icons/settings/toggle_off.png", FRIENDS_TOGGLE, FRIENDS_TOGGLE, "")
+        toggle.translation = [FRIENDS_WIDTH - FRIENDS_PAD - FRIENDS_TOGGLE, (height - FRIENDS_TOGGLE) / 2]
+        trailing = FRIENDS_TOGGLE + FRIENDS_PAD
+    else if isValid(row.unread) and row.unread > 0
+        trailing = drawUnread(node, row.unread, height) + FRIENDS_PAD
+    end if
+
+    width = FRIENDS_WIDTH - x - FRIENDS_PAD - trailing
+    hasCaption = isValidAndNotEmpty(row.caption)
+    stack = 34
+    if hasCaption then stack += 30
+    top = (height - stack) / 2
+
+    title = addLabel(node, row.title, m.fonts.title, "#FFFFFF")
+    title.width = width
+    title.height = 34
+    title.translation = [x, top]
+    if hasCaption
+        caption = addLabel(node, row.caption, m.fonts.caption, "#FFFFFFA6")
+        caption.width = width
+        caption.height = 30
+        caption.translation = [x, top + 34]
+    end if
+    return height
+end function
+
+' A circle with the first letter of the name, and a dot for whether they are on when that is known
+function drawAvatar(parent as object, name as string, presence as string, size as integer, font as object) as object
+    group = parent.createChild("Group")
+    addPoster(group, "pkg:/images/icons/circle.png", size, size, themeChrome.WithAlpha(m.accent, "40"))
+
+    initial = UCase(Left(name.Trim(), 1))
+    if initial = "" then initial = "?"
+    letter = addLabel(group, initial, font, "#FFFFFF")
+    letter.width = size
+    letter.height = size
+    letter.horizAlign = "center"
+    letter.vertAlign = "center"
+
+    if presence <> ""
+        ring = FRIENDS_PRESENCE + 4
+        border = addPoster(group, "pkg:/images/icons/circle.png", ring, ring, "#101010FF")
+        border.translation = [size - ring + 2, size - ring + 2]
+        dot = addPoster(group, "pkg:/images/icons/circle.png", FRIENDS_PRESENCE, FRIENDS_PRESENCE, presence = "online" ? FRIENDS_PRESENCE_ONLINE : "#FFFFFF59")
+        dot.translation = [size - FRIENDS_PRESENCE, size - FRIENDS_PRESENCE]
+    end if
+    return group
+end function
+
+' The count of unread messages in a pill on the accent colour. Answers the width it took.
+function drawUnread(parent as object, count as integer, rowHeight as integer) as float
+    label = addLabel(parent, count.toStr(), m.fonts.caption, themeChrome.Token("onAccent", "0xFFFFFFFF"))
+    width = label.boundingRect().width + 20
+    if width < FRIENDS_UNREAD_HEIGHT then width = FRIENDS_UNREAD_HEIGHT
+
+    left = FRIENDS_WIDTH - FRIENDS_PAD - width
+    top = (rowHeight - FRIENDS_UNREAD_HEIGHT) / 2
+    pill = addPoster(parent, "pkg:/images/livetv/fill18.9.png", width, FRIENDS_UNREAD_HEIGHT, m.accent)
+    pill.translation = [left, top]
+    ' Drawn after the pill so it sits on top of it
+    parent.removeChild(label)
+    parent.appendChild(label)
+    label.width = width
+    label.height = FRIENDS_UNREAD_HEIGHT
+    label.horizAlign = "center"
+    label.vertAlign = "center"
+    label.translation = [left, top]
+    return width
+end function
+
+function drawHeading(row as object) as float
+    label = addLabel(row.node, row.text, m.fonts.title, "#FFFFFF")
+    label.width = FRIENDS_WIDTH
+    label.height = FRIENDS_HEADING_HEIGHT
+    label.vertAlign = "bottom"
+    return FRIENDS_HEADING_HEIGHT
+end function
+
+function drawText(row as object, font as object, color as string, align as string, pad as integer) as float
+    label = addLabel(row.node, row.text, font, color)
+    label.wrap = true
+    label.width = FRIENDS_WIDTH - FRIENDS_PAD * 2
+    label.horizAlign = align
+    label.translation = [FRIENDS_PAD, pad]
+    return label.boundingRect().height + pad * 2
+end function
+
+function drawActions(row as object) as float
+    widths = []
+    total = FRIENDS_BUTTON_GAP * (row.buttons.count() - 1)
+    for each item in row.buttons
+        if item.field = true
+            widths.push(0)
+        else
+            measure = addLabel(row.node, item.label, m.fonts.button, "#FFFFFF")
+            width = measure.boundingRect().width + FRIENDS_BUTTON_PAD * 2
+            row.node.removeChild(measure)
+            widths.push(width)
+            total += width
+        end if
+    end for
+
+    ' A field takes whatever the buttons leave
+    for i = 0 to row.buttons.count() - 1
+        if row.buttons[i].field = true
+            widths[i] = FRIENDS_WIDTH - total
+            total = FRIENDS_WIDTH
+        end if
+    end for
+
+    x = 0
+    if row.align = "right" then x = FRIENDS_WIDTH - total
+    if row.align = "center" then x = (FRIENDS_WIDTH - total) / 2
+
+    height = FRIENDS_BUTTON_HEIGHT
+    for each item in row.buttons
+        if item.field = true then height = FRIENDS_FIELD_HEIGHT
+    end for
+
+    row.parts = []
+    for i = 0 to row.buttons.count() - 1
+        item = row.buttons[i]
+        group = row.node.createChild("Group")
+        group.translation = [x, 0]
+        if item.field = true
+            row.parts.push(drawFieldBox(group, widths[i], item.value, item.placeholder))
+        else
+            part = {}
+            part.fill = addPoster(group, "pkg:/images/details/surface17.9.png", widths[i], height, "")
+            part.border = addPoster(group, "pkg:/images/details/cardborderfocus.9.png", widths[i], height, "#FFFFFF")
+            label = addLabel(group, item.label, m.fonts.button, "#FFFFFF")
+            label.width = widths[i]
+            label.height = height
+            label.horizAlign = "center"
+            label.vertAlign = "center"
+            part.restingFill = item.strong ? m.focusFill : "#FFFFFF14"
+            row.parts.push(part)
+        end if
+        x += widths[i] + FRIENDS_BUTTON_GAP
+    end for
+    return height
+end function
+
+' A text box. Pressing OK on it opens the keyboard.
+function drawField(row as object) as float
+    top = 0
+    if row.label <> ""
+        label = addLabel(row.node, row.label, m.fonts.caption, "#FFFFFF99")
+        label.height = FRIENDS_FIELD_LABEL_HEIGHT
+        top = FRIENDS_FIELD_LABEL_HEIGHT
+    end if
+
+    group = row.node.createChild("Group")
+    group.translation = [0, top]
+    row.parts = [drawFieldBox(group, FRIENDS_WIDTH, row.value, row.placeholder)]
+    if not row.focusable then group.opacity = 0.6
+    return top + FRIENDS_FIELD_HEIGHT
+end function
+
+function drawFieldBox(group as object, width as integer, value as string, placeholder as string) as object
+    part = { field: true, restingFill: "#FFFFFF0F" }
+    part.fill = addPoster(group, "pkg:/images/details/surface12.9.png", width, FRIENDS_FIELD_HEIGHT, "")
+    part.border = addPoster(group, "pkg:/images/details/cardborder12.9.png", width, FRIENDS_FIELD_HEIGHT, "#FFFFFF33")
+    text = addLabel(group, value <> "" ? value : placeholder, m.fonts.body, value <> "" ? "#FFFFFF" : "#FFFFFF66")
+    text.width = width - FRIENDS_PAD * 2
+    text.height = FRIENDS_FIELD_HEIGHT
+    text.vertAlign = "center"
+    text.translation = [FRIENDS_PAD, 0]
+    return part
+end function
+
+' One message, on the right when it is the viewer's own, with its photo, its words and when it
+' was sent
+function drawBubble(row as object) as float
+    message = row.message
+    innerMax = FRIENDS_BUBBLE_MAX - FRIENDS_BUBBLE_PAD_X * 2
+    group = row.node.createChild("Group")
+    parts = []
+    innerWidth = 0
+
+    if row.sender <> ""
+        sender = addLabel(group, row.sender, m.fonts.sender, m.accent)
+        parts.push({ node: sender, height: 26 })
+    end if
+
+    if message.attachmentId <> ""
+        requestAttachment(message.attachmentId)
+        entry = m.attachments[message.attachmentId]
+        if entry.path = ""
+            pending = addLabel(group, tr("Photo"), m.fonts.body, "#FFFFFF99")
+            parts.push({ node: pending, height: 32 })
+        else
+            width = innerMax
+            height = FRIENDS_PHOTO_HEIGHT
+            if entry.width > 0
+                scale = 1.0
+                if entry.width > innerMax then scale = innerMax / entry.width
+                if entry.height * scale > FRIENDS_PHOTO_HEIGHT then scale = FRIENDS_PHOTO_HEIGHT / entry.height
+                width = Int(entry.width * scale)
+                height = Int(entry.height * scale)
+            end if
+            photo = addPoster(group, entry.path, width, height, "")
+            photo.id = message.attachmentId
+            photo.loadDisplayMode = "scaleToFit"
+            if entry.width = 0 then photo.observeField("loadStatus", "onPhotoLoaded")
+            parts.push({ node: photo, height: height, width: width })
+        end if
+    end if
+
+    if message.text <> ""
+        text = addLabel(group, message.text, m.fonts.body, "#FFFFFF")
+        parts.push({ node: text, wraps: true })
+    end if
+
+    meta = addLabel(group, row.meta, m.fonts.meta, "#FFFFFF99")
+    parts.push({ node: meta, height: 26 })
+
+    for each part in parts
+        width = part.width
+        if not isValid(width) then width = part.node.boundingRect().width
+        if width > innerWidth then innerWidth = width
+    end for
+    if innerWidth > innerMax then innerWidth = innerMax
+
+    y = FRIENDS_BUBBLE_PAD_Y
+    for each part in parts
+        if part.node.hasField("wrap")
+            part.node.width = innerWidth
+            if part.wraps = true then part.node.wrap = true
+        end if
+        height = part.height
+        if not isValid(height) then height = part.node.boundingRect().height
+        part.node.translation = [FRIENDS_BUBBLE_PAD_X, y]
+        y += height + FRIENDS_BUBBLE_LINE_GAP
+    end for
+    bubbleHeight = y - FRIENDS_BUBBLE_LINE_GAP + FRIENDS_BUBBLE_PAD_Y
+    bubbleWidth = innerWidth + FRIENDS_BUBBLE_PAD_X * 2
+
+    fill = addPoster(row.node, "pkg:/images/tracks/panel20.9.png", bubbleWidth, bubbleHeight, row.own ? themeChrome.WithAlpha(m.accent, "4D") : "#FFFFFF1A")
+    row.outline = addPoster(row.node, "pkg:/images/tracks/panelborder20.9.png", bubbleWidth, bubbleHeight, "#FFFFFF")
+    row.outline.visible = false
+    ' Drawn last so the words sit over the fill
+    row.node.removeChild(group)
+    row.node.appendChild(group)
+
+    x = 0
+    if row.own then x = FRIENDS_WIDTH - bubbleWidth
+    for each node in [fill, row.outline, group]
+        node.translation = [x, 0]
+    end for
+    return bubbleHeight
+end function
+
+function drawProfile(row as object) as float
+    avatar = drawAvatar(row.node, row.name, row.presence, FRIENDS_AVATAR_LARGE, m.fonts.avatarLarge)
+    avatar.translation = [(FRIENDS_WIDTH - FRIENDS_AVATAR_LARGE) / 2, 8]
+    y = 8 + FRIENDS_AVATAR_LARGE + 12
+
+    for each line in [[row.name, m.fonts.name, "#FFFFFF", 44], [row.title, m.fonts.caption, "#FFFFFFB3", 30], [row.caption, m.fonts.caption, "#FFFFFFB3", 30]]
+        if line[0] <> ""
+            label = addLabel(row.node, line[0], line[1], line[2])
+            label.width = FRIENDS_WIDTH
+            label.height = line[3]
+            label.horizAlign = "center"
+            label.translation = [0, y]
+            y += line[3] + 4
+        end if
+    end for
+    return y + 12
+end function
+
+' The person's figures as pills across the middle, wrapping when they run out of room
+function drawStats(row as object) as float
+    pills = []
+    lineWidths = [0]
+    for each stat in row.stats
+        pill = row.node.createChild("Group")
+        label = addLabel(pill, stat, m.fonts.caption, "#FFFFFF")
+        width = label.boundingRect().width + FRIENDS_STAT_PAD * 2
+        addPoster(pill, "pkg:/images/details/surface12.9.png", width, FRIENDS_STAT_HEIGHT, "#FFFFFF14")
+        pill.removeChild(label)
+        pill.appendChild(label)
+        label.height = FRIENDS_STAT_HEIGHT
+        label.vertAlign = "center"
+        label.translation = [FRIENDS_STAT_PAD, 0]
+
+        line = lineWidths.count() - 1
+        if lineWidths[line] > 0 and lineWidths[line] + FRIENDS_STAT_GAP + width > FRIENDS_WIDTH
+            lineWidths.push(0)
+            line++
+        end if
+        if lineWidths[line] > 0 then lineWidths[line] += FRIENDS_STAT_GAP
+        pills.push({ node: pill, line: line, x: lineWidths[line] })
+        lineWidths[line] += width
+    end for
+
+    for each pill in pills
+        left = (FRIENDS_WIDTH - lineWidths[pill.line]) / 2
+        pill.node.translation = [left + pill.x, pill.line * (FRIENDS_STAT_HEIGHT + FRIENDS_STAT_GAP)]
+    end for
+    return lineWidths.count() * (FRIENDS_STAT_HEIGHT + FRIENDS_STAT_GAP) - FRIENDS_STAT_GAP
+end function
+
+' ===== Focus =====
+
+sub showFocus(row as object, focused as boolean)
+    if not row.focusable then return
+
+    if row.kind = "card"
+        row.fill.blendColor = focused ? m.focusFill : FRIENDS_RESTING_FILL
+        row.outline.visible = focused
+    else if row.kind = "bubble"
+        row.outline.visible = focused
+    else if row.kind = "actions" or row.kind = "field"
+        for i = 0 to row.parts.count() - 1
+            part = row.parts[i]
+            active = focused and (row.kind = "field" or i = row.button)
+            if part.field = true
+                part.fill.blendColor = active ? "#FFFFFF1F" : part.restingFill
+                part.border.blendColor = active ? m.accent : "#FFFFFF33"
+            else
+                part.fill.blendColor = active ? m.focusFill : part.restingFill
+                part.border.visible = active
+            end if
+        end for
+    end if
+end sub
+
+function nextFocusable(from as integer, direction as integer) as integer
+    i = from + direction
+    while i >= 0 and i < m.rows.count()
+        if m.rows[i].focusable then return i
+        i += direction
+    end while
+    return -1
+end function
+
+sub moveFocus(direction as integer)
+    target = nextFocusable(m.focusIndex, direction)
+    if target < 0
+        ' Nothing more to land on that way, so the rows still out of sight are brought in
+        if direction > 0 then scrollTo(m.contentHeight - FRIENDS_VIEW_HEIGHT, true)
+        if direction < 0 then scrollTo(0, true)
+        return
+    end if
+
+    if m.focusIndex >= 0 then showFocus(m.rows[m.focusIndex], false)
+    m.focusIndex = target
+    row = m.rows[target]
+    if row.kind = "actions" then row.button = 0
+    showFocus(row, true)
+    scrollToFocus(true)
+end sub
+
+sub moveButton(direction as integer)
+    if m.focusIndex < 0 then return
+
+    row = m.rows[m.focusIndex]
+    if row.kind <> "actions" then return
+
+    target = row.button + direction
+    if target < 0 or target >= row.buttons.count() then return
+    row.button = target
+    showFocus(row, true)
+end sub
+
+' Keeps the focused row in view, along with any heading or note right above it
+sub scrollToFocus(animate as boolean)
+    if m.focusIndex < 0
+        scrollTo(m.scrollY, animate)
+        return
+    end if
+
+    first = m.focusIndex
+    while first > 0 and not m.rows[first - 1].focusable
+        first--
+    end while
+    ' The first stop brings everything above it along, and the last everything below it
+    top = m.rows[first].y
+    if nextFocusable(m.focusIndex, -1) < 0 then top = 0
+    row = m.rows[m.focusIndex]
+    bottom = row.y + row.height
+    if nextFocusable(m.focusIndex, 1) < 0 then bottom = m.contentHeight
+
+    target = m.scrollY
+    if bottom - target > FRIENDS_VIEW_HEIGHT then target = bottom - FRIENDS_VIEW_HEIGHT
+    if top < target then target = top
+    scrollTo(target, animate)
+end sub
+
+sub scrollTo(target as float, animate as boolean)
+    limit = m.contentHeight - FRIENDS_VIEW_HEIGHT
+    if target > limit then target = limit
+    if target < 0 then target = 0
+
+    m.scrollAnimation.control = "stop"
+    if animate and target <> m.scrollY
+        m.scrollInterp.keyValue = [[0, -m.scrollY], [0, -target]]
+        m.scrollAnimation.control = "start"
+    else
+        m.list.translation = [0, -target]
+    end if
+    m.scrollY = target
+end sub
+
+' ===== Input =====
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = KeyCode.BACK
+        if not popView() then close()
+        return true
+    end if
+    if key = KeyCode.UP
+        moveFocus(-1)
+        return true
+    end if
+    if key = KeyCode.DOWN
+        moveFocus(1)
+        return true
+    end if
+    if key = KeyCode.LEFT or key = KeyCode.RIGHT
+        moveButton(key = KeyCode.LEFT ? -1 : 1)
+        return true
+    end if
+    if key = KeyCode.OK
+        activate()
+        return true
+    end if
+    return false
+end function
+
+sub activate()
+    if m.focusIndex < 0 then return
+
+    row = m.rows[m.focusIndex]
+    if row.kind = "actions"
+        item = row.buttons[row.button]
+        if isValidAndNotEmpty(item.action) then runAction(item.action, item.arg)
+        return
+    end if
+    if isValidAndNotEmpty(row.action) then runAction(row.action, row.arg)
+end sub

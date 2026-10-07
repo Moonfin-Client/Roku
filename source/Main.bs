@@ -77,7 +77,7 @@ sub Main (args as dynamic) as void
     end if
 
     app_start:
-    stopAchievementUnlocks()
+    stopAchievementsPoll()
 
     ' Hide both nav elements before login to prevent flash/overlap
     overhang.visible = false
@@ -167,7 +167,7 @@ sub Main (args as dynamic) as void
 
     displayWhatsNewPopup(args)
     startServerMessages()
-    startAchievementUnlocks()
+    startAchievementsPoll()
 
     ' Handle input messages
     input = CreateObject("roInput")
@@ -262,6 +262,8 @@ sub Main (args as dynamic) as void
             onServerMessagesLoaded()
         else if isNodeEvent(msg, "unlocks")
             onAchievementUnlocks(msg)
+        else if isNodeEvent(msg, "incoming")
+            onChatMessages(msg)
         else if isNodeEvent(msg, "search_value")
             onSearch_valueEvent(msg)
         else if isNodeEvent(msg, "itemSelected")
@@ -401,35 +403,62 @@ sub onServerMessagesLoaded()
     m.global.sceneManager.callFunc("serverMessagesDialog")
 end sub
 
-' Badges the user unlocks while the app is open are shown in a banner when the plugin offers it.
-' The reads stop on the way out of an account and start again for whoever signs in next.
-sub startAchievementUnlocks()
-    if not achievements.Flags().unlockToastsEnabled then return
+' Badges the user unlocks and messages friends send while the app is open are shown in a banner
+' when the plugin offers them. The reads stop on the way out of an account and start again for
+' whoever signs in next.
+sub startAchievementsPoll()
+    if not achievements.Flags().unlockToastsEnabled and not achievements.SocialAvailable() then return
 
-    m.unlockTask = CreateObject("roSGNode", "AchievementUnlocksTask")
-    m.unlockTask.observeField("unlocks", m.port)
-    m.unlockTask.control = "RUN"
+    m.achievementsPoll = CreateObject("roSGNode", "AchievementsPollTask")
+    m.achievementsPoll.observeField("unlocks", m.port)
+    m.achievementsPoll.observeField("incoming", m.port)
+    m.achievementsPoll.control = "RUN"
 end sub
 
-sub stopAchievementUnlocks()
-    if not isValid(m.unlockTask) then return
+sub stopAchievementsPoll()
+    if not isValid(m.achievementsPoll) then return
 
-    m.unlockTask.unobserveField("unlocks")
-    m.unlockTask.control = "STOP"
-    m.unlockTask = invalid
+    m.achievementsPoll.unobserveField("unlocks")
+    m.achievementsPoll.unobserveField("incoming")
+    m.achievementsPoll.control = "STOP"
+    m.achievementsPoll = invalid
+    m.global.social = {}
 end sub
+
+' A read the last account started can still land after it signed out
+function isAchievementsPollEvent(msg as object) as boolean
+    return isValid(m.achievementsPoll) and m.achievementsPoll.isSameNode(msg.getRoSGNode())
+end function
+
+function isVideoPlaying() as boolean
+    active = m.global.sceneManager.callFunc("getActiveScene")
+    return isValid(active) and active.isSubType("VideoPlayerView")
+end function
 
 sub onAchievementUnlocks(msg as object)
-    ' A read the last account started can still land after it signed out
-    if not isValid(m.unlockTask) or not m.unlockTask.isSameNode(msg.getRoSGNode()) then return
+    if not isAchievementsPollEvent(msg) then return
 
     unlocks = msg.getData()
-    if unlocks.muteDuringPlayback
-        active = m.global.sceneManager.callFunc("getActiveScene")
-        if isValid(active) and active.isSubType("VideoPlayerView") then return
-    end if
+    if unlocks.muteDuringPlayback and isVideoPlaying() then return
 
     m.scene.findNode("notificationBanner").callFunc("enqueue", unlockNotices(unlocks))
+end sub
+
+' A banner for each chat that got a message from someone else. Held back over a video when the
+' mute switch says so, which is on unless the user turned it off.
+sub onChatMessages(msg as object)
+    if not isAchievementsPollEvent(msg) then return
+    if get_user_setting_bool("friends.muteChatBanners", true) and isVideoPlaying() then return
+
+    notices = []
+    for each thread in msg.getData()
+        notices.push({
+            title: substitute(tr("New message from {0}"), thread.name),
+            body: achievementsModel.ThreadIsPhoto(thread) ? tr("Photo") : thread.lastMessage,
+            icon: achievementsIcons.PathFor("forum")
+        })
+    end for
+    m.scene.findNode("notificationBanner").callFunc("enqueue", notices)
 end sub
 
 ' The plugin's grouping setting decides between one banner for the lot, under the icon of the

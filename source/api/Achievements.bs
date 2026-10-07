@@ -8,8 +8,8 @@ import "pkg:/source/utils/misc.bs"
 ' Nothing here throws. A server without the plugin answers 404 on every route, and a panel that
 ' asked for everything at once and got nothing back wants an empty screen rather than a pile of
 ' errors, so a failed call reads as no answer. The login ping, the quest reroll, spending a
-' power-up, buying one, changing what the profile wears and the unlock notification switch are
-' the only writes.
+' power-up, buying one, changing what the profile wears, the notification switches and the friends
+' and chat routes are the only writes.
 
 const ACHIEVEMENTS_ROOT = "/Plugins/AchievementBadges"
 ' What the panel opens on, so the screen that can change it knows what it was handed
@@ -51,11 +51,15 @@ namespace achievements
     ' that hides other people's figures and the unlock notifications, which need a route an older
     ' plugin doesnt have
     function DefaultFlags() as object
-        return { available: false, leaderboardEnabled: true, questsEnabled: true, activityEnabled: true, privacyMode: false, unlockToastsEnabled: false }
+        return { available: false, leaderboardEnabled: true, questsEnabled: true, activityEnabled: true, privacyMode: false, unlockToastsEnabled: false, friendsEnabled: true }
     end function
 
     function IsAvailable() as boolean
         return Flags().available = true
+    end function
+
+    function SocialAvailable() as boolean
+        return achievementsModel.SocialAvailable(Flags())
     end function
 
     ' Whether the plugin answered here. public-config needs no administrator, so an ordinary
@@ -71,6 +75,7 @@ namespace achievements
             questsEnabled: achievementsModel.Field(config, "QuestsEnabled") <> false,
             activityEnabled: achievementsModel.Field(config, "ActivityFeedEnabled") <> false,
             privacyMode: achievementsModel.Field(config, "ForcePrivacyMode") = true,
+            friendsEnabled: achievementsModel.Field(config, "FriendsEnabled") <> false,
             unlockToastsEnabled: isValid(features) and achievementsModel.Field(features, "EnableUnlockToasts") <> false
         }
     end function
@@ -158,12 +163,12 @@ namespace achievements
     ' Writes to a path and tells a refusal apart from a fault. refusedWith is the status the
     ' plugin answers when it means no, so that one comes back with whatever the plugin said, and
     ' anything else reads as a plain failure.
-    function Post(path as string, refusedWith = 0 as integer, sent = invalid as object) as object
+    function Post(path as string, refusedWith = 0 as integer, sent = invalid as object, method = "POST" as string) as object
         req = APIRequest(`${ACHIEVEMENTS_ROOT}/${path}`)
         if not isValid(req) then return {}
 
-        started = diagnostics.StartTrace("POST", req)
-        req.SetRequest("POST")
+        started = diagnostics.StartTrace(method, req)
+        req.SetRequest(method)
         req.setMessagePort(CreateObject("roMessagePort"))
         ' A write with nothing to send says nothing about its content either, since a route that
         ' takes no body answers 415 to a request that claims to carry JSON
@@ -393,8 +398,238 @@ namespace achievements
             leaderboardEnabled: config.leaderboardEnabled,
             questsEnabled: config.questsEnabled,
             activityEnabled: config.activityEnabled,
-            unlockToastsEnabled: config.unlockToastsEnabled
+            unlockToastsEnabled: config.unlockToastsEnabled,
+            socialAvailable: achievementsModel.SocialAvailable(config)
         }
+    end function
+
+    ' ===== Friends and chat =====
+
+    ' One write on the signed in user's friends or chat routes. A 429 is the plugin's rate limit,
+    ' which is a refusal with its own wording rather than a fault. What comes back says whether it
+    ' went through, what the plugin said, and the plugin's answer for the caller to read.
+    function Social(method as string, path as string, sent = invalid as object) as object
+        userId = chainLookupReturn(m.global, "session.user.id", "")
+        if not isValidAndNotEmpty(userId) then return { ok: false, message: "" }
+
+        written = Post(`users/${userId}/${path}`, 429, sent, method)
+        data = written.body
+        if not achievementsModel.IsObject(data) then return { ok: false, message: written.message ?? "" }
+
+        return {
+            ok: achievementsModel.Field(data, "Success") <> false,
+            message: achievementsModel.AsString(achievementsModel.Field(data, "Message")),
+            body: data
+        }
+    end function
+
+    function FetchFriends() as dynamic
+        userId = chainLookupReturn(m.global, "session.user.id", "")
+        if not isValidAndNotEmpty(userId) then return invalid
+
+        json = GetMap(`users/${userId}/friends`)
+        if not isValid(json) then return invalid
+
+        return achievementsModel.ParseFriendsList(json)
+    end function
+
+    ' Accepts at once when that user already asked first
+    function SendFriendRequest(userId as string) as object
+        return Social("POST", `friends/${userId}`)
+    end function
+
+    function AcceptFriendRequest(userId as string) as object
+        return Social("POST", `friends/${userId}/accept`)
+    end function
+
+    ' Also declines a request from that user, or takes one back
+    function RemoveFriend(userId as string) as object
+        return Social("DELETE", `friends/${userId}`)
+    end function
+
+    ' Answers 404 for someone who hides from the leaderboard, which comes back invalid like any miss
+    function FetchPublicProfile(userId as string) as dynamic
+        json = GetMap(`profiles/${userId}/summary`)
+        if not isValid(json) then return invalid
+
+        return achievementsModel.ParsePublicProfile(json)
+    end function
+
+    ' The users this user can see. The plugin's directory leaves out accounts an admin hid from the
+    ' login screen, which Jellyfin's /Users lists to anyone signed in. Plugin builds before 2.4.1
+    ' have no directory and fall back to /Users.
+    function FetchServerUsers() as object
+        userId = chainLookupReturn(m.global, "session.user.id", "")
+        if not isValidAndNotEmpty(userId) then return []
+
+        directory = Request(`users/${userId}/directory`)
+        if LCase(type(directory)) = "roarray" then return achievementsModel.ParseSocialUsers(directory)
+
+        return achievementsModel.ParseSocialUsers(getJson(APIRequest("/Users")))
+    end function
+
+    function FetchThreads() as dynamic
+        userId = chainLookupReturn(m.global, "session.user.id", "")
+        if not isValidAndNotEmpty(userId) then return invalid
+
+        json = GetMap(`users/${userId}/messages/threads`)
+        if not isValid(json) then return invalid
+
+        return achievementsModel.MapList(achievementsModel.Field(json, "Threads"), achievementsModel.ParseThread)
+    end function
+
+    ' The direct chat with that user. The plugin makes it on first use.
+    function OpenDirectChat(otherUserId as string) as string
+        userId = chainLookupReturn(m.global, "session.user.id", "")
+        if not isValidAndNotEmpty(userId) then return ""
+
+        json = GetMap(`users/${userId}/messages/${otherUserId}`, { limit: 1 })
+        return achievementsModel.AsString(achievementsModel.Field(json, "ConversationId"))
+    end function
+
+    function FetchConversation(conversationId as string) as dynamic
+        userId = chainLookupReturn(m.global, "session.user.id", "")
+        if not isValidAndNotEmpty(userId) then return invalid
+
+        json = GetMap(`users/${userId}/conversations/${conversationId}`)
+        conversation = achievementsModel.Field(json, "Conversation")
+        if achievementsModel.Field(json, "Success") <> true or not achievementsModel.IsObject(conversation) then return invalid
+
+        return achievementsModel.ParseConversation(conversation)
+    end function
+
+    ' The latest messages, oldest first. Reading them marks them as read.
+    function FetchMessages(conversationId as string, limit = 200 as integer) as dynamic
+        userId = chainLookupReturn(m.global, "session.user.id", "")
+        if not isValidAndNotEmpty(userId) then return invalid
+
+        json = GetMap(`users/${userId}/conversations/${conversationId}/messages`, { limit: limit })
+        if not isValid(json) then return invalid
+
+        return achievementsModel.MapList(achievementsModel.Field(json, "Messages"), achievementsModel.ParseMessage)
+    end function
+
+    ' The plugin caps a message at 1000 characters and 20 a minute, and says so in the refusal
+    function SendMessage(conversationId as string, text as string) as object
+        return Social("POST", `conversations/${conversationId}/messages`, { Text: text })
+    end function
+
+    function EditMessage(messageId as string, text as string) as object
+        return Social("PATCH", `messages/${messageId}`, { Text: text })
+    end function
+
+    function DeleteMessage(messageId as string) as object
+        return Social("DELETE", `messages/by-id/${messageId}`)
+    end function
+
+    ' Empties the chat for everyone in it
+    function ClearConversation(conversationId as string) as object
+        return Social("DELETE", `conversations/${conversationId}/clear`)
+    end function
+
+    ' A group needs at least two friends besides the signed in user. An empty title is sent as
+    ' null so the plugin names the group itself.
+    function CreateGroup(title as string, memberIds as object) as object
+        written = Social("POST", "conversations", { Title: title <> "" ? title : invalid, ParticipantIds: memberIds })
+        conversation = achievementsModel.Field(written.body, "Conversation")
+        if written.ok and achievementsModel.IsObject(conversation) then written.conversation = achievementsModel.ParseConversation(conversation)
+
+        return written
+    end function
+
+    function RenameGroup(conversationId as string, title as string) as object
+        return Social("POST", `conversations/${conversationId}/rename`, { Title: title })
+    end function
+
+    function AddGroupMember(conversationId as string, userId as string) as object
+        return Social("POST", `conversations/${conversationId}/members/${userId}`)
+    end function
+
+    ' Leaves the group when the member is the signed in user
+    function RemoveGroupMember(conversationId as string, userId as string) as object
+        return Social("DELETE", `conversations/${conversationId}/members/${userId}`)
+    end function
+
+    function SetGroupAdmin(conversationId as string, userId as string, admin as boolean) as object
+        return Social(admin ? "POST" : "DELETE", `conversations/${conversationId}/admins/${userId}`)
+    end function
+
+    ' Blocking works both ways in a direct chat, neither side can message the other. The plugin
+    ' leaves a group they share alone.
+    function SetBlocked(userId as string, blocked as boolean) as object
+        return Social(blocked ? "POST" : "DELETE", `block/${userId}`)
+    end function
+
+    function FetchBlocked() as object
+        userId = chainLookupReturn(m.global, "session.user.id", "")
+        if not isValidAndNotEmpty(userId) then return []
+
+        return achievementsModel.IdList(achievementsModel.Field(GetMap(`users/${userId}/blocked`), "Blocked"))
+    end function
+
+    ' The image behind a photo in a chat. It needs the token, so it is saved to a file for the
+    ' poster to read rather than loaded from its url. Answers the file, or empty when it failed.
+    function FetchAttachment(attachmentId as string) as string
+        req = APIRequest(`${ACHIEVEMENTS_ROOT}/attachments/${attachmentId}`)
+        if not isValid(req) then return ""
+
+        path = `tmp:/achievements-attachment-${attachmentId}`
+        if req.GetToFile(path) <> 200 then return ""
+
+        return path
+    end function
+
+    function FetchSocialPrivacy() as dynamic
+        userId = chainLookupReturn(m.global, "session.user.id", "")
+        if not isValidAndNotEmpty(userId) then return invalid
+
+        json = GetMap(`users/${userId}/preferences`)
+        if not isValid(json) then return invalid
+
+        return achievementsModel.ParseSocialPrivacy(json)
+    end function
+
+    ' The plugin replaces its whole preferences object on save, so this reads a fresh copy first
+    ' and only changes the friend settings in it
+    function SaveSocialPrivacy(privacy as object) as boolean
+        userId = chainLookupReturn(m.global, "session.user.id", "")
+        if not isValidAndNotEmpty(userId) then return false
+
+        preferences = GetMap(`users/${userId}/preferences`)
+        if not isValid(preferences) then return false
+
+        written = Post(`users/${userId}/preferences`, 400, achievementsModel.ApplySocialPrivacy(preferences, privacy))
+        return isValid(written.body)
+    end function
+
+    ' What carries over from one friends and chats read to the next. The threads seen stay invalid
+    ' until the first read, which only records what is waiting so it doesnt all pop up at once.
+    function NewSocialState() as object
+        return { friends: invalid, threads: [], seen: invalid, friendsRead: false, messageNotifications: true, openConversation: "" }
+    end function
+
+    ' Reads the friends list and the chats again and hands back the chats that got a message from
+    ' someone else since the last read, when the user wants to hear about them
+    function ReadSocial(state as object) as object
+        incoming = []
+        fetched = FetchFriends()
+        threads = FetchThreads()
+        state.friendsRead = isValid(fetched)
+        if state.friendsRead then state.friends = fetched
+        if not isValid(threads) then return incoming
+
+        if isValid(state.seen) and state.messageNotifications
+            for each thread in threads
+                if achievementsModel.ThreadHasNewFromOthers(thread, state.seen[thread.conversationId], state.openConversation) then incoming.push(thread)
+            end for
+        end if
+
+        state.threads = threads
+        state.seen = {}
+        for each thread in threads
+            state.seen[thread.conversationId] = thread
+        end for
+        return incoming
     end function
 
 end namespace

@@ -140,11 +140,16 @@ source += '\n' + await readFile('test/settings-sync-values.bs', 'utf8');
 source += '\n' + await readFile('test/audio-track.bs', 'utf8');
 const achievementsModelFile = await readFile('source/utils/achievementsModel.bs', 'utf8');
 source += '\nnamespace achievementsModel\n';
-for (const name of ['IsObject', 'Field', 'AsInt', 'AsString', 'AsBool', 'AsSeconds', 'ScoreForRarity', 'Clamp', 'Ratio', 'ParseBadge', 'RarityRank', 'ParseUnlockToastSettings', 'AllowsRarity', 'FreshUnlocks']) {
+for (const name of [
+    'IsObject', 'Field', 'AsInt', 'AsString', 'AsBool', 'AsSeconds', 'ScoreForRarity', 'Clamp', 'Ratio', 'MapList', 'ParseBadge', 'RarityRank', 'ParseUnlockToastSettings', 'AllowsRarity', 'FreshUnlocks',
+    'SocialAvailable', 'SameUserId', 'ParseSocialUser', 'ParseFriendMedia', 'ParseFriend', 'ParseFriendsList', 'FindUser', 'IsFriend', 'IsPending', 'ParseSocialUsers', 'ParseSocialPrivacy', 'ApplySocialPrivacy',
+    'ParseThread', 'ThreadIsPhoto', 'IdList', 'ParseConversation', 'IsGroupOwner', 'IsGroupAdmin', 'IsGroupMember', 'ParseMessage', 'ThreadHasNewFromOthers', 'SocialBadgeCount', 'DisplayNameFor'
+]) {
     source += '\n' + achievementsModelFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/achievement-unlocks.bs', 'utf8');
+source += '\n' + await readFile('test/friends-chat.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
 source += '\nnamespace api\nnamespace items\n';
@@ -536,12 +541,39 @@ assert.match(readUnlocks, /if not toastSettings\.enabled\s+' [^\n]*\s+state\.cur
 assert.match(readUnlocks, /if now <> "" then state\.cursor = now\s+if cursor = "" then return invalid/, 'The first read only records the server clock');
 assert.match(achievementsApi.match(/function SaveUnlockToasts\([^]*?end function/)[0], /preferences = GetMap\([^]*?preferences\.AddReplace\("EnableUnlockToasts", enabled\)\s+written = Post\(`users\/\$\{userId\}\/preferences`, 400, preferences\)/, 'The switch writes over a fresh copy of the preferences');
 const mainSource = await readFile('source/Main.bs', 'utf8');
-assert.match(mainSource, /app_start:\s+stopAchievementUnlocks\(\)/, 'The reads stop on the way out of an account');
-assert.match(mainSource, /startServerMessages\(\)\s+startAchievementUnlocks\(\)/, 'And start once the next one is in');
-assert.match(mainSource.match(/sub onAchievementUnlocks\([^]*?end sub/)[0], /if unlocks\.muteDuringPlayback[^]*?isSubType\("VideoPlayerView"\) then return/, 'Unlocks are held back during playback when the user asked');
-const unlocksTask = await readFile('components/achievements/AchievementUnlocksTask.bs', 'utf8');
-assert.match(unlocksTask, /m\.global\.observeFieldScoped\("unlockToastSettings", port\)[^]*?achievements\.AdoptUnlockSettings\(state, msg\.getData\(\)\)/, 'The reads take the settings the switch saved');
+assert.match(mainSource, /app_start:\s+stopAchievementsPoll\(\)/, 'The reads stop on the way out of an account');
+assert.match(mainSource, /startServerMessages\(\)\s+startAchievementsPoll\(\)/, 'And start once the next one is in');
+assert.match(mainSource.match(/sub onAchievementUnlocks\([^]*?end sub/)[0], /if unlocks\.muteDuringPlayback and isVideoPlaying\(\) then return/, 'Unlocks are held back during playback when the user asked');
+const pollTask = await readFile('components/achievements/AchievementsPollTask.bs', 'utf8');
+assert.match(pollTask, /m\.global\.observeFieldScoped\("unlockToastSettings", port\)[^]*?achievements\.AdoptUnlockSettings\(unlockState, msg\.getData\(\)\)/, 'The reads take the settings the switch saved');
 assert.match(await readFile('components/achievements/AchievementsScreen.bs', 'utf8'), /m\.global\.unlockToastSettings = result\.settings/, 'The switch hands its saved settings over');
 assert.match(await readFile('components/BaseScene.xml', 'utf8'), /<NotificationBanner id="notificationBanner" \/>/, 'The banner sits on the scene');
 await access('images/achievements/notifications_active.png');
 process.stdout.write('PASS: achievement unlock wiring (11 checks)\n');
+
+// Friends and chat ride the same reads as the unlocks, every 30 seconds or every 10 with a chat
+// open, and only where the plugin has them switched on
+assert.match(achievementsApi.match(/function Probe\([^]*?end function/)[0], /friendsEnabled: achievementsModel\.Field\(config, "FriendsEnabled"\) <> false/, 'The probe reads whether friends are on');
+assert.match(achievementsApi.match(/function Post\([^]*?end function/)[0], /method = "POST" as string\) as object[^]*?req\.SetRequest\(method\)/, 'Writes can delete and patch as well as post');
+assert.match(achievementsApi.match(/function Social\([^]*?end function/)[0], /written = Post\(`users\/\$\{userId\}\/\$\{path\}`, 429, sent, method\)/, 'The rate limit reads as a refusal with its own wording');
+assert.match(achievementsApi.match(/function FetchServerUsers\([^]*?end function/)[0], /directory = Request\(`users\/\$\{userId\}\/directory`\)[^]*?ParseSocialUsers\(getJson\(APIRequest\("\/Users"\)\)\)/, 'People come from the plugin directory, falling back to /Users');
+assert.match(achievementsApi.match(/function FetchAttachment\([^]*?end function/)[0], /req\.GetToFile\(path\) <> 200/, 'A photo is saved to a file with the token on the request');
+assert.match(achievementsApi.match(/function SaveSocialPrivacy\([^]*?end function/)[0], /preferences = GetMap\([^]*?ApplySocialPrivacy\(preferences, privacy\)/, 'Privacy writes over a fresh copy of the preferences');
+assert.match(pollTask, /if socialOn then readSocial\(\)/, 'The friends and chats are read with the unlocks');
+assert.match(pollTask.match(/sub readSocial\([^]*?end sub/)[0], /m\.global\.social = \{[^}]*\}\s+if incoming\.count\(\) > 0 then m\.top\.incoming = incoming/, 'What the read found is shared and new messages are passed on');
+assert.match(mainSource.match(/sub onChatMessages\([^]*?end sub/)[0], /get_user_setting_bool\("friends\.muteChatBanners", true\) and isVideoPlaying\(\) then return/, 'Chat banners are held back during playback unless the user turned that off');
+const friendsXml = await readFile('components/friends/FriendsScreen.xml', 'utf8');
+assert.match(friendsXml, /<Timer id="chatTimer" duration="10" repeat="true" \/>/, 'An open chat asks for new messages every 10 seconds');
+const friendsScreen = await readFile('components/friends/FriendsScreen.bs', 'utf8');
+assert.match(friendsScreen.match(/sub leaveView\([^]*?end sub/)[0], /m\.chatTimer\.control = "stop"\s+requestSocial\(\{ kind: "openConversation", conversationId: "" \}\)/, 'Leaving a chat stops its reads and lets its banners through again');
+for (const nav of ['components/JFOverhang.bs', 'components/Sidebar.bs']) {
+    const navSource = await readFile(nav, 'utf8');
+    assert.match(navSource, /if not kids and m\.friendsButtonEnabled and socialAvailable\(\) then m\.navItems\.push\(m\.friendsItem\)/, `${nav} shows the Friends button only where it can open`);
+    assert.match(navSource, /else if item\.id = "friends"\s+m\.global\.sceneManager\.callFunc\("friends"\)/, `${nav} opens friends from the button`);
+}
+const settingsSource = await readFile('components/settings/settings.bs', 'utf8');
+assert.match(settingsSource, /if requirement = "social" then return achievements\.SocialAvailable\(\)/, 'The friends settings only show where friends are on');
+assert.match(await readFile('settings/settings.json', 'utf8'), /"settingName": "navbar\.show_friends",[^}]*"requires": "social"/, 'The Friends button setting follows them');
+await access('images/icons/friends.png');
+await access('images/icons/settings/groups.png');
+process.stdout.write('PASS: friends and chat wiring (19 checks)\n');

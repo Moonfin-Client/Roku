@@ -5538,5 +5538,460 @@
         <extracomment>After the first few badge names in a banner, how many more there are</extracomment>
         <translation>+{0} more</translation>
     </message>
+    <message>
+        <source>Show friends button</source>
+        <extracomment>Navigation bar setting for the Friends button</extracomment>
+        <translation>Show friends button</translation>
+    </message>
+    <message>
+        <source>Friends and chat from the Achievement Badges plugin</source>
+        <extracomment>Under the Show friends button setting</extracomment>
+        <translation>Friends and chat from the Achievement Badges plugin</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <extracomment>Friends and chat from the Achievement Badges plugin, as a settings entry, a button and a screen title</extracomment>
+        <translation>Friends</translation>
+    </message>
+    <message>
+        <source>See who's online and chat with people on this server</source>
+        <extracomment>Under the Friends entry</extracomment>
+        <translation>See who's online and chat with people on this server</translation>
+    </message>
+    <message>
+        <source>Friend requests</source>
+        <extracomment>Friends screen row and title for requests to and from other users</extracomment>
+        <translation>Friend requests</translation>
+    </message>
+    <message>
+        <source>Add friends</source>
+        <extracomment>Friends screen row and title for finding people to add</extracomment>
+        <translation>Add friends</translation>
+    </message>
+    <message>
+        <source>Privacy</source>
+        <extracomment>Friends screen row and title for what friends can see</extracomment>
+        <translation>Privacy</translation>
+    </message>
+    <message>
+        <source>New message</source>
+        <extracomment>Starts a chat with one friend</extracomment>
+        <translation>New message</translation>
+    </message>
+    <message>
+        <source>New group</source>
+        <extracomment>Starts a group chat, and names one that was left untitled</extracomment>
+        <translation>New group</translation>
+    </message>
+    <message>
+        <source>Group info</source>
+        <extracomment>Opens the members and settings of a group chat</extracomment>
+        <translation>Group info</translation>
+    </message>
+    <message>
+        <source>Add people</source>
+        <extracomment>Adds friends to a group chat</extracomment>
+        <translation>Add people</translation>
+    </message>
+    <message>
+        <source>That didn't work. Try again in a moment.</source>
+        <extracomment>A friends or chat change the server turned down without saying why</extracomment>
+        <translation>That didn't work. Try again in a moment.</translation>
+    </message>
+    <message>
+        <source>Request sent to {0}</source>
+        <extracomment>A friend request went to that user</extracomment>
+        <translation>Request sent to {0}</translation>
+    </message>
+    <message>
+        <source>Watching {0}</source>
+        <extracomment>What an online friend is watching</extracomment>
+        <translation>Watching {0}</translation>
+    </message>
+    <message>
+        <source>Online</source>
+        <extracomment>A friend who is on now, and the heading over them</extracomment>
+        <translation>Online</translation>
+    </message>
+    <message>
+        <source>Last watched {0}</source>
+        <extracomment>What an offline friend watched last</extracomment>
+        <translation>Last watched {0}</translation>
+    </message>
+    <message>
+        <source>Last seen {0}</source>
+        <extracomment>When an offline friend was last on, like 5m ago</extracomment>
+        <translation>Last seen {0}</translation>
+    </message>
+    <message>
+        <source>Offline</source>
+        <extracomment>A friend who isnt on, and the heading over them</extracomment>
+        <translation>Offline</translation>
+    </message>
+    <message>
+        <source>No unread messages</source>
+        <extracomment>Under the Messages row when nothing is unread</extracomment>
+        <translation>No unread messages</translation>
+    </message>
+    <message>
+        <source>1 unread message</source>
+        <extracomment>Under the Messages row</extracomment>
+        <translation>1 unread message</translation>
+    </message>
+    <message>
+        <source>{0} unread messages</source>
+        <extracomment>Under the Messages row</extracomment>
+        <translation>{0} unread messages</translation>
+    </message>
+    <message>
+        <source>Nothing waiting</source>
+        <extracomment>Under the Friend requests row when none are waiting</extracomment>
+        <translation>Nothing waiting</translation>
+    </message>
+    <message>
+        <source>1 waiting for you</source>
+        <extracomment>Under the Friend requests row</extracomment>
+        <translation>1 waiting for you</translation>
+    </message>
+    <message>
+        <source>{0} waiting for you</source>
+        <extracomment>Under the Friend requests row</extracomment>
+        <translation>{0} waiting for you</translation>
+    </message>
+    <message>
+        <source>Photo</source>
+        <extracomment>Stands in for a photo sent in a chat</extracomment>
+        <translation>Photo</translation>
+    </message>
+    <message>
+        <source>You: {0}</source>
+        <extracomment>A chat preview of the last message, when the user sent it</extracomment>
+        <translation>You: {0}</translation>
+    </message>
+    <message>
+        <source>Could not load this. Check your connection and try again.</source>
+        <extracomment>A friends screen the server didnt answer</extracomment>
+        <translation>Could not load this. Check your connection and try again.</translation>
+    </message>
+    <message>
+        <source>Find people on this server</source>
+        <extracomment>Under the Add friends row</extracomment>
+        <translation>Find people on this server</translation>
+    </message>
+    <message>
+        <source>What your friends can see</source>
+        <extracomment>Under the Privacy row</extracomment>
+        <translation>What your friends can see</translation>
+    </message>
+    <message>
+        <source>No friends yet. Add people from this server to see them here.</source>
+        <extracomment>Friends screen with no friends</extracomment>
+        <translation>No friends yet. Add people from this server to see them here.</translation>
+    </message>
+    <message>
+        <source>{0} keeps their profile private.</source>
+        <extracomment>A user who hides their profile</extracomment>
+        <translation>{0} keeps their profile private.</translation>
+    </message>
+    <message>
+        <source>Best streak: {0} days</source>
+        <extracomment>A user's best watch streak on their profile</extracomment>
+        <translation>Best streak: {0} days</translation>
+    </message>
+    <message>
+        <source>Showcase</source>
+        <extracomment>The badges a user chose to show on their profile</extracomment>
+        <translation>Showcase</translation>
+    </message>
+    <message>
+        <source>Remove {0} from your friends? You can add them again later.</source>
+        <extracomment>Asked before removing a friend</extracomment>
+        <translation>Remove {0} from your friends? You can add them again later.</translation>
+    </message>
+    <message>
+        <source>Remove friend</source>
+        <extracomment>Removes a friend</extracomment>
+        <translation>Remove friend</translation>
+    </message>
+    <message>
+        <source>Unblock {0}?</source>
+        <extracomment>Asked before unblocking a user</extracomment>
+        <translation>Unblock {0}?</translation>
+    </message>
+    <message>
+        <source>Unblock</source>
+        <extracomment>Lets a blocked user message again</extracomment>
+        <translation>Unblock</translation>
+    </message>
+    <message>
+        <source>Block {0}? Neither of you will be able to message the other directly. Group chats you share stay open.</source>
+        <extracomment>Asked before blocking a user</extracomment>
+        <translation>Block {0}? Neither of you will be able to message the other directly. Group chats you share stay open.</translation>
+    </message>
+    <message>
+        <source>Block</source>
+        <extracomment>Stops a user messaging you directly</extracomment>
+        <translation>Block</translation>
+    </message>
+    <message>
+        <source>Send message</source>
+        <extracomment>Opens a chat with this friend</extracomment>
+        <translation>Send message</translation>
+    </message>
+    <message>
+        <source>Open {0}</source>
+        <extracomment>Opens the title a friend is watching</extracomment>
+        <translation>Open {0}</translation>
+    </message>
+    <message>
+        <source>Add as friend</source>
+        <extracomment>Sends this user a friend request</extracomment>
+        <translation>Add as friend</translation>
+    </message>
+    <message>
+        <source>No friend requests.</source>
+        <extracomment>Friend requests screen with none either way</extracomment>
+        <translation>No friend requests.</translation>
+    </message>
+    <message>
+        <source>Waiting for you</source>
+        <extracomment>Heading over friend requests other users sent</extracomment>
+        <translation>Waiting for you</translation>
+    </message>
+    <message>
+        <source>{0} wants to be friends</source>
+        <extracomment>Under a friend request from that user</extracomment>
+        <translation>{0} wants to be friends</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <extracomment>Turns down a friend request</extracomment>
+        <translation>Decline</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <extracomment>Accepts a friend request</extracomment>
+        <translation>Accept</translation>
+    </message>
+    <message>
+        <source>Sent by you</source>
+        <extracomment>Heading over friend requests the user sent</extracomment>
+        <translation>Sent by you</translation>
+    </message>
+    <message>
+        <source>Cancel request</source>
+        <extracomment>Takes back a friend request the user sent</extracomment>
+        <translation>Cancel request</translation>
+    </message>
+    <message>
+        <source>Take back the request you sent to {0}?</source>
+        <extracomment>Asked before taking back a friend request</extracomment>
+        <translation>Take back the request you sent to {0}?</translation>
+    </message>
+    <message>
+        <source>Search people</source>
+        <extracomment>Placeholder and keyboard title for searching users</extracomment>
+        <translation>Search people</translation>
+    </message>
+    <message>
+        <source>No one matches that name.</source>
+        <extracomment>A people search that found nobody</extracomment>
+        <translation>No one matches that name.</translation>
+    </message>
+    <message>
+        <source>Mute during playback</source>
+        <extracomment>Friends privacy switch for message banners during playback</extracomment>
+        <translation>Mute during playback</translation>
+    </message>
+    <message>
+        <source>No message banners while a video is playing</source>
+        <extracomment>Under the Mute during playback switch</extracomment>
+        <translation>No message banners while a video is playing</translation>
+    </message>
+    <message>
+        <source>Blocked users</source>
+        <extracomment>Heading over the users the user blocked</extracomment>
+        <translation>Blocked users</translation>
+    </message>
+    <message>
+        <source>Appear offline</source>
+        <extracomment>Friends privacy switch</extracomment>
+        <translation>Appear offline</translation>
+    </message>
+    <message>
+        <source>Friends always see you as offline</source>
+        <extracomment>Under the Appear offline switch</extracomment>
+        <translation>Friends always see you as offline</translation>
+    </message>
+    <message>
+        <source>Hide what I'm watching</source>
+        <extracomment>Friends privacy switch</extracomment>
+        <translation>Hide what I'm watching</translation>
+    </message>
+    <message>
+        <source>Friends still see you online, but not what's playing</source>
+        <extracomment>Under the Hide what I'm watching switch</extracomment>
+        <translation>Friends still see you online, but not what's playing</translation>
+    </message>
+    <message>
+        <source>Hide my last watched</source>
+        <extracomment>Friends privacy switch</extracomment>
+        <translation>Hide my last watched</translation>
+    </message>
+    <message>
+        <source>Friends won't see what you watched last while you're offline</source>
+        <extracomment>Under the Hide my last watched switch</extracomment>
+        <translation>Friends won't see what you watched last while you're offline</translation>
+    </message>
+    <message>
+        <source>Message notifications</source>
+        <extracomment>Friends privacy switch for message banners</extracomment>
+        <translation>Message notifications</translation>
+    </message>
+    <message>
+        <source>Show a banner when a friend messages you</source>
+        <extracomment>Under the Message notifications switch</extracomment>
+        <translation>Show a banner when a friend messages you</translation>
+    </message>
+    <message>
+        <source>Start a chat with a friend</source>
+        <extracomment>Under the New message row</extracomment>
+        <translation>Start a chat with a friend</translation>
+    </message>
+    <message>
+        <source>Chat with several friends at once</source>
+        <extracomment>Under the New group row</extracomment>
+        <translation>Chat with several friends at once</translation>
+    </message>
+    <message>
+        <source>No messages yet.</source>
+        <extracomment>A chat or chat list with nothing in it</extracomment>
+        <translation>No messages yet.</translation>
+    </message>
+    <message>
+        <source>Group name</source>
+        <extracomment>Label and keyboard title for naming a group chat</extracomment>
+        <translation>Group name</translation>
+    </message>
+    <message>
+        <source>Pick at least two friends</source>
+        <extracomment>How many friends a new group needs</extracomment>
+        <translation>Pick at least two friends</translation>
+    </message>
+    <message>
+        <source>Create group</source>
+        <extracomment>Makes the group chat</extracomment>
+        <translation>Create group</translation>
+    </message>
+    <message>
+        <source>edited</source>
+        <extracomment>Beside the time of a chat message that was changed</extracomment>
+        <translation>edited</translation>
+    </message>
+    <message>
+        <source>Seen</source>
+        <extracomment>Beside the last message the user sent, once someone read it</extracomment>
+        <translation>Seen</translation>
+    </message>
+    <message>
+        <source>Sent</source>
+        <extracomment>Beside the last message the user sent, before anyone read it</extracomment>
+        <translation>Sent</translation>
+    </message>
+    <message>
+        <source>Edit</source>
+        <extracomment>Changes a chat message the user sent</extracomment>
+        <translation>Edit</translation>
+    </message>
+    <message>
+        <source>Delete this message for everyone?</source>
+        <extracomment>Asked before deleting a chat message</extracomment>
+        <translation>Delete this message for everyone?</translation>
+    </message>
+    <message>
+        <source>Editing message</source>
+        <extracomment>Shown while the user changes a chat message</extracomment>
+        <translation>Editing message</translation>
+    </message>
+    <message>
+        <source>Write a message</source>
+        <extracomment>Placeholder and keyboard title for a chat message</extracomment>
+        <translation>Write a message</translation>
+    </message>
+    <message>
+        <source>Send</source>
+        <extracomment>Sends a chat message</extracomment>
+        <translation>Send</translation>
+    </message>
+    <message>
+        <source>1 member</source>
+        <extracomment>How many people are in a group chat</extracomment>
+        <translation>1 member</translation>
+    </message>
+    <message>
+        <source>{0} members</source>
+        <extracomment>How many people are in a group chat</extracomment>
+        <translation>{0} members</translation>
+    </message>
+    <message>
+        <source>You</source>
+        <extracomment>The user themselves in a group member list</extracomment>
+        <translation>You</translation>
+    </message>
+    <message>
+        <source>Owner</source>
+        <extracomment>The member who made a group chat</extracomment>
+        <translation>Owner</translation>
+    </message>
+    <message>
+        <source>Admin</source>
+        <extracomment>A member who can manage a group chat</extracomment>
+        <translation>Admin</translation>
+    </message>
+    <message>
+        <source>Remove admin</source>
+        <extracomment>Takes a member off the group admins</extracomment>
+        <translation>Remove admin</translation>
+    </message>
+    <message>
+        <source>Make admin</source>
+        <extracomment>Lets a member manage the group chat</extracomment>
+        <translation>Make admin</translation>
+    </message>
+    <message>
+        <source>Remove from group</source>
+        <extracomment>Takes a member out of a group chat</extracomment>
+        <translation>Remove from group</translation>
+    </message>
+    <message>
+        <source>No one left to add.</source>
+        <extracomment>Every friend is already in the group chat</extracomment>
+        <translation>No one left to add.</translation>
+    </message>
+    <message>
+        <source>Clear conversation</source>
+        <extracomment>Deletes every message in a group chat</extracomment>
+        <translation>Clear conversation</translation>
+    </message>
+    <message>
+        <source>Leave group</source>
+        <extracomment>Leaves a group chat</extracomment>
+        <translation>Leave group</translation>
+    </message>
+    <message>
+        <source>Leave this group? Someone will have to add you back to rejoin.</source>
+        <extracomment>Asked before leaving a group chat</extracomment>
+        <translation>Leave this group? Someone will have to add you back to rejoin.</translation>
+    </message>
+    <message>
+        <source>Delete every message in this chat for everyone in it?</source>
+        <extracomment>Asked before clearing a group chat</extracomment>
+        <translation>Delete every message in this chat for everyone in it?</translation>
+    </message>
+    <message>
+        <source>New message from {0}</source>
+        <extracomment>Banner heading for a chat message from that user</extracomment>
+        <translation>New message from {0}</translation>
+    </message>
 </context>
 </TS>

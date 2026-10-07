@@ -729,4 +729,237 @@ namespace achievementsModel
         return groups
     end function
 
+    ' ===== Friends and chat =====
+
+    ' Whether this server's plugin has friends and chat switched on
+    function SocialAvailable(flags as dynamic) as boolean
+        return IsObject(flags) and flags.available = true and flags.friendsEnabled <> false
+    end function
+
+    ' Jellyfin user ids arrive with and without their dashes depending on the route
+    function SameUserId(a as dynamic, b as dynamic) as boolean
+        return LCase(AsString(a).Replace("-", "")) = LCase(AsString(b).Replace("-", ""))
+    end function
+
+    ' The friends payloads use PascalCase and the chat ones camelCase, which Field reads alike
+    function ParseSocialUser(json as object) as object
+        return { userId: AsString(Field(json, "UserId")), userName: AsString(Field(json, "UserName")) }
+    end function
+
+    function ParseFriendMedia(value as dynamic) as dynamic
+        if not IsObject(value) then return invalid
+
+        return { id: AsString(Field(value, "Id")), name: AsString(Field(value, "Name")), seriesName: AsString(Field(value, "SeriesName")) }
+    end function
+
+    function ParseFriend(json as object) as object
+        return {
+            userId: AsString(Field(json, "UserId")),
+            userName: AsString(Field(json, "UserName")),
+            online: AsBool(Field(json, "Online")),
+            lastSeen: AsSeconds(Field(json, "LastSeen")),
+            nowPlaying: ParseFriendMedia(Field(json, "NowPlaying")),
+            lastWatched: ParseFriendMedia(Field(json, "LastWatched"))
+        }
+    end function
+
+    function ParseFriendsList(json as object) as object
+        return {
+            friends: MapList(Field(json, "Friends"), achievementsModel.ParseFriend),
+            incoming: MapList(Field(json, "Incoming"), achievementsModel.ParseSocialUser),
+            outgoing: MapList(Field(json, "Outgoing"), achievementsModel.ParseSocialUser),
+            ' The admin made everyone a friend, so there are no requests to send
+            simpleMode: AsBool(Field(json, "SimpleMode"))
+        }
+    end function
+
+    function FindUser(people as dynamic, userId as dynamic) as dynamic
+        if LCase(type(people)) <> "roarray" then return invalid
+
+        for each person in people
+            if SameUserId(person.userId, userId) then return person
+        end for
+        return invalid
+    end function
+
+    function IsFriend(list as dynamic, userId as dynamic) as boolean
+        if not IsObject(list) then return false
+        return isValid(FindUser(list.friends, userId))
+    end function
+
+    function IsPending(list as dynamic, userId as dynamic) as boolean
+        if not IsObject(list) then return false
+        return isValid(FindUser(list.incoming, userId)) or isValid(FindUser(list.outgoing, userId))
+    end function
+
+    function ParsePublicProfile(json as object) as object
+        return {
+            userName: AsString(Field(json, "UserName")),
+            unlocked: AsInt(Field(json, "Unlocked")),
+            total: AsInt(Field(json, "Total")),
+            score: AsInt(Field(json, "Score")),
+            bestWatchStreak: AsInt(Field(json, "BestWatchStreak")),
+            equipped: ParseBadges(Field(json, "Equipped")),
+            customTitle: AsString(Field(json, "CustomTitle"))
+        }
+    end function
+
+    function ParseSocialUsers(rows as dynamic) as object
+        users = []
+        if LCase(type(rows)) <> "roarray" then return users
+
+        for each row in rows
+            if IsObject(row)
+                user = { userId: AsString(Field(row, "Id")), userName: AsString(Field(row, "Name")) }
+                if user.userId <> "" then users.push(user)
+            end if
+        end for
+        return users
+    end function
+
+    ' The friend settings among the plugin's preferences. Message notifications are on unless the
+    ' plugin says otherwise.
+    function ParseSocialPrivacy(json as object) as object
+        return {
+            appearOffline: AsBool(Field(json, "AppearOffline")),
+            hideNowPlaying: AsBool(Field(json, "HideNowPlaying")),
+            hideLastWatched: AsBool(Field(json, "HideLastWatched")),
+            messageNotifications: Field(json, "MessageNotifications") <> false
+        }
+    end function
+
+    function ApplySocialPrivacy(preferences as object, privacy as object) as object
+        preferences.AddReplace("AppearOffline", privacy.appearOffline)
+        preferences.AddReplace("HideNowPlaying", privacy.hideNowPlaying)
+        preferences.AddReplace("HideLastWatched", privacy.hideLastWatched)
+        preferences.AddReplace("MessageNotifications", privacy.messageNotifications)
+        return preferences
+    end function
+
+    function ParseThread(json as object) as object
+        return {
+            conversationId: AsString(Field(json, "conversationId")),
+            isGroup: AsString(Field(json, "type")) = "group",
+            name: AsString(Field(json, "otherUserName")),
+            participants: MapList(Field(json, "participants"), achievementsModel.ParseSocialUser),
+            lastMessage: AsString(Field(json, "lastMessage")),
+            lastFromMe: AsBool(Field(json, "lastFromMe")),
+            lastAt: AsSeconds(Field(json, "lastAt")),
+            unreadCount: AsInt(Field(json, "unreadCount")),
+            hasAttachment: AsBool(Field(json, "hasAttachment"))
+        }
+    end function
+
+    ' The plugin previews a photo with no text as "[image]"
+    function ThreadIsPhoto(thread as object) as boolean
+        return thread.hasAttachment and (thread.lastMessage = "" or thread.lastMessage = "[image]")
+    end function
+
+    function IdList(value as dynamic) as object
+        ids = []
+        if LCase(type(value)) <> "roarray" then return ids
+
+        for each id in value
+            if AsString(id) <> "" then ids.push(id)
+        end for
+        return ids
+    end function
+
+    function ParseConversation(json as object) as object
+        return {
+            id: AsString(Field(json, "id")),
+            title: AsString(Field(json, "title")),
+            participantIds: IdList(Field(json, "participantIds")),
+            createdByUserId: AsString(Field(json, "createdByUserId")),
+            adminIds: IdList(Field(json, "adminIds"))
+        }
+    end function
+
+    function IsGroupOwner(conversation as object, userId as dynamic) as boolean
+        return SameUserId(conversation.createdByUserId, userId)
+    end function
+
+    function IsGroupAdmin(conversation as object, userId as dynamic) as boolean
+        if IsGroupOwner(conversation, userId) then return true
+
+        for each id in conversation.adminIds
+            if SameUserId(id, userId) then return true
+        end for
+        return false
+    end function
+
+    function IsGroupMember(conversation as object, userId as dynamic) as boolean
+        for each id in conversation.participantIds
+            if SameUserId(id, userId) then return true
+        end for
+        return false
+    end function
+
+    ' A message counts as read once anyone but its sender has read it
+    function ParseMessage(json as object) as object
+        fromUserId = AsString(Field(json, "fromUserId"))
+        isRead = AsSeconds(Field(json, "readAt")) > 0
+        for each id in IdList(Field(json, "readBy"))
+            if not SameUserId(id, fromUserId) then isRead = true
+        end for
+
+        return {
+            id: AsString(Field(json, "id")),
+            fromUserId: fromUserId,
+            fromUserName: AsString(Field(json, "fromUserName")),
+            text: AsString(Field(json, "text")),
+            sentAt: AsSeconds(Field(json, "sentAt")),
+            editedAt: AsSeconds(Field(json, "editedAt")),
+            attachmentId: AsString(Field(json, "attachmentId")),
+            isRead: isRead
+        }
+    end function
+
+    ' Whether a thread holds a message from someone else that wasnt there at the last read, the
+    ' open chat aside since that one is being read. A thread never seen before is new as a whole.
+    function ThreadHasNewFromOthers(thread as object, before as dynamic, openConversationId as string) as boolean
+        if thread.lastFromMe or thread.unreadCount = 0 then return false
+        if thread.conversationId = openConversationId then return false
+        if not isValid(before) then return true
+
+        return thread.unreadCount > before.unreadCount or (thread.lastAt > 0 and before.lastAt > 0 and thread.lastAt > before.lastAt)
+    end function
+
+    ' Friend requests waiting plus unread messages, which the Friends button wears
+    function SocialBadgeCount(social as dynamic) as integer
+        if not IsObject(social) then return 0
+
+        count = 0
+        if IsObject(social.friends) then count += social.friends.incoming.count()
+        if LCase(type(social.threads)) = "roarray"
+            for each thread in social.threads
+                count += thread.unreadCount
+            end for
+        end if
+        return count
+    end function
+
+    ' A name for a user id from whatever was read last, for group members the chat payloads only
+    ' name by id
+    function DisplayNameFor(social as dynamic, userId as dynamic) as string
+        if not IsObject(social) then return ""
+
+        people = []
+        if IsObject(social.friends)
+            people.append(social.friends.friends)
+            people.append(social.friends.incoming)
+            people.append(social.friends.outgoing)
+        end if
+        if LCase(type(social.threads)) = "roarray"
+            for each thread in social.threads
+                people.append(thread.participants)
+            end for
+        end if
+
+        for each person in people
+            if SameUserId(person.userId, userId) and person.userName <> "" then return person.userName
+        end for
+        return ""
+    end function
+
 end namespace
