@@ -5215,7 +5215,7 @@
     </message>
     <message>
         <source>Halloween</source>
-        <extracomment>Seasonal row title during October</extracomment>
+        <extracomment>Seasonal row title during October, and a seasonal effect of leaves, candy, bats and ghosts</extracomment>
         <translation>Halloween</translation>
     </message>
     <message>
@@ -5992,6 +5992,76 @@
         <source>New message from {0}</source>
         <extracomment>Banner heading for a chat message from that user</extracomment>
         <translation>New message from {0}</translation>
+    </message>
+    <message>
+        <source>Seasonal Effects</source>
+        <extracomment>Settings page and section for the seasonal effects drawn over the home screen</extracomment>
+        <translation>Seasonal Effects</translation>
+    </message>
+    <message>
+        <source>Visual effects and seasonal decorations</source>
+        <extracomment>Under the Seasonal Effects settings page</extracomment>
+        <translation>Visual effects and seasonal decorations</translation>
+    </message>
+    <message>
+        <source>Seasonal Surprise</source>
+        <extracomment>Setting that picks the seasonal effect drawn over the home screen</extracomment>
+        <translation>Seasonal Surprise</translation>
+    </message>
+    <message>
+        <source>Snow</source>
+        <extracomment>Seasonal effect</extracomment>
+        <translation>Snow</translation>
+    </message>
+    <message>
+        <source>Christmas</source>
+        <extracomment>Seasonal effect of snow with baubles and stars</extracomment>
+        <translation>Christmas</translation>
+    </message>
+    <message>
+        <source>Fireworks</source>
+        <extracomment>Seasonal effect</extracomment>
+        <translation>Fireworks</translation>
+    </message>
+    <message>
+        <source>Confetti</source>
+        <extracomment>Seasonal effect</extracomment>
+        <translation>Confetti</translation>
+    </message>
+    <message>
+        <source>Spring Petals</source>
+        <extracomment>Seasonal effect of falling blossom petals with bees</extracomment>
+        <translation>Spring Petals</translation>
+    </message>
+    <message>
+        <source>Fireflies</source>
+        <extracomment>Seasonal effect</extracomment>
+        <translation>Fireflies</translation>
+    </message>
+    <message>
+        <source>Falling Leaves</source>
+        <extracomment>Seasonal effect</extracomment>
+        <translation>Falling Leaves</translation>
+    </message>
+    <message>
+        <source>Density</source>
+        <extracomment>Setting for how many seasonal particles are drawn</extracomment>
+        <translation>Density</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <extracomment>Seasonal effect density with the fewest particles</extracomment>
+        <translation>Light</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <extracomment>Seasonal effect density</extracomment>
+        <translation>Normal</translation>
+    </message>
+    <message>
+        <source>Heavy</source>
+        <extracomment>Seasonal effect density with the most particles</extracomment>
+        <translation>Heavy</translation>
     </message>
 </context>
 </TS>

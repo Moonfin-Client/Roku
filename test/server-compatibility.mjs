@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdtemp, rm, glob, access } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, rm, glob, access, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Writable } from 'node:stream';
@@ -56,6 +56,7 @@ const selections = {
     'source/utils/detailCompatibility.bs': null,
     'source/utils/parentalFilter.bs': null,
     'source/utils/seasonalRow.bs': null,
+    'source/utils/seasonalEffects.bs': null,
     'source/utils/liveRecovery.bs': null,
     'source/utils/deviceCapabilities.bs': ['getSubtitleProfiles'],
     'source/utils/seerrMissingCollection.bs': null,
@@ -137,6 +138,7 @@ for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin']) {
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/settings-sync-values.bs', 'utf8');
+source += '\n' + await readFile('test/seasonal-effects.bs', 'utf8');
 source += '\n' + await readFile('test/audio-track.bs', 'utf8');
 const achievementsModelFile = await readFile('source/utils/achievementsModel.bs', 'utf8');
 source += '\nnamespace achievementsModel\n';
@@ -577,3 +579,32 @@ assert.match(await readFile('settings/settings.json', 'utf8'), /"settingName": "
 await access('images/icons/friends.png');
 await access('images/icons/settings/groups.png');
 process.stdout.write('PASS: friends and chat wiring (19 checks)\n');
+
+// The seasonal effects sync under Core's names, run only while home is on screen, and draw
+// from images that all ship with the app
+assert.match(settingsSyncSource, /\{ pluginKey: "seasonalSurprise", rokuKey: "seasonal\.surprise", type: "seasonalEffect" \}/, 'The seasonal effect syncs under Core\'s name');
+assert.match(settingsSyncSource, /\{ pluginKey: "seasonalDensity", rokuKey: "seasonal\.density", type: "seasonalDensity" \}/, 'The density syncs under Core\'s name');
+const homeSource = await readFile('components/home/Home.bs', 'utf8');
+assert.match(homeSource.match(/sub OnScreenShown\([^]*?end sub/)[0], /m\.seasonalEffects\.callFunc\("play"\)/, 'The effect runs while home is shown');
+assert.match(homeSource.match(/sub OnScreenHidden\([^]*?end sub/)[0], /m\.seasonalEffects\.callFunc\("halt"\)/, 'The effect holds still while home is covered');
+assert.match(await readFile('components/home/Home.xml', 'utf8'), /<SeasonalEffects id="seasonalEffects" \/>\s*<\/children>/, 'The effect draws over everything on the home screen');
+const settingsTree = JSON.parse(await readFile('settings/settings.json', 'utf8'));
+const findSetting = (nodes, name) => {
+    for (const node of nodes) {
+        if (node.settingName === name) return node;
+        const found = node.children && findSetting(node.children, name);
+        if (found) return found;
+    }
+    return null;
+};
+const effectsSource = await readFile('source/utils/seasonalEffects.bs', 'utf8');
+const listed = (name) => [...effectsSource.match(new RegExp(`function ${name}\\(\\) as object\\s+return \\[([^\\]]*)\\]`))[1].matchAll(/"([^"]+)"/g)].map(match => match[1]);
+assert.deepEqual(findSetting(settingsTree, 'seasonal.surprise').options.map(option => option.id).sort(), listed('Effects').sort(), 'The setting offers every effect');
+assert.deepEqual(findSetting(settingsTree, 'seasonal.density').options.map(option => option.id), listed('Densities'), 'The setting offers every density');
+const palette = (name) => [...effectsSource.match(new RegExp(`${name}: \\[("#[^\\]]*)\\]`))[1].matchAll(/"#([0-9a-f]{6})"/g)].map(match => match[1]);
+const artwork = ['dot', 'flake', 'leaf', 'leaf-mirror', 'disc', 'glow', 'spark', 'rocket', 'star', 'bat', 'blossom', 'candy', 'bee', 'ghost',
+    ...palette('petals').map(color => `petal-${color}`), ...palette('baubles').map(color => `bauble-${color}`)];
+assert.deepEqual((await readdir('images/seasonal')).sort(), artwork.map(name => `${name}.png`).sort(), 'Every seasonal image the effects name ships, and nothing else');
+await access('images/icons/settings/star_shine.png');
+await access('images/icons/settings/blur_on.png');
+process.stdout.write('PASS: seasonal effects wiring (10 checks)\n');

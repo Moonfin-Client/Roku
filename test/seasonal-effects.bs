@@ -1,0 +1,182 @@
+sub testSeasonalEffects()
+    for each effect in seasonalEffects.Effects()
+        assertEqual(seasonalEffects.ParseEffect(effect), effect, "Core's " + effect + " is kept as it is")
+    end for
+    assertEqual(seasonalEffects.ParseEffect("winter"), "snow", "The old winter arrives as snow")
+    assertEqual(seasonalEffects.ParseEffect("fall"), "leaves", "The old fall arrives as leaves")
+    assertEqual(seasonalEffects.ParseEffect("spring"), "petals", "The old spring arrives as petals")
+    assertEqual(seasonalEffects.ParseEffect("summer"), "fireflies", "The old summer arrives as fireflies")
+    assertEqual(seasonalEffects.ParseEffect(" Snow "), "snow", "Case and spaces dont matter")
+    assertEqual(seasonalEffects.ParseEffect("aurora"), invalid, "An effect nobody knows leaves the local choice alone")
+    assertEqual(seasonalEffects.ParseEffect(3), invalid, "Only text names an effect")
+    assertEqual(seasonalEffects.ParseDensity("heavy"), "heavy", "A density is kept as it is")
+    assertEqual(seasonalEffects.ParseDensity("blizzard"), invalid, "A density nobody knows leaves the local choice alone")
+
+    assertEqual(settingsSync.PluginToRoku("fireworks", "seasonalEffect"), "fireworks", "Core's effect arrives as it is")
+    assertEqual(settingsSync.PluginToRoku("fall", "seasonalEffect"), "leaves", "An old effect still in the profile is mapped")
+    assertEqual(settingsSync.PluginToRoku("aurora", "seasonalEffect"), invalid, "An unknown effect isnt stored")
+    assertEqual(settingsSync.PluginToRoku("heavy", "seasonalDensity"), "heavy", "The density arrives as it is")
+    assertEqual(settingsSync.PluginToRoku("blizzard", "seasonalDensity"), invalid, "An unknown density isnt stored")
+    assertEqual(settingsSync.RokuToPlugin("confetti", "seasonalEffect"), "confetti", "The effect goes out under Core's name")
+    assertEqual(settingsSync.RokuToPlugin("light", "seasonalDensity"), "light", "The density goes out as it is")
+
+    falling = ["snow", "leaves", "confetti", "christmas", "petals", "fireflies", "halloween"]
+    for each tier in ["low", "high"]
+        for each effect in falling
+            for each density in seasonalEffects.Densities()
+                built = seasonalEffects.Build(effect, density, seasonalEffects.NewRandom(1), tier)
+                expected = Int(seasonalEffects.FallCounts()[tier][density] * (seasonalEffects.CountShare()[effect] ?? 1) + 0.5)
+                assertEqual(built.falling.count(), expected, effect + " at " + density + " on a " + tier + " device")
+                assertEqual(built.bursts.count(), 0, effect + " has no fireworks")
+            end for
+        end for
+    end for
+
+    for each density in seasonalEffects.Densities()
+        built = seasonalEffects.Build("fireworks", density, seasonalEffects.NewRandom(1), "low")
+        assertEqual(built.falling.count(), 0, "Fireworks have nothing falling")
+        assertEqual(built.bursts.count(), seasonalEffects.BurstCounts()[density], "Density sets how many fireworks are in the air")
+        for each burst in built.bursts
+            ring = burst.children[2]
+            assertEqual(ring.children.count(), seasonalEffects.SPARKS_PER_BURST, "Every burst has its sparks")
+            ' The mover steps through five spots, one per burst, in step with it
+            assertEqual(burst.duration, seasonalEffects.BURST_SECONDS * 5, "The mover takes five bursts to come around")
+            assertEqual(ring.duration, seasonalEffects.BURST_SECONDS, "A burst takes its own loop")
+        end for
+    end for
+
+    seeded = seasonalEffectsSignature(seasonalEffects.Build("confetti", "heavy", seasonalEffects.NewRandom(42), "high"))
+    assertEqual(seasonalEffectsSignature(seasonalEffects.Build("confetti", "heavy", seasonalEffects.NewRandom(42), "high")), seeded, "The same seed gives the same particles")
+    assertEqual(seasonalEffectsSignature(seasonalEffects.Build("confetti", "heavy", seasonalEffects.NewRandom(43), "high")) = seeded, false, "Another seed gives other particles")
+
+    ' Every track runs from a key at 0 to a key at 1 with its keys in order, which is what an
+    ' interpolator needs to loop
+    ordered = true
+    for each effect in ["snow", "leaves", "confetti", "christmas", "petals", "fireflies", "halloween", "fireworks"]
+        for each seed in [1, 2, 3]
+            built = seasonalEffects.Build(effect, "heavy", seasonalEffects.NewRandom(seed), "high")
+            for each list in [built.falling, built.flyers, built.bursts]
+                for each spec in list
+                    if not seasonalEffectsKeysInOrder(spec) then ordered = false
+                end for
+            end for
+        end for
+    end for
+    assertEqual(ordered, true, "Every track runs in order from a key at 0 to a key at 1")
+
+    snow = seasonalEffects.Build("snow", "heavy", seasonalEffects.NewRandom(5), "high").falling
+    small = invalid
+    big = invalid
+    for each flake in snow
+        if flake.fields.uri.endsWith("dot.png")
+            if not isValid(small) or flake.fields.width < small.fields.width then small = flake
+            if not isValid(big) or flake.fields.width > big.fields.width then big = flake
+        end if
+    end for
+    assertEqual(big.fields.opacity > small.fields.opacity, true, "Nearer snow is brighter")
+    assertEqual(big.duration < small.duration, true, "Nearer snow falls quicker")
+
+    assertEqual(seasonalEffectsShapes(seasonalEffects.Build("christmas", "heavy", seasonalEffects.NewRandom(4), "high").falling), "bauble,dot,flake,star", "Christmas mixes baubles and stars into the snow")
+    assertEqual(seasonalEffectsShapes(seasonalEffects.Build("halloween", "heavy", seasonalEffects.NewRandom(2), "high").falling), "candy,leaf,leaf-mirror", "Halloween drops candy and leaves")
+    assertEqual(seasonalEffectsShapes(seasonalEffects.Build("confetti", "heavy", seasonalEffects.NewRandom(2), "high").falling), "disc,strip", "Confetti is strips and discs")
+
+    spring = seasonalEffects.Build("petals", "heavy", seasonalEffects.NewRandom(6), "high")
+    assertEqual(seasonalEffectsShapes(spring.falling), "blossom,petal", "Spring drops petals and whole blossoms")
+    narrow = true
+    for each petal in spring.falling
+        if petal.fields.uri.Instr("petal-") >= 0 and petal.fields.width >= petal.fields.height then narrow = false
+    end for
+    assertEqual(narrow, true, "A petal is narrower than it is tall")
+    assertEqual(spring.flyers.count(), seasonalEffects.FlyerCounts().petals.heavy, "Spring sends bees across")
+    facing = true
+    for each flyer in spring.flyers
+        bee = flyer.children[0]
+        leftward = seasonalEffectsHeading(flyer.tracks[0]) < 0
+        if not bee.fields.uri.endsWith("bee.png") or leftward <> (bee.tracks[1].values[0] > 0) then facing = false
+    end for
+    assertEqual(facing, true, "Bees turn to face the way they fly")
+
+    halloween = seasonalEffects.Build("halloween", "heavy", seasonalEffects.NewRandom(2), "high")
+    assertEqual(seasonalEffectsShapes(halloween.flyers), "bat,ghost", "Halloween sends bats and a ghost")
+    for each density in seasonalEffects.Densities()
+        assertEqual(seasonalEffects.Build("halloween", density, seasonalEffects.NewRandom(2), "high").flyers.count(), seasonalEffects.FlyerCounts().halloween[density], "Halloween flyers at " + density)
+    end for
+    for each effect in ["snow", "christmas", "fireflies", "leaves", "confetti", "fireworks"]
+        assertEqual(seasonalEffects.Build(effect, "heavy", seasonalEffects.NewRandom(1), "high").flyers.count(), 0, "Only spring and Halloween have flyers, not " + effect)
+    end for
+
+    glowing = true
+    for each firefly in seasonalEffects.Build("fireflies", "heavy", seasonalEffects.NewRandom(8), "high").falling
+        if not firefly.fields.uri.endsWith("glow.png") or not isValid(firefly.fields.blendColor) or firefly.tracks[1].field <> "opacity" then glowing = false
+    end for
+    assertEqual(glowing, true, "Fireflies glow in their own color and pulse")
+
+    onRing = true
+    radius = 15 * seasonalEffects.VH
+    for each spark in seasonalEffects.Build("fireworks", "heavy", seasonalEffects.NewRandom(9), "high").bursts[0].children[2].children
+        size = spark.fields.width
+        x = spark.fields.translation[0] + size / 2 - radius
+        y = spark.fields.translation[1] + size / 2 - radius
+        reach = Sqr(x * x + y * y) / radius
+        if reach < 0.6 or reach > 1.0001 then onRing = false
+    end for
+    assertEqual(onRing, true, "Sparks land on the ring, inside its box")
+
+    assertEqual(seasonalEffectsSignature(seasonalEffects.Build("none", "normal", seasonalEffects.NewRandom(1), "high")), "", "None draws nothing")
+    assertEqual(seasonalEffectsSignature(seasonalEffects.Build("aurora", "normal", seasonalEffects.NewRandom(1), "high")), "", "An effect nobody knows draws nothing")
+end sub
+
+function seasonalEffectsKeysInOrder(spec as object) as boolean
+    for each track in spec.tracks
+        keys = track.keys
+        if keys[0] <> 0 or keys[keys.count() - 1] <> 1 or keys.count() <> track.values.count() then return false
+        for i = 1 to keys.count() - 1
+            if keys[i] <= keys[i - 1] then return false
+        end for
+    end for
+    for each child in spec.children
+        if not seasonalEffectsKeysInOrder(child) then return false
+    end for
+    return true
+end function
+
+' Every particle's image, size and loop length in one line
+function seasonalEffectsSignature(built as object) as string
+    parts = []
+    for each list in [built.falling, built.flyers, built.bursts]
+        for each spec in list
+            parts.push(spec.subtype + " " + (spec.fields.uri ?? "") + " " + Str(spec.fields.width ?? 0) + " " + Str(spec.duration))
+        end for
+    end for
+    return parts.Join("|")
+end function
+
+' Which way a flight crosses, from its first step that isnt the jump back across the screen
+function seasonalEffectsHeading(track as object) as integer
+    values = track.values
+    for i = 1 to values.count() - 1
+        delta = values[i][0] - values[i - 1][0]
+        if delta <> 0 and Abs(delta) < 1000 then return Sgn(delta)
+    end for
+    return 0
+end function
+
+' The shapes a list of particles uses, by image name without the color, sorted and joined
+function seasonalEffectsShapes(specs as object) as string
+    found = {}
+    for each spec in specs
+        if spec.subtype = "Rectangle"
+            found["strip"] = true
+        else
+            node = spec
+            if spec.subtype = "Group" then node = spec.children[0]
+            name = node.fields.uri.Mid(Len(seasonalEffects.ART)).Replace(".png", "")
+            dash = name.Instr("-")
+            if dash > 0 and name <> "leaf-mirror" then name = Left(name, dash)
+            found[name] = true
+        end if
+    end for
+    names = found.Keys()
+    names.Sort()
+    return names.Join(",")
+end function
