@@ -286,15 +286,19 @@ function normalizeLatestItems(items as dynamic, isTv as boolean, untyped as bool
 end function
 
 ' Episodes and seasons as one card per series, each series keeping its first entry
-function oneCardPerSeries(items as object) as object
+function oneCardPerSeries(items as object, keepSeasons = false as boolean) as object
     cards = []
     seen = {}
     for each item in items
-        card = seriesCardForLatestItem(item) ?? item
-        cardId = LCase(toNormalizedString(card.LookupCI("Id")))
-        if not seen.DoesExist(cardId)
-            seen[cardId] = true
-            cards.push(card)
+        if keepSeasons and isStringEqual(item.LookupCI("Type"), "Season")
+            cards.push(item)
+        else
+            card = seriesCardForLatestItem(item) ?? item
+            cardId = LCase(toNormalizedString(card.LookupCI("Id")))
+            if not seen.DoesExist(cardId)
+                seen[cardId] = true
+                cards.push(card)
+            end if
         end if
     end for
     return cards
@@ -2984,9 +2988,10 @@ function loadPickedRow(picked as object) as object
     if isStringEqual(picked.source, "genres")
         params.Recursive = true
         params.GenreIds = itemId
-        params.IncludeItemTypes = genresRowItemTypes(settings)
+        showSeasons = getBoolSetting(settings, "ui.home.pickedRowsShowSeasons", false)
+        params.IncludeItemTypes = genreRowSeasonTypes(genresRowItemTypes(settings), showSeasons)
         params.SortBy = rowSortByParam(getStringSetting(settings, "ui.home.genresRowSortBy", "name"))
-        items = chainLookupReturn(api.items.Get(params), "Items", [])
+        items = seasonCardsForPickedRow(chainLookupReturn(api.items.Get(params), "Items", []), showSeasons)
     else if isStringEqual(picked.source, "collections")
         params.ParentId = itemId
         items = collectionRowItems(params, settings)
@@ -3009,6 +3014,7 @@ end function
 ' episodes were asked for
 function collectionRowItems(params as object, settings as object) as object
     showEpisodes = getBoolSetting(settings, "ui.home.collectionsRowShowEpisodes", false)
+    showSeasons = getBoolSetting(settings, "ui.home.pickedRowsShowSeasons", false)
     sortBy = getStringSetting(settings, "ui.home.collectionsRowSortBy", "name")
 
     if isPlaylistOrder(sortBy)
@@ -3022,8 +3028,14 @@ function collectionRowItems(params as object, settings as object) as object
                 Fields: PICKED_ROW_FIELDS,
                 EnableTotalRecordCount: false
             })
-            arranged = arrangeByStoredOrder(playableMembers(chainLookupReturn(flat, "Items", [])), order)
-            if not showEpisodes then arranged = oneCardPerSeries(arranged)
+            arranged = arrangeByStoredOrder(playableMembers(chainLookupReturn(flat, "Items", []), showSeasons), order)
+            if not showEpisodes
+                if showSeasons
+                    arranged = oneCardPerSeries(arranged, true)
+                else
+                    arranged = seasonCardsForPickedRow(arranged, false)
+                end if
+            end if
             return firstItems(arranged, params.Limit)
         end if
     else
@@ -3031,19 +3043,63 @@ function collectionRowItems(params as object, settings as object) as object
     end if
 
     members = chainLookupReturn(api.items.Get(params), "Items", [])
-    if showEpisodes then return expandSeriesToEpisodes(members, params.Limit)
-    return members
+    if showEpisodes
+        ' Keep explicit episode cards; only omit season cards when the season toggle is off.
+        if not showSeasons
+            withoutSeasons = []
+            for each item in members
+                if not isStringEqual(item.LookupCI("Type"), "Season") then withoutSeasons.push(item)
+            end for
+            members = withoutSeasons
+        end if
+        return expandSeriesToEpisodes(members, params.Limit)
+    end if
+    return seasonCardsForPickedRow(members, showSeasons)
+end function
+
+' Off means one card per show even when the server sends standalone season entries.
+' Entries without enough parent metadata cannot safely become series cards and are hidden.
+function seasonCardsForPickedRow(items as object, showSeasons as boolean) as object
+    if showSeasons then return items
+
+    ' Prefer a full series entry to the synthetic series card derived from a season.
+    originals = {}
+    for each item in items
+        if isStringEqual(item.LookupCI("Type"), "Series")
+            originals[LCase(toNormalizedString(item.LookupCI("Id")))] = item
+        end if
+    end for
+
+    collapsed = oneCardPerSeries(items)
+    results = []
+    for each item in collapsed
+        if not isStringEqual(item.LookupCI("Type"), "Season")
+            seriesId = LCase(toNormalizedString(item.LookupCI("Id")))
+            if isStringEqual(item.LookupCI("Type"), "Series") and originals.DoesExist(seriesId)
+                results.push(originals[seriesId])
+            else
+                results.push(item)
+            end if
+        end if
+    end for
+    return results
+end function
+
+' A genre can show seasons only when TV shows are included by its media-type filter.
+function genreRowSeasonTypes(itemTypes as string, showSeasons as boolean) as string
+    if showSeasons and Instr(1, itemTypes, "Series") > 0 then return itemTypes + ",Season"
+    return itemTypes
 end function
 
 function isPlaylistOrder(sortBy as string) as boolean
     return LCase(sortBy) = "playlistorder"
 end function
 
-' The movies and episodes among what a collection holds flat. The series and seasons come back
-' too, since the server ignores IsFolder on a collection. Episodes rarely carry a rating of their
+' The playable movies and episodes among a collection's flat members, with seasons only
+' when requested. The server ignores IsFolder for collections. Episodes rarely carry a rating of their
 ' own, so they are judged by their series where it came along, or a blocked series would slip
 ' through as its episodes or as a card built from one
-function playableMembers(items as object) as object
+function playableMembers(items as object, showSeasons = false as boolean) as object
     seriesRatings = {}
     for each item in items
         if isStringEqual(item.LookupCI("Type"), "Series") then seriesRatings[guidKey(item.LookupCI("Id"))] = item.LookupCI("OfficialRating") ?? ""
@@ -3051,7 +3107,7 @@ function playableMembers(items as object) as object
 
     playable = []
     for each item in items
-        if item.LookupCI("IsFolder") <> true
+        if item.LookupCI("IsFolder") <> true or (showSeasons and isStringEqual(item.LookupCI("Type"), "Season"))
             rating = seriesRatings[guidKey(item.LookupCI("SeriesId"))] ?? ""
             if parentalControls.WithoutBlockedItems([item], rating).Count() > 0 then playable.push(item)
         end if
