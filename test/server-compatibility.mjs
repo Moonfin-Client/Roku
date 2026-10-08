@@ -453,6 +453,13 @@ assert.match(videoLoader, /and shouldBurnInSubtitle\(video\.SelectedSubtitle\)[^
 assert.doesNotMatch(await readFile('components/video/VideoPlayerView.bs', 'utf8'), /playback\.subs\.burnin/, 'The player goes by what the task burned in, not the setting');
 process.stdout.write('PASS: subtitle burn-in wiring (2 checks)\n');
 
+// Every load goes through one place, so a load still out is set aside rather than ignoring the RUN
+const playerView = await readFile('components/video/VideoPlayerView.bs', 'utf8');
+assert.equal(playerView.match(/m\.LoadMetaDataTask\.control = TaskControl\.RUN/g).length, 1, 'Only runLoad starts the load task');
+assert.match(playerView, /isValid\(m\.liveChannel\) and isStringEqual\(m\.liveChannel\.id, m\.channelSwitch\.target\.Id\)/, 'A channel switch succeeds on the channel that came back');
+assert.match(videoLoader, /if m\.top\.abandoned\s+releaseAbandonedLiveStream\(loaded\)\s+return\s+end if\s+m\.top\.content = \[loaded\]/, 'A load the player set aside closes its stream instead of handing it over');
+process.stdout.write('PASS: live load wiring (3 checks)\n');
+
 // A custom subtitle track downloads on the task's own thread, never in an observer the render thread runs
 const captionTask = await readFile('components/captionTask.bs', 'utf8');
 const loadTrack = captionTask.match(/sub loadTrack\(\)[^]*?end sub/)[0];

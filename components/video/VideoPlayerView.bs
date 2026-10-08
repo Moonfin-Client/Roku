@@ -106,8 +106,9 @@ sub init()
         m.itemServerData = invalid
     end if
 
-    m.LoadMetaDataTask.observeField("content", "onVideoContentLoaded")
-    m.LoadMetaDataTask.control = TaskControl.RUN
+    m.loadInFlight = false
+    m.abandonedLoads = []
+    runLoad()
 
     m.PreloadTrickplayImagesTask = CreateObject("roSGNode", "PreloadTrickplayImagesTask")
     m.PreloadTrickplayImagesTask.observeField("loaded", "onSheetsLoaded")
@@ -919,8 +920,7 @@ sub reloadWithSubtitle(index as integer)
 
     m.LoadMetaDataTask.selectedSubtitleIndex = index
     m.LoadMetaDataTask.itemId = m.top.id
-    m.LoadMetaDataTask.observeField("content", "onVideoContentLoaded")
-    m.LoadMetaDataTask.control = TaskControl.RUN
+    runLoad()
 end sub
 
 ' Event handler for when audioIndex changes
@@ -942,8 +942,7 @@ sub onAudioIndexChange()
 
     m.LoadMetaDataTask.selectedAudioStreamIndex = m.top.audioIndex
     m.LoadMetaDataTask.itemId = m.top.id
-    m.LoadMetaDataTask.observeField("content", "onVideoContentLoaded")
-    m.LoadMetaDataTask.control = TaskControl.RUN
+    runLoad()
 end sub
 
 sub onPlaybackErrorDialogClosed(msg)
@@ -992,8 +991,65 @@ sub retryPlaybackFromServer()
     m.LoadMetaDataTask.selectedSubtitleIndex = m.top.SelectedSubtitle
     m.LoadMetaDataTask.selectedAudioStreamIndex = m.top.audioIndex
     m.LoadMetaDataTask.itemId = m.top.id
+    runLoad()
+end sub
+
+' Starts the load the fields on m.LoadMetaDataTask now describe. A task ignores RUN while it is
+' still running, and would answer with what it was first asked, so a load still out is set aside
+' and a fresh task carries this one.
+sub runLoad()
+    if m.loadInFlight then replaceLoadTask()
+    m.loadInFlight = true
     m.LoadMetaDataTask.observeField("content", "onVideoContentLoaded")
     m.LoadMetaDataTask.control = TaskControl.RUN
+end sub
+
+' The new task takes the request the callers just wrote onto the old one
+sub replaceLoadTask()
+    previous = m.LoadMetaDataTask
+    abandonLoad()
+
+    fresh = CreateObject("roSGNode", "LoadVideoContentTask")
+    fresh.setFields({
+        itemId: previous.itemId,
+        itemType: previous.itemType,
+        selectedSubtitleIndex: previous.selectedSubtitleIndex,
+        selectedAudioStreamIndex: previous.selectedAudioStreamIndex,
+        playbackMethod: previous.playbackMethod,
+        transcodeCodec: previous.transcodeCodec,
+        serverUrl: previous.serverUrl,
+        serverUserId: previous.serverUserId,
+        serverAuthToken: previous.serverAuthToken
+    })
+    fresh.observeField("state", "onLoadTaskState")
+    m.LoadMetaDataTask = fresh
+end sub
+
+' Stops waiting on the load that is out. It still finishes its request, then lets go of the live
+' stream that opened rather than handing it over. It is held until then, since a task nothing
+' references can be collected mid flight.
+sub abandonLoad()
+    if not m.loadInFlight then return
+    m.loadInFlight = false
+
+    previous = m.LoadMetaDataTask
+    previous.unobserveField("content")
+    previous.unobserveField("state")
+    previous.abandoned = true
+    previous.observeField("state", "onAbandonedLoadState")
+    m.abandonedLoads.push(previous)
+end sub
+
+sub onAbandonedLoadState(event as object)
+    task = event.getRoSGNode()
+    if not inArray(["stop", "done"], task.state) then return
+    task.unobserveField("state")
+
+    kept = []
+    for each held in m.abandonedLoads
+        if not held.isSameNode(task) then kept.push(held)
+    end for
+    m.abandonedLoads = kept
 end sub
 
 ' A file the device wont open is asked for as a server remux first, then with its video
@@ -1020,7 +1076,10 @@ function streamSummary(video as object) as string
     return parts.Join(", ")
 end function
 
-sub onVideoContentLoaded()
+sub onVideoContentLoaded(event as object)
+    ' Only the load the player still waits on may hand it a stream
+    if not m.loadInFlight or not event.getRoSGNode().isSameNode(m.LoadMetaDataTask) then return
+    m.loadInFlight = false
     m.LoadMetaDataTask.unobserveField("content")
     m.LoadMetaDataTask.control = TaskControl.STOP
 
@@ -1758,8 +1817,7 @@ sub onState()
                 m.top.control = VideoControl.STOP
 
                 m.LoadMetaDataTask.itemId = m.top.id
-                m.LoadMetaDataTask.observeField("content", "onVideoContentLoaded")
-                m.LoadMetaDataTask.control = TaskControl.RUN
+                runLoad()
             else
                 diagnostics.Playback(`Live TV playback failed after ${m.playbackRetries} attempts, showing the error`, diagnostics.LEVEL_ERROR)
                 showPlaybackErrorDialog(tr("Live TV Playback Failed"))
@@ -1846,7 +1904,8 @@ sub onState()
         ' The stop from a channel switch always lands before the next channel plays, so one that
         ' never came cant swallow a later stop
         m.suppressStopReport = false
-        if isValid(m.channelSwitch) and m.top.id = m.channelSwitch.target.Id then finishChannelSwitch(true)
+        ' The channel that came back decides it, since a load the switch replaced could still be the one playing
+        if isValid(m.channelSwitch) and isValid(m.liveChannel) and isStringEqual(m.liveChannel.id, m.channelSwitch.target.Id) then finishChannelSwitch(true)
     else if isStringEqual(m.top.state, MediaPlaybackState.PAUSED)
         m.playbackTimer.control = "stop"
         ReportPlayback()
@@ -2745,8 +2804,7 @@ end sub
 sub loadChannel(purpose as string)
     m.liveLoad = purpose
     m.LoadMetaDataTask.itemId = m.top.id
-    m.LoadMetaDataTask.observeField("content", "onVideoContentLoaded")
-    m.LoadMetaDataTask.control = TaskControl.RUN
+    runLoad()
 end sub
 
 sub finishChannelSwitch(succeeded as boolean)
@@ -3116,7 +3174,7 @@ sub openGuide()
     hideLiveFailedCard()
     closeCarousel()
     releaseLiveSessions()
-    m.LoadMetaDataTask.unobserveField("content")
+    abandonLoad()
     m.top.findNode("liveProgramTimer").control = TimerControl.STOP
     m.global.queueManager.callFunc("clear")
     m.top.control = VideoControl.STOP
@@ -3349,7 +3407,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         ' a load still under way included
         abandonLiveRecovery("the viewer left the channel")
         releaseLiveSessions()
-        if isValid(m.liveRecovery) then m.LoadMetaDataTask.unobserveField("content")
+        if isValid(m.liveRecovery) then abandonLoad()
 
         m.global.queueManager.callFunc("bypassNextPreferredAudioTrackIndexReset")
         m.global.queueManager.callFunc("clear")
