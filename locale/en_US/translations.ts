@@ -4124,6 +4124,11 @@
         <translation>Failed to remove from collection: {error}</translation>
     </message>
     <message>
+        <source>Failed to update playlist: {error}</source>
+        <extracomment>Note when the server refuses to delete or move a playlist row. {error} is the reason</extracomment>
+        <translation>Failed to update playlist: {error}</translation>
+    </message>
+    <message>
         <source>Create New Playlist</source>
         <extracomment>Starts a new playlist, as the first row of the playlist picker or a keyboard title</extracomment>
         <translation>Create New Playlist</translation>
