@@ -63,7 +63,7 @@ const selections = {
     'source/utils/libraryOrder.bs': null,
     'source/utils/detailSectionLayout.bs': null,
     'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
-    'components/details/detailTrackHost.bs': ['SetUpVideoOptions'],
+    'components/details/detailTrackHost.bs': ['SetUpVideoOptions', 'audioOrdinal', 'audioStreamPosition'],
     'source/enums/VideoType.bs': null,
     'source/enums/MediaStreamType.bs': null,
     'source/enums/PlaybackMethod.bs': null,
