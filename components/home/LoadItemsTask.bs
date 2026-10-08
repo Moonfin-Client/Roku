@@ -2724,31 +2724,50 @@ function chunkFrom(values as object, start as integer) as object
     return chunk
 end function
 
-' The library's provider ids, read a page at a time and kept for a while per server and user.
-' A row loading while another row reads them waits for that read rather than starting its own
+' The library's provider ids, read a page at a time and kept for a while per server and user. They
+' live in a file rather than on the global node, which would copy the whole index into every task
+' that looks. A row loading while another row reads them waits for that read rather than
+' starting its own.
 function libraryIndex() as object
-    key = m.global.session.server.url + " " + m.global.session.user.id
-    now = CreateObject("roDateTime").AsSeconds()
-    held = m.global.libraryIndex
-    if isValid(held) and held.key = key and now - held.at < LIBRARY_INDEX_TTL_SECONDS
-        for i = 1 to 120
-            if isValid(held.index) then return held.index
-            sleep(250)
-            held = m.global.libraryIndex
-            if not isValid(held) or held.key <> key then exit for
-        end for
-    end if
+    path = libraryIndexPath()
+    lockPath = path + ".lock"
+    files = CreateObject("roFileSystem")
 
-    if not m.global.hasField("libraryIndex") then m.global.addFields({ libraryIndex: {} })
-    m.global.libraryIndex = { key: key, at: now }
+    for i = 1 to 120
+        held = heldLibraryIndex(files, path)
+        if isValid(held) then return held
+        if not libraryIndexLocked(files, lockPath) then exit for
+        sleep(250)
+    end for
+
+    now = CreateObject("roDateTime").AsSeconds()
+    WriteAsciiFile(lockPath, now.ToStr())
     index = readLibraryIndex()
-    if not isValid(index)
-        ' A failed read isnt kept, so the next home load tries again
-        m.global.libraryIndex = { key: "" }
-        return {}
-    end if
-    m.global.libraryIndex = { key: key, at: now, index: index }
-    return index
+    ' A failed read isnt kept, so the next home load tries again
+    if isValid(index) then WriteAsciiFile(path, FormatJson({ at: now, index: index }))
+    files.Delete(lockPath)
+    return index ?? {}
+end function
+
+function libraryIndexPath() as string
+    scope = chainLookupReturn(m.global, "session.server.url", "") + "_" + chainLookupReturn(m.global, "session.user.id", "")
+    unsafe = CreateObject("roRegex", "[^a-z0-9]+", "i")
+    return "cachefs:/moonfinLibraryIndex_" + unsafe.ReplaceAll(LCase(scope), "_") + ".json"
+end function
+
+function heldLibraryIndex(files as object, path as string) as dynamic
+    if not files.Exists(path) then return invalid
+    held = ParseJson(ReadAsciiFile(path))
+    if not isValid(held) or not isValid(held.index) then return invalid
+    if CreateObject("roDateTime").AsSeconds() - (held.at ?? 0) >= LIBRARY_INDEX_TTL_SECONDS then return invalid
+    return held.index
+end function
+
+' Another task is reading the library, unless it started so long ago it must have stopped
+function libraryIndexLocked(files as object, lockPath as string) as boolean
+    if not files.Exists(lockPath) then return false
+    started = Val(ReadAsciiFile(lockPath))
+    return CreateObject("roDateTime").AsSeconds() - started < 60
 end function
 
 function readLibraryIndex() as dynamic
