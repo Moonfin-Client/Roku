@@ -1060,6 +1060,53 @@ function nextTranscodeStep() as string
     return PlaybackMethod.FORCETRANSCODEDISABLEREMUX
 end function
 
+' An intro asked for again from the server comes back as the main item, so it keeps the retries
+' of a stream that played rather than stepping the file down
+function streamHasPlayed() as boolean
+    return m.hasPlayed or m.LoadMetaDataTask.isIntro = true
+end function
+
+' What a failing stream tries next: "restart" in place, "server" for the same stream asked for
+' again, "stepDown" for the next step away from the file, or "fail". One that never played goes
+' straight down the steps rather than restarting what didnt start, then gets one plain retry when
+' the server was transcoding from the first, so a stall that comes and goes cant run forever.
+'
+' @param {boolean} played - whether a frame ever played
+' @param {integer} retries - retries already made for this stream
+' @param {string} nextStep - nextTranscodeStep(), empty once no step is left
+' @param {integer} maxRetries - how many retries a stream that played gets
+function retryAction(played as boolean, retries as integer, nextStep as string, maxRetries as integer) as string
+    if not played
+        if nextStep <> "" then return "stepDown"
+        if retries = 0 then return "server"
+        return "fail"
+    end if
+
+    if retries >= maxRetries then return "fail"
+    if retries = 0 then return "restart"
+    return "server"
+end function
+
+' Asks the server for playback again, a step further from the file when one is given
+'
+' @param {string} nextStep - the playback method to ask for, empty for the same stream again
+' @param {string} what - what went wrong, for the log
+sub retryFromServer(nextStep as string, what as string)
+    if nextStep = PlaybackMethod.FORCETRANSCODEALLOWREMUX
+        diagnostics.Playback(`${what} before playback started, asking the server for a remux, retry ${m.playbackRetries}`, diagnostics.LEVEL_WARN)
+    else if nextStep = PlaybackMethod.FORCETRANSCODEDISABLEREMUX
+        diagnostics.Playback(`${what} before playback started, asking the server to transcode the ${m.videoCodec} video, retry ${m.playbackRetries}`, diagnostics.LEVEL_WARN)
+    else
+        diagnostics.Playback(`${what}, asking the server for playback again, retry ${m.playbackRetries}`, diagnostics.LEVEL_WARN)
+    end if
+
+    if nextStep <> string.EMPTY
+        m.LoadMetaDataTask.playbackMethod = nextStep
+        m.LoadMetaDataTask.transcodeCodec = m.videoCodec
+    end if
+    retryPlaybackFromServer()
+end sub
+
 ' What the player was handed, so the log can say what failed
 function streamSummary(video as object) as string
     method = "direct play"
@@ -1828,44 +1875,30 @@ sub onState()
                 return
             end if
         else
-            ' Reset retry counter if more than 30 seconds have passed since last error
             currentTime = CreateObject("roDateTime").AsSeconds()
-            if m.playbackRetries > 0 and (currentTime - m.lastBufferError) > 30
+            played = streamHasPlayed()
+            ' A stream that played a while since its last error counts its retries afresh
+            if played and m.playbackRetries > 0 and (currentTime - m.lastBufferError) > 30
                 diagnostics.Playback(`Playback stabilised, resetting retry count from ${m.playbackRetries}`)
                 m.playbackRetries = 0
             end if
 
-            ' Attempt to retry playback up to REPLAY_RETRIES times before showing error
-            if m.playbackRetries < REPLAY_RETRIES
+            nextStep = string.EMPTY
+            if not played then nextStep = nextTranscodeStep()
+            action = retryAction(played, m.playbackRetries, nextStep, REPLAY_RETRIES)
+            if action <> "fail"
                 m.playbackRetries = m.playbackRetries + 1
                 m.lastBufferError = currentTime
 
-                if m.playbackRetries = 1
+                if action = "restart"
                     diagnostics.Playback(`Player error, restarting the stream, retry ${m.playbackRetries} of ${REPLAY_RETRIES}`, diagnostics.LEVEL_WARN)
                     retryPlaybackInPlace()
                 else
-                    ' The server hands back the same stream if asked the same way, so one that never
-                    ' started is asked for further from the file each time
-                    method = string.EMPTY
-                    if not m.hasPlayed then method = nextTranscodeStep()
-
-                    if method = PlaybackMethod.FORCETRANSCODEALLOWREMUX
-                        diagnostics.Playback(`Player error before playback started, asking the server for a remux, retry ${m.playbackRetries} of ${REPLAY_RETRIES}`, diagnostics.LEVEL_WARN)
-                    else if method = PlaybackMethod.FORCETRANSCODEDISABLEREMUX
-                        diagnostics.Playback(`Player error before playback started, asking the server to transcode the ${m.videoCodec} video, retry ${m.playbackRetries} of ${REPLAY_RETRIES}`, diagnostics.LEVEL_WARN)
-                    else
-                        diagnostics.Playback(`Player error, asking the server for playback again, retry ${m.playbackRetries} of ${REPLAY_RETRIES}`, diagnostics.LEVEL_WARN)
-                    end if
-
-                    if method <> string.EMPTY
-                        m.LoadMetaDataTask.playbackMethod = method
-                        m.LoadMetaDataTask.transcodeCodec = m.videoCodec
-                    end if
-                    retryPlaybackFromServer()
+                    retryFromServer(nextStep, "Player error")
                 end if
             else
                 ' All retries exhausted, show error and exit
-                diagnostics.Playback(`Playback failed after ${REPLAY_RETRIES} retries`, diagnostics.LEVEL_ERROR)
+                diagnostics.Playback(`Playback failed after ${m.playbackRetries} retries`, diagnostics.LEVEL_ERROR)
                 showPlaybackErrorDialog(tr("Error During Playback"))
 
                 ' Stop playback and exit player
@@ -2150,32 +2183,35 @@ sub bufferCheck()
             ' A channel that stalls is the live recovery's, which goes by frames rather than the buffer
             return
         else
-            ' Reset retry counter if more than 30 seconds have passed since last error
             currentTime = CreateObject("roDateTime").AsSeconds()
-            if m.playbackRetries > 0 and (currentTime - m.lastBufferError) > 30
+            played = streamHasPlayed()
+            ' A stream that played a while since its last stall counts its retries afresh. One that
+            ' never played keeps counting, or it would restart the same stream forever.
+            if played and m.playbackRetries > 0 and (currentTime - m.lastBufferError) > 30
                 diagnostics.Playback(`Buffering stabilised, resetting retry count from ${m.playbackRetries}`)
                 m.playbackRetries = 0
                 m.bufferCheckTimer.duration = 30
             end if
 
-            ' Attempt to retry playback up to REPLAY_RETRIES times
-            if m.playbackRetries < REPLAY_RETRIES
+            nextStep = string.EMPTY
+            if not played then nextStep = nextTranscodeStep()
+            action = retryAction(played, m.playbackRetries, nextStep, REPLAY_RETRIES)
+            if action <> "fail"
                 m.playbackRetries = m.playbackRetries + 1
                 m.lastBufferError = currentTime
 
                 ' Extend buffer check duration for subsequent retries to allow more time
                 m.bufferCheckTimer.duration = 30 + (m.playbackRetries * 15)
 
-                if m.playbackRetries = 1
+                if action = "restart"
                     diagnostics.Playback(`Buffering stalled, restarting the stream, retry ${m.playbackRetries} of ${REPLAY_RETRIES}`, diagnostics.LEVEL_WARN)
                     retryPlaybackInPlace()
                 else
-                    diagnostics.Playback(`Buffering stalled, asking the server for playback again, retry ${m.playbackRetries} of ${REPLAY_RETRIES}`, diagnostics.LEVEL_WARN)
-                    retryPlaybackFromServer()
+                    retryFromServer(nextStep, "Buffering stalled")
                 end if
             else
                 ' All retries exhausted, show error
-                diagnostics.Playback(`Buffering failed after ${REPLAY_RETRIES} retries`, diagnostics.LEVEL_ERROR)
+                diagnostics.Playback(`Buffering failed after ${m.playbackRetries} retries`, diagnostics.LEVEL_ERROR)
                 showPlaybackErrorDialog(tr("There was an error retrieving the data for this item from the server."))
 
                 ' Stop playback and exit player

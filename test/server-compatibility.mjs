@@ -81,7 +81,7 @@ const selections = {
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream'],
-    'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel', 'rokuAudioTrack'],
+    'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'retryAction', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel', 'rokuAudioTrack'],
     'components/itemMenu/ItemMenuTask.bs': ['playlistRenumbered'],
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
