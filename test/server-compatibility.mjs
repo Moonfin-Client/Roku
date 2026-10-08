@@ -393,6 +393,14 @@ assert.match(identifyDialog, /serverData: m\.top\.serverData[^]*?Items\/RemoteSe
 
 process.stdout.write('PASS: Jellyfin review regressions (65 checks)\n');
 
+// Shared Roku settings labels should describe the connected server, not Jellyfin only.
+const settingsConfig = await readFile('settings/settings.json', 'utf8');
+assert.match(settingsConfig, /"title": "Server Recommends"/, 'Recommendation source label is server-neutral');
+assert.doesNotMatch(settingsConfig, /Jellyfin Recommends|stock Jellyfin server similarity|What action should Jellyfin take|when Jellyfin is updated|installed on your Jellyfin server/, 'Settings avoid Jellyfin-only wording for shared features');
+const settingsScreen = await readFile('components/settings/settings.bs', 'utf8');
+assert.doesNotMatch(settingsScreen, /installed on your Jellyfin server/, 'Plugin connection error is server-neutral');
+process.stdout.write('PASS: server-neutral settings labels (3 checks)\n');
+
 // Names that share a glyph share one file, so every alias needs its target and no file of its own.
 const achievementIcons = await readFile('source/utils/achievementsIcons.bs', 'utf8');
 const iconAliases = [...achievementIcons.matchAll(/"([a-z0-9_]+)": "([a-z0-9_]+)"/g)];
