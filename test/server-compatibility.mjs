@@ -72,7 +72,7 @@ const selections = {
     'source/MainEventHandlers.bs': ['isLiveTvChannel'],
     'source/utils/embyFeatures.bs': null,
     'components/embyPreview/EmbyPreviewTask.bs': ['loadPreviewData'],
-    'components/PlaystateTask.bs': ['closeEmbyPlayback'],
+    'components/PlaystateTask.bs': ['closeEmbyPlayback', 'closeUnstartedLiveStream'],
     'components/captionTask.bs': ['trackAddress'],
     'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL', 'addSourceCodecs', 'shouldBurnInSubtitle', 'transcodeCopiesVideo'],
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
