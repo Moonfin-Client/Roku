@@ -60,6 +60,7 @@ const selections = {
     'source/utils/liveRecovery.bs': null,
     'source/utils/deviceCapabilities.bs': ['getSubtitleProfiles'],
     'source/utils/seerrMissingCollection.bs': null,
+    'source/utils/SeerrUtils.bs': ['SeerrEscapeJsonString', 'SeerrJsonFromPairs', 'SeerrFormatJson', 'SeerrFormatJsonValue'],
     'source/utils/libraryOrder.bs': null,
     'source/utils/detailSectionLayout.bs': null,
     'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
@@ -126,6 +127,7 @@ source += '\n' + await readFile('test/subtitle-profiles.bs', 'utf8');
 source += '\n' + (await readFile('components/extras/collectionLookup.bs', 'utf8')).match(/^const MAX_COLLECTIONS = .+$/m)[0];
 source += '\n' + await readFile('test/collection-lookup.bs', 'utf8');
 source += '\n' + await readFile('test/seerr-missing-collection.bs', 'utf8');
+source += '\n' + await readFile('test/seerr-json.bs', 'utf8');
 source += '\n' + await readFile('test/collection-row.bs', 'utf8');
 source += '\n' + await readFile('test/external-rows.bs', 'utf8');
 source += '\n' + await readFile('test/library-order.bs', 'utf8');
