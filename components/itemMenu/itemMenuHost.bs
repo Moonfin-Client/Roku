@@ -596,11 +596,12 @@ end sub
 
 ' What the menu on a playlist row needs, for the options showItemMenu takes. The row is a child
 ' of the list the page plays from. Moving or deleting needs an entry id on every row, which only
-' a real playlist carries.
+' a real playlist carries. It also needs no edit still waiting on the server, since one edit
+' can change the ids the next would send.
 function playlistRowOptions(row as object, playlistId as string) as object
     rows = row.getParent()
     index = playlistRowIndex(row)
-    canManage = isValidAndNotEmpty(playlistId)
+    canManage = isValidAndNotEmpty(playlistId) and not isValid(m.playlistEditPending)
     for each entry in rows.getChildren(-1, 0)
         if not canManage then exit for
         canManage = isValidAndNotEmpty(entry.playlistItemId)
@@ -634,20 +635,29 @@ sub itemMenuChangePlaylist(subject as object, entryId as string)
     if from < 0 then return
     rows = row.getParent()
 
-    rows.removeChildIndex(from)
     op = "removeFromPlaylist"
     target = from
+    newIndex = from
     if entryId <> "removeFromPlaylist"
         op = "movePlaylistItem"
         target = entryId = "moveUp" ? from - 1 : from + 1
-        rows.insertChild(row, target)
+        ' Rows a parental block hides still count on the server, so the row goes to where the
+        ' neighbour it swaps with sits there
+        neighbour = rows.getChild(target)
+        newIndex = target
+        if isValid(neighbour) and neighbour.playlistIndex >= 0 then newIndex = neighbour.playlistIndex
     end if
 
+    rows.removeChildIndex(from)
+    if op = "movePlaylistItem" then rows.insertChild(row, target)
+
+    playlistId = subject.options.playlist.playlistId
+    m.playlistEditPending = { playlistId: playlistId }
     m.top.callFunc("playlistRowsChanged", target)
     runItemMenuTask(itemMenuRequest(subject, op, {
-        playlistId: subject.options.playlist.playlistId,
+        playlistId: playlistId,
         entryId: row.playlistItemId,
-        newIndex: target,
+        newIndex: newIndex,
         rows: rows,
         from: from
     }), "onItemMenuPlaylistChanged")
@@ -659,15 +669,59 @@ sub onItemMenuPlaylistChanged(event as object)
     request = response.request
 
     if response.success
-        if request.op = "removeFromPlaylist" then showItemMenuToast(tr("Removed from playlist"))
+        listed = invalid
+        if request.op = "removeFromPlaylist"
+            showItemMenuToast(tr("Removed from playlist"))
+            if playlistRenumbersAfterDelete() then listed = playlistRowEntries(request.rows)
+        end if
+        ' The server can number its entries again after a change, so the rows read theirs back
+        ' before another edit is offered
+        runItemMenuTask({ op: "playlistEntries", playlistId: request.playlistId, server: request.server, rows: request.rows, listed: listed }, "onPlaylistEntriesLoaded")
         return
     end if
 
+    m.playlistEditPending = invalid
     row = request.subject.card
     rows = request.rows
     if request.op = "movePlaylistItem" then rows.removeChildIndex(playlistRowIndex(row))
     rows.insertChild(row, request.from)
     m.top.callFunc("playlistRowsChanged", request.from)
+end sub
+
+sub onPlaylistEntriesLoaded(event as object)
+    response = event.getData()
+    releaseItemMenuTask(event.getRoSGNode(), "response")
+    m.playlistEditPending = invalid
+    if not response.success then return
+
+    syncPlaylistEntries(response.request.rows, chainLookupReturn(response, "data.Items", []))
+end sub
+
+' The ids the rows still hold, which a server that hasnt numbered them again keeps listing
+function playlistRowEntries(rows as object) as object
+    entries = []
+    for each row in rows.getChildren(-1, 0)
+        entries.push({ id: row.id, entryId: row.playlistItemId })
+    end for
+    return entries
+end function
+
+' Each row takes its entry id and place from the server's list, matched by title in order, so a
+' title in the playlist twice and the rows a parental block hides stay lined up
+sub syncPlaylistEntries(rows as object, items as object)
+    if not isValid(rows) or type(items) <> "roArray" then return
+
+    position = 0
+    for each row in rows.getChildren(-1, 0)
+        for i = position to items.Count() - 1
+            if isStringEqual(items[i].LookupCI("Id"), row.id)
+                row.playlistItemId = (items[i].LookupCI("PlaylistItemId") ?? "").ToStr()
+                row.playlistIndex = i
+                position = i + 1
+                exit for
+            end if
+        end for
+    end for
 end sub
 
 ' ===== Admin =====
