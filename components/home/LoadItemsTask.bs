@@ -3001,6 +3001,9 @@ function loadPickedRow(picked as object) as object
         items = chainLookupReturn(api.items.Get(params), "Items", [])
     end if
 
+    ' Verify parents before building cards: a season's own rating must not let a
+    ' restricted parent series appear in a picked Home row.
+    items = filterPickedRowSeriesRatings(items)
     for each item in items
         results.push(makeHomeItem(item))
     end for
@@ -3057,10 +3060,13 @@ function collectionRowItems(params as object, settings as object) as object
     return seasonCardsForPickedRow(members, showSeasons)
 end function
 
-' Off means one card per show even when the server sends standalone season entries.
-' Entries without enough parent metadata cannot safely become series cards and are hidden.
+' One card per show when seasons are off; when they are on, keep seasons
+' but still collapse episodes if Show Episodes is disabled.
+' Unlinked seasons cannot safely become series cards and are hidden.
 function seasonCardsForPickedRow(items as object, showSeasons as boolean) as object
-    if showSeasons then return items
+    ' Keeping seasons must not turn the separate Show Episodes setting back on.
+    ' Collapse explicit episodes even when seasons are retained.
+    if showSeasons then return oneCardPerSeries(items, true)
 
     ' Prefer a full series entry to the synthetic series card derived from a season.
     originals = {}
@@ -3083,6 +3089,91 @@ function seasonCardsForPickedRow(items as object, showSeasons as boolean) as obj
         end if
     end for
     return results
+end function
+
+' The series ID whose rating must be checked, even when a season or episode has a
+' milder OfficialRating. Synthetic Series cards carry their source's SeriesId.
+function pickedRowParentSeriesId(item as object) as string
+    itemType = item.LookupCI("Type")
+    seriesId = item.LookupCI("SeriesId")
+    if isStringEqual(itemType, "Season") and not isValidAndNotEmpty(seriesId)
+        seriesId = item.LookupCI("ParentId")
+    end if
+    if isStringEqual(itemType, "Series")
+        ' A synthetic card built from an item without SeriesId can fall back to
+        ' ParentId as the displayed card ID. It still requires verification.
+        if not isValidAndNotEmpty(seriesId) then seriesId = item.LookupCI("ParentId")
+        if not isValidAndNotEmpty(seriesId) or not isStringEqual(seriesId, item.LookupCI("Id")) then return ""
+    else if not isStringEqual(itemType, "Season") and not isStringEqual(itemType, "Episode")
+        return ""
+    end if
+    if not isValidAndNotEmpty(seriesId) then return ""
+    return seriesId.ToStr()
+end function
+
+' Fail closed on missing parent information while restrictions are active; a
+' blocked series must not reappear via a child or a synthesized series card.
+function pickedCardsWithVerifiedParents(items as object, parents as object) as object
+    kept = []
+    for each item in items
+        parentId = pickedRowParentSeriesId(item)
+        itemType = item.LookupCI("Type")
+        if parentId = ""
+            if not isStringEqual(itemType, "Episode") and not isStringEqual(itemType, "Season") then kept.push(item)
+        else
+            parent = parents[guidKey(parentId)]
+            if isValid(parent) and isStringEqual(parent.LookupCI("Type"), "Series")
+                rating = parent.LookupCI("OfficialRating") ?? ""
+                if not parentalControls.IsRatingBlocked(rating)
+                    ' The outer HomeData filter checks the card's own rating.
+                    ' Synthetic series cards must carry the real series rating.
+                    if isStringEqual(itemType, "Series")
+                        corrected = {}
+                        corrected.Append(item)
+                        corrected.AddReplace("OfficialRating", rating)
+                        kept.push(corrected)
+                    else
+                        kept.push(item)
+                    end if
+                end if
+            end if
+        end if
+    end for
+    return kept
+end function
+
+' Batch-fetch the real series only when parental restrictions are configured.
+' If a lookup fails, unverified children are hidden until the row reloads.
+function filterPickedRowSeriesRatings(items as object) as object
+    if parentalControls.BlockedRatings().Count() = 0 then return items
+
+    ids = []
+    seen = {}
+    for each item in items
+        seriesId = pickedRowParentSeriesId(item)
+        if seriesId <> "" and not seen.DoesExist(guidKey(seriesId))
+            seen[guidKey(seriesId)] = true
+            ids.push(seriesId)
+        end if
+    end for
+    if ids.Count() = 0 then return pickedCardsWithVerifiedParents(items, {})
+
+    parents = {}
+    for start = 0 to ids.Count() - 1 step MATCH_CHUNK
+        chunk = chunkFrom(ids, start)
+        response = api.items.Get({
+            UserId: m.global.session.user.id,
+            Ids: chunk.Join(","),
+            Fields: "OfficialRating",
+            EnableTotalRecordCount: false
+        })
+        for each parent in chainLookupReturn(response, "Items", [])
+            if isStringEqual(parent.LookupCI("Type"), "Series")
+                parents[guidKey(parent.LookupCI("Id"))] = parent
+            end if
+        end for
+    end for
+    return pickedCardsWithVerifiedParents(items, parents)
 end function
 
 ' A genre can show seasons only when TV shows are included by its media-type filter.

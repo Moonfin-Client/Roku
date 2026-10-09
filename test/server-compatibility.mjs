@@ -85,7 +85,7 @@ const selections = {
     'components/itemMenu/ItemMenuTask.bs': ['playlistRenumbered'],
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
-    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'arrangeByStoredOrder', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'seasonCardsForPickedRow', 'genreRowSeasonTypes', 'chartItemType', 'providerKeys', 'indexByProviderIds'],
+    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'arrangeByStoredOrder', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'seasonCardsForPickedRow', 'pickedRowParentSeriesId', 'pickedCardsWithVerifiedParents', 'filterPickedRowSeriesRatings', 'genreRowSeasonTypes', 'chartItemType', 'providerKeys', 'indexByProviderIds'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
     'components/config/SigninScene.bs': ['checkQuickConnectEnabled'],
@@ -506,6 +506,7 @@ assert.match(loadItemsSource.match(/function loadPickedRow\([^]*?end function/)[
 assert.match(loadItemsSource.match(/function collectionRowItems\([^]*?end function/)[0], /\/Moonfin\/Collections\/\$\{params\.ParentId\}\/Order[^]*?Recursive: true,\s+Limit: FLAT_COLLECTION_LIMIT/, 'A stored order reads the collection flat');
 assert.match(loadItemsSource.match(/function expandSeriesToEpisodes\([^]*?end function/)[0], /SortBy: "ParentIndexNumber,IndexNumber",\s+SortOrder: "Ascending"/, 'A series opens into its episodes in order');
 assert.match(loadItemsSource.match(/function loadPickedRow\([^]*?end function/)[0], /genreRowSeasonTypes\(genresRowItemTypes\(settings\), showSeasons\)/, 'Picked genres can request seasons only when enabled');
+assert.match(loadItemsSource.match(/function loadPickedRow\([^]*?end function/)[0], /items = filterPickedRowSeriesRatings\(items\)\s+for each item in items/, 'Parent series ratings are verified before constructing Home cards');
 assert.match(loadItemsSource.match(/function collectionRowItems\([^]*?^end function/m)[0], /if showEpisodes[^]*?if not showSeasons[^]*?if not isStringEqual\(item\.LookupCI\("Type"\), "Season"\)[^]*?return expandSeriesToEpisodes\(members, params\.Limit\)/, 'The existing Show Episodes option preserves episode cards but hides seasons by default');
 assert.match(await readFile('settings/settings.json', 'utf8'), /"title": "Genre & Collection Rows Show Seasons"[^]*?"settingName": "ui\.home\.pickedRowsShowSeasons"[^]*?"default": "false"/, 'The season option is opt-in');
 assert.match(await readFile('settings/settings.json', 'utf8'), /"settingName": "ui\.home\.collectionsRowSortBy"[^]*?"id": "playlistOrder"/, 'Playlist Order is offered for the collection rows');
