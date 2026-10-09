@@ -12,6 +12,8 @@ sub testCollectionRow()
 
     playable = playableMembers([series, season, episode1, episode2, movieA, movieB])
     assertEqual(itemIds(playable), "ep1,ep2,movieA,movieB", "Only the movies and episodes of a flat collection are playable")
+    assertEqual(itemIds(playableMembers([series, season, episode1, movieA], true)), "season2,ep1,movieA", "Season entries are included in flat collection order only when enabled")
+    assertEqual(itemIds(oneCardPerSeries([movieA, season, episode1, episode2, movieB], true)), "movieA,season2,show,movieB", "A stored playlist order keeps seasons while grouping episodes")
 
     arranged = arrangeByStoredOrder(playable, ["movieB", "ep2", "ep1", "movieA"])
     assertEqual(itemIds(arranged), "movieB,ep2,ep1,movieA", "A stored order arranges the items")
@@ -20,6 +22,45 @@ sub testCollectionRow()
     assertEqual(folded[1].Name, "The Show", "The card is the series")
     assertEqual(folded[1].DoesExist("UserData"), false, "The card goes without an episode's watched state")
     assertEqual(itemIds(firstItems(arranged, 2)), "movieB,ep2", "The row keeps to its limit")
+
+    season1 = { Id: "season1", Type: "Season", Name: "Season 1", SeriesId: "show", SeriesName: "The Show", IsFolder: true }
+    orphanSeason = { Id: "orphan", Type: "Season", Name: "Unlinked Season", IsFolder: true }
+    direct = [movieA, season1, season, series, movieB, orphanSeason]
+    grouped = seasonCardsForPickedRow(direct, false)
+    assertEqual(itemIds(grouped), "movieA,show,movieB", "A picked row groups seasons into one series card by default")
+    assertEqual(grouped[1].Name, "The Show", "The grouping retains the series title")
+    assertEqual(grouped[1].IsFolder, true, "The series card remains a folder")
+    assertEqual(itemIds(seasonCardsForPickedRow(direct, true)), "movieA,season1,season2,show,movieB,orphan", "Opting in keeps individual seasons and their original order")
+    assertEqual(itemIds(seasonCardsForPickedRow([season1, season], false)), "show", "A show represented only by seasons gets one series card")
+    assertEqual(itemIds(seasonCardsForPickedRow([orphanSeason, movieB], false)), "movieB", "An unlinked season cannot leak into a series-only row")
+    assertEqual(itemIds(seasonCardsForPickedRow([episode1, episode2, movieA], false)), "show,movieA", "Episodes still collapse when expanded episodes are off")
+    assertEqual(itemIds(seasonCardsForPickedRow([season1, episode1, episode2, movieA], true)), "season1,show,movieA", "Show Seasons does not override Show Episodes being disabled")
+    assertEqual(itemIds(seasonCardsForPickedRow([season1, episode1, episode2, movieA], false)), "show,movieA", "Disabling both toggles shows just one series")
+
+    permittedParent = { Id: "show", Type: "Series", OfficialRating: "TV-PG" }
+    blockedParent = { Id: "show", Type: "Series", OfficialRating: "TV-MA" }
+    lowRatedSeason = { Id: "season1", Type: "Season", SeriesId: "show", SeriesName: "The Show", OfficialRating: "TV-Y" }
+    lowRatedEpisode = { Id: "ep3", Type: "Episode", SeriesId: "show", SeriesName: "The Show", OfficialRating: "TV-Y" }
+    synthetic = seriesCardForLatestItem(lowRatedSeason)
+    assertEqual(synthetic.OfficialRating, "TV-Y", "Fixture reproduces a synthetic card inheriting the mild season rating")
+    assertEqual(pickedRowParentSeriesId(synthetic), "show", "A synthetic series card requires its real parent rating")
+    fallbackParentCard = seriesCardForLatestItem({ Id: "orphan-season", Type: "Season", ParentId: "show", SeriesName: "The Show", OfficialRating: "TV-Y" })
+    assertEqual(pickedRowParentSeriesId(fallbackParentCard), "show", "A card synthesized via ParentId also requires real series verification")
+    assertEqual(itemIds(pickedCardsWithVerifiedParents([fallbackParentCard, movieA], {})), "movieA", "Fallback-parent synthetic cards fail closed when the parent cannot be verified")
+    assertEqual(itemIds(pickedCardsWithVerifiedParents([synthetic, lowRatedSeason, lowRatedEpisode, movieA], { show: blockedParent })), "movieA", "A blocked series cannot reappear through milder children or synthetic cards")
+    verified = pickedCardsWithVerifiedParents([synthetic, movieA], { show: permittedParent })
+    assertEqual(itemIds(verified), "show,movieA", "A permitted parent keeps its series card")
+    assertEqual(verified[0].OfficialRating, "TV-PG", "A synthetic series card must inherit the verified parent rating")
+    assertEqual(synthetic.OfficialRating, "TV-Y", "Parental rating verification does not mutate the input card")
+    assertEqual(itemIds(pickedCardsWithVerifiedParents([synthetic, lowRatedSeason, movieA], {})), "movieA", "An unavailable series parent is hidden when restrictions apply")
+    assertEqual(pickedRowParentSeriesId(movieA), "", "Standalone movies do not require parent lookups")
+
+    assertEqual(genreRowSeasonTypes("Movie,Series", false), "Movie,Series", "Genre rows exclude seasons by default")
+    assertEqual(genreRowSeasonTypes("Movie,Series", true), "Movie,Series,Season", "Opted-in mixed genre rows include seasons")
+    assertEqual(genreRowSeasonTypes("Series", true), "Series,Season", "Opted-in TV-only genre rows include seasons")
+    assertEqual(genreRowSeasonTypes("Movie", true), "Movie", "Movie-only genre rows never contain seasons")
+    assertEqual(genreRowSeasonTypes("Movie", false), "Movie", "Movie-only rows stay unchanged")
+
 
     assertEqual(itemIds(arrangeByStoredOrder([episode1, movieA, movieB, episode2], ["movieB"])), "movieB,ep1,movieA,ep2", "Items the stored order leaves out follow in the order the server sent them")
 
@@ -39,6 +80,10 @@ end function
 
 ' Stands in for the parental controls: a TV-MA title, or one judged by a TV-MA series, is blocked
 namespace parentalControls
+    function IsRatingBlocked(rating as dynamic) as boolean
+        return rating = "TV-MA"
+    end function
+
     function WithoutBlockedItems(items as object, fallbackRating = "" as dynamic) as object
         kept = []
         for each item in items

@@ -286,15 +286,19 @@ function normalizeLatestItems(items as dynamic, isTv as boolean, untyped as bool
 end function
 
 ' Episodes and seasons as one card per series, each series keeping its first entry
-function oneCardPerSeries(items as object) as object
+function oneCardPerSeries(items as object, keepSeasons = false as boolean) as object
     cards = []
     seen = {}
     for each item in items
-        card = seriesCardForLatestItem(item) ?? item
-        cardId = LCase(toNormalizedString(card.LookupCI("Id")))
-        if not seen.DoesExist(cardId)
-            seen[cardId] = true
-            cards.push(card)
+        if keepSeasons and isStringEqual(item.LookupCI("Type"), "Season")
+            cards.push(item)
+        else
+            card = seriesCardForLatestItem(item) ?? item
+            cardId = LCase(toNormalizedString(card.LookupCI("Id")))
+            if not seen.DoesExist(cardId)
+                seen[cardId] = true
+                cards.push(card)
+            end if
         end if
     end for
     return cards
@@ -2984,9 +2988,10 @@ function loadPickedRow(picked as object) as object
     if isStringEqual(picked.source, "genres")
         params.Recursive = true
         params.GenreIds = itemId
-        params.IncludeItemTypes = genresRowItemTypes(settings)
+        showSeasons = getBoolSetting(settings, "ui.home.pickedRowsShowSeasons", false)
+        params.IncludeItemTypes = genreRowSeasonTypes(genresRowItemTypes(settings), showSeasons)
         params.SortBy = rowSortByParam(getStringSetting(settings, "ui.home.genresRowSortBy", "name"))
-        items = chainLookupReturn(api.items.Get(params), "Items", [])
+        items = seasonCardsForPickedRow(chainLookupReturn(api.items.Get(params), "Items", []), showSeasons)
     else if isStringEqual(picked.source, "collections")
         params.ParentId = itemId
         items = collectionRowItems(params, settings)
@@ -2996,6 +3001,9 @@ function loadPickedRow(picked as object) as object
         items = chainLookupReturn(api.items.Get(params), "Items", [])
     end if
 
+    ' Verify parents before building cards: a season's own rating must not let a
+    ' restricted parent series appear in a picked Home row.
+    items = filterPickedRowSeriesRatings(items)
     for each item in items
         results.push(makeHomeItem(item))
     end for
@@ -3009,6 +3017,7 @@ end function
 ' episodes were asked for
 function collectionRowItems(params as object, settings as object) as object
     showEpisodes = getBoolSetting(settings, "ui.home.collectionsRowShowEpisodes", false)
+    showSeasons = getBoolSetting(settings, "ui.home.pickedRowsShowSeasons", false)
     sortBy = getStringSetting(settings, "ui.home.collectionsRowSortBy", "name")
 
     if isPlaylistOrder(sortBy)
@@ -3022,8 +3031,14 @@ function collectionRowItems(params as object, settings as object) as object
                 Fields: PICKED_ROW_FIELDS,
                 EnableTotalRecordCount: false
             })
-            arranged = arrangeByStoredOrder(playableMembers(chainLookupReturn(flat, "Items", [])), order)
-            if not showEpisodes then arranged = oneCardPerSeries(arranged)
+            arranged = arrangeByStoredOrder(playableMembers(chainLookupReturn(flat, "Items", []), showSeasons), order)
+            if not showEpisodes
+                if showSeasons
+                    arranged = oneCardPerSeries(arranged, true)
+                else
+                    arranged = seasonCardsForPickedRow(arranged, false)
+                end if
+            end if
             return firstItems(arranged, params.Limit)
         end if
     else
@@ -3031,19 +3046,151 @@ function collectionRowItems(params as object, settings as object) as object
     end if
 
     members = chainLookupReturn(api.items.Get(params), "Items", [])
-    if showEpisodes then return expandSeriesToEpisodes(members, params.Limit)
-    return members
+    if showEpisodes
+        ' Keep explicit episode cards; only omit season cards when the season toggle is off.
+        if not showSeasons
+            withoutSeasons = []
+            for each item in members
+                if not isStringEqual(item.LookupCI("Type"), "Season") then withoutSeasons.push(item)
+            end for
+            members = withoutSeasons
+        end if
+        return expandSeriesToEpisodes(members, params.Limit)
+    end if
+    return seasonCardsForPickedRow(members, showSeasons)
+end function
+
+' One card per show when seasons are off; when they are on, keep seasons
+' but still collapse episodes if Show Episodes is disabled.
+' Unlinked seasons cannot safely become series cards and are hidden.
+function seasonCardsForPickedRow(items as object, showSeasons as boolean) as object
+    ' Keeping seasons must not turn the separate Show Episodes setting back on.
+    ' Collapse explicit episodes even when seasons are retained.
+    if showSeasons then return oneCardPerSeries(items, true)
+
+    ' Prefer a full series entry to the synthetic series card derived from a season.
+    originals = {}
+    for each item in items
+        if isStringEqual(item.LookupCI("Type"), "Series")
+            originals[LCase(toNormalizedString(item.LookupCI("Id")))] = item
+        end if
+    end for
+
+    collapsed = oneCardPerSeries(items)
+    results = []
+    for each item in collapsed
+        if not isStringEqual(item.LookupCI("Type"), "Season")
+            seriesId = LCase(toNormalizedString(item.LookupCI("Id")))
+            if isStringEqual(item.LookupCI("Type"), "Series") and originals.DoesExist(seriesId)
+                results.push(originals[seriesId])
+            else
+                results.push(item)
+            end if
+        end if
+    end for
+    return results
+end function
+
+' The series ID whose rating must be checked, even when a season or episode has a
+' milder OfficialRating. Synthetic Series cards carry their source's SeriesId.
+function pickedRowParentSeriesId(item as object) as string
+    itemType = item.LookupCI("Type")
+    seriesId = item.LookupCI("SeriesId")
+    if isStringEqual(itemType, "Season") and not isValidAndNotEmpty(seriesId)
+        seriesId = item.LookupCI("ParentId")
+    end if
+    if isStringEqual(itemType, "Series")
+        ' A synthetic card built from an item without SeriesId can fall back to
+        ' ParentId as the displayed card ID. It still requires verification.
+        if not isValidAndNotEmpty(seriesId) then seriesId = item.LookupCI("ParentId")
+        if not isValidAndNotEmpty(seriesId) or not isStringEqual(seriesId, item.LookupCI("Id")) then return ""
+    else if not isStringEqual(itemType, "Season") and not isStringEqual(itemType, "Episode")
+        return ""
+    end if
+    if not isValidAndNotEmpty(seriesId) then return ""
+    return seriesId.ToStr()
+end function
+
+' Fail closed on missing parent information while restrictions are active; a
+' blocked series must not reappear via a child or a synthesized series card.
+function pickedCardsWithVerifiedParents(items as object, parents as object) as object
+    kept = []
+    for each item in items
+        parentId = pickedRowParentSeriesId(item)
+        itemType = item.LookupCI("Type")
+        if parentId = ""
+            if not isStringEqual(itemType, "Episode") and not isStringEqual(itemType, "Season") then kept.push(item)
+        else
+            parent = parents[guidKey(parentId)]
+            if isValid(parent) and isStringEqual(parent.LookupCI("Type"), "Series")
+                rating = parent.LookupCI("OfficialRating") ?? ""
+                if not parentalControls.IsRatingBlocked(rating)
+                    ' The outer HomeData filter checks the card's own rating.
+                    ' Synthetic series cards must carry the real series rating.
+                    if isStringEqual(itemType, "Series")
+                        corrected = {}
+                        corrected.Append(item)
+                        corrected.AddReplace("OfficialRating", rating)
+                        kept.push(corrected)
+                    else
+                        kept.push(item)
+                    end if
+                end if
+            end if
+        end if
+    end for
+    return kept
+end function
+
+' Batch-fetch the real series only when parental restrictions are configured.
+' If a lookup fails, unverified children are hidden until the row reloads.
+function filterPickedRowSeriesRatings(items as object) as object
+    if parentalControls.BlockedRatings().Count() = 0 then return items
+
+    ids = []
+    seen = {}
+    for each item in items
+        seriesId = pickedRowParentSeriesId(item)
+        if seriesId <> "" and not seen.DoesExist(guidKey(seriesId))
+            seen[guidKey(seriesId)] = true
+            ids.push(seriesId)
+        end if
+    end for
+    if ids.Count() = 0 then return pickedCardsWithVerifiedParents(items, {})
+
+    parents = {}
+    for start = 0 to ids.Count() - 1 step MATCH_CHUNK
+        chunk = chunkFrom(ids, start)
+        response = api.items.Get({
+            UserId: m.global.session.user.id,
+            Ids: chunk.Join(","),
+            Fields: "OfficialRating",
+            EnableTotalRecordCount: false
+        })
+        for each parent in chainLookupReturn(response, "Items", [])
+            if isStringEqual(parent.LookupCI("Type"), "Series")
+                parents[guidKey(parent.LookupCI("Id"))] = parent
+            end if
+        end for
+    end for
+    return pickedCardsWithVerifiedParents(items, parents)
+end function
+
+' A genre can show seasons only when TV shows are included by its media-type filter.
+function genreRowSeasonTypes(itemTypes as string, showSeasons as boolean) as string
+    if showSeasons and Instr(1, itemTypes, "Series") > 0 then return itemTypes + ",Season"
+    return itemTypes
 end function
 
 function isPlaylistOrder(sortBy as string) as boolean
     return LCase(sortBy) = "playlistorder"
 end function
 
-' The movies and episodes among what a collection holds flat. The series and seasons come back
-' too, since the server ignores IsFolder on a collection. Episodes rarely carry a rating of their
+' The playable movies and episodes among a collection's flat members, with seasons only
+' when requested. The server ignores IsFolder for collections. Episodes rarely carry a rating of their
 ' own, so they are judged by their series where it came along, or a blocked series would slip
 ' through as its episodes or as a card built from one
-function playableMembers(items as object) as object
+function playableMembers(items as object, showSeasons = false as boolean) as object
     seriesRatings = {}
     for each item in items
         if isStringEqual(item.LookupCI("Type"), "Series") then seriesRatings[guidKey(item.LookupCI("Id"))] = item.LookupCI("OfficialRating") ?? ""
@@ -3051,7 +3198,7 @@ function playableMembers(items as object) as object
 
     playable = []
     for each item in items
-        if item.LookupCI("IsFolder") <> true
+        if item.LookupCI("IsFolder") <> true or (showSeasons and isStringEqual(item.LookupCI("Type"), "Season"))
             rating = seriesRatings[guidKey(item.LookupCI("SeriesId"))] ?? ""
             if parentalControls.WithoutBlockedItems([item], rating).Count() > 0 then playable.push(item)
         end if
