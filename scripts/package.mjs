@@ -6,7 +6,7 @@ import JSZip from 'jszip';
 
 const stagingDir = 'build/staging';
 const { version } = JSON.parse(await readFile('package.json', 'utf8'));
-const outFile = `out/moonfin-roku-v${version}.zip`;
+const outFile = `out/Moonfin_Roku_v${version}.zip`;
 
 // Comment lines go blank rather than away, so line numbers in a crash log still match the staged code
 function trimScript(text) {

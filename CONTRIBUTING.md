@@ -17,7 +17,7 @@ Node.js and npm are the only prerequisites. You will also want a Roku in Develop
 git clone https://github.com/Moonfin-Client/Roku.git
 cd Roku
 npm install
-npm run build        # out/moonfin-roku-v<version>.zip
+npm run build        # out/Moonfin_Roku_v<version>.zip
 ```
 
 `npm run lint` runs the compiler without packaging, `npm run format` applies `bsfmt.json`, and `npm test` runs the server compatibility checks.

@@ -71,7 +71,7 @@ npm install
 npm run build
 ```
 
-Node.js and npm are the only prerequisites. The output lands in `out/moonfin-roku-v{version}.zip`. Full details are on [Building from Source](https://github.com/Moonfin-Client/Roku/wiki/Building-from-Source).
+Node.js and npm are the only prerequisites. The output lands in `out/Moonfin_Roku_v{version}.zip`. Full details are on [Building from Source](https://github.com/Moonfin-Client/Roku/wiki/Building-from-Source).
 
 ## Documentation
 
