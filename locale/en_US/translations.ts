@@ -6068,5 +6068,150 @@
         <extracomment>Seasonal effect density with the most particles</extracomment>
         <translation>Heavy</translation>
     </message>
+    <message>
+        <source>Settings Sync</source>
+        <extracomment>Title of the settings sync panel and the settings group that opens it</extracomment>
+        <translation>Settings Sync</translation>
+    </message>
+    <message>
+        <source>Server Plugin Sync</source>
+        <extracomment>Settings entry that opens the settings sync panel</extracomment>
+        <translation>Server Plugin Sync</translation>
+    </message>
+    <message>
+        <source>Sync status, profile, load, save and reset</source>
+        <extracomment>Description of the Server Plugin Sync setting</extracomment>
+        <translation>Sync status, profile, load, save and reset</translation>
+    </message>
+    <message>
+        <source>This device syncs with the profile you pick until you pick another.</source>
+        <extracomment>Caption under the Profile heading on the settings sync panel</extracomment>
+        <translation>This device syncs with the profile you pick until you pick another.</translation>
+    </message>
+    <message>
+        <source>Desktop</source>
+        <extracomment>Settings sync profile shared by computers</extracomment>
+        <translation>Desktop</translation>
+    </message>
+    <message>
+        <source>Mobile</source>
+        <extracomment>Settings sync profile shared by phones and tablets</extracomment>
+        <translation>Mobile</translation>
+    </message>
+    <message>
+        <source>TV</source>
+        <extracomment>Settings sync profile shared by TV apps</extracomment>
+        <translation>TV</translation>
+    </message>
+    <message>
+        <source>Applies everywhere</source>
+        <extracomment>Under the Global settings sync profile</extracomment>
+        <translation>Applies everywhere</translation>
+    </message>
+    <message>
+        <source>Overrides Global</source>
+        <extracomment>Under a device settings sync profile, whose settings win over the Global ones</extracomment>
+        <translation>Overrides Global</translation>
+    </message>
+    <message>
+        <source>This device</source>
+        <extracomment>Under the settings sync profile this kind of device follows by default</extracomment>
+        <translation>This device</translation>
+    </message>
+    <message>
+        <source>Load</source>
+        <extracomment>Settings sync button that copies the profile from the server to this device</extracomment>
+        <translation>Load</translation>
+    </message>
+    <message>
+        <source>Server to this device</source>
+        <extracomment>Under the Load button on the settings sync panel</extracomment>
+        <translation>Server to this device</translation>
+    </message>
+    <message>
+        <source>This device to server</source>
+        <extracomment>Under the Save button on the settings sync panel</extracomment>
+        <translation>This device to server</translation>
+    </message>
+    <message>
+        <source>Reset {0} Profile</source>
+        <extracomment>Settings sync button, {0} is the profile name</extracomment>
+        <translation>Reset {0} Profile</translation>
+    </message>
+    <message>
+        <source>Connected, version {0}</source>
+        <extracomment>Settings sync panel, {0} is the Moonbase plugin version</extracomment>
+        <translation>Connected, version {0}</translation>
+    </message>
+    <message>
+        <source>Plugin Not Detected</source>
+        <extracomment>Settings sync panel when the Moonbase plugin can't be reached</extracomment>
+        <translation>Plugin Not Detected</translation>
+    </message>
+    <message>
+        <source>Install Moonbase on your server and turn on Enable Plugin.</source>
+        <extracomment>Settings sync panel when the Moonbase plugin can't be reached</extracomment>
+        <translation>Install Moonbase on your server and turn on Enable Plugin.</translation>
+    </message>
+    <message>
+        <source>Settings sync is turned off on the server.</source>
+        <extracomment>Settings sync panel when the server admin has switched sync off</extracomment>
+        <translation>Settings sync is turned off on the server.</translation>
+    </message>
+    <message>
+        <source>Sync on</source>
+        <extracomment>Under the settings sync switch while it is on</extracomment>
+        <translation>Sync on</translation>
+    </message>
+    <message>
+        <source>Sync off</source>
+        <extracomment>Under the settings sync switch while it is off</extracomment>
+        <translation>Sync off</translation>
+    </message>
+    <message>
+        <source>Reset the {0} profile?</source>
+        <extracomment>Title of the prompt before a settings sync profile is reset, {0} is the profile name</extracomment>
+        <translation>Reset the {0} profile?</translation>
+    </message>
+    <message>
+        <source>The server forgets what this profile holds, and every synced setting on this device goes back to its default.</source>
+        <extracomment>Prompt before a device settings sync profile is reset</extracomment>
+        <translation>The server forgets what this profile holds, and every synced setting on this device goes back to its default.</translation>
+    </message>
+    <message>
+        <source>The server forgets every profile it holds for you, and every synced setting on this device goes back to its default.</source>
+        <extracomment>Prompt before the Global settings sync profile is reset</extracomment>
+        <translation>The server forgets every profile it holds for you, and every synced setting on this device goes back to its default.</translation>
+    </message>
+    <message>
+        <source>Loaded the {0} profile</source>
+        <extracomment>Note after settings were loaded from the server, {0} is the profile name</extracomment>
+        <translation>Loaded the {0} profile</translation>
+    </message>
+    <message>
+        <source>Couldn't load settings from the server</source>
+        <extracomment>Note when loading settings from the server failed</extracomment>
+        <translation>Couldn't load settings from the server</translation>
+    </message>
+    <message>
+        <source>Saved to the {0} profile</source>
+        <extracomment>Note after this device's settings were saved to the server, {0} is the profile name</extracomment>
+        <translation>Saved to the {0} profile</translation>
+    </message>
+    <message>
+        <source>Couldn't save settings to the server</source>
+        <extracomment>Note when saving settings to the server failed</extracomment>
+        <translation>Couldn't save settings to the server</translation>
+    </message>
+    <message>
+        <source>Reset the {0} profile</source>
+        <extracomment>Note after a settings sync profile was reset, {0} is the profile name</extracomment>
+        <translation>Reset the {0} profile</translation>
+    </message>
+    <message>
+        <source>Couldn't reset the {0} profile</source>
+        <extracomment>Note when resetting a settings sync profile failed, {0} is the profile name</extracomment>
+        <translation>Couldn't reset the {0} profile</translation>
+    </message>
 </context>
 </TS>

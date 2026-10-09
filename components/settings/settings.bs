@@ -1,3 +1,4 @@
+import "pkg:/components/itemMenu/itemMenuToastHost.bs"
 import "pkg:/source/api/Achievements.bs"
 import "pkg:/source/api/sdk.bs"
 import "pkg:/source/enums/ColorPalette.bs"
@@ -557,6 +558,11 @@ function getSettingCurrentValueLabel(settingItem as dynamic) as string
         return getThemeDisplayName(get_user_setting("ui.theme.customThemeId"))
     end if
 
+    if isStringEqual(settingItem.settingName, "plugin.syncProfiles")
+        if not settingsSync.IsSyncEnabled() then return ""
+        return tr(settingsSync.ProfileTitle(settingsSync.ActiveProfile()))
+    end if
+
     currentValue = get_user_setting(settingItem.settingName)
     if not isValid(currentValue) and isValid(m.global.session.user.settings[settingItem.settingName])
         currentValue = m.global.session.user.settings[settingItem.settingName]
@@ -1003,80 +1009,6 @@ function getUserSettingValue(settingName as string, defaultValue = invalid as dy
     return defaultValue
 end function
 
-' buildHomeSectionsPayload: The whole layout as the other clients read it. Every row this
-' app knows goes over with its own enabled flag, a row behind an off switch going over as
-' off, and rows belonging to the other clients keep the place the stored lists hold them
-' in. Sections this app cannot draw ride along exactly as they arrived.
-function buildHomeSectionsPayload() as object
-    storedOrder = get_user_setting(homeRowLayout.ORDER_SETTING)
-    storedHidden = get_user_setting(homeRowLayout.HIDDEN_SETTING)
-    placed = buttonLayout.ToIds(storedOrder)
-    off = buttonLayout.HiddenLookup(storedHidden)
-    picked = homeRowLayout.DynamicLookup()
-    toggles = homeRowLayout.RowToggles()
-    serverKey = homeRowLayout.ServerId()
-
-    ' The full catalogue rather than what the picker is offering, so a row behind an off
-    ' switch keeps its place in the layout instead of vanishing from it
-    known = homeRowLayout.Catalogue()
-    for each entry in homeRowLayout.DynamicRows()
-        known.push({ id: entry.id, label: entry.title })
-    end for
-
-    arranged = []
-    hiddenKnown = []
-    for each row in buttonLayout.Ordered(known, storedOrder)
-        arranged.push(row.id)
-        if not homeRowLayout.IsEnabled(row.id, placed, off, picked) then hiddenKnown.push(row.id)
-    end for
-
-    merged = buttonLayout.WithUnknownIds(known, arranged, hiddenKnown, storedOrder, storedHidden)
-
-    offAll = {}
-    for each id in merged.hidden
-        offAll[id] = true
-    end for
-
-    sections = []
-    order = 0
-
-    for each id in merged.order
-        enabled = not isValid(offAll[id])
-        if enabled and not homeRowLayout.RowToggleOn(id, toggles) then enabled = false
-
-        ' A picked collection, genre or playlist goes over as the record the other clients
-        ' read, typed none the way they write it, since the row id alone cannot say which
-        ' item the row stands for
-        entry = picked[LCase(id)]
-        if isValid(entry)
-            listEntry = homeRowLayout.SourceFor(entry.source)
-            if enabled and isValid(listEntry) and not get_user_setting_bool(listEntry.gate, false) then enabled = false
-
-            sections.push({
-                kind: "pluginDynamic",
-                type: "none",
-                enabled: enabled,
-                order: order,
-                serverId: serverKey,
-                pluginSource: entry.source,
-                pluginSection: isValid(listEntry) ? listEntry.section : entry.source,
-                pluginAdditionalData: entry.itemId,
-                pluginDisplayText: entry.title
-            })
-        else
-            sections.push({ kind: "builtin", type: id, enabled: enabled, order: order })
-        end if
-
-        order++
-    end for
-
-    for each section in homeRowLayout.Passthrough()
-        sections.push(section)
-    end for
-
-    return sections
-end function
-
 ' The layout rides the settings profile like every other setting. Both keys go together,
 ' since a row order arriving without sections makes the server drop the sections it holds,
 ' taking the other clients' disabled and plugin rows with them.
@@ -1086,7 +1018,7 @@ sub syncHomeRowsToServer()
     end if
 
     pushData = settingsSync.ProfilePush({
-        homeSections: buildHomeSectionsPayload(),
+        homeSections: settingsSync.HomeSectionsPayload(),
         homeRowOrder: homeRowLayout.Arranged()
     })
 
@@ -1806,10 +1738,12 @@ sub dismissPanel()
 
     OnScreenHidden()
 
-    ' The rows behind the panel read themselves again once, rather than on every rating toggled.
-    ' Any other screen leaves it to the home screen to do on the way back.
-    if m.blockedRatingsChanged = true
+    ' The rows behind the panel read themselves again once, rather than on every rating toggled or
+    ' every setting a load or reset brought in. Any other screen leaves it to the home screen to
+    ' do on the way back.
+    if m.blockedRatingsChanged = true or m.syncSettingsApplied = true
         m.blockedRatingsChanged = false
+        m.syncSettingsApplied = false
         behind = m.global.sceneManager.callFunc("getActiveScene")
         if isValid(behind) and behind.isSubtype("Home")
             m.global.homeNeedsRefresh = false
@@ -1887,15 +1821,62 @@ function titleExistsInList(titles as object, title as string) as boolean
     return false
 end function
 
-sub pushUnmappedChildrenByTitle(items as object, section as dynamic, mappedTitles as object)
-    if not isValid(items) then return
+' Removes the setting with this name from wherever it sits in the tree and returns it.
+function takeSettingByName(items as object, settingName as string) as dynamic
+    if not isValid(items) then return invalid
+
+    for i = 0 to items.count() - 1
+        item = items[i]
+        if isStringEqual(item.settingName, settingName)
+            items.Delete(i)
+            return item
+        end if
+
+        found = takeSettingByName(item.children, settingName)
+        if isValid(found) then return found
+    end for
+
+    return invalid
+end function
+
+function takeSettings(items as object, settingNames as object) as object
+    taken = []
+    for each settingName in settingNames
+        pushSettingIfValid(taken, takeSettingByName(items, settingName))
+    end for
+    return taken
+end function
+
+function takeChildByTitle(section as dynamic, title as string) as dynamic
+    if not isValid(section) or not isValid(section.children) then return invalid
+
+    for i = 0 to section.children.count() - 1
+        if isStringEqual(section.children[i].title, title)
+            child = section.children[i]
+            section.children.Delete(i)
+            return child
+        end if
+    end for
+
+    return invalid
+end function
+
+function settingsSection(title as string) as object
+    return { title: title, type: SettingType.SECTION }
+end function
+
+' Collects every setting still left in a section once the layout has taken what it uses, so a
+' setting nobody placed lands under Additional Settings instead of disappearing.
+sub pushRemainingSettings(items as object, section as dynamic)
     if not isValid(section) or not isValid(section.children) then return
 
     for each child in section.children
-        childTitle = chainLookupReturn(child, "title", "")
-        if not isValidAndNotEmpty(childTitle) then continue for
-        if titleExistsInList(mappedTitles, childTitle) then continue for
-        items.push(child)
+        if isStringEqual(child.type, SettingType.SECTION) then continue for
+        if isValid(child.children)
+            pushRemainingSettings(items, child)
+        else if isValidAndNotEmpty(child.settingName)
+            items.push(child)
+        end if
     end for
 end sub
 
@@ -1952,92 +1933,269 @@ function reorderSettingsForFlutter(configTree as object) as object
     accountSecurity = findSettingsSectionByTitle(configTree, "Account & Security")
     userInterface = findSettingsSectionByTitle(configTree, "User Interface")
 
-    navigationBar = findSettingsChildByTitle(moonfinSettings, "Navigation")
-    homeScreen = findSettingsChildByTitle(moonfinSettings, "Home Screen")
-    featuredMediaBar = findSettingsChildByTitle(moonfinSettings, "Media Bar")
-    seasonalEffectsPage = findSettingsChildByTitle(moonfinSettings, "Seasonal Effects")
-    themeMusic = findSettingsChildByTitle(moonfinSettings, "Theme Music")
-    shuffle = findSettingsChildByTitle(moonfinSettings, "Shuffle")
-    loadingAnimation = findSettingsChildByTitle(moonfinSettings, "Loading Animation")
-    supportMoonfin = findSettingsChildByTitle(moonfinSettings, "Support Moonfin")
-    diagLogging = findSettingsChildByTitle(moonfinSettings, "Diagnostics")
-    runSetup = findSettingsChildByTitle(moonfinSettings, "Run Setup Again")
+    ' Single settings move first, while every screen is still attached to the tree.
+    signIn = takeSettings(configTree, ["global.rememberme", "global.saveCredentials", "global.pinCodeProtection", "pin.setCode"])
+    family = takeSettings(configTree, ["kids.turnOn", "parental.blockedRatings", "ui.home.recommendationsParentalCap"])
+    syncSettings = takeSettings(configTree, ["plugin.enabled", "plugin.syncProfiles"])
+    ' The sync switch lives on the sync panel, and taking it keeps it out of Additional Settings
+    takeSettingByName(configTree, "plugin.settingsSync")
+    clock = takeSettings(configTree, ["ui.showClock", "playback.use24hourclock"])
+    behavior = takeSettings(configTree, ["load.allowwhatsnew"])
+    themePicker = takeSettings(configTree, ["ui.theme.picker"])
+    display = takeSettings(configTree, ["useFallbackFont", "ui.backdrop.homeBlurAmount", "ui.watchedIndicator", "ui.tvshows.disableUnwatchedEpisodeCount"])
+    shuffleContent = takeSettingByName(configTree, "shuffle_content_type")
 
-    general = findSettingsChildByTitle(userInterface, "General Style")
-    libraries = findSettingsChildByTitle(userInterface, "Libraries")
-    detailsScreen = findSettingsChildByTitle(userInterface, "Details Screen")
+    homeRows = takeSettings(configTree, ["ui.home.rowLayout", "ui.home.pickCollections", "ui.home.pickGenres", "ui.home.pickPlaylists"])
+    homeLooks = takeSettings(configTree, ["ui.home.rowsStyle", "ui.home.modernCardsOnMyMediaRow", "ui.home.classicRowsPadding", "ui.home.modernRowsPadding", "ui.home.preferThumbnails", "ui.home.hideMediaDescription"])
+    continueWatching = takeSettings(configTree, ["ui.home.mergeContinueWatchingNextUp", "ui.details.maxdaysnextup"])
+    recentlyAdded = takeSettings(configTree, ["ui.home.mergeRecentRowsByType", "ui.home.recentlyReleasedSeriesType"])
 
-    enablePlugin = findSettingsChildByTitle(pluginRootSection, "Enable Plugin")
-    pluginSettingsSync = findSettingsChildByTitle(pluginRootSection, "Settings Sync")
-    ratings = findSettingsChildByTitle(pluginRootSection, "Metadata & Ratings")
-    seerr = findSettingsChildByTitle(pluginRootSection, "Seerr")
+    detailsLayout = takeSettings(configTree, ["ui.itemdetail.style", "ui.backdrop.detailBlurAmount", "ui.itemdetail.buttonLayout", "ui.itemdetail.buttonsMaxVisible", "ui.itemdetail.metadataLayout", "ui.itemdetail.sections"])
+    detailsContent = takeSettings(configTree, ["ui.itemdetail.expandedTabs", "ui.library.showTechnicalDetails", "ui.itemdetail.hideMediaDescription", "ui.itemdetail.useSeriesThumbnails"])
+    recommendations = takeSettings(configTree, ["ui.home.recommendationSource"])
+    ratingSettings = takeSettings(configTree, ["ui.itemdetail.showRatings", "plugin.mdblist.enabled", "plugin.mdblist.showRatingNames", "plugin.mdblist.showRatingBadges", "plugin.tmdb.episodeRatings"])
+    themeMusic = takeSettings(configTree, ["playback.thememusic.enabled", "playback.thememusic.loop"])
+
+    playerSettings = takeSettings(configTree, ["ui.osd.buttonLayout", "playback.trickplay.enabled", "playback.trickplay.pauseWhileScrubbing", "playback.trickplay.forcecustom", "playback.resumeRewind", "playback.unpauseRewind", "playback.seekStep", "playback.skipForwardLength", "playback.skipBackLength", "playback.showChapterMarkers"])
+    progressBarTime = takeSettings(configTree, ["playback.timeAboveLeft", "playback.timeAboveCenter", "playback.timeAboveRight", "playback.timeBelowLeft", "playback.timeBelowCenter", "playback.timeBelowRight", "playback.musicTimeDisplay"])
+    streaming = takeSettings(configTree, ["playback.media.forceTranscode"])
+    videoStartDelay = takeSettings(configTree, ["playback.videoStartDelay"])
+    cinemaMode = takeSettings(configTree, ["playback.cinemamode"])
+
+    ' Then the screens that keep their own page.
+    navigationBar = takeChildByTitle(moonfinSettings, "Navigation")
+    homeScreen = takeChildByTitle(moonfinSettings, "Home Screen")
+    featuredMediaBar = takeChildByTitle(moonfinSettings, "Media Bar")
+    seasonalEffectsPage = takeChildByTitle(moonfinSettings, "Seasonal Effects")
+    loadingAnimation = takeChildByTitle(moonfinSettings, "Loading Animation")
+    supportMoonfin = takeChildByTitle(moonfinSettings, "Support Moonfin")
+    diagLogging = takeChildByTitle(moonfinSettings, "Diagnostics")
+    runSetup = takeChildByTitle(moonfinSettings, "Run Setup Again")
+
+    generalStyle = findSettingsChildByTitle(userInterface, "General Style")
+    colors = takeChildByTitle(generalStyle, "Colors")
+    libraries = takeChildByTitle(userInterface, "Libraries")
+    detailsScreen = takeChildByTitle(userInterface, "Details Screen")
+
+    seerr = takeChildByTitle(pluginRootSection, "Seerr")
+    achievementBadges = takeChildByTitle(pluginRootSection, "Achievement Badges")
+    friends = takeChildByTitle(pluginRootSection, "Friends")
     externalLists = findSettingsChildByTitle(pluginRootSection, "External Lists")
-    achievementBadges = findSettingsChildByTitle(pluginRootSection, "Achievement Badges")
-    friends = findSettingsChildByTitle(pluginRootSection, "Friends")
+    imdbLists = takeChildByTitle(externalLists, "IMDb Lists")
+    tmdbLists = takeChildByTitle(externalLists, "TMDB Lists")
+    seasonalRowList = takeChildByTitle(externalLists, "Seasonal Row")
+    calendars = takeChildByTitle(externalLists, "Upcoming Calendars")
+    seerrRows = takeChildByTitle(externalLists, "Seerr Lists")
+
+    videoPreferences = takeChildByTitle(playback, "Video Playback Preferences")
+    bitrateLimit = takeChildByTitle(videoPreferences, "Bitrate Limit")
+    maxResolution = takeChildByTitle(videoPreferences, "Maximum Resolution")
+    compatibility = takeChildByTitle(videoPreferences, "Compatibility")
+    codecSupport = takeChildByTitle(videoPreferences, "Video Codec Support")
+    profileLevelSupport = takeChildByTitle(videoPreferences, "Video Profile Level Support")
+    audio = takeChildByTitle(playback, "Audio Preferences")
+    subtitles = takeChildByTitle(playback, "Subtitle Preferences")
+    automation = takeChildByTitle(playback, "Automation & Queue")
 
     reordered = []
 
-    pushSettingIfValid(reordered, accountSecurity)
-
-    personalizationChildren = []
-    pushSettingIfValid(personalizationChildren, general)
-    pushSettingIfValid(personalizationChildren, detailsScreen)
-    pushSettingIfValid(personalizationChildren, navigationBar)
-    pushSettingIfValid(personalizationChildren, homeScreen)
-    pushSettingIfValid(personalizationChildren, libraries)
-    pushSettingIfValid(personalizationChildren, featuredMediaBar)
-    pushSettingIfValid(personalizationChildren, seasonalEffectsPage)
-    pushSettingIfValid(personalizationChildren, themeMusic)
-    pushSettingIfValid(personalizationChildren, shuffle)
-    pushSettingIfValid(personalizationChildren, loadingAnimation)
-    if personalizationChildren.count() > 0
-        reordered.push({
-            title: "Personalization",
-            requires: "notKidsMode",
-            description: "Navigation, home screen, colors, and interface preferences.",
-            icon: "personalization.png",
-            children: personalizationChildren
+    accountChildren = [settingsSection("Sign-in")]
+    accountChildren.Append(signIn)
+    accountChildren.push(settingsSection("Family"))
+    accountChildren.Append(family)
+    if syncSettings.count() > 0
+        accountChildren.push({
+            title: "Settings Sync",
+            description: "Moonbase plugin connection and settings sync.",
+            icon: "sync.png",
+            children: syncSettings
         })
     end if
+    reordered.push({
+        title: "Account",
+        requires: "notKidsMode",
+        description: "Sign-in, PIN code, Kids Mode, parental controls, and settings sync.",
+        icon: "lock.png",
+        children: accountChildren
+    })
+
+    generalChildren = [settingsSection("Clock")]
+    generalChildren.Append(clock)
+    generalChildren.push(settingsSection("Behavior"))
+    generalChildren.Append(behavior)
+    reordered.push({
+        title: "General",
+        requires: "notKidsMode",
+        description: "Clock and app behavior.",
+        icon: "advanced.png",
+        children: generalChildren
+    })
+
+    if isValid(navigationBar)
+        navigationBar.title = "Navigation Bar"
+        if isValid(shuffleContent) and isValid(navigationBar.children)
+            buttons = []
+            for each item in navigationBar.children
+                buttons.push(item)
+                if isStringEqual(item.settingName, "navbar.show_shuffle") then buttons.push(shuffleContent)
+            end for
+            navigationBar.children = buttons
+        end if
+    end if
+
+    if isValid(homeScreen)
+        homeScreen.description = "Rows, media bar, looks, and external sources."
+        rowOptions = takeChildByTitle(homeScreen, "Home Row Toggles")
+        homeChildren = [settingsSection("Contents")]
+        homeChildren.Append(homeRows)
+        if isValid(rowOptions)
+            rowOptions.title = "Row Options"
+            rowOptions.description = "Sorting and content for each row."
+            rowOptionsChildren = [settingsSection("Continue Watching and Next Up")]
+            rowOptionsChildren.Append(continueWatching)
+            rowOptionsChildren.push(settingsSection("Recently Added"))
+            rowOptionsChildren.Append(recentlyAdded)
+            rowOptionsChildren.push(settingsSection("Rows"))
+            rowOptionsChildren.Append(rowOptions.children)
+            rowOptions.children = rowOptionsChildren
+            homeChildren.push(rowOptions)
+        end if
+        pushSettingIfValid(homeChildren, featuredMediaBar)
+        homeChildren.push(settingsSection("Looks"))
+        homeChildren.Append(homeLooks)
+        homeChildren.push(settingsSection("External Sources"))
+        pushSettingIfValid(homeChildren, imdbLists)
+        pushSettingIfValid(homeChildren, tmdbLists)
+        pushSettingIfValid(homeChildren, seasonalRowList)
+        pushSettingIfValid(homeChildren, calendars)
+        if isValid(seerrRows)
+            seerrRows.title = "Seerr Rows"
+            homeChildren.push(seerrRows)
+        end if
+        ' The hidden section slots stay with the screen that owns them.
+        pushRemainingSettings(homeChildren, homeScreen)
+        homeScreen.children = homeChildren
+    end if
+
+    if isValid(libraries) and isValid(libraries.children)
+        libraries.description = "Library order, multi-server libraries, and library pages."
+        for each item in libraries.children
+            if isStringEqual(item.title, "Home Screen Rows") then item.title = "General"
+        end for
+    end if
+
+    if isValid(detailsScreen)
+        detailsScreen.title = "Details Page"
+        detailsScreen.description = "Layout, buttons, sections, ratings, and theme music."
+        detailsChildren = [settingsSection("Layout")]
+        detailsChildren.Append(detailsLayout)
+        detailsChildren.push(settingsSection("Content"))
+        detailsChildren.Append(detailsContent)
+        detailsChildren.push(settingsSection("Recommendations"))
+        detailsChildren.Append(recommendations)
+        detailsChildren.push(settingsSection("Ratings"))
+        detailsChildren.Append(ratingSettings)
+        detailsChildren.push(settingsSection("Theme Music"))
+        detailsChildren.Append(themeMusic)
+        pushRemainingSettings(detailsChildren, detailsScreen)
+        detailsScreen.children = detailsChildren
+    end if
+
+    appearanceChildren = [settingsSection("Navigation")]
+    pushSettingIfValid(appearanceChildren, navigationBar)
+    appearanceChildren.push(settingsSection("Layout"))
+    pushSettingIfValid(appearanceChildren, homeScreen)
+    pushSettingIfValid(appearanceChildren, libraries)
+    pushSettingIfValid(appearanceChildren, detailsScreen)
+    appearanceChildren.push(settingsSection("Theme"))
+    appearanceChildren.Append(themePicker)
+    pushSettingIfValid(appearanceChildren, colors)
+    appearanceChildren.push(settingsSection("Display"))
+    appearanceChildren.Append(display)
+    appearanceChildren.push(settingsSection("Extras"))
+    pushSettingIfValid(appearanceChildren, seasonalEffectsPage)
+    pushSettingIfValid(appearanceChildren, loadingAnimation)
+    reordered.push({
+        title: "Appearance",
+        requires: "notKidsMode",
+        description: "Navigation, home screen, libraries, details page, and themes.",
+        icon: "personalization.png",
+        children: appearanceChildren
+    })
 
     if isValid(playback)
-        playback.title = "Playback"
-        playback.description = "Audio/video playback, subtitles, bitrate, and compatibility controls."
+        playerChildren = []
+        playerChildren.Append(playerSettings)
+        playerChildren.push(settingsSection("Progress Bar Time"))
+        playerChildren.Append(progressBarTime)
+
+        qualityChildren = [settingsSection("Streaming")]
+        pushSettingIfValid(qualityChildren, bitrateLimit)
+        pushSettingIfValid(qualityChildren, maxResolution)
+        qualityChildren.Append(streaming)
+        qualityChildren.push(settingsSection("Decoding & Rendering"))
+        pushSettingIfValid(qualityChildren, compatibility)
+        pushSettingIfValid(qualityChildren, codecSupport)
+        pushSettingIfValid(qualityChildren, profileLevelSupport)
+        qualityChildren.Append(videoStartDelay)
+
+        if isValid(audio) then audio.title = "Audio"
+        if isValid(subtitles) then subtitles.title = "Subtitles"
+        if isValid(automation)
+            automation.title = "Skipping & Autoplay"
+            segments = takeChildByTitle(automation, "Media Segment Actions")
+            automationChildren = [settingsSection("Segments")]
+            pushSettingIfValid(automationChildren, segments)
+            automationChildren.push(settingsSection("Pre-roll"))
+            automationChildren.Append(cinemaMode)
+            automationChildren.push(settingsSection("Autoplay"))
+            automationChildren.Append(automation.children)
+            automation.children = automationChildren
+        end if
+
+        playbackChildren = [
+            settingsSection("Video"),
+            {
+                title: "Player",
+                description: "Controls, seeking, player buttons, and trick play.",
+                icon: "play.png",
+                children: playerChildren
+            },
+            {
+                title: "Quality & Decoding",
+                description: "Bitrate, resolution, transcoding, and codec support.",
+                icon: "movie_filter.png",
+                children: qualityChildren
+            },
+            settingsSection("Audio & Subtitles")
+        ]
+        pushSettingIfValid(playbackChildren, audio)
+        pushSettingIfValid(playbackChildren, subtitles)
+        playbackChildren.push(settingsSection("Skipping & Queue"))
+        pushSettingIfValid(playbackChildren, automation)
+        pushRemainingSettings(playbackChildren, playback)
+
+        playback.children = playbackChildren
+        playback.description = "Player, quality, audio, subtitles, and skipping."
         reordered.push(playback)
     end if
 
-    pluginChildren = []
-    pushSettingIfValid(pluginChildren, enablePlugin)
-    pushSettingIfValid(pluginChildren, pluginSettingsSync)
-
-    integrationsChildren = []
-    if pluginChildren.count() > 0
-        integrationsChildren.push({
-            title: "Moonbase Plugin",
-            description: "Plugin connectivity and settings sync.",
-            icon: "plugin.png",
-            children: pluginChildren
-        })
-    end if
-
-    pushSettingIfValid(integrationsChildren, ratings)
-    pushSettingIfValid(integrationsChildren, seerr)
-    pushSettingIfValid(integrationsChildren, achievementBadges)
-    pushSettingIfValid(integrationsChildren, friends)
-    pushSettingIfValid(integrationsChildren, externalLists)
-
-    if integrationsChildren.count() > 0
+    servicesChildren = []
+    pushSettingIfValid(servicesChildren, seerr)
+    pushSettingIfValid(servicesChildren, achievementBadges)
+    pushSettingIfValid(servicesChildren, friends)
+    if servicesChildren.count() > 0
         reordered.push({
-            title: "Integrations",
+            title: "Services",
             requires: "notKidsMode",
-            description: "Plugin, Seerr, ratings, and achievement integrations.",
+            description: "Seerr, Achievement Badges, and friends.",
             icon: "integrations.png",
-            children: integrationsChildren
+            children: servicesChildren
         })
     end if
 
     aboutChildren = [
-        { title: "App Info", type: SettingType.SECTION },
+        settingsSection("App Info"),
         {
             title: "Version",
             description: `${LCase(m.global.app.name)} ${m.global.app.version}`,
@@ -2054,28 +2212,20 @@ function reorderSettingsForFlutter(configTree as object) as object
     ]
     pushSettingIfValid(aboutChildren, runSetup)
     pushSettingIfValid(aboutChildren, diagLogging)
-    aboutChildren.push({ title: "Links", type: SettingType.SECTION })
+    aboutChildren.push(settingsSection("Links"))
     pushSettingIfValid(aboutChildren, supportMoonfin)
-    if aboutChildren.count() > 0
-        reordered.push({
-            title: "About",
-            requires: "notKidsMode",
-            description: "Support Moonfin and project information.",
-            icon: "info.png",
-            children: aboutChildren
-        })
-    end if
+    reordered.push({
+        title: "About",
+        requires: "notKidsMode",
+        description: "Support Moonfin and project information.",
+        icon: "info.png",
+        children: aboutChildren
+    })
 
     additionalChildren = []
-
-    moonfinMappedTitles = ["Navigation", "Home Screen", "Libraries", "Media Bar", "Seasonal Effects", "Theme Music", "Shuffle", "Loading Animation", "Support Moonfin", "Diagnostics", "Run Setup Again"]
-    pushUnmappedChildrenByTitle(additionalChildren, moonfinSettings, moonfinMappedTitles)
-
-    pluginMappedTitles = ["Enable Plugin", "Settings Sync", "Metadata & Ratings", "Seerr", "Achievement Badges", "Friends", "External Lists"]
-    pushUnmappedChildrenByTitle(additionalChildren, pluginRootSection, pluginMappedTitles)
-
-    userInterfaceMappedTitles = ["General Style", "Libraries", "Details Screen"]
-    pushUnmappedChildrenByTitle(additionalChildren, userInterface, userInterfaceMappedTitles)
+    for each section in [moonfinSettings, pluginRootSection, userInterface, accountSecurity, videoPreferences]
+        pushRemainingSettings(additionalChildren, section)
+    end for
 
     if additionalChildren.count() > 0
         reordered.push({
@@ -2093,10 +2243,6 @@ function reorderSettingsForFlutter(configTree as object) as object
         if titleExistsInList(knownRootTitles, rootTitle) then continue for
         reordered.push(rootSection)
     end for
-
-    if reordered.count() = 0
-        return configTree
-    end if
 
     return reordered
 end function
@@ -2381,6 +2527,12 @@ sub settingSelected()
         return
     end if
 
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "plugin.syncProfiles"
+        m.settingDesc.visible = false
+        showSettingsSyncPanel()
+        return
+    end if
+
     if isValid(selectedItem.settingName) and selectedItem.settingName = "ui.osd.buttonLayout"
         m.settingDesc.visible = false
         showButtonLayoutDialog(selectedItem, buttonLayout.OsdButtons(), OSD_ORDER_SETTING, OSD_HIDDEN_SETTING)
@@ -2660,35 +2812,7 @@ sub radioSettingChanged()
     end if
 
     if isStringEqual(selectedSetting.settingName, "navbar.position")
-        selectedPosition = m.radioSetting.content.getChild(m.radioSetting.checkedItem).id
-        scene = m.top.getScene()
-        if isValid(scene)
-            overhang = scene.findNode("overhang")
-            sidebar = scene.findNode("sidebar")
-            if isStringEqual(selectedPosition, "left")
-                if isValid(overhang)
-                    overhang.visible = false
-                    overhang.isVisible = false
-                end if
-                if isValid(sidebar)
-                    sidebar.visible = true
-                    sidebar.callFunc("loadLibraries")
-                end if
-            else
-                if isValid(sidebar)
-                    sidebar.visible = false
-                end if
-                if isValid(overhang)
-                    overhang.visible = true
-                    overhang.isVisible = true
-                    overhang.callFunc("loadLibraries")
-                end if
-            end if
-            m.global.sceneManager.callFunc("refreshNavReference")
-            if m.global.hasField("navPositionChanged")
-                m.global.navPositionChanged = m.global.navPositionChanged + 1
-            end if
-        end if
+        applyNavbarPosition(m.radioSetting.content.getChild(m.radioSetting.checkedItem).id)
     end if
 
     if isStringEqual(selectedSetting.settingName, "playback.media.forceTranscode")
@@ -2713,6 +2837,38 @@ sub radioSettingChanged()
     hideEditingControls()
     m.settingsMenu.setFocus(true)
     refreshDependentRows(selectedSetting.settingName)
+end sub
+
+' Swaps the top bar and the sidebar over straight away, rather than on the next launch
+sub applyNavbarPosition(position as string)
+    scene = m.top.getScene()
+    if not isValid(scene) then return
+
+    overhang = scene.findNode("overhang")
+    sidebar = scene.findNode("sidebar")
+    if isStringEqual(position, "left")
+        if isValid(overhang)
+            overhang.visible = false
+            overhang.isVisible = false
+        end if
+        if isValid(sidebar)
+            sidebar.visible = true
+            sidebar.callFunc("loadLibraries")
+        end if
+    else
+        if isValid(sidebar)
+            sidebar.visible = false
+        end if
+        if isValid(overhang)
+            overhang.visible = true
+            overhang.isVisible = true
+            overhang.callFunc("loadLibraries")
+        end if
+    end if
+    m.global.sceneManager.callFunc("refreshNavReference")
+    if m.global.hasField("navPositionChanged")
+        m.global.navPositionChanged = m.global.navPositionChanged + 1
+    end if
 end sub
 
 ' JFScreen hook called when screen is shown
@@ -2909,6 +3065,60 @@ sub onLibraryOrderPanelClosed(event as object)
 
     hideEditingControls()
     m.settingsMenu.setFocus(true)
+end sub
+
+' The panel is made once and kept, so a load, save or reset still running when it closes carries
+' on, and opening it again shows that one still going rather than starting a second
+sub showSettingsSyncPanel()
+    if not isValid(m.settingsSyncPanel)
+        m.settingsSyncPanel = createObject("roSGNode", "SettingsSyncPanel")
+        m.settingsSyncPanel.observeField("closed", "onSettingsSyncPanelClosed")
+        m.settingsSyncPanel.observeField("applied", "onSettingsSyncApplied")
+        m.settingsSyncPanel.observeField("message", "onSettingsSyncMessage")
+    end if
+
+    m.syncedLook = syncedLook()
+    m.top.appendChild(m.settingsSyncPanel)
+    m.settingsSyncPanel.callFunc("showDialog")
+end sub
+
+sub onSettingsSyncPanelClosed()
+    m.settingsMenu.setFocus(true)
+    closePickerPanel(m.settingsSyncPanel)
+    hideEditingControls()
+    ' The entry shows the profile in use, which the panel can have changed
+    refreshCurrentItemValue()
+end sub
+
+' The few settings that change what is already on screen, kept so a load or reset can tell what
+' it moved
+function syncedLook() as object
+    return {
+        navPosition: dynamicToDisplayString(getUserSettingValue("navbar.position", "top")),
+        mediaBarMode: dynamicToDisplayString(getUserSettingValue("ui.home.mediaBarMode", "")),
+        themeId: dynamicToDisplayString(getUserSettingValue("ui.theme.customThemeId", ""))
+    }
+end function
+
+' Settings that arrived from the server are brought onto the screen the way changing them here
+' would, and the rows behind the panel read themselves again once it closes
+sub onSettingsSyncApplied()
+    before = m.syncedLook
+    after = syncedLook()
+    m.syncedLook = after
+
+    if not isStringEqual(after.navPosition, before.navPosition) then applyNavbarPosition(after.navPosition)
+    if not isStringEqual(after.mediaBarMode, before.mediaBarMode) and m.global.hasField("mediaBarModeChanged")
+        m.global.mediaBarModeChanged = m.global.mediaBarModeChanged + 1
+    end if
+    if not isStringEqual(after.themeId, before.themeId) then themeApply.Refresh(m.top.getScene())
+    diagnostics.Apply()
+
+    m.syncSettingsApplied = true
+end sub
+
+sub onSettingsSyncMessage(event as object)
+    showItemMenuToast(event.getData())
 end sub
 
 ' Uploading is a request, so it runs on a task rather than the render thread this screen

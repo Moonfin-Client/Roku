@@ -77,6 +77,7 @@ const selections = {
     'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL', 'addSourceCodecs', 'shouldBurnInSubtitle', 'transcodeCopiesVideo', 'audioPlaysDirect', 'containersOverlap'],
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError'],
+    'source/utils/config.bs': ['current_user_id', 'get_user_setting'],
     'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'inArray', 'guidKey', 'isString'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
@@ -133,12 +134,13 @@ source += '\n' + await readFile('test/detail-sections.bs', 'utf8');
 source += '\n' + await readFile('test/library-filters.bs', 'utf8');
 source += '\n' + await readFile('test/item-menu.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
-source += '\nnamespace settingsSync\n';
-for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin']) {
+source += '\nnamespace settingsSync\n' + settingsSyncFile.match(/^    const .+$/gm).join('\n') + '\n';
+for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile']) {
     source += '\n' + settingsSyncFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/settings-sync-values.bs', 'utf8');
+source += '\n' + await readFile('test/settings-sync-profile.bs', 'utf8');
 source += '\n' + await readFile('test/seasonal-effects.bs', 'utf8');
 source += '\n' + await readFile('test/audio-track.bs', 'utf8');
 const achievementsModelFile = await readFile('source/utils/achievementsModel.bs', 'utf8');
@@ -616,3 +618,26 @@ assert.deepEqual((await readdir('images/seasonal')).sort(), artwork.map(name => 
 await access('images/icons/settings/star_shine.png');
 await access('images/icons/settings/blur_on.png');
 process.stdout.write('PASS: seasonal effects wiring (10 checks)\n');
+
+// Sync follows the profile picked on this device, which stays local, and the panel that picks it
+// loads, saves and resets on a task
+const syncSource = await readFile('source/utils/settingsSync.bs', 'utf8');
+const syncFunction = (name) => syncSource.match(new RegExp(`^    (?:function|sub) ${name}\\([^]*?^    end (?:function|sub)`, 'm'))[0];
+assert.match(syncFunction('PullFromServer'), /FetchResolvedProfile\(settingsSync\.ActiveProfile\(\)\)/, 'A pull reads the profile in use');
+assert.doesNotMatch(syncSource, /Settings\/(?:Profile|Resolved)\/tv/, 'No route names the TV profile outright');
+assert.match(syncFunction('ProfileBody'), /FormatJson\(\{ "profile": profileData, "clientId": "roku" \}\)/, 'The push body keeps its keys\' case on the device');
+assert.doesNotMatch(syncFunction('GetMappings'), /plugin\.syncProfile/, 'The picked profile never syncs');
+assert.match(syncSource, /pluginKey: "tmdbApiKey"[^}]*receiveOnly: true/, 'The TMDB key is never saved back or reset');
+assert.match(syncFunction('FullProfile'), /profileData\["seerrRows"\][^]*profileData\["homeSections"\][^]*profileData\["homeRowOrder"\]/, 'A save carries the Seerr rows and the whole home layout');
+const syncTask = await readFile('components/settings/SettingsSyncTask.bs', 'utf8');
+for (const name of ['loadProfile', 'saveProfile', 'resetProfile']) assert.match(syncTask, new RegExp(`^sub ${name}\\(\\)`, 'm'), `The task can ${name}`);
+assert.match(syncTask.match(/sub resetProfile\([^]*?end sub/)[0], /DeleteProfile[^]*RestoreLocalDefaults\(\)\s+settingsSync\.PullFromServer\(\)/, 'A reset clears the server, then this device, then reads the profile again');
+assert.match(settingsSource, /selectedItem\.settingName = "plugin\.syncProfiles"\s+m\.settingDesc\.visible = false\s+showSettingsSyncPanel\(\)/, 'The sync entry opens the panel');
+assert.match(settingsSource, /takeSettings\(configTree, \["plugin\.enabled", "plugin\.syncProfiles"\]\)\s+'[^\n]*\s+takeSettingByName\(configTree, "plugin\.settingsSync"\)/, 'Settings Sync lists the plugin switch and the panel, and the sync switch stays out of the list');
+const syncEntry = findSetting(settingsTree, 'plugin.syncProfiles');
+assert.equal(syncEntry.type, '', 'The sync entry opens a panel rather than holding a value');
+assert.equal(findSetting(settingsTree, 'plugin.settingsSync').default, 'true', 'The sync switch keeps its default');
+for (const icon of ['icons/cloud_download.png', 'icons/cloud_upload.png', 'icons/desktop_windows.png', 'achievements/public.png', 'achievements/phone_iphone.png', 'achievements/tv.png', 'achievements/extension.png', 'achievements/replay.png']) {
+    await access(`images/${icon}`);
+}
+process.stdout.write('PASS: settings sync profiles (22 checks)\n');

@@ -1,5 +1,6 @@
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
+import "pkg:/source/utils/buttonLayout.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/misc.bs"
@@ -8,6 +9,12 @@ import "pkg:/source/utils/themeApply.bs"
 import "pkg:/source/utils/themeRegistry.bs"
 
 namespace settingsSync
+
+    ' Which profile on the server this device reads from and writes to. It's kept on this device
+    ' only, since each device picks its own.
+    const PROFILE_SETTING = "plugin.syncProfile"
+    ' The profile a TV follows until the user picks another
+    const DEVICE_PROFILE = "tv"
 
     ' Two settings have a switch here and a property on the server, but mean different
     ' things on each side, so they are left unmapped rather than wired up to corrupt values:
@@ -59,7 +66,8 @@ namespace settingsSync
             { pluginKey: "mdblistEnabled", rokuKey: "plugin.mdblist.enabled", type: "bool" },
             { pluginKey: "mdblistRatingSources", rokuKey: "plugin.mdblist.ratingSources", type: "jsonArray" },
             { pluginKey: "tmdbEpisodeRatingsEnabled", rokuKey: "plugin.tmdb.episodeRatings", type: "bool" },
-            { pluginKey: "tmdbApiKey", rokuKey: "plugin.tmdb.apiKey", type: "direct", skipRegistry: true },
+            ' The key only ever arrives from the server, so it's never sent back or reset here
+            { pluginKey: "tmdbApiKey", rokuKey: "plugin.tmdb.apiKey", type: "direct", skipRegistry: true, receiveOnly: true },
 
             ' Settings the server can now store that already had a switch here.
             { pluginKey: "cinemaModeEnabled", rokuKey: "playback.cinemamode", type: "bool" },
@@ -239,11 +247,68 @@ namespace settingsSync
         return toBoolean(chainLookupReturn(m.global.session, "user.settings.`plugin.settingsSync`", true))
     end function
 
-    sub PullFromServer()
-        if not settingsSync.IsSyncEnabled() then return
+    ' The profiles the server keeps
+    function ProfileNames() as object
+        return ["global", "desktop", "mobile", "tv"]
+    end function
 
-        profile = settingsSync.FetchResolvedProfile("tv")
-        if not isValid(profile) then return
+    ' A pick that isn't one of the server's profiles means this device's own
+    function NormalizeProfile(value as dynamic) as string
+        if type(value) <> "String" and type(value) <> "roString" then return settingsSync.DEVICE_PROFILE
+
+        wanted = LCase(value.Trim())
+        for each known in settingsSync.ProfileNames()
+            if wanted = known then return known
+        end for
+
+        return settingsSync.DEVICE_PROFILE
+    end function
+
+    function ActiveProfile() as string
+        return settingsSync.NormalizeProfile(get_user_setting(settingsSync.PROFILE_SETTING))
+    end function
+
+    ' Only changes where sync points, so nothing is pushed or pulled. Picking this device's own
+    ' profile drops the pick, which leaves the device following it again.
+    sub PickProfile(picked as dynamic)
+        chosen = settingsSync.NormalizeProfile(picked)
+        if chosen = settingsSync.DEVICE_PROFILE
+            unset_user_setting(settingsSync.PROFILE_SETTING)
+        else
+            set_user_setting(settingsSync.PROFILE_SETTING, chosen)
+        end if
+    end sub
+
+    ' The name a profile goes by on screen, for tr to translate
+    function ProfileTitle(profileId as string) as string
+        if profileId = "global" then return "Global"
+        if profileId = "desktop" then return "Desktop"
+        if profileId = "mobile" then return "Mobile"
+        return "TV"
+    end function
+
+    function ProfilePath(profileId as string) as string
+        return `/Moonfin/Settings/Profile/${profileId}`
+    end function
+
+    function ResolvedPath(profileId as string) as string
+        return `/Moonfin/Settings/Resolved/${profileId}`
+    end function
+
+    ' The server can't clear the global profile while device profiles sit on top of it, so
+    ' resetting global drops everything the user has stored there
+    function ResetPath(profileId as string) as string
+        if profileId = "global" then return "/Moonfin/Settings"
+        return settingsSync.ProfilePath(profileId)
+    end function
+
+    ' Reads the active profile as the server resolves it and applies it here. Returns whether a
+    ' profile arrived.
+    function PullFromServer() as boolean
+        if not settingsSync.IsSyncEnabled() then return false
+
+        profile = settingsSync.FetchResolvedProfile(settingsSync.ActiveProfile())
+        if not isValid(profile) then return false
 
         tmpSettings = m.global.session.user.settings
         mappings = settingsSync.GetMappings()
@@ -345,7 +410,9 @@ namespace settingsSync
         if isValid(m.global) and m.global.hasField("overlaySettingsChanged")
             m.global.overlaySettingsChanged = m.global.overlaySettingsChanged + 1
         end if
-    end sub
+
+        return true
+    end function
 
     sub ApplyThemeColorsFromId(themeId as dynamic, tmpSettings as object)
         if not isValidAndNotEmpty(themeId) then return
@@ -391,41 +458,17 @@ namespace settingsSync
         registry_write("ui.theme.onAccent", onAccent, userId)
     end sub
 
-    sub PushToServer(rokuKey as string, rokuValue as dynamic)
-        if not settingsSync.IsSyncEnabled() then return
-
-        mapping = settingsSync.FindMappingByRokuKey(rokuKey)
-        if not isValid(mapping)
-            if Left(rokuKey, 10) = "seerr.row."
-                pushData = settingsSync.PreparePush(rokuKey, rokuValue)
-                if isValid(pushData)
-                    task = createObject("roSGNode", "PostTask")
-                    task.apiUrl = pushData.url
-                    task.stringData = pushData.body
-                    task.control = "RUN"
-                end if
-            end if
-            return
-        end if
-
-        pluginValue = settingsSync.RokuToPlugin(rokuValue, mapping.type)
-        if not isValid(pluginValue) then return
-
-        profileData = {}
-        profileData[mapping.pluginKey] = pluginValue
-
-        settingsSync.SaveProfile("tv", profileData)
-    end sub
-
     ' What a render thread hands a PostTask, since it cannot make the request itself
     function ProfilePush(profileData as object) as object
         return {
-            url: "/Moonfin/Settings/Profile/tv",
-            body: FormatJson({
-                profile: profileData,
-                clientId: "roku"
-            })
+            url: settingsSync.ProfilePath(settingsSync.ActiveProfile()),
+            body: settingsSync.ProfileBody(profileData)
         }
+    end function
+
+    ' The keys are quoted so they keep their case on the device
+    function ProfileBody(profileData as object) as string
+        return FormatJson({ "profile": profileData, "clientId": "roku" })
     end function
 
     ' Prepare settings sync push data without making HTTP requests (render-thread safe).
@@ -433,21 +476,7 @@ namespace settingsSync
         if not settingsSync.IsSyncEnabled() then return invalid
 
         if Left(rokuKey, 10) = "seerr.row."
-            ' The server expects the whole seerrRows object, so send the other flags alongside this one
-            seerrRows = {}
-            targetBool = toBooleanValue(rokuValue, false)
-
-            seerrRows.rowOrder = settingsSync.SeerrRowOrder(rokuKey, targetBool)
-
-            for each rowMapping in settingsSync.GetSeerrRowMappings()
-                if rowMapping.rokuKey = rokuKey
-                    seerrRows[rowMapping.pluginKey] = targetBool
-                else
-                    seerrRows[rowMapping.pluginKey] = settingsSync.GetSeerrRowValue(rowMapping.rokuKey, true)
-                end if
-            end for
-
-            return settingsSync.ProfilePush({ seerrRows: seerrRows })
+            return settingsSync.ProfilePush({ "seerrRows": settingsSync.SeerrRowsPayload(rokuKey, settingsSync.ToBooleanValue(rokuValue)) })
         end if
 
         mapping = settingsSync.FindMappingByRokuKey(rokuKey)
@@ -461,6 +490,176 @@ namespace settingsSync
 
         return settingsSync.ProfilePush(profileData)
     end function
+
+    ' The server expects the whole seerrRows object, so every flag goes along with the one that
+    ' changed, if any did
+    function SeerrRowsPayload(changedKey = "" as string, changedValue = false as boolean) as object
+        userSettings = m.global.session.user.settings
+        rows = {}
+        rows["rowOrder"] = settingsSync.SeerrRowOrder(changedKey, changedValue, userSettings)
+
+        for each rowMapping in settingsSync.GetSeerrRowMappings()
+            if rowMapping.rokuKey = changedKey
+                rows[rowMapping.pluginKey] = changedValue
+            else
+                rows[rowMapping.pluginKey] = settingsSync.GetSeerrRowValue(rowMapping.rokuKey, true, userSettings)
+            end if
+        end for
+
+        return rows
+    end function
+
+    ' Everything this device syncs, in the shape the server keeps it, for writing a whole
+    ' profile at once. A setting with nothing stored here is left for the server to keep.
+    function FullProfile() as object
+        ' Read once, since a task pays for every trip to the session
+        userSettings = m.global.session.user.settings
+        profileData = {}
+        for each mapping in settingsSync.GetMappings()
+            if not chainLookupReturn(mapping, "receiveOnly", false)
+                current = settingsSync.StoredValue(mapping.rokuKey, userSettings)
+                if isValid(current)
+                    pluginValue = settingsSync.RokuToPlugin(current, mapping.type)
+                    if isValid(pluginValue) then profileData[mapping.pluginKey] = pluginValue
+                end if
+            end if
+        end for
+
+        profileData["seerrRows"] = settingsSync.SeerrRowsPayload()
+        ' Both layout keys go together, since a row order arriving without sections makes the
+        ' server drop the sections it holds
+        profileData["homeSections"] = settingsSync.HomeSectionsPayload()
+        profileData["homeRowOrder"] = homeRowLayout.Arranged()
+
+        return profileData
+    end function
+
+    ' What this device holds for a setting. The session carries the settings.json default for
+    ' anything never written.
+    function StoredValue(key as string, userSettings as dynamic) as dynamic
+        if isValid(userSettings) and isValid(userSettings[key]) then return userSettings[key]
+        return get_user_setting(key)
+    end function
+
+    ' The whole home layout as the other clients read it. Every row this app knows goes over
+    ' with its own enabled flag, a row behind an off switch going over as off, and rows
+    ' belonging to the other clients keep the place the stored lists hold them in. Sections
+    ' this app can't draw ride along exactly as they arrived.
+    function HomeSectionsPayload() as object
+        storedOrder = get_user_setting(homeRowLayout.ORDER_SETTING)
+        storedHidden = get_user_setting(homeRowLayout.HIDDEN_SETTING)
+        placed = buttonLayout.ToIds(storedOrder)
+        off = buttonLayout.HiddenLookup(storedHidden)
+        picked = homeRowLayout.DynamicLookup()
+        toggles = homeRowLayout.RowToggles()
+        serverKey = homeRowLayout.ServerId()
+
+        ' The full catalogue rather than what the picker is offering, so a row behind an off
+        ' switch keeps its place in the layout instead of vanishing from it
+        known = homeRowLayout.Catalogue()
+        for each entry in homeRowLayout.DynamicRows()
+            known.push({ id: entry.id, label: entry.title })
+        end for
+
+        arranged = []
+        hiddenKnown = []
+        for each row in buttonLayout.Ordered(known, storedOrder)
+            arranged.push(row.id)
+            if not homeRowLayout.IsEnabled(row.id, placed, off, picked) then hiddenKnown.push(row.id)
+        end for
+
+        merged = buttonLayout.WithUnknownIds(known, arranged, hiddenKnown, storedOrder, storedHidden)
+
+        offAll = {}
+        for each id in merged.hidden
+            offAll[id] = true
+        end for
+
+        sections = []
+        order = 0
+
+        for each id in merged.order
+            enabled = not isValid(offAll[id])
+            if enabled and not homeRowLayout.RowToggleOn(id, toggles) then enabled = false
+
+            ' A picked collection, genre or playlist goes over as the record the other clients
+            ' read, typed none the way they write it, since the row id alone can't say which
+            ' item the row stands for
+            entry = picked[LCase(id)]
+            if isValid(entry)
+                listEntry = homeRowLayout.SourceFor(entry.source)
+                if enabled and isValid(listEntry) and not get_user_setting_bool(listEntry.gate, false) then enabled = false
+
+                sections.push({
+                    kind: "pluginDynamic",
+                    type: "none",
+                    enabled: enabled,
+                    order: order,
+                    serverId: serverKey,
+                    pluginSource: entry.source,
+                    pluginSection: isValid(listEntry) ? listEntry.section : entry.source,
+                    pluginAdditionalData: entry.itemId,
+                    pluginDisplayText: entry.title
+                })
+            else
+                sections.push({ kind: "builtin", type: id, enabled: enabled, order: order })
+            end if
+
+            order++
+        end for
+
+        for each section in homeRowLayout.Passthrough()
+            sections.push(section)
+        end for
+
+        return sections
+    end function
+
+    ' The keys this device keeps the synced settings under, the layout and the Seerr rows
+    ' among them
+    function LocalKeys() as object
+        keys = []
+        for each mapping in settingsSync.GetMappings()
+            if not chainLookupReturn(mapping, "receiveOnly", false) then keys.push(mapping.rokuKey)
+        end for
+
+        for each entry in settingsSync.GetSeerrRowOrderNames()
+            keys.push(entry.rokuKey)
+        end for
+
+        keys.Append([homeRowLayout.HIDDEN_SETTING, homeRowLayout.DYNAMIC_SETTING, homeRowLayout.PASSTHROUGH_SETTING])
+        return keys
+    end function
+
+    ' Puts every synced setting back the way a device that never synced has it, which is the
+    ' default settings.json gives it, or nothing stored at all
+    sub RestoreLocalDefaults()
+        userId = m.global.session.user.id
+        if not isValidAndNotEmpty(userId) then return
+
+        defaults = {}
+        configTree = GetConfigTree()
+        if isValid(configTree) then session.user.settings.CollectDefaults(configTree, defaults)
+
+        tmpSettings = m.global.session.user.settings
+        reg = CreateObject("roRegistrySection", userId)
+        for each key in settingsSync.LocalKeys()
+            reg.Delete(key)
+            if defaults.DoesExist(key)
+                tmpSettings[key] = defaults[key]
+            else
+                tmpSettings.Delete(key)
+            end if
+        end for
+        reg.Flush()
+
+        ' A device that never picked a theme draws the Moonfin one, so its colours come back too
+        tmpSettings["ui.theme.customThemeId"] = "moonfin"
+        registry_write("ui.theme.customThemeId", "moonfin", userId)
+        settingsSync.ApplyThemeColorsFromId("moonfin", tmpSettings)
+
+        session.user.Update("settings", tmpSettings)
+    end sub
 
     ' Seerr row flags live in a nested seerrRows object on the server, so they can't use
     ' the flat mapping table that GetMappings covers
@@ -486,10 +685,10 @@ namespace settingsSync
     end function
 
     ' The rows that are on, in the order the list names them
-    function SeerrRowOrder(changedKey = "" as string, changedValue = false as boolean) as object
+    function SeerrRowOrder(changedKey = "" as string, changedValue = false as boolean, userSettings = invalid as dynamic) as object
         order = []
         for each entry in settingsSync.GetSeerrRowOrderNames()
-            on = entry.rokuKey = changedKey ? changedValue : settingsSync.GetSeerrRowValue(entry.rokuKey, true)
+            on = entry.rokuKey = changedKey ? changedValue : settingsSync.GetSeerrRowValue(entry.rokuKey, true, userSettings)
             if on then order.push(entry.name)
         end for
 
@@ -509,8 +708,10 @@ namespace settingsSync
         ]
     end function
 
-    function GetSeerrRowValue(key as string, defaultValue = true as boolean) as boolean
-        userSettings = m.global.session.user.settings
+    ' Takes the settings already read when there are many rows to look up, since each trip to the
+    ' session copies all of them
+    function GetSeerrRowValue(key as string, defaultValue = true as boolean, userSettings = invalid as dynamic) as boolean
+        if not isValid(userSettings) then userSettings = m.global.session.user.settings
         if isValid(userSettings) and isValid(userSettings[key])
             return settingsSync.ToBooleanValue(userSettings[key], defaultValue)
         end if
@@ -783,8 +984,8 @@ namespace settingsSync
         return invalid
     end function
 
-    function FetchResolvedProfile(profile as string) as object
-        req = APIRequest(`/Moonfin/Settings/Resolved/${profile}`)
+    function FetchResolvedProfile(profileId as string) as object
+        req = APIRequest(settingsSync.ResolvedPath(profileId))
         if not isValid(req) then return invalid
 
         result = getJson(req)
@@ -793,17 +994,22 @@ namespace settingsSync
         return moonfinPlugin.normalizeKeys(result)
     end function
 
-    sub SaveProfile(profile as string, profileData as object)
-        req = APIRequest(`/Moonfin/Settings/Profile/${profile}`)
-        if not isValid(req) then return
+    ' The server merges what arrives into the profile, so only the settings sent are written
+    function SaveProfile(profileId as string, profileData as object) as boolean
+        req = APIRequest(settingsSync.ProfilePath(profileId))
+        if not isValid(req) then return false
 
-        body = FormatJson({
-            profile: profileData,
-            clientId: "roku"
-        })
+        return postVoid(req, settingsSync.ProfileBody(profileData))
+    end function
 
-        postVoid(req, body)
-    end sub
+    function DeleteProfile(profileId as string) as boolean
+        req = APIRequest(settingsSync.ResetPath(profileId))
+        if not isValid(req) then return false
+
+        req.SetRequest("DELETE")
+        status = requestResponse(req, "DELETE").status
+        return status >= 200 and status < 300
+    end function
 
     ' Which switches a pushed layout is allowed to move, keyed by the row id the server
     ' uses. Narrower than the gating table on purpose. A row the layout has off would
