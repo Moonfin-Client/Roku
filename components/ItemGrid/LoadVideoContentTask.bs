@@ -13,6 +13,7 @@ import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/embyFeatures.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/trackLabels.bs"
 
 sub init()
     m.top.filter = "All"
@@ -483,13 +484,17 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
 
     ' Use either the user's selected subtitles, or the default track
     if m.top.selectedSubtitleIndex = SubtitleSelection.NOTSET
-        defaultSubtitleIndex = SubtitleSelection.NONE
-        if isValidAndNotEmpty(m.playbackInfo.MediaSources)
-            defaultSubtitleIndex = m.playbackInfo.MediaSources[0].LookupCI("DefaultSubtitleStreamIndex") ?? SubtitleSelection.NONE
+        settings = isValid(m.global) and isValid(m.global.session) ? m.global.session.user.settings : {}
+        subMode = LCase(trackLabels.Setting(settings, "playback.subs.mode", "default"))
+
+        if subMode = "none"
+            defaultSubtitleIndex = SubtitleSelection.NONE
+        else
+            defaultSubtitleIndex = trackLabels.ResolveBestSubtitleIndex(m.playbackInfo.MediaSources[0].MediaStreams, settings)
         end if
 
-        ' Ignore the server's default track if the user only wants text subtitles and it isn't one
-        if defaultSubtitleIndex <> SubtitleSelection.NONE and m.global.session.user.settings["playback.subs.onlytext"] = true
+        ' Ignore the track if the user only wants text subtitles and it isn't one
+        if defaultSubtitleIndex <> SubtitleSelection.NONE and toBoolean(trackLabels.Setting(settings, "playback.subs.onlytext", false))
             if not isSubtitleStreamText(defaultSubtitleIndex)
                 defaultSubtitleIndex = SubtitleSelection.NONE
             end if
@@ -634,7 +639,9 @@ function isSubtitleStreamText(subtitleIndex as integer) as boolean
 
     for each stream in m.playbackInfo.MediaSources[0].MediaStreams
         if stream.Index = subtitleIndex
-            return stream.IsTextSubtitleStream = true
+            if stream.IsTextSubtitleStream = true then return true
+            codec = LCase(stream.LookupCI("Codec") ?? "")
+            return codec = "srt" or codec = "subrip" or codec = "vtt" or codec = "ass" or codec = "ssa" or codec = "ttml"
         end if
     end for
 
@@ -850,7 +857,7 @@ sub addSubtitlesToVideo(video, meta)
     safesubs = subtitles["all"]
     subtitleTracks = []
 
-    if m.global.session.user.settings["playback.subs.onlytext"] = true
+    if toBoolean(trackLabels.Setting(m.global.session.user.settings, "playback.subs.onlytext", false))
         safesubs = subtitles["text"]
     end if
 
@@ -1047,21 +1054,20 @@ sub addEpisodeToShowAtFinish(showID, serverData = invalid as dynamic)
     end if
 end sub
 
-'Checks available subtitle tracks and puts subtitles in forced, default, and non-default/forced but preferred language at the top
+'Checks available subtitle tracks and sorts them by user preference scoring
 function sortSubtitles(MediaStreams, source = invalid as dynamic, videoId = "" as string)
-    tracks = { "forced": [], "default": [], "normal": [], "text": [] }
-    'Too many args for using substitute
-    prefered_lang = getPreferredLanguage("playback.subs.language") ?? ""
-    fallback_lang = getPreferredLanguage("playback.subs.fallbackLanguage") ?? ""
-    preferSdh = toBoolean(m.global.session.user.settings["playback.preferSdhSubtitles"] ?? false)
+    allTracks = []
+    textTracks = []
+    settings = isValid(m.global) and isValid(m.global.session) ? m.global.session.user.settings : {}
+
     for each stream in MediaStreams
         if stream.type = "Subtitle"
 
             url = ""
             deliveryUrl = stream.DeliveryUrl
             embeddedNative = false
+            codec = LCase(stream.LookupCI("Codec") ?? "")
             if not isValid(deliveryUrl) and isStringEqual(stream.LookupCI("DeliveryMethod"), "Embed") and stream.IsExternal <> true
-                codec = LCase(stream.LookupCI("Codec") ?? "")
                 if (codec = "srt" or codec = "subrip") and chainLookupReturn(source, "SupportsTranscoding", true) <> false
                     ' Left in the file, but the server can still pull the text out as its own file
                     deliveryUrl = `/Videos/${videoId}/${chainLookupReturn(source, "Id", videoId)}/Subtitles/${stream.index}/0/Stream.vtt`
@@ -1083,55 +1089,41 @@ function sortSubtitles(MediaStreams, source = invalid as dynamic, videoId = "" a
 
             ' stream is rebuilt below without these fields, so read them while they are still here
             hearingImpaired = toBoolean(chainLookupReturn(stream, "IsHearingImpaired", false)) = true
-            isSdhTrack = hearingImpaired or instr(1, LCase(chainLookupReturn(stream, "displaytitle", "")), "sdh") > 0
+            displayTitle = chainLookupReturn(stream, "displaytitle", "")
+            isExternalTrack = toBoolean(stream.IsExternal) = true
+            isTextTrack = toBoolean(stream.IsTextSubtitleStream) = true or (codec = "srt" or codec = "subrip" or codec = "vtt" or codec = "ass" or codec = "ssa" or codec = "ttml")
 
-            stream = {
-                "Track": { "Language": stream.language, "Description": stream.displaytitle, "TrackName": url },
-                "IsTextSubtitleStream": stream.IsTextSubtitleStream,
+            streamObj = {
+                "Track": { "Language": stream.language, "Description": displayTitle, "TrackName": url },
+                "IsTextSubtitleStream": isTextTrack,
                 "Index": stream.index,
                 "IsDefault": stream.IsDefault,
                 "IsForced": stream.IsForced,
-                "IsExternal": stream.IsExternal,
+                "IsExternal": isExternalTrack,
                 "IsEncoded": stream.DeliveryMethod = "Encode",
                 "IsHearingImpaired": hearingImpaired,
                 "IsEmbeddedNative": embeddedNative,
-                "Codec": stream.LookupCI("Codec") ?? "",
+                "Codec": codec,
                 "DeliveryMethod": stream.LookupCI("DeliveryMethod") ?? ""
             }
 
-            if stream.isForced
-                trackType = "forced"
-            else if stream.IsDefault
-                trackType = "default"
-            else
-                trackType = "normal"
-            end if
+            score = trackLabels.ScoreSubtitle(stream, settings)
+            streamObj.score = score
 
-            matchesLanguage = prefered_lang = "" or prefered_lang = stream.Track.Language
-            if not matchesLanguage and fallback_lang <> ""
-                matchesLanguage = fallback_lang = stream.Track.Language
-            end if
-            if matchesLanguage and (prefered_lang <> "" or fallback_lang <> "" or (preferSdh and isSdhTrack))
-                tracks[trackType].unshift(stream)
+            allTracks.push(streamObj)
 
-                if stream.IsTextSubtitleStream
-                    tracks["text"].unshift(stream)
-                end if
-            else
-                tracks[trackType].push(stream)
-
-                if stream.IsTextSubtitleStream
-                    tracks["text"].push(stream)
-                end if
+            if isTextTrack
+                textTracks.push(streamObj)
             end if
         end if
     end for
 
-    tracks["default"].append(tracks["normal"])
-    tracks["forced"].append(tracks["default"])
+    allTracks.sortBy("score", "r")
+    textTracks.sortBy("score", "r")
 
-    return { "all": tracks["forced"], "text": tracks["text"] }
+    return { "all": allTracks, "text": textTracks }
 end function
+
 
 function FindPreferredAudioStream(streams as dynamic) as integer
     preferredAudioTrackIndex = m.global.queueManager.callFunc("getPreferredAudioTrackIndex")
