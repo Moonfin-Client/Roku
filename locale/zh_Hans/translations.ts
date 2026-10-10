@@ -2173,5 +2173,501 @@
         <source>Playback will automatically stop in 1 minute if no buttons are pressed.</source>
         <translation>如果未按下任何按钮，播放将在 1 分钟后自动停止。</translation>
     </message>
+    <message>
+        <source>24-Hour Clock</source>
+        <translation>24 小时制</translation>
+    </message>
+    <message>
+        <source>APP INFO</source>
+        <translation>应用信息</translation>
+    </message>
+    <message>
+        <source>ASS/SSA Direct Play</source>
+        <translation>ASS/SSA 直接播放</translation>
+    </message>
+    <message>
+        <source>Above bar, center</source>
+        <translation>上方栏，居中</translation>
+    </message>
+    <message>
+        <source>Above bar, left</source>
+        <translation>上方栏，左侧</translation>
+    </message>
+    <message>
+        <source>Above bar, right</source>
+        <translation>上方栏，右侧</translation>
+    </message>
+    <message>
+        <source>Additional Ratings</source>
+        <translation>附加评分</translation>
+    </message>
+    <message>
+        <source>Advanced</source>
+        <translation>高级</translation>
+    </message>
+    <message>
+        <source>App Theme</source>
+        <translation>应用主题</translation>
+    </message>
+    <message>
+        <source>Auto Advance</source>
+        <translation>自动切换</translation>
+    </message>
+    <message>
+        <source>Auto Advance Interval</source>
+        <translation>自动切换间隔</translation>
+    </message>
+    <message>
+        <source>Auto Login</source>
+        <translation>自动登录</translation>
+    </message>
+    <message>
+        <source>Automatic Queuing</source>
+        <translation>自动入队</translation>
+    </message>
+    <message>
+        <source>Automatically advance to next slide</source>
+        <translation>自动切换到下一张幻灯片</translation>
+    </message>
+    <message>
+        <source>Automatically play the next episode when available.</source>
+        <translation>下一集可用时自动播放。</translation>
+    </message>
+    <message>
+        <source>Automatically show tab content while browsing tabs. Turn off to open and close each tab manually.</source>
+        <translation>浏览时自动加载标签内容；关闭后需手动展开/收起标签。</translation>
+    </message>
+    <message>
+        <source>Background Blur</source>
+        <translation>详情页背景模糊</translation>
+    </message>
+    <message>
+        <source>Below bar, center</source>
+        <translation>下方栏，居中</translation>
+    </message>
+    <message>
+        <source>Below bar, left</source>
+        <translation>下方栏，左侧</translation>
+    </message>
+    <message>
+        <source>Below bar, right</source>
+        <translation>下方栏，右侧</translation>
+    </message>
+    <message>
+        <source>Browsing Background Blur</source>
+        <translation>浏览页背景模糊</translation>
+    </message>
+    <message>
+        <source>Change PIN</source>
+        <translation>更改 PIN 码</translation>
+    </message>
+    <message>
+        <source>Change subtitle modes, default languages, appearance, and rendering options.</source>
+        <translation>自定义字幕模式、默认语言、外观样式与渲染参数。</translation>
+    </message>
+    <message>
+        <source>Choose between various media bar styles, or turn the media bar off</source>
+        <translation>选择不同的媒体栏样式，或关闭媒体栏</translation>
+    </message>
+    <message>
+        <source>Choose what is shown here, or hide it.</source>
+        <translation>选择显示此处显示的内容，或将其隐藏。</translation>
+    </message>
+    <message>
+        <source>Choose what is shown on the right side of the music progress bar.</source>
+        <translation>选择音乐进度条右侧显示的内容。</translation>
+    </message>
+    <message>
+        <source>Choose which buttons the details screen shows</source>
+        <translation>选择详情页面显示的按钮</translation>
+    </message>
+    <message>
+        <source>Choose which buttons the player shows</source>
+        <translation>选择播放器显示的按钮</translation>
+    </message>
+    <message>
+        <source>Choose which time labels appear around the playback progress bar.</source>
+        <translation>选择播放进度条周围显示的时间标签。</translation>
+    </message>
+    <message>
+        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes.</source>
+        <translation>Moonfin 是经典布局；Modern 是自适应影院风布局。</translation>
+    </message>
+    <message>
+        <source>Classic keeps per-row image type and info overlay. Modern uses portrait-to-backdrop rows.</source>
+        <translation>经典模式保留每行的图片类型和信息浮层。现代模式使用竖版图到背景图的行布局。</translation>
+    </message>
+    <message>
+        <source>Clock Display</source>
+        <translation>时钟显示</translation>
+    </message>
+    <message>
+        <source>Combine separate libraries of the same type for Recently Added and Recently Released home rows.</source>
+        <translation>将同一类型的独立媒体库合并到“最近添加”和“最近发布”主页行中。</translation>
+    </message>
+    <message>
+        <source>Configure the maximum channels of your audio setup. Multichannel streams exceeding this limit will downmix or transcode.</source>
+        <translation>配置音频设备支持的最大声道数。超过此限制的多声道音频流将被降混或转码。</translation>
+    </message>
+    <message>
+        <source>Customize padding between home rows</source>
+        <translation>自定义首页各行之间的内边距</translation>
+    </message>
+    <message>
+        <source>Customize subtitle appearance</source>
+        <translation>自定义字幕外观</translation>
+    </message>
+    <message>
+        <source>Details Screen Style</source>
+        <translation>详情界面样式</translation>
+    </message>
+    <message>
+        <source>Direct play ASS/SSA subtitles</source>
+        <translation>直接播放 ASS/SSA 字幕</translation>
+    </message>
+    <message>
+        <source>Display Audio Rows</source>
+        <translation>显示音频行</translation>
+    </message>
+    <message>
+        <source>Display Collections Rows</source>
+        <translation>显示合集行</translation>
+    </message>
+    <message>
+        <source>Display Favorites Rows</source>
+        <translation>显示收藏行</translation>
+    </message>
+    <message>
+        <source>Display Genres Rows</source>
+        <translation>显示类型行</translation>
+    </message>
+    <message>
+        <source>Display Playlist Rows</source>
+        <translation>显示播放列表行</translation>
+    </message>
+    <message>
+        <source>Display Studio Row</source>
+        <translation>显示制作公司行</translation>
+    </message>
+    <message>
+        <source>Donate a coffee to the developer</source>
+        <translation>请开发者喝杯咖啡</translation>
+    </message>
+    <message>
+        <source>Enable PIN Code</source>
+        <translation>启用 PIN 码</translation>
+    </message>
+    <message>
+        <source>Enable and reorder the rating sources shown throughout the app</source>
+        <translation>启用并重新排序整个应用中显示的评级来源</translation>
+    </message>
+    <message>
+        <source>Expand TV shows to display each episode separately.</source>
+        <translation>展开电视节目，将每一集单独显示。</translation>
+    </message>
+    <message>
+        <source>Expanded Tabs</source>
+        <translation>自动展开标签页</translation>
+    </message>
+    <message>
+        <source>Extended shows a full card with episode artwork and description. Minimal shows a compact countdown overlay. Disabled hides the prompt entirely.</source>
+        <translation>扩展模式显示包含单集艺术图和简介的完整卡片；简洁模式显示紧凑倒计时浮层；禁用则完全隐藏提示。</translation>
+    </message>
+    <message>
+        <source>Featured content, appearance</source>
+        <translation>特色内容、外观</translation>
+    </message>
+    <message>
+        <source>Hide Backdrops While Browsing</source>
+        <translation>浏览库时隐藏背景海报？</translation>
+    </message>
+    <message>
+        <source>Hide Collection associated library items when browsing libraries</source>
+        <translation>浏览媒体库时隐藏合集内关联的单部影片</translation>
+    </message>
+    <message>
+        <source>Hide adult content in results</source>
+        <translation>在结果中隐藏成人内容</translation>
+    </message>
+    <message>
+        <source>Hide the movie or episode descriptive text.</source>
+        <translation>隐藏电影或剧集的描述文字。</translation>
+    </message>
+    <message>
+        <source>How long a show stays in Next Up after you last watched it</source>
+        <translation>上次观看后，该电视剧在下个播放保留时长</translation>
+    </message>
+    <message>
+        <source>Limit the maximum resolution the player will request. Higher-resolution content will be transcoded down.</source>
+        <translation>限制播放器请求的最大分辨率。更高分辨率的内容将转码到较低分辨率。</translation>
+    </message>
+    <message>
+        <source>Loop Theme Music</source>
+        <translation>循环播放主题音乐</translation>
+    </message>
+    <message>
+        <source>Manage</source>
+        <translation>管理</translation>
+    </message>
+    <message>
+        <source>Max Audio Channels</source>
+        <translation>最大音频声道数</translation>
+    </message>
+    <message>
+        <source>Max Resolution</source>
+        <translation>最大分辨率</translation>
+    </message>
+    <message>
+        <source>Max days in Next Up</source>
+        <translation>下个播放最大保留天数</translation>
+    </message>
+    <message>
+        <source>Media Bar Style</source>
+        <translation>媒体栏风格</translation>
+    </message>
+    <message>
+        <source>Media Player Behavior</source>
+        <translation>媒体播放器行为</translation>
+    </message>
+    <message>
+        <source>Media Segment Countdown</source>
+        <translation>媒体片段倒计时</translation>
+    </message>
+    <message>
+        <source>Media request integration</source>
+        <translation>媒体请求集成</translation>
+    </message>
+    <message>
+        <source>Metacritic (User)</source>
+        <translation>Metacritic（用户）</translation>
+    </message>
+    <message>
+        <source>Music Player</source>
+        <translation>音乐播放</translation>
+    </message>
+    <message>
+        <source>My Rating</source>
+        <translation>我的评分</translation>
+    </message>
+    <message>
+        <source>NSFW Filter</source>
+        <translation>NSFW 过滤器</translation>
+    </message>
+    <message>
+        <source>Navbar style, toolbar buttons, appearance</source>
+        <translation>导航栏样式、工具栏按钮、外观</translation>
+    </message>
+    <message>
+        <source>Next Up Display</source>
+        <translation>接下来播放提示</translation>
+    </message>
+    <message>
+        <source>Play theme music on detail pages</source>
+        <translation>在详情页播放主题音乐</translation>
+    </message>
+    <message>
+        <source>Play trailers/prerolls before a main feature</source>
+        <translation>正片播放前播放预告片/片前视频</translation>
+    </message>
+    <message>
+        <source>Playback Enhancements</source>
+        <translation>播放增强功能</translation>
+    </message>
+    <message>
+        <source>Prefer Audio Description Tracks</source>
+        <translation>优先音画描述音轨</translation>
+    </message>
+    <message>
+        <source>Prefer audio description tracks over normal tracks.</source>
+        <translation>优先播放无障碍音画描述音轨，替代普通音轨。</translation>
+    </message>
+    <message>
+        <source>Prioritize SDH/CC subtitle tracks when auto-selecting.</source>
+        <translation>自动选择时优先选择 SDH/CC 字幕轨道。</translation>
+    </message>
+    <message>
+        <source>Rating Badges</source>
+        <translation>评级徽章</translation>
+    </message>
+    <message>
+        <source>Rating Labels</source>
+        <translation>评级标签</translation>
+    </message>
+    <message>
+        <source>Rating Sources</source>
+        <translation>评分来源</translation>
+    </message>
+    <message>
+        <source>Recommendation System</source>
+        <translation>推荐系统</translation>
+    </message>
+    <message>
+        <source>Repeat the track instead of playing it once</source>
+        <translation>单曲循环，而非仅播放一次</translation>
+    </message>
+    <message>
+        <source>Replace Skip Outro with Next Up Display</source>
+        <translation>用“接下来播放”替换“跳过片尾”</translation>
+    </message>
+    <message>
+        <source>Rotten Tomatoes (Audience)</source>
+        <translation>烂番茄（观众）</translation>
+    </message>
+    <message>
+        <source>Rotten Tomatoes (Critics)</source>
+        <translation>烂番茄（评论家）</translation>
+    </message>
+    <message>
+        <source>Row Padding</source>
+        <translation>首页行内边距</translation>
+    </message>
+    <message>
+        <source>Row Type</source>
+        <translation>行类型</translation>
+    </message>
+    <message>
+        <source>Run setup again</source>
+        <translation>重新运行设置</translation>
+    </message>
+    <message>
+        <source>Show Audio rows in Home Sections.</source>
+        <translation>在首页栏目中显示音频行。</translation>
+    </message>
+    <message>
+        <source>Show Collections rows in Home Sections.</source>
+        <translation>在首页栏目中显示合集行。</translation>
+    </message>
+    <message>
+        <source>Show Favorite Movies, Series, and other favorite rows in Home Sections.</source>
+        <translation>在首页栏目中显示收藏的电影、剧集和其他收藏行。</translation>
+    </message>
+    <message>
+        <source>Show Genres rows in Home Sections.</source>
+        <translation>在首页栏目中显示类型行。</translation>
+    </message>
+    <message>
+        <source>Show Individual Episodes</source>
+        <translation>显示单集</translation>
+    </message>
+    <message>
+        <source>Show MDBList and TMDB ratings</source>
+        <translation>显示 MDBList 和 TMDB 评级</translation>
+    </message>
+    <message>
+        <source>Show Messages Button</source>
+        <translation>显示消息按钮</translation>
+    </message>
+    <message>
+        <source>Show Movies, Series, or both in Genres rows.</source>
+        <translation>在类型行中显示电影、剧集或两者。</translation>
+    </message>
+    <message>
+        <source>Show Playlist rows in Home Sections.</source>
+        <translation>在首页栏目中显示播放列表行。</translation>
+    </message>
+    <message>
+        <source>Show Studio row in Home Sections.</source>
+        <translation>在首页分区显示制作公司行。</translation>
+    </message>
+    <message>
+        <source>Show Technical Details</source>
+        <translation>显示媒体技术参数？</translation>
+    </message>
+    <message>
+        <source>Show Text</source>
+        <translation>显示文字？</translation>
+    </message>
+    <message>
+        <source>Show captions on YouTube trailers in the media bar</source>
+        <translation>在媒体栏的 YouTube 预告片中显示字幕</translation>
+    </message>
+    <message>
+        <source>Show codec, resolution, and stream information in banner summary</source>
+        <translation>在顶部概览栏显示编码、分辨率及音视频流信息</translation>
+    </message>
+    <message>
+        <source>Show decorative badges behind ratings</source>
+        <translation>显示评级背后的装饰徽章</translation>
+    </message>
+    <message>
+        <source>Show labels next to rating icons</source>
+        <translation>在评级图标旁边显示标签</translation>
+    </message>
+    <message>
+        <source>Show libraries from all connected servers</source>
+        <translation>显示所有已连接服务器的媒体库</translation>
+    </message>
+    <message>
+        <source>Show ratings on individual episodes</source>
+        <translation>显示单集评分</translation>
+    </message>
+    <message>
+        <source>Show the Next Up overlay instead of the Skip Outro button.</source>
+        <translation>显示“接下来播放”浮层，而不是“跳过片尾”按钮。</translation>
+    </message>
+    <message>
+        <source>Show the Seerr button in the navigation bar</source>
+        <translation>在导航栏中显示 Seerr 按钮</translation>
+    </message>
+    <message>
+        <source>Shuffle Content Type Filter</source>
+        <translation>随机播放内容类型过滤器</translation>
+    </message>
+    <message>
+        <source>Sort Collections rows by date added, release date, alphabetically, and more.</source>
+        <translation>按添加日期、发布日期、字母顺序等方式排序合集行。</translation>
+    </message>
+    <message>
+        <source>Sort Genres rows by date added, release date, alphabetically, and more.</source>
+        <translation>按添加日期、发布日期、字母顺序等对类型行进行排序。</translation>
+    </message>
+    <message>
+        <source>Source Collections</source>
+        <translation>源合集</translation>
+    </message>
+    <message>
+        <source>Source Libraries</source>
+        <translation>源媒体库</translation>
+    </message>
+    <message>
+        <source>Still Watching Prompt</source>
+        <translation>仍在观看提示</translation>
+    </message>
+    <message>
+        <source>Subtitle Rendering</source>
+        <translation>字幕渲染</translation>
+    </message>
+    <message>
+        <source>Subtitle Stream</source>
+        <translation>字幕轨道</translation>
+    </message>
+    <message>
+        <source>Use 24-hour time formatting wherever the clock is shown</source>
+        <translation>显示时钟时使用 24 小时制</translation>
+    </message>
+    <message>
+        <source>Use Series Thumbnails</source>
+        <translation>在详情页使用剧集缩略图</translation>
+    </message>
+    <message>
+        <source>Video Player</source>
+        <translation>视频播放</translation>
+    </message>
+    <message>
+        <source>When resuming playback (from Continue Watching or a media item page), how many seconds should be rewound?</source>
+        <translation>从“继续观看”或详情页继续播放时，先倒回多少秒？</translation>
+    </message>
+    <message>
+        <source>When resuming playback after pressing the pause button, how many seconds should be rewound?</source>
+        <translation>暂停后继续播放时，先倒回多少秒？</translation>
+    </message>
+    <message>
+        <source>White is much brighter in HDR than in SDR, so a dimmer style here avoids the glare</source>
+        <translation>白色在 HDR 中比 SDR 亮得多，此处使用较暗的样式可避免刺眼</translation>
+    </message>
+    <message>
+        <source>Genre</source>
+        <translation>类型</translation>
+    </message>
 </context>
 </TS>

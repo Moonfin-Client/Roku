@@ -1,0 +1,343 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/settingsGlyphs.bs"
+import "pkg:/source/utils/settingsMetrics.bs"
+
+' Lays out a screen's rows before they reach the list, so the list knows every row's height and
+' a recycled item only places what it's handed. Headings and notes become the band over the row
+' after them, which keeps focus off them.
+'
+' Each spec is either a band piece, { band: "header" | "note" | "plain" | "about", ... }, or a
+' row with a kind (nav, switch, picker, slider, info, option, reorder, button, plain, check, text)
+' and what the kind shows: title, subtitle, glyph, chip, boolValue and so on.
+function BuildRows(specs as object, style as object, width = settingsMetrics.PANEL_WIDTH as float) as object
+    content = CreateObject("roSGNode", "ContentNode")
+    heights = []
+    rowSpecs = []
+    bands = []
+    pending = []
+
+    for each spec in specs
+        if isValid(spec.band)
+            pending.push(spec)
+        else
+            rowNode = content.createChild("SettingsRowData")
+            heights.push(layoutRow(rowNode, spec, pending, style, width))
+            rowSpecs.push(spec)
+            bands.push(pending)
+            pending = []
+        end if
+    end for
+
+    ' Words with nothing under them still need somewhere to show
+    if pending.Count() > 0
+        rowNode = content.createChild("SettingsRowData")
+        heights.push(layoutRow(rowNode, { kind: "text", title: "" }, pending, style, width))
+        rowSpecs.push(invalid)
+        bands.push(pending)
+    end if
+
+    return { content: content, heights: heights, specs: rowSpecs, bands: bands }
+end function
+
+function layoutRow(rowNode as object, spec as object, bandSpecs as object, style as object, width as float) as float
+    palette = style.palette
+    fonts = palette.fonts
+    scale = palette.scale
+    kind = spec.kind ?? "nav"
+    band = layoutBand(bandSpecs, palette, width)
+
+    plain = kind = "plain"
+    option = kind = "option"
+    cardX = settingsMetrics.Px(12)
+    if plain or option then cardX = 0
+    cardWidth = width - cardX * 2
+    padX = settingsMetrics.Px(16) + 1
+    if plain then padX = settingsMetrics.Px(16)
+
+    leading = settingsMetrics.Px(44) + settingsMetrics.Px(14)
+    if plain then leading = settingsMetrics.Px(40) + settingsMetrics.Px(16)
+    if option then leading = 0
+
+    chip = spec.chip ?? ""
+    chipWidth = 0.0
+    chipHeight = 0.0
+    if kind = "picker" and chip <> ""
+        inset = settingsMetrics.Px(10) + 1
+        widest = settingsMetrics.Px(280) - inset * 2
+        natural = measureTextWidth(chip, fonts.bubble)
+        chipLines = 1
+        if natural > widest
+            natural = widest
+            chipLines = measureTextLines(chip, fonts.bubble, widest, 3)
+        end if
+        chipWidth = natural + inset * 2
+        chipHeight = settingsMetrics.BubbleHeight(chipLines)
+    end if
+
+    trailing = 0.0
+    if kind = "nav" then trailing = settingsMetrics.Px(14 + 20)
+    if option then trailing = settingsMetrics.Px(14 + 24)
+    if kind = "switch" then trailing = settingsMetrics.Px(14 + 60)
+    if kind = "reorder" or plain then trailing = settingsMetrics.Px(14 + 36)
+    if kind = "button"
+        trailing = settingsMetrics.Px(14 + 96 + 60)
+        if spec.locked = true then trailing = settingsMetrics.Px(14 + 96 + 42)
+    end if
+    if chipWidth > 0 then trailing = settingsMetrics.Px(14) + chipWidth
+    textWidth = cardWidth - padX * 2 - leading - trailing
+
+    subtitle = spec.subtitle ?? ""
+    tone = spec.subtitleTone ?? ""
+    captionDp = 12
+    captionFont = fonts.caption
+    if kind = "picker"
+        tone = "descSmall"
+        captionDp = 11
+        captionFont = fonts.descSmall
+    end if
+    captionLines = 0
+    if subtitle <> "" then captionLines = measureTextLines(subtitle, captionFont, textWidth, 8)
+    titleLines = 1
+    if kind <> "text" then titleLines = measureTextLines(spec.title ?? "", fonts.title, textWidth, 3)
+    if titleLines < 1 then titleLines = 1
+
+    titleLine = settingsMetrics.LineHeight(14, scale)
+    captionLine = settingsMetrics.LineHeight(captionDp, scale)
+    tight = kind = "switch" or kind = "picker" or kind = "button"
+    padY = settingsMetrics.Px(8)
+    if tight then padY = settingsMetrics.Px(4)
+
+    if kind = "slider"
+        top = 1 + padY + settingsMetrics.Px(8)
+        titleTop = top
+        captionTop = top + titleLine
+        captionLines = 1
+        cardHeight = settingsMetrics.Px(8) * 2 + titleLine + captionLine + settingsMetrics.Px(48) + padY * 2 + 2
+    else if kind = "text"
+        titleTop = 0
+        captionTop = 0
+        cardHeight = 0
+    else
+        bodyKind = "two"
+        if kind = "picker" then bodyKind = "three"
+        body = settingsMetrics.Body(bodyKind, titleLines, captionLines, captionDp, scale)
+        titleTop = 1 + padY + body.titleTop
+        captionTop = 1 + padY + body.captionTop
+        cardHeight = settingsMetrics.CardHeight(body.height, tight)
+        if plain and cardHeight < settingsMetrics.Px(72)
+            titleTop = titleTop + (settingsMetrics.Px(72) - cardHeight) / 2
+            captionTop = captionTop + (settingsMetrics.Px(72) - cardHeight) / 2
+            cardHeight = settingsMetrics.Px(72)
+        end if
+        if chipHeight + padY * 2 + 2 > cardHeight
+            grow = chipHeight + padY * 2 + 2 - cardHeight
+            titleTop = titleTop + grow / 2
+            captionTop = captionTop + grow / 2
+            cardHeight = cardHeight + grow
+        end if
+    end if
+
+    rowNode.setFields({
+        id: spec.id ?? "",
+        title: spec.title ?? "",
+        kind: kind,
+        subtitle: subtitle,
+        subtitleTone: tone,
+        glyph: settingsGlyphs.Char(spec.glyph ?? ""),
+        glyphStrong: spec.glyphStrong = true,
+        logo: spec.logo ?? "",
+        chip: chip,
+        chipWidth: chipWidth,
+        chipHeight: chipHeight,
+        boolValue: spec.boolValue = true,
+        locked: spec.locked = true,
+        canMovePrev: spec.canMovePrev = true,
+        canMoveNext: spec.canMoveNext = true,
+        selected: spec.selected = true,
+        sliderIndex: spec.sliderIndex ?? 0,
+        sliderCount: spec.sliderCount ?? 0,
+        bandLayout: band.parts,
+        bandHeight: band.height,
+        cardHeight: cardHeight,
+        titleTop: titleTop,
+        captionTop: captionTop,
+        captionLines: captionLines,
+        titleLines: titleLines,
+        textWidth: textWidth,
+        style: style
+    })
+
+    margin = settingsMetrics.Px(4)
+    if option then margin = settingsMetrics.Px(2)
+    if kind = "text" or plain then margin = 0
+    return band.height + cardHeight + margin * 2
+end function
+
+' Hint lines, a lead sentence, a section heading or the plain tile that heads a list, in that
+' order, with where each one sits
+function layoutBand(bandSpecs as object, palette as object, width as float) as object
+    parts = {}
+    height = 0.0
+    if bandSpecs.Count() = 0 then return { parts: parts, height: height }
+
+    fonts = palette.fonts
+    scale = palette.scale
+    bandLeft = settingsMetrics.Px(16)
+    textWidth = width - bandLeft * 2
+
+    for each spec in bandSpecs
+        if spec.band = "note" and spec.lead = true
+            leadLine = settingsMetrics.Px(20)
+            lines = measureTextLines(spec.text, fonts.lead, textWidth, 6)
+            parts.lead = { text: spec.text, x: bandLeft, y: height + settingsMetrics.Px(16), width: textWidth, height: lines * leadLine, lines: lines }
+            height = height + settingsMetrics.Px(16) + lines * leadLine + settingsMetrics.Px(8)
+            if isValidAndNotEmpty(spec.caption)
+                hintLine = settingsMetrics.Px(16)
+                lines = measureTextLines(spec.caption, fonts.hint, textWidth, 6)
+                parts.hint = { text: spec.caption, x: bandLeft, y: height, width: textWidth, height: lines * hintLine, lines: lines, tone: spec.tone }
+                height = height + lines * hintLine + settingsMetrics.Px(8)
+            end if
+        else if spec.band = "note"
+            hintLine = settingsMetrics.Px(16)
+            lines = measureTextLines(spec.text, fonts.hint, textWidth, 6)
+            parts.hint = { text: spec.text, x: bandLeft, y: height + settingsMetrics.Px(16), width: textWidth, height: lines * hintLine, lines: lines, tone: spec.tone }
+            height = height + settingsMetrics.Px(16) + lines * hintLine
+            if isValidAndNotEmpty(spec.caption)
+                lines = measureTextLines(spec.caption, fonts.hint, textWidth, 6)
+                height = height + settingsMetrics.Px(4)
+                parts.hint2 = { text: spec.caption, x: bandLeft, y: height, width: textWidth, height: lines * hintLine, lines: lines, tone: spec.tone }
+                height = height + lines * hintLine
+            end if
+            height = height + settingsMetrics.Px(12)
+        else if spec.band = "header"
+            if isValidAndNotEmpty(spec.text)
+                parts.header = { text: spec.text, x: bandLeft, y: height + settingsMetrics.Px(20), width: textWidth, height: settingsMetrics.Px(settingsMetrics.HEADER_LINE_DP), lines: 1 }
+                height = height + settingsMetrics.HeaderBand()
+            else
+                height = height + settingsMetrics.Px(20)
+            end if
+        else if spec.band = "about"
+            ' The logo and the version over About, with a rule under them
+            logoHeight = settingsMetrics.Px(72)
+            logoWidth = logoHeight * 1179 / 266
+            top = height + settingsMetrics.Px(24)
+            versionTop = top + logoHeight + settingsMetrics.Px(8)
+            dividerTop = versionTop + settingsMetrics.Px(20) + settingsMetrics.Px(24)
+            parts.about = {
+                text: spec.text,
+                logoX: (width - logoWidth) / 2,
+                logoY: top,
+                logoWidth: logoWidth,
+                logoHeight: logoHeight,
+                versionY: versionTop,
+                versionHeight: settingsMetrics.Px(20),
+                dividerY: dividerTop,
+                width: width
+            }
+            height = dividerTop + settingsMetrics.Px(1) + settingsMetrics.Px(8)
+        else if spec.band = "plain"
+            titleLine = settingsMetrics.LineHeight(14, scale)
+            captionLine = settingsMetrics.Px(16)
+            textX = bandLeft + settingsMetrics.Px(40) + settingsMetrics.Px(16)
+            plainWidth = width - textX - bandLeft
+            lines = measureTextLines(spec.caption ?? "", fonts.caption, plainWidth, 3)
+            top = height + settingsMetrics.Px(16) + 1
+            parts.plain = {
+                glyph: spec.glyph ?? "",
+                title: spec.text,
+                caption: spec.caption ?? "",
+                x: bandLeft,
+                y: top,
+                textX: textX,
+                width: plainWidth,
+                titleHeight: titleLine,
+                captionY: top + titleLine + settingsMetrics.Px(2),
+                captionHeight: lines * captionLine,
+                captionLines: lines
+            }
+            height = top + titleLine + settingsMetrics.Px(2) + lines * captionLine + settingsMetrics.Px(16) + 1
+        end if
+    end for
+
+    return { parts: parts, height: height }
+end function
+
+' Text is measured with a hidden label, once per string and face, since font metrics can't be
+' read on the thread the settings screen draws on
+function settingsMeasureLabel() as object
+    if not isValid(m.settingsMeasure)
+        m.settingsMeasure = m.top.createChild("Label")
+        m.settingsMeasure.visible = false
+        m.settingsMeasureCache = {}
+    end if
+    return m.settingsMeasure
+end function
+
+function measureTextWidth(text as string, font as object) as float
+    label = settingsMeasureLabel()
+    key = `w|${font.uri}|${font.size}|${text}`
+    cached = m.settingsMeasureCache[key]
+    if isValid(cached) then return cached
+
+    label.font = font
+    label.wrap = false
+    label.width = 0
+    label.height = 0
+    label.text = text
+    width = label.boundingRect().width
+    m.settingsMeasureCache[key] = width
+    return width
+end function
+
+function measureTextLines(text as string, font as object, width as float, maxLines as integer) as integer
+    if text = "" then return 0
+    if measureTextWidth(text, font) <= width then return 1
+
+    label = settingsMeasureLabel()
+    key = `l|${font.uri}|${font.size}|${Int(width)}|${text}`
+    cached = m.settingsMeasureCache[key]
+    if isValid(cached) then return cached
+
+    metrics = measureFontLines(font)
+    label.font = font
+    label.wrap = true
+    label.maxLines = 0
+    label.lineSpacing = 0
+    label.width = width
+    label.height = 0
+    label.text = text
+    lines = Int((label.boundingRect().height - metrics.first) / metrics.pitch + 0.5) + 1
+    if lines < 1 then lines = 1
+    if lines > maxLines then lines = maxLines
+    m.settingsMeasureCache[key] = lines
+    return lines
+end function
+
+' How tall a face's first line is and how far each line after it adds, as the label draws them
+function measureFontLines(font as object) as object
+    label = settingsMeasureLabel()
+    key = `h|${font.uri}|${font.size}`
+    cached = m.settingsMeasureCache[key]
+    if isValid(cached) then return cached
+
+    label.font = font
+    label.wrap = true
+    label.maxLines = 0
+    label.lineSpacing = 0
+    label.width = 0
+    label.height = 0
+    label.text = "Ag"
+    first = label.boundingRect().height
+    label.text = "Ag" + Chr(10) + "Ag"
+    pitch = label.boundingRect().height - first
+    if first <= 0 then first = font.size * 1.25
+    if pitch <= 0 then pitch = first
+    metrics = { first: first, pitch: pitch }
+    m.settingsMeasureCache[key] = metrics
+    return metrics
+end function
+
+' The spacing that sets a wrapped label's lines a given distance apart
+function lineSpacingFor(font as object, pitch as float) as float
+    return pitch - measureFontLines(font).pitch
+end function

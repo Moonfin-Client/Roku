@@ -1420,5 +1420,493 @@
         <translation>Configura la massima risoluzione per la riproduzione di file video su questo dispositivo.</translation>
         <extracomment>User Setting - Description</extracomment>
     </message>
+    <message>
+        <source>24-Hour Clock</source>
+        <translation>Orologio 24 ore</translation>
+    </message>
+    <message>
+        <source>APP INFO</source>
+        <translation>INFORMAZIONI SULL'APP</translation>
+    </message>
+    <message>
+        <source>ASS/SSA Direct Play</source>
+        <translation>Riproduzione Diretta ASS/SSA</translation>
+    </message>
+    <message>
+        <source>Above bar, center</source>
+        <translation>Sopra la barra, al centro</translation>
+    </message>
+    <message>
+        <source>Above bar, left</source>
+        <translation>Sopra la barra, a sinistra</translation>
+    </message>
+    <message>
+        <source>Above bar, right</source>
+        <translation>Sopra la barra, a destra</translation>
+    </message>
+    <message>
+        <source>Additional Ratings</source>
+        <translation>Valutazioni Aggiuntive</translation>
+    </message>
+    <message>
+        <source>Advanced</source>
+        <translation>Avanzate</translation>
+    </message>
+    <message>
+        <source>App Theme</source>
+        <translation>Tema dell'app</translation>
+    </message>
+    <message>
+        <source>Auto Advance</source>
+        <translation>Avanzamento Automatico</translation>
+    </message>
+    <message>
+        <source>Auto Advance Interval</source>
+        <translation>Intervallo Avanzamento Automatico</translation>
+    </message>
+    <message>
+        <source>Auto Login</source>
+        <translation>Accesso Automatico</translation>
+    </message>
+    <message>
+        <source>Automatic Queuing</source>
+        <translation>Accodamento Automatico</translation>
+    </message>
+    <message>
+        <source>Automatically advance to next slide</source>
+        <translation>Avanza automaticamente alla prossima slide</translation>
+    </message>
+    <message>
+        <source>Automatically play the next episode when available.</source>
+        <translation>Riproduci automaticamente l'episodio successivo quando disponibile.</translation>
+    </message>
+    <message>
+        <source>Automatically show tab content while browsing tabs. Turn off to open and close each tab manually.</source>
+        <translation>Mostra automaticamente il contenuto delle schede durante la navigazione. Disattiva per aprire e chiudere ogni scheda manualmente.</translation>
+    </message>
+    <message>
+        <source>Background Blur</source>
+        <translation>Sfocatura Sfondo Dettagli</translation>
+    </message>
+    <message>
+        <source>Below bar, center</source>
+        <translation>Sotto la barra, al centro</translation>
+    </message>
+    <message>
+        <source>Below bar, left</source>
+        <translation>Sotto la barra, a sinistra</translation>
+    </message>
+    <message>
+        <source>Below bar, right</source>
+        <translation>Sotto la barra, a destra</translation>
+    </message>
+    <message>
+        <source>Browsing Background Blur</source>
+        <translation>Sfocatura Sfondo Navigazione</translation>
+    </message>
+    <message>
+        <source>Change PIN</source>
+        <translation>Cambia PIN</translation>
+    </message>
+    <message>
+        <source>Change subtitle modes, default languages, appearance, and rendering options.</source>
+        <translation>Modifica le modalità dei sottotitoli, le lingue predefinite, l'aspetto e le opzioni di rendering.</translation>
+    </message>
+    <message>
+        <source>Choose between various media bar styles, or turn the media bar off</source>
+        <translation>Scegli tra diversi stili della barra multimediale oppure disattiva la barra multimediale</translation>
+    </message>
+    <message>
+        <source>Choose what is shown here, or hide it.</source>
+        <translation>Scegli cosa mostrare qui, oppure nascondilo.</translation>
+    </message>
+    <message>
+        <source>Choose what is shown on the right side of the music progress bar.</source>
+        <translation>Scegli cosa mostrare a destra della barra di avanzamento della musica.</translation>
+    </message>
+    <message>
+        <source>Choose which buttons the details screen shows</source>
+        <translation>Scegli quali pulsanti mostrare nella schermata dei dettagli</translation>
+    </message>
+    <message>
+        <source>Choose which buttons the player shows</source>
+        <translation>Scegli quali pulsanti mostrare nel lettore</translation>
+    </message>
+    <message>
+        <source>Choose which time labels appear around the playback progress bar.</source>
+        <translation>Scegli quali indicazioni di tempo mostrare attorno alla barra di avanzamento.</translation>
+    </message>
+    <message>
+        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes.</source>
+        <translation>Classica utilizza il layout Moonfin originale con contenuti centrati. Moderna offre un layout cinematografico e adattivo.</translation>
+    </message>
+    <message>
+        <source>Classic keeps per-row image type and info overlay. Modern uses portrait-to-backdrop rows.</source>
+        <translation>Classico mantiene il tipo di immagine per riga e l'overlay informativo. Moderno usa righe da verticale a sfondo.</translation>
+    </message>
+    <message>
+        <source>Clock Display</source>
+        <translation>Visualizzazione Orologio</translation>
+    </message>
+    <message>
+        <source>Combine separate libraries of the same type for Recently Added and Recently Released home rows.</source>
+        <translation>Combina le librerie separate dello stesso tipo nelle righe home Aggiunti di Recente e Usciti di Recente.</translation>
+    </message>
+    <message>
+        <source>Configure the maximum channels of your audio setup. Multichannel streams exceeding this limit will downmix or transcode.</source>
+        <translation>Configura il numero massimo di canali del tuo impianto audio. I flussi multicanale che superano questo limite verranno convertiti in downmix o transcodificati.</translation>
+    </message>
+    <message>
+        <source>Customize padding between home rows</source>
+        <translation>Personalizza il margine interno tra le righe della Home</translation>
+    </message>
+    <message>
+        <source>Customize subtitle appearance</source>
+        <translation>Personalizza l'aspetto dei sottotitoli</translation>
+    </message>
+    <message>
+        <source>Details Screen Style</source>
+        <translation>Stile schermata dettagli</translation>
+    </message>
+    <message>
+        <source>Direct play ASS/SSA subtitles</source>
+        <translation>Riproduzione diretta sottotitoli ASS/SSA</translation>
+    </message>
+    <message>
+        <source>Display Audio Rows</source>
+        <translation>Mostra Righe Audio</translation>
+    </message>
+    <message>
+        <source>Display Collections Rows</source>
+        <translation>Mostra Righe Collezioni</translation>
+    </message>
+    <message>
+        <source>Display Favorites Rows</source>
+        <translation>Mostra Righe Preferiti</translation>
+    </message>
+    <message>
+        <source>Display Genres Rows</source>
+        <translation>Mostra Righe Generi</translation>
+    </message>
+    <message>
+        <source>Display Playlist Rows</source>
+        <translation>Mostra Righe Playlist</translation>
+    </message>
+    <message>
+        <source>Display Studio Row</source>
+        <translation>Mostra Riga Studi</translation>
+    </message>
+    <message>
+        <source>Donate a coffee to the developer</source>
+        <translation>Offri un caffè allo sviluppatore</translation>
+    </message>
+    <message>
+        <source>Enable PIN Code</source>
+        <translation>Abilita Codice PIN</translation>
+    </message>
+    <message>
+        <source>Enable and reorder the rating sources shown throughout the app</source>
+        <translation>Abilita e riordina le fonti di valutazione mostrate nell'app</translation>
+    </message>
+    <message>
+        <source>Expand TV shows to display each episode separately.</source>
+        <translation>Espandi le serie TV per mostrare ogni episodio separatamente.</translation>
+    </message>
+    <message>
+        <source>Expanded Tabs</source>
+        <translation>Schede Espanse</translation>
+    </message>
+    <message>
+        <source>Extended shows a full card with episode artwork and description. Minimal shows a compact countdown overlay. Disabled hides the prompt entirely.</source>
+        <translation>Esteso mostra una scheda completa con grafica e descrizione dell'episodio. Minimal mostra una sovrapposizione compatta del conto alla rovescia. Disabilitato nasconde completamente il prompt.</translation>
+    </message>
+    <message>
+        <source>Featured content, appearance</source>
+        <translation>Contenuti in evidenza, aspetto</translation>
+    </message>
+    <message>
+        <source>Hide Backdrops While Browsing</source>
+        <translation>Nascondere gli Sfondi durante la Navigazione?</translation>
+    </message>
+    <message>
+        <source>Hide Collection associated library items when browsing libraries</source>
+        <translation>Nascondi gli elementi della libreria associati a una collezione durante la navigazione</translation>
+    </message>
+    <message>
+        <source>Hide adult content in results</source>
+        <translation>Nascondi contenuti per adulti nei risultati</translation>
+    </message>
+    <message>
+        <source>Hide the movie or episode descriptive text.</source>
+        <translation>Nasconde il testo descrittivo del film o dell'episodio.</translation>
+    </message>
+    <message>
+        <source>How long a show stays in Next Up after you last watched it</source>
+        <translation>Per quanto tempo una serie resta in Prossimo dopo l'ultima visione</translation>
+    </message>
+    <message>
+        <source>Limit the maximum resolution the player will request. Higher-resolution content will be transcoded down.</source>
+        <translation>Limita la risoluzione massima richiesta dal giocatore. Il contenuto ad alta risoluzione verrà transcodificato.</translation>
+    </message>
+    <message>
+        <source>Loop Theme Music</source>
+        <translation>Ripeti Musica Tema</translation>
+    </message>
+    <message>
+        <source>Manage</source>
+        <translation>Gestisci</translation>
+    </message>
+    <message>
+        <source>Max Audio Channels</source>
+        <translation>Numero massimo di canali audio</translation>
+    </message>
+    <message>
+        <source>Max Resolution</source>
+        <translation>Risoluzione Massima</translation>
+    </message>
+    <message>
+        <source>Max days in Next Up</source>
+        <translation>Giorni massimi in Prossimo</translation>
+    </message>
+    <message>
+        <source>Media Bar Style</source>
+        <translation>Stile della barra media</translation>
+    </message>
+    <message>
+        <source>Media Player Behavior</source>
+        <translation>Comportamento del Lettore Media</translation>
+    </message>
+    <message>
+        <source>Media Segment Countdown</source>
+        <translation>Conto alla Rovescia Segmenti Media</translation>
+    </message>
+    <message>
+        <source>Media request integration</source>
+        <translation>Integrazione richieste media</translation>
+    </message>
+    <message>
+        <source>Metacritic (User)</source>
+        <translation>Metacritic (Utenti)</translation>
+    </message>
+    <message>
+        <source>Music Player</source>
+        <translation>Lettore Musicale</translation>
+    </message>
+    <message>
+        <source>My Rating</source>
+        <translation>La Mia Valutazione</translation>
+    </message>
+    <message>
+        <source>NSFW Filter</source>
+        <translation>Filtro NSFW</translation>
+    </message>
+    <message>
+        <source>Navbar style, toolbar buttons, appearance</source>
+        <translation>Stile barra navigazione, pulsanti barra strumenti, aspetto</translation>
+    </message>
+    <message>
+        <source>Next Up Display</source>
+        <translation>Comportamento Prossimo</translation>
+    </message>
+    <message>
+        <source>Play theme music on detail pages</source>
+        <translation>Riproduci musica tema nelle pagine di dettaglio</translation>
+    </message>
+    <message>
+        <source>Play trailers/prerolls before a main feature</source>
+        <translation>Riproduci trailer/preroll prima di un film principale</translation>
+    </message>
+    <message>
+        <source>Playback Enhancements</source>
+        <translation>Miglioramenti della Riproduzione</translation>
+    </message>
+    <message>
+        <source>Prefer Audio Description Tracks</source>
+        <translation>Preferisci le tracce di descrizione audio</translation>
+    </message>
+    <message>
+        <source>Prefer audio description tracks over normal tracks.</source>
+        <translation>Preferisci le tracce di descrizione audio rispetto alle tracce normali.</translation>
+    </message>
+    <message>
+        <source>Prioritize SDH/CC subtitle tracks when auto-selecting.</source>
+        <translation>Dai priorità alle tracce di sottotitoli SDH/CC nella selezione automatica.</translation>
+    </message>
+    <message>
+        <source>Rating Badges</source>
+        <translation>Badge Valutazione</translation>
+    </message>
+    <message>
+        <source>Rating Labels</source>
+        <translation>Etichette Valutazione</translation>
+    </message>
+    <message>
+        <source>Rating Sources</source>
+        <translation>Fonti Valutazione</translation>
+    </message>
+    <message>
+        <source>Recommendation System</source>
+        <translation>Sistema di raccomandazione</translation>
+    </message>
+    <message>
+        <source>Repeat the track instead of playing it once</source>
+        <translation>Ripeti la traccia invece di riprodurla una sola volta</translation>
+    </message>
+    <message>
+        <source>Replace Skip Outro with Next Up Display</source>
+        <translation>Sostituisci Salta Finale con la Schermata Prossimo</translation>
+    </message>
+    <message>
+        <source>Rotten Tomatoes (Audience)</source>
+        <translation>Rotten Tomatoes (Pubblico)</translation>
+    </message>
+    <message>
+        <source>Rotten Tomatoes (Critics)</source>
+        <translation>Rotten Tomatoes (Critici)</translation>
+    </message>
+    <message>
+        <source>Row Padding</source>
+        <translation>Margine interno della riga Home</translation>
+    </message>
+    <message>
+        <source>Row Type</source>
+        <translation>Tipo di Riga</translation>
+    </message>
+    <message>
+        <source>Run setup again</source>
+        <translation>Esegui di nuovo la configurazione</translation>
+    </message>
+    <message>
+        <source>Show Audio rows in Home Sections.</source>
+        <translation>Mostra le righe Audio nelle Sezioni Home.</translation>
+    </message>
+    <message>
+        <source>Show Collections rows in Home Sections.</source>
+        <translation>Mostra le righe Collezioni nelle Sezioni Home.</translation>
+    </message>
+    <message>
+        <source>Show Favorite Movies, Series, and other favorite rows in Home Sections.</source>
+        <translation>Mostra Film Preferiti, Serie e altre righe di preferiti nelle Sezioni Home.</translation>
+    </message>
+    <message>
+        <source>Show Genres rows in Home Sections.</source>
+        <translation>Mostra le righe Generi nelle Sezioni Home.</translation>
+    </message>
+    <message>
+        <source>Show Individual Episodes</source>
+        <translation>Mostra Singoli Episodi</translation>
+    </message>
+    <message>
+        <source>Show MDBList and TMDB ratings</source>
+        <translation>Mostra valutazioni MDBList e TMDB</translation>
+    </message>
+    <message>
+        <source>Show Movies, Series, or both in Genres rows.</source>
+        <translation>Mostra Film, Serie o entrambi nelle righe Generi.</translation>
+    </message>
+    <message>
+        <source>Show Playlist rows in Home Sections.</source>
+        <translation>Mostra le righe Playlist nelle Sezioni Home.</translation>
+    </message>
+    <message>
+        <source>Show Studio row in Home Sections.</source>
+        <translation>Mostra la riga Studi nelle Sezioni Home.</translation>
+    </message>
+    <message>
+        <source>Show Technical Details</source>
+        <translation>Mostrare i Dettagli Tecnici?</translation>
+    </message>
+    <message>
+        <source>Show captions on YouTube trailers in the media bar</source>
+        <translation>Mostra i sottotitoli sui trailer di YouTube nella barra media</translation>
+    </message>
+    <message>
+        <source>Show codec, resolution, and stream information in banner summary</source>
+        <translation>Mostra informazioni su codec, risoluzione e stream nel riepilogo del banner</translation>
+    </message>
+    <message>
+        <source>Show decorative badges behind ratings</source>
+        <translation>Mostra badge decorativi dietro le valutazioni</translation>
+    </message>
+    <message>
+        <source>Show labels next to rating icons</source>
+        <translation>Mostra etichette accanto alle icone di valutazione</translation>
+    </message>
+    <message>
+        <source>Show libraries from all connected servers</source>
+        <translation>Mostra librerie da tutti i server connessi</translation>
+    </message>
+    <message>
+        <source>Show ratings on individual episodes</source>
+        <translation>Mostra valutazioni sui singoli episodi</translation>
+    </message>
+    <message>
+        <source>Show the Next Up overlay instead of the Skip Outro button.</source>
+        <translation>Mostra l'overlay Prossimo invece del pulsante Salta Finale.</translation>
+    </message>
+    <message>
+        <source>Show the Seerr button in the navigation bar</source>
+        <translation>Mostra il pulsante Seerr nella barra di navigazione</translation>
+    </message>
+    <message>
+        <source>Shuffle Content Type Filter</source>
+        <translation>Filtro del tipo di contenuto casuale</translation>
+    </message>
+    <message>
+        <source>Sort Collections rows by date added, release date, alphabetically, and more.</source>
+        <translation>Ordina le righe Collezioni per data di aggiunta, data di uscita, alfabeticamente e altro.</translation>
+    </message>
+    <message>
+        <source>Sort Genres rows by date added, release date, alphabetically, and more.</source>
+        <translation>Ordina le righe Generi per data di aggiunta, data di uscita, alfabeticamente e altro.</translation>
+    </message>
+    <message>
+        <source>Source Collections</source>
+        <translation>Collezioni Sorgente</translation>
+    </message>
+    <message>
+        <source>Source Libraries</source>
+        <translation>Librerie Sorgente</translation>
+    </message>
+    <message>
+        <source>Still Watching Prompt</source>
+        <translation>Prompt Stai Ancora Guardando</translation>
+    </message>
+    <message>
+        <source>Subtitle Rendering</source>
+        <translation>Rendering Sottotitoli</translation>
+    </message>
+    <message>
+        <source>Subtitle Stream</source>
+        <translation>Stream Sottotitoli</translation>
+    </message>
+    <message>
+        <source>Use 24-hour time formatting wherever the clock is shown</source>
+        <translation>Utilizza la formattazione dell'ora a 24 ore ovunque venga visualizzato l'orologio</translation>
+    </message>
+    <message>
+        <source>Use Series Thumbnails</source>
+        <translation>Usa Miniature Serie nella Pagina Dettagli</translation>
+    </message>
+    <message>
+        <source>Video Player</source>
+        <translation>Lettore Video</translation>
+    </message>
+    <message>
+        <source>When resuming playback (from Continue Watching or a media item page), how many seconds should be rewound?</source>
+        <translation>Quando si riprende la riproduzione (da Continua a guardare o dalla pagina di un elemento multimediale), quanti secondi devono essere riavvolti?</translation>
+    </message>
+    <message>
+        <source>When resuming playback after pressing the pause button, how many seconds should be rewound?</source>
+        <translation>Quando si riprende la riproduzione dopo aver premuto il pulsante di pausa, quanti secondi devono essere riavvolti?</translation>
+    </message>
+    <message>
+        <source>White is much brighter in HDR than in SDR, so a dimmer style here avoids the glare</source>
+        <translation>Il bianco è molto più luminoso in HDR che in SDR, quindi uno stile più tenue qui evita l'abbagliamento</translation>
+    </message>
+    <message>
+        <source>Genre</source>
+        <translation>Genere</translation>
+    </message>
 </context>
 </TS>

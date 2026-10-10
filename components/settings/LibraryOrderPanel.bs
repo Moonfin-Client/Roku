@@ -1,44 +1,19 @@
 import "pkg:/components/itemMenu/itemMenuToastHost.bs"
+import "pkg:/components/settings/settingsRows.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/utils/libraryOrder.bs"
 import "pkg:/source/utils/misc.bs"
-import "pkg:/source/utils/trackDialog.bs"
-
-const TEXT_SIZE = 20
-const TEXT_GAP = 12
-const HINT_GAP = 4
-const HINT_LINE = 26
-' Room the list keeps while it loads, so the panel doesnt jump when the libraries arrive
-const LOADING_ROWS = 3
 
 sub init()
     m.list = m.top.findNode("checklist")
     m.list.observeField("itemSelected", "onItemSelected")
-
-    m.description = m.top.findNode("description")
-    m.hint = m.top.findNode("hint")
+    m.panelFill = m.top.findNode("panelFill")
+    m.titleBar = m.top.findNode("titleBar")
     m.loading = m.top.findNode("loading")
 
     m.saveTimer = m.top.findNode("saveTimer")
     m.saveTimer.duration = libraryOrder.SAVE_DELAY
     m.saveTimer.observeField("fire", "onSaveTimer")
-
-    m.parts = {
-        panel: m.top.findNode("panel"),
-        panelBg: m.top.findNode("panelBg"),
-        panelBorder: m.top.findNode("panelBorder"),
-        title: m.top.findNode("title"),
-        titleRule: m.top.findNode("titleRule"),
-        list: m.list
-    }
-
-    m.parts.title.text = tr("Library Order")
-    m.description.text = tr("Your libraries appear in this order on My Media, the recently added rows and the navigation bar. The order is saved to your server account, so other apps you sign in to use it too.")
-    m.hint.text = tr("Press left or right to move the highlighted library.")
-    for each label in [m.description, m.hint]
-        label.font.size = TEXT_SIZE
-        label.width = trackDialog.PANEL_WIDTH - (trackDialog.ROW_PAD_X * 2)
-    end for
 
     m.libraries = []
     m.unified = false
@@ -48,17 +23,23 @@ sub init()
     m.savePending = false
     m.saveQueued = false
     m.isClosed = false
-    m.laidOutCount = -1
+    m.retryShown = false
 end sub
 
 sub showDialog()
+    palette = m.top.style.palette
+    m.panelFill.blendColor = palette.panel.color
+    m.panelFill.opacity = palette.panel.opacity
+    m.list.animate = not palette.lowTier
+    m.titleBar.style = m.top.style
+    m.titleBar.isRoot = false
+    m.titleBar.title = tr("Library Order")
     load()
 end sub
 
 sub load()
     m.libraries = []
-    layoutPanel(LOADING_ROWS)
-    m.list.content = CreateObject("roSGNode", "ContentNode")
+    showRows([], 0)
     m.list.setFocus(true)
     m.loading.active = true
 
@@ -90,80 +71,46 @@ sub onLoaded(event as object)
     showLibraries(0)
 end sub
 
+' The lines explaining the screen head the list, and each library is a plain tile with its glyph
 sub showLibraries(focusIndex as integer)
-    content = CreateObject("roSGNode", "ContentNode")
+    specs = [{ band: "note", text: tr("Your libraries appear in this order on My Media, the recently added rows and the navigation bar. The order is saved to your server account, so other apps you sign in to use it too."), caption: tr("Press left or right to move the highlighted library.") }]
     for i = 0 to m.libraries.Count() - 1
         library = m.libraries[i]
-        row = content.CreateChild("LibraryOrderData")
-        row.title = library.Name
-        if m.unified and isValidAndNotEmpty(library.serverName) then row.title += " (" + library.serverName + ")"
+        title = library.Name
+        if m.unified and isValidAndNotEmpty(library.serverName) then title += " (" + library.serverName + ")"
+        subtitle = ""
         ' Emby's own apps hide a library by its Guid rather than its Id
-        if m.hidden.DoesExist(library.Id) or (isValidAndNotEmpty(library.Guid) and m.hidden.DoesExist(library.Guid)) then row.description = tr("Hidden")
-        row.icon = libraryOrder.Icon(library)
-        row.reorderable = true
-        row.moveHints = true
-        row.canMoveLeft = not libraryOrder.IsFirstOfServer(m.libraries, i)
-        row.canMoveRight = not libraryOrder.IsLastOfServer(m.libraries, i)
+        if m.hidden.DoesExist(library.Id) or (isValidAndNotEmpty(library.Guid) and m.hidden.DoesExist(library.Guid)) then subtitle = tr("Hidden")
+        specs.push({
+            kind: "plain",
+            title: title,
+            subtitle: subtitle,
+            glyph: libraryOrder.Icon(library),
+            canMovePrev: not libraryOrder.IsFirstOfServer(m.libraries, i),
+            canMoveNext: not libraryOrder.IsLastOfServer(m.libraries, i)
+        })
     end for
-
-    layoutPanel(m.libraries.Count())
-    m.list.content = content
-    m.list.jumpToItem = focusIndex
-    m.list.setFocus(true)
+    m.retryShown = false
+    showRows(specs, focusIndex)
 end sub
 
 sub showMessage(message as string, action as string)
-    content = CreateObject("roSGNode", "ContentNode")
-    note = content.CreateChild("LibraryOrderData")
-    note.title = message
-    note.noIndicator = true
-    note.paragraph = true
+    specs = [{ band: "note", text: message }]
+    m.retryShown = action <> ""
+    if m.retryShown then specs.push({ kind: "nav", title: action, glyph: "refresh" })
+    showRows(specs, 0)
+end sub
 
-    if action <> ""
-        button = content.CreateChild("LibraryOrderData")
-        button.title = action
-        button.action = "retry"
-        button.noIndicator = true
-    end if
-
-    layoutPanel(content.getChildCount())
-    m.list.content = content
-    m.list.jumpToItem = content.getChildCount() - 1
+sub showRows(specs as object, focusIndex as integer)
+    built = BuildRows(specs, m.top.style)
+    m.list.rowHeights = built.heights
+    m.list.content = built.content
+    if focusIndex > 0 then m.list.jumpToItem = focusIndex
     m.list.setFocus(true)
 end sub
 
-' The description and the hint sit between the title and its rule, so everything below them moves
-' down by what they take, and the list gives up rows to keep the panel on screen. A move keeps the
-' row count, so the panel is only laid out again when that changes
-sub layoutPanel(count as integer)
-    if count = m.laidOutCount then return
-    m.laidOutCount = count
-
-    textTop = trackDialog.PANEL_PAD_Y + trackDialog.TITLE_LINE + TEXT_GAP
-    descriptionHeight = m.description.boundingRect().height
-    block = TEXT_GAP + descriptionHeight + HINT_GAP + HINT_LINE
-
-    room = trackDialog.PANEL_MAX_HEIGHT - (trackDialog.PANEL_PAD_Y * 2) - trackDialog.TitleBlock() - block
-    rows = Int(room / trackDialog.RowHeight())
-    if count < rows then rows = count
-    if rows < 1 then rows = 1
-    trackDialog.Layout(m.parts, rows)
-
-    m.description.translation = [trackDialog.ROW_PAD_X, textTop]
-    m.hint.translation = [trackDialog.ROW_PAD_X, textTop + descriptionHeight + HINT_GAP]
-
-    for each part in [m.parts.titleRule, m.list]
-        part.translation = [part.translation[0], part.translation[1] + block]
-    end for
-    m.parts.panel.translation = [m.parts.panel.translation[0], m.parts.panel.translation[1] - (block / 2)]
-    for each layer in [m.parts.panelBg, m.parts.panelBorder]
-        layer.height = layer.height + block
-    end for
-end sub
-
 sub onItemSelected()
-    row = m.list.content.getChild(m.list.itemSelected)
-    if isValid(row) and row.action = "retry" then load()
+    if m.retryShown then load()
 end sub
 
 ' Left and right move the focused library, since up and down already move the focus
@@ -177,10 +124,12 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     if isStringEqual(key, KeyCode.LEFT) then return moveFocused(-1)
     if isStringEqual(key, KeyCode.RIGHT) then return moveFocused(1)
-    return false
+    ' The settings panel behind reads up from its first row as a move to its title bar
+    return isStringEqual(key, KeyCode.UP)
 end function
 
 function moveFocused(direction as integer) as boolean
+    if m.libraries.Count() = 0 then return true
     index = m.list.itemFocused
     moved = libraryOrder.Move(m.libraries, index, index + direction)
     if not isValid(moved) then return true

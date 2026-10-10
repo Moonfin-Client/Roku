@@ -1563,5 +1563,65 @@
         <translation>Audio Codec Support</translation>
         <extracomment>Settings Menu - Title of option</extracomment>
     </message>
+    <message>
+        <source>Above bar, center</source>
+        <translation>Above bar, centre</translation>
+    </message>
+    <message>
+        <source>Background Blur</source>
+        <translation>Details Background Blur</translation>
+    </message>
+    <message>
+        <source>Below bar, center</source>
+        <translation>Below bar, centre</translation>
+    </message>
+    <message>
+        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes.</source>
+        <translation>Classic is the original centred Moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes.</translation>
+    </message>
+    <message>
+        <source>Customize how many action buttons appear before folding into the More Actions menu.</source>
+        <translation>Customise how many action buttons appear before folding into the More Actions menu.</translation>
+    </message>
+    <message>
+        <source>Customize subtitle appearance</source>
+        <translation>Customise subtitle appearance</translation>
+    </message>
+    <message>
+        <source>Display Favorites Rows</source>
+        <translation>Display Favourites Rows</translation>
+    </message>
+    <message>
+        <source>Display customizable posters that expand on focus. Disable to always show landscape thumbnail.</source>
+        <translation>Display customisable posters that expand on focus. Disable to always show landscape thumbnail.</translation>
+    </message>
+    <message>
+        <source>Hide Backdrops While Browsing</source>
+        <translation>Hide Backdrops while Browsing?</translation>
+    </message>
+    <message>
+        <source>Row Padding</source>
+        <translation>Home Row Padding</translation>
+    </message>
+    <message>
+        <source>Show Favorite Movies, Series, and other favorite rows in Home Sections.</source>
+        <translation>Show Favourite Movies, Series, and other favourite rows in Home Sections.</translation>
+    </message>
+    <message>
+        <source>Show Messages Button</source>
+        <translation>Show messages button</translation>
+    </message>
+    <message>
+        <source>Show Technical Details</source>
+        <translation>Show Technical Details?</translation>
+    </message>
+    <message>
+        <source>Show Text</source>
+        <translation>Show Text?</translation>
+    </message>
+    <message>
+        <source>Use Series Thumbnails</source>
+        <translation>Use Series Thumbnails on Details Page</translation>
+    </message>
 </context>
 </TS>

@@ -6213,5 +6213,757 @@
         <extracomment>Note when resetting a settings sync profile failed, {0} is the profile name</extracomment>
         <translation>Couldn't reset the {0} profile</translation>
     </message>
+    <message>
+        <source>24-Hour Clock</source>
+        <translation>24-Hour Clock</translation>
+    </message>
+    <message>
+        <source>APP INFO</source>
+        <translation>APP INFO</translation>
+    </message>
+    <message>
+        <source>ASS/SSA Direct Play</source>
+        <translation>ASS/SSA Direct Play</translation>
+    </message>
+    <message>
+        <source>AUDIO</source>
+        <translation>AUDIO</translation>
+    </message>
+    <message>
+        <source>Above bar, center</source>
+        <translation>Above bar, center</translation>
+    </message>
+    <message>
+        <source>Above bar, left</source>
+        <translation>Above bar, left</translation>
+    </message>
+    <message>
+        <source>Above bar, right</source>
+        <translation>Above bar, right</translation>
+    </message>
+    <message>
+        <source>Additional Ratings</source>
+        <translation>Additional Ratings</translation>
+    </message>
+    <message>
+        <source>Advanced</source>
+        <translation>Advanced</translation>
+    </message>
+    <message>
+        <source>App Theme</source>
+        <translation>App Theme</translation>
+    </message>
+    <message>
+        <source>Audio Stream</source>
+        <translation>Audio Stream</translation>
+    </message>
+    <message>
+        <source>Auto Advance</source>
+        <translation>Auto Advance</translation>
+    </message>
+    <message>
+        <source>Auto Advance Interval</source>
+        <translation>Auto Advance Interval</translation>
+    </message>
+    <message>
+        <source>Auto Login</source>
+        <translation>Auto Login</translation>
+    </message>
+    <message>
+        <source>Automatic Queuing</source>
+        <translation>Automatic Queuing</translation>
+    </message>
+    <message>
+        <source>Automatically advance to next slide</source>
+        <translation>Automatically advance to next slide</translation>
+    </message>
+    <message>
+        <source>Automatically play the next episode when available.</source>
+        <translation>Automatically play the next episode when available.</translation>
+    </message>
+    <message>
+        <source>Automatically show tab content while browsing tabs. Turn off to open and close each tab manually.</source>
+        <translation>Automatically show tab content while browsing tabs. Turn off to open and close each tab manually.</translation>
+    </message>
+    <message>
+        <source>Background Blur</source>
+        <translation>Background Blur</translation>
+    </message>
+    <message>
+        <source>Below bar, center</source>
+        <translation>Below bar, center</translation>
+    </message>
+    <message>
+        <source>Below bar, left</source>
+        <translation>Below bar, left</translation>
+    </message>
+    <message>
+        <source>Below bar, right</source>
+        <translation>Below bar, right</translation>
+    </message>
+    <message>
+        <source>Browsing Background Blur</source>
+        <translation>Browsing Background Blur</translation>
+    </message>
+    <message>
+        <source>COLLECTIONS</source>
+        <translation>COLLECTIONS</translation>
+    </message>
+    <message>
+        <source>CONTINUE WATCHING AND NEXT UP</source>
+        <translation>CONTINUE WATCHING AND NEXT UP</translation>
+    </message>
+    <message>
+        <source>Capture media, login and network logs and send them to the server as a report</source>
+        <translation>Capture media, login and network logs and send them to the server as a report</translation>
+    </message>
+    <message>
+        <source>Change PIN</source>
+        <translation>Change PIN</translation>
+    </message>
+    <message>
+        <source>Change subtitle modes, default languages, appearance, and rendering options.</source>
+        <translation>Change subtitle modes, default languages, appearance, and rendering options.</translation>
+    </message>
+    <message>
+        <source>Choose and reorder what metadata the details screen shows</source>
+        <translation>Choose and reorder what metadata the details screen shows</translation>
+    </message>
+    <message>
+        <source>Choose between various media bar styles, or turn the media bar off</source>
+        <translation>Choose between various media bar styles, or turn the media bar off</translation>
+    </message>
+    <message>
+        <source>Choose how many Since You Watched rows to display (1-5)</source>
+        <translation>Choose how many Since You Watched rows to display (1-5)</translation>
+    </message>
+    <message>
+        <source>Choose sorting method for completed items</source>
+        <translation>Choose sorting method for completed items</translation>
+    </message>
+    <message>
+        <source>Choose type of items to recommend</source>
+        <translation>Choose type of items to recommend</translation>
+    </message>
+    <message>
+        <source>Choose what is shown here, or hide it.</source>
+        <translation>Choose what is shown here, or hide it.</translation>
+    </message>
+    <message>
+        <source>Choose what is shown on the right side of the music progress bar.</source>
+        <translation>Choose what is shown on the right side of the music progress bar.</translation>
+    </message>
+    <message>
+        <source>Choose which buttons the details screen shows</source>
+        <translation>Choose which buttons the details screen shows</translation>
+    </message>
+    <message>
+        <source>Choose which buttons the player shows</source>
+        <translation>Choose which buttons the player shows</translation>
+    </message>
+    <message>
+        <source>Choose which source item to base recommendations on</source>
+        <translation>Choose which source item to base recommendations on</translation>
+    </message>
+    <message>
+        <source>Choose which time labels appear around the playback progress bar.</source>
+        <translation>Choose which time labels appear around the playback progress bar.</translation>
+    </message>
+    <message>
+        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes.</source>
+        <translation>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes.</translation>
+    </message>
+    <message>
+        <source>Classic keeps per-row image type and info overlay. Modern uses portrait-to-backdrop rows.</source>
+        <translation>Classic keeps per-row image type and info overlay. Modern uses portrait-to-backdrop rows.</translation>
+    </message>
+    <message>
+        <source>Clock Display</source>
+        <translation>Clock Display</translation>
+    </message>
+    <message>
+        <source>Combine separate libraries of the same type for Recently Added and Recently Released home rows.</source>
+        <translation>Combine separate libraries of the same type for Recently Added and Recently Released home rows.</translation>
+    </message>
+    <message>
+        <source>Configure Popular, Top Rated, and Trending TMDB lists.</source>
+        <translation>Configure Popular, Top Rated, and Trending TMDB lists.</translation>
+    </message>
+    <message>
+        <source>Configure the maximum channels of your audio setup. Multichannel streams exceeding this limit will downmix or transcode.</source>
+        <translation>Configure the maximum channels of your audio setup. Multichannel streams exceeding this limit will downmix or transcode.</translation>
+    </message>
+    <message>
+        <source>Controls, seeking, player buttons, and trick play</source>
+        <translation>Controls, seeking, player buttons, and trick play</translation>
+    </message>
+    <message>
+        <source>Customize how many action buttons appear before folding into the More Actions menu.</source>
+        <translation>Customize how many action buttons appear before folding into the More Actions menu.</translation>
+    </message>
+    <message>
+        <source>Customize padding between home rows</source>
+        <translation>Customize padding between home rows</translation>
+    </message>
+    <message>
+        <source>Customize subtitle appearance</source>
+        <translation>Customize subtitle appearance</translation>
+    </message>
+    <message>
+        <source>Details Screen Style</source>
+        <translation>Details Screen Style</translation>
+    </message>
+    <message>
+        <source>Diagnostics &amp; Logging</source>
+        <translation>Diagnostics &amp; Logging</translation>
+    </message>
+    <message>
+        <source>Direct play ASS/SSA subtitles</source>
+        <translation>Direct play ASS/SSA subtitles</translation>
+    </message>
+    <message>
+        <source>Display Audio Rows</source>
+        <translation>Display Audio Rows</translation>
+    </message>
+    <message>
+        <source>Display Collections Rows</source>
+        <translation>Display Collections Rows</translation>
+    </message>
+    <message>
+        <source>Display Favorites Rows</source>
+        <translation>Display Favorites Rows</translation>
+    </message>
+    <message>
+        <source>Display Genres Rows</source>
+        <translation>Display Genres Rows</translation>
+    </message>
+    <message>
+        <source>Display Playlist Rows</source>
+        <translation>Display Playlist Rows</translation>
+    </message>
+    <message>
+        <source>Display Rewatch Row</source>
+        <translation>Display Rewatch Row</translation>
+    </message>
+    <message>
+        <source>Display Studio Row</source>
+        <translation>Display Studio Row</translation>
+    </message>
+    <message>
+        <source>Display customizable posters that expand on focus. Disable to always show landscape thumbnail.</source>
+        <translation>Display customizable posters that expand on focus. Disable to always show landscape thumbnail.</translation>
+    </message>
+    <message>
+        <source>Donate a coffee to the developer</source>
+        <translation>Donate a coffee to the developer</translation>
+    </message>
+    <message>
+        <source>Enable PIN Code</source>
+        <translation>Enable PIN Code</translation>
+    </message>
+    <message>
+        <source>Enable and reorder the rating sources shown throughout the app</source>
+        <translation>Enable and reorder the rating sources shown throughout the app</translation>
+    </message>
+    <message>
+        <source>Expand TV shows to display each episode separately.</source>
+        <translation>Expand TV shows to display each episode separately.</translation>
+    </message>
+    <message>
+        <source>Expanded Tabs</source>
+        <translation>Expanded Tabs</translation>
+    </message>
+    <message>
+        <source>Extended shows a full card with episode artwork and description. Minimal shows a compact countdown overlay. Disabled hides the prompt entirely.</source>
+        <translation>Extended shows a full card with episode artwork and description. Minimal shows a compact countdown overlay. Disabled hides the prompt entirely.</translation>
+    </message>
+    <message>
+        <source>FAVORITES</source>
+        <translation>FAVORITES</translation>
+    </message>
+    <message>
+        <source>Featured content, appearance</source>
+        <translation>Featured content, appearance</translation>
+    </message>
+    <message>
+        <source>GENRES</source>
+        <translation>GENRES</translation>
+    </message>
+    <message>
+        <source>HDR</source>
+        <translation>HDR</translation>
+    </message>
+    <message>
+        <source>Hide Backdrops While Browsing</source>
+        <translation>Hide Backdrops While Browsing</translation>
+    </message>
+    <message>
+        <source>Hide Collection associated library items when browsing libraries</source>
+        <translation>Hide Collection associated library items when browsing libraries</translation>
+    </message>
+    <message>
+        <source>Hide Media Description</source>
+        <translation>Hide Media Description</translation>
+    </message>
+    <message>
+        <source>Hide adult content in results</source>
+        <translation>Hide adult content in results</translation>
+    </message>
+    <message>
+        <source>Hide the movie or episode descriptive text.</source>
+        <translation>Hide the movie or episode descriptive text.</translation>
+    </message>
+    <message>
+        <source>How long a show stays in Next Up after you last watched it</source>
+        <translation>How long a show stays in Next Up after you last watched it</translation>
+    </message>
+    <message>
+        <source>IMDb</source>
+        <translation>IMDb</translation>
+    </message>
+    <message>
+        <source>Include Collections</source>
+        <translation>Include Collections</translation>
+    </message>
+    <message>
+        <source>Include Movies</source>
+        <translation>Include Movies</translation>
+    </message>
+    <message>
+        <source>Include Previously Watched</source>
+        <translation>Include Previously Watched</translation>
+    </message>
+    <message>
+        <source>Include Shows</source>
+        <translation>Include Shows</translation>
+    </message>
+    <message>
+        <source>Include watched items in recommendations</source>
+        <translation>Include watched items in recommendations</translation>
+    </message>
+    <message>
+        <source>Letterboxd</source>
+        <translation>Letterboxd</translation>
+    </message>
+    <message>
+        <source>Limit the maximum resolution the player will request. Higher-resolution content will be transcoded down.</source>
+        <translation>Limit the maximum resolution the player will request. Higher-resolution content will be transcoded down.</translation>
+    </message>
+    <message>
+        <source>Logging</source>
+        <translation>Logging</translation>
+    </message>
+    <message>
+        <source>Loop Theme Music</source>
+        <translation>Loop Theme Music</translation>
+    </message>
+    <message>
+        <source>Manage</source>
+        <translation>Manage</translation>
+    </message>
+    <message>
+        <source>Max Audio Channels</source>
+        <translation>Max Audio Channels</translation>
+    </message>
+    <message>
+        <source>Max Resolution</source>
+        <translation>Max Resolution</translation>
+    </message>
+    <message>
+        <source>Max days in Next Up</source>
+        <translation>Max days in Next Up</translation>
+    </message>
+    <message>
+        <source>Media Bar Style</source>
+        <translation>Media Bar Style</translation>
+    </message>
+    <message>
+        <source>Media Player Behavior</source>
+        <translation>Media Player Behavior</translation>
+    </message>
+    <message>
+        <source>Media Segment Countdown</source>
+        <translation>Media Segment Countdown</translation>
+    </message>
+    <message>
+        <source>Media request integration</source>
+        <translation>Media request integration</translation>
+    </message>
+    <message>
+        <source>Metacritic</source>
+        <translation>Metacritic</translation>
+    </message>
+    <message>
+        <source>Metacritic (User)</source>
+        <translation>Metacritic (User)</translation>
+    </message>
+    <message>
+        <source>Moonbase plugin sync and customization profiles</source>
+        <translation>Moonbase plugin sync and customization profiles</translation>
+    </message>
+    <message>
+        <source>Moonfin scores your own library, Jellyfin takes the picks from the server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</source>
+        <translation>Moonfin scores your own library, Jellyfin takes the picks from the server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</translation>
+    </message>
+    <message>
+        <source>Music Player</source>
+        <translation>Music Player</translation>
+    </message>
+    <message>
+        <source>My Rating</source>
+        <translation>My Rating</translation>
+    </message>
+    <message>
+        <source>MyAnimeList</source>
+        <translation>MyAnimeList</translation>
+    </message>
+    <message>
+        <source>NSFW Filter</source>
+        <translation>NSFW Filter</translation>
+    </message>
+    <message>
+        <source>Navbar style, toolbar buttons, appearance</source>
+        <translation>Navbar style, toolbar buttons, appearance</translation>
+    </message>
+    <message>
+        <source>Navigation, home screen, libraries, details page, and themes</source>
+        <translation>Navigation, home screen, libraries, details page, and themes</translation>
+    </message>
+    <message>
+        <source>Next Up Display</source>
+        <translation>Next Up Display</translation>
+    </message>
+    <message>
+        <source>Number of Rows to Add</source>
+        <translation>Number of Rows to Add</translation>
+    </message>
+    <message>
+        <source>Only the sections the current Details screen style can show are listed. Hiding one hides it in every style that has it.</source>
+        <translation>Only the sections the current Details screen style can show are listed. Hiding one hides it in every style that has it.</translation>
+    </message>
+    <message>
+        <source>PLAYLISTS</source>
+        <translation>PLAYLISTS</translation>
+    </message>
+    <message>
+        <source>Play is always first. Everything else is up to you.</source>
+        <translation>Play is always first. Everything else is up to you.</translation>
+    </message>
+    <message>
+        <source>Play theme music on detail pages</source>
+        <translation>Play theme music on detail pages</translation>
+    </message>
+    <message>
+        <source>Play trailers/prerolls before a main feature</source>
+        <translation>Play trailers/prerolls before a main feature</translation>
+    </message>
+    <message>
+        <source>Playback Enhancements</source>
+        <translation>Playback Enhancements</translation>
+    </message>
+    <message>
+        <source>Playback controls are always shown. Everything below is up to you.</source>
+        <translation>Playback controls are always shown. Everything below is up to you.</translation>
+    </message>
+    <message>
+        <source>Prefer Audio Description Tracks</source>
+        <translation>Prefer Audio Description Tracks</translation>
+    </message>
+    <message>
+        <source>Prefer audio description tracks over normal tracks.</source>
+        <translation>Prefer audio description tracks over normal tracks.</translation>
+    </message>
+    <message>
+        <source>Press left or right to move the highlighted button.</source>
+        <translation>Press left or right to move the highlighted button.</translation>
+    </message>
+    <message>
+        <source>Prioritize SDH/CC subtitle tracks when auto-selecting.</source>
+        <translation>Prioritize SDH/CC subtitle tracks when auto-selecting.</translation>
+    </message>
+    <message>
+        <source>RECENTLY ADDED</source>
+        <translation>RECENTLY ADDED</translation>
+    </message>
+    <message>
+        <source>REWATCH</source>
+        <translation>REWATCH</translation>
+    </message>
+    <message>
+        <source>Rating Badges</source>
+        <translation>Rating Badges</translation>
+    </message>
+    <message>
+        <source>Rating Labels</source>
+        <translation>Rating Labels</translation>
+    </message>
+    <message>
+        <source>Rating Sources</source>
+        <translation>Rating Sources</translation>
+    </message>
+    <message>
+        <source>Read the recorded log and send a report</source>
+        <translation>Read the recorded log and send a report</translation>
+    </message>
+    <message>
+        <source>Recommendation Source</source>
+        <translation>Recommendation Source</translation>
+    </message>
+    <message>
+        <source>Recommendation System</source>
+        <translation>Recommendation System</translation>
+    </message>
+    <message>
+        <source>Repeat the track instead of playing it once</source>
+        <translation>Repeat the track instead of playing it once</translation>
+    </message>
+    <message>
+        <source>Replace Skip Outro with Next Up Display</source>
+        <translation>Replace Skip Outro with Next Up Display</translation>
+    </message>
+    <message>
+        <source>Replace thumbnails on the details page with the series thumbnail</source>
+        <translation>Replace thumbnails on the details page with the series thumbnail</translation>
+    </message>
+    <message>
+        <source>Reports</source>
+        <translation>Reports</translation>
+    </message>
+    <message>
+        <source>Roger Ebert</source>
+        <translation>Roger Ebert</translation>
+    </message>
+    <message>
+        <source>Rotten Tomatoes (Audience)</source>
+        <translation>Rotten Tomatoes (Audience)</translation>
+    </message>
+    <message>
+        <source>Rotten Tomatoes (Critics)</source>
+        <translation>Rotten Tomatoes (Critics)</translation>
+    </message>
+    <message>
+        <source>Row Padding</source>
+        <translation>Row Padding</translation>
+    </message>
+    <message>
+        <source>Row Type</source>
+        <translation>Row Type</translation>
+    </message>
+    <message>
+        <source>Run setup again</source>
+        <translation>Run setup again</translation>
+    </message>
+    <message>
+        <source>SINCE YOU WATCHED</source>
+        <translation>SINCE YOU WATCHED</translation>
+    </message>
+    <message>
+        <source>STUDIOS</source>
+        <translation>STUDIOS</translation>
+    </message>
+    <message>
+        <source>Send Crash Reports to Server</source>
+        <translation>Send Crash Reports to Server</translation>
+    </message>
+    <message>
+        <source>Show Audio rows in Home Sections.</source>
+        <translation>Show Audio rows in Home Sections.</translation>
+    </message>
+    <message>
+        <source>Show Collections rows in Home Sections.</source>
+        <translation>Show Collections rows in Home Sections.</translation>
+    </message>
+    <message>
+        <source>Show Favorite Movies, Series, and other favorite rows in Home Sections.</source>
+        <translation>Show Favorite Movies, Series, and other favorite rows in Home Sections.</translation>
+    </message>
+    <message>
+        <source>Show Friends Button</source>
+        <translation>Show Friends Button</translation>
+    </message>
+    <message>
+        <source>Show Genres rows in Home Sections.</source>
+        <translation>Show Genres rows in Home Sections.</translation>
+    </message>
+    <message>
+        <source>Show Individual Episodes</source>
+        <translation>Show Individual Episodes</translation>
+    </message>
+    <message>
+        <source>Show MDBList and TMDB ratings</source>
+        <translation>Show MDBList and TMDB ratings</translation>
+    </message>
+    <message>
+        <source>Show Messages Button</source>
+        <translation>Show Messages Button</translation>
+    </message>
+    <message>
+        <source>Show Movies, Series, or both in Genres rows.</source>
+        <translation>Show Movies, Series, or both in Genres rows.</translation>
+    </message>
+    <message>
+        <source>Show Playlist rows in Home Sections.</source>
+        <translation>Show Playlist rows in Home Sections.</translation>
+    </message>
+    <message>
+        <source>Show Rewatch row in Home Sections</source>
+        <translation>Show Rewatch row in Home Sections</translation>
+    </message>
+    <message>
+        <source>Show Studio row in Home Sections.</source>
+        <translation>Show Studio row in Home Sections.</translation>
+    </message>
+    <message>
+        <source>Show Technical Details</source>
+        <translation>Show Technical Details</translation>
+    </message>
+    <message>
+        <source>Show Text</source>
+        <translation>Show Text</translation>
+    </message>
+    <message>
+        <source>Show captions on YouTube trailers in the media bar</source>
+        <translation>Show captions on YouTube trailers in the media bar</translation>
+    </message>
+    <message>
+        <source>Show codec, resolution, and stream information in banner summary</source>
+        <translation>Show codec, resolution, and stream information in banner summary</translation>
+    </message>
+    <message>
+        <source>Show decorative badges behind ratings</source>
+        <translation>Show decorative badges behind ratings</translation>
+    </message>
+    <message>
+        <source>Show labels next to rating icons</source>
+        <translation>Show labels next to rating icons</translation>
+    </message>
+    <message>
+        <source>Show libraries from all connected servers</source>
+        <translation>Show libraries from all connected servers</translation>
+    </message>
+    <message>
+        <source>Show ratings on individual episodes</source>
+        <translation>Show ratings on individual episodes</translation>
+    </message>
+    <message>
+        <source>Show season availability badges on media details pages</source>
+        <translation>Show season availability badges on media details pages</translation>
+    </message>
+    <message>
+        <source>Show the Next Up overlay instead of the Skip Outro button.</source>
+        <translation>Show the Next Up overlay instead of the Skip Outro button.</translation>
+    </message>
+    <message>
+        <source>Show the Seerr button in the navigation bar</source>
+        <translation>Show the Seerr button in the navigation bar</translation>
+    </message>
+    <message>
+        <source>Show watched TV shows in the rewatch row</source>
+        <translation>Show watched TV shows in the rewatch row</translation>
+    </message>
+    <message>
+        <source>Show watched collections in the rewatch row</source>
+        <translation>Show watched collections in the rewatch row</translation>
+    </message>
+    <message>
+        <source>Show watched movies in the rewatch row</source>
+        <translation>Show watched movies in the rewatch row</translation>
+    </message>
+    <message>
+        <source>Shuffle Content Type Filter</source>
+        <translation>Shuffle Content Type Filter</translation>
+    </message>
+    <message>
+        <source>Sign-in, PIN code, Kids Mode, parental controls, and settings sync</source>
+        <translation>Sign-in, PIN code, Kids Mode, parental controls, and settings sync</translation>
+    </message>
+    <message>
+        <source>Sort Collections rows by date added, release date, alphabetically, and more.</source>
+        <translation>Sort Collections rows by date added, release date, alphabetically, and more.</translation>
+    </message>
+    <message>
+        <source>Sort Genres rows by date added, release date, alphabetically, and more.</source>
+        <translation>Sort Genres rows by date added, release date, alphabetically, and more.</translation>
+    </message>
+    <message>
+        <source>Source Collections</source>
+        <translation>Source Collections</translation>
+    </message>
+    <message>
+        <source>Source Item</source>
+        <translation>Source Item</translation>
+    </message>
+    <message>
+        <source>Source Libraries</source>
+        <translation>Source Libraries</translation>
+    </message>
+    <message>
+        <source>Source Type</source>
+        <translation>Source Type</translation>
+    </message>
+    <message>
+        <source>Still Watching Prompt</source>
+        <translation>Still Watching Prompt</translation>
+    </message>
+    <message>
+        <source>Subtitle Rendering</source>
+        <translation>Subtitle Rendering</translation>
+    </message>
+    <message>
+        <source>Subtitle Stream</source>
+        <translation>Subtitle Stream</translation>
+    </message>
+    <message>
+        <source>Toggle Upcoming Calendars from Radarr/Sonarr.</source>
+        <translation>Toggle Upcoming Calendars from Radarr/Sonarr.</translation>
+    </message>
+    <message>
+        <source>Trakt</source>
+        <translation>Trakt</translation>
+    </message>
+    <message>
+        <source>Turn metadata items on or off, and arrange the order they appear on the details screen.</source>
+        <translation>Turn metadata items on or off, and arrange the order they appear on the details screen.</translation>
+    </message>
+    <message>
+        <source>Turn rows on or off and change their order</source>
+        <translation>Turn rows on or off and change their order</translation>
+    </message>
+    <message>
+        <source>Use 24-hour time formatting wherever the clock is shown</source>
+        <translation>Use 24-hour time formatting wherever the clock is shown</translation>
+    </message>
+    <message>
+        <source>Use Series Thumbnails</source>
+        <translation>Use Series Thumbnails</translation>
+    </message>
+    <message>
+        <source>Version {0}</source>
+        <translation>Version {0}</translation>
+    </message>
+    <message>
+        <source>Video Player</source>
+        <translation>Video Player</translation>
+    </message>
+    <message>
+        <source>When resuming playback (from Continue Watching or a media item page), how many seconds should be rewound?</source>
+        <translation>When resuming playback (from Continue Watching or a media item page), how many seconds should be rewound?</translation>
+    </message>
+    <message>
+        <source>When resuming playback after pressing the pause button, how many seconds should be rewound?</source>
+        <translation>When resuming playback after pressing the pause button, how many seconds should be rewound?</translation>
+    </message>
+    <message>
+        <source>White is much brighter in HDR than in SDR, so a dimmer style here avoids the glare</source>
+        <translation>White is much brighter in HDR than in SDR, so a dimmer style here avoids the glare</translation>
+    </message>
+    <message>
+        <source>Genre</source>
+        <translation>Genre</translation>
+    </message>
+    <message>
+        <source>Rows</source>
+        <translation>Rows</translation>
+    </message>
 </context>
 </TS>

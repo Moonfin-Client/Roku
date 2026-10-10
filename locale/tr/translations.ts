@@ -2199,5 +2199,513 @@
         <translation type="unfinished"></translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
+    <message>
+        <source>24-Hour Clock</source>
+        <translation>24 Saat Biçimi</translation>
+    </message>
+    <message>
+        <source>APP INFO</source>
+        <translation>UYGULAMA BİLGİSİ</translation>
+    </message>
+    <message>
+        <source>ASS/SSA Direct Play</source>
+        <translation>ASS/SSA Doğrudan Oynatma</translation>
+    </message>
+    <message>
+        <source>Above bar, center</source>
+        <translation>Çubuğun üstünde, orta</translation>
+    </message>
+    <message>
+        <source>Above bar, left</source>
+        <translation>Çubuğun üstünde, sol</translation>
+    </message>
+    <message>
+        <source>Above bar, right</source>
+        <translation>Çubuğun üstünde, sağ</translation>
+    </message>
+    <message>
+        <source>Additional Ratings</source>
+        <translation>Ek Derecelendirmeler</translation>
+    </message>
+    <message>
+        <source>Advanced</source>
+        <translation>Gelişmiş</translation>
+    </message>
+    <message>
+        <source>App Theme</source>
+        <translation>Uygulama Teması</translation>
+    </message>
+    <message>
+        <source>Auto Advance</source>
+        <translation>Otomatik İlerleme</translation>
+    </message>
+    <message>
+        <source>Auto Advance Interval</source>
+        <translation>Otomatik İlerleme Aralığı</translation>
+    </message>
+    <message>
+        <source>Auto Login</source>
+        <translation>Otomatik Giriş</translation>
+    </message>
+    <message>
+        <source>Automatic Queuing</source>
+        <translation>Otomatik Sıraya Ekleme</translation>
+    </message>
+    <message>
+        <source>Automatically advance to next slide</source>
+        <translation>Otomatik olarak sonraki slayta geç</translation>
+    </message>
+    <message>
+        <source>Automatically play the next episode when available.</source>
+        <translation>Mevcut olduğunda sonraki bölümü otomatik oynat.</translation>
+    </message>
+    <message>
+        <source>Automatically show tab content while browsing tabs. Turn off to open and close each tab manually.</source>
+        <translation>Sekmeler arasında gezinirken sekme içeriğini otomatik olarak göster. Her sekmeyi manuel olarak açıp kapatmak için bu seçeneği kapatın.</translation>
+    </message>
+    <message>
+        <source>Background Blur</source>
+        <translation>Detay Arka Plan Bulanıklığı</translation>
+    </message>
+    <message>
+        <source>Below bar, center</source>
+        <translation>Çubuğun altında, orta</translation>
+    </message>
+    <message>
+        <source>Below bar, left</source>
+        <translation>Çubuğun altında, sol</translation>
+    </message>
+    <message>
+        <source>Below bar, right</source>
+        <translation>Çubuğun altında, sağ</translation>
+    </message>
+    <message>
+        <source>Browsing Background Blur</source>
+        <translation>Gezinme Arka Plan Bulanıklığı</translation>
+    </message>
+    <message>
+        <source>Change PIN</source>
+        <translation>PIN'i değiştir</translation>
+    </message>
+    <message>
+        <source>Change subtitle modes, default languages, appearance, and rendering options.</source>
+        <translation>Altyazı modlarını, varsayılan dilleri, görünümü ve oluşturma seçeneklerini değiştirin.</translation>
+    </message>
+    <message>
+        <source>Choose and reorder what metadata the details screen shows</source>
+        <translation>Detaylar ekranında gösterilecek meta verileri seçin ve sıralayın</translation>
+    </message>
+    <message>
+        <source>Choose between various media bar styles, or turn the media bar off</source>
+        <translation>Çeşitli medya çubuğu stilleri arasından seçim yapın veya medya çubuğunu kapatın</translation>
+    </message>
+    <message>
+        <source>Choose what is shown here, or hide it.</source>
+        <translation>Burada ne gösterileceğini seçin veya gizleyin.</translation>
+    </message>
+    <message>
+        <source>Choose what is shown on the right side of the music progress bar.</source>
+        <translation>Müzik ilerleme çubuğunun sağ tarafında ne gösterileceğini seçin.</translation>
+    </message>
+    <message>
+        <source>Choose which buttons the details screen shows</source>
+        <translation>Detay ekranında gösterilecek düğmeleri seç</translation>
+    </message>
+    <message>
+        <source>Choose which buttons the player shows</source>
+        <translation>Gösterilecek oynatıcı düğmelerini seç</translation>
+    </message>
+    <message>
+        <source>Choose which time labels appear around the playback progress bar.</source>
+        <translation>Oynatma ilerleme çubuğunun etrafında hangi zaman etiketlerinin görüneceğini seçin.</translation>
+    </message>
+    <message>
+        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes.</source>
+        <translation>Klasik, orijinal ortalanmış Moonfin düzenidir. Modern, duyarlı sinematik bir düzendir. Spotlight, açılır içerik kartlarına sahip, ana görsel odaklı bir düzendir. Nouveau, bölümlerin sayfa boyunca alt alta sıralandığı tam ekran bir düzendir. Minimalist ise sadece kapak görselinden, tek bir oynatma butonundan ve bölümlerden oluşur.</translation>
+    </message>
+    <message>
+        <source>Classic keeps per-row image type and info overlay. Modern uses portrait-to-backdrop rows.</source>
+        <translation>Klasik mod, satır başına görsel türünü ve bilgi katmanını korur. Modern mod ise dikey görsellerden yatay arka planlara uzanan satırlar kullanır.</translation>
+    </message>
+    <message>
+        <source>Clock Display</source>
+        <translation>Saat Göstergesi</translation>
+    </message>
+    <message>
+        <source>Combine separate libraries of the same type for Recently Added and Recently Released home rows.</source>
+        <translation>Son Eklenenler ve Son Çıkanlar ana sayfa satırları için aynı türdeki ayrı kütüphaneleri birleştirin.</translation>
+    </message>
+    <message>
+        <source>Configure the maximum channels of your audio setup. Multichannel streams exceeding this limit will downmix or transcode.</source>
+        <translation>Ses sisteminizin maksimum kanal sayısını yapılandırın. Bu sınırı aşan çok kanallı akışlar downmix yapılacak (azaltılacak) veya dönüştürülecektir.</translation>
+    </message>
+    <message>
+        <source>Customize how many action buttons appear before folding into the More Actions menu.</source>
+        <translation>Diğer Eylemler menüsüne taşınmadan önce kaç eylem düğmesinin gösterileceğini belirleyin.</translation>
+    </message>
+    <message>
+        <source>Customize padding between home rows</source>
+        <translation>Ana sayfa satırları arasındaki boşluğu özelleştir</translation>
+    </message>
+    <message>
+        <source>Customize subtitle appearance</source>
+        <translation>Altyazı görünümünü özelleştirin</translation>
+    </message>
+    <message>
+        <source>Details Screen Style</source>
+        <translation>Detay Ekranı Stili</translation>
+    </message>
+    <message>
+        <source>Direct play ASS/SSA subtitles</source>
+        <translation>Doğrudan oynatılan ASS/SSA altyazıları</translation>
+    </message>
+    <message>
+        <source>Display Audio Rows</source>
+        <translation>Ses Satırlarını Göster</translation>
+    </message>
+    <message>
+        <source>Display Collections Rows</source>
+        <translation>Koleksiyon Satırlarını Göster</translation>
+    </message>
+    <message>
+        <source>Display Favorites Rows</source>
+        <translation>Favoriler Satırlarını Görüntüle</translation>
+    </message>
+    <message>
+        <source>Display Genres Rows</source>
+        <translation>Tür Satırlarını Göster</translation>
+    </message>
+    <message>
+        <source>Display Playlist Rows</source>
+        <translation>Oynatma Listesi Satırlarını Göster</translation>
+    </message>
+    <message>
+        <source>Display Studio Row</source>
+        <translation>Stüdyo Satırını Göster</translation>
+    </message>
+    <message>
+        <source>Donate a coffee to the developer</source>
+        <translation>Geliştiriciye bir kahve ısmarla</translation>
+    </message>
+    <message>
+        <source>Enable PIN Code</source>
+        <translation>PIN Kodunu Etkinleştir</translation>
+    </message>
+    <message>
+        <source>Enable and reorder the rating sources shown throughout the app</source>
+        <translation>Uygulama genelinde gösterilen puan kaynaklarını etkinleştirin ve yeniden sıralayın</translation>
+    </message>
+    <message>
+        <source>Expand TV shows to display each episode separately.</source>
+        <translation>Her bölümü ayrı ayrı göstermek için dizileri genişlet.</translation>
+    </message>
+    <message>
+        <source>Expanded Tabs</source>
+        <translation>Genişletilmiş Sekmeler</translation>
+    </message>
+    <message>
+        <source>Extended shows a full card with episode artwork and description. Minimal shows a compact countdown overlay. Disabled hides the prompt entirely.</source>
+        <translation>Genişletilmiş, bölümün resmini ve açıklamasını içeren tam bir kart gösterir. Minimal, kompakt bir geri sayım katmanını gösterir. Devre Dışı istemi tamamen gizler.</translation>
+    </message>
+    <message>
+        <source>Featured content, appearance</source>
+        <translation>Öne çıkan içerik, görünüm</translation>
+    </message>
+    <message>
+        <source>Hide Backdrops While Browsing</source>
+        <translation>Göz atarken arka plan resimleri gizlensin mi?</translation>
+    </message>
+    <message>
+        <source>Hide Collection associated library items when browsing libraries</source>
+        <translation>Kitaplıklarda gezinirken koleksiyona dahil olan ögeleri gizle</translation>
+    </message>
+    <message>
+        <source>Hide adult content in results</source>
+        <translation>Sonuçlardaki yetişkinlere uygun içeriği gizle</translation>
+    </message>
+    <message>
+        <source>Hide the movie or episode descriptive text.</source>
+        <translation>Film veya bölüm açıklama metnini gizler.</translation>
+    </message>
+    <message>
+        <source>How long a show stays in Next Up after you last watched it</source>
+        <translation>Bir dizinin, son izlemenizden sonra Sıradaki Bölümlerde kalacağı süre</translation>
+    </message>
+    <message>
+        <source>Limit the maximum resolution the player will request. Higher-resolution content will be transcoded down.</source>
+        <translation>Oyuncunun isteyeceği maksimum çözünürlüğü sınırlayın. Daha yüksek çözünürlüklü içeriğin kodu dönüştürülecektir.</translation>
+    </message>
+    <message>
+        <source>Loop Theme Music</source>
+        <translation>Tema Müziğini Sürekli Çal</translation>
+    </message>
+    <message>
+        <source>Manage</source>
+        <translation>Yönet</translation>
+    </message>
+    <message>
+        <source>Max Audio Channels</source>
+        <translation>Maksimum Kanal Sayısı</translation>
+    </message>
+    <message>
+        <source>Max Resolution</source>
+        <translation>Maksimum Çözünürlük</translation>
+    </message>
+    <message>
+        <source>Max days in Next Up</source>
+        <translation>Sıradaki Bölümler için maksimum gün</translation>
+    </message>
+    <message>
+        <source>Media Bar Style</source>
+        <translation>Medya Çubuğu Stili</translation>
+    </message>
+    <message>
+        <source>Media Player Behavior</source>
+        <translation>Medya Oynatıcı Davranışı</translation>
+    </message>
+    <message>
+        <source>Media Segment Countdown</source>
+        <translation>Medya Bölümü Geri Sayımı</translation>
+    </message>
+    <message>
+        <source>Media request integration</source>
+        <translation>Medya isteği entegrasyonu</translation>
+    </message>
+    <message>
+        <source>Metacritic (User)</source>
+        <translation>Metacritic (Kullanıcı)</translation>
+    </message>
+    <message>
+        <source>Music Player</source>
+        <translation>Müzik Oynatıcı</translation>
+    </message>
+    <message>
+        <source>My Rating</source>
+        <translation>Derecelendirmem</translation>
+    </message>
+    <message>
+        <source>NSFW Filter</source>
+        <translation>Hassas İçerik Filtresi</translation>
+    </message>
+    <message>
+        <source>Navbar style, toolbar buttons, appearance</source>
+        <translation>Gezinme çubuğu stili, araç çubuğu düğmeleri, görünüm</translation>
+    </message>
+    <message>
+        <source>Next Up Display</source>
+        <translation>Sıradaki Bölümler Görünümü</translation>
+    </message>
+    <message>
+        <source>Play theme music on detail pages</source>
+        <translation>Detay sayfalarında tema müziği çalın</translation>
+    </message>
+    <message>
+        <source>Play trailers/prerolls before a main feature</source>
+        <translation>Ana özellikten önce fragmanları/ön gösterimleri oynatın</translation>
+    </message>
+    <message>
+        <source>Playback Enhancements</source>
+        <translation>Oynatma İyileştirmeleri</translation>
+    </message>
+    <message>
+        <source>Prefer Audio Description Tracks</source>
+        <translation>Sesli Betimlemeli Parçalara Öncelik Ver</translation>
+    </message>
+    <message>
+        <source>Prefer audio description tracks over normal tracks.</source>
+        <translation>Normal ses yerine sesli betimlemeli parçalara öncelik ver.</translation>
+    </message>
+    <message>
+        <source>Prioritize SDH/CC subtitle tracks when auto-selecting.</source>
+        <translation>Otomatik seçim yaparken SDH/CC altyazı parçalarına öncelik ver.</translation>
+    </message>
+    <message>
+        <source>Rating Badges</source>
+        <translation>Puan Rozetleri</translation>
+    </message>
+    <message>
+        <source>Rating Labels</source>
+        <translation>Puan Etiketleri</translation>
+    </message>
+    <message>
+        <source>Rating Sources</source>
+        <translation>Derecelendirme Kaynakları</translation>
+    </message>
+    <message>
+        <source>Recommendation System</source>
+        <translation>Öneri Sistemi</translation>
+    </message>
+    <message>
+        <source>Repeat the track instead of playing it once</source>
+        <translation>Parçayı bir kez oynatmak yerine döngüye al</translation>
+    </message>
+    <message>
+        <source>Replace Skip Outro with Next Up Display</source>
+        <translation>"Jeneriği Atla" yerine "Sıradaki Bölüm Ekranını" yerleştir</translation>
+    </message>
+    <message>
+        <source>Rotten Tomatoes (Audience)</source>
+        <translation>Rotten Tomatoes (Seyirci)</translation>
+    </message>
+    <message>
+        <source>Rotten Tomatoes (Critics)</source>
+        <translation>Rotten Tomatoes (Eleştirmenler)</translation>
+    </message>
+    <message>
+        <source>Row Padding</source>
+        <translation>Ana Sayfa Satır Boşluğu</translation>
+    </message>
+    <message>
+        <source>Row Type</source>
+        <translation>Satır Tipi</translation>
+    </message>
+    <message>
+        <source>Run setup again</source>
+        <translation>Kurulumu yeniden çalıştır</translation>
+    </message>
+    <message>
+        <source>Show Audio rows in Home Sections.</source>
+        <translation>Ana Sayfa Bölümlerinde Ses Satırlarını Göster.</translation>
+    </message>
+    <message>
+        <source>Show Collections rows in Home Sections.</source>
+        <translation>Koleksiyon satırlarını Ana Sayfa Bölümlerinde göster.</translation>
+    </message>
+    <message>
+        <source>Show Favorite Movies, Series, and other favorite rows in Home Sections.</source>
+        <translation>Favori Filmleri, Dizileri ve diğer favori satırlarını Ana Sayfa Bölümlerinde göster.</translation>
+    </message>
+    <message>
+        <source>Show Genres rows in Home Sections.</source>
+        <translation>Ana Sayfa Bölümlerinde Türler satırlarını göster.</translation>
+    </message>
+    <message>
+        <source>Show Individual Episodes</source>
+        <translation>Tekil Bölümleri Göster</translation>
+    </message>
+    <message>
+        <source>Show MDBList and TMDB ratings</source>
+        <translation>MDBList ve TMDB puanlarını göster</translation>
+    </message>
+    <message>
+        <source>Show Messages Button</source>
+        <translation>Mesajlar butonunu göster</translation>
+    </message>
+    <message>
+        <source>Show Movies, Series, or both in Genres rows.</source>
+        <translation>Türler satırlarında Filmleri, Dizileri veya her ikisini birden göster.</translation>
+    </message>
+    <message>
+        <source>Show Playlist rows in Home Sections.</source>
+        <translation>Oynatma listesi satırlarını Ana Sayfa Bölümleri'nde göster.</translation>
+    </message>
+    <message>
+        <source>Show Studio row in Home Sections.</source>
+        <translation>Stüdyo satırını Ana Sayfa Bölümlerinde göster.</translation>
+    </message>
+    <message>
+        <source>Show Technical Details</source>
+        <translation>Teknik Detaylar Gösterilsin Mi?</translation>
+    </message>
+    <message>
+        <source>Show Text</source>
+        <translation>Yazı Gözüksün Mü?</translation>
+    </message>
+    <message>
+        <source>Show captions on YouTube trailers in the media bar</source>
+        <translation>YouTube fragmanlarında medya çubuğunda altyazıları göster</translation>
+    </message>
+    <message>
+        <source>Show codec, resolution, and stream information in banner summary</source>
+        <translation>Başlık özetinde kodek, çözünürlük ve akış bilgilerini göster</translation>
+    </message>
+    <message>
+        <source>Show decorative badges behind ratings</source>
+        <translation>Puanların arkasında dekoratif rozetler göster</translation>
+    </message>
+    <message>
+        <source>Show labels next to rating icons</source>
+        <translation>Puan simgelerinin yanında etiketleri göster</translation>
+    </message>
+    <message>
+        <source>Show libraries from all connected servers</source>
+        <translation>Bağlı tüm sunuculardaki kitaplıkları göster</translation>
+    </message>
+    <message>
+        <source>Show ratings on individual episodes</source>
+        <translation>Ayrı bölümlerdeki derecelendirmeleri göster</translation>
+    </message>
+    <message>
+        <source>Show season availability badges on media details pages</source>
+        <translation>Medya detay sayfalarında sezon durum rozetlerini göster</translation>
+    </message>
+    <message>
+        <source>Show the Next Up overlay instead of the Skip Outro button.</source>
+        <translation>"Jeneriği Atla" butonu yerine "Sıradaki Bölüm" ekranını göster.</translation>
+    </message>
+    <message>
+        <source>Show the Seerr button in the navigation bar</source>
+        <translation>Gezinti çubuğunda Seerr butonunu göster</translation>
+    </message>
+    <message>
+        <source>Shuffle Content Type Filter</source>
+        <translation>İçerik Türü Filtresini Karıştır</translation>
+    </message>
+    <message>
+        <source>Sort Collections rows by date added, release date, alphabetically, and more.</source>
+        <translation>Koleksiyonlar satırlarını ekleme tarihine, çıkış tarihine, alfabetik sıraya ve daha fazlasına göre sıralayın.</translation>
+    </message>
+    <message>
+        <source>Sort Genres rows by date added, release date, alphabetically, and more.</source>
+        <translation>Türler satırlarını ekleme tarihine, çıkış tarihine, alfabetik sıraya ve daha fazlasına göre sıralayın.</translation>
+    </message>
+    <message>
+        <source>Source Collections</source>
+        <translation>Kaynak Koleksiyonlar</translation>
+    </message>
+    <message>
+        <source>Source Libraries</source>
+        <translation>Kaynak Kütüphaneler</translation>
+    </message>
+    <message>
+        <source>Still Watching Prompt</source>
+        <translation>Hâlâ İzliyor musunuz? Uyarısı</translation>
+    </message>
+    <message>
+        <source>Subtitle Rendering</source>
+        <translation>Altyazı Oluşturma</translation>
+    </message>
+    <message>
+        <source>Subtitle Stream</source>
+        <translation>Altyazı Parçası</translation>
+    </message>
+    <message>
+        <source>Use 24-hour time formatting wherever the clock is shown</source>
+        <translation>Saatin gösterildiği her yerde 24 saat biçimini kullan</translation>
+    </message>
+    <message>
+        <source>Use Series Thumbnails</source>
+        <translation>Ayrıntılar Sayfasında Dizi Küçük Resimlerini Kullan</translation>
+    </message>
+    <message>
+        <source>Video Player</source>
+        <translation>Video Oynatıcı</translation>
+    </message>
+    <message>
+        <source>When resuming playback (from Continue Watching or a media item page), how many seconds should be rewound?</source>
+        <translation>Oynatmayı devam ettirirken (İzlemeye Devam Et'ten veya bir medya öğesi sayfasından), kaç saniye geri sarılmalıdır?</translation>
+    </message>
+    <message>
+        <source>When resuming playback after pressing the pause button, how many seconds should be rewound?</source>
+        <translation>Duraklatma tuşuna bastıktan sonra oynatmaya devam edilirken kaç saniye geri sarılmalıdır?</translation>
+    </message>
+    <message>
+        <source>White is much brighter in HDR than in SDR, so a dimmer style here avoids the glare</source>
+        <translation>HDR'de beyaz renkler SDR'ye göre çok daha parlaktır; bu nedenle buradaki daha sönük bir stil göz almasını (parlama yapar) engeller</translation>
+    </message>
+    <message>
+        <source>Genre</source>
+        <translation>Tür</translation>
+    </message>
 </context>
 </TS>

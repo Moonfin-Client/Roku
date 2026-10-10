@@ -2274,5 +2274,525 @@
         <source>Since you watched %1</source>
         <translation>Ja que vas veure %1</translation>
     </message>
+    <message>
+        <source>24-Hour Clock</source>
+        <translation>Rellotge de 24 hores</translation>
+    </message>
+    <message>
+        <source>APP INFO</source>
+        <translation>INFORMACIÓ DE L'APP</translation>
+    </message>
+    <message>
+        <source>ASS/SSA Direct Play</source>
+        <translation>Reproducció nativa d'ASS/SSA</translation>
+    </message>
+    <message>
+        <source>Above bar, center</source>
+        <translation>Sobre la barra, al centre</translation>
+    </message>
+    <message>
+        <source>Above bar, left</source>
+        <translation>Sobre la barra, a l'esquerra</translation>
+    </message>
+    <message>
+        <source>Above bar, right</source>
+        <translation>Sobre la barra, a la dreta</translation>
+    </message>
+    <message>
+        <source>Additional Ratings</source>
+        <translation>Valoracions addicionals</translation>
+    </message>
+    <message>
+        <source>Advanced</source>
+        <translation>Avançat</translation>
+    </message>
+    <message>
+        <source>App Theme</source>
+        <translation>Tema de l'aplicació</translation>
+    </message>
+    <message>
+        <source>Auto Advance</source>
+        <translation>Avançament automàtic</translation>
+    </message>
+    <message>
+        <source>Auto Advance Interval</source>
+        <translation>Interval d'avanç automàtic</translation>
+    </message>
+    <message>
+        <source>Auto Login</source>
+        <translation>Inici de sessió automàtic</translation>
+    </message>
+    <message>
+        <source>Automatic Queuing</source>
+        <translation>Cua automàtica</translation>
+    </message>
+    <message>
+        <source>Automatically advance to next slide</source>
+        <translation>Avança automàticament a la diapositiva següent</translation>
+    </message>
+    <message>
+        <source>Automatically play the next episode when available.</source>
+        <translation>Reprodueix automàticament el següent episodi quan estigui disponible.</translation>
+    </message>
+    <message>
+        <source>Automatically show tab content while browsing tabs. Turn off to open and close each tab manually.</source>
+        <translation>Mostra automàticament el contingut de les pestanyes mentre hi navegues. Desactiva-ho per obrir i tancar cada pestanya manualment.</translation>
+    </message>
+    <message>
+        <source>Background Blur</source>
+        <translation>Detalls Desenfocament de fons</translation>
+    </message>
+    <message>
+        <source>Below bar, center</source>
+        <translation>Sota la barra, al centre</translation>
+    </message>
+    <message>
+        <source>Below bar, left</source>
+        <translation>Sota la barra, a l'esquerra</translation>
+    </message>
+    <message>
+        <source>Below bar, right</source>
+        <translation>A sota de la barra, a la dreta</translation>
+    </message>
+    <message>
+        <source>Browsing Background Blur</source>
+        <translation>Desenfocament de fons de navegació</translation>
+    </message>
+    <message>
+        <source>Change PIN</source>
+        <translation>Canvia el PIN</translation>
+    </message>
+    <message>
+        <source>Change subtitle modes, default languages, appearance, and rendering options.</source>
+        <translation>Canvia els modes de subtítols, els idiomes predeterminats, l'aparença i les opcions de renderització.</translation>
+    </message>
+    <message>
+        <source>Choose and reorder what metadata the details screen shows</source>
+        <translation>Tria i reordena quines metadades mostra la pantalla de detalls</translation>
+    </message>
+    <message>
+        <source>Choose between various media bar styles, or turn the media bar off</source>
+        <translation>Trieu entre Moonfin, MakD o desactiva la barra multimèdia</translation>
+    </message>
+    <message>
+        <source>Choose what is shown here, or hide it.</source>
+        <translation>Tria què es mostra aquí, o amaga-ho.</translation>
+    </message>
+    <message>
+        <source>Choose what is shown on the right side of the music progress bar.</source>
+        <translation>Tria què es mostra al costat dret de la barra de progrés de la música.</translation>
+    </message>
+    <message>
+        <source>Choose which buttons the details screen shows</source>
+        <translation>Tria quins botons mostra la pantalla de detalls</translation>
+    </message>
+    <message>
+        <source>Choose which buttons the player shows</source>
+        <translation>Tria quins botons mostra el reproductor</translation>
+    </message>
+    <message>
+        <source>Choose which time labels appear around the playback progress bar.</source>
+        <translation>Tria quines etiquetes de temps apareixen al voltant de la barra de progrés de reproducció.</translation>
+    </message>
+    <message>
+        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes.</source>
+        <translation>Clàssic és la disposició original centrada de moonfin. Modern és una disposició cinematogràfica adaptativa. Spotlight és una disposició que posa la il·lustració al davant, amb targetes de contingut emergents. Nouveau és una disposició a pantalla completa amb les seccions apilades al llarg de la pàgina. Minimalista és la il·lustració, un botó de reproducció i els episodis.</translation>
+    </message>
+    <message>
+        <source>Classic keeps per-row image type and info overlay. Modern uses portrait-to-backdrop rows.</source>
+        <translation>El clàssic manté el tipus d'imatge per fila i la superposició d'informació. Modern utilitza files de retrat a fons.</translation>
+    </message>
+    <message>
+        <source>Clock Display</source>
+        <translation>Visualització del rellotge</translation>
+    </message>
+    <message>
+        <source>Combine separate libraries of the same type for Recently Added and Recently Released home rows.</source>
+        <translation>Combina biblioteques separades del mateix tipus per a les files d'inici de «Afegit recentment» i «Publicat recentment».</translation>
+    </message>
+    <message>
+        <source>Configure the maximum channels of your audio setup. Multichannel streams exceeding this limit will downmix or transcode.</source>
+        <translation>Configura el nombre màxim de canals de la teva configuració d’àudio. Els fluxos multicanal que superin aquest límit es reduiran a una versió mesclada o es transcodificaran.</translation>
+    </message>
+    <message>
+        <source>Customize how many action buttons appear before folding into the More Actions menu.</source>
+        <translation>Personalitza quants botons d'acció apareixen abans de plegar-se al menú Més accions.</translation>
+    </message>
+    <message>
+        <source>Customize padding between home rows</source>
+        <translation>Personalitza la separació entre les fileres d'inici</translation>
+    </message>
+    <message>
+        <source>Customize subtitle appearance</source>
+        <translation>Personalitza l'aspecte dels subtítols</translation>
+    </message>
+    <message>
+        <source>Details Screen Style</source>
+        <translation>Estil de la secció de detalls</translation>
+    </message>
+    <message>
+        <source>Direct play ASS/SSA subtitles</source>
+        <translation>Reproducció directa de subtítols ASS/SSA</translation>
+    </message>
+    <message>
+        <source>Display Audio Rows</source>
+        <translation>Mostra les files d'àudio</translation>
+    </message>
+    <message>
+        <source>Display Collections Rows</source>
+        <translation>Mostra les files de les col·leccions</translation>
+    </message>
+    <message>
+        <source>Display Favorites Rows</source>
+        <translation>Mostra les files de preferits</translation>
+    </message>
+    <message>
+        <source>Display Genres Rows</source>
+        <translation>Mostra les files de gèneres</translation>
+    </message>
+    <message>
+        <source>Display Playlist Rows</source>
+        <translation>Mostra les files de llistes de reproducció</translation>
+    </message>
+    <message>
+        <source>Display Studio Row</source>
+        <translation>Mostra la fila de l'estudi</translation>
+    </message>
+    <message>
+        <source>Display customizable posters that expand on focus. Disable to always show landscape thumbnail.</source>
+        <translation>Mostra pòsters personalitzables que s'amplien en enfocar-los. Desactiva-ho per mostrar sempre la miniatura apaïsada.</translation>
+    </message>
+    <message>
+        <source>Donate a coffee to the developer</source>
+        <translation>Dona un cafè al desenvolupador</translation>
+    </message>
+    <message>
+        <source>Enable PIN Code</source>
+        <translation>Activa el codi PIN</translation>
+    </message>
+    <message>
+        <source>Enable and reorder the rating sources shown throughout the app</source>
+        <translation>Activa i reordena les fonts de classificació que es mostren a l'aplicació</translation>
+    </message>
+    <message>
+        <source>Expand TV shows to display each episode separately.</source>
+        <translation>Expandir les sèries per mostrar cada episodi per separat.</translation>
+    </message>
+    <message>
+        <source>Expanded Tabs</source>
+        <translation>Pestanyes desplegades</translation>
+    </message>
+    <message>
+        <source>Extended shows a full card with episode artwork and description. Minimal shows a compact countdown overlay. Disabled hides the prompt entirely.</source>
+        <translation>Ampliat mostra una targeta completa amb il·lustració i descripció de l'episodi. Minimal mostra una superposició de compte enrere compacta. Desactivat amaga completament el missatge.</translation>
+    </message>
+    <message>
+        <source>Featured content, appearance</source>
+        <translation>Contingut destacat, aparença</translation>
+    </message>
+    <message>
+        <source>Hide Backdrops While Browsing</source>
+        <translation>Amagar les imatges de fons mentre navegues?</translation>
+    </message>
+    <message>
+        <source>Hide Collection associated library items when browsing libraries</source>
+        <translation>Amaga els elements associats a col·leccions en navegar per les biblioteques</translation>
+    </message>
+    <message>
+        <source>Hide adult content in results</source>
+        <translation>Amaga contingut per a adults als resultats</translation>
+    </message>
+    <message>
+        <source>Hide the movie or episode descriptive text.</source>
+        <translation>Amaga el text descriptiu de la pel·lícula o de l'episodi.</translation>
+    </message>
+    <message>
+        <source>How long a show stays in Next Up after you last watched it</source>
+        <translation>Quant de temps una sèrie roman a «Següent» després de l'última vegada que la vas veure</translation>
+    </message>
+    <message>
+        <source>Limit the maximum resolution the player will request. Higher-resolution content will be transcoded down.</source>
+        <translation>Limiteu la resolució màxima que demanarà el reproductor. El contingut de més alta resolució es transcodificarà cap avall.</translation>
+    </message>
+    <message>
+        <source>Loop Theme Music</source>
+        <translation>Música del tema en bucle</translation>
+    </message>
+    <message>
+        <source>Manage</source>
+        <translation>Gestionar</translation>
+    </message>
+    <message>
+        <source>Max Audio Channels</source>
+        <translation>Màxim de canals d'àudio</translation>
+    </message>
+    <message>
+        <source>Max Resolution</source>
+        <translation>Resolució màxima</translation>
+    </message>
+    <message>
+        <source>Max days in Next Up</source>
+        <translation>Màxim de dies a "A continuació"</translation>
+    </message>
+    <message>
+        <source>Media Bar Style</source>
+        <translation>Estil de barra multimèdia</translation>
+    </message>
+    <message>
+        <source>Media Player Behavior</source>
+        <translation>Comportament del reproductor multimèdia</translation>
+    </message>
+    <message>
+        <source>Media Segment Countdown</source>
+        <translation>Compte enrere per els segments</translation>
+    </message>
+    <message>
+        <source>Media request integration</source>
+        <translation>Integració de sol·licituds de mitjans</translation>
+    </message>
+    <message>
+        <source>Metacritic</source>
+        <translation>Metacrític</translation>
+    </message>
+    <message>
+        <source>Metacritic (User)</source>
+        <translation>Metacritic (usuari)</translation>
+    </message>
+    <message>
+        <source>Music Player</source>
+        <translation>Reproductor de música</translation>
+    </message>
+    <message>
+        <source>My Rating</source>
+        <translation>La meva valoració</translation>
+    </message>
+    <message>
+        <source>NSFW Filter</source>
+        <translation>Filtre NSFW</translation>
+    </message>
+    <message>
+        <source>Navbar style, toolbar buttons, appearance</source>
+        <translation>Estil de la barra de navegació, botons de la barra d'eines, aspecte</translation>
+    </message>
+    <message>
+        <source>Next Up Display</source>
+        <translation>Visualització següent</translation>
+    </message>
+    <message>
+        <source>Only the sections the current Details screen style can show are listed. Hiding one hides it in every style that has it.</source>
+        <translation>Només es mostren les seccions que pot mostrar l'estil actual de la pantalla de detalls. Si n'amagues una, s'amaga en tots els estils que la tenen.</translation>
+    </message>
+    <message>
+        <source>Play theme music on detail pages</source>
+        <translation>Reprodueix música temàtica a les pàgines de detalls</translation>
+    </message>
+    <message>
+        <source>Play trailers/prerolls before a main feature</source>
+        <translation>Reprodueix tràilers/prerolls abans d'una funció principal</translation>
+    </message>
+    <message>
+        <source>Playback Enhancements</source>
+        <translation>Millores de reproducció</translation>
+    </message>
+    <message>
+        <source>Prefer Audio Description Tracks</source>
+        <translation>Prefereix les pistes d'audiodescripció</translation>
+    </message>
+    <message>
+        <source>Prefer audio description tracks over normal tracks.</source>
+        <translation>Prefereix les pistes d'audiodescripció en comptes de les normals.</translation>
+    </message>
+    <message>
+        <source>Prioritize SDH/CC subtitle tracks when auto-selecting.</source>
+        <translation>Doneu prioritat a les pistes de subtítols SDH/CC quan feu la selecció automàtica.</translation>
+    </message>
+    <message>
+        <source>Rating Badges</source>
+        <translation>Insígnies de valoració</translation>
+    </message>
+    <message>
+        <source>Rating Labels</source>
+        <translation>Etiquetes de qualificació</translation>
+    </message>
+    <message>
+        <source>Rating Sources</source>
+        <translation>Fonts de valoració</translation>
+    </message>
+    <message>
+        <source>Recommendation System</source>
+        <translation>Sistema de recomanacions</translation>
+    </message>
+    <message>
+        <source>Repeat the track instead of playing it once</source>
+        <translation>Repeteix la pista en comptes de reproduir-la un sol cop</translation>
+    </message>
+    <message>
+        <source>Replace Skip Outro with Next Up Display</source>
+        <translation>Substituïu Skip Outro per Next Up Display</translation>
+    </message>
+    <message>
+        <source>Rotten Tomatoes (Audience)</source>
+        <translation>Rotten Tomatoes (Públic)</translation>
+    </message>
+    <message>
+        <source>Rotten Tomatoes (Critics)</source>
+        <translation>Rotten Tomatoes (crítics)</translation>
+    </message>
+    <message>
+        <source>Row Padding</source>
+        <translation>Separació de les fileres d'inici</translation>
+    </message>
+    <message>
+        <source>Row Type</source>
+        <translation>Tipus de files</translation>
+    </message>
+    <message>
+        <source>Run setup again</source>
+        <translation>Iniciar la configuració de nou</translation>
+    </message>
+    <message>
+        <source>Show Audio rows in Home Sections.</source>
+        <translation>Mostra les files d'àudio a les seccions d'inici.</translation>
+    </message>
+    <message>
+        <source>Show Collections rows in Home Sections.</source>
+        <translation>Mostra les files de les col·leccions a les seccions d'inici.</translation>
+    </message>
+    <message>
+        <source>Show Favorite Movies, Series, and other favorite rows in Home Sections.</source>
+        <translation>Mostra pel·lícules, sèries i altres files preferides a les seccions d'inici.</translation>
+    </message>
+    <message>
+        <source>Show Friends Button</source>
+        <translation>Mostra el botó d'amics</translation>
+    </message>
+    <message>
+        <source>Show Genres rows in Home Sections.</source>
+        <translation>Mostra les files de gèneres a les seccions d'inici.</translation>
+    </message>
+    <message>
+        <source>Show MDBList and TMDB ratings</source>
+        <translation>Mostra les classificacions MDBList i TMDB</translation>
+    </message>
+    <message>
+        <source>Show Messages Button</source>
+        <translation>Botó de mostrar missatges</translation>
+    </message>
+    <message>
+        <source>Show Movies, Series, or both in Genres rows.</source>
+        <translation>Mostra pel·lícules, sèries o totes dues a les files Gèneres.</translation>
+    </message>
+    <message>
+        <source>Show Playlist rows in Home Sections.</source>
+        <translation>Mostra les files de llistes de reproducció a les seccions d'inici.</translation>
+    </message>
+    <message>
+        <source>Show Studio row in Home Sections.</source>
+        <translation>Mostra la fila de l'estudi a les seccions d'inici.</translation>
+    </message>
+    <message>
+        <source>Show Technical Details</source>
+        <translation>Mostrar els detalls tècnics?</translation>
+    </message>
+    <message>
+        <source>Show Text</source>
+        <translation>Vols mostrar el text?</translation>
+    </message>
+    <message>
+        <source>Show captions on YouTube trailers in the media bar</source>
+        <translation>Mostra els subtítols dels tràilers de YouTube a la barra de mitjans</translation>
+    </message>
+    <message>
+        <source>Show codec, resolution, and stream information in banner summary</source>
+        <translation>Mostra el còdec, la resolució i la informació del flux al resum del bàner</translation>
+    </message>
+    <message>
+        <source>Show decorative badges behind ratings</source>
+        <translation>Mostra insígnies decoratives darrere de les puntuacions</translation>
+    </message>
+    <message>
+        <source>Show labels next to rating icons</source>
+        <translation>Mostra les etiquetes al costat de les icones de valoració</translation>
+    </message>
+    <message>
+        <source>Show libraries from all connected servers</source>
+        <translation>Mostra les biblioteques de tots els servidors connectats</translation>
+    </message>
+    <message>
+        <source>Show ratings on individual episodes</source>
+        <translation>Mostra les puntuacions d'episodis individuals</translation>
+    </message>
+    <message>
+        <source>Show season availability badges on media details pages</source>
+        <translation>Mostra les insígnies de disponibilitat de temporades a les pàgines de detalls dels mitjans</translation>
+    </message>
+    <message>
+        <source>Show the Next Up overlay instead of the Skip Outro button.</source>
+        <translation>Mostra la superposició Next Up en lloc del botó Salta Outro.</translation>
+    </message>
+    <message>
+        <source>Show the Seerr button in the navigation bar</source>
+        <translation>Mostra el botó de Seerr a la barra de navegació</translation>
+    </message>
+    <message>
+        <source>Shuffle Content Type Filter</source>
+        <translation>Barreja el filtre de tipus de contingut</translation>
+    </message>
+    <message>
+        <source>Sort Collections rows by date added, release date, alphabetically, and more.</source>
+        <translation>Ordena les files de les col·leccions per data afegida, data de llançament, alfabèticament i molt més.</translation>
+    </message>
+    <message>
+        <source>Sort Genres rows by date added, release date, alphabetically, and more.</source>
+        <translation>Ordena les files de gèneres per data afegida, data de llançament, alfabèticament i molt més.</translation>
+    </message>
+    <message>
+        <source>Source Collections</source>
+        <translation>Col·leccions font</translation>
+    </message>
+    <message>
+        <source>Source Libraries</source>
+        <translation>Biblioteques font</translation>
+    </message>
+    <message>
+        <source>Still Watching Prompt</source>
+        <translation>Encara està mirant el missatge</translation>
+    </message>
+    <message>
+        <source>Subtitle Rendering</source>
+        <translation>Renderització dels subtítols</translation>
+    </message>
+    <message>
+        <source>Subtitle Stream</source>
+        <translation>Flux de subtítols</translation>
+    </message>
+    <message>
+        <source>Use 24-hour time formatting wherever the clock is shown</source>
+        <translation>Utilitzeu el format de 24 hores allà on es mostri el rellotge</translation>
+    </message>
+    <message>
+        <source>Use Series Thumbnails</source>
+        <translation>Utilitzar miniatures de la sèrie a la pàgina de detalls</translation>
+    </message>
+    <message>
+        <source>Video Player</source>
+        <translation>Reproductor de vídeo</translation>
+    </message>
+    <message>
+        <source>When resuming playback (from Continue Watching or a media item page), how many seconds should be rewound?</source>
+        <translation>Quan es reprèn la reproducció (des de Continuar mirant o des de la pàgina d'un element multimèdia), quants segons s'han de rebobinar?</translation>
+    </message>
+    <message>
+        <source>When resuming playback after pressing the pause button, how many seconds should be rewound?</source>
+        <translation>Quan es reprèn la reproducció després de prémer el botó de pausa, quants segons s'han de rebobinar?</translation>
+    </message>
+    <message>
+        <source>White is much brighter in HDR than in SDR, so a dimmer style here avoids the glare</source>
+        <translation>El blanc és molt més brillant en HDR que en SDR, així que un estil més apagat aquí evita l'enlluernament</translation>
+    </message>
+    <message>
+        <source>Genre</source>
+        <translation>Gènere</translation>
+    </message>
 </context>
 </TS>

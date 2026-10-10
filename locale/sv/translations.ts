@@ -2174,5 +2174,381 @@
         <source>Playback will automatically stop in 1 minute if no buttons are pressed.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>24-Hour Clock</source>
+        <translation>24-timmarsklocka</translation>
+    </message>
+    <message>
+        <source>APP INFO</source>
+        <translation>APPINFO</translation>
+    </message>
+    <message>
+        <source>ASS/SSA Direct Play</source>
+        <translation>ASS/SSA direktspel</translation>
+    </message>
+    <message>
+        <source>Additional Ratings</source>
+        <translation>Ytterligare betyg</translation>
+    </message>
+    <message>
+        <source>Advanced</source>
+        <translation>Avancerat</translation>
+    </message>
+    <message>
+        <source>App Theme</source>
+        <translation>App-tema</translation>
+    </message>
+    <message>
+        <source>Auto Advance</source>
+        <translation>Automatisk förflyttning</translation>
+    </message>
+    <message>
+        <source>Auto Advance Interval</source>
+        <translation>Autoavanceringsintervall</translation>
+    </message>
+    <message>
+        <source>Auto Login</source>
+        <translation>Automatisk inloggning</translation>
+    </message>
+    <message>
+        <source>Automatic Queuing</source>
+        <translation>Automatisk kö</translation>
+    </message>
+    <message>
+        <source>Automatically advance to next slide</source>
+        <translation>Gå automatiskt vidare till nästa bild</translation>
+    </message>
+    <message>
+        <source>Automatically play the next episode when available.</source>
+        <translation>Spela automatiskt nästa avsnitt när det finns tillgängligt.</translation>
+    </message>
+    <message>
+        <source>Automatically show tab content while browsing tabs. Turn off to open and close each tab manually.</source>
+        <translation>Visa flikinnehåll automatiskt när du bläddrar bland flikarna. Stäng av för att öppna och stänga varje flik manuellt.</translation>
+    </message>
+    <message>
+        <source>Background Blur</source>
+        <translation>Detaljer Bakgrundsskärpa</translation>
+    </message>
+    <message>
+        <source>Browsing Background Blur</source>
+        <translation>Bläddrar bakgrundsoskärpa</translation>
+    </message>
+    <message>
+        <source>Change PIN</source>
+        <translation>Ändra PIN-kod</translation>
+    </message>
+    <message>
+        <source>Change subtitle modes, default languages, appearance, and rendering options.</source>
+        <translation>Ändra undertextlägen, standardspråk, utseende och renderingsalternativ.</translation>
+    </message>
+    <message>
+        <source>Choose between various media bar styles, or turn the media bar off</source>
+        <translation>Välj mellan olika mediefältsstilar eller stäng av mediefältet</translation>
+    </message>
+    <message>
+        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes.</source>
+        <translation>Klassisk är Moonfins ursprungliga centrerade layout. Modern är en responsiv, filmisk layout.</translation>
+    </message>
+    <message>
+        <source>Classic keeps per-row image type and info overlay. Modern uses portrait-to-backdrop rows.</source>
+        <translation>Klassisk behåller bildtyp per rad och infoöverlägg. Modern använder rader som går från stående format till bakgrundsbild.</translation>
+    </message>
+    <message>
+        <source>Clock Display</source>
+        <translation>Klockdisplay</translation>
+    </message>
+    <message>
+        <source>Configure the maximum channels of your audio setup. Multichannel streams exceeding this limit will downmix or transcode.</source>
+        <translation>Ställ in det maximala antalet kanaler för din ljudanläggning. Flerkanalsströmmar som överskrider gränsen nedmixas eller omkodas.</translation>
+    </message>
+    <message>
+        <source>Customize subtitle appearance</source>
+        <translation>Anpassa undertexternas utseende</translation>
+    </message>
+    <message>
+        <source>Details Screen Style</source>
+        <translation>Stil för detaljsida</translation>
+    </message>
+    <message>
+        <source>Direct play ASS/SSA subtitles</source>
+        <translation>Spela ASS/SSA undertexter direkt</translation>
+    </message>
+    <message>
+        <source>Display Audio Rows</source>
+        <translation>Visa ljudrader</translation>
+    </message>
+    <message>
+        <source>Display Collections Rows</source>
+        <translation>Visa samlingsrader</translation>
+    </message>
+    <message>
+        <source>Display Favorites Rows</source>
+        <translation>Visa favoritrader</translation>
+    </message>
+    <message>
+        <source>Display Genres Rows</source>
+        <translation>Visa genrerader</translation>
+    </message>
+    <message>
+        <source>Display Playlist Rows</source>
+        <translation>Visa spellisterader</translation>
+    </message>
+    <message>
+        <source>Donate a coffee to the developer</source>
+        <translation>Bjud utvecklaren på en kaffe</translation>
+    </message>
+    <message>
+        <source>Enable PIN Code</source>
+        <translation>Aktivera PIN-kod</translation>
+    </message>
+    <message>
+        <source>Enable and reorder the rating sources shown throughout the app</source>
+        <translation>Aktivera och ändra ordning på betygskällorna som visas i appen</translation>
+    </message>
+    <message>
+        <source>Expanded Tabs</source>
+        <translation>Expanderade flikar</translation>
+    </message>
+    <message>
+        <source>Extended shows a full card with episode artwork and description. Minimal shows a compact countdown overlay. Disabled hides the prompt entirely.</source>
+        <translation>Utökad visar ett helt kort med avsnittsbilder och beskrivning. Minimal visar en kompakt nedräkningsöverlagring. Inaktiverad döljer uppmaningen helt.</translation>
+    </message>
+    <message>
+        <source>Featured content, appearance</source>
+        <translation>Utvalt innehåll, utseende</translation>
+    </message>
+    <message>
+        <source>Hide Backdrops While Browsing</source>
+        <translation>Dölj bakgrundsbilder när du bläddrar?</translation>
+    </message>
+    <message>
+        <source>Hide Collection associated library items when browsing libraries</source>
+        <translation>Dölj biblioteksobjekt som hör till en samling när du bläddrar i bibliotek</translation>
+    </message>
+    <message>
+        <source>Hide adult content in results</source>
+        <translation>Dölj barnförbjudet innehåll i resultaten</translation>
+    </message>
+    <message>
+        <source>Limit the maximum resolution the player will request. Higher-resolution content will be transcoded down.</source>
+        <translation>Begränsa den maximala upplösningen som spelaren kommer att begära. Innehåll med högre upplösning kommer att omkodas ned.</translation>
+    </message>
+    <message>
+        <source>Loop Theme Music</source>
+        <translation>Loopa temamusik</translation>
+    </message>
+    <message>
+        <source>Manage</source>
+        <translation>Hantera</translation>
+    </message>
+    <message>
+        <source>Max Audio Channels</source>
+        <translation>Max antal ljudkanaler</translation>
+    </message>
+    <message>
+        <source>Max Resolution</source>
+        <translation>Max upplösning</translation>
+    </message>
+    <message>
+        <source>Media Bar Style</source>
+        <translation>Mediefaltsstil</translation>
+    </message>
+    <message>
+        <source>Media Player Behavior</source>
+        <translation>Mediespelarens beteende</translation>
+    </message>
+    <message>
+        <source>Media Segment Countdown</source>
+        <translation>Nedräkning för mediesegment</translation>
+    </message>
+    <message>
+        <source>Media request integration</source>
+        <translation>Integration av mediaförfrågningar</translation>
+    </message>
+    <message>
+        <source>Metacritic</source>
+        <translation>Metakritisk</translation>
+    </message>
+    <message>
+        <source>Metacritic (User)</source>
+        <translation>Metacritic (användare)</translation>
+    </message>
+    <message>
+        <source>NSFW Filter</source>
+        <translation>NSFW-filter</translation>
+    </message>
+    <message>
+        <source>Navbar style, toolbar buttons, appearance</source>
+        <translation>Navbar stil, verktygsfältsknappar, utseende</translation>
+    </message>
+    <message>
+        <source>Next Up Display</source>
+        <translation>Next Up Beteende</translation>
+    </message>
+    <message>
+        <source>Play theme music on detail pages</source>
+        <translation>Spela temamusik på detaljsidor</translation>
+    </message>
+    <message>
+        <source>Play trailers/prerolls before a main feature</source>
+        <translation>Spela trailers/prerolls före en huvudfunktion</translation>
+    </message>
+    <message>
+        <source>Playback Enhancements</source>
+        <translation>Uppspelningsförbättringar</translation>
+    </message>
+    <message>
+        <source>Prefer Audio Description Tracks</source>
+        <translation>Föredra syntolkningsspår</translation>
+    </message>
+    <message>
+        <source>Prefer audio description tracks over normal tracks.</source>
+        <translation>Föredra syntolkningsspår framför vanliga spår.</translation>
+    </message>
+    <message>
+        <source>Prioritize SDH/CC subtitle tracks when auto-selecting.</source>
+        <translation>Prioritera SDH-/CC-undertextspår vid automatiskt val.</translation>
+    </message>
+    <message>
+        <source>Rating Badges</source>
+        <translation>Betygsmärken</translation>
+    </message>
+    <message>
+        <source>Rating Labels</source>
+        <translation>Betygsetiketter</translation>
+    </message>
+    <message>
+        <source>Rating Sources</source>
+        <translation>Betygskällor</translation>
+    </message>
+    <message>
+        <source>Recommendation System</source>
+        <translation>Rekommendationssystem</translation>
+    </message>
+    <message>
+        <source>Repeat the track instead of playing it once</source>
+        <translation>Upprepa spåret i stället för att spela det en gång</translation>
+    </message>
+    <message>
+        <source>Replace Skip Outro with Next Up Display</source>
+        <translation>Ersätt Hoppa över outro med Näst på tur</translation>
+    </message>
+    <message>
+        <source>Rotten Tomatoes (Audience)</source>
+        <translation>Rotten Tomatoes (publik)</translation>
+    </message>
+    <message>
+        <source>Rotten Tomatoes (Critics)</source>
+        <translation>Rotten Tomatoes (Kritiker)</translation>
+    </message>
+    <message>
+        <source>Row Type</source>
+        <translation>Rows Type</translation>
+    </message>
+    <message>
+        <source>Show Audio rows in Home Sections.</source>
+        <translation>Visa ljudrader i hemsektionerna.</translation>
+    </message>
+    <message>
+        <source>Show Collections rows in Home Sections.</source>
+        <translation>Visa samlingsrader i hemsektionerna.</translation>
+    </message>
+    <message>
+        <source>Show Favorite Movies, Series, and other favorite rows in Home Sections.</source>
+        <translation>Visa favoritfilmer, favoritserier och andra favoritrader i hemsektionerna.</translation>
+    </message>
+    <message>
+        <source>Show Genres rows in Home Sections.</source>
+        <translation>Visa genrerader i hemsektionerna.</translation>
+    </message>
+    <message>
+        <source>Show MDBList and TMDB ratings</source>
+        <translation>Visa MDBList- och TMDB-betyg</translation>
+    </message>
+    <message>
+        <source>Show Movies, Series, or both in Genres rows.</source>
+        <translation>Visa filmer, serier eller båda på genrerader.</translation>
+    </message>
+    <message>
+        <source>Show Playlist rows in Home Sections.</source>
+        <translation>Visa spellisterader i hemsektionerna.</translation>
+    </message>
+    <message>
+        <source>Show Technical Details</source>
+        <translation>Visa tekniska detaljer?</translation>
+    </message>
+    <message>
+        <source>Show codec, resolution, and stream information in banner summary</source>
+        <translation>Visa codec, upplösning och streaminformation i bannersammanfattningen</translation>
+    </message>
+    <message>
+        <source>Show decorative badges behind ratings</source>
+        <translation>Visa dekorativa märken bakom betyg</translation>
+    </message>
+    <message>
+        <source>Show labels next to rating icons</source>
+        <translation>Visa etiketter bredvid betygsikoner</translation>
+    </message>
+    <message>
+        <source>Show libraries from all connected servers</source>
+        <translation>Visa bibliotek från alla anslutna servrar</translation>
+    </message>
+    <message>
+        <source>Show ratings on individual episodes</source>
+        <translation>Visa betyg på enskilda avsnitt</translation>
+    </message>
+    <message>
+        <source>Show the Next Up overlay instead of the Skip Outro button.</source>
+        <translation>Visa överlägget Näst på tur i stället för knappen Hoppa över outro.</translation>
+    </message>
+    <message>
+        <source>Show the Seerr button in the navigation bar</source>
+        <translation>Visa Seerr-knappen i navigeringsfältet</translation>
+    </message>
+    <message>
+        <source>Shuffle Content Type Filter</source>
+        <translation>Blanda filter för innehållstyp</translation>
+    </message>
+    <message>
+        <source>Sort Collections rows by date added, release date, alphabetically, and more.</source>
+        <translation>Sortera samlingsrader efter tillagt datum, releasedatum, alfabetiskt och mer.</translation>
+    </message>
+    <message>
+        <source>Sort Genres rows by date added, release date, alphabetically, and more.</source>
+        <translation>Sortera genrerader efter tillagt datum, releasedatum, alfabetiskt och mer.</translation>
+    </message>
+    <message>
+        <source>Source Collections</source>
+        <translation>Källsamlingar</translation>
+    </message>
+    <message>
+        <source>Source Libraries</source>
+        <translation>Källbibliotek</translation>
+    </message>
+    <message>
+        <source>Still Watching Prompt</source>
+        <translation>Tittar fortfarande på Prompt</translation>
+    </message>
+    <message>
+        <source>Subtitle Rendering</source>
+        <translation>Undertextrendering</translation>
+    </message>
+    <message>
+        <source>Subtitle Stream</source>
+        <translation>Undertextström</translation>
+    </message>
+    <message>
+        <source>Use 24-hour time formatting wherever the clock is shown</source>
+        <translation>Använd 24-timmars tidsformatering varhelst klockan visas</translation>
+    </message>
+    <message>
+        <source>When resuming playback (from Continue Watching or a media item page), how many seconds should be rewound?</source>
+        <translation>När du återupptar uppspelningen (från Fortsätt titta eller en sida med medieobjekt), hur många sekunder ska du spola tillbaka?</translation>
+    </message>
+    <message>
+        <source>When resuming playback after pressing the pause button, how many seconds should be rewound?</source>
+        <translation>När du återupptar uppspelningen efter att du tryckt på pausknappen, hur många sekunder ska du spola tillbaka?</translation>
+    </message>
 </context>
 </TS>

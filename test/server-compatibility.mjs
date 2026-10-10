@@ -60,6 +60,9 @@ const selections = {
     'source/utils/liveRecovery.bs': null,
     'source/utils/deviceCapabilities.bs': ['getSubtitleProfiles'],
     'source/utils/seerrMissingCollection.bs': null,
+    'source/utils/settingsIcons.bs': null,
+    'source/utils/settingsMetrics.bs': null,
+    'source/utils/ratingSourceList.bs': null,
     'source/utils/libraryOrder.bs': null,
     'source/utils/detailSectionLayout.bs': null,
     'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
@@ -131,6 +134,8 @@ source += '\n' + await readFile('test/collection-row.bs', 'utf8');
 source += '\n' + await readFile('test/external-rows.bs', 'utf8');
 source += '\n' + await readFile('test/library-order.bs', 'utf8');
 source += '\n' + await readFile('test/detail-sections.bs', 'utf8');
+source += '\n' + await readFile('test/rating-sources.bs', 'utf8');
+source += '\n' + await readFile('test/settings-metrics.bs', 'utf8');
 source += '\n' + await readFile('test/library-filters.bs', 'utf8');
 source += '\n' + await readFile('test/item-menu.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
@@ -587,7 +592,9 @@ const settingsSource = await readFile('components/settings/settings.bs', 'utf8')
 assert.match(settingsSource, /if requirement = "social" then return achievements\.SocialAvailable\(\)/, 'The friends settings only show where friends are on');
 assert.match(await readFile('settings/settings.json', 'utf8'), /"settingName": "navbar\.show_friends",[^}]*"requires": "social"/, 'The Friends button setting follows them');
 await access('images/icons/friends.png');
-await access('images/icons/settings/groups.png');
+const glyphTable = await readFile('source/utils/settingsGlyphs.bs', 'utf8');
+const glyphNames = [...glyphTable.matchAll(/^\s+"([a-z0-9_]+)":\s+&h[0-9A-F]+/gm)].map(match => match[1]);
+assert.ok(glyphNames.includes((await readFile('settings/settings.json', 'utf8')).match(/"settingName": "navbar\.show_friends",\s+"glyph": "([a-z0-9_]+)"/)[1]), 'The Friends button setting draws its glyph');
 process.stdout.write('PASS: friends and chat wiring (19 checks)\n');
 
 // The seasonal effects sync under Core's names, run only while home is on screen, and draw
@@ -615,8 +622,8 @@ const palette = (name) => [...effectsSource.match(new RegExp(`${name}: \\[("#[^\
 const artwork = ['dot', 'flake', 'leaf', 'leaf-mirror', 'disc', 'glow', 'spark', 'rocket', 'star', 'bat', 'blossom', 'candy', 'bee', 'ghost',
     ...palette('petals').map(color => `petal-${color}`), ...palette('baubles').map(color => `bauble-${color}`)];
 assert.deepEqual((await readdir('images/seasonal')).sort(), artwork.map(name => `${name}.png`).sort(), 'Every seasonal image the effects name ships, and nothing else');
-await access('images/icons/settings/star_shine.png');
-await access('images/icons/settings/blur_on.png');
+assert.ok(glyphNames.includes(findSetting(settingsTree, 'seasonal.surprise').glyph), 'The seasonal effect draws its glyph');
+assert.ok(glyphNames.includes(findSetting(settingsTree, 'seasonal.density').glyph), 'The density draws its glyph');
 process.stdout.write('PASS: seasonal effects wiring (10 checks)\n');
 
 // Sync follows the profile picked on this device, which stays local, and the panel that picks it
@@ -632,12 +639,30 @@ assert.match(syncFunction('FullProfile'), /profileData\["seerrRows"\][^]*profile
 const syncTask = await readFile('components/settings/SettingsSyncTask.bs', 'utf8');
 for (const name of ['loadProfile', 'saveProfile', 'resetProfile']) assert.match(syncTask, new RegExp(`^sub ${name}\\(\\)`, 'm'), `The task can ${name}`);
 assert.match(syncTask.match(/sub resetProfile\([^]*?end sub/)[0], /DeleteProfile[^]*RestoreLocalDefaults\(\)\s+settingsSync\.PullFromServer\(\)/, 'A reset clears the server, then this device, then reads the profile again');
-assert.match(settingsSource, /selectedItem\.settingName = "plugin\.syncProfiles"\s+m\.settingDesc\.visible = false\s+showSettingsSyncPanel\(\)/, 'The sync entry opens the panel');
+assert.match(settingsSource, /selectedItem\.settingName = "plugin\.syncProfiles"\s+showSettingsSyncPanel\(\)/, 'The sync entry opens the panel');
 assert.match(settingsSource, /takeSettings\(configTree, \["plugin\.enabled", "plugin\.syncProfiles"\]\)\s+'[^\n]*\s+takeSettingByName\(configTree, "plugin\.settingsSync"\)/, 'Settings Sync lists the plugin switch and the panel, and the sync switch stays out of the list');
 const syncEntry = findSetting(settingsTree, 'plugin.syncProfiles');
 assert.equal(syncEntry.type, '', 'The sync entry opens a panel rather than holding a value');
 assert.equal(findSetting(settingsTree, 'plugin.settingsSync').default, 'true', 'The sync switch keeps its default');
-for (const icon of ['icons/cloud_download.png', 'icons/cloud_upload.png', 'icons/desktop_windows.png', 'achievements/public.png', 'achievements/phone_iphone.png', 'achievements/tv.png', 'achievements/extension.png', 'achievements/replay.png']) {
-    await access(`images/${icon}`);
+for (const glyph of ['extension', 'public', 'desktop_windows', 'phone_iphone', 'tv', 'cloud_download', 'cloud_upload', 'restart_alt']) {
+    assert.ok(glyphNames.includes(glyph), `The sync panel draws ${glyph}`);
 }
 process.stdout.write('PASS: settings sync profiles (22 checks)\n');
+
+// Every glyph a setting names is in the icon font, and the font and its table cover the same characters
+const settingsJsonText = await readFile('settings/settings.json', 'utf8');
+assert.doesNotMatch(settingsJsonText, /"icon": "[^"]*\.png"/, 'No setting still points at an icon image');
+const namedGlyphs = new Set([...settingsJsonText.matchAll(/"glyph": "([a-z0-9_]+)"/g)].map(match => match[1]));
+for (const glyph of namedGlyphs) assert.ok(glyphNames.includes(glyph), `The icon font has ${glyph}`);
+const iconFont = await readFile('fonts/SettingsIcons.ttf');
+const tableCount = iconFont.readUInt16BE(4);
+let fontCodes = 0;
+for (let i = 0; i < tableCount; i++) {
+    const record = 12 + i * 16;
+    if (iconFont.toString('latin1', record, record + 4) === 'OS/2') {
+        const os2 = iconFont.readUInt32BE(record + 8);
+        fontCodes = iconFont.readUInt16BE(os2 + 66) - iconFont.readUInt16BE(os2 + 64) + 1;
+    }
+}
+assert.equal(fontCodes, glyphNames.length, 'The glyph table and the icon font cover the same characters');
+process.stdout.write(`PASS: settings glyphs (${namedGlyphs.size + 2} checks)\n`);

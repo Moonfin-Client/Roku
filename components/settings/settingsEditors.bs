@@ -1,0 +1,273 @@
+import "pkg:/source/utils/buttonLayout.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/detailMetadataLayout.bs"
+import "pkg:/source/utils/homeRowLayout.bs"
+import "pkg:/source/utils/ratingSourceList.bs"
+import "pkg:/source/utils/settingsIcons.bs"
+
+' The home rows, the action and player buttons, the metadata row and the rating sources are each
+' a screen of the settings list. The screen works on a copy, left and right move the focused row
+' and OK switches it, and the arrangement is written once when the screen closes, and only when
+' it changed.
+
+const RATING_SOURCES_SETTING = "plugin.mdblist.ratingSources"
+
+sub openEditor(kind as string, settingItem as object)
+    rows = editorRowsFor(kind, invalid)
+    m.editor = { kind: kind, rows: rows, openedKey: editorKey(rows), resetKey: "" }
+    title = settingItem.title
+    if kind = "rows" then title = "Rows"
+    if kind = "ratingSources" then title = "Ratings"
+    LoadMenu({ title: title, editor: kind, clean: true, titleAction: "restore", children: [] })
+end sub
+
+' What an editor offers, in its stored order, or in the order it goes back to after a reset
+function editorRowsFor(kind as string, resetTo as dynamic) as object
+    rows = []
+    if kind = "rows"
+        homeRowLayout.MigrateLegacySlots()
+        homeRowLayout.MigrateSinceYouWatched()
+        stored = get_user_setting(homeRowLayout.ORDER_SETTING)
+        off = buttonLayout.HiddenLookup(get_user_setting(homeRowLayout.HIDDEN_SETTING))
+        if isValid(resetTo)
+            stored = FormatJson(resetTo)
+            off = {}
+        end if
+        placed = buttonLayout.ToIds(stored)
+        picked = homeRowLayout.DynamicLookup()
+        for each row in buttonLayout.Ordered(homeRowLayout.Offered(), stored)
+            rows.push({ id: row.id, label: tr(row.label), subtitle: pickedRowSource(row.id), enabled: homeRowLayout.IsEnabled(row.id, placed, off, picked) })
+        end for
+        return rows
+    end if
+
+    if kind = "ratingSources"
+        enabled = ratingSourceList.Normalize(get_user_setting(RATING_SOURCES_SETTING))
+        if enabled.Count() = 0 or isValid(resetTo) then enabled = ratingSourceList.Defaults()
+        return editorRowsFrom(enabled)
+    end if
+
+    target = editorTarget(kind)
+    storedOrder = get_user_setting(target.orderKey)
+    off = buttonLayout.HiddenLookup(get_user_setting(target.hiddenKey))
+    if isValid(resetTo)
+        storedOrder = "[]"
+        off = {}
+    end if
+    for each entry in buttonLayout.Ordered(target.catalogue, storedOrder)
+        rows.push({ id: entry.id, label: tr(entry.label), subtitle: tr(entry.subtitle ?? ""), enabled: not isValid(off[entry.id]) })
+    end for
+    return rows
+end function
+
+' A row picked out of a list says which kind of list it came from
+function pickedRowSource(rowId as string) as string
+    fromId = homeRowLayout.SourceFromId(rowId)
+    if not isValid(fromId) then return ""
+    labels = { collections: "Collection", genres: "Genre", playlists: "Playlist" }
+    return tr(labels[fromId.source] ?? "")
+end function
+
+function editorTarget(kind as string) as object
+    if kind = "osdButtons" then return { catalogue: buttonLayout.OsdButtons(), orderKey: OSD_ORDER_SETTING, hiddenKey: OSD_HIDDEN_SETTING }
+    if kind = "metadata" then return { catalogue: detailMetadataLayout.DetailMetadata(), orderKey: DETAIL_METADATA_ORDER_SETTING, hiddenKey: DETAIL_METADATA_HIDDEN_SETTING }
+    return { catalogue: buttonLayout.DetailButtons(), orderKey: DETAIL_ORDER_SETTING, hiddenKey: DETAIL_HIDDEN_SETTING }
+end function
+
+function editorKey(rows as object) as string
+    parts = []
+    for each row in rows
+        parts.push(`${row.id}:${row.enabled}`)
+    end for
+    return parts.Join(",")
+end function
+
+function editorEnabledIds(rows as object) as object
+    ids = []
+    for each row in rows
+        if row.enabled then ids.push(row.id)
+    end for
+    return ids
+end function
+
+' The rows of the open editor, with the lines that explain it over the first one
+function editorSpecs() as object
+    kind = m.editor.kind
+    specs = []
+    hints = {
+        detailButtons: "Play is always first. Everything else is up to you.",
+        osdButtons: "Playback controls are always shown. Everything below is up to you.",
+        metadata: "Turn metadata items on or off, and arrange the order they appear on the details screen."
+    }
+    if isValid(hints[kind]) then specs.push({ band: "note", text: tr(hints[kind]), caption: tr("Press left or right to move the highlighted button.") })
+    if kind = "ratingSources" then specs.push({ band: "plain", glyph: "reorder", text: tr("Rating Sources"), caption: tr("Enable and reorder the rating sources shown throughout the app") })
+
+    rows = m.editor.rows
+    for i = 0 to rows.Count() - 1
+        specs.push(editorRowSpec(i))
+    end for
+    return specs
+end function
+
+function editorRowSpec(index as integer) as object
+    kind = m.editor.kind
+    rows = m.editor.rows
+    row = rows[index]
+    spec = { id: row.id, title: row.label, subtitle: row.subtitle ?? "", canMovePrev: index > 0, canMoveNext: index < rows.Count() - 1 }
+    checkbox = "check_box_outline_blank"
+    if row.enabled then checkbox = "check_box"
+
+    if kind = "rows"
+        spec.kind = "reorder"
+        spec.glyph = checkbox
+    else if kind = "ratingSources"
+        ' Only the turned-on sources have an order to change
+        spec.kind = "plain"
+        spec.glyph = checkbox
+        spec.boolValue = row.enabled
+        spec.canMovePrev = row.enabled and index > 0
+        spec.canMoveNext = row.enabled and index < editorEnabledIds(rows).Count() - 1
+    else
+        spec.kind = "button"
+        spec.glyphStrong = true
+        spec.boolValue = row.enabled
+        if kind = "osdButtons"
+            spec.glyph = settingsIcons.OsdButtonGlyph(row.id)
+        else if kind = "metadata"
+            spec.glyph = settingsIcons.MetadataGlyph(row.id)
+        else
+            spec.glyph = settingsIcons.DetailButtonGlyph(row.id)
+        end if
+    end if
+    return spec
+end function
+
+' Left and right move the focused row a place, and focus goes with it
+function editorMove(delta as integer) as boolean
+    if not isValid(m.editor) then return false
+    index = m.settingsMenu.itemFocused
+    rows = m.editor.rows
+    if index < 0 or index >= rows.Count() then return true
+
+    last = rows.Count() - 1
+    if m.editor.kind = "ratingSources"
+        if not rows[index].enabled then return true
+        last = editorEnabledIds(rows).Count() - 1
+    end if
+    target = index + delta
+    if target < 0 or target > last then return true
+
+    moving = rows[index]
+    rows[index] = rows[target]
+    rows[target] = moving
+    m.editor.rows = rows
+    refreshEditorRows([index, target])
+    m.settingsMenu.jumpToItem = target
+    return true
+end function
+
+' OK switches the focused row on or off. A rating source switched on joins the end of the ones
+' already on, so the list is laid out again around it.
+sub editorToggle()
+    index = m.settingsMenu.itemFocused
+    rows = m.editor.rows
+    if index < 0 or index >= rows.Count() then return
+
+    if m.editor.kind = "ratingSources"
+        id = rows[index].id
+        m.editor.rows = editorRowsFrom(ratingSourceList.Toggle(editorEnabledIds(rows), id))
+        showSection(m.userLocation.peek())
+        for i = 0 to m.editor.rows.Count() - 1
+            if m.editor.rows[i].id = id then m.settingsMenu.jumpToItem = i
+        end for
+        return
+    end if
+
+    rows[index].enabled = not rows[index].enabled
+    m.editor.rows = rows
+    refreshEditorRows([index])
+end sub
+
+function editorRowsFrom(enabled as object) as object
+    rows = []
+    for each source in ratingSourceList.Rows(enabled)
+        source.label = tr(source.label)
+        rows.push(source)
+    end for
+    return rows
+end function
+
+' Every row goes back to where it starts, and nothing is written until the screen closes
+sub editorReset()
+    kind = m.editor.kind
+    resetTo = []
+    if kind = "rows" then resetTo = homeRowLayout.DefaultEnabled()
+    m.editor.rows = editorRowsFor(kind, resetTo)
+    m.editor.resetKey = editorKey(m.editor.rows)
+    showSection(m.userLocation.peek())
+end sub
+
+' Rows that changed lay themselves out again, and the rows under them move if one grew
+sub refreshEditorRows(indexes as object)
+    heights = m.settingsMenu.rowHeights
+    grew = false
+    for each index in indexes
+        rowNode = m.settingsMenu.content.getChild(index)
+        height = layoutRow(rowNode, editorRowSpec(index), m.rowBands[index], m.sectionStyle, settingsMetrics.PANEL_WIDTH)
+        if Abs(heights[index] - height) > 0.5
+            heights[index] = height
+            grew = true
+        end if
+    end for
+    if grew
+        m.settingsMenu.rowHeights = heights
+        return
+    end if
+    for each index in indexes
+        m.settingsMenu.callFunc("refreshItem", index)
+    end for
+end sub
+
+sub commitOpenEditor()
+    editor = m.editor
+    m.editor = invalid
+    if not isValid(editor) then return
+    key = editorKey(editor.rows)
+    if key = editor.openedKey then return
+
+    order = []
+    hidden = []
+    for each row in editor.rows
+        order.push(row.id)
+        if not row.enabled then hidden.push(row.id)
+    end for
+    resetForm = key = editor.resetKey
+
+    if editor.kind = "rows"
+        ' A reset writes the starting rows and an empty off list, so every row past those falls
+        ' back to being off on its own on every client
+        if resetForm
+            saveHomeRowLayout(homeRowLayout.DefaultEnabled(), [])
+        else
+            merged = homeRowLayout.Save(order, hidden)
+            saveHomeRowLayout(merged.order, merged.hidden)
+        end if
+        return
+    end if
+
+    if editor.kind = "ratingSources"
+        stored = FormatJson(ratingSourceList.ToStored(editorEnabledIds(editor.rows)))
+        set_user_setting(RATING_SOURCES_SETTING, stored)
+        syncSettingToServer(RATING_SOURCES_SETTING, stored)
+        return
+    end if
+
+    target = editorTarget(editor.kind)
+    ' A reset clears both lists, which puts every button back in the order the app declares them
+    if resetForm
+        saveButtonLayout(target, [], [])
+        return
+    end if
+    merged = buttonLayout.WithUnknownIds(target.catalogue, order, hidden, get_user_setting(target.orderKey), get_user_setting(target.hiddenKey))
+    saveButtonLayout(target, merged.order, merged.hidden)
+end sub
