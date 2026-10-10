@@ -61,6 +61,7 @@ const selections = {
     'source/utils/deviceCapabilities.bs': ['getSubtitleProfiles'],
     'source/utils/seerrMissingCollection.bs': null,
     'source/utils/settingsIcons.bs': null,
+    'source/utils/episodeBrowser.bs': null,
     'source/utils/settingsMetrics.bs': null,
     'source/utils/ratingSourceList.bs': null,
     'source/utils/libraryOrder.bs': null,
@@ -138,6 +139,7 @@ source += '\n' + await readFile('test/rating-sources.bs', 'utf8');
 source += '\n' + await readFile('test/settings-metrics.bs', 'utf8');
 source += '\n' + await readFile('test/library-filters.bs', 'utf8');
 source += '\n' + await readFile('test/item-menu.bs', 'utf8');
+source += '\n' + await readFile('test/episode-browser.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n' + settingsSyncFile.match(/^    const .+$/gm).join('\n') + '\n';
 for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile']) {
@@ -466,6 +468,14 @@ assert.equal(playerView.match(/m\.LoadMetaDataTask\.control = TaskControl\.RUN/g
 assert.match(playerView, /isValid\(m\.liveChannel\) and isStringEqual\(m\.liveChannel\.id, m\.channelSwitch\.target\.Id\)/, 'A channel switch succeeds on the channel that came back');
 assert.match(videoLoader, /if m\.top\.abandoned\s+releaseAbandonedLiveStream\(loaded\)\s+return\s+end if\s+m\.top\.content = \[loaded\]/, 'A load the player set aside closes its stream instead of handing it over');
 process.stdout.write('PASS: live load wiring (3 checks)\n');
+
+// Picking an episode from the player's browser reports the old one stopped and resumes the pick
+const episodePick = playerView.match(/sub onEpisodePicked\([^]*?end sub/)[0];
+assert.match(episodePick, /ReportPlayback\("stop"\)\s+m\.top\.unobserveField\("state"\)/, 'Switching episodes reports the old one stopped before the state observer comes off');
+assert.match(episodePick, /startingPoint = episodeBrowser\.ResumeTicks\(episode\)[^]*?callFunc\("push", episode\)/, 'The picked episode carries its resume point into the queue');
+assert.match(await readFile('components/video/OSD.bs', 'utf8'), /id: "episodes", nodeId: "showEpisodes"/, 'The player offers the Episodes button');
+assert.match(await readFile('source/utils/buttonLayout.bs', 'utf8'), /id: "chapters"[^]*?id: "episodes"[^]*?id: "subtitles"/, 'Episodes sits between Chapters and Subtitles in Player Buttons');
+process.stdout.write('PASS: episode browser wiring (4 checks)\n');
 
 // A custom subtitle track downloads on the task's own thread, never in an observer the render thread runs
 const captionTask = await readFile('components/captionTask.bs', 'utf8');

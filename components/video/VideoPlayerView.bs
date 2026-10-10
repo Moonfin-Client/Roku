@@ -18,6 +18,7 @@ import "pkg:/source/utils/blockedContent.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/diagnostics.bs"
 import "pkg:/source/utils/embyFeatures.bs"
+import "pkg:/source/utils/episodeBrowser.bs"
 import "pkg:/source/utils/liveRecovery.bs"
 import "pkg:/source/utils/liveTvGuide.bs"
 import "pkg:/source/utils/liveTvLastChannel.bs"
@@ -590,6 +591,80 @@ sub closeChapterList()
     showOSD("chapterList")
 end sub
 
+sub handleEpisodesAction()
+    if isValid(m.episodeOverlay) or not isValidAndNotEmpty(m.top.showID) then return
+
+    handleHideAction(false)
+    m.episodeOverlay = CreateObject("roSGNode", "EpisodeBrowserOverlay")
+    m.episodeOverlay.observeField("selected", "onEpisodePicked")
+    m.episodeOverlay.observeField("dismissed", "closeEpisodeBrowser")
+    m.top.appendChild(m.episodeOverlay)
+    m.episodeOverlay.seriesName = m.playingSeriesName ?? ""
+    m.episodeOverlay.playingId = m.top.id
+    m.episodeOverlay.seasonNumber = m.playingSeason ?? 0
+    m.episodeOverlay.callFunc("open")
+    m.episodeOverlay.setFocus(true)
+
+    m.episodeTask = CreateObject("roSGNode", "NouveauSeriesEpisodesTask")
+    m.episodeTask.seriesId = m.top.showID
+    if isValid(m.itemServerData)
+        m.episodeTask.serverUrl = m.itemServerData.serverUrl
+        m.episodeTask.serverUserId = m.itemServerData.userId
+        m.episodeTask.serverAuthToken = m.itemServerData.authToken
+    end if
+    m.episodeTask.observeField("episodes", "onEpisodeTaskDone")
+    m.episodeTask.control = TaskControl.RUN
+end sub
+
+sub onEpisodeTaskDone()
+    if isValid(m.episodeOverlay) then m.episodeOverlay.episodes = m.episodeTask.episodes
+end sub
+
+' Picking the episode that's on just closes the browser. Any other takes its place, carrying on
+' where it was left, and the rest of its season queues behind it.
+sub onEpisodePicked()
+    episode = m.episodeOverlay.selected
+    if not isValid(episode) or isStringEqual(episode.id, m.top.id)
+        closeEpisodeBrowser()
+        return
+    end if
+
+    dropEpisodeBrowser()
+    episode.startingPoint = episodeBrowser.ResumeTicks(episode)
+    ' The stop goes out before the state observer comes off, or the server never hears this one ended
+    ReportPlayback("stop")
+    m.top.unobserveField("state")
+    m.top.control = VideoControl.STOP
+    m.global.sceneManager.callFunc("clearPreviousScene")
+    m.global.queueManager.callFunc("bypassNextPreferredAudioTrackIndexReset")
+    m.global.queueManager.callFunc("clear")
+    m.global.queueManager.callFunc("setPrerollStatus", false)
+    m.global.queueManager.callFunc("push", episode)
+    m.global.queueManager.callFunc("playQueue")
+end sub
+
+sub closeEpisodeBrowser()
+    if not isValid(m.episodeOverlay) then return
+    dropEpisodeBrowser()
+    prepareOSD()
+    showOSD("showEpisodes")
+end sub
+
+' The browser lets go of the remote before it goes, since removing the focused node lets the
+' firmware put focus anywhere. A list still on its way is left to land on nothing.
+sub dropEpisodeBrowser()
+    m.episodeOverlay.unobserveField("selected")
+    m.episodeOverlay.unobserveField("dismissed")
+    if isValid(m.episodeTask)
+        m.episodeTask.unobserveField("episodes")
+        m.episodeTask = invalid
+    end if
+    m.episodeOverlay.setFocus(false)
+    m.top.setFocus(true)
+    m.top.removeChild(m.episodeOverlay)
+    m.episodeOverlay = invalid
+end sub
+
 ' getCurrentChapterIndex: Finds current chapter index
 '
 ' @return {integer} indicating index of current chapter within chapter data or 0 if chapter lookup fails
@@ -764,6 +839,11 @@ sub onOSDAction()
 
     if action = "chapterlist"
         handleChapterListAction()
+        return
+    end if
+
+    if action = "showepisodes"
+        handleEpisodesAction()
         return
     end if
 
@@ -1224,6 +1304,8 @@ sub onVideoContentLoaded(event as object)
     m.osd.chapterStarts = chapterStarts
     m.trickplay = videoContent[0].trickplay
     m.top.showID = videoContent[0].showID
+    m.playingSeason = videoContent[0].seasonNumber
+    m.playingSeriesName = videoContent[0].seriesName
     m.mediaSegments = videoContent[0].mediaSegments
 
     ' A new item gets its own prompts, so an earlier dismissal doesn't carry over
@@ -1238,6 +1320,8 @@ sub onVideoContentLoaded(event as object)
     m.liveChannel = videoContent[0].liveChannel
     m.osd.liveMode = isValid(m.liveChannel)
     m.top.isLiveChannel = isValid(m.liveChannel)
+    ' Only an episode of a series has a season to browse
+    m.osd.hasEpisodes = isValidAndNotEmpty(m.top.showID) and not isValid(m.liveChannel) and m.LoadMetaDataTask.isIntro <> true
     if isValid(m.liveChannel)
         ' A details screen under the guide reloads as whatever played last, and a channel isnt
         ' something it can show
@@ -1572,7 +1656,7 @@ sub displaySegmentSkipButton(segmentType as string, endticks as double)
         end if
     end if
 
-    if m.osd.visible then return ' Don't show if OSD is visible
+    if m.osd.visible or isValid(m.episodeOverlay) then return ' Don't show over the controls or the episode browser
 
     ' The end of an episode can be handed to the Up Next card instead of offering
     ' a skip that lands in the same place
@@ -1788,7 +1872,7 @@ end sub
 
 ' The card comes up as the item runs out
 sub checkNextUp()
-    if m.nextUp.visible then return
+    if m.nextUp.visible or isValid(m.episodeOverlay) then return
     if m.top.duration <= 0 then return
     if m.osd.visible then return
     if m.top.trickPlayBar.visible then return
@@ -1823,7 +1907,7 @@ sub onState()
     if isStringEqual(m.top.state, MediaPlaybackState.PAUSED)
         m.wasPaused = true
         ' Keep OSD visible when paused
-        if not m.scrubActive and not isValid(m.chapterOverlay)
+        if not m.scrubActive and not isValid(m.chapterOverlay) and not isValid(m.episodeOverlay)
             if not m.osd.visible
                 showOSD()
             end if
@@ -3270,6 +3354,13 @@ function onKeyEvent(key as string, press as boolean) as boolean
             if m.top.state = "paused" then m.top.control = VideoControl.RESUME else m.top.control = VideoControl.PAUSE
         end if
         m.chapterOverlay.setFocus(true)
+        return true
+    end if
+    if isValid(m.episodeOverlay)
+        if press and key = KeyCode.PLAY
+            if m.top.state = "paused" then m.top.control = VideoControl.RESUME else m.top.control = VideoControl.PAUSE
+        end if
+        m.episodeOverlay.setFocus(true)
         return true
     end if
 

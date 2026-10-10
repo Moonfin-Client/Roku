@@ -1,0 +1,382 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/episodeBrowser.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/nouveauLayout.bs"
+import "pkg:/source/utils/playbackOverlay.bs"
+
+const PANEL_WIDTH = 1400
+const PANEL_HEIGHT = 918
+const PANEL_PAD = 30
+const ROW_LEFT = 32
+const ROW_WIDTH = 1336
+const ROW_HEIGHT = 196
+const ROW_STEP = 208
+const ROW_PAD = 17
+const THUMB_WIDTH = 288
+const THUMB_HEIGHT = 162
+const TEXT_GAP = 28
+const TAB_HEIGHT = 54
+const TAB_PAD_X = 26
+const TAB_GAP = 10
+' Stills load only for the rows on screen and this many either side, so a long season doesn't
+' ask for every picture at once
+const THUMB_MARGIN_ROWS = 2
+
+sub init()
+    m.panelFill = m.top.findNode("panelFill")
+    m.panelBorder = m.top.findNode("panelBorder")
+    m.title = m.top.findNode("title")
+    m.tabsViewport = m.top.findNode("tabsViewport")
+    m.tabs = m.top.findNode("tabs")
+    m.titleRule = m.top.findNode("titleRule")
+    m.viewport = m.top.findNode("viewport")
+    m.rows = m.top.findNode("rows")
+    m.message = m.top.findNode("message")
+    m.footer = m.top.findNode("footer")
+    m.entrance = m.top.findNode("entrance")
+    m.entranceSlide = m.top.findNode("entranceSlide")
+
+    playbackOverlay.SetFont(m.title, 30, true)
+    playbackOverlay.SetFont(m.message, 24, false)
+    playbackOverlay.SetFont(m.footer, 18, false)
+    m.footer.text = tr("Press BACK to close")
+
+    m.palette = playbackOverlay.Palette()
+    m.hideOverview = toBoolean(chainLookupReturn(m.global.session, "user.settings.`ui.itemdetail.hideMediaDescription`", false))
+    m.opened = false
+    m.loaded = false
+    m.numbers = []
+    m.buckets = {}
+    m.seasonIndex = 0
+    m.tabScroll = 0
+    m.tabVisuals = []
+    m.visuals = []
+    m.focusIndex = 0
+    m.scrollRow = 0
+    m.visibleRows = 1
+    m.zone = "rows"
+end sub
+
+sub open()
+    m.opened = true
+    m.title.text = m.top.seriesName
+    titleHeight = m.title.boundingRect().height
+    m.title.translation = [ROW_LEFT + 4, PANEL_PAD]
+    m.title.width = ROW_WIDTH - 8
+    m.tabsTop = PANEL_PAD + titleHeight + 18
+    m.tabsViewport.translation = [ROW_LEFT, m.tabsTop]
+    m.tabsViewport.clippingRect = [-4, -4, ROW_WIDTH + 8, TAB_HEIGHT + 8]
+
+    m.panelFill.height = PANEL_HEIGHT
+    m.panelBorder.height = PANEL_HEIGHT
+    panelLeft = (1920 - PANEL_WIDTH) / 2
+    panelTop = (1080 - PANEL_HEIGHT) / 2
+    m.entranceSlide.keyValue = [[panelLeft, panelTop + 30], [panelLeft, panelTop]]
+    m.entrance.control = "start"
+
+    render()
+end sub
+
+sub onEpisodesLoaded()
+    m.loaded = true
+    if m.opened then render()
+end sub
+
+sub render()
+    if not m.loaded
+        layoutBody()
+        showMessage(tr("Loading..."))
+        return
+    end if
+
+    grouped = nouveauLayout.GroupEpisodesBySeason(episodeBrowser.PlayableOnly(m.top.episodes))
+    m.numbers = grouped.numbers
+    m.buckets = grouped.buckets
+    layoutBody()
+    if m.numbers.count() = 0
+        showMessage(tr("Nothing here yet."))
+        return
+    end if
+
+    opening = nouveauLayout.EffectiveSeason(m.numbers, m.top.seasonNumber, invalid)
+    m.seasonIndex = 0
+    for i = 0 to m.numbers.count() - 1
+        if m.numbers[i] = opening then m.seasonIndex = i
+    end for
+    buildTabs()
+    showSeason()
+end sub
+
+' The tab strip only shows for a series with more than one season, and the list moves up into
+' its room when it doesn't
+sub layoutBody()
+    hasTabs = m.numbers.count() > 1
+    m.tabsViewport.visible = hasTabs
+    bodyTop = m.tabsTop
+    if hasTabs then bodyTop = m.tabsTop + TAB_HEIGHT + 18
+    m.titleRule.translation = [2, bodyTop]
+
+    viewportTop = bodyTop + 19
+    footerHeight = m.footer.boundingRect().height
+    footerTop = PANEL_HEIGHT - PANEL_PAD - footerHeight
+    room = footerTop - 18 - viewportTop
+    m.visibleRows = Int((room + ROW_STEP - ROW_HEIGHT) / ROW_STEP)
+    if m.visibleRows < 1 then m.visibleRows = 1
+
+    m.viewport.translation = [0, viewportTop]
+    ' The panel's own edges cut the focused row where it grows past them
+    m.viewport.clippingRect = [2, -6, PANEL_WIDTH - 4, room + 12]
+    m.message.translation = [0, viewportTop]
+    m.message.width = PANEL_WIDTH
+    m.message.height = room
+    m.footer.translation = [0, footerTop]
+end sub
+
+sub showMessage(text as string)
+    m.rows.removeChildrenIndex(m.rows.getChildCount(), 0)
+    m.visuals = []
+    m.message.text = text
+    m.message.visible = true
+end sub
+
+sub buildTabs()
+    m.tabs.removeChildrenIndex(m.tabs.getChildCount(), 0)
+    m.tabVisuals = []
+    m.tabScroll = 0
+    if m.numbers.count() < 2 then return
+
+    x = 0
+    for each number in m.numbers
+        group = m.tabs.createChild("Group")
+        fill = group.createChild("Poster")
+        fill.uri = "pkg:/images/icons/pill-focus.9.png"
+        ring = group.createChild("Poster")
+        ring.uri = "pkg:/images/details/tabborderfocus.9.png"
+        ring.blendColor = "#FFFFFF"
+        label = group.createChild("Label")
+        playbackOverlay.SetFont(label, 24, true)
+        label.text = nouveauLayout.SeasonLabel(number)
+        width = label.boundingRect().width + TAB_PAD_X * 2
+        label.width = width
+        label.height = TAB_HEIGHT
+        label.horizAlign = "center"
+        label.vertAlign = "center"
+        fill.width = width
+        fill.height = TAB_HEIGHT
+        ring.width = width
+        ring.height = TAB_HEIGHT
+        group.translation = [x, 0]
+        m.tabVisuals.push({ fill: fill, ring: ring, label: label, x: x, width: width })
+        x += width + TAB_GAP
+    end for
+    applyTabs()
+end sub
+
+' The open season wears the accent, and gets the ring while the remote is on the tabs
+sub applyTabs()
+    if m.tabVisuals.count() = 0 then return
+    for i = 0 to m.tabVisuals.count() - 1
+        visual = m.tabVisuals[i]
+        if i = m.seasonIndex
+            visual.fill.blendColor = m.palette.accent
+            visual.label.color = m.palette.onAccent
+        else
+            visual.fill.blendColor = "#FFFFFF1F"
+            visual.label.color = "#FFFFFFD9"
+        end if
+        visual.ring.visible = m.zone = "tabs" and i = m.seasonIndex
+    end for
+
+    target = m.tabVisuals[m.seasonIndex]
+    if target.x < m.tabScroll then m.tabScroll = target.x
+    if target.x + target.width > m.tabScroll + ROW_WIDTH then m.tabScroll = target.x + target.width - ROW_WIDTH
+    m.tabs.translation = [-m.tabScroll, 0]
+end sub
+
+' Opens on the playing episode when it's in this season, with the one before it still in view
+sub showSeason()
+    m.message.visible = false
+    m.rows.removeChildrenIndex(m.rows.getChildCount(), 0)
+    m.visuals = []
+    season = m.buckets[m.numbers[m.seasonIndex].toStr()] ?? []
+
+    m.focusIndex = 0
+    for i = 0 to season.count() - 1
+        isPlaying = isStringEqual(season[i].id, m.top.playingId)
+        m.visuals.push(buildRow(season[i], isPlaying))
+        if isPlaying then m.focusIndex = i
+    end for
+    m.scrollRow = m.focusIndex - 1
+    applyFocus()
+end sub
+
+function buildRow(episode as object, isPlaying as boolean) as object
+    group = m.rows.createChild("Group")
+    group.scaleRotateCenter = [ROW_WIDTH / 2, ROW_HEIGHT / 2]
+    fill = group.createChild("Poster")
+    fill.uri = "pkg:/images/livetv/fill10.9.png"
+    fill.width = ROW_WIDTH
+    fill.height = ROW_HEIGHT
+    border = group.createChild("Poster")
+    border.uri = "pkg:/images/playback/stroke10w2.9.png"
+    border.width = ROW_WIDTH
+    border.height = ROW_HEIGHT
+
+    thumbBack = group.createChild("Rectangle")
+    thumbBack.color = "#FFFFFF14"
+    thumbBack.width = THUMB_WIDTH
+    thumbBack.height = THUMB_HEIGHT
+    thumbBack.translation = [ROW_PAD, ROW_PAD]
+    thumb = group.createChild("Poster")
+    thumb.width = THUMB_WIDTH
+    thumb.height = THUMB_HEIGHT
+    thumb.loadDisplayMode = "scaleToZoom"
+    thumb.translation = [ROW_PAD, ROW_PAD]
+
+    fraction = episodeBrowser.WatchedFraction(episode)
+    if fraction > 0
+        track = group.createChild("Rectangle")
+        track.color = "#00000099"
+        track.width = THUMB_WIDTH
+        track.height = 6
+        track.translation = [ROW_PAD, ROW_PAD + THUMB_HEIGHT - 6]
+        bar = group.createChild("Rectangle")
+        bar.color = m.palette.accent
+        bar.width = Int(THUMB_WIDTH * fraction)
+        bar.height = 6
+        bar.translation = [ROW_PAD, ROW_PAD + THUMB_HEIGHT - 6]
+    end if
+    if chainLookupReturn(episode, "json.UserData.Played", false) = true
+        check = group.createChild("PlayedCheckmark")
+        check.width = 36
+        check.height = 36
+        check.translation = [ROW_PAD + THUMB_WIDTH - 46, ROW_PAD + 10]
+        check.data = { played: true }
+    end if
+
+    textLeft = ROW_PAD + THUMB_WIDTH + TEXT_GAP
+    textWidth = ROW_WIDTH - textLeft - ROW_PAD - 8
+    lineLabel = group.createChild("Label")
+    playbackOverlay.SetFont(lineLabel, 20, true)
+    lineLabel.color = "#FFFFFFA6"
+    lineLabel.text = episodeBrowser.RowLine(episode)
+    lineLabel.width = textWidth
+    lineLabel.translation = [textLeft, ROW_PAD + 2]
+
+    nameLabel = group.createChild("Label")
+    playbackOverlay.SetFont(nameLabel, 27, true)
+    nameLabel.color = "#FFFFFF"
+    nameLabel.text = chainLookupReturn(episode, "json.Name", "")
+    nameLabel.width = textWidth
+    nameLabel.translation = [textLeft, ROW_PAD + 32]
+
+    if not m.hideOverview
+        overviewLabel = group.createChild("Label")
+        playbackOverlay.SetFont(overviewLabel, 21, false)
+        overviewLabel.color = "#FFFFFFB8"
+        overviewLabel.wrap = true
+        overviewLabel.maxLines = 3
+        overviewLabel.width = textWidth
+        overviewLabel.text = chainLookupReturn(episode, "json.Overview", "")
+        overviewLabel.translation = [textLeft, ROW_PAD + 76]
+    end if
+
+    return { group: group, fill: fill, border: border, thumb: thumb, episode: episode, isPlaying: isPlaying }
+end function
+
+' Only the row with the remote gets the accent border, so it can't be mistaken for the playing
+' one, which keeps a wash
+sub applyFocus()
+    lastScroll = m.visuals.count() - m.visibleRows
+    if lastScroll < 0 then lastScroll = 0
+    if m.focusIndex < m.scrollRow then m.scrollRow = m.focusIndex
+    if m.focusIndex >= m.scrollRow + m.visibleRows then m.scrollRow = m.focusIndex - m.visibleRows + 1
+    if m.scrollRow > lastScroll then m.scrollRow = lastScroll
+    if m.scrollRow < 0 then m.scrollRow = 0
+
+    for i = 0 to m.visuals.count() - 1
+        visual = m.visuals[i]
+        focused = m.zone = "rows" and i = m.focusIndex
+        scale = 1.0
+        shift = 0
+        if focused
+            visual.fill.blendColor = playbackOverlay.WithAlpha(m.palette.accent, 77)
+            visual.border.blendColor = m.palette.accent
+            scale = 1.02
+            shift = 6
+        else if visual.isPlaying
+            visual.fill.blendColor = playbackOverlay.WithAlpha(m.palette.accent, 51)
+            visual.border.blendColor = "#FFFFFF26"
+        else
+            visual.fill.blendColor = "#FFFFFF14"
+            visual.border.blendColor = "#FFFFFF26"
+        end if
+        visual.group.scale = [scale, scale]
+        visual.group.translation = [ROW_LEFT + shift, i * ROW_STEP]
+
+        if visual.thumb.uri = "" and i >= m.scrollRow - THUMB_MARGIN_ROWS and i < m.scrollRow + m.visibleRows + THUMB_MARGIN_ROWS
+            visual.thumb.uri = visual.episode.posterURL
+        end if
+    end for
+    m.rows.translation = [0, -m.scrollRow * ROW_STEP]
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if key = KeyCode.BACK
+        m.top.dismissed = true
+        return true
+    end if
+    if m.zone = "tabs" then return onTabsKey(key)
+    return onRowsKey(key)
+end function
+
+function onRowsKey(key as string) as boolean
+    if key = KeyCode.UP
+        if m.focusIndex > 0
+            m.focusIndex--
+            applyFocus()
+        else if m.tabVisuals.count() > 1
+            m.zone = "tabs"
+            applyTabs()
+            applyFocus()
+        end if
+        return true
+    end if
+    if key = KeyCode.DOWN
+        if m.focusIndex < m.visuals.count() - 1
+            m.focusIndex++
+            applyFocus()
+        end if
+        return true
+    end if
+    if key = KeyCode.OK
+        if m.focusIndex < m.visuals.count() then m.top.selected = m.visuals[m.focusIndex].episode
+        return true
+    end if
+    ' Play and pause reach the player, everything else stays in the browser
+    return key <> KeyCode.PLAY
+end function
+
+' Moving along the tabs opens each season as the remote reaches it
+function onTabsKey(key as string) as boolean
+    if key = KeyCode.LEFT or key = KeyCode.RIGHT
+        target = m.seasonIndex + 1
+        if key = KeyCode.LEFT then target = m.seasonIndex - 1
+        if target >= 0 and target < m.tabVisuals.count()
+            m.seasonIndex = target
+            showSeason()
+            applyTabs()
+        end if
+        return true
+    end if
+    if key = KeyCode.DOWN or key = KeyCode.OK
+        if m.visuals.count() > 0
+            m.zone = "rows"
+            applyTabs()
+            applyFocus()
+        end if
+        return true
+    end if
+    return key <> KeyCode.PLAY
+end function
