@@ -5378,6 +5378,11 @@
         <translation>Media info</translation>
     </message>
     <message>
+        <source>Version badge</source>
+        <extracomment>Details screen section</extracomment>
+        <translation>Version badge</translation>
+    </message>
+    <message>
         <source>File, streams and Direct Play check</source>
         <extracomment>Under the Media info section switch</extracomment>
         <translation>File, streams and Direct Play check</translation>

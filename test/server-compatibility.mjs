@@ -67,6 +67,7 @@ const selections = {
     'source/utils/libraryOrder.bs': null,
     'source/utils/detailSectionLayout.bs': null,
     'source/utils/trackLabels.bs': null,
+    'source/utils/fileFacts.bs': null,
     'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions', 'SetUpAudioOptions', 'detailServerSubtitleIndex', 'audioOrdinal', 'audioStreamPosition'],
     'source/enums/VideoType.bs': null,
@@ -83,7 +84,7 @@ const selections = {
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting'],
-    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'inArray', 'guidKey', 'isString', 'toBoolean'],
+    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream'],
@@ -152,6 +153,7 @@ source += '\n' + await readFile('test/settings-sync-profile.bs', 'utf8');
 source += '\n' + await readFile('test/seasonal-effects.bs', 'utf8');
 source += '\n' + await readFile('test/audio-track.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-selection.bs', 'utf8');
+source += '\n' + await readFile('test/file-facts.bs', 'utf8');
 const achievementsModelFile = await readFile('source/utils/achievementsModel.bs', 'utf8');
 source += '\nnamespace achievementsModel\n';
 for (const name of [
@@ -454,6 +456,12 @@ for (const [detailStyle, handler] of Object.entries(chapterPlays)) {
 const loadVideoSource = await readFile('components/ItemGrid/LoadVideoContentTask.bs', 'utf8');
 assert.match(loadVideoSource, /shouldBurnInSubtitle\(video\.SelectedSubtitle\)\s+m\.playbackInfo = getPlaybackInfo\(video\.id, mediaSourceId, audio_stream_idx, requestedSubtitleIndex,/, 'A burn in asks the server for the track that will play');
 process.stdout.write(`PASS: subtitle pick lifetime (${Object.keys(chapterPlays).length + 3} checks)\n`);
+
+// The Spotlight File Details card and version badge follow the synced section switches.
+const spotlightCards = await readFile('components/details/SpotlightCards.bs', 'utf8');
+assert.match(spotlightCards.match(/^function spotlightBuilderFileDetailsCard\(\)[^]*?^end function/m)[0], /if not detailSectionLayout\.Shows\("mediaInfo"\) then return invalid/, 'Hiding Media info hides the File Details card');
+assert.match((await readFile('components/details/SpotlightItemDetails.bs', 'utf8')).match(/^sub updateVersionBadge\(\)[^]*?^end sub/m)[0], /detailSectionLayout\.Shows\("versionBadge"\)/, 'Hiding the version badge hides it');
+process.stdout.write('PASS: spotlight sections (2 checks)\n');
 
 // A card left in a selection field opens again when a favorite or watched change rewrites it, and
 // that rewrite has to leave the card's type alone.

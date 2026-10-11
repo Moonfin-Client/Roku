@@ -409,48 +409,28 @@ function spotlightFirstLandscapeUrl(serverUrl as string, items as object) as str
     return ""
 end function
 
-function spotlightCardFallbackUrl(_serverUrl as string, item as object, heroBackdropUrl as string, index = 1 as integer) as string
-    tags = chainLookupReturn(item, "json.BackdropImageTags", chainLookupReturn(item, "BackdropImageTags", invalid))
-    if not isValid(tags) or tags.count() < 2 then return heroBackdropUrl
-    backdropIndex = index
-    if backdropIndex >= tags.count() then backdropIndex = tags.count() - 1
-    itemId = chainLookupReturn(item, "id", chainLookupReturn(item, "Id", ""))
-    if not isValidAndNotEmpty(itemId) then return heroBackdropUrl
-    return ImageURL(itemId, "Backdrop/" + backdropIndex.toStr(), { "maxWidth": 960, "quality": 90, "tag": tags[backdropIndex] })
+' One of an item's later backdrops, so a card doesn't repeat the hero. An item with only one keeps
+' the hero's
+function spotlightBackdropUrl(item as object, index as integer, heroBackdropUrl as string) as string
+    tags = chainLookupReturn(item, "json.BackdropImageTags", invalid)
+    itemId = chainLookupReturn(item, "id", "")
+    if type(tags) <> "roArray" or tags.count() < 2 or not isValidAndNotEmpty(itemId) then return heroBackdropUrl
+    if index >= tags.count() then index = tags.count() - 1
+    return ImageURL(itemId, `Backdrop/${index}`, { "maxWidth": 960, "quality": 90, "tag": tags[index] })
 end function
 
+' An episode rarely has backdrops of its own, so it borrows a later one from its series
 function spotlightFileDetailsImageUrl(s as object) as string
-    item = s.item
-    tags = chainLookupReturn(item, "json.BackdropImageTags", chainLookupReturn(item, "BackdropImageTags", invalid))
-    itemId = chainLookupReturn(item, "id", chainLookupReturn(item, "Id", ""))
-    if isValid(tags) and tags.count() >= 3 and isValidAndNotEmpty(itemId)
-        return ImageURL(itemId, "Backdrop/2", { "maxWidth": 960, "quality": 90, "tag": tags[2] })
+    if chainLookupReturn(s.item, "json.BackdropImageTags", []).count() >= 2 then return spotlightBackdropUrl(s.item, 2, s.fallbackImageUrl)
+
+    parentId = chainLookupReturn(s.item, "json.ParentBackdropItemId", "")
+    parentTags = chainLookupReturn(s.item, "json.ParentBackdropImageTags", [])
+    if isValidAndNotEmpty(parentId) and type(parentTags) = "roArray" and parentTags.count() > 0
+        index = parentTags.count() - 1
+        if index > 2 then index = 2
+        return ImageURL(parentId, `Backdrop/${index}`, { "maxWidth": 960, "quality": 90, "tag": parentTags[index] })
     end if
-    extBackdrop = chainLookupReturn(item, "_externalBackdropUrl", "")
-    if isValidAndNotEmpty(extBackdrop) then return extBackdrop
-    return spotlightCardFallbackUrl(s.serverUrl, item, s.fallbackImageUrl, 2)
-end function
-
-function fileInfoSourceFromState(s as object) as dynamic
-    sources = chainLookupReturn(s.item, "json.MediaSources", chainLookupReturn(s.item, "MediaSources", []))
-    if not isValid(sources) or sources.count() = 0 then return invalid
-    selectedId = chainLookupReturn(s, "selectedVideoStreamId", "")
-    for each candidate in sources
-        if isValid(candidate.Id) and candidate.Id = selectedId then return candidate
-    end for
-    return sources[0]
-end function
-
-function spotlightFileInfoTrackLines(streams as object, activeIndex as integer, includeForced as boolean) as object
-    lines = []
-    if not isValid(streams) then return lines
-    for each stream in streams
-        lines.push({
-            text: fileFacts.TrackLine(stream, includeForced),
-            active: activeIndex >= 0 and chainLookupReturn(stream, "Index", -1) = activeIndex
-        })
-    end for
-    return lines
+    return s.fallbackImageUrl
 end function
 
 ' Each card is built as an AA the screen can render directly.
@@ -498,7 +478,7 @@ function spotlightBuilderFactories() as object
     else if itemType = "season"
         return ["episodes", "people", "chapters_extras", "similar"]
     else if itemType = "episode"
-        return ["episodes", "people", "chapters_extras", "similar", "file_details"]
+        return ["episodes", "people", "chapters_extras", "file_details", "similar"]
     else if itemType = "musicalbum" or itemType = "audiobook" or itemType = "book"
         return ["tracks", "similar"]
     else if itemType = "playlist"
@@ -510,7 +490,7 @@ function spotlightBuilderFactories() as object
     else if itemType = "boxset"
         return ["boxset_items", "people", "playlist_order"]
     end if
-    return ["people", "chapters_extras", "similar", "collections", "file_details"]
+    return ["people", "chapters_extras", "file_details", "similar", "collections"]
 end function
 
 function spotlightBuilderBuild() as object
@@ -572,7 +552,7 @@ function spotlightBuilderPeopleCard() as dynamic
         id: "people",
         title: tr("Cast, Crew, and Studios"),
         subtitle: spotlightJoinSubtitle(subtitleParts),
-        imageUrl: spotlightCardFallbackUrl(s.serverUrl, s.item, s.fallbackImageUrl, 1),
+        imageUrl: spotlightBackdropUrl(s.item, 1, s.fallbackImageUrl),
         iconKey: "people",
         sections: cardSections
     }
@@ -951,8 +931,10 @@ end function
 
 function spotlightBuilderFileDetailsCard() as dynamic
     s = m.s
-    source = fileInfoSourceFromState(s)
-    if not isValid(source) then return invalid
+    if not detailSectionLayout.Shows("mediaInfo") then return invalid
+    itemJson = chainLookupReturn(s.item, "json", invalid)
+    source = fileFacts.PickedSource(itemJson, chainLookupReturn(s, "selectedVideoStreamId", ""))
+    if not fileFacts.HasInfo(itemJson, source) then return invalid
 
     subtitleParts = []
     container = UCase(chainLookupReturn(source, "Container", ""))
@@ -960,43 +942,8 @@ function spotlightBuilderFileDetailsCard() as dynamic
     if container <> "" then subtitleParts.push(container)
     if size <> "" then subtitleParts.push(size)
 
-    video = invalid
-    audio = []
-    subtitles = []
-    for each stream in chainLookupReturn(source, "MediaStreams", [])
-        streamType = chainLookupReturn(stream, "Type", "")
-        if streamType = "Video" and not isValid(video) then video = stream
-        if streamType = "Audio" then audio.push(stream)
-        if streamType = "Subtitle" then subtitles.push(stream)
-    end for
-
-    activeAudio = chainLookupReturn(s, "selectedAudioStreamIndex", -1)
-    audioStreams = chainLookupReturn(source, "MediaStreams", [])
-    if activeAudio >= 0 and activeAudio < audioStreams.count()
-        activeAudio = chainLookupReturn(audioStreams[activeAudio], "Index", activeAudio)
-    end if
-
-    added = fileFacts.AddedOn(chainLookupReturn(s.item, "json.DateCreated", invalid))
-    if added <> "" then added = Substitute(tr("Date Added: {0}"), added)
-
-    selectedSub = chainLookupReturn(s, "selectedSubtitleIndex", SubtitleSelection.NONE)
-
-    fileSpec = {
-        fileName: fileFacts.FileName(source),
-        sizeLine: fileFacts.SizeLine(source),
-        added: added,
-        videoLine: fileFacts.VideoLines(video).join("  •  "),
-        audioLines: spotlightFileInfoTrackLines(audio, activeAudio, false),
-        subtitleLines: spotlightFileInfoTrackLines(subtitles, selectedSub, true)
-    }
-
-    cardSections = [{
-        kind: "fileInfo",
-        spec: fileSpec,
-        source: source,
-        activeAudioIndex: activeAudio,
-        activeSubtitleIndex: selectedSub
-    }]
+    activeAudio = fileFacts.AudioIndex(itemJson, chainLookupReturn(s, "selectedAudioStreamIndex", -1))
+    activeSubtitle = chainLookupReturn(s, "selectedSubtitleIndex", SubtitleSelection.NONE)
 
     return {
         id: "file_details",
@@ -1004,7 +951,13 @@ function spotlightBuilderFileDetailsCard() as dynamic
         subtitle: spotlightJoinSubtitle(subtitleParts),
         imageUrl: spotlightFileDetailsImageUrl(s),
         iconKey: "file_details",
-        sections: cardSections,
-        itemJson: chainLookupReturn(s.item, "json", {})
+        sections: [{
+            kind: "fileInfo",
+            spec: fileFacts.InfoSpec(itemJson, source, activeAudio, activeSubtitle),
+            source: source,
+            activeAudioIndex: activeAudio,
+            activeSubtitleIndex: activeSubtitle
+        }],
+        itemJson: itemJson
     }
 end function
