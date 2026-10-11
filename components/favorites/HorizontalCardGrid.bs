@@ -1,0 +1,212 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Only the columns on screen are drawn, plus one either side so a scroll never shows a gap
+' before it is filled. Each pooled column is handed new cards only when a scroll moves it to a
+' different place.
+
+sub init()
+    m.track = m.top.findNode("track")
+    m.scroll = m.top.findNode("scroll")
+    m.scrollInterp = m.top.findNode("scrollInterp")
+
+    m.pool = []
+    m.rows = 1
+    m.visibleColumns = 1
+    m.cellWidth = 0
+    m.cellHeight = 0
+    m.hasFocus = false
+    m.focusedCard = invalid
+
+    m.top.observeField("focusedChild", "onFocusChainChanged")
+end sub
+
+sub onLayoutChanged()
+    layout = m.top.layout
+    if not isValid(layout) then return
+
+    m.cellWidth = layout.cellWidth
+    m.cellHeight = layout.cellHeight
+    m.rows = layout.rows > 0 ? layout.rows : 1
+    m.visibleColumns = layout.columns > 0 ? layout.columns : 1
+
+    poolSize = m.visibleColumns + 2
+    if m.pool.count() <> poolSize or (m.pool.count() > 0 and m.pool[0].cards.count() <> m.rows)
+        m.track.removeChildrenIndex(m.track.getChildCount(), 0)
+        m.pool = []
+        for slot = 1 to poolSize
+            cards = []
+            for row = 1 to m.rows
+                card = m.track.createChild("LibraryCard")
+                card.visible = false
+                cards.push(card)
+            end for
+            m.pool.push({ column: -1, cards: cards })
+        end for
+    end if
+
+    showItem(m.top.itemFocused)
+end sub
+
+sub onContentChanged()
+    showItem(m.top.itemFocused)
+end sub
+
+sub onJumpToItem()
+    if m.top.jumpToItem < 0 then return
+    showItem(m.top.jumpToItem)
+end sub
+
+sub redraw()
+    showItem(m.top.itemFocused)
+end sub
+
+function itemCount() as integer
+    if not isValid(m.top.content) then return 0
+    return m.top.content.getChildCount()
+end function
+
+' Lands on an item without a scroll, drawing every column again
+sub showItem(index as integer)
+    for each slot in m.pool
+        slot.column = -1
+    end for
+    moveFocus(index, false)
+end sub
+
+' Scrolls just far enough to bring the item on screen, the way the other clients do it
+sub moveFocus(index as integer, animate as boolean)
+    count = itemCount()
+    if count = 0 or m.pool.count() = 0
+        m.top.firstColumn = 0
+        m.track.translation = [0, 0]
+        for each slot in m.pool
+            hideColumn(slot)
+        end for
+        if m.top.itemFocused <> -1 then m.top.itemFocused = -1
+        m.focusedCard = invalid
+        return
+    end if
+
+    if index < 0 then index = 0
+    if index > count - 1 then index = count - 1
+
+    column = index \ m.rows
+    first = m.top.firstColumn
+    if column < first then first = column
+    if column > first + m.visibleColumns - 1 then first = column - m.visibleColumns + 1
+    if first < 0 then first = 0
+
+    m.top.firstColumn = first
+    drawWindow(count)
+
+    target = [-first * m.cellWidth, 0]
+    m.scroll.control = "stop"
+    if animate
+        m.scrollInterp.keyValue = [m.track.translation, target]
+        m.scroll.control = "start"
+    else
+        m.track.translation = target
+    end if
+
+    if isValid(m.focusedCard) then m.focusedCard.itemHasFocus = false
+    m.focusedCard = cardFor(index)
+    if isValid(m.focusedCard) then m.focusedCard.itemHasFocus = m.hasFocus
+
+    if m.top.itemFocused <> index then m.top.itemFocused = index
+end sub
+
+sub drawWindow(count as integer)
+    first = m.top.firstColumn - 1
+    for column = first to first + m.pool.count() - 1
+        if column >= 0 then drawColumn(column, count)
+    end for
+end sub
+
+sub drawColumn(column as integer, count as integer)
+    slot = m.pool[column mod m.pool.count()]
+    if slot.column = column then return
+    slot.column = column
+
+    for row = 0 to m.rows - 1
+        card = slot.cards[row]
+        index = (column * m.rows) + row
+        if index < count
+            card.translation = [column * m.cellWidth, row * m.cellHeight]
+            card.itemContent = m.top.content.getChild(index)
+            card.visible = true
+        else
+            card.visible = false
+        end if
+    end for
+end sub
+
+sub hideColumn(slot as object)
+    slot.column = -1
+    for each card in slot.cards
+        card.visible = false
+    end for
+end sub
+
+function cardFor(index as integer) as dynamic
+    if index < 0 or m.pool.count() = 0 then return invalid
+
+    column = index \ m.rows
+    slot = m.pool[column mod m.pool.count()]
+    if slot.column <> column then return invalid
+    return slot.cards[index mod m.rows]
+end function
+
+' Like a MarkupGrid, the focused card only shows it while the grid holds the focus
+sub onFocusChainChanged()
+    hasFocus = m.top.isInFocusChain()
+    if hasFocus = m.hasFocus then return
+
+    m.hasFocus = hasFocus
+    if isValid(m.focusedCard) then m.focusedCard.itemHasFocus = hasFocus
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    count = itemCount()
+    index = m.top.itemFocused
+    if count = 0 or index < 0 then return false
+
+    if isStringEqual(key, KeyCode.OK)
+        m.top.itemSelected = index
+        return true
+    end if
+
+    if isStringEqual(key, KeyCode.RIGHT)
+        target = index + m.rows
+        if target > count - 1
+            ' The last column can be short, so a card beside its gap steps to its last card
+            if index \ m.rows = (count - 1) \ m.rows then return false
+            target = count - 1
+        end if
+        moveFocus(target, true)
+        return true
+    end if
+
+    if isStringEqual(key, KeyCode.LEFT)
+        if index < m.rows then return false
+        moveFocus(index - m.rows, true)
+        return true
+    end if
+
+    ' Up from the top row and down from the bottom one are left to the screen
+    if isStringEqual(key, KeyCode.DOWN)
+        if index mod m.rows = m.rows - 1 or index + 1 > count - 1 then return false
+        moveFocus(index + 1, true)
+        return true
+    end if
+
+    if isStringEqual(key, KeyCode.UP)
+        if index mod m.rows = 0 then return false
+        moveFocus(index - 1, true)
+        return true
+    end if
+
+    return false
+end function

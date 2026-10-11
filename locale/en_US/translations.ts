@@ -3173,6 +3173,18 @@
         <translation>View style</translation>
     </message>
     <message>
+        <source>Grid direction</source>
+        <translation>Grid direction</translation>
+    </message>
+    <message>
+        <source>Vertical</source>
+        <translation>Vertical</translation>
+    </message>
+    <message>
+        <source>Horizontal</source>
+        <translation>Horizontal</translation>
+    </message>
+    <message>
         <source>No favorites yet</source>
         <translation>No favorites yet</translation>
     </message>

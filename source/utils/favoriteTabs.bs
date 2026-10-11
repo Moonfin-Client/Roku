@@ -1,3 +1,4 @@
+import "pkg:/source/utils/accentFolding.bs"
 import "pkg:/source/utils/libraryCard.bs"
 import "pkg:/source/utils/librarySorts.bs"
 import "pkg:/source/utils/misc.bs"
@@ -32,6 +33,7 @@ namespace favoriteTabs
     const PAGE_AHEAD = 15
     ' The flat view asks for more at a time, since it has no tabs to spread the cost over
     const LIST_PAGE_SIZE = 150
+    const LIST_PAGE_AHEAD = 50
 
     ' Multi server mode makes one query instead of nine, so it needs the types as a list
     function AllTypes() as string
@@ -118,13 +120,17 @@ namespace favoriteTabs
         return "poster"
     end function
 
-    function CardMetrics(shape as string, imageSize as string, gridWidth as integer) as object
+    function CardMetrics(shape as string, imageSize as string, gridWidth as integer, showServers = false as boolean) as object
         posterHeight = favoriteTabs.posterHeightFor(shape, imageSize)
         cardWidth = favoriteTabs.cardWidthFor(shape, imageSize, posterHeight)
 
         metrics = libraryCard.MetricsFor(cardWidth, posterHeight, favoriteTabs.CardImageType(shape), 0, false, gridWidth)
         ' Every card here is a favorite, so the heart would say nothing
         metrics.showFavoriteBadge = false
+        ' A series only gets the check once all of it is watched, never a count of what's left
+        metrics.showUnplayedCount = false
+        ' Several servers can hold the same kind of thing, so each card says whose it is
+        metrics.showServerBadge = showServers
         ' A person is drawn round wherever they turn up, even in a grid of posters
         metrics.roundPeople = true
         return metrics
@@ -209,6 +215,129 @@ namespace favoriteTabs
             end for
         end if
         return filters[0]
+    end function
+
+    ' What the settings panel steps each of its rows through
+    function ImageSizes() as object
+        return ["small", "medium", "large", "extraLarge"]
+    end function
+
+    function ImageTypes() as object
+        return ["poster", "thumbnail"]
+    end function
+
+    function GridDirections() as object
+        return ["vertical", "horizontal"]
+    end function
+
+    function ViewStyles() as object
+        return ["home", "library"]
+    end function
+
+    ' The value after the current one, and the first again after the last
+    function Cycle(values as object, current as dynamic) as string
+        for i = 0 to values.count() - 1
+            if isStringEqual(values[i], current) then return values[(i + 1) mod values.count()]
+        end for
+        return values[0]
+    end function
+
+    function SettingLabel(value as string) as string
+        labels = {
+            small: tr("Small"),
+            medium: tr("Medium"),
+            large: tr("Large"),
+            extraLarge: tr("Extra Large"),
+            poster: tr("Poster"),
+            thumbnail: tr("Thumbnail"),
+            vertical: tr("Vertical"),
+            horizontal: tr("Horizontal"),
+            home: tr("Home View"),
+            library: tr("Library View")
+        }
+        return labels[value] ?? value
+    end function
+
+    ' The alphabet strip reads the name the server sorts by, or the shown name when it sent
+    ' none, with accents folded so Ángel files under A
+    function FilterByStartLetter(nodes as object, letter as string) as object
+        if letter = "" then return nodes
+
+        kept = []
+        for each node in nodes
+            name = toString(chainLookupReturn(node, "json.SortName", ""))
+            if name = "" then name = toString(chainLookupReturn(node, "json.Name", ""))
+            if accentFolding.StartLetter(name) = letter then kept.push(node)
+        end for
+        return kept
+    end function
+
+    ' Several servers each sort their own share, so a list pooled from them is put in order
+    ' here. Names go first, so whatever the chosen sort ranks equally stays alphabetical.
+    function SortItems(items as object, sortKey as string) as object
+        byName = favoriteTabs.stableSort(items, "SortName", true)
+        option = favoriteTabs.ChosenSort(sortKey)
+        if isStringEqual(option.value, "SortName") then return byName
+        return favoriteTabs.stableSort(byName, option.value, isStringEqual(option.order, "Ascending"))
+    end function
+
+    function sortValue(item as object, key as string) as dynamic
+        if key = "SortName"
+            name = toString(item.SortName ?? "")
+            if name = "" then name = toString(item.Name ?? "")
+            return LCase(name)
+        end if
+
+        if key = "CommunityRating" or key = "CriticRating" then return item[key] ?? 0
+        if key = "Runtime" then return item.RunTimeTicks ?? 0
+        if key = "DatePlayed" then return toString(chainLookupReturn(item, "UserData.LastPlayedDate", ""))
+        return toString(item[key] ?? "")
+    end function
+
+    ' A merge sort, since items that compare equal have to keep the order they came in
+    function stableSort(items as object, key as string, ascending as boolean) as object
+        ordered = []
+        for each item in items
+            ordered.push({ value: favoriteTabs.sortValue(item, key), item: item })
+        end for
+
+        total = ordered.count()
+        width = 1
+        while width < total
+            merged = []
+            for start = 0 to total - 1 step width * 2
+                middle = start + width
+                if middle > total then middle = total
+                finish = start + (width * 2)
+                if finish > total then finish = total
+
+                i = start
+                j = middle
+                while i < middle or j < finish
+                    ' Only a strictly earlier item from the second half goes first
+                    if j < finish and (i >= middle or favoriteTabs.comesBefore(ordered[j].value, ordered[i].value, ascending))
+                        merged.push(ordered[j])
+                        j++
+                    else
+                        merged.push(ordered[i])
+                        i++
+                    end if
+                end while
+            end for
+            ordered = merged
+            width *= 2
+        end while
+
+        sorted = []
+        for each entry in ordered
+            sorted.push(entry.item)
+        end for
+        return sorted
+    end function
+
+    function comesBefore(first as dynamic, second as dynamic, ascending as boolean) as boolean
+        if ascending then return first < second
+        return first > second
     end function
 
 end namespace

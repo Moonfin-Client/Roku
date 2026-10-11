@@ -1,7 +1,7 @@
-import "pkg:/source/utils/accentFolding.bs"
 import "pkg:/source/utils/contentNodes.bs"
 import "pkg:/source/utils/diagnostics.bs"
 import "pkg:/source/utils/favoriteTabs.bs"
+import "pkg:/source/utils/mediaDedup.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/multiserver.bs"
 import "pkg:/source/utils/parentalControls.bs"
@@ -34,6 +34,7 @@ sub loadFavorites()
     ' answer everything at once, since nine queries per server is more than the fan out is
     ' worth, and the buckets are counted here instead.
     pooled = sessions.count() > 1
+    m.top.pooled = pooled
 
     if mode = "page"
         loadPage(sessions, request, tabs)
@@ -103,7 +104,8 @@ sub loadTabs(userSession as object, request as object, tabs as object)
 
     for each answer in awaitAll(port, pending, keepAlive)
         tabDef = answer.tag
-        built = buildNodes(answer.items, userSession, tabs, tabDef)
+        stampServer(answer.items, userSession)
+        built = buildNodes(answer.items, tabs, tabDef)
         counts[tabDef.key] = answer.total > 0 ? answer.total : built.count()
         fetched[tabDef.key] = answer.items.count()
 
@@ -117,30 +119,11 @@ end sub
 
 ' Every tab across every server, one request each, bucketed here
 sub loadPooledTabs(sessions as object, request as object, tabs as object)
-    port = CreateObject("roMessagePort")
-    pending = {}
-    keepAlive = {}
-    bySession = {}
+    nodes = buildNodes(pooledItems(sessions, favoriteTabs.AllTypes(), request.sortKey ?? ""), tabs)
 
-    for each userSession in sessions
-        params = listParams(userSession, favoriteTabs.AllTypes(), request.sortField, request.sortOrder, 0, 0)
-        started = startRequest(userSession, params, port)
-        if isValid(started)
-            pending[started.id] = started.id
-            keepAlive[started.id] = started.request
-            bySession[started.id] = userSession
-        end if
-    end for
-
-    nodes = []
     counts = emptyCounts(tabs)
-
-    for each answer in awaitAll(port, pending, keepAlive)
-        userSession = bySession[answer.tag]
-        for each node in buildNodes(answer.items, userSession, tabs)
-            nodes.push(node)
-            counts[node.favoritesTab] = counts[node.favoritesTab] + 1
-        end for
+    for each node in nodes
+        counts[node.favoritesTab] = counts[node.favoritesTab] + 1
     end for
 
     answerWith("tabs", nodes, counts, nodes.count(), 0, "")
@@ -160,34 +143,39 @@ sub loadPage(sessions as object, request as object, tabs as object)
     params = listParams(userSession, pageTab.types, request.sortField, request.sortOrder, startIndex, favoriteTabs.PAGE_SIZE)
 
     answer = fetchOne(userSession, params)
+    stampServer(answer.items, userSession)
     counts = emptyCounts(tabs)
     counts[pageTab.key] = answer.total
 
     fetched = {}
     fetched[pageTab.key] = answer.items.count()
-    answerWith("page", buildNodes(answer.items, userSession, tabs, pageTab), counts, answer.total, startIndex, pageTab.key, fetched)
+    answerWith("page", buildNodes(answer.items, tabs, pageTab), counts, answer.total, startIndex, pageTab.key, fetched)
 end sub
 
-' The flat view, which narrows by type rather than tabbing between them
+' The flat view, which narrows by type rather than tabbing between them. The letter strip
+' narrows what has loaded on the screen, so it never reaches here.
 sub loadList(sessions as object, request as object, tabs as object, pooled as boolean)
-    itemTypes = request.itemTypes ?? favoriteTabs.ChosenTypeFilter("all").types
+    itemTypes = request.itemTypes
+    if not isValid(itemTypes) then itemTypes = favoriteTabs.ChosenTypeFilter("all").types
 
+    ' Several servers cant be paged as one list, so they are gathered whole
     if pooled
-        loadPooledList(sessions, request, tabs, itemTypes)
+        nodes = buildNodes(pooledItems(sessions, itemTypes, request.sortKey ?? ""), tabs)
+        answerWith("list", nodes, emptyCounts(tabs), nodes.count(), 0, "")
         return
     end if
 
     userSession = sessions[0]
     startIndex = request.startIndex ?? 0
     params = listParams(userSession, itemTypes, request.sortField, request.sortOrder, startIndex, favoriteTabs.LIST_PAGE_SIZE)
-    if isValidAndNotEmpty(request.nameStartsWith) then params.NameStartsWith = request.nameStartsWith
 
     answer = fetchOne(userSession, params)
-    answerWith("list", buildNodes(answer.items, userSession, tabs), emptyCounts(tabs), answer.total, startIndex, "", { list: answer.items.count() })
+    stampServer(answer.items, userSession)
+    answerWith("list", buildNodes(answer.items, tabs), emptyCounts(tabs), answer.total, startIndex, "", { list: answer.items.count() })
 end sub
 
-' Several servers cant be paged as one list, so they are gathered whole and narrowed here
-sub loadPooledList(sessions as object, request as object, tabs as object, itemTypes as string)
+' Every server's favorites in one list, with a title two servers both hold shown once
+function pooledItems(sessions as object, itemTypes as string, sortKey as string) as object
     port = CreateObject("roMessagePort")
     pending = {}
     keepAlive = {}
@@ -203,31 +191,13 @@ sub loadPooledList(sessions as object, request as object, tabs as object, itemTy
         end if
     end for
 
-    nodes = []
+    items = []
     for each answer in awaitAll(port, pending, keepAlive)
-        userSession = bySession[answer.tag]
-        for each node in buildNodes(answer.items, userSession, tabs)
-            nodes.push(node)
-        end for
+        stampServer(answer.items, bySession[answer.tag])
+        items.append(answer.items)
     end for
 
-    if isValidAndNotEmpty(request.nameStartsWith) then nodes = narrowToLetter(nodes, request.nameStartsWith)
-
-    answerWith("list", nodes, emptyCounts(tabs), nodes.count(), 0, "")
-end sub
-
-' The server does this for a single server list, so the pooled one matches it here
-function narrowToLetter(nodes as object, letter as string) as object
-    kept = []
-    wanted = UCase(letter)
-
-    for each node in nodes
-        name = toString(chainLookupReturn(node, "json.SortName", ""))
-        if name = "" then name = toString(node.title ?? "")
-        if accentFolding.StartLetter(name) = wanted then kept.push(node)
-    end for
-
-    return kept
+    return favoriteTabs.SortItems(deduplicateMediaItems(items), sortKey)
 end function
 
 ' =====================================================================
@@ -326,9 +296,20 @@ end function
 ' BUILDING THE CARDS
 ' =====================================================================
 
+' Every setFields reads straight off the json, so the server an item came from is put there
+' before any node is built
+sub stampServer(items as object, userSession as object)
+    for each item in items
+        item.AddReplace("_serverUrl", userSession.serverUrl)
+        item.AddReplace("_userId", userSession.userId)
+        item.AddReplace("_authToken", userSession.authToken)
+        item.AddReplace("_serverName", userSession.serverName)
+    end for
+end sub
+
 ' A tab of its own means every item belongs to it. Without one each item is placed by what
 ' it is, which is what the flat grid mixing every type needs.
-function buildNodes(items as object, userSession as object, tabs as object, fixedTab = invalid as object) as object
+function buildNodes(items as object, tabs as object, fixedTab = invalid as object) as object
     nodes = []
     if not isValidAndNotEmpty(items) then return nodes
 
@@ -336,7 +317,7 @@ function buildNodes(items as object, userSession as object, tabs as object, fixe
         tabDef = fixedTab
         if not isValid(tabDef) then tabDef = favoriteTabs.TabForType(tabs, item.Type)
         if isValid(tabDef)
-            node = buildNode(item, userSession, tabDef)
+            node = buildNode(item, tabDef)
             if isValid(node) then nodes.push(node)
         end if
     end for
@@ -346,7 +327,7 @@ end function
 
 ' The same node types the library grid builds, so a card selected here opens what the
 ' same card opens there
-function buildNode(item as object, userSession as object, tabDef as object) as object
+function buildNode(item as object, tabDef as object) as object
     if not isValid(item) or not isValidAndNotEmpty(item.Id) then return invalid
 
     node = contentNodes.ForType(item.Type ?? "")
@@ -355,11 +336,6 @@ function buildNode(item as object, userSession as object, tabDef as object) as o
     node.addField("favoritesTab", "string", false)
     node.favoritesTab = tabDef.key
 
-    ' Every setFields reads straight off the json, so what it looks for is put there first
-    item.AddReplace("_serverUrl", userSession.serverUrl)
-    item.AddReplace("_userId", userSession.userId)
-    item.AddReplace("_authToken", userSession.authToken)
-    item.AddReplace("_serverName", userSession.serverName)
     if not isValid(item.ImageTags) then item.AddReplace("ImageTags", {})
     if not isValid(item.BackdropImageTags) then item.AddReplace("BackdropImageTags", [])
     if not isValid(item.UserData) then item.AddReplace("UserData", {})
@@ -367,21 +343,21 @@ function buildNode(item as object, userSession as object, tabDef as object) as o
     node.json = item
     node.title = item.Name ?? ""
 
-    ' setFields sizes its poster for the library grid, and a tab knows better what shape
-    ' its own cards are
-    artwork = cardArtwork(item, tabDef.shape, userSession)
+    ' setFields sizes its poster for the library grid. Both shapes are kept, since the flat
+    ' view's image type setting swaps between them without a reload.
+    artwork = cardArtwork(item, "portrait")
     if artwork <> "" then node.posterUrl = artwork
-    node.landscapePosterURL = artwork
+    node.landscapePosterURL = cardArtwork(item, "landscape")
 
     return node
 end function
 
-function cardArtwork(item as object, shape as string, userSession as object) as string
+function cardArtwork(item as object, shape as string) as string
     picked = favoriteTabs.CardImage(item, shape)
     if picked.id = "" then return ""
 
     params = { maxHeight: 400, quality: 80 }
     if isValidAndNotEmpty(picked.tag) then params.Tag = picked.tag
 
-    return buildImageURLForServer(userSession.serverUrl, picked.id, picked.imageType, params)
+    return buildImageURLForServer(item._serverUrl, picked.id, picked.imageType, params)
 end function

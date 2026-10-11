@@ -9,7 +9,6 @@ import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/favoriteTabs.bs"
 import "pkg:/source/utils/libraryCard.bs"
-import "pkg:/source/utils/libraryFilters.bs"
 import "pkg:/source/utils/mediaBadges.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/multiserver.bs"
@@ -41,8 +40,8 @@ sub init()
     m.viewStyle = "home"
     m.imageSize = "medium"
     m.imageType = "poster"
+    m.gridDirection = "vertical"
     m.sortKey = "SortName"
-    m.sortOrder = ""
     m.typeFilter = "all"
 
     m.tabs = []
@@ -50,9 +49,10 @@ sub init()
     m.buckets = {}
     m.counts = {}
     m.contentByTab = {}
+    ' Everything the flat view has loaded, and the part of it the letter leaves showing
+    m.listNodes = []
     m.listContent = createSGNode("ContentNode")
     m.listTotal = 0
-    m.listLoaded = 0
     ' How far into the server's lists each tab and the flat view have read, since blocked titles
     ' thin out the pages that are shown
     m.fetchedByTab = {}
@@ -62,7 +62,10 @@ sub init()
     m.loading = false
     m.pagingTab = string.EMPTY
     m.loaded = false
+    m.pooled = false
+    m.focusGridWhenFilled = false
     m.toolbarFocusIndex = TOOLBAR_HOME
+    m.panelKind = string.EMPTY
 
     m.loadTask = createObject("roSGNode", "LoadFavoritesTask")
     m.loadTask.observeField("results", "onFavoritesLoaded")
@@ -75,6 +78,7 @@ sub setupNodes()
     m.screenTitle.text = tr("Favorites")
     m.screenTitle.font.size = 42
     m.itemCountLabel.font.size = 18
+    updateItemCount(0)
 
     m.homeButton = m.top.findNode("homeButton")
     m.sortButton = m.top.findNode("sortButton")
@@ -103,19 +107,21 @@ sub setupNodes()
 
     m.itemGrid = m.top.findNode("itemGrid")
     m.itemGrid.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
-    m.itemGrid.observeField("itemFocused", "onItemFocused")
-    m.itemGrid.observeFieldScoped("itemSelected", "onItemSelected")
+    m.horizontalGrid = m.top.findNode("horizontalGrid")
+    for each grid in [m.itemGrid, m.horizontalGrid]
+        grid.observeField("itemFocused", "onItemFocused")
+        grid.observeFieldScoped("itemSelected", "onItemSelected")
+    end for
+    ' The grid the direction setting picked, which every other part of the screen goes through
+    m.grid = m.itemGrid
 
     m.emptyLabel = m.top.findNode("emptyLabel")
     m.statusText = m.top.findNode("statusText")
     m.statusCount = m.top.findNode("statusCount")
 
-    m.sortDialog = m.top.findNode("sortDialog")
-    m.settingsDialog = m.top.findNode("settingsDialog")
-    m.sortDialog.observeField("applied", "onSortApplied")
-    m.sortDialog.observeField("closed", "onDialogClosed")
-    m.settingsDialog.observeField("applied", "onSettingsApplied")
-    m.settingsDialog.observeField("closed", "onDialogClosed")
+    m.panel = m.top.findNode("panel")
+    m.panel.observeField("chosen", "onPanelChosen")
+    m.panel.observeField("closed", "onPanelClosed")
 
     m.backdrop = m.top.findNode("backdrop")
     m.backdropPrev = m.top.findNode("backdropPrev")
@@ -148,6 +154,7 @@ sub OnScreenShown(isReturning = false as boolean)
 
     if not m.loaded
         readSettings()
+        applyGridDirection()
         applyViewStyle()
         loadCurrentView()
         return
@@ -175,6 +182,7 @@ sub readSettings()
     m.viewStyle = settingOr("favorites_viewStyle", "home")
     m.imageSize = settingOr("favorites_imageSize", "medium")
     m.imageType = settingOr("favorites_imageType", "poster")
+    m.gridDirection = settingOr("favorites_gridDirection", "vertical")
     m.sortKey = settingOr("favorites_sortKey", "SortName")
 end sub
 
@@ -196,14 +204,14 @@ sub loadCurrentView()
     m.buckets = {}
     m.counts = {}
     m.contentByTab = {}
+    m.listNodes = []
     m.listContent = createSGNode("ContentNode")
     m.listTotal = 0
-    m.listLoaded = 0
     m.fetchedByTab = {}
     m.listFetched = 0
     m.pagingTab = string.EMPTY
 
-    m.itemGrid.content = createSGNode("ContentNode")
+    m.grid.content = createSGNode("ContentNode")
     m.tabBar.tabs = []
     m.tabBar.visible = false
     clearFocusedItem()
@@ -214,21 +222,20 @@ sub loadCurrentView()
         return
     end if
 
-    runRequest({
-        mode: "list",
-        startIndex: 0,
-        itemTypes: favoriteTabs.ChosenTypeFilter(m.typeFilter).types,
-        nameStartsWith: m.startLetter
-    })
+    m.focusGridWhenFilled = true
+    runRequest({ mode: "list", startIndex: 0, itemTypes: favoriteTabs.ChosenTypeFilter(m.typeFilter).types })
 end sub
 
+' Every sort runs one way only, the way the other clients offer them
 sub runRequest(request as object)
     option = favoriteTabs.ChosenSort(m.sortKey)
+    request.sortKey = option.value
     request.sortField = option.field
-    request.sortOrder = isValidAndNotEmpty(m.sortOrder) ? m.sortOrder : option.order
+    request.sortOrder = option.order
 
     m.loading = true
-    startLoadingSpinner(false)
+    ' A page arriving behind cards already on screen needs no spinner over them
+    if gridIsEmpty() then startLoadingSpinner(false)
 
     m.loadTask.control = TaskControl.STOP
     m.loadTask.request = request
@@ -249,6 +256,7 @@ sub onFavoritesLoaded(event as object)
     m.loading = false
     stopLoadingSpinner()
     m.loaded = true
+    m.pooled = m.loadTask.pooled
 
     if not isValid(nodes) then nodes = []
 
@@ -262,11 +270,14 @@ sub onFavoritesLoaded(event as object)
         appendPage(tabKey, nodes)
     else
         if m.loadTask.startIndex = 0 then m.listFetched = 0
-        m.listFetched += fetched.list ?? nodes.count()
-        applyList(nodes, m.loadTask.total, m.loadTask.startIndex)
-    end if
+        pageFetched = fetched.list ?? nodes.count()
+        m.listFetched += pageFetched
 
-    restoreDialogFocus()
+        ' An empty page means the server has nothing past it, whatever its count said
+        total = m.loadTask.total
+        if pageFetched = 0 then total = m.listFetched
+        applyList(nodes, total, m.loadTask.startIndex)
+    end if
 end sub
 
 ' =====================================================================
@@ -296,6 +307,7 @@ sub applyTabs(nodes as object, counts as object)
 
     if m.tabs.count() = 0
         m.tabBar.visible = false
+        updateItemCount(0)
         showEmpty()
         return
     end if
@@ -314,7 +326,7 @@ sub applyTabs(nodes as object, counts as object)
     end for
 
     m.emptyLabel.visible = false
-    m.itemGrid.visible = true
+    m.grid.visible = true
     m.tabBar.tabs = labels
     m.tabBar.visible = true
     updateItemCount(total)
@@ -338,15 +350,16 @@ sub showTab(index as integer)
     openTab = m.tabs[m.tabIndex]
 
     applyShape(openTab.shape, false)
-    m.itemGrid.content = m.contentByTab[openTab.key]
-    m.itemGrid.jumpToItem = 0
+    m.grid.content = m.contentByTab[openTab.key]
+    m.grid.jumpToItem = 0
     clearFocusedItem()
+    loadMoreIfNeeded()
 end sub
 
 sub onTabSelected()
     index = m.tabBar.selectedIndex
     if index < 0 or index >= m.tabs.count() then return
-    if index = m.tabIndex and isValid(m.itemGrid.content) and m.itemGrid.content.getChildCount() > 0 then return
+    if index = m.tabIndex and not gridIsEmpty() then return
 
     showTab(index)
 end sub
@@ -365,8 +378,8 @@ sub onTabBarEscape()
     end if
 end sub
 
-' The next page of the open tab, asked for as its grid runs out
-sub loadMoreForTab(focusedIndex as integer)
+' The next page of the open tab, asked for once the grid has drawn close to its end
+sub loadMoreForTab()
     if m.loading or m.pagingTab <> string.EMPTY then return
     if m.tabs.count() = 0 then return
 
@@ -375,8 +388,8 @@ sub loadMoreForTab(focusedIndex as integer)
     fetched = m.fetchedByTab[openTab.key] ?? shown
     count = m.counts[openTab.key]
     if not isValid(count) then count = fetched
-    if fetched >= count then return
-    if focusedIndex < shown - favoriteTabs.PAGE_AHEAD then return
+    if fetched = 0 or fetched >= count then return
+    if drawnReach() < shown - favoriteTabs.PAGE_AHEAD then return
 
     m.pagingTab = openTab.key
     runRequest({ mode: "page", tabKey: openTab.key, startIndex: fetched })
@@ -394,6 +407,11 @@ sub appendPage(tabKey as string, nodes as object)
         bucket.push(node)
     end for
     content.appendChildren(nodes)
+
+    if m.tabs[m.tabIndex].key = tabKey
+        redrawSideways()
+        loadMoreIfNeeded()
+    end if
 end sub
 
 ' =====================================================================
@@ -402,52 +420,98 @@ end sub
 
 sub applyList(nodes as object, total as integer, startIndex as integer)
     m.pagingTab = string.EMPTY
-
     m.listTotal = total
-    m.listLoaded += nodes.count()
-    m.listContent.appendChildren(nodes)
 
-    if m.listLoaded = 0
-        showEmpty()
-        updateItemCount(0)
-        updateStatusBar()
-        return
-    end if
-
-    m.emptyLabel.visible = false
-    m.itemGrid.visible = true
+    for each node in nodes
+        m.listNodes.push(node)
+    end for
+    m.listContent.appendChildren(favoriteTabs.FilterByStartLetter(nodes, m.startLetter))
     updateItemCount(total)
 
     if startIndex = 0
         applyShape(listShape(), false)
-        m.itemGrid.content = m.listContent
-        m.itemGrid.jumpToItem = 0
+        m.grid.content = m.listContent
+        m.grid.jumpToItem = 0
         clearFocusedItem()
+    else
+        redrawSideways()
+    end if
+
+    showListState()
+end sub
+
+' What the flat grid shows once its cards change, whether a page landed or the letter moved
+sub showListState()
+    updateStatusBar()
+
+    if m.listContent.getChildCount() = 0
+        ' A letter can match nothing in the pages read so far and still match in the rest
+        if m.listFetched >= m.listTotal then showEmpty()
+        loadMoreIfNeeded()
+        return
+    end if
+
+    m.emptyLabel.visible = false
+    m.grid.visible = true
+
+    ' The grid takes the focus once there is something in it, after a fresh load or a letter
+    if m.focusGridWhenFilled
+        m.focusGridWhenFilled = false
         focusGrid()
     end if
 
-    updateStatusBar()
+    loadMoreIfNeeded()
 end sub
 
-sub loadMoreForList(focusedIndex as integer)
+' The next page of the flat view, asked for once the grid has drawn close to its end
+sub loadMoreForList()
     if m.loading or m.listFetched >= m.listTotal then return
-    if focusedIndex < m.listLoaded - favoriteTabs.PAGE_AHEAD then return
+    if drawnReach() < m.listContent.getChildCount() - favoriteTabs.LIST_PAGE_AHEAD then return
 
-    runRequest({
-        mode: "list",
-        startIndex: m.listFetched,
-        itemTypes: favoriteTabs.ChosenTypeFilter(m.typeFilter).types,
-        nameStartsWith: m.startLetter
-    })
+    runRequest({ mode: "list", startIndex: m.listFetched, itemTypes: favoriteTabs.ChosenTypeFilter(m.typeFilter).types })
 end sub
 
+sub loadMoreIfNeeded()
+    if isHomeView()
+        loadMoreForTab()
+    else
+        loadMoreForList()
+    end if
+end sub
+
+' The last card the grid has on screen, which is as far as the other clients have drawn when
+' they decide whether to ask for more
+function drawnReach() as integer
+    if m.grid.isSameNode(m.horizontalGrid)
+        layout = m.horizontalGrid.layout
+        if not isValid(layout) then return 0
+        return ((m.horizontalGrid.firstColumn + layout.columns) * layout.rows) - 1
+    end if
+
+    focused = m.itemGrid.itemFocused
+    if focused < 0 then focused = 0
+    perRow = m.itemGrid.numColumns
+    return (((focused \ perRow) + m.itemGrid.numRows) * perRow) - 1
+end function
+
+' The letter narrows what has already loaded rather than asking the server again
 sub onLetterSelected()
     letter = m.top.alphaSelected
     if not isValidAndNotEmpty(letter) then return
 
     ' Picking the same letter again clears it, the way the libraries do
-    m.startLetter = isStringEqual(m.startLetter, letter) ? string.EMPTY : letter
-    loadCurrentView()
+    if isStringEqual(m.startLetter, letter) then letter = string.EMPTY
+    m.startLetter = letter
+    m.alphaPicker.activeLetter = letter
+    m.focusGridWhenFilled = letter <> string.EMPTY
+
+    m.listContent = createSGNode("ContentNode")
+    m.listContent.appendChildren(favoriteTabs.FilterByStartLetter(m.listNodes, letter))
+    m.grid.content = m.listContent
+    m.grid.jumpToItem = 0
+    clearFocusedItem()
+
+    showListState()
 end sub
 
 sub updateStatusBar()
@@ -460,10 +524,10 @@ sub updateStatusBar()
     text = Substitute(tr("{0} favorites sorted by {1}"), m.listTotal.toStr(), sortLabel)
 
     filter = favoriteTabs.ChosenTypeFilter(m.typeFilter)
-    if not isStringEqual(filter.value, "all") then text += `  ·  ${filter.label}`
+    if not isStringEqual(filter.value, "all") then text += ` · ${filter.label}`
 
     m.statusText.text = text
-    m.statusCount.text = `${m.listLoaded.toStr()} | ${m.listTotal.toStr()}`
+    m.statusCount.text = `${m.listContent.getChildCount().toStr()} | ${m.listTotal.toStr()}`
 end sub
 
 ' =====================================================================
@@ -475,7 +539,7 @@ end sub
 sub applyShape(shape as string, force as boolean)
     if not isValidAndNotEmpty(shape) then shape = "portrait"
 
-    metrics = favoriteTabs.CardMetrics(shape, m.imageSize, GRID_WIDTH)
+    metrics = favoriteTabs.CardMetrics(shape, m.imageSize, GRID_WIDTH, m.pooled)
     m.global.addFields({ libraryCardMetrics: metrics })
     m.global.libraryCardMetrics = metrics
 
@@ -494,24 +558,62 @@ sub applyShape(shape as string, force as boolean)
     rows = Int(room / metrics.cellHeight)
     if rows < 1 then rows = 1
 
-    m.itemGrid.translation = [48, top]
-    m.itemGrid.clippingRect = [0, 0, GRID_WIDTH, room]
+    m.grid.translation = [48, top]
+    m.grid.clippingRect = [0, 0, GRID_WIDTH, room]
+
+    ' Sideways, the cards keep their size and as many rows fit as would show on screen
+    if m.grid.isSameNode(m.horizontalGrid)
+        m.horizontalGrid.layout = {
+            cellWidth: metrics.cellWidth,
+            cellHeight: metrics.cellHeight,
+            rows: rows,
+            columns: metrics.columns
+        }
+        return
+    end if
+
     m.itemGrid.itemSize = [metrics.cellWidth, metrics.cellHeight]
     m.itemGrid.rowHeights = [metrics.cellHeight]
     m.itemGrid.numColumns = metrics.columns
     m.itemGrid.numRows = rows
 end sub
 
-sub onItemFocused()
-    index = m.itemGrid.itemFocused
-    if index < 0 then return
+' Hands the cards to the grid the direction setting picks, still on the card that had focus
+sub applyGridDirection()
+    wanted = m.itemGrid
+    if isStringEqual(m.gridDirection, "horizontal") then wanted = m.horizontalGrid
+    if wanted.isSameNode(m.grid) then return
 
-    if isHomeView()
-        loadMoreForTab(index)
-    else
-        loadMoreForList(index)
-    end if
+    hadFocus = m.grid.isInFocusChain()
+    focused = m.grid.itemFocused
+    content = m.grid.content
+    showing = m.grid.visible
 
+    m.grid.content = createSGNode("ContentNode")
+    m.grid.visible = false
+
+    m.grid = wanted
+    applyShape(m.shape, true)
+    m.grid.content = content
+    m.grid.visible = showing
+    if focused > 0 then m.grid.jumpToItem = focused
+    if hadFocus then focusGrid()
+end sub
+
+' The sideways grid only draws the cards in view, so it's told when its content changes under it
+sub redrawSideways()
+    if m.grid.isSameNode(m.horizontalGrid) then m.horizontalGrid.callFunc("redraw")
+end sub
+
+function gridIsEmpty() as boolean
+    return not isValid(m.grid.content) or m.grid.content.getChildCount() = 0
+end function
+
+sub onItemFocused(event as object)
+    if not event.getRoSGNode().isSameNode(m.grid) then return
+    if m.grid.itemFocused < 0 then return
+
+    loadMoreIfNeeded()
     updateFocusedItem()
 end sub
 
@@ -519,8 +621,10 @@ end sub
 sub itemMenuChanged(_action as string, _card as dynamic, _menuJson as object)
 end sub
 
-sub onItemSelected()
-    node = getItemGridFocusedItem(m.itemGrid)
+sub onItemSelected(event as object)
+    if not event.getRoSGNode().isSameNode(m.grid) then return
+
+    node = getItemGridFocusedItem(m.grid)
     if not isValid(node) then return
 
     m.top.selectedItem = node
@@ -528,14 +632,17 @@ sub onItemSelected()
 end sub
 
 sub focusGrid()
-    if not isValid(m.itemGrid.content) or m.itemGrid.content.getChildCount() = 0
+    ' Nothing reaches past the panel while it's open
+    if m.panel.visible then return
+
+    if gridIsEmpty() or not m.grid.visible
         focusToolbarItem(TOOLBAR_HOME)
         return
     end if
 
     unfocusAllToolbarItems()
-    m.itemGrid.setFocus(true)
-    setLastFocus(m.itemGrid)
+    m.grid.setFocus(true)
+    setLastFocus(m.grid)
 
     ' The grid keeps the position it already had, so nothing tells the line above it what
     ' is under the cursor now
@@ -543,21 +650,25 @@ sub focusGrid()
 end sub
 
 sub showEmpty()
-    m.emptyLabel.text = isHomeView() ? tr("No favorites yet") : tr("No favorites found")
+    emptyText = tr("No favorites found")
+    if isHomeView() then emptyText = tr("No favorites yet")
+    m.emptyLabel.text = emptyText
     m.emptyLabel.visible = true
-    m.itemGrid.visible = false
+
+    ' The toolbar and the letters keep the focus they have, since the grid is all that went
+    gridHadFocus = m.grid.isInFocusChain()
+    m.grid.visible = false
     clearFocusedItem()
-    updateItemCount(0)
-    focusToolbarItem(TOOLBAR_HOME)
+    if gridHadFocus or not toolbarHasFocus() then focusToolbarItem(TOOLBAR_HOME)
 end sub
 
 ' The name and the count read as one line, so the pair is centred rather than each of them
 sub updateItemCount(total as integer)
-    m.itemCountLabel.text = total > 0 ? `${total.toStr()} ${tr("Items")}` : ""
+    m.itemCountLabel.text = `${total.toStr()} ${tr("Items")}`
 
     nameWidth = m.screenTitle.boundingRect().width
     countWidth = m.itemCountLabel.boundingRect().width
-    gap = countWidth > 0 ? 16 : 0
+    gap = 16
 
     startX = (1920 - (nameWidth + gap + countWidth)) / 2
     m.screenTitle.translation = [startX, 28]
@@ -581,7 +692,7 @@ sub clearFocusedItem()
 end sub
 
 sub updateFocusedItem()
-    node = getItemGridFocusedItem(m.itemGrid)
+    node = getItemGridFocusedItem(m.grid)
     if not isChainValid(node, "json")
         clearFocusedItem()
         return
@@ -669,6 +780,7 @@ sub renderRatingsRow(pluginRatings as object)
     if not isValid(m.pluginRatings) then return
 
     m.pluginRatings.showBadges = get_user_setting_bool("plugin.mdblist.showRatingBadges", true)
+    m.pluginRatings.showNames = get_user_setting_bool("plugin.mdblist.showRatingNames", false)
 
     entries = ratingsRow.Merge(m.serverRatings, pluginRatings)
     m.pluginRatings.ratingsData = { data: entries }
@@ -809,102 +921,134 @@ end sub
 ' THE TWO PANELS
 ' =====================================================================
 
-sub openSortDialog()
-    filters = libraryFilters.EmptyState()
-    context = {
-        title: isHomeView() ? tr("Sort By") : tr("Sort & Filter"),
-        sorts: favoriteTabs.SortOptions(),
-        sortOnly: true
-    }
+sub openSortPanel()
+    sortRows = []
+    for each option in favoriteTabs.SortOptions()
+        sortRows.push({ value: option.value, kind: "radio", title: option.label, selected: isStringEqual(option.value, m.sortKey) })
+    end for
+
+    title = tr("Sort By")
+    sections = [{ id: "sort", label: tr("Sort By"), rows: sortRows }]
 
     ' The tabs are the type picker in the other layout
     if not isHomeView()
-        context.typeOptions = favoriteTabs.TypeFilters()
-        filters.type = m.typeFilter
+        title = tr("Sort & Filter")
+        typeRows = []
+        for each filter in favoriteTabs.TypeFilters()
+            typeRows.push({ value: filter.value, kind: "radio", title: filter.label, selected: isStringEqual(filter.value, m.typeFilter) })
+        end for
+        sections.push({ id: "type", label: tr("Type"), rows: typeRows })
     end if
 
-    m.sortDialog.context = context
-    m.sortDialog.state = {
-        view: string.EMPTY,
-        sortKey: m.sortKey,
-        sortOrder: m.sortOrder,
-        filters: filters
-    }
-    m.sortDialog.callFunc("showDialog")
-    setLastFocus(m.sortDialog)
+    showPanel("sort", { title: title, sections: sections })
 end sub
 
-sub onSortApplied(msg as object)
-    applied = msg.getData()
-    if not isValid(applied) then return
+sub openSettingsPanel()
+    settingRows = [settingRow("imageSize", tr("Image size"), m.imageSize)]
+    ' Each tab already knows what shape its cards are
+    if not isHomeView() then settingRows.push(settingRow("imageType", tr("Image Type"), m.imageType))
+    settingRows.push(settingRow("gridDirection", tr("Grid direction"), m.gridDirection))
+    settingRows.push(settingRow("viewStyle", tr("View style"), m.viewStyle))
 
-    m.sortKey = applied.sortKey
-    m.sortOrder = applied.sortOrder
-    set_user_setting("favorites_sortKey", m.sortKey)
-
-    typeFilter = chainLookupReturn(applied, "filters.type", m.typeFilter)
-    if isValidAndNotEmpty(typeFilter) then m.typeFilter = typeFilter
-
-    loadCurrentView()
+    showPanel("settings", {
+        eyebrow: tr("Favorites"),
+        title: tr("Settings"),
+        sections: [{ id: "settings", rows: settingRows }]
+    })
 end sub
 
-sub openSettingsDialog()
-    m.settingsDialog.context = {
-        libraryName: tr("Settings"),
-        kind: tr("Favorites"),
-        ' Each tab already knows what shape its cards are
-        showImageType: not isHomeView(),
-        showCardText: false,
-        showLetterNav: false,
-        showViewStyle: true
-    }
-    m.settingsDialog.settings = {
-        imageSize: m.imageSize,
-        imageType: m.imageType,
-        viewStyle: m.viewStyle
-    }
-    m.settingsDialog.callFunc("showDialog")
-    setLastFocus(m.settingsDialog)
+function settingRow(value as string, title as string, current as string) as object
+    return { value: value, kind: "setting", title: title, summary: favoriteTabs.SettingLabel(current) }
+end function
+
+sub showPanel(kind as string, spec as object)
+    m.panelKind = kind
+    unfocusAllToolbarItems()
+    m.panel.spec = spec
+    m.panel.callFunc("showPanel")
+    setLastFocus(m.panel)
 end sub
 
-' Every row takes effect as it is stepped on, so this runs once per press
-sub onSettingsApplied(msg as object)
-    applied = msg.getData()
-    if not isValid(applied) then return
+' The focus goes back to the button that opened the panel, and waits there for a grid that
+' is reloading
+sub dismissPanel()
+    opener = TOOLBAR_SETTINGS
+    if m.panelKind = "sort" then opener = TOOLBAR_SORT
+    m.panelKind = string.EMPTY
+    m.panel.callFunc("closePanel")
+    focusToolbarItem(opener)
+end sub
 
-    styleChanged = not isStringEqual(m.viewStyle, applied.viewStyle)
-    typeChanged = not isStringEqual(m.imageType, applied.imageType)
+' Back closed the panel itself
+sub onPanelClosed()
+    if m.panelKind <> string.EMPTY then dismissPanel()
+end sub
 
-    m.imageSize = applied.imageSize
-    m.imageType = applied.imageType
-    m.viewStyle = applied.viewStyle
+sub onPanelChosen(event as object)
+    picked = event.getData()
+    if not isValid(picked) then return
 
-    set_user_setting("favorites_imageSize", m.imageSize)
-    set_user_setting("favorites_imageType", m.imageType)
-    set_user_setting("favorites_viewStyle", m.viewStyle)
+    if picked.section = "settings"
+        cycleSetting(picked.value)
+        return
+    end if
 
-    ' The whole screen is rebuilt underneath, so the panel steps out of the way and the
-    ' focus waits on the button that opened it
-    if styleChanged
-        m.settingsDialog.callFunc("closeDialog")
+    ' A sort or type pick closes the panel and hands the focus to the grid
+    changed = false
+    if picked.section = "sort" and not isStringEqual(m.sortKey, picked.value)
+        m.sortKey = picked.value
+        set_user_setting("favorites_sortKey", m.sortKey)
+        changed = true
+    else if picked.section = "type" and not isStringEqual(m.typeFilter, picked.value)
+        m.typeFilter = picked.value
+        changed = true
+    end if
+
+    dismissPanel()
+    if changed
+        loadCurrentView()
+    else
+        focusGrid()
+    end if
+end sub
+
+' Each settings row steps to its next value as it's pressed, and the panel stays open on it
+sub cycleSetting(key as string)
+    if key = "viewStyle"
+        m.viewStyle = favoriteTabs.Cycle(favoriteTabs.ViewStyles(), m.viewStyle)
+        set_user_setting("favorites_viewStyle", m.viewStyle)
+
+        ' The whole screen is rebuilt underneath, so the panel steps out of the way
+        dismissPanel()
         applyViewStyle()
         loadCurrentView()
-        focusToolbarItem(TOOLBAR_SETTINGS)
         return
     end if
 
-    if typeChanged and not isHomeView()
-        loadCurrentView()
-        setLastFocus(m.settingsDialog)
-        return
+    if key = "imageSize"
+        m.imageSize = favoriteTabs.Cycle(favoriteTabs.ImageSizes(), m.imageSize)
+        set_user_setting("favorites_imageSize", m.imageSize)
+        applyShape(m.shape, true)
+        redrawGrid()
+    else if key = "imageType"
+        m.imageType = favoriteTabs.Cycle(favoriteTabs.ImageTypes(), m.imageType)
+        set_user_setting("favorites_imageType", m.imageType)
+        applyShape(listShape(), true)
+        redrawGrid()
+    else if key = "gridDirection"
+        m.gridDirection = favoriteTabs.Cycle(favoriteTabs.GridDirections(), m.gridDirection)
+        set_user_setting("favorites_gridDirection", m.gridDirection)
+        applyGridDirection()
     end if
 
-    applyShape(m.shape, true)
-    redrawGrid()
+    openSettingsPanel()
 end sub
 
-' The cards are the same, so only the shape they are drawn at has moved
+' The cards are the same, so only the shape they are drawn at has moved. The sideways grid
+' already drew itself again when it was handed the new shape.
 sub redrawGrid()
+    if m.grid.isSameNode(m.horizontalGrid) then return
+
     focused = m.itemGrid.itemFocused
     content = m.itemGrid.content
     m.itemGrid.content = createSGNode("ContentNode")
@@ -923,27 +1067,12 @@ sub applyViewStyle()
 
     if home
         m.startLetter = string.EMPTY
+        m.alphaPicker.activeLetter = string.EMPTY
         m.typeFilter = "all"
     end if
 
     clearBackdrop()
     applyShape(home ? "portrait" : listShape(), true)
-end sub
-
-' A panel left open while the grid reloads would lose focus to it, since handing the grid
-' its content takes focus back
-sub restoreDialogFocus()
-    for each dialog in [m.sortDialog, m.settingsDialog]
-        if dialog.visible
-            dialog.callFunc("focusDialog")
-            setLastFocus(dialog)
-            return
-        end if
-    end for
-end sub
-
-sub onDialogClosed()
-    focusToolbarItem(m.toolbarFocusIndex)
 end sub
 
 ' =====================================================================
@@ -957,14 +1086,17 @@ sub focusToolbarItem(index as integer)
     unfocusAllToolbarItems()
     m.toolbarFocusIndex = index
 
-    if index >= 0 and index < m.toolbarButtons.count()
-        m.toolbarButtons[index].focus = true
-        m.toolbarButtons[index].setFocus(true)
-        setLastFocus(m.toolbarButtons[index])
-    else if index = TOOLBAR_ALPHA
+    if index = TOOLBAR_ALPHA
+        ' The strip is always entered at #, wherever it was left
+        m.alphaGrid.jumpToItem = 0
         m.alphaGrid.setFocus(true)
         setLastFocus(m.alphaGrid)
+        return
     end if
+
+    m.toolbarButtons[index].focus = true
+    m.toolbarButtons[index].setFocus(true)
+    setLastFocus(m.toolbarButtons[index])
 end sub
 
 sub unfocusAllToolbarItems()
@@ -972,6 +1104,14 @@ sub unfocusAllToolbarItems()
         button.focus = false
     end for
 end sub
+
+function toolbarHasFocus() as boolean
+    if m.alphaGrid.isInFocusChain() then return true
+    for each button in m.toolbarButtons
+        if button.isInFocusChain() then return true
+    end for
+    return false
+end function
 
 sub focusBelowToolbar()
     unfocusAllToolbarItems()
@@ -984,6 +1124,32 @@ sub focusBelowToolbar()
 
     focusGrid()
 end sub
+
+' Back on a grid that has scrolled takes it to its first card instead of leaving, from
+' anywhere on the screen
+sub goBack()
+    if m.grid.visible and not gridIsEmpty() and gridScrolledAway()
+        m.grid.jumpToItem = 0
+        focusGrid()
+        return
+    end if
+
+    leaveScreen()
+end sub
+
+' The upright grid holds its focus on the top row, so any row past the first means it has
+' scrolled
+function gridScrolledAway() as boolean
+    if m.grid.isSameNode(m.horizontalGrid) then return m.horizontalGrid.firstColumn > 0
+    return m.itemGrid.itemFocused >= m.itemGrid.numColumns
+end function
+
+function onTopRow() as boolean
+    if m.grid.isSameNode(m.horizontalGrid)
+        return m.horizontalGrid.itemFocused mod m.horizontalGrid.layout.rows = 0
+    end if
+    return m.itemGrid.itemFocused < m.itemGrid.numColumns
+end function
 
 sub reclaimResources()
     m.loadTask.control = TaskControl.STOP
@@ -1003,27 +1169,17 @@ end sub
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
+    if isStringEqual(key, KeyCode.BACK)
+        goBack()
+        return true
+    end if
+
     ' The nav has slid away, so the first tab has nothing to its left
-    if m.tabBar.isInFocusChain()
-        if isStringEqual(key, KeyCode.LEFT) then return true
-        if isStringEqual(key, KeyCode.BACK)
-            leaveScreen()
-            return true
-        end if
-        return false
-    end if
+    if m.tabBar.isInFocusChain() then return isStringEqual(key, KeyCode.LEFT)
 
-    if m.homeButton.isInFocusChain() or m.sortButton.isInFocusChain() or m.settingsButton.isInFocusChain()
-        return toolbarKey(key)
-    end if
-
-    if m.alphaGrid.isInFocusChain()
-        return alphaKey(key)
-    end if
-
-    if m.itemGrid.isInFocusChain()
-        return gridKey(key)
-    end if
+    if m.alphaGrid.isInFocusChain() then return alphaKey(key)
+    if toolbarHasFocus() then return toolbarKey(key)
+    if m.grid.isInFocusChain() then return gridKey(key)
 
     return false
 end function
@@ -1052,15 +1208,10 @@ function toolbarKey(key as string) as boolean
         if m.toolbarFocusIndex = TOOLBAR_HOME
             leaveScreen()
         else if m.toolbarFocusIndex = TOOLBAR_SORT
-            openSortDialog()
+            openSortPanel()
         else
-            openSettingsDialog()
+            openSettingsPanel()
         end if
-        return true
-    end if
-
-    if isStringEqual(key, KeyCode.BACK)
-        leaveScreen()
         return true
     end if
 
@@ -1079,43 +1230,24 @@ function alphaKey(key as string) as boolean
         return true
     end if
 
-    if isStringEqual(key, KeyCode.UP)
-        return true
-    end if
-
-    if isStringEqual(key, KeyCode.BACK)
-        leaveScreen()
-        return true
-    end if
-
-    return false
+    return isStringEqual(key, KeyCode.UP)
 end function
 
 function gridKey(key as string) as boolean
     if isStringEqual(key, KeyCode.OPTIONS)
-        return showItemMenu(getItemGridFocusedItem(m.itemGrid))
+        return showItemMenu(getItemGridFocusedItem(m.grid))
     end if
 
+    ' Up leaves from the top row, for the open tab or for # on the letters
     if isStringEqual(key, KeyCode.UP)
-        if m.itemGrid.itemFocused >= m.itemGrid.numColumns then return false
+        if not onTopRow() then return false
 
         if isHomeView() and m.tabBar.visible
             m.tabBar.setFocus(true)
             setLastFocus(m.tabBar)
         else
-            focusToolbarItem(m.alphaPicker.visible ? TOOLBAR_ALPHA : m.toolbarFocusIndex)
+            focusToolbarItem(TOOLBAR_ALPHA)
         end if
-        return true
-    end if
-
-    if isStringEqual(key, KeyCode.BACK)
-        ' Back climbs out of a long grid before it leaves the screen
-        if m.itemGrid.itemFocused >= m.itemGrid.numColumns
-            m.itemGrid.jumpToItem = 0
-            return true
-        end if
-
-        leaveScreen()
         return true
     end if
 
@@ -1123,4 +1255,5 @@ function gridKey(key as string) as boolean
 end function
 
 sub userDataApplied(_changes as object)
+    redrawSideways()
 end sub

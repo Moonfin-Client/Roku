@@ -69,6 +69,9 @@ const selections = {
     'source/utils/detailSectionLayout.bs': null,
     'source/utils/trackLabels.bs': null,
     'source/utils/fileFacts.bs': null,
+    'source/utils/librarySorts.bs': null,
+    'source/utils/libraryCard.bs': null,
+    'source/utils/favoriteTabs.bs': null,
     'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions', 'SetUpAudioOptions', 'detailServerSubtitleIndex', 'audioOrdinal', 'audioStreamPosition'],
     'source/enums/VideoType.bs': null,
@@ -156,6 +159,7 @@ source += '\n' + await readFile('test/seasonal-effects.bs', 'utf8');
 source += '\n' + await readFile('test/audio-track.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-selection.bs', 'utf8');
 source += '\n' + await readFile('test/file-facts.bs', 'utf8');
+source += '\n' + await readFile('test/favorite-tabs.bs', 'utf8');
 const achievementsModelFile = await readFile('source/utils/achievementsModel.bs', 'utf8');
 source += '\nnamespace achievementsModel\n';
 for (const name of [
