@@ -1,0 +1,65 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/homePreview.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+
+' Each lookup gives up after this long, since a preview thats late has lost its moment
+const PREVIEW_REQUEST_TIMEOUT_MS = 5000
+
+sub init()
+    m.top.functionName = "execute"
+end sub
+
+sub execute()
+    request = m.top.request
+    if not isValid(request) then return
+    answer = { requestId: request.requestId ?? 0 }
+
+    if m.top.action = "stop"
+        stopEncoding(request)
+    else
+        target = resolveTarget(request)
+        if isValid(target) then answer.target = target
+    end if
+    m.top.answer = answer
+end sub
+
+' The item the card plays, with what the stream needs. A series plays its next episode, and a
+' series with none, or whose next is a special, has nothing to show.
+function resolveTarget(request as object) as dynamic
+    server = request.server
+    item = request.item
+    if not isValid(server) or not isValid(item) then return invalid
+    targetId = toString(chainLookupReturn(item, "Id", ""))
+    if targetId = "" or toString(server.url) = "" then return invalid
+
+    if LCase(toString(chainLookupReturn(item, "Type", ""))) = "series"
+        nextUp = serverJson(server, "Shows/NextUp", { "SeriesId": targetId, "UserId": server.userId, "Limit": 1, "EnableTotalRecordCount": false })
+        episode = homePreview.TargetFromNextUp(chainLookupReturn(nextUp, "Items", invalid))
+        if not isValid(episode) then return invalid
+        targetId = toString(chainLookupReturn(episode, "Id", ""))
+        if targetId = "" then return invalid
+    end if
+
+    path = serverItemMetadataPath(targetId, server.userId, isEmbyServer(server.url))
+    target = serverJson(server, path, { "UserId": server.userId, "Fields": "MediaSources,MediaStreams" })
+    if not validItemMetadata(target) then return invalid
+    return target
+end function
+
+' Lets the server drop the preview's transcode. Jellyfin and Emby take the same route.
+sub stopEncoding(request as object)
+    server = request.server
+    playSessionId = toString(request.playSessionId ?? "")
+    if not isValid(server) or playSessionId = "" then return
+
+    params = homePreview.EncodingStopParams(toString(getAuthHeaderContext().deviceId), playSessionId)
+    req = itemServerRequest(server, "Videos/ActiveEncodings", params)
+    if isValid(req) then deleteVoid(req)
+end sub
+
+function serverJson(server as object, path as string, params as object) as dynamic
+    req = itemServerRequest(server, path, params)
+    if not isValid(req) then return invalid
+    return requestResponse(req, "GET", "", PREVIEW_REQUEST_TIMEOUT_MS).data
+end function

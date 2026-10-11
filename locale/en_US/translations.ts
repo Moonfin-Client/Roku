@@ -5210,6 +5210,26 @@
         <translation>This trailer is a link to a web page, which cant be opened here.</translation>
     </message>
     <message>
+        <source>Media Preview</source>
+        <extracomment>Setting that plays a short clip of the focused home row card</extracomment>
+        <translation>Media Preview</translation>
+    </message>
+    <message>
+        <source>Play a short clip of the focused card after a moment on it. A series plays its next episode.</source>
+        <extracomment>Description of the Media Preview setting</extracomment>
+        <translation>Play a short clip of the focused card after a moment on it. A series plays its next episode.</translation>
+    </message>
+    <message>
+        <source>Preview Audio</source>
+        <extracomment>Setting that plays the sound of a media preview</extracomment>
+        <translation>Preview Audio</translation>
+    </message>
+    <message>
+        <source>Play the sound of a media preview. Off keeps previews silent.</source>
+        <extracomment>Description of the Preview Audio setting</extracomment>
+        <translation>Play the sound of a media preview. Off keeps previews silent.</translation>
+    </message>
+    <message>
         <source>Seasonal Row</source>
         <extracomment>Home row of holiday movies, and the settings section that configures it</extracomment>
         <translation>Seasonal Row</translation>

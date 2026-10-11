@@ -1,0 +1,134 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/trackLabels.bs"
+
+' What the focused card's preview plays and how the server is asked for it. Nothing here touches
+' a node or a timer, so those stay with the controller in Home.
+namespace homePreview
+
+    ' How long a card holds focus before its preview starts
+    const DWELL_S = 1.2
+    ' A stream that hasnt shown a frame by then is given up on
+    const OPEN_TIMEOUT_S = 10
+    ' A preview runs this long at most
+    const PLAY_CAP_S = 30
+    ' Where a title starts when there is no position to pick up from
+    const DEFAULT_START_S = 180
+    ' A title shorter than this starts from the top instead
+    const SHORT_RUNTIME_S = 900
+
+    function Supports(itemType as dynamic) as boolean
+        kind = LCase(toString(itemType))
+        return kind = "series" or kind = "movie" or kind = "episode" or kind = "video" or kind = "musicvideo"
+    end function
+
+    ' Seerr, calendar and other outside cards look like items but have nothing on the server to play
+    function IsLibraryItem(json as dynamic) as boolean
+        if type(json) <> "roAssociativeArray" then return false
+        if not isValidAndNotEmpty(json.LookupCI("Id")) then return false
+        for each key in ["SeerrTmdbId", "SeerrItem", "CalendarDate"]
+            if isValid(json.LookupCI(key)) then return false
+        end for
+        return true
+    end function
+
+    ' A series plays its next episode, unless that is a special
+    function TargetFromNextUp(items as dynamic) as dynamic
+        if type(items) <> "roArray" or items.count() = 0 then return invalid
+        first = items[0]
+        if type(first) <> "roAssociativeArray" then return invalid
+        if chainLookupReturn(first, "ParentIndexNumber", -1) = 0 then return invalid
+        return first
+    end function
+
+    ' A title picks up where it was left, otherwise it starts three minutes in, or from the top
+    ' when it is too short for that
+    function StartSeconds(userData as dynamic, runTimeTicks as dynamic) as integer
+        ticks = chainLookupReturn(userData, "PlaybackPositionTicks", 0)
+        if homePreview.Numeric(ticks) and ticks > 0 then return Int(ticks / 10000000)
+        if homePreview.Numeric(runTimeTicks) and runTimeTicks > 0 and runTimeTicks / 10000000 < homePreview.SHORT_RUNTIME_S then return 0
+        return homePreview.DEFAULT_START_S
+    end function
+
+    ' The audio track the stream carries: one in the preferred language when there is one, and
+    ' among those the default plain track over commentary or audio description. -1 when the item
+    ' has no audio at all.
+    function AudioStreamIndex(mediaStreams as dynamic, preferredLanguage as dynamic) as integer
+        audio = []
+        if type(mediaStreams) = "roArray"
+            for i = 0 to mediaStreams.count() - 1
+                stream = mediaStreams[i]
+                if type(stream) = "roAssociativeArray" and LCase(toString(stream.LookupCI("Type"))) = "audio"
+                    audio.push({ stream: stream, position: i })
+                end if
+            end for
+        end if
+        if audio.count() = 0 then return -1
+
+        pool = []
+        language = LCase(toString(preferredLanguage))
+        if language <> ""
+            for each entry in audio
+                if LCase(toString(entry.stream.LookupCI("Language"))) = language then pool.push(entry)
+            end for
+        end if
+        if pool.count() = 0 then pool = audio
+
+        plain = []
+        for each entry in pool
+            if not trackLabels.IsCommentary(entry.stream) and not trackLabels.IsAudioDescription(entry.stream) then plain.push(entry)
+        end for
+
+        pick = invalid
+        for each entry in plain
+            if trackLabels.Flag(entry.stream, "IsDefault")
+                pick = entry
+                exit for
+            end if
+        end for
+        if not isValid(pick) and plain.count() > 0 then pick = plain[0]
+        if not isValid(pick) then pick = pool[0]
+
+        index = pick.stream.LookupCI("Index")
+        if homePreview.Numeric(index) then return Int(index)
+        return pick.position
+    end function
+
+    ' The query for a short transcode the card can show: 720p h264 at 4 Mbps with stereo aac,
+    ' nothing burned in, under a session of its own so stopping it never touches real playback.
+    ' Emby turns the subtitle method away, and with no subtitle index asked for it burns nothing
+    ' in anyway. The keys are quoted so the device sends them as the server spells them.
+    function StreamParams(playSessionId as string, deviceId as string, mediaSourceId as string, audioIndex as integer, token as string, emby as boolean) as object
+        params = {
+            "PlaySessionId": playSessionId,
+            "DeviceId": deviceId,
+            "videoCodec": "h264",
+            "audioCodec": "aac",
+            "maxVideoBitDepth": 8,
+            "videoBitRate": 4000000,
+            "maxWidth": 1280,
+            "maxHeight": 720,
+            "audioBitRate": 96000,
+            "audioChannels": 2,
+            "SegmentContainer": "ts"
+        }
+        if not emby then params["subtitleMethod"] = "Drop"
+        if mediaSourceId <> "" then params["MediaSourceId"] = mediaSourceId
+        if audioIndex >= 0 then params["AudioStreamIndex"] = audioIndex
+        if token <> "" then params["ApiKey"] = token
+        return params
+    end function
+
+    function StreamUrl(serverUrl as string, itemId as string, params as object) as string
+        return buildURLForServer(serverUrl, "Videos/" + itemId + "/master.m3u8", params)
+    end function
+
+    function EncodingStopParams(deviceId as string, playSessionId as string) as object
+        return { "DeviceId": deviceId, "PlaySessionId": playSessionId }
+    end function
+
+    function Numeric(value as dynamic) as boolean
+        kind = LCase(type(value))
+        return kind = "integer" or kind = "rointeger" or kind = "roint" or kind = "longinteger" or kind = "rolonginteger" or kind = "float" or kind = "rofloat" or kind = "double" or kind = "rodouble"
+    end function
+end namespace

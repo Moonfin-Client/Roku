@@ -72,6 +72,7 @@ const selections = {
     'source/utils/librarySorts.bs': null,
     'source/utils/libraryCard.bs': null,
     'source/utils/favoriteTabs.bs': null,
+    'source/utils/homePreview.bs': null,
     'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions', 'SetUpAudioOptions', 'detailServerSubtitleIndex', 'audioOrdinal', 'audioStreamPosition'],
     'source/enums/VideoType.bs': null,
@@ -160,6 +161,7 @@ source += '\n' + await readFile('test/audio-track.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-selection.bs', 'utf8');
 source += '\n' + await readFile('test/file-facts.bs', 'utf8');
 source += '\n' + await readFile('test/favorite-tabs.bs', 'utf8');
+source += '\n' + await readFile('test/home-preview.bs', 'utf8');
 const moonfinPluginFile = await readFile('source/api/MoonfinPlugin.bs', 'utf8');
 source += '\nnamespace moonfinPlugin\n';
 for (const name of ['InfoFromPing', 'WithUserToken', 'AreTmdbThumbsAvailable', 'TmdbThumbURL', 'StudioImageURL', 'IsEnabled', 'IsPluginInstalled', 'ParseBoolSetting']) {
@@ -748,3 +750,40 @@ const homeData = await readFile('components/data/HomeData.bs', 'utf8');
 assert.match(homeData, /sub setTitledThumb\([^]*?m\.top\.thumbnailURL = thumbUrl\s+m\.top\.widePosterURL = thumbUrl/, 'The titled thumb leads a card\'s wide art');
 assert.doesNotMatch(homeData.match(/sub setTitledThumb\([^]*?end sub/)[0], /backdropURL/, 'The page behind a card keeps the plain backdrop');
 process.stdout.write('PASS: tmdb thumbs wiring (18 checks)\n');
+
+// The focused card's preview: both switches sit under Home Screen for modern rows and sync with
+// the plugin, every way off the screen stops it, the controller never reports playback, and the
+// corner piece keeps its transparency where the device reads it
+const previewSettings = await readFile('settings/settings.json', 'utf8');
+assert.match(previewSettings, /"settingName": "ui\.home\.episodePreviewEnabled",\s+"glyph": "play_circle",\s+"requires": "setting:ui\.home\.rowsStyle!=v1",\s+"type": "bool",\s+"default": "false"/, 'Media Preview is a Home Screen switch for modern rows, off by default');
+assert.match(previewSettings, /"settingName": "ui\.home\.previewAudioEnabled",\s+"glyph": "volume_up",\s+"requires": "setting:ui\.home\.rowsStyle!=v1&&setting:ui\.home\.episodePreviewEnabled",\s+"type": "bool",\s+"default": "true"/, 'Preview Audio follows Media Preview, on by default');
+assert.match(settingsSyncSource, /\{ pluginKey: "episodePreviewEnabled", rokuKey: "ui\.home\.episodePreviewEnabled", type: "bool" \}/, 'Media Preview syncs with the plugin');
+assert.match(settingsSyncSource, /\{ pluginKey: "previewAudioEnabled", rokuKey: "ui\.home\.previewAudioEnabled", type: "bool" \}/, 'Preview Audio syncs with the plugin');
+assert.match(await readFile('components/settings/settings.bs', 'utf8'), /homeLooks = takeSettings\(configTree, \[[^\]]*"ui\.home\.episodePreviewEnabled", "ui\.home\.previewAudioEnabled"[^\]]*\]\)/, 'Both preview switches sit in the Home Screen Looks group');
+const previewStrings = await readFile('locale/en_US/translations.ts', 'utf8');
+for (const name of ['Media Preview', 'Preview Audio']) assert.match(previewStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
+const previewHome = await readFile('components/home/Home.bs', 'utf8');
+assert.match(previewHome, /^import "pkg:\/components\/home\/modernPreview\.bs"$/m, 'Home runs the preview controller in its own scope');
+assert.match(previewHome.match(/sub OnScreenHidden\([^]*?end sub/)[0], /stopPreview\(\)/, 'A screen pushed over Home stops the preview');
+assert.match(previewHome.match(/sub hideModernFocusCard\([^]*?end sub/)[0], /^\s*stopPreview\(\)/m, 'Taking the card down stops the preview first');
+assert.match(previewHome.match(/sub onHomeRowsFocusChanged\([^]*?end sub/)[0], /if not m\.homeRows\.isInFocusChain\(\)\s+stopPreview\(\)\s+return/, 'Focus leaving the rows stops the preview');
+assert.match(previewHome.match(/sub onItemDetailsLoaded\([^]*?end sub/)[0], /m\.previewDetails = json/, 'The details a card already fetched feed its preview');
+const previewController = await readFile('components/home/modernPreview.bs', 'utf8');
+assert.match(previewController, /observeFieldScoped\("settingsOpen", "onPreviewSettingsOpen"\)/, 'Home watches the settings overlay');
+assert.match(previewController.match(/sub onPreviewSettingsOpen\([^]*?end sub/)[0], /settingsOpen = true[^]*?stopPreview\(\)/, 'Opening settings stops the preview');
+assert.match(previewController.match(/sub onHomeRowsQuickPlay\([^]*?end sub/)[0], /stopPreview\(\)/, 'The Play key stops the preview before the player comes');
+assert.doesNotMatch(previewController, /playstateTask|Sessions\/Playing/, 'A preview never reports playback');
+assert.match(await readFile('components/home/Home.xml', 'utf8'), /<Timer id="previewTimer"/, 'Home carries the preview timer');
+const previewCard = await readFile('components/home/ModernFocusCard.xml', 'utf8');
+assert.equal((previewCard.match(/pkg:\/images\/previewCorner\.png/g) ?? []).length, 4, 'The card draws four corner pieces');
+assert.doesNotMatch(previewCard, /scale="\[-/, 'The corners turn rather than mirror, since a negative scale never mirrors');
+for (const name of ['mountPreview', 'revealPreview', 'unmountPreview']) assert.match(previewCard, new RegExp(`<function name="${name}"`), `The card offers ${name}`);
+const previewCardSource = await readFile('components/home/ModernFocusCard.bs', 'utf8');
+assert.match(previewCardSource.match(/^sub hideCard\(\)[^]*?^end sub/m)[0], /^\s*unmountPreview\(\)/m, 'Hiding the card takes the preview down first');
+assert.doesNotMatch(await readFile('components/seerr/SeerrDiscoveryScreen.bs', 'utf8'), /mountPreview/, 'Discover never mounts a preview');
+const cornerPng = await readFile('images/previewCorner.png');
+assert.ok([3, 4, 6].includes(cornerPng[25]), 'The corner piece keeps its transparency where the device reads it');
+assert.equal(cornerPng.readUInt32BE(16), 8, 'The corner piece is 8 wide');
+assert.equal(cornerPng.readUInt32BE(20), 8, 'The corner piece is 8 high');
+assert.ok(cornerPng.length < 1024, 'The corner piece is small');
+process.stdout.write('PASS: home preview wiring (28 checks)\n');

@@ -1,0 +1,248 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/homePreview.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+
+' Plays a short clip of the focused modern card once it has held focus for a moment. The
+' artwork stays until the stream shows a frame, and every way focus or the screen can move on
+' stops it, so a preview never outlives its card and never meets real playback. These run in
+' Home's scope, so m is the screen.
+
+sub previewInit()
+    m.previewTimer = m.top.findNode("previewTimer")
+    m.previewTimer.observeFieldScoped("fire", "onPreviewTimer")
+
+    m.previewPhase = "idle"
+    m.previewRequestId = 0
+    m.previewItem = invalid
+    m.previewItemId = ""
+    m.previewServer = invalid
+    m.previewTask = invalid
+    m.previewVideo = invalid
+    m.previewPlaySessionId = ""
+    m.previewUnavailableId = ""
+    m.previewDetails = invalid
+    ' Stop tasks are held here until they answer, so one isnt collected mid flight
+    m.previewStops = []
+
+    if isValid(m.global.sceneManager) then m.global.sceneManager.observeFieldScoped("settingsOpen", "onPreviewSettingsOpen")
+    m.homeRows.observeField("quickPlayNode", "onHomeRowsQuickPlay")
+end sub
+
+' The checks cheap enough to run on every move
+function previewAllowed() as boolean
+    if not get_user_setting_bool("ui.home.episodePreviewEnabled", false) then return false
+    if not m.modernHomeRows or not isValid(m.modernFocusCard) or not m.modernFocusCard.cardShown then return false
+    if not m.homeRows.isInFocusChain() then return false
+    if isValid(m.mediaBar) and m.mediaBar.visible then return false
+    ' Music holds the one media pipeline, and it came first
+    return chainLookupReturn(m.global, "audioPlayer.state", "") <> "playing"
+end function
+
+' The checks that ask the scene manager, so they wait for the dwell
+function previewScreenFree() as boolean
+    manager = m.global.sceneManager
+    if not isValid(manager) then return false
+    if manager.settingsOpen = true then return false
+    active = manager.callFunc("getActiveScene")
+    if not isValid(active) or not active.isSameNode(m.top) then return false
+    return manager.callFunc("isDialogOpen") <> true
+end function
+
+sub startPreviewTimer(seconds as float)
+    m.previewTimer.control = "stop"
+    m.previewTimer.duration = seconds
+    m.previewTimer.control = "start"
+end sub
+
+' A card has focus. The same card asked about again carries on, since a move reports the cell
+' it is heading to and then the cell it landed on, and that mustnt start the dwell over.
+sub previewOnFocus(item as dynamic)
+    itemId = ""
+    if isValid(item) then itemId = toString(item.id)
+    if itemId <> "" and itemId = m.previewItemId then return
+
+    stopPreview()
+    if itemId = "" or itemId = m.previewUnavailableId or not previewAllowed() then return
+    if not homePreview.Supports(item.type) or not homePreview.IsLibraryItem(item.json) then return
+
+    m.previewItem = item
+    m.previewItemId = itemId
+    m.previewPhase = "dwelling"
+    startPreviewTimer(homePreview.DWELL_S)
+end sub
+
+' The dwell is up, or the stream took too long to show a frame, or it has played its time
+sub onPreviewTimer()
+    if m.previewPhase = "dwelling"
+        onPreviewDwell()
+    else if m.previewPhase = "opening" or m.previewPhase = "playing"
+        stopPreview()
+    end if
+end sub
+
+' A film or episode whose details already came back has what the stream needs, and anything
+' else is looked up on a task. The server lookup reads the registry, so it waits for here
+' rather than running on every move.
+sub onPreviewDwell()
+    if not isValid(m.previewItem) or not previewScreenFree()
+        stopPreview()
+        return
+    end if
+    m.previewServer = itemServer(m.previewItem.json)
+    itemType = toString(m.previewItem.type)
+    if LCase(itemType) <> "series" and isStringEqual(chainLookupReturn(m.previewDetails, "Id", ""), m.previewItemId)
+        startPreviewFrom(m.previewDetails)
+        return
+    end if
+
+    m.previewPhase = "resolving"
+    m.previewTask = CreateObject("roSGNode", "HomePreviewTask")
+    m.previewTask.action = "resolve"
+    m.previewTask.request = { requestId: m.previewRequestId, item: { "Id": m.previewItemId, "Type": itemType }, server: m.previewServer }
+    m.previewTask.observeFieldScoped("answer", "onPreviewAnswer")
+    m.previewTask.control = "RUN"
+end sub
+
+sub onPreviewAnswer(event as object)
+    answer = event.getData()
+    if not isValid(answer) or answer.requestId <> m.previewRequestId or m.previewPhase <> "resolving" then return
+    if isValid(m.previewTask) then m.previewTask.unobserveFieldScoped("answer")
+    m.previewTask = invalid
+
+    target = answer.target
+    if type(target) <> "roAssociativeArray"
+        markPreviewUnavailable()
+        return
+    end if
+    startPreviewFrom(target)
+end sub
+
+' The item that plays, with its sources and streams. The Video goes under the card's art, so
+' the picture is there the moment the art fades.
+sub startPreviewFrom(json as object)
+    server = m.previewServer
+    targetId = toString(chainLookupReturn(json, "Id", ""))
+    if targetId = "" or not isValid(server) or server.url = ""
+        markPreviewUnavailable()
+        return
+    end if
+
+    mediaSourceId = ""
+    streams = chainLookupReturn(json, "MediaStreams", invalid)
+    sources = chainLookupReturn(json, "MediaSources", invalid)
+    if type(sources) = "roArray" and sources.count() > 0
+        mediaSourceId = toString(chainLookupReturn(sources[0], "Id", ""))
+        if type(streams) <> "roArray" then streams = chainLookupReturn(sources[0], "MediaStreams", invalid)
+    end if
+    audioIndex = homePreview.AudioStreamIndex(streams, getPreferredLanguage("playback.audioPreferredLanguage"))
+
+    m.previewPlaySessionId = CreateObject("roDeviceInfo").GetRandomUUID()
+    params = homePreview.StreamParams(m.previewPlaySessionId, toString(getAuthHeaderContext().deviceId), mediaSourceId, audioIndex, server.token, isEmbyServer(server.url))
+    url = homePreview.StreamUrl(server.url, targetId, params)
+    if url = ""
+        markPreviewUnavailable()
+        return
+    end if
+
+    content = CreateObject("roSGNode", "ContentNode")
+    content.url = url
+    content.streamFormat = "hls"
+    ' The start goes in with the stream, since a seek afterwards lands on the keyframe before it
+    content.PlayStart = homePreview.StartSeconds(chainLookupReturn(json, "UserData", invalid), chainLookupReturn(json, "RunTimeTicks", invalid))
+    if LCase(Left(url, 8)) = "https://" then content.HttpCertificatesFile = "common:/certs/ca-bundle.crt"
+
+    video = CreateObject("roSGNode", "Video")
+    video.mute = not get_user_setting_bool("ui.home.previewAudioEnabled", true)
+    video.observeFieldScoped("state", "onPreviewVideoState")
+    video.content = content
+    m.previewVideo = video
+    m.modernFocusCard.callFunc("mountPreview", { video: video })
+    video.control = "play"
+    m.previewPhase = "opening"
+    startPreviewTimer(homePreview.OPEN_TIMEOUT_S)
+end sub
+
+sub onPreviewVideoState()
+    if not isValid(m.previewVideo) then return
+    state = m.previewVideo.state
+    if state = "playing"
+        if m.previewPhase <> "opening" then return
+        m.previewPhase = "playing"
+        startPreviewTimer(homePreview.PLAY_CAP_S)
+        m.modernFocusCard.callFunc("revealPreview")
+    else if state = "error"
+        if m.previewPhase = "opening"
+            markPreviewUnavailable()
+        else
+            stopPreview()
+        end if
+    else if state = "finished"
+        stopPreview()
+    end if
+end sub
+
+' Nothing to play, so the artwork stays and the card isnt asked about again until another one fails
+sub markPreviewUnavailable()
+    m.previewUnavailableId = m.previewItemId
+    stopPreview()
+end sub
+
+' Takes down whatever stage the preview is at. The request id goes up first so a lookup still
+' under way is ignored when it lands, and the server's transcode goes last, once the Video has stopped.
+sub stopPreview()
+    if m.previewPhase = "idle" then return
+    m.previewRequestId++
+    m.previewTimer.control = "stop"
+    if isValid(m.previewTask)
+        m.previewTask.unobserveFieldScoped("answer")
+        m.previewTask = invalid
+    end if
+
+    if isValid(m.previewVideo)
+        m.previewVideo.unobserveFieldScoped("state")
+        m.modernFocusCard.callFunc("unmountPreview")
+        m.previewVideo = invalid
+    end if
+
+    if m.previewPhase = "opening" or m.previewPhase = "playing" then stopPreviewEncoding()
+
+    m.previewPhase = "idle"
+    m.previewItem = invalid
+    m.previewItemId = ""
+    m.previewServer = invalid
+    m.previewPlaySessionId = ""
+end sub
+
+' Tells the server the preview's transcode can go
+sub stopPreviewEncoding()
+    if m.previewPlaySessionId = "" or not isValid(m.previewServer) then return
+    task = CreateObject("roSGNode", "HomePreviewTask")
+    task.action = "stop"
+    task.request = { server: m.previewServer, playSessionId: m.previewPlaySessionId }
+    task.observeFieldScoped("answer", "onPreviewStopDone")
+    m.previewStops.push(task)
+    task.control = "RUN"
+end sub
+
+sub onPreviewStopDone(event as object)
+    done = event.getRoSGNode()
+    done.unobserveFieldScoped("answer")
+    kept = []
+    for each task in m.previewStops
+        if not task.isSameNode(done) then kept.push(task)
+    end for
+    m.previewStops = kept
+end sub
+
+' Settings open over the screen without hiding it, and a preview never plays under them
+sub onPreviewSettingsOpen()
+    if m.global.sceneManager.settingsOpen = true then stopPreview()
+end sub
+
+' The Play key hands the card to Main, which pushes the player over this screen. Main clears
+' the field again once it has read it.
+sub onHomeRowsQuickPlay(event as object)
+    if isValid(event.getData()) then stopPreview()
+end sub

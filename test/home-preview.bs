@@ -1,0 +1,121 @@
+sub testHomePreview()
+    ' Jellyfin gets the whole transcode query with the token as ApiKey, and never a start time or a
+    ' direct stream flag
+    prefix = "https://jellyfin.test/Videos/film/master.m3u8?"
+    url = homePreview.StreamUrl("https://jellyfin.test", "film", homePreview.StreamParams("ps-1", "device-1", "source-1", 2, "jf-token", false))
+    assertEqual(Left(url, Len(prefix)), prefix, "A Jellyfin preview is the item's HLS master")
+    query = previewQuery(url)
+    expected = {
+        "PlaySessionId": "ps-1",
+        "DeviceId": "device-1",
+        "videoCodec": "h264",
+        "audioCodec": "aac",
+        "maxVideoBitDepth": "8",
+        "videoBitRate": "4000000",
+        "maxWidth": "1280",
+        "maxHeight": "720",
+        "audioBitRate": "96000",
+        "audioChannels": "2",
+        "subtitleMethod": "Drop",
+        "SegmentContainer": "ts",
+        "MediaSourceId": "source-1",
+        "AudioStreamIndex": "2",
+        "ApiKey": "jf-token"
+    }
+    for each pair in expected.Items()
+        assertEqual(query[pair.key], pair.value, "The Jellyfin preview query carries " + pair.key)
+    end for
+    assertEqual(query.count(), expected.count(), "The Jellyfin preview query carries nothing else")
+    assertEqual(query.DoesExist("api_key"), false, "Jellyfin takes the token as ApiKey")
+    assertEqual(query.DoesExist("StartTimeTicks"), false, "The start never rides in the query, since the server turns those segments away")
+    assertEqual(query.DoesExist("Static"), false, "A preview is never asked for as a direct stream")
+
+    ' Emby takes the token as api_key and has no subtitle method to drop
+    embyPrefix = "https://emby.test/emby/Videos/film/master.m3u8?"
+    embyUrl = homePreview.StreamUrl("https://emby.test/emby", "film", homePreview.StreamParams("ps-2", "device-1", "source-1", 1, "emby-token", true))
+    assertEqual(Left(embyUrl, Len(embyPrefix)), embyPrefix, "An Emby preview keeps the server prefix")
+    embyQuery = previewQuery(embyUrl)
+    assertEqual(embyQuery.api_key, "emby-token", "Emby takes the token as api_key")
+    assertEqual(embyQuery.DoesExist("ApiKey"), false, "Emby never sees ApiKey")
+    assertEqual(embyQuery.DoesExist("subtitleMethod"), false, "Emby turns the subtitle method away, so it stays out")
+    assertEqual(embyQuery.SegmentContainer, "ts", "Emby gets the same segments")
+    assertEqual(embyQuery.AudioStreamIndex, "1", "Emby gets the audio track")
+
+    ' What there is nothing for stays out of the query
+    bare = previewQuery(homePreview.StreamUrl("https://jellyfin.test", "film", homePreview.StreamParams("ps-3", "device-1", "", -1, "", false)))
+    assertEqual(bare.DoesExist("MediaSourceId"), false, "No source id, no MediaSourceId")
+    assertEqual(bare.DoesExist("AudioStreamIndex"), false, "No audio track, no AudioStreamIndex")
+    assertEqual(bare.DoesExist("ApiKey"), false, "No token, no ApiKey")
+    assertEqual(bare.PlaySessionId, "ps-3", "The session still rides along")
+    assertEqual(homePreview.StreamUrl("", "film", {}), "", "No server, no stream")
+
+    stopParams = homePreview.EncodingStopParams("device-1", "ps-1")
+    assertEqual(stopParams.DeviceId, "device-1", "The stop names the device")
+    assertEqual(stopParams.PlaySessionId, "ps-1", "The stop names the session")
+    assertEqual(stopParams.count(), 2, "The stop carries nothing else")
+
+    ' Where a preview starts
+    assertEqual(homePreview.StartSeconds({ PlaybackPositionTicks: 12340000000& }, 54000000000&), 1234, "A resumable title picks up where it was left")
+    assertEqual(homePreview.StartSeconds({ PlaybackPositionTicks: 950000000 }, 54000000000&), 95, "A short way in still counts as a position")
+    assertEqual(homePreview.StartSeconds({ PlaybackPositionTicks: 0& }, 6000000000&), 0, "A ten minute title starts from the top")
+    assertEqual(homePreview.StartSeconds({ PlaybackPositionTicks: 0 }, 54000000000&), 180, "A ninety minute title starts three minutes in")
+    assertEqual(homePreview.StartSeconds(invalid, invalid), 180, "An unknown runtime starts three minutes in")
+    assertEqual(homePreview.StartSeconds({}, "5400"), 180, "A runtime that isnt a number is unknown")
+    assertEqual(homePreview.DEFAULT_START_S, 180, "Three minutes in by default")
+    assertEqual(homePreview.SHORT_RUNTIME_S, 900, "Fifteen minutes is the short runtime")
+    assertEqual(homePreview.DWELL_S, 1.2, "The dwell is 1.2 seconds")
+    assertEqual(homePreview.OPEN_TIMEOUT_S, 10, "A stream gets 10 seconds to open")
+    assertEqual(homePreview.PLAY_CAP_S, 30, "A preview plays for 30 seconds at most")
+
+    ' Which audio track the stream carries
+    streams = [
+        { Type: "Video", Index: 0 },
+        { Type: "Audio", Index: 1, Language: "eng", Title: "Director's Commentary", IsDefault: true },
+        { Type: "Audio", Index: 2, Language: "eng", IsAudioDescription: true },
+        { Type: "Audio", Index: 3, Language: "eng" },
+        { Type: "Audio", Index: 4, Language: "fre", IsDefault: true },
+        { Type: "Audio", Index: 5, Language: "fre" },
+        { Type: "Subtitle", Index: 6, Language: "eng" }
+    ]
+    assertEqual(homePreview.AudioStreamIndex(streams, "fre"), 4, "The preferred language's default track wins")
+    assertEqual(homePreview.AudioStreamIndex(streams, "eng"), 3, "Commentary and audio description give way to a plain track")
+    assertEqual(homePreview.AudioStreamIndex(streams, invalid), 4, "No preference takes the default plain track")
+    assertEqual(homePreview.AudioStreamIndex(streams, "deu"), 4, "A language the item lacks falls back to the default plain track")
+    assertEqual(homePreview.AudioStreamIndex([{ Type: "Audio", Index: 1, DisplayTitle: "English Commentary" }], "eng"), 1, "Only commentary still plays commentary")
+    assertEqual(homePreview.AudioStreamIndex([{ Type: "Audio", Index: 7, Language: "jpn" }, { Type: "Audio", Index: 8, Language: "jpn" }], "jpn"), 7, "No default takes the first of the language")
+    assertEqual(homePreview.AudioStreamIndex([{ Type: "Audio", Language: "eng" }, { Type: "Audio", Language: "eng" }], "eng"), 0, "A stream without an index is named by its place")
+    assertEqual(homePreview.AudioStreamIndex([{ Type: "Video", Index: 0 }], "eng"), -1, "No audio, no track")
+    assertEqual(homePreview.AudioStreamIndex(invalid, "eng"), -1, "No streams, no track")
+
+    ' What a series plays
+    assertEqual(homePreview.TargetFromNextUp([{ Id: "ep-2", ParentIndexNumber: 1, IndexNumber: 2 }]).Id, "ep-2", "A series plays its next episode")
+    assertEqual(homePreview.TargetFromNextUp([{ Id: "sp-1", ParentIndexNumber: 0 }]), invalid, "A special next up means no preview")
+    assertEqual(homePreview.TargetFromNextUp([]), invalid, "Nothing next up means no preview")
+    assertEqual(homePreview.TargetFromNextUp(invalid), invalid, "No answer means no preview")
+    assertEqual(homePreview.TargetFromNextUp([{ Id: "ep-9" }]).Id, "ep-9", "An episode without a season number still plays")
+
+    ' Which cards preview at all
+    for each kind in ["Series", "Movie", "Episode", "Video", "MusicVideo", "movie"]
+        assertEqual(homePreview.Supports(kind), true, kind + " previews")
+    end for
+    for each kind in ["BoxSet", "Season", "Audio", "MusicAlbum", "Playlist", "Person", "CollectionFolder", "TvChannel", "", invalid]
+        assertEqual(homePreview.Supports(kind), false, toString(kind) + " doesnt preview")
+    end for
+    assertEqual(homePreview.IsLibraryItem({ Id: "film", Type: "Movie" }), true, "A library item previews")
+    assertEqual(homePreview.IsLibraryItem({ Id: "film", SeerrTmdbId: 603 }), false, "A Seerr card doesnt")
+    assertEqual(homePreview.IsLibraryItem({ Id: "film", SeerrItem: { tmdbId: 603 } }), false, "A Seerr request card doesnt")
+    assertEqual(homePreview.IsLibraryItem({ Id: "film", CalendarDate: "2026-10-11" }), false, "A calendar release doesnt")
+    assertEqual(homePreview.IsLibraryItem({ Type: "Movie" }), false, "A card without an id doesnt")
+    assertEqual(homePreview.IsLibraryItem(invalid), false, "No json doesnt")
+end sub
+
+function previewQuery(url as string) as object
+    query = {}
+    parts = url.Split("?")
+    if parts.count() < 2 then return query
+    for each pair in parts[1].Split("&")
+        sides = pair.Split("=")
+        query[sides[0]] = sides[1]
+    end for
+    return query
+end function
