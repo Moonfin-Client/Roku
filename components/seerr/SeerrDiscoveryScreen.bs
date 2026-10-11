@@ -1,3 +1,4 @@
+import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/utils/misc.bs"
@@ -73,6 +74,12 @@ sub init()
     m.categoryRows.observeField("rowItemFocused", "onRowItemFocused")
     m.categoryRows.observeField("rowItemSelected", "onRowItemSelected")
 
+    ' Modern rows follow Home's rows style, with the focused media card drawn over its row
+    m.modernRows = isModernHomeRows()
+    m.modernFocusCard = m.top.findNode("modernFocusCard")
+    m.modernCardItem = invalid
+    if m.modernRows then applyModernLayout()
+
     m.requestsButton = m.top.findNode("requestsButton")
     m.requestsButton.text = tr("Requests")
     accent = themeChrome.Accent()
@@ -89,6 +96,15 @@ sub init()
 end sub
 
 sub onScreenFocusChanged()
+    ' The card goes with the rows' focus, to the Requests button, the nav or another screen
+    if m.modernRows
+        if m.categoryRows.hasFocus()
+            refreshModernCard()
+        else
+            hideModernCard()
+        end if
+    end if
+
     ' Reload config when returning to this screen
     if m.top.hasFocus() or m.top.isInFocusChain()
         oldConfig = m.configCache
@@ -317,6 +333,7 @@ sub onRowItemFocused(event as object)
             if row <> invalid and itemIndex < row.getChildCount()
                 focusedItem = row.getChild(itemIndex)
                 UpdateDetailsSection(focusedItem)
+                if m.modernRows then updateModernCard(rowIndex, itemIndex)
 
                 ' Trigger load more when within 5 items of the end
                 itemsFromEnd = row.getChildCount() - itemIndex
@@ -586,6 +603,7 @@ sub onDiscoveryResponse(event as object)
 
                     mediaNode = CreateMediaContentNode(item)
                     if mediaNode <> invalid
+                        prepareModernNode(mediaNode)
                         row.appendChild(mediaNode)
                     end if
                 end for
@@ -791,12 +809,17 @@ sub onEnrichResponse(event as object)
     requestInfo = m.currentEnrichRequest
 
     if response.success and response.data <> invalid
+        ' TMDB's details leave the media type out, and the request has it
+        details = response.data
+        if not isValidAndNotEmpty(details.mediaType) then details.mediaType = requestInfo.type
+
         ' Create content node from full TMDB details
-        mediaNode = CreateMediaContentNode(response.data)
+        mediaNode = CreateMediaContentNode(details)
         if mediaNode <> invalid
             ' Add the media info from the request
             mediaNode.addField("mediaInfo", "assocarray", false)
             mediaNode.mediaInfo = requestInfo.mediaInfo
+            prepareModernNode(mediaNode)
             m.enrichedRequestItems.Push(mediaNode)
         end if
     end if
@@ -805,4 +828,153 @@ sub onEnrichResponse(event as object)
     EnrichNextRequest()
 end sub
 
+' ============================================
+' Modern rows
+' ============================================
 
+' The rows sit where Home's modern rows do, and the focused card carries the details, so the
+' section above the rows stays hidden. Classic keeps the layout from the markup.
+sub applyModernLayout()
+    m.top.findNode("detailsSection").visible = false
+    m.categoryRows.translation = [111, 170]
+    m.categoryRows.itemSpacing = [0, homeRowsVerticalSpacing(true)]
+    m.categoryRows.rowLabelOffset = [[0, 20]]
+
+    ' The first row's counter sits just under the button there, so it moves up clear of it
+    m.top.findNode("requestsButton").translation = [1560, 100]
+
+    ' The card is the focus indicator on a media row, and the tile rows want the border back
+    m.classicFocusBitmapUri = m.categoryRows.focusBitmapUri
+
+    m.categoryRows.observeField("keyPressedNotifier", "onRowsKeyPressed")
+    m.categoryRows.observeField("moveTarget", "onRowsMoveTarget")
+end sub
+
+' A media cell opts into the slide that makes room for the card. Genre, studio and network
+' tiles never get the card, so they never have it.
+sub prepareModernNode(node as object)
+    if not m.modernRows then return
+    node.addField("modernShift", "float", false)
+end sub
+
+function isModernCardRow(row as dynamic) as boolean
+    if not isValid(row) then return false
+    return row.isGenreRow <> true and row.isNetworkRow <> true and row.isStudioRow <> true
+end function
+
+' The card steps aside while the rows scroll up or down under it
+sub onRowsKeyPressed()
+    hideModernCard()
+end sub
+
+' The row only reports its new focus once it has finished scrolling, so the card and cells
+' start changing as the key is pressed, the way Home's do
+sub onRowsMoveTarget(event as object)
+    target = event.getData()
+    if not isValid(target) or target.count() < 2 then return
+    if not m.modernFocusCard.cardShown then return
+    updateModernCard(target[0], target[1])
+end sub
+
+sub refreshModernCard()
+    focused = m.categoryRows.rowItemFocused
+    if not isValid(focused) or focused.count() < 2 then return
+    if focused[0] < 0 or focused[1] < 0 then return
+    updateModernCard(focused[0], focused[1])
+end sub
+
+sub updateModernCard(rowIndex as integer, itemIndex as integer)
+    if not isValid(m.categoryRows.content) then return
+    row = m.categoryRows.content.getChild(rowIndex)
+    item = invalid
+    if isModernCardRow(row) then item = row.getChild(itemIndex)
+
+    if not isValid(item)
+        if m.categoryRows.focusBitmapUri <> m.classicFocusBitmapUri then m.categoryRows.focusBitmapUri = m.classicFocusBitmapUri
+        hideModernCard()
+        return
+    end if
+
+    if m.categoryRows.focusBitmapUri <> "" then m.categoryRows.focusBitmapUri = ""
+    m.modernFocusCard.callFunc("reflow", { content: m.categoryRows.content, row: rowIndex, col: itemIndex })
+
+    ' A key press brings the card in before the row settles, and the focus change after it
+    ' mustnt ask for the same details again
+    if m.modernFocusCard.cardShown and isValid(m.modernCardItem) and m.modernCardItem.isSameNode(item) then return
+    m.modernCardItem = item
+
+    m.modernFocusCard.callFunc("showCard", { item: item, uris: discoverCardUris(item), logoTile: false })
+    m.modernFocusCard.callFunc("setDetails", { meta: discoverCardMeta(item), overview: item.overview ?? "" })
+    fetchModernRatings(item)
+end sub
+
+sub hideModernCard()
+    m.modernCardItem = invalid
+    if isValid(m.modernRatingsDebounce) then m.modernRatingsDebounce.control = "stop"
+    m.pendingModernRatings = invalid
+    m.modernFocusCard.callFunc("hideCard")
+end sub
+
+' The plugin's titled backdrop first, then the plain one, then the poster
+function discoverCardUris(item as object) as object
+    uris = []
+    thumbUrl = moonfinPlugin.TmdbThumbURL(item.mediaType, item.tmdbId)
+    if thumbUrl <> "" then uris.push(thumbUrl)
+    for each uri in [item.backdropUrl, item.hdPosterUrl]
+        if isValidAndNotEmpty(uri) then uris.push(uri)
+    end for
+    return uris
+end function
+
+' Year, kind and score, laid out like the line under Home's modern card
+function discoverCardMeta(item as object) as string
+    parts = []
+    if isValidAndNotEmpty(item.releaseYear) then parts.push(item.releaseYear)
+    if isStringEqual(item.mediaType, "movie")
+        parts.push("Movie")
+    else if isStringEqual(item.mediaType, "tv")
+        parts.push("TV Series")
+    end if
+    if isValidAndNotEmpty(item.rating) then parts.push("★ " + item.rating)
+    return parts.join("  •  ")
+end function
+
+' The plugin's MDBList ratings, asked for once focus settles on a card
+sub fetchModernRatings(item as object)
+    if not moonfinPlugin.IsRatingsEnabled() then return
+
+    tmdbId = toString(item.tmdbId).Trim()
+    itemType = ""
+    if isStringEqual(item.mediaType, "movie")
+        itemType = "Movie"
+    else if isStringEqual(item.mediaType, "tv")
+        itemType = "Series"
+    end if
+    if tmdbId = "" or itemType = "" then return
+
+    m.pendingModernRatings = { "Type": itemType, "Id": "", "ProviderIds": { "Tmdb": tmdbId } }
+    m.pendingModernRatingsItem = item
+    m.modernRatingsDebounce = moonfinPlugin.StartRatingsDebounce(m.modernRatingsDebounce, "onModernRatingsDebounceFired")
+end sub
+
+sub onModernRatingsDebounceFired()
+    itemData = m.pendingModernRatings
+    if not isValid(itemData) then return
+    m.pendingModernRatings = invalid
+
+    if isValid(m.modernRatingsTask) then m.modernRatingsTask.unobserveFieldScoped("ratings")
+    m.modernRatingsTask = createObject("roSGNode", "FetchRatingsTask")
+    m.modernRatingsTask.itemData = itemData
+    m.modernRatingsTaskItem = m.pendingModernRatingsItem
+    m.modernRatingsTask.observeFieldScoped("ratings", "onModernRatingsLoaded")
+    m.modernRatingsTask.control = "RUN"
+end sub
+
+sub onModernRatingsLoaded(event as object)
+    result = event.getData()
+    if not isValid(result) or not isValidAndNotEmpty(result.data) then return
+
+    ' An answer for a card that has lost focus since is dropped
+    if not isValid(m.modernCardItem) or not m.modernCardItem.isSameNode(m.modernRatingsTaskItem) then return
+    m.modernFocusCard.callFunc("setRatings", result)
+end sub

@@ -1,0 +1,406 @@
+import "pkg:/components/anime/animeMarkerWatch.bs"
+import "pkg:/source/utils/misc.bs"
+
+sub init()
+    m.mfImageA = m.top.findNode("mfImageA")
+    m.mfImageB = m.top.findNode("mfImageB")
+    m.mfBackdrop = m.top.findNode("mfBackdrop")
+    m.mfInfo = m.top.findNode("mfInfo")
+    m.mfTitle = m.top.findNode("mfTitle")
+    m.mfMeta = m.top.findNode("mfMeta")
+    m.mfRatings = m.top.findNode("mfRatings")
+    m.mfOverview = m.top.findNode("mfOverview")
+    m.mfInfoFadeIn = m.top.findNode("mfInfoFadeIn")
+    m.mfInfoOp = m.top.findNode("mfInfoOp")
+    m.mfInfoFadeOut = m.top.findNode("mfInfoFadeOut")
+    m.mfInfoFadeOutOp = m.top.findNode("mfInfoFadeOutOp")
+    m.mfInfoSwapIn = m.top.findNode("mfInfoSwapIn")
+    m.mfInfoSwapInOp = m.top.findNode("mfInfoSwapInOp")
+    m.mfDetails = m.top.findNode("mfDetails")
+    m.mfDetailsFadeIn = m.top.findNode("mfDetailsFadeIn")
+    m.mfDetailsOp = m.top.findNode("mfDetailsOp")
+    m.mfInfoFadeOut.observeField("state", "onModernInfoFadedOut")
+    m.mfCardItem = invalid
+    m.mfInfoPending = invalid
+    m.mfInfoPendingDetails = invalid
+    m.mfInfoPendingRatings = invalid
+
+    ' Each poster remembers which card it was given, since a failed image leaves it on
+    ' another of that card's images rather than the first one asked for
+    m.mfCrossfades = {}
+    m.mfPosterCards = {}
+    for each poster in [m.mfImageA, m.mfImageB]
+        fade = {
+            anim: m.top.findNode(poster.id + "Crossfade"),
+            fadeIn: m.top.findNode(poster.id + "In"),
+            fadeOut: m.top.findNode(poster.id + "Out"),
+            backdrop: m.top.findNode(poster.id + "Backdrop")
+        }
+        fade.anim.observeField("state", "onModernImageFaded")
+        poster.observeField("loadStatus", "onModernImageLoadStatusChange")
+        m.mfCrossfades[poster.id] = fade
+        m.mfPosterCards[poster.id] = ""
+    end for
+    m.mfShown = m.mfImageA
+    m.mfNext = m.mfImageB
+    m.mfFading = false
+    m.mfPendingDisplayMode = "scaleToZoom"
+    m.mfPendingBackdrop = 0.0
+    m.mfImageSettle = m.top.findNode("mfImageSettle")
+    m.mfImageSettle.observeField("fire", "onModernImageSettled")
+
+    ' The focused card is known by its first image. The rest are what to try when one fails.
+    m.mfPendingUri = ""
+    m.mfPendingUris = []
+    m.mfLoadingUris = []
+    m.mfLoadingIndex = 0
+    m.mfCrossfading = false
+    m.mfSettling = false
+    m.modernCardShown = false
+
+    m.reflowContent = invalid
+    m.prevReflowRow = invalid
+    m.prevReflowCol = -1
+end sub
+
+' Draws the focused card (landscape image plus info) on top of the row. The rest of the info
+' arrives through setDetails and setRatings once the host has it.
+sub showCard(params as object)
+    focusedItem = params.item
+    if not isValid(focusedItem) then return
+
+    ' A key press brings the card in before the row settles, and the focus change after it
+    ' mustnt start the same card over
+    if m.modernCardShown and isValid(m.mfCardItem) and m.mfCardItem.isSameNode(focusedItem) then return
+    m.mfCardItem = focusedItem
+
+    watchAnimeMarker(focusedItem, focusedItem.json, true)
+
+    m.top.visible = true
+
+    if not m.modernCardShown
+        m.modernCardShown = true
+        m.top.cardShown = true
+
+        ' The frame starts empty so the wide image fades into it rather than replacing
+        ' whichever row was open before
+        for each poster in [m.mfImageA, m.mfImageB]
+            poster.uri = ""
+            poster.opacity = 0
+            m.mfPosterCards[poster.id] = ""
+        end for
+        m.mfCrossfading = false
+
+        setModernInfo(focusedItem)
+        fadeInModernInfo()
+    else
+        queueModernInfo(focusedItem)
+    end if
+
+    m.mfPendingUris = []
+    for each uri in params.uris ?? []
+        if isValidAndNotEmpty(uri) and not inArray(m.mfPendingUris, uri) then m.mfPendingUris.push(uri)
+    end for
+    m.mfPendingUri = ""
+    if m.mfPendingUris.count() > 0 then m.mfPendingUri = m.mfPendingUris[0]
+
+    ' Studios and networks carry a wide logo, which has to sit whole inside the frame on a
+    ' dark ground rather than being cropped to fill it
+    if params.logoTile = true
+        m.mfPendingDisplayMode = "scaleToFit"
+        m.mfPendingBackdrop = 1.0
+    else
+        m.mfPendingDisplayMode = "scaleToZoom"
+        m.mfPendingBackdrop = 0.0
+    end if
+
+    m.mfImageSettle.control = "stop"
+    m.mfImageSettle.control = "start"
+
+    ' A move on its own swaps straight away so it feels immediate. Only once a burst is
+    ' under way do the rest wait, which is what stops a held direction fetching per cell.
+    if not m.mfSettling
+        m.mfSettling = true
+        swapModernImage()
+    end if
+end sub
+
+' The info comes up with the card when a modern row takes focus
+sub fadeInModernInfo()
+    m.mfInfoFadeIn.control = "stop"
+    m.mfInfoOp.keyValue = [m.mfInfo.opacity, 1.0]
+    m.mfInfoFadeIn.control = "start"
+end sub
+
+sub setModernInfo(item as object)
+    m.mfTitle.text = item.title ?? ""
+    m.mfDetailsFadeIn.control = "stop"
+    m.mfDetails.opacity = 0
+    m.mfMeta.text = ""
+    m.mfOverview.text = ""
+    m.mfRatings.ratingsData = invalid
+    m.mfRatings.visible = false
+    updateModernOverviewPosition()
+end sub
+
+' A move that lands while the old info is still fading out only changes which card comes in
+' next, so holding a direction doesnt flicker through every title
+sub queueModernInfo(item as object)
+    m.mfInfoPending = item
+    m.mfInfoPendingDetails = invalid
+    m.mfInfoPendingRatings = invalid
+    if m.mfInfoFadeOut.state = "running" then return
+
+    m.mfInfoFadeIn.control = "stop"
+    m.mfInfoSwapIn.control = "stop"
+    if m.mfInfo.opacity <= 0
+        tryModernInfoSwap()
+        return
+    end if
+
+    m.mfInfoFadeOutOp.keyValue = [m.mfInfo.opacity, 0.0]
+    m.mfInfoFadeOut.control = "start"
+end sub
+
+sub onModernInfoFadedOut(event as object)
+    if isStringEqual(event.getData(), "stopped") then tryModernInfoSwap()
+end sub
+
+' The new info comes in with the new image, so a title never sits under the last card's art
+sub tryModernInfoSwap()
+    if not isValid(m.mfInfoPending) then return
+    if m.mfInfoFadeOut.state = "running" then return
+    if modernImagePending() then return
+    swapModernInfo()
+end sub
+
+' True until the focused card's image has started crossfading in
+function modernImagePending() as boolean
+    if m.mfCrossfading then return true
+    if not isValidAndNotEmpty(m.mfPendingUri) then return false
+    return not isStringEqual(m.mfPosterCards[m.mfShown.id], m.mfPendingUri)
+end function
+
+' Details that came back while the old card was fading out are held until here, so they
+' never show under the wrong title
+sub swapModernInfo()
+    item = m.mfInfoPending
+    if not isValid(item) then return
+    m.mfInfoPending = invalid
+
+    setModernInfo(item)
+    if isValid(m.mfInfoPendingDetails)
+        m.mfMeta.text = m.mfInfoPendingDetails.meta
+        m.mfOverview.text = m.mfInfoPendingDetails.overview
+        m.mfDetails.opacity = 1
+    end if
+    if isValid(m.mfInfoPendingRatings) then showModernRatings(m.mfInfoPendingRatings)
+    m.mfInfoPendingDetails = invalid
+    m.mfInfoPendingRatings = invalid
+
+    m.mfInfoSwapInOp.keyValue = [m.mfInfo.opacity, 1.0]
+    m.mfInfoSwapIn.control = "start"
+end sub
+
+' The line under the title and the overview, held while the last card's info is still going
+sub setDetails(params as object)
+    meta = params.meta ?? ""
+    overview = params.overview ?? ""
+    if isValid(m.mfInfoPending)
+        m.mfInfoPendingDetails = { meta: meta, overview: overview }
+        return
+    end if
+
+    m.mfMeta.text = meta
+    m.mfOverview.text = overview
+    fadeInModernDetails()
+end sub
+
+sub fadeInModernDetails()
+    if m.mfDetails.opacity >= 1 then return
+
+    m.mfDetailsFadeIn.control = "stop"
+    m.mfDetailsOp.keyValue = [m.mfDetails.opacity, 1.0]
+    m.mfDetailsFadeIn.control = "start"
+end sub
+
+sub setRatings(result as object)
+    if isValid(m.mfInfoPending)
+        m.mfInfoPendingRatings = result
+        return
+    end if
+
+    showModernRatings(result)
+end sub
+
+sub showModernRatings(result as object)
+    m.mfRatings.ratingsData = result
+    m.mfRatings.visible = true
+    updateModernOverviewPosition()
+end sub
+
+sub updateModernOverviewPosition()
+    y = 75
+    ' A row scaled down to fit takes less height, so the overview follows it up
+    if m.mfRatings.visible then y = 74 + 52 * m.mfRatings.scale[1]
+    m.mfOverview.translation = [0, y]
+end sub
+
+sub onModernImageSettled()
+    m.mfSettling = false
+    swapModernImage()
+end sub
+
+' A crossfade already under way finishes before the next image loads, so a quick run of
+' moves eases from card to card rather than cutting partway
+sub swapModernImage()
+    if m.mfFading then return
+    card = m.mfPendingUri
+    if not isValidAndNotEmpty(card) then return
+
+    if isStringEqual(m.mfPosterCards[m.mfShown.id], card)
+        if m.mfCrossfading
+            m.mfCrossfading = false
+            m.mfNext.uri = ""
+            m.mfPosterCards[m.mfNext.id] = ""
+        end if
+        tryModernInfoSwap()
+        return
+    end if
+    if m.mfCrossfading and isStringEqual(m.mfPosterCards[m.mfNext.id], card) then return
+
+    m.mfNext.opacity = 0
+    m.mfNext.loadDisplayMode = m.mfPendingDisplayMode
+
+    ' Armed before the uri is set, since an image already in the cache reports itself ready
+    ' straight away and the fade would otherwise be skipped, leaving an empty frame
+    m.mfCrossfading = true
+    m.mfPosterCards[m.mfNext.id] = card
+    m.mfLoadingUris = m.mfPendingUris
+    m.mfLoadingIndex = 0
+    m.mfNext.uri = m.mfLoadingUris[0]
+    onModernImageLoadStatusChange()
+end sub
+
+' A failed image moves on to the card's next one. The frame crossfades once one has loaded,
+' or once there's nothing left to try, so the last card's image doesnt stay up.
+sub onModernImageLoadStatusChange()
+    if not m.mfCrossfading then return
+    loadStatus = m.mfNext.loadStatus
+    if loadStatus = "failed" and m.mfLoadingIndex + 1 < m.mfLoadingUris.count()
+        m.mfLoadingIndex++
+        m.mfNext.uri = m.mfLoadingUris[m.mfLoadingIndex]
+        onModernImageLoadStatusChange()
+        return
+    end if
+    if loadStatus <> "ready" and loadStatus <> "failed" then return
+    m.mfCrossfading = false
+
+    fade = m.mfCrossfades[m.mfNext.id]
+    fade.fadeIn.keyValue = [m.mfNext.opacity, 1.0]
+    fade.fadeOut.keyValue = [m.mfShown.opacity, 0.0]
+    fade.backdrop.keyValue = [m.mfBackdrop.opacity, m.mfPendingBackdrop]
+    m.mfFading = true
+    fade.anim.control = "start"
+
+    incoming = m.mfNext
+    m.mfNext = m.mfShown
+    m.mfShown = incoming
+    tryModernInfoSwap()
+end sub
+
+sub onModernImageFaded(event as object)
+    if not isStringEqual(event.getData(), "stopped") then return
+    m.mfFading = false
+    swapModernImage()
+end sub
+
+sub hideCard()
+    watchAnimeMarker(invalid, invalid)
+    m.mfCardItem = invalid
+    m.mfInfoPending = invalid
+    m.mfInfoPendingDetails = invalid
+    m.mfInfoPendingRatings = invalid
+    m.mfInfoFadeIn.control = "stop"
+    m.mfInfoFadeOut.control = "stop"
+    m.mfInfoSwapIn.control = "stop"
+    m.mfDetailsFadeIn.control = "stop"
+    m.mfInfo.opacity = 0
+    m.mfImageSettle.control = "stop"
+    m.mfPendingUri = ""
+    for each fade in m.mfCrossfades.Items()
+        fade.value.anim.control = "stop"
+    end for
+    m.mfCrossfading = false
+    m.mfFading = false
+    m.mfSettling = false
+    m.mfBackdrop.opacity = 0
+
+    m.top.visible = false
+    m.modernCardShown = false
+    if m.top.cardShown then m.top.cardShown = false
+
+    if isValid(m.prevReflowRow)
+        resetRowReflow(m.prevReflowRow)
+        m.prevReflowRow = invalid
+    end if
+end sub
+
+' The focused card carries the same pill as its cell in the row, over the wide artwork
+sub showAnimeMarker(marker as dynamic)
+    m.mfAnimePill = drawAnimeCardPill(m.mfAnimePill, m.mfImageA.getParent(), marker, m.mfImageA.width, m.mfImageA.height, false)
+end sub
+
+' Slides the items after the focused one to the right so the focused landscape card has room
+' and nothing is hidden behind it. RowList doesnt clip cells to their slots, so a translated
+' cell shows in the gap it opens. The cells watch modernShift on their content.
+sub reflow(params as object)
+    content = params.content
+    rowIndex = params.row
+    focusedCol = params.col
+    if not isValid(content) or not isValid(rowIndex) or not isValid(focusedCol) then return
+    if rowIndex < 0 or focusedCol < 0 then return
+
+    if isValid(m.prevReflowRow)
+        sameContent = isValid(m.reflowContent) and m.reflowContent.isSameNode(content)
+        if sameContent and m.prevReflowRow = rowIndex and m.prevReflowCol = focusedCol then return
+
+        ' Reset the previously reflowed row if the focus moved to a different row
+        if not sameContent or m.prevReflowRow <> rowIndex then resetRowReflow(m.prevReflowRow)
+    end if
+
+    m.reflowContent = content
+    row = content.getChild(rowIndex)
+    if not isValid(row) then return
+
+    shiftAmount = m.top.shiftAmount
+    items = row.getChildren(-1, 0)
+    for i = 0 to items.count() - 1
+        shift = 0
+        if i = focusedCol
+            shift = -1
+        else if i > focusedCol
+            shift = shiftAmount
+        end if
+        setItemShift(items[i], shift)
+    end for
+
+    m.prevReflowRow = rowIndex
+    m.prevReflowCol = focusedCol
+end sub
+
+sub resetRowReflow(rowIndex as integer)
+    if not isValid(m.reflowContent) then return
+    row = m.reflowContent.getChild(rowIndex)
+    if not isValid(row) then return
+    items = row.getChildren(-1, 0)
+    for each item in items
+        setItemShift(item, 0)
+    end for
+end sub
+
+sub setItemShift(node as object, shift as integer)
+    if not isValid(node) then return
+    if not node.hasField("modernShift") then node.addField("modernShift", "float", false)
+    node.setField("modernShift", shift)
+end sub

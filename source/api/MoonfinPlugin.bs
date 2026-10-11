@@ -18,6 +18,30 @@ namespace moonfinPlugin
         return normalized
     end function
 
+    ' The session's record of what the plugin can do, from a Ping answer. Sign in and the
+    ' Settings connection test both build it here, so neither drops a flag the other keeps.
+    ' An older plugin leaves a newer flag out, which reads as false.
+    function InfoFromPing(result as dynamic, displayName = "" as string) as object
+        if not isValid(result) then return { installed: false }
+
+        info = {
+            installed: true,
+            version: result.version ?? "unknown",
+            settingsSyncEnabled: result.settingsSyncEnabled ?? false,
+            mdblistAvailable: result.mdblistAvailable ?? false,
+            tmdbAvailable: result.tmdbAvailable ?? false,
+            tmdbThumbsSupported: result.tmdbThumbsSupported ?? false,
+            seerrEnabled: result.seerrEnabled ?? false,
+            messagesSupported: result.messagesSupported ?? false,
+            clientLogSupported: result.clientLogSupported ?? false,
+            ' Without it there's no similar items endpoint, so false skips the call
+            recommendationsSupported: result.recommendationsSupported ?? false,
+            defaultSettings: result.defaultSettings ?? invalid
+        }
+        if toBoolean(info.seerrEnabled) = true then info.seerrDisplayName = displayName
+        return info
+    end function
+
     ' The messages the admin wrote for this user. The server decides who sees
     ' what, so whatever comes back is theirs to read.
     function Messages() as object
@@ -287,12 +311,59 @@ namespace moonfinPlugin
         return companies
     end function
 
-    ' Builds a Poster uri for a cached TMDB studio logo. A Poster node can't send the
-    ' Authorization header, and Jellyfin 12 drops the api_key query param with the
-    ' rest of the legacy authorization, so the endpoint serves this one anonymously.
+    ' Builds a Poster uri for a cached TMDB studio logo. The endpoint wants the user's token,
+    ' which a Poster can only send in the query.
     function StudioImageURL(companyId as dynamic) as string
         if not isValid(companyId) then return ""
-        return buildURL("/Moonfin/Tmdb/StudioImage/" + `${companyId}`, authenticatedImageParams(get_url() ?? "", {}))
+        url = buildURL("/Moonfin/Tmdb/StudioImage/" + `${companyId}`, moonfinPlugin.WithUserToken({}))
+        if not isValid(url) then return ""
+        return url
+    end function
+
+    ' A Poster can't send the Authorization header, so an image the plugin guards carries the
+    ' token in its query. buildURL turns ApiKey into api_key on Emby.
+    function WithUserToken(params as object) as object
+        token = get_user_setting("token")
+        if isValidAndNotEmpty(token) then params["ApiKey"] = token
+        return params
+    end function
+
+    ' The plugin hands out a titled TMDB backdrop for a movie or show the server doesn't hold.
+    ' An older plugin, or one without a TMDB key, can't.
+    function AreTmdbThumbsAvailable() as boolean
+        if not moonfinPlugin.IsEnabled() then return false
+        pluginInfo = m.global.session.pluginInfo
+        if not isValid(pluginInfo) then return false
+        return toBoolean(pluginInfo.tmdbAvailable) = true and toBoolean(pluginInfo.tmdbThumbsSupported) = true
+    end function
+
+    ' Builds a Poster uri for that titled backdrop. The plugin redirects it to TMDB, falling
+    ' back to the plain backdrop there. Empty when there's nothing to ask for, so the caller
+    ' keeps the art it already has. The IMDb id only counts when there's no TMDB id.
+    function TmdbThumbURL(mediaType as dynamic, tmdbId as dynamic, imdbId = "" as dynamic) as string
+        if not moonfinPlugin.AreTmdbThumbsAvailable() then return ""
+
+        kind = LCase(toString(mediaType))
+        if kind <> "movie" and kind <> "tv" then return ""
+
+        params = { "type": kind }
+        tmdb = toString(tmdbId).Trim()
+        imdb = toString(imdbId).Trim()
+        if tmdb <> ""
+            params["tmdbId"] = tmdb
+        else if imdb <> ""
+            params["imdbId"] = imdb
+        else
+            return ""
+        end if
+
+        ' A Poster won't follow a redirect from http to https, so a plain http server asks the
+        ' plugin to send it to TMDB over http too.
+        if LCase(Left(toString(get_url()), 7)) = "http://" then params["scheme"] = "http"
+
+        url = buildURL("/Moonfin/Tmdb/Thumb", moonfinPlugin.WithUserToken(params))
+        if not isValid(url) then return ""
+        return url
     end function
 
     function ParseBoolSetting(value as dynamic, defaultVal as boolean) as boolean

@@ -160,6 +160,15 @@ source += '\n' + await readFile('test/audio-track.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-selection.bs', 'utf8');
 source += '\n' + await readFile('test/file-facts.bs', 'utf8');
 source += '\n' + await readFile('test/favorite-tabs.bs', 'utf8');
+const moonfinPluginFile = await readFile('source/api/MoonfinPlugin.bs', 'utf8');
+source += '\nnamespace moonfinPlugin\n';
+for (const name of ['InfoFromPing', 'WithUserToken', 'AreTmdbThumbsAvailable', 'TmdbThumbURL', 'StudioImageURL', 'IsEnabled', 'IsPluginInstalled', 'ParseBoolSetting']) {
+    const match = moonfinPluginFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
+    assert.ok(match, `Missing moonfinPlugin.${name}`);
+    source += '\n' + match[0];
+}
+source += '\nend namespace\n';
+source += '\n' + await readFile('test/tmdb-thumbs.bs', 'utf8');
 const achievementsModelFile = await readFile('source/utils/achievementsModel.bs', 'utf8');
 source += '\nnamespace achievementsModel\n';
 for (const name of [
@@ -707,3 +716,35 @@ for (let i = 0; i < tableCount; i++) {
 }
 assert.equal(fontCodes, glyphNames.length, 'The glyph table and the icon font cover the same characters');
 process.stdout.write(`PASS: settings glyphs (${namedGlyphs.size + 2} checks)\n`);
+
+// Sign in and the Settings connection test build the plugin record through one builder, so a
+// test connection keeps every flag sign in reads, the thumbs one among them
+const pluginApiSource = await readFile('source/api/MoonfinPlugin.bs', 'utf8');
+assert.match(pluginApiSource.match(/function InfoFromPing\([^]*?end function/)[0], /tmdbThumbsSupported: result\.tmdbThumbsSupported \?\? false/, 'The plugin record keeps the thumbs flag');
+const signInPing = (await readFile('source/utils/session.bs', 'utf8')).match(/sub CheckPluginStatus\(\)[^]*?end sub/)[0];
+assert.match(signInPing, /pluginInfo = moonfinPlugin\.InfoFromPing\(result, displayName\)/, 'Sign in builds the plugin record with the shared builder');
+const settingsPing = settingsSource.match(/sub onPluginPingComplete\(\)[^]*?end sub/)[0];
+assert.match(settingsPing, /pluginInfo = moonfinPlugin\.InfoFromPing\(result, displayName\)/, 'The connection test builds the same plugin record');
+assert.doesNotMatch(settingsPing, /tmdbAvailable:/, 'The connection test has no hand built copy of the record to fall behind');
+assert.match(await readFile('components/tasks/PluginPingTask.bs', 'utf8'), /result\.addReplace\("seerrDisplayName", moonfinPlugin\.SeerrDisplayName\(\)\)/, 'The connection test keeps the Seerr name');
+
+// Discover follows the home rows style, and its modern card leads with the plugin's thumb
+const discoverSource = await readFile('components/seerr/SeerrDiscoveryScreen.bs', 'utf8');
+assert.match(discoverSource, /m\.modernRows = isModernHomeRows\(\)\s+m\.modernFocusCard = m\.top\.findNode\("modernFocusCard"\)/, 'Discover reads the home rows style');
+assert.match(discoverSource, /if m\.modernRows then applyModernLayout\(\)/, 'Only modern rows change Discover\'s layout');
+assert.match(discoverSource.match(/function discoverCardUris\([^]*?end function/)[0], /TmdbThumbURL\(item\.mediaType, item\.tmdbId\)[^]*?\[item\.backdropUrl, item\.hdPosterUrl\]/, 'The card tries the thumb, then the backdrop, then the poster');
+assert.match(discoverSource, /details\.mediaType = requestInfo\.type/, 'A request card takes its media type from the request');
+assert.match(await readFile('components/seerr/SeerrDiscoveryScreen.xml', 'utf8'), /<ModernFocusCard id="modernFocusCard"/, 'Discover hosts the shared card');
+assert.match(await readFile('components/home/Home.xml', 'utf8'), /<ModernFocusCard id="modernFocusCard" translation="\[111, 225\]"/, 'Home hosts the shared card where its own used to be');
+
+// Settings are stored flat, so a dotted path that splits the key never finds Prefer Thumbnails
+const homeRowsSource = await readFile('components/home/HomeRows.bs', 'utf8');
+assert.doesNotMatch(homeRowsSource, /"user\.settings\.ui\.home\.preferThumbnails"/, 'Prefer Thumbnails is read by its flat key');
+assert.match(homeRowsSource, /chainLookupReturn\(m\.global\.session, "user\.settings\.`ui\.home\.preferThumbnails`", false\)/, 'Prefer Thumbnails has one reader');
+assert.match(homeRowsSource.match(/sub updateCustomDynamicRowItems\([^]*?end sub/)[0], /row\.usePoster = not prefersThumbnails\(\)/, 'Seerr, chart and seasonal rows follow Prefer Thumbnails');
+assert.match(homeRowsSource.match(/sub updateSinceYouWatchedItems\([^]*?end sub/)[0], /row\.usePoster = not prefersThumbnails\(\)/, 'Since you watched follows Prefer Thumbnails');
+assert.match(homeRowsSource.match(/function internalRowConfig\([^]*?end function/)[0], /radarr_calendar: \{[^}]*usePoster: not prefersThumbnails\(\) \}[^]*sonarr_calendar: \{[^}]*usePoster: not prefersThumbnails\(\) \}/, 'The calendar rows follow Prefer Thumbnails');
+const homeData = await readFile('components/data/HomeData.bs', 'utf8');
+assert.match(homeData, /sub setTitledThumb\([^]*?m\.top\.thumbnailURL = thumbUrl\s+m\.top\.widePosterURL = thumbUrl/, 'The titled thumb leads a card\'s wide art');
+assert.doesNotMatch(homeData.match(/sub setTitledThumb\([^]*?end sub/)[0], /backdropURL/, 'The page behind a card keeps the plain backdrop');
+process.stdout.write('PASS: tmdb thumbs wiring (18 checks)\n');
