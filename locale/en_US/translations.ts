@@ -941,10 +941,6 @@
         <translation>Name</translation>
     </message>
     <message>
-        <source>Sort Order</source>
-        <translation>Sort Order</translation>
-    </message>
-    <message>
         <source>Descending</source>
         <translation>Descending</translation>
     </message>
@@ -1751,11 +1747,6 @@
         <extracomment>All in filter</extracomment>
     </message>
     <message>
-        <source>Aired</source>
-        <translation>Aired</translation>
-        <extracomment>Aired date label</extracomment>
-    </message>
-    <message>
         <source>Slideshow Off</source>
         <translation>Slideshow Off</translation>
     </message>
@@ -1895,10 +1886,6 @@
     <message>
         <source>Album Artists (Grid)</source>
         <translation>Album Artists (Grid)</translation>
-    </message>
-    <message>
-        <source>Song</source>
-        <translation>Song</translation>
     </message>
     <message>
         <source>Songs</source>
@@ -2593,10 +2580,6 @@
         <translation>Unhide Users</translation>
     </message>
     <message>
-        <source>Play Normally - disabled because of selected force transcoding setting</source>
-        <translation>Play Normally - disabled because of selected force transcoding setting</translation>
-    </message>
-    <message>
         <source>as</source>
         <translation>as</translation>
         <extracomment>Used in ExtrasRowList.bs to show the role of a person in a movie or TV show</extracomment>
@@ -2931,16 +2914,8 @@
         <translation>Force Transcode (Allow Remux)</translation>
     </message>
     <message>
-        <source>Force Transcode (Allow Remux) - disabled because of selected force transcoding setting</source>
-        <translation>Force Transcode (Allow Remux) - disabled because of selected force transcoding setting</translation>
-    </message>
-    <message>
         <source>Force Transcode (Remux Disabled)</source>
         <translation>Force Transcode (Remux Disabled)</translation>
-    </message>
-    <message>
-        <source>Force Transcode (Remux Disabled) - disabled because of selected force transcoding setting</source>
-        <translation>Force Transcode (Remux Disabled) - disabled because of selected force transcoding setting</translation>
     </message>
     <message>
         <source>No channels found matching your search criteria</source>
