@@ -6,6 +6,7 @@ import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/enums/CollectionType.bs"
 import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/enums/ImageLayout.bs"
 import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/String.bs"
@@ -334,13 +335,25 @@ function getParentItemId() as string
     return m.top.parentItem.id
 end function
 
+' A genre or studio browse carries its library's id, so its sort, filters, view and cards save under a key of their own
+function settingsKey() as string
+    if isValid(m.top.genreFilter)
+        if isValidAndNotEmpty(m.top.genreFilter.genreId) then return "genre-" + m.top.genreFilter.genreId
+        return "genre-" + (m.top.genreFilter.genreName ?? "")
+    end if
+    if isValid(m.top.studioFilter)
+        if isValidAndNotEmpty(m.top.studioFilter.studioId) then return "studio-" + m.top.studioFilter.studioId
+        return "studio-" + (m.top.studioFilter.studioName ?? "")
+    end if
+    return getParentItemId()
+end function
 
 ' Load initial set of data
 sub loadInitialItems()
     m.loadItemsTask.control = TaskControl.STOP
     startLoadingSpinner(false)
 
-    itemId = getParentItemId()
+    itemId = settingsKey()
 
     ' The settings map is gone once the user signs out, and a library can still reload on the way there
     userSettings = chainLookupReturn(m.global.session, "user.settings", {})
@@ -605,7 +618,7 @@ sub noteCardSubtitles(itemData as object)
 end sub
 
 sub applyGridMetrics()
-    libraryId = getParentItemId()
+    libraryId = settingsKey()
 
     imageSize = settingOr(`library_imageSize_${libraryId}`, "medium")
     imageType = settingOr(`library_imageType_${libraryId}`, defaultImageType())
@@ -655,9 +668,12 @@ function detailedSubHeadings() as boolean
 end function
 
 function defaultImageType() as string
+    if isStringEqual(m.view, "Albums") or inArray([ItemType.PLAYLIST, ItemType.MUSICARTIST], m.top.mediaType) then return "square"
+    orientation = settingOr("libraryPosterOrientation", ImageLayout.DEFAULT)
+    if isStringEqual(orientation, ImageLayout.LANDSCAPE) then return "thumbnail"
+    if isStringEqual(orientation, ImageLayout.PORTRAIT) then return "poster"
     if inArray([ItemType.PHOTO, ItemType.PHOTOALBUM, ItemType.MUSICVIDEO], m.top.mediaType) then return "thumbnail"
     if isStringEqual(m.view, "Episodes") then return "thumbnail"
-    if isStringEqual(m.view, "Albums") or inArray([ItemType.PLAYLIST, ItemType.MUSICARTIST], m.top.mediaType) then return "square"
     return "poster"
 end function
 
@@ -722,7 +738,7 @@ sub openSettingsDialog()
         showGroupByType: isPlaylistLibrary()
     }
 
-    libraryId = getParentItemId()
+    libraryId = settingsKey()
     m.settingsDialog.settings = {
         imageSize: settingOr(`library_imageSize_${libraryId}`, "medium"),
         imageType: settingOr(`library_imageType_${libraryId}`, defaultImageType()),
@@ -742,11 +758,12 @@ sub onSettingsApplied(msg as object)
     applied = msg.getData()
     if not isValid(applied) then return
 
-    libraryId = getParentItemId()
+    libraryId = settingsKey()
     wasFolderView = settingOr(`library_folderView_${libraryId}`, "off")
 
     set_user_setting(`library_imageSize_${libraryId}`, applied.imageSize)
-    set_user_setting(`library_imageType_${libraryId}`, applied.imageType)
+    ' Saving the default would pin it, and the global Library Image Orientation would stop applying
+    if not isStringEqual(applied.imageType, settingOr(`library_imageType_${libraryId}`, defaultImageType())) then set_user_setting(`library_imageType_${libraryId}`, applied.imageType)
     set_user_setting(`library_cardText_${libraryId}`, applied.cardText)
     set_user_setting(`library_letterNav_${libraryId}`, applied.letterNav)
     set_user_setting(`library_folderView_${libraryId}`, applied.folderView)
@@ -770,7 +787,7 @@ end sub
 ' The alphabet strip is the only toolbar item that can be turned off, so focus skips over
 ' it while it is gone
 sub applyLetterNav()
-    m.alphaPicker.visible = settingOr(`library_letterNav_${getParentItemId()}`, "on") <> "off" and not m.playlistGrouped
+    m.alphaPicker.visible = settingOr(`library_letterNav_${settingsKey()}`, "on") <> "off" and not m.playlistGrouped
 end sub
 
 sub openSortDialog()
@@ -800,7 +817,7 @@ sub onSortApplied(msg as object)
     applied = msg.getData()
     if not isValid(applied) then return
 
-    itemId = m.top.parentItem.Id
+    itemId = settingsKey()
 
     if not isStringEqual(applied.view, m.view)
         previousView = m.view
@@ -818,7 +835,7 @@ sub onSortApplied(msg as object)
         m.top.alphaSelected = string.EMPTY
         m.loadItemsTask.nameStartsWith = " "
 
-        if not isStringEqual(m.view, "Genres")
+        if not isStringEqual(m.view, "Genres") and not isValid(m.top.genreFilter)
             set_user_setting(`display.${m.top.mediaType}library.defaultview`, m.view)
         end if
     end if
@@ -1043,9 +1060,12 @@ sub showFocusedItem()
 
     itemData = focusedItem.json
 
+    ' Genres rows carry no per-item metadata, so the detail bar stays hidden on that view
+    showDetails = get_user_setting_bool("ui.library.showMediaDetails", true) and not isStringEqual(m.view, "Genres")
+
     populateRatings(itemData)
 
-    if moonfinPlugin.IsRatingsEnabled()
+    if showDetails and moonfinPlugin.IsRatingsEnabled()
         fetchLibraryRatings(itemData)
     end if
 
@@ -1055,8 +1075,6 @@ sub showFocusedItem()
         SetName(string.EMPTY)
     end if
 
-    ' Genres rows carry no per-item metadata, so the detail bar stays hidden on that view
-    showDetails = get_user_setting_bool("ui.library.showMediaDetails", true) and not isStringEqual(m.view, "Genres")
     m.selectedItemName.visible = showDetails
 
     drawMetaRow(itemData)
@@ -1097,7 +1115,7 @@ sub renderRatingsRow(pluginRatings as object)
 
     entries = ratingsRow.Merge(m.serverRatings, pluginRatings)
     m.pluginRatings.ratingsData = { data: entries }
-    m.pluginRatings.visible = entries.count() > 0
+    m.pluginRatings.visible = entries.count() > 0 and get_user_setting_bool("ui.library.showMediaDetails", true)
 end sub
 
 ' A series has no single runtime, and only a series carries a status worth a pill
