@@ -6530,6 +6530,110 @@
         <translation>Hide the movie or episode descriptive text.</translation>
     </message>
     <message>
+        <source>Toggle Media Description Visibility</source>
+        <translation>Toggle Media Description Visibility</translation>
+    </message>
+    <message>
+        <source>Hide media descriptions from various detail pages.</source>
+        <translation>Hide media descriptions from various detail pages.</translation>
+    </message>
+    <message>
+        <source>Local Content</source>
+        <translation>Local Content</translation>
+    </message>
+    <message>
+        <source>Hide Movie Description</source>
+        <translation>Hide Movie Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on movie details pages.</source>
+        <translation>Hide descriptive text on movie details pages.</translation>
+    </message>
+    <message>
+        <source>Hide Show Description</source>
+        <translation>Hide Show Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on TV show details pages.</source>
+        <translation>Hide descriptive text on TV show details pages.</translation>
+    </message>
+    <message>
+        <source>Hide Season Description</source>
+        <translation>Hide Season Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on season details pages.</source>
+        <translation>Hide descriptive text on season details pages.</translation>
+    </message>
+    <message>
+        <source>Hide Episode Description</source>
+        <translation>Hide Episode Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on episode details pages.</source>
+        <translation>Hide descriptive text on episode details pages.</translation>
+    </message>
+    <message>
+        <source>Hide Collection Description</source>
+        <translation>Hide Collection Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on collection details pages.</source>
+        <translation>Hide descriptive text on collection details pages.</translation>
+    </message>
+    <message>
+        <source>Hide Book Description</source>
+        <translation>Hide Book Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on book details pages.</source>
+        <translation>Hide descriptive text on book details pages.</translation>
+    </message>
+    <message>
+        <source>Hide Person Biography</source>
+        <translation>Hide Person Biography</translation>
+    </message>
+    <message>
+        <source>Hide biographical text on person details pages.</source>
+        <translation>Hide biographical text on person details pages.</translation>
+    </message>
+    <message>
+        <source>Hide Music Description</source>
+        <translation>Hide Music Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on music and playlist details pages.</source>
+        <translation>Hide descriptive text on music and playlist details pages.</translation>
+    </message>
+    <message>
+        <source>Seerr Content</source>
+        <translation>Seerr Content</translation>
+    </message>
+    <message>
+        <source>Hide Seerr Movie Description</source>
+        <translation>Hide Seerr Movie Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on Seerr movie details pages.</source>
+        <translation>Hide descriptive text on Seerr movie details pages.</translation>
+    </message>
+    <message>
+        <source>Hide Seerr Show Description</source>
+        <translation>Hide Seerr Show Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on Seerr TV show details pages.</source>
+        <translation>Hide descriptive text on Seerr TV show details pages.</translation>
+    </message>
+    <message>
+        <source>Hide Seerr Collection Description</source>
+        <translation>Hide Seerr Collection Description</translation>
+    </message>
+    <message>
+        <source>Hide descriptive text on Seerr collection details pages.</source>
+        <translation>Hide descriptive text on Seerr collection details pages.</translation>
+    </message>
+    <message>
         <source>How long a show stays in Next Up after you last watched it</source>
         <translation>How long a show stays in Next Up after you last watched it</translation>
     </message>
