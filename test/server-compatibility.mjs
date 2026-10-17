@@ -701,7 +701,10 @@ assert.equal(findSetting(settingsTree, 'plugin.settingsSync').default, 'true', '
 for (const glyph of ['extension', 'public', 'desktop_windows', 'phone_iphone', 'tv', 'cloud_download', 'cloud_upload', 'restart_alt']) {
     assert.ok(glyphNames.includes(glyph), `The sync panel draws ${glyph}`);
 }
-process.stdout.write('PASS: settings sync profiles (22 checks)\n');
+assert.match(syncFunction('GetMappings'), /\{ pluginKey: "libraryStyle", rokuKey: "ui\.library\.style", type: "direct" \}/, 'The library style syncs under Core\'s name');
+const styleStrings = await readFile('locale/en_US/translations.ts', 'utf8');
+for (const name of ['Library Style', 'Docked', 'Show', 'Display']) assert.match(styleStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
+process.stdout.write('PASS: settings sync profiles (27 checks)\n');
 
 // Every glyph a setting names is in the icon font, and the font and its table cover the same characters
 const settingsJsonText = await readFile('settings/settings.json', 'utf8');

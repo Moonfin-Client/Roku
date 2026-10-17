@@ -21,6 +21,8 @@ import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/playlistGrouping.bs"
 import "pkg:/source/utils/ratingsRow.bs"
+import "pkg:/source/utils/themeChrome.bs"
+import "pkg:/source/utils/trackDialog.bs"
 import "pkg:/source/utils/tvKeyboard.bs"
 
 ' The age rating and series status badges, sized around whatever they are given
@@ -33,6 +35,24 @@ const GROUPED_CARD_SIZE = 240
 const GROUPED_CARD_GAP = 24
 const GROUPED_ROW_GAP = 90
 const PLAYLIST_GROUPING_SETTING = "ui.library.playlistsGroupByType"
+
+const LIBRARY_STYLE_SETTING = "ui.library.style"
+const MARGIN_X = 87
+' Modern's bar runs the grid's width under the title, its controls inset by the bar's padding
+const MODERN_BAR_TOP = 80
+const MODERN_BAR_HEIGHT = 84
+const MODERN_BAR_PAD = 9
+const MODERN_CONTROL_GAP = 6
+const MODERN_GRID_TOP = 380
+' Docked's panel holds every control, so the grid starts beside it and runs up to the details
+const DOCK_PAD_X = 30
+const DOCK_ROW_WIDTH = 390
+const DOCK_TITLE_LEFT = 105
+const DOCK_GRID_LEFT = 498
+const DOCK_GRID_TOP = 200
+const DOCK_GRID_WIDTH = 1335
+const HEADER_CONTROL_HEIGHT = 66
+const DOCK_ROW_HEIGHT = 72
 
 ' Return parent collection type
 function getCollectionType() as string
@@ -79,7 +99,28 @@ sub setupNodes()
     m.homeButton = m.top.findNode("homeButton")
     m.sortButton = m.top.findNode("sortButton")
     m.settingsButton = m.top.findNode("settingsButton")
-    m.toolbarButtons = [m.homeButton, m.sortButton, m.settingsButton]
+    m.classicButtons = [m.homeButton, m.sortButton, m.settingsButton]
+    m.toolbarButtons = m.classicButtons
+
+    ' The Modern and Docked controls
+    m.focusedInfo = m.top.findNode("focusedInfo")
+    m.styledHeader = m.top.findNode("styledHeader")
+    m.dockPanel = m.top.findNode("dockPanel")
+    m.dockEdge = m.top.findNode("dockEdge")
+    m.dockRule = m.top.findNode("dockRule")
+    m.modernBar = m.top.findNode("modernBar")
+    m.modernBarBorder = m.top.findNode("modernBarBorder")
+    m.modernRuleHome = m.top.findNode("modernRuleHome")
+    m.modernRuleSort = m.top.findNode("modernRuleSort")
+    m.styledHome = m.top.findNode("styledHome")
+    m.styledSort = m.top.findNode("styledSort")
+    m.styledShow = m.top.findNode("styledShow")
+    m.styledDisplay = m.top.findNode("styledDisplay")
+    panelInk = themeChrome.IsActive() ? themeChrome.Surface() : trackDialog.PANEL_INK
+    m.dockPanel.color = panelInk
+    m.dockPanel.opacity = trackDialog.PANEL_OPACITY
+    m.modernBar.blendColor = panelInk
+    m.modernBar.opacity = trackDialog.PANEL_OPACITY
 
     ' Alpha picker
     m.alphaPicker = m.top.findNode("alphaPicker")
@@ -117,8 +158,10 @@ sub init()
     m.serverPosition = 0
     m.blockedCount = 0
 
-    ' Toolbar focus state: 0=home, 1=sort, 2=settings, 3=alpha
+    ' Toolbar focus state: 0=home, 1=sort, 2=settings, 3=alpha, 4=search, 5=show
     m.toolbarFocusIndex = 0
+    ' The bar control Up from Modern's letters goes back to
+    m.barFocusIndex = 0
 
     m.data = createSGNode("ContentNode")
     m.itemGrid.observeField("itemFocused", "onItemFocused")
@@ -172,6 +215,8 @@ sub init()
     m.backdropPrevFadeOutInterp = m.top.findNode("backdropPrevFadeOutInterp")
     m.backdropCrossfading = false
     m.backdropTargetOpacity = 1.0
+
+    applyLibraryStyle()
 end sub
 
 ' Handle backdrop load status - when new backdrop finishes loading, crossfade it in
@@ -259,8 +304,13 @@ sub OnScreenShown(isReturning = false as boolean)
         m.libraryName.text = isValid(m.top.parentItem.name) ? m.top.parentItem.name : m.top.parentItem.title
     end if
 
+    ' Settings can change the style while this screen waits under it, and the theme font the push
+    ' brought means the controls are measured again
+    previousStyle = m.libraryStyle
+    applyLibraryStyle()
+
     ' Only redraw items on initial show, not when returning from detail screens
-    if not isReturning
+    if not isReturning or previousStyle <> m.libraryStyle
         redrawItems()
     end if
 
@@ -407,6 +457,7 @@ sub loadInitialItems()
 
     m.sortKey = librarySorts.KeyFor(m.sortField, isMusicLibrary(), isMyListLibrary())
     m.sortOrder = m.sortAscending ? "Ascending" : "Descending"
+    layoutStyledHeader()
 
     m.loadItemsTask.sortField = m.sortField
     m.loadItemsTask.sortAscending = m.sortAscending
@@ -624,10 +675,10 @@ sub applyGridMetrics()
     imageType = settingOr(`library_imageType_${libraryId}`, defaultImageType())
     showText = settingOr(`library_cardText_${libraryId}`, "on") <> "off"
 
-    metrics = libraryCard.Metrics(imageSize, imageType, showText, m.hasCardSubtitles = true, detailedSubHeadings())
+    metrics = libraryCard.Metrics(imageSize, imageType, showText, m.hasCardSubtitles = true, detailedSubHeadings(), m.gridWidth)
     if m.playlistGrouped = true
         metrics = groupedCardMetrics()
-        m.groupRows.itemSize = [libraryCard.GRID_WIDTH, metrics.cellHeight]
+        m.groupRows.itemSize = [m.gridWidth, metrics.cellHeight]
         m.groupRows.rowItemSize = [[metrics.cellWidth, metrics.cellHeight]]
         m.groupRows.rowItemSpacing = [[GROUPED_CARD_GAP - (metrics.padX * 2), 0]]
         m.groupRows.itemSpacing = [0, GROUPED_ROW_GAP]
@@ -646,7 +697,7 @@ end sub
 ' A grouped row draws square cards of one size with only a title under each, whatever the
 ' grid is set to
 function groupedCardMetrics() as object
-    metrics = libraryCard.MetricsFor(GROUPED_CARD_SIZE, GROUPED_CARD_SIZE, "square", libraryCard.TEXT_HEIGHT_TITLE_ONLY, detailedSubHeadings(), libraryCard.GRID_WIDTH)
+    metrics = libraryCard.MetricsFor(GROUPED_CARD_SIZE, GROUPED_CARD_SIZE, "square", libraryCard.TEXT_HEIGHT_TITLE_ONLY, detailedSubHeadings(), m.gridWidth)
     metrics.cellWidth = GROUPED_CARD_SIZE + (metrics.padX * 2)
     metrics.posterWidth = GROUPED_CARD_SIZE
     return metrics
@@ -788,10 +839,12 @@ end sub
 ' it while it is gone
 sub applyLetterNav()
     m.alphaPicker.visible = settingOr(`library_letterNav_${settingsKey()}`, "on") <> "off" and not m.playlistGrouped
+    m.dockRule.visible = m.alphaPicker.visible and m.libraryStyle = "docked"
 end sub
 
-sub openSortDialog()
+sub openSortDialog(section = "" as string)
     m.sortDialog.context = {
+        section: section,
         views: availableViews(),
         isSeries: isStringEqual(m.top.mediaType, ItemType.SERIES),
         isMusic: isMusicLibrary(),
@@ -870,6 +923,12 @@ end sub
 ' The toolbar buttons draw their focus from a flag of their own, so the button that opened the
 ' dialog would keep looking focused while the list has the remote
 sub onSortClosed()
+    ' Modern and Docked name what each control holds, so focus goes back to the one that opened it
+    if m.libraryStyle <> "classic"
+        focusToolbarItem(m.toolbarFocusIndex)
+        return
+    end if
+
     unfocusAllToolbarItems()
     m.itemGrid.setFocus(m.itemGrid.opacity = 1)
     m.genreGrid.setFocus(m.genreGrid.opacity = 1)
@@ -957,7 +1016,7 @@ sub ItemDataLoaded(msg)
 
     ' A page arriving behind the open keyboard must not pull focus out of it, and a later page
     ' of grouped playlists leaves focus wherever it is
-    if not isValid(m.keyboard) and not (m.playlistGrouped and m.loadedItems > 0)
+    if not isValid(m.keyboard) and not (m.playlistGrouped and m.loadedItems > 0) and not styledHeaderFocused()
         contentList = m.playlistGrouped ? m.groupRows : m.itemGrid
         unfocusAllToolbarItems()
         contentList.setFocus(true)
@@ -1477,13 +1536,13 @@ sub createItemGrid(itemGridID = "itemGrid" as string)
     m.itemGrid.id = itemGridID
     m.itemGrid.itemSpacing = "[20, 20]"
     m.itemGrid.vertFocusAnimationStyle = "fixed"
-    m.itemGrid.translation = "[87, 316]"
     m.itemGrid.observeField("itemFocused", "onItemFocused")
     m.itemGrid.observeFieldScoped("itemSelected", "onItemSelected")
     m.itemGrid.drawFocusFeedback = false
     m.itemGrid.itemComponentName = "LibraryCard"
 
     m.top.insertChild(m.itemGrid, 1)
+    applyLibraryStyle()
     applyGridMetrics()
 end sub
 
@@ -1498,17 +1557,222 @@ sub updateStatusBar()
     centreTitleRow()
 end sub
 
-' The name and the count read as one line, so the pair is centred rather than each of them
+' The name and the count read as one line, so the pair is centred rather than each of them.
+' Modern starts the line at the margin and Docked stacks the two beside its Home button.
 sub centreTitleRow()
+    if m.libraryStyle = "docked"
+        m.libraryName.translation = [DOCK_TITLE_LEFT, 30]
+        m.itemCountLabel.translation = [DOCK_TITLE_LEFT, 66]
+        return
+    end if
+
     nameWidth = m.libraryName.boundingRect().width
     countWidth = m.itemCountLabel.boundingRect().width
     gap = countWidth > 0 ? 17 : 0
 
     startX = (1920 - (nameWidth + gap + countWidth)) / 2
+    if m.libraryStyle = "modern" then startX = MARGIN_X
     m.libraryName.translation = [startX, 20]
     m.itemCountLabel.translation = [startX + nameWidth + gap, 22]
 end sub
 
+
+' =====================================================================
+' LIBRARY STYLES
+' =====================================================================
+
+' Classic keeps the header every library had, Modern puts the controls in one bar under the title
+' and Docked moves them into a panel down the left with the grid beside it
+sub applyLibraryStyle()
+    style = settingOr(LIBRARY_STYLE_SETTING, "classic")
+    if not inArray(["classic", "modern", "docked"], style) then style = "classic"
+    m.libraryStyle = style
+    classic = style = "classic"
+    docked = style = "docked"
+
+    for each btn in m.classicButtons
+        btn.visible = classic
+    end for
+    m.styledHeader.visible = not classic
+    m.toolbarButtons = classic ? m.classicButtons : [m.styledHome, m.styledSort, m.styledDisplay]
+    m.dockPanel.visible = docked
+    m.dockEdge.visible = docked
+    m.dockRule.visible = docked and m.alphaPicker.visible
+    for each node in [m.modernBar, m.modernBarBorder, m.modernRuleHome, m.modernRuleSort]
+        node.visible = style = "modern"
+    end for
+
+    gridLeft = MARGIN_X
+    gridTop = 316
+    m.gridWidth = libraryCard.GRID_WIDTH
+    m.focusedInfo.translation = [MARGIN_X, 84]
+    m.alphaPicker.translation = [240, 255]
+    if style = "modern"
+        gridTop = MODERN_GRID_TOP
+        m.focusedInfo.translation = [MARGIN_X, MODERN_BAR_TOP + MODERN_BAR_HEIGHT + 16]
+        m.alphaPicker.translation = [MARGIN_X, MODERN_GRID_TOP - 50]
+    else if docked
+        gridLeft = DOCK_GRID_LEFT
+        gridTop = DOCK_GRID_TOP
+        m.gridWidth = DOCK_GRID_WIDTH
+        m.focusedInfo.translation = [DOCK_GRID_LEFT, 42]
+        m.alphaPicker.translation = [DOCK_PAD_X, 498]
+    end if
+    m.selectedItemName.width = m.gridWidth
+
+    ' The letters run in one line, or seven to a row in the panel with every row in view
+    m.alphaGrid.numColumns = docked ? 7 : 28
+    m.alphaGrid.numRows = docked ? 4 : 1
+    m.alphaGrid.itemSpacing = docked ? [18, 24] : [10, 0]
+    m.alphaGrid.vertFocusAnimationStyle = docked ? "floatingFocus" : "fixed"
+
+    if classic
+        m.searchBox.translation = [1369, 9]
+        m.searchBox.boxWidth = 464
+    end if
+    m.libraryName.width = docked ? DOCK_ROW_WIDTH - DOCK_TITLE_LEFT + DOCK_PAD_X : 0
+
+    room = 1056 - gridTop
+    for each grid in [m.itemGrid, m.groupRows, m.genreGrid]
+        grid.translation = [gridLeft, gridTop]
+    end for
+    m.itemGrid.clippingRect = [0, 0, m.gridWidth, room]
+    m.groupRows.clippingRect = [0, -60, m.gridWidth, room + 60]
+    m.genreGrid.clippingRect = [-30, -20, m.gridWidth + 60, room + 37]
+    m.genreGrid.numColumns = docked ? 3 : 4
+
+    layoutStyledHeader()
+    centreTitleRow()
+end sub
+
+' The controls name what they are set to, so they are laid out again whenever that changes
+sub layoutStyledHeader()
+    ' The sort label needs the library, which init runs before
+    if m.libraryStyle = "classic" or not isValid(m.top.parentItem) then return
+
+    sortName = librarySorts.Chosen(m.sortKey, isMusicLibrary(), isMyListLibrary()).label
+    sortArgs = { height: HEADER_CONTROL_HEIGHT, text: tr("Sort by"), value: sortName, sortOrder: m.sortOrder }
+    showArgs = { height: HEADER_CONTROL_HEIGHT, text: tr("Show"), value: playedLabel() }
+    m.styledHome.callFunc("layout", { height: HEADER_CONTROL_HEIGHT })
+
+    if m.libraryStyle = "docked"
+        m.styledHome.translation = [DOCK_PAD_X - 6, 42]
+        m.searchBox.translation = [DOCK_PAD_X, 132]
+        m.searchBox.boxWidth = DOCK_ROW_WIDTH
+        m.styledDisplay.icon = "grid_view_outlined"
+        displayArgs = { text: tr("Display") }
+        rowTop = 222
+        for each row in [[m.styledSort, sortArgs], [m.styledShow, showArgs], [m.styledDisplay, displayArgs]]
+            row[1].height = DOCK_ROW_HEIGHT
+            row[1].width = DOCK_ROW_WIDTH
+            row[0].callFunc("layout", row[1])
+            row[0].translation = [DOCK_PAD_X, rowTop]
+            rowTop += DOCK_ROW_HEIGHT + 6
+        end for
+        return
+    end if
+
+    ' Home and the search lead the bar, and Sort, Show and Display are packed against its far end
+    top = MODERN_BAR_TOP + MODERN_BAR_PAD
+    barRight = MARGIN_X + libraryCard.GRID_WIDTH - MODERN_BAR_PAD
+    m.modernBar.translation = [MARGIN_X, MODERN_BAR_TOP]
+    m.modernBarBorder.translation = [MARGIN_X, MODERN_BAR_TOP]
+    for each layer in [m.modernBar, m.modernBarBorder]
+        layer.width = libraryCard.GRID_WIDTH
+        layer.height = MODERN_BAR_HEIGHT
+    end for
+
+    m.styledHome.translation = [MARGIN_X + MODERN_BAR_PAD, top]
+    m.styledDisplay.icon = "settings"
+    displayLeft = barRight - m.styledDisplay.callFunc("layout", { height: HEADER_CONTROL_HEIGHT })
+    m.styledDisplay.translation = [displayLeft, top]
+    showLeft = displayLeft - MODERN_CONTROL_GAP - m.styledShow.callFunc("layout", showArgs)
+    m.styledShow.translation = [showLeft, top]
+    sortLeft = showLeft - MODERN_CONTROL_GAP - m.styledSort.callFunc("layout", sortArgs)
+    m.styledSort.translation = [sortLeft, top]
+
+    ruleTop = MODERN_BAR_TOP + (MODERN_BAR_HEIGHT - 42) / 2
+    searchLeft = MARGIN_X + MODERN_BAR_PAD + HEADER_CONTROL_HEIGHT + MODERN_BAR_PAD
+    m.modernRuleHome.translation = [searchLeft, ruleTop]
+    m.modernRuleSort.translation = [sortLeft - MODERN_BAR_PAD - 1, ruleTop]
+    searchLeft += 1 + MODERN_BAR_PAD
+    m.searchBox.translation = [searchLeft, top]
+    m.searchBox.boxWidth = sortLeft - (MODERN_BAR_PAD * 2) - 1 - searchLeft
+end sub
+
+function playedLabel() as string
+    for each option in libraryFilters.PlayedOptions()
+        if isStringEqual(option.value, m.filterState.played) then return option.label
+    end for
+    return tr("All")
+end function
+
+function styledHeaderFocused() as boolean
+    if m.libraryStyle = "classic" then return false
+    if m.searchBox.isInFocusChain() or m.styledShow.isInFocusChain() then return true
+    for each btn in m.toolbarButtons
+        if btn.isInFocusChain() then return true
+    end for
+    return false
+end function
+
+' Modern steps along its bar with Left and Right and Docked down its panel with Up and Down, both
+' in the order Home, search, Sort, Show, Display. The other axis leaves for the letters or the grid.
+function onStyledHeaderKey(key as string) as boolean
+    if isStringEqual(key, KeyCode.BACK) or (isStringEqual(key, KeyCode.OK) and m.toolbarFocusIndex = 0)
+        reclaimResources()
+        m.global.sceneManager.callfunc("popScene")
+        return true
+    end if
+
+    if isStringEqual(key, KeyCode.OK)
+        if m.toolbarFocusIndex = 4 then openSearchKeyboard()
+        if m.toolbarFocusIndex = 1 then openSortDialog()
+        if m.toolbarFocusIndex = 5 then openSortDialog("played")
+        if m.toolbarFocusIndex = 2 then openSettingsDialog()
+        return true
+    end if
+
+    docked = m.libraryStyle = "docked"
+    order = [0, 4, 1, 5, 2]
+    position = 0
+    for i = 0 to order.count() - 1
+        if order[i] = m.toolbarFocusIndex then position = i
+    end for
+
+    if isStringEqual(key, docked ? KeyCode.UP : KeyCode.LEFT)
+        if position > 0 then focusToolbarItem(order[position - 1])
+        return true
+    end if
+
+    if isStringEqual(key, docked ? KeyCode.DOWN : KeyCode.RIGHT)
+        if position < order.count() - 1
+            focusToolbarItem(order[position + 1])
+        else if docked and m.alphaPicker.visible
+            focusToolbarItem(3)
+        end if
+        return true
+    end if
+
+    if isStringEqual(key, docked ? KeyCode.RIGHT : KeyCode.DOWN)
+        if not docked and m.alphaPicker.visible
+            focusToolbarItem(3)
+        else if m.loadedItems > 0
+            unfocusAllToolbarItems()
+            focusContent()
+        end if
+        return true
+    end if
+
+    return isStringEqual(key, docked ? KeyCode.LEFT : KeyCode.UP)
+end function
+
+' What Up from the top row of letters reaches
+function aboveLetters() as integer
+    if m.libraryStyle = "modern" then return m.barFocusIndex
+    if m.libraryStyle = "docked" then return 2
+    return 4
+end function
 
 ' =====================================================================
 ' TOOLBAR FOCUS MANAGEMENT
@@ -1519,11 +1783,10 @@ sub focusToolbarItem(index as integer)
     ' back on the gear rather than on nothing
     if index = 3 and not m.alphaPicker.visible then index = 2
 
-    for each btn in m.toolbarButtons
-        btn.focus = false
-    end for
+    unfocusAllToolbarItems()
 
     m.toolbarFocusIndex = index
+    if index <> 3 then m.barFocusIndex = index
     m.searchBox.focused = index = 4
 
     if index >= 0 and index < m.toolbarButtons.count()
@@ -1536,6 +1799,10 @@ sub focusToolbarItem(index as integer)
     else if index = 4
         m.searchBox.setFocus(true)
         setLastFocus(m.searchBox)
+    else if index = 5
+        m.styledShow.focus = true
+        m.styledShow.setFocus(true)
+        setLastFocus(m.styledShow)
     end if
 end sub
 
@@ -1557,6 +1824,7 @@ sub unfocusAllToolbarItems()
     for each btn in m.toolbarButtons
         btn.focus = false
     end for
+    m.styledShow.focus = false
 end sub
 
 ' =====================================================================
@@ -1565,6 +1833,8 @@ end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
+
+    if styledHeaderFocused() then return onStyledHeaderKey(key)
 
     if m.searchBox.isInFocusChain()
         if isStringEqual(key, KeyCode.OK)
@@ -1657,18 +1927,39 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     ' ---- ALPHA PICKER NAVIGATION ----
     if m.alphaGrid.isInFocusChain()
-        if isStringEqual(key, KeyCode.LEFT) and m.alphaGrid.itemFocused = 0
+        columns = m.alphaGrid.numColumns
+        letter = m.alphaGrid.itemFocused
+        letterCount = m.alphaGrid.content.getChildCount()
+        if isStringEqual(key, KeyCode.LEFT) and letter mod columns = 0
             ' Move from alpha to settings icon
-            focusToolbarItem(2)
+            if m.libraryStyle = "classic" then focusToolbarItem(2)
             return true
         end if
 
+        ' Docked's letters sit left of the grid, so Right off the end of a row reaches it
+        if isStringEqual(key, KeyCode.RIGHT) and m.libraryStyle = "docked" and ((letter + 1) mod columns = 0 or letter = letterCount - 1)
+            if m.loadedItems > 0
+                unfocusAllToolbarItems()
+                focusContent()
+            end if
+            return true
+        end if
+
+        ' Docked stacks the letters in rows, so Up and Down only leave them from the outer rows
         if isStringEqual(key, KeyCode.UP)
-            focusToolbarItem(4)
+            if letter >= columns
+                m.alphaGrid.jumpToItem = letter - columns
+            else
+                focusToolbarItem(aboveLetters())
+            end if
             return true
         end if
 
         if isStringEqual(key, KeyCode.DOWN)
+            if letter + columns < letterCount
+                m.alphaGrid.jumpToItem = letter + columns
+                return true
+            end if
             unfocusAllToolbarItems()
             focusContent()
             return true
@@ -1692,6 +1983,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         end if
 
+        if isStringEqual(key, KeyCode.LEFT) and m.libraryStyle = "docked" and isValid(focused) and focused.count() > 1 and focused[1] = 0
+            focusToolbarItem(m.toolbarFocusIndex)
+            return true
+        end if
+
         if isStringEqual(key, KeyCode.BACK)
             if not atTop
                 m.groupRows.jumpToRowItem = [0, 0]
@@ -1707,8 +2003,14 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     ' ---- GRID / GENRE GRID NAVIGATION ----
     if m.itemGrid.isinFocusChain() or m.genreGrid.isinFocusChain()
+        gridComponent = m.itemGrid.isinFocusChain() ? m.itemGrid : m.genreGrid
+        ' Docked keeps its controls left of the grid
+        if isStringEqual(key, KeyCode.LEFT) and m.libraryStyle = "docked" and gridComponent.itemFocused mod gridComponent.numColumns = 0
+            focusToolbarItem(m.toolbarFocusIndex)
+            return true
+        end if
+
         if isStringEqual(key, KeyCode.UP)
-            gridComponent = m.itemGrid.isinFocusChain() ? m.itemGrid : m.genreGrid
             if gridComponent.itemFocused < gridComponent.numColumns
                 ' At top row, move to toolbar
                 focusToolbarItem(m.toolbarFocusIndex)
@@ -1717,7 +2019,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
 
         if isStringEqual(key, KeyCode.BACK)
-            gridComponent = m.itemGrid.isinFocusChain() ? m.itemGrid : m.genreGrid
             if gridComponent.itemFocused >= gridComponent.numColumns
                 gridComponent.jumpToItem = 0
                 return true

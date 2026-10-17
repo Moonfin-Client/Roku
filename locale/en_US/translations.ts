@@ -2995,6 +2995,28 @@
         <translation>Library Image Orientation</translation>
     </message>
     <message>
+        <source>Library Style</source>
+        <translation>Library Style</translation>
+    </message>
+    <message>
+        <source>Choose between the Classic, Modern and Docked library headers.</source>
+        <translation>Choose between the Classic, Modern and Docked library headers.</translation>
+    </message>
+    <message>
+        <source>Docked</source>
+        <translation>Docked</translation>
+    </message>
+    <message>
+        <source>Show</source>
+        <extracomment>A library header control that opens the played status filter</extracomment>
+        <translation>Show</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <extracomment>A library header control that opens how the library draws its cards</extracomment>
+        <translation>Display</translation>
+    </message>
+    <message>
         <source>Select the poster image orientation for the library views.</source>
         <translation>Select the poster image orientation for the library views.</translation>
     </message>
