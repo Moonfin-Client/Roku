@@ -64,6 +64,7 @@ const selections = {
     'source/utils/episodeBrowser.bs': null,
     'source/utils/settingsMetrics.bs': null,
     'source/utils/ratingSourceList.bs': null,
+    'source/utils/homeRowGroups.bs': null,
     'source/utils/SeerrUtils.bs': ['SeerrEscapeJsonString', 'SeerrJsonFromPairs', 'SeerrFormatJson', 'SeerrFormatJsonValue'],
     'source/utils/libraryOrder.bs': null,
     'source/utils/detailSectionLayout.bs': null,
@@ -145,6 +146,7 @@ source += '\n' + await readFile('test/external-rows.bs', 'utf8');
 source += '\n' + await readFile('test/library-order.bs', 'utf8');
 source += '\n' + await readFile('test/detail-sections.bs', 'utf8');
 source += '\n' + await readFile('test/rating-sources.bs', 'utf8');
+source += '\n' + await readFile('test/home-row-groups.bs', 'utf8');
 source += '\n' + await readFile('test/settings-metrics.bs', 'utf8');
 source += '\n' + await readFile('test/library-filters.bs', 'utf8');
 source += '\n' + await readFile('test/item-menu.bs', 'utf8');

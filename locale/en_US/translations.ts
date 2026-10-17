@@ -7003,5 +7003,20 @@
         <source>Rows</source>
         <translation>Rows</translation>
     </message>
+    <message>
+        <source>Seerr</source>
+        <translation>Seerr</translation>
+        <extracomment>Heading of a group of disabled rows in the Home Rows editor</extracomment>
+    </message>
+    <message>
+        <source>Genres and Studios</source>
+        <translation>Genres and Studios</translation>
+        <extracomment>Heading of a group of disabled rows in the Home Rows editor</extracomment>
+    </message>
+    <message>
+        <source>External Lists</source>
+        <translation>External Lists</translation>
+        <extracomment>Heading of a group of disabled rows in the Home Rows editor</extracomment>
+    </message>
 </context>
 </TS>
