@@ -75,6 +75,7 @@ const selections = {
     'source/utils/favoriteTabs.bs': null,
     'source/utils/homePreview.bs': null,
     'source/utils/remoteSubtitles.bs': null,
+    'source/utils/quickConnectUrl.bs': null,
     'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
     'components/extras/LoadExtrasTask.bs': ['personRoleIn'],
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions', 'SetUpAudioOptions', 'detailServerSubtitleIndex', 'audioOrdinal', 'audioStreamPosition'],
@@ -129,6 +130,7 @@ source += '\n' + await readFile('test/emby-details.bs', 'utf8');
 source += '\n' + await readFile('test/server-compatibility.bs', 'utf8');
 source += '\n' + await readFile('test/review-regressions.bs', 'utf8');
 source += '\n' + await readFile('test/accent-folding.bs', 'utf8');
+source += '\n' + await readFile('test/quick-connect-url.bs', 'utf8');
 source += '\n' + await readFile('test/log-redaction.bs', 'utf8');
 source += '\n' + await readFile('test/youtube-trailer.bs', 'utf8');
 source += '\n' + await readFile('test/playback-fallback.bs', 'utf8');
