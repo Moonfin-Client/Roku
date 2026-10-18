@@ -706,9 +706,13 @@ for (const glyph of ['extension', 'public', 'desktop_windows', 'phone_iphone', '
     assert.ok(glyphNames.includes(glyph), `The sync panel draws ${glyph}`);
 }
 assert.match(syncFunction('GetMappings'), /\{ pluginKey: "libraryStyle", rokuKey: "ui\.library\.style", type: "direct" \}/, 'The library style syncs under Core\'s name');
+assert.match(syncFunction('GetMappings'), /\{ pluginKey: "musicLibraryStyle", rokuKey: "ui\.library\.musicStyle", type: "direct" \}/, 'The music library style syncs under the profile\'s name');
+const musicStyle = findSetting(settingsTree, 'ui.library.musicStyle');
+assert.equal(musicStyle.default, 'immersive', 'Immersive is the music library default');
+assert.deepEqual(musicStyle.options.map(option => option.id), ['classic', 'quickAccess', 'immersive'], 'The music styles keep the values the profile stores');
 const styleStrings = await readFile('locale/en_US/translations.ts', 'utf8');
-for (const name of ['Library Style', 'Docked', 'Show', 'Display']) assert.match(styleStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
-process.stdout.write('PASS: settings sync profiles (27 checks)\n');
+for (const name of ['Video Library Style', 'Docked', 'Show', 'Display', 'Music Library Style', 'Quick Access', 'Immersive']) assert.match(styleStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
+process.stdout.write('PASS: settings sync profiles (33 checks)\n');
 
 // Every glyph a setting names is in the icon font, and the font and its table cover the same characters
 const settingsJsonText = await readFile('settings/settings.json', 'utf8');

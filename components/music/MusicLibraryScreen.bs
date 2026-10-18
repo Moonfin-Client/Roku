@@ -1,0 +1,1358 @@
+import "pkg:/source/api/Image.bs"
+import "pkg:/source/enums/ItemType.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/fontApply.bs"
+import "pkg:/source/utils/libraryFilters.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/musicLibraryStyle.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+import "pkg:/source/utils/themeChrome.bs"
+
+' The header sits 16 below the bar across the top
+const HEADER_TOP = 116
+' The width the rail nav down the left takes while it's folded
+const SIDEBAR_WIDTH = 78
+const SECTION_PAD = 28
+const SECTION_HEADER = 44
+const SECTION_HEADER_GAP = 8
+const CARD_SIZE = 168
+const CARD_GAP = 20
+' A shelf is a card plus room for its words, with 5 above and below its cards
+const SHELF_HEIGHT = 232
+const SHELF_GAP = 6
+const GRID_GAP = 20
+const GRID_CARD_TEXT = 40
+const SONG_ROW = 56
+const TRACK_ROW = 32
+const GENRE_HEIGHT = 96
+const GENRE_GAP = 16
+const HEADER_BUTTON = 44
+const HERO_ART = 300
+const HERO_GAP = 40
+const HERO_BUTTON = 52
+const BUTTON_GAP = 10
+const TRACKS_WIDTH = 420
+const RAIL_WIDTH = 248
+const RAIL_ICON_ROW = 44
+const RAIL_PLAYLIST_ROW = 48
+const QUICK_INSET = 32
+const QUICK_HEIGHT = 64
+const QUICK_GAP = 10
+const FILTER_HEIGHT = 40
+const PAGE_SIZE = 15
+' A shelf asks for its next page once the focus is this close to its end
+const PAGE_AHEAD = 8
+const SCROLL_BOTTOM = 40
+const SORT_SETTING = "music_sortKey"
+
+sub init()
+    m.top.optionsAvailable = false
+    m.page = m.top.findNode("page")
+    m.rail = m.top.findNode("rail")
+    m.railBg = m.top.findNode("railBg")
+    m.railList = m.top.findNode("railList")
+    m.sortDialog = m.top.findNode("sortDialog")
+    m.sortDialog.observeField("applied", "onSortApplied")
+    m.sortDialog.observeField("closed", "onSortClosed")
+    m.scrollAnim = m.top.findNode("scrollAnim")
+    m.scrollInterp = m.top.findNode("scrollInterp")
+
+    m.isQuick = settingOr(musicLibraryStyle.SETTING, "immersive") = "quickAccess"
+    m.accent = themeChrome.Accent()
+    m.ink = themeChrome.OnBackground()
+    m.separator = " " + fontApply.ThemeSeparator() + " "
+
+    m.loadTask = CreateObject("roSGNode", "LoadMusicLibraryTask")
+    m.loadTask.observeField("result", "onLibraryLoaded")
+    m.playTask = CreateObject("roSGNode", "JellyfinAPITask")
+    m.playTask.observeField("response", "onTracksLoaded")
+    m.favoriteTask = CreateObject("roSGNode", "FavoriteItemsTask")
+
+    m.categories = [
+        { id: "artists", label: tr("Artists"), glyph: "person" },
+        { id: "albums", label: tr("Albums"), glyph: "album" },
+        { id: "songs", label: tr("Songs"), glyph: "music_note" },
+        { id: "playlists", label: tr("Playlists"), glyph: "queue_music" },
+        { id: "genres", label: tr("Genres"), glyph: "category" },
+        { id: "favorites", label: tr("Favorites"), glyph: "favorite" }
+    ]
+
+    m.sections = []
+    m.pageTasks = {}
+    m.loaded = false
+    m.focusSection = 0
+    m.focusItem = 0
+    m.onSeeAll = false
+    m.scrollTarget = 0
+    m.top.observeField("focusedChild", "onFocusChanged")
+end sub
+
+' =====================================================================
+' LOADING
+' =====================================================================
+
+sub loadLibrary()
+    library = m.top.parentItem
+    if not isValid(library) then return
+
+    m.libraryId = library.libraryId ?? ""
+    if m.libraryId = "" then m.libraryId = library.id
+    m.libraryName = library.title ?? ""
+    if m.libraryName = "" then m.libraryName = chainLookupReturn(library, "json.Name", tr("Music"))
+    reload()
+end sub
+
+sub reload()
+    m.sortKey = settingOr(SORT_SETTING, "SortName")
+    m.loadTask.control = TaskControl.STOP
+    m.loadTask.libraryId = m.libraryId
+    m.loadTask.sortKey = m.sortKey
+    m.loadTask.control = TaskControl.RUN
+    startLoadingSpinner(false)
+end sub
+
+sub onLibraryLoaded(event as object)
+    stopLoadingSpinner()
+    m.data = event.getData()
+    if not isValid(m.data) then return
+
+    clearPage()
+    m.navInset = 0
+    nav = getActiveNav(m.top.getScene())
+    if isValid(nav) and nav.isSubType("Sidebar") then m.navInset = SIDEBAR_WIDTH
+    m.album = m.data.album
+    m.albumFavorite = chainLookupReturn(m.album, "UserData.IsFavorite", false) = true
+    if m.isQuick
+        buildQuickAccess()
+    else
+        buildImmersive()
+    end if
+    m.loaded = true
+
+    ' A reload after Sort & Filter goes back to the button, the first load lands on the content
+    if m.returnToSort = true
+        m.returnToSort = false
+        focusCell(0, m.sections[0].cells.count() - 1)
+    else
+        focusContent()
+    end if
+end sub
+
+sub clearPage()
+    takeFocus()
+    m.tabBar = invalid
+    m.focusedNode = invalid
+    m.sections = []
+    m.pageTasks = {}
+    m.page.removeChildrenIndex(m.page.getChildCount(), 0)
+    m.railList.removeChildrenIndex(m.railList.getChildCount(), 0)
+    m.page.translation = [0, 0]
+    m.railList.translation = [0, 0]
+end sub
+
+' =====================================================================
+' IMMERSIVE
+' =====================================================================
+
+sub buildImmersive()
+    inset = 48 + m.navInset
+    right = 1920 - 48
+    featured = m.data.featured
+    rows = m.data.rows
+    tracks = m.data.tracks
+
+    ' Drawn first so it sits under the header and the hero, which it's sized to once they're laid out
+    backdrop = invalid
+    if isValid(featured) and not get_user_setting_bool("ui.library.hideBackdrops", false) then backdrop = addBackdrop(featured)
+
+    ' The name, the categories as tabs, then Search and Sort & Filter at the far end
+    header = newSection("header", HEADER_TOP)
+    header.pinTop = true
+    header.tabs = true
+    name = addLabel(m.page, m.libraryName, inset, HEADER_TOP, 24, true)
+    name.height = HEADER_BUTTON
+    name.vertAlign = "center"
+    tabsX = inset + name.boundingRect().width + 28
+
+    sortButton = addTile(m.page, headerButtonSpec("tune"), right - HEADER_BUTTON, HEADER_TOP)
+    searchButton = addTile(m.page, headerButtonSpec("search_rounded"), right - (HEADER_BUTTON * 2) - 8, HEADER_TOP)
+
+    tabs = [{ id: "overview", label: tr("Overview") }]
+    for each category in m.categories
+        tabs.push({ id: category.id, label: category.label })
+    end for
+    m.tabBar = m.page.createChild("DetailTabBar")
+    m.tabBar.expanded = false
+    m.tabBar.escapeRight = true
+    m.tabBar.segmentHeight = 34
+    m.tabBar.segmentPadX = 15
+    m.tabBar.barPad = 5
+    m.tabBar.textSize = 13
+    m.tabBar.maxWidth = searchButton.translation[0] - 16 - tabsX
+    m.tabBar.translation = [tabsX, HEADER_TOP]
+    m.tabBar.selectedIndex = 0
+    m.tabBar.tabs = tabs
+    m.tabBar.observeField("activated", "onTabActivated")
+    m.tabBar.observeField("escape", "onTabEscape")
+
+    header.cells = [m.tabBar, searchButton, sortButton]
+    header.actions = [invalid, { do: "search" }, { do: "sort" }]
+    header.columns = 3
+    header.bottom = HEADER_TOP + HEADER_BUTTON
+    m.sections.push(header)
+
+    y = header.bottom
+    if isValid(featured) then y = addHero(featured, tracks, y + 32, inset, right) + 40
+    if isValid(backdrop) then fitBackdrop(backdrop, y)
+
+    y = addCardGrid(rows.latest, Substitute(tr("Latest {0}"), m.libraryName), y, inset, right)
+    y = addSongList("lastPlayed", tr("Last Played"), rows.lastPlayed.items, 5, y, inset, 1920 - inset)
+    y = addGenres(y, inset, right)
+    y = addShelf("albumArtists", tr("Album Artists"), rows.albumArtists, true, "artists", y, inset, 0)
+    y = addShelf("favorites", tr("Favorites"), rows.favorites, false, "favoriteAlbums", y, inset, 0)
+    y = addShelf("playlists", tr("Playlists"), rows.playlists, false, "playlists", y, inset, 0)
+    y = addShelf("artists", tr("Artists"), rows.artists, true, "musicArtists", y, inset, 0)
+    addShelf("albums", tr("Albums"), rows.albums, false, "albums", y, inset, 0)
+end sub
+
+function headerButtonSpec(glyph as string) as object
+    return { kind: "button", height: HEADER_BUTTON, glyph: glyph, fill: "#000000", fillOpacity: 0.35, ink: "#FFFFFF" }
+end function
+
+' The hero's cover blurred behind the header and the hero, fading into the page
+function addBackdrop(featured as object) as dynamic
+    url = artOf(featured, 480, { blur: 20 })
+    if url = "" then return invalid
+
+    backdrop = m.page.createChild("Poster")
+    backdrop.loadDisplayMode = "scaleToFill"
+    backdrop.width = 1920
+    backdrop.loadWidth = 480
+    backdrop.loadHeight = 480
+    backdrop.opacity = 0.65
+    backdrop.uri = url
+
+    fade = m.page.createChild("Poster")
+    fade.uri = "pkg:/images/seerr_gradient.png"
+    fade.loadDisplayMode = "scaleToFill"
+    ' The gradient is drawn in (17, 24, 39), which this tint lands on the page's #000018
+    fade.blendColor = "#00009D"
+    fade.width = 1920
+    return { image: backdrop, fade: fade }
+end function
+
+sub fitBackdrop(backdrop as object, height as integer)
+    backdrop.image.height = height
+    backdrop.fade.height = height
+end sub
+
+' The album on a large cover with its title, Play, Shuffle and Favorite, and its songs beside
+' it. Everything sits on the bottom of the cover. Hands back the bottom of the cover.
+function addHero(featured as object, tracks as object, y as integer, left as integer, right as integer) as integer
+    source = m.album ?? featured
+    bottom = y + HERO_ART
+    addTile(m.page, { kind: "card", width: HERO_ART, image: artOf(featured, HERO_ART), glyph: "album" }, left, y)
+
+    textX = left + HERO_ART + HERO_GAP
+    textRight = right
+    if tracks.count() > 0 then textRight = right - TRACKS_WIDTH - 40
+    textWidth = textRight - textX
+
+    hero = newSection("hero", y)
+    hero.pinTop = true
+    hero.left = sideOut()
+    buttonsY = bottom - HERO_BUTTON
+    play = addButton(m.page, heroButtonSpec("play_arrow_rounded", tr("Play"), true))
+    shuffle = addButton(m.page, heroButtonSpec("shuffle_rounded", tr("Shuffle"), false))
+    play.node.translation = [textX, buttonsY]
+    shuffle.node.translation = [textX + play.width + BUTTON_GAP, buttonsY]
+    hero.cells = [play.node, shuffle.node]
+    hero.actions = [{ do: "play" }, { do: "shuffle" }]
+    if isValid(m.album)
+        m.favoriteButton = addTile(m.page, favoriteSpec(), textX + play.width + shuffle.width + (BUTTON_GAP * 2), buttonsY)
+        hero.cells.push(m.favoriteButton)
+        hero.actions.push({ do: "favorite" })
+    end if
+    hero.columns = hero.cells.count()
+
+    meta = addLabel(m.page, heroMeta(source, tracks.count()), textX, 0, 16, false)
+    meta.color = themeChrome.WithAlpha(m.ink, "CC")
+    meta.width = textWidth
+    meta.maxLines = 1
+    metaY = buttonsY - 24 - meta.boundingRect().height
+    meta.translation = [textX, metaY]
+
+    title = addLabel(m.page, heroTitle(featured), textX, 0, 52, true)
+    title.width = textWidth
+    title.wrap = true
+    title.maxLines = 2
+    titleY = metaY - 8 - title.boundingRect().height
+    title.translation = [textX, titleY]
+
+    eyebrowText = tr("Recently Added")
+    if m.data.rows.lastPlayed.items.count() > 0 then eyebrowText = tr("Jump Back In")
+    eyebrow = addLabel(m.page, UCase(eyebrowText), textX, 0, 13, true)
+    eyebrow.color = m.accent
+    eyebrow.translation = [textX, titleY - 8 - eyebrow.boundingRect().height]
+
+    hero.bottom = bottom
+    m.sections.push(hero)
+    if tracks.count() > 0 then addAlbumTracks(featured, tracks, right - TRACKS_WIDTH, bottom, hero)
+    return bottom
+end function
+
+function heroButtonSpec(glyph as string, label as string, primary as boolean) as object
+    spec = { kind: "button", height: HERO_BUTTON, glyph: glyph, title: label, glyphSize: 22, textSize: 16, padX: 24, fill: "#FFFFFF", fillOpacity: 0.14, ink: m.ink, pressFill: true }
+    if primary
+        spec.fill = m.accent
+        spec.fillOpacity = 1.0
+        spec.ink = themeChrome.OnAccent()
+    end if
+    return spec
+end function
+
+function favoriteSpec() as object
+    spec = heroButtonSpec("favorite_border", "", false)
+    if m.albumFavorite
+        spec.glyph = "favorite"
+        spec.iconInk = m.accent
+    end if
+    return spec
+end function
+
+' The album's first songs in a panel standing on the bottom of the cover, the one played last
+' picked out. Right from Favorite reaches them and Left goes back.
+sub addAlbumTracks(featured as object, tracks as object, x as integer, bottom as integer, hero as object)
+    shown = tracks.count()
+    if shown > 6 then shown = 6
+    panelHeight = 12 + 26 + (shown * TRACK_ROW) + 12
+    y = bottom - panelHeight
+
+    panel = m.page.createChild("Poster")
+    panel.uri = "pkg:/images/details/surface17.9.png"
+    panel.blendColor = "#000000"
+    panel.opacity = 0.42
+    panel.width = TRACKS_WIDTH
+    panel.height = panelHeight
+    panel.translation = [x, y]
+    heading = addLabel(m.page, UCase(tr("From This Album")), x + 20, y + 16, 12, true)
+    heading.color = themeChrome.WithAlpha(m.ink, "B3")
+
+    hero.right = "tracks"
+    list = newSection("tracks", y)
+    list.aside = "hero"
+    list.left = "hero"
+    list.pinTop = true
+    rowY = y + 12 + 26
+    for i = 0 to shown - 1
+        track = tracks[i]
+        number = track.IndexNumber ?? i + 1
+        tile = addTile(m.page, { kind: "row", width: TRACKS_WIDTH - 24, height: TRACK_ROW, title: track.Name ?? "", leading: number.toStr(), trailing: runtimeOf(track) }, x + 12, rowY + (i * TRACK_ROW))
+        tile.highlighted = isStringEqual(track.Id, featured.Id)
+        list.cells.push(tile)
+        list.actions.push({ open: track })
+    end for
+    list.bottom = bottom
+    m.sections.push(list)
+end sub
+
+function heroTitle(featured as object) as string
+    if isValid(m.album) then return m.album.Name ?? ""
+    if isStringEqual(featured.Type, "Audio") then return featured.Album ?? featured.Name ?? ""
+    return featured.Name ?? ""
+end function
+
+function heroMeta(source as object, trackCount as integer) as string
+    parts = []
+    artist = subtitleOf(source)
+    if artist <> "" then parts.push(artist)
+    if isValid(source.ProductionYear) then parts.push(source.ProductionYear.toStr())
+    if trackCount = 1
+        parts.push(tr("1 track"))
+    else if trackCount > 1
+        parts.push(tr("{count} tracks").replace("{count}", trackCount.toStr()))
+    end if
+    return parts.join(m.separator)
+end function
+
+' Two rows of the newest albums, as many across as fit at 200 or so each
+function addCardGrid(row as object, title as string, y as integer, left as integer, right as integer) as integer
+    items = row.items
+    if items.count() = 0 then return y
+    columns = Int((right - left + GRID_GAP) / 200)
+    if columns < 3 then columns = 3
+    if columns > 8 then columns = 8
+    cardWidth = Int(((right - left) - ((columns - 1) * GRID_GAP)) / columns)
+    rowHeight = cardWidth + GRID_CARD_TEXT + GRID_GAP
+
+    section = newSection("latest", y + SECTION_PAD)
+    y = addHeading(section, title, y, left, right, invalid)
+    shown = items.count()
+    if shown > columns * 2 then shown = columns * 2
+    for i = 0 to shown - 1
+        item = items[i]
+        x = left + ((i mod columns) * (cardWidth + GRID_GAP))
+        tile = addTile(m.page, { kind: "card", width: cardWidth, title: item.Name ?? "", subtitle: subtitleOf(item), image: artOf(item, cardWidth), glyph: "album" }, x, y + ((i \ columns) * rowHeight))
+        section.cells.push(tile)
+        section.actions.push({ open: item })
+    end for
+    section.columns = columns
+    section.bottom = y + (((shown - 1) \ columns) * rowHeight) + cardWidth + GRID_CARD_TEXT
+    section.left = sideOut()
+    m.sections.push(section)
+    return section.bottom
+end function
+
+' One row of genre tiles in colors of their own, with See All for the rest
+function addGenres(y as integer, left as integer, right as integer) as integer
+    genres = m.data.genres
+    if genres.count() = 0 then return y
+    columns = Int((right - left + GENRE_GAP) / 166)
+    if columns < 2 then columns = 2
+    if columns > 8 then columns = 8
+    tileWidth = Int(((right - left) - ((columns - 1) * GENRE_GAP)) / columns)
+    colors = ["#7A2E22", "#3B2D5C", "#6B2F4A", "#4D3B72", "#B4472F", "#1F3A5F", "#8A5A1E", "#14505C"]
+
+    section = newSection("genres", y + SECTION_PAD)
+    y = addHeading(section, tr("Browse By Genre"), y, left, right, { category: "genres" })
+    shown = genres.count()
+    if shown > columns then shown = columns
+    for i = 0 to shown - 1
+        genre = genres[i]
+        tile = addTile(m.page, { kind: "genre", width: tileWidth, height: GENRE_HEIGHT, title: genre.Name ?? "", color: colors[i mod colors.count()] }, left + (i * (tileWidth + GENRE_GAP)), y)
+        section.cells.push(tile)
+        section.actions.push({ genre: genre })
+    end for
+    section.columns = shown
+    section.bottom = y + GENRE_HEIGHT
+    section.left = sideOut()
+    m.sections.push(section)
+    return section.bottom
+end function
+
+' =====================================================================
+' QUICK ACCESS
+' =====================================================================
+
+sub buildQuickAccess()
+    railLeft = m.navInset
+    left = railLeft + RAIL_WIDTH + QUICK_INSET
+    right = 1920 - QUICK_INSET
+    rows = m.data.rows
+    quick = quickItems()
+
+    m.rail.visible = true
+    m.railBg.translation = [railLeft, 0]
+
+    ' Jump Back In over the grid, or the library's name when there's nothing to jump back into
+    header = newSection("header", HEADER_TOP)
+    header.pinTop = true
+    headerText = m.libraryName
+    if quick.count() > 0 then headerText = tr("Jump Back In")
+    sortButton = addButton(m.page, { kind: "button", height: FILTER_HEIGHT, glyph: "tune", title: tr("Sort & Filter"), glyphSize: 18, textSize: 14, padX: 16, fill: "#FFFFFF", fillOpacity: 0.08 })
+    sortButton.node.translation = [right - sortButton.width, HEADER_TOP]
+    title = addLabel(m.page, headerText, left, HEADER_TOP, 26, true)
+    title.width = right - sortButton.width - 16 - left
+    title.height = FILTER_HEIGHT
+    title.vertAlign = "center"
+    title.maxLines = 1
+    header.cells = [sortButton.node]
+    header.actions = [{ do: "sort" }]
+    header.left = "rail"
+    header.bottom = HEADER_TOP + FILTER_HEIGHT
+    m.sections.push(header)
+
+    y = header.bottom
+    if quick.count() > 0
+        y += 16
+        columns = Int((right - left) / 240)
+        if columns < 2 then columns = 2
+        if columns > 4 then columns = 4
+        tileWidth = Int(((right - left) - ((columns - 1) * QUICK_GAP)) / columns)
+        section = newSection("quick", y)
+        for i = 0 to quick.count() - 1
+            entry = quick[i]
+            tile = addTile(m.page, { kind: "quick", width: tileWidth, height: QUICK_HEIGHT, title: entry.title, image: entry.image, glyph: "album" }, left + ((i mod columns) * (tileWidth + QUICK_GAP)), y + ((i \ columns) * (QUICK_HEIGHT + QUICK_GAP)))
+            section.cells.push(tile)
+            section.actions.push(entry.action)
+        end for
+        section.columns = columns
+        section.bottom = y + ((((quick.count() - 1) \ columns) + 1) * (QUICK_HEIGHT + QUICK_GAP)) - QUICK_GAP
+        section.left = "rail"
+        m.sections.push(section)
+        y = section.bottom
+    end if
+
+    y = addShelf("latest", Substitute(tr("Latest {0}"), m.libraryName), rows.latest, false, "", y, left, railLeft + RAIL_WIDTH)
+    y = addSongList("lastPlayed", tr("Last Played"), rows.lastPlayed.items, 6, y, left, right)
+    y = addShelf("albumArtists", tr("Album Artists"), rows.albumArtists, true, "artists", y, left, railLeft + RAIL_WIDTH)
+    y = addShelf("favorites", tr("Favorites"), rows.favorites, false, "favoriteAlbums", y, left, railLeft + RAIL_WIDTH)
+    y = addShelf("artists", tr("Artists"), rows.artists, true, "musicArtists", y, left, railLeft + RAIL_WIDTH)
+    addShelf("albums", tr("Albums"), rows.albums, false, "albums", y, left, railLeft + RAIL_WIDTH)
+
+    buildRail(railLeft + 12)
+end sub
+
+' The albums of the songs played last, each once, then the playlists, eight at most
+function quickItems() as object
+    seen = {}
+    entries = []
+    for each track in m.data.rows.lastPlayed.items
+        albumId = track.AlbumId ?? ""
+        key = albumId
+        if key = "" then key = track.Id
+        if not seen.doesExist(key)
+            seen[key] = true
+            if albumId = ""
+                entries.push({ title: track.Name ?? "", image: artOf(track, QUICK_HEIGHT), action: { open: track } })
+            else
+                entries.push({ title: track.Album ?? track.Name ?? "", image: artOf(track, QUICK_HEIGHT), action: { albumOf: track } })
+            end if
+        end if
+    end for
+    for each playlist in m.data.rows.playlists.items
+        entries.push({ title: playlist.Name ?? "", image: artOf(playlist, QUICK_HEIGHT), action: { open: playlist } })
+    end for
+
+    while entries.count() > 8
+        entries.pop()
+    end while
+    return entries
+end function
+
+' The library's name, Search, Overview and the categories, then the music playlists under a
+' heading of their own
+sub buildRail(x as integer)
+    itemWidth = RAIL_WIDTH - 24
+    name = addLabel(m.railList, m.libraryName, x + 12, HEADER_TOP, 24, true)
+    name.width = itemWidth - 24
+    name.maxLines = 1
+
+    rail = newSection("rail", HEADER_TOP)
+    rail.aside = "rail"
+    rail.left = "sidebar"
+    y = HEADER_TOP + name.boundingRect().height + 12
+    entries = [
+        { title: tr("Search Music"), glyph: "search_rounded", action: { do: "search" } },
+        { title: tr("Overview"), glyph: "space_dashboard_outlined", action: { do: "overview" }, selected: true }
+    ]
+    for each category in m.categories
+        entries.push({ title: category.label, glyph: category.glyph, action: { category: category.id } })
+    end for
+
+    for each entry in entries
+        tile = addTile(m.railList, { kind: "rail", width: itemWidth, height: RAIL_ICON_ROW, title: entry.title, glyph: entry.glyph, selected: entry.selected }, x, y)
+        rail.cells.push(tile)
+        rail.actions.push(entry.action)
+        y += RAIL_ICON_ROW
+    end for
+
+    playlists = m.data.rows.playlists.items
+    if playlists.count() > 0
+        heading = addLabel(m.railList, UCase(tr("Playlists")), x + 12, y + 18, 12, true)
+        heading.color = themeChrome.WithAlpha(m.ink, "9E")
+        y += 18 + heading.boundingRect().height + 8
+        for each playlist in playlists
+            tile = addTile(m.railList, { kind: "rail", art: true, width: itemWidth, height: RAIL_PLAYLIST_ROW, title: playlist.Name ?? "", image: artOf(playlist, 32), glyph: "queue_music" }, x, y)
+            rail.cells.push(tile)
+            rail.actions.push({ open: playlist })
+            y += RAIL_PLAYLIST_ROW
+        end for
+    end if
+    rail.bottom = y
+    m.sections.push(rail)
+end sub
+
+' =====================================================================
+' SECTIONS
+' =====================================================================
+
+' A section is a run of cells read row by row, columns across. aside names the section it
+' hangs off when the up and down keys pass it by, left and right name where the edges go.
+function newSection(id as string, top as integer) as object
+    return { id: id, cells: [], actions: [], columns: 1, top: top, bottom: top, seeAll: invalid, seeAllAction: invalid, row: invalid, memory: 0, aside: "", left: "", right: "", pinTop: false, tabs: false }
+end function
+
+' Where Left off a section's first column goes: the rail in Quick Access, the side nav otherwise
+function sideOut() as string
+    if m.isQuick then return "rail"
+    return "sidebar"
+end function
+
+' A section's heading 28 below the section above, with See All at the far end when it has one.
+' Hands back where its cells start.
+function addHeading(section as object, title as string, y as integer, left as integer, right as integer, seeAll as dynamic) as integer
+    y += SECTION_PAD
+    label = addLabel(m.page, title, left, y, 22, true)
+    label.height = SECTION_HEADER
+    label.vertAlign = "center"
+    label.width = right - left
+    label.maxLines = 1
+    if isValid(seeAll)
+        button = addButton(m.page, { kind: "button", height: 33, title: tr("See All"), textSize: 13, padX: 12, bold: false, ink: themeChrome.WithAlpha(m.ink, "B3") })
+        button.node.translation = [right - button.width, y + ((SECTION_HEADER - 33) / 2)]
+        label.width = right - button.width - 16 - left
+        section.seeAll = button.node
+        section.seeAllAction = seeAll
+    end if
+    return y + SECTION_HEADER + SECTION_HEADER_GAP
+end function
+
+' A row of covers that keeps the focused one at its start and pages in more as the focus nears
+' its end. Artists are drawn round. clipLeft is where the page stops showing it on the left.
+function addShelf(id as string, title as string, row as object, round as boolean, seeAll as string, y as integer, left as integer, clipLeft as integer) as integer
+    if row.items.count() = 0 then return y
+
+    section = newSection(id, y + SECTION_PAD)
+    seeAllAction = invalid
+    if seeAll <> "" then seeAllAction = { category: seeAll }
+    y = addHeading(section, title, y, left, 1920 - 12, seeAllAction) - SECTION_HEADER_GAP + SHELF_GAP
+
+    clip = m.page.createChild("Group")
+    clip.translation = [left, y]
+    clip.clippingRect = [clipLeft - left, -30, 1920 - clipLeft, SHELF_HEIGHT + 60]
+    section.row = clip.createChild("Group")
+    section.round = round
+    section.left = sideOut()
+    section.query = row
+    section.offset = row.fetched
+    section.hasMore = row.fetched < row.total
+    appendCards(section, row.items)
+    section.bottom = y + SHELF_HEIGHT
+    m.sections.push(section)
+    return section.bottom
+end function
+
+sub appendCards(section as object, items as object)
+    placeholder = "album"
+    if section.round then placeholder = "person"
+    for each item in items
+        x = section.cells.count() * (CARD_SIZE + CARD_GAP)
+        tile = addTile(section.row, { kind: "card", width: CARD_SIZE, title: item.Name ?? "", subtitle: subtitleOf(item), image: artOf(item, CARD_SIZE), round: section.round, glyph: placeholder }, x, 5)
+        section.cells.push(tile)
+        section.actions.push({ open: item })
+    end for
+    section.columns = section.cells.count()
+end sub
+
+' Songs as rows: cover, title over artist and album, and length
+function addSongList(id as string, title as string, items as object, maxRows as integer, y as integer, left as integer, right as integer) as integer
+    if items.count() = 0 then return y
+
+    section = newSection(id, y + SECTION_PAD)
+    y = addHeading(section, title, y, left, right, invalid)
+    shown = items.count()
+    if shown > maxRows then shown = maxRows
+    for i = 0 to shown - 1
+        item = items[i]
+        tile = addTile(m.page, { kind: "row", width: right - left, height: SONG_ROW, title: item.Name ?? "", subtitle: songSubtitle(item), trailing: runtimeOf(item), image: artOf(item, 44), glyph: "music_note" }, left, y + (i * SONG_ROW))
+        section.cells.push(tile)
+        section.actions.push({ open: item })
+    end for
+    section.bottom = y + (shown * SONG_ROW)
+    section.left = sideOut()
+    m.sections.push(section)
+    return section.bottom
+end function
+
+' =====================================================================
+' PAGING
+' =====================================================================
+
+' The next 15, or for Latest, which has no paging, the whole list again 15 longer
+sub loadMore(section as object)
+    query = section.query
+    params = {}
+    params.append(query.params)
+    count = section.cells.count()
+    if query.latest = true
+        params.limit = count + PAGE_SIZE
+    else
+        params.startIndex = section.offset
+        params.limit = PAGE_SIZE
+    end if
+
+    task = CreateObject("roSGNode", "JellyfinAPITask")
+    task.observeField("response", "onPageLoaded")
+    task.request = { path: query.path, params: params }
+    section.paging = true
+    m.pageTasks[section.id] = task
+    task.control = TaskControl.RUN
+end sub
+
+sub onPageLoaded(event as object)
+    task = event.getRoSGNode()
+    section = invalid
+    for each candidate in m.sections
+        if isValid(m.pageTasks[candidate.id]) and m.pageTasks[candidate.id].isSameNode(task) then section = candidate
+    end for
+    if not isValid(section) then return
+    m.pageTasks.delete(section.id)
+    section.paging = false
+
+    response = event.getData()
+    data = invalid
+    if isValid(response) and response.success = true then data = response.data
+    items = responseItems(data)
+    count = section.cells.count()
+    query = section.query
+
+    added = []
+    if query.latest = true
+        for i = count to items.count() - 1
+            added.push(items[i])
+        end for
+        section.hasMore = items.count() >= count + PAGE_SIZE and items.count() < query.total
+    else
+        for each item in items
+            if query.audioOnly <> true or isStringEqual(item.LookupCI("MediaType"), "Audio") then added.push(item)
+        end for
+        total = query.total
+        if type(data) = "roAssociativeArray" and isValid(data.TotalRecordCount) then total = data.TotalRecordCount
+        section.offset += items.count()
+        section.hasMore = items.count() > 0 and section.offset < total
+    end if
+    appendCards(section, added)
+end sub
+
+' =====================================================================
+' BUILDING BLOCKS
+' =====================================================================
+
+' A label on the page, in the theme's font when one is on
+function addLabel(parent as object, text as string, x as integer, y as integer, size as integer, bold as boolean) as object
+    label = parent.createChild("Label")
+    if bold
+        label.font = "font:MediumBoldSystemFont"
+    else
+        label.font = "font:MediumSystemFont"
+    end if
+    label.font.size = size
+    label.text = text
+    label.color = m.ink
+    label.translation = [x, y]
+    fontApply.ApplyThemeFonts(label)
+    return label
+end function
+
+' A button sized to its words, for the caller to place
+function addButton(parent as object, spec as object) as object
+    tile = parent.createChild("MusicLibraryTile")
+    return { node: tile, width: tile.callFunc("setup", spec) }
+end function
+
+function addTile(parent as object, args as object, x as integer, y as integer) as object
+    tile = parent.createChild("MusicLibraryTile")
+    tile.translation = [x, y]
+    tile.callFunc("setup", args)
+    return tile
+end function
+
+' The cover a music item shows, its album's for a song without one of its own
+function artOf(item as object, size as integer, extra = {} as object) as string
+    params = { maxHeight: size, maxWidth: size, quality: 90 }
+    params.append(extra)
+
+    albumTag = item.AlbumPrimaryImageTag ?? ""
+    if isStringEqual(item.Type, "Audio") and albumTag <> "" and isValidAndNotEmpty(item.AlbumId)
+        params.tag = albumTag
+        return ImageURL(item.AlbumId, "Primary", params)
+    end if
+
+    tag = chainLookupReturn(item, "ImageTags.Primary", "")
+    if tag <> ""
+        params.tag = tag
+        return ImageURL(item.Id, "Primary", params)
+    end if
+
+    parentTag = item.ParentPrimaryImageTag ?? ""
+    if parentTag <> "" and isValidAndNotEmpty(item.ParentPrimaryImageItemId)
+        params.tag = parentTag
+        return ImageURL(item.ParentPrimaryImageItemId, "Primary", params)
+    end if
+    return ""
+end function
+
+' Who made a song or album, how big a playlist is, or how many albums an artist has
+function subtitleOf(item as object) as string
+    itemType = item.Type ?? ""
+    if isStringEqual(itemType, "Audio") or isStringEqual(itemType, "MusicAlbum")
+        if isValidAndNotEmpty(item.Artists) then return item.Artists.join(", ")
+        names = []
+        for each artist in item.AlbumArtists ?? []
+            if isValidAndNotEmpty(artist.Name) then names.push(artist.Name)
+        end for
+        if names.count() > 0 then return names.join(", ")
+        return item.AlbumArtist ?? ""
+    end if
+
+    if isStringEqual(itemType, "Playlist")
+        count = item.ChildCount ?? 0
+        if count = 1 then return tr("1 item")
+        if count > 1 then return tr("{count} items").replace("{count}", count.toStr())
+    else if isStringEqual(itemType, "MusicArtist")
+        count = item.RecursiveItemCount ?? 0
+        if count > 0 then return tr("{count} albums").replace("{count}", count.toStr())
+    end if
+    return ""
+end function
+
+function songSubtitle(item as object) as string
+    artist = subtitleOf(item)
+    album = item.Album ?? ""
+    if album = "" then return artist
+    if artist = "" then return album
+    return artist + m.separator + album
+end function
+
+function runtimeOf(item as object) as string
+    ticks = item.RunTimeTicks
+    if not isValid(ticks) or ticks <= 0 then return ""
+    return ticksToHuman(ticks)
+end function
+
+' =====================================================================
+' FOCUS
+' =====================================================================
+
+' The first section from start on, going the given way, that the up and down keys stop on
+function nextSection(start as integer, direction as integer) as integer
+    index = start
+    while index >= 0 and index < m.sections.count()
+        if m.sections[index].aside = "" then return index
+        index += direction
+    end while
+    return -1
+end function
+
+function sectionIndex(id as string) as integer
+    for i = 0 to m.sections.count() - 1
+        if m.sections[i].id = id then return i
+    end for
+    return -1
+end function
+
+' Entering a section lands where a shelf was left, or on its first stop
+sub enterSection(index as integer)
+    if index < 0 then index = 0
+    if index >= m.sections.count() then return
+    focusCell(index, m.sections[index].memory)
+end sub
+
+sub focusCell(index as integer, item as integer)
+    section = m.sections[index]
+    if item >= section.cells.count() then item = section.cells.count() - 1
+    if item < 0 then item = 0
+    m.focusSection = index
+    m.focusItem = item
+    m.onSeeAll = false
+
+    if isValid(section.row)
+        section.memory = item
+        if section.hasMore = true and section.paging <> true and item >= section.cells.count() - PAGE_AHEAD then loadMore(section)
+    end if
+
+    if isTabStop()
+        m.tabBar.setFocus(true)
+        m.top.lastFocus = m.tabBar
+    else
+        takeFocus()
+        m.top.lastFocus = m.top
+    end if
+    drawFocus()
+    scrollToFocus()
+end sub
+
+' Asking for the focus does nothing while a child of the screen has it, so the child lets go first
+sub takeFocus()
+    node = m.top.focusedChild
+    depth = 0
+    while isValid(node) and not node.isSameNode(m.top) and not node.hasFocus() and depth < 10
+        node = node.focusedChild
+        depth++
+    end while
+    if isValid(node) and not node.isSameNode(m.top) then node.setFocus(false)
+    m.top.setFocus(true)
+end sub
+
+function isTabStop() as boolean
+    section = m.sections[m.focusSection]
+    return section.tabs and m.focusItem = 0 and not m.onSeeAll
+end function
+
+function focusedNode() as dynamic
+    section = m.sections[m.focusSection]
+    if m.onSeeAll then return section.seeAll
+    return section.cells[m.focusItem]
+end function
+
+' Only the stop the remote is on is lit, and nothing is while the nav, the tabs or a dialog
+' holds the focus
+sub drawFocus()
+    if isValid(m.focusedNode) then m.focusedNode.focus = false
+    m.focusedNode = invalid
+    if not m.loaded or not m.top.hasFocus() or isTabStop() then return
+    node = focusedNode()
+    if not isValid(node) then return
+    node.focus = true
+    m.focusedNode = node
+end sub
+
+sub onFocusChanged()
+    drawFocus()
+end sub
+
+sub scrollToFocus()
+    section = m.sections[m.focusSection]
+
+    if section.id = "rail"
+        tile = section.cells[m.focusItem]
+        tileTop = tile.translation[1]
+        tileBottom = tileTop + RAIL_PLAYLIST_ROW
+        scrollY = -m.railList.translation[1]
+        if tileTop - scrollY < HEADER_TOP then scrollY = tileTop - HEADER_TOP
+        if tileBottom - scrollY > 1080 - SCROLL_BOTTOM then scrollY = tileBottom - (1080 - SCROLL_BOTTOM)
+        if scrollY < 0 then scrollY = 0
+        m.railList.translation = [0, -scrollY]
+        return
+    end if
+
+    ' A shelf holds the focused card at its start until its last cards are in view
+    if isValid(section.row) and not m.onSeeAll
+        rowStart = section.row.getParent().translation[0]
+        shift = m.focusItem * (CARD_SIZE + CARD_GAP)
+        maxShift = rowStart + (section.cells.count() * (CARD_SIZE + CARD_GAP)) - 1920
+        if shift > maxShift then shift = maxShift
+        if shift < 0 then shift = 0
+        section.row.translation = [-shift, 0]
+    end if
+
+    scrollY = -m.page.translation[1]
+    if m.scrollAnim.state = "running" then scrollY = -m.scrollTarget
+    target = scrollY
+    if section.pinTop
+        target = 0
+    else
+        if section.top - target < HEADER_TOP then target = section.top - HEADER_TOP
+        if section.bottom - target > 1080 - SCROLL_BOTTOM then target = section.bottom - (1080 - SCROLL_BOTTOM)
+        if target < 0 then target = 0
+    end if
+    if target = scrollY then return
+
+    m.scrollTarget = -target
+    m.scrollAnim.control = "stop"
+    m.scrollInterp.keyValue = [m.page.translation, [0, -target]]
+    m.scrollAnim.control = "start"
+end sub
+
+' Up off the top of the page reaches the nav, which comes back to the stop it left
+sub goToNav()
+    if not FocusNav(m.top) then focusCell(m.focusSection, m.focusItem)
+end sub
+
+sub leaveSection(direction as string)
+    section = m.sections[m.focusSection]
+    index = m.focusSection
+    if section.aside <> "" and section.aside <> "rail" then index = sectionIndex(section.aside)
+
+    if direction = "up"
+        target = nextSection(index - 1, -1)
+        if target < 0
+            goToNav()
+            return
+        end if
+        enterSection(target)
+        return
+    end if
+
+    target = nextSection(index + 1, 1)
+    if target >= 0 then enterSection(target)
+end sub
+
+' Left off a section's first column, and Right off its last
+sub leaveSide(edge as string)
+    if edge = "sidebar"
+        if not FocusSidebar(m.top) then drawFocus()
+    else if edge = "rail"
+        rail = sectionIndex("rail")
+        if rail >= 0 then focusCell(rail, 1)
+    else if edge = "hero"
+        hero = sectionIndex("hero")
+        focusCell(hero, m.sections[hero].cells.count() - 1)
+    else if edge = "tracks"
+        focusCell(sectionIndex("tracks"), 0)
+    end if
+end sub
+
+' Right off the rail, or Select on Overview, goes to the first stop under the header
+sub focusContent()
+    enterSection(nextSection(1, 1))
+end sub
+
+sub moveFocus(key as string)
+    section = m.sections[m.focusSection]
+    item = m.focusItem
+    columns = section.columns
+    count = section.cells.count()
+
+    if m.onSeeAll
+        if key = KeyCode.DOWN
+            focusCell(m.focusSection, section.memory)
+        else if key = KeyCode.UP
+            leaveSection("up")
+        end if
+        return
+    end if
+
+    if section.id = "rail"
+        if key = KeyCode.UP
+            if item > 0 then focusCell(m.focusSection, item - 1) else goToNav()
+        else if key = KeyCode.DOWN
+            if item < count - 1 then focusCell(m.focusSection, item + 1)
+        else if key = KeyCode.LEFT
+            leaveSide("sidebar")
+        else
+            focusContent()
+        end if
+        return
+    end if
+
+    if key = KeyCode.RIGHT
+        if (item mod columns) < columns - 1 and item + 1 < count
+            focusCell(m.focusSection, item + 1)
+        else if section.right <> ""
+            leaveSide(section.right)
+        end if
+    else if key = KeyCode.LEFT
+        if item mod columns > 0
+            focusCell(m.focusSection, item - 1)
+        else if section.left <> ""
+            leaveSide(section.left)
+        end if
+    else if key = KeyCode.UP
+        if item >= columns
+            focusCell(m.focusSection, item - columns)
+        else if isValid(section.seeAll)
+            m.onSeeAll = true
+            drawFocus()
+            scrollToFocus()
+        else
+            leaveSection("up")
+        end if
+    else if key = KeyCode.DOWN
+        if item + columns < count
+            focusCell(m.focusSection, item + columns)
+        else
+            leaveSection("down")
+        end if
+    end if
+end sub
+
+' The highlight goes back to Overview once the remote leaves the tabs
+sub onTabEscape(event as object)
+    direction = event.getData()
+    m.tabBar.focusIndex = 0
+    if direction = "right"
+        focusCell(m.focusSection, 1)
+    else
+        leaveSection(direction)
+    end if
+end sub
+
+' The arrows only move along the tabs, Select opens the one they reached
+sub onTabActivated(event as object)
+    index = event.getData()
+    m.tabBar.selectedIndex = 0
+    if index < 1 then return
+    m.tabBar.focusIndex = 0
+    openCategory(m.categories[index - 1].id)
+end sub
+
+' =====================================================================
+' WHAT SELECT DOES
+' =====================================================================
+
+sub activate()
+    section = m.sections[m.focusSection]
+    action = invalid
+    if m.onSeeAll
+        action = section.seeAllAction
+    else
+        action = section.actions[m.focusItem]
+    end if
+    if not isValid(action) then return
+
+    doing = action.do ?? ""
+    if isValid(action.open)
+        openItem(action.open)
+    else if isValid(action.category)
+        openCategory(action.category)
+    else if isValid(action.genre)
+        openGenre(action.genre)
+    else if isValid(action.albumOf)
+        openAlbumOf(action.albumOf)
+    else if doing = "play"
+        playFeatured()
+    else if doing = "shuffle"
+        shuffleAlbum()
+    else if doing = "favorite"
+        toggleFavorite()
+    else if doing = "search"
+        pushRelayed(CreateObject("roSGNode", "searchResults"))
+    else if doing = "sort"
+        openSort()
+    else if doing = "overview"
+        focusContent()
+    end if
+end sub
+
+' A song plays from its album, anything else opens on its own screen through Main
+sub openItem(item as object)
+    if isStringEqual(item.Type, "Audio")
+        playSong(item)
+        return
+    end if
+
+    node = CreateObject("roSGNode", "JFContentItem")
+    node.id = item.Id
+    node.Type = item.Type
+    node.json = item
+    relaySelection(node)
+end sub
+
+sub openAlbumOf(track as object)
+    openItem({ Id: track.AlbumId, Name: track.Album ?? "", Type: "MusicAlbum" })
+end sub
+
+' Main only reads a pick when it arrives, so the field is cleared at once or a later change to
+' the node would open it again
+sub relaySelection(node as object)
+    m.top.selectedItem = node
+    m.top.selectedItem = invalid
+end sub
+
+sub openGenre(genre as object)
+    m.top.genreItemSelected = {
+        genreId: genre.Id,
+        genreName: genre.Name,
+        libraryId: m.libraryId,
+        itemType: "MusicAlbum",
+        mediaType: ItemType.MUSICARTIST,
+        collectionType: "music"
+    }
+end sub
+
+' Each category and See All is the library grid holding one kind of item, or every favorite,
+' or the genres. It keeps its own sort and filters, so the library's own grid is left alone.
+sub openCategory(id as string)
+    entries = {
+        artists: { id: "artists", view: "Artists", itemType: "AlbumArtists" },
+        musicArtists: { id: "musicArtists", view: "Artists", itemType: "MusicArtist" },
+        albums: { id: "albums", view: "Albums", itemType: "MusicAlbum" },
+        songs: { id: "songs", view: "Albums", itemType: "Audio" },
+        playlists: { id: "playlists", view: "Albums", itemType: "Playlist" },
+        genres: { id: "genres", view: "Genres" },
+        favorites: { id: "favorites", view: "Albums", itemType: "", favorites: true },
+        favoriteAlbums: { id: "favoriteAlbums", view: "Albums", itemType: "MusicAlbum", favorites: true }
+    }
+    group = CreateObject("roSGNode", "VisualLibraryScene")
+    group.mediaType = ItemType.MUSICARTIST
+    group.entry = entries[id]
+    group.parentItem = m.top.parentItem
+    pushRelayed(group)
+end sub
+
+' A screen pushed from here hands what's picked on it to whoever opened this one
+sub pushRelayed(group as object)
+    group.observeField("selectedItem", "onChildSelected")
+    if group.hasField("genreItemSelected") then group.observeField("genreItemSelected", "onChildGenreSelected")
+    m.global.sceneManager.callFunc("pushScene", group)
+end sub
+
+sub onChildSelected(event as object)
+    picked = event.getData()
+    if isValid(picked) then relaySelection(picked)
+end sub
+
+sub onChildGenreSelected(event as object)
+    m.top.genreItemSelected = event.getData()
+end sub
+
+' =====================================================================
+' PLAYBACK AND FAVORITE
+' =====================================================================
+
+sub playFeatured()
+    featured = m.data.featured
+    if not isValid(featured) then return
+    if isStringEqual(featured.Type, "Audio")
+        playSong(featured)
+    else if m.data.tracks.count() > 0
+        playTracks(m.data.tracks, 0)
+    else
+        openItem(featured)
+    end if
+end sub
+
+' The album's songs from this one on, or just the song when it has no album
+sub playSong(track as object)
+    albumId = track.AlbumId ?? ""
+    if albumId = ""
+        playTracks([track], 0)
+    else if isValid(m.album) and isStringEqual(albumId, m.album.Id) and m.data.tracks.count() > 0
+        playTracks(m.data.tracks, trackIndex(m.data.tracks, track.Id))
+    else
+        requestTracks({ parentId: albumId, sortBy: "ParentIndexNumber,IndexNumber,SortName" }, track.Id)
+    end if
+end sub
+
+' The album's songs in a random order from the server, 300 at most
+sub shuffleAlbum()
+    featured = m.data.featured
+    if not isValid(featured) then return
+    parentId = featured.Id
+    if isValid(m.album) then parentId = m.album.Id
+    requestTracks({ parentId: parentId, recursive: true, sortBy: "Random", limit: 300 }, "")
+end sub
+
+sub requestTracks(params as object, startId as string)
+    params.userId = m.global.session.user.id
+    params.includeItemTypes = "Audio"
+    params.fields = "PrimaryImageAspectRatio"
+    m.startTrackId = startId
+    m.playTask.control = TaskControl.STOP
+    m.playTask.request = { path: "Items", params: params }
+    m.playTask.control = TaskControl.RUN
+    startLoadingSpinner()
+end sub
+
+sub onTracksLoaded(event as object)
+    response = event.getData()
+    tracks = []
+    if isValid(response) and response.success = true then tracks = responseItems(response.data)
+    if tracks.count() = 0
+        stopLoadingSpinner()
+        return
+    end if
+    playTracks(tracks, trackIndex(tracks, m.startTrackId))
+end sub
+
+function trackIndex(tracks as object, trackId as string) as integer
+    for i = 0 to tracks.count() - 1
+        if isStringEqual(tracks[i].Id, trackId) then return i
+    end for
+    return 0
+end function
+
+sub playTracks(tracks as object, position as integer)
+    startLoadingSpinner()
+    queue = m.global.queueManager
+    queue.callFunc("clear")
+    queue.callFunc("resetShuffle")
+    queue.callFunc("set", tracks)
+    queue.callFunc("setPosition", position)
+    queue.callFunc("playQueue")
+end sub
+
+sub toggleFavorite()
+    if not isValid(m.album) then return
+    m.albumFavorite = not m.albumFavorite
+    m.favoriteTask.itemId = m.album.Id
+    if m.albumFavorite
+        m.favoriteTask.favTask = "favorite"
+    else
+        m.favoriteTask.favTask = "unfavorite"
+    end if
+    m.favoriteTask.control = TaskControl.RUN
+    m.favoriteButton.callFunc("setup", favoriteSpec())
+end sub
+
+' =====================================================================
+' SORT & FILTER
+' =====================================================================
+
+' The rows sort by name, release year or date added
+sub openSort()
+    m.sortDialog.context = {
+        title: tr("Sort & Filter"),
+        sortOnly: true,
+        sorts: [
+            { value: "SortName", field: "SortName", order: "Ascending", label: tr("Name") },
+            { value: "ProductionYear", field: "ProductionYear,SortName", order: "Descending", label: tr("Release Year") },
+            { value: "DateCreated", field: "DateCreated", order: "Descending", label: tr("Date Added") }
+        ]
+    }
+    m.sortDialog.state = { view: "", sortKey: m.sortKey, sortOrder: "", filters: libraryFilters.EmptyState() }
+    m.sortDialog.callFunc("showDialog")
+    m.top.lastFocus = m.sortDialog
+    drawFocus()
+end sub
+
+sub onSortApplied(event as object)
+    applied = event.getData()
+    if not isValid(applied) or isStringEqual(applied.sortKey, m.sortKey) then return
+    m.sortKey = applied.sortKey
+    set_user_setting(SORT_SETTING, m.sortKey)
+    m.sortChanged = true
+end sub
+
+sub onSortClosed()
+    if m.sortChanged = true
+        m.sortChanged = false
+        m.returnToSort = true
+        takeFocus()
+        reload()
+        return
+    end if
+    focusCell(m.focusSection, m.focusItem)
+end sub
+
+' =====================================================================
+' COMING AND GOING
+' =====================================================================
+
+sub OnScreenShown(_isReturning = false as boolean)
+    takeFocus()
+    if not m.loaded then return
+    if m.onSeeAll
+        m.top.lastFocus = m.top
+        drawFocus()
+        return
+    end if
+    focusCell(m.focusSection, m.focusItem)
+end sub
+
+sub leaveScreen()
+    m.loadTask.control = TaskControl.STOP
+    m.playTask.control = TaskControl.STOP
+    ' The screen points at itself while it holds the focus, which would keep it alive once gone
+    m.top.lastFocus = invalid
+    m.global.sceneManager.callFunc("popScene")
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = KeyCode.BACK
+        leaveScreen()
+        return true
+    end if
+
+    ' While the dialog or the tabs hold the focus, the keys they pass up go nowhere
+    if m.sortDialog.visible or not m.loaded then return true
+    if isValid(m.tabBar) and m.tabBar.isInFocusChain() then return true
+
+    if key = KeyCode.OK
+        activate()
+        return true
+    end if
+
+    if key = KeyCode.UP or key = KeyCode.DOWN or key = KeyCode.LEFT or key = KeyCode.RIGHT
+        moveFocus(key)
+        return true
+    end if
+
+    return false
+end function

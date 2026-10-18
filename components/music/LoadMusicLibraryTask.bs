@@ -1,0 +1,96 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+
+const PAGE_SIZE = 15
+const GENRE_LIMIT = 8
+const ITEM_FIELDS = "PrimaryImageAspectRatio,ChildCount,RecursiveItemCount"
+' The server's Latest list has no paging, so a full page is taken to mean there could be up to this many
+const LATEST_MAX = 100
+
+sub init()
+    m.top.functionName = "loadLibrary"
+end sub
+
+sub loadLibrary()
+    libraryId = m.top.libraryId
+    sortKey = m.top.sortKey
+
+    ' Release Year only reorders the albums
+    nameSort = { sortBy: "SortName", sortOrder: "Ascending" }
+    rowSort = nameSort
+    albumSort = nameSort
+    if sortKey = "DateCreated"
+        rowSort = { sortBy: "DateCreated", sortOrder: "Descending" }
+        albumSort = rowSort
+    else if sortKey = "ProductionYear"
+        albumSort = { sortBy: "ProductionYear,SortName", sortOrder: "Descending" }
+    end if
+
+    latest = fetchRow("Items/Latest", { userId: m.global.session.user.id, parentId: libraryId, limit: PAGE_SIZE, fields: ITEM_FIELDS, imageTypeLimit: 1 })
+    latest.latest = true
+    if latest.items.count() >= PAGE_SIZE then latest.total = LATEST_MAX
+
+    rows = {
+        latest: latest,
+        lastPlayed: fetchRow("Items", rowQuery(libraryId, { includeItemTypes: "Audio", filters: "IsPlayed" }, { sortBy: "DatePlayed", sortOrder: "Descending" })),
+        favorites: fetchRow("Items", rowQuery(libraryId, { includeItemTypes: "MusicAlbum", filters: "IsFavorite" }, albumSort)),
+        playlists: audioOnly(fetchRow("Items", rowQuery("", { includeItemTypes: "Playlist" }, rowSort))),
+        albumArtists: fetchRow("Artists/AlbumArtists", rowQuery(libraryId, { fields: "PrimaryImageAspectRatio,SortName" }, rowSort)),
+        artists: fetchRow("Items", rowQuery(libraryId, { includeItemTypes: "MusicArtist" }, rowSort)),
+        albums: fetchRow("Items", rowQuery(libraryId, { includeItemTypes: "MusicAlbum" }, albumSort))
+    }
+
+    genres = fetchRow("Genres", { userId: m.global.session.user.id, parentId: libraryId, recursive: true, sortBy: "SortName", sortOrder: "Ascending", limit: GENRE_LIMIT })
+
+    ' The hero is the song played last, or the first thing any row has when nothing has been
+    featured = invalid
+    for each id in ["lastPlayed", "latest", "favorites", "playlists", "albumArtists", "artists", "albums"]
+        if rows[id].items.count() > 0
+            featured = rows[id].items[0]
+            exit for
+        end if
+    end for
+
+    album = invalid
+    tracks = []
+    if isValid(featured)
+        albumId = featured.LookupCI("AlbumId")
+        if isStringEqual(featured.LookupCI("Type"), "MusicAlbum") then albumId = featured.LookupCI("Id")
+        if isValidAndNotEmpty(albumId)
+            found = fetchRow("Items", { userId: m.global.session.user.id, ids: albumId, fields: ITEM_FIELDS }).items
+            if found.count() > 0 then album = found[0]
+            tracks = fetchRow("Items", { userId: m.global.session.user.id, parentId: albumId, includeItemTypes: "Audio", sortBy: "ParentIndexNumber,IndexNumber,SortName", fields: ITEM_FIELDS }).items
+        end if
+    end if
+
+    m.top.result = { rows: rows, genres: genres.items, featured: featured, album: album, tracks: tracks }
+end sub
+
+' A page of a row, with what it took to ask for it so the screen can ask for the next one
+function fetchRow(path as string, params as object) as object
+    data = getJson(APIRequest(path, params))
+    items = responseItems(data)
+    total = items.count()
+    if type(data) = "roAssociativeArray" and isValid(data.TotalRecordCount) then total = data.TotalRecordCount
+    return { items: items, total: total, fetched: items.count(), path: path, params: params }
+end function
+
+function rowQuery(parentId as string, params as object, order as object) as object
+    query = { userId: m.global.session.user.id, recursive: true, limit: PAGE_SIZE, fields: ITEM_FIELDS, imageTypeLimit: 1, enableImageTypes: "Primary", sortBy: order.sortBy, sortOrder: order.sortOrder }
+    if parentId <> "" then query.parentId = parentId
+    query.append(params)
+    return query
+end function
+
+' Playlists live outside the library, so only the ones that hold music are kept. The next page
+' still starts after every playlist this one read.
+function audioOnly(row as object) as object
+    kept = []
+    for each playlist in row.items
+        if isStringEqual(playlist.LookupCI("MediaType"), "Audio") then kept.push(playlist)
+    end for
+    row.items = kept
+    row.audioOnly = true
+    return row
+end function

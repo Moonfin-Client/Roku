@@ -2995,8 +2995,8 @@
         <translation>Library Image Orientation</translation>
     </message>
     <message>
-        <source>Library Style</source>
-        <translation>Library Style</translation>
+        <source>Video Library Style</source>
+        <translation>Video Library Style</translation>
     </message>
     <message>
         <source>Choose between the Classic, Modern and Docked library headers.</source>
@@ -3015,6 +3015,64 @@
         <source>Display</source>
         <extracomment>A library header control that opens how the library draws its cards</extracomment>
         <translation>Display</translation>
+    </message>
+    <message>
+        <source>Music Library Style</source>
+        <translation>Music Library Style</translation>
+    </message>
+    <message>
+        <source>Classic is the original artist and album grid. Quick Access starts with a grid of your recent albums and playlists. Immersive leads with the album you&apos;re listening to.</source>
+        <translation>Classic is the original artist and album grid. Quick Access starts with a grid of your recent albums and playlists. Immersive leads with the album you&apos;re listening to.</translation>
+    </message>
+    <message>
+        <source>Quick Access</source>
+        <extracomment>Music library style option: a grid of recent albums and playlists over the rows</extracomment>
+        <translation>Quick Access</translation>
+    </message>
+    <message>
+        <source>Immersive</source>
+        <extracomment>Music library style option: a full-width album hero over the rows</extracomment>
+        <translation>Immersive</translation>
+    </message>
+    <message>
+        <source>Jump Back In</source>
+        <extracomment>Heading over the albums and playlists the user played recently in a music library</extracomment>
+        <translation>Jump Back In</translation>
+    </message>
+    <message>
+        <source>From This Album</source>
+        <extracomment>Heading over the track list of the album shown in the music library hero</extracomment>
+        <translation>From This Album</translation>
+    </message>
+    <message>
+        <source>Search Music</source>
+        <extracomment>Label for the search control in a music library</extracomment>
+        <translation>Search Music</translation>
+    </message>
+    <message>
+        <source>Latest {0}</source>
+        <extracomment>Heading over the newest albums in a music library, {0} is the library's name</extracomment>
+        <translation>Latest {0}</translation>
+    </message>
+    <message>
+        <source>Last Played</source>
+        <extracomment>Heading over the songs played last in a music library</extracomment>
+        <translation>Last Played</translation>
+    </message>
+    <message>
+        <source>Browse By Genre</source>
+        <extracomment>Heading over the genre tiles in a music library</extracomment>
+        <translation>Browse By Genre</translation>
+    </message>
+    <message>
+        <source>See All</source>
+        <extracomment>Opens the whole list behind a music library row</extracomment>
+        <translation>See All</translation>
+    </message>
+    <message>
+        <source>Release Year</source>
+        <extracomment>A music library sort</extracomment>
+        <translation>Release Year</translation>
     </message>
     <message>
         <source>Select the poster image orientation for the library views.</source>
