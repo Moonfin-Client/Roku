@@ -16,7 +16,8 @@ const RATING_SOURCES_SETTING = "plugin.mdblist.ratingSources"
 sub openEditor(kind as string, settingItem as object)
     rows = editorRowsFor(kind, invalid)
     ' General is the one disabled group that starts open, since it's short
-    m.editor = { kind: kind, rows: rows, openedKey: editorKey(rows), resetKey: "", openGroups: { general: true } }
+    m.editor = { kind: kind, rows: rows, openedKey: editorKey(rows), resetKey: "", openGroups: { general: true }, leftOut: {} }
+    if kind = "rows" then checkLiveTv()
     title = settingItem.title
     if kind = "rows" then title = "Rows"
     if kind = "ratingSources" then title = "Ratings"
@@ -105,11 +106,16 @@ function editorSpecs() as object
     if kind = "ratingSources" then specs.push({ band: "plain", glyph: "reorder", text: tr("Rating Sources"), caption: tr("Enable and reorder the rating sources shown throughout the app") })
 
     m.editor.view = editorView()
+    shownEnabled = 0
+    for each entry in m.editor.view
+        if isValid(entry.row) and m.editor.rows[entry.row].enabled then shownEnabled = shownEnabled + 1
+    end for
+    m.editor.shownEnabled = shownEnabled
     for i = 0 to m.editor.view.Count() - 1
         entry = m.editor.view[i]
         if kind = "rows"
             if i = 0 then specs.push({ band: "header", text: tr("Enabled") })
-            if isValid(entry.group) and (i = 0 or not isValid(m.editor.view[i - 1].group)) then specs.push({ band: "header", text: tr("Disabled") })
+            if i = shownEnabled then specs.push({ band: "header", text: tr("Disabled") })
         end if
         specs.push(editorRowSpec(i))
     end for
@@ -120,7 +126,7 @@ end function
 ' home rows are grouped, so every other editor lists its rows as they are.
 function editorView() as object
     rows = m.editor.rows
-    if m.editor.kind = "rows" then return homeRowGroups.View(rows, m.editor.openGroups)
+    if m.editor.kind = "rows" then return homeRowGroups.View(rows, m.editor.openGroups, m.editor.leftOut)
     entries = []
     for i = 0 to rows.Count() - 1
         entries.push({ row: i })
@@ -139,7 +145,7 @@ function editorRowSpec(item as integer) as object
     if isValid(entry.group)
         glyph = "chevron_right"
         if m.editor.openGroups[entry.group] = true then glyph = "keyboard_arrow_down"
-        return { id: "group:" + entry.group, kind: "picker", title: editorGroupLabel(entry.group), glyph: glyph, chip: entry.total.ToStr() }
+        return { id: editorEntryId(entry), kind: "picker", title: editorGroupLabel(entry.group), glyph: glyph, chip: entry.total.ToStr() }
     end if
     index = entry.row
     rows = m.editor.rows
@@ -153,7 +159,7 @@ function editorRowSpec(item as integer) as object
         spec.kind = "reorder"
         spec.glyph = checkbox
         spec.canMovePrev = row.enabled and item > 0
-        spec.canMoveNext = row.enabled and item < editorEnabledIds(rows).Count() - 1
+        spec.canMoveNext = row.enabled and item < m.editor.shownEnabled - 1
     else if kind = "ratingSources"
         ' Only the turned-on sources have an order to change
         spec.kind = "plain"
@@ -188,7 +194,7 @@ function editorMove(delta as integer) as boolean
     last = view.Count() - 1
     if m.editor.kind = "ratingSources" or m.editor.kind = "rows"
         if not rows[index].enabled then return true
-        last = editorEnabledIds(rows).Count() - 1
+        last = m.editor.shownEnabled - 1
     end if
     target = item + delta
     if target < 0 or target > last then return true
@@ -290,13 +296,44 @@ sub toggleHomeRow(item as integer)
     m.editor.rows = rows
 
     showSection(m.userLocation.peek())
+    focusEditorEntry(focusId)
+end sub
+
+function editorEntryId(entry as object) as string
+    if isValid(entry.group) then return "group:" + entry.group
+    return m.editor.rows[entry.row].id
+end function
+
+sub focusEditorEntry(entryId as string)
     for i = 0 to m.editor.view.Count() - 1
-        entry = m.editor.view[i]
-        entryId = ""
-        if isValid(entry.group) then entryId = "group:" + entry.group
-        if isValid(entry.row) then entryId = rows[entry.row].id
-        if entryId = focusId then m.settingsMenu.jumpToItem = i
+        if editorEntryId(m.editor.view[i]) = entryId then m.settingsMenu.jumpToItem = i
     end for
+end sub
+
+' Live TV and On Now only fill on a server with Live TV, so the editor looks at the viewer's
+' libraries as it opens and leaves both rows out when none of them is Live TV. An empty answer
+' could be a failed request, so it leaves them in.
+sub checkLiveTv()
+    m.liveTvTask = createObject("roSGNode", "LoadItemsTask")
+    m.liveTvTask.observeField("content", "onLiveTvChecked")
+    m.liveTvTask.control = "RUN"
+end sub
+
+sub onLiveTvChecked(event as object)
+    libraries = event.getData()
+    event.getRoSGNode().unobserveField("content")
+    m.liveTvTask = invalid
+    if not isValid(m.editor) or m.editor.kind <> "rows" or not isValidAndNotEmpty(libraries) then return
+    for each library in libraries
+        if isStringEqual(chainLookupReturn(library, "json.collectiontype", ""), "livetv") then return
+    end for
+
+    focusId = ""
+    item = m.settingsMenu.itemFocused
+    if item >= 0 and item < m.editor.view.Count() then focusId = editorEntryId(m.editor.view[item])
+    m.editor.leftOut = { livetv: true, onnow: true }
+    showSection(m.userLocation.peek())
+    focusEditorEntry(focusId)
 end sub
 
 function editorRowsFrom(enabled as object) as object
