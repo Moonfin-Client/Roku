@@ -152,7 +152,6 @@ function QrCode()
 end function
 
 function onTextChanged(nodeEvent)
-    time = createObject("roTimespan")
     text = nodeEvent.getData()
     qr = QrCode()
     ecl = getEcl()
@@ -163,7 +162,6 @@ function onTextChanged(nodeEvent)
     digest.Setup("sha1")
     sha1 = digest.Process(ba)
     renderCode(qr, "tmp:/" + sha1 + ".png")
-    ?"Time:", time.totalMilliseconds(), text
 end function
 
 function getEcl()
