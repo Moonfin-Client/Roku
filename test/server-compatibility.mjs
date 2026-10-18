@@ -721,6 +721,9 @@ const settingsJsonText = await readFile('settings/settings.json', 'utf8');
 assert.doesNotMatch(settingsJsonText, /"icon": "[^"]*\.png"/, 'No setting still points at an icon image');
 const namedGlyphs = new Set([...settingsJsonText.matchAll(/"glyph": "([a-z0-9_]+)"/g)].map(match => match[1]));
 for (const glyph of namedGlyphs) assert.ok(glyphNames.includes(glyph), `The icon font has ${glyph}`);
+const aboutGlyphs = [...settingsSource.matchAll(/aboutLink\(\{[^}]*glyph: "([a-z0-9_]+)"/g)].map(match => match[1]);
+assert.ok(aboutGlyphs.length > 0, 'About lists its links');
+for (const glyph of aboutGlyphs) assert.ok(glyphNames.includes(glyph), `The About link draws ${glyph}`);
 const iconFont = await readFile('fonts/SettingsIcons.ttf');
 const tableCount = iconFont.readUInt16BE(4);
 let fontCodes = 0;
@@ -732,7 +735,7 @@ for (let i = 0; i < tableCount; i++) {
     }
 }
 assert.equal(fontCodes, glyphNames.length, 'The glyph table and the icon font cover the same characters');
-process.stdout.write(`PASS: settings glyphs (${namedGlyphs.size + 2} checks)\n`);
+process.stdout.write(`PASS: settings glyphs (${namedGlyphs.size + aboutGlyphs.length + 3} checks)\n`);
 
 // Sign in and the Settings connection test build the plugin record through one builder, so a
 // test connection keeps every flag sign in reads, the thumbs one among them

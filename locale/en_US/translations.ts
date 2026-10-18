@@ -6318,6 +6318,50 @@
         <translation>APP INFO</translation>
     </message>
     <message>
+        <source>Source Code</source>
+        <translation>Source Code</translation>
+    </message>
+    <message>
+        <source>Report an Issue</source>
+        <translation>Report an Issue</translation>
+    </message>
+    <message>
+        <source>Open the issue tracker on GitHub</source>
+        <translation>Open the issue tracker on GitHub</translation>
+    </message>
+    <message>
+        <source>Join Discord</source>
+        <translation>Join Discord</translation>
+    </message>
+    <message>
+        <source>Chat with the community</source>
+        <translation>Chat with the community</translation>
+    </message>
+    <message>
+        <source>LEGAL</source>
+        <translation>LEGAL</translation>
+    </message>
+    <message>
+        <source>Licenses</source>
+        <translation>Licenses</translation>
+    </message>
+    <message>
+        <source>Open-source license notices</source>
+        <translation>Open-source license notices</translation>
+    </message>
+    <message>
+        <source>Privacy Policy</source>
+        <translation>Privacy Policy</translation>
+    </message>
+    <message>
+        <source>How Moonfin handles your data</source>
+        <translation>How Moonfin handles your data</translation>
+    </message>
+    <message>
+        <source>Scan with your phone to open this link</source>
+        <translation>Scan with your phone to open this link</translation>
+    </message>
+    <message>
         <source>ASS/SSA Direct Play</source>
         <translation>ASS/SSA Direct Play</translation>
     </message>

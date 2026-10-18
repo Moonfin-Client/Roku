@@ -31,7 +31,7 @@ FIRST_CODE = 0xE000
 EXTRA_GLYPHS = [
     'check', 'check_box', 'check_box_outline_blank', 'chevron_right', 'arrow_left', 'arrow_right',
     'keyboard_arrow_up', 'keyboard_arrow_down', 'lock_outline', 'restore', 'refresh', 'tune',
-    'extension', 'restart_alt',
+    'extension', 'restart_alt', 'play_arrow_rounded',
 ]
 
 
