@@ -76,6 +76,7 @@ const selections = {
     'source/utils/homePreview.bs': null,
     'source/utils/remoteSubtitles.bs': null,
     'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
+    'components/extras/LoadExtrasTask.bs': ['personRoleIn'],
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions', 'SetUpAudioOptions', 'detailServerSubtitleIndex', 'audioOrdinal', 'audioStreamPosition'],
     'source/enums/VideoType.bs': null,
     'source/enums/MediaStreamType.bs': null,
@@ -151,6 +152,7 @@ source += '\n' + await readFile('test/settings-metrics.bs', 'utf8');
 source += '\n' + await readFile('test/library-filters.bs', 'utf8');
 source += '\n' + await readFile('test/item-menu.bs', 'utf8');
 source += '\n' + await readFile('test/episode-browser.bs', 'utf8');
+source += '\n' + await readFile('test/person-role.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n' + settingsSyncFile.match(/^    const .+$/gm).join('\n') + '\n';
 for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile']) {
