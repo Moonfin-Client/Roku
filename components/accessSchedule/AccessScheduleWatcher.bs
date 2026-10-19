@@ -1,9 +1,10 @@
 import "pkg:/source/utils/accessSchedule.bs"
 import "pkg:/source/utils/misc.bs"
 
-' How long to wait between looks when no opening or closing is nearer, and before asking again
-' after a look that failed
+' How long to wait between looks when no opening or closing is nearer, for a user with a schedule
+' and for one without, and before asking again after a look that failed
 const POLL_SECONDS = 60
+const IDLE_SECONDS = 900
 const RETRY_SECONDS = 15
 ' The least time between looks prompted by the server turning a request away, which can come in
 ' bursts
@@ -39,7 +40,9 @@ sub recheck()
 end sub
 
 sub onRefused()
-    if m.top.userId = "" then return
+    ' While blocked every request is refused, the server check included, and a look under way
+    ' already brings the newest answer
+    if m.top.userId = "" or m.top.blocked or m.task <> invalid then return
     now = m.clock.TotalMilliseconds()
     if m.lastRefusalLook <> 0 and now - m.lastRefusalLook < REFUSAL_SECONDS * 1000 then return
     m.lastRefusalLook = now
@@ -77,12 +80,14 @@ sub onResult(event as object)
     m.task.unobserveField("result")
     m.task = invalid
 
-    ' A schedule that couldn't be read leaves the last one in place
     if result.ok
         m.entries = result.entries
         m.exempt = result.exempt
+        apply(result.refused)
+    else
+        ' A schedule that couldn't be read leaves the last answer in place
+        startTimer(RETRY_SECONDS)
     end if
-    apply(not result.ok)
 
     if m.lookAgain
         m.lookAgain = false
@@ -90,27 +95,31 @@ sub onResult(event as object)
     end if
 end sub
 
-sub apply(failed as boolean)
+sub apply(refused as dynamic)
     now = CreateObject("roDateTime")
     now.ToLocalTime()
     day = now.GetDayOfWeek()
     secondOfDay = now.GetHours() * 3600 + now.GetMinutes() * 60 + now.GetSeconds()
 
-    allowed = m.exempt or accessSchedule.IsAllowed(m.entries, day, secondOfDay)
-    if allowed
+    status = accessSchedule.Status(m.entries, refused, day, secondOfDay)
+    if m.exempt or not status.blocked
         setBlocked(false, invalid)
     else
-        setBlocked(true, accessSchedule.NextAccess(m.entries, day, secondOfDay))
+        setBlocked(true, status.next)
     end if
 
+    ' An administrator has no schedule to enforce, so only a refused request looks again
+    if m.exempt then return
     delay = POLL_SECONDS
-    if failed then delay = RETRY_SECONDS
-    if not m.exempt
-        boundary = accessSchedule.SecondsToBoundary(m.entries, day, secondOfDay)
-        if boundary <> invalid and boundary < delay then delay = boundary
-    end if
-    if delay < 1 then delay = 1
-    m.timer.duration = delay
+    if m.entries.Count() = 0 then delay = IDLE_SECONDS
+    boundary = accessSchedule.SecondsToBoundary(m.entries, day, secondOfDay)
+    if boundary <> invalid and boundary < delay then delay = boundary
+    startTimer(delay)
+end sub
+
+sub startTimer(seconds as integer)
+    if seconds < 1 then seconds = 1
+    m.timer.duration = seconds
     m.timer.control = "start"
 end sub
 
