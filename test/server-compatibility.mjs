@@ -80,6 +80,7 @@ const selections = {
     'source/utils/remoteSubtitles.bs': null,
     'source/utils/quickConnectUrl.bs': null,
     'source/utils/playlistSortFilter.bs': null,
+    'source/utils/accessSchedule.bs': null,
     'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
     'components/extras/LoadExtrasTask.bs': ['personRoleIn'],
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions', 'SetUpAudioOptions', 'detailServerSubtitleIndex', 'audioOrdinal', 'audioStreamPosition'],
@@ -111,7 +112,7 @@ const selections = {
     'components/account/AccountDialog.bs': ['accountImageURL'],
     'components/config/SigninScene.bs': ['checkQuickConnectEnabled'],
     'source/utils/parsedUrl.bs': ['ParsedUrl', '__ParsedUrl_ToString'],
-    'source/api/baserequest.bs': ['buildParams', 'buildServerURL', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer', 'APIRequest', 'APIRequestForServer', 'authRequest', 'authRequestForServer', 'setCertificateAuthority', 'getJson', 'postPlaybackInfo', 'requestCanceled'],
+    'source/api/baserequest.bs': ['buildParams', 'buildServerURL', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer', 'APIRequest', 'APIRequestForServer', 'authRequest', 'authRequestForServer', 'setCertificateAuthority', 'getJson', 'noteAccessRefused', 'noteRefusalIn', 'postPlaybackInfo', 'requestCanceled'],
 };
 let source = 'namespace bslib\n' + bslib.source + '\nend namespace\n' + await readFile('source/enums/String.bs', 'utf8');
 for (const [file, names] of Object.entries(selections)) {
@@ -137,6 +138,7 @@ source += '\n' + await readFile('test/review-regressions.bs', 'utf8');
 source += '\n' + await readFile('test/accent-folding.bs', 'utf8');
 source += '\n' + await readFile('test/quick-connect-url.bs', 'utf8');
 source += '\n' + await readFile('test/sign-in-refused.bs', 'utf8');
+source += '\n' + await readFile('test/access-schedule.bs', 'utf8');
 source += '\n' + await readFile('test/log-redaction.bs', 'utf8');
 source += '\n' + await readFile('test/youtube-trailer.bs', 'utf8');
 source += '\n' + await readFile('test/playback-fallback.bs', 'utf8');

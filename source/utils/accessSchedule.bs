@@ -1,0 +1,108 @@
+' A user's access schedule as Jellyfin keeps it: the days an entry covers and the hours of those
+' days the user may use the server. Jellyfin applies it by the rules below, so the app does too,
+' to say so when the time is up instead of letting everything start failing.
+'
+' Times are given as a day of the week (0 is Sunday) and the second of that day, in the server's
+' local time, which is taken to be this device's.
+
+namespace accessSchedule
+
+    const SECONDS_PER_DAY = 86400
+    const LOOK_AHEAD_DAYS = 8
+
+    ' The entries of a policy as plain { days, start, end } records, with the days as the list of
+    ' weekday numbers the entry covers and the hours as seconds into the day. Anything that isn't
+    ' an entry is left out, and so is a day name the server doesn't use.
+    function Read(policy as dynamic) as object
+        entries = []
+        if type(policy) <> "roAssociativeArray" then return entries
+        raw = policy.AccessSchedules
+        if type(raw) <> "roArray" then return entries
+        for each item in raw
+            if type(item) = "roAssociativeArray"
+                days = accessSchedule.DaysOf(item.DayOfWeek)
+                entries.push({
+                    days: days,
+                    start: accessSchedule.HourToSeconds(item.StartHour),
+                    end: accessSchedule.HourToSeconds(item.EndHour)
+                })
+            end if
+        end for
+        return entries
+    end function
+
+    function HourToSeconds(hours as dynamic) as integer
+        if type(hours) <> "roInt" and type(hours) <> "roFloat" and type(hours) <> "roDouble" and type(hours) <> "Integer" and type(hours) <> "Float" and type(hours) <> "Double" then return 0
+        return Cint(hours * 3600)
+    end function
+
+    function DaysOf(name as dynamic) as object
+        if type(name) <> "roString" and type(name) <> "String" then return []
+        if name = "Everyday" then return [0, 1, 2, 3, 4, 5, 6]
+        if name = "Weekday" then return [1, 2, 3, 4, 5]
+        if name = "Weekend" then return [0, 6]
+        names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        for index = 0 to 6
+            if names[index] = name then return [index]
+        end for
+        return []
+    end function
+
+    function Covers(entry as object, day as integer) as boolean
+        for each covered in entry.days
+            if covered = day then return true
+        end for
+        return false
+    end function
+
+    ' Whether the user may use the server at that moment: an entry allows it when it covers the
+    ' day and the time of day is between its start and its end, both included. A user with no
+    ' entries is always allowed. Administrators are exempt, which is for the caller to check.
+    function IsAllowed(entries as object, day as integer, secondOfDay as integer) as boolean
+        if entries.Count() = 0 then return true
+        for each entry in entries
+            if accessSchedule.Covers(entry, day) and secondOfDay >= entry.start and secondOfDay <= entry.end then return true
+        end for
+        return false
+    end function
+
+    ' When the user is next let in, as { seconds, dayOffset, secondOfDay, day }: how long from now,
+    ' how many days ahead that day is, and the time of day it opens. Invalid when they are allowed
+    ' now or no entry opens in the next week.
+    function NextAccess(entries as object, day as integer, secondOfDay as integer) as dynamic
+        if accessSchedule.IsAllowed(entries, day, secondOfDay) then return invalid
+        best = invalid
+        for offset = 0 to accessSchedule.LOOK_AHEAD_DAYS - 1
+            target = (day + offset) mod 7
+            for each entry in entries
+                if accessSchedule.Covers(entry, target)
+                    seconds = offset * accessSchedule.SECONDS_PER_DAY + entry.start - secondOfDay
+                    if seconds > 0 and (best = invalid or seconds < best.seconds)
+                        best = { seconds: seconds, dayOffset: offset, secondOfDay: entry.start, day: target }
+                    end if
+                end if
+            end for
+        end for
+        return best
+    end function
+
+    ' How long until the answer of IsAllowed could change, in seconds: every start, and the second
+    ' after every end, since the end itself is still allowed. Invalid when no entry has one in the
+    ' next week.
+    function SecondsToBoundary(entries as object, day as integer, secondOfDay as integer) as dynamic
+        best = invalid
+        for offset = 0 to accessSchedule.LOOK_AHEAD_DAYS - 1
+            target = (day + offset) mod 7
+            for each entry in entries
+                if accessSchedule.Covers(entry, target)
+                    for each moment in [entry.start, entry.end + 1]
+                        seconds = offset * accessSchedule.SECONDS_PER_DAY + moment - secondOfDay
+                        if seconds > 0 and (best = invalid or seconds < best) then best = seconds
+                    end for
+                end if
+            end for
+        end for
+        return best
+    end function
+
+end namespace

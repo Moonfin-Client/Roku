@@ -1,0 +1,124 @@
+import "pkg:/source/utils/accessSchedule.bs"
+import "pkg:/source/utils/misc.bs"
+
+' How long to wait between looks when no opening or closing is nearer, and before asking again
+' after a look that failed
+const POLL_SECONDS = 60
+const RETRY_SECONDS = 15
+' The least time between looks prompted by the server turning a request away, which can come in
+' bursts
+const REFUSAL_SECONDS = 5
+
+sub init()
+    m.timer = m.top.findNode("timer")
+    m.timer.observeField("fire", "onTimer")
+    m.entries = []
+    m.exempt = false
+    m.task = invalid
+    m.lookAgain = false
+    m.lastRefusalLook = 0
+    m.clock = CreateObject("roTimespan")
+    m.top.blocked = false
+
+    if m.global.hasField("accessRefused") then m.global.observeField("accessRefused", "onRefused")
+end sub
+
+sub onUserChange()
+    m.timer.control = "stop"
+    ' A look still under way for the previous user must not answer for the next
+    cancelTask()
+    m.entries = []
+    m.exempt = false
+    m.lookAgain = false
+    setBlocked(false, invalid)
+    if m.top.userId <> "" then look()
+end sub
+
+sub recheck()
+    if m.top.userId <> "" then look()
+end sub
+
+sub onRefused()
+    if m.top.userId = "" then return
+    now = m.clock.TotalMilliseconds()
+    if m.lastRefusalLook <> 0 and now - m.lastRefusalLook < REFUSAL_SECONDS * 1000 then return
+    m.lastRefusalLook = now
+    look()
+end sub
+
+sub onTimer()
+    look()
+end sub
+
+sub cancelTask()
+    if m.task <> invalid
+        m.task.unobserveField("result")
+        m.task.control = "stop"
+        m.task = invalid
+    end if
+end sub
+
+' Reads the schedule again. One look at a time: a request that arrives while one is under way
+' asks for another when it ends.
+sub look()
+    m.timer.control = "stop"
+    if m.task <> invalid
+        m.lookAgain = true
+        return
+    end if
+    m.task = CreateObject("roSGNode", "AccessScheduleTask")
+    m.task.userId = m.top.userId
+    m.task.observeField("result", "onResult")
+    m.task.control = "run"
+end sub
+
+sub onResult(event as object)
+    result = event.getData()
+    m.task.unobserveField("result")
+    m.task = invalid
+
+    ' A schedule that couldn't be read leaves the last one in place
+    if result.ok
+        m.entries = result.entries
+        m.exempt = result.exempt
+    end if
+    apply(not result.ok)
+
+    if m.lookAgain
+        m.lookAgain = false
+        look()
+    end if
+end sub
+
+sub apply(failed as boolean)
+    now = CreateObject("roDateTime")
+    now.ToLocalTime()
+    day = now.GetDayOfWeek()
+    secondOfDay = now.GetHours() * 3600 + now.GetMinutes() * 60 + now.GetSeconds()
+
+    allowed = m.exempt or accessSchedule.IsAllowed(m.entries, day, secondOfDay)
+    if allowed
+        setBlocked(false, invalid)
+    else
+        setBlocked(true, accessSchedule.NextAccess(m.entries, day, secondOfDay))
+    end if
+
+    delay = POLL_SECONDS
+    if failed then delay = RETRY_SECONDS
+    if not m.exempt
+        boundary = accessSchedule.SecondsToBoundary(m.entries, day, secondOfDay)
+        if boundary <> invalid and boundary < delay then delay = boundary
+    end if
+    if delay < 1 then delay = 1
+    m.timer.duration = delay
+    m.timer.control = "start"
+end sub
+
+' Told only when the answer changes, so the app stops playback once for each time the user is
+' turned away
+sub setBlocked(blocked as boolean, upcoming as dynamic)
+    if blocked = m.top.blocked then return
+    m.top.next = upcoming
+    m.top.blocked = blocked
+    m.top.accessStatus = blocked
+end sub
