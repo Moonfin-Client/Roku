@@ -7120,5 +7120,10 @@
         <translation>External Lists</translation>
         <extracomment>Heading of a group of disabled rows in the Home Rows editor</extracomment>
     </message>
+    <message>
+        <source>This account can&apos;t sign in right now. It may be outside its allowed hours, locked or disabled. Try again later or ask an administrator.</source>
+        <translation>This account can&apos;t sign in right now. It may be outside its allowed hours, locked or disabled. Try again later or ask an administrator.</translation>
+        <extracomment>Shown when the server refuses a sign in because the account can't be used right now, for example outside its access schedule</extracomment>
+    </message>
 </context>
 </TS>

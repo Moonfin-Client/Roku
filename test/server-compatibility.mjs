@@ -91,7 +91,7 @@ const selections = {
     'components/captionTask.bs': ['trackAddress'],
     'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL', 'addSourceCodecs', 'shouldBurnInSubtitle', 'transcodeCopiesVideo', 'audioPlaysDirect', 'containersOverlap'],
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
-    'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError'],
+    'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting'],
     'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
@@ -131,6 +131,7 @@ source += '\n' + await readFile('test/server-compatibility.bs', 'utf8');
 source += '\n' + await readFile('test/review-regressions.bs', 'utf8');
 source += '\n' + await readFile('test/accent-folding.bs', 'utf8');
 source += '\n' + await readFile('test/quick-connect-url.bs', 'utf8');
+source += '\n' + await readFile('test/sign-in-refused.bs', 'utf8');
 source += '\n' + await readFile('test/log-redaction.bs', 'utf8');
 source += '\n' + await readFile('test/youtube-trailer.bs', 'utf8');
 source += '\n' + await readFile('test/playback-fallback.bs', 'utf8');
