@@ -23,9 +23,17 @@ function validPasswordLogin(response as object) as boolean
     return embyConnect.StringValue(json.User, ["Id"]) <> "" and embyConnect.StringValue(json.User, ["Name"]) <> ""
 end function
 
+' Jellyfin refuses a sign in with a 403 when the account can't be used right now, for instance
+' outside the hours of its access schedule, and gives no reason beyond that. A wrong password is
+' a 401, but the account is checked first, so such an account gets this for any password.
+function signInRefusedMessage() as string
+    return tr("This account can't sign in right now. It may be outside its allowed hours, locked or disabled. Try again later or ask an administrator.")
+end function
+
 function passwordLoginError(status as integer) as string
     if status = 401 or status = 403
         if isEmbyServer() then return tr("Emby server rejected the login. Use the local server account, or choose Emby Connect for your Emby account.")
+        if status = 403 then return signInRefusedMessage()
         return tr("Username or password is incorrect, or access is denied.")
     end if
     if status = 0 then return tr("The server did not respond. Check the connection and try again.")
@@ -248,23 +256,24 @@ function checkQuickConnect(secret)
     return false
 end function
 
-function AuthenticateViaQuickConnect(secret)
-    params = {
-        secret: secret
-    }
-    req = APIRequest("Users/AuthenticateWithQuickConnect")
-    jsonResponse = postJson(req, FormatJson(params))
-    if jsonResponse <> invalid and jsonResponse.AccessToken <> invalid and jsonResponse.User <> invalid
-        userdata = CreateObject("roSGNode", "UserData")
-        userdata.json = jsonResponse
-        session.user.Update("id", jsonResponse.User.Id)
-        session.user.Update("authToken", jsonResponse.AccessToken)
-        userdata.callFunc("saveToRegistry")
+' Exchanges an approved Quick Connect secret for a session. refused is true when the server turned
+' the account away, which it does with a 403 and nothing in the body.
+function AuthenticateViaQuickConnect(secret) as object
+    serverUrl = get_url()
+    header = buildAuthHeaderForServer({ serverUrl: serverUrl, userId: "", authToken: "" })
+    headers = { "Content-Type": "application/json", "Authorization": header }
+    if isEmbyServer(serverUrl) then headers["X-Emby-Authorization"] = header
+    url = buildURLForServer(serverUrl, "Users/AuthenticateWithQuickConnect", {})
+    response = embyConnect.Request(url, "POST", FormatJson({ secret: secret }), headers)
+    if not validPasswordLogin(response) then return { ok: false, refused: response.status = 403 }
 
-        return true
-    end if
-
-    return false
+    jsonResponse = response.data
+    userdata = CreateObject("roSGNode", "UserData")
+    userdata.json = jsonResponse
+    session.user.Update("id", jsonResponse.User.Id)
+    session.user.Update("authToken", jsonResponse.AccessToken)
+    userdata.callFunc("saveToRegistry")
+    return { ok: true, refused: false }
 end function
 
 sub forgetServerIdentity(serverUrl as dynamic, removedUserId as string)
