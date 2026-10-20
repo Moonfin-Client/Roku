@@ -89,7 +89,7 @@ const selections = {
     'components/embyPreview/EmbyPreviewTask.bs': ['loadPreviewData'],
     'components/PlaystateTask.bs': ['closeEmbyPlayback', 'closeUnstartedLiveStream'],
     'components/captionTask.bs': ['trackAddress'],
-    'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL', 'addSourceCodecs', 'shouldBurnInSubtitle', 'transcodeCopiesVideo', 'audioPlaysDirect', 'containersOverlap'],
+    'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL', 'addSourceCodecs', 'shouldBurnInSubtitle', 'transcodeCopiesVideo', 'audioPlaysDirect', 'containersOverlap', 'liveDirectStreamFormat'],
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting'],
