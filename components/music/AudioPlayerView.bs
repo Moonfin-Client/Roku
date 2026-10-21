@@ -68,14 +68,19 @@ sub init()
     m.playPosition.color = m.accent
     m.queueList.focusBitmapBlendColor = m.cursor
     m.queueList.observeField("itemSelected", "onQueueItemSelected")
+    m.lyricsCursor.focusBitmapBlendColor = m.cursor
+    m.lyricsCursor.observeField("itemSelected", "onLyricLineSelected")
+    m.lyricStarts = []
 
     m.buttons.setFocus(true)
     layoutDock()
     loadQueueList()
     showPanel()
 
-    if m.global.audioPlayer.state = "playing"
+    ' The mini player can open this on a paused track too, which gets no position updates
+    if m.global.audioPlayer.state = "playing" or m.global.audioPlayer.state = "paused"
         onAudioDataChanged()
+        audioPositionChanged()
     end if
 end sub
 
@@ -215,15 +220,16 @@ sub setupButtons()
 end sub
 
 ' Favorite and add to playlist on the left, the transport in the middle and the panel toggles on
-' the right. A single track has nothing to skip or shuffle, and a mixed queue can't shuffle or loop.
+' the right. A mixed queue can't shuffle or loop.
 sub layoutDock()
     hidden = {}
-    if m.global.queueManager.callFunc("getCount") < 2
-        hidden = { "previous": true, "next": true, "shuffle": true, "loop": true }
-    else if m.playlistTypeCount > 1
-        hidden = { "shuffle": true, "loop": true }
+    if m.playlistTypeCount > 1 then hidden = { "shuffle": true, "loop": true }
+
+    ' Without lyrics Up Next is the only panel, so there's nothing to toggle
+    if not m.hasLyrics
+        hidden["lyrics"] = true
+        hidden["queue"] = true
     end if
-    if not m.hasLyrics then hidden["lyrics"] = true
 
     dockGroups = [
         { x: 80, align: 0, ids: ["favorite", "addToPlaylist"] },
@@ -334,63 +340,146 @@ function activateDockButton(id as string) as boolean
     if id = "lyrics" or id = "queue"
         wantsQueue = id = "queue"
         if wantsQueue = m.queueList.visible
-            ' OK on the panel that is already showing steps into it. Lyrics only follow playback.
-            if wantsQueue
-                focusOn(m.queueList)
-                paintDock()
-            end if
-            return true
+            ' OK on the panel that is already showing steps into it
+            enterPanel()
+        else
+            m.showQueue = wantsQueue
+            showPanel()
         end if
-
-        m.showQueue = wantsQueue
-        showPanel()
         return true
     end if
 
     return false
 end function
 
-' Lyrics fill the right side unless Up Next is toggled on or the track has none
+' Lyrics fill the right side unless Up Next is toggled on or the track has none. They follow
+' playback until the cursor steps in, and then the whole song is listed.
 sub showPanel()
     lyricsShown = m.hasLyrics and not m.showQueue
-    if isValid(m.lyrics) then m.lyrics.visible = lyricsShown
+    cursoring = lyricsShown and m.lyricsCursor.isInFocusChain()
+    if isValid(m.lyrics) then m.lyrics.visible = lyricsShown and not cursoring
+    m.lyricsCursor.visible = cursoring
     m.queueList.visible = not lyricsShown
     paintDock()
 end sub
 
-' Up Next lists the playing track and the ones after it
+' Up from the seek bar, Options, or OK on the toggle that's showing lands on the playing track or
+' the line being sung
+sub enterPanel()
+    if m.queueList.visible
+        m.queueList.jumpToItem = currentQueueRow()
+        exitScrubMode(m.queueList)
+        return
+    end if
+
+    m.lyricsCursor.jumpToItem = activeLyricLine()
+    exitScrubMode(m.lyricsCursor)
+    showPanel()
+end sub
+
+sub leavePanel()
+    setFocusOnThumb()
+    showPanel()
+end sub
+
+' A list that was hidden under the cursor still holds focus, so it has to be showing to count
+function panelHasFocus() as boolean
+    return (m.queueList.visible and m.queueList.isInFocusChain()) or (m.lyricsCursor.visible and m.lyricsCursor.isInFocusChain())
+end function
+
+function currentQueueRow() as integer
+    row = m.global.queueManager.callFunc("getPosition")
+    last = m.global.queueManager.callFunc("getCount") - 1
+    if row > last then row = last
+    if row < 0 then row = 0
+    return row
+end function
+
+' The last position this screen saw, which a track change resets to 0 before the player does
+function activeLyricLine() as integer
+    position = Int(m.lastRecordedPositionTimestamp) * 10000000&
+    active = 0
+    for i = 0 to m.lyricStarts.count() - 1
+        if m.lyricStarts[i] <= position then active = i
+    end for
+    return active
+end function
+
+' Up Next lists the whole queue. Outside the panel it scrolls to the playing track, and inside
+' it the cursor stays on its row.
 sub loadQueueList()
     queue = m.global.queueManager.callFunc("getQueue")
-    m.queueStart = m.global.queueManager.callFunc("getPosition")
-    if m.queueStart < 0 then m.queueStart = 0
+    playing = currentQueueRow()
+    keepRow = m.queueList.itemFocused
+    inPanel = m.queueList.isInFocusChain()
 
     content = CreateObject("roSGNode", "ContentNode")
-    for i = m.queueStart to queue.count() - 1
-        queueItem = queue[i]
-        itemJson = queueItem
-        if isValid(queueItem.json) then itemJson = queueItem.json
-
-        row = content.createChild("ContentNode")
-        row.title = itemJson.Name ?? itemJson.title ?? ""
-        if isValidAndNotEmpty(itemJson.Artists)
-            row.description = itemJson.Artists.join(", ")
-        else if isString(itemJson.AlbumArtist)
-            row.description = itemJson.AlbumArtist
-        end if
-        row.HDPosterUrl = audioArtworkURL(queueItem, audioArtId(itemJson), ImageType.PRIMARY, { "maxHeight": 84, "maxWidth": 84 })
-        if i = m.queueStart then row.addFields({ isCurrent: true })
+    for i = 0 to queue.count() - 1
+        content.appendChild(queueRow(queue[i], i = playing))
     end for
 
     m.queueList.content = content
+    m.queuePlayingRow = playing
+    if not inPanel or keepRow < 0 or keepRow >= queue.count() then keepRow = playing
+    m.queueList.jumpToItem = keepRow
+end sub
+
+function queueRow(queueItem as object, isCurrent as boolean) as object
+    itemJson = queueItem
+    if isValid(queueItem.json) then itemJson = queueItem.json
+
+    row = CreateObject("roSGNode", "ContentNode")
+    row.title = itemJson.Name ?? itemJson.title ?? ""
+    if isValidAndNotEmpty(itemJson.Artists)
+        row.description = itemJson.Artists.join(", ")
+    else if isString(itemJson.AlbumArtist)
+        row.description = itemJson.AlbumArtist
+    end if
+    row.HDPosterUrl = audioArtworkURL(queueItem, audioArtId(itemJson), ImageType.PRIMARY, { "maxHeight": 84, "maxWidth": 84 })
+    if isCurrent then row.addFields({ isCurrent: true })
+    return row
+end function
+
+' A track change in the same queue only moves the marker, so a long queue isn't rebuilt
+sub moveQueueMarker()
+    content = m.queueList.content
+    if not isValid(content) or content.getChildCount() <> m.global.queueManager.callFunc("getCount")
+        loadQueueList()
+        return
+    end if
+
+    playing = currentQueueRow()
+    for each row in [m.queuePlayingRow, playing]
+        content.replaceChild(queueRow(m.global.queueManager.callFunc("getItemByIndex", row), row = playing), row)
+    end for
+    m.queuePlayingRow = playing
+    if not m.queueList.isInFocusChain() then m.queueList.jumpToItem = playing
 end sub
 
 sub onQueueItemSelected()
     picked = m.queueList.itemSelected
-    if picked <= 0 then return
+    if picked = currentQueueRow() then return
 
     ' playNext steps on from the track before, and knows what to do when that one is a video
-    m.global.queueManager.callFunc("setPosition", m.queueStart + picked - 1)
+    m.global.queueManager.callFunc("setPosition", picked - 1)
     m.global.audioPlayer.callFunc("playNext")
+end sub
+
+sub loadLyricLines(lines as object)
+    m.lyricStarts = []
+    content = CreateObject("roSGNode", "ContentNode")
+    for each line in lines
+        row = content.createChild("ContentNode")
+        row.title = line.text ?? ""
+        m.lyricStarts.push(line.start ?? 0)
+    end for
+    m.lyricsCursor.content = content
+end sub
+
+sub onLyricLineSelected()
+    seconds = m.lyricStarts[m.lyricsCursor.itemSelected] / 10000000.0
+    m.global.audioPlayer.seek = seconds
+    if isValid(m.lyrics) then m.lyrics.callFunc("findPosition", seconds)
 end sub
 
 function favoriteClicked() as boolean
@@ -445,7 +534,7 @@ sub setupInfoNodes()
     m.seekTimestamp = m.top.findNode("seekTimestamp")
     m.totalLengthTimestamp = m.top.findNode("totalLengthTimestamp")
     m.queueList = m.top.findNode("queueList")
-    m.textFocus = m.top.findNode("textFocus")
+    m.lyricsCursor = m.top.findNode("lyricsCursor")
     m.qualityBadge = m.top.findNode("qualityBadge")
     m.qualityPill = m.top.findNode("qualityPill")
     m.qualityText = m.top.findNode("qualityText")
@@ -560,8 +649,10 @@ sub endScreenSaver()
     m.PosterOne.opacity = 0
 end sub
 
+' A paused track keeps its mini player, anything else that isn't playing stops
 sub displayMiniPlayer()
-    if not isStringEqual(m.global.audioPlayer.state, MediaPlaybackState.PLAYING)
+    state = m.global.audioPlayer.state
+    if not isStringEqual(state, MediaPlaybackState.PLAYING) and not isStringEqual(state, MediaPlaybackState.PAUSED)
         m.global.queueManager.callFunc("clear")
         m.global.audioPlayer.control = "stop"
         return
@@ -675,12 +766,11 @@ sub onAudioDataChanged()
     ' Reset buffer bar without animation
     m.bufferPosition.width = 0
     m.hasLyrics = false
+    wasInPanel = panelHasFocus()
 
-    if m.thumb.hasFocus()
-        exitScrubMode(m.buttons)
-    else
-        resetSeekbarThumb()
-    end if
+    ' Focus stays where it was, only a scrub in progress is dropped
+    m.inScrubMode = false
+    resetSeekbarThumb()
     m.lastRecordedPositionTimestamp = 0
     m.positionTimestamp.text = "0:00"
     m.playPosition.width = 0
@@ -758,11 +848,16 @@ sub onAudioDataChanged()
         if isValid(m.lyrics)
             m.lyrics.lyricdata = data.lyricdata
         end if
+        loadLyricLines(data.lyricdata.Lyrics)
     end if
 
-    loadQueueList()
+    moveQueueMarker()
     layoutDock()
     showPanel()
+
+    ' The panel can swap under the cursor, lyrics coming or going with the track
+    if wasInPanel and not panelHasFocus() then enterPanel()
+    if m.lyricsCursor.isInFocusChain() then m.lyricsCursor.jumpToItem = activeLyricLine()
 end sub
 
 sub moveDisplayElements(hasLyrics as boolean)
@@ -786,6 +881,7 @@ sub showLyrics()
     m.lyrics = CreateObject("roSGNode", "Lyrics")
     m.lyrics.translation = "[660, 220]"
     m.lyrics.width = 1180
+    m.lyrics.findNode("currentLine").color = m.accent
     m.top.insertChild(m.lyrics, 2)
 end sub
 
@@ -814,6 +910,7 @@ sub onMetaDataLoaded()
 
             ' Update displayed total audio length
             m.totalLengthTimestamp.text = ticksToHuman(data.json.RunTimeTicks)
+            if m.global.audioPlayer.state = "paused" then audioPositionChanged()
         end if
     end if
 end sub
@@ -981,7 +1078,6 @@ sub exitScrubMode(nodeReceivingFocus = m.buttons as dynamic)
 end sub
 
 sub setFocusOnThumb()
-    m.textFocus.visible = false
     m.thumb.visible = true
 
     if not m.seekPosition.visible
@@ -994,229 +1090,114 @@ end sub
 
 ' A node keeps reporting hasFocus after focus moves to one outside it, so the others let go first
 sub focusOn(target as object)
-    for each node in [m.buttons, m.thumb, m.queueList, m.song, m.artist]
+    for each node in [m.buttons, m.thumb, m.queueList, m.lyricsCursor]
         if not node.isSameNode(target) then node.setFocus(false)
     end for
     target.setFocus(true)
 end sub
 
-' The title opens the album and the artist opens the artist, each outlined in the cursor color
-sub focusText(textNode as object)
-    focusOn(textNode)
-    m.textFocus.translation = [textNode.translation[0] - 16, textNode.translation[1] - 6]
-    m.textFocus.height = textNode.height + 12
-    m.textFocus.blendColor = m.cursor
-    m.textFocus.visible = true
-end sub
-
-' Process key press events
+' The dock, the seek bar and the panel are stacked, and Up and Down walk between them
 function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
 
-    if press
-        ' If user presses key to turn off screensaver, don't do anything else with it
-        if screenSaverActive()
-            endScreenSaver()
+    ' A key that ends the screensaver does nothing else
+    if screenSaverActive()
+        endScreenSaver()
+        return true
+    end if
+
+    ' The lists keep Up, Down and OK. Left, Back and Down past the last row go back to the seek bar.
+    if m.queueList.hasFocus() or m.lyricsCursor.hasFocus()
+        if key = KeyCode.LEFT or key = KeyCode.BACK or key = KeyCode.DOWN
+            leavePanel()
             return true
         end if
 
-        ' Key Event handler when m.song is in focus
-        if m.song.hasFocus()
-            if key = KeyCode.DOWN
-                focusText(m.artist)
-                return true
-            end if
+        if key = KeyCode.PLAY then return playAction()
+        return true
+    end if
 
-            if key = KeyCode.OK or key = KeyCode.PLAY
-                currentItem = m.global.queueManager.callFunc("getCurrentItem")
-
-                if isChainValid(currentItem, "AlbumId")
-                    if isValidAndNotEmpty(currentItem.AlbumId)
-                        if m.playlistTypeCount > 1
-                            m.global.queueManager.callFunc("clear")
-                            m.global.audioPlayer.control = "stop"
-                        else
-                            displayMiniPlayer()
-                        end if
-
-                        m.global.audioPlayer.loopMode = ""
-                        data = {
-                            selectionType: "album",
-                            id: currentItem.AlbumId
-                        }
-                        m.top.getScene().jumpTo = data
-                        return true
-                    end if
-                end if
-
-                if not isValidAndNotEmpty(m.top.getScene().jumpTo)
-                    if isChainValid(currentItem, "json.AlbumId")
-                        if isValidAndNotEmpty(currentItem.json.AlbumId)
-                            if m.playlistTypeCount > 1
-                                m.global.queueManager.callFunc("clear")
-                                m.global.audioPlayer.control = "stop"
-                                m.global.audioPlayer.loopMode = ""
-                            else
-                                displayMiniPlayer()
-                            end if
-                            data = {
-                                selectionType: "album",
-                                id: currentItem.json.AlbumId
-                            }
-                            m.top.getScene().jumpTo = data
-                        end if
-                    end if
-                end if
-            end if
+    if m.thumb.hasFocus()
+        if key = KeyCode.RIGHT
+            m.inScrubMode = true
+            processScrubAction(10)
+            return true
         end if
 
-        ' Key Event handler when m.artist is in focus
-        if m.artist.hasFocus()
-            if key = KeyCode.DOWN
-                setFocusOnThumb()
-                return true
-            end if
-
-            if key = KeyCode.UP
-                focusText(m.song)
-                return true
-            end if
-
-            if key = KeyCode.OK or key = KeyCode.PLAY
-                currentItem = m.global.queueManager.callFunc("getCurrentItem")
-
-                if isChainValid(currentItem, "ArtistItems")
-                    if isValidAndNotEmpty(currentItem.ArtistItems)
-                        if m.playlistTypeCount > 1
-                            m.global.queueManager.callFunc("clear")
-                            m.global.audioPlayer.control = "stop"
-                            m.global.audioPlayer.loopMode = ""
-                        else
-                            displayMiniPlayer()
-                        end if
-                        data = currentItem.ArtistItems[0]
-                        data.selectionType = "artist"
-                        m.top.getScene().jumpTo = data
-                    end if
-                end if
-
-                if not isValidAndNotEmpty(m.top.getScene().jumpTo)
-                    if isChainValid(currentItem, "json.ArtistItems")
-                        if isValidAndNotEmpty(currentItem.json.ArtistItems)
-                            if m.playlistTypeCount > 1
-                                m.global.queueManager.callFunc("clear")
-                                m.global.audioPlayer.control = "stop"
-                                m.global.audioPlayer.loopMode = ""
-                            else
-                                displayMiniPlayer()
-                            end if
-                            data = currentItem.json.ArtistItems[0]
-                            data.selectionType = "artist"
-                            m.top.getScene().jumpTo = data
-                        end if
-                    end if
-                end if
-
-                return true
-            end if
+        if key = KeyCode.LEFT
+            m.inScrubMode = true
+            processScrubAction(-10)
+            return true
         end if
 
-        ' Key Event handler when m.thumb is in focus
-        if m.thumb.hasFocus()
-            if key = KeyCode.RIGHT
-                m.inScrubMode = true
-                processScrubAction(10)
-                return true
-            end if
-
-            if key = KeyCode.LEFT
-                m.inScrubMode = true
-                processScrubAction(-10)
-                return true
-            end if
-
-            ' Up enters Up Next when it shows. Lyrics only follow playback, so with them up the
-            ' title and artist come next instead.
-            if key = KeyCode.UP
-                if m.queueList.visible
-                    exitScrubMode(m.queueList)
-                else
-                    exitScrubMode(m.artist)
-                    focusText(m.artist)
-                end if
-                return true
-            end if
-
-            if key = KeyCode.OK or key = KeyCode.PLAY
-                if m.inScrubMode
-                    startLoadingSpinner()
-                    m.inScrubMode = false
-                    m.global.audioPlayer.seek = m.scrubTimestamp
-                    if isValid(m.lyrics)
-                        m.lyrics.callFunc("findPosition", m.scrubTimestamp)
-                    end if
-                    return true
-                end if
-
-                return playAction()
-            end if
-        end if
-
-        ' The list handles up, down and OK itself. Left, Back and Down past the last row go back to the seek bar.
-        if m.queueList.hasFocus()
-            if key = KeyCode.LEFT or key = KeyCode.BACK or key = KeyCode.DOWN
-                setFocusOnThumb()
-                return true
-            end if
-
-            if key = KeyCode.RIGHT or key = KeyCode.UP then return true
-        end if
-
-        if key = KeyCode.PLAY
-            return playAction()
-        end if
-
-        if m.buttons.hasFocus()
-            if key = KeyCode.UP
-                setFocusOnThumb()
-                return true
-            end if
-
-            if key = KeyCode.OK
-                return activateDockButton(m.dockFocus)
-            end if
-
-            if key = KeyCode.RIGHT
-                moveDockFocus(1)
-                return true
-            end if
-
-            if key = KeyCode.LEFT
-                moveDockFocus(-1)
-                return true
-            end if
+        if key = KeyCode.UP
+            enterPanel()
+            return true
         end if
 
         if key = KeyCode.DOWN
-            if m.thumb.visible
-                exitScrubMode(m.buttons)
-            end if
+            exitScrubMode(m.buttons)
             return true
         end if
 
-        if key = KeyCode.BACK
-            if m.playlistTypeCount > 1
-                stopClicked()
-            else
-                displayMiniPlayer()
+        if key = KeyCode.OK or key = KeyCode.PLAY
+            if m.inScrubMode
+                startLoadingSpinner()
+                m.inScrubMode = false
+                m.global.audioPlayer.seek = m.scrubTimestamp
+                if isValid(m.lyrics)
+                    m.lyrics.callFunc("findPosition", m.scrubTimestamp)
+                end if
+                return true
             end if
 
-            unobserveAll()
-            ' We do not return true here so the keypress event can be passed along to the scene manager
-        else if key = KeyCode.REWIND
-            return previousClicked()
-        else if key = KeyCode.FASTFORWRD
-            return nextClicked()
+            return playAction()
         end if
+    end if
+
+    if m.buttons.hasFocus()
+        if key = KeyCode.UP
+            setFocusOnThumb()
+            return true
+        end if
+
+        if key = KeyCode.OK
+            return activateDockButton(m.dockFocus)
+        end if
+
+        if key = KeyCode.RIGHT
+            moveDockFocus(1)
+            return true
+        end if
+
+        if key = KeyCode.LEFT
+            moveDockFocus(-1)
+            return true
+        end if
+
+        if key = KeyCode.DOWN then return true
+    end if
+
+    if key = KeyCode.OPTIONS
+        enterPanel()
+        return true
+    end if
+
+    if key = KeyCode.PLAY
+        return playAction()
+    else if key = KeyCode.BACK
+        if m.playlistTypeCount > 1
+            stopClicked()
+        else
+            displayMiniPlayer()
+        end if
+
+        unobserveAll()
+        ' This doesn't return true, so Back still reaches the scene manager
+    else if key = KeyCode.REWIND
+        return previousClicked()
+    else if key = KeyCode.FASTFORWRD
+        return nextClicked()
     end if
 
     return false
