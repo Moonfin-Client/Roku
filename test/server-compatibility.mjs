@@ -440,8 +440,8 @@ const achievementIcons = await readFile('source/utils/achievementsIcons.bs', 'ut
 const iconAliases = [...achievementIcons.matchAll(/"([a-z0-9_]+)": "([a-z0-9_]+)"/g)];
 assert.ok(iconAliases.length > 0, 'Achievement icon aliases are listed');
 for (const [, alias, target] of iconAliases) {
-    await access(`images/achievements/${target}.png`);
-    await assert.rejects(access(`images/achievements/${alias}.png`), undefined, `${alias} shares ${target}.png rather than keeping a copy`);
+    await access(`images/achievements/${target}.webp`);
+    await assert.rejects(access(`images/achievements/${alias}.webp`), undefined, `${alias} shares ${target}.webp rather than keeping a copy`);
 }
 process.stdout.write(`PASS: achievement icon aliases (${iconAliases.length} checks)\n`);
 
@@ -628,7 +628,7 @@ const pollTask = await readFile('components/achievements/AchievementsPollTask.bs
 assert.match(pollTask, /m\.global\.observeFieldScoped\("unlockToastSettings", port\)[^]*?achievements\.AdoptUnlockSettings\(unlockState, msg\.getData\(\)\)/, 'The reads take the settings the switch saved');
 assert.match(await readFile('components/achievements/AchievementsScreen.bs', 'utf8'), /m\.global\.unlockToastSettings = result\.settings/, 'The switch hands its saved settings over');
 assert.match(await readFile('components/BaseScene.xml', 'utf8'), /<NotificationBanner id="notificationBanner" \/>/, 'The banner sits on the scene');
-await access('images/achievements/notifications_active.png');
+await access('images/achievements/notifications_active.webp');
 process.stdout.write('PASS: achievement unlock wiring (11 checks)\n');
 
 // Friends and chat ride the same reads as the unlocks, every 30 seconds or every 10 with a chat
