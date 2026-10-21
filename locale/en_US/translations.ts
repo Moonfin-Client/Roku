@@ -7125,5 +7125,10 @@
         <translation>This account can&apos;t sign in right now. It may be outside its allowed hours, locked or disabled. Try again later or ask an administrator.</translation>
         <extracomment>Shown when the server refuses a sign in because the account can't be used right now, for example outside its access schedule</extracomment>
     </message>
+    <message>
+        <source>Lossless</source>
+        <translation>Lossless</translation>
+        <extracomment>Part of the audio quality badge on the music player, for a lossless codec such as FLAC</extracomment>
+    </message>
 </context>
 </TS>

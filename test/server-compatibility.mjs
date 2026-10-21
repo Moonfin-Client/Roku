@@ -96,7 +96,7 @@ const selections = {
     'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
-    'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream'],
+    'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
     'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'retryAction', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel', 'rokuAudioTrack'],
     'components/itemMenu/ItemMenuTask.bs': ['playlistRenumbered'],
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
@@ -166,6 +166,7 @@ source += '\n' + await readFile('test/settings-sync-values.bs', 'utf8');
 source += '\n' + await readFile('test/settings-sync-profile.bs', 'utf8');
 source += '\n' + await readFile('test/seasonal-effects.bs', 'utf8');
 source += '\n' + await readFile('test/audio-track.bs', 'utf8');
+source += '\n' + await readFile('test/audio-quality.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-selection.bs', 'utf8');
 source += '\n' + await readFile('test/file-facts.bs', 'utf8');
 source += '\n' + await readFile('test/favorite-tabs.bs', 'utf8');
@@ -412,7 +413,8 @@ assert.match(audioPlayer, /getServerInfoFromItem\(currentItem\)[^]*?params\.serv
 
 const audioPlayerView = await readFile('components/music/AudioPlayerView.bs', 'utf8');
 assert.match(audioPlayerView, /setTaskServerFromItem\(m\.LoadMetaDataTask, currentItem\)/, 'Audio metadata task follows the queue-item server');
-assert.match(audioPlayerView, /audioArtworkURL\(currentItem[^]*?ImageType\.PRIMARY/, 'Audio artwork uses the queue-item server');
+assert.match(audioPlayerView, /setArtwork\(currentItem, itemJson\)[^]*?sub setArtwork\(item as object[^]*?audioArtworkURL\(item, artId, ImageType\.PRIMARY/, 'Audio artwork uses the queue-item server');
+assert.match(audioPlayerView, /audioArtworkURL\(queueItem, audioArtId\(itemJson\)/, 'Up Next thumbnails use each queue item server');
 
 const detailApiTask = await readFile('components/JellyfinAPITask.bs', 'utf8');
 assert.match(detailApiTask, /request\.serverData[^]*?APIRequestForServer\(serverData\.serverUrl, serverData\.userId, serverData\.authToken/, 'Detail API task can target the item server');

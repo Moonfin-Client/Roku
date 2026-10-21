@@ -1,3 +1,4 @@
+import "pkg:/components/itemMenu/itemMenuHost.bs"
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/enums/ColorPalette.bs"
@@ -6,21 +7,16 @@ import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/MediaPlaybackState.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/enums/TaskControl.bs"
-import "pkg:/source/enums/ViewLoadStatus.bs"
 
-import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/themeChrome.bs"
 
-enum ButtonState
-    DEFAULT = "default"
-    SELECTED = "selected"
-end enum
+const DOCK_BUTTON_SIZE = 88
+const DOCK_PLAY_SIZE = 104
+const DOCK_GAP = 24
 
 sub init()
-    activeNav = getActiveNav(m.top.getScene())
-    if isValid(activeNav)
-        activeNav.isVisible = false
-    end if
+    m.top.overhangVisible = false
 
     hideAudioMiniPlayer()
 
@@ -29,18 +25,26 @@ sub init()
     m.lastRecordedPositionTimestamp = 0
     m.scrubTimestamp = -1
     m.hasLyrics = false
+    m.showQueue = false
+    m.isFavorite = false
+    m.favoriteOverrides = {}
+    m.dockFocus = "play"
 
     m.playlistTypeCount = m.global.queueManager.callFunc("getQueueUniqueTypes").count()
 
+    ' The settings can't change while this screen is up, and each read copies the whole session
+    m.accent = themeChrome.Accent()
+    m.onAccent = themeChrome.OnAccent()
+    m.cursor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+
     setupAudioNode()
     setupAnimationTasks()
-    setupButtons()
     setupInfoNodes()
+    setupButtons()
     setupDataTasks()
     setupScreenSaver()
 
-    m.buttonCount = m.buttons.getChildCount()
-    m.seekPosition.translation = [100 - (m.seekPosition.width / 2), m.seekPosition.translation[1]]
+    moveSeekbarThumb(0)
 
     m.screenSaverTimeout = 300
 
@@ -49,24 +53,26 @@ sub init()
 
     m.di = CreateObject("roDeviceInfo")
 
-    loadButtons()
-    setShuffleIconState()
-    setLoopButtonImage()
-
     m.song = m.top.findNode("song")
-    m.song.font.size = 60
+    m.song.font.size = 48
 
     m.artist = m.top.findNode("artist")
-    m.artist.font.size = 35
+    m.artist.font.size = 28
+    m.artist.color = m.accent
 
-    numberofsongs = m.top.findNode("numberofsongs")
-    numberofsongs.font.size = 25
+    m.album = m.top.findNode("album")
+    m.album.font.size = 24
 
-    m.seekBar.color = ColorPalette.BLACK77
-    m.bufferPosition.color = ColorPalette.MIDGREY
-    m.playPosition.color = ColorPalette.TRIADBLUE
+    m.seekBar.color = "0xFFFFFF26"
+    m.bufferPosition.color = "0xFFFFFF33"
+    m.playPosition.color = m.accent
+    m.queueList.focusBitmapBlendColor = m.cursor
+    m.queueList.observeField("itemSelected", "onQueueItemSelected")
 
     m.buttons.setFocus(true)
+    layoutDock()
+    loadQueueList()
+    showPanel()
 
     if m.global.audioPlayer.state = "playing"
         onAudioDataChanged()
@@ -81,6 +87,21 @@ function audioArtworkURL(item as dynamic, id as string, imageType as string, par
     targetParams.Append(params)
     if isEmbyServer(serverData.serverUrl) then targetParams.api_key = serverData.authToken
     return buildURLForServer(serverData.serverUrl, "Items/" + id + "/Images/" + imageType, targetParams, serverData.userId)
+end function
+
+' Album art first, the way the song lists and the mini player show it, then the track's own.
+' Album song lists queue bare nodes, which carry AlbumId as a field.
+function audioArtId(item as object) as string
+    if isValidAndNotEmpty(item.AlbumId) then return item.AlbumId
+    if isValidAndNotEmpty(item.id) then return item.id
+    return ""
+end function
+
+function currentItemJson() as object
+    currentItem = m.global.queueManager.callFunc("getCurrentItem")
+    if not isValid(currentItem) then return {}
+    if isValid(currentItem.json) then return currentItem.json
+    return currentItem
 end function
 
 sub onScreensaverTimeoutLoaded()
@@ -107,14 +128,11 @@ sub setupScreenSaver()
 end sub
 
 sub setupAnimationTasks()
-    m.displayButtonsAnimation = m.top.FindNode("displayButtonsAnimation")
     m.playPositionAnimation = m.top.FindNode("playPositionAnimation")
     m.playPositionAnimationWidth = m.top.FindNode("playPositionAnimationWidth")
 
     m.bufferPositionAnimation = m.top.FindNode("bufferPositionAnimation")
     m.bufferPositionAnimationWidth = m.top.FindNode("bufferPositionAnimationWidth")
-
-    m.screenSaverStartAnimation = m.top.FindNode("screenSaverStartAnimation")
 end sub
 
 ' Creates tasks to gather data needed to render Scene and play song
@@ -122,14 +140,6 @@ sub setupDataTasks()
     ' Load meta data
     m.LoadMetaDataTask = CreateObject("roSGNode", "LoadItemsTask")
     m.LoadMetaDataTask.itemsToLoad = "metaData"
-
-    ' Load background image
-    m.LoadBackdropImageTask = CreateObject("roSGNode", "LoadItemsTask")
-    m.LoadBackdropImageTask.itemsToLoad = "backdropImage"
-
-    ' Load audio stream
-    m.LoadAudioStreamTask = CreateObject("roSGNode", "LoadItemsTask")
-    m.LoadAudioStreamTask.itemsToLoad = "audioStream"
 
     m.LoadScreenSaverTimeoutTask = CreateObject("roSGNode", "LoadScreenSaverTimeoutTask")
 end sub
@@ -139,7 +149,8 @@ sub setupAudioNode()
     m.global.audioPlayer.observeFieldScoped("position", "audioPositionChanged")
     m.global.audioPlayer.observeFieldScoped("bufferingStatus", "bufferPositionChanged")
     m.global.audioPlayer.observeFieldScoped("audioData", "onAudioDataChanged")
-    m.global.audioPlayer.observeFieldScoped("loopmode", "setLoopButtonImage")
+    m.global.audioPlayer.observeFieldScoped("loopmode", "paintDock")
+    m.global.audioPlayer.observeFieldScoped("state", "paintDock")
 end sub
 
 ' Creates audio node used to play song(s)
@@ -148,39 +159,277 @@ sub unobserveAll()
     m.global.audioPlayer.unobserveFieldScoped("bufferingStatus")
     m.global.audioPlayer.unobserveFieldScoped("audioData")
     m.global.audioPlayer.unobserveFieldScoped("loopmode")
+    m.global.audioPlayer.unobserveFieldScoped("state")
 end sub
 
-' Setup playback buttons, default to Play button selected
+function dockButtonSize(id as string) as integer
+    if id = "play" then return DOCK_PLAY_SIZE
+    return DOCK_BUTTON_SIZE
+end function
+
+' Each dock button is a disc, its icon and a focus ring, painted by paintDock
 sub setupButtons()
     m.buttons = m.top.findNode("buttons")
-    m.top.observeField("selectedButtonIndex", "onButtonSelectedChange")
+    m.dockIcons = {
+        "favorite": "pkg:/images/icons/heart.png",
+        "addToPlaylist": "pkg:/images/icons/add_to_playlist.png",
+        "shuffle": "pkg:/images/icons/shuffle.png",
+        "previous": "pkg:/images/icons/previous.png",
+        "next": "pkg:/images/playback/skip_next.png",
+        "loop": "pkg:/images/icons/repeat.png",
+        "lyrics": "pkg:/images/icons/lyrics.png",
+        "queue": "pkg:/images/icons/details.png"
+    }
 
-    ' If we're playing a mixed playlist, remove the shuffle and loop buttons
-    if m.playlistTypeCount > 1
-        shuffleButton = m.top.findNode("shuffle")
-        m.buttons.removeChild(shuffleButton)
+    m.dock = {}
+    for each id in ["favorite", "addToPlaylist", "shuffle", "previous", "play", "next", "loop", "lyrics", "queue"]
+        size = dockButtonSize(id)
+        button = m.buttons.createChild("Group")
+        button.id = id
 
-        loopButton = m.top.findNode("loop")
-        m.buttons.removeChild(loopButton)
+        disc = button.createChild("Poster")
+        disc.uri = "pkg:/images/icons/circle.png"
+        disc.width = size
+        disc.height = size
 
-        m.previouslySelectedButtonIndex = 0
-        m.top.selectedButtonIndex = 1
-        return
-    end if
+        iconSize = size / 2
+        icon = button.createChild("Poster")
+        icon.width = iconSize
+        icon.height = iconSize
+        icon.translation = [(size - iconSize) / 2, (size - iconSize) / 2]
 
-    m.previouslySelectedButtonIndex = 1
-    m.top.selectedButtonIndex = 2
+        ring = button.createChild("Poster")
+        ring.uri = "pkg:/images/icons/focusRing.png"
+        ring.width = size + 12
+        ring.height = size + 12
+        ring.translation = [-6, -6]
+        ring.blendColor = m.cursor
+
+        if id = "play"
+            disc.blendColor = m.accent
+            icon.blendColor = m.onAccent
+        end if
+
+        m.dock[id] = button
+    end for
 end sub
 
-' Event handler when user selected a different playback button
-sub onButtonSelectedChange()
-    ' Change previously selected button back to default image
-    selectedButton = m.buttons.getChild(m.previouslySelectedButtonIndex)
-    selectedButton.blendColor = ColorPalette.WHITE
+' Favorite and add to playlist on the left, the transport in the middle and the panel toggles on
+' the right. A single track has nothing to skip or shuffle, and a mixed queue can't shuffle or loop.
+sub layoutDock()
+    hidden = {}
+    if m.global.queueManager.callFunc("getCount") < 2
+        hidden = { "previous": true, "next": true, "shuffle": true, "loop": true }
+    else if m.playlistTypeCount > 1
+        hidden = { "shuffle": true, "loop": true }
+    end if
+    if not m.hasLyrics then hidden["lyrics"] = true
 
-    ' Change selected button image to selected image
-    selectedButton = m.buttons.getChild(m.top.selectedButtonIndex)
-    selectedButton.blendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+    dockGroups = [
+        { x: 80, align: 0, ids: ["favorite", "addToPlaylist"] },
+        { x: 960, align: 0.5, ids: ["shuffle", "previous", "play", "next", "loop"] },
+        { x: 1840, align: 1, ids: ["lyrics", "queue"] }
+    ]
+
+    m.dockOrder = []
+    for each dockGroup in dockGroups
+        shown = []
+        groupWidth = 0
+        for each id in dockGroup.ids
+            button = m.dock[id]
+            button.visible = not hidden.DoesExist(id)
+            if button.visible
+                shown.push(id)
+                groupWidth += dockButtonSize(id)
+            end if
+        end for
+        if shown.count() > 1 then groupWidth += DOCK_GAP * (shown.count() - 1)
+
+        left = dockGroup.x - groupWidth * dockGroup.align
+        for each id in shown
+            buttonSize = dockButtonSize(id)
+            m.dock[id].translation = [left, (DOCK_PLAY_SIZE - buttonSize) / 2]
+            left += buttonSize + DOCK_GAP
+            m.dockOrder.push(id)
+        end for
+    end for
+
+    if not inArray(m.dockOrder, m.dockFocus) then m.dockFocus = "play"
+    paintDock()
+end sub
+
+function dockButtonActive(id as string) as boolean
+    if id = "favorite" then return m.isFavorite
+    if id = "shuffle" then return m.global.queueManager.callFunc("getIsShuffled") = true
+    if id = "loop" then return m.global.audioPlayer.loopMode <> ""
+    if id = "lyrics" then return not m.queueList.visible
+    if id = "queue" then return m.queueList.visible
+    return false
+end function
+
+function dockIcon(id as string) as string
+    if id = "play"
+        if m.global.audioPlayer.state = "playing" then return "pkg:/images/icons/pause.png"
+        return "pkg:/images/icons/play.png"
+    end if
+    if id = "loop" and m.global.audioPlayer.loopMode = "one" then return "pkg:/images/icons/repeat_one.png"
+    return m.dockIcons[id]
+end function
+
+' Play sits on an accent disc, a toggle that is on is tinted with the accent, and the ring in the
+' cursor color shows which button the remote is on
+sub paintDock()
+    if not isValid(m.dockOrder) then return
+
+    dockFocused = m.buttons.hasFocus()
+
+    for each id in m.dockOrder
+        button = m.dock[id]
+        disc = button.getChild(0)
+        icon = button.getChild(1)
+        focused = dockFocused and id = m.dockFocus
+
+        icon.uri = dockIcon(id)
+        button.getChild(2).visible = focused
+
+        if id <> "play"
+            active = dockButtonActive(id)
+            icon.blendColor = active ? m.accent : ColorPalette.WHITE
+
+            if focused
+                disc.blendColor = ColorPalette.WHITE
+                disc.opacity = .24
+            else if active
+                disc.blendColor = m.accent
+                disc.opacity = .25
+            else
+                disc.blendColor = ColorPalette.WHITE
+                disc.opacity = .08
+            end if
+        end if
+    end for
+end sub
+
+sub moveDockFocus(delta as integer)
+    index = 0
+    for i = 0 to m.dockOrder.count() - 1
+        if m.dockOrder[i] = m.dockFocus then index = i
+    end for
+
+    index += delta
+    if index < 0 or index >= m.dockOrder.count() then return
+    m.dockFocus = m.dockOrder[index]
+    paintDock()
+end sub
+
+function activateDockButton(id as string) as boolean
+    if id = "play" then return playAction()
+    if id = "previous" then return previousClicked()
+    if id = "next" then return nextClicked()
+    if id = "shuffle" then return shuffleClicked()
+    if id = "loop" then return loopClicked()
+    if id = "favorite" then return favoriteClicked()
+    if id = "addToPlaylist" then return addToPlaylistClicked()
+
+    if id = "lyrics" or id = "queue"
+        wantsQueue = id = "queue"
+        if wantsQueue = m.queueList.visible
+            ' OK on the panel that is already showing steps into it. Lyrics only follow playback.
+            if wantsQueue
+                focusOn(m.queueList)
+                paintDock()
+            end if
+            return true
+        end if
+
+        m.showQueue = wantsQueue
+        showPanel()
+        return true
+    end if
+
+    return false
+end function
+
+' Lyrics fill the right side unless Up Next is toggled on or the track has none
+sub showPanel()
+    lyricsShown = m.hasLyrics and not m.showQueue
+    if isValid(m.lyrics) then m.lyrics.visible = lyricsShown
+    m.queueList.visible = not lyricsShown
+    paintDock()
+end sub
+
+' Up Next lists the playing track and the ones after it
+sub loadQueueList()
+    queue = m.global.queueManager.callFunc("getQueue")
+    m.queueStart = m.global.queueManager.callFunc("getPosition")
+    if m.queueStart < 0 then m.queueStart = 0
+
+    content = CreateObject("roSGNode", "ContentNode")
+    for i = m.queueStart to queue.count() - 1
+        queueItem = queue[i]
+        itemJson = queueItem
+        if isValid(queueItem.json) then itemJson = queueItem.json
+
+        row = content.createChild("ContentNode")
+        row.title = itemJson.Name ?? itemJson.title ?? ""
+        if isValidAndNotEmpty(itemJson.Artists)
+            row.description = itemJson.Artists.join(", ")
+        else if isString(itemJson.AlbumArtist)
+            row.description = itemJson.AlbumArtist
+        end if
+        row.HDPosterUrl = audioArtworkURL(queueItem, audioArtId(itemJson), ImageType.PRIMARY, { "maxHeight": 84, "maxWidth": 84 })
+        if i = m.queueStart then row.addFields({ isCurrent: true })
+    end for
+
+    m.queueList.content = content
+end sub
+
+sub onQueueItemSelected()
+    picked = m.queueList.itemSelected
+    if picked <= 0 then return
+
+    ' playNext steps on from the track before, and knows what to do when that one is a video
+    m.global.queueManager.callFunc("setPosition", m.queueStart + picked - 1)
+    m.global.audioPlayer.callFunc("playNext")
+end sub
+
+function favoriteClicked() as boolean
+    itemJson = currentItemJson()
+    if not isValidAndNotEmpty(itemJson.Id) then return true
+
+    m.isFavorite = not m.isFavorite
+    m.favoriteOverrides[itemJson.Id] = m.isFavorite
+    paintDock()
+    runItemMenuTask(itemMenuRequest(audioMenuSubject(itemJson), "favorite", { value: m.isFavorite }), "onFavoriteSaved")
+    return true
+end function
+
+' The heart flips at once, so a refusal puts it back
+sub onFavoriteSaved(event as object)
+    response = event.getData()
+    releaseItemMenuTask(event.getRoSGNode(), "response")
+    if response.success then return
+
+    itemId = response.request.itemId
+    m.favoriteOverrides[itemId] = not response.request.value
+    if isStringEqual(currentItemJson().Id, itemId)
+        m.isFavorite = not response.request.value
+        paintDock()
+    end if
+end sub
+
+function addToPlaylistClicked() as boolean
+    itemJson = currentItemJson()
+    if isValidAndNotEmpty(itemJson.Id) then itemMenuLoadPicker(audioMenuSubject(itemJson), "playlists")
+    return true
+end function
+
+function audioMenuSubject(itemJson as object) as object
+    return { card: invalid, json: itemJson, options: {}, entries: [], returnFocus: m.buttons }
+end function
+
+' Nothing on this screen shows what the playlist picker changes
+sub itemMenuChanged(_action as string, _card as dynamic, _menuJson as object)
 end sub
 
 sub setupInfoNodes()
@@ -191,14 +440,15 @@ sub setupInfoNodes()
     m.bufferPosition = m.top.findNode("bufferPosition")
     m.seekBar = m.top.findNode("seekBar")
     m.thumb = m.top.findNode("thumb")
-    m.shuffleIndicator = m.top.findNode("shuffleIndicator")
-    m.loopIndicator = m.top.findNode("loopIndicator")
     m.positionTimestamp = m.top.findNode("positionTimestamp")
     m.seekPosition = m.top.findNode("seekPosition")
     m.seekTimestamp = m.top.findNode("seekTimestamp")
     m.totalLengthTimestamp = m.top.findNode("totalLengthTimestamp")
-    m.nextItem = m.top.findNode("nextItem")
-    m.previousItem = m.top.findNode("previousItem")
+    m.queueList = m.top.findNode("queueList")
+    m.textFocus = m.top.findNode("textFocus")
+    m.qualityBadge = m.top.findNode("qualityBadge")
+    m.qualityPill = m.top.findNode("qualityPill")
+    m.qualityText = m.top.findNode("qualityText")
 end sub
 
 sub bufferPositionChanged()
@@ -368,19 +618,6 @@ function loopClicked() as boolean
     return true
 end function
 
-sub setLoopButtonImage()
-    if m.global.audioPlayer.loopMode = "all"
-        m.loopIndicator.opacity = "1"
-        m.loopIndicator.uri = "pkg:/images/icons/loopIndicator-on.png"
-    else if m.global.audioPlayer.loopMode = "one"
-        m.loopIndicator.opacity = "1"
-        m.loopIndicator.uri = "pkg:/images/icons/loopIndicator1-on.png"
-    else
-        m.loopIndicator.opacity = "0"
-        m.loopIndicator.uri = "pkg:/images/icons/loopIndicator-off.png"
-    end if
-end sub
-
 function nextClicked() as boolean
     m.global.audioPlayer.callFunc("playNext")
     return true
@@ -407,66 +644,14 @@ function shuffleClicked() as boolean
 
     toggleShuffleEnabled()
 
-    setSiblingData()
-
     if not m.global.queueManager.callFunc("getIsShuffled")
-        m.shuffleIndicator.opacity = ".4"
-        m.shuffleIndicator.uri = m.shuffleIndicator.uri.Replace("-on", "-off")
         m.global.queueManager.callFunc("setPosition", currentSongIndex)
-        setTrackNumberDisplay()
-        return true
     end if
 
-    m.shuffleIndicator.opacity = "1"
-    m.shuffleIndicator.uri = m.shuffleIndicator.uri.Replace("-off", "-on")
-    setTrackNumberDisplay()
-
+    loadQueueList()
+    paintDock()
     return true
 end function
-
-sub setShuffleIconState()
-    if m.global.queueManager.callFunc("getIsShuffled")
-        m.shuffleIndicator.opacity = "1"
-        m.shuffleIndicator.uri = m.shuffleIndicator.uri.Replace("-off", "-on")
-    end if
-end sub
-
-sub setTrackNumberDisplay()
-    setFieldTextValue("numberofsongs", "Track " + stri(m.global.queueManager.callFunc("getPosition") + 1).trim() + "/" + stri(m.global.queueManager.callFunc("getCount")).trim())
-end sub
-
-' setSiblingData: Set the icon and title text for the previous and next items
-'
-sub setSiblingData()
-    previousItemTitleText = m.global.queueManager.callFunc("getPreviousItemTitleAndIcon")
-    if isValidAndNotEmpty(previousItemTitleText)
-        m.previousItem.icon = previousItemTitleText[0]
-        m.previousItem.text = previousItemTitleText[1]
-    else
-        m.previousItem.icon = ""
-        m.previousItem.text = ""
-    end if
-
-    nextItemTitleText = m.global.queueManager.callFunc("getNextItemTitleAndIcon")
-    if isValidAndNotEmpty(nextItemTitleText)
-        m.nextItem.icon = nextItemTitleText[0]
-        m.nextItem.text = nextItemTitleText[1]
-    else
-        m.nextItem.icon = ""
-        m.nextItem.text = ""
-    end if
-
-    checkDisplaySiblingItem()
-end sub
-
-' If we have more and 1 song to play, fade in the next and previous controls
-sub loadButtons()
-    if m.global.queueManager.callFunc("getCount") > 1
-        m.shuffleIndicator.opacity = ".4"
-        m.loopIndicator.opacity = ".4"
-        m.displayButtonsAnimation.control = "start"
-    end if
-end sub
 
 sub onAudioDataChanged()
     stopLoadingSpinner()
@@ -491,7 +676,11 @@ sub onAudioDataChanged()
     m.bufferPosition.width = 0
     m.hasLyrics = false
 
-    exitScrubMode(m.buttons)
+    if m.thumb.hasFocus()
+        exitScrubMode(m.buttons)
+    else
+        resetSeekbarThumb()
+    end if
     m.lastRecordedPositionTimestamp = 0
     m.positionTimestamp.text = "0:00"
     m.playPosition.width = 0
@@ -515,19 +704,21 @@ sub onAudioDataChanged()
         useMetaTask = true
     end if
 
+    itemJson = currentItemJson()
+    favoriteOverride = m.favoriteOverrides[itemJson.Id ?? ""]
+    if isValid(favoriteOverride)
+        m.isFavorite = favoriteOverride
+    else
+        m.isFavorite = chainLookupReturn(itemJson, "UserData.IsFavorite", false) = true
+    end if
+
     if useMetaTask
         setTaskServerFromItem(m.LoadMetaDataTask, currentItem)
         m.LoadMetaDataTask.itemId = currentItem.id
         m.LoadMetaDataTask.observeField("content", "onMetaDataLoaded")
         m.LoadMetaDataTask.control = TaskControl.RUN
     else
-        if isValid(currentItem.ParentBackdropItemId)
-            setBackdropImage(audioArtworkURL(currentItem, currentItem.ParentBackdropItemId, ImageType.BACKDROP, { "maxHeight": "720", "maxWidth": "1280" }))
-        else
-            m.background.visible = false
-        end if
-
-        setPosterImage(audioArtworkURL(currentItem, currentItem.id, ImageType.PRIMARY, { "maxHeight": 500, "maxWidth": 500 }))
+        setArtwork(currentItem, itemJson)
         setOnScreenTextValues(currentItem)
         m.songDuration = currentItem.RunTimeTicks / 10000000.0
 
@@ -539,6 +730,8 @@ sub onAudioDataChanged()
             m.totalLengthTimestamp.text = ticksToHuman(currentItem.RunTimeTicks)
         end if
     end if
+
+    setQualityBadge(data.qualityLabel)
 
     ' Validate lyrics data and for now only support timed lyrics
     if data.hasLyrics
@@ -567,7 +760,9 @@ sub onAudioDataChanged()
         end if
     end if
 
-    setSiblingData()
+    loadQueueList()
+    layoutDock()
+    showPanel()
 end sub
 
 sub moveDisplayElements(hasLyrics as boolean)
@@ -589,9 +784,9 @@ sub showLyrics()
     end if
 
     m.lyrics = CreateObject("roSGNode", "Lyrics")
-    m.lyrics.translation = "[650, 300]"
-    m.lyrics.width = 1000
-    m.top.insertChild(m.lyrics, 1)
+    m.lyrics.translation = "[660, 220]"
+    m.lyrics.width = 1180
+    m.top.insertChild(m.lyrics, 2)
 end sub
 
 sub hideLyrics()
@@ -601,26 +796,18 @@ sub hideLyrics()
     m.lyrics = invalid
 end sub
 
-sub onBackdropImageLoaded()
-    data = m.LoadBackdropImageTask.content[0]
-    m.LoadBackdropImageTask.unobserveField("content")
-    setBackdropImage(data)
-end sub
-
 sub onMetaDataLoaded()
     data = m.LoadMetaDataTask.content[0]
     m.LoadMetaDataTask.unobserveField("content")
     if isValidAndNotEmpty(data) and isValid(data.json)
-        ' Use metadata to load backdrop image
-        if isValid(data.json.ArtistItems) and isValid(data.json.ArtistItems[0]) and isValid(data.json.ArtistItems[0].id)
-            setTaskServerFromItem(m.LoadBackdropImageTask, data)
-            m.LoadBackdropImageTask.itemId = data.json.ArtistItems[0].id
-            m.LoadBackdropImageTask.observeField("content", "onBackdropImageLoaded")
-            m.LoadBackdropImageTask.control = TaskControl.RUN
-        end if
-
+        setArtwork(data, data.json)
         setPosterImage(data.posterURL)
         setOnScreenTextValues(data.json)
+
+        if not m.favoriteOverrides.DoesExist(data.json.Id ?? "")
+            m.isFavorite = chainLookupReturn(data.json, "UserData.IsFavorite", false) = true
+            paintDock()
+        end if
 
         if isValid(data.json.RunTimeTicks)
             m.songDuration = data.json.RunTimeTicks / 10000000.0
@@ -629,6 +816,15 @@ sub onMetaDataLoaded()
             m.totalLengthTimestamp.text = ticksToHuman(data.json.RunTimeTicks)
         end if
     end if
+end sub
+
+' The cover, and a heavily blurred copy of it behind everything
+sub setArtwork(item as object, itemJson as object)
+    artId = audioArtId(itemJson)
+    if artId = "" then return
+
+    setPosterImage(audioArtworkURL(item, artId, ImageType.PRIMARY, { "maxHeight": 480, "maxWidth": 480 }))
+    setBackdropImage(audioArtworkURL(item, artId, ImageType.PRIMARY, { "maxHeight": 360, "maxWidth": 360, "blur": 18 }))
 end sub
 
 ' Set poster image on screen
@@ -644,18 +840,34 @@ end sub
 ' Populate on screen text variables
 sub setOnScreenTextValues(json)
     if isValid(json)
-        if m.playlistTypeCount = 1
-            setTrackNumberDisplay()
-        end if
-
         if isValidAndNotEmpty(json.Artists)
             setFieldTextValue("artist", json.Artists[0].replace(chr(8208), "-"))
         end if
 
         if isValidAndNotEmpty(json.name)
-            setFieldTextValue("song", UCase(json.name))
+            setFieldTextValue("song", json.name)
+        end if
+
+        if isString(json.Album)
+            setFieldTextValue("album", json.Album)
+        else
+            setFieldTextValue("album", "")
         end if
     end if
+end sub
+
+sub setQualityBadge(label as dynamic)
+    if not isValidAndNotEmpty(label)
+        m.qualityBadge.visible = false
+        return
+    end if
+
+    m.qualityText.text = label
+    pillWidth = m.qualityText.boundingRect().width + 40
+    m.qualityText.translation = [20, 0]
+    m.qualityPill.width = pillWidth
+    m.qualityBadge.translation = [1840 - pillWidth, 44]
+    m.qualityBadge.visible = true
 end sub
 
 ' Add backdrop image to screen
@@ -674,14 +886,6 @@ sub setBackdropImage(data)
         m.backDrop.uri = data
         m.background.visible = true
     end if
-end sub
-
-' setSelectedButtonState: Changes the icon state url for the currently selected button
-'
-' @param {string} newState - state to replace {oldState} with in icon url
-sub setSelectedButtonState(newState as string)
-    selectedButton = m.buttons.getChild(m.top.selectedButtonIndex)
-    selectedButton.blendColor = newState = ButtonState.SELECTED ? chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT) : ColorPalette.WHITE
 end sub
 
 ' processScrubAction: Handles +/- seeking for the audio trickplay bar
@@ -748,8 +952,11 @@ sub moveSeekbarThumb(playPositionBarWidth as float)
     ' Move the thumb
     m.thumb.translation = [thumbPostionLeft, m.thumb.translation[1]]
 
-    ' Move the seek position element so it follows the thumb
-    m.seekPosition.translation = [100 + thumbPostionLeft - (m.seekPosition.width / 2), m.seekPosition.translation[1]]
+    ' Move the seek position element so it follows the thumb, without leaving the screen
+    popupLeft = m.seekBar.translation[0] + thumbPostionLeft - (m.seekPosition.width / 2)
+    if popupLeft < 40 then popupLeft = 40
+    if popupLeft > 1880 - m.seekPosition.width then popupLeft = 1880 - m.seekPosition.width
+    m.seekPosition.translation = [popupLeft, m.seekPosition.translation[1]]
 end sub
 
 ' exitScrubMode: Moves player out of scrub mode state,  resets back to standard play mode
@@ -759,8 +966,7 @@ sub exitScrubMode(nodeReceivingFocus = m.buttons as dynamic)
         nodeReceivingFocus = m.buttons
     end if
 
-    nodeReceivingFocus.setFocus(true)
-    m.thumb.setFocus(false)
+    focusOn(nodeReceivingFocus)
 
     if m.seekPosition.visible
         m.seekPosition.visible = false
@@ -771,68 +977,36 @@ sub exitScrubMode(nodeReceivingFocus = m.buttons as dynamic)
     m.inScrubMode = false
     m.thumb.visible = false
 
-    if isValid(nodeReceivingFocus.id)
-        if LCase(nodeReceivingFocus.id) = "buttons"
-            setSelectedButtonState(ButtonState.SELECTED)
-        end if
-    end if
-end sub
-
-' checkDisplaySiblingItem: Determine visible state for both previous and next item popups
-'
-sub checkDisplaySiblingItem()
-    if not m.buttons.hasFocus()
-        m.previousItem.visible = false
-        m.nextItem.visible = false
-        return
-    end if
-
-    selectedButtonID = LCase(m.buttons.getChild(m.top.selectedButtonIndex).id)
-
-    showNextItem = false
-
-    if selectedButtonID = "next"
-        showNextItem = true
-    end if
-
-    if m.global.queueManager.callFunc("getPosition") = m.global.queueManager.callFunc("getCount") - 1
-        showNextItem = false
-    end if
-
-    if not isValidAndNotEmpty(m.nextItem.text)
-        showNextItem = false
-    end if
-
-    m.nextItem.visible = showNextItem
-
-    showPreviousItem = false
-
-    if selectedButtonID = "previous"
-        showPreviousItem = true
-    end if
-
-    if m.global.queueManager.callFunc("getPosition") = 0
-        showPreviousItem = false
-    end if
-
-    if not isValidAndNotEmpty(m.previousItem.text)
-        showPreviousItem = false
-    end if
-
-    m.previousItem.visible = showPreviousItem
+    paintDock()
 end sub
 
 sub setFocusOnThumb()
-    if not m.thumb.visible
-        m.thumb.visible = true
-        setSelectedButtonState(ButtonState.DEFAULT)
-    end if
+    m.textFocus.visible = false
+    m.thumb.visible = true
 
     if not m.seekPosition.visible
         m.seekPosition.visible = true
     end if
 
-    m.thumb.setFocus(true)
+    focusOn(m.thumb)
+    paintDock()
+end sub
+
+' A node keeps reporting hasFocus after focus moves to one outside it, so the others let go first
+sub focusOn(target as object)
+    for each node in [m.buttons, m.thumb, m.queueList, m.song, m.artist]
+        if not node.isSameNode(target) then node.setFocus(false)
+    end for
+    target.setFocus(true)
+end sub
+
+' The title opens the album and the artist opens the artist, each outlined in the cursor color
+sub focusText(textNode as object)
+    focusOn(textNode)
+    m.textFocus.translation = [textNode.translation[0] - 16, textNode.translation[1] - 6]
+    m.textFocus.height = textNode.height + 12
+    m.textFocus.blendColor = m.cursor
+    m.textFocus.visible = true
 end sub
 
 ' Process key press events
@@ -848,11 +1022,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         ' Key Event handler when m.song is in focus
         if m.song.hasFocus()
             if key = KeyCode.DOWN
-                m.song.setFocus(false)
-                m.song.color = ColorPalette.WHITE
-
-                m.artist.setFocus(true)
-                m.artist.color = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+                focusText(m.artist)
                 return true
             end if
 
@@ -902,18 +1072,12 @@ function onKeyEvent(key as string, press as boolean) as boolean
         ' Key Event handler when m.artist is in focus
         if m.artist.hasFocus()
             if key = KeyCode.DOWN
-                m.artist.setFocus(false)
-                m.artist.color = ColorPalette.WHITE
                 setFocusOnThumb()
                 return true
             end if
 
             if key = KeyCode.UP
-                m.artist.setFocus(false)
-                m.artist.color = ColorPalette.WHITE
-
-                m.song.setFocus(true)
-                m.song.color = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+                focusText(m.song)
                 return true
             end if
 
@@ -970,10 +1134,14 @@ function onKeyEvent(key as string, press as boolean) as boolean
                 return true
             end if
 
+            ' Up enters Up Next when it shows. Lyrics only follow playback, so with them up the
+            ' title and artist come next instead.
             if key = KeyCode.UP
-                m.artist.color = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
-                if m.thumb.visible
+                if m.queueList.visible
+                    exitScrubMode(m.queueList)
+                else
                     exitScrubMode(m.artist)
+                    focusText(m.artist)
                 end if
                 return true
             end if
@@ -993,6 +1161,16 @@ function onKeyEvent(key as string, press as boolean) as boolean
             end if
         end if
 
+        ' The list handles up, down and OK itself. Left, Back and Down past the last row go back to the seek bar.
+        if m.queueList.hasFocus()
+            if key = KeyCode.LEFT or key = KeyCode.BACK or key = KeyCode.DOWN
+                setFocusOnThumb()
+                return true
+            end if
+
+            if key = KeyCode.RIGHT or key = KeyCode.UP then return true
+        end if
+
         if key = KeyCode.PLAY
             return playAction()
         end if
@@ -1000,49 +1178,20 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if m.buttons.hasFocus()
             if key = KeyCode.UP
                 setFocusOnThumb()
-                m.buttons.setFocus(false)
-                checkDisplaySiblingItem()
                 return true
             end if
 
             if key = KeyCode.OK
-                selectedButtonID = m.buttons.getChild(m.top.selectedButtonIndex).id
-                if selectedButtonID = "play"
-                    return playAction()
-                else if selectedButtonID = "previous"
-                    return previousClicked()
-                else if selectedButtonID = "next"
-                    return nextClicked()
-                else if selectedButtonID = "shuffle"
-                    return shuffleClicked()
-                else if selectedButtonID = "loop"
-                    return loopClicked()
-                else if selectedButtonID = "stop"
-                    return stopClicked()
-                end if
+                return activateDockButton(m.dockFocus)
             end if
 
             if key = KeyCode.RIGHT
-                if m.global.queueManager.callFunc("getCount") = 1
-                    if m.top.selectedButtonIndex = 3 then return false
-                end if
-
-                m.previouslySelectedButtonIndex = m.top.selectedButtonIndex
-                if m.top.selectedButtonIndex < m.buttonCount - 1 then m.top.selectedButtonIndex = m.top.selectedButtonIndex + 1
-                checkDisplaySiblingItem()
+                moveDockFocus(1)
                 return true
             end if
 
             if key = KeyCode.LEFT
-                if m.global.queueManager.callFunc("getCount") = 1
-                    if m.top.selectedButtonIndex = 2 then return false
-                end if
-
-                if m.top.selectedButtonIndex > 0
-                    m.previouslySelectedButtonIndex = m.top.selectedButtonIndex
-                    m.top.selectedButtonIndex = m.top.selectedButtonIndex - 1
-                    checkDisplaySiblingItem()
-                end if
+                moveDockFocus(-1)
                 return true
             end if
         end if
@@ -1051,7 +1200,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
             if m.thumb.visible
                 exitScrubMode(m.buttons)
             end if
-            checkDisplaySiblingItem()
             return true
         end if
 
@@ -1073,4 +1221,3 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     return false
 end function
-
