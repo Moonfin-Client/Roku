@@ -291,6 +291,10 @@
         <translation>Genres watched</translation>
     </message>
     <message>
+        <source>Go to Details screen</source>
+        <translation>Go to Details screen</translation>
+    </message>
+    <message>
         <source>Go to Series</source>
         <translation>Go to Series</translation>
     </message>
