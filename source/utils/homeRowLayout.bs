@@ -88,24 +88,15 @@ namespace homeRowLayout
     ' the other clients write or the same collection ends up with two identities.
     function Sources() as object
         return [
-            { key: "collections", section: "collection", gate: "ui.home.displayCollectionsRows", setting: "ui.home.pickCollections", task: "collections" },
-            { key: "genres", section: "genre", gate: "ui.home.displayGenresRows", setting: "ui.home.pickGenres", task: "genres" },
-            { key: "playlists", section: "playlist", gate: "ui.home.displayPlaylistsRows", setting: "ui.home.pickPlaylists", task: "homeplaylists" }
+            { key: "collections", section: "collection", gate: "ui.home.displayCollectionsRows" },
+            { key: "genres", section: "genre", gate: "ui.home.displayGenresRows" },
+            { key: "playlists", section: "playlist", gate: "ui.home.displayPlaylistsRows" }
         ]
     end function
 
     function SourceFor(key as string) as object
         for each entry in homeRowLayout.Sources()
             if isStringEqual(entry.key, key) then return entry
-        end for
-
-        return invalid
-    end function
-
-    function SourceForSetting(settingName as dynamic) as object
-        name = homeRowLayout.AsText(settingName)
-        for each entry in homeRowLayout.Sources()
-            if isStringEqual(entry.setting, name) then return entry
         end for
 
         return invalid
@@ -125,8 +116,8 @@ namespace homeRowLayout
     end function
 
     ' What a row id is asking for, or invalid when it is not one of these rows. The server
-    ' key sits in the middle and is a url, so it carries colons of its own and only the two
-    ' ends of the id can be read.
+    ' key sits in the middle and is a url with colons of its own, so it's whatever the two
+    ' ends leave.
     function SourceFromId(id as dynamic) as object
         text = homeRowLayout.AsText(id)
         if not LCase(text).startsWith(homeRowLayout.DYNAMIC_PREFIX) then return invalid
@@ -137,7 +128,22 @@ namespace homeRowLayout
         entry = homeRowLayout.SourceFor(parts[1])
         if not isValid(entry) then return invalid
 
-        return { source: entry.key, itemId: parts[parts.Count() - 1] }
+        itemId = parts[parts.Count() - 1]
+        head = Len(homeRowLayout.DYNAMIC_PREFIX) + Len(parts[1]) + 1
+        tail = Len(parts[parts.Count() - 2]) + Len(itemId) + 2
+        return { source: entry.key, itemId: itemId, server: Mid(text, head + 1, Len(text) - head - tail) }
+    end function
+
+    function IsOwnServer(id as dynamic) as boolean
+        fromId = homeRowLayout.SourceFromId(id)
+        return isValid(fromId) and LCase(fromId.server) = LCase(homeRowLayout.ServerId())
+    end function
+
+    ' Another server's collections only show while multi-server libraries is on
+    function PickShown(id as dynamic) as boolean
+        if homeRowLayout.IsOwnServer(id) then return true
+        fromId = homeRowLayout.SourceFromId(id)
+        return isValid(fromId) and fromId.source = "collections" and get_user_setting_bool("ui.home.enableMultiServer", false)
     end function
 
     function AsText(value as dynamic) as string
@@ -186,6 +192,29 @@ namespace homeRowLayout
 
     sub SaveDynamic(entries as object)
         set_user_setting(homeRowLayout.DYNAMIC_SETTING, FormatJson(entries))
+    end sub
+
+    ' Drops picked rows and their places in the order and off lists. Left in those lists, an id
+    ' no longer picked would go to the server as a row type nobody knows.
+    sub ForgetPicks(ids as object)
+        gone = {}
+        for each id in ids
+            gone[id] = true
+        end for
+
+        kept = []
+        for each entry in homeRowLayout.DynamicRows()
+            if not gone.DoesExist(entry.id) then kept.push(entry)
+        end for
+        homeRowLayout.SaveDynamic(kept)
+
+        for each key in [homeRowLayout.ORDER_SETTING, homeRowLayout.HIDDEN_SETTING]
+            stored = []
+            for each id in buttonLayout.ToIds(get_user_setting(key))
+                if not gone.DoesExist(id) then stored.push(id)
+            end for
+            set_user_setting(key, FormatJson(stored))
+        end for
     end sub
 
     ' Sections the server holds that this app cannot draw, custom rows among them. Kept
@@ -294,12 +323,13 @@ namespace homeRowLayout
     function Offered() as object
         toggles = homeRowLayout.RowToggles()
 
-        ' Only rows already picked from a list reach the main picker, so it stays short no
-        ' matter how many collections the server holds
+        ' Only picked rows are offered here, the Rows editor fetches the rest itself
         picked = {}
         for each entry in homeRowLayout.DynamicRows()
-            if not isValid(picked[entry.source]) then picked[entry.source] = []
-            picked[entry.source].push({ id: entry.id, label: entry.title })
+            if homeRowLayout.PickShown(entry.id)
+                if not isValid(picked[entry.source]) then picked[entry.source] = []
+                picked[entry.source].push({ id: entry.id, label: entry.title })
+            end if
         end for
 
         seedCount = homeRowLayout.SeedRowCount()

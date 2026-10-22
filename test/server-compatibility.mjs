@@ -70,6 +70,7 @@ const selections = {
     'source/utils/detailSectionLayout.bs': null,
     'source/utils/trackLabels.bs': null,
     'source/utils/fileFacts.bs': null,
+    'source/utils/playbackFacts.bs': null,
     'source/utils/librarySorts.bs': null,
     'source/utils/libraryCard.bs': null,
     'source/utils/favoriteTabs.bs': null,
@@ -97,7 +98,7 @@ const selections = {
     'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
-    'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream'],
+    'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
     'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'retryAction', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel', 'rokuAudioTrack'],
     'components/itemMenu/ItemMenuTask.bs': ['playlistRenumbered'],
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
@@ -168,8 +169,10 @@ source += '\n' + await readFile('test/settings-sync-values.bs', 'utf8');
 source += '\n' + await readFile('test/settings-sync-profile.bs', 'utf8');
 source += '\n' + await readFile('test/seasonal-effects.bs', 'utf8');
 source += '\n' + await readFile('test/audio-track.bs', 'utf8');
+source += '\n' + await readFile('test/audio-quality.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-selection.bs', 'utf8');
 source += '\n' + await readFile('test/file-facts.bs', 'utf8');
+source += '\n' + await readFile('test/playback-facts.bs', 'utf8');
 source += '\n' + await readFile('test/favorite-tabs.bs', 'utf8');
 source += '\n' + await readFile('test/home-preview.bs', 'utf8');
 source += '\n' + await readFile('test/remote-subtitles.bs', 'utf8');
@@ -414,7 +417,8 @@ assert.match(audioPlayer, /getServerInfoFromItem\(currentItem\)[^]*?params\.serv
 
 const audioPlayerView = await readFile('components/music/AudioPlayerView.bs', 'utf8');
 assert.match(audioPlayerView, /setTaskServerFromItem\(m\.LoadMetaDataTask, currentItem\)/, 'Audio metadata task follows the queue-item server');
-assert.match(audioPlayerView, /audioArtworkURL\(currentItem[^]*?ImageType\.PRIMARY/, 'Audio artwork uses the queue-item server');
+assert.match(audioPlayerView, /setArtwork\(currentItem, itemJson\)[^]*?sub setArtwork\(item as object[^]*?audioArtworkURL\(item, artId, ImageType\.PRIMARY/, 'Audio artwork uses the queue-item server');
+assert.match(audioPlayerView, /audioArtworkURL\(queueItem, audioArtId\(itemJson\)/, 'Up Next thumbnails use each queue item server');
 
 const detailApiTask = await readFile('components/JellyfinAPITask.bs', 'utf8');
 assert.match(detailApiTask, /request\.serverData[^]*?APIRequestForServer\(serverData\.serverUrl, serverData\.userId, serverData\.authToken/, 'Detail API task can target the item server');
@@ -440,8 +444,8 @@ const achievementIcons = await readFile('source/utils/achievementsIcons.bs', 'ut
 const iconAliases = [...achievementIcons.matchAll(/"([a-z0-9_]+)": "([a-z0-9_]+)"/g)];
 assert.ok(iconAliases.length > 0, 'Achievement icon aliases are listed');
 for (const [, alias, target] of iconAliases) {
-    await access(`images/achievements/${target}.png`);
-    await assert.rejects(access(`images/achievements/${alias}.png`), undefined, `${alias} shares ${target}.png rather than keeping a copy`);
+    await access(`images/achievements/${target}.webp`);
+    await assert.rejects(access(`images/achievements/${alias}.webp`), undefined, `${alias} shares ${target}.webp rather than keeping a copy`);
 }
 process.stdout.write(`PASS: achievement icon aliases (${iconAliases.length} checks)\n`);
 
@@ -628,7 +632,7 @@ const pollTask = await readFile('components/achievements/AchievementsPollTask.bs
 assert.match(pollTask, /m\.global\.observeFieldScoped\("unlockToastSettings", port\)[^]*?achievements\.AdoptUnlockSettings\(unlockState, msg\.getData\(\)\)/, 'The reads take the settings the switch saved');
 assert.match(await readFile('components/achievements/AchievementsScreen.bs', 'utf8'), /m\.global\.unlockToastSettings = result\.settings/, 'The switch hands its saved settings over');
 assert.match(await readFile('components/BaseScene.xml', 'utf8'), /<NotificationBanner id="notificationBanner" \/>/, 'The banner sits on the scene');
-await access('images/achievements/notifications_active.png');
+await access('images/achievements/notifications_active.webp');
 process.stdout.write('PASS: achievement unlock wiring (11 checks)\n');
 
 // Friends and chat ride the same reads as the unlocks, every 30 seconds or every 10 with a chat

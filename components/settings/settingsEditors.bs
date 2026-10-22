@@ -3,6 +3,7 @@ import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/detailMetadataLayout.bs"
 import "pkg:/source/utils/homeRowGroups.bs"
 import "pkg:/source/utils/homeRowLayout.bs"
+import "pkg:/source/utils/multiserver.bs"
 import "pkg:/source/utils/ratingSourceList.bs"
 import "pkg:/source/utils/settingsIcons.bs"
 
@@ -14,13 +15,20 @@ import "pkg:/source/utils/settingsIcons.bs"
 const RATING_SOURCES_SETTING = "plugin.mdblist.ratingSources"
 
 sub openEditor(kind as string, settingItem as object)
-    rows = editorRowsFor(kind, invalid)
-    ' General is the one disabled group that starts open, since it's short
-    m.editor = { kind: kind, rows: rows, openedKey: editorKey(rows), resetKey: "", openGroups: { general: true }, leftOut: {} }
-    if kind = "rows" then checkLiveTv()
     title = settingItem.title
-    if kind = "rows" then title = "Rows"
     if kind = "ratingSources" then title = "Ratings"
+    if kind = "rows"
+        loadRowsEditor()
+        return
+    end if
+    showEditor(kind, title, {}, [])
+end sub
+
+sub showEditor(kind as string, title as string, leftOut as object, fetched as object)
+    ' General is the one disabled group that starts open, since it's short
+    m.editor = { kind: kind, rows: editorRowsFor(kind, invalid), resetKey: "", openGroups: { general: true }, leftOut: leftOut, fetched: fetched, found: [] }
+    addFoundRows()
+    m.editor.openedKey = editorKey(m.editor.rows)
     LoadMenu({ title: title, editor: kind, clean: true, titleAction: "restore", children: [] })
 end sub
 
@@ -39,7 +47,10 @@ function editorRowsFor(kind as string, resetTo as dynamic) as object
         placed = buttonLayout.ToIds(stored)
         picked = homeRowLayout.DynamicLookup()
         for each row in buttonLayout.Ordered(homeRowLayout.Offered(), stored)
-            rows.push({ id: row.id, label: tr(row.label), subtitle: pickedRowSource(row.id), enabled: homeRowLayout.IsEnabled(row.id, placed, off, picked) })
+            ' A reset keeps no picks, so they come back as items to turn on
+            if not isValid(resetTo) or not isValid(homeRowLayout.SourceFromId(row.id))
+                rows.push({ id: row.id, label: tr(row.label), subtitle: pickedRowSource(row.id), enabled: homeRowLayout.IsEnabled(row.id, placed, off, picked) })
+            end if
         end for
         return rows
     end if
@@ -63,12 +74,19 @@ function editorRowsFor(kind as string, resetTo as dynamic) as object
     return rows
 end function
 
-' A row picked out of a list says which kind of list it came from
+' A collection from another signed in server names that server
 function pickedRowSource(rowId as string) as string
     fromId = homeRowLayout.SourceFromId(rowId)
     if not isValid(fromId) then return ""
-    labels = { collections: "Collection", genres: "Genre", playlists: "Playlist" }
-    return tr(labels[fromId.source] ?? "")
+    if fromId.source = "genres" then return tr("Genres row")
+    if fromId.source = "playlists" then return tr("Playlists row")
+    serverName = m.serverNames[serverNameKey(fromId.server)]
+    if isValid(serverName) then return substitute(tr("Collections row from {0}"), serverName)
+    return tr("Collections row")
+end function
+
+function serverNameKey(serverUrl as string) as string
+    return LCase(settingsSync.WithoutTrailingSlash(serverUrl))
 end function
 
 function editorTarget(kind as string) as object
@@ -310,30 +328,112 @@ sub focusEditorEntry(entryId as string)
     end for
 end sub
 
-' Live TV and On Now only fill on a server with Live TV, so the editor looks at the viewer's
-' libraries as it opens and leaves both rows out when none of them is Live TV. An empty answer
-' could be a failed request, so it leaves them in.
+' The editor waits behind the spinner until it has what it offers. That's every collection, genre
+' and playlist whose rows are switched on, other signed in servers' collections while multi-server
+' libraries is on, and whether there's Live TV.
+sub loadRowsEditor()
+    startLoadingSpinner()
+    m.rowsLoad = { waiting: 0, leftOut: {}, fetched: [], tasks: [] }
+    others = []
+    if isMultiServerEnabled() then others = getLoggedInServerUsersExcludingCurrent()
+    m.serverNames = {}
+    for each userSession in others
+        m.serverNames[serverNameKey(userSession.serverUrl)] = userSession.serverName
+    end for
+
+    checkLiveTv()
+    for each listEntry in homeRowLayout.Sources()
+        if homeRowLayout.RowToggleOn(listEntry.key)
+            fetchList(listEntry.key, invalid)
+            if listEntry.key = "collections"
+                for each userSession in others
+                    fetchList(listEntry.key, userSession)
+                end for
+            end if
+        end if
+    end for
+end sub
+
+' Kept until they finish so the tasks aren't collected mid flight
+sub runRowsLoadTask(task as object)
+    m.rowsLoad.tasks.push(task)
+    m.rowsLoad.waiting = m.rowsLoad.waiting + 1
+    task.control = "RUN"
+end sub
+
+sub rowsLoadDone()
+    m.rowsLoad.waiting = m.rowsLoad.waiting - 1
+    if m.rowsLoad.waiting > 0 then return
+    loaded = m.rowsLoad
+    m.rowsLoad = invalid
+    stopLoadingSpinner()
+    refreshPicks(loaded.fetched)
+    showEditor("rows", "Rows", loaded.leftOut, loaded.fetched)
+    m.settingsMenu.setFocus(true)
+end sub
+
+' Live TV and On Now only fill on a server with Live TV, so both rows are left out when none of the
+' viewer's libraries is Live TV. An empty answer could be a failed request, so it leaves them in.
 sub checkLiveTv()
-    m.liveTvTask = createObject("roSGNode", "LoadItemsTask")
-    m.liveTvTask.observeField("content", "onLiveTvChecked")
-    m.liveTvTask.control = "RUN"
+    task = createObject("roSGNode", "LoadItemsTask")
+    task.observeField("content", "onLiveTvChecked")
+    runRowsLoadTask(task)
 end sub
 
 sub onLiveTvChecked(event as object)
     libraries = event.getData()
     event.getRoSGNode().unobserveField("content")
-    m.liveTvTask = invalid
-    if not isValid(m.editor) or m.editor.kind <> "rows" or not isValidAndNotEmpty(libraries) then return
-    for each library in libraries
-        if isStringEqual(chainLookupReturn(library, "json.collectiontype", ""), "livetv") then return
-    end for
+    if isValidAndNotEmpty(libraries)
+        m.rowsLoad.leftOut = { livetv: true, onnow: true }
+        for each library in libraries
+            if isStringEqual(chainLookupReturn(library, "json.collectiontype", ""), "livetv") then m.rowsLoad.leftOut = {}
+        end for
+    end if
+    rowsLoadDone()
+end sub
 
-    focusId = ""
-    item = m.settingsMenu.itemFocused
-    if item >= 0 and item < m.editor.view.Count() then focusId = editorEntryId(m.editor.view[item])
-    m.editor.leftOut = { livetv: true, onnow: true }
-    showSection(m.userLocation.peek())
-    focusEditorEntry(focusId)
+sub fetchList(key as string, userSession as dynamic)
+    task = createObject("roSGNode", "LoadItemsTask")
+    task.itemsToLoad = "pickable"
+    task.itemId = key
+    if isValid(userSession)
+        task.serverUrl = userSession.serverUrl
+        task.serverUserId = userSession.userId
+        task.serverAuthToken = userSession.authToken
+    end if
+    task.observeField("content", "onListFetched")
+    runRowsLoadTask(task)
+end sub
+
+sub onListFetched(event as object)
+    task = event.getRoSGNode()
+    items = event.getData()
+    task.unobserveField("content")
+    serverKey = task.serverUrl
+    if serverKey = "" then serverKey = homeRowLayout.ServerId()
+    if isValid(items)
+        for each item in items
+            itemId = homeRowLayout.AsText(item.id)
+            if itemId <> "" then m.rowsLoad.fetched.push({ id: homeRowLayout.DynamicId(task.itemId, serverKey, itemId), source: task.itemId, itemId: itemId, title: homeRowLayout.AsText(item.title) })
+        end for
+    end if
+    rowsLoadDone()
+end sub
+
+' Picks the server no longer has are dropped and renamed ones take the new name, kept on the
+' device until the next save sends them
+sub refreshPicks(fetched as object)
+    refreshed = homeRowGroups.Refreshed(homeRowLayout.DynamicRows(), fetched)
+    if not refreshed.changed then return
+    homeRowLayout.SaveDynamic(refreshed.picks)
+    if refreshed.gone.Count() > 0 then homeRowLayout.ForgetPicks(refreshed.gone)
+end sub
+
+sub addFoundRows()
+    m.editor.found = homeRowGroups.Unlisted(m.editor.rows, m.editor.fetched)
+    for each record in m.editor.found
+        m.editor.rows.push({ id: record.id, label: record.title, subtitle: pickedRowSource(record.id), enabled: false })
+    end for
 end sub
 
 function editorRowsFrom(enabled as object) as object
@@ -351,6 +451,7 @@ sub editorReset()
     resetTo = []
     if kind = "rows" then resetTo = homeRowLayout.DefaultEnabled()
     m.editor.rows = editorRowsFor(kind, resetTo)
+    addFoundRows()
     m.editor.resetKey = editorKey(m.editor.rows)
     showSection(m.userLocation.peek())
 end sub
@@ -382,22 +483,28 @@ sub commitOpenEditor()
     if not isValid(editor) then return
     key = editorKey(editor.rows)
     if key = editor.openedKey then return
-
-    order = []
-    hidden = []
-    for each row in editor.rows
-        order.push(row.id)
-        if not row.enabled then hidden.push(row.id)
-    end for
     resetForm = key = editor.resetKey
 
     if editor.kind = "rows"
+        if editor.resetKey <> ""
+            ids = []
+            for each entry in homeRowLayout.DynamicRows()
+                ids.push(entry.id)
+            end for
+            homeRowLayout.ForgetPicks(ids)
+        end if
         ' A reset writes the starting rows and an empty off list, so every row past those falls
         ' back to being off on its own on every client
         if resetForm
             saveHomeRowLayout(homeRowLayout.DefaultEnabled(), [])
         else
-            merged = homeRowLayout.Save(order, hidden)
+            toSave = homeRowGroups.ToSave(editor.rows, editor.found)
+            if toSave.picked.Count() > 0
+                picked = homeRowLayout.DynamicRows()
+                picked.Append(toSave.picked)
+                homeRowLayout.SaveDynamic(picked)
+            end if
+            merged = homeRowLayout.Save(toSave.order, toSave.hidden)
             saveHomeRowLayout(merged.order, merged.hidden)
         end if
         return
@@ -416,6 +523,12 @@ sub commitOpenEditor()
         saveButtonLayout(target, [], [])
         return
     end if
+    order = []
+    hidden = []
+    for each row in editor.rows
+        order.push(row.id)
+        if not row.enabled then hidden.push(row.id)
+    end for
     merged = buttonLayout.WithUnknownIds(target.catalogue, order, hidden, get_user_setting(target.orderKey), get_user_setting(target.hiddenKey))
     saveButtonLayout(target, merged.order, merged.hidden)
 end sub

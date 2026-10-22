@@ -1,0 +1,736 @@
+import "pkg:/source/utils/fileFacts.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/trackLabels.bs"
+
+' The rows of the player's Playback Information panel, kept clear of the server and the screen so
+' they can be tested on their own
+namespace playbackFacts
+
+    ' The facts are the MediaSource, the session's TranscodingInfo, the address the player was
+    ' handed and whether it came from the server, the forced transcode flag, the audio and
+    ' subtitle indexes playing and whether that subtitle is drawn in, Live TV's channel and
+    ' program, the viewer's quality limit in bits a second, language names by code, and the player
+    ' and device names
+    function Build(facts as object) as object
+        mediaSource = facts.source
+        if type(mediaSource) <> "roAssociativeArray" then mediaSource = {}
+        info = facts.transcoding
+        if type(info) <> "roAssociativeArray" then info = {}
+        streams = mediaSource.MediaStreams
+        if type(streams) <> "roArray" then streams = []
+        url = facts.url ?? ""
+        languages = facts.languages ?? {}
+
+        videoTrack = playbackFacts.FirstStream(streams, "Video")
+        audioTrack = playbackFacts.ChosenAudio(streams, facts.audioIndex, mediaSource)
+        subtitleTrack = invalid
+        if fileFacts.IsNumber(facts.subtitleIndex) and facts.subtitleIndex >= 0 then subtitleTrack = playbackFacts.StreamAt(streams, "Subtitle", facts.subtitleIndex)
+
+        served = facts.isTranscoded = true
+        reasons = []
+        if served
+            ' The address's reasons lead, and the session's stand in when the address has none
+            reasons = playbackFacts.ServerReasons(playbackFacts.QueryValue(url, "TranscodeReasons"))
+            held = playbackFacts.ServerReasons(info.LookupCI("TranscodeReasons"))
+            if not playbackFacts.SameReasons(reasons, held) then info = {}
+            if reasons.count() = 0 then reasons = held
+        else
+            ' The player knows which address it was handed, so a TranscodingInfo on a session that
+            ' isn't ours can't turn a direct play into a transcode
+            info = {}
+        end if
+        burned = served and isValid(subtitleTrack) and playbackFacts.BurnsIn(facts.subtitleBurnedIn = true, subtitleTrack, url)
+        played = playbackFacts.PlayMethod(url, served, info, videoTrack, audioTrack, reasons, burned, mediaSource)
+        container = playbackFacts.ContainerText(mediaSource)
+        qualityLimit = 0
+        if fileFacts.IsNumber(facts.qualityLimit) and facts.qualityLimit > 0 then qualityLimit = facts.qualityLimit
+
+        sections = []
+
+        rows = []
+        if facts.live = true
+            channel = facts.channel
+            if type(channel) = "roAssociativeArray"
+                playbackFacts.AddRow(rows, tr("Channel"), (trackLabels.Field(channel, "number") + " " + trackLabels.Field(channel, "name")).Trim())
+            end if
+            playbackFacts.AddRow(rows, tr("Program"), facts.program ?? "")
+        end if
+        playbackFacts.AddRow(rows, tr("Play Method"), playbackFacts.MethodLabel(played), true)
+        rows.push({ note: playbackFacts.NoteText(played) })
+        if served
+            limit = qualityLimit
+            if limit = 0 then limit = playbackFacts.StreamingTarget(url)
+            known = { video: videoTrack, audio: audioTrack, subtitle: subtitleTrack, container: container, bitrate: playbackFacts.NumberOf(mediaSource, "Bitrate"), limit: limit }
+            playbackFacts.AddRow(rows, tr("Why"), playbackFacts.WhyLines(reasons, facts.forced = true, known).Join(Chr(10)))
+        end if
+        playbackFacts.AddRow(rows, tr("Bitrate"), playbackFacts.BitrateRowText(played, mediaSource, info, url))
+        playbackFacts.AddRow(rows, tr("Quality Limit"), playbackFacts.QualityLimitText(qualityLimit))
+        playbackFacts.AddSection(sections, tr("Playback"), rows)
+
+        rows = []
+        if isValid(videoTrack)
+            playbackFacts.AddRow(rows, tr("Resolution"), playbackFacts.ResolutionText(videoTrack, info, played))
+            playbackFacts.AddRow(rows, tr("Frame Rate"), playbackFacts.FrameRateText(videoTrack))
+            playbackFacts.AddRow(rows, tr("Format"), playbackFacts.VideoFormatText(videoTrack, played))
+            playbackFacts.AddRow(rows, tr("HDR"), playbackFacts.RangeText(videoTrack))
+        end if
+        playbackFacts.AddSection(sections, tr("Video"), rows)
+
+        rows = []
+        if isValid(audioTrack)
+            flags = []
+            if trackLabels.Flag(audioTrack, "IsDefault") then flags.push(tr("Default"))
+            playbackFacts.AddRow(rows, tr("Track"), playbackFacts.TrackText(audioTrack, languages, flags))
+            playbackFacts.AddRow(rows, tr("Format"), playbackFacts.AudioFormatText(audioTrack, played))
+            playbackFacts.AddRow(rows, tr("Channels"), playbackFacts.ChannelsRowText(audioTrack, played))
+        end if
+        playbackFacts.AddSection(sections, tr("Audio"), rows)
+
+        rows = []
+        if isValid(subtitleTrack)
+            flags = []
+            if trackLabels.Flag(subtitleTrack, "IsForced") then flags.push(tr("Forced"))
+            if trackLabels.Flag(subtitleTrack, "IsHearingImpaired") then flags.push(tr("SDH"))
+            playbackFacts.AddRow(rows, tr("Track"), playbackFacts.TrackText(subtitleTrack, languages, flags))
+            playbackFacts.AddRow(rows, tr("Format"), playbackFacts.SubtitleFormatText(trackLabels.Field(subtitleTrack, "Codec")))
+            playbackFacts.AddRow(rows, tr("Delivery"), playbackFacts.DeliveryText(subtitleTrack, burned))
+        end if
+        playbackFacts.AddSection(sections, tr("Subtitles"), rows)
+
+        rows = []
+        if facts.live <> true
+            playbackFacts.AddRow(rows, tr("Name"), playbackFacts.FileNameText(mediaSource))
+            playbackFacts.AddRow(rows, tr("Container"), container)
+            playbackFacts.AddRow(rows, tr("Size"), playbackFacts.SizeText(playbackFacts.NumberOf(mediaSource, "Size")))
+        end if
+        playbackFacts.AddSection(sections, tr("File"), rows)
+
+        rows = []
+        playbackFacts.AddRow(rows, tr("Player"), facts.player ?? "")
+        playbackFacts.AddRow(rows, tr("Device"), facts.device ?? "")
+        playbackFacts.AddRow(rows, tr("Transcode Reasons"), reasons.Join(", "))
+        playbackFacts.AddSection(sections, tr("Technical"), rows)
+
+        return sections
+    end function
+
+    sub AddRow(rows as object, label as string, value as dynamic, bold = false as boolean)
+        if not isValidAndNotEmpty(value) then return
+        rows.push({ label: label, value: value, bold: bold })
+    end sub
+
+    sub AddSection(sections as object, title as string, rows as object)
+        if rows.count() > 0 then sections.push({ title: title, rows: rows })
+    end sub
+
+    ' Direct Stream needs both tracks shown to be copied into the new container, so a transcode
+    ' where neither side is known to change still reads as Transcoding
+    function PlayMethod(url as string, served as boolean, info as object, videoTrack as dynamic, audioTrack as dynamic, reasons as object, burned as boolean, mediaSource as object) as object
+        result = { kind: "direct", video: false, audio: false, videoCodec: "", audioCodec: "", audioChannels: 0 }
+        if not served then return result
+
+        videoBitrate = playbackFacts.NumberOf(videoTrack, "BitRate")
+        if videoBitrate <= 0 then videoBitrate = playbackFacts.NumberOf(mediaSource, "Bitrate")
+        video = playbackFacts.TrackChange(info, "Video", videoTrack, url, videoBitrate, reasons, burned)
+        audio = playbackFacts.TrackChange(info, "Audio", audioTrack, url, playbackFacts.NumberOf(audioTrack, "BitRate"), reasons, false)
+        result.video = video.converted
+        result.videoCodec = video.codec
+        result.audio = audio.converted
+        result.audioCodec = audio.codec
+        result.audioChannels = audio.channels
+
+        result.kind = "transcode"
+        if video.known and audio.known and not video.converted and not audio.converted then result.kind = "stream"
+        return result
+    end function
+
+    ' The session's TranscodingInfo says outright whether a track changes, while the address only
+    ' lists the profile's codecs in order, so it's read for clues when the session has nothing
+    function TrackChange(info as object, kind as string, track as dynamic, url as string, sourceBitrate as dynamic, reasons as object, burned as boolean) as object
+        change = { converted: false, codec: "", channels: 0, known: not isValid(track) }
+        if kind = "Audio" then change.channels = playbackFacts.NumberOf(info, "AudioChannels")
+
+        direct = LCase(trackLabels.Field(info, "Is" + kind + "Direct"))
+        change.codec = trackLabels.Field(info, kind + "Codec")
+        if direct = "true" or direct = "false"
+            change.converted = direct = "false"
+            change.known = true
+            return change
+        end if
+        if not isValid(track) then return change
+
+        sourceName = playbackFacts.CodecName(kind, trackLabels.Field(track, "Codec"))
+        if change.codec <> ""
+            change.converted = playbackFacts.Differs(playbackFacts.CodecName(kind, change.codec), sourceName)
+            change.known = true
+            return change
+        end if
+
+        listed = playbackFacts.QueryValue(url, kind + "Codec")
+        if listed <> "" and sourceName <> ""
+            change.known = true
+            inList = false
+            for each entry in listed.Split(",")
+                if playbackFacts.CodecName(kind, entry) = sourceName then inList = true
+            end for
+            if not inList
+                change.converted = true
+                change.codec = playbackFacts.FirstEntry(listed)
+            end if
+        end if
+
+        cap = playbackFacts.QueryValue(url, kind + "Bitrate").ToInt()
+        if cap > 0 and sourceBitrate > cap then change.converted = true
+
+        if kind = "Audio"
+            sourceChannels = playbackFacts.NumberOf(track, "Channels")
+            for each field in ["TranscodingMaxAudioChannels", "MaxAudioChannels"]
+                most = playbackFacts.QueryValue(url, field).ToInt()
+                if most > 0 and sourceChannels > most
+                    change.converted = true
+                    if change.channels = 0 or most < change.channels then change.channels = most
+                end if
+            end for
+        end if
+
+        ' A reason only says why direct play failed and the codec may still be copied, so just the
+        ' reasons that need a new encode count here
+        reencode = ",audioprofilenotsupported,audiochannelsnotsupported,audiosampleratenotsupported,audiobitdepthnotsupported,audiobitratenotsupported,"
+        if kind = "Video" then reencode = ",videoprofilenotsupported,videolevelnotsupported,videorangetypenotsupported,videorangenotsupported,videoresolutionnotsupported,videobitdepthnotsupported,videoframeratenotsupported,videobitratenotsupported,refframesnotsupported,anamorphicvideonotsupported,interlacedvideonotsupported,"
+        for each reason in reasons
+            if Instr(1, reencode, "," + LCase(reason) + ",") > 0 then change.converted = true
+        end for
+        if burned then change.converted = true
+        return change
+    end function
+
+    function CodecName(kind as string, codec as string) as string
+        if kind = "Video" then return playbackFacts.VideoCodecName(codec)
+        return playbackFacts.AudioCodecName(codec, "")
+    end function
+
+    function MethodLabel(played as object) as string
+        if played.kind = "direct" then return tr("Direct Play")
+        if played.kind = "stream" then return tr("Direct Stream")
+        return tr("Transcoding")
+    end function
+
+    function NoteText(played as object) as string
+        if played.kind = "direct" then return tr("Playing the original file as is.")
+        if played.kind = "stream" then return tr("The server is repackaging the file without converting it.")
+        if played.video and played.audio then return tr("The server is converting the video and audio so this device can play it.")
+        if played.video then return tr("The server is converting the video so this device can play it.")
+        if played.audio then return tr("The server is converting the audio so this device can play it.")
+        return tr("The server is converting this file so this device can play it.")
+    end function
+
+    ' Each reason once in the server's order, from the address's comma list or the session's, which
+    ' is an array on current servers and a comma string on older ones
+    function ServerReasons(held as dynamic) as object
+        listed = []
+        if type(held) = "roArray"
+            listed = held
+        else if isString(held)
+            listed = held.Split(",")
+        end if
+
+        found = []
+        seen = {}
+        for each entry in listed
+            reason = ""
+            if isValid(entry) then reason = entry.toStr().Trim()
+            if reason <> "" and not seen.DoesExist(LCase(reason))
+                seen[LCase(reason)] = true
+                found.push(reason)
+            end if
+        end for
+        return found
+    end function
+
+    ' Jellyfin keeps a transcode's details on the session after it ends, and an earlier transcode
+    ' still running reports into it too, so the session only counts when its reasons agree
+    function SameReasons(listed as object, held as object) as boolean
+        if listed.count() = 0 or held.count() = 0 then return true
+        if listed.count() <> held.count() then return false
+        heldKeys = ","
+        for each reason in held
+            heldKeys += LCase(reason) + ","
+        end for
+        for each reason in listed
+            if Instr(1, heldKeys, "," + LCase(reason) + ",") = 0 then return false
+        end for
+        return true
+    end function
+
+    ' One line per reason in a fixed order, naming the source value that kept the file from direct
+    ' play where it's known, and identical lines show once
+    function WhyLines(reasons as object, forced as boolean, known as object) as object
+        video = known.video
+        audio = known.audio
+        codec = playbackFacts.VideoCodecName(trackLabels.Field(video, "Codec"))
+        profile = playbackFacts.VideoProfile(video)
+        level = playbackFacts.LevelText(codec, playbackFacts.NumberOf(video, "Level"))
+        videoBits = playbackFacts.NumberOf(video, "BitDepth")
+        width = playbackFacts.NumberOf(video, "Width")
+        height = playbackFacts.NumberOf(video, "Height")
+        fps = playbackFacts.FrameRateText(video).Replace(" fps", "")
+        range = playbackFacts.RangeText(video)
+        audioCodec = trackLabels.Field(audio, "Codec").Trim()
+        audioProfile = trackLabels.Field(audio, "Profile").Trim()
+        channels = playbackFacts.NumberOf(audio, "Channels")
+        sampleRate = playbackFacts.NumberOf(audio, "SampleRate")
+        audioBits = playbackFacts.NumberOf(audio, "BitDepth")
+        subtitleCodec = trackLabels.Field(known.subtitle, "Codec").Trim()
+
+        videoLine = tr("This device can't play this video format")
+        if codec <> "" then videoLine = tr("This device can't play {codec} video").Replace("{codec}", codec)
+        audioLine = tr("This device can't play this audio format")
+        if audioCodec <> "" then audioLine = tr("This device can't play {format} audio").Replace("{format}", playbackFacts.AudioCodecName(audioCodec, ""))
+
+        ' Each line goes in a numbered group, so the lines keep a fixed order whatever order the
+        ' reasons came in
+        ordered = []
+        for i = 0 to 23
+            ordered.push([])
+        end for
+        if forced then ordered[1].push(tr("Transcoding is forced in settings"))
+
+        bitrateReasons = ",containerbitrateexceedslimit,videobitratenotsupported,audiobitratenotsupported,videobitrateexceedslimit,bitratelimitexceeded,containerbitratenotsupported,"
+        for each reason in reasons
+            key = LCase(reason)
+            group = 23
+            text = tr("The file couldn't be played directly")
+            if Instr(1, bitrateReasons, "," + key + ",") > 0
+                group = 2
+                text = tr("The bitrate is above the streaming limit")
+                ' Rounded down, so the limit never reads above the bitrate, and a cap under 1 Mbps
+                ' would read as 0
+                mbps = Int(known.limit / 1000000)
+                if mbps > 0 and known.bitrate > known.limit
+                    text = tr("{bitrate} is above the {limit} streaming limit").Replace("{bitrate}", playbackFacts.BitrateText(known.bitrate)).Replace("{limit}", mbps.ToStr() + " Mbps")
+                end if
+            else if key = "containernotsupported"
+                group = 3
+                text = tr("This device can't play this file type")
+                if known.container <> "" then text = tr("This device can't open {container} files").Replace("{container}", known.container)
+            else if key = "videocodecnotsupported" or key = "videocodectagnotsupported"
+                group = 4
+                text = videoLine
+            else if key = "videoprofilenotsupported"
+                group = 5
+                text = videoLine
+                if codec <> "" and profile <> "" then text = tr("This device can't play {codec} {profile} video").Replace("{codec}", codec).Replace("{profile}", profile)
+            else if key = "videolevelnotsupported"
+                group = 6
+                text = videoLine
+                if codec <> "" and level <> "" then text = tr("This device can't play {codec} level {level} video").Replace("{codec}", codec).Replace("{level}", level)
+            else if key = "videobitdepthnotsupported"
+                group = 7
+                text = tr("This device can't play this video format")
+                if videoBits > 0 then text = tr("This device can't play {bits}-bit video").Replace("{bits}", videoBits.ToStr())
+            else if key = "videoresolutionnotsupported"
+                group = 8
+                text = tr("This device can't play this video format")
+                if width > 0 and height > 0 then text = tr("This device can't play {resolution} video").Replace("{resolution}", playbackFacts.ResolutionName(width, height))
+            else if key = "videoframeratenotsupported"
+                group = 9
+                text = tr("This device can't play this video format")
+                if fps <> "" then text = tr("This device can't play {fps} fps video").Replace("{fps}", fps)
+            else if key = "interlacedvideonotsupported"
+                group = 10
+                text = tr("This device can't play interlaced video")
+            else if key = "anamorphicvideonotsupported"
+                group = 11
+                text = tr("This device can't play anamorphic video")
+            else if key = "refframesnotsupported" or key = "unknownvideostreaminfo"
+                group = 12
+                text = tr("This device can't play this video format")
+            else if key = "videorangetypenotsupported" or key = "videorangenotsupported"
+                group = 13
+                ' An SDR or empty range means the server's HDR type couldn't be read
+                text = tr("This device can't display this HDR format")
+                if range <> "" and range <> "SDR" then text = tr("This device can't display {range}").Replace("{range}", range)
+            else if key = "audiocodecnotsupported"
+                group = 14
+                text = audioLine
+            else if key = "audioprofilenotsupported"
+                group = 15
+                text = audioLine
+                if audioCodec <> "" and audioProfile <> "" then text = tr("This device can't play {fullFormat}").Replace("{fullFormat}", playbackFacts.AudioCodecName(audioCodec, audioProfile))
+            else if key = "audiochannelsnotsupported"
+                group = 16
+                text = tr("This device can't play this audio format")
+                if channels > 0
+                    layout = channels.ToStr() + "-channel"
+                    if channels = 6 then layout = "5.1"
+                    if channels = 8 then layout = "7.1"
+                    text = tr("This device can't play {channels} audio").Replace("{channels}", layout)
+                end if
+            else if key = "audiosampleratenotsupported"
+                group = 17
+                text = tr("This device can't play this audio format")
+                if sampleRate > 0 then text = tr("This device can't play {rate} kHz audio").Replace("{rate}", playbackFacts.TrimZeros(fileFacts.Fixed(sampleRate / 1000, 1)))
+            else if key = "audiobitdepthnotsupported"
+                group = 18
+                text = tr("This device can't play this audio format")
+                if audioBits > 0 then text = tr("This device can't play {bits}-bit audio").Replace("{bits}", audioBits.ToStr())
+            else if key = "audioisexternal"
+                group = 19
+                text = tr("The audio track is in a separate file")
+            else if key = "secondaryaudionotsupported"
+                group = 20
+                text = tr("This device can only play the first audio track")
+            else if key = "unknownaudiostreaminfo"
+                group = 21
+                text = tr("This device can't play this audio format")
+            else if key = "subtitlecodecnotsupported"
+                group = 22
+                text = tr("Subtitles are being burned into the video")
+                if subtitleCodec <> "" then text = tr("{format} subtitles are being burned into the video").Replace("{format}", CreateObject("roRegex", " \(.*\)$", "").ReplaceAll(playbackFacts.SubtitleFormatText(subtitleCodec), ""))
+            end if
+            ordered[group].push(text)
+        end for
+
+        lines = []
+        seen = {}
+        seen.SetModeCaseSensitive()
+        for each group in ordered
+            for each text in group
+                if not seen.DoesExist(text)
+                    seen[text] = true
+                    lines.push(text)
+                end if
+            end for
+        end for
+        return lines
+    end function
+
+    ' H.264 writes level 5.1 as 51 and HEVC as 153
+    function LevelText(codec as string, level as dynamic) as string
+        if not fileFacts.IsNumber(level) or level <= 0 then return ""
+        if codec = "H.264" then level = level / 10
+        if codec = "HEVC" then level = level / 30
+        return playbackFacts.TrimZeros(fileFacts.Fixed(level, 1))
+    end function
+
+    ' The rate a transcode address aims for, the whole stream's cap first
+    function StreamingTarget(url as string) as integer
+        most = playbackFacts.QueryValue(url, "MaxStreamingBitrate").ToInt()
+        if most > 0 then return most
+        videoRate = playbackFacts.QueryValue(url, "VideoBitrate")
+        audioRate = playbackFacts.QueryValue(url, "AudioBitrate")
+        if videoRate = "" or audioRate = "" then return 0
+        return videoRate.ToInt() + audioRate.ToInt()
+    end function
+
+    ' shortcut: only an encoded comma or space is decoded, which covers every value read here, so
+    ' switch to roUrlTransfer.Unescape if one ever needs more
+    function QueryValue(url as string, field as string) as string
+        match = CreateObject("roRegex", "[?&]" + field + "=([^&#]*)", "i").Match(url)
+        if match.count() < 2 then return ""
+        return match[1].Replace("%2C", ",").Replace("%2c", ",").Replace("%20", " ").Replace("+", " ").Trim()
+    end function
+
+    function FirstEntry(list as string) as string
+        if list = "" then return ""
+        return list.Split(",")[0].Trim()
+    end function
+
+    function Differs(a as string, b as string) as boolean
+        return a <> "" and b <> "" and a <> b
+    end function
+
+    function Converted(value as string, original as string) as string
+        return tr("{value} (converted from {source})").Replace("{value}", value).Replace("{source}", original)
+    end function
+
+    function NumberOf(holder as dynamic, field as string) as dynamic
+        if type(holder) <> "roAssociativeArray" then return 0
+        value = holder.LookupCI(field)
+        if fileFacts.IsNumber(value) then return value
+        return 0
+    end function
+
+    function FirstStream(streams as object, streamType as string) as dynamic
+        for each stream in streams
+            if isStringEqual(trackLabels.Field(stream, "Type"), streamType) then return stream
+        end for
+        return invalid
+    end function
+
+    function StreamAt(streams as object, streamType as string, index as integer) as dynamic
+        for each stream in streams
+            if isStringEqual(trackLabels.Field(stream, "Type"), streamType) and playbackFacts.NumberOf(stream, "Index") = index then return stream
+        end for
+        return invalid
+    end function
+
+    ' The track playing, else the one the file plays by default, else the first
+    function ChosenAudio(streams as object, audioIndex as dynamic, mediaSource as object) as dynamic
+        if fileFacts.IsNumber(audioIndex) and audioIndex >= 0
+            chosen = playbackFacts.StreamAt(streams, "Audio", audioIndex)
+            if isValid(chosen) then return chosen
+        end if
+        defaultIndex = mediaSource.LookupCI("DefaultAudioStreamIndex")
+        if fileFacts.IsNumber(defaultIndex)
+            chosen = playbackFacts.StreamAt(streams, "Audio", defaultIndex)
+            if isValid(chosen) then return chosen
+        end if
+        for each stream in streams
+            if isStringEqual(trackLabels.Field(stream, "Type"), "Audio") and trackLabels.Flag(stream, "IsDefault") then return stream
+        end for
+        return playbackFacts.FirstStream(streams, "Audio")
+    end function
+
+    ' Zeros past the point go, and the point with them when nothing is left after it
+    function TrimZeros(text as string) as string
+        if Instr(1, text, ".") = 0 then return text
+        while Right(text, 1) = "0"
+            text = Left(text, Len(text) - 1)
+        end while
+        if Right(text, 1) = "." then text = Left(text, Len(text) - 1)
+        return text
+    end function
+
+    function BitrateText(bitsPerSecond as dynamic) as string
+        if not fileFacts.IsNumber(bitsPerSecond) or bitsPerSecond <= 0 then return ""
+        if bitsPerSecond >= 1000000 then return fileFacts.Fixed(bitsPerSecond / 1000000, 1) + " Mbps"
+        return Int(bitsPerSecond / 1000 + 0.5).ToStr() + " Kbps"
+    end function
+
+    ' The limits the viewer picks from are whole megabits
+    function QualityLimitText(bitsPerSecond as dynamic) as string
+        if not fileFacts.IsNumber(bitsPerSecond) or bitsPerSecond <= 0 then return ""
+        return Int(bitsPerSecond / 1000000 + 0.5).ToStr() + " Mbps"
+    end function
+
+    ' A stream the session hasn't measured yet falls back to the rates the server was asked to stay
+    ' under, which only say something while they're below the file's own bitrate
+    function BitrateRowText(played as object, mediaSource as object, info as object, url as string) as string
+        original = playbackFacts.NumberOf(mediaSource, "Bitrate")
+        originalText = playbackFacts.BitrateText(original)
+        if played.kind = "direct" then return originalText
+
+        delivered = playbackFacts.NumberOf(info, "Bitrate")
+        if delivered <= 0
+            delivered = playbackFacts.QueryValue(url, "VideoBitrate").ToInt() + playbackFacts.QueryValue(url, "AudioBitrate").ToInt()
+            if original > 0 and delivered >= original then delivered = 0
+        end if
+        text = playbackFacts.BitrateText(delivered)
+        if text = "" then return originalText
+        if originalText = "" or originalText = text then return text
+        return tr("{value} (original {original})").Replace("{value}", text).Replace("{original}", originalText)
+    end function
+
+    function ResolutionName(width as integer, height as integer) as string
+        if width >= 3200 or height >= 1800 then return "4K"
+        if width >= 1600 or height >= 900 then return "1080p"
+        if width >= 1200 or height >= 700 then return "720p"
+        return "SD"
+    end function
+
+    function ResolutionText(videoTrack as object, info as object, played as object) as string
+        sourceWidth = playbackFacts.NumberOf(videoTrack, "Width")
+        sourceHeight = playbackFacts.NumberOf(videoTrack, "Height")
+        if sourceWidth <= 0 or sourceHeight <= 0 then return ""
+        sourceName = playbackFacts.ResolutionName(sourceWidth, sourceHeight)
+
+        outWidth = playbackFacts.NumberOf(info, "Width")
+        outHeight = playbackFacts.NumberOf(info, "Height")
+        if played.video and outWidth > 0 and outHeight > 0 and (outWidth <> sourceWidth or outHeight <> sourceHeight)
+            return tr("{value} ({size}, converted from {source})").Replace("{value}", playbackFacts.ResolutionName(outWidth, outHeight)).Replace("{size}", `${outWidth}×${outHeight}`).Replace("{source}", sourceName)
+        end if
+        return `${sourceName} (${sourceWidth}×${sourceHeight})`
+    end function
+
+    function FrameRateText(videoTrack as object) as string
+        rate = playbackFacts.NumberOf(videoTrack, "RealFrameRate")
+        if rate <= 0 then rate = playbackFacts.NumberOf(videoTrack, "AverageFrameRate")
+        if rate <= 0 then return ""
+        return playbackFacts.TrimZeros(fileFacts.Fixed(rate, 3)) + " fps"
+    end function
+
+    function VideoCodecName(codec as string) as string
+        names = { hevc: "HEVC", h265: "HEVC", h264: "H.264", avc: "H.264", av1: "AV1", vp9: "VP9", vp8: "VP8", mpeg2video: "MPEG-2", mpeg4: "MPEG-4", vc1: "VC-1" }
+        known = names[LCase(codec.Trim())]
+        if isValid(known) then return known
+        return UCase(codec.Trim())
+    end function
+
+    function VideoFormatText(videoTrack as object, played as object) as string
+        sourceName = playbackFacts.VideoCodecName(trackLabels.Field(videoTrack, "Codec"))
+        if sourceName = "" then return ""
+        outName = playbackFacts.VideoCodecName(played.videoCodec)
+        if played.video and playbackFacts.Differs(outName, sourceName) then return playbackFacts.Converted(outName, sourceName)
+        return (sourceName + " " + playbackFacts.VideoProfile(videoTrack)).Trim()
+    end function
+
+    ' A profile of 0 is a server that couldn't read one
+    function VideoProfile(videoTrack as dynamic) as string
+        profile = trackLabels.Field(videoTrack, "Profile").Trim()
+        if profile = "0" then return ""
+        return profile
+    end function
+
+    ' Jellyfin names the range type, Emby its extended type, and both fall back to the plain range
+    function RangeText(videoTrack as object) as string
+        for each field in ["VideoRangeType", "ExtendedVideoType", "VideoRange"]
+            key = LCase(trackLabels.Field(videoTrack, field)).Replace(" ", "").Replace("+", "plus")
+            if key = "sdr" then return "SDR"
+            if key = "hdr10" then return "HDR10"
+            if key = "hdr10plus" then return "HDR10+"
+            if key = "hlg" or key = "hyperloggamma" then return "HLG"
+            if Left(key, 4) = "dovi" or Left(key, 11) = "dolbyvision"
+                profile = playbackFacts.NumberOf(videoTrack, "DvProfile")
+                if profile > 0 then return `Dolby Vision Profile ${profile}`
+                return "Dolby Vision"
+            end if
+            if key <> "" and key <> "unknown" and key <> "none" then return "HDR"
+        end for
+        return ""
+    end function
+
+    function AudioCodecName(codec as string, profile as string) as string
+        kind = LCase(codec.Trim())
+        variant = LCase(profile)
+        dolby = { truehd: "Dolby TrueHD", eac3: "Dolby Digital Plus", ac3: "Dolby Digital" }
+        if isValid(dolby[kind])
+            if Instr(1, variant, "atmos") > 0 then return dolby[kind] + " with Atmos"
+            return dolby[kind]
+        end if
+        if kind = "dts" or kind = "dca"
+            if Instr(1, variant, "dts:x") > 0 then return "DTS:X"
+            if Instr(1, variant, "dts-hd ma") > 0 then return "DTS-HD Master Audio"
+            if Instr(1, variant, "dts-hd hra") > 0 then return "DTS-HD High Resolution"
+            return "DTS"
+        end if
+        if Left(kind, 4) = "pcm_" then return "PCM"
+        names = { aac: "AAC", flac: "FLAC", opus: "Opus", mp3: "MP3", vorbis: "Vorbis", alac: "ALAC" }
+        if isValid(names[kind]) then return names[kind]
+        return UCase(kind)
+    end function
+
+    function AudioFormatText(audioTrack as object, played as object) as string
+        codec = trackLabels.Field(audioTrack, "Codec")
+        if codec = "" then return ""
+        sourceName = playbackFacts.AudioCodecName(codec, "")
+        outName = playbackFacts.AudioCodecName(played.audioCodec, "")
+        if played.audio and playbackFacts.Differs(outName, sourceName) then return playbackFacts.Converted(outName, sourceName)
+        return playbackFacts.AudioCodecName(codec, trackLabels.Field(audioTrack, "Profile"))
+    end function
+
+    function ChannelsText(count as integer) as string
+        if count = 6 then return tr("5.1 surround")
+        if count = 8 then return tr("7.1 surround")
+        return playbackFacts.ChannelLayout(count)
+    end function
+
+    ' The bare layout the converted line names its source by
+    function ChannelLayout(count as integer) as string
+        if count = 1 then return tr("Mono")
+        if count = 2 then return tr("Stereo")
+        if count = 6 then return "5.1"
+        if count = 8 then return "7.1"
+        return tr("{count} channels").Replace("{count}", count.ToStr())
+    end function
+
+    function ChannelsRowText(audioTrack as object, played as object) as string
+        sourceCount = playbackFacts.NumberOf(audioTrack, "Channels")
+        if sourceCount <= 0 then return ""
+        outCount = played.audioChannels
+        if played.audio and outCount > 0 and outCount <> sourceCount then return playbackFacts.Converted(playbackFacts.ChannelsText(outCount), playbackFacts.ChannelLayout(sourceCount))
+        return playbackFacts.ChannelsText(sourceCount)
+    end function
+
+    ' The language's name where the server knows the code, else the track's own title
+    function TrackText(stream as object, languages as object, flags as object) as string
+        named = ""
+        code = trackLabels.Field(stream, "Language")
+        if code <> ""
+            key = trackLabels.LanguageKey(code)
+            if isValid(languages[key]) then named = languages[key]
+        end if
+        if named = "" then named = trackLabels.Field(stream, "Title").Trim()
+        if named = "" then return ""
+        for each flag in flags
+            named = named + ", " + flag
+        end for
+        return named
+    end function
+
+    function SubtitleFormatText(codec as string) as string
+        names = {
+            pgssub: "PGS (image)", dvdsub: "VobSub (image)", dvd_subtitle: "VobSub (image)", vobsub: "VobSub (image)", dvbsub: "DVB (image)",
+            subrip: "SRT (text)", srt: "SRT (text)", ass: "ASS (styled text)", ssa: "SSA (styled text)", webvtt: "WebVTT (text)", vtt: "WebVTT (text)",
+            mov_text: "MP4 text", tx3g: "MP4 text", ttml: "TTML (text)"
+        }
+        known = names[LCase(codec.Trim())]
+        if isValid(known) then return known
+        return UCase(codec.Trim())
+    end function
+
+    ' Only the subtitle being encoded counts, since Jellyfin writes SubtitleMethod=Encode into
+    ' transcode addresses that burn nothing
+    function BurnsIn(drawnIn as boolean, stream as object, url as string) as boolean
+        if drawnIn or LCase(trackLabels.Field(stream, "DeliveryMethod")) = "encode" then return true
+        index = playbackFacts.QueryValue(url, "SubtitleStreamIndex")
+        return index <> "" and index = trackLabels.Field(stream, "Index") and LCase(playbackFacts.QueryValue(url, "SubtitleMethod")) = "encode"
+    end function
+
+    function DeliveryText(stream as object, burned as boolean) as string
+        if burned then return tr("Burned in by the server")
+        if trackLabels.Flag(stream, "IsExternal") then return tr("External")
+        return tr("Embedded")
+    end function
+
+    function FileNameText(mediaSource as object) as string
+        path = trackLabels.Field(mediaSource, "Path").Trim()
+        if path <> ""
+            parts = path.Replace("\", "/").Split("/")
+            last = parts[parts.count() - 1]
+            if last <> "" then return last
+        end if
+        return trackLabels.Field(mediaSource, "Name").Trim()
+    end function
+
+    ' A known media extension on the path wins, since Jellyfin narrows Container to what the device
+    ' profile lists and an MP4 can come back as MOV
+    function ContainerText(mediaSource as object) as string
+        named = CreateObject("roRegex", "\.(3gp|asf|avi|divx|flv|iso|m2ts|m4v|mkv|mov|mp4|mpeg|mpg|mts|ogm|ogv|rmvb|ts|vob|webm|wmv|wtv)$", "i").Match(trackLabels.Field(mediaSource, "Path").Trim())
+        if named.count() > 1 then return UCase(named[1])
+
+        container = trackLabels.Field(mediaSource, "Container")
+        if container.Trim() = "" then return ""
+        parts = LCase(container).Split(",")
+        for each part in parts
+            if part.Trim() = "mp4" then return "MP4"
+        end for
+        return UCase(parts[0].Trim())
+    end function
+
+    function SizeText(bytes as dynamic) as string
+        if not fileFacts.IsNumber(bytes) or bytes <= 0 then return ""
+        if bytes >= 1073741824 then return fileFacts.Fixed(bytes / 1073741824, 1) + " GB"
+        return Int(bytes / 1048576 + 0.5).ToStr() + " MB"
+    end function
+
+    ' The server's culture list keyed by every spelling a file may tag a language with
+    function LanguageNames(cultures as dynamic) as object
+        names = {}
+        if type(cultures) <> "roArray" then return names
+        for each culture in cultures
+            named = trackLabels.Field(culture, "DisplayName")
+            if named = "" then named = trackLabels.Field(culture, "Name")
+            codes = [trackLabels.Field(culture, "TwoLetterISOLanguageName"), trackLabels.Field(culture, "ThreeLetterISOLanguageName")]
+            if type(culture) = "roAssociativeArray" and type(culture.LookupCI("ThreeLetterISOLanguageNames")) = "roArray" then codes.append(culture.LookupCI("ThreeLetterISOLanguageNames"))
+            for each code in codes
+                if named <> "" and isValidAndNotEmpty(code)
+                    key = trackLabels.LanguageKey(code)
+                    if not names.DoesExist(key) then names[key] = named
+                end if
+            end for
+        end for
+        return names
+    end function
+
+end namespace

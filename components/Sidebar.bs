@@ -28,6 +28,10 @@ const CLOCK_SIZE = 18
 const NAV_AREA_TOP = 118
 const NAV_AREA_HEIGHT = 894
 
+' The music card takes the foot of that band while music plays
+const MUSIC_CARD_BAND = 148
+const MUSIC_CARD_INNER = 236
+
 sub init()
     m.top.id = "sidebar"
 
@@ -59,6 +63,8 @@ sub init()
     m.scrollAnim = m.top.findNode("scrollAnim")
     m.scrollPosInterp = m.top.findNode("scrollPosInterp")
     m.sidebarClock = m.top.findNode("sidebarClock")
+    m.navAreaHeight = NAV_AREA_HEIGHT
+    setupMusicCard()
 
     ' The rows borrow this font, so it is sized before any of them are built
     m.navLabelFont = m.top.findNode("navLabelFont").font
@@ -109,7 +115,7 @@ end sub
 ' rail is open
 sub styleRail()
     m.navScrollClip.translation = [0, NAV_AREA_TOP]
-    m.navScrollClip.clippingRect = [0, 0, SIDEBAR_EXPANDED_WIDTH, NAV_AREA_HEIGHT]
+    m.navScrollClip.clippingRect = [0, 0, SIDEBAR_EXPANDED_WIDTH, m.navAreaHeight]
 
     clockTime = m.sidebarClock.findNode("clockTime")
     if not isValid(clockTime) then return
@@ -265,11 +271,11 @@ sub layoutSidebar()
     ' are more of them than the band can show
     total = navContentHeight()
     yCursor = 0
-    if total < NAV_AREA_HEIGHT then yCursor = (NAV_AREA_HEIGHT - total) / 2
+    if total < m.navAreaHeight then yCursor = (m.navAreaHeight - total) / 2
 
     for i = 0 to m.navItems.count() - 1
         item = m.navItems[i]
-        isFocused = (not m.avatarSelected and i = m.selectedIndex and m.sidebarHasFocus)
+        isFocused = (not m.avatarSelected and m.cardFocus < 0 and i = m.selectedIndex and m.sidebarHasFocus)
 
         if isValid(item.icon)
             item.icon.opacity = isFocused ? 1.0 : 0.6
@@ -292,6 +298,7 @@ sub layoutSidebar()
 
     scrollToFocusedItem()
     positionFocusPill()
+    paintMusicCard()
 end sub
 
 sub scrollToFocusedItem()
@@ -302,7 +309,7 @@ sub scrollToFocusedItem()
     itemBottom = itemTop + itemHeight(focusedItem)
 
     totalContentHeight = navContentHeight()
-    if totalContentHeight <= NAV_AREA_HEIGHT
+    if totalContentHeight <= m.navAreaHeight
         if m.scrollY <> 0
             m.scrollY = 0
             m.navItemsGroup.translation = [0, 0]
@@ -317,12 +324,12 @@ sub scrollToFocusedItem()
         targetScroll = - (itemTop - viewPad)
     end if
 
-    if itemBottom + targetScroll > NAV_AREA_HEIGHT - viewPad
-        targetScroll = - (itemBottom - NAV_AREA_HEIGHT + viewPad)
+    if itemBottom + targetScroll > m.navAreaHeight - viewPad
+        targetScroll = - (itemBottom - m.navAreaHeight + viewPad)
     end if
 
     maxScroll = 0
-    minScroll = - (totalContentHeight - NAV_AREA_HEIGHT)
+    minScroll = - (totalContentHeight - m.navAreaHeight)
     if minScroll > 0 then minScroll = 0
     if targetScroll > maxScroll then targetScroll = maxScroll
     if targetScroll < minScroll then targetScroll = minScroll
@@ -340,7 +347,7 @@ sub scrollToFocusedItem()
 end sub
 
 sub positionFocusPill()
-    if m.avatarSelected or not m.sidebarHasFocus
+    if m.avatarSelected or m.cardFocus >= 0 or not m.sidebarHasFocus
         m.focusPill.visible = false
         return
     end if
@@ -399,6 +406,7 @@ sub expandSidebar()
     end for
 
     positionFocusPill()
+    paintMusicCard()
 end sub
 
 sub collapseSidebar()
@@ -419,6 +427,7 @@ sub collapseSidebar()
     end for
 
     positionFocusPill()
+    paintMusicCard()
 end sub
 
 sub onFocusChanged()
@@ -442,6 +451,7 @@ sub onFocusChanged()
             end if
             expandSidebar()
         else
+            m.cardFocus = -1
             collapseSidebar()
             if m.librariesExpanded then collapseLibraries()
         end if
@@ -740,6 +750,8 @@ end sub
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
+    if m.cardFocus >= 0 then return handleMusicCardKey(key)
+
     maxIndex = m.navItems.count() - 1
 
     if key = KeyCode.UP
@@ -764,6 +776,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         else if m.selectedIndex < maxIndex
             m.selectedIndex = m.selectedIndex + 1
+            layoutSidebar()
+        else if m.musicCard.visible
+            m.cardFocus = 0
             layoutSidebar()
         end if
         return true
@@ -910,4 +925,162 @@ function getLibraryDataIndex(itemId as string) as integer
     return -1
 end function
 
+' Previous, play or pause, next and stop, with play a size up
+sub setupMusicCard()
+    m.cardFocus = -1
+    m.musicCard = m.top.findNode("musicCard")
+    m.musicCardArt = m.top.findNode("musicCardArt")
+    m.musicCardTitle = m.top.findNode("musicCardTitle")
+    m.musicCardArtist = m.top.findNode("musicCardArtist")
+    m.musicCardRowFocus = m.top.findNode("musicCardRowFocus")
+    m.musicCardArtMask = m.top.findNode("musicCardArtMask")
+    m.musicCardNote = m.top.findNode("musicCardNote")
+    m.musicCardButtons = m.top.findNode("musicCardButtons")
+    m.musicCardParts = [m.top.findNode("musicCardFill"), m.top.findNode("musicCardBorder"), m.musicCardTitle, m.musicCardArtist, m.musicCardButtons]
+    m.musicCardActions = ["previous", "play", "next", "stop"]
 
+    sizes = [38, 44, 38, 38]
+    icons = ["pkg:/images/icons/previous.png", "", "pkg:/images/playback/skip_next.png", "pkg:/images/icons/stop.png"]
+    gap = (MUSIC_CARD_INNER - 158) / 5
+    left = 12 + gap
+    for i = 0 to sizes.count() - 1
+        size = sizes[i]
+        iconSize = size = 44 ? 26 : 22
+        button = m.musicCardButtons.createChild("Group")
+        button.translation = [left, (44 - size) / 2]
+
+        disc = button.createChild("Poster")
+        disc.uri = "pkg:/images/icons/circle.png"
+        disc.width = size
+        disc.height = size
+
+        icon = button.createChild("Poster")
+        icon.uri = icons[i]
+        icon.width = iconSize
+        icon.height = iconSize
+        icon.translation = [(size - iconSize) / 2, (size - iconSize) / 2]
+
+        left += size + gap
+    end for
+end sub
+
+sub onMusicPlayerSet()
+    for each field in ["active", "songTitle", "artistName", "artUri", "isPlaying"]
+        m.top.musicPlayer.observeField(field, "onMusicStateChanged")
+    end for
+    onMusicStateChanged()
+end sub
+
+sub onMusicStateChanged()
+    shown = m.top.musicPlayer.active = true
+    if shown <> m.musicCard.visible
+        m.musicCard.visible = shown
+        m.navAreaHeight = shown ? NAV_AREA_HEIGHT - MUSIC_CARD_BAND : NAV_AREA_HEIGHT
+        m.navScrollClip.clippingRect = [0, 0, SIDEBAR_EXPANDED_WIDTH, m.navAreaHeight]
+
+        if not shown and m.cardFocus >= 0
+            m.cardFocus = -1
+            m.selectedIndex = m.navItems.count() - 1
+        end if
+        layoutSidebar()
+        return
+    end if
+
+    paintMusicCard()
+end sub
+
+' The closed rail shows the art in a circle, the open one the whole card
+sub paintMusicCard()
+    if not isValid(m.top.musicPlayer) or not m.musicCard.visible then return
+    player = m.top.musicPlayer
+
+    for each part in m.musicCardParts
+        part.visible = m.isExpanded
+    end for
+
+    if m.isExpanded
+        m.musicCardArtMask.maskUri = "pkg:/images/miniPlayerArtMask.png"
+        m.musicCardArtMask.translation = [12, 12]
+    else
+        m.musicCardArtMask.maskUri = "pkg:/images/icons/circle.png"
+        m.musicCardArtMask.translation = [3, 40]
+    end if
+    m.musicCardNote.translation = [m.musicCardArtMask.translation[0] + 13, m.musicCardArtMask.translation[1] + 13]
+
+    m.musicCardArt.uri = player.artUri
+    m.musicCardTitle.text = player.songTitle
+    m.musicCardArtist.text = player.artistName
+    m.musicCardRowFocus.visible = m.cardFocus = 0
+
+    for i = 0 to m.musicCardActions.count() - 1
+        button = m.musicCardButtons.getChild(i)
+        focused = m.cardFocus = i + 1
+        disc = button.getChild(0)
+        disc.opacity = focused ? 1.0 : 0.1
+
+        icon = button.getChild(1)
+        icon.blendColor = focused ? "0x101010FF" : ColorPalette.WHITE
+        if m.musicCardActions[i] = "play"
+            icon.uri = player.isPlaying ? "pkg:/images/icons/pause.png" : "pkg:/images/icons/play.png"
+        end if
+    end for
+end sub
+
+' The art row opens the player and sits above the buttons. Right past the last button leaves
+' for the page like the rail items do.
+function handleMusicCardKey(key as string) as boolean
+    if key = KeyCode.UP
+        if m.cardFocus > 0
+            m.cardFocus = 0
+        else
+            m.cardFocus = -1
+            m.selectedIndex = m.navItems.count() - 1
+        end if
+        layoutSidebar()
+        return true
+    end if
+
+    if key = KeyCode.DOWN
+        if m.cardFocus = 0 then m.cardFocus = 2
+        paintMusicCard()
+        return true
+    end if
+
+    if key = KeyCode.LEFT
+        if m.cardFocus > 1 then m.cardFocus -= 1
+        paintMusicCard()
+        return true
+    end if
+
+    if key = KeyCode.RIGHT
+        if m.cardFocus >= 1 and m.cardFocus < m.musicCardActions.count()
+            m.cardFocus += 1
+            paintMusicCard()
+            return true
+        end if
+        return handleRightKey()
+    end if
+
+    if key = KeyCode.REPLAY then return handleRightKey()
+
+    if key = KeyCode.OK
+        if m.cardFocus = 0
+            m.top.musicPlayer.callFunc("runAction", "open")
+        else
+            m.top.musicPlayer.callFunc("runAction", m.musicCardActions[m.cardFocus - 1])
+        end if
+        return true
+    end if
+
+    return false
+end function
+
+' The replay key's way into the card
+sub focusMusicPlayer()
+    if not m.musicCard.visible then return
+
+    m.avatarSelected = false
+    m.cardFocus = 0
+    m.top.setFocus(true)
+    layoutSidebar()
+end sub

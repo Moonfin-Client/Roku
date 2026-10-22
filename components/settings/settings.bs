@@ -824,111 +824,6 @@ sub saveHomeRowLayout(order as object, hidden as object)
     syncHomeRowsToServer()
 end sub
 
-' The individual collections, genres or playlists that can each be a row of their own. The
-' list comes from the server, so the dialog only opens once it arrives.
-sub showPickedRowsDialog(settingItem as object)
-    listEntry = homeRowLayout.SourceForSetting(chainLookupReturn(settingItem, "settingName", ""))
-    if not isValid(listEntry) then return
-
-    ' The list takes a moment to arrive, so a second press while one is already loading is
-    ' ignored rather than leaving two tasks racing to fill the same dialog
-    if isValid(m.pickedTask) and m.pickedTask.state = "run" then return
-
-    m.pickedList = listEntry
-    m.pickedTitle = tr(chainLookupReturn(settingItem, "title", ""))
-    m.pickedTask = createObject("roSGNode", "LoadItemsTask")
-    m.pickedTask.itemsToLoad = listEntry.task
-    m.pickedTask.observeField("content", "onPickedRowsLoaded")
-    m.pickedTask.control = "RUN"
-end sub
-
-' The shared message helper waits on a message port, which would freeze the render thread
-' the settings screen runs on, so the scene shows this one instead
-sub showNothingToPickDialog()
-    dialog = createObject("roSGNode", "StandardMessageDialog")
-    dialog.title = m.pickedTitle
-    dialog.message = [tr("Nothing to pick from here yet.")]
-    dialog.buttons = [tr("OK")]
-    dialog.observeField("buttonSelected", "onNothingToPickDismissed")
-    m.top.getScene().dialog = dialog
-end sub
-
-sub onNothingToPickDismissed(event as object)
-    event.getRoSGNode().unobserveField("buttonSelected")
-    m.top.getScene().dialog = invalid
-    m.settingsMenu.setFocus(true)
-end sub
-
-sub onPickedRowsLoaded(event as object)
-    task = event.getRoSGNode()
-    found = event.getData()
-    task.unobserveField("content")
-    m.pickedTask = invalid
-
-    if not isValidAndNotEmpty(found)
-        showNothingToPickDialog()
-        return
-    end if
-
-    placed = buttonLayout.ToIds(get_user_setting(homeRowLayout.ORDER_SETTING))
-    off = buttonLayout.HiddenLookup(get_user_setting(homeRowLayout.HIDDEN_SETTING))
-    picked = homeRowLayout.DynamicLookup()
-    serverKey = homeRowLayout.ServerId()
-
-    options = []
-    checked = []
-    for each item in found
-        itemId = homeRowLayout.AsText(item.id)
-        if itemId = "" then continue for
-
-        rowId = homeRowLayout.DynamicId(m.pickedList.key, serverKey, itemId)
-        options.push({ id: rowId, title: item.title })
-        checked.push(homeRowLayout.IsEnabled(rowId, placed, off, picked))
-    end for
-
-    m.pickedOptions = options
-    openMultiPicker(m.pickedTitle, options, checked, "onPickedRowsSaved")
-end sub
-
-sub onPickedRowsSaved()
-    checked = m.picker.checked ?? []
-    closePicker()
-
-    ' Only this list is rewritten, so a collection picked here leaves the genres alone
-    kept = []
-    for each entry in homeRowLayout.DynamicRows()
-        if not isStringEqual(entry.source, m.pickedList.key) then kept.push(entry)
-    end for
-
-    off = buttonLayout.HiddenLookup(get_user_setting(homeRowLayout.HIDDEN_SETTING))
-    anyPicked = false
-    for i = 0 to m.pickedOptions.Count() - 1
-        if i >= checked.Count() or checked[i] <> true then continue for
-        option = m.pickedOptions[i]
-
-        fromId = homeRowLayout.SourceFromId(option.id)
-        if not isValid(fromId) then continue for
-
-        kept.push({
-            id: option.id,
-            source: m.pickedList.key,
-            itemId: fromId.itemId,
-            title: option.title
-        })
-        anyPicked = true
-        ' Picking a row again clears the switch off it left behind
-        off.Delete(option.id)
-    end for
-
-    homeRowLayout.SaveDynamic(kept)
-    saveHomeRowLayout(buttonLayout.ToIds(get_user_setting(homeRowLayout.ORDER_SETTING)), off.Keys())
-
-    ' These rows also answer to the switch for the list they came from, which sits in a
-    ' submenu of its own, so picking one turns it on rather than leaving nothing to show
-    if anyPicked then setUserBoolSetting(m.pickedList.gate, true, true)
-    m.pickedOptions = []
-end sub
-
 sub saveButtonLayout(target as object, order as object, hidden as object)
     for each entry in [{ key: target.orderKey, value: order }, { key: target.hiddenKey, value: hidden }]
         serialized = FormatJson(entry.value)
@@ -1884,17 +1779,6 @@ function normalizeBoolSettingValue(value as dynamic) as boolean
     return false
 end function
 
-sub setUserBoolSetting(settingName as string, enabled as boolean, syncToServer = false as boolean)
-    value = enabled ? "true" : "false"
-    session.user.settings.Save(settingName, value)
-    set_user_setting(settingName, value)
-
-    if syncToServer
-        syncSettingToServer(settingName, value)
-    end if
-end sub
-
-
 sub setSettingVisibilityByName(items as object, settingName as string, isVisible as boolean)
     if not isValid(items)
         return
@@ -1931,10 +1815,10 @@ function reorderSettingsForFlutter(configTree as object) as object
     clock = takeSettings(configTree, ["ui.showClock", "playback.use24hourclock"])
     behavior = takeSettings(configTree, ["load.allowwhatsnew"])
     themePicker = takeSettings(configTree, ["ui.theme.picker"])
-    display = takeSettings(configTree, ["useFallbackFont", "ui.backdrop.homeBlurAmount", "ui.watchedIndicator", "ui.tvshows.disableUnwatchedEpisodeCount"])
+    display = takeSettings(configTree, ["useFallbackFont", "ui.home.showBackdrop", "ui.itemdetail.showBackdrop", "ui.library.showBackdrops", "ui.backdrop.homeBlurAmount", "ui.watchedIndicator", "ui.tvshows.disableUnwatchedEpisodeCount"])
     shuffleContent = takeSettingByName(configTree, "shuffle_content_type")
 
-    homeRows = takeSettings(configTree, ["ui.home.rowLayout", "ui.home.pickCollections", "ui.home.pickGenres", "ui.home.pickPlaylists"])
+    homeRows = takeSettings(configTree, ["ui.home.rowLayout"])
     homeLooks = takeSettings(configTree, ["ui.home.rowsStyle", "ui.home.modernCardsOnMyMediaRow", "ui.home.episodePreviewEnabled", "ui.home.previewAudioEnabled", "ui.home.classicRowsPadding", "ui.home.modernRowsPadding", "ui.home.preferThumbnails", "ui.home.hideMediaDescription"])
     continueWatching = takeSettings(configTree, ["ui.details.maxdaysnextup", "ui.home.mergeContinueWatchingNextUp"])
     recentlyAdded = takeSettings(configTree, ["ui.home.recentlyReleasedSeriesType", "ui.home.mergeRecentRowsByType"])
@@ -2619,11 +2503,6 @@ sub settingSelected()
 
     if isValid(selectedItem.settingName) and selectedItem.settingName = "ui.home.rowLayout"
         openEditor("rows", selectedItem)
-        return
-    end if
-
-    if isValid(selectedItem.settingName) and isValid(homeRowLayout.SourceForSetting(selectedItem.settingName))
-        showPickedRowsDialog(selectedItem)
         return
     end if
 
