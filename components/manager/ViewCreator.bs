@@ -77,26 +77,11 @@ sub CreateVideoPlayerView()
     m.view.observeField("selectPlaybackInfoPressed", "onSelectPlaybackInfoPressed")
     m.view.observeField("selectSubtitlePressed", "onSelectSubtitlePressed")
     m.view.observeField("selectAudioPressed", "onSelectAudioPressed")
+    m.view.observeField("content", "forgetPlaybackInfo")
+    m.view.observeField("audioIndex", "forgetPlaybackInfo")
 
-    mediaSourceId = currentItem.mediaSourceId
-
-    if not isValid(mediaSourceId) or mediaSourceId = ""
-        mediaSourceId = currentItem.id
-    end if
-
+    if isValid(m.getPlaybackInfoTask) then m.getPlaybackInfoTask.unobserveField("data")
     m.getPlaybackInfoTask = createObject("roSGNode", "GetPlaybackInfoTask")
-    m.getPlaybackInfoTask.videoID = mediaSourceId
-    playbackServer = ""
-    if type(currentItem.json) = "roAssociativeArray" then playbackServer = currentItem.json._serverUrl ?? ""
-    if isEmbyServer(playbackServer) then m.getPlaybackInfoTask.videoID = currentItem.id
-
-    itemServerData = getServerInfoFromItem(currentItem)
-    if isValid(itemServerData)
-        m.getPlaybackInfoTask.serverUrl = itemServerData.serverUrl
-        m.getPlaybackInfoTask.serverUserId = itemServerData.userId
-        m.getPlaybackInfoTask.serverAuthToken = itemServerData.authToken
-    end if
-
     m.getPlaybackInfoTask.observeField("data", "onPlaybackInfoLoaded")
 
     m.global.sceneManager.callFunc("pushScene", m.view)
@@ -401,23 +386,53 @@ end sub
 
 ' User requested playback info
 sub onSelectPlaybackInfoPressed()
-    ' Check if we already have playback info and show it in a popup
-    if isValid(m.playbackData) and isValid(m.playbackData.playbackinfo)
-        m.global.sceneManager.callFunc("standardDialog", tr("Playback Info"), m.playbackData.playbackinfo)
+    if isValid(m.playbackData) and isValid(m.playbackData.sections)
+        m.view.callFunc("showPlaybackInfo", m.playbackData.sections)
         return
     end if
 
-    m.getPlaybackInfoTask.control = TaskControl.RUN
+    ' Read at each press, since a channel switch or a reload changes what plays under the same player
+    currentItem = m.global.queueManager.callFunc("getCurrentItem")
+    ' A playback error empties the queue while the player retries, so the player's own item stands in
+    if not isValid(currentItem) then currentItem = { id: m.view.videoId ?? "" }
+    task = m.getPlaybackInfoTask
+
+    task.videoID = currentItem.mediaSourceId ?? ""
+    if task.videoID = "" then task.videoID = currentItem.id
+    playbackServer = ""
+    if type(currentItem.json) = "roAssociativeArray" then playbackServer = currentItem.json._serverUrl ?? ""
+    if isEmbyServer(playbackServer) then task.videoID = currentItem.id
+    setTaskServerFromItem(task, currentItem)
+
+    task.itemId = m.view.videoId ?? ""
+    task.mediaSourceId = m.view.mediaSourceId ?? ""
+    task.url = ""
+    if isValid(m.view.content) then task.url = m.view.content.url
+    task.isTranscoded = m.view.isTranscoded
+    task.audioIndex = m.view.audioIndex
+    task.subtitleIndex = m.view.selectedSubtitle
+    task.subtitleBurnedIn = false
+    for each subtitle in m.view.fullSubtitleData ?? []
+        if subtitle.Index = m.view.selectedSubtitle then task.subtitleBurnedIn = subtitle.IsEncoded = true
+    end for
+    task.isLive = m.view.isLiveChannel
+    osd = m.view.findNode("osd")
+    task.channel = osd.liveChannel ?? {}
+    task.program = chainLookupReturn(osd.liveProgram, "Name", "")
+    task.control = TaskControl.RUN
 end sub
 
 ' The playback info task has returned data
 sub onPlaybackInfoLoaded()
     m.playbackData = m.getPlaybackInfoTask.data
-
-    ' Check if we have playback info and show it in a popup
-    if isValid(m.playbackData) and isValid(m.playbackData.playbackinfo)
-        m.global.sceneManager.callFunc("standardDialog", tr("Playback Info"), m.playbackData.playbackinfo)
+    if isValid(m.playbackData) and isValid(m.playbackData.sections)
+        m.view.callFunc("showPlaybackInfo", m.playbackData.sections)
     end if
+end sub
+
+' A new stream or audio track under the same player leaves the last facts stale
+sub forgetPlaybackInfo()
+    m.playbackData = invalid
 end sub
 
 ' Playback state change event handlers

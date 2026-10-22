@@ -1634,18 +1634,6 @@
         <translation>Transcoding Information</translation>
     </message>
     <message>
-        <source>Reason</source>
-        <translation>Reason</translation>
-    </message>
-    <message>
-        <source>Force Transcoding setting is enabled</source>
-        <translation>Force Transcoding setting is enabled</translation>
-    </message>
-    <message>
-        <source>Force Transcode option is enabled</source>
-        <translation>Force Transcode option is enabled</translation>
-    </message>
-    <message>
         <source>Video Codec</source>
         <translation>Video Codec</translation>
     </message>
@@ -1664,14 +1652,6 @@
     <message>
         <source>Audio Channels</source>
         <translation>Audio Channels</translation>
-    </message>
-    <message>
-        <source>Stream Information</source>
-        <translation>Stream Information</translation>
-    </message>
-    <message>
-        <source>Codec</source>
-        <translation>Codec</translation>
     </message>
     <message>
         <source>Codec Tag</source>
@@ -2494,10 +2474,6 @@
     <message>
         <source>Display Watched Checkmark</source>
         <translation>Display Watched Checkmark</translation>
-    </message>
-    <message>
-        <source>Playback Info</source>
-        <translation>Playback Info</translation>
     </message>
     <message>
         <source>Select Audio</source>
@@ -7157,6 +7133,316 @@
         <source>Playlists row</source>
         <translation>Playlists row</translation>
         <extracomment>Under a playlist's own row in the Home Rows editor</extracomment>
+    </message>
+    <message>
+        <source>Channel</source>
+        <translation>Channel</translation>
+        <extracomment>A row label in the player's Playback Information panel, for the Live TV channel playing</extracomment>
+    </message>
+    <message>
+        <source>Program</source>
+        <translation>Program</translation>
+        <extracomment>A row label in the player's Playback Information panel, for the Live TV program airing now</extracomment>
+    </message>
+    <message>
+        <source>Play Method</source>
+        <translation>Play Method</translation>
+        <extracomment>A row label in the player's Playback Information panel: Direct Play, Direct Stream or Transcoding</extracomment>
+    </message>
+    <message>
+        <source>Why</source>
+        <translation>Why</translation>
+        <extracomment>A row label in the player's Playback Information panel, listing why the server is converting the file</extracomment>
+    </message>
+    <message>
+        <source>Bitrate</source>
+        <translation>Bitrate</translation>
+        <extracomment>A row label in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>Quality Limit</source>
+        <translation>Quality Limit</translation>
+        <extracomment>A row label in the player's Playback Information panel, for the maximum streaming bitrate the viewer picked</extracomment>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>Resolution</translation>
+        <extracomment>A row label in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>Frame Rate</source>
+        <translation>Frame Rate</translation>
+        <extracomment>A row label in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>Track</source>
+        <translation>Track</translation>
+        <extracomment>A row label in the player's Playback Information panel, naming the audio or subtitle track playing</extracomment>
+    </message>
+    <message>
+        <source>Delivery</source>
+        <translation>Delivery</translation>
+        <extracomment>A row label in the player's Playback Information panel, for how the subtitles reach the player</extracomment>
+    </message>
+    <message>
+        <source>File</source>
+        <translation>File</translation>
+        <extracomment>A section title in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>Technical</source>
+        <translation>Technical</translation>
+        <extracomment>A section title in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>Player</source>
+        <translation>Player</translation>
+        <extracomment>A row label in the player's Playback Information panel, naming the playback engine</extracomment>
+    </message>
+    <message>
+        <source>Device</source>
+        <translation>Device</translation>
+        <extracomment>A row label in the player's Playback Information panel, naming this Roku and its OS version</extracomment>
+    </message>
+    <message>
+        <source>Transcode Reasons</source>
+        <translation>Transcode Reasons</translation>
+        <extracomment>A row label in the player's Playback Information panel, followed by the server's own reason names</extracomment>
+    </message>
+    <message>
+        <source>Direct Stream</source>
+        <translation>Direct Stream</translation>
+        <extracomment>A play method in the player's Playback Information panel, where the server repackages the file without converting it</extracomment>
+    </message>
+    <message>
+        <source>Transcoding</source>
+        <translation>Transcoding</translation>
+        <extracomment>A play method in the player's Playback Information panel, where the server converts the file</extracomment>
+    </message>
+    <message>
+        <source>Mono</source>
+        <translation>Mono</translation>
+        <extracomment>Audio channels in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>Stereo</source>
+        <translation>Stereo</translation>
+        <extracomment>Audio channels in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>5.1 surround</source>
+        <translation>5.1 surround</translation>
+        <extracomment>Audio channels in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>7.1 surround</source>
+        <translation>7.1 surround</translation>
+        <extracomment>Audio channels in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>{count} channels</source>
+        <translation>{count} channels</translation>
+        <extracomment>Audio channels in the player's Playback Information panel. {count} is the number of channels</extracomment>
+    </message>
+    <message>
+        <source>Embedded</source>
+        <translation>Embedded</translation>
+        <extracomment>Subtitle delivery in the player's Playback Information panel, for subtitles inside the file</extracomment>
+    </message>
+    <message>
+        <source>External</source>
+        <translation>External</translation>
+        <extracomment>Subtitle delivery in the player's Playback Information panel, for subtitles in a file of their own</extracomment>
+    </message>
+    <message>
+        <source>Burned in by the server</source>
+        <translation>Burned in by the server</translation>
+        <extracomment>Subtitle delivery in the player's Playback Information panel, for subtitles the server draws into the picture</extracomment>
+    </message>
+    <message>
+        <source>{value} (original {original})</source>
+        <translation>{value} (original {original})</translation>
+        <extracomment>The bitrate row in the player's Playback Information panel while the server streams the file. {value} is what reaches the device and {original} is the file's own bitrate</extracomment>
+    </message>
+    <message>
+        <source>{value} (converted from {source})</source>
+        <translation>{value} (converted from {source})</translation>
+        <extracomment>A row value in the player's Playback Information panel when the server converts it, for example AAC (converted from Dolby TrueHD)</extracomment>
+    </message>
+    <message>
+        <source>{value} ({size}, converted from {source})</source>
+        <translation>{value} ({size}, converted from {source})</translation>
+        <extracomment>The resolution row in the player's Playback Information panel when the server scales the video, for example 1080p (1920×1080, converted from 4K)</extracomment>
+    </message>
+    <message>
+        <source>Playing the original file as is.</source>
+        <translation>Playing the original file as is.</translation>
+        <extracomment>The note under Direct Play in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>The server is repackaging the file without converting it.</source>
+        <translation>The server is repackaging the file without converting it.</translation>
+        <extracomment>The note under Direct Stream in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>The server is converting the video so this device can play it.</source>
+        <translation>The server is converting the video so this device can play it.</translation>
+        <extracomment>The note under Transcoding in the player's Playback Information panel when only the video is converted</extracomment>
+    </message>
+    <message>
+        <source>The server is converting the audio so this device can play it.</source>
+        <translation>The server is converting the audio so this device can play it.</translation>
+        <extracomment>The note under Transcoding in the player's Playback Information panel when only the audio is converted</extracomment>
+    </message>
+    <message>
+        <source>The server is converting the video and audio so this device can play it.</source>
+        <translation>The server is converting the video and audio so this device can play it.</translation>
+        <extracomment>The note under Transcoding in the player's Playback Information panel when both are converted</extracomment>
+    </message>
+    <message>
+        <source>The server is converting this file so this device can play it.</source>
+        <translation>The server is converting this file so this device can play it.</translation>
+        <extracomment>The note under Transcoding in the player's Playback Information panel when it isn't known which part is converted</extracomment>
+    </message>
+    <message>
+        <source>Transcoding is forced in settings</source>
+        <translation>Transcoding is forced in settings</translation>
+        <extracomment>A reason in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>This device can't play this file type</source>
+        <translation>This device can't play this file type</translation>
+        <extracomment>A reason in the player's Playback Information panel, when the container isn't supported</extracomment>
+    </message>
+    <message>
+        <source>This device can't play this video format</source>
+        <translation>This device can't play this video format</translation>
+        <extracomment>A reason in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>This device can't display this HDR format</source>
+        <translation>This device can't display this HDR format</translation>
+        <extracomment>A reason in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>This device can't play this audio format</source>
+        <translation>This device can't play this audio format</translation>
+        <extracomment>A reason in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>Subtitles are being burned into the video</source>
+        <translation>Subtitles are being burned into the video</translation>
+        <extracomment>A reason in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>The file couldn't be played directly</source>
+        <translation>The file couldn't be played directly</translation>
+        <extracomment>A reason in the player's Playback Information panel, for any reason the others don't cover</extracomment>
+    </message>
+    <message>
+        <source>{bitrate} is above the {limit} streaming limit</source>
+        <translation>{bitrate} is above the {limit} streaming limit</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example 68.4 Mbps is above the 20 Mbps streaming limit</extracomment>
+    </message>
+    <message>
+        <source>The bitrate is above the streaming limit</source>
+        <translation>The bitrate is above the streaming limit</translation>
+        <extracomment>A reason in the player's Playback Information panel, when the file's bitrate is over the limit</extracomment>
+    </message>
+    <message>
+        <source>This device can't open {container} files</source>
+        <translation>This device can't open {container} files</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example This device can't open MKV files</extracomment>
+    </message>
+    <message>
+        <source>This device can't play {codec} video</source>
+        <translation>This device can't play {codec} video</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example This device can't play HEVC video</extracomment>
+    </message>
+    <message>
+        <source>This device can't play {codec} {profile} video</source>
+        <translation>This device can't play {codec} {profile} video</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example This device can't play HEVC Main 10 video</extracomment>
+    </message>
+    <message>
+        <source>This device can't play {codec} level {level} video</source>
+        <translation>This device can't play {codec} level {level} video</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example This device can't play HEVC level 5.1 video</extracomment>
+    </message>
+    <message>
+        <source>This device can't play {bits}-bit video</source>
+        <translation>This device can't play {bits}-bit video</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example This device can't play 10-bit video</extracomment>
+    </message>
+    <message>
+        <source>This device can't play {resolution} video</source>
+        <translation>This device can't play {resolution} video</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example This device can't play 4K video</extracomment>
+    </message>
+    <message>
+        <source>This device can't play {fps} fps video</source>
+        <translation>This device can't play {fps} fps video</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example This device can't play 59.94 fps video</extracomment>
+    </message>
+    <message>
+        <source>This device can't play interlaced video</source>
+        <translation>This device can't play interlaced video</translation>
+        <extracomment>A reason in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>This device can't play anamorphic video</source>
+        <translation>This device can't play anamorphic video</translation>
+        <extracomment>A reason in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>This device can't display {range}</source>
+        <translation>This device can't display {range}</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example This device can't display Dolby Vision Profile 7</extracomment>
+    </message>
+    <message>
+        <source>This device can't play {format} audio</source>
+        <translation>This device can't play {format} audio</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example This device can't play DTS audio</extracomment>
+    </message>
+    <message>
+        <source>This device can't play {fullFormat}</source>
+        <translation>This device can't play {fullFormat}</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example This device can't play Dolby TrueHD with Atmos</extracomment>
+    </message>
+    <message>
+        <source>This device can't play {channels} audio</source>
+        <translation>This device can't play {channels} audio</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example This device can't play 7.1 audio</extracomment>
+    </message>
+    <message>
+        <source>This device can't play {rate} kHz audio</source>
+        <translation>This device can't play {rate} kHz audio</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example This device can't play 96 kHz audio</extracomment>
+    </message>
+    <message>
+        <source>This device can't play {bits}-bit audio</source>
+        <translation>This device can't play {bits}-bit audio</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example This device can't play 24-bit audio</extracomment>
+    </message>
+    <message>
+        <source>The audio track is in a separate file</source>
+        <translation>The audio track is in a separate file</translation>
+        <extracomment>A reason in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>This device can only play the first audio track</source>
+        <translation>This device can only play the first audio track</translation>
+        <extracomment>A reason in the player's Playback Information panel</extracomment>
+    </message>
+    <message>
+        <source>{format} subtitles are being burned into the video</source>
+        <translation>{format} subtitles are being burned into the video</translation>
+        <extracomment>A reason in the player's Playback Information panel, for example PGS subtitles are being burned into the video</extracomment>
+    </message>
+    <message>
+        <source>Roku native player</source>
+        <translation>Roku native player</translation>
+        <extracomment>The Player row in the player's Playback Information panel, naming the Roku's own video player</extracomment>
     </message>
 </context>
 </TS>

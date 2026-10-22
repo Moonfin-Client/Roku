@@ -2,24 +2,23 @@ import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/sdk.bs"
 import "pkg:/source/enums/PlaybackMethod.bs"
 import "pkg:/source/utils/config.bs"
-import "pkg:/source/utils/detailCompatibility.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/playbackFacts.bs"
+import "pkg:/source/utils/trackLabels.bs"
 
 sub init()
     m.top.functionName = "getPlaybackInfoTask"
 end sub
 
+' The request names what the player has, since a playback error empties the queue while the player
+' retries and Emby's source ids differ from its item ids
 function ItemPostPlaybackInfo(id as string)
-    currentView = m.global.sceneManager.callFunc("getActiveScene")
-    currentItem = m.global.queueManager.callFunc("getCurrentItem")
-
-    ' The queue can empty while the player is still up
-    if not isValid(currentItem) or not isValid(currentView) then return invalid
-
     body = {
         "DeviceProfile": getDeviceProfile()
     }
+    mediaSourceId = m.top.mediaSourceId
+    if mediaSourceId = "" then mediaSourceId = id
 
     ' Check if we have multi-server info
     serverUrl = m.top.serverUrl
@@ -32,14 +31,13 @@ function ItemPostPlaybackInfo(id as string)
         ' Use the specified server instead of global session
         params = {
             "UserId": serverUserId,
-            "StartTimeTicks": currentItem.startingPoint,
             "IsPlayback": true,
             "AutoOpenLiveStream": true,
             "MaxStreamingBitrate": "140000000",
             "MaxStaticBitrate": "140000000",
-            "SubtitleStreamIndex": currentView.selectedSubtitle,
-            "MediaSourceId": playbackSourceForItem(currentItem),
-            "AudioStreamIndex": currentItem.selectedAudioStreamIndex
+            "SubtitleStreamIndex": m.top.subtitleIndex,
+            "MediaSourceId": mediaSourceId,
+            "AudioStreamIndex": m.top.audioIndex
         }
 
         req = APIRequestForServer(serverUrl, serverUserId, serverAuthToken, Substitute("Items/{0}/PlaybackInfo", id), params)
@@ -51,14 +49,13 @@ function ItemPostPlaybackInfo(id as string)
         ' Use the global session (original behavior)
         params = {
             "UserId": m.global.session.user.id,
-            "StartTimeTicks": currentItem.startingPoint,
             "IsPlayback": true,
             "AutoOpenLiveStream": true,
             "MaxStreamingBitrate": "140000000",
             "MaxStaticBitrate": "140000000",
-            "SubtitleStreamIndex": currentView.selectedSubtitle,
-            "MediaSourceId": playbackSourceForItem(currentItem),
-            "AudioStreamIndex": currentItem.selectedAudioStreamIndex
+            "SubtitleStreamIndex": m.top.subtitleIndex,
+            "MediaSourceId": mediaSourceId,
+            "AudioStreamIndex": m.top.audioIndex
         }
 
         req = APIRequest(Substitute("Items/{0}/PlaybackInfo", id), params)
@@ -67,13 +64,58 @@ function ItemPostPlaybackInfo(id as string)
     end if
 end function
 
-' Returns an array of playback info to be displayed during playback.
-' In the future, with a custom playback info view, we can return an associated array.
+' The rows of the Playback Information panel, built from what the player says it's playing, the
+' file the server describes and the session's TranscodingInfo
 sub getPlaybackInfoTask()
-    m.playbackInfo = ItemPostPlaybackInfo(m.top.videoID)
+    playing = findPlaybackSession()
+    mediaSource = invalid
+    if m.top.isLive
+        ' Asking for a channel's playback info opens another stream, so the session's tracks stand in
+        streams = chainLookup(playing, "NowPlayingItem.MediaStreams")
+        if isValidAndNotEmpty(streams) then mediaSource = { MediaStreams: streams }
+    else
+        playbackInfo = ItemPostPlaybackInfo(m.top.videoID)
+        if isValidAndNotEmpty(chainLookup(playbackInfo, "MediaSources")) then mediaSource = playbackInfo.MediaSources[0]
+    end if
 
-    m.top.data = { playbackInfo: GetTranscodingStats(findPlaybackSession()) }
+    settings = m.global.session.user.settings
+    limit = 0
+    ' Read as text, since a synced setting can arrive as a string as easily as a boolean or number
+    if LCase(trackLabels.Field(settings, "playback.bitrate.maxlimited")) = "true" then limit = Int(val(trackLabels.Field(settings, "playback.bitrate.limit"))) * 1000000
+    ' Only the setting counts, since the app also forces a transcode on its own for rotated video
+    ' and Live TV retries
+    forced = not isStringEqual(settings["playback.media.forceTranscode"] ?? PlaybackMethod.PLAYNORMALLY, PlaybackMethod.PLAYNORMALLY)
+
+    deviceInfo = CreateObject("roDeviceInfo")
+    os = deviceInfo.GetOSVersion()
+
+    m.top.data = {
+        sections: playbackFacts.Build({
+            source: mediaSource,
+            transcoding: chainLookup(playing, "TranscodingInfo"),
+            url: m.top.url,
+            isTranscoded: m.top.isTranscoded,
+            forced: forced,
+            audioIndex: m.top.audioIndex,
+            subtitleIndex: m.top.subtitleIndex,
+            subtitleBurnedIn: m.top.subtitleBurnedIn,
+            live: m.top.isLive,
+            channel: m.top.channel,
+            program: m.top.program,
+            qualityLimit: limit,
+            languages: playbackFacts.LanguageNames(serverCultures()),
+            player: tr("Roku native player"),
+            device: `${deviceInfo.GetModelDisplayName()}, Roku OS ${os.major}.${os.minor}.${os.revision}`
+        })
+    }
 end sub
+
+function serverCultures() as dynamic
+    if not isValidAndNotEmpty(m.top.serverUrl) or not isValidAndNotEmpty(m.top.serverUserId) or not isValidAndNotEmpty(m.top.serverAuthToken)
+        return api.localization.GetCultures()
+    end if
+    return getJson(APIRequestForServer(m.top.serverUrl, m.top.serverUserId, m.top.serverAuthToken, "Localization/Cultures", {}))
+end function
 
 ' Asking the server for our session by device id comes back empty, because task
 ' threads send a different device id than the main thread does. What we are
@@ -93,10 +135,12 @@ function findPlaybackSession() as dynamic
     if not isValidAndNotEmpty(sessions) then return invalid
 
     client = getAuthHeaderContext().appName + " Roku"
+    itemId = m.top.itemId
+    if itemId = "" then itemId = m.top.videoID
     match = invalid
 
     for each candidate in sessions
-        if not isStringEqual(chainLookupReturn(candidate, "NowPlayingItem.Id", ""), m.top.videoID) then continue for
+        if not isStringEqual(chainLookupReturn(candidate, "NowPlayingItem.Id", ""), itemId) then continue for
         if not isStringEqual(candidate.Client, client) then continue for
 
         ' Other clients can sit on the same item, so hold this one but keep
@@ -106,227 +150,4 @@ function findPlaybackSession() as dynamic
     end for
 
     return match
-end function
-
-function GetTranscodingStats(deviceSession)
-    sessionStats = { data: [] }
-
-    transcodingInfo = invalid
-    if isValid(deviceSession) then transcodingInfo = deviceSession.TranscodingInfo
-    isTranscoding = isValidAndNotEmpty(transcodingInfo)
-
-    ' Section 1: Playback Method
-    sessionStats.data.push("<header>" + tr("Playback Method") + "</header>")
-
-    if not isValid(deviceSession)
-        ' Without the server's session there is no way to tell direct play from transcoding
-        sessionStats.data.push("<b>" + tr("Method") + ":</b> " + tr("Unavailable"))
-    else if isTranscoding
-        ' Transcoding is active
-        sessionStats.data.push("<b>" + tr("Method") + ":</b> " + tr("Transcoding"))
-
-        ' Show transcoding reasons
-        transcodingReasons = transcodingInfo.TranscodeReasons
-        if not isStringEqual(PlaybackMethod.PLAYNORMALLY, m.global.session.user.settings["playback.media.forceTranscode"])
-            sessionStats.data.push("<b>" + tr("Reason") + ":</b> " + tr("Force Transcoding setting is enabled"))
-        else if not isStringEqual(PlaybackMethod.PLAYNORMALLY, m.global.queueManager.callFunc("getForceTranscode"))
-            sessionStats.data.push("<b>" + tr("Reason") + ":</b> " + tr("Force Transcode option is enabled"))
-        else if isValid(transcodingReasons) and transcodingReasons.Count() > 0
-            for i = 0 to transcodingReasons.Count() - 1
-                if i = 0
-                    sessionStats.data.push("<b>" + tr("Reason") + ":</b> " + transcodingReasons[i])
-                else
-                    sessionStats.data.push("           " + transcodingReasons[i])
-                end if
-            end for
-        end if
-    else
-        ' Direct Play
-        sessionStats.data.push("<b>" + tr("Method") + ":</b> " + tr("Direct Play"))
-    end if
-
-    ' Section 2: Stream Information
-    if havePlaybackInfo()
-        mediaSource = m.playbackInfo.mediaSources[0]
-        sessionStats.data.push("")
-        sessionStats.data.push("<header>" + tr("Stream Information") + "</header>")
-
-        if isValid(mediaSource.Container)
-            sessionStats.data.push("<b>" + tr("Container") + ":</b> " + UCase(mediaSource.Container))
-        end if
-
-        if isValid(mediaSource.Bitrate)
-            sessionStats.data.push("<b>" + tr("Bitrate") + ":</b> " + getDisplayBitrate(mediaSource.Bitrate))
-        end if
-
-        if isValid(mediaSource.Size)
-            sizeGB = (mediaSource.Size / 1073741824.0)
-            sessionStats.data.push("<b>" + tr("File Size") + ":</b> " + formatFloat(sizeGB, 2) + " GB")
-        end if
-
-        ' Section 3: Video Details
-        videoStream = invalid
-        audioStream = invalid
-
-        ' Find video and audio streams
-        for each stream in mediaSource.MediaStreams
-            if stream.Type = "Video" and videoStream = invalid
-                videoStream = stream
-            else if stream.Type = "Audio" and audioStream = invalid
-                audioStream = stream
-            end if
-        end for
-
-        ' Video information
-        if isValid(videoStream)
-            sessionStats.data.push("")
-            sessionStats.data.push("<header>" + tr("Video") + "</header>")
-
-            if isValid(videoStream.DisplayTitle)
-                sessionStats.data.push("<b>" + tr("Stream") + ":</b> " + videoStream.DisplayTitle)
-            end if
-
-            if isValid(videoStream.Codec)
-                videoCodecDisplay = UCase(videoStream.Codec)
-
-                ' Show if video is direct or transcoded
-                if isTranscoding
-                    if transcodingInfo.IsVideoDirect
-                        videoCodecDisplay = videoCodecDisplay + " (" + tr("Direct") + ")"
-                    else if isValid(transcodingInfo.VideoCodec)
-                        videoCodecDisplay = UCase(transcodingInfo.VideoCodec) + " (" + tr("Transcoded from") + " " + UCase(videoStream.Codec) + ")"
-                    end if
-                end if
-
-                sessionStats.data.push("<b>" + tr("Codec") + ":</b> " + videoCodecDisplay)
-            end if
-
-            if isValid(videoStream.Width) and isValid(videoStream.Height)
-                resolution = Str(videoStream.Width) + "x" + Str(videoStream.Height)
-                resolutionName = ""
-                if videoStream.Height >= 2160
-                    resolutionName = " (4K)"
-                else if videoStream.Height >= 1080
-                    resolutionName = " (1080p)"
-                else if videoStream.Height >= 720
-                    resolutionName = " (720p)"
-                else if videoStream.Height >= 480
-                    resolutionName = " (480p)"
-                end if
-                sessionStats.data.push("<b>" + tr("Resolution") + ":</b> " + resolution + resolutionName)
-            end if
-
-            if isValid(videoStream.BitRate)
-                sessionStats.data.push("<b>" + tr("Bitrate") + ":</b> " + getDisplayBitrate(videoStream.BitRate))
-            end if
-
-            if isValid(videoStream.VideoRangeType) and videoStream.VideoRangeType <> "SDR"
-                sessionStats.data.push("<b>" + tr("Range") + ":</b> " + UCase(videoStream.VideoRangeType))
-            end if
-
-            if isValid(videoStream.AverageFrameRate)
-                fps = videoStream.AverageFrameRate
-                sessionStats.data.push("<b>" + tr("Frame Rate") + ":</b> " + formatFloat(fps, 2) + " fps")
-            else if isValid(videoStream.RealFrameRate)
-                fps = videoStream.RealFrameRate
-                sessionStats.data.push("<b>" + tr("Frame Rate") + ":</b> " + formatFloat(fps, 2) + " fps")
-            end if
-        end if
-
-        ' Audio information
-        if isValid(audioStream)
-            sessionStats.data.push("")
-            sessionStats.data.push("<header>" + tr("Audio") + "</header>")
-
-            if isValid(audioStream.DisplayTitle)
-                sessionStats.data.push("<b>" + tr("Stream") + ":</b> " + audioStream.DisplayTitle)
-            end if
-
-            if isValid(audioStream.Codec)
-                audioCodecDisplay = UCase(audioStream.Codec)
-
-                ' Show if audio is direct or transcoded
-                if isTranscoding
-                    if transcodingInfo.IsAudioDirect
-                        audioCodecDisplay = audioCodecDisplay + " (" + tr("Direct") + ")"
-                    else if isValid(transcodingInfo.AudioCodec)
-                        audioCodecDisplay = UCase(transcodingInfo.AudioCodec) + " (" + tr("Transcoded from") + " " + UCase(audioStream.Codec) + ")"
-                    end if
-                end if
-
-                sessionStats.data.push("<b>" + tr("Codec") + ":</b> " + audioCodecDisplay)
-            end if
-
-            if isValid(audioStream.Channels)
-                channelLayout = Str(audioStream.Channels) + ".0"
-                if audioStream.Channels = 6
-                    channelLayout = "5.1"
-                else if audioStream.Channels = 8
-                    channelLayout = "7.1"
-                end if
-                sessionStats.data.push("<b>" + tr("Channels") + ":</b> " + channelLayout)
-            end if
-
-            if isValid(audioStream.SampleRate)
-                sampleRateKHz = (audioStream.SampleRate / 1000.0)
-                sessionStats.data.push("<b>" + tr("Sample Rate") + ":</b> " + formatFloat(sampleRateKHz, 1) + " kHz")
-            end if
-
-            if isValid(audioStream.BitRate)
-                sessionStats.data.push("<b>" + tr("Bitrate") + ":</b> " + getDisplayBitrate(audioStream.BitRate))
-            end if
-
-            if isValid(audioStream.Language)
-                sessionStats.data.push("<b>" + tr("Language") + ":</b> " + UCase(audioStream.Language))
-            end if
-        end if
-    end if
-
-    return sessionStats
-end function
-
-function havePlaybackInfo()
-    if not isValid(m.playbackInfo)
-        return false
-    end if
-
-    if not isValid(m.playbackInfo.mediaSources)
-        return false
-    end if
-
-    if m.playbackInfo.mediaSources.Count() <= 0
-        return false
-    end if
-
-    if not isValid(m.playbackInfo.mediaSources[0].MediaStreams)
-        return false
-    end if
-
-    if m.playbackInfo.mediaSources[0].MediaStreams.Count() <= 0
-        return false
-    end if
-
-    return true
-end function
-
-function getDisplayBitrate(bitrate)
-    if bitrate > 1000000
-        return Str(Fix(bitrate / 1000000)) + " Mbps"
-    else
-        return Str(Fix(bitrate / 1000)) + " Kbps"
-    end if
-end function
-
-' Format a float value to a specific number of decimal places
-' @param value - Float or dynamic value to format
-' @param decimals - Number of decimal places
-' @returns Formatted string representation
-function formatFloat(value as dynamic, decimals as integer) as string
-    if value = invalid then return "0"
-    strVal = value.ToStr()
-    dotPos = InStr(1, strVal, ".")
-    if dotPos > 0 and decimals >= 0
-        return Left(strVal, dotPos + decimals)
-    end if
-    return strVal
 end function

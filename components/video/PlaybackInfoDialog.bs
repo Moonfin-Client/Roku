@@ -1,0 +1,195 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/playbackOverlay.bs"
+
+const PANEL_WIDTH = 935
+const PANEL_MAX_HEIGHT = 1000
+const PANEL_PAD_Y = 33
+const PANEL_BORDER = 2
+const TITLE_SIZE = 33
+const TITLE_PAD_X = 40
+const TITLE_PAD_BOTTOM = 20
+const RULE_GAP = 13
+const HEADER_SIZE = 27
+const HEADER_PAD_TOP = 20
+const HEADER_PAD_BOTTOM = 7
+const ROW_SIZE = 22
+const ROW_PAD_X = 27
+const ROW_PAD_Y = 5
+const VALUE_GAP = 20
+const NOTE_SIZE = 20
+const NOTE_PAD_BOTTOM = 7
+const LIST_END = 27
+const THUMB_INSET = 8
+const THUMB_MIN = 40
+const SCROLL_STEP = 200
+const MUTED_TEXT = "#FFFFFF8A"
+
+sub init()
+    m.panel = m.top.findNode("panel")
+    m.panelFill = m.top.findNode("panelFill")
+    m.panelBorder = m.top.findNode("panelBorder")
+    m.title = m.top.findNode("title")
+    m.titleRule = m.top.findNode("titleRule")
+    m.viewport = m.top.findNode("viewport")
+    m.rows = m.top.findNode("rows")
+    m.thumb = m.top.findNode("thumb")
+    m.scroll = m.top.findNode("scroll")
+    m.scrollRows = m.top.findNode("scrollRows")
+    m.scrollThumb = m.top.findNode("scrollThumb")
+    m.fonts = {}
+    m.scrollY = 0
+    m.maxScroll = 0
+end sub
+
+sub open()
+    m.rows.removeChildrenIndex(m.rows.getChildCount(), 0)
+    innerWidth = PANEL_WIDTH - ROW_PAD_X * 2
+
+    titleText = tr("Playback Information")
+    m.title.font = fontFor(titleText, TITLE_SIZE, true)
+    m.title.text = titleText
+    m.title.wrap = true
+    m.title.width = PANEL_WIDTH - TITLE_PAD_X * 2
+    m.title.translation = [TITLE_PAD_X, PANEL_PAD_Y]
+    ruleTop = PANEL_PAD_Y + m.title.boundingRect().height + TITLE_PAD_BOTTOM
+    m.titleRule.translation = [PANEL_BORDER, ruleTop]
+    m.titleRule.width = PANEL_WIDTH - PANEL_BORDER * 2
+    listTop = ruleTop + m.titleRule.height + RULE_GAP
+
+    y = 0
+    for each section in m.top.sections ?? []
+        header = addLabel(section.title, HEADER_SIZE, true, "#FFFFFF", innerWidth)
+        header.translation = [ROW_PAD_X, y + HEADER_PAD_TOP]
+        y += HEADER_PAD_TOP + header.boundingRect().height + HEADER_PAD_BOTTOM
+
+        for each row in section.rows ?? []
+            if isValid(row.note)
+                note = addLabel(row.note, NOTE_SIZE, false, MUTED_TEXT, innerWidth)
+                note.translation = [ROW_PAD_X, y]
+                y += note.boundingRect().height + NOTE_PAD_BOTTOM
+            else
+                ' The label keeps its whole width and the value wraps in what is left
+                label = addLabel(row.label, ROW_SIZE, false, MUTED_TEXT, 0)
+                labelRect = label.boundingRect()
+                valueWidth = innerWidth - labelRect.width - VALUE_GAP
+                if valueWidth < 120 then valueWidth = 120
+                value = addLabel(row.value, ROW_SIZE, row.bold = true, "#FFFFFF", valueWidth)
+                value.horizAlign = "right"
+                label.translation = [ROW_PAD_X, y + ROW_PAD_Y]
+                value.translation = [PANEL_WIDTH - ROW_PAD_X - valueWidth, y + ROW_PAD_Y]
+                lineHeight = labelRect.height
+                valueHeight = value.boundingRect().height
+                if valueHeight > lineHeight then lineHeight = valueHeight
+                y += ROW_PAD_Y * 2 + lineHeight
+            end if
+        end for
+    end for
+
+    contentHeight = y + LIST_END
+    viewHeight = contentHeight
+    room = PANEL_MAX_HEIGHT - listTop - PANEL_PAD_Y
+    if viewHeight > room then viewHeight = room
+    m.maxScroll = contentHeight - viewHeight
+    panelHeight = listTop + viewHeight + PANEL_PAD_Y
+
+    m.viewport.translation = [0, listTop]
+    m.viewport.clippingRect = [0, 0, PANEL_WIDTH, viewHeight]
+    for each layer in [m.panelFill, m.panelBorder]
+        layer.width = PANEL_WIDTH
+        layer.height = panelHeight
+    end for
+    palette = playbackOverlay.Palette()
+    m.panelFill.blendColor = playbackOverlay.WithAlpha(palette.surface, 230)
+    m.panelBorder.blendColor = palette.chipBorder
+    m.panel.translation = [Int((1920 - PANEL_WIDTH) / 2), Int((1080 - panelHeight) / 2)]
+
+    ' The thumb spans the list area and only shows when there's more list than room
+    m.thumbTop = listTop
+    m.viewHeight = viewHeight
+    m.thumb.visible = m.maxScroll > 0
+    thumbHeight = Int(viewHeight * viewHeight / contentHeight)
+    if thumbHeight < THUMB_MIN then thumbHeight = THUMB_MIN
+    m.thumb.height = thumbHeight
+
+    m.scroll.control = "stop"
+    m.scrollY = 0
+    m.rows.translation = [0, 0]
+    m.thumb.translation = thumbAt(0)
+end sub
+
+function addLabel(text as string, size as integer, bold as boolean, color as string, width as integer) as object
+    label = m.rows.createChild("Label")
+    label.font = fontFor(text, size, bold)
+    label.color = color
+    label.text = text
+    if width > 0
+        label.wrap = true
+        label.lineSpacing = 0
+        label.width = width
+    end if
+    return label
+end function
+
+' Roboto only draws Latin, Greek and Cyrillic, so text in any other script keeps the system font
+function fontFor(text as string, size as integer, bold as boolean) as object
+    uri = "pkg:/fonts/Roboto-Regular.ttf"
+    if bold then uri = "pkg:/fonts/Roboto-Bold.ttf"
+    if not robotoDraws(text)
+        uri = "font:SystemFontFile"
+        if bold then uri = "font:BoldSystemFontFile"
+    end if
+
+    key = uri + ":" + size.ToStr()
+    font = m.fonts[key]
+    if isValid(font) then return font
+    font = CreateObject("roSGNode", "Font")
+    font.uri = uri
+    font.size = size
+    m.fonts[key] = font
+    return font
+end function
+
+function robotoDraws(text as string) as boolean
+    for i = 1 to Len(text)
+        code = Asc(Mid(text, i, 1))
+        if code >= &h0530 and not (code >= &h1E00 and code <= &h1EFF) and not (code >= &h2000 and code <= &h20CF) then return false
+    end for
+    return true
+end function
+
+function thumbAt(offset as integer) as object
+    travel = m.viewHeight - m.thumb.height
+    top = m.thumbTop
+    if m.maxScroll > 0 then top += Int(travel * offset / m.maxScroll)
+    return [PANEL_WIDTH - PANEL_BORDER - THUMB_INSET - m.thumb.width, top]
+end function
+
+' Each press moves on from where the last one was headed, so a held key keeps going
+sub scrollBy(distance as integer)
+    target = m.scrollY + distance
+    if target < 0 then target = 0
+    if target > m.maxScroll then target = m.maxScroll
+    if target = m.scrollY then return
+    m.scrollY = target
+
+    m.scroll.control = "stop"
+    m.scrollRows.keyValue = [m.rows.translation, [0, -target]]
+    m.scrollThumb.keyValue = [m.thumb.translation, thumbAt(target)]
+    m.scroll.control = "start"
+end sub
+
+' Up and Down scroll, OK and Back close, and every other key stays here so the player behind
+' can't pick it up
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return true
+
+    if key = KeyCode.UP
+        scrollBy(-SCROLL_STEP)
+    else if key = KeyCode.DOWN
+        scrollBy(SCROLL_STEP)
+    else if key = KeyCode.OK or key = KeyCode.BACK
+        m.top.dismissed = true
+    end if
+    return true
+end function
