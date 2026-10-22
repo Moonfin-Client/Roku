@@ -5231,13 +5231,13 @@
     </message>
     <message>
         <source>Mute Trailer Audio</source>
-        <extracomment>Setting that silences trailer previews and the trailer overlay</extracomment>
+        <extracomment>Setting that silences trailer previews in the media bar</extracomment>
         <translation>Mute Trailer Audio</translation>
     </message>
     <message>
-        <source>Mute trailer previews in the featured media bar and details screen trailer overlay</source>
+        <source>Mute trailer previews in the featured media bar</source>
         <extracomment>Description of the Mute Trailer Audio setting</extracomment>
-        <translation>Mute trailer previews in the featured media bar and details screen trailer overlay</translation>
+        <translation>Mute trailer previews in the featured media bar</translation>
     </message>
     <message>
         <source>Trailer Captions</source>
