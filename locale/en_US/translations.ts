@@ -7130,5 +7130,25 @@
         <translation>Lossless</translation>
         <extracomment>Part of the audio quality badge on the music player, for a lossless codec such as FLAC</extracomment>
     </message>
+    <message>
+        <source>Collections row</source>
+        <translation>Collections row</translation>
+        <extracomment>Under a collection's own row in the Home Rows editor</extracomment>
+    </message>
+    <message>
+        <source>Collections row from {0}</source>
+        <translation>Collections row from {0}</translation>
+        <extracomment>Under a collection's own row in the Home Rows editor when it comes from another server. {0} is that server's name</extracomment>
+    </message>
+    <message>
+        <source>Genres row</source>
+        <translation>Genres row</translation>
+        <extracomment>Under a genre's own row in the Home Rows editor</extracomment>
+    </message>
+    <message>
+        <source>Playlists row</source>
+        <translation>Playlists row</translation>
+        <extracomment>Under a playlist's own row in the Home Rows editor</extracomment>
+    </message>
 </context>
 </TS>

@@ -416,10 +416,11 @@ function loadRecentlyReleased() as object
     return results
 end function
 
-' Wraps a Jellyfin item in a HomeData node using the standard home row fields.
-function makeHomeItem(item as object) as object
+' Wraps a Jellyfin item in a HomeData node using the standard home row fields. An item from
+' another signed in server carries that server, so its art and playback go there.
+function makeHomeItem(item as object, serverData = invalid as dynamic) as object
     tmp = createSGNode("HomeData")
-    tmp.json = {
+    json = {
         Id: item.LookupCI("Id"),
         name: item.LookupCI("name"),
         Type: item.LookupCI("Type"),
@@ -442,6 +443,12 @@ function makeHomeItem(item as object) as object
         SeriesPrimaryImageTag: item.LookupCI("SeriesPrimaryImageTag"),
         BackdropImageTags: item.LookupCI("BackdropImageTags")
     }
+    if isValid(serverData)
+        json._serverUrl = serverData.serverUrl
+        json._userId = serverData.userId
+        json._authToken = serverData.authToken
+    end if
+    tmp.json = json
     return tmp
 end function
 
@@ -2163,6 +2170,11 @@ sub loadItems()
         return
     end if
 
+    if isStringEqual(m.top.itemsToLoad, "pickable")
+        m.top.content = loadPickable(m.top.itemId)
+        return
+    end if
+
     ' Row ids reach us lowercased when they come from settings and camel cased when they
     ' come from the server, so match the prefix case-insensitively
     lowerItemsToLoad = LCase(m.top.itemsToLoad)
@@ -2980,21 +2992,58 @@ function loadPickedRow(picked as object) as object
         params.GenreIds = itemId
         params.IncludeItemTypes = genresRowItemTypes(settings)
         params.SortBy = rowSortByParam(getStringSetting(settings, "ui.home.genresRowSortBy", "name"))
-        items = chainLookupReturn(api.items.Get(params), "Items", [])
+        items = chainLookupReturn(rowItems(params), "Items", [])
     else if isStringEqual(picked.source, "collections")
         params.ParentId = itemId
         items = collectionRowItems(params, settings)
     else
         params.Recursive = true
         params.ParentId = itemId
-        items = chainLookupReturn(api.items.Get(params), "Items", [])
+        items = chainLookupReturn(rowItems(params), "Items", [])
     end if
 
+    serverData = loadItemsTaskServerData()
     for each item in items
-        results.push(makeHomeItem(item))
+        results.push(makeHomeItem(item, serverData))
     end for
 
     return results
+end function
+
+' A collection picked on another signed in server is read from that server
+function rowRequest(path as string, params = {} as object) as dynamic
+    serverData = loadItemsTaskServerData()
+    if not isValid(serverData) then return APIRequest(path, params)
+    return APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, path, params)
+end function
+
+function rowItems(params as object) as dynamic
+    serverData = loadItemsTaskServerData()
+    if not isValid(serverData) then return api.items.Get(params)
+    params.UserId = serverData.userId
+    return getJson(rowRequest("/items/", params))
+end function
+
+' Every collection, genre or playlist a home row can be picked from, by name. My List's own hidden
+' playlist is left out.
+function loadPickable(source as string) as object
+    params = { UserId: m.global.session.user.id, Recursive: true, SortBy: "SortName", SortOrder: "Ascending", EnableTotalRecordCount: false }
+    if source = "genres"
+        params.IncludeItemTypes = genresRowItemTypes(m.global.session.user.settings)
+        data = api.genres.Get(params)
+    else if source = "collections"
+        params.IncludeItemTypes = "BoxSet"
+        data = rowItems(params)
+    else
+        params.IncludeItemTypes = "Playlist"
+        data = rowItems(params)
+    end if
+
+    found = []
+    for each item in chainLookupReturn(data, "Items", [])
+        if not isStringEqual(item.LookupCI("Name"), "|My List|") then found.push({ id: item.LookupCI("Id"), title: item.LookupCI("Name") })
+    end for
+    return found
 end function
 
 ' Only the collection's own members come back, since asking recursively brings every season and
@@ -3006,9 +3055,9 @@ function collectionRowItems(params as object, settings as object) as object
     sortBy = getStringSetting(settings, "ui.home.collectionsRowSortBy", "name")
 
     if isPlaylistOrder(sortBy)
-        order = getJson(APIRequest(`/Moonfin/Collections/${params.ParentId}/Order`))
+        order = getJson(rowRequest(`/Moonfin/Collections/${params.ParentId}/Order`))
         if type(order) = "roArray" and order.Count() > 0
-            flat = api.items.Get({
+            flat = rowItems({
                 UserId: params.UserId,
                 ParentId: params.ParentId,
                 Recursive: true,
@@ -3024,7 +3073,7 @@ function collectionRowItems(params as object, settings as object) as object
         params.SortBy = rowSortByParam(sortBy)
     end if
 
-    members = chainLookupReturn(api.items.Get(params), "Items", [])
+    members = chainLookupReturn(rowItems(params), "Items", [])
     if showEpisodes then return expandSeriesToEpisodes(members, params.Limit)
     return members
 end function
@@ -3085,7 +3134,7 @@ function expandSeriesToEpisodes(members as object, limit as integer) as object
     expanded = []
     for each item in members
         if isStringEqual(item.LookupCI("Type"), "Series")
-            data = api.items.Get({
+            data = rowItems({
                 UserId: m.global.session.user.id,
                 ParentId: item.LookupCI("Id"),
                 IncludeItemTypes: "Episode",
