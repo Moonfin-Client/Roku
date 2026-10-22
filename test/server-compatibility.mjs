@@ -77,6 +77,7 @@ const selections = {
     'source/utils/homePreview.bs': null,
     'source/utils/remoteSubtitles.bs': null,
     'source/utils/quickConnectUrl.bs': null,
+    'source/utils/playlistSortFilter.bs': null,
     'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
     'components/extras/LoadExtrasTask.bs': ['personRoleIn'],
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions', 'SetUpAudioOptions', 'detailServerSubtitleIndex', 'audioOrdinal', 'audioStreamPosition'],
@@ -174,6 +175,7 @@ source += '\n' + await readFile('test/playback-facts.bs', 'utf8');
 source += '\n' + await readFile('test/favorite-tabs.bs', 'utf8');
 source += '\n' + await readFile('test/home-preview.bs', 'utf8');
 source += '\n' + await readFile('test/remote-subtitles.bs', 'utf8');
+source += '\n' + await readFile('test/playlist-sort-filter.bs', 'utf8');
 const moonfinPluginFile = await readFile('source/api/MoonfinPlugin.bs', 'utf8');
 source += '\nnamespace moonfinPlugin\n';
 for (const name of ['InfoFromPing', 'WithUserToken', 'AreTmdbThumbsAvailable', 'TmdbThumbURL', 'StudioImageURL', 'IsEnabled', 'IsPluginInstalled', 'ParseBoolSetting']) {

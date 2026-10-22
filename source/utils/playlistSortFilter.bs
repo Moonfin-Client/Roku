@@ -1,0 +1,275 @@
+import "pkg:/source/utils/misc.bs"
+
+namespace playlistSortFilter
+
+    const SORT_ORDER = "order"
+    const SORT_NAME = "name"
+    const SORT_ARTIST = "artist"
+    const SORT_ALBUM = "album"
+    const SORT_RUNTIME = "runtime"
+    const SORT_DATE_ADDED = "dateAdded"
+    const SORT_PREMIERE_DATE = "premiereDate"
+    const SORT_COMMUNITY_RATING = "communityRating"
+    const SORT_CRITIC_RATING = "criticRating"
+    const SORT_DATE_PLAYED = "datePlayed"
+    const SORT_PLAY_COUNT = "playCount"
+    const SORT_RANDOM = "random"
+
+    const DIR_ASCENDING = "ascending"
+    const DIR_DESCENDING = "descending"
+
+    const PLAYED_ALL = "all"
+    const PLAYED_UNPLAYED = "unplayed"
+    const PLAYED_PLAYED = "played"
+
+    function SortOptions() as object
+        return [
+            { id: SORT_ORDER, label: tr("Playlist Order") },
+            { id: SORT_NAME, label: tr("Name") },
+            { id: SORT_ARTIST, label: tr("Artist") },
+            { id: SORT_ALBUM, label: tr("Album") },
+            { id: SORT_RUNTIME, label: tr("Runtime") },
+            { id: SORT_DATE_ADDED, label: tr("Date Added") },
+            { id: SORT_PREMIERE_DATE, label: tr("Release Date") },
+            { id: SORT_COMMUNITY_RATING, label: tr("Community Rating") },
+            { id: SORT_CRITIC_RATING, label: tr("Critic Rating") },
+            { id: SORT_DATE_PLAYED, label: tr("Date Played") },
+            { id: SORT_PLAY_COUNT, label: tr("Play Count") },
+            { id: SORT_RANDOM, label: tr("Random") }
+        ]
+    end function
+
+    function SortLabel(sortBy as string) as string
+        for each opt in SortOptions()
+            if opt.id = sortBy then return opt.label
+        end for
+        return tr("Playlist Order")
+    end function
+
+    function PlayedFilterOptions() as object
+        return [
+            { id: PLAYED_ALL, label: tr("All") },
+            { id: PLAYED_UNPLAYED, label: tr("Unplayed") },
+            { id: PLAYED_PLAYED, label: tr("Played") }
+        ]
+    end function
+
+    function ActiveFilterCount(options as object) as integer
+        count = 0
+        played = options.playedFilter ?? PLAYED_ALL
+        if played <> PLAYED_ALL then count++
+
+        if options.favoriteOnly = true then count++
+
+        mediaType = options.mediaTypeFilter ?? ""
+        if mediaType <> "" and mediaType <> "all" then count++
+
+        return count
+    end function
+
+    function IsDefault(options as object) as boolean
+        sortBy = options.sortBy ?? SORT_ORDER
+        sortDirection = options.sortDirection ?? DIR_ASCENDING
+        playedFilterVal = options.playedFilter ?? PLAYED_ALL
+        favoriteOnly = options.favoriteOnly = true
+        mediaTypeFilterVal = options.mediaTypeFilter ?? ""
+
+        return sortBy = SORT_ORDER and sortDirection = DIR_ASCENDING and playedFilterVal = PLAYED_ALL and not favoriteOnly and (mediaTypeFilterVal = "" or mediaTypeFilterVal = "all")
+    end function
+
+    function AvailableMediaTypes(items as object) as object
+        typesMap = {}
+        for each it in items
+            t = it.LookupCI("type") ?? it.LookupCI("MediaType") ?? ""
+            if isValidAndNotEmpty(t)
+                typesMap[t] = true
+            end if
+        end for
+
+        result = []
+        for each key in typesMap
+            result.push(key)
+        end for
+        return result
+    end function
+
+    function ExtractSortValue(item as object, sortBy as string) as dynamic
+        if sortBy = SORT_NAME
+            return item.LookupCI("title") ?? item.LookupCI("name") ?? ""
+        end if
+
+        if sortBy = SORT_ARTIST
+            artists = item.LookupCI("artists")
+            if isValid(artists) and type(artists) = "roArray" and artists.count() > 0
+                return artists[0]
+            end if
+            return item.LookupCI("albumArtist") ?? item.LookupCI("artist") ?? ""
+        end if
+
+        if sortBy = SORT_ALBUM
+            return item.LookupCI("album") ?? ""
+        end if
+
+        if sortBy = SORT_RUNTIME
+            val = item.LookupCI("RunTimeTicks")
+            if isValid(val) and type(val) <> "String" and type(val) <> "roString"
+                return val
+            end if
+            return 0
+        end if
+
+        if sortBy = SORT_DATE_ADDED
+            return chainLookupReturn(item, "json.DateCreated", "")
+        end if
+
+        if sortBy = SORT_PREMIERE_DATE
+            dateVal = chainLookupReturn(item, "json.PremiereDate", "")
+            if isValidAndNotEmpty(dateVal) then return dateVal
+            prodYear = item.LookupCI("ProductionYear")
+            if isValid(prodYear) then return stri(prodYear).trim()
+            return ""
+        end if
+
+        if sortBy = SORT_COMMUNITY_RATING
+            val = chainLookupReturn(item, "json.CommunityRating", -1.0)
+            if isValid(val) and type(val) <> "String" and type(val) <> "roString"
+                return val
+            end if
+            return -1.0
+        end if
+
+        if sortBy = SORT_CRITIC_RATING
+            val = chainLookupReturn(item, "json.CriticRating", -1.0)
+            if isValid(val) and type(val) <> "String" and type(val) <> "roString"
+                return val
+            end if
+            return -1.0
+        end if
+
+        if sortBy = SORT_DATE_PLAYED
+            return chainLookupReturn(item, "json.UserData.LastPlayedDate", "")
+        end if
+
+        if sortBy = SORT_PLAY_COUNT
+            val = chainLookupReturn(item, "json.UserData.PlayCount", 0)
+            if isValid(val) and type(val) <> "String" and type(val) <> "roString"
+                return val
+            end if
+            return 0
+        end if
+
+        return ""
+    end function
+
+    function SortAndFilter(items as object, options = {} as object) as object
+        if not isValid(items) or items.count() = 0 then return []
+
+        playedFilterVal = options.playedFilter ?? PLAYED_ALL
+        favoriteOnly = options.favoriteOnly = true
+        mediaTypeFilterVal = options.mediaTypeFilter ?? ""
+        sortBy = options.sortBy ?? SORT_ORDER
+        sortDirection = options.sortDirection ?? DIR_ASCENDING
+
+        ' 1. Filter
+        filtered = []
+        for each item in items
+            keep = true
+
+            ' Played filter
+            if playedFilterVal = PLAYED_UNPLAYED or playedFilterVal = PLAYED_PLAYED
+                isPlayed = chainLookupReturn(item, "played", false)
+                if not isPlayed
+                    isPlayed = chainLookupReturn(item, "json.UserData.Played", false)
+                end if
+                if playedFilterVal = PLAYED_UNPLAYED and isPlayed
+                    keep = false
+                else if playedFilterVal = PLAYED_PLAYED and not isPlayed
+                    keep = false
+                end if
+            end if
+
+            ' Favorite filter
+            if keep and favoriteOnly
+                isFav = chainLookupReturn(item, "favorite", false)
+                if not isFav
+                    isFav = chainLookupReturn(item, "json.UserData.IsFavorite", false)
+                end if
+                if not isFav then keep = false
+            end if
+
+            ' Media type filter
+            if keep and isValidAndNotEmpty(mediaTypeFilterVal) and mediaTypeFilterVal <> "all"
+                itemType = item.LookupCI("type") ?? item.LookupCI("MediaType") ?? ""
+                if LCase(itemType) <> LCase(mediaTypeFilterVal) then keep = false
+            end if
+
+            if keep then filtered.push(item)
+        end for
+
+        if filtered.count() <= 1 then return filtered
+
+        ' 2. Sort
+        if sortBy = SORT_ORDER
+            if sortDirection = DIR_DESCENDING
+                reversed = []
+                for i = filtered.count() - 1 to 0 step -1
+                    reversed.push(filtered[i])
+                end for
+                return reversed
+            end if
+            return filtered
+        end if
+
+        if sortBy = SORT_RANDOM
+            ' Seeded or random shuffle
+            shuffled = []
+            for each it in filtered
+                shuffled.push(it)
+            end for
+            seed = options.randomSeed ?? 42
+            n = shuffled.count()
+            for i = n - 1 to 1 step -1
+                seed = (seed * 1103515245 + 12345) and &h7fffffff
+                j = seed mod (i + 1)
+                temp = shuffled[i]
+                shuffled[i] = shuffled[j]
+                shuffled[j] = temp
+            end for
+            return shuffled
+        end if
+
+        ' Field sorting
+        isNumeric = (sortBy = SORT_RUNTIME or sortBy = SORT_COMMUNITY_RATING or sortBy = SORT_CRITIC_RATING or sortBy = SORT_PLAY_COUNT)
+
+        keyed = []
+        for i = 0 to filtered.count() - 1
+            it = filtered[i]
+            val = ExtractSortValue(it, sortBy)
+            keyed.push({ item: it, sortkey: val, index: i })
+        end for
+
+        ' For stable sorting, sort by index first
+        if sortDirection = DIR_DESCENDING
+            keyed.SortBy("index", "r")
+            if isNumeric
+                keyed.SortBy("sortkey", "r")
+            else
+                keyed.SortBy("sortkey", "ir")
+            end if
+        else
+            keyed.SortBy("index")
+            if isNumeric
+                keyed.SortBy("sortkey")
+            else
+                keyed.SortBy("sortkey", "i")
+            end if
+        end if
+
+        result = []
+        for each entry in keyed
+            result.push(entry.item)
+        end for
+        return result
+    end function
+
+end namespace
