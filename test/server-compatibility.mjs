@@ -821,4 +821,5 @@ assert.match(scheduleWatcher, /if result\.ok[^]*?else(?:\s+'[^\n]*)*\s+startTime
 assert.match(scheduleWatcher, /if m\.exempt then return\s+delay = POLL_SECONDS\s+if m\.entries\.Count\(\) = 0 then delay = IDLE_SECONDS/, 'An administrator isnt polled and a user without a schedule is polled every 15 minutes');
 assert.match(scheduleWatcher, /if m\.serverClock <> invalid\s+server = accessSchedule\.ServerWallClock\(m\.serverClock, now\.AsSeconds\(\)\)/, 'The schedule is judged on the server clock when the plugin reports it');
 assert.match(scheduleWatcher, /if result\.clockMissing then m\.askClock = false\s+if result\.clock <> invalid or result\.clockMissing then m\.serverClock = result\.clock/, 'A server without Moonfin/Time is not asked again and a failed read keeps the last clock');
-process.stdout.write('PASS: access schedule wiring (7 checks)\n');
+assert.match(scheduleWatcher, /m\.task\.askClock = m\.askClock and not m\.top\.blocked/, 'The server clock is not asked for once the time is up, when the server refuses it');
+process.stdout.write('PASS: access schedule wiring (8 checks)\n');
