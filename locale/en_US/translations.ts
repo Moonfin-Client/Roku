@@ -6550,6 +6550,10 @@
         <translation>Customize subtitle appearance</translation>
     </message>
     <message>
+        <source>Details Screen Backdrop</source>
+        <translation>Details Screen Backdrop</translation>
+    </message>
+    <message>
         <source>Details Screen Style</source>
         <translation>Details Screen Style</translation>
     </message>
@@ -6634,10 +6638,6 @@
         <translation>HDR</translation>
     </message>
     <message>
-        <source>Hide Backdrops While Browsing</source>
-        <translation>Hide Backdrops While Browsing</translation>
-    </message>
-    <message>
         <source>Hide Collection associated library items when browsing libraries</source>
         <translation>Hide Collection associated library items when browsing libraries</translation>
     </message>
@@ -6652,6 +6652,10 @@
     <message>
         <source>Hide the movie or episode descriptive text.</source>
         <translation>Hide the movie or episode descriptive text.</translation>
+    </message>
+    <message>
+        <source>Home Screen Backdrop</source>
+        <translation>Home Screen Backdrop</translation>
     </message>
     <message>
         <source>How long a show stays in Next Up after you last watched it</source>
@@ -6684,6 +6688,10 @@
     <message>
         <source>Letterboxd</source>
         <translation>Letterboxd</translation>
+    </message>
+    <message>
+        <source>Library Backdrops</source>
+        <translation>Library Backdrops</translation>
     </message>
     <message>
         <source>Limit the maximum resolution the player will request. Higher-resolution content will be transcoded down.</source>
