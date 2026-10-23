@@ -291,6 +291,22 @@
         <translation>Genres watched</translation>
     </message>
     <message>
+        <source>Default Action</source>
+        <translation>Default Action</translation>
+    </message>
+    <message>
+        <source>Change what single clicking on a CW&amp;NU item does</source>
+        <translation>Change what single clicking on a CW&amp;NU item does</translation>
+    </message>
+    <message>
+        <source>Go to Details screen</source>
+        <translation>Go to Details screen</translation>
+    </message>
+    <message>
+        <source>Play immediately</source>
+        <translation>Play immediately</translation>
+    </message>
+    <message>
         <source>Go to Series</source>
         <translation>Go to Series</translation>
     </message>
