@@ -96,6 +96,59 @@ sub onSeerrPublicSettingsLoaded(event as object)
     m.global.addFields({ seerrPublicSettings: response.data })
 end sub
 
+' The viewer's own Seerr settings, fetched once a session and dropped when the Seerr account changes
+sub EnsureSeerrUserSettings()
+    if m.global = invalid then return
+    if m.global.seerrUserSettings <> invalid then return
+    if m.seerrUserSettingsTask <> invalid then return
+
+    m.seerrUserSettingsTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.seerrUserSettingsTask.request = {
+        method: "GET",
+        endpoint: "/api/v1/auth/me"
+    }
+    m.seerrUserSettingsTask.observeField("response", "onSeerrUserSettingsLoaded")
+    m.seerrUserSettingsTask.control = "RUN"
+end sub
+
+sub onSeerrUserSettingsLoaded(event as object)
+    response = event.getData()
+    m.seerrUserSettingsTask = invalid
+
+    if response = invalid or response.success <> true or response.data = invalid then return
+    userSettings = response.data.settings
+    if type(userSettings) <> "roAssociativeArray" then userSettings = {}
+    m.global.addFields({ seerrUserSettings: userSettings })
+end sub
+
+' Where a title's streaming services are looked up, in the order Seerr's own page uses: the
+' viewer's region, then the server's, then the US
+function SeerrStreamingRegion() as string
+    if m.global = invalid then return "US"
+
+    for each stored in [m.global.seerrUserSettings, m.global.seerrPublicSettings]
+        if isValid(stored) and isValidAndNotEmpty(stored.streamingRegion) then return stored.streamingRegion
+    end for
+    return "US"
+end function
+
+' The services that include a title with a subscription in a region, in the order Seerr sends them
+function SeerrStreamingProviders(details as object, region as string) as object
+    providers = []
+    if not isValid(details) or type(details.watchProviders) <> "roArray" then return providers
+
+    for each entry in details.watchProviders
+        if type(entry) = "roAssociativeArray" and isStringEqual(entry.iso_3166_1, region)
+            if type(entry.flatrate) <> "roArray" then return providers
+            for each provider in entry.flatrate
+                if type(provider) = "roAssociativeArray" and isString(provider.name) then providers.push(provider)
+            end for
+            return providers
+        end if
+    end for
+    return providers
+end function
+
 ' Check if user has advanced request permission (can select server, profile, root folder)
 ' @param permissions - User's permission bitmask
 ' @returns True if user has REQUEST_ADVANCED permission (or is admin/manage requests)
@@ -552,6 +605,8 @@ sub SetSeerrUserIdentity(userId as string, seerrUserId as integer, displayName a
 
     sec.Write("permissions", permissions.toStr())
     sec.Flush()
+
+    if m.global.hasField("seerrUserSettings") then m.global.removeField("seerrUserSettings")
 end sub
 
 sub ClearSeerrUserIdentity(userId as string)
@@ -566,6 +621,8 @@ sub ClearSeerrUserIdentity(userId as string)
     sec.Delete("avatar")
     sec.Delete("permissions")
     sec.Flush()
+
+    if m.global.hasField("seerrUserSettings") then m.global.removeField("seerrUserSettings")
 end sub
 
 ' Seerr grants every account a set of rights, and the plugin only reports them when it

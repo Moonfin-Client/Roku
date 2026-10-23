@@ -3926,6 +3926,11 @@
         <translation>Genres and Tags</translation>
     </message>
     <message>
+        <source>Streaming on</source>
+        <extracomment>Heading over the logos of the services streaming a Seerr title</extracomment>
+        <translation>Streaming on</translation>
+    </message>
+    <message>
         <source>Continuing</source>
         <extracomment>Series status badge</extracomment>
         <translation>Continuing</translation>
@@ -5454,6 +5459,11 @@
         <source>Genres &amp; tags</source>
         <extracomment>Seerr section on the details screen</extracomment>
         <translation>Genres &amp; tags</translation>
+    </message>
+    <message>
+        <source>Streaming services</source>
+        <extracomment>Seerr section on the details screen</extracomment>
+        <translation>Streaming services</translation>
     </message>
     <message>
         <source>Similar titles</source>
