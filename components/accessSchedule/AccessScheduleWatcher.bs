@@ -1,0 +1,136 @@
+import "pkg:/source/utils/accessSchedule.bs"
+import "pkg:/source/utils/misc.bs"
+
+' How long to wait between looks when no opening or closing is nearer, for a user with a schedule
+' and for one without, and before asking again after a look that failed
+const POLL_SECONDS = 60
+const IDLE_SECONDS = 900
+const RETRY_SECONDS = 15
+' The least time between looks prompted by the server turning a request away, which can come in
+' bursts
+const REFUSAL_SECONDS = 5
+
+sub init()
+    m.timer = m.top.findNode("timer")
+    m.timer.observeField("fire", "onTimer")
+    m.entries = []
+    m.exempt = false
+    m.task = invalid
+    m.lookAgain = false
+    m.lastRefusalLook = 0
+    m.clock = CreateObject("roTimespan")
+    m.top.blocked = false
+
+    if m.global.hasField("accessRefused") then m.global.observeField("accessRefused", "onRefused")
+end sub
+
+sub onUserChange()
+    m.timer.control = "stop"
+    ' A look still under way for the previous user must not answer for the next
+    cancelTask()
+    m.entries = []
+    m.exempt = false
+    m.lookAgain = false
+    setBlocked(false, invalid)
+    if m.top.userId <> "" then look()
+end sub
+
+sub recheck()
+    if m.top.userId <> "" then look()
+end sub
+
+sub onRefused()
+    ' While blocked every request is refused, the server check included, and a look under way
+    ' already brings the newest answer
+    if m.top.userId = "" or m.top.blocked or m.task <> invalid then return
+    now = m.clock.TotalMilliseconds()
+    if m.lastRefusalLook <> 0 and now - m.lastRefusalLook < REFUSAL_SECONDS * 1000 then return
+    m.lastRefusalLook = now
+    look()
+end sub
+
+sub onTimer()
+    look()
+end sub
+
+sub cancelTask()
+    if m.task <> invalid
+        m.task.unobserveField("result")
+        m.task.control = "stop"
+        m.task = invalid
+    end if
+end sub
+
+' Reads the schedule again. One look at a time: a request that arrives while one is under way
+' asks for another when it ends.
+sub look()
+    m.timer.control = "stop"
+    if m.task <> invalid
+        m.lookAgain = true
+        return
+    end if
+    m.task = CreateObject("roSGNode", "AccessScheduleTask")
+    m.task.userId = m.top.userId
+    m.task.observeField("result", "onResult")
+    m.task.control = "run"
+end sub
+
+sub onResult(event as object)
+    result = event.getData()
+    m.task.unobserveField("result")
+    m.task = invalid
+
+    if result.ok
+        m.entries = result.entries
+        m.exempt = result.exempt
+        apply(result.refused)
+    else
+        ' A schedule that couldn't be read leaves the last answer in place
+        startTimer(RETRY_SECONDS)
+    end if
+
+    if m.lookAgain
+        m.lookAgain = false
+        look()
+    end if
+end sub
+
+sub apply(refused as dynamic)
+    now = CreateObject("roDateTime")
+    now.ToLocalTime()
+    day = now.GetDayOfWeek()
+    secondOfDay = now.GetHours() * 3600 + now.GetMinutes() * 60 + now.GetSeconds()
+
+    status = accessSchedule.Status(m.entries, refused, day, secondOfDay)
+    if m.exempt or not status.blocked
+        setBlocked(false, invalid)
+    else
+        setBlocked(true, status.next)
+    end if
+
+    ' An administrator has no schedule to enforce, so only a refused request looks again
+    if m.exempt then return
+    delay = POLL_SECONDS
+    if m.entries.Count() = 0 then delay = IDLE_SECONDS
+    boundary = accessSchedule.SecondsToBoundary(m.entries, day, secondOfDay)
+    if boundary <> invalid and boundary < delay then delay = boundary
+    startTimer(delay)
+end sub
+
+sub startTimer(seconds as integer)
+    if seconds < 1 then seconds = 1
+    m.timer.duration = seconds
+    m.timer.control = "start"
+end sub
+
+' Told only when the answer changes, so the app stops playback once for each time the user is
+' turned away. The next opening is kept current while blocked, since a changed schedule moves it.
+sub setBlocked(blocked as boolean, upcoming as dynamic)
+    if blocked = m.top.blocked
+        if blocked then m.top.next = upcoming
+        return
+    end if
+    m.top.next = upcoming
+    m.top.blocked = blocked
+    m.top.accessStatus = blocked
+end sub

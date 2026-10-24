@@ -7130,6 +7130,41 @@
         <extracomment>Shown when the server refuses a sign in because the account can't be used right now, for example outside its access schedule</extracomment>
     </message>
     <message>
+        <source>Time&apos;s up</source>
+        <translation>Time&apos;s up</translation>
+        <extracomment>Title of the screen shown when the signed in user's access schedule has closed</extracomment>
+    </message>
+    <message>
+        <source>This account isn&apos;t available right now.</source>
+        <translation>This account isn&apos;t available right now.</translation>
+        <extracomment>Shown on the Time's up screen</extracomment>
+    </message>
+    <message>
+        <source>You can use it again today at {0}.</source>
+        <translation>You can use it again today at {0}.</translation>
+        <extracomment>Shown on the Time's up screen; {0} is a time of day</extracomment>
+    </message>
+    <message>
+        <source>You can use it again tomorrow at {0}.</source>
+        <translation>You can use it again tomorrow at {0}.</translation>
+        <extracomment>Shown on the Time's up screen; {0} is a time of day</extracomment>
+    </message>
+    <message>
+        <source>You can use it again on {0} at {1}.</source>
+        <translation>You can use it again on {0} at {1}.</translation>
+        <extracomment>Shown on the Time's up screen; {0} is a day of the week and {1} a time of day</extracomment>
+    </message>
+    <message>
+        <source>Switch User</source>
+        <translation>Switch User</translation>
+        <extracomment>Button on the Time's up screen that opens the list of users</extracomment>
+    </message>
+    <message>
+        <source>You can use it again on {0}, {1} {2} at {3}.</source>
+        <translation>You can use it again on {0}, {1} {2} at {3}.</translation>
+        <extracomment>Shown on the Time's up screen when the next opening is a week or more away; {0} is a day of the week, {1} a month, {2} the day of the month and {3} a time of day</extracomment>
+    </message>
+    <message>
         <source>Lossless</source>
         <translation>Lossless</translation>
         <extracomment>Part of the audio quality badge on the music player, for a lossless codec such as FLAC</extracomment>
