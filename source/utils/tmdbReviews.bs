@@ -1,0 +1,130 @@
+import "pkg:/source/api/MoonfinPlugin.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/detailSectionLayout.bs"
+import "pkg:/source/utils/messageMarkdown.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/tvKeyboard.bs"
+
+' The Reviews section on the details screen, read from TMDB through the plugin
+namespace tmdbReviews
+
+    ' Cards a review row sits on are this big, in every style that draws them
+    const CARD_WIDTH = 560
+    const CARD_HEIGHT = 300
+
+    ' Starts fetching a title's reviews, or returns invalid when there's nothing to ask for. The
+    ' callback is named in the calling component, like any observer.
+    function StartTask(json as dynamic, callback as string) as dynamic
+        if not moonfinPlugin.AreTmdbReviewsSupported() or not detailSectionLayout.Shows("reviews") then return invalid
+        request = tmdbReviews.Target(json)
+        if not isValid(request) then return invalid
+        task = CreateObject("roSGNode", "TmdbReviewsTask")
+        task.observeField("reviews", callback)
+        task.target = request
+        task.control = TaskControl.RUN
+        return task
+    end function
+
+    ' What to ask the plugin for, or invalid for a title that can't have TMDB reviews
+    function Target(json as dynamic) as dynamic
+        itemType = LCase(toString(chainLookupReturn(json, "Type", "")))
+        if itemType <> "movie" and itemType <> "series" then return invalid
+        tmdbId = toString(chainLookupReturn(json, "ProviderIds.Tmdb", "")).Trim()
+        if tmdbId = "" then return invalid
+        mediaType = "movie"
+        if itemType = "series" then mediaType = "tv"
+        return { tmdbId: tmdbId, mediaType: mediaType }
+    end function
+
+    ' The reviews in a plugin answer, each ready to draw. A failed answer has none.
+    function Parse(response as dynamic) as object
+        cards = []
+        if type(response) <> "roAssociativeArray" or (response.LookupCI("success") ?? false) <> true then return cards
+        list = response.LookupCI("reviews")
+        if type(list) <> "roArray" then return cards
+
+        for each entry in list
+            if type(entry) = "roAssociativeArray"
+                body = toString(entry.LookupCI("content") ?? "").Trim()
+                if body <> ""
+                    writer = toString(entry.LookupCI("author") ?? "").Trim()
+                    cards.push({
+                        author: writer,
+                        initial: UCase(Left(writer, 1)),
+                        avatarUrl: toString(entry.LookupCI("avatarUrl") ?? ""),
+                        rating: tmdbReviews.RatingText(entry.LookupCI("rating")),
+                        date: tmdbReviews.DateText(toString(entry.LookupCI("createdAt") ?? "")),
+                        preview: messageMarkdown.Strip(body).Replace(Chr(10), " "),
+                        content: body
+                    })
+                end if
+            end if
+        end for
+        return cards
+    end function
+
+    ' A score out of ten with a decimal only when it has one, like 9 or 7.5
+    function RatingText(score as dynamic) as string
+        kind = LCase(type(score))
+        if not inArray(["integer", "roint", "rointeger", "longinteger", "float", "rofloat", "double", "rodouble"], kind) then return ""
+        tenths = Int(score * 10 + 0.5)
+        whole = Int(tenths / 10).ToStr()
+        if tenths mod 10 = 0 then return whole
+        return whole + "." + (tenths mod 10).ToStr()
+    end function
+
+    ' The day a review went up, in the viewer's own time zone
+    function DateText(stamp as string) as string
+        if stamp = "" then return ""
+        moment = CreateObject("roDateTime")
+        moment.FromISO8601String(stamp)
+        if moment.AsSeconds() = 0 then return ""
+        moment.ToLocalTime()
+        return moment.AsDateString("short-month-no-weekday")
+    end function
+
+    ' The rating and the date on one line, for the cards and the dialog
+    function MetaLine(review as object) as string
+        parts = []
+        if review.rating <> "" then parts.push(tr("{rating} / 10").Replace("{rating}", review.rating))
+        if review.date <> "" then parts.push(review.date)
+        return parts.Join("  ·  ")
+    end function
+
+    ' A row of cards to hand a grid or a row list, each holding its review
+    function ContentNodes(reviews as object) as object
+        nodes = []
+        for each review in reviews
+            node = CreateObject("roSGNode", "ContentNode")
+            node.addFields({ review: review })
+            nodes.push(node)
+        end for
+        return nodes
+    end function
+
+    ' Arrays have no insert, and the reviews row and tab both land in the middle of a list
+    function InsertAt(list as object, index as integer, value as dynamic) as object
+        copy = []
+        for i = 0 to list.count() - 1
+            if i = index then copy.push(value)
+            copy.push(list[i])
+        end for
+        if index >= list.count() then copy.push(value)
+        return copy
+    end function
+
+    ' One dialog serves every details screen. It stays in the scene once it has been opened, and
+    ' hands focus back to whatever had it.
+    sub OpenDialog(review as object)
+        scene = m.top.getScene()
+        dialog = scene.findNode("tmdbReviewDialog")
+        if not isValid(dialog)
+            dialog = scene.createChild("ReviewDialog")
+            dialog.id = "tmdbReviewDialog"
+        end if
+        dialog.returnFocus = tvKeyboard.deepestFocus(scene)
+        dialog.review = review
+        dialog.callFunc("showReview")
+    end sub
+
+end namespace

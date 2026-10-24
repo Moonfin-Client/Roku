@@ -53,6 +53,7 @@ const selections = {
     'source/utils/itemMenu.bs': null,
     'source/utils/logRedaction.bs': null,
     'source/utils/youtubeTrailer.bs': null,
+    'source/utils/tmdbReviews.bs': null,
     'source/utils/detailCompatibility.bs': null,
     'source/utils/parentalFilter.bs': null,
     'source/utils/seasonalRow.bs': null,
@@ -176,13 +177,16 @@ source += '\n' + await readFile('test/home-preview.bs', 'utf8');
 source += '\n' + await readFile('test/remote-subtitles.bs', 'utf8');
 const moonfinPluginFile = await readFile('source/api/MoonfinPlugin.bs', 'utf8');
 source += '\nnamespace moonfinPlugin\n';
-for (const name of ['InfoFromPing', 'WithUserToken', 'AreTmdbThumbsAvailable', 'TmdbThumbURL', 'StudioImageURL', 'IsEnabled', 'IsPluginInstalled', 'ParseBoolSetting']) {
+for (const name of ['InfoFromPing', 'WithUserToken', 'AreTmdbThumbsAvailable', 'AreTmdbReviewsSupported', 'TmdbThumbURL', 'StudioImageURL', 'IsEnabled', 'IsPluginInstalled', 'ParseBoolSetting']) {
     const match = moonfinPluginFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
     assert.ok(match, `Missing moonfinPlugin.${name}`);
     source += '\n' + match[0];
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/tmdb-thumbs.bs', 'utf8');
+// The whole markdown reader uses loops this interpreter cant parse, and the reviews only need Strip
+source += '\nnamespace messageMarkdown\n' + (await readFile('source/utils/messageMarkdown.bs', 'utf8')).match(/^    function Strip\([^]*?^    end function/m)[0] + '\nend namespace\n';
+source += '\n' + await readFile('test/tmdb-reviews.bs', 'utf8');
 const achievementsModelFile = await readFile('source/utils/achievementsModel.bs', 'utf8');
 source += '\nnamespace achievementsModel\n';
 for (const name of [

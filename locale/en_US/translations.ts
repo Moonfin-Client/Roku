@@ -3451,6 +3451,26 @@
         <translation>{count} extras</translation>
     </message>
     <message>
+        <source>1 review</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>1 review</translation>
+    </message>
+    <message>
+        <source>{count} reviews</source>
+        <extracomment>Count on a Spotlight card</extracomment>
+        <translation>{count} reviews</translation>
+    </message>
+    <message>
+        <source>Reviews</source>
+        <extracomment>TMDB reviews of a title on the details screen, and the switch for them in the details screen sections settings</extracomment>
+        <translation>Reviews</translation>
+    </message>
+    <message>
+        <source>{rating} / 10</source>
+        <extracomment>A reviewer's score out of ten on a TMDB review, for example 9 / 10</extracomment>
+        <translation>{rating} / 10</translation>
+    </message>
+    <message>
         <source>Chapter</source>
         <extracomment>A chapter with no name of its own, followed by its number</extracomment>
         <translation>Chapter</translation>
