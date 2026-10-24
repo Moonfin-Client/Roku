@@ -98,7 +98,7 @@ const selections = {
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting'],
-    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad'],
+    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'arrangeByStoredOrder'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
@@ -106,7 +106,7 @@ const selections = {
     'components/itemMenu/ItemMenuTask.bs': ['playlistRenumbered'],
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
-    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'arrangeByStoredOrder', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds'],
+    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds'],
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
@@ -508,11 +508,12 @@ const loadVideoSource = await readFile('components/ItemGrid/LoadVideoContentTask
 assert.match(loadVideoSource, /shouldBurnInSubtitle\(video\.SelectedSubtitle\)\s+m\.playbackInfo = getPlaybackInfo\(video\.id, mediaSourceId, audio_stream_idx, requestedSubtitleIndex,/, 'A burn in asks the server for the track that will play');
 process.stdout.write(`PASS: subtitle pick lifetime (${Object.keys(chapterPlays).length + 3} checks)\n`);
 
-// The Spotlight File Details card and version badge follow the synced section switches.
+// The Spotlight File Details card, Playlist Order card and version badge follow the synced section switches.
 const spotlightCards = await readFile('components/details/SpotlightCards.bs', 'utf8');
 assert.match(spotlightCards.match(/^function spotlightBuilderFileDetailsCard\(\)[^]*?^end function/m)[0], /if not detailSectionLayout\.Shows\("mediaInfo"\) then return invalid/, 'Hiding Media info hides the File Details card');
+assert.match(spotlightCards.match(/^function spotlightBuilderPlaylistOrderCard\(\)[^]*?^end function/m)[0], /if not detailSectionLayout\.Shows\("playlistOrder"\) then return invalid/, 'Hiding Playlist Order hides the Playlist Order card');
 assert.match((await readFile('components/details/SpotlightItemDetails.bs', 'utf8')).match(/^sub updateVersionBadge\(\)[^]*?^end sub/m)[0], /detailSectionLayout\.Shows\("versionBadge"\)/, 'Hiding the version badge hides it');
-process.stdout.write('PASS: spotlight sections (2 checks)\n');
+process.stdout.write('PASS: spotlight sections (3 checks)\n');
 
 // A card left in a selection field opens again when a favorite or watched change rewrites it, and
 // that rewrite has to leave the card's type alone.
