@@ -5241,6 +5241,16 @@
         <translation>Trailer Not Available</translation>
     </message>
     <message>
+        <source>{count} trailers</source>
+        <extracomment>Count in the header of the trailer picker on the details screen</extracomment>
+        <translation>{count} trailers</translation>
+    </message>
+    <message>
+        <source>Subtitled</source>
+        <extracomment>Chip on a trailer in the trailer picker whose video has subtitles burned in</extracomment>
+        <translation>Subtitled</translation>
+    </message>
+    <message>
         <source>This trailer is a link to a web page, which cant be opened here.</source>
         <extracomment>Shown when a title's trailer link isnt a YouTube video</extracomment>
         <translation>This trailer is a link to a web page, which cant be opened here.</translation>
@@ -6956,8 +6966,8 @@
         <translation>Show Text</translation>
     </message>
     <message>
-        <source>Show captions on YouTube trailers in the media bar</source>
-        <translation>Show captions on YouTube trailers in the media bar</translation>
+        <source>Show captions on YouTube trailers</source>
+        <translation>Show captions on YouTube trailers</translation>
     </message>
     <message>
         <source>Show codec, resolution, and stream information in banner summary</source>

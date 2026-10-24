@@ -138,6 +138,13 @@ namespace MainAction
     end sub
 
     sub onTrailerButtonClicked(activeScene as object)
+        ' Read before the spinner, whose hidden dialog holds focus while it runs
+        returnFocus = activeScene.focusedChild
+        while isValid(returnFocus) and not returnFocus.hasFocus()
+            returnFocus = returnFocus.focusedChild
+        end while
+        if not isValid(returnFocus) then returnFocus = activeScene
+
         startLoadingSpinner()
 
         itemContent = chainLookup(activeScene, "itemContent")
@@ -179,36 +186,31 @@ namespace MainAction
             end for
         end if
 
-        ' If local trailers exist, play them
-        if isValid(trailerData) and trailerData.count() > 0 and isValid(trailerData[0].id)
-            playItem(trailerData, { method: "set", bypassNextPreferredAudioTrackIndexReset: true })
-            stopLoadingSpinner()
+        choices = []
+        if type(trailerData) = "roArray"
+            for each trailer in trailerData
+                if type(trailer) = "roAssociativeArray" and isValidAndNotEmpty(trailer.LookupCI("Id")) then choices.push(MainAction.localTrailerChoice(trailer, itemContent, trailerServerData))
+            end for
+        end if
+        remoteTrailers = chainLookupReturn(activeScene, "itemContent.json.RemoteTrailers", [])
+        choices.Append(youtubeTrailer.RemoteChoices(remoteTrailers))
+        stopLoadingSpinner()
 
-            if isChainValid(activeScene, "lastFocus")
-                activeScene.lastFocus.setFocus(true)
-            end if
+        if choices.count() = 1
+            MainAction.playTrailerChoice(choices[0], activeScene)
+        else if choices.count() > 1
+            MainAction.openTrailerPicker(activeScene, choices, returnFocus)
         else
-            ' No local trailers available
-            stopLoadingSpinner()
-
-            ' Only the first trailer link counts. A YouTube one plays over the screen, and any
-            ' other kind is a web page this device cant open.
-            trailerUrl = ""
-            for each trailer in chainLookupReturn(activeScene, "itemContent.json.RemoteTrailers", [])
-                trailerUrl = toString(chainLookupReturn(trailer, "Url", ""))
-                if trailerUrl <> "" then exit for
+            ' Any link left over is a web page this device cant open
+            webLink = false
+            for each trailer in remoteTrailers
+                if toString(chainLookupReturn(trailer, "Url", "")) <> ""
+                    webLink = true
+                    exit for
+                end if
             end for
 
-            videoId = youtubeTrailer.ExtractIdFromUrl(trailerUrl)
-            if videoId <> ""
-                if inArray([MediaPlaybackState.PLAYING, MediaPlaybackState.PAUSED, MediaPlaybackState.BUFFERING], m.global.audioPlayer.state)
-                    m.global.audioPlayer.control = VideoControl.STOP
-                    m.global.audioPlayer.content = invalid
-                end if
-                overlay = CreateObject("roSGNode", "TrailerOverlay")
-                overlay.videoId = videoId
-                m.global.sceneManager.callFunc("pushScene", overlay)
-            else if trailerUrl <> ""
+            if webLink
                 dialog = CreateObject("roSGNode", "StandardMessageDialog")
                 dialog.id = "OKDialog"
                 dialog.title = tr("Trailer Not Available")
@@ -216,13 +218,57 @@ namespace MainAction
                 dialog.buttons = [tr("OK")]
                 m.scene.dialog = dialog
                 m.scene.dialog.observeField("buttonSelected", m.port)
-            else
-
-                if isChainValid(activeScene, "lastFocus")
-                    activeScene.lastFocus.setFocus(true)
-                end if
+            else if isChainValid(activeScene, "lastFocus")
+                activeScene.lastFocus.setFocus(true)
             end if
         end if
+    end sub
+
+    function localTrailerChoice(trailer as object, itemContent as object, serverData as dynamic) as object
+        shown = youtubeTrailer.ShownTitle(toString(trailer.LookupCI("Name") ?? ""))
+        thumb = toString(chainLookupReturn(itemContent, "backdropURL", ""))
+        primaryTag = toString(chainLookupReturn(trailer, "ImageTags.Primary", ""))
+        if primaryTag <> "" then thumb = getImageURL(trailer.LookupCI("Id"), "Primary", { maxWidth: 408, maxHeight: 228, Tag: primaryTag }, serverData)
+        ticks = chainLookupReturn(trailer, "RunTimeTicks", 0)
+        return { item: trailer, videoId: "", title: shown.text, subtitled: shown.subtitled, thumb: thumb, seconds: Int(ticks / 10000000), meta: "" }
+    end function
+
+    sub playTrailerChoice(choice as object, activeScene as object)
+        if isValid(choice.item)
+            playItem([choice.item], { method: "set", bypassNextPreferredAudioTrackIndexReset: true })
+            if isChainValid(activeScene, "lastFocus")
+                activeScene.lastFocus.setFocus(true)
+            end if
+            return
+        end if
+
+        if inArray([MediaPlaybackState.PLAYING, MediaPlaybackState.PAUSED, MediaPlaybackState.BUFFERING], m.global.audioPlayer.state)
+            m.global.audioPlayer.control = VideoControl.STOP
+            m.global.audioPlayer.content = invalid
+        end if
+        overlay = CreateObject("roSGNode", "TrailerOverlay")
+        overlay.videoId = choice.videoId
+        m.global.sceneManager.callFunc("pushScene", overlay)
+    end sub
+
+    sub openTrailerPicker(activeScene as object, choices as object, returnFocus as object)
+        picker = CreateObject("roSGNode", "TrailerPicker")
+        picker.itemName = toString(chainLookupReturn(activeScene, "itemContent.json.Name", ""))
+        picker.trailers = choices
+        picker.returnFocus = returnFocus
+        picker.observeField("trailerChosen", m.port)
+        m.scene.appendChild(picker)
+        picker.callFunc("showPicker")
+    end sub
+
+    ' The picker has already given focus back, so it can leave the scene before the trailer starts
+    sub onTrailerChosen(msg as object)
+        picker = msg.getRoSGNode()
+        index = msg.getData()
+        trailers = picker.trailers
+        picker.unobserveField("trailerChosen")
+        m.scene.removeChild(picker)
+        if index >= 0 and index < trailers.count() then MainAction.playTrailerChoice(trailers[index], m.global.sceneManager.callFunc("getActiveScene"))
     end sub
 
     sub onWatchedButtonClicked(activeScene as object)
