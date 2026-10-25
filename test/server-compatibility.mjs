@@ -165,6 +165,8 @@ for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin', 'ProfileNam
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/settings-sync-values.bs', 'utf8');
+source += '\n' + (await readFile('source/utils/keyboardLayouts.bs', 'utf8')).replace(/^import .*$/gm, '');
+source += '\n' + await readFile('test/keyboard-layouts.bs', 'utf8');
 source += '\n' + await readFile('test/settings-sync-profile.bs', 'utf8');
 source += '\n' + await readFile('test/seasonal-effects.bs', 'utf8');
 source += '\n' + await readFile('test/audio-track.bs', 'utf8');
@@ -721,9 +723,18 @@ assert.match(syncFunction('GetMappings'), /\{ pluginKey: "musicLibraryStyle", ro
 const musicStyle = findSetting(settingsTree, 'ui.library.musicStyle');
 assert.equal(musicStyle.default, 'immersive', 'Immersive is the music library default');
 assert.deepEqual(musicStyle.options.map(option => option.id), ['classic', 'quickAccess', 'immersive'], 'The music styles keep the values the profile stores');
+assert.match(syncFunction('GetMappings'), /\{ pluginKey: "keyboardStyle", rokuKey: "ui\.keyboard\.style", type: "keyboardStyle" \}/, 'The keyboard style syncs under the profile\'s name');
+const keyboardStyle = findSetting(settingsTree, 'ui.keyboard.style');
+assert.equal(keyboardStyle.default, 'docked', 'Docked is the keyboard default');
+const keyboardSource = await readFile('components/keyboards/TVKeyboard.bs', 'utf8');
+assert.match(keyboardSource, /settingOr\(KB_STYLE_SETTING, "docked"\)/, 'The keyboard falls back to the default the setting shows');
+assert.match(keyboardSource, /if entry = "IME"\s+openStylePicker\(\)/, 'The keyboard key opens the style picker');
+assert.match(keyboardSource, /if m\.pickingStyle\s+pickStyle\(value\)/, 'Picking a style saves it and switches the keyboard');
+assert.deepEqual(keyboardStyle.options.map(option => option.id), ['native', 'classic', 'glass', 'docked'], 'The keyboard styles keep the values the profile stores');
+assert.match(settingsSource, /input = takeSettings\(configTree, \["ui\.keyboard\.style"\]\)[^]*generalChildren\.push\(settingsSection\("Input"\)\)\s+generalChildren\.Append\(input\)/, 'Keyboard Style sits under General > Input');
 const styleStrings = await readFile('locale/en_US/translations.ts', 'utf8');
-for (const name of ['Video Library Style', 'Docked', 'Show', 'Display', 'Music Library Style', 'Quick Access', 'Immersive']) assert.match(styleStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
-process.stdout.write('PASS: settings sync profiles (33 checks)\n');
+for (const name of ['Video Library Style', 'Docked', 'Show', 'Display', 'Music Library Style', 'Quick Access', 'Immersive', 'Keyboard Style', 'Native', 'Classic', 'Glass', 'Input']) assert.match(styleStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
+process.stdout.write('PASS: settings sync profiles (45 checks)\n');
 
 // Every glyph a setting names is in the icon font, and the font and its table cover the same characters
 const settingsJsonText = await readFile('settings/settings.json', 'utf8');

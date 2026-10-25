@@ -1,11 +1,19 @@
+import "pkg:/components/keyboards/dockedKeyboard.bs"
+import "pkg:/components/keyboards/glassKeyboard.bs"
+import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/keyboardLayouts.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/settingsSync.bs"
 import "pkg:/source/utils/themeChrome.bs"
 
 ' The in-app keyboard, drawn in the pixels the other clients draw it in. It sits
 ' against the foot of the screen, and reports where its panel starts so a screen
-' can lift whatever it is filling clear of it.
+' can lift whatever it is filling clear of it. The Keyboard Style setting picks
+' Classic, Glass or Docked, or hands every field to Roku's own keyboard.
+const KB_STYLE_SETTING = "ui.keyboard.style"
+
 const KB_PANEL_WIDTH = 1640
 const KB_PANEL_PAD_X = 28
 const KB_PANEL_PAD_Y = 24
@@ -41,9 +49,23 @@ const KB_ALT_PAD_X = 12
 const KB_ALT_GAP = 12
 const KB_ALT_SIZE = 36
 const KB_ALT_BOX_PAD = 16
+const KB_PICK_PAD_X = 24
+const KB_PICK_CHECK = 32
 
 ' Held arrows and backspace repeat, the way they do on the other clients
 const KB_REPEAT_DELAY = 0.4
+
+' The keycap hints Glass and Docked show beside the keys
+const KB_CAP_HEIGHT = 36
+const KB_CAP_PAD_X = 10
+const KB_CAP_SIZE = 20
+const KB_CAP_ARROW = 22
+const KB_HINT_SIZE = 23
+const KB_HINT_GAP = 14
+const KB_HINTS_GAP = 32
+
+' How far the settings glow reaches past the card it was drawn for
+const KB_GLOW_MARGIN = 44
 
 sub init()
     m.scrim = m.top.findNode("scrim")
@@ -60,7 +82,26 @@ sub init()
     m.altBg = m.top.findNode("altBg")
     m.altOptions = m.top.findNode("altOptions")
     m.repeatTimer = m.top.findNode("repeatTimer")
+    m.dockBg = m.top.findNode("dockBg")
+    m.dockLine = m.top.findNode("dockLine")
+    m.echo = m.top.findNode("echo")
+    m.echoText = m.top.findNode("echoText")
+    m.caret = m.top.findNode("caret")
+    m.ghost = m.top.findNode("ghost")
+    m.hints = m.top.findNode("hints")
+    m.halo = m.top.findNode("halo")
+    m.haloShadow = m.top.findNode("haloShadow")
+    m.haloGlow = m.top.findNode("haloGlow")
+    m.haloRing = m.top.findNode("haloRing")
 
+    m.style = "classic"
+    m.nativeDialog = invalid
+    m.pickingStyle = false
+    m.hintsWidth = 0
+    m.echoWidth = 0
+    m.echoReady = false
+    m.barWidth = 0
+    m.keyEntries = []
     m.fieldWidth = 0
     m.rows = []
     m.keyNodes = []
@@ -79,6 +120,12 @@ sub init()
     m.field.observeField("isDictating", "onDictatingChanged")
     ' The default caps out well short of a server address or a long password
     m.field.maxTextLength = 256
+    m.field.observeField("text", "onFieldEdited")
+    m.field.observeField("cursorPosition", "onFieldEdited")
+    for each label in [m.echoText, m.ghost]
+        label.font.size = DK_ECHO_SIZE
+        label.height = DK_ECHO_HEIGHT
+    end for
 
     m.repeatTimer.observeField("fire", "onRepeatFire")
     m.focusTimer = m.top.findNode("focusTimer")
@@ -89,20 +136,33 @@ sub init()
 end sub
 
 sub onVisibleChanged()
-    m.field.voiceEnabled = m.top.visible
-
     if not m.top.visible
+        m.field.voiceEnabled = false
         m.repeatTimer.control = "stop"
+        closeNativeDialog()
         return
     end if
+
+    showKeyboard()
+end sub
+
+' Lays the keyboard out in the stored style. A style picked from the keyboard's own picker
+' comes through here too, so the open keyboard turns into it
+sub showKeyboard()
+    m.style = settingOr(KB_STYLE_SETTING, "docked")
+    if m.style <> "native" and m.style <> "classic" and m.style <> "glass" then m.style = "docked"
+    m.field.voiceEnabled = m.style <> "native"
 
     m.shifted = false
     m.numericPage = false
     m.rowIndex = 0
     m.colIndex = 0
+    ' The dock's first cell is the rail, so it opens on the first letter instead
+    if m.style = "docked" then m.colIndex = 1
     m.chipIndex = -1
     m.altIndex = -1
     m.altPopup.visible = false
+    m.echoReady = false
 
     m.field.text = m.top.text
     m.field.cursorPosition = Len(m.top.text)
@@ -111,6 +171,13 @@ sub onVisibleChanged()
     m.title.text = m.top.titleText
     m.title.visible = isValidAndNotEmpty(m.top.titleText)
     m.scrim.visible = m.top.showScrim
+    applyStyle()
+
+    if m.style = "native"
+        m.top.panelTop = 1080
+        openNativeDialog()
+        return
+    end if
 
     build()
     m.top.setFocus(true)
@@ -120,24 +187,85 @@ sub onVisibleChanged()
 end sub
 
 function currentLayout() as object
+    if m.style = "docked" then return keyboardLayouts.Docked(layoutVariant(), m.numericPage, m.shifted)
     if m.numericPage then return keyboardLayouts.Numeric()
 
-    variant = keyboardLayouts.VariantForLocale(m.global.session.user.settings["ui.language"] ?? "")
+    variant = layoutVariant()
     if m.shifted then return keyboardLayouts.Upper(variant)
 
     return keyboardLayouts.Lower(variant)
 end function
 
+function layoutVariant() as string
+    return keyboardLayouts.VariantForLocale(m.global.session.user.settings["ui.language"] ?? "")
+end function
+
 sub build()
     m.rows = currentLayout()
-    buildChips()
-    buildGrid()
-    layoutPanel()
+    if m.style = "docked"
+        buildDockedChips()
+        buildDockedKeys()
+        layoutDocked()
+    else if m.style = "glass"
+        buildChips("pkg:/images/settings/bubble20.9.png", "font:SmallestSystemFont", GK_CHIP_SIZE, GK_CHIP_HEIGHT)
+        buildGlassGrid()
+        layoutGlass()
+    else
+        buildChips()
+        buildGrid()
+        layoutPanel()
+    end if
     paint()
 end sub
 
+' The parts of the panel each style draws its own way. Every style sets all of them, so
+' a keyboard opened in one style never keeps what the last one left behind
+sub applyStyle()
+    docked = m.style = "docked"
+    glass = m.style = "glass"
+
+    m.panel.visible = m.style <> "native"
+    m.dockBg.visible = docked
+    m.dockLine.visible = docked
+    m.panelBg.visible = not docked
+    m.panelBorder.visible = not docked
+    m.echo.visible = docked
+    m.hints.visible = docked or glass
+    m.halo.visible = false
+    m.haloShadow.visible = glass
+    m.haloRing.visible = docked
+    ' The box stays under the echo as the target the remote dictates into
+    m.fieldGroup.opacity = docked ? 0 : 1
+    if docked then m.title.visible = false
+
+    m.scrim.color = "#000000"
+    m.scrim.opacity = 0.7
+    m.panelBg.uri = "pkg:/images/details/surface17.9.png"
+    m.panelBorder.uri = "pkg:/images/details/cardborder.9.png"
+    m.panelBorder.opacity = 0.4
+    m.fieldBg.uri = "pkg:/images/details/surface12.9.png"
+    m.altBg.uri = "pkg:/images/details/surface12.9.png"
+
+    if glass
+        m.scrim.color = "#06080C"
+        m.scrim.opacity = 0.42
+        m.panelBg.uri = "pkg:/images/keyboard/panel48.9.png"
+        m.panelBorder.uri = "pkg:/images/keyboard/panel48s.9.png"
+        m.panelBorder.opacity = 1
+        m.fieldBg.uri = "pkg:/images/settings/tile23.9.png"
+        buildHints(false, "#FFFFFF8C")
+    else if docked
+        m.scrim.color = "#040508"
+        m.scrim.opacity = 0.55
+        buildHints(true, "#FFFFFF80")
+    end if
+    if glass or docked then m.altBg.uri = "pkg:/images/settings/card27.9.png"
+
+    if m.style = "native" then m.scrim.visible = false
+end sub
+
 ' Each chip is a pill sized to the words it carries
-sub buildChips()
+sub buildChips(uri = "pkg:/images/details/surface12.9.png" as string, font = "font:SmallestBoldSystemFont" as string, size = KB_CHIP_SIZE as integer, height = KB_CHIP_BAR_HEIGHT as integer)
     m.chipBar.removeChildrenIndex(m.chipBar.getChildCount(), 0)
     m.chipNodes = []
     if not isValidAndNotEmpty(m.top.chips) then return
@@ -145,27 +273,27 @@ sub buildChips()
     for each entry in m.top.chips
         chip = m.chipBar.createChild("Group")
         bg = chip.createChild("Poster")
-        bg.uri = "pkg:/images/details/surface12.9.png"
+        bg.uri = uri
         label = chip.createChild("Label")
         label.text = entry
-        label.font = "font:SmallestBoldSystemFont"
-        label.font.size = KB_CHIP_SIZE
+        label.font = font
+        label.font.size = size
         label.horizAlign = "center"
         label.vertAlign = "center"
-        label.height = KB_CHIP_BAR_HEIGHT
+        label.height = height
         m.chipNodes.push({ node: chip, bg: bg, label: label, value: entry })
     end for
 end sub
 
 ' Widths are taken before the labels are given one, since a label asked how wide
 ' it is once it has a width answers with the box rather than the words
-sub layoutChips()
+sub layoutChips(height = KB_CHIP_BAR_HEIGHT as integer)
     xPos = 0
     for each chip in m.chipNodes
         width = chip.label.boundingRect().width + (KB_CHIP_PAD_X * 2)
         chip.node.translation = [xPos, 0]
         chip.bg.width = width
-        chip.bg.height = KB_CHIP_BAR_HEIGHT
+        chip.bg.height = height
         chip.label.width = width
         xPos += width + KB_CHIP_GAP
     end for
@@ -230,6 +358,7 @@ function iconFor(entry as string) as string
         "CURSORL": "pkg:/images/keyboard/cursorl.png",
         "CURSORR": "pkg:/images/keyboard/cursorr.png",
         "DONE": "pkg:/images/keyboard/done.png",
+        "IME": "pkg:/images/achievements/keyboard.webp",
         "SHIFT": "pkg:/images/keyboard/shift.png"
     }
 
@@ -246,6 +375,7 @@ function iconSizeFor(entry as string) as integer
         "CURSORL": 44,
         "CURSORR": 44,
         "DONE": 40,
+        "IME": 40,
         "SHIFT": 40
     }
 
@@ -291,10 +421,35 @@ end sub
 sub layoutPanel()
     contentWidth = KB_PANEL_WIDTH - (KB_PANEL_PAD_X * 2)
 
-    yPos = KB_PANEL_PAD_Y
+    yPos = layoutFieldRows(KB_PANEL_PAD_X, KB_PANEL_PAD_Y, contentWidth)
+
+    if m.chipNodes.count() > 0
+        m.chipBar.translation = [KB_PANEL_PAD_X, yPos]
+        layoutChips()
+        yPos += KB_CHIP_BAR_HEIGHT + KB_CHIP_BAR_GAP
+    end if
+
+    m.grid.translation = [KB_PANEL_PAD_X, yPos]
+    yPos += layoutKeyRows(contentWidth, KB_KEY_HEIGHT, KB_ROW_GAP)
+
+    yPos += KB_PANEL_PAD_Y
+
+    m.panelBg.width = KB_PANEL_WIDTH
+    m.panelBg.height = yPos
+    m.panelBorder.width = KB_PANEL_WIDTH
+    m.panelBorder.height = yPos
+    m.panel.translation = [(1920 - KB_PANEL_WIDTH) / 2, 1080 - KB_BOTTOM_MARGIN - yPos]
+
+    m.top.panelTop = m.panel.translation[1]
+end sub
+
+' The title and the box the text lands in, from the top of the panel down. Returns
+' where the row under them starts
+function layoutFieldRows(padX as float, top as float, contentWidth as float) as float
+    yPos = top
     if m.title.visible
         m.title.width = contentWidth
-        m.title.translation = [KB_PANEL_PAD_X, yPos]
+        m.title.translation = [padX, yPos]
         yPos += m.title.boundingRect().height + KB_TITLE_GAP
     end if
 
@@ -305,21 +460,17 @@ sub layoutPanel()
     ' Voice entry grows the box beyond its bounds, which would otherwise paint
     ' over the keys below it
     m.fieldGroup.clippingRect = [0, 0, contentWidth, KB_FIELD_HEIGHT]
-    m.fieldGroup.translation = [KB_PANEL_PAD_X, yPos]
-    yPos += KB_FIELD_HEIGHT + KB_FIELD_GAP
+    m.fieldGroup.translation = [padX, yPos]
 
-    if m.chipNodes.count() > 0
-        m.chipBar.translation = [KB_PANEL_PAD_X, yPos]
-        layoutChips()
-        yPos += KB_CHIP_BAR_HEIGHT + KB_CHIP_BAR_GAP
-    end if
+    return yPos + KB_FIELD_HEIGHT + KB_FIELD_GAP
+end function
 
-    ' Keys share the row out in units, so space keeps its stretch whatever the
-    ' panel is sized to
+' Keys share the row out in units, so space keeps its stretch whatever the
+' panel is sized to. Returns how tall the rows came to
+function layoutKeyRows(contentWidth as float, keyHeight as integer, rowGap as integer) as float
     unit = contentWidth / keyboardLayouts.MaxRowSpan(m.rows)
     gap = unit * keyboardLayouts.KEY_GAP_FACTOR
 
-    m.grid.translation = [KB_PANEL_PAD_X, yPos]
     rowY = 0
     for i = 0 to m.keyNodes.count() - 1
         builtRow = m.keyNodes[i]
@@ -334,7 +485,7 @@ sub layoutPanel()
             width = unit * keyboardLayouts.KeyUnitSpan(entry.value)
             entry.node.translation = [xPos, rowY]
             entry.bg.width = width
-            entry.bg.height = KB_KEY_HEIGHT
+            entry.bg.height = keyHeight
             entry.width = width
 
             if isValid(entry.label)
@@ -342,38 +493,36 @@ sub layoutPanel()
                 entry.label.translation = [0, 0]
             end if
             if isValid(entry.icon)
-                entry.icon.translation = [(width - entry.icon.width) / 2, (KB_KEY_HEIGHT - entry.icon.height) / 2]
+                entry.icon.translation = [(width - entry.icon.width) / 2, (keyHeight - entry.icon.height) / 2]
             end if
             if isValid(entry.dot)
                 entry.dot.translation = [width - KB_DOT_INSET - KB_DOT_SIZE, KB_DOT_INSET]
             end if
             if isValid(entry.bar)
                 entry.bar.width = width - (KB_SPACE_BAR_INSET * 2)
-                entry.bar.translation = [KB_SPACE_BAR_INSET, (KB_KEY_HEIGHT - KB_SPACE_BAR_HEIGHT) / 2]
+                entry.bar.translation = [KB_SPACE_BAR_INSET, (keyHeight - KB_SPACE_BAR_HEIGHT) / 2]
             end if
 
             xPos += width + gap
         end for
-        rowY += KB_KEY_HEIGHT + KB_ROW_GAP
+        rowY += keyHeight + rowGap
     end for
 
-    gridHeight = rowY - KB_ROW_GAP
-    yPos += gridHeight
-
-    yPos += KB_PANEL_PAD_Y
-
-    m.panelBg.width = KB_PANEL_WIDTH
-    m.panelBg.height = yPos
-    m.panelBorder.width = KB_PANEL_WIDTH
-    m.panelBorder.height = yPos
-    m.panel.translation = [(1920 - KB_PANEL_WIDTH) / 2, 1080 - KB_BOTTOM_MARGIN - yPos]
-
-    m.top.panelTop = m.panel.translation[1]
-end sub
+    return rowY - rowGap
+end function
 
 ' Every colour the keyboard draws comes from the theme, so it sits with whatever
 ' the rest of the app is wearing
 sub paint()
+    if m.style = "glass"
+        paintGlass()
+        return
+    end if
+    if m.style = "docked"
+        paintDocked()
+        return
+    end if
+
     surface = themeChrome.IsActive() ? themeChrome.Surface() : "#181818"
     onSurface = themeChrome.IsActive() ? themeChrome.OnSurface() : "#FFFFFF"
     idleKey = themeChrome.IsActive() ? themeChrome.SurfaceVariant() : "#2A2A2A"
@@ -412,6 +561,7 @@ sub paint()
         chosen = (m.altIndex = i)
         alt.bg.blendColor = chosen ? focusKey : idleKey
         alt.label.color = chosen ? onFocusKey : onSurface
+        if isValid(alt.check) then alt.check.blendColor = alt.label.color
     end for
 
     m.altBg.blendColor = surface
@@ -473,6 +623,19 @@ sub pressKey(entry as string)
         return
     end if
 
+    ' The docked rail's modes, which leave focus where it is
+    if entry = "MODE_LOWER" or entry = "MODE_UPPER" or entry = "MODE_NUM"
+        m.numericPage = entry = "MODE_NUM"
+        if not m.numericPage then m.shifted = entry = "MODE_UPPER"
+        build()
+        return
+    end if
+
+    if entry = "IME"
+        openStylePicker()
+        return
+    end if
+
     if entry = "DONE"
         m.top.text = m.field.text
         ' Put away before the screen is told, since that runs on this thread and
@@ -505,8 +668,6 @@ sub pressKey(entry as string)
     insertText(entry)
 end sub
 
-' The accents sit over the key they belong to, pulled back inside the panel when
-' the key is near either end
 sub openAlternates()
     entry = currentKey()
     if not isValid(entry) then return
@@ -514,37 +675,88 @@ sub openAlternates()
     options = keyboardLayouts.AlternatesFor(entry.value)
     if not isValid(options) then return
 
+    m.pickingStyle = false
     m.altOptions.removeChildrenIndex(m.altOptions.getChildCount(), 0)
     m.altNodes = []
 
     xPos = 0
-    for each option in options
-        optionGroup = m.altOptions.createChild("Group")
-        bg = optionGroup.createChild("Poster")
-        bg.uri = "pkg:/images/details/surface12.9.png"
-        label = optionGroup.createChild("Label")
-        label.text = option
-        label.font = "font:SmallestBoldSystemFont"
-        label.font.size = KB_ALT_SIZE
-        label.horizAlign = "center"
-        label.vertAlign = "center"
-        label.height = KB_ALT_HEIGHT
-
-        width = label.boundingRect().width + (KB_ALT_PAD_X * 2)
+    for each value in options
+        option = addPopupOption(value, value)
+        width = option.label.boundingRect().width + (KB_ALT_PAD_X * 2)
         if width < KB_ALT_MIN_WIDTH then width = KB_ALT_MIN_WIDTH
 
-        optionGroup.translation = [xPos, 0]
-        bg.width = width
-        bg.height = KB_ALT_HEIGHT
-        label.width = width
+        option.node.translation = [xPos, 0]
+        option.bg.width = width
+        option.label.width = width
         xPos += width + KB_ALT_GAP
-
-        m.altNodes.push({ node: optionGroup, bg: bg, label: label, value: option })
     end for
 
-    boxWidth = xPos - KB_ALT_GAP + (KB_ALT_BOX_PAD * 2)
+    showPopup(entry, xPos - KB_ALT_GAP, KB_ALT_HEIGHT, 0)
+end sub
+
+' The keyboard key lists the styles over itself, with a check on the one in use
+sub openStylePicker()
+    entry = currentKey()
+    if not isValid(entry) then return
+
+    m.pickingStyle = true
+    m.altOptions.removeChildrenIndex(m.altOptions.getChildCount(), 0)
+    m.altNodes = []
+
+    styles = keyboardLayouts.Styles()
+    rowWidth = 0
+    current = 0
+    for i = 0 to styles.count() - 1
+        option = addPopupOption(styles[i].id, tr(styles[i].title))
+        option.label.horizAlign = "left"
+        option.label.translation = [KB_PICK_PAD_X, 0]
+        width = option.label.boundingRect().width
+        if width > rowWidth then rowWidth = width
+        option.node.translation = [0, i * (KB_ALT_HEIGHT + KB_ALT_GAP)]
+
+        if styles[i].id = m.style
+            current = i
+            option.check = option.node.createChild("Poster")
+            option.check.uri = "pkg:/images/livetv/check.png"
+            option.check.width = KB_PICK_CHECK
+            option.check.height = KB_PICK_CHECK
+        end if
+    end for
+
+    rowWidth += (KB_PICK_PAD_X * 2) + KB_ALT_GAP + KB_PICK_CHECK
+    for each option in m.altNodes
+        option.bg.width = rowWidth
+        if isValid(option.check) then option.check.translation = [rowWidth - KB_PICK_PAD_X - KB_PICK_CHECK, (KB_ALT_HEIGHT - KB_PICK_CHECK) / 2]
+    end for
+
+    showPopup(entry, rowWidth, styles.count() * (KB_ALT_HEIGHT + KB_ALT_GAP) - KB_ALT_GAP, current)
+end sub
+
+function addPopupOption(value as string, text as string) as object
+    optionGroup = m.altOptions.createChild("Group")
+    bg = optionGroup.createChild("Poster")
+    bg.uri = "pkg:/images/details/surface12.9.png"
+    if m.style <> "classic" then bg.uri = "pkg:/images/settings/bubble20.9.png"
+    bg.height = KB_ALT_HEIGHT
+    label = optionGroup.createChild("Label")
+    label.text = text
+    label.font = "font:SmallestBoldSystemFont"
+    label.font.size = KB_ALT_SIZE
+    label.horizAlign = "center"
+    label.vertAlign = "center"
+    label.height = KB_ALT_HEIGHT
+
+    option = { node: optionGroup, bg: bg, label: label, value: value }
+    m.altNodes.push(option)
+    return option
+end function
+
+' The popup sits over the key it belongs to, pulled back inside the screen when the key is
+' near either end
+sub showPopup(entry as object, contentWidth as float, contentHeight as float, focusIndex as integer)
+    boxWidth = contentWidth + (KB_ALT_BOX_PAD * 2)
     m.altBg.width = boxWidth
-    m.altBg.height = KB_ALT_HEIGHT + (KB_ALT_BOX_PAD * 2)
+    m.altBg.height = contentHeight + (KB_ALT_BOX_PAD * 2)
     m.altOptions.translation = [KB_ALT_BOX_PAD, KB_ALT_BOX_PAD]
 
     keyCentre = m.panel.translation[0] + m.grid.translation[0] + entry.node.translation[0] + (entry.width / 2)
@@ -555,9 +767,24 @@ sub openAlternates()
     keyTop = m.panel.translation[1] + m.grid.translation[1] + entry.node.translation[1]
     m.altPopup.translation = [boxX, keyTop - m.altBg.height - KB_ROW_GAP]
 
-    m.altIndex = 0
+    m.altIndex = focusIndex
     m.altPopup.visible = true
     paint()
+end sub
+
+' Saved and synced the way Settings saves it, then the open keyboard turns into the new style
+sub pickStyle(style as string)
+    set_user_setting(KB_STYLE_SETTING, style)
+    pushData = settingsSync.PreparePush(KB_STYLE_SETTING, style)
+    if isValid(pushData)
+        ' Held until it finishes, or a task nothing references can be collected mid flight
+        m.syncTask = createObject("roSGNode", "PostTask")
+        m.syncTask.apiUrl = pushData.url
+        m.syncTask.stringData = pushData.body
+        m.syncTask.control = "RUN"
+    end if
+
+    showKeyboard()
 end sub
 
 sub closeAlternates()
@@ -624,7 +851,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     if key = KeyCode.OK
         if m.chipIndex >= 0
-            insertText(m.chipNodes[m.chipIndex].value)
+            insertText(chipInsertion(m.chipNodes[m.chipIndex].value))
         else
             entry = currentKey()
             if isValid(entry)
@@ -645,27 +872,33 @@ function handleAlternatesKey(key as string) as boolean
     end if
 
     if key = KeyCode.OK
-        insertText(m.altNodes[m.altIndex].value)
+        value = m.altNodes[m.altIndex].value
         closeAlternates()
+        if m.pickingStyle
+            pickStyle(value)
+        else
+            insertText(value)
+        end if
         return true
     end if
 
-    if key = KeyCode.LEFT and m.altIndex > 0
+    ' The styles run down a list, so Up and Down step through them as well
+    toPrevious = key = KeyCode.LEFT or (m.pickingStyle and key = KeyCode.UP)
+    toFollowing = key = KeyCode.RIGHT or (m.pickingStyle and key = KeyCode.DOWN)
+    if toPrevious and m.altIndex > 0
         m.altIndex--
         paint()
-        return true
-    end if
-
-    if key = KeyCode.RIGHT and m.altIndex < m.altNodes.count() - 1
+    else if toFollowing and m.altIndex < m.altNodes.count() - 1
         m.altIndex++
         paint()
-        return true
     end if
 
     return true
 end function
 
 function moveSelection(key as string) as boolean
+    if m.style = "docked" and m.chipIndex < 0 then return moveDockedSelection(key)
+
     if key = KeyCode.UP
         if m.chipIndex >= 0 then return true
 
@@ -723,4 +956,185 @@ end function
 sub clampColumn()
     last = m.keyNodes[m.rowIndex].count() - 1
     if m.colIndex > last then m.colIndex = last
+end sub
+
+' Roku's own keyboard, which stands in for this one with the Native style and finishes the field
+sub openNativeDialog()
+    dialog = CreateObject("roSGNode", "StandardKeyboardDialog")
+    dialog.title = m.top.titleText
+    if dialog.title = "" then dialog.title = m.top.hintText
+    dialog.text = m.field.text
+    dialog.textEditBox.secureMode = m.top.secureMode
+    dialog.textEditBox.hintText = m.top.hintText
+    dialog.buttons = [tr("OK"), tr("Cancel")]
+
+    palette = CreateObject("roSGNode", "RSGPalette")
+    palette.colors = {
+        DialogBackgroundColor: chainLookupReturn(m.global.session, "user.settings.colorDialogBackground", ColorPalette.ELEMENTBACKGROUND),
+        DialogFocusColor: chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT),
+        DialogFocusItemColor: chainLookupReturn(m.global.session, "user.settings.colorDialogSelectedText", ColorPalette.WHITE),
+        DialogSecondaryItemColor: chainLookupReturn(m.global.session, "user.settings.colorDialogBorderLine", ColorPalette.LIGHTBLUE),
+        DialogTextColor: chainLookupReturn(m.global.session, "user.settings.colorDialogText", ColorPalette.WHITE)
+    }
+    dialog.palette = palette
+
+    dialog.observeField("text", "onNativeText")
+    dialog.observeField("buttonSelected", "onNativeButton")
+    dialog.observeField("wasClosed", "onNativeClosed")
+    m.nativeDialog = dialog
+    m.top.getScene().dialog = dialog
+end sub
+
+' A screen that searches as letters land sees them from Roku's keyboard too
+sub onNativeText()
+    if isValid(m.nativeDialog) then m.top.text = m.nativeDialog.text
+end sub
+
+sub onNativeButton()
+    text = m.nativeDialog.text
+    accepted = m.nativeDialog.buttonSelected = 0
+    closeNativeDialog()
+
+    m.top.visible = false
+    if accepted
+        m.top.text = text
+        m.top.submitted = true
+    else
+        m.top.cancelled = true
+    end if
+end sub
+
+' Back on Roku's keyboard, which has put itself away already
+sub onNativeClosed()
+    if not isValid(m.nativeDialog) then return
+
+    closeNativeDialog()
+    m.top.visible = false
+    m.top.cancelled = true
+end sub
+
+sub closeNativeDialog()
+    if not isValid(m.nativeDialog) then return
+
+    dialog = m.nativeDialog
+    m.nativeDialog = invalid
+    dialog.unobserveField("text")
+    dialog.unobserveField("buttonSelected")
+    dialog.unobserveField("wasClosed")
+    dialog.close = true
+end sub
+
+function finishLabel() as string
+    if m.top.purpose = "search" then return tr("Search")
+
+    return tr("Done")
+end function
+
+' On the dock a suggestion that carries on from what is typed finishes it, the way its
+' ghost promised, rather than landing after it
+function chipInsertion(value as string) as string
+    typed = m.field.text
+    if m.style <> "docked" or typed = "" or m.field.cursorPosition < Len(typed) then return value
+    if LCase(Left(value, Len(typed))) <> LCase(typed) then return value
+
+    return Mid(value, Len(typed) + 1)
+end function
+
+sub onFieldEdited(event as object)
+    if m.style <> "docked" or not m.echoReady or not m.top.visible then return
+
+    refreshEcho()
+    if event.getField() = "text" then layoutDockedChips()
+end sub
+
+' The accent eased most of the way to white, for words drawn on an accent tint
+function accentInk(accent as string) as string
+    parts = themeChrome.RgbParts(accent)
+    hex = "#"
+    for each channel in [parts.r, parts.g, parts.b]
+        hex += themeChrome.ByteToHex(Int(channel + (255 - channel) * 0.55 + 0.5))
+    end for
+
+    return hex + "FF"
+end function
+
+function onAccentInk(accent as string) as string
+    if themeChrome.Luminance(themeChrome.RgbParts(accent)) > 0.19 then return "#04131AFF"
+
+    return "#FFFFFFFF"
+end function
+
+' The keycap hints, the accents one always and the close one on the dock, laid out
+' from the left. Their width is kept so the layout can set them against the right edge
+sub buildHints(withClose as boolean, inkColor as string)
+    m.hints.removeChildrenIndex(m.hints.getChildCount(), 0)
+    m.hintsWidth = addHint(0, "*", tr("for accents"), inkColor)
+    if withClose then m.hintsWidth = addHint(m.hintsWidth + KB_HINTS_GAP, "", tr("close"), inkColor)
+end sub
+
+function addHint(xPos as float, capText as string, words as string, inkColor as string) as float
+    hint = m.hints.createChild("Group")
+    hint.translation = [xPos, 0]
+
+    cap = hint.createChild("Poster")
+    cap.uri = "pkg:/images/keyboard/cap10s.9.png"
+    cap.blendColor = "#FFFFFF47"
+    cap.height = KB_CAP_HEIGHT
+    capWidth = KB_CAP_HEIGHT
+    if capText <> ""
+        capLabel = hint.createChild("Label")
+        capLabel.text = capText
+        capLabel.font = "font:SmallestBoldSystemFont"
+        capLabel.font.size = KB_CAP_SIZE
+        capLabel.color = "#FFFFFFBF"
+        capLabel.horizAlign = "center"
+        capLabel.vertAlign = "center"
+        capLabel.height = KB_CAP_HEIGHT
+        ' An asterisk is drawn high in the font, so it comes down to the middle of the cap
+        capLabel.translation = [0, 5]
+        measured = capLabel.boundingRect().width + (KB_CAP_PAD_X * 2)
+        if measured > capWidth then capWidth = measured
+        capLabel.width = capWidth
+    else
+        ' The remote's back key, drawn as the arrow printed on it
+        arrow = hint.createChild("Poster")
+        arrow.uri = "pkg:/images/itemMenu/arrow_upward.png"
+        arrow.width = KB_CAP_ARROW
+        arrow.height = KB_CAP_ARROW
+        arrow.blendColor = "#FFFFFFBF"
+        arrow.scaleRotateCenter = [KB_CAP_ARROW / 2, KB_CAP_ARROW / 2]
+        arrow.rotation = 1.5708
+        arrow.translation = [(capWidth - KB_CAP_ARROW) / 2, (KB_CAP_HEIGHT - KB_CAP_ARROW) / 2]
+    end if
+    cap.width = capWidth
+
+    label = hint.createChild("Label")
+    label.text = words
+    label.font = "font:SmallestSystemFont"
+    label.font.size = KB_HINT_SIZE
+    label.color = inkColor
+    label.vertAlign = "center"
+    label.height = KB_CAP_HEIGHT
+    label.translation = [capWidth + KB_HINT_GAP, 0]
+
+    return xPos + capWidth + KB_HINT_GAP + label.boundingRect().width
+end function
+
+' A soft light under the focused key, cut from the glow the settings cards wear
+sub glowAround(poster as object, rect as object, lift as integer, color as string, strength as float)
+    poster.blendColor = color
+    poster.opacity = strength
+    poster.translation = [rect.x - KB_GLOW_MARGIN, rect.y - KB_GLOW_MARGIN + lift]
+    poster.width = rect.width + (KB_GLOW_MARGIN * 2)
+    poster.height = rect.height + (KB_GLOW_MARGIN * 2)
+end sub
+
+sub paintModernAlternates(focusFill as string, focusInk as string)
+    for i = 0 to m.altNodes.count() - 1
+        alt = m.altNodes[i]
+        chosen = (m.altIndex = i)
+        alt.bg.blendColor = chosen ? focusFill : "#FFFFFF13"
+        alt.label.color = chosen ? focusInk : "#FFFFFFEB"
+        if isValid(alt.check) then alt.check.blendColor = alt.label.color
+    end for
 end sub

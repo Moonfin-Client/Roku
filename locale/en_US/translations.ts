@@ -7484,5 +7484,43 @@
         <translation>Roku native player</translation>
         <extracomment>The Player row in the player's Playback Information panel, naming the Roku's own video player</extracomment>
     </message>
+    <message>
+        <source>Keyboard Style</source>
+        <translation>Keyboard Style</translation>
+    </message>
+    <message>
+        <source>Native uses your TV&apos;s own keyboard. Classic is the original Moonfin keyboard. Glass is a frosted panel with larger keys. Docked fills the bottom of the screen and shows what you type above the keys.</source>
+        <translation>Native uses your TV&apos;s own keyboard. Classic is the original Moonfin keyboard. Glass is a frosted panel with larger keys. Docked fills the bottom of the screen and shows what you type above the keys.</translation>
+    </message>
+    <message>
+        <source>Native</source>
+        <extracomment>Keyboard style option: the TV&apos;s own keyboard</extracomment>
+        <translation>Native</translation>
+    </message>
+    <message>
+        <source>Glass</source>
+        <extracomment>Keyboard style option: a see-through panel with larger keys</extracomment>
+        <translation>Glass</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <extracomment>Settings heading over the keyboard options</extracomment>
+        <translation>Input</translation>
+    </message>
+    <message>
+        <source>space</source>
+        <extracomment>Label on the on-screen keyboard&apos;s space bar</extracomment>
+        <translation>space</translation>
+    </message>
+    <message>
+        <source>for accents</source>
+        <extracomment>On-screen keyboard hint shown after the remote&apos;s options key, which opens the accents behind a key</extracomment>
+        <translation>for accents</translation>
+    </message>
+    <message>
+        <source>close</source>
+        <extracomment>On-screen keyboard hint shown after the remote&apos;s back key</extracomment>
+        <translation>close</translation>
+    </message>
 </context>
 </TS>

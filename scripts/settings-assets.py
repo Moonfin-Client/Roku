@@ -281,6 +281,11 @@ def write_images():
     write_square(os.path.join(IMAGES_OUT, 'square.9.png'), 2)
     write_square(os.path.join(IMAGES_OUT, 'square3s.9.png'), 4, 2 * dp)
     write_dot(os.path.join(IMAGES_OUT, 'dot96.png'), 96)
+    # The Glass keyboard panel and the keycaps in the keyboard hints
+    keyboard = os.path.join(ROOT, 'images/keyboard')
+    write_fill(os.path.join(keyboard, 'panel48.9.png'), 48)
+    write_stroke(os.path.join(keyboard, 'panel48s.9.png'), 48, 2)
+    write_stroke(os.path.join(keyboard, 'cap10s.9.png'), 10, 2)
 
 
 def main():
