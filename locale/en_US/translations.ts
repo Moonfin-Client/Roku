@@ -98,7 +98,7 @@
     </message>
     <message>
         <source>Bests</source>
-        <extracomment>Heading over the viewer's best figures</extracomment>
+        <extracomment>Heading over the viewer&apos;s best figures</extracomment>
         <translation>Bests</translation>
     </message>
     <message>
@@ -681,9 +681,9 @@
         <translation>Simplify the app and lock the way out with a PIN</translation>
     </message>
     <message>
-        <source>Size: {0}  &#8226;  Format: {1}</source>
+        <source>Size: {0}  •  Format: {1}</source>
         <extracomment>File size and container in the Nouveau details footer</extracomment>
-        <translation>Size: {0}  &#8226;  Format: {1}</translation>
+        <translation>Size: {0}  •  Format: {1}</translation>
     </message>
     <message>
         <source>Similar</source>
@@ -761,7 +761,7 @@
     </message>
     <message>
         <source>This server</source>
-        <extracomment>Heading over the whole server's figures</extracomment>
+        <extracomment>Heading over the whole server&apos;s figures</extracomment>
         <translation>This server</translation>
     </message>
     <message>
@@ -828,12 +828,12 @@
     </message>
     <message>
         <source>Used this week, comes back Monday UTC</source>
-        <extracomment>Shown once the week's quest reroll is spent</extracomment>
+        <extracomment>Shown once the week&apos;s quest reroll is spent</extracomment>
         <translation>Used this week, comes back Monday UTC</translation>
     </message>
     <message>
         <source>Used today, comes back at midnight UTC</source>
-        <extracomment>Shown once the day's quest reroll is spent</extracomment>
+        <extracomment>Shown once the day&apos;s quest reroll is spent</extracomment>
         <translation>Used today, comes back at midnight UTC</translation>
     </message>
     <message>
@@ -857,8 +857,8 @@
         <translation>You get one daily and one weekly reroll, and this spends it.</translation>
     </message>
     <message>
-        <source>It's spent as soon as you confirm.</source>
-        <translation>It's spent as soon as you confirm.</translation>
+        <source>It&apos;s spent as soon as you confirm.</source>
+        <translation>It&apos;s spent as soon as you confirm.</translation>
     </message>
     <message>
         <source>Settings</source>
@@ -2290,7 +2290,7 @@
     </message>
     <message>
         <source>Ratings for how good a movie is</source>
-        <translation>Community and critic review ratings from Rotten Tomatoes.</translation>
+        <translation>Ratings for how good a movie is</translation>
         <extracomment>User Setting - Setting description</extracomment>
     </message>
     <message>
@@ -3027,7 +3027,7 @@
     </message>
     <message>
         <source>Latest {0}</source>
-        <extracomment>Heading over the newest albums in a music library, {0} is the library's name</extracomment>
+        <extracomment>Heading over the newest albums in a music library, {0} is the library&apos;s name</extracomment>
         <translation>Latest {0}</translation>
     </message>
     <message>
@@ -3427,7 +3427,7 @@
     </message>
     <message>
         <source>Chapters and Extras</source>
-        <extracomment>Spotlight card that holds a title's chapters and extras</extracomment>
+        <extracomment>Spotlight card that holds a title&apos;s chapters and extras</extracomment>
         <translation>Chapters and Extras</translation>
     </message>
     <message>
@@ -3467,7 +3467,7 @@
     </message>
     <message>
         <source>{rating} / 10</source>
-        <extracomment>A reviewer's score out of ten on a TMDB review, for example 9 / 10</extracomment>
+        <extracomment>A reviewer&apos;s score out of ten on a TMDB review, for example 9 / 10</extracomment>
         <translation>{rating} / 10</translation>
     </message>
     <message>
@@ -3557,7 +3557,7 @@
     </message>
     <message>
         <source>Track List</source>
-        <extracomment>Spotlight card that holds an album's tracks</extracomment>
+        <extracomment>Spotlight card that holds an album&apos;s tracks</extracomment>
         <translation>Track List</translation>
     </message>
     <message>
@@ -3572,7 +3572,7 @@
     </message>
     <message>
         <source>Playlist</source>
-        <extracomment>Spotlight card that holds a playlist's items</extracomment>
+        <extracomment>Spotlight card that holds a playlist&apos;s items</extracomment>
         <translation>Playlist</translation>
     </message>
     <message>
@@ -3592,7 +3592,7 @@
     </message>
     <message>
         <source>Movies &amp; Shows</source>
-        <extracomment>Spotlight card that holds a collection's titles</extracomment>
+        <extracomment>Spotlight card that holds a collection&apos;s titles</extracomment>
         <translation>Movies &amp; Shows</translation>
     </message>
     <message>
@@ -3796,9 +3796,9 @@
         <translation>Audio channel count ({0}ch) exceeds the player limit.</translation>
     </message>
     <message>
-        <source>Tip: Adjust 'Maximum Audio Channels' in Audio Preferences.</source>
+        <source>Tip: Adjust &apos;Maximum Audio Channels&apos; in Audio Preferences.</source>
         <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
-        <translation>Tip: Adjust 'Maximum Audio Channels' in Audio Preferences.</translation>
+        <translation>Tip: Adjust &apos;Maximum Audio Channels&apos; in Audio Preferences.</translation>
     </message>
     <message>
         <source>Subtitle format ({0}) is not supported directly and must be burned in.</source>
@@ -3811,14 +3811,14 @@
         <translation>ASS/SSA subtitles require transcoding because direct play is turned off.</translation>
     </message>
     <message>
-        <source>Tip: Enable 'Direct Play ASS Subtitles' in Subtitle Preferences to play directly without transcoding.</source>
+        <source>Tip: Enable &apos;Direct Play ASS Subtitles&apos; in Subtitle Preferences to play directly without transcoding.</source>
         <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
-        <translation>Tip: Enable 'Direct Play ASS Subtitles' in Subtitle Preferences to play directly without transcoding.</translation>
+        <translation>Tip: Enable &apos;Direct Play ASS Subtitles&apos; in Subtitle Preferences to play directly without transcoding.</translation>
     </message>
     <message>
-        <source>Tip: Increase 'Maximum Bitrate' in Video Playback Preferences to allow direct streaming.</source>
+        <source>Tip: Increase &apos;Maximum Bitrate&apos; in Video Playback Preferences to allow direct streaming.</source>
         <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
-        <translation>Tip: Increase 'Maximum Bitrate' in Video Playback Preferences to allow direct streaming.</translation>
+        <translation>Tip: Increase &apos;Maximum Bitrate&apos; in Video Playback Preferences to allow direct streaming.</translation>
     </message>
     <message>
         <source>File bitrate ({0}) exceeds the configured streaming limit ({1}).</source>
@@ -3942,7 +3942,7 @@
     </message>
     <message>
         <source>Genres and Tags</source>
-        <extracomment>Chip that opens Seerr's genres, networks and keywords for a title</extracomment>
+        <extracomment>Chip that opens Seerr&apos;s genres, networks and keywords for a title</extracomment>
         <translation>Genres and Tags</translation>
     </message>
     <message>
@@ -4022,57 +4022,57 @@
     </message>
     <message>
         <source>January</source>
-        <extracomment>Month in a person's birth or death date</extracomment>
+        <extracomment>Month in a person&apos;s birth or death date</extracomment>
         <translation>January</translation>
     </message>
     <message>
         <source>February</source>
-        <extracomment>Month in a person's birth or death date</extracomment>
+        <extracomment>Month in a person&apos;s birth or death date</extracomment>
         <translation>February</translation>
     </message>
     <message>
         <source>March</source>
-        <extracomment>Month in a person's birth or death date</extracomment>
+        <extracomment>Month in a person&apos;s birth or death date</extracomment>
         <translation>March</translation>
     </message>
     <message>
         <source>April</source>
-        <extracomment>Month in a person's birth or death date</extracomment>
+        <extracomment>Month in a person&apos;s birth or death date</extracomment>
         <translation>April</translation>
     </message>
     <message>
         <source>June</source>
-        <extracomment>Month in a person's birth or death date</extracomment>
+        <extracomment>Month in a person&apos;s birth or death date</extracomment>
         <translation>June</translation>
     </message>
     <message>
         <source>July</source>
-        <extracomment>Month in a person's birth or death date</extracomment>
+        <extracomment>Month in a person&apos;s birth or death date</extracomment>
         <translation>July</translation>
     </message>
     <message>
         <source>August</source>
-        <extracomment>Month in a person's birth or death date</extracomment>
+        <extracomment>Month in a person&apos;s birth or death date</extracomment>
         <translation>August</translation>
     </message>
     <message>
         <source>September</source>
-        <extracomment>Month in a person's birth or death date</extracomment>
+        <extracomment>Month in a person&apos;s birth or death date</extracomment>
         <translation>September</translation>
     </message>
     <message>
         <source>October</source>
-        <extracomment>Month in a person's birth or death date</extracomment>
+        <extracomment>Month in a person&apos;s birth or death date</extracomment>
         <translation>October</translation>
     </message>
     <message>
         <source>November</source>
-        <extracomment>Month in a person's birth or death date</extracomment>
+        <extracomment>Month in a person&apos;s birth or death date</extracomment>
         <translation>November</translation>
     </message>
     <message>
         <source>December</source>
-        <extracomment>Month in a person's birth or death date</extracomment>
+        <extracomment>Month in a person&apos;s birth or death date</extracomment>
         <translation>December</translation>
     </message>
     <message>
@@ -4361,9 +4361,9 @@
         <translation>Could not refresh ratings from server. Showing saved ratings.</translation>
     </message>
     <message>
-        <source>This isn't available</source>
+        <source>This isn&apos;t available</source>
         <extracomment>Shown with a lock in place of a title a blocked rating keeps out</extracomment>
-        <translation>This isn't available</translation>
+        <translation>This isn&apos;t available</translation>
     </message>
     <message>
         <source>Now</source>
@@ -4427,47 +4427,47 @@
     </message>
     <message>
         <source>Kids</source>
-        <extracomment>Guide filter and program tag for children's programs</extracomment>
+        <extracomment>Guide filter and program tag for children&apos;s programs</extracomment>
         <translation>Kids</translation>
     </message>
     <message>
         <source>Premiere</source>
-        <extracomment>Guide filter and program tag for a program's first airing</extracomment>
+        <extracomment>Guide filter and program tag for a program&apos;s first airing</extracomment>
         <translation>Premiere</translation>
     </message>
     <message>
         <source>Sun</source>
-        <extracomment>Short name for Sunday in the guide's date heading</extracomment>
+        <extracomment>Short name for Sunday in the guide&apos;s date heading</extracomment>
         <translation>Sun</translation>
     </message>
     <message>
         <source>Mon</source>
-        <extracomment>Short name for Monday in the guide's date heading</extracomment>
+        <extracomment>Short name for Monday in the guide&apos;s date heading</extracomment>
         <translation>Mon</translation>
     </message>
     <message>
         <source>Tue</source>
-        <extracomment>Short name for Tuesday in the guide's date heading</extracomment>
+        <extracomment>Short name for Tuesday in the guide&apos;s date heading</extracomment>
         <translation>Tue</translation>
     </message>
     <message>
         <source>Wed</source>
-        <extracomment>Short name for Wednesday in the guide's date heading</extracomment>
+        <extracomment>Short name for Wednesday in the guide&apos;s date heading</extracomment>
         <translation>Wed</translation>
     </message>
     <message>
         <source>Thu</source>
-        <extracomment>Short name for Thursday in the guide's date heading</extracomment>
+        <extracomment>Short name for Thursday in the guide&apos;s date heading</extracomment>
         <translation>Thu</translation>
     </message>
     <message>
         <source>Fri</source>
-        <extracomment>Short name for Friday in the guide's date heading</extracomment>
+        <extracomment>Short name for Friday in the guide&apos;s date heading</extracomment>
         <translation>Fri</translation>
     </message>
     <message>
         <source>Sat</source>
-        <extracomment>Short name for Saturday in the guide's date heading</extracomment>
+        <extracomment>Short name for Saturday in the guide&apos;s date heading</extracomment>
         <translation>Sat</translation>
     </message>
     <message>
@@ -4542,7 +4542,7 @@
     </message>
     <message>
         <source>Failed to update favorite channel</source>
-        <extracomment>Guide notice when a channel's favorite state couldnt be changed</extracomment>
+        <extracomment>Guide notice when a channel&apos;s favorite state couldnt be changed</extracomment>
         <translation>Failed to update favorite channel</translation>
     </message>
     <message>
@@ -5222,7 +5222,7 @@
     </message>
     <message>
         <source>Trailer Preview</source>
-        <extracomment>Setting that plays the current title's trailer behind the media bar</extracomment>
+        <extracomment>Setting that plays the current title&apos;s trailer behind the media bar</extracomment>
         <translation>Trailer Preview</translation>
     </message>
     <message>
@@ -5272,7 +5272,7 @@
     </message>
     <message>
         <source>This trailer is a link to a web page, which cant be opened here.</source>
-        <extracomment>Shown when a title's trailer link isnt a YouTube video</extracomment>
+        <extracomment>Shown when a title&apos;s trailer link isnt a YouTube video</extracomment>
         <translation>This trailer is a link to a web page, which cant be opened here.</translation>
     </message>
     <message>
@@ -5391,9 +5391,9 @@
         <translation>Hidden</translation>
     </message>
     <message>
-        <source>Couldn't save the library order</source>
+        <source>Couldn&apos;t save the library order</source>
         <extracomment>Note shown when the server refused a new library order</extracomment>
-        <translation>Couldn't save the library order</translation>
+        <translation>Couldn&apos;t save the library order</translation>
     </message>
     <message>
         <source>Sections</source>
@@ -5552,7 +5552,7 @@
     </message>
     <message>
         <source>View Details</source>
-        <extracomment>Playlist row menu entry that opens the title's page</extracomment>
+        <extracomment>Playlist row menu entry that opens the title&apos;s page</extracomment>
         <translation>View Details</translation>
     </message>
     <message>
@@ -5621,13 +5621,13 @@
         <translation>Completely disables automatic subtitle loading.</translation>
     </message>
     <message>
-        <source>Plays tracks internally flagged in the media file's metadata as "default" or "forced".</source>
+        <source>Plays tracks internally flagged in the media file&apos;s metadata as &quot;default&quot; or &quot;forced&quot;.</source>
         <extracomment>Describes the Default subtitle mode</extracomment>
-        <translation>Plays tracks internally flagged in the media file's metadata as "default" or "forced".</translation>
+        <translation>Plays tracks internally flagged in the media file&apos;s metadata as &quot;default&quot; or &quot;forced&quot;.</translation>
     </message>
     <message>
         <source>Unlock notifications</source>
-        <extracomment>Achievements screen switch for the Achievement Badges plugin's unlock banners</extracomment>
+        <extracomment>Achievements screen switch for the Achievement Badges plugin&apos;s unlock banners</extracomment>
         <translation>Unlock notifications</translation>
     </message>
     <message>
@@ -5671,9 +5671,9 @@
         <translation>Friends</translation>
     </message>
     <message>
-        <source>See who's online and chat with people on this server</source>
+        <source>See who&apos;s online and chat with people on this server</source>
         <extracomment>Under the Friends entry</extracomment>
-        <translation>See who's online and chat with people on this server</translation>
+        <translation>See who&apos;s online and chat with people on this server</translation>
     </message>
     <message>
         <source>Friend requests</source>
@@ -5711,9 +5711,9 @@
         <translation>Add people</translation>
     </message>
     <message>
-        <source>That didn't work. Try again in a moment.</source>
+        <source>That didn&apos;t work. Try again in a moment.</source>
         <extracomment>A friends or chat change the server turned down without saying why</extracomment>
-        <translation>That didn't work. Try again in a moment.</translation>
+        <translation>That didn&apos;t work. Try again in a moment.</translation>
     </message>
     <message>
         <source>Request sent to {0}</source>
@@ -5812,7 +5812,7 @@
     </message>
     <message>
         <source>Best streak: {0} days</source>
-        <extracomment>A user's best watch streak on their profile</extracomment>
+        <extracomment>A user&apos;s best watch streak on their profile</extracomment>
         <translation>Best streak: {0} days</translation>
     </message>
     <message>
@@ -5941,14 +5941,14 @@
         <translation>Friends always see you as offline</translation>
     </message>
     <message>
-        <source>Hide what I'm watching</source>
+        <source>Hide what I&apos;m watching</source>
         <extracomment>Friends privacy switch</extracomment>
-        <translation>Hide what I'm watching</translation>
+        <translation>Hide what I&apos;m watching</translation>
     </message>
     <message>
-        <source>Friends still see you online, but not what's playing</source>
-        <extracomment>Under the Hide what I'm watching switch</extracomment>
-        <translation>Friends still see you online, but not what's playing</translation>
+        <source>Friends still see you online, but not what&apos;s playing</source>
+        <extracomment>Under the Hide what I&apos;m watching switch</extracomment>
+        <translation>Friends still see you online, but not what&apos;s playing</translation>
     </message>
     <message>
         <source>Hide my last watched</source>
@@ -5956,9 +5956,9 @@
         <translation>Hide my last watched</translation>
     </message>
     <message>
-        <source>Friends won't see what you watched last while you're offline</source>
+        <source>Friends won&apos;t see what you watched last while you&apos;re offline</source>
         <extracomment>Under the Hide my last watched switch</extracomment>
-        <translation>Friends won't see what you watched last while you're offline</translation>
+        <translation>Friends won&apos;t see what you watched last while you&apos;re offline</translation>
     </message>
     <message>
         <source>Message notifications</source>
@@ -6257,12 +6257,12 @@
     </message>
     <message>
         <source>Plugin Not Detected</source>
-        <extracomment>Settings sync panel when the Moonbase plugin can't be reached</extracomment>
+        <extracomment>Settings sync panel when the Moonbase plugin can&apos;t be reached</extracomment>
         <translation>Plugin Not Detected</translation>
     </message>
     <message>
         <source>Install Moonbase on your server and turn on Enable Plugin.</source>
-        <extracomment>Settings sync panel when the Moonbase plugin can't be reached</extracomment>
+        <extracomment>Settings sync panel when the Moonbase plugin can&apos;t be reached</extracomment>
         <translation>Install Moonbase on your server and turn on Enable Plugin.</translation>
     </message>
     <message>
@@ -6301,19 +6301,19 @@
         <translation>Loaded the {0} profile</translation>
     </message>
     <message>
-        <source>Couldn't load settings from the server</source>
+        <source>Couldn&apos;t load settings from the server</source>
         <extracomment>Note when loading settings from the server failed</extracomment>
-        <translation>Couldn't load settings from the server</translation>
+        <translation>Couldn&apos;t load settings from the server</translation>
     </message>
     <message>
         <source>Saved to the {0} profile</source>
-        <extracomment>Note after this device's settings were saved to the server, {0} is the profile name</extracomment>
+        <extracomment>Note after this device&apos;s settings were saved to the server, {0} is the profile name</extracomment>
         <translation>Saved to the {0} profile</translation>
     </message>
     <message>
-        <source>Couldn't save settings to the server</source>
+        <source>Couldn&apos;t save settings to the server</source>
         <extracomment>Note when saving settings to the server failed</extracomment>
-        <translation>Couldn't save settings to the server</translation>
+        <translation>Couldn&apos;t save settings to the server</translation>
     </message>
     <message>
         <source>Reset the {0} profile</source>
@@ -6321,9 +6321,9 @@
         <translation>Reset the {0} profile</translation>
     </message>
     <message>
-        <source>Couldn't reset the {0} profile</source>
+        <source>Couldn&apos;t reset the {0} profile</source>
         <extracomment>Note when resetting a settings sync profile failed, {0} is the profile name</extracomment>
-        <translation>Couldn't reset the {0} profile</translation>
+        <translation>Couldn&apos;t reset the {0} profile</translation>
     </message>
     <message>
         <source>24-Hour Clock</source>
@@ -7147,7 +7147,7 @@
     <message>
         <source>This account can&apos;t sign in right now. It may be outside its allowed hours, locked or disabled. Try again later or ask an administrator.</source>
         <translation>This account can&apos;t sign in right now. It may be outside its allowed hours, locked or disabled. Try again later or ask an administrator.</translation>
-        <extracomment>Shown when the server refuses a sign in because the account can't be used right now, for example outside its access schedule</extracomment>
+        <extracomment>Shown when the server refuses a sign in because the account can&apos;t be used right now, for example outside its access schedule</extracomment>
     </message>
     <message>
         <source>Lossless</source>
@@ -7157,332 +7157,332 @@
     <message>
         <source>Collections row</source>
         <translation>Collections row</translation>
-        <extracomment>Under a collection's own row in the Home Rows editor</extracomment>
+        <extracomment>Under a collection&apos;s own row in the Home Rows editor</extracomment>
     </message>
     <message>
         <source>Collections row from {0}</source>
         <translation>Collections row from {0}</translation>
-        <extracomment>Under a collection's own row in the Home Rows editor when it comes from another server. {0} is that server's name</extracomment>
+        <extracomment>Under a collection&apos;s own row in the Home Rows editor when it comes from another server. {0} is that server&apos;s name</extracomment>
     </message>
     <message>
         <source>Genres row</source>
         <translation>Genres row</translation>
-        <extracomment>Under a genre's own row in the Home Rows editor</extracomment>
+        <extracomment>Under a genre&apos;s own row in the Home Rows editor</extracomment>
     </message>
     <message>
         <source>Playlists row</source>
         <translation>Playlists row</translation>
-        <extracomment>Under a playlist's own row in the Home Rows editor</extracomment>
+        <extracomment>Under a playlist&apos;s own row in the Home Rows editor</extracomment>
     </message>
     <message>
         <source>Channel</source>
         <translation>Channel</translation>
-        <extracomment>A row label in the player's Playback Information panel, for the Live TV channel playing</extracomment>
+        <extracomment>A row label in the player&apos;s Playback Information panel, for the Live TV channel playing</extracomment>
     </message>
     <message>
         <source>Program</source>
         <translation>Program</translation>
-        <extracomment>A row label in the player's Playback Information panel, for the Live TV program airing now</extracomment>
+        <extracomment>A row label in the player&apos;s Playback Information panel, for the Live TV program airing now</extracomment>
     </message>
     <message>
         <source>Play Method</source>
         <translation>Play Method</translation>
-        <extracomment>A row label in the player's Playback Information panel: Direct Play, Direct Stream or Transcoding</extracomment>
+        <extracomment>A row label in the player&apos;s Playback Information panel: Direct Play, Direct Stream or Transcoding</extracomment>
     </message>
     <message>
         <source>Why</source>
         <translation>Why</translation>
-        <extracomment>A row label in the player's Playback Information panel, listing why the server is converting the file</extracomment>
+        <extracomment>A row label in the player&apos;s Playback Information panel, listing why the server is converting the file</extracomment>
     </message>
     <message>
         <source>Bitrate</source>
         <translation>Bitrate</translation>
-        <extracomment>A row label in the player's Playback Information panel</extracomment>
+        <extracomment>A row label in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>Quality Limit</source>
         <translation>Quality Limit</translation>
-        <extracomment>A row label in the player's Playback Information panel, for the maximum streaming bitrate the viewer picked</extracomment>
+        <extracomment>A row label in the player&apos;s Playback Information panel, for the maximum streaming bitrate the viewer picked</extracomment>
     </message>
     <message>
         <source>Resolution</source>
         <translation>Resolution</translation>
-        <extracomment>A row label in the player's Playback Information panel</extracomment>
+        <extracomment>A row label in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>Frame Rate</source>
         <translation>Frame Rate</translation>
-        <extracomment>A row label in the player's Playback Information panel</extracomment>
+        <extracomment>A row label in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>Track</source>
         <translation>Track</translation>
-        <extracomment>A row label in the player's Playback Information panel, naming the audio or subtitle track playing</extracomment>
+        <extracomment>A row label in the player&apos;s Playback Information panel, naming the audio or subtitle track playing</extracomment>
     </message>
     <message>
         <source>Delivery</source>
         <translation>Delivery</translation>
-        <extracomment>A row label in the player's Playback Information panel, for how the subtitles reach the player</extracomment>
+        <extracomment>A row label in the player&apos;s Playback Information panel, for how the subtitles reach the player</extracomment>
     </message>
     <message>
         <source>File</source>
         <translation>File</translation>
-        <extracomment>A section title in the player's Playback Information panel</extracomment>
+        <extracomment>A section title in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>Technical</source>
         <translation>Technical</translation>
-        <extracomment>A section title in the player's Playback Information panel</extracomment>
+        <extracomment>A section title in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>Player</source>
         <translation>Player</translation>
-        <extracomment>A row label in the player's Playback Information panel, naming the playback engine</extracomment>
+        <extracomment>A row label in the player&apos;s Playback Information panel, naming the playback engine</extracomment>
     </message>
     <message>
         <source>Device</source>
         <translation>Device</translation>
-        <extracomment>A row label in the player's Playback Information panel, naming this Roku and its OS version</extracomment>
+        <extracomment>A row label in the player&apos;s Playback Information panel, naming this Roku and its OS version</extracomment>
     </message>
     <message>
         <source>Transcode Reasons</source>
         <translation>Transcode Reasons</translation>
-        <extracomment>A row label in the player's Playback Information panel, followed by the server's own reason names</extracomment>
+        <extracomment>A row label in the player&apos;s Playback Information panel, followed by the server&apos;s own reason names</extracomment>
     </message>
     <message>
         <source>Direct Stream</source>
         <translation>Direct Stream</translation>
-        <extracomment>A play method in the player's Playback Information panel, where the server repackages the file without converting it</extracomment>
+        <extracomment>A play method in the player&apos;s Playback Information panel, where the server repackages the file without converting it</extracomment>
     </message>
     <message>
         <source>Transcoding</source>
         <translation>Transcoding</translation>
-        <extracomment>A play method in the player's Playback Information panel, where the server converts the file</extracomment>
+        <extracomment>A play method in the player&apos;s Playback Information panel, where the server converts the file</extracomment>
     </message>
     <message>
         <source>Mono</source>
         <translation>Mono</translation>
-        <extracomment>Audio channels in the player's Playback Information panel</extracomment>
+        <extracomment>Audio channels in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>Stereo</source>
         <translation>Stereo</translation>
-        <extracomment>Audio channels in the player's Playback Information panel</extracomment>
+        <extracomment>Audio channels in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>5.1 surround</source>
         <translation>5.1 surround</translation>
-        <extracomment>Audio channels in the player's Playback Information panel</extracomment>
+        <extracomment>Audio channels in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>7.1 surround</source>
         <translation>7.1 surround</translation>
-        <extracomment>Audio channels in the player's Playback Information panel</extracomment>
+        <extracomment>Audio channels in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>{count} channels</source>
         <translation>{count} channels</translation>
-        <extracomment>Audio channels in the player's Playback Information panel. {count} is the number of channels</extracomment>
+        <extracomment>Audio channels in the player&apos;s Playback Information panel. {count} is the number of channels</extracomment>
     </message>
     <message>
         <source>Embedded</source>
         <translation>Embedded</translation>
-        <extracomment>Subtitle delivery in the player's Playback Information panel, for subtitles inside the file</extracomment>
+        <extracomment>Subtitle delivery in the player&apos;s Playback Information panel, for subtitles inside the file</extracomment>
     </message>
     <message>
         <source>External</source>
         <translation>External</translation>
-        <extracomment>Subtitle delivery in the player's Playback Information panel, for subtitles in a file of their own</extracomment>
+        <extracomment>Subtitle delivery in the player&apos;s Playback Information panel, for subtitles in a file of their own</extracomment>
     </message>
     <message>
         <source>Burned in by the server</source>
         <translation>Burned in by the server</translation>
-        <extracomment>Subtitle delivery in the player's Playback Information panel, for subtitles the server draws into the picture</extracomment>
+        <extracomment>Subtitle delivery in the player&apos;s Playback Information panel, for subtitles the server draws into the picture</extracomment>
     </message>
     <message>
         <source>{value} (original {original})</source>
         <translation>{value} (original {original})</translation>
-        <extracomment>The bitrate row in the player's Playback Information panel while the server streams the file. {value} is what reaches the device and {original} is the file's own bitrate</extracomment>
+        <extracomment>The bitrate row in the player&apos;s Playback Information panel while the server streams the file. {value} is what reaches the device and {original} is the file&apos;s own bitrate</extracomment>
     </message>
     <message>
         <source>{value} (converted from {source})</source>
         <translation>{value} (converted from {source})</translation>
-        <extracomment>A row value in the player's Playback Information panel when the server converts it, for example AAC (converted from Dolby TrueHD)</extracomment>
+        <extracomment>A row value in the player&apos;s Playback Information panel when the server converts it, for example AAC (converted from Dolby TrueHD)</extracomment>
     </message>
     <message>
         <source>{value} ({size}, converted from {source})</source>
         <translation>{value} ({size}, converted from {source})</translation>
-        <extracomment>The resolution row in the player's Playback Information panel when the server scales the video, for example 1080p (1920×1080, converted from 4K)</extracomment>
+        <extracomment>The resolution row in the player&apos;s Playback Information panel when the server scales the video, for example 1080p (1920×1080, converted from 4K)</extracomment>
     </message>
     <message>
         <source>Playing the original file as is.</source>
         <translation>Playing the original file as is.</translation>
-        <extracomment>The note under Direct Play in the player's Playback Information panel</extracomment>
+        <extracomment>The note under Direct Play in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>The server is repackaging the file without converting it.</source>
         <translation>The server is repackaging the file without converting it.</translation>
-        <extracomment>The note under Direct Stream in the player's Playback Information panel</extracomment>
+        <extracomment>The note under Direct Stream in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>The server is converting the video so this device can play it.</source>
         <translation>The server is converting the video so this device can play it.</translation>
-        <extracomment>The note under Transcoding in the player's Playback Information panel when only the video is converted</extracomment>
+        <extracomment>The note under Transcoding in the player&apos;s Playback Information panel when only the video is converted</extracomment>
     </message>
     <message>
         <source>The server is converting the audio so this device can play it.</source>
         <translation>The server is converting the audio so this device can play it.</translation>
-        <extracomment>The note under Transcoding in the player's Playback Information panel when only the audio is converted</extracomment>
+        <extracomment>The note under Transcoding in the player&apos;s Playback Information panel when only the audio is converted</extracomment>
     </message>
     <message>
         <source>The server is converting the video and audio so this device can play it.</source>
         <translation>The server is converting the video and audio so this device can play it.</translation>
-        <extracomment>The note under Transcoding in the player's Playback Information panel when both are converted</extracomment>
+        <extracomment>The note under Transcoding in the player&apos;s Playback Information panel when both are converted</extracomment>
     </message>
     <message>
         <source>The server is converting this file so this device can play it.</source>
         <translation>The server is converting this file so this device can play it.</translation>
-        <extracomment>The note under Transcoding in the player's Playback Information panel when it isn't known which part is converted</extracomment>
+        <extracomment>The note under Transcoding in the player&apos;s Playback Information panel when it isn&apos;t known which part is converted</extracomment>
     </message>
     <message>
         <source>Transcoding is forced in settings</source>
         <translation>Transcoding is forced in settings</translation>
-        <extracomment>A reason in the player's Playback Information panel</extracomment>
+        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
-        <source>This device can't play this file type</source>
-        <translation>This device can't play this file type</translation>
-        <extracomment>A reason in the player's Playback Information panel, when the container isn't supported</extracomment>
+        <source>This device can&apos;t play this file type</source>
+        <translation>This device can&apos;t play this file type</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, when the container isn&apos;t supported</extracomment>
     </message>
     <message>
-        <source>This device can't play this video format</source>
-        <translation>This device can't play this video format</translation>
-        <extracomment>A reason in the player's Playback Information panel</extracomment>
+        <source>This device can&apos;t play this video format</source>
+        <translation>This device can&apos;t play this video format</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
-        <source>This device can't display this HDR format</source>
-        <translation>This device can't display this HDR format</translation>
-        <extracomment>A reason in the player's Playback Information panel</extracomment>
+        <source>This device can&apos;t display this HDR format</source>
+        <translation>This device can&apos;t display this HDR format</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
-        <source>This device can't play this audio format</source>
-        <translation>This device can't play this audio format</translation>
-        <extracomment>A reason in the player's Playback Information panel</extracomment>
+        <source>This device can&apos;t play this audio format</source>
+        <translation>This device can&apos;t play this audio format</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>Subtitles are being burned into the video</source>
         <translation>Subtitles are being burned into the video</translation>
-        <extracomment>A reason in the player's Playback Information panel</extracomment>
+        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
-        <source>The file couldn't be played directly</source>
-        <translation>The file couldn't be played directly</translation>
-        <extracomment>A reason in the player's Playback Information panel, for any reason the others don't cover</extracomment>
+        <source>The file couldn&apos;t be played directly</source>
+        <translation>The file couldn&apos;t be played directly</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for any reason the others don&apos;t cover</extracomment>
     </message>
     <message>
         <source>{bitrate} is above the {limit} streaming limit</source>
         <translation>{bitrate} is above the {limit} streaming limit</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example 68.4 Mbps is above the 20 Mbps streaming limit</extracomment>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example 68.4 Mbps is above the 20 Mbps streaming limit</extracomment>
     </message>
     <message>
         <source>The bitrate is above the streaming limit</source>
         <translation>The bitrate is above the streaming limit</translation>
-        <extracomment>A reason in the player's Playback Information panel, when the file's bitrate is over the limit</extracomment>
+        <extracomment>A reason in the player&apos;s Playback Information panel, when the file&apos;s bitrate is over the limit</extracomment>
     </message>
     <message>
-        <source>This device can't open {container} files</source>
-        <translation>This device can't open {container} files</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example This device can't open MKV files</extracomment>
+        <source>This device can&apos;t open {container} files</source>
+        <translation>This device can&apos;t open {container} files</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t open MKV files</extracomment>
     </message>
     <message>
-        <source>This device can't play {codec} video</source>
-        <translation>This device can't play {codec} video</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example This device can't play HEVC video</extracomment>
+        <source>This device can&apos;t play {codec} video</source>
+        <translation>This device can&apos;t play {codec} video</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play HEVC video</extracomment>
     </message>
     <message>
-        <source>This device can't play {codec} {profile} video</source>
-        <translation>This device can't play {codec} {profile} video</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example This device can't play HEVC Main 10 video</extracomment>
+        <source>This device can&apos;t play {codec} {profile} video</source>
+        <translation>This device can&apos;t play {codec} {profile} video</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play HEVC Main 10 video</extracomment>
     </message>
     <message>
-        <source>This device can't play {codec} level {level} video</source>
-        <translation>This device can't play {codec} level {level} video</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example This device can't play HEVC level 5.1 video</extracomment>
+        <source>This device can&apos;t play {codec} level {level} video</source>
+        <translation>This device can&apos;t play {codec} level {level} video</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play HEVC level 5.1 video</extracomment>
     </message>
     <message>
-        <source>This device can't play {bits}-bit video</source>
-        <translation>This device can't play {bits}-bit video</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example This device can't play 10-bit video</extracomment>
+        <source>This device can&apos;t play {bits}-bit video</source>
+        <translation>This device can&apos;t play {bits}-bit video</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play 10-bit video</extracomment>
     </message>
     <message>
-        <source>This device can't play {resolution} video</source>
-        <translation>This device can't play {resolution} video</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example This device can't play 4K video</extracomment>
+        <source>This device can&apos;t play {resolution} video</source>
+        <translation>This device can&apos;t play {resolution} video</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play 4K video</extracomment>
     </message>
     <message>
-        <source>This device can't play {fps} fps video</source>
-        <translation>This device can't play {fps} fps video</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example This device can't play 59.94 fps video</extracomment>
+        <source>This device can&apos;t play {fps} fps video</source>
+        <translation>This device can&apos;t play {fps} fps video</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play 59.94 fps video</extracomment>
     </message>
     <message>
-        <source>This device can't play interlaced video</source>
-        <translation>This device can't play interlaced video</translation>
-        <extracomment>A reason in the player's Playback Information panel</extracomment>
+        <source>This device can&apos;t play interlaced video</source>
+        <translation>This device can&apos;t play interlaced video</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
-        <source>This device can't play anamorphic video</source>
-        <translation>This device can't play anamorphic video</translation>
-        <extracomment>A reason in the player's Playback Information panel</extracomment>
+        <source>This device can&apos;t play anamorphic video</source>
+        <translation>This device can&apos;t play anamorphic video</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
-        <source>This device can't display {range}</source>
-        <translation>This device can't display {range}</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example This device can't display Dolby Vision Profile 7</extracomment>
+        <source>This device can&apos;t display {range}</source>
+        <translation>This device can&apos;t display {range}</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t display Dolby Vision Profile 7</extracomment>
     </message>
     <message>
-        <source>This device can't play {format} audio</source>
-        <translation>This device can't play {format} audio</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example This device can't play DTS audio</extracomment>
+        <source>This device can&apos;t play {format} audio</source>
+        <translation>This device can&apos;t play {format} audio</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play DTS audio</extracomment>
     </message>
     <message>
-        <source>This device can't play {fullFormat}</source>
-        <translation>This device can't play {fullFormat}</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example This device can't play Dolby TrueHD with Atmos</extracomment>
+        <source>This device can&apos;t play {fullFormat}</source>
+        <translation>This device can&apos;t play {fullFormat}</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play Dolby TrueHD with Atmos</extracomment>
     </message>
     <message>
-        <source>This device can't play {channels} audio</source>
-        <translation>This device can't play {channels} audio</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example This device can't play 7.1 audio</extracomment>
+        <source>This device can&apos;t play {channels} audio</source>
+        <translation>This device can&apos;t play {channels} audio</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play 7.1 audio</extracomment>
     </message>
     <message>
-        <source>This device can't play {rate} kHz audio</source>
-        <translation>This device can't play {rate} kHz audio</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example This device can't play 96 kHz audio</extracomment>
+        <source>This device can&apos;t play {rate} kHz audio</source>
+        <translation>This device can&apos;t play {rate} kHz audio</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play 96 kHz audio</extracomment>
     </message>
     <message>
-        <source>This device can't play {bits}-bit audio</source>
-        <translation>This device can't play {bits}-bit audio</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example This device can't play 24-bit audio</extracomment>
+        <source>This device can&apos;t play {bits}-bit audio</source>
+        <translation>This device can&apos;t play {bits}-bit audio</translation>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play 24-bit audio</extracomment>
     </message>
     <message>
         <source>The audio track is in a separate file</source>
         <translation>The audio track is in a separate file</translation>
-        <extracomment>A reason in the player's Playback Information panel</extracomment>
+        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>This device can only play the first audio track</source>
         <translation>This device can only play the first audio track</translation>
-        <extracomment>A reason in the player's Playback Information panel</extracomment>
+        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>{format} subtitles are being burned into the video</source>
         <translation>{format} subtitles are being burned into the video</translation>
-        <extracomment>A reason in the player's Playback Information panel, for example PGS subtitles are being burned into the video</extracomment>
+        <extracomment>A reason in the player&apos;s Playback Information panel, for example PGS subtitles are being burned into the video</extracomment>
     </message>
     <message>
         <source>Roku native player</source>
         <translation>Roku native player</translation>
-        <extracomment>The Player row in the player's Playback Information panel, naming the Roku's own video player</extracomment>
+        <extracomment>The Player row in the player&apos;s Playback Information panel, naming the Roku&apos;s own video player</extracomment>
     </message>
     <message>
         <source>Keyboard Style</source>
