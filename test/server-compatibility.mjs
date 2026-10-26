@@ -700,13 +700,19 @@ const listed = (name) => [...effectsSource.match(new RegExp(`function ${name}\\(
 assert.deepEqual(findSetting(settingsTree, 'seasonal.surprise').options.map(option => option.id).sort(), listed('Effects').sort(), 'The setting offers every effect');
 assert.deepEqual(findSetting(settingsTree, 'seasonal.density').options.map(option => option.id), listed('Densities'), 'The setting offers every density');
 const palette = (name) => [...effectsSource.match(new RegExp(`${name}: \\[("#[^\\]]*)\\]`))[1].matchAll(/"#([0-9a-f]{6})"/g)].map(match => match[1]);
-const artwork = ['dot', 'flake', 'leaf', 'leaf-mirror', 'disc', 'glow', 'spark', 'rocket', 'star', 'bat', 'blossom', 'candy', 'bee', 'ghost', 'planchette',
-    ...palette('petals').map(color => `petal-${color}`), ...palette('baubles').map(color => `bauble-${color}`)];
-assert.deepEqual((await readdir('images/seasonal')).sort(), artwork.map(name => `${name}.png`).sort(), 'Every seasonal image the effects name ships, and nothing else');
-assert.match(await readFile('components/seasonal/HalloweenPlanchette.xml', 'utf8'), /uri="pkg:\/images\/seasonal\/planchette\.png"/, 'The planchette draws its own image');
+const followerSource = await readFile('components/seasonal/SeasonalFollower.bs', 'utf8');
+const followerArt = [...new Set([...followerSource.matchAll(/"(follower-[A-Za-z-]+)"/g)].map(match => match[1]))];
+const artwork = ['dot', 'flake', 'leaf', 'leaf-mirror', 'disc', 'glow', 'spark', 'rocket', 'star', 'bat', 'blossom', 'candy', 'bee', 'ghost', 'heart', 'egg', 'lantern',
+    ...followerArt, ...palette('petals').map(color => `petal-${color}`), ...palette('baubles').map(color => `bauble-${color}`)];
+assert.deepEqual((await readdir('images/seasonal')).sort(), artwork.map(name => `${name}.webp`).sort(), 'Every seasonal image the effects and followers name ships, and nothing else');
+const followerStyles = followerSource.match(/function followerStyles\(\) as object\s+return \{([^]*?)\n    \}/)[1];
+const effectFollowers = effectsSource.match(/function FollowerStyles\(effect as string\) as object\s+styles = \{([^]*?)\n        \}/)[1];
+for (const [, style] of effectFollowers.matchAll(/"(\w+)"/g)) {
+    assert.match(followerStyles, new RegExp(`^\\s+${style}: \\{`, 'm'), `The ${style} follower is drawn`);
+}
 assert.ok(glyphNames.includes(findSetting(settingsTree, 'seasonal.surprise').glyph), 'The seasonal effect draws its glyph');
 assert.ok(glyphNames.includes(findSetting(settingsTree, 'seasonal.density').glyph), 'The density draws its glyph');
-process.stdout.write('PASS: seasonal effects wiring (11 checks)\n');
+process.stdout.write('PASS: seasonal effects wiring (12 checks)\n');
 
 // Sync follows the profile picked on this device, which stays local, and the panel that picks it
 // loads, saves and resets on a task
