@@ -5251,6 +5251,16 @@
         <translation>Show captions on media bar trailer previews when YouTube has them</translation>
     </message>
     <message>
+        <source>Peek Home Rows</source>
+        <extracomment>Setting that shows the first home row along the bottom of the media bar</extracomment>
+        <translation>Peek Home Rows</translation>
+    </message>
+    <message>
+        <source>Show the top half of the first row along the bottom of the media bar</source>
+        <extracomment>Description of the Peek Home Rows setting</extracomment>
+        <translation>Show the top half of the first row along the bottom of the media bar</translation>
+    </message>
+    <message>
         <source>Loading trailer...</source>
         <extracomment>Shown while a YouTube trailer is being found</extracomment>
         <translation>Loading trailer...</translation>
