@@ -7532,5 +7532,37 @@
         <extracomment>On-screen keyboard hint shown after the remote&apos;s back key</extracomment>
         <translation>close</translation>
     </message>
+    <message>
+        <source>Row Sorting</source>
+        <translation>Row Sorting</translation>
+    </message>
+    <message>
+        <source>Sort Order</source>
+        <translation>Sort Order</translation>
+    </message>
+    <message>
+        <source>Sorting</source>
+        <translation>Sorting</translation>
+    </message>
+    <message>
+        <source>Release Date</source>
+        <translation>Release Date</translation>
+    </message>
+    <message>
+        <source>Rating</source>
+        <translation>Rating</translation>
+    </message>
+    <message>
+        <source>Popularity</source>
+        <translation>Popularity</translation>
+    </message>
+    <message>
+        <source>Choose sorting method for this row</source>
+        <translation>Choose sorting method for this row</translation>
+    </message>
+    <message>
+        <source>Choose sort order</source>
+        <translation>Choose sort order</translation>
+    </message>
 </context>
 </TS>
