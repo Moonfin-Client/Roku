@@ -1,4 +1,5 @@
 import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/utils/homePreview.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/serverCompatibility.bs"
@@ -17,6 +18,8 @@ sub execute()
 
     if m.top.action = "stop"
         stopEncoding(request)
+    else if m.top.action = "trailer"
+        resolveTrailer(request, answer)
     else
         target = resolveTarget(request)
         if isValid(target) then answer.target = target
@@ -46,6 +49,41 @@ function resolveTarget(request as object) as dynamic
     if not validItemMetadata(target) then return invalid
     return target
 end function
+
+' The trailer of the item asked about. A file on the server comes back as the target, with what
+' its stream needs, and a YouTube trailer comes back as its id. The item is only fetched for its
+' links when it has no file and came without them.
+sub resolveTrailer(request as object, answer as object)
+    if isValid(request.details)
+        resolveOutsideTrailer(request.details, answer)
+        return
+    end if
+
+    server = request.server
+    ownerId = toString(chainLookupReturn(request, "item.Id", ""))
+    if not isValid(server) or ownerId = "" or toString(server.url) = "" then return
+
+    emby = isEmbyServer(server.url)
+    path = serverItemMetadataPath(ownerId, server.userId, emby)
+    params = { "UserId": server.userId }
+    found = homePreview.TrailerSource(serverJson(server, path + "/LocalTrailers", params), chainLookupReturn(request, "item.RemoteTrailers", invalid))
+    if not isValid(found) then found = homePreview.TrailerSource(invalid, chainLookupReturn(serverJson(server, path, params), "RemoteTrailers", invalid))
+    if not isValid(found) then return
+
+    if isValidAndNotEmpty(found.videoId)
+        answer.videoId = found.videoId
+        return
+    end if
+    target = serverJson(server, serverItemMetadataPath(found.localId, server.userId, emby), { "UserId": server.userId, "Fields": "MediaSources,MediaStreams" })
+    if validItemMetadata(target) then answer.target = target
+end sub
+
+' A title with no server item only has the trailer the plugin's TMDB details name
+sub resolveOutsideTrailer(query as object, answer as object)
+    if not moonfinPlugin.AreTmdbDetailsSupported() then return
+    found = homePreview.DetailsTrailerSource(requestResponse(APIRequest("/Moonfin/Tmdb/Details", query), "GET", "", PREVIEW_REQUEST_TIMEOUT_MS).data)
+    if isValid(found) then answer.videoId = found.videoId
+end sub
 
 ' Lets the server drop the preview's transcode. Jellyfin and Emby take the same route.
 sub stopEncoding(request as object)

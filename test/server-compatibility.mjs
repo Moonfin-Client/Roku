@@ -799,17 +799,26 @@ assert.match(homeData, /sub setTitledThumb\([^]*?m\.top\.thumbnailURL = thumbUrl
 assert.doesNotMatch(homeData.match(/sub setTitledThumb\([^]*?end sub/)[0], /backdropURL/, 'The page behind a card keeps the plain backdrop');
 process.stdout.write('PASS: tmdb thumbs wiring (18 checks)\n');
 
-// The focused card's preview: both switches sit under Home Screen for modern rows and sync with
-// the plugin, every way off the screen stops it, the controller never reports playback, and the
-// corner piece keeps its transparency where the device reads it
+// The focused card's preview: the mode and the audio switch sit under Home Screen for modern rows
+// and sync with the plugin, every way off the screen stops it, the controller never reports
+// playback, and the corner piece keeps its transparency where the device reads it
 const previewSettings = await readFile('settings/settings.json', 'utf8');
-assert.match(previewSettings, /"settingName": "ui\.home\.episodePreviewEnabled",\s+"glyph": "play_circle",\s+"requires": "setting:ui\.home\.rowsStyle!=v1",\s+"type": "bool",\s+"default": "false"/, 'Media Preview is a Home Screen switch for modern rows, off by default');
+assert.match(previewSettings, /"title": "Media Preview",[^{}]*"settingName": "ui\.home\.mediaPreviewMode",\s+"glyph": "play_circle",\s+"requires": "setting:ui\.home\.rowsStyle!=v1",\s+"type": "radio",\s+"default": "media",\s+"options": \[\s+\{\s+"title": "Off",\s+"id": "off"\s+\},\s+\{\s+"title": "Media Preview",\s+"id": "media"\s+\},\s+\{\s+"title": "Trailer Preview",\s+"id": "trailer"\s+\}\s+\]/, 'Media Preview is a Home Screen choice of off, clip or trailer for modern rows');
+assert.doesNotMatch(previewSettings, /"settingName": "ui\.home\.episodePreviewEnabled"/, 'The old switch has no row of its own, the choice writes it');
 assert.match(previewSettings, /"settingName": "ui\.home\.previewAudioEnabled",\s+"glyph": "volume_up",\s+"requires": "setting:ui\.home\.rowsStyle!=v1&&setting:ui\.home\.episodePreviewEnabled",\s+"type": "bool",\s+"default": "true"/, 'Preview Audio follows Media Preview, on by default');
-assert.match(settingsSyncSource, /\{ pluginKey: "episodePreviewEnabled", rokuKey: "ui\.home\.episodePreviewEnabled", type: "bool" \}/, 'Media Preview syncs with the plugin');
+assert.match(settingsSyncSource, /\{ pluginKey: "episodePreviewEnabled", rokuKey: "ui\.home\.episodePreviewEnabled", type: "bool" \}/, 'The Media Preview switch syncs with the plugin');
+assert.match(settingsSyncSource, /\{ pluginKey: "mediaPreviewMode", rokuKey: "ui\.home\.mediaPreviewMode", type: "direct" \}/, 'The Media Preview mode syncs with the plugin');
 assert.match(settingsSyncSource, /\{ pluginKey: "previewAudioEnabled", rokuKey: "ui\.home\.previewAudioEnabled", type: "bool" \}/, 'Preview Audio syncs with the plugin');
-assert.match(await readFile('components/settings/settings.bs', 'utf8'), /homeLooks = takeSettings\(configTree, \[[^\]]*"ui\.home\.episodePreviewEnabled", "ui\.home\.previewAudioEnabled"[^\]]*\]\)/, 'Both preview switches sit in the Home Screen Looks group');
+const previewSettingsScreen = await readFile('components/settings/settings.bs', 'utf8');
+assert.match(previewSettingsScreen, /homeLooks = takeSettings\(configTree, \[[^\]]*"ui\.home\.mediaPreviewMode", "ui\.home\.previewAudioEnabled"[^\]]*\]\)/, 'Both preview settings sit in the Home Screen Looks group');
+const previewChoice = previewSettingsScreen.match(/sub applyRadioChoice\([^]*?^end sub/m)[0];
+assert.match(previewChoice, /if isStringEqual\(selectedSetting\.settingName, "ui\.home\.mediaPreviewMode"\)\s+dependsOn = "ui\.home\.episodePreviewEnabled"\s+previewOn = "true"\s+if isStringEqual\(selectedValue, "off"\) then previewOn = "false"\s+set_user_setting\(dependsOn, previewOn\)\s+syncSettingToServer\(dependsOn, previewOn\)/, 'Picking a preview mode writes and syncs the switch too');
+assert.match(previewChoice, /refreshDependentRows\(selectedSetting\.settingName, dependsOn\)/, 'Preview Audio comes and goes with the switch the choice wrote');
+assert.equal((previewSettingsScreen.match(/"ui\.home\.mediaPreviewMode"\) then (?:currentValue|selectedValue) = homePreview\.Mode\(m\.global\.session\.user\.settings\)/g) ?? []).length, 2, 'The row and the picker show the mode that plays');
 const previewStrings = await readFile('locale/en_US/translations.ts', 'utf8');
-for (const name of ['Media Preview', 'Preview Audio']) assert.match(previewStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
+for (const name of ['Media Preview', 'Preview Audio', 'Trailer Preview', 'Off']) assert.match(previewStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
+const previewDescription = previewSettings.match(/"description": "([^"]*)",\s+"settingName": "ui\.home\.mediaPreviewMode"/)[1];
+assert.ok(previewStrings.includes(`<source>${previewDescription}</source>`), 'The Media Preview description is translated');
 const previewHome = await readFile('components/home/Home.bs', 'utf8');
 assert.match(previewHome, /^import "pkg:\/components\/home\/modernPreview\.bs"$/m, 'Home runs the preview controller in its own scope');
 assert.match(previewHome.match(/sub OnScreenHidden\([^]*?end sub/)[0], /stopPreview\(\)/, 'A screen pushed over Home stops the preview');
@@ -821,6 +830,17 @@ assert.match(previewController, /observeFieldScoped\("settingsOpen", "onPreviewS
 assert.match(previewController.match(/sub onPreviewSettingsOpen\([^]*?end sub/)[0], /settingsOpen = true[^]*?stopPreview\(\)/, 'Opening settings stops the preview');
 assert.match(previewController.match(/sub onHomeRowsQuickPlay\([^]*?end sub/)[0], /stopPreview\(\)/, 'The Play key stops the preview before the player comes');
 assert.doesNotMatch(previewController, /playstateTask|Sessions\/Playing/, 'A preview never reports playback');
+assert.match(previewController.match(/sub previewOnFocus\([^]*?end sub/)[0], /mode = homePreview\.Mode\(m\.global\.session\.user\.settings\)\s+if itemId = "" or itemId = m\.previewUnavailableId or mode = "off"/, 'A card asks the mode helper whether anything plays');
+assert.doesNotMatch(previewController + previewHome, /episodePreviewEnabled/, 'Nothing reads the old switch on its own');
+assert.match(previewController.match(/sub onPreviewAnswer\([^]*?end sub/)[0], /else if isValidAndNotEmpty\(answer\.videoId\)\s+m\.previewTask = CreateObject\("roSGNode", "TrailerPreviewTask"\)\s+m\.previewTask\.request = \{ requestId: m\.previewRequestId, videoId: answer\.videoId, index: 0, captions: false \}/, 'A YouTube trailer is resolved by the media bar\'s trailer task');
+assert.match(previewController.match(/sub startPreviewFrom\([^]*?end sub/)[0], /start = 0\s+if m\.previewMode <> "trailer" then start = homePreview\.StartSeconds/, 'A trailer starts from the top');
+assert.match(previewController.match(/sub onPreviewPosition\([^]*?end sub/)[0], /if m\.previewVideo\.position <= m\.previewMovedFrom then return\s+m\.previewPhase = "playing"\s+playCap = homePreview\.PlayCapSeconds\(m\.previewMode\)\s+if playCap > 0\s+startPreviewTimer\(playCap\)\s+else\s+m\.previewTimer\.control = "stop"\s+end if\s+m\.modernFocusCard\.callFunc\("revealPreview"\)/, 'The card only shows the video once its position moves, and only a clip has a cap');
+assert.match(previewController.match(/sub previewOnFocus\([^]*?end sub/)[0], /if isValid\(homePreview\.OutsideTrailerQuery\(item\.json\)\)\s+mode = "trailer"\s+else if not homePreview\.IsLibraryItem\(item\.json\)/, 'An outside title plays its trailer in either mode');
+assert.match(previewController.match(/sub onPreviewDwell\([^]*?end sub/)[0], /if isValid\(outsideQuery\)\s+request = \{ requestId: m\.previewRequestId, details: outsideQuery \}/, 'An outside title asks for its details and nothing else');
+const previewTaskSource = await readFile('components/home/HomePreviewTask.bs', 'utf8');
+assert.match(previewTaskSource.match(/sub resolveTrailer\([^]*?end sub/)[0], /^\s+if isValid\(request\.details\)\s+resolveOutsideTrailer\(request\.details, answer\)\s+return\s+end if/m, 'An outside title skips every server item lookup');
+assert.match(previewTaskSource.match(/sub resolveOutsideTrailer\([^]*?end sub/)[0], /if not moonfinPlugin\.AreTmdbDetailsSupported\(\) then return\s+found = homePreview\.DetailsTrailerSource\(requestResponse\(APIRequest\("\/Moonfin\/Tmdb\/Details", query\)/, 'The trailer comes from the plugin\'s TMDB details, only where the plugin offers them');
+assert.doesNotMatch(previewController.match(/sub onPreviewVideoState\([^]*?end sub/)[0], /revealPreview/, 'The playing state alone never reveals the video');
 assert.match(await readFile('components/home/Home.xml', 'utf8'), /<Timer id="previewTimer"/, 'Home carries the preview timer');
 const previewCard = await readFile('components/home/ModernFocusCard.xml', 'utf8');
 assert.equal((previewCard.match(/pkg:\/images\/previewCorner\.png/g) ?? []).length, 4, 'The card draws four corner pieces');
@@ -834,4 +854,4 @@ assert.ok([3, 4, 6].includes(cornerPng[25]), 'The corner piece keeps its transpa
 assert.equal(cornerPng.readUInt32BE(16), 8, 'The corner piece is 8 wide');
 assert.equal(cornerPng.readUInt32BE(20), 8, 'The corner piece is 8 high');
 assert.ok(cornerPng.length < 1024, 'The corner piece is small');
-process.stdout.write('PASS: home preview wiring (28 checks)\n');
+process.stdout.write('PASS: home preview wiring (46 checks)\n');

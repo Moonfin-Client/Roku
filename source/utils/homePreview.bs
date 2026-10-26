@@ -1,6 +1,7 @@
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/trackLabels.bs"
+import "pkg:/source/utils/youtubeTrailer.bs"
 
 ' What the focused card's preview plays and how the server is asked for it. Nothing here touches
 ' a node or a timer, so those stay with the controller in Home.
@@ -16,6 +17,66 @@ namespace homePreview
     const DEFAULT_START_S = 180
     ' A title shorter than this starts from the top instead
     const SHORT_RUNTIME_S = 900
+
+    ' What a focused card plays: "off", "media" or "trailer". The switch alone says whether
+    ' anything plays, so an app that only knows the switch still turns previews on and off, and
+    ' the mode only picks between the clip and the trailer.
+    function Mode(settings as dynamic) as string
+        if type(settings) <> "roAssociativeArray" then return "off"
+        if LCase(toString(settings["ui.home.episodePreviewEnabled"]).Trim()) <> "true" then return "off"
+        if LCase(toString(settings["ui.home.mediaPreviewMode"])) = "trailer" then return "trailer"
+        return "media"
+    end function
+
+    ' Whose trailer a card plays: a film or series its own, an episode or season its series'.
+    ' Anything else has none.
+    function TrailerItemId(json as dynamic) as string
+        kind = LCase(toString(chainLookupReturn(json, "Type", "")))
+        if kind = "movie" or kind = "series" then return toString(chainLookupReturn(json, "Id", ""))
+        if kind = "episode" or kind = "season" then return toString(chainLookupReturn(json, "SeriesId", ""))
+        return ""
+    end function
+
+    ' The server's own trailer file comes first, then the first trailer on YouTube. With neither
+    ' there is nothing, since a card never falls back to its clip.
+    function TrailerSource(localTrailers as dynamic, remoteTrailers as dynamic) as dynamic
+        if type(localTrailers) = "roArray"
+            for each trailer in localTrailers
+                trailerId = toString(chainLookupReturn(trailer, "Id", ""))
+                if trailerId <> "" then return { localId: trailerId }
+            end for
+        end if
+        videoId = youtubeTrailer.ExtractId({ RemoteTrailers: remoteTrailers })
+        if videoId <> "" then return { videoId: videoId }
+        return invalid
+    end function
+
+    ' A title from Seerr, an outside list or the seasonal suggestions has no server item, so its
+    ' trailer comes from the plugin's TMDB details, asked for by its TMDB id or failing that its
+    ' IMDb id. Calendar cards, browse tiles and shortcuts have no title to ask about.
+    function OutsideTrailerQuery(json as dynamic) as dynamic
+        if type(json) <> "roAssociativeArray" then return invalid
+        if not isValid(json.LookupCI("SeerrTmdbId")) or isValid(json.LookupCI("CalendarDate")) then return invalid
+        kind = LCase(toString(json.LookupCI("SeerrMediaType")))
+        if kind <> "movie" and kind <> "tv" then return invalid
+
+        tmdbId = toString(json.LookupCI("SeerrTmdbId")).Trim()
+        imdbId = toString(chainLookupReturn(json, "ProviderIds.Imdb", "")).Trim()
+        if tmdbId <> "" then return { "type": kind, "tmdbId": tmdbId }
+        if imdbId <> "" then return { "type": kind, "imdbId": imdbId }
+        return invalid
+    end function
+
+    ' The details name at most one trailer, and only a YouTube one plays
+    function DetailsTrailerSource(details as dynamic) as dynamic
+        return homePreview.TrailerSource(invalid, [{ Url: toString(chainLookupReturn(details, "trailerUrl", "")) }])
+    end function
+
+    ' A clip stops at the cap, and a trailer plays to its end, which 0 stands for
+    function PlayCapSeconds(previewMode as string) as integer
+        if previewMode = "trailer" then return 0
+        return homePreview.PLAY_CAP_S
+    end function
 
     function Supports(itemType as dynamic) as boolean
         kind = LCase(toString(itemType))

@@ -5291,9 +5291,9 @@
         <translation>Media Preview</translation>
     </message>
     <message>
-        <source>Play a short clip of the focused card after a moment on it. A series plays its next episode.</source>
-        <extracomment>Description of the Media Preview setting</extracomment>
-        <translation>Play a short clip of the focused card after a moment on it. A series plays its next episode.</translation>
+        <source>Play a short clip or the trailer of the focused card after a moment on it. A series clip plays its next episode.</source>
+        <extracomment>Description of the Media Preview setting, which picks between off, a clip of the card and its trailer</extracomment>
+        <translation>Play a short clip or the trailer of the focused card after a moment on it. A series clip plays its next episode.</translation>
     </message>
     <message>
         <source>Preview Audio</source>

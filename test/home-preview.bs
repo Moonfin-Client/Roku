@@ -107,6 +107,71 @@ sub testHomePreview()
     assertEqual(homePreview.IsLibraryItem({ Id: "film", CalendarDate: "2026-10-11" }), false, "A calendar release doesnt")
     assertEqual(homePreview.IsLibraryItem({ Type: "Movie" }), false, "A card without an id doesnt")
     assertEqual(homePreview.IsLibraryItem(invalid), false, "No json doesnt")
+
+    ' The switch decides whether anything plays, and the mode only picks the clip or the trailer
+    modes = [
+        [{}, "off", "Nothing stored is off, as the switch always was"],
+        [{ "ui.home.episodePreviewEnabled": false, "ui.home.mediaPreviewMode": "trailer" }, "off", "The switch off wins over the mode"],
+        [{ "ui.home.episodePreviewEnabled": "false", "ui.home.mediaPreviewMode": "media" }, "off", "A synced false is off"],
+        [{ "ui.home.episodePreviewEnabled": true }, "media", "A switch turned on before the mode existed plays the clip"],
+        [{ "ui.home.episodePreviewEnabled": "true", "ui.home.mediaPreviewMode": "media" }, "media", "Media plays the clip"],
+        [{ "ui.home.episodePreviewEnabled": true, "ui.home.mediaPreviewMode": "trailer" }, "trailer", "Trailer plays the trailer"],
+        [{ "ui.home.episodePreviewEnabled": "true", "ui.home.mediaPreviewMode": "Trailer" }, "trailer", "The mode is read without case"],
+        [{ "ui.home.episodePreviewEnabled": true, "ui.home.mediaPreviewMode": "off" }, "media", "An older app turning the switch back on gets the clip"],
+        [{ "ui.home.episodePreviewEnabled": true, "ui.home.mediaPreviewMode": "something new" }, "media", "A mode this app doesnt know plays the clip"]
+    ]
+    for each entry in modes
+        assertEqual(homePreview.Mode(entry[0]), entry[1], entry[2])
+    end for
+    assertEqual(homePreview.Mode(invalid), "off", "No settings is off")
+
+    ' Whose trailer a card plays
+    assertEqual(homePreview.TrailerItemId({ Id: "film", Type: "Movie" }), "film", "A film plays its own trailer")
+    assertEqual(homePreview.TrailerItemId({ Id: "show", Type: "Series" }), "show", "A series plays its own trailer")
+    assertEqual(homePreview.TrailerItemId({ Id: "ep", Type: "Episode", SeriesId: "show" }), "show", "An episode plays its series' trailer")
+    assertEqual(homePreview.TrailerItemId({ Id: "s1", Type: "Season", SeriesId: "show" }), "show", "A season plays its series' trailer")
+    assertEqual(homePreview.TrailerItemId({ Id: "ep", Type: "Episode" }), "", "An episode without a series has none")
+    for each kind in ["Video", "MusicVideo", "BoxSet", "Person", "Audio", ""]
+        assertEqual(homePreview.TrailerItemId({ Id: "x", Type: kind, SeriesId: "show" }), "", kind + " has no trailer")
+    end for
+    assertEqual(homePreview.TrailerItemId(invalid), "", "No json, no trailer")
+
+    ' Where the trailer comes from: the server's file, then the first YouTube link, then nothing
+    youtube = [{ Url: "https://vimeo.com/1" }, { Url: "https://www.youtube.com/watch?v=yQy-ANhnUpE" }, { Url: "https://youtu.be/17KJk3ErIx0" }]
+    assertEqual(homePreview.TrailerSource([{ Id: "" }, { Id: "local-1" }, { Id: "local-2" }], youtube).localId, "local-1", "The server's own trailer wins")
+    assertEqual(homePreview.TrailerSource([{ Id: "local-1" }], youtube).DoesExist("videoId"), false, "A server trailer leaves YouTube alone")
+    assertEqual(homePreview.TrailerSource([], youtube).videoId, "yQy-ANhnUpE", "Without a file the first YouTube trailer plays")
+    assertEqual(homePreview.TrailerSource(invalid, youtube).videoId, "yQy-ANhnUpE", "A failed file lookup still tries YouTube")
+    assertEqual(homePreview.TrailerSource([], [{ Url: "https://vimeo.com/1" }]), invalid, "A link that isnt YouTube plays nothing")
+    assertEqual(homePreview.TrailerSource([], []), invalid, "No trailer plays nothing")
+    assertEqual(homePreview.TrailerSource(invalid, invalid), invalid, "Nothing found plays nothing")
+
+    ' A trailer plays to its end and a clip stops at the cap
+    assertEqual(homePreview.PlayCapSeconds("trailer"), 0, "A trailer has no cap")
+    assertEqual(homePreview.PlayCapSeconds("media"), 30, "A clip stops at 30 seconds")
+
+    ' Which outside titles ask the plugin's TMDB details for a trailer, and how
+    seerrMovie = homePreview.OutsideTrailerQuery({ Id: "603", Type: "Movie", SeerrTmdbId: "603", SeerrMediaType: "movie", SeerrItem: {} })
+    assertEqual(seerrMovie.tmdbId, "603", "A Seerr film asks by its TMDB id")
+    assertEqual(seerrMovie.type, "movie", "as a film")
+    assertEqual(seerrMovie.count(), 2, "and nothing else")
+    assertEqual(homePreview.OutsideTrailerQuery({ Id: "1399", Type: "Series", SeerrTmdbId: "1399", SeerrMediaType: "tv", ProviderIds: { Imdb: "tt0944947" } }).tmdbId, "1399", "A list series with both ids asks by TMDB")
+    imdbOnly = homePreview.OutsideTrailerQuery({ Id: "", Type: "Movie", SeerrTmdbId: "", SeerrMediaType: "movie", ProviderIds: { Imdb: "tt0111161" } })
+    assertEqual(imdbOnly.imdbId, "tt0111161", "A list title known only to IMDb asks by its IMDb id")
+    assertEqual(imdbOnly.DoesExist("tmdbId"), false, "and sends no TMDB id")
+    assertEqual(homePreview.OutsideTrailerQuery({ Id: "", SeerrTmdbId: "", SeerrMediaType: "movie" }), invalid, "A title with no id has nothing to ask")
+    assertEqual(homePreview.OutsideTrailerQuery({ Id: "287", SeerrTmdbId: "287", SeerrMediaType: "person" }), invalid, "A person from Seerr trending has no trailer")
+    assertEqual(homePreview.OutsideTrailerQuery({ Id: "cal-Movie-4", Type: "Movie", CalendarDate: "2026-10-30", ProviderIds: { Tmdb: "4" } }), invalid, "A calendar card plays nothing")
+    assertEqual(homePreview.OutsideTrailerQuery({ Id: "seerr-genre-28", Type: "SeerrBrowse", SeerrBrowseType: "genre", SeerrMediaType: "movie" }), invalid, "A genre, studio or network tile plays nothing")
+    assertEqual(homePreview.OutsideTrailerQuery({ Id: "seerr-shortcut-requests", Type: "SeerrShortcut", SeerrShortcut: "requests" }), invalid, "A Seerr shortcut plays nothing")
+    assertEqual(homePreview.OutsideTrailerQuery({ Id: "film", Type: "Movie", ProviderIds: { Tmdb: "603" } }), invalid, "A library item asks the server instead")
+    assertEqual(homePreview.OutsideTrailerQuery(invalid), invalid, "No json, no query")
+
+    ' The details name the trailer, and only a YouTube one plays
+    assertEqual(homePreview.DetailsTrailerSource({ overview: "x", trailerUrl: "https://www.youtube.com/watch?v=yQy-ANhnUpE" }).videoId, "yQy-ANhnUpE", "The details' YouTube trailer plays")
+    assertEqual(homePreview.DetailsTrailerSource({ trailerUrl: "https://vimeo.com/1" }), invalid, "A trailer elsewhere plays nothing")
+    assertEqual(homePreview.DetailsTrailerSource({ overview: "x" }), invalid, "Details without a trailer play nothing")
+    assertEqual(homePreview.DetailsTrailerSource(invalid), invalid, "No details play nothing")
 end sub
 
 function previewQuery(url as string) as object

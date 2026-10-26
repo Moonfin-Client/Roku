@@ -3,17 +3,19 @@ import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/homePreview.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/serverCompatibility.bs"
+import "pkg:/source/utils/youtubeTrailer.bs"
 
-' Plays a short clip of the focused modern card once it has held focus for a moment. The
-' artwork stays until the stream shows a frame, and every way focus or the screen can move on
-' stops it, so a preview never outlives its card and never meets real playback. These run in
-' Home's scope, so m is the screen.
+' Plays a short clip or the trailer of the focused modern card once it has held focus for a
+' moment. The artwork stays until the stream shows a frame, and every way focus or the screen
+' can move on stops it, so a preview never outlives its card and never meets real playback.
+' These run in Home's scope, so m is the screen.
 
 sub previewInit()
     m.previewTimer = m.top.findNode("previewTimer")
     m.previewTimer.observeFieldScoped("fire", "onPreviewTimer")
 
     m.previewPhase = "idle"
+    m.previewMode = "off"
     m.previewRequestId = 0
     m.previewItem = invalid
     m.previewItemId = ""
@@ -21,6 +23,8 @@ sub previewInit()
     m.previewTask = invalid
     m.previewVideo = invalid
     m.previewPlaySessionId = ""
+    m.previewAudioLanguage = ""
+    m.previewMovedFrom = -1
     m.previewUnavailableId = ""
     m.previewDetails = invalid
     ' Stop tasks are held here until they answer, so one isnt collected mid flight
@@ -32,7 +36,6 @@ end sub
 
 ' The checks cheap enough to run on every move
 function previewAllowed() as boolean
-    if not get_user_setting_bool("ui.home.episodePreviewEnabled", false) then return false
     if not m.modernHomeRows or not isValid(m.modernFocusCard) or not m.modernFocusCard.cardShown then return false
     if not m.homeRows.isInFocusChain() then return false
     if isValid(m.mediaBar) and m.mediaBar.visible then return false
@@ -61,12 +64,25 @@ end sub
 sub previewOnFocus(item as dynamic)
     itemId = ""
     if isValid(item) then itemId = toString(item.id)
+    ' A list title known only to IMDb comes without an id of its own
+    if itemId = "" and isValid(item) then itemId = toString(chainLookupReturn(item.json, "ProviderIds.Imdb", ""))
     if itemId <> "" and itemId = m.previewItemId then return
 
     stopPreview()
-    if itemId = "" or itemId = m.previewUnavailableId or not previewAllowed() then return
-    if not homePreview.Supports(item.type) or not homePreview.IsLibraryItem(item.json) then return
+    mode = homePreview.Mode(m.global.session.user.settings)
+    if itemId = "" or itemId = m.previewUnavailableId or mode = "off" or not previewAllowed() then return
+    ' A title from Seerr or an outside list has nothing on the server, so in either mode it plays its trailer
+    if isValid(homePreview.OutsideTrailerQuery(item.json))
+        mode = "trailer"
+    else if not homePreview.IsLibraryItem(item.json)
+        return
+    else if mode = "trailer" and homePreview.TrailerItemId(item.json) = ""
+        return
+    else if mode = "media" and not homePreview.Supports(item.type)
+        return
+    end if
 
+    m.previewMode = mode
     m.previewItem = item
     m.previewItemId = itemId
     m.previewPhase = "dwelling"
@@ -90,33 +106,55 @@ sub onPreviewDwell()
         stopPreview()
         return
     end if
-    m.previewServer = itemServer(m.previewItem.json)
+    json = m.previewItem.json
+    m.previewServer = itemServer(json)
     itemType = toString(m.previewItem.type)
-    if LCase(itemType) <> "series" and isStringEqual(chainLookupReturn(m.previewDetails, "Id", ""), m.previewItemId)
+    action = "resolve"
+    request = { requestId: m.previewRequestId, item: { "Id": m.previewItemId, "Type": itemType }, server: m.previewServer }
+    if m.previewMode = "trailer"
+        action = "trailer"
+        outsideQuery = homePreview.OutsideTrailerQuery(json)
+        if isValid(outsideQuery)
+            request = { requestId: m.previewRequestId, details: outsideQuery }
+        else
+            ' An episode or season plays its series' trailer, so only a card's own links stand in for it
+            request.item = { "Id": homePreview.TrailerItemId(json) }
+            if request.item.Id = m.previewItemId then request.item.RemoteTrailers = chainLookupReturn(json, "RemoteTrailers", invalid)
+        end if
+    else if LCase(itemType) <> "series" and isStringEqual(chainLookupReturn(m.previewDetails, "Id", ""), m.previewItemId)
         startPreviewFrom(m.previewDetails)
         return
     end if
 
     m.previewPhase = "resolving"
     m.previewTask = CreateObject("roSGNode", "HomePreviewTask")
-    m.previewTask.action = "resolve"
-    m.previewTask.request = { requestId: m.previewRequestId, item: { "Id": m.previewItemId, "Type": itemType }, server: m.previewServer }
+    m.previewTask.action = action
+    m.previewTask.request = request
     m.previewTask.observeFieldScoped("answer", "onPreviewAnswer")
     m.previewTask.control = "RUN"
 end sub
 
+' The server's lookup answers with an item to stream or a YouTube trailer to look up, and the
+' YouTube lookup answers with the stream itself
 sub onPreviewAnswer(event as object)
     answer = event.getData()
     if not isValid(answer) or answer.requestId <> m.previewRequestId or m.previewPhase <> "resolving" then return
     if isValid(m.previewTask) then m.previewTask.unobserveFieldScoped("answer")
     m.previewTask = invalid
 
-    target = answer.target
-    if type(target) <> "roAssociativeArray"
+    if type(answer.target) = "roAssociativeArray"
+        startPreviewFrom(answer.target)
+    else if isValidAndNotEmpty(answer.videoId)
+        m.previewTask = CreateObject("roSGNode", "TrailerPreviewTask")
+        m.previewTask.request = { requestId: m.previewRequestId, videoId: answer.videoId, index: 0, captions: false }
+        m.previewTask.observeFieldScoped("answer", "onPreviewAnswer")
+        m.previewTask.control = "RUN"
+    else if isValidAndNotEmpty(answer.url)
+        m.previewAudioLanguage = toString(answer.audioLanguage)
+        playPreview(answer.url, answer.format, 0)
+    else
         markPreviewUnavailable()
-        return
     end if
-    startPreviewFrom(target)
 end sub
 
 ' The item that plays, with its sources and streams. The Video goes under the card's art, so
@@ -146,17 +184,26 @@ sub startPreviewFrom(json as object)
         return
     end if
 
+    start = 0
+    if m.previewMode <> "trailer" then start = homePreview.StartSeconds(chainLookupReturn(json, "UserData", invalid), chainLookupReturn(json, "RunTimeTicks", invalid))
+    playPreview(url, "hls", start)
+end sub
+
+sub playPreview(url as string, format as string, start as integer)
     content = CreateObject("roSGNode", "ContentNode")
     content.url = url
-    content.streamFormat = "hls"
+    content.streamFormat = format
     ' The start goes in with the stream, since a seek afterwards lands on the keyframe before it
-    content.PlayStart = homePreview.StartSeconds(chainLookupReturn(json, "UserData", invalid), chainLookupReturn(json, "RunTimeTicks", invalid))
+    content.PlayStart = start
     if LCase(Left(url, 8)) = "https://" then content.HttpCertificatesFile = "common:/certs/ca-bundle.crt"
 
     video = CreateObject("roSGNode", "Video")
     video.mute = not get_user_setting_bool("ui.home.previewAudioEnabled", true)
     video.observeFieldScoped("state", "onPreviewVideoState")
+    video.observeFieldScoped("position", "onPreviewPosition")
+    video.observeFieldScoped("availableAudioTracks", "onPreviewAudioTracks")
     video.content = content
+    m.previewMovedFrom = -1
     m.previewVideo = video
     m.modernFocusCard.callFunc("mountPreview", { video: video })
     video.control = "play"
@@ -164,14 +211,19 @@ sub startPreviewFrom(json as object)
     startPreviewTimer(homePreview.OPEN_TIMEOUT_S)
 end sub
 
+' A YouTube manifest lists machine dubbed soundtracks before the original, and flags none of them
+sub onPreviewAudioTracks()
+    if not isValid(m.previewVideo) then return
+    track = youtubeTrailer.OriginalAudioTrack(m.previewVideo.availableAudioTracks, m.previewAudioLanguage)
+    if track <> "" and m.previewVideo.audioTrack <> track then m.previewVideo.audioTrack = track
+end sub
+
 sub onPreviewVideoState()
     if not isValid(m.previewVideo) then return
     state = m.previewVideo.state
     if state = "playing"
-        if m.previewPhase <> "opening" then return
-        m.previewPhase = "playing"
-        startPreviewTimer(homePreview.PLAY_CAP_S)
-        m.modernFocusCard.callFunc("revealPreview")
+        ' A stream can say it plays before a frame is up, so the card waits for the position to move
+        if m.previewPhase = "opening" and m.previewMovedFrom < 0 then m.previewMovedFrom = m.previewVideo.position
     else if state = "error"
         if m.previewPhase = "opening"
             markPreviewUnavailable()
@@ -181,6 +233,19 @@ sub onPreviewVideoState()
     else if state = "finished"
         stopPreview()
     end if
+end sub
+
+sub onPreviewPosition()
+    if m.previewPhase <> "opening" or m.previewMovedFrom < 0 or not isValid(m.previewVideo) then return
+    if m.previewVideo.position <= m.previewMovedFrom then return
+    m.previewPhase = "playing"
+    playCap = homePreview.PlayCapSeconds(m.previewMode)
+    if playCap > 0
+        startPreviewTimer(playCap)
+    else
+        m.previewTimer.control = "stop"
+    end if
+    m.modernFocusCard.callFunc("revealPreview")
 end sub
 
 ' Nothing to play, so the artwork stays and the card isnt asked about again until another one fails
@@ -202,6 +267,8 @@ sub stopPreview()
 
     if isValid(m.previewVideo)
         m.previewVideo.unobserveFieldScoped("state")
+        m.previewVideo.unobserveFieldScoped("position")
+        m.previewVideo.unobserveFieldScoped("availableAudioTracks")
         m.modernFocusCard.callFunc("unmountPreview")
         m.previewVideo = invalid
     end if
@@ -209,10 +276,12 @@ sub stopPreview()
     if m.previewPhase = "opening" or m.previewPhase = "playing" then stopPreviewEncoding()
 
     m.previewPhase = "idle"
+    m.previewMode = "off"
     m.previewItem = invalid
     m.previewItemId = ""
     m.previewServer = invalid
     m.previewPlaySessionId = ""
+    m.previewAudioLanguage = ""
 end sub
 
 ' Tells the server the preview's transcode can go
@@ -236,9 +305,13 @@ sub onPreviewStopDone(event as object)
     m.previewStops = kept
 end sub
 
-' Settings open over the screen without hiding it, and a preview never plays under them
+' Settings open over the screen without hiding it, and a preview never plays under them. A card
+' that had nothing to play may have something once the mode changes.
 sub onPreviewSettingsOpen()
-    if m.global.sceneManager.settingsOpen = true then stopPreview()
+    if m.global.sceneManager.settingsOpen = true
+        stopPreview()
+        m.previewUnavailableId = ""
+    end if
 end sub
 
 ' The Play key hands the card to Main, which pushes the player over this screen. Main clears
