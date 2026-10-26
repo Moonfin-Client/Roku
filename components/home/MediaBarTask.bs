@@ -1,5 +1,7 @@
 import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/api/sdk.bs"
+import "pkg:/source/utils/externalList.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/parentalControls.bs"
 
@@ -17,25 +19,20 @@ sub getMediaBarData()
     excludedGenreIds = parseStringArraySetting(m.top.excludedGenreIds)
     excludedGenreNames = getExcludedGenreNames(excludedGenreIds)
 
+    ' Outside lists picked on their own fill the bar alone. When they come back empty the bar
+    ' falls back to what it shows with nothing picked.
+    externalItems = getExternalItems(parseStringArraySetting(m.top.externalListIds), includeTypes)
+
     parentIds = []
     if sourceType = "collection"
-        if selectedCollectionIds.count() > 0
-            parentIds = selectedCollectionIds
-        else
-            parentIds = getCollectionAndPlaylistIds()
-        end if
+        parentIds = selectedCollectionIds
+        if parentIds.count() = 0 and externalItems.count() = 0 then parentIds = getCollectionAndPlaylistIds()
     else
         ' The views only list libraries the account can open, so a saved pick it lost access to
-        ' drops out here
-        parentIds = getLibraryIds(allowedCollectionTypes)
-        if selectedLibraryIds.count() > 0
-            parentIds = filterIdsBySelection(parentIds, selectedLibraryIds)
-        end if
-    end if
-
-    if parentIds.count() = 0
-        m.top.mediaBarData = { items: [] }
-        return
+        ' drops out here, and with every pick gone the bar draws from them all
+        libraryIds = getLibraryIds(allowedCollectionTypes)
+        if selectedLibraryIds.count() > 0 then parentIds = filterIdsBySelection(libraryIds, selectedLibraryIds)
+        if parentIds.count() = 0 and externalItems.count() = 0 then parentIds = libraryIds
     end if
 
     fetchLimit = m.top.featuredCount + 5
@@ -82,46 +79,241 @@ sub getMediaBarData()
         completed++
     end while
 
-    filteredItems = filterAndDedupeItems(allItems)
-    shuffled = shuffleArray(filteredItems)
-    featuredCount = m.top.featuredCount
-    if shuffled.count() > featuredCount
-        allItems = shuffled.slice(0, featuredCount)
-    else
-        allItems = shuffled
-    end if
+    ' Blocked titles go before the count is taken, so they dont leave the bar short. Library
+    ' titles come first, so one an outside list repeats keeps its server item.
+    pool = parentalControls.WithoutBlockedItems(allItems)
+    ' A chart can hold hundreds of titles, so beside a library it gets as many places as the bar
+    ' has slides
+    externalItems = shuffleArray(filterAndDedupeItems(externalItems))
+    if pool.count() > 0 and externalItems.count() > m.top.featuredCount then externalItems = externalItems.slice(0, m.top.featuredCount)
+    pool.append(externalItems)
+    pool = shuffleArray(filterAndDedupeItems(pool))
 
-    m.top.mediaBarData = { items: parentalControls.WithoutBlockedItems(allItems) }
+    m.top.mediaBarData = { items: pickSlides(pool, m.top.featuredCount, excludedGenreNames) }
 end sub
+
+' The first titles of the shuffled pool, with only the outside ones that make it looked up on
+' TMDB. One that turns out to be an excluded genre or to have no backdrop gives its place to
+' the next title in the pool.
+function pickSlides(pool as object, wanted as integer, excludedGenreNames as object) as object
+    picked = []
+    cursor = 0
+    while picked.count() < wanted and cursor < pool.count()
+        batch = []
+        while batch.count() < wanted - picked.count() and cursor < pool.count()
+            batch.push(pool[cursor])
+            cursor++
+        end while
+
+        addExternalDetails(batch)
+        for each item in batch
+            if keepSlide(item, excludedGenreNames) then picked.push(item)
+        end for
+    end while
+    return picked
+end function
+
+' Library titles were already filtered when they were fetched
+function keepSlide(item as object, excludedGenreNames as object) as boolean
+    if not isValid(item.External) then return true
+    if not isValidAndNotEmpty(item.BackdropUrl) then return false
+    return filterItemsByExcludedGenres([item], excludedGenreNames).count() > 0
+end function
 
 function filterAndDedupeItems(items as object) as object
     result = []
     seen = {}
     for each item in items
-        itemType = LCase(item.LookupCI("Type") ?? "")
+        keys = dedupeKeys(item)
+        fresh = true
+        for each key in keys
+            if seen.DoesExist(key) then fresh = false
+        end for
 
-        tmdbId = ""
-        if isChainValid(item, "providerIds")
-            tmdbId = moonfinPlugin.GetTmdbId(item.providerIds)
-        end if
-
-        if isValidAndNotEmpty(tmdbId)
-            dedupeKey = `${itemType}|tmdb|${LCase(tmdbId)}`
-        else if isValidAndNotEmpty(item.id)
-            dedupeKey = `${itemType}|id|${item.id}`
-        else
-            nameKey = LCase(item.LookupCI("Name") ?? "")
-            yearKey = isValid(item.LookupCI("ProductionYear")) ? item.LookupCI("ProductionYear").toStr() : ""
-            dedupeKey = `${itemType}|name|${nameKey}|${yearKey}`
-        end if
-
-        if not seen.DoesExist(dedupeKey)
-            seen[dedupeKey] = true
+        if fresh
+            for each key in keys
+                seen[key] = true
+            end for
             result.push(item)
         end if
     end for
     return result
 end function
+
+' A title is known by its TMDB id together with its type and by its IMDb id, so the same title
+' from a library and from an outside list counts once. Without either, its id or its name and
+' year stand in.
+function dedupeKeys(item as object) as object
+    itemType = LCase(item.LookupCI("Type") ?? "")
+
+    keys = []
+    providerIds = item.LookupCI("ProviderIds")
+    if isValid(providerIds)
+        tmdbId = moonfinPlugin.GetTmdbId(providerIds)
+        if isValidAndNotEmpty(tmdbId) then keys.push(`${itemType}|tmdb|${LCase(tmdbId)}`)
+        imdbId = providerIds.LookupCI("Imdb")
+        if isValidAndNotEmpty(imdbId) then keys.push(`imdb|${LCase(imdbId)}`)
+    end if
+    if keys.count() > 0 then return keys
+
+    if isValidAndNotEmpty(item.id) then return [`${itemType}|id|${item.id}`]
+
+    nameKey = LCase(item.LookupCI("Name") ?? "")
+    yearKey = isValid(item.LookupCI("ProductionYear")) ? item.LookupCI("ProductionYear").toStr() : ""
+    return [`${itemType}|name|${nameKey}|${yearKey}`]
+end function
+
+' The titles of the picked outside lists that can go on the bar, fetched together. Nothing
+' without the plugin, which is what fetches them.
+function getExternalItems(listIds as object, includeTypes as string) as object
+    pool = []
+    if listIds.count() = 0 or not moonfinPlugin.IsEnabled() then return pool
+
+    ' A title with no backdrop of its own can still get one from TMDB
+    detailsSupported = moonfinPlugin.AreTmdbDetailsSupported()
+    customRows = externalList.CustomRows()
+
+    port = CreateObject("roMessagePort")
+    pending = {}
+    for each listId in listIds
+        query = externalList.RequestFor(listId, customRows)
+        req = invalid
+        if isValid(query) then req = APIRequest("/Moonfin/CustomRows/Items", query)
+        if isValid(req)
+            req.setMessagePort(port)
+            if req.AsyncGetToString() then pending[req.GetIdentity().toStr()] = { req: req, query: query }
+        end if
+    end for
+
+    while pending.count() > 0
+        msg = wait(30000, port)
+        if type(msg) <> "roUrlEvent" then exit while
+
+        key = msg.GetSourceIdentity().toStr()
+        entry = pending[key]
+        if isValid(entry)
+            pending.Delete(key)
+            data = invalid
+            if msg.GetResponseCode() = 200 then data = ParseJson(msg.GetString())
+            if chainLookupReturn(data, "success", false) = true
+                rowType = ""
+                if entry.query.source = "tmdb_chart" then rowType = externalList.ChartItemType(entry.query.type)
+                for each raw in chainLookupReturn(data, "items", [])
+                    item = externalSlideItem(raw, rowType)
+                    if isValid(item) and Instr(1, includeTypes, item.Type) > 0 and (detailsSupported or item.BackdropUrl <> "") then pool.push(item)
+                end for
+            end if
+        end if
+    end while
+
+    ' A missing rating on an outside title means nobody looked it up, so it stays out once a
+    ' rating is blocked, as on the home rows
+    return parentalControls.WithoutUnratedOrBlockedItems(pool)
+end function
+
+' One list title shaped like a library item, so the bar reads both the same way. It carries
+' its own art and the Seerr record it opens, since there is no server item behind it.
+function externalSlideItem(raw as dynamic, rowType as string) as dynamic
+    if type(raw) <> "roAssociativeArray" then return invalid
+
+    ids = raw.LookupCI("providerIds")
+    if type(ids) <> "roAssociativeArray" then ids = {}
+    tmdbId = toString(ids.LookupCI("Tmdb")).Trim()
+    if tmdbId = "" then tmdbId = toString(raw.LookupCI("tmdbId")).Trim()
+    imdbId = toString(ids.LookupCI("Imdb")).Trim()
+    if tmdbId = "" and imdbId = "" then return invalid
+
+    providerIds = {}
+    if tmdbId <> "" then providerIds.Tmdb = tmdbId
+    if imdbId <> "" then providerIds.Imdb = imdbId
+
+    itemType = rowType
+    if itemType = "" then itemType = toString(raw.LookupCI("type"))
+    itemType = (LCase(itemType) = "series") ? "Series" : "Movie"
+    mediaType = (itemType = "Series") ? "tv" : "movie"
+
+    title = toString(raw.LookupCI("name"))
+    if title = "" then title = toString(raw.LookupCI("title"))
+    year = raw.LookupCI("productionYear")
+    posterPath = toString(raw.LookupCI("posterUrl"))
+    backdropPath = toString(raw.LookupCI("backdropUrl"))
+
+    return {
+        External: true,
+        Id: tmdbId <> "" ? tmdbId : imdbId,
+        Name: title,
+        Type: itemType,
+        ProductionYear: year,
+        OfficialRating: raw.LookupCI("officialRating"),
+        CommunityRating: raw.LookupCI("rating"),
+        ProviderIds: providerIds,
+        PosterUrl: externalList.ImageUrl(posterPath, "w500"),
+        BackdropUrl: externalList.ImageUrl(backdropPath, "w1280"),
+        LogoUrl: "",
+        RemoteTrailers: [],
+        SeerrItem: { id: tmdbId, title: title, type: mediaType, mediaType: mediaType, posterPath: posterPath, backdropPath: backdropPath, productionYear: year }
+    }
+end function
+
+' Fills in what TMDB holds for the outside titles in the batch, asked for together. A title it
+' has nothing on keeps what its list gave.
+sub addExternalDetails(items as object)
+    if not moonfinPlugin.AreTmdbDetailsSupported() then return
+
+    port = CreateObject("roMessagePort")
+    pending = {}
+    for each item in items
+        if isValid(item.External)
+            query = { "type": item.SeerrItem.mediaType }
+            if isValidAndNotEmpty(item.ProviderIds.Tmdb)
+                query["tmdbId"] = item.ProviderIds.Tmdb
+            else
+                query["imdbId"] = item.ProviderIds.Imdb
+            end if
+            req = APIRequest("/Moonfin/Tmdb/Details", query)
+            if isValid(req)
+                req.setMessagePort(port)
+                if req.AsyncGetToString() then pending[req.GetIdentity().toStr()] = { req: req, item: item }
+            end if
+        end if
+    end for
+
+    while pending.count() > 0
+        msg = wait(15000, port)
+        if type(msg) <> "roUrlEvent" then exit while
+
+        key = msg.GetSourceIdentity().toStr()
+        entry = pending[key]
+        if isValid(entry)
+            pending.Delete(key)
+            ' A 404 means TMDB has nothing on the title
+            if msg.GetResponseCode() = 200 then applyExternalDetails(entry.item, ParseJson(msg.GetString()))
+        end if
+    end while
+end sub
+
+sub applyExternalDetails(item as object, details as dynamic)
+    if type(details) <> "roAssociativeArray" then return
+
+    overview = toString(details.LookupCI("overview"))
+    if overview <> "" then item.Overview = overview
+    rating = details.LookupCI("rating")
+    if isValid(rating) then item.CommunityRating = rating
+    genres = details.LookupCI("genres")
+    if type(genres) = "roArray" then item.Genres = genres
+
+    ' The bar reads a LongInteger, and a short runtime parses as an Integer
+    ticks = details.LookupCI("runTimeTicks")
+    if type(ticks) = "LongInteger" or type(ticks) = "Integer" or type(ticks) = "roInt" or type(ticks) = "roInteger"
+        item.RunTimeTicks = 0& + ticks
+    end if
+
+    backdropUrl = externalList.ImageUrl(details.LookupCI("backdropPath"), "w1280")
+    if backdropUrl <> "" then item.BackdropUrl = backdropUrl
+    item.LogoUrl = externalList.ImageUrl(details.LookupCI("logoPath"), "w500")
+    trailerUrl = toString(details.LookupCI("trailerUrl"))
+    if trailerUrl <> "" then item.RemoteTrailers = [{ Url: trailerUrl }]
+end sub
 
 function getAllowedCollectionTypes() as object
     contentType = m.top.contentType
@@ -213,6 +405,8 @@ function getExcludedGenreNames(excludedGenreIds as object) as object
     selected = {}
     for each id in excludedGenreIds
         selected[guidKey(id)] = true
+        ' Other clients sync the genre's name rather than its id
+        names[LCase(id)] = true
     end for
 
     genres = api.genres.Get({
