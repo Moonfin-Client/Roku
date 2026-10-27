@@ -7612,5 +7612,15 @@
         <extracomment>Shown in place of a playlist&apos;s rows when its filters leave none</extracomment>
         <translation>No tracks match the active filters</translation>
     </message>
+    <message>
+        <source>Live TV Direct Play</source>
+        <extracomment>Playback setting that plays a tuner channel straight from the source instead of a server stream</extracomment>
+        <translation>Live TV Direct Play</translation>
+    </message>
+    <message>
+        <source>Enable direct play for Live TV</source>
+        <extracomment>Description of the Live TV Direct Play setting</extracomment>
+        <translation>Enable direct play for Live TV</translation>
+    </message>
 </context>
 </TS>
