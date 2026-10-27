@@ -648,11 +648,12 @@ for (const handler of ['onPlaylistItemSelectedEvent', 'onPlaylistPlayAllEvent', 
 }
 assert.match(await readFile('source/api/Items.bs', 'utf8'), /"Fields": "DateCreated,SortName"/, 'The playlist rows carry what Date Added and Name sort by');
 assert.match(playlistViewHost.match(/function playlistViewRowOptions\([^]*?end function/)[0], /if not playlistViewInOrder\(\)\s+options\.playlist\.first = true\s+options\.playlist\.last = true/, 'A row only moves where the playlist order shows');
+assert.match(playlistViewHost.match(/sub playlistViewRedraw\([^]*?end sub/)[0], /"moreActionsButton" then moreIndex = i\s+end for\s+if index < 0 then index = moreIndex/, 'A redraw goes back to More Actions when the button sits behind it');
 assert.match(await readFile('components/itemMenu/itemMenuDetailHost.bs', 'utf8'), /playlistViewRowMarked\(action, card, menuJson\)/, 'A row the menu marks keeps the change for the filters');
 for (const screen of ['components/details/ModernItemDetails.bs', 'components/details/SpotlightItemDetails.bs']) {
     assert.match(await readFile(screen, 'utf8'), /sub handleScreenButtonAction\(action as string\)\s+if playlistViewAction\(action\) then return/, `${screen} hands a playlist's buttons to the shared actions`);
 }
-process.stdout.write('PASS: playlist sort and filter wiring (8 checks)\n');
+process.stdout.write('PASS: playlist sort and filter wiring (9 checks)\n');
 
 // Unlock notifications only run against a plugin that serves them, read in the background for as
 // long as the account is signed in, and follow the switch on the achievements screen straight away
