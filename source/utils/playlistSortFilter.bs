@@ -1,8 +1,11 @@
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/seasonalEffects.bs"
 
+' A playlist's rows sorted and filtered on the client. The playlist on the server keeps its order,
+' only what the page shows changes.
 namespace playlistSortFilter
 
-    const SORT_ORDER = "order"
+    const SORT_ORDER = "playlistOrder"
     const SORT_NAME = "name"
     const SORT_ARTIST = "artist"
     const SORT_ALBUM = "album"
@@ -19,8 +22,20 @@ namespace playlistSortFilter
     const DIR_DESCENDING = "descending"
 
     const PLAYED_ALL = "all"
-    const PLAYED_UNPLAYED = "unplayed"
-    const PLAYED_PLAYED = "played"
+    const PLAYED_WATCHED = "watched"
+    const PLAYED_UNWATCHED = "unwatched"
+    const PLAYED_IN_PROGRESS = "inProgress"
+
+    function DefaultState() as object
+        return {
+            sortBy: SORT_ORDER,
+            sortDirection: DIR_ASCENDING,
+            playedFilter: PLAYED_ALL,
+            favoriteOnly: false,
+            mediaTypeFilter: "",
+            randomSeed: 0
+        }
+    end function
 
     function SortOptions() as object
         return [
@@ -33,7 +48,7 @@ namespace playlistSortFilter
             { id: SORT_PREMIERE_DATE, label: tr("Release Date") },
             { id: SORT_COMMUNITY_RATING, label: tr("Community Rating") },
             { id: SORT_CRITIC_RATING, label: tr("Critic Rating") },
-            { id: SORT_DATE_PLAYED, label: tr("Date Played") },
+            { id: SORT_DATE_PLAYED, label: tr("Last Played") },
             { id: SORT_PLAY_COUNT, label: tr("Play Count") },
             { id: SORT_RANDOM, label: tr("Random") }
         ]
@@ -46,230 +61,299 @@ namespace playlistSortFilter
         return tr("Playlist Order")
     end function
 
-    function PlayedFilterOptions() as object
+    function DirectionLabel(sortDirection as string) as string
+        if sortDirection = DIR_DESCENDING then return tr("Descending")
+        return tr("Ascending")
+    end function
+
+    function PlayedOptions() as object
         return [
             { id: PLAYED_ALL, label: tr("All") },
-            { id: PLAYED_UNPLAYED, label: tr("Unplayed") },
-            { id: PLAYED_PLAYED, label: tr("Played") }
+            { id: PLAYED_WATCHED, label: tr("Watched") },
+            { id: PLAYED_UNWATCHED, label: tr("Unwatched") },
+            { id: PLAYED_IN_PROGRESS, label: tr("In Progress") }
         ]
     end function
 
-    function ActiveFilterCount(options as object) as integer
-        count = 0
-        played = options.playedFilter ?? PLAYED_ALL
-        if played <> PLAYED_ALL then count++
-
-        if options.favoriteOnly = true then count++
-
-        mediaType = options.mediaTypeFilter ?? ""
-        if mediaType <> "" and mediaType <> "all" then count++
-
-        return count
+    function PlayedLabel(playedFilter as string) as string
+        for each opt in PlayedOptions()
+            if opt.id = playedFilter then return opt.label
+        end for
+        return tr("All")
     end function
 
-    function IsDefault(options as object) as boolean
-        sortBy = options.sortBy ?? SORT_ORDER
-        sortDirection = options.sortDirection ?? DIR_ASCENDING
-        playedFilterVal = options.playedFilter ?? PLAYED_ALL
-        favoriteOnly = options.favoriteOnly = true
-        mediaTypeFilterVal = options.mediaTypeFilter ?? ""
-
-        return sortBy = SORT_ORDER and sortDirection = DIR_ASCENDING and playedFilterVal = PLAYED_ALL and not favoriteOnly and (mediaTypeFilterVal = "" or mediaTypeFilterVal = "all")
+    function TypeLabel(mediaType as string) as string
+        if mediaType = "Audio" then return tr("Audio")
+        if mediaType = "Video" then return tr("Video")
+        return mediaType
     end function
 
-    function AvailableMediaTypes(items as object) as object
-        typesMap = {}
-        for each it in items
-            t = it.LookupCI("type") ?? it.LookupCI("MediaType") ?? ""
-            if isValidAndNotEmpty(t)
-                typesMap[t] = true
+    function TypeOf(row as object) as string
+        mediaType = TextAt(row, "json.MediaType")
+        if mediaType = "" then mediaType = TextAt(row, "type")
+        return mediaType
+    end function
+
+    ' The types the rows hold, in the order they first show up
+    function MediaTypes(rows as object) as object
+        found = []
+        seen = {}
+        for each row in rows
+            mediaType = TypeOf(row)
+            if mediaType <> "" and not seen.DoesExist(mediaType)
+                seen[mediaType] = true
+                found.push(mediaType)
             end if
         end for
-
-        result = []
-        for each key in typesMap
-            result.push(key)
-        end for
-        return result
+        return found
     end function
 
-    function ExtractSortValue(item as object, sortBy as string) as dynamic
+    function IsSorted(state as object) as boolean
+        return state.sortBy <> SORT_ORDER or state.sortDirection <> DIR_ASCENDING
+    end function
+
+    function IsFiltered(state as object) as boolean
+        return state.playedFilter <> PLAYED_ALL or state.favoriteOnly or state.mediaTypeFilter <> ""
+    end function
+
+    ' Only with no sort or filter do the rows show in the playlist's own order, the one place a
+    ' row can be moved
+    function IsDefault(state as object) as boolean
+        return not IsSorted(state) and not IsFiltered(state)
+    end function
+
+    ' What the Filter button names, which is nothing, the one filter that is on, or how many are
+    function FilterSummary(state as object) as string
+        parts = []
+        if state.playedFilter <> PLAYED_ALL then parts.push(PlayedLabel(state.playedFilter))
+        if state.favoriteOnly then parts.push(tr("Favorites"))
+        if state.mediaTypeFilter <> "" then parts.push(TypeLabel(state.mediaTypeFilter))
+
+        if parts.count() = 0 then return ""
+        if parts.count() = 1 then return parts[0]
+        return tr("{0} active").Replace("{0}", parts.count().toStr())
+    end function
+
+    ' Sort, Filter and, once either is in use, Reset. The Sort button names its direction under
+    ' the label.
+    function Buttons(state as object) as object
+        sortButton = { icon: "pkg:/images/icons/detail_sort.png", label: tr("Sort"), action: "playlistSort", id: "playlistSortButton", active: IsSorted(state) }
+        if IsSorted(state)
+            sortButton.label = `${tr("Sort")}: ${SortLabel(state.sortBy)}`
+            if state.sortBy <> SORT_RANDOM then sortButton.detail = DirectionLabel(state.sortDirection)
+        end if
+
+        filterButton = { icon: "pkg:/images/icons/detail_filter.png", label: tr("Filter"), action: "playlistFilter", id: "playlistFilterButton", active: IsFiltered(state) }
+        summary = FilterSummary(state)
+        if summary <> "" then filterButton.label = `${tr("Filter")}: ${summary}`
+
+        configs = [sortButton, filterButton]
+        if not IsDefault(state) then configs.push({ icon: "pkg:/images/icons/detail_reset.png", label: tr("Reset"), action: "playlistReset", id: "playlistResetButton" })
+        return configs
+    end function
+
+    ' The sort picker, where the sort in use names its direction
+    function SortChoices(state as object) as object
+        choices = []
+        for each opt in SortOptions()
+            choice = { Name: opt.id, description: opt.label }
+            if opt.id = state.sortBy
+                choice.selected = true
+                if opt.id <> SORT_RANDOM then choice.description = `${opt.label} (${DirectionLabel(state.sortDirection)})`
+            end if
+            choices.push(choice)
+        end for
+        return choices
+    end function
+
+    ' A new sort starts ascending and the one in use turns round. Random shuffles again each time.
+    sub PickSort(state as object, sortBy as string)
+        if sortBy = state.sortBy and sortBy <> SORT_RANDOM
+            if state.sortDirection = DIR_ASCENDING
+                state.sortDirection = DIR_DESCENDING
+            else
+                state.sortDirection = DIR_ASCENDING
+            end if
+        else
+            state.sortBy = sortBy
+            state.sortDirection = DIR_ASCENDING
+        end if
+        if sortBy = SORT_RANDOM then state.randomSeed = Rnd(2147483646)
+    end sub
+
+    ' The filter menu, each line naming where its filter stands. Type only shows for a playlist that
+    ' mixes them, and Clear Filters once one is on.
+    function FilterMenu(state as object, types as object) as object
+        favorites = tr("No")
+        if state.favoriteOnly then favorites = tr("Yes")
+        menu = [
+            { action: "played", label: `${tr("Played Status")}: ${PlayedLabel(state.playedFilter)}` },
+            { action: "favorites", label: `${tr("Favorites")}: ${favorites}` }
+        ]
+        if types.count() > 1
+            shownType = tr("All")
+            if state.mediaTypeFilter <> "" then shownType = TypeLabel(state.mediaTypeFilter)
+            menu.push({ action: "type", label: `${tr("Type")}: ${shownType}` })
+        end if
+        if IsFiltered(state) then menu.push({ action: "clear", label: tr("Clear Filters") })
+        return menu
+    end function
+
+    function PlayedChoices(state as object) as object
+        choices = []
+        for each opt in PlayedOptions()
+            choice = { Name: opt.id, description: opt.label }
+            if opt.id = state.playedFilter then choice.selected = true
+            choices.push(choice)
+        end for
+        return choices
+    end function
+
+    function TypeChoices(state as object, types as object) as object
+        choices = [{ Name: "", description: tr("All") }]
+        for each mediaType in types
+            choices.push({ Name: mediaType, description: TypeLabel(mediaType) })
+        end for
+        for each choice in choices
+            if choice.Name = state.mediaTypeFilter then choice.selected = true
+        end for
+        return choices
+    end function
+
+    sub ClearFilters(state as object)
+        state.playedFilter = PLAYED_ALL
+        state.favoriteOnly = false
+        state.mediaTypeFilter = ""
+    end sub
+
+    ' A watched or favorite change from the item menu, kept on the row the filters read
+    sub KeepUserData(row as object, userData as dynamic)
+        if type(userData) <> "roAssociativeArray" or not row.hasField("json") then return
+        json = row.json
+        if type(json) <> "roAssociativeArray" then json = {}
+        json.UserData = userData
+        row.json = json
+    end sub
+
+    ' Every field sorts upward with ties going by name, and downward is that order turned round
+    function SortAndFilter(rows as object, state as object) as object
+        kept = []
+        for each row in rows
+            if Keeps(row, state) then kept.push(row)
+        end for
+
+        if state.sortBy = SORT_RANDOM then return Shuffled(kept, state.randomSeed)
+
+        if state.sortBy <> SORT_ORDER
+            keyed = []
+            for each row in kept
+                keyed.push({ row: row, name: LCase(NameOf(row)), value: SortValue(row, state.sortBy) })
+            end for
+            keyed.SortBy("value")
+
+            ' Each run of rows that tie is put in name order on its own, since a sort can leave
+            ' equal rows in any order
+            kept = []
+            first = 0
+            while first < keyed.count()
+                tied = [keyed[first]]
+                while first + tied.count() < keyed.count() and keyed[first + tied.count()].value = keyed[first].value
+                    tied.push(keyed[first + tied.count()])
+                end while
+                tied.SortBy("name")
+                for each entry in tied
+                    kept.push(entry.row)
+                end for
+                first += tied.count()
+            end while
+        end if
+
+        if state.sortDirection = DIR_DESCENDING then kept.Reverse()
+        return kept
+    end function
+
+    ' Unwatched leaves out a row that is under way, which In Progress is for
+    function Keeps(row as object, state as object) as boolean
+        if state.favoriteOnly and chainLookupReturn(row, "json.UserData.IsFavorite", false) <> true then return false
+        if state.mediaTypeFilter <> "" and TypeOf(row) <> state.mediaTypeFilter then return false
+        if state.playedFilter = PLAYED_ALL then return true
+
+        played = chainLookupReturn(row, "played", false) = true
+        if state.playedFilter = PLAYED_WATCHED then return played
+
+        started = NumberAt(row, "json.UserData.PlaybackPositionTicks") > 0
+        if state.playedFilter = PLAYED_UNWATCHED then return not played and not started
+        return not played and started
+    end function
+
+    ' Text goes lower case and numbers go to doubles, since the firmware sorts each type apart and a
+    ' server sends whole numbers and fractions alike
+    function SortValue(row as object, sortBy as string) as dynamic
         if sortBy = SORT_NAME
-            return item.LookupCI("title") ?? item.LookupCI("name") ?? ""
+            name = TextAt(row, "json.SortName")
+            if name = "" then name = NameOf(row)
+            return LCase(name)
+        else if sortBy = SORT_ARTIST
+            artist = TextAt(row, "json.AlbumArtist")
+            artists = chainLookupReturn(row, "json.Artists", [])
+            if artist = "" and type(artists) = "roArray" and artists.count() > 0 and isString(artists[0]) then artist = artists[0]
+            return LCase(artist)
+        else if sortBy = SORT_ALBUM
+            return LCase(TextAt(row, "json.Album"))
+        else if sortBy = SORT_DATE_ADDED
+            return TextAt(row, "json.DateCreated")
+        else if sortBy = SORT_PREMIERE_DATE
+            premiere = TextAt(row, "json.PremiereDate")
+            year = chainLookupReturn(row, "json.ProductionYear", invalid)
+            if premiere = "" and isValid(year) then premiere = `${year}-01-01`
+            return premiere
+        else if sortBy = SORT_DATE_PLAYED
+            return TextAt(row, "json.UserData.LastPlayedDate")
+        else if sortBy = SORT_RUNTIME
+            return NumberAt(row, "json.RunTimeTicks")
+        else if sortBy = SORT_COMMUNITY_RATING
+            return NumberAt(row, "json.CommunityRating")
+        else if sortBy = SORT_CRITIC_RATING
+            return NumberAt(row, "json.CriticRating")
+        else if sortBy = SORT_PLAY_COUNT
+            return NumberAt(row, "json.UserData.PlayCount")
         end if
-
-        if sortBy = SORT_ARTIST
-            artists = item.LookupCI("artists")
-            if isValid(artists) and type(artists) = "roArray" and artists.count() > 0
-                return artists[0]
-            end if
-            return item.LookupCI("albumArtist") ?? item.LookupCI("artist") ?? ""
-        end if
-
-        if sortBy = SORT_ALBUM
-            return item.LookupCI("album") ?? ""
-        end if
-
-        if sortBy = SORT_RUNTIME
-            val = item.LookupCI("RunTimeTicks")
-            if isValid(val) and type(val) <> "String" and type(val) <> "roString"
-                return val
-            end if
-            return 0
-        end if
-
-        if sortBy = SORT_DATE_ADDED
-            return chainLookupReturn(item, "json.DateCreated", "")
-        end if
-
-        if sortBy = SORT_PREMIERE_DATE
-            dateVal = chainLookupReturn(item, "json.PremiereDate", "")
-            if isValidAndNotEmpty(dateVal) then return dateVal
-            prodYear = item.LookupCI("ProductionYear")
-            if isValid(prodYear) then return stri(prodYear).trim()
-            return ""
-        end if
-
-        if sortBy = SORT_COMMUNITY_RATING
-            val = chainLookupReturn(item, "json.CommunityRating", -1.0)
-            if isValid(val) and type(val) <> "String" and type(val) <> "roString"
-                return val
-            end if
-            return -1.0
-        end if
-
-        if sortBy = SORT_CRITIC_RATING
-            val = chainLookupReturn(item, "json.CriticRating", -1.0)
-            if isValid(val) and type(val) <> "String" and type(val) <> "roString"
-                return val
-            end if
-            return -1.0
-        end if
-
-        if sortBy = SORT_DATE_PLAYED
-            return chainLookupReturn(item, "json.UserData.LastPlayedDate", "")
-        end if
-
-        if sortBy = SORT_PLAY_COUNT
-            val = chainLookupReturn(item, "json.UserData.PlayCount", 0)
-            if isValid(val) and type(val) <> "String" and type(val) <> "roString"
-                return val
-            end if
-            return 0
-        end if
-
         return ""
     end function
 
-    function SortAndFilter(items as object, options = {} as object) as object
-        if not isValid(items) or items.count() = 0 then return []
+    function NameOf(row as object) as string
+        name = TextAt(row, "json.Name")
+        if name = "" then name = TextAt(row, "title")
+        return name
+    end function
 
-        playedFilterVal = options.playedFilter ?? PLAYED_ALL
-        favoriteOnly = options.favoriteOnly = true
-        mediaTypeFilterVal = options.mediaTypeFilter ?? ""
-        sortBy = options.sortBy ?? SORT_ORDER
-        sortDirection = options.sortDirection ?? DIR_ASCENDING
+    function TextAt(row as object, path as string) as string
+        value = chainLookupReturn(row, path, "")
+        if not isString(value) then return ""
+        return value
+    end function
 
-        ' 1. Filter
-        filtered = []
-        for each item in items
-            keep = true
-
-            ' Played filter
-            if playedFilterVal = PLAYED_UNPLAYED or playedFilterVal = PLAYED_PLAYED
-                isPlayed = chainLookupReturn(item, "played", false)
-                if not isPlayed
-                    isPlayed = chainLookupReturn(item, "json.UserData.Played", false)
-                end if
-                if playedFilterVal = PLAYED_UNPLAYED and isPlayed
-                    keep = false
-                else if playedFilterVal = PLAYED_PLAYED and not isPlayed
-                    keep = false
-                end if
-            end if
-
-            ' Favorite filter
-            if keep and favoriteOnly
-                isFav = chainLookupReturn(item, "favorite", false)
-                if not isFav
-                    isFav = chainLookupReturn(item, "json.UserData.IsFavorite", false)
-                end if
-                if not isFav then keep = false
-            end if
-
-            ' Media type filter
-            if keep and isValidAndNotEmpty(mediaTypeFilterVal) and mediaTypeFilterVal <> "all"
-                itemType = item.LookupCI("type") ?? item.LookupCI("MediaType") ?? ""
-                if LCase(itemType) <> LCase(mediaTypeFilterVal) then keep = false
-            end if
-
-            if keep then filtered.push(item)
-        end for
-
-        if filtered.count() <= 1 then return filtered
-
-        ' 2. Sort
-        if sortBy = SORT_ORDER
-            if sortDirection = DIR_DESCENDING
-                reversed = []
-                for i = filtered.count() - 1 to 0 step -1
-                    reversed.push(filtered[i])
-                end for
-                return reversed
-            end if
-            return filtered
+    function NumberAt(row as object, path as string) as double
+        value = chainLookupReturn(row, path, 0)
+        valueType = type(value)
+        if valueType = "Integer" or valueType = "roInt" or valueType = "LongInteger" or valueType = "roLongInteger" or valueType = "Float" or valueType = "roFloat" or valueType = "Double" or valueType = "roDouble"
+            return value + 0#
         end if
+        return 0#
+    end function
 
-        if sortBy = SORT_RANDOM
-            ' Seeded or random shuffle
-            shuffled = []
-            for each it in filtered
-                shuffled.push(it)
-            end for
-            seed = options.randomSeed ?? 42
-            n = shuffled.count()
-            for i = n - 1 to 1 step -1
-                seed = (seed * 1103515245 + 12345) and &h7fffffff
-                j = seed mod (i + 1)
-                temp = shuffled[i]
-                shuffled[i] = shuffled[j]
-                shuffled[j] = temp
-            end for
-            return shuffled
-        end if
-
-        ' Field sorting
-        isNumeric = (sortBy = SORT_RUNTIME or sortBy = SORT_COMMUNITY_RATING or sortBy = SORT_CRITIC_RATING or sortBy = SORT_PLAY_COUNT)
-
-        keyed = []
-        for i = 0 to filtered.count() - 1
-            it = filtered[i]
-            val = ExtractSortValue(it, sortBy)
-            keyed.push({ item: it, sortkey: val, index: i })
+    ' The order a seed shuffles to, the same every time so the rows hold still while it is in use
+    function Shuffled(rows as object, seed as integer) as object
+        copy = []
+        copy.Append(rows)
+        random = seasonalEffects.NewRandom(seed)
+        for i = copy.count() - 1 to 1 step -1
+            j = Int(random.roll() * (i + 1))
+            held = copy[i]
+            copy[i] = copy[j]
+            copy[j] = held
         end for
-
-        ' For stable sorting, sort by index first
-        if sortDirection = DIR_DESCENDING
-            keyed.SortBy("index", "r")
-            if isNumeric
-                keyed.SortBy("sortkey", "r")
-            else
-                keyed.SortBy("sortkey", "ir")
-            end if
-        else
-            keyed.SortBy("index")
-            if isNumeric
-                keyed.SortBy("sortkey")
-            else
-                keyed.SortBy("sortkey", "i")
-            end if
-        end if
-
-        result = []
-        for each entry in keyed
-            result.push(entry.item)
-        end for
-        return result
+        return copy
     end function
 
 end namespace

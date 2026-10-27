@@ -1,0 +1,195 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/playlistSortFilter.bs"
+
+' A playlist's sort and filters, shared by the screens that show its rows. These run in the
+' screen's scope, so m is that screen. The screen declares an activeTracks field, which playback
+' reads, and a playlistRowsChanged function, which gets -1 when the rows and the action row
+' should be drawn again.
+
+function playlistViewState() as object
+    if not isValid(m.playlistView) then m.playlistView = playlistSortFilter.DefaultState()
+    return m.playlistView
+end function
+
+' In the playlist's own order the list shows the rows themselves, so the menu moves them in place.
+' Otherwise it shows copies, since a node can only have one parent.
+function playlistViewRows(rows as object) as object
+    m.playlistViewSource = rows
+    m.playlistViewShown = playlistSortFilter.SortAndFilter(rows.getChildren(-1, 0), playlistViewState())
+
+    shownRows = rows
+    if not playlistViewInOrder()
+        shownRows = CreateObject("roSGNode", "ContentNode")
+        for each row in m.playlistViewShown
+            shownRows.appendChild(row.clone(false))
+        end for
+    end if
+    m.top.activeTracks = shownRows
+    return shownRows
+end function
+
+function playlistViewInOrder() as boolean
+    return playlistSortFilter.IsDefault(playlistViewState())
+end function
+
+' How many rows show, or -1 before the playlist's rows arrive
+function playlistViewCount() as integer
+    if not isValid(m.playlistViewShown) then return -1
+    return m.playlistViewShown.count()
+end function
+
+function playlistViewTicks() as dynamic
+    ticks = 0
+    for each row in m.playlistViewShown ?? []
+        ticks += row.RunTimeTicks
+    end for
+    return ticks
+end function
+
+' The playlist's own row behind the one showing at index, which is the one the menu changes
+function playlistViewRow(index as integer) as dynamic
+    if not isValid(m.playlistViewShown) or index < 0 or index >= m.playlistViewShown.count() then return invalid
+    return m.playlistViewShown[index]
+end function
+
+' A row's menu, which only moves a row where the playlist's own order shows
+function playlistViewRowOptions(row as object, playlistId as string) as object
+    options = playlistRowOptions(row, playlistId)
+    if not playlistViewInOrder()
+        options.playlist.first = true
+        options.playlist.last = true
+    end if
+    return options
+end function
+
+function playlistViewButtons() as object
+    return playlistSortFilter.Buttons(playlistViewState())
+end function
+
+' The menu's watched or favorite change to a playlist row. A filter reads the row's own data, so
+' that takes the change, and a sorted or filtered list draws again.
+sub playlistViewRowMarked(action as string, card as dynamic, menuJson as object)
+    if action <> "watched" and action <> "favorite" then return
+    if type(card) <> "roSGNode" or not card.hasField("playlistItemId") then return
+
+    playlistSortFilter.KeepUserData(card, menuJson.UserData)
+    if not playlistViewInOrder() then m.top.callFunc("playlistRowsChanged", -1)
+end sub
+
+' The actions a playlist's buttons take. Returns false for any other.
+function playlistViewAction(action as string) as boolean
+    if action = "playlistPlay"
+        m.top.playAll = true
+    else if action = "playlistShuffle"
+        ' The main thread hears the field only when it changes
+        m.top.shufflePlay = false
+        m.top.shufflePlay = true
+    else if action = "playlistSort"
+        m.global.sceneManager.callFunc("radioDialog", tr("Sort By"), { data: playlistSortFilter.SortChoices(playlistViewState()) })
+        m.global.sceneManager.observeFieldScoped("returnData", "onPlaylistSortPicked")
+    else if action = "playlistFilter"
+        openPlaylistFilterMenu()
+    else if action = "playlistReset"
+        m.playlistView = playlistSortFilter.DefaultState()
+        playlistViewRedraw("playlistSortButton")
+    else
+        return false
+    end if
+    return true
+end function
+
+sub onPlaylistSortPicked()
+    m.global.sceneManager.unobserveFieldScoped("returnData")
+    picked = m.global.sceneManager.returnData
+    if not isValid(picked) or not isString(picked.Name) then return
+
+    playlistSortFilter.PickSort(playlistViewState(), picked.Name)
+    playlistViewLater("sort")
+end sub
+
+sub openPlaylistFilterMenu()
+    types = []
+    if isValid(m.playlistViewSource) then types = playlistSortFilter.MediaTypes(m.playlistViewSource.getChildren(-1, 0))
+    m.playlistFilterTypes = types
+    m.playlistFilterMenu = playlistSortFilter.FilterMenu(playlistViewState(), types)
+
+    labels = []
+    for each entry in m.playlistFilterMenu
+        labels.push(entry.label)
+    end for
+    m.global.sceneManager.callFunc("optionDialog", "playlistFilter", tr("Filter"), [], labels, {})
+    m.global.sceneManager.observeFieldScoped("returnData", "onPlaylistFilterPicked")
+end sub
+
+' Played Status and Type open their own picker, and the others change straight away
+sub onPlaylistFilterPicked()
+    m.global.sceneManager.unobserveFieldScoped("returnData")
+    index = chainLookupReturn(m.global.sceneManager.returnData, "indexSelected", -1)
+    if index < 0 or index >= m.playlistFilterMenu.count() then return
+
+    action = m.playlistFilterMenu[index].action
+    state = playlistViewState()
+    if action = "favorites"
+        state.favoriteOnly = not state.favoriteOnly
+    else if action = "clear"
+        playlistSortFilter.ClearFilters(state)
+    end if
+    playlistViewLater(action)
+end sub
+
+sub onPlaylistFilterChosen()
+    m.global.sceneManager.unobserveFieldScoped("returnData")
+    picked = m.global.sceneManager.returnData
+    if not isValid(picked) or not isString(picked.Name) then return
+
+    if m.playlistFilterChoice = "played"
+        playlistViewState().playedFilter = picked.Name
+    else
+        playlistViewState().mediaTypeFilter = picked.Name
+    end if
+    playlistViewLater("filter")
+end sub
+
+' A dialog hands the remote back as it closes, so whatever a choice in it leads to waits until then
+sub playlistViewLater(pending as string)
+    m.playlistViewPending = pending
+    m.playlistViewTimer = CreateObject("roSGNode", "Timer")
+    m.playlistViewTimer.duration = 0.05
+    m.playlistViewTimer.observeField("fire", "onPlaylistViewLater")
+    m.playlistViewTimer.control = "start"
+end sub
+
+sub onPlaylistViewLater()
+    pending = m.playlistViewPending
+    state = playlistViewState()
+    if pending = "played" or pending = "type"
+        m.playlistFilterChoice = pending
+        title = tr("Played Status")
+        choices = playlistSortFilter.PlayedChoices(state)
+        if pending = "type"
+            title = tr("Type")
+            choices = playlistSortFilter.TypeChoices(state, m.playlistFilterTypes)
+        end if
+        m.global.sceneManager.callFunc("radioDialog", title, { data: choices })
+        m.global.sceneManager.observeFieldScoped("returnData", "onPlaylistFilterChosen")
+    else if pending = "sort"
+        playlistViewRedraw("playlistSortButton")
+    else
+        playlistViewRedraw("playlistFilterButton")
+    end if
+end sub
+
+sub playlistViewRedraw(buttonId as string)
+    m.top.callFunc("playlistRowsChanged", -1)
+    if m.buttonGroups.count() = 0 then return
+
+    index = 0
+    for i = 0 to m.buttonGroups.count() - 1
+        if m.buttonGroups[i].id = buttonId then index = i
+    end for
+    m.currentButtonIndex = index
+    m.buttonGroups[index].setFocus(true)
+    m.top.lastFocus = m.buttonGroups[index]
+    highlightButton(index)
+    setLastFocus(m.buttonGroups[index])
+end sub

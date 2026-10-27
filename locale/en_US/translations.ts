@@ -7542,5 +7542,75 @@
         <extracomment>On-screen keyboard hint shown after the remote&apos;s back key</extracomment>
         <translation>close</translation>
     </message>
+    <message>
+        <source>Sort</source>
+        <extracomment>Playlist button that opens the sort picker</extracomment>
+        <translation>Sort</translation>
+    </message>
+    <message>
+        <source>Filter</source>
+        <extracomment>Playlist button and dialog title for the filters on a playlist&apos;s rows</extracomment>
+        <translation>Filter</translation>
+    </message>
+    <message>
+        <source>Artist</source>
+        <extracomment>Playlist sort by each row&apos;s artist</extracomment>
+        <translation>Artist</translation>
+    </message>
+    <message>
+        <source>Runtime</source>
+        <extracomment>Playlist sort by how long each row runs</extracomment>
+        <translation>Runtime</translation>
+    </message>
+    <message>
+        <source>Release Date</source>
+        <extracomment>Playlist sort by each row&apos;s release date</extracomment>
+        <translation>Release Date</translation>
+    </message>
+    <message>
+        <source>Critic Rating</source>
+        <extracomment>Playlist sort by each row&apos;s critic rating</extracomment>
+        <translation>Critic Rating</translation>
+    </message>
+    <message>
+        <source>Play Count</source>
+        <extracomment>Playlist sort by how many times each row was played</extracomment>
+        <translation>Play Count</translation>
+    </message>
+    <message>
+        <source>Played Status</source>
+        <extracomment>Playlist filter for watched, unwatched or in progress rows</extracomment>
+        <translation>Played Status</translation>
+    </message>
+    <message>
+        <source>In Progress</source>
+        <extracomment>Played status filter for rows started but not finished</extracomment>
+        <translation>In Progress</translation>
+    </message>
+    <message>
+        <source>Type</source>
+        <extracomment>Playlist filter for the kind of media, such as audio or video</extracomment>
+        <translation>Type</translation>
+    </message>
+    <message>
+        <source>Clear Filters</source>
+        <extracomment>Turns every playlist filter off</extracomment>
+        <translation>Clear Filters</translation>
+    </message>
+    <message>
+        <source>{0} active</source>
+        <extracomment>How many playlist filters are on, where {0} is the number</extracomment>
+        <translation>{0} active</translation>
+    </message>
+    <message>
+        <source>This playlist is empty</source>
+        <extracomment>Shown in place of a playlist&apos;s rows when it holds nothing</extracomment>
+        <translation>This playlist is empty</translation>
+    </message>
+    <message>
+        <source>No tracks match the active filters</source>
+        <extracomment>Shown in place of a playlist&apos;s rows when its filters leave none</extracomment>
+        <translation>No tracks match the active filters</translation>
+    </message>
 </context>
 </TS>

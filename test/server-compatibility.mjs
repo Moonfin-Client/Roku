@@ -629,11 +629,30 @@ assert.match(itemMenuHostSource.match(/sub itemMenuChangePlaylist\([^]*?end sub/
 assert.match(itemMenuHostSource.match(/sub onItemMenuPlaylistChanged\([^]*?end sub/)[0], /rows\.insertChild\(row, request\.from\)/, 'And comes back if the server refuses');
 assert.match(mainActions, /APIRequest\(`\/Playlists\/\$\{playlistID\}\/Items`, \{ EntryIds: entryID \}\)[^]*?req\.SetRequest\("DELETE"\)/, 'The delete names the entry id');
 assert.match(mainActions.match(/sub removeItemFromMyList\([^]*?end sub/)[0], /MainAction\.removeItemFromPlaylist\(playlistID, MainAction\.playlistEntryId\(playlistID, itemID\)\)/, 'My List takes a title out by its entry id too');
-assert.match(await readFile('components/music/PlaylistDetails.bs', 'utf8'), /m\.itemList\.content = listData/, 'The playlist screen lists the rows playback reads');
+const playlistViewHost = await readFile('components/music/playlistViewHost.bs', 'utf8');
+assert.match(playlistViewHost.match(/function playlistViewRows\([^]*?end function/)[0], /m\.top\.activeTracks = shownRows\s+return shownRows/, 'A playlist screen shows the rows playback reads');
+assert.match(await readFile('components/music/PlaylistDetails.bs', 'utf8'), /m\.itemList\.content = playlistViewRows\(rows\)/, 'The classic playlist screen lists them');
+assert.match(await readFile('components/details/ModernItemDetails.bs', 'utf8'), /m\.trackGrid\.content = playlistViewRows\(m\.musicList\)/, 'So does the modern one');
+assert.match(await readFile('components/details/SpotlightItemDetails.bs', 'utf8'), /shown = playlistViewRows\(rows\)\.getChildren\(-1, 0\)/, 'And Spotlight');
 for (const screen of ['components/music/PlaylistDetails.xml', 'components/details/ModernItemDetails.xml', 'components/details/SpotlightItemDetails.xml']) {
-    assert.match(await readFile(screen, 'utf8'), /<function name="playlistRowsChanged" \/>/, `${screen} redraws its rows after the menu changes them`);
+    const xml = await readFile(screen, 'utf8');
+    assert.match(xml, /<function name="playlistRowsChanged" \/>/, `${screen} redraws its rows after the menu changes them`);
+    assert.match(xml, /<field id="activeTracks" type="node" \/>/, `${screen} hands playback the rows it shows`);
 }
-process.stdout.write('PASS: playlist row wiring (11 checks)\n');
+process.stdout.write('PASS: playlist row wiring (17 checks)\n');
+
+// A playlist's sort and filters reach what plays, the menu and the request that feeds them
+const mainEventHandlers = await readFile('source/MainEventHandlers.bs', 'utf8');
+for (const handler of ['onPlaylistItemSelectedEvent', 'onPlaylistPlayAllEvent', 'onPlaylistShuffleEvent']) {
+    assert.match(mainEventHandlers.match(new RegExp(`sub ${handler}\\([^]*?end sub`))[0], /tracksNode = screenContent\.activeTracks \?\? screenContent\.listData/, `${handler} plays the rows that show`);
+}
+assert.match(await readFile('source/api/Items.bs', 'utf8'), /"Fields": "DateCreated,SortName"/, 'The playlist rows carry what Date Added and Name sort by');
+assert.match(playlistViewHost.match(/function playlistViewRowOptions\([^]*?end function/)[0], /if not playlistViewInOrder\(\)\s+options\.playlist\.first = true\s+options\.playlist\.last = true/, 'A row only moves where the playlist order shows');
+assert.match(await readFile('components/itemMenu/itemMenuDetailHost.bs', 'utf8'), /playlistViewRowMarked\(action, card, menuJson\)/, 'A row the menu marks keeps the change for the filters');
+for (const screen of ['components/details/ModernItemDetails.bs', 'components/details/SpotlightItemDetails.bs']) {
+    assert.match(await readFile(screen, 'utf8'), /sub handleScreenButtonAction\(action as string\)\s+if playlistViewAction\(action\) then return/, `${screen} hands a playlist's buttons to the shared actions`);
+}
+process.stdout.write('PASS: playlist sort and filter wiring (8 checks)\n');
 
 // Unlock notifications only run against a plugin that serves them, read in the background for as
 // long as the account is signed in, and follow the switch on the achievements screen straight away
