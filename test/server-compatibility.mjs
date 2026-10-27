@@ -96,7 +96,7 @@ const selections = {
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting'],
-    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad'],
+    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
@@ -140,6 +140,7 @@ source += '\n' + await readFile('test/log-redaction.bs', 'utf8');
 source += '\n' + await readFile('test/youtube-trailer.bs', 'utf8');
 source += '\n' + await readFile('test/playback-fallback.bs', 'utf8');
 source += '\n' + await readFile('test/home-backdrop-blur.bs', 'utf8');
+source += '\n' + await readFile('test/home-backdrop-style.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-burn-in.bs', 'utf8');
 source += '\n' + await readFile('test/seasonal-row.bs', 'utf8');
 source += '\n' + await readFile('test/live-recovery.bs', 'utf8');
@@ -819,7 +820,7 @@ assert.match(settingsSyncSource, /\{ pluginKey: "previewAudioEnabled", rokuKey: 
 const previewSettingsScreen = await readFile('components/settings/settings.bs', 'utf8');
 assert.match(previewSettingsScreen, /homeLooks = takeSettings\(configTree, \[[^\]]*"ui\.home\.mediaPreviewMode", "ui\.home\.previewAudioEnabled"[^\]]*\]\)/, 'Both preview settings sit in the Home Screen Looks group');
 const previewChoice = previewSettingsScreen.match(/sub applyRadioChoice\([^]*?^end sub/m)[0];
-assert.match(previewChoice, /if isStringEqual\(selectedSetting\.settingName, "ui\.home\.mediaPreviewMode"\)\s+dependsOn = "ui\.home\.episodePreviewEnabled"\s+previewOn = "true"\s+if isStringEqual\(selectedValue, "off"\) then previewOn = "false"\s+set_user_setting\(dependsOn, previewOn\)\s+syncSettingToServer\(dependsOn, previewOn\)/, 'Picking a preview mode writes and syncs the switch too');
+assert.match(previewChoice, /if isStringEqual\(selectedSetting\.settingName, "ui\.home\.mediaPreviewMode"\) then dependsOn = "ui\.home\.episodePreviewEnabled"\s+if isStringEqual\(selectedSetting\.settingName, "ui\.home\.backdropStyle"\) then dependsOn = "ui\.home\.showBackdrop"\s+if dependsOn <> ""\s+switchOn = "true"\s+if isStringEqual\(selectedValue, "off"\) then switchOn = "false"\s+set_user_setting\(dependsOn, switchOn\)\s+syncSettingToServer\(dependsOn, switchOn\)/, 'Picking a preview mode or a backdrop style writes and syncs its switch too');
 assert.match(previewChoice, /refreshDependentRows\(selectedSetting\.settingName, dependsOn\)/, 'Preview Audio comes and goes with the switch the choice wrote');
 assert.equal((previewSettingsScreen.match(/"ui\.home\.mediaPreviewMode"\) then (?:currentValue|selectedValue) = homePreview\.Mode\(m\.global\.session\.user\.settings\)/g) ?? []).length, 2, 'The row and the picker show the mode that plays');
 const previewStrings = await readFile('locale/en_US/translations.ts', 'utf8');
@@ -862,3 +863,15 @@ assert.equal(cornerPng.readUInt32BE(16), 8, 'The corner piece is 8 wide');
 assert.equal(cornerPng.readUInt32BE(20), 8, 'The corner piece is 8 high');
 assert.ok(cornerPng.length < 1024, 'The corner piece is small');
 process.stdout.write('PASS: home preview wiring (46 checks)\n');
+
+// The Home Screen Backdrop is a choice of off, full screen or corner that writes the old switch
+// too, and Home reads both through one helper
+assert.match(previewSettings, /"title": "Home Screen Backdrop",\s+"settingName": "ui\.home\.backdropStyle",\s+"glyph": "image",\s+"type": "radio",\s+"default": "fullScreen",\s+"options": \[\s+\{\s+"title": "Off",\s+"id": "off"\s+\},\s+\{\s+"title": "Full Screen",\s+"id": "fullScreen"\s+\},\s+\{\s+"title": "Corner",\s+"id": "corner"\s+\}\s+\]/, 'Home Screen Backdrop is a choice of off, full screen or corner');
+assert.doesNotMatch(previewSettings, /"settingName": "ui\.home\.showBackdrop"/, 'The old backdrop switch has no row of its own, the choice writes it');
+assert.match(settingsSyncSource, /\{ pluginKey: "homeBackdropEnabled", rokuKey: "ui\.home\.showBackdrop", type: "bool" \}/, 'The backdrop switch syncs with the plugin');
+assert.match(settingsSyncSource, /\{ pluginKey: "homeBackdropStyle", rokuKey: "ui\.home\.backdropStyle", type: "direct" \}/, 'The backdrop style syncs with the plugin');
+assert.equal((previewSettingsScreen.match(/"ui\.home\.backdropStyle"\) then (?:currentValue|selectedValue) = getHomeBackdropStyle\(m\.global\.session\.user\.settings\)/g) ?? []).length, 2, 'The row and the picker show the style Home draws');
+assert.doesNotMatch(previewHome, /"ui\.home\.showBackdrop"/, 'Home never reads the old backdrop switch on its own');
+assert.match(previewHome, /maskUri = "pkg:\/images\/backdropCornerMask\.png"/, 'The corner backdrop fades out through its mask');
+for (const name of ['Full Screen', 'Corner']) assert.match(previewStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
+process.stdout.write('PASS: home backdrop style wiring (9 checks)\n');

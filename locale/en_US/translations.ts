@@ -6684,6 +6684,16 @@
         <translation>Home Screen Backdrop</translation>
     </message>
     <message>
+        <source>Full Screen</source>
+        <extracomment>Home Screen Backdrop choice that draws the focused item&apos;s backdrop behind the whole screen</extracomment>
+        <translation>Full Screen</translation>
+    </message>
+    <message>
+        <source>Corner</source>
+        <extracomment>Home Screen Backdrop choice that draws the focused item&apos;s backdrop in the top right corner, fading out toward the left and the bottom</extracomment>
+        <translation>Corner</translation>
+    </message>
+    <message>
         <source>How long a show stays in Next Up after you last watched it</source>
         <translation>How long a show stays in Next Up after you last watched it</translation>
     </message>
