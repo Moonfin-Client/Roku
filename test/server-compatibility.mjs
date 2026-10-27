@@ -902,6 +902,13 @@ assert.match(previewHome, /maskUri = "pkg:\/images\/backdropCornerMask\.png"/, '
 for (const name of ['Full Screen', 'Corner']) assert.match(previewStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
 process.stdout.write('PASS: home backdrop style wiring (9 checks)\n');
 
+// Continue Watching and Next Up cards play on select through one check the press and the card menu share
+assert.match(homeRowsSource.match(/function playsOnSelect\([^]*?end function/)[0], /if rowId <> "resume" and rowId <> "nextup" then return false\s+return isStringEqual\(get_user_setting\("ui\.home\.continueWatchingDefaultAction"\), "play"\)/, 'Only Continue Watching and Next Up rows play on select, and only when the setting says play');
+assert.match(homeRowsSource.match(/sub itemSelected\(\)[^]*?end sub/)[0], /if isValid\(item\) and playsOnSelect\(m\.top\.rowItemSelected\[0\]\)/, 'A press checks the row it was made on');
+assert.match(homeSource, /showItemMenu\(focusedItem, \{ playImmediately: m\.homeRows\.callFunc\("playsOnSelect", m\.homeRows\.rowItemFocused\[0\]\) \}\)/, 'The card menu asks the same check for the focused row');
+assert.match(await readFile('components/home/HomeRows.xml', 'utf8'), /<function name="playsOnSelect" \/>/, 'Home can call the check');
+process.stdout.write('PASS: play on select wiring (4 checks)\n');
+
 // The server's answer to /Users/Me decides whether an access schedule has closed
 const scheduleTask = await readFile('components/accessSchedule/AccessScheduleTask.bs', 'utf8');
 assert.match(scheduleTask, /if not exempt and entries\.Count\(\) > 0 then refused = accessSchedule\.RefusedBy\(requestResponse\(APIRequest\("Users\/Me"\), "GET"\)\.status\)/, 'Only a user with a schedule who isnt an administrator asks the server');

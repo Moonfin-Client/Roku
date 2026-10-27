@@ -291,6 +291,26 @@
         <translation>Genres watched</translation>
     </message>
     <message>
+        <source>Default Action</source>
+        <extracomment>Setting for what pressing a Continue Watching or Next Up card does</extracomment>
+        <translation>Default Action</translation>
+    </message>
+    <message>
+        <source>What selecting a Continue Watching or Next Up item does</source>
+        <extracomment>Description of the Default Action setting</extracomment>
+        <translation>What selecting a Continue Watching or Next Up item does</translation>
+    </message>
+    <message>
+        <source>Go to Details</source>
+        <extracomment>Default Action choice that opens the item&apos;s details, and the card menu entry that does the same when the cards play on select</extracomment>
+        <translation>Go to Details</translation>
+    </message>
+    <message>
+        <source>Play immediately</source>
+        <extracomment>Default Action choice that starts playing the item straight away</extracomment>
+        <translation>Play immediately</translation>
+    </message>
+    <message>
         <source>Go to Series</source>
         <translation>Go to Series</translation>
     </message>
