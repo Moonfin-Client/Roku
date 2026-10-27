@@ -907,7 +907,7 @@ const scheduleTask = await readFile('components/accessSchedule/AccessScheduleTas
 assert.match(scheduleTask, /if not exempt and entries\.Count\(\) > 0 then refused = accessSchedule\.RefusedBy\(requestResponse\(APIRequest\("Users\/Me"\), "GET"\)\.status\)/, 'Only a user with a schedule who isnt an administrator asks the server');
 const scheduleWatcher = await readFile('components/accessSchedule/AccessScheduleWatcher.bs', 'utf8');
 assert.match(scheduleWatcher, /status = accessSchedule\.Status\(m\.entries, refused, day, secondOfDay\)/, 'The server answer decides whether the user is blocked');
-assert.match(scheduleWatcher, /sub onRefused\(\)(?:\s+'[^\n]*)*\s+if m\.top\.userId = "" or m\.top\.blocked or m\.task <> invalid then return/, 'A refused request starts no look while blocked or while one is under way');
+assert.match(scheduleWatcher, /sub onRefused\(\)(?:\s+'[^\n]*)*\s+if m\.top\.userId = "" or m\.top\.blocked then return/, 'A refused request starts no look while blocked, and asks for another while one is under way');
 assert.match(scheduleWatcher, /if result\.ok[^]*?else(?:\s+'[^\n]*)*\s+startTimer\(RETRY_SECONDS\)/, 'A failed read keeps the last answer and asks again');
 assert.match(scheduleWatcher, /if m\.exempt then return\s+delay = POLL_SECONDS\s+if m\.entries\.Count\(\) = 0 then delay = IDLE_SECONDS/, 'An administrator isnt polled and a user without a schedule is polled every 15 minutes');
 process.stdout.write('PASS: access schedule wiring (5 checks)\n');
