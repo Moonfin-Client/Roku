@@ -80,6 +80,7 @@ const selections = {
     'source/utils/remoteSubtitles.bs': null,
     'source/utils/quickConnectUrl.bs': null,
     'source/utils/playlistSortFilter.bs': null,
+    'source/utils/accessSchedule.bs': null,
     'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
     'components/extras/LoadExtrasTask.bs': ['personRoleIn'],
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions', 'SetUpAudioOptions', 'detailServerSubtitleIndex', 'audioOrdinal', 'audioStreamPosition'],
@@ -111,7 +112,7 @@ const selections = {
     'components/account/AccountDialog.bs': ['accountImageURL'],
     'components/config/SigninScene.bs': ['checkQuickConnectEnabled'],
     'source/utils/parsedUrl.bs': ['ParsedUrl', '__ParsedUrl_ToString'],
-    'source/api/baserequest.bs': ['buildParams', 'buildServerURL', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer', 'APIRequest', 'APIRequestForServer', 'authRequest', 'authRequestForServer', 'setCertificateAuthority', 'getJson', 'postPlaybackInfo', 'requestCanceled'],
+    'source/api/baserequest.bs': ['buildParams', 'buildServerURL', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer', 'APIRequest', 'APIRequestForServer', 'authRequest', 'authRequestForServer', 'setCertificateAuthority', 'getJson', 'noteAccessRefused', 'noteRefusalIn', 'postPlaybackInfo', 'requestCanceled'],
 };
 let source = 'namespace bslib\n' + bslib.source + '\nend namespace\n' + await readFile('source/enums/String.bs', 'utf8');
 for (const [file, names] of Object.entries(selections)) {
@@ -137,6 +138,7 @@ source += '\n' + await readFile('test/review-regressions.bs', 'utf8');
 source += '\n' + await readFile('test/accent-folding.bs', 'utf8');
 source += '\n' + await readFile('test/quick-connect-url.bs', 'utf8');
 source += '\n' + await readFile('test/sign-in-refused.bs', 'utf8');
+source += '\n' + await readFile('test/access-schedule.bs', 'utf8');
 source += '\n' + await readFile('test/log-redaction.bs', 'utf8');
 source += '\n' + await readFile('test/youtube-trailer.bs', 'utf8');
 source += '\n' + await readFile('test/playback-fallback.bs', 'utf8');
@@ -906,3 +908,13 @@ assert.match(homeRowsSource.match(/sub itemSelected\(\)[^]*?end sub/)[0], /if is
 assert.match(homeSource, /showItemMenu\(focusedItem, \{ playImmediately: m\.homeRows\.callFunc\("playsOnSelect", m\.homeRows\.rowItemFocused\[0\]\) \}\)/, 'The card menu asks the same check for the focused row');
 assert.match(await readFile('components/home/HomeRows.xml', 'utf8'), /<function name="playsOnSelect" \/>/, 'Home can call the check');
 process.stdout.write('PASS: play on select wiring (4 checks)\n');
+
+// The server's answer to /Users/Me decides whether an access schedule has closed
+const scheduleTask = await readFile('components/accessSchedule/AccessScheduleTask.bs', 'utf8');
+assert.match(scheduleTask, /if not exempt and entries\.Count\(\) > 0 then refused = accessSchedule\.RefusedBy\(requestResponse\(APIRequest\("Users\/Me"\), "GET"\)\.status\)/, 'Only a user with a schedule who isnt an administrator asks the server');
+const scheduleWatcher = await readFile('components/accessSchedule/AccessScheduleWatcher.bs', 'utf8');
+assert.match(scheduleWatcher, /status = accessSchedule\.Status\(m\.entries, refused, day, secondOfDay\)/, 'The server answer decides whether the user is blocked');
+assert.match(scheduleWatcher, /sub onRefused\(\)(?:\s+'[^\n]*)*\s+if m\.top\.userId = "" or m\.top\.blocked then return/, 'A refused request starts no look while blocked, and asks for another while one is under way');
+assert.match(scheduleWatcher, /if result\.ok[^]*?else(?:\s+'[^\n]*)*\s+startTimer\(RETRY_SECONDS\)/, 'A failed read keeps the last answer and asks again');
+assert.match(scheduleWatcher, /if m\.exempt then return\s+delay = POLL_SECONDS\s+if m\.entries\.Count\(\) = 0 then delay = IDLE_SECONDS/, 'An administrator isnt polled and a user without a schedule is polled every 15 minutes');
+process.stdout.write('PASS: access schedule wiring (5 checks)\n');
