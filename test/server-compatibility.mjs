@@ -104,7 +104,7 @@ const selections = {
     'components/itemMenu/ItemMenuTask.bs': ['playlistRenumbered'],
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
-    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'arrangeByStoredOrder', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'customRowLanguage'],
+    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'arrangeByStoredOrder', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds'],
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
@@ -603,8 +603,9 @@ assert.match(loadItemsSource.match(/function matchOnEmby\([^]*?end function/)[0]
 assert.match(loadItemsSource.match(/function readLibraryIndex\([^]*?end function/)[0], /StartIndex: start,\s+Limit: LIBRARY_INDEX_PAGE[^]*?pageFull = data\.Items\.Count\(\) = LIBRARY_INDEX_PAGE/, 'Jellyfin reads the library a page at a time until a page comes back short');
 assert.match(loadItemsSource.match(/function customRowCard\([^]*?end function/)[0], /for each key in providerKeys\(item\)\s+if owned\.DoesExist\(key\)/, 'An owned chart title becomes its library card');
 assert.match(loadItemsSource, /if source = "tmdb_chart" then rowType = externalList\.ChartItemType\(chartType\)/, 'A TMDB chart types its titles from the path');
-assert.match(loadItemsSource.match(/function loadCustomDynamicList\([^]*?end function/)[0], /customRowParams\.language = lang/, 'Custom rows include the interface language parameter');
-process.stdout.write('PASS: external rows wiring (5 checks)\n');
+assert.match(loadItemsSource.match(/function loadCustomDynamicList\([^]*?end function/)[0], /APIRequest\("\/Moonfin\/CustomRows\/Items", externalList\.Localized\(/, 'A custom row asks for the device language');
+assert.match(await readFile('components/home/MediaBarTask.bs', 'utf8'), /APIRequest\("\/Moonfin\/CustomRows\/Items", externalList\.Localized\(query\)\)/, 'An outside list on the media bar asks for it too');
+process.stdout.write('PASS: external rows wiring (6 checks)\n');
 
 // Library lists keep each server's order and leave out what an Emby user hid from My Media
 assert.match(await readFile('components/tasks/MultiServerTask.bs', 'utf8'), /itemsArray = withoutHiddenViews\(itemsArray, embyHiddenViews\(reqInfo\.userSession\)\)/, 'Multi-server views drop the libraries an Emby user hid');
