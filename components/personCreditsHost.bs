@@ -71,7 +71,80 @@ end function
 ' of a series the person is billed on is already covered by that series, so only the rest count
 ' as a guest appearance. Guest appearances and music videos each have a switch, and a hidden one
 ' comes back empty.
-function splitFilmography(entries as object) as object
+function personPageSortOption() as string
+    return chainLookupReturn(m.global.session, "user.settings.`ui.person.sortOption`", "alphabetical")
+end function
+
+function personPageGroupItems() as boolean
+    return chainLookupReturn(m.global.session, "user.settings.`ui.person.groupItems`", false) = true
+end function
+
+' Sorts credit nodes or raw item AAs by alphabetical title, release date descending, or release date ascending.
+' Items missing a date sink to the bottom in both date sort modes.
+function sortPersonItems(items as object, sortOption = invalid as dynamic) as object
+    if not isValidAndNotEmpty(items) or items.count() <= 1 then return items
+
+    effectiveSort = isValidAndNotEmpty(sortOption) ? sortOption : personPageSortOption()
+
+    decorated = []
+    for each item in items
+        itemJson = isValid(item.json) ? item.json : item
+        title = LCase(chainLookupReturn(itemJson, "Name", chainLookupReturn(itemJson, "name", chainLookupReturn(itemJson, "title", chainLookupReturn(itemJson, "Title", "")))))
+
+        dateStr = chainLookupReturn(itemJson, "PremiereDate", "")
+        if dateStr = "" then dateStr = chainLookupReturn(itemJson, "releaseDate", "")
+        if dateStr = "" then dateStr = chainLookupReturn(itemJson, "firstAirDate", "")
+        if dateStr = "" and isValid(itemJson.ProductionYear) and itemJson.ProductionYear > 0
+            dateStr = itemJson.ProductionYear.toStr() + "-01-01"
+        end if
+        if dateStr.len() >= 10 then dateStr = Left(dateStr, 10)
+
+        decorated.push({
+            item: item,
+            title: title,
+            date: dateStr
+        })
+    end for
+
+    if effectiveSort = "releaseDateAsc"
+        decorated.SortBy("title")
+        decorated.SortBy("date")
+        withDate = []
+        withoutDate = []
+        for each entry in decorated
+            if entry.date <> "" then withDate.push(entry.item) else withoutDate.push(entry.item)
+        end for
+        sorted = []
+        sorted.Append(withDate)
+        sorted.Append(withoutDate)
+        return sorted
+    else if effectiveSort = "releaseDateDesc"
+        decorated.SortBy("title")
+        decorated.SortBy("date", "r")
+        withDate = []
+        withoutDate = []
+        for each entry in decorated
+            if entry.date <> "" then withDate.push(entry.item) else withoutDate.push(entry.item)
+        end for
+        sorted = []
+        sorted.Append(withDate)
+        sorted.Append(withoutDate)
+        return sorted
+    else
+        decorated.SortBy("title")
+        sorted = []
+        for each entry in decorated
+            sorted.push(entry.item)
+        end for
+        return sorted
+    end if
+end function
+
+' The filmography comes back as one list, and each kind of work gets its own group. An episode
+' of a series the person is billed on is already covered by that series, so only the rest count
+' as a guest appearance. Guest appearances and music videos each have a switch, and a hidden one
+' comes back empty.
+function splitFilmography(entries as object, sortOption = invalid as dynamic) as object
     filmography = { movies: [], series: [], guest: [], music: [] }
     hidden = detailSectionLayout.HiddenIds()
     seriesIds = {}
@@ -93,26 +166,40 @@ function splitFilmography(entries as object) as object
         end if
     end for
 
+    effectiveSort = isValidAndNotEmpty(sortOption) ? sortOption : personPageSortOption()
+    filmography.movies = sortPersonItems(filmography.movies, effectiveSort)
+    filmography.series = sortPersonItems(filmography.series, effectiveSort)
+    filmography.guest = sortPersonItems(filmography.guest, effectiveSort)
+    filmography.music = sortPersonItems(filmography.music, effectiveSort)
+
     return filmography
 end function
 
 ' What Seerr knows they appeared in and worked on, leaving out a list the viewer hid
-function shownSeerrCredits(credits as object) as object
+function shownSeerrCredits(credits as object, group = invalid as dynamic, sortOption = invalid as dynamic) as object
     hidden = detailSectionLayout.HiddenIds()
     shown = { appearances: [], crew: [] }
-    if not hidden.DoesExist("seerrPersonAppearances") then shown.appearances = usableSeerrCredits(credits.cast, false)
-    if not hidden.DoesExist("seerrPersonCrew") then shown.crew = usableSeerrCredits(credits.crew, true)
+    effectiveGroup = isValid(group) ? group : personPageGroupItems()
+    effectiveSort = isValidAndNotEmpty(sortOption) ? sortOption : personPageSortOption()
+    if not hidden.DoesExist("seerrPersonAppearances") then shown.appearances = usableSeerrCredits(credits.cast, false, effectiveGroup, effectiveSort)
+    if not hidden.DoesExist("seerrPersonCrew") then shown.crew = usableSeerrCredits(credits.crew, true, effectiveGroup, effectiveSort)
     return shown
 end function
 
 ' Only credits with a poster, never a crew job that is a thank you rather than work on the title,
-' sorted by title. Seerr lists a title once per credit, so it is kept once.
-
-function usableSeerrCredits(credits as object, isCrew as boolean) as object
+' sorted and grouped according to user preferences.
+function usableSeerrCredits(credits as object, isCrew as boolean, group = invalid as dynamic, sortOption = invalid as dynamic) as object
     list = []
     if not isValidAndNotEmpty(credits) then return list
 
-    usable = []
+    effectiveGroup = isValid(group) ? group : personPageGroupItems()
+    effectiveSort = isValidAndNotEmpty(sortOption) ? sortOption : personPageSortOption()
+
+    posterBase = GetTmdbImageBaseUrls().posterW342
+    grouped = {}
+    groupedOrder = []
+    singleEntries = []
+
     for each credit in credits
         posterPath = credit.LookupCI("posterPath")
         if not isValidAndNotEmpty(posterPath) then continue for
@@ -122,54 +209,93 @@ function usableSeerrCredits(credits as object, isCrew as boolean) as object
             if job = "thanks" or job = "special thanks" then continue for
         end if
 
-        title = credit.LookupCI("title")
-        if not isValidAndNotEmpty(title) then title = credit.LookupCI("name")
-        usable.push({ title: title ?? "", credit: credit, posterPath: posterPath })
-    end for
-    usable.SortBy("title", "i")
-
-    ' Films and shows number their ids apart, so the same id can be one of each
-    posterBase = GetTmdbImageBaseUrls().posterW342
-    seen = {}
-    for each entry in usable
-        credit = entry.credit
-
         mediaType = LCase(credit.LookupCI("mediaType") ?? "")
         if mediaType = "" then mediaType = isValidAndNotEmpty(credit.LookupCI("title")) ? "movie" : "tv"
 
-        tmdbId = ""
         rawId = credit.LookupCI("id")
+        tmdbId = ""
         if isValid(rawId) then tmdbId = rawId.ToStr()
-        if seen.DoesExist(mediaType + ":" + tmdbId) then continue for
-        seen[mediaType + ":" + tmdbId] = true
+        if tmdbId = "" then continue for
 
-        ' The card caption reads the year off the same field the library entries use
+        title = credit.LookupCI("title")
+        if not isValidAndNotEmpty(title) then title = credit.LookupCI("name")
+        if not isValidAndNotEmpty(title) then title = ""
+
+        role = isCrew ? (credit.LookupCI("job") ?? credit.LookupCI("department") ?? "") : (credit.LookupCI("character") ?? "")
+        role = role.Trim()
+
+        if effectiveGroup
+            key = mediaType + ":" + tmdbId
+            if not grouped.DoesExist(key)
+                grouped[key] = { credit: credit, title: title, posterPath: posterPath, roles: [], mediaType: mediaType, tmdbId: tmdbId }
+                groupedOrder.push(key)
+            end if
+            if role <> ""
+                hasRole = false
+                for each r in grouped[key].roles
+                    if r = role then hasRole = true: exit for
+                end for
+                if not hasRole then grouped[key].roles.push(role)
+            end if
+        else
+            singleEntries.push({ credit: credit, title: title, posterPath: posterPath, role: role, mediaType: mediaType, tmdbId: tmdbId })
+        end if
+    end for
+
+    entries = []
+    if effectiveGroup
+        for each key in groupedOrder
+            entry = grouped[key]
+            entries.push({
+                credit: entry.credit,
+                title: entry.title,
+                posterPath: entry.posterPath,
+                role: entry.roles.join(", "),
+                mediaType: entry.mediaType,
+                tmdbId: entry.tmdbId
+            })
+        end for
+    else
+        entries = singleEntries
+    end if
+
+    for each entry in entries
+        credit = entry.credit
+        creditRole = entry.role
+
         released = credit.LookupCI("releaseDate")
         if not isValidAndNotEmpty(released) then released = credit.LookupCI("firstAirDate")
         year = invalid
         if isValidAndNotEmpty(released) and released.len() >= 4 then year = released.left(4).toInt()
 
-        ' Selecting the card opens the Seerr page, which reads the credit off SeerrItem the same
-        ' way the home rows do
-        credit.mediaType = mediaType
-
+        posterUrl = posterBase + entry.posterPath
+        credit.mediaType = entry.mediaType
         data = {
-            Id: tmdbId,
+            Id: entry.tmdbId,
             name: entry.title,
-            Type: mediaType = "tv" ? "Series" : "Movie",
-            SeerrTmdbId: tmdbId,
-            SeerrMediaType: mediaType,
-            SeerrPosterURL: posterBase + entry.posterPath,
+            Name: entry.title,
+            Type: entry.mediaType = "tv" ? "Series" : "Movie",
+            SeerrTmdbId: entry.tmdbId,
+            SeerrMediaType: entry.mediaType,
+            SeerrPosterURL: posterUrl,
             SeerrItem: credit
         }
         if isValid(year) and year > 0 then data.ProductionYear = year
+        if isValidAndNotEmpty(creditRole)
+            data.subTitle = creditRole
+            data._credit = creditRole
+            data.PersonRole = creditRole
+        end if
+        if isValidAndNotEmpty(released) then data.releaseDate = released
 
         card = createSGNode("HomeData")
+        card.hdPosterUrl = posterUrl
+        card.sdPosterUrl = posterUrl
         card.json = data
         list.push(card)
     end for
 
-    return list
+    return sortPersonItems(list, effectiveSort)
 end function
 
 ' Biographies often open with a phonetic spelling and the name in its own script. The
