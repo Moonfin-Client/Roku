@@ -1,0 +1,156 @@
+import "pkg:/components/music/musicCategoryHost.bs"
+
+const STATION_WIDTH = 345
+const STATION_HEIGHT = 240
+const STATION_GAP = 30
+const SHELF_COVER = 177
+const SHELF_GAP = 24
+const SHELF_PAGE = 20
+' The strip and the header come before the first genre's row
+const GENRE_FIRST = 2
+
+sub categoryLoad()
+    m.category = "genres"
+    m.right = 1920 - CATEGORY_INSET
+    m.all = []
+    m.genres = []
+    m.byCount = true
+    m.hasCounts = false
+    m.shelves = {}
+    setRows("main", [categoryStrip(), genresHeader()])
+    categoryRequest("genres", "Genres", { parentId: m.libraryId, includeItemTypes: "MusicAlbum", fields: "ItemCounts", recursive: true, sortBy: "SortName", sortOrder: "Ascending" }, "onGenresLoaded")
+    startLoadingSpinner(false)
+end sub
+
+sub onGenresLoaded(event as object)
+    data = categoryResponse(event, "genres")
+    if not isValid(data) then return
+    stopLoadingSpinner()
+    m.all = responseItems(data)
+    m.hasCounts = musicCategories.AnyAlbumCount(m.all)
+    m.byCount = m.hasCounts
+    m.genres = orderedGenres()
+    setRows("main", genreRows())
+    if m.focusRow < 0 then focusFirstItem("main")
+end sub
+
+function orderedGenres() as object
+    if m.byCount then return musicCategories.ByAlbumCount(m.all)
+    return m.all
+end function
+
+function genresHeader() as object
+    row = headerRow(tr("Genres"), musicCategories.CountText(m.all.count(), tr("1 genre"), tr("{count} genres")), m.left)
+    if not m.hasCounts then return row
+    order = tr("A to Z")
+    if m.byCount then order = tr("Most Albums")
+    spec = pillSpec(order, "sort")
+    placeButtons(row, [{ spec: spec, action: { do: "order" }, key: "order" }], m.right - specWidth(spec), HEADER_HEIGHT - PILL_HEIGHT, 0)
+    return row
+end function
+
+function genreRows() as object
+    rows = [categoryStrip(), genresHeader()]
+    top = m.contentTop
+    if m.genres.count() = 0
+        rows.push(emptyRow(tr("No items found"), top))
+        return rows
+    end if
+    for i = 0 to m.genres.count() - 1
+        rows.push(genreRow(i, top + i * (STATION_HEIGHT + STATION_GAP)))
+    end for
+    return rows
+end function
+
+function genreRow(index as integer, top as integer) as object
+    genre = m.genres[index]
+    palette = musicCategories.Palette()
+    row = newRow(top, STATION_HEIGHT)
+    row.notify = true
+    station = { kind: "mix", width: STATION_WIDTH, height: STATION_HEIGHT, title: genre.Name ?? "", subtitle: musicCategories.CountText(musicCategories.AlbumCount(genre), tr("1 album"), tr("{count} albums")), trailing: tr("Shuffle"), glyph: "shuffle", color: palette[index mod palette.count()], ink: "#FFFFFF", titleSize: 39 }
+    addCell(row, m.left, 0, STATION_WIDTH, STATION_HEIGHT, station, { station: index }, "station:" + toString(genre.Id))
+
+    shelfLeft = m.left + STATION_WIDTH + 33
+    row.shelf = { from: 1, left: shelfLeft, width: 1920 - shelfLeft, shift: 0 }
+    shelf = m.shelves[toString(genre.Id)]
+    if not isValid(shelf) then return row
+    coverTop = (STATION_HEIGHT - SHELF_COVER - 36) \ 2
+    for i = 0 to shelf.items.count() - 1
+        album = shelf.items[i]
+        spec = { kind: "card", width: SHELF_COVER, title: album.Name ?? "", image: coverOf(album, SHELF_COVER), glyph: "album", titleSize: 20, textGap: 9 }
+        addCell(row, shelfLeft + i * (SHELF_COVER + SHELF_GAP), coverTop, SHELF_COVER, SHELF_COVER + 36, spec, { album: album }, toString(genre.Id) + ":" + toString(album.Id))
+    end for
+    return row
+end function
+
+' =====================================================================
+' SHELVES
+' =====================================================================
+
+sub loadShelf(genreId as string)
+    shelf = m.shelves[genreId]
+    if not isValid(shelf)
+        shelf = { items: [], fetched: 0, total: 1 }
+        m.shelves[genreId] = shelf
+    end if
+    if shelf.paging = true or shelf.fetched >= shelf.total then return
+    shelf.paging = true
+    categoryRequest("shelf:" + genreId, "Items", { parentId: m.libraryId, includeItemTypes: "MusicAlbum", genreIds: genreId, recursive: true, sortBy: "DateCreated,SortName", sortOrder: "Descending", fields: "PrimaryImageAspectRatio", imageTypeLimit: 1, enableImageTypes: "Primary", startIndex: shelf.fetched, limit: SHELF_PAGE }, "onShelfPage", { genreId: genreId })
+end sub
+
+sub onShelfPage(event as object)
+    genreId = event.getRoSGNode().request.context.genreId
+    data = categoryResponse(event, "shelf:" + genreId)
+    if not isValid(data) then return
+    shelf = m.shelves[genreId]
+    shelf.paging = false
+    items = responseItems(data)
+    shelf.items.append(items)
+    shelf.fetched += items.count()
+    shelf.total = totalOf(data, shelf.fetched)
+    if items.count() = 0 then shelf.total = shelf.fetched
+
+    rows = m.regions.main.rows
+    for i = GENRE_FIRST to rows.count() - 1
+        if i - GENRE_FIRST < m.genres.count() and isStringEqual(toString(m.genres[i - GENRE_FIRST].Id), genreId)
+            shift = rows[i].shelf.shift
+            rows[i] = genreRow(i - GENRE_FIRST, rows[i].top)
+            rows[i].shelf.shift = shift
+            rebuildRows("main", i, i)
+            exit for
+        end if
+    end for
+end sub
+
+' =====================================================================
+' HOOKS
+' =====================================================================
+
+sub categoryActivate(action as object)
+    if isValid(action.station)
+        requestTracks({ parentId: m.libraryId, genreIds: m.genres[action.station].Id, recursive: true, sortBy: "Random", limit: 300 }, "")
+    else if isValid(action.album)
+        openItem(action.album)
+    else if action.do = "order"
+        m.byCount = not m.byCount
+        m.genres = orderedGenres()
+        setRows("main", genreRows())
+    end if
+end sub
+
+sub categoryFocused()
+    if m.focusRegion <> "main" or m.focusRow < GENRE_FIRST or m.focusRow - GENRE_FIRST >= m.genres.count() then return
+    row = m.regions.main.rows[m.focusRow]
+    if m.focusCell >= row.cells.count() - 5 then loadShelf(toString(m.genres[m.focusRow - GENRE_FIRST].Id))
+end sub
+
+function categoryBack() as boolean
+    return false
+end function
+
+' A genre's albums load once its row comes into view
+sub categoryRowShown(_regionId as string, index as integer)
+    if index < GENRE_FIRST or index - GENRE_FIRST >= m.genres.count() then return
+    genreId = toString(m.genres[index - GENRE_FIRST].Id)
+    if not m.shelves.doesExist(genreId) then loadShelf(genreId)
+end sub

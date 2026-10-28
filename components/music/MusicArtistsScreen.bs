@@ -1,0 +1,238 @@
+import "pkg:/components/music/musicCategoryHost.bs"
+
+const ARTIST_COLUMNS = 7
+const ARTIST_FACE = 192
+const ARTIST_CELL = 264
+const ARTIST_GAP = 21
+const ARTIST_RIGHT = 132
+const LETTER_ROW = 57
+const RAIL_STEP = 30
+
+sub categoryLoad()
+    m.category = "artists"
+    m.allArtists = m.top.start = "allArtists"
+    m.descending = false
+    m.railLetter = ""
+    m.regions.main.right = "side"
+    m.regions.side.left = "main"
+    reloadArtists()
+    startLoadingSpinner(false)
+end sub
+
+sub reloadArtists()
+    m.items = []
+    m.initials = []
+    m.fetched = 0
+    m.total = 0
+    m.pendingLetter = ""
+    setRows("main", [categoryStrip(), artistsHeader()])
+    loadArtistPage()
+end sub
+
+sub loadArtistPage()
+    m.paging = true
+    path = "Artists/AlbumArtists"
+    if m.allArtists then path = "Artists"
+    sortOrder = "Ascending"
+    if m.descending then sortOrder = "Descending"
+    categoryRequest("page", path, { parentId: m.libraryId, recursive: true, sortBy: "SortName", sortOrder: sortOrder, fields: "PrimaryImageAspectRatio,SortName", startIndex: m.fetched, limit: musicCategories.PAGE_SIZE }, "onArtistPage")
+end sub
+
+sub onArtistPage(event as object)
+    data = categoryResponse(event, "page")
+    if not isValid(data) then return
+    m.paging = false
+    items = responseItems(data)
+    for each item in items
+        m.items.push(item)
+        m.initials.push(musicCategories.LetterOf(item))
+    end for
+    m.fetched += items.count()
+    m.total = totalOf(data, m.fetched)
+    if items.count() = 0 then m.total = m.fetched
+
+    first = m.fetched = items.count()
+    keep = m.regions.main.rows.count() - 1
+    if first then keep = 0
+    setRows("main", artistRows(), keep)
+    if first
+        stopLoadingSpinner()
+        buildRail()
+        if m.focusRow < 0 then focusFirstItem("main")
+    end if
+    resolveJump()
+end sub
+
+function artistsHeader() as object
+    right = 1920 - ARTIST_RIGHT
+    row = headerRow(tr("Artists"), musicCategories.CountText(m.total, tr("1 artist"), tr("{count} artists")), m.left)
+    segments = [
+        { title: tr("Album Artists"), action: { list: false }, key: "albumArtists", selected: not m.allArtists },
+        { title: tr("All Artists"), action: { list: true }, key: "allArtists", selected: m.allArtists }
+    ]
+    order = tr("A to Z")
+    if m.descending then order = tr("Z to A")
+    buttons = [
+        { spec: pillSpec(order, "sort_by_alpha"), action: { do: "sort" }, key: "sort" },
+        { spec: pillSpec(tr("Shuffle All"), "shuffle"), action: { do: "shuffle" }, key: "shuffle" }
+    ]
+    width = segmentsWidth(segments, 22, 20) + CONTROL_GAP + specWidth(buttons[0].spec) + CONTROL_GAP + specWidth(buttons[1].spec)
+    x = placeSegments(row, segments, right - width, HEADER_HEIGHT - SEGMENT_HEIGHT - 5, SEGMENT_HEIGHT, 22, 20)
+    placeButtons(row, buttons, x + CONTROL_GAP, HEADER_HEIGHT - PILL_HEIGHT, CONTROL_GAP)
+    return row
+end function
+
+' Each artist's row and place in it are kept for the jump rail
+function artistRows() as object
+    rows = [categoryStrip(), artistsHeader()]
+    y = m.contentTop
+    if m.items.count() = 0
+        if m.fetched >= m.total and not m.paging then rows.push(emptyRow(tr("No items found"), y))
+        return rows
+    end if
+
+    columnWidth = Int((1920 - ARTIST_RIGHT - m.left - (ARTIST_COLUMNS - 1) * 30) / ARTIST_COLUMNS)
+    face = ARTIST_FACE
+    if face > columnWidth then face = columnWidth
+    m.itemRow = []
+    m.itemCell = []
+    current = ""
+    row = invalid
+    headingTop = 0
+    for i = 0 to m.items.count() - 1
+        initial = m.initials[i]
+        if initial <> current
+            if isValid(row) then y += ARTIST_CELL + ARTIST_GAP
+            heading = newRow(y, LETTER_ROW)
+            heading.decor.push(labelDecor(initial, m.left, 6, 39, true, m.accent))
+            rows.push(heading)
+            headingTop = y
+            y += LETTER_ROW + ARTIST_GAP
+            current = initial
+            row = invalid
+        end if
+        if isValid(row) and row.cells.count() = ARTIST_COLUMNS
+            y += ARTIST_CELL + ARTIST_GAP
+            row = invalid
+        end if
+        if not isValid(row)
+            row = newRow(y, ARTIST_CELL)
+            if headingTop = y - LETTER_ROW - ARTIST_GAP then row.revealTop = headingTop
+            rows.push(row)
+        end if
+        item = m.items[i]
+        column = row.cells.count()
+        x = m.left + column * (columnWidth + 30) + (columnWidth - face) \ 2
+        spec = { kind: "card", width: face, round: true, title: item.Name ?? "", subtitle: musicCategories.CountText(item.AlbumCount, tr("1 album"), tr("{count} albums")), image: coverOf(item, face), glyph: "person", titleSize: 22, subtitleSize: 20, textGap: 15, textWidth: columnWidth, centered: true }
+        addCell(row, x, 0, face, ARTIST_CELL, spec, { artist: i }, toString(item.Id))
+        m.itemRow.push(rows.count() - 1)
+        m.itemCell.push(column)
+    end for
+    return rows
+end function
+
+' =====================================================================
+' THE JUMP RAIL
+' =====================================================================
+
+sub buildRail()
+    letters = musicCategories.RAIL_LETTERS
+    x = 1920 - 48 - 54
+    top = m.headerTop
+    rows = []
+    for i = 0 to Len(letters) - 1
+        row = newRow(top + 9 + i * RAIL_STEP, 28)
+        if i = 0 then row.decor.push({ kind: "box", uri: PILL_URI, x: x, y: -9, width: 54, height: Len(letters) * RAIL_STEP + 18, opacity: 0.05 })
+        addCell(row, x + 9, 0, 36, 28, railSpec(Mid(letters, i + 1, 1)), { letter: Mid(letters, i + 1, 1) }, "rail" + i.toStr())
+        rows.push(row)
+    end for
+    setRows("side", rows)
+    markRail()
+end sub
+
+function railSpec(initial as string) as object
+    ink = themeChrome.WithAlpha(m.ink, "B3")
+    if initial = m.railLetter then ink = m.accent
+    return { kind: "button", height: 28, title: initial, textSize: 18, padX: 0, minWidth: 36, ink: ink }
+end function
+
+' The rail picks out the letter of the section the focus is in, and Right from the grid comes in there
+sub markRail()
+    letter = ""
+    cell = focusedCell()
+    if m.focusRegion = "main" and isValid(cell) and isValid(cell.action.artist) then letter = m.initials[cell.action.artist]
+    if letter = "" and m.railLetter = "" and m.initials.count() > 0 then letter = m.initials[0]
+    if letter = "" or letter = m.railLetter then return
+
+    rows = m.regions.side.rows
+    if rows.count() = 0 then return
+    previous = -1
+    if m.railLetter <> "" then previous = Instr(1, musicCategories.RAIL_LETTERS, m.railLetter) - 1
+    m.railLetter = letter
+    index = Instr(1, musicCategories.RAIL_LETTERS, letter) - 1
+    m.regions.side.enter = [index, 0]
+    for each changed in [previous, index]
+        if changed >= 0
+            rows[changed].cells[0].spec = railSpec(Mid(musicCategories.RAIL_LETTERS, changed + 1, 1))
+            rebuildRows("side", changed, changed)
+        end if
+    end for
+end sub
+
+' A letter pages in more until it's loaded, then its heading goes to the top with its first
+' artist focused. A letter with none lands on the next one that has some.
+sub resolveJump()
+    if m.pendingLetter = "" then return
+    index = musicCategories.JumpIndex(m.initials, m.pendingLetter, m.descending)
+    if index < 0 and m.fetched < m.total
+        if not m.paging then loadArtistPage()
+        return
+    end if
+    m.pendingLetter = ""
+    stopLoadingSpinner()
+    if index < 0 then index = m.items.count() - 1
+    if index < 0 then return
+
+    rowIndex = m.itemRow[index]
+    row = m.regions.main.rows[rowIndex]
+    headingTop = row.revealTop ?? row.top
+    scrollRegion(m.regions.main, headingTop - CATEGORY_TOP)
+    focusAt("main", rowIndex, m.itemCell[index])
+end sub
+
+' =====================================================================
+' HOOKS
+' =====================================================================
+
+sub categoryActivate(action as object)
+    if isValid(action.artist)
+        openItem(m.items[action.artist])
+    else if isValid(action.letter)
+        m.pendingLetter = action.letter
+        startLoadingSpinner(false)
+        resolveJump()
+    else if isValid(action.list)
+        if action.list = m.allArtists then return
+        m.allArtists = action.list
+        reloadArtists()
+    else if action.do = "sort"
+        m.descending = not m.descending
+        reloadArtists()
+    else if action.do = "shuffle"
+        requestTracks({ parentId: m.libraryId, recursive: true, sortBy: "Random", limit: 300 }, "")
+    end if
+end sub
+
+sub categoryFocused()
+    if m.focusRegion <> "main" then return
+    markRail()
+    if m.paging or m.fetched >= m.total then return
+    if m.focusRow >= m.regions.main.rows.count() - 4 then loadArtistPage()
+end sub
+
+function categoryBack() as boolean
+    return false
+end function
+
+sub categoryRowShown(_regionId as string, _index as integer)
+end sub

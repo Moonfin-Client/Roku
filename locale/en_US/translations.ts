@@ -7808,5 +7808,175 @@
         <extracomment>Sort By choice in My List for the order things were added</extracomment>
         <translation>Order Added</translation>
     </message>
+    <message>
+        <source>Overview</source>
+        <extracomment>The first pill on the music category strip, which goes back to the music library's own screen</extracomment>
+        <translation>Overview</translation>
+    </message>
+    <message>
+        <source>Music</source>
+        <extracomment>The music library's name when the server gives none</extracomment>
+        <translation>Music</translation>
+    </message>
+    <message>
+        <source>Recently Added</source>
+        <extracomment>Sort choice on the music Albums screen and a list heading on the Songs screen</extracomment>
+        <translation>Recently Added</translation>
+    </message>
+    <message>
+        <source>All Artists</source>
+        <extracomment>Shows every artist on the music Artists screen, not only album artists</extracomment>
+        <translation>All Artists</translation>
+    </message>
+    <message>
+        <source>A to Z</source>
+        <extracomment>Sort pill on the music screens</extracomment>
+        <translation>A to Z</translation>
+    </message>
+    <message>
+        <source>Z to A</source>
+        <extracomment>Sort pill on the music Artists screen</extracomment>
+        <translation>Z to A</translation>
+    </message>
+    <message>
+        <source>Shuffle All</source>
+        <extracomment>Plays up to 300 random songs from the music library</extracomment>
+        <translation>Shuffle All</translation>
+    </message>
+    <message>
+        <source>1 artist</source>
+        <extracomment>Artist count beside the music Artists title</extracomment>
+        <translation>1 artist</translation>
+    </message>
+    <message>
+        <source>{count} artists</source>
+        <extracomment>Artist count beside the music Artists title. {count} is the number of artists</extracomment>
+        <translation>{count} artists</translation>
+    </message>
+    <message>
+        <source>Filter by Genre</source>
+        <extracomment>Title of the genre picker on the music Albums screen</extracomment>
+        <translation>Filter by Genre</translation>
+    </message>
+    <message>
+        <source>All Genres</source>
+        <extracomment>The first choice in the music Albums genre picker, which takes the filter off</extracomment>
+        <translation>All Genres</translation>
+    </message>
+    <message>
+        <source>Open Album</source>
+        <extracomment>Button in the album panel on the music Albums screen</extracomment>
+        <translation>Open Album</translation>
+    </message>
+    <message>
+        <source>1 song</source>
+        <extracomment>Song count on the music screens</extracomment>
+        <translation>1 song</translation>
+    </message>
+    <message>
+        <source>{count} songs</source>
+        <extracomment>Song count on the music screens. {count} is the number of songs</extracomment>
+        <translation>{count} songs</translation>
+    </message>
+    <message>
+        <source>All Songs A to Z</source>
+        <extracomment>Opens the full songs list from the music Songs screen</extracomment>
+        <translation>All Songs A to Z</translation>
+    </message>
+    <message>
+        <source>Everything</source>
+        <extracomment>Title of the mix that shuffles the whole music library</extracomment>
+        <translation>Everything</translation>
+    </message>
+    <message>
+        <source>300 songs at random</source>
+        <extracomment>Line under the Everything mix on the music Songs screen</extracomment>
+        <translation>300 songs at random</translation>
+    </message>
+    <message>
+        <source>Mix</source>
+        <extracomment>Small heading over a mix card on the music Songs screen</extracomment>
+        <translation>Mix</translation>
+    </message>
+    <message>
+        <source>Most Played</source>
+        <extracomment>A mix and a list heading on the music Songs screen</extracomment>
+        <translation>Most Played</translation>
+    </message>
+    <message>
+        <source>Your top 100</source>
+        <extracomment>Line under the Most Played mix on the music Songs screen</extracomment>
+        <translation>Your top 100</translation>
+    </message>
+    <message>
+        <source>Fresh Arrivals</source>
+        <extracomment>Title of the mix of the newest songs on the music Songs screen</extracomment>
+        <translation>Fresh Arrivals</translation>
+    </message>
+    <message>
+        <source>The newest 100 songs</source>
+        <extracomment>Line under the Fresh Arrivals mix on the music Songs screen</extracomment>
+        <translation>The newest 100 songs</translation>
+    </message>
+    <message>
+        <source>Rediscover</source>
+        <extracomment>Title of the mix of favorite songs not played lately on the music Songs screen</extracomment>
+        <translation>Rediscover</translation>
+    </message>
+    <message>
+        <source>Favorites you haven't played lately</source>
+        <extracomment>Line under the Rediscover mix on the music Songs screen</extracomment>
+        <translation>Favorites you haven't played lately</translation>
+    </message>
+    <message>
+        <source>1 play</source>
+        <extracomment>How many times a song has been played, in the Most Played list</extracomment>
+        <translation>1 play</translation>
+    </message>
+    <message>
+        <source>{count} plays</source>
+        <extracomment>How many times a song has been played, in the Most Played list. {count} is the number of plays</extracomment>
+        <translation>{count} plays</translation>
+    </message>
+    <message>
+        <source>1 playlist</source>
+        <extracomment>Playlist count beside the music Playlists title</extracomment>
+        <translation>1 playlist</translation>
+    </message>
+    <message>
+        <source>{count} playlists</source>
+        <extracomment>Playlist count beside the music Playlists title. {count} is the number of playlists</extracomment>
+        <translation>{count} playlists</translation>
+    </message>
+    <message>
+        <source>Open Playlist</source>
+        <extracomment>Button on the music Playlists screen that opens the playlist's own screen</extracomment>
+        <translation>Open Playlist</translation>
+    </message>
+    <message>
+        <source>1 genre</source>
+        <extracomment>Genre count beside the music Genres title</extracomment>
+        <translation>1 genre</translation>
+    </message>
+    <message>
+        <source>{count} genres</source>
+        <extracomment>Genre count beside the music Genres title. {count} is the number of genres</extracomment>
+        <translation>{count} genres</translation>
+    </message>
+    <message>
+        <source>Most Albums</source>
+        <extracomment>Sort pill on the music Genres screen that puts the genres with the most albums first</extracomment>
+        <translation>Most Albums</translation>
+    </message>
+    <message>
+        <source>{0} hr</source>
+        <extracomment>How long a playlist or album runs, in whole hours. {0} is the number of hours</extracomment>
+        <translation>{0} hr</translation>
+    </message>
+    <message>
+        <source>{0} hr {1} min</source>
+        <extracomment>How long a playlist or album runs. {0} is the hours and {1} the minutes</extracomment>
+        <translation>{0} hr {1} min</translation>
+    </message>
 </context>
 </TS>

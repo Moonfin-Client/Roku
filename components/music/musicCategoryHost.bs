@@ -1,0 +1,870 @@
+import "pkg:/components/music/musicScreenHost.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/musicCategories.bs"
+import "pkg:/source/utils/musicLibraryStyle.bs"
+import "pkg:/source/utils/themeChrome.bs"
+
+' The page every music category screen draws on. A screen lays its rows out as data in the main
+' and side regions, and only the rows near the view are built, so a library of thousands of
+' albums costs a screenful of tiles.
+'
+' A row: { top, height, cells, decor, pinTop, upTo, downTo, enterAt, shelf, notify, revealTop }
+' A cell: { x, y, w, h, spec (a MusicLibraryTile's), action, key, lit }, x and y within its row
+'
+' Each screen supplies categoryLoad, categoryActivate(action), categoryFocused, categoryBack and
+' categoryRowShown(regionId, index), sets m.category, and starts its main rows with
+' categoryStrip() and its header.
+'
+' Immersive shows the categories as pills along the top, Quick Access as a rail down the left
+' and Classic as icon buttons along the top. Classic opens the plain grid rather than the music
+' library, so its buttons only show when the style changes while the music library is open.
+
+const CATEGORY_TOP = 116
+const CATEGORY_INSET = 72
+const CATEGORY_SIDEBAR = 78
+const CATEGORY_BOTTOM = 40
+const STRIP_HEIGHT = 44
+const HEADER_HEIGHT = 64
+const CONTENT_GAP = 27
+const RAIL_WIDTH = 248
+const RAIL_ROW = 44
+const RAIL_INSET = 32
+' Rows this far past the view are built ahead of the scroll
+const BUILD_MARGIN = 360
+const PILL_HEIGHT = 60
+const SEGMENT_HEIGHT = 51
+const CONTROL_GAP = 15
+const PILL_URI = "pkg:/images/icons/pill-focus.9.png"
+const SURFACE_URI = "pkg:/images/details/surface17.9.png"
+
+sub init()
+    m.top.optionsAvailable = false
+    setUpMusicScreen()
+    m.onAccent = themeChrome.OnAccent()
+    m.soft = themeChrome.WithAlpha(m.ink, "A6")
+    m.dialog = m.top.findNode("dialog")
+    m.regions = {}
+    for each id in ["main", "side", "rail"]
+        m.regions[id] = { id: id, group: m.top.findNode(id + "Region"), anim: m.top.findNode(id + "Scroll"), interp: m.top.findNode(id + "ScrollInterp"), rows: [], scroll: 0, from: 0, built: {}, memory: invalid, enter: invalid, left: "", right: "", up: "nav", viewTop: CATEGORY_TOP }
+    end for
+    m.tasks = {}
+    m.covers = {}
+    m.loaded = false
+    m.focusRegion = "main"
+    m.focusRow = -1
+    m.focusCell = 0
+    m.top.observeField("focusedChild", "drawFocus")
+    m.top.observeField("parentItem", "onCategoryParent")
+end sub
+
+sub onCategoryParent()
+    if not isValid(m.top.parentItem) then return
+    readLibrary()
+    m.navInset = 0
+    nav = getActiveNav(m.top.getScene())
+    if isValid(nav) and nav.isSubType("Sidebar") then m.navInset = CATEGORY_SIDEBAR
+    m.navStyle = settingOr(musicLibraryStyle.SETTING, "immersive")
+    m.withStrip = m.navStyle <> "quickAccess"
+    if m.withStrip
+        m.left = CATEGORY_INSET + m.navInset
+        m.headerTop = CATEGORY_TOP + STRIP_HEIGHT + 14
+        m.regions.main.left = "sidebar"
+    else
+        m.left = m.navInset + RAIL_WIDTH + RAIL_INSET
+        m.headerTop = CATEGORY_TOP
+        m.regions.main.left = "rail"
+    end if
+    m.contentTop = m.headerTop + HEADER_HEIGHT + CONTENT_GAP
+    m.loaded = true
+    ' The rail picks out m.category, which categoryLoad sets
+    categoryLoad()
+    if not m.withStrip then buildCategoryRail()
+    ' A switch from another category's strip or rail keeps the remote there
+    if m.top.fromStrip then focusCategoryNav()
+end sub
+
+sub focusCategoryNav()
+    if m.withStrip
+        focusAt("main", 0, stripIndex())
+    else
+        focusAt("rail", railIndex(), 0)
+    end if
+end sub
+
+' The rail's rows are the library's name, Search Music, then the strip's pills in order
+function railIndex() as integer
+    return stripIndex() + 2
+end function
+
+' =====================================================================
+' THE CATEGORY STRIP
+' =====================================================================
+
+function navEntries() as object
+    entries = [{ id: "overview", label: tr("Overview"), glyph: "space_dashboard_outlined" }]
+    entries.append(musicCategoryList())
+    return entries
+end function
+
+function stripIndex() as integer
+    entries = navEntries()
+    for i = 0 to entries.count() - 1
+        if entries[i].id = m.category then return i
+    end for
+    return 0
+end function
+
+' With the rail it's an empty row, so every screen's rows count the same way
+function categoryStrip() as object
+    if not m.withStrip then return newRow(CATEGORY_TOP, 0)
+    row = newRow(CATEGORY_TOP, STRIP_HEIGHT)
+    row.pinTop = true
+    row.right = ""
+    name = labelDecor(m.libraryName, m.left, 0, 24, true, m.ink)
+    name.height = STRIP_HEIGHT
+    name.vertAlign = "center"
+    row.decor.push(name)
+    x = m.left + textWidth(m.libraryName, 24, true) + 28
+    row.enterAt = stripIndex()
+    if m.navStyle = "classic"
+        placeButtons(row, classicEntries(), x, 0, 8)
+        return row
+    end if
+    segments = []
+    for each entry in navEntries()
+        segments.push({ title: entry.label, action: { nav: entry.id }, key: "nav:" + entry.id, selected: entry.id = m.category })
+    end for
+    ' The overview's tab bar asks for more under a theme font, which draws small
+    placeSegments(row, segments, x, 5, 34, 15, fontApply.ThemeTextSize(13))
+    return row
+end function
+
+function classicEntries() as object
+    focusInk = "#FFFFFF"
+    if themeChrome.IsActive() then focusInk = m.onAccent
+    entries = []
+    for each entry in navEntries()
+        spec = { kind: "button", height: STRIP_HEIGHT, title: entry.label, glyph: entry.glyph, glyphSize: 24, textSize: fontApply.ThemeTextSize(18), padX: 16, fill: m.accent, fillOpacity: 0.0, ink: m.soft, pressFill: true, focusFill: m.accent, focusInk: focusInk }
+        if entry.id = m.category
+            spec.fillOpacity = 0.16
+            spec.ink = m.accent
+        end if
+        entries.push({ spec: spec, action: { nav: entry.id }, key: "nav:" + entry.id })
+    end for
+    return entries
+end function
+
+sub buildCategoryRail()
+    railBg = m.top.findNode("railBg")
+    railBg.color = m.ink
+    railBg.translation = [m.navInset, 0]
+    railBg.visible = true
+
+    x = m.navInset + 12
+    itemWidth = RAIL_WIDTH - 24
+    nameRow = newRow(CATEGORY_TOP, 32)
+    name = labelDecor(m.libraryName, x + 12, 0, 24, true, m.ink)
+    name.width = itemWidth - 24
+    nameRow.decor.push(name)
+    rows = [nameRow]
+
+    entries = [{ id: "search", label: tr("Search Music"), glyph: "search_rounded" }]
+    entries.append(navEntries())
+    y = CATEGORY_TOP + Int(textBox(m.libraryName, 24, true).height) + 12
+    for each entry in entries
+        row = newRow(y, RAIL_ROW)
+        addCell(row, x, 0, itemWidth, RAIL_ROW, { kind: "rail", width: itemWidth, height: RAIL_ROW, title: entry.label, glyph: entry.glyph, selected: entry.id = m.category }, { nav: entry.id }, "nav:" + entry.id)
+        rows.push(row)
+        y += RAIL_ROW
+    end for
+
+    rail = m.regions.rail
+    rail.left = "sidebar"
+    rail.right = "main"
+    rail.enter = [railIndex(), 0]
+    setRows("rail", rows)
+end sub
+
+' Another category takes this screen's place in the stack, so Back still goes to the music library
+sub openFromNav(id as string)
+    if id = m.category
+        if m.focusRegion = "rail" then leaveSide("main") else focusFirstItem("main")
+        return
+    end if
+    if id = "search"
+        pushRelayed(CreateObject("roSGNode", "searchResults"))
+        return
+    end if
+    if id = "overview"
+        leaveScreen()
+        return
+    end if
+    stopCategoryTasks()
+    m.top.switchCategory = id
+end sub
+
+' =====================================================================
+' ROWS
+' =====================================================================
+
+function newRow(top as integer, height as integer) as object
+    return { top: top, height: height, cells: [], decor: [] }
+end function
+
+sub addCell(row as object, x as integer, y as integer, w as integer, h as integer, spec as object, action as dynamic, key = "" as string)
+    row.cells.push({ x: x, y: y, w: w, h: h, spec: spec, action: action, key: key })
+end sub
+
+' Swaps a region's rows. The first keepBuilt rows are the same as before, so what's built of
+' them stays, and the focus goes back to the cell with the same key when there is one.
+sub setRows(regionId as string, rows as object, keepBuilt = 0 as integer)
+    region = m.regions[regionId]
+    focusKey = ""
+    if m.focusRegion = regionId then focusKey = focusedCellKey()
+    for each key in region.built.keys()
+        if key.toInt() >= keepBuilt then dropRow(region, key)
+    end for
+    region.rows = rows
+    if m.focusRegion = regionId and m.focusRow >= 0
+        if focusKey <> "" and focusByKey(regionId, focusKey) then return
+        m.focusRow = -1
+        focusFirstItem(regionId)
+        return
+    end if
+    refreshRegion(region)
+    drawFocus()
+end sub
+
+sub rebuildRows(regionId as string, first as integer, last as integer)
+    region = m.regions[regionId]
+    for i = first to last
+        key = i.toStr()
+        if region.built.doesExist(key)
+            dropRow(region, key)
+            buildRow(region, i)
+        end if
+    end for
+    drawFocus()
+end sub
+
+sub buildRow(region as object, index as integer)
+    row = region.rows[index]
+    group = region.group.createChild("Group")
+    group.translation = [0, row.top]
+    for each decor in row.decor
+        drawDecor(group, decor)
+    end for
+
+    shelf = invalid
+    if isValid(row.shelf)
+        clip = group.createChild("Group")
+        clip.translation = [row.shelf.left, 0]
+        clip.clippingRect = [-12, -40, row.shelf.width + 12, row.height + 80]
+        shelf = clip.createChild("Group")
+        shelf.translation = [-row.shelf.shift, 0]
+    end if
+
+    tiles = []
+    for i = 0 to row.cells.count() - 1
+        cell = row.cells[i]
+        if isValid(shelf) and i >= row.shelf.from
+            tile = addTile(shelf, cell.spec, cell.x - row.shelf.left, cell.y)
+        else
+            tile = addTile(group, cell.spec, cell.x, cell.y)
+        end if
+        if cell.lit = true then tile.highlighted = true
+        tiles.push(tile)
+    end for
+    region.built[index.toStr()] = { group: group, tiles: tiles, shelf: shelf }
+    if row.notify = true then categoryRowShown(region.id, index)
+end sub
+
+sub dropRow(region as object, key as string)
+    built = region.built[key]
+    region.built.delete(key)
+    if not isValid(built) then return
+    for each tile in built.tiles
+        if isValid(m.litNode) and tile.isSameNode(m.litNode) then m.litNode = invalid
+    end for
+    region.group.removeChild(built.group)
+end sub
+
+sub drawDecor(parent as object, decor as object)
+    if decor.kind = "label"
+        label = addLabel(parent, decor.text, decor.x, decor.y, decor.size, decor.bold = true)
+        if isValid(decor.color) then label.color = decor.color
+        if isValid(decor.width)
+            label.width = decor.width
+            label.maxLines = decor.maxLines ?? 1
+            label.wrap = (decor.maxLines ?? 1) > 1
+        end if
+        if isValid(decor.height) then label.height = decor.height
+        if isValid(decor.vertAlign) then label.vertAlign = decor.vertAlign
+        if isValid(decor.horizAlign) then label.horizAlign = decor.horizAlign
+    else if decor.kind = "box"
+        surface = parent.createChild("Poster")
+        surface.uri = decor.uri ?? SURFACE_URI
+        surface.width = decor.width
+        surface.height = decor.height
+        surface.translation = [decor.x, decor.y]
+        surface.blendColor = decor.color ?? m.ink
+        surface.opacity = decor.opacity ?? 1.0
+    else if decor.kind = "tile"
+        addTile(parent, decor.spec, decor.x, decor.y)
+    else if decor.kind = "notch"
+        ' A square turned on its corner, clipped to the half that stands above the panel
+        clip = parent.createChild("Group")
+        clip.clippingRect = [decor.x - decor.size, decor.y - decor.size, decor.size * 2, decor.size]
+        notch = clip.createChild("Rectangle")
+        notch.width = decor.size
+        notch.height = decor.size
+        notch.translation = [decor.x - decor.size / 2, decor.y - decor.size / 2]
+        notch.scaleRotateCenter = [decor.size / 2, decor.size / 2]
+        notch.rotation = 0.7854
+        notch.color = m.ink
+        notch.opacity = decor.opacity
+    end if
+end sub
+
+function labelDecor(text as string, x as integer, y as integer, size as integer, bold as boolean, color as string) as object
+    return { kind: "label", text: text, x: x, y: y, size: size, bold: bold, color: color }
+end function
+
+' Every cover URL parses the server's address again, and a list is laid out again whenever more
+' of it loads, so each cover is worked out once
+function coverOf(item as object, size as integer) as string
+    key = toString(item.Id) + ":" + size.toStr()
+    if not m.covers.doesExist(key) then m.covers[key] = artOf(item, size)
+    return m.covers[key]
+end function
+
+' Builds the rows near the view of a region, across where it scrolls from and to
+sub refreshRegion(region as object)
+    top = region.scroll
+    bottom = region.scroll
+    if region.from < top then top = region.from
+    if region.from > bottom then bottom = region.from
+    top -= BUILD_MARGIN
+    bottom += 1080 + BUILD_MARGIN
+
+    keep = {}
+    rows = region.rows
+    for i = firstRowReaching(rows, top) to rows.count() - 1
+        if rows[i].top > bottom then exit for
+        keep[i.toStr()] = true
+        if not region.built.doesExist(i.toStr()) then buildRow(region, i)
+    end for
+    for each key in region.built.keys()
+        if not keep.doesExist(key) then dropRow(region, key)
+    end for
+end sub
+
+' The first row whose bottom reaches y, found by halves since a big library has hundreds
+function firstRowReaching(rows as object, y as integer) as integer
+    low = 0
+    high = rows.count()
+    while low < high
+        middle = (low + high) \ 2
+        if rows[middle].top + rows[middle].height < y
+            low = middle + 1
+        else
+            high = middle
+        end if
+    end while
+    return low
+end function
+
+' =====================================================================
+' FOCUS
+' =====================================================================
+
+sub focusAt(regionId as string, rowIndex as integer, cellIndex as integer)
+    region = m.regions[regionId]
+    if rowIndex < 0 or rowIndex >= region.rows.count() then return
+    row = region.rows[rowIndex]
+    if row.cells.count() = 0 then return
+    if cellIndex >= row.cells.count() then cellIndex = row.cells.count() - 1
+    if cellIndex < 0 then cellIndex = 0
+    m.focusRegion = regionId
+    m.focusRow = rowIndex
+    m.focusCell = cellIndex
+    region.memory = [rowIndex, cellIndex]
+
+    takeFocus()
+    m.top.lastFocus = m.top
+    scrollShelf(region, row, cellIndex)
+    scrollToFocus(region)
+    drawFocus()
+    categoryFocused()
+end sub
+
+' The first item under a region's header, or with nothing under it the header's controls,
+' or the strip's pill for this screen
+sub focusFirstItem(regionId as string)
+    rows = m.regions[regionId].rows
+    for i = 0 to rows.count() - 1
+        if rows[i].cells.count() > 0 and rows[i].pinTop <> true
+            focusAt(regionId, i, 0)
+            return
+        end if
+    end for
+    for i = rows.count() - 1 to 0 step -1
+        if rows[i].cells.count() > 0
+            focusAt(regionId, i, rows[i].enterAt ?? 0)
+            return
+        end if
+    end for
+    refreshRegion(m.regions[regionId])
+end sub
+
+function focusByKey(regionId as string, key as string) as boolean
+    rows = m.regions[regionId].rows
+    for i = 0 to rows.count() - 1
+        cells = rows[i].cells
+        for j = 0 to cells.count() - 1
+            if cells[j].key = key
+                focusAt(regionId, i, j)
+                return true
+            end if
+        end for
+    end for
+    return false
+end function
+
+function focusedCell() as dynamic
+    if m.focusRow < 0 then return invalid
+    rows = m.regions[m.focusRegion].rows
+    if m.focusRow >= rows.count() then return invalid
+    cells = rows[m.focusRow].cells
+    if m.focusCell >= cells.count() then return invalid
+    return cells[m.focusCell]
+end function
+
+function focusedCellKey() as string
+    cell = focusedCell()
+    if not isValid(cell) then return ""
+    return cell.key
+end function
+
+function tileAt(regionId as string, rowIndex as integer, cellIndex as integer) as dynamic
+    built = m.regions[regionId].built[rowIndex.toStr()]
+    if not isValid(built) or cellIndex >= built.tiles.count() then return invalid
+    return built.tiles[cellIndex]
+end function
+
+' Tints a cell, or takes the tint off, without building its row again
+sub setLit(regionId as string, rowIndex as integer, cellIndex as integer, lit as boolean)
+    rows = m.regions[regionId].rows
+    if rowIndex < 0 or rowIndex >= rows.count() or cellIndex >= rows[rowIndex].cells.count() then return
+    rows[rowIndex].cells[cellIndex].lit = lit
+    tile = tileAt(regionId, rowIndex, cellIndex)
+    if isValid(tile) then tile.highlighted = lit
+end sub
+
+' Only the stop the remote is on is lit, and nothing is while the nav or a dialog has the focus
+sub drawFocus()
+    if isValid(m.litNode) then m.litNode.focus = false
+    m.litNode = invalid
+    if not m.loaded or not m.top.hasFocus() or m.focusRow < 0 then return
+    tile = tileAt(m.focusRegion, m.focusRow, m.focusCell)
+    if not isValid(tile) then return
+    tile.focus = true
+    m.litNode = tile
+end sub
+
+' A shelf holds the focused card at its start until its last cards are in view
+sub scrollShelf(region as object, row as object, cellIndex as integer)
+    shelf = row.shelf
+    if not isValid(shelf) or cellIndex < shelf.from then return
+    cell = row.cells[cellIndex]
+    last = row.cells[row.cells.count() - 1]
+    shift = cell.x - shelf.left
+    maxShift = last.x + last.w - shelf.left - shelf.width
+    if shift > maxShift then shift = maxShift
+    if shift < 0 then shift = 0
+    shelf.shift = shift
+    built = region.built[m.focusRow.toStr()]
+    if isValid(built) and isValid(built.shelf) then built.shelf.translation = [-shift, 0]
+end sub
+
+sub scrollToFocus(region as object)
+    row = region.rows[m.focusRow]
+    cell = row.cells[m.focusCell]
+    target = region.scroll
+    if row.pinTop = true
+        target = 0
+    else
+        cellTop = row.top + cell.y
+        if isValid(row.revealTop) and row.revealTop < cellTop then cellTop = row.revealTop
+        cellBottom = row.top + cell.y + cell.h
+        if cellBottom - target > 1080 - CATEGORY_BOTTOM then target = cellBottom - (1080 - CATEGORY_BOTTOM)
+        if cellTop - target < region.viewTop then target = cellTop - region.viewTop
+        if target < 0 then target = 0
+    end if
+    scrollRegion(region, target)
+end sub
+
+sub scrollRegion(region as object, target as integer)
+    if target = region.scroll
+        refreshRegion(region)
+        return
+    end if
+    ' A long jump cuts straight there rather than building every row it would slide past
+    if Abs(target - region.scroll) > 1080
+        region.anim.control = "stop"
+        region.from = target
+        region.scroll = target
+        region.group.translation = [0, -target]
+        refreshRegion(region)
+        return
+    end if
+    region.from = region.scroll
+    region.scroll = target
+    refreshRegion(region)
+    region.anim.control = "stop"
+    region.interp.keyValue = [region.group.translation, [0, -target]]
+    region.anim.control = "start"
+end sub
+
+' Up off the top of the page reaches the nav, which comes back to the stop it left
+sub goToNav()
+    if not FocusNav(m.top) then drawFocus()
+end sub
+
+sub leaveSide(edge as string)
+    if edge = "sidebar"
+        if not FocusSidebar(m.top) then drawFocus()
+        return
+    end if
+    if edge = "nav"
+        goToNav()
+        return
+    end if
+    if edge = "strip"
+        if m.withStrip then focusAt("main", 0, stripIndex()) else goToNav()
+        return
+    end if
+    if edge = "" or not m.regions.doesExist(edge) then return
+    region = m.regions[edge]
+    landing = region.enter ?? region.memory
+    if isValid(landing)
+        focusAt(edge, landing[0], landing[1])
+    else
+        focusFirstItem(edge)
+    end if
+end sub
+
+sub moveFocus(key as string)
+    if m.focusRow < 0
+        if key = KeyCode.UP then goToNav()
+        if key = KeyCode.LEFT then leaveSide(m.regions[m.focusRegion].left)
+        return
+    end if
+    region = m.regions[m.focusRegion]
+    rows = region.rows
+    row = rows[m.focusRow]
+    cell = row.cells[m.focusCell]
+
+    if key = KeyCode.LEFT or key = KeyCode.RIGHT
+        right = key = KeyCode.RIGHT
+        target = sidewaysCell(row, m.focusCell, right)
+        if target >= 0
+            focusAt(region.id, m.focusRow, target)
+        else if right
+            leaveSide(row.right ?? region.right)
+        else
+            leaveSide(row.left ?? region.left)
+        end if
+        return
+    end if
+
+    down = key = KeyCode.DOWN
+    target = stackedCell(row, m.focusCell, down)
+    if target >= 0
+        focusAt(region.id, m.focusRow, target)
+        return
+    end if
+    jump = row.upTo
+    if down then jump = row.downTo
+    if isValid(jump)
+        focusAt(region.id, jump[0], jump[1])
+        return
+    end if
+
+    direction = -1
+    if down then direction = 1
+    index = m.focusRow + direction
+    while index >= 0 and index < rows.count() and rows[index].cells.count() = 0
+        index += direction
+    end while
+    if index < 0
+        leaveSide(region.up)
+        return
+    end if
+    if index >= rows.count() then return
+    focusAt(region.id, index, landingCell(row, rows[index], cell, down))
+end sub
+
+' Into or out of the header the remote lands on the row's own stop, the picked tab or its first
+' cell, so Down from the header always starts the content at its first item. Anywhere else it
+' lands on the cell nearest the one it left.
+function landingCell(from as object, into as object, cell as object, down as boolean) as integer
+    if from.pinTop = true or into.pinTop = true then return into.enterAt ?? 0
+    return enteredCell(into, cell.x + cell.w \ 2, down)
+end function
+
+' The nearest cell in the same row the given way, one level with this one before any other
+function sidewaysCell(row as object, from as integer, right as boolean) as integer
+    here = row.cells[from]
+    centerX = here.x + here.w / 2
+    best = -1
+    bestScore = 0
+    for i = 0 to row.cells.count() - 1
+        cell = row.cells[i]
+        dx = cell.x + cell.w / 2 - centerX
+        if i <> from and ((right and dx > 0) or (not right and dx < 0))
+            score = Abs(dx) + Abs(cell.y + cell.h / 2 - (here.y + here.h / 2)) * 4
+            if cell.y < here.y + here.h and cell.y + cell.h > here.y then score -= 100000
+            if best < 0 or score < bestScore
+                best = i
+                bestScore = score
+            end if
+        end if
+    end for
+    return best
+end function
+
+' The nearest cell above or below in the same row that shares some of this one's width
+function stackedCell(row as object, from as integer, down as boolean) as integer
+    here = row.cells[from]
+    best = -1
+    bestScore = 0
+    for i = 0 to row.cells.count() - 1
+        cell = row.cells[i]
+        dy = cell.y - here.y
+        if i <> from and ((down and dy > 0) or (not down and dy < 0)) and cell.x < here.x + here.w and cell.x + cell.w > here.x
+            score = Abs(dy) * 4 + Abs(cell.x - here.x)
+            if best < 0 or score < bestScore
+                best = i
+                bestScore = score
+            end if
+        end if
+    end for
+    return best
+end function
+
+' Coming into a row from above lands on its top line, from below on its bottom one, nearest x
+function enteredCell(row as object, x as integer, fromAbove as boolean) as integer
+    best = 0
+    bestScore = 0
+    for i = 0 to row.cells.count() - 1
+        cell = row.cells[i]
+        depth = cell.y
+        if not fromAbove then depth = row.height - cell.y - cell.h
+        score = Abs(cell.x + cell.w / 2 - x) + depth * 4
+        if i = 0 or score < bestScore
+            best = i
+            bestScore = score
+        end if
+    end for
+    return best
+end function
+
+' =====================================================================
+' HEADER
+' =====================================================================
+
+function textBox(text as string, size as integer, bold as boolean) as object
+    label = addLabel(m.top, text, 0, 0, size, bold)
+    bounds = label.boundingRect()
+    m.top.removeChild(label)
+    return bounds
+end function
+
+function textWidth(text as string, size as integer, bold as boolean) as integer
+    return Int(textBox(text, size, bold).width + 0.5)
+end function
+
+function pillSpec(title as string, glyph as string, primary = false as boolean) as object
+    spec = { kind: "button", height: PILL_HEIGHT, title: title, glyph: glyph, glyphSize: 27, textSize: 21, padX: 24, fill: m.ink, fillOpacity: 0.08, ink: m.ink, pressFill: true }
+    if primary
+        spec.fill = m.accent
+        spec.fillOpacity = 1.0
+        spec.ink = m.onAccent
+    end if
+    return spec
+end function
+
+function buttonSpec(title as string, glyph as string, primary = false as boolean) as object
+    spec = pillSpec(title, glyph, primary)
+    spec.append({ height: 66, glyphSize: 30, textSize: 22, padX: 27 })
+    if not primary then spec.fillOpacity = 0.14
+    return spec
+end function
+
+function specWidth(spec as object) as integer
+    width = textWidth(spec.title, spec.textSize, spec.bold <> false) + spec.padX * 2
+    if isValidAndNotEmpty(spec.glyph) then width += spec.glyphSize + 8
+    if isValid(spec.minWidth) and spec.minWidth > width then width = spec.minWidth
+    return width
+end function
+
+' Lays buttons out from x on a row, each { spec, action, key }, and hands back where they end
+function placeButtons(row as object, buttons as object, x as integer, y as integer, gap as integer) as integer
+    for each button in buttons
+        width = specWidth(button.spec)
+        addCell(row, x, y, width, button.spec.height, button.spec, button.action, button.key ?? "")
+        x += width + gap
+    end for
+    return x - gap
+end function
+
+' Segments on a translucent bar from x, each { title, action, key, selected }
+function placeSegments(row as object, segments as object, x as integer, y as integer, height as integer, padX as integer, size as integer) as integer
+    pad = 5
+    specs = []
+    widths = []
+    total = 0
+    for each segment in segments
+        spec = { kind: "button", height: height, title: segment.title, textSize: size, padX: padX, bold: segment.selected = true, fill: m.accent, fillOpacity: 0.0, ink: themeChrome.WithAlpha(m.ink, "BF"), pill: true, pressFill: true }
+        if segment.selected = true
+            spec.fillOpacity = 1.0
+            spec.ink = m.onAccent
+        end if
+        specs.push(spec)
+        widths.push(specWidth(spec))
+        total += widths.peek()
+    end for
+    row.decor.push({ kind: "box", uri: PILL_URI, x: x, y: y - pad, width: total + pad * 2, height: height + pad * 2, opacity: 0.08 })
+    x += pad
+    for i = 0 to segments.count() - 1
+        if segments[i].selected = true then row.enterAt = row.cells.count()
+        addCell(row, x, y, widths[i], height, specs[i], segments[i].action, segments[i].key ?? "")
+        x += widths[i]
+    end for
+    return x + pad
+end function
+
+function segmentsWidth(segments as object, padX as integer, size as integer) as integer
+    total = 10
+    for each segment in segments
+        total += textWidth(segment.title, size, segment.selected = true) + padX * 2
+    end for
+    return total
+end function
+
+function headerRow(title as string, count as string, left as integer) as object
+    row = newRow(m.headerTop, HEADER_HEIGHT)
+    row.pinTop = true
+    heading = labelDecor(title, left, 0, 51, true, m.ink)
+    heading.height = HEADER_HEIGHT
+    heading.vertAlign = "bottom"
+    row.decor.push(heading)
+    if count <> ""
+        countLabel = labelDecor(count, left + textWidth(title, 51, true) + 21, 0, 23, false, m.soft)
+        countLabel.height = HEADER_HEIGHT - 7
+        countLabel.vertAlign = "bottom"
+        row.decor.push(countLabel)
+    end if
+    return row
+end function
+
+function emptyRow(text as string, top as integer) as object
+    row = newRow(top, 120)
+    note = labelDecor(text, 0, 40, 30, true, m.soft)
+    note.width = 1920
+    note.horizAlign = "center"
+    row.decor.push(note)
+    return row
+end function
+
+' =====================================================================
+' REQUESTS
+' =====================================================================
+
+' One request at a time per name: a newer one makes the answer to the older one stale
+sub categoryRequest(name as string, path as string, params as object, handler as string, context = {} as object)
+    params.userId = m.global.session.user.id
+    task = CreateObject("roSGNode", "JellyfinAPITask")
+    task.observeField("response", handler)
+    task.request = { path: path, params: params, context: context }
+    m.tasks[name] = task
+    task.control = TaskControl.RUN
+end sub
+
+' The answer's data, an empty object when the request failed, or invalid when it's stale
+function categoryResponse(event as object, name as string) as dynamic
+    task = event.getRoSGNode()
+    current = m.tasks[name]
+    if not isValid(current) or not current.isSameNode(task) then return invalid
+    m.tasks.delete(name)
+    response = event.getData()
+    if isValid(response) and response.success = true and isValid(response.data) then return response.data
+    return {}
+end function
+
+function totalOf(data as object, fallback as integer) as integer
+    if type(data) = "roAssociativeArray" and isValid(data.TotalRecordCount) then return Int(data.TotalRecordCount)
+    return fallback
+end function
+
+' =====================================================================
+' KEYS AND COMING AND GOING
+' =====================================================================
+
+sub OnScreenShown(_isReturning = false as boolean)
+    takeFocus()
+    m.top.lastFocus = m.top
+    drawFocus()
+end sub
+
+' The screen points at itself while it holds the focus, which would keep it alive once it's
+' popped, even by the nav's Home
+sub OnScreenHidden()
+    m.top.lastFocus = invalid
+end sub
+
+sub stopCategoryTasks()
+    for each name in m.tasks
+        m.tasks[name].control = TaskControl.STOP
+    end for
+    m.tasks = {}
+    m.playTask.control = TaskControl.STOP
+end sub
+
+sub leaveScreen()
+    stopCategoryTasks()
+    m.global.sceneManager.callFunc("popScene")
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if key = KeyCode.BACK
+        if not categoryBack() then leaveScreen()
+        return true
+    end if
+
+    ' While a dialog holds the focus, the keys it passes up go nowhere
+    if not m.loaded or (isValid(m.dialog) and m.dialog.visible) then return true
+
+    if key = KeyCode.OK
+        cell = focusedCell()
+        if not isValid(cell) or not isValid(cell.action) then return true
+        if isValid(cell.action.nav)
+            openFromNav(cell.action.nav)
+        else
+            categoryActivate(cell.action)
+        end if
+        return true
+    end if
+
+    if key = KeyCode.UP or key = KeyCode.DOWN or key = KeyCode.LEFT or key = KeyCode.RIGHT
+        moveFocus(key)
+        return true
+    end if
+    return false
+end function

@@ -35,6 +35,8 @@ EXTRA_GLYPHS = [
     # The library header controls and the Sort & Filter group headings
     'home', 'sort', 'category_outlined', 'filter_list', 'shuffle', 'settings', 'grid_view',
     'expand_more', 'expand_less',
+    # The music category screens' buttons
+    'sort_by_alpha', 'play_arrow', 'album', 'queue_music',
 ]
 
 

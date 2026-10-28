@@ -1,0 +1,246 @@
+import "pkg:/source/api/Image.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/fontApply.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+import "pkg:/source/utils/themeChrome.bs"
+
+' What the music library screen and its category screens share
+
+sub setUpMusicScreen()
+    m.accent = themeChrome.Accent()
+    m.ink = themeChrome.OnBackground()
+    m.separator = " " + fontApply.ThemeSeparator() + " "
+    m.playTask = CreateObject("roSGNode", "JellyfinAPITask")
+    m.playTask.observeField("response", "onTracksLoaded")
+end sub
+
+sub readLibrary()
+    library = m.top.parentItem
+    m.libraryId = library.libraryId ?? ""
+    if m.libraryId = "" then m.libraryId = library.id
+    m.libraryName = library.title ?? ""
+    if m.libraryName = "" then m.libraryName = chainLookupReturn(library, "json.Name", tr("Music"))
+end sub
+
+function musicCategoryList() as object
+    return [
+        { id: "artists", label: tr("Artists"), glyph: "person" },
+        { id: "albums", label: tr("Albums"), glyph: "album" },
+        { id: "songs", label: tr("Songs"), glyph: "music_note" },
+        { id: "playlists", label: tr("Playlists"), glyph: "queue_music" },
+        { id: "genres", label: tr("Genres"), glyph: "category" },
+        { id: "favorites", label: tr("Favorites"), glyph: "favorite" }
+    ]
+end function
+
+' =====================================================================
+' BUILDING BLOCKS
+' =====================================================================
+
+' A label on the page, in the theme's font when one is on
+function addLabel(parent as object, text as string, x as integer, y as integer, size as integer, bold as boolean) as object
+    label = parent.createChild("Label")
+    if bold
+        label.font = "font:MediumBoldSystemFont"
+    else
+        label.font = "font:MediumSystemFont"
+    end if
+    label.font.size = size
+    label.text = text
+    label.color = m.ink
+    label.translation = [x, y]
+    fontApply.ApplyThemeFonts(label)
+    return label
+end function
+
+' A button sized to its words, for the caller to place
+function addButton(parent as object, spec as object) as object
+    tile = parent.createChild("MusicLibraryTile")
+    return { node: tile, width: tile.callFunc("setup", spec) }
+end function
+
+function addTile(parent as object, args as object, x as integer, y as integer) as object
+    tile = parent.createChild("MusicLibraryTile")
+    tile.translation = [x, y]
+    tile.callFunc("setup", args)
+    return tile
+end function
+
+' The cover a music item shows, its album's for a song without one of its own
+function artOf(item as object, size as integer, extra = {} as object) as string
+    params = { maxHeight: size, maxWidth: size, quality: 90 }
+    params.append(extra)
+
+    albumTag = item.AlbumPrimaryImageTag ?? ""
+    if isStringEqual(item.Type, "Audio") and albumTag <> "" and isValidAndNotEmpty(item.AlbumId)
+        params.tag = albumTag
+        return ImageURL(item.AlbumId, "Primary", params)
+    end if
+
+    tag = chainLookupReturn(item, "ImageTags.Primary", "")
+    if tag <> ""
+        params.tag = tag
+        return ImageURL(item.Id, "Primary", params)
+    end if
+
+    parentTag = item.ParentPrimaryImageTag ?? ""
+    if parentTag <> "" and isValidAndNotEmpty(item.ParentPrimaryImageItemId)
+        params.tag = parentTag
+        return ImageURL(item.ParentPrimaryImageItemId, "Primary", params)
+    end if
+    return ""
+end function
+
+' Who made a song or album, how big a playlist is, or how many albums an artist has
+function subtitleOf(item as object) as string
+    itemType = item.Type ?? ""
+    if isStringEqual(itemType, "Audio") or isStringEqual(itemType, "MusicAlbum")
+        if isValidAndNotEmpty(item.Artists) then return item.Artists.join(", ")
+        names = []
+        for each artist in item.AlbumArtists ?? []
+            if isValidAndNotEmpty(artist.Name) then names.push(artist.Name)
+        end for
+        if names.count() > 0 then return names.join(", ")
+        return item.AlbumArtist ?? ""
+    end if
+
+    if isStringEqual(itemType, "Playlist")
+        count = item.ChildCount ?? 0
+        if count = 1 then return tr("1 item")
+        if count > 1 then return tr("{count} items").replace("{count}", count.toStr())
+    else if isStringEqual(itemType, "MusicArtist")
+        count = item.RecursiveItemCount ?? 0
+        if count > 0 then return tr("{count} albums").replace("{count}", count.toStr())
+    end if
+    return ""
+end function
+
+function songSubtitle(item as object) as string
+    artist = subtitleOf(item)
+    album = item.Album ?? ""
+    if album = "" then return artist
+    if artist = "" then return album
+    return artist + m.separator + album
+end function
+
+function runtimeOf(item as object) as string
+    ticks = item.RunTimeTicks
+    if not isValid(ticks) or ticks <= 0 then return ""
+    return ticksToHuman(ticks)
+end function
+
+' Asking for the focus does nothing while a child of the screen has it, so the child lets go first
+sub takeFocus()
+    node = m.top.focusedChild
+    depth = 0
+    while isValid(node) and not node.isSameNode(m.top) and not node.hasFocus() and depth < 10
+        node = node.focusedChild
+        depth++
+    end while
+    if isValid(node) and not node.isSameNode(m.top) then node.setFocus(false)
+    m.top.setFocus(true)
+end sub
+
+' =====================================================================
+' OPENING WHAT'S PICKED
+' =====================================================================
+
+' A song plays from its album, anything else opens on its own screen through Main
+sub openItem(item as object)
+    if isStringEqual(item.Type, "Audio")
+        playSong(item)
+        return
+    end if
+
+    node = CreateObject("roSGNode", "JFContentItem")
+    node.id = item.Id
+    node.Type = item.Type
+    node.json = item
+    relaySelection(node)
+end sub
+
+sub openAlbumOf(track as object)
+    openItem({ Id: track.AlbumId, Name: track.Album ?? "", Type: "MusicAlbum" })
+end sub
+
+' Main only reads a pick when it arrives, so the field is cleared at once or a later change to
+' the node would open it again
+sub relaySelection(node as object)
+    m.top.selectedItem = node
+    m.top.selectedItem = invalid
+end sub
+
+' A screen pushed from here hands what's picked on it to whoever opened this one
+sub pushRelayed(group as object)
+    group.observeField("selectedItem", "onChildSelected")
+    if group.hasField("genreItemSelected") then group.observeField("genreItemSelected", "onChildGenreSelected")
+    m.global.sceneManager.callFunc("pushScene", group)
+end sub
+
+sub onChildSelected(event as object)
+    picked = event.getData()
+    if isValid(picked) then relaySelection(picked)
+end sub
+
+sub onChildGenreSelected(event as object)
+    m.top.genreItemSelected = event.getData()
+end sub
+
+' =====================================================================
+' PLAYBACK
+' =====================================================================
+
+' The album's songs from this one on, or just the song when it has no album. An album whose
+' songs are already loaded, kept in m.albumTracks, plays without asking again.
+sub playSong(track as object)
+    albumId = track.AlbumId ?? ""
+    if albumId = ""
+        playTracks([track], 0)
+    else if isValid(m.albumTracks) and isStringEqual(albumId, m.albumTracks.id) and m.albumTracks.tracks.count() > 0
+        playTracks(m.albumTracks.tracks, trackIndex(m.albumTracks.tracks, track.Id))
+    else
+        requestTracks({ parentId: albumId, sortBy: "ParentIndexNumber,IndexNumber,SortName" }, track.Id)
+    end if
+end sub
+
+sub requestTracks(params as object, startId as string, shuffled = false as boolean)
+    params.userId = m.global.session.user.id
+    params.includeItemTypes = "Audio"
+    params.fields = "PrimaryImageAspectRatio"
+    m.startTrackId = startId
+    m.shuffleTracks = shuffled
+    m.playTask.control = TaskControl.STOP
+    m.playTask.request = { path: "Items", params: params }
+    m.playTask.control = TaskControl.RUN
+    startLoadingSpinner()
+end sub
+
+sub onTracksLoaded(event as object)
+    response = event.getData()
+    tracks = []
+    if isValid(response) and response.success = true then tracks = responseItems(response.data)
+    if tracks.count() = 0
+        stopLoadingSpinner()
+        return
+    end if
+    if m.shuffleTracks = true then tracks = shuffleArray(tracks)
+    playTracks(tracks, trackIndex(tracks, m.startTrackId))
+end sub
+
+function trackIndex(tracks as object, trackId as string) as integer
+    for i = 0 to tracks.count() - 1
+        if isStringEqual(tracks[i].Id, trackId) then return i
+    end for
+    return 0
+end function
+
+sub playTracks(tracks as object, position as integer)
+    startLoadingSpinner()
+    queue = m.global.queueManager
+    queue.callFunc("clear")
+    queue.callFunc("resetShuffle")
+    queue.callFunc("set", tracks)
+    queue.callFunc("setPosition", position)
+    queue.callFunc("playQueue")
+end sub
