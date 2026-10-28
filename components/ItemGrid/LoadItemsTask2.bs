@@ -7,7 +7,11 @@ import "pkg:/source/utils/accentFolding.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/libraryFilters.bs"
+import "pkg:/source/utils/librarySorts.bs"
 import "pkg:/source/utils/misc.bs"
+
+' How many ids one item request carries when My Rating reads back what was rated
+const RATED_PAGE = 100
 
 ' Helper functions for multi-server API calls
 
@@ -95,6 +99,10 @@ sub loadItems()
     results = []
 
     sort_field = m.top.sortField
+    ' Neither of these is a field the server sorts on, so the request itself goes by name
+    myRating = isStringEqual(sort_field, librarySorts.MY_RATING_FIELD)
+    foldersFirst = isStringEqual(sort_field, librarySorts.FOLDERS_FIRST_FIELD)
+    if myRating or foldersFirst then sort_field = "SortName"
 
     if m.top.sortAscending = true
         sort_order = "Ascending"
@@ -119,7 +127,7 @@ sub loadItems()
         SortBy: sort_field,
         SortOrder: sort_order,
         recursive: m.top.recursive,
-        Fields: "Overview, ChildCount, RecursiveItemCount, ProviderIds, SortName",
+        Fields: "Overview, ChildCount, RecursiveItemCount, ProviderIds, SortName, Genres, Studios",
         StudioIds: m.top.studioIds,
         genreIds: m.top.genreIds
     }
@@ -303,27 +311,54 @@ sub loadItems()
         url = "Items"
     end if
 
-    ' Make API request with timeout handling
-    resp = targetAPIRequest(url, params)
+    data = invalid
+    isItemsRequest = isStringEqual(url, "Items")
 
-    ' Add timeout by checking if request is valid
-    if not isValid(resp)
-        ' Request setup failed
-        m.top.content = []
-        m.top.hasExecuted = false
-        return
+    ' Everything rated comes back as the first page, since the plugin serves ids and scores
+    ' rather than a sorted stream. Without the plugin this falls back to the name sort.
+    if myRating and isItemsRequest and not isUsingRemoteServer()
+        if m.top.startIndex = 0
+            data = ratedItems(params)
+            m.top.ratedPage = isValid(data)
+        else if m.top.ratedPage
+            m.top.content = []
+            m.top.hasExecuted = false
+            return
+        end if
     end if
 
-    ' Get response - handle remote server separately since we need GetToString
-    if isUsingRemoteServer()
-        responseBody = resp.GetToString()
-        if responseBody <> invalid and responseBody <> ""
-            data = ParseJson(responseBody)
-        else
-            data = invalid
+    ' The folders come in whole with the first page, and every page after it skips past them
+    directories = []
+    if foldersFirst and isItemsRequest
+        if m.top.startIndex = 0
+            m.top.directoryCount = 0
+            folderParams = {}
+            folderParams.Append(params)
+            folderParams.Delete("limit")
+            folderParams.Delete("ExcludeItemTypes")
+            folderParams.IncludeItemTypes = librarySorts.DIRECTORY_TYPES
+            folderParams.EnableTotalRecordCount = false
+            folderData = fetchData(url, folderParams)
+            if isValid(folderData) and type(folderData.Items) = "roArray" then directories = folderData.Items
+            m.top.directoryCount = directories.count()
         end if
-    else
-        data = getJson(resp)
+
+        skipped = m.top.startIndex - m.top.directoryCount
+        if skipped < 0 then skipped = 0
+        params.StartIndex = skipped
+        excluded = librarySorts.DIRECTORY_TYPES
+        if m.top.excludeItemTypes <> "" then excluded = m.top.excludeItemTypes + "," + excluded
+        params.ExcludeItemTypes = excluded
+    end if
+
+    if not isValid(data) then data = fetchData(url, params)
+
+    if isValid(data) and foldersFirst and isItemsRequest
+        if directories.count() > 0 and type(data.Items) = "roArray"
+            directories.Append(data.Items)
+            data.Items = directories
+        end if
+        if isValid(data.TotalRecordCount) then data.TotalRecordCount += m.top.directoryCount
     end if
 
     ' Check if API call timed out or failed
@@ -559,3 +594,56 @@ sub loadItems()
     ' Reset hasExecuted for next pagination batch
     m.top.hasExecuted = false
 end sub
+
+' One request against whichever server the task points at, or invalid when it fails
+function fetchData(url as string, params as object) as dynamic
+    resp = targetAPIRequest(url, params)
+    if not isValid(resp) then return invalid
+
+    ' A remote server is read as text, since its request isnt one getJson can take
+    if isUsingRemoteServer()
+        responseBody = resp.GetToString()
+        if responseBody = invalid or responseBody = "" then return invalid
+        return ParseJson(responseBody)
+    end if
+    return getJson(resp)
+end function
+
+' The items the user rated in this library, best first or worst first, read back a page of ids
+' at a time with the library's own filters still applied
+function ratedItems(params as object) as dynamic
+    ratings = getJson(APIRequest("/Moonfin/UserRatings/Mine"))
+    if type(ratings) <> "roAssociativeArray" then return invalid
+
+    ids = librarySorts.MyRatingOrder(ratings.LookupCI("Items"), m.top.sortAscending)
+    query = {}
+    query.Append(params)
+    for each key in ["SortBy", "SortOrder", "StartIndex", "limit"]
+        query.Delete(key)
+    end for
+    query.recursive = true
+
+    found = {}
+    for start = 0 to ids.count() - 1 step RATED_PAGE
+        page = []
+        last = start + RATED_PAGE - 1
+        if last > ids.count() - 1 then last = ids.count() - 1
+        for i = start to last
+            page.push(ids[i])
+        end for
+        query.Ids = page.Join(",")
+
+        data = fetchData("Items", query)
+        if isValid(data) and type(data.Items) = "roArray"
+            for each item in data.Items
+                found[toString(item.LookupCI("Id"))] = item
+            end for
+        end if
+    end for
+
+    items = []
+    for each itemId in ids
+        if found.DoesExist(itemId) then items.push(found[itemId])
+    end for
+    return { Items: items, TotalRecordCount: items.count() }
+end function

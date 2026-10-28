@@ -1980,11 +1980,6 @@
         <translation>Settings relating to the appearance of pages in Movie Libraries.</translation>
     </message>
     <message>
-        <source>Presentation</source>
-        <translation>Presentation</translation>
-        <extracomment>Title of an option - name of presentation view</extracomment>
-    </message>
-    <message>
         <source>Grid</source>
         <translation>Grid</translation>
         <extracomment>Title of an option - name of grid view</extracomment>
@@ -2329,16 +2324,6 @@
         <extracomment>Libraries Setting - Setting description</extracomment>
     </message>
     <message>
-        <source>Forget Filters</source>
-        <translation>Forget Filters</translation>
-        <extracomment>Libraries Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Forget applied library filters when Jellyfin is closed.</source>
-        <translation>Forget applied library filters when Jellyfin is closed.</translation>
-        <extracomment>Libraries Setting - Setting description</extracomment>
-    </message>
-    <message>
         <source>View All Next Up</source>
         <translation>View All Next Up</translation>
         <extracomment>Title for viewing all episodes available in the Next Up section</extracomment>
@@ -2450,10 +2435,6 @@
     <message>
         <source>What&apos;s New</source>
         <translation>What&apos;s New</translation>
-    </message>
-    <message>
-        <source>Sort by</source>
-        <translation>Sort by</translation>
     </message>
     <message>
         <source>Search is unavailable because the API does not support searching inside boxsets.</source>
@@ -7686,6 +7667,146 @@
         <source>On collection pages</source>
         <extracomment>Under the Playlist order section switch</extracomment>
         <translation>On collection pages</translation>
+    </message>
+    <message>
+        <source>Group By</source>
+        <extracomment>A library header control and dialog that splits movies or shows into categories</extracomment>
+        <translation>Group By</translation>
+    </message>
+    <message>
+        <source>Decade (Year)</source>
+        <extracomment>Group By choice that puts each title under the decade it came out in</extracomment>
+        <translation>Decade (Year)</translation>
+    </message>
+    <message>
+        <source>Parental Rating</source>
+        <extracomment>Group By choice, Sort By choice and Sort &amp; Filter group for the age rating</extracomment>
+        <translation>Parental Rating</translation>
+    </message>
+    <message>
+        <source>Studio</source>
+        <extracomment>Group By choice that puts each title under the studios that made it</extracomment>
+        <translation>Studio</translation>
+    </message>
+    <message>
+        <source>Jump to letter</source>
+        <extracomment>Caption over the letters in the Docked library panel</extracomment>
+        <translation>Jump to letter</translation>
+    </message>
+    <message>
+        <source>Album Artists</source>
+        <extracomment>Title of the music library page that lists album artists</extracomment>
+        <translation>Album Artists</translation>
+    </message>
+    <message>
+        <source>Like</source>
+        <extracomment>My Rating filter for titles you liked</extracomment>
+        <translation>Like</translation>
+    </message>
+    <message>
+        <source>Dislike</source>
+        <extracomment>My Rating filter for titles you disliked</extracomment>
+        <translation>Dislike</translation>
+    </message>
+    <message>
+        <source>Library</source>
+        <extracomment>Sort &amp; Filter group that narrows a genre to one library</extracomment>
+        <translation>Library</translation>
+    </message>
+    <message>
+        <source>All Libraries</source>
+        <extracomment>Library group choice that looks for the genre in every library</extracomment>
+        <translation>All Libraries</translation>
+    </message>
+    <message>
+        <source>Scroll Direction</source>
+        <extracomment>Library Display section for whether the grid scrolls down or sideways</extracomment>
+        <translation>Scroll Direction</translation>
+    </message>
+    <message>
+        <source>Image Type</source>
+        <extracomment>Library Display section for poster, thumbnail or banner art</extracomment>
+        <translation>Image Type</translation>
+    </message>
+    <message>
+        <source>Poster Size</source>
+        <extracomment>Library Display section for how big the cards are</extracomment>
+        <translation>Poster Size</translation>
+    </message>
+    <message>
+        <source>Grouping</source>
+        <extracomment>Library Display section heading over Group by Type for playlists</extracomment>
+        <translation>Grouping</translation>
+    </message>
+    <message>
+        <source>Playlist Types</source>
+        <extracomment>Library Display section heading over the kinds of playlist to show</extracomment>
+        <translation>Playlist Types</translation>
+    </message>
+    <message>
+        <source>Music Video</source>
+        <extracomment>Playlist Types choice</extracomment>
+        <translation>Music Video</translation>
+    </message>
+    <message>
+        <source>Audio (Music)</source>
+        <extracomment>Playlist Types choice for music playlists</extracomment>
+        <translation>Audio (Music)</translation>
+    </message>
+    <message>
+        <source>Audiobook</source>
+        <extracomment>Playlist Types choice</extracomment>
+        <translation>Audiobook</translation>
+    </message>
+    <message>
+        <source>Book</source>
+        <extracomment>Playlist Types choice</extracomment>
+        <translation>Book</translation>
+    </message>
+    <message>
+        <source>Mixed</source>
+        <extracomment>Playlist Types choice for playlists that hold more than one kind of item</extracomment>
+        <translation>Mixed</translation>
+    </message>
+    <message>
+        <source>Alphabet bar</source>
+        <extracomment>Library Display switch for the row of letters over the grid</extracomment>
+        <translation>Alphabet bar</translation>
+    </message>
+    <message>
+        <source>Folder View</source>
+        <extracomment>Library Display switch that lists the library one folder at a time</extracomment>
+        <translation>Folder View</translation>
+    </message>
+    <message>
+        <source>Titles Under Posters</source>
+        <extracomment>Libraries Setting - Setting title</extracomment>
+        <translation>Titles Under Posters</translation>
+    </message>
+    <message>
+        <source>Show each item&apos;s title and details below its artwork in library grids.</source>
+        <extracomment>Libraries Setting - Setting description</extracomment>
+        <translation>Show each item&apos;s title and details below its artwork in library grids.</translation>
+    </message>
+    <message>
+        <source>Length</source>
+        <extracomment>Sort By choice for songs and music, the same as Runtime</extracomment>
+        <translation>Length</translation>
+    </message>
+    <message>
+        <source>Track Number</source>
+        <extracomment>Sort By choice for songs</extracomment>
+        <translation>Track Number</translation>
+    </message>
+    <message>
+        <source>Folders First</source>
+        <extracomment>Sort By choice in folder view that lists folders ahead of everything else</extracomment>
+        <translation>Folders First</translation>
+    </message>
+    <message>
+        <source>Order Added</source>
+        <extracomment>Sort By choice in My List for the order things were added</extracomment>
+        <translation>Order Added</translation>
     </message>
 </context>
 </TS>

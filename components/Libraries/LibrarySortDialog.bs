@@ -10,6 +10,9 @@ import "pkg:/source/utils/tvKeyboard.bs"
 ' each one costs a focusable row
 const FACET_PAGE = 50
 const SORT_SECTION = "sort"
+const LIBRARY_SECTION = "library"
+' The row that empties every filter at once, told apart from the Clear row inside one group
+const CLEAR_ALL = "clearAll"
 
 sub init()
     m.rowMenu = m.top.findNode("rowMenu")
@@ -17,18 +20,20 @@ sub init()
     title = m.top.findNode("title")
     title.text = tr("Sort & Filter")
 
-    ' Groups open and close as the viewer works, so the panel is held at full height
-    ' rather than resizing under them
-    trackDialog.Layout({
+    m.parts = {
         panel: m.top.findNode("panel"),
         panelBg: m.top.findNode("panelBg"),
         panelBorder: m.top.findNode("panelBorder"),
         title: title,
         titleRule: m.top.findNode("titleRule"),
         list: m.rowMenu
-    }, libraryPanel.FullHeightRows(), libraryPanel.ROW_HEIGHT)
+    }
+    ' Groups open and close as the viewer works, so the panel is held at full height
+    ' rather than resizing under them
+    trackDialog.Layout(m.parts, libraryPanel.FullHeightRows(), libraryPanel.ROW_HEIGHT)
 
-    m.expanded = SORT_SECTION
+    m.flat = false
+    m.expanded = ""
     m.facetLimit = FACET_PAGE
     m.facetQuery = ""
     m.lastFocused = 0
@@ -44,14 +49,18 @@ sub onRowFocused(event as object)
     rows = m.rowMenu.content
     if isValid(rows)
         row = rows.getChild(index)
-        if isValid(row) and row.kind = "note"
+        if isValid(row) and (row.kind = "note" or row.kind = "heading")
             direction = index > m.lastFocused ? 1 : -1
             if index + direction >= rows.getChildCount() then direction = -1
+            if index + direction < 0 then direction = 1
             m.pendingFocus = index + direction
             m.skipNoteTimer.control = "start"
             return
         end if
     end if
+    ' A redraw lands on the first row for a moment before the jump back, and the step queued
+    ' for that row would otherwise pull the cursor away again
+    m.skipNoteTimer.control = "stop"
     m.lastFocused = index
 end sub
 
@@ -61,8 +70,16 @@ end sub
 
 sub showDialog()
     m.working = m.top.state
-    ' The library header's Show control opens the dialog on the played status
-    m.expanded = isValidAndNotEmpty(m.top.context.section) ? m.top.context.section : SORT_SECTION
+    ' A dialog handed its sections whole lays them out flat and leaves every choice to the screen
+    m.flat = isValid(m.top.context.sections)
+    ' Every section starts closed, except the played status the Show control opens it on and
+    ' the sorts of a panel that holds nothing else
+    m.expanded = ""
+    if isValidAndNotEmpty(m.top.context.section)
+        m.expanded = m.top.context.section
+    else if m.top.context.sortOnly = true
+        m.expanded = SORT_SECTION
+    end if
     m.facetLimit = FACET_PAGE
     m.facetQuery = ""
 
@@ -73,10 +90,40 @@ sub showDialog()
     buildRows()
     m.top.visible = true
 
-    ' The dialog opens on the first row of its open section rather than on the heading above it
-    m.rowMenu.jumpToItem = firstRowIn(m.expanded)
+    ' The dialog opens on the first row of its open section rather than on the heading above it,
+    ' and on the first heading when they're all closed
+    first = 0
+    if m.expanded <> "" then first = firstRowIn(m.expanded)
+    if m.flat then first = nextChoice(0)
+    m.lastFocused = first
+    m.rowMenu.jumpToItem = first
+    m.resized = false
     m.rowMenu.setFocus(true)
 end sub
+
+' The screen changed what the sections hold, so the list is drawn again around the row in hand
+sub refresh()
+    rebuild()
+end sub
+
+' A flat dialog fits itself around its rows, since nothing in it opens or closes. Resizing the
+' list puts its cursor back on the first row, so a redraw that keeps the same rows leaves it be.
+sub fitPanel()
+    if not m.flat then return
+    count = m.rowMenu.content.getChildCount()
+    if count = m.fittedCount then return
+    m.fittedCount = count
+    trackDialog.Layout(m.parts, count, libraryPanel.ROW_HEIGHT)
+    m.resized = true
+end sub
+
+function nextChoice(index as integer) as integer
+    rows = m.rowMenu.content
+    for i = index to rows.getChildCount() - 1
+        if rows.getChild(i).kind <> "heading" then return i
+    end for
+    return 0
+end function
 
 ' The dialog is a plain group, so focus handed to it would sit above the list rather than
 ' on it and the arrow keys would go nowhere
@@ -129,9 +176,8 @@ function facetOptions(values as dynamic) as object
     return options
 end function
 
-' Every group the dialog can show, in the order the other clients show them. The View
-' group leads because it is what decides between a grid of items and a grid of genres,
-' and nothing else on the screen offers that.
+' Every group the dialog can show. The View group only leads on the classic music grid, where
+' it's the one way between artists, albums and genres.
 function buildSections() as object
     context = m.top.context
     filters = m.working.filters
@@ -154,15 +200,10 @@ function buildSections() as object
 
     ' A screen that only sorts one kind of thing brings its own list rather than taking the
     ' library's and then hiding most of it
-    offered = isValidAndNotEmpty(context.sorts) ? context.sorts : librarySorts.Options(context.isMusic = true, context.isMyList = true)
-
-    sorts = []
-    for each option in offered
-        if option.seriesOnly <> true or context.isSeries = true then sorts.push(option)
-    end for
+    sorts = isValidAndNotEmpty(context.sorts) ? context.sorts : librarySorts.Options(context.sortKind)
 
     ' A grid of genres has nothing to rank but its own names
-    if context.namesOnly = true then sorts = [sorts[0]]
+    if context.namesOnly = true then sorts = [librarySorts.Pick(sorts, "SortName")]
     sections.push({
         key: SORT_SECTION,
         title: tr("Sort By"),
@@ -189,29 +230,34 @@ function buildSections() as object
     ' facets for
     if context.sortOnly = true then return sections
 
-    sections.push({
-        key: "favorites",
-        title: tr("Filters"),
-        kind: "check",
-        options: [{ value: "favorites", label: tr("Favorites Only") }],
-        selected: filters.favorites = true ? ["favorites"] : [],
-        summary: filters.favorites = true ? tr("Favorites") : ""
-    })
+    ' A list of favorites has nothing to narrow to favorites
+    if context.favoritesOnly <> true
+        sections.push({
+            key: "favorites",
+            title: tr("Filters"),
+            kind: "check",
+            options: [{ value: "favorites", label: tr("Favorites") }],
+            selected: filters.favorites = true ? ["favorites"] : [],
+            summary: filters.favorites = true ? tr("Favorites") : ""
+        })
+    end if
 
-    played = libraryFilters.PlayedOptions()
-    sections.push({
-        key: "played",
-        title: tr("Played Status"),
-        kind: "radio",
-        options: played,
-        selected: filters.played,
-        summary: chosenLabel(played, filters.played)
-    })
+    if context.isMusic <> true
+        played = libraryFilters.PlayedOptions()
+        sections.push({
+            key: "played",
+            title: tr("Played Status"),
+            kind: "radio",
+            options: played,
+            selected: filters.played,
+            summary: chosenLabel(played, filters.played)
+        })
+    end if
 
     rated = [
         { value: "all", label: tr("All") },
-        { value: "liked", label: tr("Liked") },
-        { value: "disliked", label: tr("Disliked") }
+        { value: "liked", label: tr("Like") },
+        { value: "disliked", label: tr("Dislike") }
     ]
     sections.push({
         key: "rated",
@@ -313,31 +359,99 @@ sub addFacet(sections as object, key as string, title as string, values as dynam
 end sub
 
 sub buildRows()
+    if m.flat
+        buildFlatRows()
+        return
+    end if
+
     content = createSGNode("ContentNode")
     first = true
 
     for each section in buildSections()
-        row = content.createChild("LibraryPanelRowData")
-        row.kind = "header"
-        row.section = section.key
-        row.title = section.title
-        row.summary = section.summary
-        row.expanded = isStringEqual(section.key, m.expanded)
-        row.ruleAbove = not first
+        addHeader(content, section, not first)
         first = false
-
-        if row.expanded then addSectionBody(content, section)
     end for
 
-    if not libraryFilters.IsEmpty(m.working.filters)
+    if hasFilters()
         row = content.createChild("LibraryPanelRowData")
-        row.kind = "action"
-        row.section = "clear"
+        row.kind = "clear"
+        row.section = CLEAR_ALL
         row.title = tr("Clear Filters")
         row.ruleAbove = true
     end if
 
+    ' A genre browse can be narrowed to one library, and that group comes last
+    libraries = m.top.context.libraries
+    if isValidAndNotEmpty(libraries)
+        options = [{ value: "", label: tr("All Libraries") }]
+        options.Append(libraries)
+        addHeader(content, {
+            key: LIBRARY_SECTION,
+            title: tr("Library"),
+            kind: "radio",
+            options: options,
+            selected: m.working.libraryId ?? "",
+            summary: chosenLabel(libraries, m.working.libraryId)
+        }, true)
+    end if
+
     m.rowMenu.content = content
+end sub
+
+sub addHeader(content as object, section as object, ruleAbove as boolean)
+    row = content.createChild("LibraryPanelRowData")
+    row.kind = "header"
+    row.section = section.key
+    row.title = section.title
+    row.summary = section.summary
+    row.expanded = isStringEqual(section.key, m.expanded)
+    row.ruleAbove = ruleAbove
+
+    if row.expanded then addSectionBody(content, section)
+end sub
+
+' A list of favorites always keeps its own filter, so that one doesnt count as something to clear
+function hasFilters() as boolean
+    filters = m.working.filters
+    if m.top.context.favoritesOnly = true
+        filters = {}
+        filters.Append(m.working.filters)
+        filters.favorites = false
+    end if
+    return not libraryFilters.IsEmpty(filters)
+end function
+
+' Each section is a heading over its choices, and one with no heading starts after a rule
+sub buildFlatRows()
+    content = createSGNode("ContentNode")
+    first = true
+
+    for each section in m.top.context.sections
+        titled = isValidAndNotEmpty(section.title)
+        if titled
+            row = content.createChild("LibraryPanelRowData")
+            row.kind = "heading"
+            row.section = section.key
+            row.title = section.title
+            row.ruleAbove = not first
+        end if
+
+        firstOption = true
+        for each option in section.options
+            row = content.createChild("LibraryPanelRowData")
+            row.kind = section.kind
+            row.section = section.key
+            row.value = option.value
+            row.title = option.label
+            row.selected = isChosen(section, option.value)
+            row.ruleAbove = firstOption and not titled and not first
+            firstOption = false
+        end for
+        first = false
+    end for
+
+    m.rowMenu.content = content
+    fitPanel()
 end sub
 
 sub addSectionBody(content as object, section as object)
@@ -378,7 +492,7 @@ sub addSectionBody(content as object, section as object)
         ' Picking the sort already in use turns it around, so the one in use says which
         ' way it currently runs
         if section.sorted = true and row.selected
-            row.sortOrder = isValidAndNotEmpty(m.working.sortOrder) ? m.working.sortOrder : option.order
+            row.sortOrder = sortOrderOf(option)
         end if
     end for
 
@@ -397,6 +511,12 @@ sub addSectionBody(content as object, section as object)
         row.title = Substitute(tr("Show more ({0} left)"), remaining.toStr())
     end if
 end sub
+
+' The direction the sort in use runs, which a screen that never set one takes from the sort itself
+function sortOrderOf(option as object) as string
+    if isValidAndNotEmpty(m.working.sortOrder) then return m.working.sortOrder
+    return option.order ?? "Ascending"
+end function
 
 function isChosen(section as object, value as string) as boolean
     if section.kind = "radio" then return isStringEqual(toString(section.selected), value)
@@ -427,6 +547,13 @@ sub toggleValue(key as string, value as string)
 end sub
 
 sub applyRow(row as object)
+    if m.flat
+        if row.kind = "heading" then return
+        m.top.chosen = { section: row.section, value: row.value }
+        if m.top.context.closeOnPick = true then closeDialog()
+        return
+    end if
+
     if row.kind = "header"
         m.expanded = isStringEqual(m.expanded, row.section) ? "" : row.section
         m.facetLimit = FACET_PAGE
@@ -439,6 +566,16 @@ sub applyRow(row as object)
 
     if row.kind = "search"
         openFacetSearch(row)
+        return
+    end if
+
+    ' Closing hands focus back to the grid, since staying open would leave the remote on a row
+    ' that just removed itself
+    if row.kind = "clear" and isStringEqual(row.section, CLEAR_ALL)
+        m.working.filters = libraryFilters.EmptyState()
+        if m.top.context.favoritesOnly = true then m.working.filters.favorites = true
+        notifyScene()
+        closeDialog()
         return
     end if
 
@@ -457,20 +594,16 @@ sub applyRow(row as object)
         return
     end if
 
-    if row.kind = "action" and isStringEqual(row.section, "clear")
-        m.working.filters = libraryFilters.EmptyState()
-        notifyScene()
-        closeDialog()
-        return
-    end if
-
-    ' The one choice groups are the whole reason the dialog was opened, so making one puts
-    ' it away. The many choice groups stay, since picking one of them is rarely the only
-    ' thing the viewer came to do.
+    ' Every pick takes effect and the dialog stays up, unless the screen asked for a pick to put
+    ' it away
     if row.kind = "radio"
         applyRadio(row)
         notifyScene()
-        closeDialog()
+        if m.top.context.closeOnPick = true
+            closeDialog()
+        else
+            rebuild()
+        end if
         return
     end if
 
@@ -496,15 +629,21 @@ sub applyRadio(row as object)
         return
     end if
 
+    ' Picking the sort in use turns it around, and picking another keeps the direction it runs in
     if isStringEqual(row.section, SORT_SECTION)
         if isStringEqual(m.working.sortKey, row.value)
-            option = librarySorts.Chosen(row.value, m.top.context.isMusic = true, m.top.context.isMyList = true)
-            current = isValidAndNotEmpty(m.working.sortOrder) ? m.working.sortOrder : option.order
+            sorts = m.top.context.sorts
+            if not isValidAndNotEmpty(sorts) then sorts = librarySorts.Options(m.top.context.sortKind)
+            current = sortOrderOf(librarySorts.Pick(sorts, row.value))
             m.working.sortOrder = isStringEqual(current, "Ascending") ? "Descending" : "Ascending"
         else
             m.working.sortKey = row.value
-            m.working.sortOrder = ""
         end if
+        return
+    end if
+
+    if isStringEqual(row.section, LIBRARY_SECTION)
+        m.working.libraryId = row.value
         return
     end if
 
@@ -565,7 +704,15 @@ sub rebuild(takeFocus = true as boolean)
     last = rows.getChildCount() - 1
     if focused > last then focused = last
     if focused < 0 then focused = 0
+    if m.flat then focused = nextChoice(focused)
+    m.lastFocused = focused
     m.rowMenu.jumpToItem = focused
+    ' A list that was just resized is still landing and ignores the jump, so it's made again
+    if m.resized = true
+        m.resized = false
+        m.pendingFocus = focused
+        m.skipNoteTimer.control = "start"
+    end if
     if takeFocus then m.rowMenu.setFocus(true)
 end sub
 
@@ -574,7 +721,8 @@ sub notifyScene()
         view: m.working.view,
         sortKey: m.working.sortKey,
         sortOrder: m.working.sortOrder,
-        filters: m.working.filters
+        filters: m.working.filters,
+        libraryId: m.working.libraryId ?? ""
     }
 end sub
 

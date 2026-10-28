@@ -74,6 +74,7 @@ const selections = {
     'source/utils/fileFacts.bs': null,
     'source/utils/playbackFacts.bs': null,
     'source/utils/librarySorts.bs': null,
+    'source/utils/libraryGroupBy.bs': null,
     'source/utils/libraryCard.bs': null,
     'source/utils/favoriteTabs.bs': null,
     'source/utils/homePreview.bs': null,
@@ -161,6 +162,8 @@ source += '\n' + await readFile('test/rating-sources.bs', 'utf8');
 source += '\n' + await readFile('test/home-row-groups.bs', 'utf8');
 source += '\n' + await readFile('test/settings-metrics.bs', 'utf8');
 source += '\n' + await readFile('test/library-filters.bs', 'utf8');
+source += '\n' + await readFile('test/library-group-by.bs', 'utf8');
+source += '\n' + await readFile('test/library-sorts.bs', 'utf8');
 source += '\n' + await readFile('test/item-menu.bs', 'utf8');
 source += '\n' + await readFile('test/episode-browser.bs', 'utf8');
 source += '\n' + await readFile('test/person-role.bs', 'utf8');
@@ -919,3 +922,33 @@ assert.match(scheduleWatcher, /sub onRefused\(\)(?:\s+'[^\n]*)*\s+if m\.top\.use
 assert.match(scheduleWatcher, /if result\.ok[^]*?else(?:\s+'[^\n]*)*\s+startTimer\(RETRY_SECONDS\)/, 'A failed read keeps the last answer and asks again');
 assert.match(scheduleWatcher, /if m\.exempt then return\s+delay = POLL_SECONDS\s+if m\.entries\.Count\(\) = 0 then delay = IDLE_SECONDS/, 'An administrator isnt polled and a user without a schedule is polled every 15 minutes');
 process.stdout.write('PASS: access schedule wiring (5 checks)\n');
+
+// The library header, its dialogs and its settings: Home goes home, the display choices sync, and
+// a removed card leaves every view of it
+const libraryScene = await readFile('components/Libraries/VisualLibraryScene.bs', 'utf8');
+const libraryXml = await readFile('components/Libraries/VisualLibraryScene.xml', 'utf8');
+assert.match(libraryScene.match(/function onToolbarKey\([^]*?end function/)[0], /if index = FOCUS_HOME\s+reclaimResources\(\)\s+m\.global\.sceneManager\.callFunc\("goHome"\)/, 'Home goes home rather than back');
+assert.match(libraryScene.match(/sub focusFirstPage\(\)[^]*?end sub/)[0], /m\.openedOnHome = true\s+focusToolbarItem\(FOCUS_HOME\)/, 'The screen opens on Home');
+for (const icon of ['home', 'sort', 'category_outlined', 'shuffle', 'settings']) {
+    assert.match(libraryXml, new RegExp(`<LibraryHeaderButton id="\\w+Button" icon="${icon}" />`), `Classic draws ${icon} from the icon font`);
+}
+for (const glyph of ['home', 'sort', 'category_outlined', 'filter_list', 'shuffle', 'settings', 'grid_view', 'expand_more', 'expand_less']) {
+    assert.ok(glyphNames.includes(glyph), `The icon font has ${glyph}`);
+}
+assert.match(libraryXml, /<LibrarySortDialog id="displayDialog" visible="false" \/>\s+<LibrarySortDialog id="groupDialog" visible="false" \/>/, 'Display and Group By use the sort dialog\'s list');
+assert.doesNotMatch(libraryXml, /LibrarySettingsDialog/, 'The cycling settings dialog is gone');
+assert.match(libraryScene, /title: tr\("Group By"\),\s+closeOnPick: true,/, 'A Group By pick closes its dialog');
+assert.match(await readFile('components/ItemGrid/LoadItemsTask2.bs', 'utf8'), /Fields: "[^"]*Genres, Studios"/, 'Items carry the genres and studios Group By reads');
+assert.match(settingsSyncSource, /\{ pluginKey: "libraryCardTitles", rokuKey: "ui\.library\.cardTitles", type: "bool" \}/, 'Titles Under Posters syncs under Core\'s name');
+assert.match(settingsSyncSource, /\{ pluginKey: "libraryPosterSize", rokuKey: "ui\.library\.posterSize", type: "direct" \}/, 'The library poster size syncs under Core\'s name');
+assert.match(settingsSyncSource, /\{ pluginKey: "playlistPosterSize", rokuKey: "ui\.library\.playlistPosterSize", type: "direct" \}/, 'The playlist poster size syncs under Core\'s name');
+assert.match(settingsSyncSource, /pluginKey: "posterSize", rokuKey: "ui\.posterSize"[^}]*receiveOnly: true/, 'The general poster size is only read');
+assert.equal(findSetting(settingsTree, 'ui.library.cardTitles').default, 'true', 'Titles Under Posters starts on');
+assert.equal(findSetting(settingsTree, 'itemgrid.forgetFilters'), null, 'Forget Filters is gone');
+assert.doesNotMatch(mainSource, /clearOldLibraryFilters/, 'Filters are no longer wiped at start');
+assert.match(mainEventHandlers.match(/sub removeFromLibraryGrid\([^]*?end sub/)[0], /screen\.callFunc\("removeItem", itemId\)/, 'A library takes a removed card out of its own views');
+assert.equal((mainEventHandlers.match(/removeFromLibraryGrid\(activeScene, itemID\)/g) ?? []).length, 2, 'Deleting a playlist and leaving My List both use it');
+for (const name of ['Group By', 'Decade (Year)', 'Jump to letter', 'Scroll Direction', 'Poster Size', 'Playlist Types', 'Folder View', 'Titles Under Posters', 'Folders First', 'Like', 'Dislike', 'All Libraries']) {
+    assert.match(styleStrings, new RegExp(`<source>${name.replace(/[()]/g, '\\$&')}</source>`), `${name} is translated`);
+}
+process.stdout.write('PASS: library screen wiring (41 checks)\n');

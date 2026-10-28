@@ -16,11 +16,14 @@ import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/libraryCard.bs"
 import "pkg:/source/utils/libraryFilters.bs"
+import "pkg:/source/utils/libraryGroupBy.bs"
 import "pkg:/source/utils/librarySorts.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/playlistGrouping.bs"
 import "pkg:/source/utils/ratingsRow.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+import "pkg:/source/utils/settingsSync.bs"
 import "pkg:/source/utils/themeChrome.bs"
 import "pkg:/source/utils/trackDialog.bs"
 import "pkg:/source/utils/tvKeyboard.bs"
@@ -29,12 +32,31 @@ import "pkg:/source/utils/tvKeyboard.bs"
 const PILL_PAD_X = 18
 const PILL_HEIGHT = 26
 
-' Grouped rows draw the square cards at this size, this far apart, with this much room
-' between rows for the next row's title
-const GROUPED_CARD_SIZE = 240
+' Grouped playlist cards sit this far apart, with this much room between rows for the next
+' row's title
 const GROUPED_CARD_GAP = 24
 const GROUPED_ROW_GAP = 90
 const PLAYLIST_GROUPING_SETTING = "ui.library.playlistsGroupByType"
+' Synced poster sizes, which fall back to the general poster size
+const LIBRARY_POSTER_SIZE_SETTING = "ui.library.posterSize"
+const PLAYLIST_POSTER_SIZE_SETTING = "ui.library.playlistPosterSize"
+const POSTER_SIZE_SETTING = "ui.posterSize"
+const CARD_TITLES_SETTING = "ui.library.cardTitles"
+' Group By's category chips sit above the grid and push it down this far
+const CATEGORY_BAR_SPACE = 74
+const CLASSIC_BUTTON_SIZE = 44
+const CLASSIC_BUTTON_GAP = 3
+const CLASSIC_BAR_TOP = 248
+
+' Where each control sits in the toolbar focus order
+const FOCUS_HOME = 0
+const FOCUS_SORT = 1
+const FOCUS_DISPLAY = 2
+const FOCUS_LETTERS = 3
+const FOCUS_SEARCH = 4
+const FOCUS_SHOW = 5
+const FOCUS_GROUP = 6
+const FOCUS_SHUFFLE = 7
 
 const LIBRARY_STYLE_SETTING = "ui.library.style"
 const MARGIN_X = 87
@@ -66,8 +88,13 @@ sub setupNodes()
 
     ' Grid and lists
     m.sortDialog = m.top.findNode("sortDialog")
-    m.settingsDialog = m.top.findNode("settingsDialog")
+    m.displayDialog = m.top.findNode("displayDialog")
+    m.groupDialog = m.top.findNode("groupDialog")
+    m.dialogs = [m.sortDialog, m.displayDialog, m.groupDialog]
     m.itemGrid = m.top.findNode("itemGrid")
+    m.horizontalGrid = m.top.findNode("horizontalGrid")
+    m.grid = m.itemGrid
+    m.categoryBar = m.top.findNode("categoryBar")
     m.genreGrid = m.top.findNode("genreGrid")
     m.emptyText = m.top.findNode("emptyText")
 
@@ -95,11 +122,8 @@ sub setupNodes()
         pill.font.size = 16
     end for
 
-    ' Toolbar icon buttons
-    m.homeButton = m.top.findNode("homeButton")
-    m.sortButton = m.top.findNode("sortButton")
-    m.settingsButton = m.top.findNode("settingsButton")
-    m.classicButtons = [m.homeButton, m.sortButton, m.settingsButton]
+    ' Classic's icon buttons, indexed by their place in the focus order
+    m.classicButtons = [m.top.findNode("homeButton"), m.top.findNode("sortButton"), m.top.findNode("settingsButton"), invalid, invalid, invalid, m.top.findNode("groupButton"), m.top.findNode("shuffleButton")]
     m.toolbarButtons = m.classicButtons
 
     ' The Modern and Docked controls
@@ -114,8 +138,14 @@ sub setupNodes()
     m.modernRuleSort = m.top.findNode("modernRuleSort")
     m.styledHome = m.top.findNode("styledHome")
     m.styledSort = m.top.findNode("styledSort")
+    m.styledGroup = m.top.findNode("styledGroup")
     m.styledShow = m.top.findNode("styledShow")
+    m.styledShuffle = m.top.findNode("styledShuffle")
     m.styledDisplay = m.top.findNode("styledDisplay")
+    m.styledButtons = [m.styledHome, m.styledSort, m.styledDisplay, invalid, invalid, m.styledShow, m.styledGroup, m.styledShuffle]
+    m.letterCaption = m.top.findNode("letterCaption")
+    m.letterCaption.text = tr("Jump to letter")
+    m.letterCaption.font.size = 18
     panelInk = themeChrome.IsActive() ? themeChrome.Surface() : trackDialog.PANEL_INK
     m.dockPanel.color = panelInk
     m.dockPanel.opacity = trackDialog.PANEL_OPACITY
@@ -136,7 +166,6 @@ sub init()
     ' Tell SceneManager to hide the overhang for this screen
     m.top.overhangVisible = false
 
-    m.itemGridCounter = 0
     m.top.optionsAvailable = false
     setupNodes()
     m.allItems = []
@@ -147,10 +176,16 @@ sub init()
     m.genreGrid.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
 
     m.sortDialog.observeField("applied", "onSortApplied")
-    m.sortDialog.observeField("closed", "onSortClosed")
+    m.displayDialog.observeField("chosen", "onDisplayChosen")
+    m.groupDialog.observeField("chosen", "onGroupChosen")
+    for each dialog in m.dialogs
+        dialog.observeField("closed", "onSortClosed")
+    end for
 
-    m.settingsDialog.observeField("applied", "onSettingsApplied")
-    m.settingsDialog.observeField("closed", "onSortClosed")
+    m.categoryBar.observeField("selectedIndex", "onCategorySelected")
+    m.categoryBar.observeField("activated", "onCategoryActivated")
+    m.categoryBar.observeField("escape", "onCategoryEscape")
+    m.syncTasks = []
 
     m.loadedRows = 0
     m.loadedItems = 0
@@ -158,14 +193,16 @@ sub init()
     m.serverPosition = 0
     m.blockedCount = 0
 
-    ' Toolbar focus state: 0=home, 1=sort, 2=settings, 3=alpha, 4=search, 5=show
-    m.toolbarFocusIndex = 0
+    ' The header control with focus, one of the FOCUS_ places
+    m.toolbarFocusIndex = FOCUS_HOME
     ' The bar control Up from Modern's letters goes back to
     m.barFocusIndex = 0
 
     m.data = createSGNode("ContentNode")
-    m.itemGrid.observeField("itemFocused", "onItemFocused")
-    m.itemGrid.observeFieldScoped("itemSelected", "onItemSelected")
+    for each grid in [m.itemGrid, m.horizontalGrid]
+        grid.observeField("itemFocused", "onItemFocused")
+        grid.observeFieldScoped("itemSelected", "onItemSelected")
+    end for
     m.itemGrid.content = m.data
 
     m.genreData = createSGNode("ContentNode")
@@ -178,7 +215,16 @@ sub init()
     m.groupRows.rowLabelFont.size = 28
     m.groupRows.observeField("rowItemFocused", "onGroupItemFocused")
     m.groupRows.observeField("rowItemSelected", "onGroupItemSelected")
-    m.playlistGrouped = false
+    ' playlists or category, and whether the groups show as rows or as chips over the grid
+    m.grouping = ""
+    m.groupLayout = ""
+    m.groupBy = "none"
+    m.folderView = false
+    m.scrollDirection = "vertical"
+    resetCategoryGroups()
+    ' Every kind of playlist shows until one is unticked. It's never saved, the way the other
+    ' clients leave it.
+    m.playlistTypes = playlistGrouping.Categories()
     ' What each playlist was found to hold, kept across reloads since a sort doesnt change it
     m.playlistCategories = {}
     m.playlistAttempted = {}
@@ -195,7 +241,10 @@ sub init()
     m.sortOrder = "Ascending"
     m.filterState = libraryFilters.EmptyState()
 
-    m.view = "presentation"
+    m.view = ""
+    ' A genre browse can be narrowed to one library for as long as it is open
+    m.libraryFilter = invalid
+    m.libraries = []
 
     m.loadItemsTask1 = createObject("roSGNode", "LoadItemsTask")
 
@@ -295,14 +344,7 @@ sub OnScreenShown(isReturning = false as boolean)
     ' Hide the overhang/navbar
     m.overhang.isVisible = false
 
-    ' Set library name in header
-    if isValid(m.top.genreFilter) and isValidAndNotEmpty(m.top.genreFilter.genreName)
-        m.libraryName.text = m.top.genreFilter.genreName
-    else if isValid(m.top.studioFilter) and isValidAndNotEmpty(m.top.studioFilter.studioName)
-        m.libraryName.text = m.top.studioFilter.studioName
-    else if isValid(m.top.parentItem)
-        m.libraryName.text = isValid(m.top.parentItem.name) ? m.top.parentItem.name : m.top.parentItem.title
-    end if
+    m.libraryName.text = libraryTitle()
 
     ' Settings can change the style while this screen waits under it, and the theme font the push
     ' brought means the controls are measured again
@@ -315,7 +357,7 @@ sub OnScreenShown(isReturning = false as boolean)
     end if
 
     ' Temporarily unobserve itemSelected to prevent triggering navigation when restoring focus
-    m.itemGrid.unobserveFieldScoped("itemSelected")
+    m.grid.unobserveFieldScoped("itemSelected")
 
     group = m.global.sceneManager.callFunc("getActiveScene")
 
@@ -324,7 +366,7 @@ sub OnScreenShown(isReturning = false as boolean)
         group.lastFocus = m.top.lastFocus
 
         ' Re-observe itemSelected after focus is restored
-        m.itemGrid.observeFieldScoped("itemSelected", "onItemSelected")
+        m.grid.observeFieldScoped("itemSelected", "onItemSelected")
 
         ' Skip metadata loading when returning from detail screens
         if isReturning then return
@@ -342,7 +384,7 @@ sub OnScreenShown(isReturning = false as boolean)
         m.top.setFocus(true)
         group.lastFocus = m.top
         ' Re-observe itemSelected even if no lastFocus
-        m.itemGrid.observeFieldScoped("itemSelected", "onItemSelected")
+        m.grid.observeFieldScoped("itemSelected", "onItemSelected")
     end if
 end sub
 
@@ -360,13 +402,32 @@ sub onItemDataLoaded()
     focusedItem.callFunc("setWatched", chainLookupReturn(itemData[0], "json.UserData.Played", false), chainLookupReturn(itemData[0], "json.UserData.UnplayedItemCount", 0))
 end sub
 
+' The library's name, or what a music category or a genre or studio browse holds
+function libraryTitle() as string
+    if isValid(m.top.genreFilter) and isValidAndNotEmpty(m.top.genreFilter.genreName) then return m.top.genreFilter.genreName
+    if isValid(m.top.studioFilter) and isValidAndNotEmpty(m.top.studioFilter.studioName) then return m.top.studioFilter.studioName
+
+    entry = m.top.entry
+    if isValid(entry)
+        if entry.favorites = true then return tr("Favorites")
+        if isStringEqual(entry.itemType, "MusicAlbum") then return tr("Albums")
+        if isStringEqual(entry.itemType, "AlbumArtists") then return tr("Album Artists")
+        if isStringEqual(entry.itemType, "MusicArtist") then return tr("Artists")
+        if isStringEqual(entry.itemType, "Audio") then return tr("Songs")
+    end if
+
+    if not isValid(m.top.parentItem) then return ""
+    return isValid(m.top.parentItem.name) ? m.top.parentItem.name : m.top.parentItem.title
+end function
+
 sub redrawItems()
     applyGridMetrics()
 
+    focused = m.grid.itemFocused
     applySearchFilter()
 
     ' Reset cursor back to its previous location
-    m.itemGrid.jumpToItem = m.itemGrid.itemFocused
+    if focused > 0 then m.grid.jumpToItem = focused
 
     genreContent = m.genreData.getChildren(-1, 0)
     m.genreData = createSGNode("ContentNode")
@@ -396,7 +457,76 @@ function settingsKey() as string
         return "studio-" + (m.top.studioFilter.studioName ?? "")
     end if
     if isValid(m.top.entry) then return getParentItemId() + "-" + m.top.entry.id
+    return libraryKey()
+end function
+
+' A folder opened from inside a library was listed with that library's id, so it keeps the
+' library's settings rather than starting over with its own
+function libraryKey() as string
+    owner = chainLookupReturn(m.top.parentItem, "json.passedData.libraryID", "")
+    if isFolderInsideLibrary() and isValidAndNotEmpty(owner) then return owner
     return getParentItemId()
+end function
+
+function isFolderInsideLibrary() as boolean
+    if not isValid(m.top.parentItem) or m.top.parentItem.hasField("collectionType") then return false
+    return inArray(["Folder", "PhotoAlbum", "CollectionFolder"], chainLookupReturn(m.top.parentItem, "json.Type", ""))
+end function
+
+' The library the screen was opened on, rather than a genre, a studio, a music category or a
+' folder inside it
+function isLibraryRoot() as boolean
+    if isValid(m.top.genreFilter) or isValid(m.top.studioFilter) or isValid(m.top.entry) then return false
+    return isValid(m.top.parentItem) and m.top.parentItem.hasField("collectionType")
+end function
+
+function libraryCollectionType() as string
+    if not isLibraryRoot() then return ""
+    return LCase(toString(m.top.parentItem.collectionType))
+end function
+
+' Any library can list its own folders one level at a time
+function canFolderView() as boolean
+    if not isLibraryRoot() or isMusicLibrary() or isMyListLibrary() then return false
+    return not inArray([CollectionType.NEXTUP, "livetv", "channels"], libraryCollectionType())
+end function
+
+' Home videos and untyped libraries start in folder view, everything else starts flat
+function folderViewOn() as boolean
+    if not canFolderView() then return false
+    fallback = isFlatFolderLibrary() ? "on" : "off"
+    return settingOr(`library_folderView_${settingsKey()}`, fallback) = "on"
+end function
+
+function isFlatFolderLibrary() as boolean
+    collection = libraryCollectionType()
+    return canFolderView() and (collection = CollectionType.HOMEVIDEOS or collection = "" or collection = "mixed")
+end function
+
+function isMovieOrSeries() as boolean
+    return isStringEqual(m.top.mediaType, ItemType.MOVIE) or isStringEqual(m.top.mediaType, ItemType.SERIES)
+end function
+
+' Only movies and series carry what the groupings read, and folders carry none of it
+function canGroup() as boolean
+    return isMovieOrSeries() and m.folderView <> true
+end function
+
+function isSongsBrowse() as boolean
+    return isStringEqual(chainLookupReturn(m.top.entry, "itemType", ""), "Audio")
+end function
+
+' What the Sort By group offers depends on what the library holds
+function sortKind() as object
+    return {
+        music: isMusicLibrary() and not isSongsBrowse(),
+        songs: isSongsBrowse(),
+        series: isStringEqual(m.top.mediaType, ItemType.SERIES),
+        movieOrSeries: isMovieOrSeries(),
+        foldery: m.folderView = true,
+        myList: isMyListLibrary(),
+        myRating: moonfinPlugin.IsPluginInstalled() and not isValidAndNotEmpty(chainLookupReturn(m.top.parentItem, "serverUrl", ""))
+    }
 end function
 
 ' Load initial set of data
@@ -410,103 +540,65 @@ sub loadInitialItems()
     userSettings = chainLookupReturn(m.global.session, "user.settings", {})
 
     m.sortField = userSettings["display." + itemId + ".sortField"]
-    m.view = userSettings["display." + itemId + ".landing"]
     m.sortAscending = userSettings["display." + itemId + ".sortAscending"]
     m.filterState = storedFilterState(itemId)
+    m.view = ""
 
-    ' A music category keeps its own view, and starts on its own filter until the viewer changes it
+    ' A music category keeps its own view, and a list of favorites always keeps its filter
     entry = m.top.entry
     if isValid(entry)
         m.view = entry.view
-        if not isValid(userSettings["display." + itemId + ".filterState"]) then m.filterState.favorites = entry.favorites = true
+        if entry.favorites = true then m.filterState.favorites = true
+    else if isMusicLibrary() and not isValid(m.top.genreFilter) and not isValid(m.top.parentItem.parentFolder)
+        ' The classic music grid remembers which of its views was last picked
+        m.view = userSettings["display." + itemId + ".landing"]
+        if not isValid(m.view) then m.view = userSettings[`display.${ItemType.MUSICARTIST}library.defaultview`]
+        if not isValidAndNotEmpty(m.view) or not inArray(["Artists", "Albums", "Genres"], m.view) then m.view = "Artists"
     end if
 
-    ' If user has not set a preferred view for this folder, check if they've set a default view
-    if not isValid(m.view)
-        settingName = `display.${m.top.mediaType}library.defaultview`
-
-        if isStringEqual(m.top.mediaType, ItemType.PHOTOALBUM)
-            settingName = `display.${ItemType.PHOTO}library.defaultview`
-        end if
-
-        m.view = userSettings[settingName]
-    end if
-
-    if not isValidAndNotEmpty(m.sortField) then m.sortField = "SortName"
-
-    if not isValidAndNotEmpty(m.view)
-        if isStringEqual(m.top.mediaType, ItemType.MUSICARTIST)
-            m.view = "Artists"
-        else
-            m.view = "presentation"
-        end if
-    end if
     if not isValid(m.sortAscending)
         m.sortAscending = true
     else if not isStringEqual(type(m.sortAscending), "roBoolean")
         m.sortAscending = isStringEqual(m.sortAscending, "true")
     end if
 
-    ' If we're in genre or studio browse mode, force view to presentation (never "Genres")
-    if isValid(m.top.genreFilter) or isValid(m.top.studioFilter)
-        if m.view <> "presentation" then m.view = "presentation"
-    else
-        ' If view is not valid, use default view
-        if isStringEqual(m.top.mediaType, ItemType.MUSICARTIST)
-            if not inArray(["Artists", "Albums", "Genres"], m.view) then m.view = "Artists"
-        else
-            if not inArray(["presentation", "Genres", "Episodes"], m.view) then m.view = "presentation"
-        end if
+    m.folderView = folderViewOn()
+    m.groupBy = "none"
+    if canGroup() then m.groupBy = libraryGroupBy.Normalize(settingOr(`library_groupBy_${itemId}`, "none"))
+    m.scrollDirection = settingOr(`library_scrollDirection_${itemId}`, "vertical")
+    if m.libraryFilter = invalid then m.libraryFilter = chainLookupReturn(m.top.genreFilter, "libraryId", "")
 
-        if isValid(m.top.parentItem.parentFolder)
-            if m.view <> "presentation" then m.view = "presentation"
-        end if
-    end if
-
-    m.sortKey = librarySorts.KeyFor(m.sortField, isMusicLibrary(), isMyListLibrary())
+    ' Folders come first until something else is picked, and a saved sort the library no longer
+    ' offers goes back to that or to the name
+    kind = sortKind()
+    m.sortKey = librarySorts.KeyFor(m.sortField, kind)
+    if m.sortKey = "" then m.sortKey = m.folderView ? "FoldersFirst" : "SortName"
+    m.sortField = librarySorts.Chosen(m.sortKey, kind).field
     m.sortOrder = m.sortAscending ? "Ascending" : "Descending"
-    layoutStyledHeader()
 
     m.loadItemsTask.sortField = m.sortField
     m.loadItemsTask.sortAscending = m.sortAscending
     m.loadItemsTask.filterState = m.filterState
-    m.folderView = settingOr(`library_folderView_${itemId}`, "off") = "on"
     m.loadItemsTask.startIndex = 0
     m.loadItemsTask.studioIds = string.EMPTY
+    m.loadItemsTask.genreIds = string.EMPTY
     m.loadItemsTask.view = string.EMPTY
     ' The task outlives a load, so anything a branch below switches off is put back first
     m.loadItemsTask.recursive = true
+    m.loadItemsTask.itemType = string.EMPTY
+    m.loadItemsTask.excludeItemTypes = string.EMPTY
+    m.loadItemsTask.collapseBoxSetItems = true
+    m.loadItemsTask.itemId = getParentItemId()
     m.loadItemsTask.passToItem = {
-        libraryID: getParentItemId()
+        libraryID: libraryKey()
     }
 
+    ' Only the music library still lists its genres as a grid of their own
     if isStringEqual(m.view, "Genres")
         m.loadItemsTask.view = "Genres"
         m.loadItemsTask.genreIds = getParentItemId()
-        m.loadItemsTask.itemId = getParentItemId()
         m.loadItemsTask.studioIds = getParentItemId()
-        if isStringEqual(m.top.mediaType, ItemType.MUSICVIDEO)
-            m.loadItemsTask.recursive = true
-        end if
-        ' For music genres, use MusicAlbum as the includeItemTypes
-        if isStringEqual(m.top.mediaType, ItemType.MUSICARTIST)
-            m.loadItemsTask.itemType = "MusicAlbum"
-        end if
-    else if isStringEqual(m.view, "presentation")
-        m.loadItemsTask.itemId = getParentItemId()
-        m.loadItemsTask.studioIds = string.EMPTY
-        m.loadItemsTask.genreIds = string.EMPTY
-    else if isStringEqual(m.view, "Episodes")
-        m.loadItemsTask.itemId = getParentItemId()
-        m.loadItemsTask.studioIds = string.EMPTY
-        m.loadItemsTask.genreIds = string.EMPTY
-        if isStringEqual(m.loadItemsTask.sortField, "SortName")
-            m.loadItemsTask.sortField = `SeriesSortName,SortName`
-        end if
-    else if inArray(["Artists", "Albums"], m.view)
-        m.loadItemsTask.itemId = getParentItemId()
-        m.loadItemsTask.studioIds = string.EMPTY
-        m.loadItemsTask.genreIds = string.EMPTY
+        m.loadItemsTask.itemType = "MusicAlbum"
     end if
 
     ' Genre browse mode: override task params to filter by selected genre
@@ -521,9 +613,8 @@ sub loadInitialItems()
             m.loadItemsTask.genreNames = m.top.genreFilter.genreName
         end if
 
-        if isValidAndNotEmpty(m.top.genreFilter.libraryId)
-            m.loadItemsTask.itemId = m.top.genreFilter.libraryId
-        end if
+        ' All Libraries leaves the parent off so the genre is looked for everywhere
+        m.loadItemsTask.itemId = m.libraryFilter
 
         if isValidAndNotEmpty(m.top.genreFilter.itemType)
             m.loadItemsTask.itemType = m.top.genreFilter.itemType
@@ -545,21 +636,16 @@ sub loadInitialItems()
         m.loadItemsTask.recursive = false
 
         if isStringEqual(m.top.mediaType, ItemType.MUSICVIDEO)
-            m.loadItemsTask.sortField = `${m.sortField}`
             m.loadItemsTask.itemType = `${ItemType.MUSICVIDEO},${ItemType.FOLDER}`
             m.loadItemsTask.passToItem.addreplace("collectionType", ItemType.MUSICVIDEO)
         end if
-
-    else if isStringEqual(m.view, "Episodes")
-        m.loadItemsTask.recursive = true
-        m.loadItemsTask.itemType = ItemType.EPISODE
     else if isStringEqual(m.top.mediaType, ItemType.MUSICARTIST)
         ' Music library: set itemType based on selected view
         ' Use PascalCase strings to match LoadItemsTask2's case-sensitive checks
         if isStringEqual(m.view, "Albums")
             m.loadItemsTask.itemType = "MusicAlbum"
             m.loadItemsTask.recursive = true
-        else
+        else if not isStringEqual(m.view, "Genres")
             ' Default: Artists view
             m.loadItemsTask.itemType = "MusicArtist"
         end if
@@ -613,33 +699,31 @@ sub loadInitialItems()
         end if
     end if
 
-    ' Folder view lists one level at a time rather than everything underneath it, so the
-    ' folders themselves come back alongside the items
-    if m.folderView and not isValid(m.top.genreFilter) and not isValid(m.top.studioFilter)
+    ' Folder view lists one level of the library at a time, folders and all. A home videos or
+    ' mixed library out of it lists everything under it instead, minus the folders.
+    if m.folderView
         m.loadItemsTask.recursive = false
-        if isValidAndNotEmpty(m.loadItemsTask.itemType)
-            m.loadItemsTask.itemType = `${m.loadItemsTask.itemType},${ItemType.FOLDER}`
-        end if
+        m.loadItemsTask.itemType = string.EMPTY
+        m.loadItemsTask.excludeItemTypes = string.EMPTY
+        m.loadItemsTask.collapseBoxSetItems = false
+    else if isFlatFolderLibrary()
+        m.loadItemsTask.recursive = true
+        m.loadItemsTask.excludeItemTypes = librarySorts.DIRECTORY_TYPES
+        m.loadItemsTask.collapseBoxSetItems = false
     end if
 
-    m.playlistGrouped = playlistGroupingOn()
-    m.itemGrid.visible = not m.playlistGrouped
-    m.groupRows.visible = m.playlistGrouped
+    setGroupingState()
+    layoutContent()
+    layoutStyledHeader()
+    layoutClassicButtons()
 
     applyLetterNav()
     m.emptyText.visible = false
 
-    showDetails = get_user_setting_bool("ui.library.showMediaDetails", true)
+    ' Genres rows carry no per-item metadata, so the detail bar stays hidden on that view
+    showDetails = get_user_setting_bool("ui.library.showMediaDetails", true) and not isStringEqual(m.view, "Genres")
     m.infoGroup.visible = showDetails
     m.selectedItemName.visible = showDetails
-
-    applyGridMetrics()
-
-    ' Genres view hides metadata
-    if isStringEqual(m.view, "Genres")
-        m.infoGroup.visible = false
-        m.selectedItemName.visible = false
-    end if
 
     applyGridMetrics()
 
@@ -647,14 +731,46 @@ sub loadInitialItems()
     m.loadItemsTask.control = TaskControl.RUN
 
     m.getFiltersTask.observeField("filters", "FilterDataLoaded")
+    filterParent = m.top.parentItem.Id
+    if isValid(m.top.genreFilter) then filterParent = m.libraryFilter
     m.getFiltersTask.params = {
         userid: m.global.session.user.id,
-        parentid: m.top.parentItem.Id,
+        parentid: filterParent,
         includeitemtypes: m.loadItemsTask.itemType
     }
     m.getFiltersTask.control = "RUN"
 
+    if isValid(m.top.genreFilter) and m.libraries.count() = 0 then loadLibraries()
+
     updateStatusBar()
+end sub
+
+' Which grouping is on and how it shows. Playlists always group into rows, and a library
+' grouped by category shows its groups as rows when it scrolls sideways or as chips over the
+' grid when it scrolls down.
+sub setGroupingState()
+    m.grouping = ""
+    m.groupLayout = ""
+    if playlistGroupingOn()
+        m.grouping = "playlists"
+        m.groupLayout = "rows"
+    else if m.groupBy <> "none" and canGroup()
+        m.grouping = "category"
+        m.groupLayout = m.scrollDirection = "horizontal" ? "rows" : "tabs"
+    end if
+
+    wanted = m.itemGrid
+    if m.grouping = "" and m.scrollDirection = "horizontal" then wanted = m.horizontalGrid
+    if not wanted.isSameNode(m.grid)
+        m.grid.content = createSGNode("ContentNode")
+        m.grid.visible = false
+        m.grid = wanted
+    end if
+
+    m.grid.visible = m.groupLayout <> "rows"
+    m.groupRows.visible = m.groupLayout = "rows"
+    m.categoryBar.visible = m.groupLayout = "tabs"
+    if m.groupLayout <> "tabs" then m.categoryBar.tabs = []
 end sub
 
 ' Every card in the grid agrees on one set of numbers, worked out the way the other
@@ -681,18 +797,17 @@ sub noteCardSubtitles(itemData as object)
 end sub
 
 sub applyGridMetrics()
-    libraryId = settingsKey()
+    showText = get_user_setting_bool(CARD_TITLES_SETTING, true)
+    metrics = libraryCard.Metrics(posterSize(), currentImageType(), showText, m.hasCardSubtitles = true, detailedSubHeadings(), m.gridWidth)
+    if m.grouping = "playlists" then metrics = groupedCardMetrics()
 
-    imageSize = settingOr(`library_imageSize_${libraryId}`, "medium")
-    imageType = settingOr(`library_imageType_${libraryId}`, defaultImageType())
-    showText = settingOr(`library_cardText_${libraryId}`, "on") <> "off"
-
-    metrics = libraryCard.Metrics(imageSize, imageType, showText, m.hasCardSubtitles = true, detailedSubHeadings(), m.gridWidth)
-    if m.playlistGrouped = true
-        metrics = groupedCardMetrics()
+    if m.groupLayout = "rows"
+        ' A playlist row spaces its square cards out, a category row keeps the grid's own cells
+        spacing = 0
+        if m.grouping = "playlists" then spacing = GROUPED_CARD_GAP - (metrics.padX * 2)
         m.groupRows.itemSize = [m.gridWidth, metrics.cellHeight]
         m.groupRows.rowItemSize = [[metrics.cellWidth, metrics.cellHeight]]
-        m.groupRows.rowItemSpacing = [[GROUPED_CARD_GAP - (metrics.padX * 2), 0]]
+        m.groupRows.rowItemSpacing = [[spacing, 0]]
         m.groupRows.itemSpacing = [0, GROUPED_ROW_GAP]
     end if
     m.global.addFields({ libraryCardMetrics: metrics })
@@ -703,16 +818,42 @@ sub applyGridMetrics()
     m.itemGrid.numColumns = metrics.columns
     m.itemGrid.itemSpacing = [0, 0]
 
+    ' Sideways, the cards keep their size and as many rows fit as would show on screen
+    rows = Int(m.gridRoom / metrics.cellHeight)
+    if rows < 1 then rows = 1
+    m.horizontalGrid.layout = {
+        cellWidth: metrics.cellWidth,
+        cellHeight: metrics.cellHeight,
+        rows: rows,
+        columns: metrics.columns
+    }
+
     m.loadItemsTask.numberOfColumns = metrics.columns
 end sub
 
-' A grouped row draws square cards of one size with only a title under each, whatever the
-' grid is set to
+' A playlist row draws square cards at the poster size with only a title under each. A row
+' doesnt stretch its cells to fill the width the way the grid does, so each card keeps its size.
 function groupedCardMetrics() as object
-    metrics = libraryCard.MetricsFor(GROUPED_CARD_SIZE, GROUPED_CARD_SIZE, "square", libraryCard.TEXT_HEIGHT_TITLE_ONLY, detailedSubHeadings(), m.gridWidth)
-    metrics.cellWidth = GROUPED_CARD_SIZE + (metrics.padX * 2)
-    metrics.posterWidth = GROUPED_CARD_SIZE
+    metrics = libraryCard.Metrics(posterSize(), "square", get_user_setting_bool(CARD_TITLES_SETTING, true), false, detailedSubHeadings(), m.gridWidth)
+    metrics.posterWidth = metrics.posterHeight
+    metrics.cellWidth = metrics.posterWidth + (metrics.padX * 2)
     return metrics
+end function
+
+' Playlists keep a size of their own, and either follows the account's general poster size
+' until one is picked here
+function posterSize() as string
+    picked = get_user_setting(isPlaylistLibrary() ? PLAYLIST_POSTER_SIZE_SETTING : LIBRARY_POSTER_SIZE_SETTING)
+    return libraryCard.PosterSize(picked, get_user_setting(POSTER_SIZE_SETTING))
+end function
+
+' A library whose cards are square either way has nothing to pick between
+function currentImageType() as string
+    fallback = defaultImageType()
+    if fallback = "square" then return fallback
+    picked = settingOr(`library_imageType_${settingsKey()}`, fallback)
+    if not inArray(["poster", "thumbnail", "banner"], picked) then return fallback
+    return picked
 end function
 
 function isPlaylistLibrary() as boolean
@@ -736,38 +877,16 @@ function defaultImageType() as string
     if isStringEqual(orientation, ImageLayout.LANDSCAPE) then return "thumbnail"
     if isStringEqual(orientation, ImageLayout.PORTRAIT) then return "poster"
     if inArray([ItemType.PHOTO, ItemType.PHOTOALBUM, ItemType.MUSICVIDEO], m.top.mediaType) then return "thumbnail"
-    if isStringEqual(m.view, "Episodes") then return "thumbnail"
     return "poster"
 end function
 
-' Which grids this library can put up. Nothing in the other clients offers this, so it
-' leads the dialog rather than being dropped.
 function availableViews() as object
-    ' A music category is one kind of item already
-    if isValid(m.top.entry) then return []
-    if isMusicLibrary()
-        views = [
-            { key: "Artists", label: tr("Artists") },
-            { key: "Albums", label: tr("Albums") }
-        ]
-        if not isValid(m.top.genreFilter) then views.push({ key: "Genres", label: tr("Genres") })
-        return views
-    end if
-
-    views = [{ key: "presentation", label: tr("Presentation") }]
-
-    ' A genre browse, a studio browse, a boxset and a folder inside a genre are each one
-    ' grid already
-    if isValid(m.top.genreFilter) or isValid(m.top.studioFilter) then return views
-    if isValid(m.top.parentItem.parentFolder) then return views
-    if inArray([ItemType.BOXSET, CollectionType.BOXSETS, ItemType.MYLIST], getCollectionType()) then return views
-
-    views.push({ key: "Genres", label: tr("Genres") })
-    if isStringEqual(m.top.mediaType, ItemType.SERIES)
-        views.push({ key: "Episodes", label: tr("Episodes") })
-    end if
-
-    return views
+    if isValid(m.top.entry) or not isMusicLibrary() or isValid(m.top.genreFilter) then return []
+    return [
+        { key: "Artists", label: tr("Artists") },
+        { key: "Albums", label: tr("Albums") },
+        { key: "Genres", label: tr("Genres") }
+    ]
 end function
 
 function isMusicLibrary() as boolean
@@ -794,66 +913,184 @@ function storedFilterState(itemId as string) as object
     return state
 end function
 
-sub openSettingsDialog()
-    m.settingsDialog.context = {
-        libraryName: m.libraryName.text,
-        kind: isValid(m.top.genreFilter) ? tr("Genre") : isValid(m.top.studioFilter) ? tr("Studio") : tr("Libraries"),
-        showImageType: not isStringEqual(defaultImageType(), "square"),
-        showFolderView: not isValid(m.top.genreFilter) and not isValid(m.top.studioFilter),
-        showGroupByType: isPlaylistLibrary()
-    }
+' =====================================================================
+' DISPLAY AND GROUP BY
+' =====================================================================
 
-    libraryId = settingsKey()
-    m.settingsDialog.settings = {
-        imageSize: settingOr(`library_imageSize_${libraryId}`, "medium"),
-        imageType: settingOr(`library_imageType_${libraryId}`, defaultImageType()),
-        cardText: settingOr(`library_cardText_${libraryId}`, "on"),
-        letterNav: settingOr(`library_letterNav_${libraryId}`, "on"),
-        folderView: settingOr(`library_folderView_${libraryId}`, "off"),
-        groupByType: get_user_setting_bool(PLAYLIST_GROUPING_SETTING, true) ? "on" : "off"
-    }
-    m.settingsDialog.callFunc("showDialog")
+sub openDisplayDialog()
+    m.displayDialog.context = { title: tr("Display"), sections: displaySections() }
+    m.displayDialog.callFunc("showDialog")
 
     group = m.global.sceneManager.callFunc("getActiveScene")
-    group.lastFocus = m.settingsDialog
+    group.lastFocus = m.displayDialog
 end sub
 
-' Every row takes effect as it is stepped on, so this runs once per press
-sub onSettingsApplied(msg as object)
-    applied = msg.getData()
-    if not isValid(applied) then return
+function radioSection(key as string, title as string, values as object, labels as object, selected as string) as object
+    options = []
+    for i = 0 to values.count() - 1
+        options.push({ value: values[i], label: labels[i] })
+    end for
+    return { key: key, title: title, kind: "radio", options: options, selected: selected }
+end function
 
-    libraryId = settingsKey()
-    wasFolderView = settingOr(`library_folderView_${libraryId}`, "off")
+' The Display sections, then this library's alphabet bar with its folder view switch under it
+function displaySections() as object
+    sections = [radioSection("scroll", tr("Scroll Direction"), ["vertical", "horizontal"], [tr("Vertical"), tr("Horizontal")], m.scrollDirection)]
 
-    set_user_setting(`library_imageSize_${libraryId}`, applied.imageSize)
-    ' Saving the default would pin it, and the global Library Image Orientation would stop applying
-    if not isStringEqual(applied.imageType, settingOr(`library_imageType_${libraryId}`, defaultImageType())) then set_user_setting(`library_imageType_${libraryId}`, applied.imageType)
-    set_user_setting(`library_cardText_${libraryId}`, applied.cardText)
-    set_user_setting(`library_letterNav_${libraryId}`, applied.letterNav)
-    set_user_setting(`library_folderView_${libraryId}`, applied.folderView)
-
-    wasGrouped = get_user_setting_bool(PLAYLIST_GROUPING_SETTING, true) ? "on" : "off"
-    if isValid(applied.groupByType) then set_user_setting(PLAYLIST_GROUPING_SETTING, applied.groupByType = "on" ? "true" : "false")
-
-    applyLetterNav()
-
-    ' Listing folders rather than everything inside them is a different query, and grouping
-    ' needs every playlist loaded
-    if not isStringEqual(wasFolderView, applied.folderView) or (isValid(applied.groupByType) and not isStringEqual(wasGrouped, applied.groupByType))
-        resetLoadedItems()
-        loadInitialItems()
-        return
+    imageType = currentImageType()
+    if imageType <> "square"
+        sections.push(radioSection("imageType", tr("Image Type"), ["poster", "thumbnail", "banner"], [tr("Poster"), tr("Thumbnail"), tr("Banner")], imageType))
+    end if
+    if imageType <> "banner"
+        sections.push(radioSection("posterSize", tr("Poster Size"), ["small", "medium", "large", "extraLarge"], [tr("Small"), tr("Medium"), tr("Large"), tr("Extra Large")], posterSize()))
     end if
 
-    redrawItems()
+    if isPlaylistLibrary()
+        grouped = get_user_setting_bool(PLAYLIST_GROUPING_SETTING, true)
+        sections.push({ key: "grouping", title: tr("Grouping"), kind: "check", options: [{ value: "groupByType", label: tr("Group by Type") }], selected: grouped ? ["groupByType"] : [] })
+
+        types = []
+        labels = [tr("Video"), tr("Music Video"), tr("Audio (Music)"), tr("Audiobook"), tr("Book"), tr("Photo"), tr("Mixed")]
+        categories = playlistGrouping.Categories()
+        for i = 0 to categories.count() - 1
+            types.push({ value: categories[i], label: labels[i] })
+        end for
+        sections.push({ key: "playlistTypes", title: tr("Playlist Types"), kind: "check", options: types, selected: m.playlistTypes })
+    end if
+
+    letters = [{ value: "letterNav", label: tr("Alphabet bar") }]
+    chosen = []
+    if letterNavOn() then chosen.push("letterNav")
+    if canFolderView()
+        letters.push({ value: "folderView", label: tr("Folder View") })
+        if m.folderView then chosen.push("folderView")
+    end if
+    sections.push({ key: "letters", title: "", kind: "check", options: letters, selected: chosen })
+    return sections
+end function
+
+' Every pick takes effect as it is made and the dialog stays up, so it is drawn again after each
+sub onDisplayChosen(event as object)
+    choice = event.getData()
+    if not isValid(choice) then return
+
+    libraryId = settingsKey()
+    section = choice.section
+    value = choice.value
+
+    if section = "scroll"
+        set_user_setting(`library_scrollDirection_${libraryId}`, value)
+        m.scrollDirection = value
+        relayout()
+    else if section = "imageType"
+        ' Saving the default would pin it, and the global Library Image Orientation would stop applying
+        if isStringEqual(value, defaultImageType())
+            unset_user_setting(`library_imageType_${libraryId}`)
+        else
+            set_user_setting(`library_imageType_${libraryId}`, value)
+        end if
+        redrawItems()
+        layoutStyledHeader()
+    else if section = "posterSize"
+        savePosterSize(value)
+        redrawItems()
+    else if section = "grouping"
+        set_user_setting(PLAYLIST_GROUPING_SETTING, get_user_setting_bool(PLAYLIST_GROUPING_SETTING, true) ? "false" : "true")
+        relayout()
+    else if section = "playlistTypes"
+        togglePlaylistType(value)
+        applySearchFilter()
+    else if value = "letterNav"
+        set_user_setting(`library_letterNav_${libraryId}`, letterNavOn() ? "off" : "on")
+        applyLetterNav()
+        layoutStyledHeader()
+    else if value = "folderView"
+        set_user_setting(`library_folderView_${libraryId}`, m.folderView ? "off" : "on")
+        ' Listing folders rather than everything inside them is a different query
+        resetLoadedItems()
+        loadInitialItems()
+    end if
+
+    m.displayDialog.context = { title: tr("Display"), sections: displaySections() }
+    m.displayDialog.callFunc("refresh")
 end sub
 
-' The alphabet strip is the only toolbar item that can be turned off, so focus skips over
-' it while it is gone
+' Clearing the last kind would leave the page blank with no way back
+sub togglePlaylistType(category as string)
+    kept = []
+    found = false
+    for each shown in m.playlistTypes
+        if isStringEqual(shown, category)
+            found = true
+        else
+            kept.push(shown)
+        end if
+    end for
+
+    if found and kept.count() = 0 then return
+    if not found then kept.push(category)
+    m.playlistTypes = kept
+end sub
+
+' Kept on this device and sent to the server, so the size follows the account to its other screens
+sub savePosterSize(size as string)
+    key = isPlaylistLibrary() ? PLAYLIST_POSTER_SIZE_SETTING : LIBRARY_POSTER_SIZE_SETTING
+    set_user_setting(key, size)
+    pushData = settingsSync.PreparePush(key, size)
+    if not isValid(pushData) then return
+    task = createObject("roSGNode", "PostTask")
+    task.apiUrl = pushData.url
+    task.stringData = pushData.body
+    task.control = "RUN"
+    ' Held until it finishes, or a task nothing references can be collected mid flight
+    m.syncTasks.push(task)
+end sub
+
+sub openGroupDialog()
+    m.groupDialog.context = {
+        title: tr("Group By"),
+        closeOnPick: true,
+        sections: [{ key: "groupBy", title: "", kind: "radio", options: libraryGroupBy.Options(), selected: m.groupBy }]
+    }
+    m.groupDialog.callFunc("showDialog")
+
+    group = m.global.sceneManager.callFunc("getActiveScene")
+    group.lastFocus = m.groupDialog
+end sub
+
+' Grouping sorts the whole library, so the rest of it loads once a grouping is picked
+sub onGroupChosen(event as object)
+    choice = event.getData()
+    if not isValid(choice) then return
+
+    m.groupBy = libraryGroupBy.Normalize(choice.value)
+    set_user_setting(`library_groupBy_${settingsKey()}`, m.groupBy)
+    m.selectedCategory = ""
+    relayout()
+end sub
+
+' The grid, the rows or the chips are swapped and laid out again around what is already loaded
+sub relayout()
+    setGroupingState()
+    layoutContent()
+    layoutStyledHeader()
+    layoutClassicButtons()
+    applyGridMetrics()
+    applyLetterNav()
+    applySearchFilter()
+    if m.grouping <> "" then loadMoreData()
+end sub
+
+function letterNavOn() as boolean
+    return settingOr(`library_letterNav_${settingsKey()}`, "on") <> "off"
+end function
+
+' The alphabet strip can be turned off and goes while the library is grouped, so focus skips
+' over it while it is gone
 sub applyLetterNav()
-    m.alphaPicker.visible = settingOr(`library_letterNav_${settingsKey()}`, "on") <> "off" and not m.playlistGrouped
+    m.alphaPicker.visible = letterNavOn() and m.grouping = ""
     m.dockRule.visible = m.alphaPicker.visible and m.libraryStyle = "docked"
+    m.letterCaption.visible = m.dockRule.visible
 end sub
 
 sub openSortDialog(section = "" as string)
@@ -862,20 +1099,47 @@ sub openSortDialog(section = "" as string)
         views: availableViews(),
         isSeries: isStringEqual(m.top.mediaType, ItemType.SERIES),
         isMusic: isMusicLibrary(),
-        isMyList: isMyListLibrary(),
+        favoritesOnly: chainLookupReturn(m.top.entry, "favorites", false) = true,
+        sortKind: sortKind(),
         showVideoFilters: not isMusicLibrary() and not isStringEqual(m.top.mediaType, ItemType.PLAYLIST),
-        namesOnly: isStringEqual(m.view, "Genres")
+        namesOnly: isStringEqual(m.view, "Genres"),
+        libraries: m.libraries
     }
     m.sortDialog.state = {
         view: m.view,
         sortKey: m.sortKey,
         sortOrder: m.sortOrder,
-        filters: m.filterState
+        filters: m.filterState,
+        libraryId: m.libraryFilter
     }
     m.sortDialog.callFunc("showDialog")
 
     group = m.global.sceneManager.callFunc("getActiveScene")
     group.lastFocus = m.sortDialog
+end sub
+
+' The libraries a genre browse can be narrowed to, the ones that hold movies or shows
+sub loadLibraries()
+    if not isValid(m.librariesTask)
+        m.librariesTask = createObject("roSGNode", "JellyfinAPITask")
+        m.librariesTask.observeField("response", "onLibrariesLoaded")
+    end if
+    m.librariesTask.request = { path: "UserViews", params: { userId: m.global.session.user.id } }
+    m.librariesTask.control = TaskControl.RUN
+end sub
+
+sub onLibrariesLoaded(event as object)
+    response = event.getData()
+    if not isValid(response) or response.success <> true then return
+
+    libraries = []
+    for each view in responseItems(response.data)
+        collection = view.LookupCI("CollectionType")
+        if not isValidAndNotEmpty(collection) or isStringEqual(collection, CollectionType.MOVIES) or isStringEqual(collection, CollectionType.TVSHOWS)
+            libraries.push({ value: toString(view.LookupCI("Id")), label: toString(view.LookupCI("Name")) })
+        end if
+    end for
+    m.libraries = libraries
 end sub
 
 ' Every choice in the dialog takes effect as it is made, so this runs on each one rather
@@ -887,29 +1151,24 @@ sub onSortApplied(msg as object)
     itemId = settingsKey()
 
     if not isStringEqual(applied.view, m.view)
-        previousView = m.view
         m.view = applied.view
         set_user_setting("display." + itemId + ".landing", m.view)
-
-        ' Episodes draws a different card, so the grid is rebuilt around it
-        if inArray([previousView, m.view], "Episodes")
-            m.top.removeChild(m.itemGrid)
-            m.itemGridCounter++
-            createItemGrid(`itemGrid${m.itemGridCounter}`)
-        end if
 
         clearSearchQuery()
         m.top.alphaSelected = string.EMPTY
         m.loadItemsTask.nameStartsWith = " "
 
-        if not isStringEqual(m.view, "Genres") and not isValid(m.top.genreFilter)
+        if not isStringEqual(m.view, "Genres")
             set_user_setting(`display.${m.top.mediaType}library.defaultview`, m.view)
         end if
     end if
 
-    option = librarySorts.Chosen(applied.sortKey, isMusicLibrary(), isMyListLibrary())
+    ' A genre browse narrowed to one library keeps it only while the screen is open
+    m.libraryFilter = applied.libraryId ?? ""
+
+    option = librarySorts.Chosen(applied.sortKey, sortKind())
     m.sortKey = option.value
-    m.sortOrder = isValidAndNotEmpty(applied.sortOrder) ? applied.sortOrder : option.order
+    m.sortOrder = isStringEqual(applied.sortOrder, "Descending") ? "Descending" : "Ascending"
     m.sortField = option.field
     m.sortAscending = isStringEqual(m.sortOrder, "Ascending")
     m.filterState = applied.filters
@@ -925,7 +1184,7 @@ end sub
 ' A dialog left open while the grid reloads would lose focus to it, since setting the
 ' grid's content takes focus back
 sub restoreDialogFocus(group as object)
-    for each dialog in [m.sortDialog, m.settingsDialog]
+    for each dialog in m.dialogs
         if dialog.visible
             dialog.callFunc("focusDialog")
             group.lastFocus = dialog
@@ -937,18 +1196,8 @@ end sub
 ' The toolbar buttons draw their focus from a flag of their own, so the button that opened the
 ' dialog would keep looking focused while the list has the remote
 sub onSortClosed()
-    ' Modern and Docked name what each control holds, so focus goes back to the one that opened it
-    if m.libraryStyle <> "classic"
-        focusToolbarItem(m.toolbarFocusIndex)
-        return
-    end if
-
-    unfocusAllToolbarItems()
-    m.itemGrid.setFocus(m.itemGrid.opacity = 1)
-    m.genreGrid.setFocus(m.genreGrid.opacity = 1)
-
-    group = m.global.sceneManager.callFunc("getActiveScene")
-    group.lastFocus = m.itemGrid.opacity = 1 ? m.itemGrid : m.genreGrid
+    ' Focus goes back to the control that opened the dialog
+    focusToolbarItem(m.toolbarFocusIndex)
 end sub
 
 ' What the library holds, for the genre, rating, tag, year and language groups
@@ -994,6 +1243,8 @@ sub ItemDataLoaded(msg)
     itemData = shownData
     itemCount = itemData.count()
 
+    firstPage = m.loadedItems = 0
+
     if isStringEqual(m.view, "Genres")
         ' Reset genre grid data
         m.genreData.removeChildren(m.genreData.getChildren(-1, 0))
@@ -1004,17 +1255,11 @@ sub ItemDataLoaded(msg)
 
         m.loadedItems = m.genreData.getChildCount()
 
-        m.itemGrid.opacity = 0
+        m.grid.opacity = 0
         m.genreGrid.opacity = 1
 
-        unfocusAllToolbarItems()
-        m.genreGrid.setFocus(true)
-        group = m.global.sceneManager.callFunc("getActiveScene")
-        group.lastFocus = m.genreGrid
-
         stopLoadingOperation()
-
-        restoreDialogFocus(group)
+        focusFirstPage()
 
         if m.loadedItems = 0
             m.emptyText.text = tr("No items found. Try adjusting your selected filters.")
@@ -1025,22 +1270,11 @@ sub ItemDataLoaded(msg)
         return
     end if
 
-    m.itemGrid.opacity = "1"
-    m.genreGrid.opacity = "0"
-
-    ' A page arriving behind the open keyboard must not pull focus out of it, and a later page
-    ' of grouped playlists leaves focus wherever it is
-    if not isValid(m.keyboard) and not (m.playlistGrouped and m.loadedItems > 0) and not styledHeaderFocused()
-        contentList = m.playlistGrouped ? m.groupRows : m.itemGrid
-        unfocusAllToolbarItems()
-        contentList.setFocus(true)
-        m.genreGrid.setFocus(false)
-        group = m.global.sceneManager.callFunc("getActiveScene")
-        group.lastFocus = contentList
-    end if
+    m.grid.opacity = 1
+    m.genreGrid.opacity = 0
 
     if m.data.getChildCount() = 0
-        m.itemGrid.jumpToItem = 0
+        m.grid.jumpToItem = 0
     end if
 
     for each item in itemData
@@ -1048,20 +1282,28 @@ sub ItemDataLoaded(msg)
     end for
     noteCardSubtitles(itemData)
 
-    if m.searchQuery = ""
-        m.data.appendChildren(itemData)
-    else
+    ' A search or a narrowed set of playlist types redraws from everything loaded, and a
+    ' grouping only takes in the page that just arrived
+    if narrowing()
         applySearchFilter()
+    else
+        m.data.appendChildren(itemData)
+        if m.grouping = "playlists"
+            refreshPlaylistGroups()
+        else if m.grouping = "category"
+            addToCategoryGroups(itemData)
+        else
+            redrawSideways()
+        end if
     end if
+
+    if isPlaylistLibrary() then queueCategoryChecks(itemData)
 
     ' Update the stored counts
     m.loadedItems = m.loadedItems + itemCount
     m.loadedRows = m.loadedItems / m.itemGrid.numColumns
 
-    if m.playlistGrouped
-        refreshPlaylistGroups()
-        queueCategoryChecks(itemData)
-    end if
+    if firstPage then focusFirstPage()
 
     ' If there are no items to display, show message
     if m.loadedItems = 0
@@ -1083,11 +1325,37 @@ sub ItemDataLoaded(msg)
     updateStatusBar()
 
     ' Grouping sorts the whole library, so the rest of it loads without waiting to be scrolled to
-    if m.playlistGrouped
-        loadMoreData()
-    else
-        queueSearchPage()
+    queueNextPage()
+end sub
+
+' The screen opens on Home, and a reload after that puts focus back in the grid. A page arriving
+' behind the open keyboard, a dialog or the header controls leaves focus where it is.
+sub focusFirstPage()
+    group = m.global.sceneManager.callFunc("getActiveScene")
+    if m.openedOnHome <> true
+        m.openedOnHome = true
+        focusToolbarItem(FOCUS_HOME)
+    else if not isValid(m.keyboard) and not styledHeaderFocused() and not dialogOpen()
+        unfocusAllToolbarItems()
+        focusContent()
     end if
+    restoreDialogFocus(group)
+end sub
+
+function dialogOpen() as boolean
+    for each dialog in m.dialogs
+        if dialog.visible then return true
+    end for
+    return false
+end function
+
+function narrowing() as boolean
+    return m.searchQuery.Trim() <> "" or m.playlistTypes.count() < playlistGrouping.Categories().count()
+end function
+
+' The sideways grid only draws the cards in view, so it's told when its content grows under it
+sub redrawSideways()
+    if m.grid.isSameNode(m.horizontalGrid) then m.horizontalGrid.callFunc("redraw")
 end sub
 
 ' Set Selected Name
@@ -1104,22 +1372,24 @@ end sub
 
 ' Handle new item being focused
 sub onItemFocused()
-    itemInt = m.itemGrid.itemFocused
-
-    if itemInt = -1
-        return
-    end if
+    if m.grid.itemFocused = -1 then return
 
     ' Lazy loading: Load more items when user is near the end
-    focusedRow = m.itemGrid.currFocusRow
-    if m.loadItemsTask.totalRecordCount > m.serverPosition
-        if focusedRow >= m.loadedRows - 3
-            loadMoreData()
-        end if
-    end if
+    if m.loadItemsTask.totalRecordCount > m.serverPosition and nearLoadedEnd() then loadMoreData()
 
     showFocusedItem()
 end sub
+
+' Within three rows, or three columns sideways, of the last card loaded
+function nearLoadedEnd() as boolean
+    if m.grid.isSameNode(m.horizontalGrid)
+        layout = m.horizontalGrid.layout
+        if not isValid(layout) then return false
+        reach = (m.horizontalGrid.firstColumn + layout.columns + 3) * layout.rows
+        return reach >= m.loadedItems
+    end if
+    return m.itemGrid.currFocusRow >= m.loadedRows - 3
+end function
 
 ' The name, facts and backdrop of whatever card has focus
 sub showFocusedItem()
@@ -1317,7 +1587,7 @@ end sub
 
 ' Item Selected
 sub onItemSelected()
-    m.top.selectedItem = m.itemGrid.content.getChild(m.itemGrid.itemSelected)
+    m.top.selectedItem = m.grid.content.getChild(m.grid.itemSelected)
     m.top.selectedItem = invalid
 end sub
 
@@ -1325,8 +1595,8 @@ end sub
 function getItemFocused()
     if m.groupRows.isinFocusChain()
         return groupRowItemAt(m.groupRows.rowItemFocused)
-    else if m.itemGrid.isinFocusChain()
-        return getItemGridFocusedItem(m.itemGrid)
+    else if m.grid.isinFocusChain()
+        return getItemGridFocusedItem(m.grid)
     else if m.genreGrid.isinFocusChain() and m.genreGrid.itemFocused >= 0
         return m.genreGrid.content.getChild(m.genreGrid.itemFocused)
     end if
@@ -1379,6 +1649,161 @@ sub refreshPlaylistGroups()
     if m.emptyText.visible then m.emptyText.text = tr("No items found")
 end sub
 
+' =====================================================================
+' GROUP BY
+' =====================================================================
+
+sub resetCategoryGroups()
+    ' What each category holds, under the category's name as it was first seen
+    m.categoryItems = {}
+    m.categoryLabels = []
+    m.categoryRows = {}
+    m.categoryShown = invalid
+    if not isValid(m.selectedCategory) then m.selectedCategory = ""
+end sub
+
+sub rebuildCategoryGroups()
+    resetCategoryGroups()
+    m.groupRows.content = createSGNode("ContentNode")
+    addToCategoryGroups(filteredItems())
+    if m.categoryLabels.count() = 0
+        m.categoryBar.tabs = []
+        m.itemGrid.content = createSGNode("ContentNode")
+    end if
+end sub
+
+' Each page lands in the categories it belongs to, rather than every category being built
+' again. An item can sit in more than one row, and a node only has one parent, so every row past
+' its first gets a copy.
+sub addToCategoryGroups(items as object)
+    rows = m.groupLayout = "rows"
+    touched = {}
+    added = false
+
+    for each item in items
+        firstRow = true
+        for each key in libraryGroupBy.KeysFor(item.json, m.groupBy)
+            if not m.categoryItems.DoesExist(key)
+                m.categoryItems[key] = { label: key, items: [] }
+                m.categoryLabels.push(key)
+                added = true
+            end if
+            category = m.categoryItems[key]
+            category.items.push(item)
+            touched[key] = true
+
+            if rows
+                row = m.categoryRows[key]
+                if not isValid(row)
+                    row = createSGNode("ContentNode")
+                    m.categoryRows[key] = row
+                end if
+                if firstRow
+                    row.appendChild(item)
+                else
+                    row.appendChild(item.clone(true))
+                end if
+            else if isStringEqual(key, m.selectedCategory) and isValid(m.categoryShown)
+                m.categoryShown.appendChild(item)
+            end if
+            firstRow = false
+        end for
+    end for
+
+    if added then m.categoryLabels = libraryGroupBy.Ordered(m.categoryLabels, m.groupBy)
+
+    if rows
+        for each key in touched
+            category = m.categoryItems[key]
+            m.categoryRows[key].title = `${category.label} (${category.items.count().toStr()})`
+        end for
+        ' Only a new category changes the order the rows run in. Swapping the rows in puts focus
+        ' back on the first one, so it goes back to the row it was on.
+        if added
+            focused = m.groupRows.rowItemFocused
+            focusedRow = invalid
+            if isValid(m.groupRows.content) and isValid(focused) and focused.count() = 2 then focusedRow = m.groupRows.content.getChild(focused[0])
+            root = createSGNode("ContentNode")
+            target = invalid
+            for each label in m.categoryLabels
+                row = m.categoryRows[label]
+                if isValid(focusedRow) and row.isSameNode(focusedRow) then target = [root.getChildCount(), focused[1]]
+                root.appendChild(row)
+            end for
+            m.groupRows.content = root
+            if isValid(target) then m.groupRows.jumpToRowItem = target
+        end if
+        return
+    end if
+
+    ' The category in view stays in view across a reload, or the first one shows
+    if not isValid(m.categoryShown) or not m.categoryItems.DoesExist(m.selectedCategory)
+        if m.categoryItems.DoesExist(m.selectedCategory)
+            showCategory(m.selectedCategory)
+        else if m.categoryLabels.count() > 0
+            showCategory(m.categoryLabels[0])
+        end if
+    end if
+    if touched.count() > 0 then drawCategoryTabs()
+end sub
+
+' The chips name each category with how much it holds, and stay on the one being shown
+sub drawCategoryTabs()
+    tabs = []
+    selected = 0
+    for i = 0 to m.categoryLabels.count() - 1
+        category = m.categoryItems[m.categoryLabels[i]]
+        tabs.push({ id: category.label, label: `${category.label} (${category.items.count().toStr()})` })
+        if isStringEqual(category.label, m.selectedCategory) then selected = i
+    end for
+    m.categoryBar.tabs = tabs
+    m.categoryBar.focusIndex = selected
+    m.categoryBar.selectedIndex = selected
+end sub
+
+' The grid holds one category at a time, so the cards move into it rather than being copied
+sub showCategory(key as string)
+    category = m.categoryItems[key]
+    if not isValid(category) then return
+
+    m.selectedCategory = category.label
+    m.categoryShown = createSGNode("ContentNode")
+    m.categoryShown.appendChildren(category.items)
+    m.itemGrid.content = m.categoryShown
+    m.itemGrid.jumpToItem = 0
+end sub
+
+sub onCategorySelected()
+    index = m.categoryBar.selectedIndex
+    if index < 0 or index >= m.categoryLabels.count() then return
+    label = m.categoryLabels[index]
+    if isStringEqual(label, m.selectedCategory) and isValid(m.categoryShown) then return
+    showCategory(label)
+end sub
+
+' Focus only leaves the chips when one is pressed
+sub onCategoryActivated()
+    if m.categoryBar.activated < 0 then return
+    focusGridItems()
+end sub
+
+' Docked keeps its controls left of the chips, and Classic and Modern keep theirs above them
+sub onCategoryEscape()
+    escape = m.categoryBar.escape
+    if escape = "up" or (escape = "left" and m.libraryStyle = "docked")
+        focusToolbarItem(m.toolbarFocusIndex)
+    else if escape = "down"
+        focusGridItems()
+    end if
+end sub
+
+sub focusGridItems()
+    if not isValid(m.itemGrid.content) or m.itemGrid.content.getChildCount() = 0 then return
+    unfocusAllToolbarItems()
+    m.itemGrid.setFocus(true)
+    setLastFocus(m.itemGrid)
+end sub
+
 ' Playlists that could be more than one kind are looked into, each only once
 sub queueCategoryChecks(items as object)
     for each item in items
@@ -1404,7 +1829,11 @@ sub onPlaylistCategories(event as object)
     resolved = event.getData()
     if not isValid(resolved) then return
     m.playlistCategories.Append(resolved)
-    if m.playlistGrouped then refreshPlaylistGroups()
+    if m.grouping = "playlists"
+        refreshPlaylistGroups()
+    else if narrowing()
+        applySearchFilter()
+    end if
 end sub
 
 ' Playlists that turned up while a look was running go once it finishes
@@ -1437,7 +1866,9 @@ sub resetLoadedItems()
     m.allItems = []
     m.searchNames = []
     m.data = createSGNode("ContentNode")
-    m.itemGrid.content = m.data
+    m.grid.content = m.data
+    resetCategoryGroups()
+    m.groupRows.content = createSGNode("ContentNode")
 end sub
 
 ' The query narrows what is already loaded rather than asking the server again, so the
@@ -1445,9 +1876,7 @@ end sub
 sub applySearchFilter()
     m.data = createSGNode("ContentNode")
     m.data.appendChildren(filteredItems())
-
-    m.itemGrid.content = m.data
-    if m.playlistGrouped then refreshPlaylistGroups()
+    showContent()
     updateStatusBar()
 
     ' Handing the grid new content puts focus back on it, which would send the next
@@ -1455,20 +1884,44 @@ sub applySearchFilter()
     if isValid(m.keyboard) then m.keyboard.setFocus(true)
 end sub
 
+' Hands what is loaded to whatever is showing it: the grid, the playlist rows or the categories
+sub showContent()
+    if m.grouping = "playlists"
+        refreshPlaylistGroups()
+    else if m.grouping = "category"
+        rebuildCategoryGroups()
+    else
+        m.grid.content = m.data
+        redrawSideways()
+    end if
+end sub
+
 function filteredItems() as object
+    items = m.allItems
     query = accentFolding.ForSearch(m.searchQuery.Trim())
-    if query = "" then return m.allItems
+    if query <> ""
+        ' Folding costs more than matching, so each name is only folded once
+        for i = m.searchNames.count() to m.allItems.count() - 1
+            m.searchNames.push(sortableName(m.allItems[i]))
+        end for
 
-    ' Folding costs more than matching, so each name is only folded once
-    for i = m.searchNames.count() to m.allItems.count() - 1
-        m.searchNames.push(sortableName(m.allItems[i]))
-    end for
+        items = []
+        for i = 0 to m.allItems.count() - 1
+            if m.searchNames[i].instr(query) <> -1 then items.push(m.allItems[i])
+        end for
+    end if
 
-    matches = []
-    for i = 0 to m.allItems.count() - 1
-        if m.searchNames[i].instr(query) <> -1 then matches.push(m.allItems[i])
+    if m.playlistTypes.count() = playlistGrouping.Categories().count() then return items
+
+    ' Only playlists answer to the type checkboxes, anything else in the library stays
+    shown = []
+    for each item in items
+        json = item.json
+        if not isValid(json) or not isStringEqual(json.LookupCI("Type"), "Playlist") or inArray(m.playlistTypes, playlistGrouping.CategoryOf(json, m.playlistCategories))
+            shown.push(item)
+        end if
     end for
-    return matches
+    return shown
 end function
 
 ' The server sorts on SortName, so a query is matched against that where it exists
@@ -1482,15 +1935,15 @@ sub onSearchQueryChanged(event as object)
     m.searchQuery = event.getData()
     m.searchBox.query = m.searchQuery
     applySearchFilter()
-    queueSearchPage()
+    queueNextPage()
 end sub
 
-' Matching only sees the pages already fetched, so a query that reaches past them pulls the
-' rest in a page at a time. Typing would restart that walk on every letter, so it waits for a
-' pause first.
-sub queueSearchPage()
+' Matching only sees the pages already fetched, so a query or a grouping that reaches past them
+' pulls the rest in a page at a time. Typing would restart that walk on every letter, so it waits
+' for a pause first.
+sub queueNextPage()
     if isValid(m.searchPageTimer) then m.searchPageTimer.control = "stop"
-    if m.searchQuery.Trim() = "" then return
+    if m.searchQuery.Trim() = "" and m.grouping = "" then return
 
     if not isValid(m.searchPageTimer)
         m.searchPageTimer = createObject("roSGNode", "Timer")
@@ -1507,7 +1960,14 @@ sub clearSearchQuery()
 end sub
 
 sub onSearchPageTimer()
-    if m.searchQuery.Trim() <> "" then loadMoreData()
+    if m.searchQuery.Trim() = "" and m.grouping = "" then return
+    ' The task is still winding down from the page it just handed over, and a running task ignores
+    ' being run again
+    if m.loadItemsTask.state = "run"
+        m.searchPageTimer.control = "start"
+        return
+    end if
+    loadMoreData()
 end sub
 
 sub openSearchKeyboard()
@@ -1545,20 +2005,27 @@ sub alphaSelectedChanged()
     loadInitialItems()
 end sub
 
+' The item is gone from the server, so it leaves every list it was drawn in and the count drops
+sub removeItem(itemId as string)
+    kept = []
+    for each item in m.allItems
+        if not isStringEqual(chainLookupReturn(item, "json.Id", ""), itemId) then kept.push(item)
+    end for
+    removed = m.allItems.count() - kept.count()
+    if removed = 0 then return
 
-sub createItemGrid(itemGridID = "itemGrid" as string)
-    m.itemGrid = createObject("rosgnode", "MarkupGrid")
-    m.itemGrid.id = itemGridID
-    m.itemGrid.itemSpacing = "[20, 20]"
-    m.itemGrid.vertFocusAnimationStyle = "fixed"
-    m.itemGrid.observeField("itemFocused", "onItemFocused")
-    m.itemGrid.observeFieldScoped("itemSelected", "onItemSelected")
-    m.itemGrid.drawFocusFeedback = false
-    m.itemGrid.itemComponentName = "LibraryCard"
+    focused = m.grid.itemFocused
+    m.allItems = kept
+    m.searchNames = []
+    m.loadedItems -= removed
+    m.serverPosition -= removed
+    m.loadItemsTask.totalRecordCount -= removed
+    applySearchFilter()
 
-    m.top.insertChild(m.itemGrid, 1)
-    applyLibraryStyle()
-    applyGridMetrics()
+    shown = m.grid.content
+    if not isValid(shown) or m.groupLayout = "rows" then return
+    if focused >= shown.getChildCount() then focused = shown.getChildCount() - 1
+    if focused > 0 then m.grid.jumpToItem = focused
 end sub
 
 ' =====================================================================
@@ -1568,7 +2035,13 @@ end sub
 ' The count sits beside the library name, and is re-centred as it changes width
 sub updateStatusBar()
     totalCount = m.loadItemsTask.totalRecordCount - m.blockedCount
-    m.itemCountLabel.text = totalCount > 0 ? `${totalCount} ${tr("Items")}` : ""
+    countText = ""
+    if totalCount = 1
+        countText = tr("1 item")
+    else if totalCount > 1
+        countText = tr("{count} items").Replace("{count}", totalCount.toStr())
+    end if
+    m.itemCountLabel.text = countText
     centreTitleRow()
 end sub
 
@@ -1605,11 +2078,8 @@ sub applyLibraryStyle()
     classic = style = "classic"
     docked = style = "docked"
 
-    for each btn in m.classicButtons
-        btn.visible = classic
-    end for
     m.styledHeader.visible = not classic
-    m.toolbarButtons = classic ? m.classicButtons : [m.styledHome, m.styledSort, m.styledDisplay]
+    m.toolbarButtons = classic ? m.classicButtons : m.styledButtons
     m.dockPanel.visible = docked
     m.dockEdge.visible = docked
     m.dockRule.visible = docked and m.alphaPicker.visible
@@ -1617,23 +2087,13 @@ sub applyLibraryStyle()
         node.visible = style = "modern"
     end for
 
-    gridLeft = MARGIN_X
-    gridTop = 316
-    m.gridWidth = libraryCard.GRID_WIDTH
     m.focusedInfo.translation = [MARGIN_X, 84]
-    m.alphaPicker.translation = [240, 255]
     if style = "modern"
-        gridTop = MODERN_GRID_TOP
         m.focusedInfo.translation = [MARGIN_X, MODERN_BAR_TOP + MODERN_BAR_HEIGHT + 16]
         m.alphaPicker.translation = [MARGIN_X, MODERN_GRID_TOP - 50]
     else if docked
-        gridLeft = DOCK_GRID_LEFT
-        gridTop = DOCK_GRID_TOP
-        m.gridWidth = DOCK_GRID_WIDTH
         m.focusedInfo.translation = [DOCK_GRID_LEFT, 42]
-        m.alphaPicker.translation = [DOCK_PAD_X, 498]
     end if
-    m.selectedItemName.width = m.gridWidth
 
     ' The letters run in one line, or seven to a row in the panel with every row in view
     m.alphaGrid.numColumns = docked ? 7 : 28
@@ -1645,19 +2105,85 @@ sub applyLibraryStyle()
         m.searchBox.translation = [1369, 9]
         m.searchBox.boxWidth = 464
     end if
+
+    layoutContent()
+    m.selectedItemName.width = m.gridWidth
     m.libraryName.width = docked ? DOCK_ROW_WIDTH - DOCK_TITLE_LEFT + DOCK_PAD_X : 0
 
+    layoutClassicButtons()
+    layoutStyledHeader()
+    centreTitleRow()
+end sub
+
+' Where the grid, the rows and the chips sit for the style, with the chips taking room off the top
+sub layoutContent()
+    gridLeft = MARGIN_X
+    gridTop = 316
+    m.gridWidth = libraryCard.GRID_WIDTH
+    if m.libraryStyle = "modern"
+        gridTop = MODERN_GRID_TOP
+    else if m.libraryStyle = "docked"
+        gridLeft = DOCK_GRID_LEFT
+        gridTop = DOCK_GRID_TOP
+        m.gridWidth = DOCK_GRID_WIDTH
+    end if
+
+    m.categoryBar.translation = [gridLeft, gridTop]
+    m.categoryBar.maxWidth = m.gridWidth
+    if m.groupLayout = "tabs" then gridTop += CATEGORY_BAR_SPACE
+
     room = 1056 - gridTop
-    for each grid in [m.itemGrid, m.groupRows, m.genreGrid]
+    m.gridRoom = room
+    for each grid in [m.itemGrid, m.horizontalGrid, m.groupRows, m.genreGrid]
         grid.translation = [gridLeft, gridTop]
     end for
     m.itemGrid.clippingRect = [0, 0, m.gridWidth, room]
+    m.horizontalGrid.clippingRect = [0, 0, m.gridWidth, room]
     m.groupRows.clippingRect = [0, -60, m.gridWidth, room + 60]
     m.genreGrid.clippingRect = [-30, -20, m.gridWidth + 60, room + 37]
-    m.genreGrid.numColumns = docked ? 3 : 4
+    m.genreGrid.numColumns = m.libraryStyle = "docked" ? 3 : 4
+end sub
 
-    layoutStyledHeader()
-    centreTitleRow()
+' Which header controls this library shows, in the order focus walks them. Home leads, then the
+' search in Modern and Docked, Sort, Group By for movies and shows, Show where there is a played
+' status, Shuffle for songs and Display for anything but music.
+function toolbarOrder() as object
+    classic = m.libraryStyle = "classic"
+    order = [FOCUS_HOME]
+    if not classic then order.push(FOCUS_SEARCH)
+    order.push(FOCUS_SORT)
+    if canGroup() then order.push(FOCUS_GROUP)
+    if not classic and not isMusicLibrary() then order.push(FOCUS_SHOW)
+    if isSongsBrowse() then order.push(FOCUS_SHUFFLE)
+    if not isMusicLibrary() then order.push(FOCUS_DISPLAY)
+    return order
+end function
+
+function headerControlShown(index as integer) as boolean
+    return hasIndex(toolbarOrder(), index)
+end function
+
+function hasIndex(order as object, index as integer) as boolean
+    for each entry in order
+        if entry = index then return true
+    end for
+    return false
+end function
+
+' Classic's icons sit in one line over the grid with the letters after them
+sub layoutClassicButtons()
+    classic = m.libraryStyle = "classic"
+    x = MARGIN_X
+    for each index in [FOCUS_HOME, FOCUS_SORT, FOCUS_GROUP, FOCUS_SHUFFLE, FOCUS_DISPLAY]
+        button = m.classicButtons[index]
+        button.visible = classic and headerControlShown(index)
+        if button.visible
+            button.callFunc("layout", { height: CLASSIC_BUTTON_SIZE })
+            button.translation = [x, CLASSIC_BAR_TOP]
+            x += CLASSIC_BUTTON_SIZE + CLASSIC_BUTTON_GAP
+        end if
+    end for
+    if classic then m.alphaPicker.translation = [x + 12, 255]
 end sub
 
 ' The controls name what they are set to, so they are laid out again whenever that changes
@@ -1665,29 +2191,48 @@ sub layoutStyledHeader()
     ' The sort label needs the library, which init runs before
     if m.libraryStyle = "classic" or not isValid(m.top.parentItem) then return
 
-    sortName = librarySorts.Chosen(m.sortKey, isMusicLibrary(), isMyListLibrary()).label
-    sortArgs = { height: HEADER_CONTROL_HEIGHT, text: tr("Sort by"), value: sortName, sortOrder: m.sortOrder }
-    showArgs = { height: HEADER_CONTROL_HEIGHT, text: tr("Show"), value: playedLabel() }
+    ' What each control says, by its place in the focus order
+    labeled = [invalid, invalid, invalid, invalid, invalid, invalid, invalid, invalid]
+    labeled[FOCUS_SORT] = { height: HEADER_CONTROL_HEIGHT, text: tr("Sort By"), value: librarySorts.Chosen(m.sortKey, sortKind()).label, sortOrder: m.sortOrder }
+    labeled[FOCUS_GROUP] = { height: HEADER_CONTROL_HEIGHT, text: tr("Group By"), value: libraryGroupBy.Label(m.groupBy) }
+    labeled[FOCUS_SHOW] = { height: HEADER_CONTROL_HEIGHT, text: tr("Show"), value: playedLabel() }
     m.styledHome.callFunc("layout", { height: HEADER_CONTROL_HEIGHT })
+
+    shown = toolbarOrder()
+    for i = 1 to m.styledButtons.count() - 1
+        button = m.styledButtons[i]
+        if isValid(button) then button.visible = hasIndex(shown, i)
+    end for
 
     if m.libraryStyle = "docked"
         m.styledHome.translation = [DOCK_PAD_X - 6, 42]
         m.searchBox.translation = [DOCK_PAD_X, 132]
         m.searchBox.boxWidth = DOCK_ROW_WIDTH
-        m.styledDisplay.icon = "grid_view_outlined"
-        displayArgs = { text: tr("Display") }
+        m.styledDisplay.icon = "grid_view"
+        labeled[FOCUS_SHUFFLE] = { text: tr("Shuffle") }
+        labeled[FOCUS_DISPLAY] = { text: tr("Display"), value: imageTypeLabel() }
         rowTop = 222
-        for each row in [[m.styledSort, sortArgs], [m.styledShow, showArgs], [m.styledDisplay, displayArgs]]
-            row[1].height = DOCK_ROW_HEIGHT
-            row[1].width = DOCK_ROW_WIDTH
-            row[0].callFunc("layout", row[1])
-            row[0].translation = [DOCK_PAD_X, rowTop]
-            rowTop += DOCK_ROW_HEIGHT + 6
+        for each index in shown
+            args = labeled[index]
+            if isValid(args)
+                args.height = DOCK_ROW_HEIGHT
+                args.width = DOCK_ROW_WIDTH
+                m.styledButtons[index].callFunc("layout", args)
+                m.styledButtons[index].translation = [DOCK_PAD_X, rowTop]
+                rowTop += DOCK_ROW_HEIGHT + 6
+            end if
         end for
+
+        ' The letters follow the last row, under a rule and a caption saying what they do
+        m.dockRule.translation = [DOCK_PAD_X, rowTop + 12]
+        m.letterCaption.translation = [DOCK_PAD_X, rowTop + 25]
+        m.letterCaption.width = DOCK_ROW_WIDTH
+        m.letterCaption.height = 26
+        m.alphaPicker.translation = [DOCK_PAD_X, rowTop + 63]
         return
     end if
 
-    ' Home and the search lead the bar, and Sort, Show and Display are packed against its far end
+    ' Home and the search lead the bar, and the labeled controls are packed against its far end
     top = MODERN_BAR_TOP + MODERN_BAR_PAD
     barRight = MARGIN_X + libraryCard.GRID_WIDTH - MODERN_BAR_PAD
     m.modernBar.translation = [MARGIN_X, MODERN_BAR_TOP]
@@ -1699,12 +2244,20 @@ sub layoutStyledHeader()
 
     m.styledHome.translation = [MARGIN_X + MODERN_BAR_PAD, top]
     m.styledDisplay.icon = "settings"
-    displayLeft = barRight - m.styledDisplay.callFunc("layout", { height: HEADER_CONTROL_HEIGHT })
-    m.styledDisplay.translation = [displayLeft, top]
-    showLeft = displayLeft - MODERN_CONTROL_GAP - m.styledShow.callFunc("layout", showArgs)
-    m.styledShow.translation = [showLeft, top]
-    sortLeft = showLeft - MODERN_CONTROL_GAP - m.styledSort.callFunc("layout", sortArgs)
-    m.styledSort.translation = [sortLeft, top]
+
+    right = barRight + MODERN_CONTROL_GAP
+    sortLeft = right
+    for i = shown.count() - 1 to 0 step -1
+        index = shown[i]
+        if index <> FOCUS_HOME and index <> FOCUS_SEARCH
+            args = labeled[index]
+            if not isValid(args) then args = { height: HEADER_CONTROL_HEIGHT }
+            left = right - MODERN_CONTROL_GAP - m.styledButtons[index].callFunc("layout", args)
+            m.styledButtons[index].translation = [left, top]
+            right = left
+            sortLeft = left
+        end if
+    end for
 
     ruleTop = MODERN_BAR_TOP + (MODERN_BAR_HEIGHT - 42) / 2
     searchLeft = MARGIN_X + MODERN_BAR_PAD + HEADER_CONTROL_HEIGHT + MODERN_BAR_PAD
@@ -1715,6 +2268,15 @@ sub layoutStyledHeader()
     m.searchBox.boxWidth = sortLeft - (MODERN_BAR_PAD * 2) - 1 - searchLeft
 end sub
 
+function imageTypeLabel() as string
+    if isPlaylistLibrary() then return ""
+    imageType = currentImageType()
+    if imageType = "thumbnail" then return tr("Thumbnail")
+    if imageType = "banner" then return tr("Banner")
+    if imageType = "poster" then return tr("Poster")
+    return ""
+end function
+
 function playedLabel() as string
     for each option in libraryFilters.PlayedOptions()
         if isStringEqual(option.value, m.filterState.played) then return option.label
@@ -1724,32 +2286,50 @@ end function
 
 function styledHeaderFocused() as boolean
     if m.libraryStyle = "classic" then return false
-    if m.searchBox.isInFocusChain() or m.styledShow.isInFocusChain() then return true
+    if m.searchBox.isInFocusChain() then return true
+    return toolbarButtonFocused()
+end function
+
+function toolbarButtonFocused() as boolean
     for each btn in m.toolbarButtons
-        if btn.isInFocusChain() then return true
+        if isValid(btn) and btn.isInFocusChain() then return true
     end for
     return false
 end function
 
-' Modern steps along its bar with Left and Right and Docked down its panel with Up and Down, both
-' in the order Home, search, Sort, Show, Display. The other axis leaves for the letters or the grid.
-function onStyledHeaderKey(key as string) as boolean
-    if isStringEqual(key, KeyCode.BACK) or (isStringEqual(key, KeyCode.OK) and m.toolbarFocusIndex = 0)
-        reclaimResources()
-        m.global.sceneManager.callfunc("popScene")
+' Modern steps along its bar with Left and Right, Docked down its panel with Up and Down and
+' Classic along its icons, all in the order toolbarOrder gives. The other axis leaves for the
+' letters, the search or the grid.
+function onToolbarKey(key as string) as boolean
+    if isStringEqual(key, KeyCode.BACK)
+        leaveLibrary()
         return true
     end if
 
     if isStringEqual(key, KeyCode.OK)
-        if m.toolbarFocusIndex = 4 then openSearchKeyboard()
-        if m.toolbarFocusIndex = 1 then openSortDialog()
-        if m.toolbarFocusIndex = 5 then openSortDialog("played")
-        if m.toolbarFocusIndex = 2 then openSettingsDialog()
+        index = m.toolbarFocusIndex
+        if index = FOCUS_HOME
+            reclaimResources()
+            m.global.sceneManager.callFunc("goHome")
+        else if index = FOCUS_SEARCH
+            openSearchKeyboard()
+        else if index = FOCUS_SORT
+            openSortDialog()
+        else if index = FOCUS_SHOW
+            openSortDialog("played")
+        else if index = FOCUS_DISPLAY
+            openDisplayDialog()
+        else if index = FOCUS_GROUP
+            openGroupDialog()
+        else if index = FOCUS_SHUFFLE
+            shuffleSongs()
+        end if
         return true
     end if
 
+    classic = m.libraryStyle = "classic"
     docked = m.libraryStyle = "docked"
-    order = [0, 4, 1, 5, 2]
+    order = toolbarOrder()
     position = 0
     for i = 0 to order.count() - 1
         if order[i] = m.toolbarFocusIndex then position = i
@@ -1763,15 +2343,15 @@ function onStyledHeaderKey(key as string) as boolean
     if isStringEqual(key, docked ? KeyCode.DOWN : KeyCode.RIGHT)
         if position < order.count() - 1
             focusToolbarItem(order[position + 1])
-        else if docked and m.alphaPicker.visible
-            focusToolbarItem(3)
+        else if not isStringEqual(m.libraryStyle, "modern") and m.alphaPicker.visible
+            focusToolbarItem(FOCUS_LETTERS)
         end if
         return true
     end if
 
     if isStringEqual(key, docked ? KeyCode.RIGHT : KeyCode.DOWN)
-        if not docked and m.alphaPicker.visible
-            focusToolbarItem(3)
+        if m.libraryStyle = "modern" and m.alphaPicker.visible
+            focusToolbarItem(FOCUS_LETTERS)
         else if m.loadedItems > 0
             unfocusAllToolbarItems()
             focusContent()
@@ -1779,14 +2359,66 @@ function onStyledHeaderKey(key as string) as boolean
         return true
     end if
 
+    ' Classic's search sits above its icons
+    if classic and isStringEqual(key, KeyCode.UP)
+        focusToolbarItem(FOCUS_SEARCH)
+        return true
+    end if
+
     return isStringEqual(key, docked ? KeyCode.LEFT : KeyCode.UP)
 end function
+
+sub leaveLibrary()
+    reclaimResources()
+    m.global.sceneManager.callfunc("popScene")
+end sub
+
+' Up to 300 of the library's songs in a random order
+sub shuffleSongs()
+    if not isValid(m.shuffleTask)
+        m.shuffleTask = createObject("roSGNode", "JellyfinAPITask")
+        m.shuffleTask.observeField("response", "onShuffleLoaded")
+    end if
+    m.shuffleTask.control = TaskControl.STOP
+    m.shuffleTask.request = {
+        path: "Items",
+        params: {
+            userId: m.global.session.user.id,
+            parentId: getParentItemId(),
+            includeItemTypes: "Audio",
+            recursive: true,
+            sortBy: "Random",
+            limit: 300,
+            fields: "PrimaryImageAspectRatio"
+        }
+    }
+    m.shuffleTask.control = TaskControl.RUN
+    startLoadingSpinner()
+end sub
+
+sub onShuffleLoaded(event as object)
+    response = event.getData()
+    tracks = []
+    if isValid(response) and response.success = true then tracks = responseItems(response.data)
+    if tracks.count() = 0
+        stopLoadingSpinner()
+        return
+    end if
+
+    queue = m.global.queueManager
+    queue.callFunc("clear")
+    queue.callFunc("resetShuffle")
+    queue.callFunc("set", tracks)
+    queue.callFunc("setPosition", 0)
+    queue.callFunc("playQueue")
+end sub
 
 ' What Up from the top row of letters reaches
 function aboveLetters() as integer
     if m.libraryStyle = "modern" then return m.barFocusIndex
-    if m.libraryStyle = "docked" then return 2
-    return 4
+    order = toolbarOrder()
+    if m.libraryStyle = "docked" then return order[order.count() - 1]
+    return FOCUS_SEARCH
 end function
 
 ' =====================================================================
@@ -1794,52 +2426,54 @@ end function
 ' =====================================================================
 
 sub focusToolbarItem(index as integer)
-    ' The alphabet strip is the one toolbar item that can be turned off, so focus lands
-    ' back on the gear rather than on nothing
-    if index = 3 and not m.alphaPicker.visible then index = 2
+    ' The alphabet strip can be turned off, so focus lands back on the last header control
+    ' rather than on nothing
+    if index = FOCUS_LETTERS and not m.alphaPicker.visible
+        order = toolbarOrder()
+        index = order[order.count() - 1]
+    end if
+    if index <> FOCUS_LETTERS and index <> FOCUS_SEARCH and not headerControlShown(index) then index = FOCUS_HOME
 
     unfocusAllToolbarItems()
 
     m.toolbarFocusIndex = index
-    if index <> 3 then m.barFocusIndex = index
-    m.searchBox.focused = index = 4
+    if index <> FOCUS_LETTERS then m.barFocusIndex = index
+    m.searchBox.focused = index = FOCUS_SEARCH
 
-    if index >= 0 and index < m.toolbarButtons.count()
-        m.toolbarButtons[index].focus = true
-        m.toolbarButtons[index].setFocus(true)
-        setLastFocus(m.toolbarButtons[index])
-    else if index = 3
+    button = m.toolbarButtons[index]
+    if isValid(button)
+        button.focus = true
+        button.setFocus(true)
+        setLastFocus(button)
+    else if index = FOCUS_LETTERS
         m.alphaGrid.setFocus(true)
         setLastFocus(m.alphaGrid)
-    else if index = 4
+    else if index = FOCUS_SEARCH
         m.searchBox.setFocus(true)
         setLastFocus(m.searchBox)
-    else if index = 5
-        m.styledShow.focus = true
-        m.styledShow.setFocus(true)
-        setLastFocus(m.styledShow)
     end if
 end sub
 
-' The list under the toolbar, which is the grouped rows while playlists are grouped
+' The list under the toolbar: the grouped rows, the category chips, the genres or the grid
 sub focusContent()
     if m.loadedItems = 0 then return
-    if m.playlistGrouped
-        m.groupRows.setFocus(true)
-        setLastFocus(m.groupRows)
-        return
+    target = m.grid
+    if isStringEqual(m.view, "Genres")
+        target = m.genreGrid
+    else if m.groupLayout = "rows"
+        target = m.groupRows
+    else if m.groupLayout = "tabs"
+        target = m.categoryBar
     end if
-    m.itemGrid.setFocus(m.itemGrid.opacity = 1)
-    m.genreGrid.setFocus(m.genreGrid.opacity = 1)
-    setLastFocus(m.itemGrid.opacity = 1 ? m.itemGrid : m.genreGrid)
+    target.setFocus(true)
+    setLastFocus(target)
 end sub
 
 sub unfocusAllToolbarItems()
     m.searchBox.focused = false
     for each btn in m.toolbarButtons
-        btn.focus = false
+        if isValid(btn) then btn.focus = false
     end for
-    m.styledShow.focus = false
 end sub
 
 ' =====================================================================
@@ -1849,8 +2483,9 @@ end sub
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
 
-    if styledHeaderFocused() then return onStyledHeaderKey(key)
+    if styledHeaderFocused() then return onToolbarKey(key)
 
+    ' Classic's search sits on its own above the icons
     if m.searchBox.isInFocusChain()
         if isStringEqual(key, KeyCode.OK)
             openSearchKeyboard()
@@ -1858,87 +2493,25 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
 
         if isStringEqual(key, KeyCode.LEFT)
-            focusToolbarItem(3)
+            focusToolbarItem(FOCUS_LETTERS)
             return true
         end if
 
         if isStringEqual(key, KeyCode.DOWN)
             m.searchBox.focused = false
-            focusToolbarItem(0)
+            focusToolbarItem(FOCUS_HOME)
             return true
         end if
 
         if isStringEqual(key, KeyCode.BACK)
-            reclaimResources()
-            m.global.sceneManager.callfunc("popScene")
+            leaveLibrary()
             return true
         end if
 
         return true
     end if
 
-    ' ---- TOOLBAR ICON NAVIGATION ----
-    if m.homeButton.isInFocusChain() or m.sortButton.isInFocusChain() or m.settingsButton.isInFocusChain()
-        if isStringEqual(key, KeyCode.RIGHT)
-            if m.homeButton.isInFocusChain()
-                focusToolbarItem(1)
-                return true
-            else if m.sortButton.isInFocusChain()
-                focusToolbarItem(2)
-                return true
-            else if m.settingsButton.isInFocusChain()
-                unfocusAllToolbarItems()
-                focusToolbarItem(3)
-                return true
-            end if
-        end if
-
-        if isStringEqual(key, KeyCode.LEFT)
-            if m.settingsButton.isInFocusChain()
-                focusToolbarItem(1)
-                return true
-            else if m.sortButton.isInFocusChain()
-                focusToolbarItem(0)
-                return true
-            end if
-            ' At home button, LEFT does nothing
-            return true
-        end if
-
-        if isStringEqual(key, KeyCode.UP)
-            unfocusAllToolbarItems()
-            focusToolbarItem(4)
-            return true
-        end if
-
-        if isStringEqual(key, KeyCode.DOWN)
-            unfocusAllToolbarItems()
-            focusContent()
-            return true
-        end if
-
-        if isStringEqual(key, KeyCode.OK)
-            if m.homeButton.isInFocusChain()
-                reclaimResources()
-                m.global.sceneManager.callfunc("popScene")
-                return true
-            else if m.sortButton.isInFocusChain()
-                openSortDialog()
-                return true
-            else if m.settingsButton.isInFocusChain()
-                openSettingsDialog()
-                return true
-            end if
-        end if
-
-        if isStringEqual(key, KeyCode.BACK)
-            reclaimResources()
-            m.global.sceneManager.callfunc("popScene")
-            return true
-        end if
-
-        return false
-    end if
+    if toolbarButtonFocused() then return onToolbarKey(key)
 
     ' ---- ALPHA PICKER NAVIGATION ----
     if m.alphaGrid.isInFocusChain()
@@ -1946,8 +2519,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
         letter = m.alphaGrid.itemFocused
         letterCount = m.alphaGrid.content.getChildCount()
         if isStringEqual(key, KeyCode.LEFT) and letter mod columns = 0
-            ' Move from alpha to settings icon
-            if m.libraryStyle = "classic" then focusToolbarItem(2)
+            ' Classic's letters follow its icons, so Left off the first letter reaches the last one
+            if m.libraryStyle = "classic"
+                order = toolbarOrder()
+                focusToolbarItem(order[order.count() - 1])
+            end if
             return true
         end if
 
@@ -1981,15 +2557,23 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
 
         if isStringEqual(key, KeyCode.BACK)
-            reclaimResources()
-            m.global.sceneManager.callfunc("popScene")
+            leaveLibrary()
             return true
         end if
 
         return false
     end if
 
-    ' ---- GROUPED PLAYLIST ROWS ----
+    ' ---- GROUP BY CHIPS ----
+    if m.categoryBar.isInFocusChain()
+        if isStringEqual(key, KeyCode.BACK)
+            leaveLibrary()
+            return true
+        end if
+        return false
+    end if
+
+    ' ---- GROUPED ROWS ----
     if m.groupRows.isInFocusChain()
         focused = m.groupRows.rowItemFocused
         atTop = not isValid(focused) or focused.count() < 1 or focused[0] = 0
@@ -2008,8 +2592,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
                 m.groupRows.jumpToRowItem = [0, 0]
                 return true
             end if
-            reclaimResources()
-            m.global.sceneManager.callfunc("popScene")
+            leaveLibrary()
             return true
         end if
 
@@ -2017,29 +2600,31 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     ' ---- GRID / GENRE GRID NAVIGATION ----
-    if m.itemGrid.isinFocusChain() or m.genreGrid.isinFocusChain()
-        gridComponent = m.itemGrid.isinFocusChain() ? m.itemGrid : m.genreGrid
+    if m.grid.isinFocusChain() or m.genreGrid.isinFocusChain()
+        gridComponent = m.grid.isinFocusChain() ? m.grid : m.genreGrid
         ' Docked keeps its controls left of the grid
-        if isStringEqual(key, KeyCode.LEFT) and m.libraryStyle = "docked" and gridComponent.itemFocused mod gridComponent.numColumns = 0
+        if isStringEqual(key, KeyCode.LEFT) and m.libraryStyle = "docked" and atFirstColumn(gridComponent)
             focusToolbarItem(m.toolbarFocusIndex)
             return true
         end if
 
-        if isStringEqual(key, KeyCode.UP)
-            if gridComponent.itemFocused < gridComponent.numColumns
-                ' At top row, move to toolbar
+        ' Above the top row are the category chips while grouped, the toolbar otherwise
+        if isStringEqual(key, KeyCode.UP) and onTopRow(gridComponent)
+            if m.groupLayout = "tabs"
+                m.categoryBar.setFocus(true)
+                setLastFocus(m.categoryBar)
+            else
                 focusToolbarItem(m.toolbarFocusIndex)
-                return true
             end if
+            return true
         end if
 
         if isStringEqual(key, KeyCode.BACK)
-            if gridComponent.itemFocused >= gridComponent.numColumns
+            if scrolledAway(gridComponent)
                 gridComponent.jumpToItem = 0
                 return true
             end if
-            reclaimResources()
-            m.global.sceneManager.callfunc("popScene")
+            leaveLibrary()
             return true
         end if
 
@@ -2047,6 +2632,22 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     return false
+end function
+
+' The sideways grid runs its items down each column, the upright ones across each row
+function onTopRow(grid as object) as boolean
+    if grid.isSameNode(m.horizontalGrid) then return grid.itemFocused mod grid.layout.rows = 0
+    return grid.itemFocused < grid.numColumns
+end function
+
+function atFirstColumn(grid as object) as boolean
+    if grid.isSameNode(m.horizontalGrid) then return grid.itemFocused < grid.layout.rows
+    return grid.itemFocused mod grid.numColumns = 0
+end function
+
+function scrolledAway(grid as object) as boolean
+    if grid.isSameNode(m.horizontalGrid) then return grid.firstColumn > 0
+    return grid.itemFocused >= grid.numColumns
 end function
 
 ' Play starts the focused card, or opens it when it is a photo, and Options opens its menu
@@ -2057,7 +2658,8 @@ function handleCardKey(key as string) as boolean
     if isStringEqual(key, KeyCode.OPTIONS) then return showItemMenu(focusedItem)
 
     if isStringEqual(ItemType.PHOTO, chainLookupReturn(focusedItem, "type", string.EMPTY))
-        m.itemGrid.itemSelected = m.itemGrid.itemFocused
+        m.top.selectedItem = focusedItem
+        m.top.selectedItem = invalid
     else
         m.top.quickPlayNode = focusedItem
     end if
@@ -2101,9 +2703,13 @@ sub reclaimResources()
     m.genreGrid.content = m.genreData
 end sub
 
-' Items the search is hiding are in no list, so they are brought up to date as well
+' Items the search is hiding, and categories off screen, are in no list, so they are brought up
+' to date as well
 sub userDataApplied(changes as object)
     for each item in m.allItems
         userDataSync.ApplyToNode(item, changes)
+    end for
+    for each key in m.categoryRows
+        userDataSync.ApplyToTree(m.categoryRows[key], changes)
     end for
 end sub
