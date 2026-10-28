@@ -7677,5 +7677,15 @@
         <translation>You can use it again on {0}, {1} {2} at {3}.</translation>
         <extracomment>Shown on the Time's up screen when the next opening is a week or more away; {0} is a day of the week, {1} a month, {2} the day of the month and {3} a time of day</extracomment>
     </message>
+    <message>
+        <source>Playlist order</source>
+        <extracomment>Details page section switch for the list a collection plays in</extracomment>
+        <translation>Playlist order</translation>
+    </message>
+    <message>
+        <source>On collection pages</source>
+        <extracomment>Under the Playlist order section switch</extracomment>
+        <translation>On collection pages</translation>
+    </message>
 </context>
 </TS>
