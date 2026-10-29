@@ -6222,6 +6222,11 @@
         <translation>Show a Skip button during Cinema Mode trailers, commercials, and other pre-rolls.</translation>
     </message>
     <message>
+        <source>Fetching subtitles</source>
+        <extracomment>Shown in the player while a picked subtitle track is still downloading</extracomment>
+        <translation>Fetching subtitles</translation>
+    </message>
+    <message>
         <source>Skip {segment}</source>
         <extracomment>Skip button in the player. {segment} is Intro, Outro, Recap, Preview or Commercial</extracomment>
         <translation>Skip {segment}</translation>
