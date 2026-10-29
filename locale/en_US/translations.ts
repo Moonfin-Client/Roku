@@ -6212,6 +6212,16 @@
         <translation>Automatically dismiss the skip intro and outro button after a few seconds.</translation>
     </message>
     <message>
+        <source>Cinema Mode Skip Button</source>
+        <extracomment>Setting that shows a Skip button on Cinema Mode pre-rolls</extracomment>
+        <translation>Cinema Mode Skip Button</translation>
+    </message>
+    <message>
+        <source>Show a Skip button during Cinema Mode trailers, commercials, and other pre-rolls.</source>
+        <extracomment>Description of the Cinema Mode Skip Button setting</extracomment>
+        <translation>Show a Skip button during Cinema Mode trailers, commercials, and other pre-rolls.</translation>
+    </message>
+    <message>
         <source>Skip {segment}</source>
         <extracomment>Skip button in the player. {segment} is Intro, Outro, Recap, Preview or Commercial</extracomment>
         <translation>Skip {segment}</translation>

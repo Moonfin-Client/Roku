@@ -46,6 +46,8 @@ const SKIP_SEEK_HOLD_MS = 1200
 const SKIP_LANDING_LIMIT_MS = 10000
 ' Back right after Back took a prompt down is the same press, so it isn't passed on to the player
 const SKIP_BACK_HOLD_MS = 500
+' The pre-roll Skip button stays up for this much of the pre-roll, so only a longer one gets it
+const CINEMA_SKIP_SECONDS = 10
 
 sub init()
     m.top.observeField("availableAudioTracks", "applyChosenAudioTrack")
@@ -258,6 +260,7 @@ sub init()
     for each id in ["audioSelector", "subtitleSelector", "subtitleDownloadDialog", "subtitleOffsetOverlay", "subtitleAppearance"]
         m.playerModals.push(m.top.findNode(id))
     end for
+    m.cinemaSkipOn = false
     resetSkipPrompts()
 
 
@@ -858,8 +861,10 @@ sub onOSDAction()
         return
     end if
 
-    if action = "backkey"
-        if handleSkipPromptKey(KeyCode.BACK) then return
+    if action = "backkey" or action = "fastforwardkey"
+        key = KeyCode.BACK
+        if action = "fastforwardkey" then key = KeyCode.FASTFORWRD
+        if handleCinemaSkipKey(key) or handleSkipPromptKey(key) then return
         handleHideAction(false)
         return
     end if
@@ -1374,6 +1379,8 @@ sub onVideoContentLoaded(event as object)
     ' A new item gets its own prompts, so an earlier dismissal doesn't carry over
     m.nextUpDismissed = false
     hideNextItem()
+    ' A pre-roll gets the Skip button when Cinema Mode asks for it and the feature is queued behind it
+    m.cinemaSkipOn = m.LoadMetaDataTask.isIntro = true and toBoolean(m.global.session.user.settings["playback.cinemamode.skip"] ?? false) and m.global.queueManager.callFunc("getPosition") < m.global.queueManager.callFunc("getCount") - 1
     resetSkipPrompts()
 
     m.osd.itemTitleText = m.top.content.title
@@ -1819,6 +1826,9 @@ sub resetSkipPrompts()
     m.promptHoldUntil = 0
     m.promptLanding = -1
     m.skipBackHeldUntil = 0
+    m.cinemaWanted = true
+    m.cinemaShownFrom = -1
+    m.cinemaBackHeldUntil = 0
     clearSkipPrompt()
 end sub
 
@@ -1908,6 +1918,7 @@ sub offerSkipPrompt(seg as object, ticks as double)
         m.skipAutoHideTimer.control = "start"
     end if
 
+    m.skipSegmentButton.label = ""
     m.skipSegmentButton.segmentType = m.skipPrompt.type
     updatePromptCountdown(ticks)
     ' A new prompt clears the controls away and takes the remote
@@ -1955,11 +1966,15 @@ sub noteSkipPromptLanding()
     m.promptHoldUntil = m.uptime.TotalMilliseconds() + SKIP_SEEK_HOLD_MS
 end sub
 
-' Shows the prompt when it's wanted and nothing covers it. It takes the remote while the controls
-' are away, and hands it back to them if it goes while it has it.
+' Shows the prompt or the pre-roll Skip button when one is wanted and nothing covers it. It takes the
+' remote while the controls are away, and hands it back to them if it goes while it has it.
 sub applySkipPrompt()
     kind = ""
-    if isValid(m.skipPrompt) and (not m.skipPromptLapsed or m.osd.visible) then kind = "segment"
+    if cinemaSkipShown()
+        kind = "preroll"
+    else if isValid(m.skipPrompt) and (not m.skipPromptLapsed or m.osd.visible)
+        kind = "segment"
+    end if
     if kind <> "" and (isValid(m.liveChannel) or playerModalOpen()) then kind = ""
     if m.osd.skipButton <> kind then m.osd.skipButton = kind
 
@@ -2002,7 +2017,7 @@ end sub
 function handleSkipPromptKey(key as string) as boolean
     now = m.uptime.TotalMilliseconds()
     if key = KeyCode.BACK and now < m.skipBackHeldUntil then return true
-    if not isValid(m.skipPrompt) then return false
+    if not isValid(m.skipPrompt) or cinemaSkipShown() then return false
 
     ' Up or Down with the controls away brings them up on the prompt, which comes back with them
     ' after its few seconds have run out
@@ -2052,6 +2067,76 @@ sub focusOsdSeekbar()
     m.osd.callFunc("focusOnSeekbar")
 end sub
 
+' The Skip button on Cinema Mode pre-rolls. It comes up as each one starts and goes away after ten
+' seconds of it playing, so a pause holds it up. Right brings it back, Back puts it away and Fast
+' Forward skips whether it shows or not.
+function cinemaSkipEligible() as boolean
+    return m.cinemaSkipOn and m.top.duration > CINEMA_SKIP_SECONDS
+end function
+
+function cinemaSkipShown() as boolean
+    return cinemaSkipEligible() and m.cinemaWanted
+end function
+
+sub updateCinemaSkip()
+    if not cinemaSkipShown() then return
+    if m.cinemaShownFrom < 0
+        m.cinemaShownFrom = m.top.position
+    else if m.top.position - m.cinemaShownFrom >= CINEMA_SKIP_SECONDS
+        m.cinemaWanted = false
+        applySkipPrompt()
+        return
+    end if
+
+    remaining = m.top.duration - m.top.position
+    if remaining < 0 then remaining = 0
+    m.skipSegmentButton.label = tr("Skip")
+    m.skipSegmentButton.secondsRemaining = Int(remaining + 0.5)
+    m.skipSegmentButton.progress = remaining / m.top.duration
+    applySkipPrompt()
+end sub
+
+sub skipPreroll()
+    m.cinemaWanted = false
+    applySkipPrompt()
+    handleItemSkipAction("itemnext")
+end sub
+
+function handleCinemaSkipKey(key as string) as boolean
+    if not cinemaSkipEligible() or playerModalOpen() then return false
+    if key = KeyCode.FASTFORWRD
+        skipPreroll()
+        return true
+    end if
+
+    now = m.uptime.TotalMilliseconds()
+    if key = KeyCode.BACK and (m.cinemaWanted or now < m.cinemaBackHeldUntil)
+        if m.cinemaWanted then m.cinemaBackHeldUntil = now + SKIP_BACK_HOLD_MS
+        m.cinemaWanted = false
+        applySkipPrompt()
+        return true
+    end if
+    if key = KeyCode.RIGHT and not m.cinemaWanted and not m.osd.visible
+        m.cinemaShownFrom = -1
+        m.cinemaWanted = true
+        updateCinemaSkip()
+        return true
+    end if
+
+    ' With the controls up the button sits just above the seek bar, and Up and Down move between them
+    if m.cinemaWanted and m.skipSegmentButton.hasFocus()
+        if key = KeyCode.OK
+            skipPreroll()
+            return true
+        end if
+        if key = KeyCode.DOWN and m.osd.visible
+            focusOsdSeekbar()
+            return true
+        end if
+    end if
+    return false
+end function
+
 ' When Video Player state changes
 sub onPositionChanged()
     ' Pass video position data into OSD
@@ -2080,7 +2165,9 @@ sub onPositionChanged()
     m.dialog = m.top.getScene().findNode("dialogBackground")
     if not isValid(m.dialog)
         ' Do not show Next Episode button for intro videos
-        if not m.LoadMetaDataTask.isIntro
+        if m.LoadMetaDataTask.isIntro
+            updateCinemaSkip()
+        else
             checkSegmentSkipButton()
             checkNextUp()
         end if
@@ -3615,7 +3702,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if not press then return false
-    if handleSkipPromptKey(key) then return true
+    if handleCinemaSkipKey(key) or handleSkipPromptKey(key) then return true
 
     if m.scrubActive
         if key = KeyCode.OK or key = KeyCode.PLAY
@@ -3687,57 +3774,48 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
     end if
 
+    ' A pre-roll gets the controls too, so the remote can reach its Skip button from the seek bar
     if key = KeyCode.DOWN and not m.top.trickPlayBar.visible
-        if not m.LoadMetaDataTask.isIntro
-            if not stateAllowsOSD() then return true
+        if not stateAllowsOSD() then return true
 
-            prepareOSD()
-            showOSD("seekbar")
-            return true
-        end if
+        prepareOSD()
+        showOSD("seekbar")
+        return true
 
     else if key = KeyCode.UP and not m.top.trickPlayBar.visible
-        if not m.LoadMetaDataTask.isIntro
-            ' Up during live playback opens the channel carousel, even while the stream buffers
-            if isValid(m.liveChannel)
-                openCarousel()
-                return true
-            end if
-
-            if not stateAllowsOSD() then return true
-
-            prepareOSD()
-            showOSD("transport")
+        ' Up during live playback opens the channel carousel, even while the stream buffers
+        if isValid(m.liveChannel)
+            openCarousel()
             return true
         end if
+
+        if not stateAllowsOSD() then return true
+
+        prepareOSD()
+        showOSD("transport")
+        return true
 
     else if key = KeyCode.OK and not m.top.trickPlayBar.visible
-        if not m.LoadMetaDataTask.isIntro
-            if not stateAllowsOSD() then return true
+        if not stateAllowsOSD() then return true
 
-            prepareOSD()
-            showOSD()
-            return true
-        end if
-
-        return false
+        prepareOSD()
+        showOSD()
+        return true
     end if
 
-    if not m.LoadMetaDataTask.isIntro
-        if key = KeyCode.PLAY and not m.top.trickPlayBar.visible
-            if resumeHeldScrub() then return true
-            if not stateAllowsOSD() then return true
+    if key = KeyCode.PLAY and not m.top.trickPlayBar.visible
+        if resumeHeldScrub() then return true
+        if not stateAllowsOSD() then return true
 
-            if m.top.state = "paused"
-                m.top.control = VideoControl.RESUME
-                return true
-            end if
-
-            m.top.control = VideoControl.PAUSE
-            prepareOSD()
-            showOSD()
+        if m.top.state = "paused"
+            m.top.control = VideoControl.RESUME
             return true
         end if
+
+        m.top.control = VideoControl.PAUSE
+        prepareOSD()
+        showOSD()
+        return true
     end if
 
     if key = KeyCode.BACK
