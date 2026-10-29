@@ -562,7 +562,14 @@ assert.match(episodePick, /ReportPlayback\("stop"\)\s+m\.top\.unobserveField\("s
 assert.match(episodePick, /startingPoint = episodeBrowser\.ResumeTicks\(episode\)[^]*?callFunc\("push", episode\)/, 'The picked episode carries its resume point into the queue');
 assert.match(await readFile('components/video/OSD.bs', 'utf8'), /id: "episodes", nodeId: "showEpisodes"/, 'The player offers the Episodes button');
 assert.match(await readFile('source/utils/buttonLayout.bs', 'utf8'), /id: "chapters"[^]*?id: "episodes"[^]*?id: "subtitles"/, 'Episodes sits between Chapters and Subtitles in Player Buttons');
-process.stdout.write('PASS: episode browser wiring (4 checks)\n');
+const episodeOverlay = await readFile('components/video/EpisodeBrowserOverlay.bs', 'utf8');
+const episodeOverlayXml = await readFile('components/video/EpisodeBrowserOverlay.xml', 'utf8');
+assert.match(episodeOverlayXml, /<DetailTabBar id="seasonBar" visible="false" escapeLeft="true" \/>/, 'The episode browser picks seasons on the shared tab bar');
+assert.match(episodeOverlayXml, /id="scrim"[^>]*color="#0000008A"/, 'The episode browser dims the video like the other dialogs');
+assert.doesNotMatch(episodeOverlay, /Press BACK to close/, 'The episode browser has no close hint');
+assert.match(episodeOverlay, /requestMarker[^]*?pillSize = "compact"/, 'The episode browser rows carry their anime markers');
+assert.match(playerView, /m\.episodeOverlay\.logoUri = osdLogo\.uri/, 'The episode browser header is the series logo');
+process.stdout.write('PASS: episode browser wiring (9 checks)\n');
 
 const animeTask = await readFile('components/anime/AnimeMarkersTask.bs', 'utf8');
 assert.equal((animeTask.match(/labelStyle = body\.LookupCI\("labelStyle"\)|labelStyle: body\.LookupCI\("labelStyle"\)/g) || []).length, 2, 'Both marker answers carry the admin\'s label style');
