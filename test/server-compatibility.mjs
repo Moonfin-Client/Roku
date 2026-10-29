@@ -608,7 +608,7 @@ process.stdout.write('PASS: caption download wiring (3 checks)\n');
 const itemsSearch = (await readFile('source/api/Items.bs', 'utf8')).match(/function searchViaItems\([^]*?end function/)[0];
 assert.doesNotMatch(itemsSearch, /persons/i, 'The items search no longer waits on people');
 const searchTask = await readFile('components/search/SearchTask.bs', 'utf8');
-assert.match(searchTask, /people = startPeopleSearch\(query\)[^]*?searchMedia\(query\)[^]*?publishSearchResults\(results, query, requestToken, false\)[^]*?peopleSearchResults\(people, PEOPLE_TIMEOUT_MS - clock\.TotalMilliseconds\(\)\)/, 'People start before the media search, media is published first and the late wait is bounded');
+assert.match(searchTask, /people = startPeopleSearch\(query\)[^]*?searchMedia\(query, m\.top\.liveTv\)[^]*?publishSearchResults\(results, query, requestToken, false\)[^]*?peopleSearchResults\(people, PEOPLE_TIMEOUT_MS - clock\.TotalMilliseconds\(\)\)/, 'People start before the media search, media is published first and the late wait is bounded');
 process.stdout.write('PASS: search people wiring (2 checks)\n');
 
 // Modern and Classic list every collection a film is in
@@ -1080,4 +1080,6 @@ assert.match((await readFile('components/video/OSD.bs', 'utf8')).match(/function
 const recordingsSource = await readFile('components/liveTv/recordings/LiveTvRecordings.bs', 'utf8');
 assert.match(recordingsSource.match(/function applyTimers\([^]*?end function/)[0], /if read < m\.timerReads\.applied then return false/, 'An older schedule read cant replace a newer one');
 assert.match(recordingsSource, /else if response\.kind = "cancelTimer"\s+'[^\n]*\s+m\.timerReads\.started\+\+\s+m\.timerReads\.applied = m\.timerReads\.started/, 'A read started before a cancel cant bring the timer back');
-process.stdout.write('PASS: Live TV recording wiring (8 checks)\n');
+assert.match((await readFile('source/api/Items.bs', 'utf8')).match(/function searchMedia\([^]*?end function/)[0], /if includePrograms\s+liveTv = api\.items\.Get\(\{[^}]*"IncludeItemTypes": "LiveTvProgram"/, 'Search only asks for Live TV programs when it is told to');
+assert.match((await readFile('components/search/SearchResults.bs', 'utf8')).match(/sub onViewsLoaded\([^]*?end sub/)[0], /isStringEqual\(view\.LookupCI\("CollectionType"\), "livetv"\) then m\.searchTask\.liveTv = true/, 'Search adds Live TV programs only on a server with a Live TV library');
+process.stdout.write('PASS: Live TV recording wiring (10 checks)\n');
