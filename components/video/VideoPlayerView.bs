@@ -34,6 +34,18 @@ const OVERLAY_BOTTOM = 174
 const NEXT_UP_TICK_MS = 100
 const NEXT_UP_PLAY = 0
 const NEXT_UP_DISMISS = 1
+' The skip prompt sits just clear of the controls' bottom block, which keeps its place while the
+' controls are away, so the prompt never moves
+const SKIP_PROMPT_TOP = 668
+' A segment shorter than this isn't offered, and one shorter than the second isn't skipped by itself
+const SKIP_MIN_PROMPT_TICKS = 30000000
+const SKIP_MIN_AUTO_TICKS = 10000000
+' A seek the viewer makes holds prompts back this long, so the segment it lands in isn't offered.
+' One still landing holds them until it does, or until the longer wait has passed.
+const SKIP_SEEK_HOLD_MS = 1200
+const SKIP_LANDING_LIMIT_MS = 10000
+' Back right after Back took a prompt down is the same press, so it isn't passed on to the player
+const SKIP_BACK_HOLD_MS = 500
 
 sub init()
     m.top.observeField("availableAudioTracks", "applyChosenAudioTrack")
@@ -239,8 +251,15 @@ sub init()
     m.nextupbuttonseconds = (m.global.session.user.settings["playback.nextupbuttonseconds"] ?? "30").ToInt()
 
     ' Skip segment tracking
-    m.mediaSegmentDismissed = {}
-    m.currentSegmentType = invalid
+    m.uptime = CreateObject("roTimespan")
+    m.skipAutoHideTimer = m.top.findNode("skipAutoHideTimer")
+    m.skipAutoHideTimer.observeField("fire", "onSkipPromptLapsed")
+    m.playerModals = []
+    for each id in ["audioSelector", "subtitleSelector", "subtitleDownloadDialog", "subtitleOffsetOverlay", "subtitleAppearance"]
+        m.playerModals.push(m.top.findNode(id))
+    end for
+    resetSkipPrompts()
+
 
     m.checkedForNextEpisode = false
     m.getNextEpisodeTask = createObject("roSGNode", "GetNextEpisodeTask")
@@ -344,6 +363,7 @@ sub handleChapterSkipAction(action as string)
         if gotoChapter > m.chapters.count() - 1 then return
 
         newPosition = m.chapters[gotoChapter].StartPositionTicks / 10000000#
+        holdSkipPrompts(newPosition)
         m.top.seek = newPosition
         setVideoEndingTime(newPosition)
         m.positionText.text = secondsToHuman(newPosition, true)
@@ -356,6 +376,7 @@ sub handleChapterSkipAction(action as string)
         if gotoChapter < 0 then gotoChapter = 0
 
         newPosition = m.chapters[gotoChapter].StartPositionTicks / 10000000#
+        holdSkipPrompts(newPosition)
         m.top.seek = newPosition
         setVideoEndingTime(newPosition)
         m.positionText.text = secondsToHuman(newPosition, true)
@@ -386,6 +407,7 @@ sub handleItemSkipAction(action as string)
         if not isValid(queuePos) then queuePos = 0
 
         if currentPos > 3 or queuePos <= 0
+            holdSkipPrompts(0)
             m.top.seek = 0
             setVideoEndingTime(0)
             m.positionText.text = secondsToHuman(0, true)
@@ -451,6 +473,7 @@ sub startScrubbing(direction as integer)
     m.scrubPosition = m.top.position
 
     m.top.control = VideoControl.PAUSE
+    holdSkipPrompts()
 
     m.pauseOverlay.visible = true
     m.scrubInfo = m.top.findNode("scrubInfo")
@@ -479,7 +502,7 @@ sub stopScrubbing()
 
     m.top.control = VideoControl.RESUME
     m.pauseOverlay.visible = false
-    hideSegmentSkipButton()
+    holdSkipPrompts(m.scrubPosition)
 end sub
 
 ' onScrubTimer: updates scrub position, UI, and speed indicator on each timer tick while scrubbing playback
@@ -536,6 +559,7 @@ sub handleHideAction(resume as boolean)
     if resume
         m.top.control = VideoControl.RESUME
     end if
+    applySkipPrompt()
 end sub
 
 sub handleChapterListAction()
@@ -575,6 +599,7 @@ sub onChapterPicked()
     closeChapterList()
     duration = m.top.duration
     if duration > 1 and seekTime > duration - 1 then seekTime = duration - 1
+    holdSkipPrompts(seekTime)
     m.top.seek = seekTime
     m.positionText.text = secondsToHuman(seekTime, true)
 end sub
@@ -824,6 +849,17 @@ sub onOSDAction()
     action = LCase(m.osd.action)
 
     if action = "hide"
+        handleHideAction(false)
+        return
+    end if
+
+    if action = "focusskip"
+        if m.skipSegmentButton.visible then m.skipSegmentButton.setFocus(true)
+        return
+    end if
+
+    if action = "backkey"
+        if handleSkipPromptKey(KeyCode.BACK) then return
         handleHideAction(false)
         return
     end if
@@ -1336,10 +1372,9 @@ sub onVideoContentLoaded(event as object)
     m.mediaSegments = videoContent[0].mediaSegments
 
     ' A new item gets its own prompts, so an earlier dismissal doesn't carry over
-    m.mediaSegmentDismissed = {}
     m.nextUpDismissed = false
     hideNextItem()
-    hideSegmentSkipButton()
+    resetSkipPrompts()
 
     m.osd.itemTitleText = m.top.content.title
 
@@ -1635,15 +1670,8 @@ sub onNextEpisodeDataLoaded()
     end if
 end sub
 
-sub hideSegmentSkipButton()
-    m.currentSegmentEndTicks = 0
-    m.currentSegmentStartTicks = 0
-    m.currentSegmentType = invalid
-    m.skipSegmentButton.visible = false
-end sub
-
 sub onSkipSegmentResized()
-    m.skipSegmentButton.translation = [1920 - OVERLAY_EDGE - m.skipSegmentButton.overlayWidth, 1080 - OVERLAY_BOTTOM - m.skipSegmentButton.overlayHeight]
+    m.skipSegmentButton.translation = [1920 - OVERLAY_EDGE - m.skipSegmentButton.overlayWidth, SKIP_PROMPT_TOP]
 end sub
 
 sub onNextUpResized()
@@ -1661,40 +1689,6 @@ sub applyOverlayCountdownPreference()
     m.skipSegmentButton.showTimer = showTimer
     m.nextUp.showRing = showRing
     m.nextUp.showTimer = showTimer
-end sub
-
-sub displaySegmentSkipButton(segmentType as string, endticks as double)
-    m.currentSegmentEndTicks = endticks
-    m.currentSegmentType = segmentType
-
-    if isValidAndNotEmpty(m.mediaSegmentDismissed) and m.mediaSegmentDismissed.DoesExist(m.currentSegmentType) then return
-
-    ' Check if user has specific instructions for this media segment type
-    userSetting = m.global.session.user.settings[`playback.mediasegments.${segmentType}`]
-    if isValid(userSetting)
-
-        ' User doesn't want anything to happen for this media segment type
-        if isStringEqual(userSetting, MediaSegmentAction.NONE) then return
-
-        ' User wants to auto-skip this media segment type
-        if isStringEqual(userSetting, MediaSegmentAction.SKIP)
-            skipCurrentSegment()
-            return
-        end if
-    end if
-
-    if m.osd.visible or isValid(m.episodeOverlay) then return ' Don't show over the controls or the episode browser
-
-    ' The end of an episode can be handed to the Up Next card instead of offering
-    ' a skip that lands in the same place
-    if isStringEqual(segmentType, MediaSegmentType.OUTRO)
-        if toBoolean(m.global.session.user.settings["playback.replaceskipoutrowithnextup"] ?? false)
-            if displayNextItem() then return
-        end if
-    end if
-
-    m.skipSegmentButton.segmentType = segmentType
-    m.skipSegmentButton.visible = true
 end sub
 
 sub hideNextItem()
@@ -1804,7 +1798,7 @@ end sub
 
 sub playNextUpItem()
     hideNextItem()
-    hideSegmentSkipButton()
+    clearSkipPrompt()
     handleItemSkipAction("itemnext")
 end sub
 
@@ -1814,54 +1808,248 @@ sub cancelNextItem()
     hideNextItem()
 end sub
 
-sub updateSegmentCountdown(currentPositionTicks as longinteger)
-    if not m.skipSegmentButton.visible then return
+' ------------------------------------------------------------------------------------------------
+' Skip prompt
+' ------------------------------------------------------------------------------------------------
 
-    m.skipSegmentButton.secondsRemaining = Int((m.currentSegmentEndTicks - currentPositionTicks) / 10000000&)
-
-    span = m.currentSegmentEndTicks - m.currentSegmentStartTicks
-    if span <= 0
-        m.skipSegmentButton.progress = 0
-        return
-    end if
-
-    progress = (m.currentSegmentEndTicks - currentPositionTicks) / span
-    if progress < 0 then progress = 0
-    if progress > 1 then progress = 1
-
-    m.skipSegmentButton.progress = progress
+' Everything the prompts remember about the item, cleared for each new one
+sub resetSkipPrompts()
+    m.activeSegmentStart = -1#
+    m.autoSkipped = []
+    m.promptHoldUntil = 0
+    m.promptLanding = -1
+    m.skipBackHeldUntil = 0
+    clearSkipPrompt()
 end sub
 
+function segmentActionFor(segmentType as string) as string
+    picked = m.global.session.user.settings[`playback.mediasegments.${LCase(segmentType)}`]
+    if not isValid(picked) then return MediaSegmentAction.ASKTOSKIP
+    return LCase(picked)
+end function
+
+' A prompt comes up on the way into a segment. Once it's gone, by Back, a skip or a seek, it stays
+' gone until playback leaves the segment and comes back into it.
 sub checkSegmentSkipButton()
     if not isValidAndNotEmpty(m.mediaSegments) then return
 
-    matchFound = false
+    ticks = m.top.position * 10000000#
+    ' Back at or before a segment's start is a rewind into it on purpose, so it can skip itself again
+    kept = []
+    for each start in m.autoSkipped
+        if ticks > start then kept.push(start)
+    end for
+    m.autoSkipped = kept
 
-    currentPositionTicks = int(m.top.position) * 10000000&
-    for i = 0 to m.mediaSegments.TotalRecordCount - 1
-        mediaSegment = m.mediaSegments.items[i]
-
-        if currentPositionTicks < mediaSegment.StartTicks then continue for
-
-        ' Don't display skip button if we are within 5 seconds of the segment end time
-        if currentPositionTicks >= (mediaSegment.EndTicks - 50000000) then continue for
-
-        ' Current position is between media segment's start and end ticks. Display a skip button
-        displaySegmentSkipButton(mediaSegment.type, mediaSegment.EndTicks)
-        m.currentSegmentStartTicks = mediaSegment.StartTicks
-        updateSegmentCountdown(currentPositionTicks)
-
-        matchFound = true
-
-        exit for
+    seg = invalid
+    for each candidate in m.mediaSegments.items ?? []
+        if ticks >= candidate.StartTicks and ticks < candidate.EndTicks
+            seg = candidate
+            exit for
+        end if
     end for
 
-    ' Check if no match was found but the skip segment button is visible
-    if not matchFound
-        if m.skipSegmentButton.visible
-            hideSegmentSkipButton()
+    act = MediaSegmentAction.NONE
+    span = 0
+    entered = false
+    if isValid(seg)
+        act = segmentActionFor(seg.Type ?? "")
+        span = seg.EndTicks - seg.StartTicks
+        entered = m.activeSegmentStart <> seg.StartTicks
+        m.activeSegmentStart = seg.StartTicks
+    else
+        m.activeSegmentStart = -1#
+    end if
+
+    if entered and act = MediaSegmentAction.SKIP and span >= SKIP_MIN_AUTO_TICKS and not autoSkippedAlready(seg.StartTicks)
+        m.autoSkipped.push(seg.StartTicks)
+        clearSkipPrompt()
+        skipSegmentTo(seg.EndTicks)
+    else if m.uptime.TotalMilliseconds() < m.promptHoldUntil
+        clearSkipPrompt()
+    else if entered and act = MediaSegmentAction.ASKTOSKIP and span >= SKIP_MIN_PROMPT_TICKS
+        offerSkipPrompt(seg, ticks)
+    else if isValid(seg) and act = MediaSegmentAction.ASKTOSKIP
+        if isValid(m.skipPrompt) and m.skipPrompt.start = seg.StartTicks
+            updatePromptCountdown(ticks)
+            ' A picker opened or closed over it since the last tick
+            applySkipPrompt()
+        end if
+    else
+        clearSkipPrompt()
+    end if
+end sub
+
+' A skip can land a frame short of the end, still inside the segment, so each one only skips itself
+' once until playback is back at its start
+function autoSkippedAlready(start as dynamic) as boolean
+    for each skipped in m.autoSkipped
+        if skipped = start then return true
+    end for
+    return false
+end function
+
+sub offerSkipPrompt(seg as object, ticks as double)
+    ' The end of an episode can be handed to the Up Next card instead of offering a skip that lands
+    ' in the same place
+    if isStringEqual(seg.Type, MediaSegmentType.OUTRO) and toBoolean(m.global.session.user.settings["playback.replaceskipoutrowithnextup"] ?? false)
+        if displayNextItem()
+            clearSkipPrompt()
+            return
         end if
     end if
+
+    m.skipAutoHideTimer.control = "stop"
+    m.skipPromptLapsed = false
+    m.skipPrompt = { type: seg.Type ?? "", start: seg.StartTicks, end: seg.EndTicks }
+    seconds = { s5: 5, s10: 10 }[m.global.session.user.settings["playback.mediasegments.autohide"] ?? "off"] ?? 0
+    if seconds > 0
+        m.skipAutoHideTimer.duration = seconds
+        m.skipAutoHideTimer.control = "start"
+    end if
+
+    m.skipSegmentButton.segmentType = m.skipPrompt.type
+    updatePromptCountdown(ticks)
+    ' A new prompt clears the controls away and takes the remote
+    if m.osd.visible and not playerModalOpen() then handleHideAction(false)
+    applySkipPrompt()
+end sub
+
+sub updatePromptCountdown(ticks as double)
+    remaining = Int((m.skipPrompt.end - ticks) / 10000000# + 0.5)
+    if remaining < 0 then remaining = 0
+    total = (m.skipPrompt.end - m.skipPrompt.start) / 10000000#
+    if total < 1 then total = 1
+    if m.skipSegmentButton.secondsRemaining <> remaining then m.skipSegmentButton.secondsRemaining = remaining
+    m.skipSegmentButton.progress = remaining / total
+end sub
+
+' Once its few seconds run out the prompt only shows along with the controls, until its segment ends
+sub onSkipPromptLapsed()
+    m.skipPromptLapsed = true
+    applySkipPrompt()
+end sub
+
+sub clearSkipPrompt()
+    m.skipAutoHideTimer.control = "stop"
+    m.skipPromptLapsed = false
+    m.skipPrompt = invalid
+    applySkipPrompt()
+end sub
+
+' A seek the viewer makes takes the prompt down, and the segment it lands in isn't offered. The
+' player only reports the new spot once a seek is done, so one with a target holds them until it lands.
+sub holdSkipPrompts(landing = -1 as float)
+    holdFor = SKIP_SEEK_HOLD_MS
+    if landing >= 0 then holdFor = SKIP_LANDING_LIMIT_MS
+    holdUntil = m.uptime.TotalMilliseconds() + holdFor
+    if holdUntil > m.promptHoldUntil then m.promptHoldUntil = holdUntil
+    ' Only the newest seek's landing ends the hold, since an older one can land while a newer one is still on its way
+    if landing >= 0 then m.promptLanding = landing
+    clearSkipPrompt()
+end sub
+
+sub noteSkipPromptLanding()
+    if m.promptLanding < 0 or Abs(m.top.position - m.promptLanding) >= 1.5 then return
+    m.promptLanding = -1
+    m.promptHoldUntil = m.uptime.TotalMilliseconds() + SKIP_SEEK_HOLD_MS
+end sub
+
+' Shows the prompt when it's wanted and nothing covers it. It takes the remote while the controls
+' are away, and hands it back to them if it goes while it has it.
+sub applySkipPrompt()
+    kind = ""
+    if isValid(m.skipPrompt) and (not m.skipPromptLapsed or m.osd.visible) then kind = "segment"
+    if kind <> "" and (isValid(m.liveChannel) or playerModalOpen()) then kind = ""
+    if m.osd.skipButton <> kind then m.osd.skipButton = kind
+
+    button = m.skipSegmentButton
+    if kind = ""
+        if not button.visible then return
+        if button.hasFocus()
+            if m.osd.visible
+                focusOsdSeekbar()
+            else
+                button.setFocus(false)
+                m.top.setFocus(true)
+            end if
+        end if
+        button.visible = false
+        return
+    end if
+
+    button.visible = true
+    if not m.osd.visible and not button.hasFocus() then button.setFocus(true)
+end sub
+
+function playerModalOpen() as boolean
+    if isValid(m.chapterOverlay) or isValid(m.episodeOverlay) or isValid(m.playbackInfoDialog) or isValid(m.carousel) then return true
+    for each modal in m.playerModals
+        if isValid(modal) and modal.visible then return true
+    end for
+    return isValid(m.top.getScene().findNode("dialogBackground"))
+end function
+
+sub pressSkipPrompt()
+    endTicks = m.skipPrompt.end
+    clearSkipPrompt()
+    if skipSegmentTo(endTicks) then return
+    prepareOSD()
+    showOSD("seekbar")
+end sub
+
+' Keys for the segment prompt, ahead of everything else the player does with them
+function handleSkipPromptKey(key as string) as boolean
+    now = m.uptime.TotalMilliseconds()
+    if key = KeyCode.BACK and now < m.skipBackHeldUntil then return true
+    if not isValid(m.skipPrompt) then return false
+
+    ' Up or Down with the controls away brings them up on the prompt, which comes back with them
+    ' after its few seconds have run out
+    if not m.osd.visible and (key = KeyCode.UP or key = KeyCode.DOWN)
+        showControlsOnSkip()
+        return true
+    end if
+
+    if not m.skipSegmentButton.visible then return false
+    ' Back takes the prompt down before it closes the controls or leaves the player
+    if key = KeyCode.BACK
+        m.skipBackHeldUntil = now + SKIP_BACK_HOLD_MS
+        clearSkipPrompt()
+        return true
+    end if
+
+    if not m.skipSegmentButton.hasFocus() then return false
+    if key = KeyCode.OK
+        pressSkipPrompt()
+        return true
+    end if
+    if key = KeyCode.LEFT
+        if m.osd.visible then focusOsdSeekbar()
+        return true
+    end if
+    if key = KeyCode.RIGHT or key = KeyCode.UP
+        if not m.osd.visible then showControlsOnSkip()
+        return true
+    end if
+    if key = KeyCode.DOWN
+        focusOsdSeekbar()
+        return true
+    end if
+    return false
+end function
+
+sub showControlsOnSkip()
+    if not stateAllowsOSD() then return
+    prepareOSD()
+    showOSD()
+    if m.skipSegmentButton.visible then m.skipSegmentButton.setFocus(true)
+end sub
+
+sub focusOsdSeekbar()
+    m.skipSegmentButton.setFocus(false)
+    m.osd.setFocus(true)
+    m.osd.callFunc("focusOnSeekbar")
 end sub
 
 ' When Video Player state changes
@@ -1886,6 +2074,8 @@ sub onPositionChanged()
         m.captionTask.currentPos = newPos
     end if
 
+    noteSkipPromptLanding()
+
     ' Check if dialog is open
     m.dialog = m.top.getScene().findNode("dialogBackground")
     if not isValid(m.dialog)
@@ -1903,13 +2093,15 @@ sub checkNextUp()
     if m.top.duration <= 0 then return
     if m.osd.visible then return
     if m.top.trickPlayBar.visible then return
+    ' Raising the card over a skip prompt would leave the prompt unpressable, so it waits for it
+    if isValid(m.skipPrompt) and not m.skipPromptLapsed then return
 
     remaining = m.top.duration - m.top.position
     threshold = isStringEqual(nextUpBehaviour(), "extended") ? 1 : 0.5
 
     if remaining > threshold then return
 
-    if displayNextItem() then hideSegmentSkipButton()
+    if displayNextItem() then clearSkipPrompt()
 end sub
 
 '
@@ -2114,13 +2306,6 @@ sub onTrickPlayBarVisibleChange()
             m.videoEndingTime.visible = m.top.trickPlayBar.visible
         end if
     end if
-
-    ' Don't show both the trickplay bar and the skip segment button at the same time
-    if m.top.trickPlayBar.visible
-        if m.skipSegmentButton.visible
-            hideSegmentSkipButton()
-        end if
-    end if
 end sub
 
 sub setVideoEndingTime(videoSeekPosition = 0 as integer)
@@ -2175,8 +2360,6 @@ sub onTrickPlayBarTextChange()
     if not m.top.trickPlayBar.visible then return
 
     m.nextupbuttonseconds = (m.global.session.user.settings["playback.nextupbuttonseconds"] ?? "30").ToInt()
-    m.currentSegmentType = invalid
-    m.mediaSegmentDismissed = {}
     m.nextUpDismissed = false
 
     setVideoEndingTime(0)
@@ -2432,26 +2615,25 @@ function availSubtitleTrackIdx(tracknameToFind as string) as integer
     return SubtitleSelection.NONE
 end function
 
-sub skipCurrentSegment()
-    seekPosition = m.currentSegmentEndTicks / 10000000#
+' Returns true when the segment runs to the end and the next item plays in its place
+function skipSegmentTo(endTicks as dynamic) as boolean
+    seekPosition = endTicks / 10000000#
 
     if seekPosition > (m.top.duration - 2)
         if m.global.queueManager.callFunc("getPosition") < m.global.queueManager.callFunc("getCount") - 1
             handleItemSkipAction("itemnext")
-            return
+            return true
         else
             seekPosition = m.top.duration - 1
         end if
     end if
 
     m.top.seek = seekPosition
-end sub
+    return false
+end function
 
 sub prepareOSD()
     setSiblingData()
-    if m.skipSegmentButton.visible
-        hideSegmentSkipButton()
-    end if
 end sub
 
 sub showOSD(focusTarget = "seekbar" as string)
@@ -2462,6 +2644,7 @@ sub showOSD(focusTarget = "seekbar" as string)
     m.pauseOverlay.visible = true
     ' The controls coming up is the cue that a scrub may follow, so the sheets ahead start loading
     if not m.scrubHold.active then prefetchSheets(m.top.position * 1000, true)
+    applySkipPrompt()
 end sub
 
 ' ------------------------------------------------------------------------------------------------
@@ -2551,10 +2734,12 @@ sub scrubBy(direction as integer)
     if m.scrubHold.active
         target = clampSeconds((m.scrubHold.target ?? m.top.position) + delta, limit)
         m.scrubHold.target = target
+        holdSkipPrompts()
     else
         ' A seek is still landing while the presses come, so each builds on where the last one aimed
         target = clampSeconds((m.pendingSeek ?? m.top.position) + delta, limit)
         m.pendingSeek = target
+        holdSkipPrompts(target)
         m.top.seek = target
         m.seekSettleTimer.control = "start"
     end if
@@ -2580,7 +2765,10 @@ function resumeHeldScrub() as boolean
     if not m.scrubHold.active then return false
     target = m.scrubHold.target
     m.scrubHold = { active: false, wasPlaying: false, target: invalid }
-    if isValid(target) then m.top.seek = target
+    if isValid(target)
+        holdSkipPrompts(target)
+        m.top.seek = target
+    end if
     hideSeekPreview()
     ' The scrub made this pause, so the unpause rewind has nothing to undo
     m.wasPaused = false
@@ -2591,6 +2779,7 @@ end function
 ' Seeks to where the scrub was aiming but stays paused, so play picks up from there
 sub settleHeldScrub()
     if not m.scrubHold.active or not isValid(m.scrubHold.target) then return
+    holdSkipPrompts(m.scrubHold.target)
     m.top.seek = m.scrubHold.target
     m.scrubHold.target = invalid
     hideSeekPreview()
@@ -3425,15 +3614,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
     end if
 
-    if m.skipSegmentButton.visible and not m.top.trickPlayBar.visible
-        if key = KeyCode.OK and press
-            skipCurrentSegment()
-            hideSegmentSkipButton()
-            return true
-        end if
-    end if
-
     if not press then return false
+    if handleSkipPromptKey(key) then return true
 
     if m.scrubActive
         if key = KeyCode.OK or key = KeyCode.PLAY
@@ -3497,6 +3679,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
                 if newPosition < 0 then newPosition = 0
             end if
 
+            holdSkipPrompts(newPosition)
             m.top.seek = newPosition
             setVideoEndingTime(newPosition)
             m.positionText.text = secondsToHuman(newPosition, true)
@@ -3565,14 +3748,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
         if m.nextUp.visible
             cancelNextItem()
-            return true
-        end if
-
-        if m.skipSegmentButton.visible
-            if isValid(m.currentSegmentType)
-                m.mediaSegmentDismissed[m.currentSegmentType] = true
-            end if
-            hideSegmentSkipButton()
             return true
         end if
 

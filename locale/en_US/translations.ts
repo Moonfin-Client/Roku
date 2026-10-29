@@ -6202,6 +6202,26 @@
         <translation>A holiday piece, like Halloween's planchette, follows what you select on Home</translation>
     </message>
     <message>
+        <source>Auto Hide Skip Button</source>
+        <extracomment>Setting that takes the skip intro and outro button down by itself after a few seconds</extracomment>
+        <translation>Auto Hide Skip Button</translation>
+    </message>
+    <message>
+        <source>Automatically dismiss the skip intro and outro button after a few seconds.</source>
+        <extracomment>Description of the Auto Hide Skip Button setting</extracomment>
+        <translation>Automatically dismiss the skip intro and outro button after a few seconds.</translation>
+    </message>
+    <message>
+        <source>Skip {segment}</source>
+        <extracomment>Skip button in the player. {segment} is Intro, Outro, Recap, Preview or Commercial</extracomment>
+        <translation>Skip {segment}</translation>
+    </message>
+    <message>
+        <source>Ends in {time}</source>
+        <extracomment>Time left on the segment the skip button offers to skip. {time} is like 1:05</extracomment>
+        <translation>Ends in {time}</translation>
+    </message>
+    <message>
         <source>Settings Sync</source>
         <extracomment>Title of the settings sync panel and the settings group that opens it</extracomment>
         <translation>Settings Sync</translation>
