@@ -81,3 +81,66 @@ function negotiatedPlaybackSource(info as object, current as string, live as boo
     if isEmbyServer(serverUrl) and not live then return embyFeatures.ChooseMediaSource(info, current)
     return current
 end function
+
+' An Emby channel item, like one from a plugin's virtual library such as HyperMS, lists a single
+' placeholder source with no streams. PlaybackInfo probes the real file and answers with it under
+' another id, while naming the placeholder gets back only the placeholder, which the server can only
+' transcode and that transcode fails. A live channel's source has none until it's tuned, and an item
+' that lists its own streams was probed, so both keep their id.
+function isStreamlessStaticSource(item as dynamic, mediaSourceId as dynamic) as boolean
+    if not isValidAndNotEmpty(mediaSourceId) or type(item) <> "roAssociativeArray" then return false
+    itemType = item.LookupCI("Type") ?? ""
+    if itemType = "TvChannel" or itemType = "LiveTvChannel" then return false
+    if hasStreams(item) then return false
+    sources = item.LookupCI("MediaSources")
+    if type(sources) <> "roArray" or sources.Count() <> 1 or type(sources[0]) <> "roAssociativeArray" then return false
+    return isStringEqual(sources[0].LookupCI("Id") ?? "", mediaSourceId) and not hasStreams(sources[0])
+end function
+
+function hasStreams(holder as object) as boolean
+    streams = holder.LookupCI("MediaStreams")
+    return type(streams) = "roArray" and streams.Count() > 0
+end function
+
+' How the placeholder comes back from PlaybackInfo. A live stream is left out, since its streams
+' only show up once it's tuned.
+function isUnprobedPlaceholder(source as dynamic) as boolean
+    if type(source) <> "roAssociativeArray" or hasStreams(source) then return false
+    if (source.LookupCI("SupportsDirectPlay") ?? false) = true or (source.LookupCI("SupportsDirectStream") ?? false) = true then return false
+    return not isValidAndNotEmpty(source.LookupCI("LiveStreamId"))
+end function
+
+' The source a PlaybackInfo answer gives for the id it was asked about, or its first
+function playbackSourceFor(info as dynamic, mediaSourceId as string) as dynamic
+    if type(info) <> "roAssociativeArray" or type(info.LookupCI("MediaSources")) <> "roArray" then return invalid
+    sources = info.LookupCI("MediaSources")
+    for each source in sources
+        if type(source) = "roAssociativeArray" and isStringEqual(source.LookupCI("Id") ?? "", mediaSourceId) then return source
+    end for
+    return sources[0]
+end function
+
+' The sources a PlaybackInfo asked without an id came back with that were actually probed
+function probedSources(info as dynamic) as object
+    probed = []
+    if type(info) <> "roAssociativeArray" or type(info.LookupCI("MediaSources")) <> "roArray" then return probed
+    for each source in info.LookupCI("MediaSources")
+        if type(source) = "roAssociativeArray" and hasStreams(source) then probed.push(source)
+    end for
+    return probed
+end function
+
+' Whether a PlaybackInfo pinned to a source that failed may ask again with no id and take the
+' server's own pick. A single version item gets the same title back either way, which matters when
+' the server swaps the source, like the live stream of a recording that's still being written.
+' An id the item doesn't list is stale, and several versions keep the viewer's pick.
+function canRetryWithoutMediaSourceId(item as dynamic, mediaSourceId as dynamic) as boolean
+    if not isValidAndNotEmpty(mediaSourceId) or type(item) <> "roAssociativeArray" then return false
+    sources = item.LookupCI("MediaSources")
+    if type(sources) <> "roArray" or sources.Count() = 0 then return false
+    if sources.Count() = 1 then return true
+    for each source in sources
+        if type(source) = "roAssociativeArray" and isStringEqual(source.LookupCI("Id") ?? "", mediaSourceId) then return false
+    end for
+    return true
+end function

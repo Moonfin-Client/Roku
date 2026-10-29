@@ -23,19 +23,23 @@ end sub
 
 ' Helper function to get playback info using appropriate server
 function getPlaybackInfo(id as string, mediaSourceId = "" as string, audioTrackIndex = -1 as integer, subtitleTrackIndex = SubtitleSelection.NOTSET as integer, startTimeTicks = 0 as longinteger, options = {} as object) as object
+    result = requestPlaybackInfo(id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
+    ' An answer naming an error, like no compatible stream for a pinned source, is a failure
+    if type(result) = "roAssociativeArray" and isValid(result.LookupCI("ErrorCode")) then return invalid
+    if not usablePlaybackInfo(result) then return invalid
+    return result
+end function
+
+' The server's answer as it came, before anything checks it can play
+function requestPlaybackInfo(id as string, mediaSourceId as string, audioTrackIndex as integer, subtitleTrackIndex as integer, startTimeTicks as longinteger, options as object) as dynamic
     if m.top.playbackMethod <> ""
         options.playbackMethod = m.top.playbackMethod
         options.transcodeCodec = m.top.transcodeCodec
     end if
 
     serverData = playbackServerData()
-    if isValid(serverData)
-        result = ItemPostPlaybackInfoForServer(serverData, id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
-    else
-        result = ItemPostPlaybackInfo(id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
-    end if
-    if not usablePlaybackInfo(result) then return invalid
-    return result
+    if isValid(serverData) then return ItemPostPlaybackInfoForServer(serverData, id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
+    return ItemPostPlaybackInfo(id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
 end function
 
 function playbackResourceURL(path as string) as string
@@ -453,8 +457,28 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     video.content.PlayStart = playStartSec
 
     mediaSourceId = initialPlaybackSource(meta.json, mediaSourceId, video.id, meta.live, m.top.serverUrl)
+    onEmby = isEmbyServer(m.top.serverUrl)
+    if onEmby and isStreamlessStaticSource(meta.json, mediaSourceId) then mediaSourceId = ""
 
     m.playbackInfo = getPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, m.top.selectedSubtitleIndex, playbackPosition)
+    if not isValid(m.playbackInfo) and canRetryWithoutMediaSourceId(meta.json, mediaSourceId)
+        mediaSourceId = ""
+        m.playbackInfo = getPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, m.top.selectedSubtitleIndex, playbackPosition)
+    end if
+
+    ' The same placeholder reached through an item that came without its sources. One with several
+    ' versions is left alone, since what comes back without the id would be its other versions.
+    sourceCount = 0
+    if type(meta.json.LookupCI("MediaSources")) = "roArray" then sourceCount = meta.json.LookupCI("MediaSources").Count()
+    if onEmby and mediaSourceId <> "" and sourceCount <= 1 and isUnprobedPlaceholder(playbackSourceFor(m.playbackInfo, mediaSourceId))
+        retry = requestPlaybackInfo(video.id, "", audio_stream_idx, m.top.selectedSubtitleIndex, playbackPosition, {})
+        probed = probedSources(retry)
+        if probed.Count() > 0
+            retry.MediaSources = probed
+            m.playbackInfo = retry
+            mediaSourceId = ""
+        end if
+    end if
     if not isValid(m.playbackInfo)
         video.errorMsg = "Error loading playback info"
         video.content = invalid
