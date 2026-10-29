@@ -175,7 +175,7 @@ source += '\n' + await readFile('test/person-role.bs', 'utf8');
 // The rest of the guide rules use loops this interpreter cant parse
 const liveTvGuideFile = await readFile('source/utils/liveTvGuide.bs', 'utf8');
 source += '\n' + liveTvGuideFile.match(/^const GUIDE_MINUTE = .+$/m)[0] + '\nnamespace liveTvGuide\n';
-for (const name of ['ParseTime', 'EpisodeTitleOf', 'SeasonEpisodeLabel', 'EpisodeLine', 'HasTimer', 'HasSeriesTimer', 'StartOfDay']) {
+for (const name of ['ParseTime', 'EpisodeTitleOf', 'SeasonEpisodeLabel', 'EpisodeLine', 'HasTimer', 'HasSeriesTimer', 'RecordingMark', 'SeriesChoices', 'SeriesChoiceOf', 'SeriesChoiceFlags', 'StartOfDay']) {
     const match = liveTvGuideFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
     assert.ok(match, `Missing liveTvGuide.${name}`);
     source += '\n' + match[0];
@@ -1064,3 +1064,8 @@ assert.match(await readFile('components/home/HomeRows.bs', 'utf8'), /itemHeight 
 assert.match(classicHomeXml, /<RatingsRow id="homeRatings"[^>]*singleLine="true"/, 'Home shows its ratings as single line chips');
 process.stdout.write('PASS: classic home info area wiring\n');
 
+const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');
+const guideDialog = guideSource.match(/sub openProgramDialog\([^]*?end sub/)[0];
+assert.match(guideDialog, /id: "record"[^]*id: "seriesSettings"[^]*id: "recordSeries"[^]*id: "favorite"[^]*id: "watch"[^]*id: "close"/, 'The program dialog keeps Record, Series Settings, Record Series, Favorite, Watch and Close in order');
+assert.match(guideDialog, /if seriesTimer and not timer and not ended then note = tr\("The series recording will skip this showing"\)/, 'A showing the series rule passes over says so');
+process.stdout.write('PASS: Live TV recording wiring (2 checks)\n');

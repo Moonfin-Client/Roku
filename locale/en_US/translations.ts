@@ -8140,5 +8140,60 @@
         <source>Show each library as its own button in the navigation bar instead of in the Libraries menu</source>
         <translation>Show each library as its own button in the navigation bar instead of in the Libraries menu</translation>
     </message>
+    <message>
+        <source>The series recording will skip this showing</source>
+        <extracomment>Note on a program a series recording covers but won't record</extracomment>
+        <translation>The series recording will skip this showing</translation>
+    </message>
+    <message>
+        <source>Series Settings</source>
+        <extracomment>Button that opens which episodes a series recording records</extracomment>
+        <translation>Series Settings</translation>
+    </message>
+    <message>
+        <source>Which episodes should be recorded?</source>
+        <extracomment>Title of the list of series recording choices</extracomment>
+        <translation>Which episodes should be recorded?</translation>
+    </message>
+    <message>
+        <source>All Episodes</source>
+        <extracomment>Series recording choice</extracomment>
+        <translation>All Episodes</translation>
+    </message>
+    <message>
+        <source>Every showing, including repeats</source>
+        <extracomment>What the All Episodes series recording choice records</extracomment>
+        <translation>Every showing, including repeats</translation>
+    </message>
+    <message>
+        <source>Episodes Not Already Recorded</source>
+        <extracomment>Series recording choice, the default for a new series recording</extracomment>
+        <translation>Episodes Not Already Recorded</translation>
+    </message>
+    <message>
+        <source>Skips episodes already in your library and records each episode once</source>
+        <extracomment>What the Episodes Not Already Recorded choice records</extracomment>
+        <translation>Skips episodes already in your library and records each episode once</translation>
+    </message>
+    <message>
+        <source>New Episodes Only</source>
+        <extracomment>Series recording choice</extracomment>
+        <translation>New Episodes Only</translation>
+    </message>
+    <message>
+        <source>First airings only, no repeats</source>
+        <extracomment>What the New Episodes Only choice records</extracomment>
+        <translation>First airings only, no repeats</translation>
+    </message>
+    <message>
+        <source>Series recording updated</source>
+        <extracomment>Toast after a series recording's episode choice changes</extracomment>
+        <translation>Series recording updated</translation>
+    </message>
+    <message>
+        <source>Unable to update series recording</source>
+        <extracomment>Toast when a series recording can't be read or changed</extracomment>
+        <translation>Unable to update series recording</translation>
+    </message>
 </context>
 </TS>

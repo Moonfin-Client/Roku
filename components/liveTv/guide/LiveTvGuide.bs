@@ -111,6 +111,7 @@ sub resetViewState()
     m.scrollRow = 0
     m.dialogType = ""
     m.dialogProgram = invalid
+    m.seriesRule = invalid
     m.channelNumber = ""
 end sub
 
@@ -424,6 +425,8 @@ sub onGuideStep(stepName as string, ctx as object, ok as boolean)
         ' A failed refresh keeps what the guide already holds
     else if stepName = "dialogDone"
         onDialogActionDone(ctx, ok)
+    else if stepName = "seriesRuleLoaded"
+        onSeriesRuleLoaded(ctx, ok)
     end if
 end sub
 
@@ -630,7 +633,8 @@ sub updateHero()
         communityRating: invalid,
         badgeLabel: invalid,
         synopsis: invalid,
-        isLive: false
+        isLive: false,
+        mark: ""
     }
     if isValid(channel)
         model.title = channel.Name ?? ""
@@ -660,6 +664,7 @@ sub updateHero()
         end if
         model.synopsis = preview.LookupCI("Overview")
         model.isLive = liveTvGuide.IsLiveAt(preview, now)
+        model.mark = liveTvGuide.RecordingMark(preview)
     end if
 
     m.hero.model = model
@@ -1005,13 +1010,17 @@ sub openProgramDialog(program as object)
         if program.LookupCI(flag[0]) = true then chips.push(tr(flag[1]))
     end for
 
+    note = ""
+    if seriesTimer and not timer and not ended then note = tr("The series recording will skip this showing")
+
     buttons = []
     if not ended
         label = tr("Record")
         if timer then label = tr("Cancel Recording")
         buttons.push({ id: "record", label: label, danger: timer, isDefault: recordingNow })
     end if
-    if program.LookupCI("IsSeries") = true
+    if seriesTimer then buttons.push({ id: "seriesSettings", label: tr("Series Settings") })
+    if program.LookupCI("IsSeries") = true or seriesTimer
         label = tr("Record Series")
         if seriesTimer then label = tr("Cancel Series Recording")
         buttons.push({ id: "recordSeries", label: label, danger: seriesTimer })
@@ -1031,11 +1040,48 @@ sub openProgramDialog(program as object)
         title: program.LookupCI("Name") ?? "",
         time: liveTvGuide.ClockTime(program.startSec) + " – " + liveTvGuide.ClockTime(program.endSec),
         episode: liveTvGuide.EpisodeLine(program),
+        note: note,
         overview: program.LookupCI("Overview") ?? "",
         chips: chips,
         buttons: buttons
     })
     m.dialogProgram = program
+end sub
+
+' Which episodes a new series rule records, or the rule's current choice when it has one
+sub openSeriesChoice(program as object, rule as dynamic)
+    selected = "notRecorded"
+    if isValid(rule) then selected = liveTvGuide.SeriesChoiceOf(rule)
+    choices = []
+    for each choice in liveTvGuide.SeriesChoices()
+        choices.push({ label: choice.label, detail: choice.detail, selected: choice.key = selected })
+    end for
+    openDialog("series", { type: "series", title: tr("Which episodes should be recorded?"), choices: choices })
+    m.dialogProgram = program
+    m.seriesRule = rule
+end sub
+
+sub onSeriesRuleLoaded(ctx as object, ok as boolean)
+    if not isValid(m.dialog) or m.dialogType <> "program" then return
+    if not ok
+        m.dialog.busy = false
+        showToast(tr("Unable to update series recording"))
+        return
+    end if
+    openSeriesChoice(m.dialogProgram, ctx.rule)
+end sub
+
+sub handleSeriesChoice(key as string)
+    rule = m.seriesRule
+    if not isValid(rule)
+        m.dialog.busy = true
+        storeToggleSeriesRecording(m.dialogProgram, { then: "dialogDone", success: tr("Series set to record"), failure: tr("Unable to create series recording") }, liveTvGuide.SeriesChoiceFlags(key))
+    else if liveTvGuide.SeriesChoiceOf(rule) = key
+        closeDialog()
+    else
+        m.dialog.busy = true
+        storeUpdateSeriesRule(rule, liveTvGuide.SeriesChoiceFlags(key), { then: "dialogDone", success: tr("Series recording updated"), failure: tr("Unable to update series recording") })
+    end if
 end sub
 
 sub openSort()
@@ -1071,7 +1117,7 @@ sub openDate()
 end sub
 
 sub onDialogDismissed()
-    if m.dialogType = "program"
+    if m.dialogType = "program" or m.dialogType = "series"
         closeDialog()
     else
         closeDialogNode()
@@ -1101,6 +1147,10 @@ sub onDialogAction(event as object)
 
     program = m.dialogProgram
     if not isValid(program) then return
+    if m.dialogType = "series"
+        handleSeriesChoice(liveTvGuide.SeriesChoices()[action.option].key)
+        return
+    end if
     if action.id = "close"
         closeDialog()
     else if action.id = "watch"
@@ -1116,15 +1166,16 @@ sub onDialogAction(event as object)
             failure = tr("Failed to cancel recording")
         end if
         storeToggleProgramRecording(program, { then: "dialogDone", success: success, failure: failure })
-    else if action.id = "recordSeries"
+    else if action.id = "seriesSettings"
         m.dialog.busy = true
-        success = tr("Series set to record")
-        failure = tr("Unable to create series recording")
-        if liveTvGuide.HasSeriesTimer(program)
-            success = tr("Series recording cancelled")
-            failure = tr("Failed to cancel series recording")
+        storeLoadSeriesRule(program.LookupCI("SeriesTimerId"), { then: "seriesRuleLoaded" })
+    else if action.id = "recordSeries"
+        if not liveTvGuide.HasSeriesTimer(program)
+            openSeriesChoice(program, invalid)
+            return
         end if
-        storeToggleSeriesRecording(program, { then: "dialogDone", success: success, failure: failure })
+        m.dialog.busy = true
+        storeToggleSeriesRecording(program, { then: "dialogDone", success: tr("Series recording cancelled"), failure: tr("Failed to cancel series recording") })
     else if action.id = "favorite"
         m.dialog.busy = true
         channel = storeChannelForId(program.LookupCI("ChannelId"))
