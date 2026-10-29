@@ -6237,6 +6237,11 @@
         <translation>Ends in {time}</translation>
     </message>
     <message>
+        <source>Languages to search when downloading subtitles, up to 5. With none ticked, the default subtitle language is searched, or one language is picked from the video when that is not set.</source>
+        <extracomment>Description of the Subtitle Download Languages setting</extracomment>
+        <translation>Languages to search when downloading subtitles, up to 5. With none ticked, the default subtitle language is searched, or one language is picked from the video when that is not set.</translation>
+    </message>
+    <message>
         <source>Settings Sync</source>
         <extracomment>Title of the settings sync panel and the settings group that opens it</extracomment>
         <translation>Settings Sync</translation>
