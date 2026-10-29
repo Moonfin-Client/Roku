@@ -8226,6 +8226,36 @@
         <translation>Unable to update series recording</translation>
     </message>
     <message>
+        <source>Failed to load recordings</source>
+        <extracomment>Toast when the player's Record button can't read the program's recordings</extracomment>
+        <translation>Failed to load recordings</translation>
+    </message>
+    <message>
+        <source>Record This Program</source>
+        <extracomment>Player Record dialog row for a program that isn't a series</extracomment>
+        <translation>Record This Program</translation>
+    </message>
+    <message>
+        <source>Record This Episode</source>
+        <extracomment>Player Record dialog row for an episode of a series</extracomment>
+        <translation>Record This Episode</translation>
+    </message>
+    <message>
+        <source>Cancel This Recording</source>
+        <extracomment>Player Record dialog row for a program already set to record</extracomment>
+        <translation>Cancel This Recording</translation>
+    </message>
+    <message>
+        <source>Next series recording: {dateTime}</source>
+        <extracomment>{dateTime} is a day and time such as Thu, Oct 29 · 8:00 PM</extracomment>
+        <translation>Next series recording: {dateTime}</translation>
+    </message>
+    <message>
+        <source>Series recording is scheduled, but the guide has no upcoming episodes</source>
+        <extracomment>Player Record dialog note for a series recording with nothing coming up</extracomment>
+        <translation>Series recording is scheduled, but the guide has no upcoming episodes</translation>
+    </message>
+    <message>
         <source>Record {name}</source>
         <extracomment>Title of the Record prompt for a program already airing. {name} is the program</extracomment>
         <translation>Record {name}</translation>

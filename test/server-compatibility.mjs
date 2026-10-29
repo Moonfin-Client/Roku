@@ -176,7 +176,7 @@ source += '\n' + await readFile('test/person-role.bs', 'utf8');
 // The rest of the guide rules use loops this interpreter cant parse
 const liveTvGuideFile = await readFile('source/utils/liveTvGuide.bs', 'utf8');
 source += '\n' + liveTvGuideFile.match(/^const GUIDE_MINUTE = .+$/m)[0] + '\nnamespace liveTvGuide\n';
-for (const name of ['ParseTime', 'EpisodeTitleOf', 'SeasonEpisodeLabel', 'EpisodeLine', 'HasTimer', 'HasSeriesTimer', 'RecordingMark', 'SeriesChoices', 'SeriesChoiceOf', 'SeriesChoiceFlags', 'IsUpcomingTimer', 'UpcomingTimers', 'StartOfDay']) {
+for (const name of ['ParseTime', 'EpisodeTitleOf', 'SeasonEpisodeLabel', 'EpisodeLine', 'HasTimer', 'HasSeriesTimer', 'RecordingMark', 'SeriesChoices', 'SeriesChoiceOf', 'SeriesChoiceFlags', 'IsUpcomingTimer', 'UpcomingTimers', 'TimerFor', 'LiveRecording', 'StartOfDay']) {
     const match = liveTvGuideFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
     assert.ok(match, `Missing liveTvGuide.${name}`);
     source += '\n' + match[0];
@@ -1073,7 +1073,11 @@ const guideDialog = guideSource.match(/sub openProgramDialog\([^]*?end sub/)[0];
 assert.match(guideDialog, /id: "record"[^]*id: "seriesSettings"[^]*id: "recordSeries"[^]*id: "favorite"[^]*id: "watch"[^]*id: "close"/, 'The program dialog keeps Record, Series Settings, Record Series, Favorite, Watch and Close in order');
 assert.match(guideDialog, /if seriesTimer and not timer and not ended then note = tr\("The series recording will skip this showing"\)/, 'A showing the series rule passes over says so');
 assert.match(guideSource.match(/sub onDialogAction\([^]*?end sub/)[0], /if not liveTvGuide\.HasTimer\(program\)\s+recordProgram\(program\)/, 'Record on a program with no timer goes through the Record prompt');
+const playerSource = await readFile('components/video/VideoPlayerView.bs', 'utf8');
+assert.match(playerSource.match(/sub recordAiringProgram\([^]*?end sub/)[0], /CreateObject\("roSGNode", "RecordAiring"\)/, 'The player records through the same Record prompt');
+assert.match(playerSource.match(/sub onPrewarmLoaded\([^]*?end sub/)[0], /tag\.cold = true and tag\.revision <> m\.recordingRevision then refreshCarouselRecordings\(\)/, 'A recording changed during the carousel\'s first load is read again');
+assert.match((await readFile('components/video/OSD.bs', 'utf8')).match(/function liveCandidates\([^]*?end function/)[0], /if m\.top\.recordable[^]*"record"[^]*"info"/, 'The live row puts Record before Info while the program airs');
 const recordingsSource = await readFile('components/liveTv/recordings/LiveTvRecordings.bs', 'utf8');
 assert.match(recordingsSource.match(/function applyTimers\([^]*?end function/)[0], /if read < m\.timerReads\.applied then return false/, 'An older schedule read cant replace a newer one');
 assert.match(recordingsSource, /else if response\.kind = "cancelTimer"\s+'[^\n]*\s+m\.timerReads\.started\+\+\s+m\.timerReads\.applied = m\.timerReads\.started/, 'A read started before a cancel cant bring the timer back');
-process.stdout.write('PASS: Live TV recording wiring (5 checks)\n');
+process.stdout.write('PASS: Live TV recording wiring (8 checks)\n');

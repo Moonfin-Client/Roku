@@ -24,6 +24,7 @@ import "pkg:/source/utils/liveTvGuide.bs"
 import "pkg:/source/utils/liveTvLastChannel.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
+import "pkg:/source/utils/recordAiring.bs"
 import "pkg:/source/utils/seasonalEffects.bs"
 
 const REPLAY_RETRIES = 3
@@ -64,6 +65,13 @@ sub init()
     m.suppressStopReport = false
     m.selectionRevision = 0
     m.liveTasks = []
+    m.recordState = invalid
+    m.recordDialog = invalid
+    m.recordAiring = invalid
+    m.recordBusy = false
+    ' Counts the recording changes made here, so a carousel load can tell one landed while it ran
+    m.recordingRevision = 0
+    m.top.findNode("recordStateTimer").observeField("fire", "onRecordStateTick")
     m.top.findNode("liveProgramTimer").observeField("fire", "refreshLiveProgram")
     m.top.findNode("prewarmTimer").observeField("fire", "prewarmCarousel")
     m.top.findNode("switchTimer").observeField("fire", "onSwitchTimeout")
@@ -275,6 +283,10 @@ sub init()
     m.subtitleFetchLabel.text = tr("Fetching subtitles")
     m.subtitleFetchDelay.observeField("fire", "onSubtitleFetchDelay")
     m.osd.observeField("visible", "placeSubtitleFetch")
+    m.osd.observeField("visible", "onRecordControlsVisible")
+    m.recordToast = m.top.findNode("recordToast")
+    m.recordToastText = m.top.findNode("recordToastText")
+    liveTvGuide.SetFont(m.recordToastText, 20, false)
 
     m.checkedForNextEpisode = false
     m.getNextEpisodeTask = createObject("roSGNode", "GetNextEpisodeTask")
@@ -983,6 +995,11 @@ sub onOSDAction()
 
     if action = "showguide"
         openGuide()
+        return
+    end if
+
+    if action = "showrecord"
+        refreshRecordState(true)
         return
     end if
 end sub
@@ -2067,7 +2084,7 @@ sub applySkipPrompt()
 end sub
 
 function playerModalOpen() as boolean
-    if isValid(m.chapterOverlay) or isValid(m.episodeOverlay) or isValid(m.playbackInfoDialog) or isValid(m.carousel) then return true
+    if isValid(m.chapterOverlay) or isValid(m.episodeOverlay) or isValid(m.playbackInfoDialog) or isValid(m.carousel) or isValid(m.recordDialog) or isValid(m.recordAiring) then return true
     for each modal in m.playerModals
         if isValid(modal) and modal.visible then return true
     end for
@@ -3151,6 +3168,9 @@ sub onLiveProgramLoaded(event as object)
     program = liveTvGuide.ProgramAiringAt(programs, liveTvGuide.NowSeconds())
     if not isValid(program) then program = programs[0]
     m.osd.liveProgram = program
+    ' A Record prompt still open for the program that just ended records nothing
+    if isValid(m.recordAiring) and m.recordAiring.request.program.LookupCI("Id") <> program.LookupCI("Id") then m.recordAiring.abort = true
+    updateRecordButton()
 end sub
 
 ' The lineup is the guide's, in the guide's order, when playback started there. Anywhere else it is
@@ -3198,8 +3218,13 @@ sub prewarmCarousel()
         if not m.carouselPrograms.DoesExist(id) then missing.push(id)
     end for
     if missing.count() = 0 then return
+    loadCarouselPrograms(missing)
+end sub
+
+sub loadCarouselPrograms(ids as object)
     start = liveTvGuide.LeftEdge(liveTvGuide.NowSeconds())
-    sendLiveRequest({ kind: "programs", ids: missing, from: start, upto: start + liveTvGuide.DefaultWindow() }, "onPrewarmLoaded")
+    tag = { cold: m.carouselPrograms.count() = 0, revision: m.recordingRevision }
+    sendLiveRequest({ kind: "programs", ids: ids, from: start, upto: start + liveTvGuide.DefaultWindow(), tag: tag }, "onPrewarmLoaded")
 end sub
 
 sub onPrewarmLoaded(event as object)
@@ -3215,6 +3240,289 @@ sub onPrewarmLoaded(event as object)
         list.push(program)
         m.carouselPrograms[id] = list
     end for
+    ' A recording changed during the first load was missed, since nothing was loaded yet to refresh
+    tag = response.tag
+    if isValid(tag) and tag.cold = true and tag.revision <> m.recordingRevision then refreshCarouselRecordings()
+end sub
+
+' The carousel's cards wear each program's recording mark, so a change made here reads them again
+sub refreshCarouselRecordings()
+    m.recordingRevision++
+    ids = m.carouselPrograms.Keys()
+    if ids.count() > 0 then loadCarouselPrograms(ids)
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' Recording from the player
+' ------------------------------------------------------------------------------------------------
+
+' The program airing now on a signed in server, which is all the Record button offers to record
+function airingProgram() as dynamic
+    if not isValid(m.liveChannel) or not liveOnSignedInServer() then return invalid
+    program = m.osd.liveProgram
+    if not isValidAndNotEmpty(program.LookupCI("Id")) or not isValid(program.startSec) then return invalid
+    if not liveTvGuide.IsAiringAt(program, liveTvGuide.NowSeconds()) then return invalid
+    return program
+end function
+
+' The airing program as last read along with the timers, or as the controls hold it before then
+function recordingNow() as dynamic
+    program = airingProgram()
+    if not isValid(program) then return invalid
+    if isValid(m.recordState) and m.recordState.program.LookupCI("Id") = program.LookupCI("Id") then return m.recordState
+    return { program: program, timers: [] }
+end function
+
+sub updateRecordButton()
+    state = recordingNow()
+    m.osd.recordable = isValid(state)
+    if isValid(state) then m.osd.recordMark = liveTvGuide.LiveRecording(state.program, state.timers, liveTvGuide.NowSeconds()).mark
+end sub
+
+' The program the controls hold can be a minute old, so it is read again with the timers as the
+' controls come up and once a minute while they stay up
+sub onRecordControlsVisible()
+    timer = m.top.findNode("recordStateTimer")
+    timer.control = TimerControl.STOP
+    if not m.osd.visible or not isValid(airingProgram()) then return
+    refreshRecordState(false)
+    timer.control = TimerControl.START
+end sub
+
+sub onRecordStateTick()
+    refreshRecordState(false)
+end sub
+
+' Asked again just before the dialog opens too, so it shows what the server has now
+sub refreshRecordState(open as boolean)
+    program = airingProgram()
+    if not isValid(program) then return
+    id = program.LookupCI("Id")
+    sendLiveRequest({ kind: "recordState", programId: id, tag: { programId: id, open: open } }, "onRecordStateLoaded")
+end sub
+
+sub onRecordStateLoaded(event as object)
+    releaseLiveTask(event.getRoSGNode())
+    response = event.getData()
+    program = airingProgram()
+    if not isValid(program) or response.tag.programId <> program.LookupCI("Id") then return
+    if response.ok then m.recordState = { program: response.program, timers: response.timers }
+    updateRecordButton()
+    if response.tag.open <> true then return
+    if response.ok
+        openRecordDialog()
+    else
+        showRecordToast(tr("Failed to load recordings"))
+    end if
+end sub
+
+' What the Record button opens: the airing program's recording and its series rule
+sub openRecordDialog()
+    state = recordingNow()
+    if not isValid(state) or isValid(m.recordDialog) or isValid(m.recordAiring) then return
+    program = state.program
+    info = liveTvGuide.LiveRecording(program, state.timers, liveTvGuide.NowSeconds())
+    m.recordInfo = info
+    hasTimer = isValid(info.timer)
+    hasRule = info.seriesTimerId <> ""
+
+    details = [{ text: liveTvGuide.ClockTime(liveTvGuide.ParseTime(program.LookupCI("StartDate"))) + " – " + liveTvGuide.ClockTime(liveTvGuide.ParseTime(program.LookupCI("EndDate"))) }]
+    episode = liveTvGuide.EpisodeLine(program)
+    if episode <> "" then details.push({ text: episode })
+    if hasRule and not hasTimer then details.push({ text: tr("The series recording will skip this showing"), note: true })
+    if hasRule
+        nextLine = tr("Series recording is scheduled, but the guide has no upcoming episodes")
+        if info.nextStart > 0 then nextLine = tr("Next series recording: {dateTime}").Replace("{dateTime}", liveTvGuide.DayLabel(info.nextStart) + GUIDE_META_SEPARATOR + liveTvGuide.ClockTime(info.nextStart))
+        details.push({ text: nextLine, note: true })
+    end if
+
+    recordLabel = tr("Record This Program")
+    if program.LookupCI("IsSeries") = true then recordLabel = tr("Record This Episode")
+    if hasTimer then recordLabel = tr("Cancel This Recording")
+    labels = [recordLabel]
+    ids = ["record"]
+    if hasRule
+        labels.push(tr("Series Settings"))
+        ids.push("seriesSettings")
+    end if
+    if hasRule or program.LookupCI("IsSeries") = true
+        if hasRule then labels.push(tr("Cancel Series Recording")) else labels.push(tr("Record Series"))
+        ids.push("series")
+    end if
+    labels.push(tr("Close"))
+    ids.push("close")
+
+    ' Close holds focus when the dialog opens, so a stray OK changes nothing
+    showRecordDialog({ title: program.LookupCI("Name") ?? "", details: details, labels: labels, ids: ids, focus: ids.count() - 1, divider: ids.count() - 1 })
+end sub
+
+' Which episodes a new or changed series rule records
+sub openSeriesChoices(rule as dynamic)
+    selected = "notRecorded"
+    if isValid(rule) then selected = liveTvGuide.SeriesChoiceOf(rule)
+    labels = []
+    optionDetails = []
+    ids = []
+    selectedIndex = 0
+    for each choice in liveTvGuide.SeriesChoices()
+        if choice.key = selected then selectedIndex = ids.count()
+        labels.push(choice.label)
+        optionDetails.push(choice.detail)
+        ids.push(choice.key)
+    end for
+    m.seriesRule = rule
+    showRecordDialog({ title: tr("Which episodes should be recorded?"), labels: labels, optionDetails: optionDetails, ids: ids, selected: selectedIndex, series: true })
+end sub
+
+sub showRecordDialog(model as object)
+    handleHideAction(false)
+    m.recordDialog = CreateObject("roSGNode", "ListPromptDialog")
+    m.recordDialog.observeField("optionSelected", "onRecordDialogChoice")
+    m.top.appendChild(m.recordDialog)
+    m.recordDialog.dialogTitle = model.title
+    m.recordDialog.details = model.details ?? []
+    m.recordDialog.options = model.labels
+    m.recordDialog.optionDetails = model.optionDetails ?? []
+    m.recordDialog.selectedOption = model.selected ?? -1
+    m.recordDialog.openOnSelected = true
+    m.recordDialog.focusOption = model.focus ?? -1
+    m.recordDialog.dividerBefore = model.divider ?? -1
+    m.recordDialog.returnFocus = m.top
+    m.recordDialog.callFunc("showDialog")
+    m.recordDialogModel = model
+end sub
+
+sub closeRecordDialog()
+    if not isValid(m.recordDialog) then return
+    m.recordDialog.unobserveField("optionSelected")
+    m.top.setFocus(true)
+    m.top.removeChild(m.recordDialog)
+    m.recordDialog = invalid
+end sub
+
+' The controls come back on the Record button, the way they do after any of the player's panels
+sub restoreRecordControls()
+    prepareOSD()
+    showOSD("showRecord")
+end sub
+
+sub onRecordDialogChoice(event as object)
+    index = event.getData()
+    model = m.recordDialogModel
+    closeRecordDialog()
+    if index < 0
+        restoreRecordControls()
+        return
+    end if
+    choice = model.ids[index]
+
+    if model.series = true
+        restoreRecordControls()
+        rule = m.seriesRule
+        if not isValid(rule)
+            runRecordAction({ kind: "createSeriesTimer", programId: m.recordState.program.LookupCI("Id"), flags: liveTvGuide.SeriesChoiceFlags(choice) }, tr("Series set to record"), tr("Unable to create series recording"))
+        else if liveTvGuide.SeriesChoiceOf(rule) <> choice
+            runRecordAction({ kind: "updateSeriesTimer", rule: rule, flags: liveTvGuide.SeriesChoiceFlags(choice) }, tr("Series recording updated"), tr("Unable to update series recording"))
+        end if
+        return
+    end if
+
+    info = m.recordInfo
+    if choice = "record"
+        if isValid(info.timer)
+            restoreRecordControls()
+            runRecordAction({ kind: "cancelTimer", timerId: info.timer.LookupCI("Id") }, tr("Recording cancelled"), tr("Failed to cancel recording"))
+        else
+            recordAiringProgram()
+        end if
+    else if choice = "seriesSettings"
+        sendLiveRequest({ kind: "seriesTimer", timerId: info.seriesTimerId }, "onSeriesRuleLoaded")
+    else if choice = "series"
+        if info.seriesTimerId <> ""
+            restoreRecordControls()
+            runRecordAction({ kind: "cancelSeriesTimer", timerId: info.seriesTimerId }, tr("Series recording cancelled"), tr("Failed to cancel series recording"))
+        else
+            openSeriesChoices(invalid)
+        end if
+    else
+        restoreRecordControls()
+    end if
+end sub
+
+sub onSeriesRuleLoaded(event as object)
+    releaseLiveTask(event.getRoSGNode())
+    response = event.getData()
+    if response.ok
+        openSeriesChoices(response.rule)
+        return
+    end if
+    showRecordToast(tr("Unable to update series recording"))
+    restoreRecordControls()
+end sub
+
+' The Record prompt takes over from the dialog while it's needed. Back on it records nothing and
+' says nothing.
+sub recordAiringProgram()
+    if m.recordBusy then return
+    m.recordBusy = true
+    channel = ""
+    if isValid(m.liveChannel) then channel = recordAiring.PromptChannel(m.liveChannel.number, m.liveChannel.name)
+    m.recordAiring = CreateObject("roSGNode", "RecordAiring")
+    m.recordAiring.observeField("outcome", "onRecordAiringDone")
+    m.top.appendChild(m.recordAiring)
+    m.recordAiring.setFocus(true)
+    m.recordAiring.request = { program: m.recordState.program, channel: channel }
+end sub
+
+sub onRecordAiringDone(event as object)
+    outcome = event.getData()
+    m.recordAiring.unobserveField("outcome")
+    m.top.setFocus(true)
+    m.top.removeChild(m.recordAiring)
+    m.recordAiring = invalid
+    m.recordBusy = false
+    message = recordAiring.Message(outcome)
+    if message <> "" and outcome <> "failed" then refreshCarouselRecordings()
+    if message <> "" then showRecordToast(message)
+    refreshRecordState(false)
+    restoreRecordControls()
+end sub
+
+' One change at a time, answered with a toast
+sub runRecordAction(request as object, success as string, failure as string)
+    if m.recordBusy then return
+    m.recordBusy = true
+    request.tag = { success: success, failure: failure }
+    sendLiveRequest(request, "onRecordActionDone")
+end sub
+
+sub onRecordActionDone(event as object)
+    releaseLiveTask(event.getRoSGNode())
+    response = event.getData()
+    m.recordBusy = false
+    if response.ok
+        showRecordToast(response.tag.success)
+        refreshCarouselRecordings()
+    else
+        showRecordToast(response.tag.failure)
+    end if
+    refreshRecordState(false)
+end sub
+
+sub showRecordToast(message as string)
+    m.recordToastText.text = message
+    rect = m.recordToastText.boundingRect()
+    fill = m.top.findNode("recordToastFill")
+    border = m.top.findNode("recordToastBorder")
+    for each layer in [fill, border]
+        layer.width = rect.width + 56
+        layer.height = rect.height + 28
+    end for
+    m.recordToast.translation = [(1920 - fill.width) / 2, 72]
+    m.recordToast.visible = true
+    fade = m.top.findNode("recordToastFade")
+    fade.control = "stop"
+    fade.control = "start"
 end sub
 
 sub openCarousel()
@@ -3695,6 +4003,7 @@ sub openGuide()
     releaseLiveSessions()
     abandonLoad()
     m.top.findNode("liveProgramTimer").control = TimerControl.STOP
+    m.top.findNode("recordStateTimer").control = TimerControl.STOP
     m.global.queueManager.callFunc("clear")
     m.top.control = VideoControl.STOP
     sceneManager = m.global.sceneManager
