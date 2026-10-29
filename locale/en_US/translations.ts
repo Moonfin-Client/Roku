@@ -6695,6 +6695,11 @@
         <translation>Corner</translation>
     </message>
     <message>
+        <source>Top</source>
+        <extracomment>Home Screen Backdrop choice that draws the focused item&apos;s backdrop across the top half of the screen, fading out toward the bottom</extracomment>
+        <translation>Top</translation>
+    </message>
+    <message>
         <source>How long a show stays in Next Up after you last watched it</source>
         <translation>How long a show stays in Next Up after you last watched it</translation>
     </message>

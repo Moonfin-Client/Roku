@@ -918,17 +918,18 @@ assert.equal(cornerPng.readUInt32BE(20), 8, 'The corner piece is 8 high');
 assert.ok(cornerPng.length < 1024, 'The corner piece is small');
 process.stdout.write('PASS: home preview wiring (46 checks)\n');
 
-// The Home Screen Backdrop is a choice of off, full screen or corner that writes the old switch
-// too, and Home reads both through one helper
-assert.match(previewSettings, /"title": "Home Screen Backdrop",\s+"settingName": "ui\.home\.backdropStyle",\s+"glyph": "image",\s+"type": "radio",\s+"default": "fullScreen",\s+"options": \[\s+\{\s+"title": "Off",\s+"id": "off"\s+\},\s+\{\s+"title": "Full Screen",\s+"id": "fullScreen"\s+\},\s+\{\s+"title": "Corner",\s+"id": "corner"\s+\}\s+\]/, 'Home Screen Backdrop is a choice of off, full screen or corner');
+// The Home Screen Backdrop is a choice of off, full screen, corner or top that writes the old
+// switch too, and Home reads both through one helper
+assert.match(previewSettings, /"title": "Home Screen Backdrop",\s+"settingName": "ui\.home\.backdropStyle",\s+"glyph": "image",\s+"type": "radio",\s+"default": "fullScreen",\s+"options": \[\s+\{\s+"title": "Off",\s+"id": "off"\s+\},\s+\{\s+"title": "Full Screen",\s+"id": "fullScreen"\s+\},\s+\{\s+"title": "Corner",\s+"id": "corner"\s+\},\s+\{\s+"title": "Top",\s+"id": "top"\s+\}\s+\]/, 'Home Screen Backdrop is a choice of off, full screen, corner or top');
 assert.doesNotMatch(previewSettings, /"settingName": "ui\.home\.showBackdrop"/, 'The old backdrop switch has no row of its own, the choice writes it');
 assert.match(settingsSyncSource, /\{ pluginKey: "homeBackdropEnabled", rokuKey: "ui\.home\.showBackdrop", type: "bool" \}/, 'The backdrop switch syncs with the plugin');
 assert.match(settingsSyncSource, /\{ pluginKey: "homeBackdropStyle", rokuKey: "ui\.home\.backdropStyle", type: "direct" \}/, 'The backdrop style syncs with the plugin');
 assert.equal((previewSettingsScreen.match(/"ui\.home\.backdropStyle"\) then (?:currentValue|selectedValue) = getHomeBackdropStyle\(m\.global\.session\.user\.settings\)/g) ?? []).length, 2, 'The row and the picker show the style Home draws');
 assert.doesNotMatch(previewHome, /"ui\.home\.showBackdrop"/, 'Home never reads the old backdrop switch on its own');
 assert.match(previewHome, /maskUri = "pkg:\/images\/backdropCornerMask\.png"/, 'The corner backdrop fades out through its mask');
-for (const name of ['Full Screen', 'Corner']) assert.match(previewStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
-process.stdout.write('PASS: home backdrop style wiring (9 checks)\n');
+assert.match(previewHome, /maskUri = "pkg:\/images\/backdropTopMask\.png"/, 'The top backdrop fades out through its mask');
+for (const name of ['Full Screen', 'Corner', 'Top']) assert.match(previewStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
+process.stdout.write('PASS: home backdrop style wiring (11 checks)\n');
 
 // Continue Watching and Next Up cards play on select through one check the press and the card menu share
 assert.match(homeRowsSource.match(/function playsOnSelect\([^]*?end function/)[0], /if rowId <> "resume" and rowId <> "nextup" then return false\s+return isStringEqual\(get_user_setting\("ui\.home\.continueWatchingDefaultAction"\), "play"\)/, 'Only Continue Watching and Next Up rows play on select, and only when the setting says play');
