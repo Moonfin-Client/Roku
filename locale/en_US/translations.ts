@@ -31,10 +31,6 @@
         <translation>Adds a button to the menu for messages sent by your server admin</translation>
     </message>
     <message>
-        <source>All the details on one page.</source>
-        <translation>All the details on one page.</translation>
-    </message>
-    <message>
         <source>And plenty more</source>
         <translation>And plenty more</translation>
     </message>
@@ -42,10 +38,6 @@
         <source>Appearance</source>
         <extracomment>The screen for picking an avatar and a title</extracomment>
         <translation>Appearance</translation>
-    </message>
-    <message>
-        <source>Artwork first, with cards that open what they name.</source>
-        <translation>Artwork first, with cards that open what they name.</translation>
     </message>
     <message>
         <source>Artwork, one play button and the episodes.</source>
@@ -248,10 +240,6 @@
         <source>Equipped</source>
         <extracomment>Shown on the avatar or title the profile wears</extracomment>
         <translation>Equipped</translation>
-    </message>
-    <message>
-        <source>Every section stacked down one page.</source>
-        <translation>Every section stacked down one page.</translation>
     </message>
     <message>
         <source>Exit Kids Mode</source>
@@ -524,10 +512,6 @@
         <source>Owned</source>
         <extracomment>Shown on an avatar or title the profile holds but is not wearing</extracomment>
         <translation>Owned</translation>
-    </message>
-    <message>
-        <source>Pick a look</source>
-        <translation>Pick a look</translation>
     </message>
     <message>
         <source>PIN must be exactly 4 digits.</source>
@@ -1199,6 +1183,96 @@
     <message>
         <source>Where should navigation go?</source>
         <translation>Where should navigation go?</translation>
+    </message>
+    <message>
+        <source>Step {0} of {1}</source>
+        <extracomment>Setup wizard progress, {0} is the current step and {1} how many there are</extracomment>
+        <translation>Step {0} of {1}</translation>
+    </message>
+    <message>
+        <source>Up and down to preview · OK to choose · Back twice to skip</source>
+        <extracomment>Setup wizard hint about the remote keys</extracomment>
+        <translation>Up and down to preview · OK to choose · Back twice to skip</translation>
+    </message>
+    <message>
+        <source>Navigation Bar</source>
+        <extracomment>Settings screen name, shown in the setup wizard as where a choice lives</extracomment>
+        <translation>Navigation Bar</translation>
+    </message>
+    <message>
+        <source>Navigation Style</source>
+        <extracomment>Setting name, shown in the setup wizard as what a step changes</extracomment>
+        <translation>Navigation Style</translation>
+    </message>
+    <message>
+        <source>Media Bar</source>
+        <extracomment>Settings screen name, shown in the setup wizard as where a choice lives</extracomment>
+        <translation>Media Bar</translation>
+    </message>
+    <message>
+        <source>Details Page</source>
+        <extracomment>Settings screen name, shown in the setup wizard as where a choice lives</extracomment>
+        <translation>Details Page</translation>
+    </message>
+    <message>
+        <source>Tabs across the top of the screen.</source>
+        <extracomment>Setup wizard description of the Top Bar navigation</extracomment>
+        <translation>Tabs across the top of the screen.</translation>
+    </message>
+    <message>
+        <source>A slim rail of icons down the left side.</source>
+        <extracomment>Setup wizard description of the Left Sidebar navigation</extracomment>
+        <translation>A slim rail of icons down the left side.</translation>
+    </message>
+    <message>
+        <source>Large artwork with the title, details and overview laid over it.</source>
+        <extracomment>Setup wizard description of the Moonfin media bar</extracomment>
+        <translation>Large artwork with the title, details and overview laid over it.</translation>
+    </message>
+    <message>
+        <source>Large artwork led by a big title logo.</source>
+        <extracomment>Setup wizard description of the MakD media bar</extracomment>
+        <translation>Large artwork led by a big title logo.</translation>
+    </message>
+    <message>
+        <source>Titles shelved as book spines, with the featured one face out.</source>
+        <extracomment>Setup wizard description of the Bookshelf media bar</extracomment>
+        <translation>Titles shelved as book spines, with the featured one face out.</translation>
+    </message>
+    <message>
+        <source>The featured title opened up, with the next few lined up beside it.</source>
+        <extracomment>Setup wizard description of the Gallery media bar</extracomment>
+        <translation>The featured title opened up, with the next few lined up beside it.</translation>
+    </message>
+    <message>
+        <source>A shorter banner above your rows, so more of them fit on screen.</source>
+        <extracomment>Setup wizard description of the Banner media bar</extracomment>
+        <translation>A shorter banner above your rows, so more of them fit on screen.</translation>
+    </message>
+    <message>
+        <source>Artwork first in a framed panel, with your rows right underneath.</source>
+        <extracomment>Setup wizard description of the Aya media bar</extracomment>
+        <translation>Artwork first in a framed panel, with your rows right underneath.</translation>
+    </message>
+    <message>
+        <source>No featured area. Home opens straight onto your rows.</source>
+        <extracomment>Setup wizard description of the media bar turned off</extracomment>
+        <translation>No featured area. Home opens straight onto your rows.</translation>
+    </message>
+    <message>
+        <source>Everything centred in one stack.</source>
+        <extracomment>Setup wizard description of the Classic details screen</extracomment>
+        <translation>Everything centred in one stack.</translation>
+    </message>
+    <message>
+        <source>Hero-first, with pop-up cards for cast and extras.</source>
+        <extracomment>Setup wizard description of the Spotlight details screen</extracomment>
+        <translation>Hero-first, with pop-up cards for cast and extras.</translation>
+    </message>
+    <message>
+        <source>Full-screen, with sections stacked instead of tabs.</source>
+        <extracomment>Setup wizard description of the Nouveau details screen</extracomment>
+        <translation>Full-screen, with sections stacked instead of tabs.</translation>
     </message>
     <message>
         <source>Year</source>

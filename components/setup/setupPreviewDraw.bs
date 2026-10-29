@@ -3,12 +3,19 @@ import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
 import "pkg:/source/utils/themeChrome.bs"
 
-' Drawing primitives shared by the setup wizard previews. Every preview is a
-' miniature of the app sketched from rectangles and posters on a 1920x1080
-' canvas, then scaled down to its card.
+' Drawing pieces shared by the setup wizard previews. Every preview is the real
+' screen laid out on a 1920x1080 canvas with the library's own artwork and
+' text, then scaled down onto the wizard's stage.
 namespace setupPreviewDraw
+    ' What the previews shrink by on the wizard's stage, 1040 of 1920
+    const STAGE_SCALE = 0.5417
+
     function Palette() as object
         onSurface = themeChrome.OnSurface()
+        settings = m.global.session.user.settings
+        opacitySetting = settings["ui.overlayOpacity"]
+        overlayOpacity = 0.5
+        if isValid(opacitySetting) then overlayOpacity = opacitySetting.toFloat()
         return {
             background: formatSceneGraphColor(chainLookupReturn(m.global.session, "user.settings.colorBackground", ""), ColorPalette.VIEWBACKGROUND),
             surface: themeChrome.Surface(),
@@ -18,8 +25,8 @@ namespace setupPreviewDraw
             onSurfaceFaint: playbackOverlay.WithAlpha(onSurface, 40),
             accent: themeChrome.Accent(),
             onAccent: themeChrome.OnAccent(),
-            scrim: "0x00000088",
-            band: playbackOverlay.WithAlpha(onSurface, 200)
+            overlay: formatOverlayColor(settings["ui.overlayColor"], "0x475569FF"),
+            overlayOpacity: overlayOpacity
         }
     end function
 
@@ -30,6 +37,39 @@ namespace setupPreviewDraw
         node.height = height
         node.color = color
         return node
+    end function
+
+    ' One of the rounded shapes, a 9-patch or dot image tinted to the color it fills with
+    function Shape(parent as object, uri as string, x as float, y as float, width as float, height as float, color as string) as object
+        node = parent.createChild("Poster")
+        node.uri = uri
+        node.translation = [x, y]
+        node.width = width
+        node.height = height
+        node.blendColor = color
+        return node
+    end function
+
+    ' System font text at a pixel size, where bold stands in for the semibold the other clients use
+    function TextLabel(parent as object, value as string, x as float, y as float, size as integer, color as string, bold as boolean) as object
+        label = parent.createChild("Label")
+        label.font = "font:SmallSystemFont"
+        if bold then label.font = "font:SmallBoldSystemFont"
+        label.font.size = size
+        label.color = color
+        label.text = value
+        label.translation = [x, y]
+        return label
+    end function
+
+    ' Text in a fixed width that wraps to a few lines at the line height the other clients use
+    function Paragraph(parent as object, value as string, x as float, y as float, width as float, size as integer, lines as integer, color as string) as object
+        label = setupPreviewDraw.TextLabel(parent, value, x, y, size, color, false)
+        label.width = width
+        label.wrap = true
+        label.maxLines = lines
+        label.lineSpacing = size * 0.25
+        return label
     end function
 
     ' A poster that opens on a plain block and keeps it when there is no
@@ -45,45 +85,66 @@ namespace setupPreviewDraw
         return node
     end function
 
-    ' A row of posters from the preview items, plain blocks when there are
-    ' none yet
-    sub PosterRow(parent as object, items as object, x as float, y as float, cardWidth as float, cardHeight as float, gap as float, count as integer, pal as object, startAt = 0 as integer)
-        for i = 0 to count - 1
-            uri = ""
-            if isValid(items) and items.count() > 0
-                uri = items[(startAt + i) mod items.count()].posterUrl
-            end if
-            setupPreviewDraw.Art(parent, x + i * (cardWidth + gap), y, cardWidth, cardHeight, uri, pal.surfaceVariant)
+    ' Roku draws a 9-patch's corners at their own pixel size whatever a node is scaled by, so a
+    ' rounded shape in a preview takes the art with the radius it ends up with on the stage. It never
+    ' takes more than half the shape's short side there, or a pill's ends squash.
+    function FitUri(radius as float, width as float, height as float, choices as object) as string
+        target = radius * STAGE_SCALE
+        shortSide = height
+        if width > 0 and width < height then shortSide = width
+        ceiling = shortSide * STAGE_SCALE / 2 + 0.01
+        picked = choices[0]
+        for each choice in choices
+            if choice[0] <= ceiling and Abs(choice[0] - target) < Abs(picked[0] - target) then picked = choice
         end for
+        return picked[1]
+    end function
+
+    function Round(parent as object, x as float, y as float, width as float, height as float, radius as float, color as string) as object
+        fills = [[3, "pkg:/images/settings/round3.9.png"], [6, "pkg:/images/livetv/fill6.9.png"], [10, "pkg:/images/livetv/fill10.9.png"], [12, "pkg:/images/livetv/fill12.9.png"], [15, "pkg:/images/livetv/fill15.9.png"], [18, "pkg:/images/livetv/fill18.9.png"], [20, "pkg:/images/livetv/fill20.9.png"], [22, "pkg:/images/livetv/fill22.9.png"], [28, "pkg:/images/livetv/fill28.9.png"]]
+        return setupPreviewDraw.Shape(parent, setupPreviewDraw.FitUri(radius, width, height, fills), x, y, width, height, color)
+    end function
+
+    function Ring(parent as object, x as float, y as float, width as float, height as float, radius as float, color as string) as object
+        strokes = [[6, "pkg:/images/livetv/stroke6w1_5.9.png"], [8, "pkg:/images/playback/stroke8w2.9.png"], [10, "pkg:/images/playback/stroke10w2.9.png"], [12, "pkg:/images/livetv/stroke12w1.9.png"], [20, "pkg:/images/setup/ring20.9.png"]]
+        return setupPreviewDraw.Shape(parent, setupPreviewDraw.FitUri(radius, width, height, strokes), x, y, width, height, color)
+    end function
+
+    ' Rectangles ignore masks on Roku, so artwork is rounded by painting its corners in the color
+    ' behind it. The radius is the real screen's mask (8, 14, 16 or 18), cut to its size on the stage.
+    sub Corners(parent as object, x as float, y as float, width as float, height as float, radius as integer, color as string)
+        onStage = Int(radius * STAGE_SCALE + 0.5)
+        setupPreviewDraw.Shape(parent, `pkg:/images/setup/corners${onStage}.9.png`, x, y, width, height, color)
     end sub
 
-    ' The item's logo when it carries one, a plain title bar when it doesnt
-    sub Logo(parent as object, items as object, index as integer, x as float, y as float, width as float, height as float, barColor as string)
-        uri = setupPreviewDraw.ItemField(items, index, "logoUrl")
-        if isValidAndNotEmpty(uri)
-            node = parent.createChild("Poster")
-            node.translation = [x, y]
-            node.width = width
-            node.height = height
-            node.loadDisplayMode = "scaleToFit"
-            node.uri = uri
-        else
-            setupPreviewDraw.Rect(parent, x, y + height * 0.3, width * 0.75, height * 0.35, barColor)
-        end if
-    end sub
+    function RoundArt(parent as object, x as float, y as float, width as float, height as float, uri as dynamic, fallbackColor as string, radius as integer, behind as string) as object
+        node = setupPreviewDraw.Art(parent, x, y, width, height, uri, fallbackColor)
+        setupPreviewDraw.Corners(parent, x, y, width, height, radius, behind)
+        return node
+    end function
 
-    ' The app's own bottom-fade gradient, so preview scrims feather out the way
-    ' the real screens do instead of ending on a hard line
-    sub Gradient(parent as object, x as float, y as float, width as float, height as float, alpha = 255 as integer)
+    ' A stretched fade, tinted, the way the real screens feather their scrims
+    function Scrim(parent as object, uri as string, x as float, y as float, width as float, height as float, color as string, alpha as float) as object
         node = parent.createChild("Poster")
         node.translation = [x, y]
         node.width = width
         node.height = height
         node.loadDisplayMode = "scaleToFill"
-        node.blendColor = "0x000000"
-        node.opacity = alpha / 255
-        node.uri = "pkg:/images/seerr_gradient.png"
-    end sub
+        node.blendColor = color
+        node.opacity = alpha
+        node.uri = uri
+        return node
+    end function
+
+    ' Dark at the left edge, clear by the right
+    function FadeRight(parent as object, x as float, y as float, width as float, height as float, color as string, alpha as float) as object
+        return setupPreviewDraw.Scrim(parent, "pkg:/images/sidebar-edge-gradient.png", x, y, width, height, color, alpha)
+    end function
+
+    ' Clear at the top, dark at the bottom edge
+    function FadeUp(parent as object, x as float, y as float, width as float, height as float, color as string, alpha as float) as object
+        return setupPreviewDraw.Scrim(parent, "pkg:/images/seerr_gradient.png", x, y, width, height, color, alpha)
+    end function
 
     ' One of the app's own icon assets, tinted like the chrome it sits in
     function Icon(parent as object, uri as string, x as float, y as float, size as float, color as string) as object
@@ -97,36 +158,145 @@ namespace setupPreviewDraw
         return node
     end function
 
-    ' A run of indicator dots with the active one brightened
-    sub Dots(parent as object, centerX as float, y as float, count as integer, active as integer, pal as object)
-        size = 14
-        gap = 14
-        x = centerX - (count * size + (count - 1) * gap) / 2
+    ' A run of round page marks with the first one lit, centered on centerX
+    sub Dots(parent as object, centerX as float, y as float, count as integer, size as float, activeSize as float, gap as float, faded as string)
+        rowWidth = activeSize + (count - 1) * (size + gap)
+        x = centerX - rowWidth / 2
         for i = 0 to count - 1
-            color = pal.onSurfaceFaint
-            if i = active then color = pal.onSurface
-            setupPreviewDraw.Rect(parent, x + i * (size + gap), y, size, size, color)
+            diameter = size
+            ink = faded
+            if i = 0
+                diameter = activeSize
+                ink = "0xFFFFFFFF"
+            end if
+            setupPreviewDraw.Shape(parent, "pkg:/images/icons/circle.png", x, y + (activeSize - diameter) / 2, diameter, diameter, ink)
+            x += diameter + gap
         end for
     end sub
 
-    ' The full bleed featured hero the moonfin media bar opens home with:
-    ' backdrop, logo top left, the light info band along the bottom, dots
-    sub Hero(parent as object, items as object, pal as object, index = 0 as integer)
-        uri = setupPreviewDraw.ItemField(items, index, "backdropUrl")
-        setupPreviewDraw.Art(parent, 0, 0, 1920, 1080, uri, pal.surfaceVariant)
-        setupPreviewDraw.Gradient(parent, 0, 640, 1920, 440, 220)
-        setupPreviewDraw.Logo(parent, items, index, 80, 150, 460, 170, pal.onSurface)
-        setupPreviewDraw.Rect(parent, 48, 830, 1824, 180, pal.band)
-        for i = 0 to 4
-            setupPreviewDraw.Rect(parent, 100 + i * 130, 866, 104, 40, pal.background)
-        end for
-        setupPreviewDraw.Rect(parent, 100, 934, 1500, 22, pal.background)
-        setupPreviewDraw.Rect(parent, 100, 966, 1200, 22, pal.background)
-        setupPreviewDraw.Dots(parent, 960, 1038, 9, 4, pal)
-    end sub
+    ' The preview item, or nothing while the library pull is still out
+    function Entry(items as object, index as integer) as object
+        if not isValid(items) or items.count() = 0 then return {}
+        return items[index mod items.count()]
+    end function
 
     function ItemField(items as object, index as integer, field as string) as string
-        if not isValid(items) or items.count() = 0 then return ""
-        return items[index mod items.count()][field] ?? ""
+        found = setupPreviewDraw.Entry(items, index)
+        found = found[field]
+        if not isValid(found) or type(found) = "roArray" then return ""
+        return found
     end function
+
+    ' The item's logo when it carries one, its title in bold when it doesnt, the way the real
+    ' screens fall back
+    function Logo(parent as object, items as object, index as integer, x as float, y as float, width as float, height as float, titleSize = 56 as integer) as object
+        uri = setupPreviewDraw.ItemField(items, index, "logoUrl")
+        if isValidAndNotEmpty(uri)
+            node = parent.createChild("Poster")
+            node.translation = [x, y]
+            node.width = width
+            node.height = height
+            node.loadDisplayMode = "scaleToFit"
+            node.uri = uri
+            return node
+        end if
+        label = setupPreviewDraw.TextLabel(parent, setupPreviewDraw.ItemField(items, index, "title"), x, y, titleSize, "0xFFFFFFFF", true)
+        label.width = width
+        label.height = height
+        label.wrap = true
+        label.maxLines = 2
+        label.vertAlign = "bottom"
+        return label
+    end function
+
+    ' Year, the age rating in its outlined badge, runtime and genres, dotted apart like the real
+    ' info lines. Returns where the line ends.
+    function MetaLine(parent as object, items as object, index as integer, x as float, y as float, size as integer, ink as string) as float
+        found = setupPreviewDraw.Entry(items, index)
+        parts = []
+        if isValidAndNotEmpty(found.year) then parts.push({ text: found.year, badge: false })
+        if isValidAndNotEmpty(found.officialRating) then parts.push({ text: found.officialRating, badge: true })
+        if isValidAndNotEmpty(found.runtime) then parts.push({ text: found.runtime, badge: false })
+        if isValid(found.genres)
+            for each genre in found.genres
+                parts.push({ text: genre, badge: false })
+            end for
+        end if
+
+        at = x
+        padX = size * 0.4
+        for i = 0 to parts.count() - 1
+            if i > 0
+                dot = setupPreviewDraw.TextLabel(parent, "•", at, y, size, "0xFFFFFF80", true)
+                at += dot.boundingRect().width + size * 0.5
+            end if
+            if parts[i].badge
+                badge = setupPreviewDraw.Ring(parent, at, y - size * 0.1, 0, size * 1.45, 4, "0xFFFFFF66")
+                label = setupPreviewDraw.TextLabel(parent, parts[i].text, at + padX, y, size - 2, ink, true)
+                badge.width = label.boundingRect().width + padX * 2
+                at += badge.width + size * 0.5
+            else
+                label = setupPreviewDraw.TextLabel(parent, parts[i].text, at, y, size, ink, true)
+                at += label.boundingRect().width + size * 0.5
+            end if
+        end for
+        return at
+    end function
+
+    ' The star and score the real rows lead their facts with
+    function Score(parent as object, items as object, index as integer, x as float, y as float, size as integer, ink as string) as float
+        rating = setupPreviewDraw.ItemField(items, index, "communityRating")
+        if rating = "" then return x
+        setupPreviewDraw.Icon(parent, "pkg:/images/sharp_star_white_18dp.png", x, y + size * 0.05, size * 1.1, "0xFFC107FF")
+        label = setupPreviewDraw.TextLabel(parent, rating, x + size * 1.35, y, size, ink, true)
+        return x + size * 1.35 + label.boundingRect().width
+    end function
+
+    ' A row header and its rounded cards with the title and year under each, the way the real
+    ' rows draw them. The field picks posters or the wide backdrop art.
+    sub CardRow(parent as object, items as object, title as string, x as float, y as float, cardWidth as float, cardHeight as float, count as integer, pal as object, startAt = 0 as integer, field = "posterUrl" as string)
+        setupPreviewDraw.TextLabel(parent, title, x, y, 32, pal.onSurface, true)
+        cardTop = y + 52
+        for i = 0 to count - 1
+            cardX = x + i * (cardWidth + 24)
+            uri = setupPreviewDraw.ItemField(items, startAt + i, field)
+            setupPreviewDraw.RoundArt(parent, cardX, cardTop, cardWidth, cardHeight, uri, pal.surfaceVariant, 8, pal.background)
+            name = setupPreviewDraw.TextLabel(parent, setupPreviewDraw.ItemField(items, startAt + i, "title"), cardX, cardTop + cardHeight + 12, 26, pal.onSurface, true)
+            name.width = cardWidth
+            setupPreviewDraw.TextLabel(parent, setupPreviewDraw.ItemField(items, startAt + i, "year"), cardX, cardTop + cardHeight + 46, 24, playbackOverlay.WithAlpha(pal.onSurface, 153), false)
+        end for
+    end sub
+
+    ' The featured bar home opens on with the default style: full bleed artwork, the logo top
+    ' left, the translucent info panel with the facts and overview along the bottom, page marks
+    ' under it and paging arrows on the edges. Docked moves it clear of a sidebar.
+    sub Hero(parent as object, items as object, pal as object, docked = false as boolean)
+        setupPreviewDraw.Art(parent, 0, 0, 1920, 1080, setupPreviewDraw.ItemField(items, 0, "backdropUrl"), pal.surfaceVariant)
+        setupPreviewDraw.FadeUp(parent, 0, 640, 1920, 440, "0x000000", 0.55)
+
+        edge = 48
+        logoX = 80
+        if docked
+            edge = 176
+            logoX = 208
+        end if
+        setupPreviewDraw.Logo(parent, items, 0, logoX, 112, 560, 240, 64)
+
+        panelWidth = 1920 - edge - 48
+        panelTop = 790
+        panel = setupPreviewDraw.Round(parent, edge, panelTop, panelWidth, 218, 23, pal.overlay)
+        panel.opacity = 0.75 * pal.overlayOpacity
+        setupPreviewDraw.MetaLine(parent, items, 0, edge + 32, panelTop + 26, 24, "0xFFFFFFE6")
+        setupPreviewDraw.Paragraph(parent, setupPreviewDraw.ItemField(items, 0, "overview"), edge + 32, panelTop + 72, panelWidth - 64, 28, 3, "0xFFFFFFE6")
+
+        dotsBg = setupPreviewDraw.Round(parent, 960 - 106, 1020, 212, 44, 22, pal.overlay)
+        dotsBg.opacity = 0.6 * pal.overlayOpacity
+        setupPreviewDraw.Dots(parent, 960, 1032, 5, 16, 20, 16, "0xFFFFFF80")
+
+        for each arrow in [[16, "chevron-left"], [1808, "chevron-right"]]
+            circle = setupPreviewDraw.Shape(parent, "pkg:/images/icons/circle.png", arrow[0], 492, 96, 96, "0x000000")
+            circle.opacity = 0.4
+            setupPreviewDraw.Icon(parent, `pkg:/images/icons/${arrow[1]}.png`, arrow[0] + 20, 512, 56, playbackOverlay.WithAlpha(pal.onSurface, 230))
+        end for
+    end sub
 end namespace
