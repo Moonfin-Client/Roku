@@ -4711,16 +4711,6 @@
         <translation>Cancel Recording?</translation>
     </message>
     <message>
-        <source>Cancel Series Recording?</source>
-        <extracomment>Title of the question asked before a series recording is cancelled</extracomment>
-        <translation>Cancel Series Recording?</translation>
-    </message>
-    <message>
-        <source>Stop recording {name}?</source>
-        <extracomment>Asked before a series recording is cancelled, {name} is the series</extracomment>
-        <translation>Stop recording {name}?</translation>
-    </message>
-    <message>
         <source>Cancel scheduled recording of {name}?</source>
         <extracomment>Asked before a scheduled recording is cancelled, {name} is the program</extracomment>
         <translation>Cancel scheduled recording of {name}?</translation>

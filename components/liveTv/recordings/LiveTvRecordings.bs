@@ -40,9 +40,13 @@ sub init()
     m.dialog = invalid
     m.selected = invalid
     m.tasks = []
+    ' The schedule is read again whenever a series rule changes, and those reads can finish in any
+    ' order, so each is numbered and only one newer than the last applied replaces the list
+    m.timerReads = { started: 0, applied: 0 }
 
     buildPills()
-    sendRequest({ kind: "recordings" })
+    m.timerReads.started++
+    sendRequest({ kind: "recordings", tag: { read: m.timerReads.started } })
 end sub
 
 sub OnScreenShown(_isReturning = false as boolean)
@@ -71,6 +75,13 @@ sub onResponse(event as object)
     m.tasks = kept
 
     response = event.getData()
+    if response.kind = "timers"
+        if response.ok and applyTimers(response.tag.read, response.timers)
+            buildPills()
+            buildBody()
+        end if
+        return
+    end if
     if response.kind <> "recordings" and not response.ok
         if isValid(m.dialog) then m.dialog.busy = false
         return
@@ -79,7 +90,7 @@ sub onResponse(event as object)
     if response.kind = "recordings"
         m.spinner.visible = false
         m.rows = response.rows
-        m.timers = response.timers ?? []
+        applyTimers(response.tag.read, response.timers ?? [])
         m.seriesTimers = response.seriesTimers ?? []
         buildPills()
         buildBody()
@@ -89,13 +100,38 @@ sub onResponse(event as object)
         end for
         finishAction()
     else if response.kind = "cancelTimer"
+        ' A read started before the cancel can still return the canceled timer
+        m.timerReads.started++
+        m.timerReads.applied = m.timerReads.started
         m.timers = withoutId(m.timers, response.tag.id)
         finishAction()
     else if response.kind = "cancelSeriesTimer"
         m.seriesTimers = withoutId(m.seriesTimers, response.tag.id)
+        reloadTimers()
+        finishAction()
+    else if response.kind = "updateSeriesTimer"
+        updated = []
+        for each rule in m.seriesTimers
+            if rule.Id = response.tag.rule.Id then updated.push(response.tag.rule) else updated.push(rule)
+        end for
+        m.seriesTimers = updated
+        reloadTimers()
         finishAction()
     end if
 end sub
+
+' A series rule decides which showings are booked, so the schedule is read again once it changes
+sub reloadTimers()
+    m.timerReads.started++
+    sendRequest({ kind: "timers", tag: { read: m.timerReads.started } })
+end sub
+
+function applyTimers(read as integer, timers as object) as boolean
+    if read < m.timerReads.applied then return false
+    m.timerReads.applied = read
+    m.timers = liveTvGuide.UpcomingTimers(timers, liveTvGuide.NowSeconds())
+    return true
+end function
 
 function withoutId(items as object, id as string) as object
     kept = []
@@ -506,13 +542,23 @@ sub openCard(card as object)
         return
     end if
 
-    name = card.title
-    title = tr("Cancel Series Recording?")
-    text = tr("Stop recording {name}?")
-    if card.kind = "timer"
-        title = tr("Cancel Recording?")
-        text = tr("Cancel scheduled recording of {name}?")
+    if card.kind = "seriesTimer"
+        openDialog({
+            type: "confirm",
+            width: 700,
+            titleGap: 18,
+            surfaceColor: "#1A1A2EFF",
+            dangerColor: RECORDING_DANGER.Mid(1),
+            title: card.title,
+            buttons: [
+                { id: "close", label: tr("Close"), isDefault: true },
+                { id: "seriesSettings", label: tr("Series Settings") },
+                { id: "yes", label: tr("Cancel Series Recording"), danger: true }
+            ]
+        })
+        return
     end if
+
     ' No is the default target so a stray OK press cant cancel anything
     openDialog({
         type: "confirm",
@@ -520,13 +566,25 @@ sub openCard(card as object)
         titleGap: 18,
         surfaceColor: "#1A1A2EFF",
         dangerColor: RECORDING_DANGER.Mid(1),
-        title: title,
-        text: text.Replace("{name}", chr(34) + name + chr(34)),
+        title: tr("Cancel Recording?"),
+        text: tr("Cancel scheduled recording of {name}?").Replace("{name}", chr(34) + card.title + chr(34)),
         buttons: [
             { id: "no", label: tr("No"), isDefault: true },
             { id: "yes", label: tr("Yes, Cancel"), danger: true }
         ]
     })
+end sub
+
+' Which episodes the rule records, its current choice checked and focused
+sub openSeriesChoices(card as object)
+    selected = liveTvGuide.SeriesChoiceOf(card.item)
+    choices = []
+    for each choice in liveTvGuide.SeriesChoices()
+        choices.push({ label: choice.label, detail: choice.detail, selected: choice.key = selected })
+    end for
+    closeDialog()
+    m.selected = { kind: "seriesChoice", item: card.item, title: card.title }
+    openDialog({ type: "series", width: 840, titleGap: 18, title: tr("Which episodes should be recorded?"), choices: choices })
 end sub
 
 function durationText(ticks as dynamic) as string
@@ -543,7 +601,22 @@ sub onDialogAction(event as object)
     card = m.selected
     if not isValid(card) then return
     id = card.item.Id
-    if action.id = "close" or action.id = "no"
+    if card.kind = "seriesChoice"
+        key = liveTvGuide.SeriesChoices()[action.option].key
+        if liveTvGuide.SeriesChoiceOf(card.item) = key
+            closeDialog()
+            return
+        end if
+        rule = {}
+        rule.append(card.item)
+        rule.append(liveTvGuide.SeriesChoiceFlags(key))
+        m.dialog.busy = true
+        sendRequest({ kind: "updateSeriesTimer", rule: rule, tag: { rule: rule } })
+        return
+    end if
+    if action.id = "seriesSettings"
+        openSeriesChoices(card)
+    else if action.id = "close" or action.id = "no"
         closeDialog()
     else if action.id = "play"
         closeDialog()
