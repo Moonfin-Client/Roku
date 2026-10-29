@@ -192,13 +192,14 @@ source += '\n' + await readFile('test/playlist-sort-filter.bs', 'utf8');
 source += '\n' + await readFile('test/music-categories.bs', 'utf8');
 const moonfinPluginFile = await readFile('source/api/MoonfinPlugin.bs', 'utf8');
 source += '\nnamespace moonfinPlugin\n';
-for (const name of ['InfoFromPing', 'WithUserToken', 'AreTmdbThumbsAvailable', 'AreTmdbReviewsSupported', 'AreTmdbDetailsSupported', 'GetTmdbId', 'TmdbThumbURL', 'StudioImageURL', 'IsEnabled', 'IsPluginInstalled', 'ParseBoolSetting']) {
+for (const name of ['InfoFromPing', 'WithUserToken', 'AreTmdbThumbsAvailable', 'AreTmdbReviewsSupported', 'AreTmdbDetailsSupported', 'GetTmdbId', 'TmdbThumbURL', 'StudioImageURL', 'IsEnabled', 'IsPluginInstalled', 'ParseBoolSetting', 'RatingsSetting', 'RatingsBool', 'IsRatingsEnabled', 'IsEpisodeRatingsEnabled']) {
     const match = moonfinPluginFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
     assert.ok(match, `Missing moonfinPlugin.${name}`);
     source += '\n' + match[0];
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/tmdb-thumbs.bs', 'utf8');
+source += '\n' + await readFile('test/ratings-scope.bs', 'utf8');
 // The rest of the row layout uses loops this interpreter cant parse, and the outside lists only need these
 const homeRowLayoutFile = await readFile('source/utils/homeRowLayout.bs', 'utf8');
 source += '\nnamespace homeRowLayout\n' + homeRowLayoutFile.match(/^    const .+$/gm).join('\n') + '\n';
@@ -977,3 +978,42 @@ for (const name of ['Group By', 'Decade (Year)', 'Jump to letter', 'Scroll Direc
     assert.match(styleStrings, new RegExp(`<source>${name.replace(/[()]/g, '\\$&')}</source>`), `${name} is translated`);
 }
 process.stdout.write('PASS: library screen wiring (41 checks)\n');
+
+// Home rows and the media bar each have their own ratings settings, which sync under the profile's
+// names and start where the global ones do, except Home's labels, which start off, and the badges,
+// which start on because Home and the media bar always drew them before they had a setting
+const ratingsGlobals = { enabled: 'plugin.mdblist.enabled', ratingSources: 'plugin.mdblist.ratingSources', episodeRatings: 'plugin.tmdb.episodeRatings', showRatingNames: 'plugin.mdblist.showRatingNames', showRatingBadges: 'plugin.mdblist.showRatingBadges' };
+const ratingsServerKeys = {
+    home: { enabled: 'homeRowsMdblistEnabled', ratingSources: 'homeRowsMdblistRatingSources', episodeRatings: 'homeRowsTmdbEpisodeRatingsEnabled', showRatingNames: 'homeRowsMdblistShowRatingNames', showRatingBadges: 'homeRowsMdblistShowRatingBadges' },
+    mediaBar: { enabled: 'mediaBarMdblistEnabled', ratingSources: 'mediaBarMdblistRatingSources', showRatingNames: 'mediaBarMdblistShowRatingNames', showRatingBadges: 'mediaBarMdblistShowRatingBadges' },
+};
+const mediaBarRatingsGate = 'setting:ui.home.mediaBarMode!=bookshelf&&setting:ui.home.mediaBarMode!=aya&&setting:ui.home.mediaBarMode!=off';
+for (const [scope, keys] of Object.entries(ratingsServerKeys)) {
+    for (const [name, pluginKey] of Object.entries(keys)) {
+        const rokuKey = `ui.${scope}.ratings.${name}`;
+        const type = name === 'ratingSources' ? 'jsonArray' : 'bool';
+        const keepLocal = name === 'ratingSources' ? ', emptyKeepsLocal: true' : '';
+        assert.ok(settingsSyncSource.includes(`{ pluginKey: "${pluginKey}", rokuKey: "${rokuKey}", type: "${type}"${keepLocal} }`), `${rokuKey} syncs as ${pluginKey}`);
+        const setting = findSetting(settingsTree, rokuKey);
+        const global = findSetting(settingsTree, ratingsGlobals[name]);
+        assert.ok(setting, `${rokuKey} has a row`);
+        assert.equal(setting.type, global.type, `${rokuKey} is the same kind of row as the global one`);
+        const expected = name === 'showRatingBadges' ? 'true' : scope === 'home' && name === 'showRatingNames' ? 'false' : global.default;
+        assert.equal(setting.default, expected, `${rokuKey} starts where it should`);
+        if (scope === 'mediaBar') assert.equal(setting.requires, mediaBarRatingsGate, `${rokuKey} only shows for the styles that draw ratings`);
+    }
+}
+assert.equal(findSetting(settingsTree, 'ui.mediaBar.ratings.episodeRatings'), null, 'The media bar has no episode ratings');
+assert.match(syncFunction('PullFromServer'), /if not isValid\(pluginValue\) then continue for\s+if chainLookupReturn\(mapping, "emptyKeepsLocal", false\) and type\(pluginValue\) = "roArray" and pluginValue\.Count\(\) = 0 then continue for/, 'An empty surface list from the server keeps the list on the device');
+const ratingsSettingsScreen = await readFile('components/settings/settings.bs', 'utf8');
+assert.match(ratingsSettingsScreen, /homeChildren\.push\(settingsSection\("Ratings"\)\)\s+homeChildren\.Append\(homeRatings\)/, 'Home Screen has a Ratings section');
+assert.match(ratingsSettingsScreen, /isStringEqual\(selectedItem\.type, "ratingSources"\)\s+openEditor\("ratingSources", selectedItem\)/, 'Every Rating Sources row opens the editor');
+for (const [file, scope] of [['components/home/Home.bs', 'home'], ['components/home/MediaBar.bs', 'mediaBar'], ['components/home/GalleryItem.bs', 'mediaBar']]) {
+    const text = await readFile(file, 'utf8');
+    assert.doesNotMatch(text, /IsRatingsEnabled\(\)|IsEpisodeRatingsEnabled\(\)|IsRatingSourceEnabled\("\w+"\)|plugin\.mdblist|plugin\.tmdb\.episodeRatings/, `${file} never reads the global ratings settings`);
+    assert.match(text, new RegExp(`StyleRatingsRow\\([^,]+, "${scope}"\\)`), `${file} styles its ratings from its own settings`);
+}
+assert.match(await readFile('components/home/Home.bs', 'utf8'), /m\.homeRatingsTask\.scope = "home"/, 'Home asks for its own sources');
+assert.match(await readFile('components/home/MediaBar.bs', 'utf8'), /m\.mediaBarRatingsTask\.scope = "mediaBar"/, 'The media bar asks for its own sources');
+assert.match(await readFile('components/tasks/FetchRatingsTask.bs', 'utf8'), /data: moonfinPlugin\.BuildDisplayRatings\(fetched, scope\)/, 'The cache keeps what the plugin sent, and each surface picks its own sources from it');
+process.stdout.write('PASS: ratings settings per surface wiring\n');
