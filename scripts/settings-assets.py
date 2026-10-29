@@ -54,7 +54,7 @@ def collect_glyph_names():
 
     char_call = re.compile(r'(?:Char|Glyph)\(\s*"([a-z0-9_]+)"\s*\)')
     glyph_field = re.compile(r'\bglyph\s*:\s*"([a-z0-9_]+)"', re.I)
-    map_value = re.compile(r':\s*"([a-z0-9_]+)"')
+    map_value = re.compile(r'(?::|\?\?)\s*"([a-z0-9_]+)"')
     for folder in ('components', 'source'):
         for base, _, files in os.walk(os.path.join(ROOT, folder)):
             for name in files:

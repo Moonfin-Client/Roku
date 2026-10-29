@@ -806,7 +806,28 @@ for (let i = 0; i < tableCount; i++) {
     }
 }
 assert.equal(fontCodes, glyphNames.length, 'The glyph table and the icon font cover the same characters');
-process.stdout.write(`PASS: settings glyphs (${namedGlyphs.size + aboutGlyphs.length + 3} checks)\n`);
+const iconGlyphs = new Set([...(await readFile('source/utils/settingsIcons.bs', 'utf8')).matchAll(/(?::|\?\?)\s*"([a-z0-9_]+)"/g)].map(match => match[1]));
+for (const glyph of iconGlyphs) assert.ok(glyphNames.includes(glyph), `The icon font has ${glyph}, fallbacks included`);
+process.stdout.write(`PASS: settings glyphs (${namedGlyphs.size + aboutGlyphs.length + iconGlyphs.size + 3} checks)\n`);
+
+// Show Libraries Individually syncs, shows only with the libraries button on, and puts the same
+// library list in the nav with each button holding its own library
+const listHolding = (nodes, name) => nodes.some(item => item.settingName === name) ? nodes : nodes.map(node => node.children && listHolding(node.children, name)).find(Boolean);
+const navChildren = listHolding(settingsTree, 'navbar.show_libraries');
+const librariesAt = navChildren.findIndex(item => item.settingName === 'navbar.show_libraries');
+const individually = navChildren[librariesAt + 1];
+assert.equal(individually.settingName, 'navbar.show_libraries_individually', 'The switch sits right after Show Libraries in Toolbar');
+assert.deepEqual([individually.default, individually.glyph, individually.requires], ['false', navChildren[librariesAt].glyph, 'setting:navbar.show_libraries'], 'It starts off, shares the icon and only shows with the libraries button on');
+assert.match(syncFunction('GetMappings'), /\{ pluginKey: "showLibrariesIndividually", rokuKey: "navbar\.show_libraries_individually", type: "bool" \}/, 'It syncs under the profile\'s name');
+const navStrings = await readFile('locale/en_US/translations.ts', 'utf8');
+for (const text of [individually.title, individually.description]) assert.ok(navStrings.includes(`<source>${text}</source>`), `${text} is translated`);
+for (const nav of ['components/Sidebar.bs', 'components/JFOverhang.bs']) {
+    const navSource = await readFile(nav, 'utf8');
+    assert.match(navSource, /libraries = individually \? m\.libraryButtons : m\.libraryItems/, `${nav} draws the buttons from the libraries entry's own list`);
+    assert.match(navSource, /else if isValid\(item\.lib\)\s+[^\n]*\n\s+m\.top\.librarySelected = libraryNodeFor\(item\.lib\)/, `${nav} opens the library the button holds`);
+    assert.doesNotMatch(navSource, /getLibraryDataIndex/, `${nav} never finds a library by its id alone`);
+}
+process.stdout.write('PASS: libraries individually wiring (11 checks)\n');
 
 // Sign in and the Settings connection test build the plugin record through one builder, so a
 // test connection keeps every flag sign in reads, the thumbs one among them

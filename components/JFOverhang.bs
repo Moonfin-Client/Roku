@@ -6,8 +6,10 @@ import "pkg:/source/enums/PosterLoadStatus.bs"
 import "pkg:/source/utils/achievementsModel.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/kidsMode.bs"
+import "pkg:/source/utils/libraryOrder.bs"
 import "pkg:/source/utils/multiserver.bs"
 import "pkg:/source/utils/serverMessages.bs"
+import "pkg:/source/utils/settingsGlyphs.bs"
 import "pkg:/source/utils/themeChrome.bs"
 import "pkg:/source/utils/unreadBadge.bs"
 
@@ -81,6 +83,7 @@ sub init()
     m.navItems = []
     m.libraryData = []
     m.libraryItems = []
+    m.libraryButtons = []
     m.librariesExpanded = false
     m.multiServerTask = invalid
     m.lastNavbarSettings = { shuffle: invalid, favorites: invalid, genres: invalid, libraries: invalid, seerr: invalid, showSeerr: invalid, showMessages: invalid, alwaysExpanded: invalid }
@@ -134,9 +137,9 @@ function createNavItem(id as string, iconUri as string, labelText as string, ble
     return { id: id, btn: btn, icon: icon, label: label, isLibChild: false, defaultBlendColor: blendColor, cycleInk: "", badge: invalid, badgeLabel: invalid }
 end function
 
-function createLibraryChildItem(id as string, labelText as string) as object
+function createLibraryChildItem(lib as object, labelText as string) as object
     btn = createObject("roSGNode", "Group")
-    btn.id = "lib_" + id
+    btn.id = "lib_" + lib.id
 
     label = createObject("roSGNode", "Label")
     label.text = labelText
@@ -146,7 +149,28 @@ function createLibraryChildItem(id as string, labelText as string) as object
     label.translation = [LIB_ITEM_PAD, 0]
     btn.appendChild(label)
 
-    return { id: "lib_" + id, btn: btn, icon: invalid, label: label, isLibChild: true, cycleInk: "" }
+    return { id: "lib_" + lib.id, btn: btn, icon: invalid, label: label, isLibChild: true, cycleInk: "", lib: lib }
+end function
+
+' A library as a full button of its own, led by the glyph Library Order shows for its type
+function createLibraryButton(lib as object, labelText as string) as object
+    item = createNavItem("lib_" + lib.id, "", labelText)
+    glyph = createObject("roSGNode", "Label")
+    glyph.font = createObject("roSGNode", "Font")
+    glyph.font.uri = settingsGlyphs.FONT_URI
+    glyph.font.size = ICON_SIZE
+    glyph.text = settingsGlyphs.Char(libraryOrder.Icon(lib))
+    glyph.width = ICON_SIZE
+    glyph.height = ICON_SIZE
+    glyph.horizAlign = "center"
+    glyph.vertAlign = "center"
+    glyph.color = "#FFFFFF"
+    ' A theme font would draw letters in place of the glyph, and an empty base font keeps it out
+    glyph.addField("themeBaseFont", "node", false)
+    item.btn.replaceChild(glyph, 0)
+    item.icon = glyph
+    item.lib = lib
+    return item
 end function
 
 sub rebuildNavItems()
@@ -174,12 +198,14 @@ sub rebuildNavItems()
         m.navItems.push(m.seerrItem)
     end if
 
-    if not kids and m.librariesEnabled then m.navItems.push(m.librariesItem)
+    individually = not kids and m.librariesEnabled and m.librariesIndividually
+    if not kids and m.librariesEnabled and not individually then m.navItems.push(m.librariesItem)
 
-    if m.librariesExpanded
-        for i = 0 to m.libraryItems.count() - 1
+    if individually or m.librariesExpanded
+        libraries = individually ? m.libraryButtons : m.libraryItems
+        for i = 0 to libraries.count() - 1
             if showLiveTv and isLiveTvLibrary(m.libraryData[i]) then continue for
-            m.navItems.push(m.libraryItems[i])
+            m.navItems.push(libraries[i])
         end for
     end if
 
@@ -199,7 +225,7 @@ sub rebuildNavItems()
 
     if m.selectedIndex >= m.navItems.count() then m.selectedIndex = m.navItems.count() - 1
     if m.selectedIndex < 0 then m.selectedIndex = 0
-    layoutNavbar()
+    applyNavColorCycle()
     unreadBadge.Apply(m.messagesItem, ICON_SIZE, serverMessages.UnreadCount())
     applyFriendsBadge()
 end sub
@@ -232,23 +258,27 @@ sub layoutNavbar()
         isFocused = (not m.avatarSelected and i = m.selectedIndex and m.navHasFocus)
 
         if isValid(item.icon)
+            ink = invalid
+            item.icon.opacity = 0.6
             if isFocused
-                item.icon.blendColor = focusIconColor
+                ink = focusIconColor
                 item.icon.opacity = 1.0
             else if isValidAndNotEmpty(item.cycleInk)
                 ' A colour cycle names each button outright, so it draws at full
                 ' strength rather than the muted white the rest sit at
-                item.icon.blendColor = item.cycleInk
+                ink = item.cycleInk
                 item.icon.opacity = 1.0
+            else if themed
+                ink = idleIconColor
+            else if item.defaultBlendColor <> ""
+                ink = item.defaultBlendColor
+            end if
+
+            ' A library glyph is a label, which takes a color where an image takes a blend
+            if item.icon.subtype() = "Label"
+                item.icon.color = ink ?? "#FFFFFF"
             else
-                if themed
-                    item.icon.blendColor = idleIconColor
-                else if item.defaultBlendColor <> ""
-                    item.icon.blendColor = item.defaultBlendColor
-                else
-                    item.icon.blendColor = invalid
-                end if
-                item.icon.opacity = 0.6
+                item.icon.blendColor = ink
             end if
         end if
 
@@ -451,6 +481,7 @@ end sub
 sub loadLibraries()
     m.libraryData = []
     m.libraryItems = []
+    m.libraryButtons = []
     m.librariesExpanded = false
 
     if isMultiServerEnabled()
@@ -486,7 +517,8 @@ sub onLoadLibrariesComplete(msg as object)
             collectionType: item.LookupCI("CollectionType")
         }
         m.libraryData.push(libData)
-        m.libraryItems.push(createLibraryChildItem(libData.id, libData.name))
+        m.libraryItems.push(createLibraryChildItem(libData, libData.name))
+        m.libraryButtons.push(createLibraryButton(libData, libData.name))
     end for
 
     rebuildNavItems()
@@ -543,7 +575,8 @@ sub onMultiServerLibrariesLoaded(msg as object)
         displayName = lib.name
         if not isValidAndNotEmpty(displayName) then displayName = "Library"
         displayName += lib.serverSuffix
-        m.libraryItems.push(createLibraryChildItem(lib.id, displayName))
+        m.libraryItems.push(createLibraryChildItem(lib, displayName))
+        m.libraryButtons.push(createLibraryButton(lib, displayName))
     end for
 
     rebuildNavItems()
@@ -567,6 +600,7 @@ sub loadNavbarSettings()
     m.genresButtonEnabled = parseBoolSetting(m.global.session.user.settings["navbar.show_genres"], invalid, true)
     m.liveTvButtonEnabled = parseBoolSetting(m.global.session.user.settings["navbar.show_livetv"], invalid, true)
     m.librariesEnabled = parseBoolSetting(m.global.session.user.settings["navbar.show_libraries"], invalid, true)
+    m.librariesIndividually = parseBoolSetting(m.global.session.user.settings["navbar.show_libraries_individually"], invalid, false)
     m.seerrButtonEnabled = parseBoolSetting(m.global.session.user.settings["navbar.show_seerr"], invalid, true)
     m.messagesButtonEnabled = parseBoolSetting(m.global.session.user.settings["navbar.show_messages"], invalid, false)
     m.friendsButtonEnabled = parseBoolSetting(m.global.session.user.settings["navbar.show_friends"], invalid, false)
@@ -578,6 +612,7 @@ sub loadNavbarSettings()
         genres: m.global.session.user.settings["navbar.show_genres"],
         liveTv: m.global.session.user.settings["navbar.show_livetv"],
         libraries: m.global.session.user.settings["navbar.show_libraries"],
+        individually: m.global.session.user.settings["navbar.show_libraries_individually"],
         seerr: m.global.session.user.settings["seerr.enabled"],
         showSeerr: m.global.session.user.settings["navbar.show_seerr"],
         showMessages: m.global.session.user.settings["navbar.show_messages"],
@@ -609,6 +644,7 @@ sub onSessionChanged()
         genres: parseBoolSetting(m.global.session.user.settings["navbar.show_genres"]),
         liveTv: parseBoolSetting(m.global.session.user.settings["navbar.show_livetv"], invalid, true),
         libraries: parseBoolSetting(m.global.session.user.settings["navbar.show_libraries"]),
+        individually: parseBoolSetting(m.global.session.user.settings["navbar.show_libraries_individually"]),
         seerr: parseBoolSetting(m.global.session.user.settings["seerr.enabled"]),
         showSeerr: parseBoolSetting(m.global.session.user.settings["navbar.show_seerr"], invalid, true),
         showMessages: parseBoolSetting(m.global.session.user.settings["navbar.show_messages"], invalid, false),
@@ -623,6 +659,7 @@ sub onSessionChanged()
         genres: parseBoolSetting(m.lastNavbarSettings.genres),
         liveTv: parseBoolSetting(m.lastNavbarSettings.liveTv, invalid, true),
         libraries: parseBoolSetting(m.lastNavbarSettings.libraries),
+        individually: parseBoolSetting(m.lastNavbarSettings.individually),
         seerr: parseBoolSetting(m.lastNavbarSettings.seerr),
         showSeerr: parseBoolSetting(m.lastNavbarSettings.showSeerr, invalid, true),
         showMessages: parseBoolSetting(m.lastNavbarSettings.showMessages, invalid, false),
@@ -631,7 +668,7 @@ sub onSessionChanged()
         alwaysExpanded: parseBoolSetting(m.lastNavbarSettings.alwaysExpanded),
         kids: parseBoolSetting(m.lastNavbarSettings.kids)
     }
-    if currentSettings.shuffle <> lastSettings.shuffle or currentSettings.favorites <> lastSettings.favorites or currentSettings.genres <> lastSettings.genres or currentSettings.liveTv <> lastSettings.liveTv or currentSettings.libraries <> lastSettings.libraries or currentSettings.seerr <> lastSettings.seerr or currentSettings.showSeerr <> lastSettings.showSeerr or currentSettings.showMessages <> lastSettings.showMessages or currentSettings.showFriends <> lastSettings.showFriends or currentSettings.social <> lastSettings.social or currentSettings.alwaysExpanded <> lastSettings.alwaysExpanded or currentSettings.kids <> lastSettings.kids
+    if currentSettings.shuffle <> lastSettings.shuffle or currentSettings.favorites <> lastSettings.favorites or currentSettings.genres <> lastSettings.genres or currentSettings.liveTv <> lastSettings.liveTv or currentSettings.libraries <> lastSettings.libraries or currentSettings.individually <> lastSettings.individually or currentSettings.seerr <> lastSettings.seerr or currentSettings.showSeerr <> lastSettings.showSeerr or currentSettings.showMessages <> lastSettings.showMessages or currentSettings.showFriends <> lastSettings.showFriends or currentSettings.social <> lastSettings.social or currentSettings.alwaysExpanded <> lastSettings.alwaysExpanded or currentSettings.kids <> lastSettings.kids
         loadNavbarSettings()
         rebuildNavItems()
     end if
@@ -974,12 +1011,10 @@ function handleOKKey() as boolean
         end if
         return true
 
-    else if item.isLibChild
-        libIndex = getLibraryDataIndex(item.id)
-        if libIndex >= 0 and libIndex < m.libraryData.count()
-            m.top.librarySelected = libraryNodeFor(m.libraryData[libIndex])
-            return true
-        end if
+    else if isValid(item.lib)
+        ' The item holds its own library, since two servers can share a library id
+        m.top.librarySelected = libraryNodeFor(item.lib)
+        return true
     end if
 
     return false
@@ -1009,14 +1044,6 @@ end function
 function liveTvLibraryIndex() as integer
     for i = 0 to m.libraryData.count() - 1
         if isLiveTvLibrary(m.libraryData[i]) then return i
-    end for
-    return -1
-end function
-
-function getLibraryDataIndex(itemId as string) as integer
-    actualId = itemId.replace("lib_", "")
-    for i = 0 to m.libraryData.count() - 1
-        if m.libraryData[i].id = actualId then return i
     end for
     return -1
 end function

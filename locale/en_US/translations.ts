@@ -7978,5 +7978,13 @@
         <extracomment>How long a playlist or album runs. {0} is the hours and {1} the minutes</extracomment>
         <translation>{0} hr {1} min</translation>
     </message>
+    <message>
+        <source>Show Libraries Individually</source>
+        <translation>Show Libraries Individually</translation>
+    </message>
+    <message>
+        <source>Show each library as its own button in the navigation bar instead of in the Libraries menu</source>
+        <translation>Show each library as its own button in the navigation bar instead of in the Libraries menu</translation>
+    </message>
 </context>
 </TS>
