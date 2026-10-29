@@ -6222,6 +6222,16 @@
         <translation>Show a Skip button during Cinema Mode trailers, commercials, and other pre-rolls.</translation>
     </message>
     <message>
+        <source>Transcode Audio Codecs</source>
+        <extracomment>Setting that lists the audio codecs the server converts instead of sending as is</extracomment>
+        <translation>Transcode Audio Codecs</translation>
+    </message>
+    <message>
+        <source>The server converts audio in these formats instead of sending it as is.</source>
+        <extracomment>Description of the Transcode Audio Codecs setting</extracomment>
+        <translation>The server converts audio in these formats instead of sending it as is.</translation>
+    </message>
+    <message>
         <source>Fetching subtitles</source>
         <extracomment>Shown in the player while a picked subtitle track is still downloading</extracomment>
         <translation>Fetching subtitles</translation>

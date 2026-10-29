@@ -60,7 +60,7 @@ const selections = {
     'source/utils/seasonalRow.bs': null,
     'source/utils/seasonalEffects.bs': null,
     'source/utils/liveRecovery.bs': null,
-    'source/utils/deviceCapabilities.bs': ['getSubtitleProfiles'],
+    'source/utils/deviceCapabilities.bs': ['getSubtitleProfiles', 'transcodableAudioCodecOf', 'transcodeAudioCodecPicks', 'canTranscodeAudioCodecAway', 'keptAudioCodecs', 'applyTranscodeAudioCodecs'],
     'source/utils/seerrMissingCollection.bs': null,
     'source/utils/settingsIcons.bs': null,
     'source/utils/episodeBrowser.bs': null,
@@ -168,6 +168,7 @@ source += '\n' + await readFile('test/library-group-by.bs', 'utf8');
 source += '\n' + await readFile('test/library-sorts.bs', 'utf8');
 source += '\n' + await readFile('test/item-menu.bs', 'utf8');
 source += '\n' + await readFile('test/episode-browser.bs', 'utf8');
+source += '\n' + await readFile('test/transcode-audio.bs', 'utf8');
 source += '\n' + await readFile('test/person-role.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n' + settingsSyncFile.match(/^    const .+$/gm).join('\n') + '\n';

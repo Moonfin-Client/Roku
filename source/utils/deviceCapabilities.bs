@@ -424,6 +424,92 @@ function getTranscodingProfiles(videoCodec = string.EMPTY as string) as object
     return transcodingProfiles
 end function
 
+' The name a picked codec is stored under, for every label a profile or a stream gives it
+function transcodableAudioCodecOf(codec as dynamic) as string
+    name = LCase(toString(codec).Trim())
+    if name = "aac_latm" then return "aac"
+    if name = "dca" or name = "dtshd" or name = "dts-hd" then return "dts"
+    if name = "mlp" then return "truehd"
+    if name = "wav" or name.StartsWith("pcm") then return "pcm"
+    return name
+end function
+
+function transcodeAudioCodecOptions() as object
+    return [
+        { id: "aac", title: "AAC" }, { id: "ac3", title: "AC3" }, { id: "eac3", title: "EAC3" },
+        { id: "dts", title: "DTS" }, { id: "truehd", title: "TrueHD" }, { id: "flac", title: "FLAC" },
+        { id: "alac", title: "ALAC" }, { id: "mp3", title: "MP3" }, { id: "mp2", title: "MP2" },
+        { id: "opus", title: "Opus" }, { id: "vorbis", title: "Vorbis" }, { id: "pcm", title: "PCM" }
+    ]
+end function
+
+function transcodeAudioCodecPicks(settings as dynamic) as object
+    if type(settings) <> "roAssociativeArray" then return []
+    parsed = ParseJson(toString(settings.LookupCI("playback.transcodeAudioCodecs") ?? "[]"))
+    if type(parsed) <> "roArray" then return []
+    return parsed
+end function
+
+' Whether a streamed transcode has another format to convert this one into. One with nowhere else
+' to go is copied, so picking it would only cost a remux.
+function canTranscodeAudioCodecAway(profile as object, codec as string) as boolean
+    for each entry in profile.TranscodingProfiles ?? []
+        if toString(entry.Type) = "Video" and toString(entry.Context) = "Streaming"
+            for each name in toString(entry.AudioCodec).Split(",")
+                if transcodableAudioCodecOf(name) <> codec then return true
+            end for
+        end if
+    end for
+    return false
+end function
+
+function keptAudioCodecs(codecs as string, picked as object) as string
+    kept = []
+    for each name in codecs.Split(",")
+        if not inArray(picked, transcodableAudioCodecOf(name)) then kept.push(name)
+    end for
+    return kept.Join(",")
+end function
+
+' Only video loses the picks, so music still direct plays. An empty list means any codec, so a
+' direct play entry left empty goes. A streamed transcode left empty goes too while another can
+' still convert, since the server prefers whichever can copy the source audio. Live TV only takes
+' the TS profile, so there, or when nothing else can convert, it keeps its list and the server
+' copies that audio.
+function applyTranscodeAudioCodecs(profile as object, picked as object, isLiveTV as boolean) as object
+    if picked.Count() = 0 then return profile
+
+    directPlay = []
+    for each entry in profile.DirectPlayProfiles ?? []
+        listed = toString(entry.AudioCodec)
+        if toString(entry.Type) <> "Video" or listed = ""
+            directPlay.push(entry)
+        else
+            entry.AudioCodec = keptAudioCodecs(listed, picked)
+            if entry.AudioCodec <> "" then directPlay.push(entry)
+        end if
+    end for
+    profile.DirectPlayProfiles = directPlay
+
+    streamedCanConvert = false
+    for each entry in profile.TranscodingProfiles ?? []
+        if toString(entry.Type) = "Video" and toString(entry.Context) = "Streaming" and keptAudioCodecs(toString(entry.AudioCodec), picked) <> "" then streamedCanConvert = true
+    end for
+
+    transcoding = []
+    for each entry in profile.TranscodingProfiles ?? []
+        edited = toString(entry.Type) = "Video" and toString(entry.AudioCodec) <> ""
+        codecs = ""
+        if edited then codecs = keptAudioCodecs(entry.AudioCodec, picked)
+        if not edited or codecs <> "" or isLiveTV or not streamedCanConvert or toString(entry.Context) <> "Streaming"
+            if codecs <> "" then entry.AudioCodec = codecs
+            transcoding.push(entry)
+        end if
+    end for
+    profile.TranscodingProfiles = transcoding
+    return profile
+end function
+
 function getContainerProfiles() as object
     containerProfiles = []
 
