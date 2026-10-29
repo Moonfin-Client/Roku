@@ -5151,7 +5151,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Search using the OpenSubtitles plugin</source>
+        <source>Search using OpenSubtitles</source>
         <extracomment>Description under the subtitle search entry in the subtitle track menu</extracomment>
         <translation type="unfinished"></translation>
     </message>

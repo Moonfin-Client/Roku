@@ -5152,9 +5152,9 @@
         <translation>Download subtitles...</translation>
     </message>
     <message>
-        <source>Search using the OpenSubtitles plugin</source>
+        <source>Search using OpenSubtitles</source>
         <extracomment>Description under the subtitle search entry in the subtitle track menu</extracomment>
-        <translation>Search using the OpenSubtitles plugin</translation>
+        <translation>Search using OpenSubtitles</translation>
     </message>
     <message>
         <source>Download Subtitles</source>
