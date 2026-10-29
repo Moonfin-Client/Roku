@@ -595,6 +595,21 @@
         <translation>Subbed/Dubbed</translation>
     </message>
     <message>
+        <source>Sub</source>
+        <extracomment>Short anime marker pill for an item with the original audio and subtitles</extracomment>
+        <translation>Sub</translation>
+    </message>
+    <message>
+        <source>Dub</source>
+        <extracomment>Short anime marker pill for an item with dubbed audio</extracomment>
+        <translation>Dub</translation>
+    </message>
+    <message>
+        <source>Sub/Dub</source>
+        <extracomment>Short anime marker pill for an item with both the original audio and a dub</extracomment>
+        <translation>Sub/Dub</translation>
+    </message>
+    <message>
         <source>Rewatches</source>
         <translation>Rewatches</translation>
     </message>

@@ -64,6 +64,7 @@ const selections = {
     'source/utils/seerrMissingCollection.bs': null,
     'source/utils/settingsIcons.bs': null,
     'source/utils/episodeBrowser.bs': null,
+    'source/utils/animeMarkers.bs': null,
     'source/utils/settingsMetrics.bs': null,
     'source/utils/ratingSourceList.bs': null,
     'source/utils/homeRowGroups.bs': null,
@@ -168,6 +169,7 @@ source += '\n' + await readFile('test/library-group-by.bs', 'utf8');
 source += '\n' + await readFile('test/library-sorts.bs', 'utf8');
 source += '\n' + await readFile('test/item-menu.bs', 'utf8');
 source += '\n' + await readFile('test/episode-browser.bs', 'utf8');
+source += '\n' + await readFile('test/anime-markers.bs', 'utf8');
 source += '\n' + await readFile('test/transcode-audio.bs', 'utf8');
 source += '\n' + await readFile('test/person-role.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
@@ -561,6 +563,10 @@ assert.match(episodePick, /startingPoint = episodeBrowser\.ResumeTicks\(episode\
 assert.match(await readFile('components/video/OSD.bs', 'utf8'), /id: "episodes", nodeId: "showEpisodes"/, 'The player offers the Episodes button');
 assert.match(await readFile('source/utils/buttonLayout.bs', 'utf8'), /id: "chapters"[^]*?id: "episodes"[^]*?id: "subtitles"/, 'Episodes sits between Chapters and Subtitles in Player Buttons');
 process.stdout.write('PASS: episode browser wiring (4 checks)\n');
+
+const animeTask = await readFile('components/anime/AnimeMarkersTask.bs', 'utf8');
+assert.equal((animeTask.match(/labelStyle = body\.LookupCI\("labelStyle"\)|labelStyle: body\.LookupCI\("labelStyle"\)/g) || []).length, 2, 'Both marker answers carry the admin\'s label style');
+process.stdout.write('PASS: anime marker label style (1 check)\n');
 
 // A custom subtitle track downloads on the task's own thread, never in an observer the render thread runs
 const captionTask = await readFile('components/captionTask.bs', 'utf8');
