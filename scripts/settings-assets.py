@@ -291,6 +291,10 @@ def write_images():
     write_fill(os.path.join(keyboard, 'panel48.9.png'), 48)
     write_stroke(os.path.join(keyboard, 'panel48s.9.png'), 48, 2)
     write_stroke(os.path.join(keyboard, 'cap10s.9.png'), 10, 2)
+    # The ring around the pills on the classic home info row, which fill with images/makd/dotspill14.9.png
+    home = os.path.join(ROOT, 'images/home')
+    os.makedirs(home, exist_ok=True)
+    write_stroke(os.path.join(home, 'pill14s1.9.png'), 14, 1)
 
 
 def main():

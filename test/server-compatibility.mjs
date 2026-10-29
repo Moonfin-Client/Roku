@@ -1017,3 +1017,17 @@ assert.match(await readFile('components/home/Home.bs', 'utf8'), /m\.homeRatingsT
 assert.match(await readFile('components/home/MediaBar.bs', 'utf8'), /m\.mediaBarRatingsTask\.scope = "mediaBar"/, 'The media bar asks for its own sources');
 assert.match(await readFile('components/tasks/FetchRatingsTask.bs', 'utf8'), /data: moonfinPlugin\.BuildDisplayRatings\(fetched, scope\)/, 'The cache keeps what the plugin sent, and each surface picks its own sources from it');
 process.stdout.write('PASS: ratings settings per surface wiring\n');
+
+// The classic info area takes 320 from y 120 and ends above the rows at 450, with the overview's
+// three lines 36 apart, and classic cards carry a second line of text, so their rows are taller
+const classicHomeXml = await readFile('components/home/Home.xml', 'utf8');
+const classicHomeSource = await readFile('components/home/Home.bs', 'utf8');
+assert.match(classicHomeXml, /<Group id="detailsSection" translation="\[111, 120\]">/, 'The info area starts below the top nav');
+const overviewTop = Number(classicHomeSource.match(/const OVERVIEW_TOP = (\d+)/)[1]);
+const overviewLine = Number(classicHomeSource.match(/const OVERVIEW_LINE_HEIGHT = (\d+)/)[1]);
+assert.equal(120 + overviewTop + 3 * overviewLine, 440, 'Three overview lines end above the rows');
+assert.match(classicHomeSource, /m\.homeRows\.translation = m\.modernHomeRows \? \[111, 170\] : \[111, 450\]/, 'The rows stay at 450');
+assert.match(await readFile('components/home/HomeRows.bs', 'utf8'), /itemHeight = 380\s+if not isModernHomeRows\(\) then itemHeight = 415/, 'Classic rows make room for the second line under the cards');
+assert.match(classicHomeXml, /<RatingsRow id="homeRatings"[^>]*singleLine="true"/, 'Home shows its ratings as single line chips');
+process.stdout.write('PASS: classic home info area wiring\n');
+
