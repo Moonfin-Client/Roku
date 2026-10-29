@@ -1,0 +1,229 @@
+import "pkg:/source/api/MoonfinPlugin.bs"
+import "pkg:/source/utils/incompleteRecordings.bs"
+import "pkg:/source/utils/liveTvGuide.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/recordAiring.bs"
+
+sub init()
+    m.scrim = m.top.findNode("scrim")
+    m.spinner = m.top.findNode("spinner")
+    m.spinner.poster.width = 58
+    m.spinner.poster.height = 58
+    m.spinner.translation = [(1920 - 58) / 2, (1080 - 58) / 2]
+    m.done = false
+    m.prompt = invalid
+end sub
+
+sub onRequest()
+    m.program = m.top.request.program
+    m.channel = m.top.request.channel
+    if not isString(m.channel) then m.channel = recordAiring.PromptChannel(m.program.LookupCI("ChannelNumber"), m.program.LookupCI("ChannelName"))
+    m.programId = m.program.LookupCI("Id")
+    m.start = liveTvGuide.ParseTime(m.program.LookupCI("StartDate"))
+    m.choice = ""
+    m.suggestion = invalid
+
+    now = liveTvGuide.NowSeconds()
+    canKeep = moonfinPlugin.CanKeepAsComplete()
+    m.canSearch = recordAiring.OffersCompleteShowing(m.program, now, canKeep)
+    if moonfinPlugin.ExtendedCompleteShowingsSupported() and canKeep and now - m.start > RECORD_PROMPT_GRACE
+        setLoading(true)
+        send({ kind: "completeShowingOptions", programId: m.programId }, "onOptions")
+        return
+    end if
+    offerOrRecord()
+end sub
+
+sub setLoading(loading as boolean)
+    m.scrim.visible = loading
+    m.spinner.visible = loading
+end sub
+
+sub send(request as object, handler as string)
+    m.task = CreateObject("roSGNode", "LiveTvRequestTask")
+    m.task.observeField("response", handler)
+    m.task.request = request
+    m.task.control = "RUN"
+end sub
+
+' The server's answer decides how the showing was matched, and the guide's own episode numbers are
+' only a fallback when it didnt answer
+sub onOptions(event as object)
+    response = event.getData()
+    setLoading(false)
+    if m.done then return
+    if response.ok
+        options = recordAiring.Options(response.options, liveTvGuide.NowSeconds())
+        m.canSearch = options.canSearch
+        m.suggestion = options.showing
+    end if
+    offerOrRecord()
+end sub
+
+sub offerOrRecord()
+    if m.canSearch or isValid(m.suggestion)
+        openPrompt()
+        return
+    end if
+    recordChoice("")
+end sub
+
+function plural(count as integer, one as string, other as string) as string
+    if count = 1 then return tr(one)
+    return tr(other).Replace("{minutes}", count.toStr())
+end function
+
+sub openPrompt()
+    now = liveTvGuide.NowSeconds()
+    showing = m.suggestion
+    description = (m.program.LookupCI("Overview") ?? "").Trim()
+    elapsed = Int((now - m.start) / 60)
+    shown = elapsed
+    if shown < 1 then shown = 1
+
+    ends = liveTvGuide.ParseTime(m.program.LookupCI("EndDate"))
+    span = incompleteRecordings.ShowingTime(m.start, liveTvGuide.use24Hour())
+    progress = invalid
+    if ends > 0 then span += " – " + liveTvGuide.ClockTime(ends)
+    if ends > m.start
+        progress = (now - m.start) / (ends - m.start)
+        if progress < 0 then progress = 0
+        if progress > 1 then progress = 1
+    end if
+    cards = [{
+        label: tr("Now"),
+        when: joinParts([span, m.channel]),
+        progress: progress,
+        progressLabel: plural(elapsed, "1 min already aired", "{minutes} min already aired"),
+        description: description
+    }]
+
+    notes = []
+    cautious = recordAiring.IsCautious(showing, m.canSearch, description)
+    question = tr("Also record a future showing automatically once one is found, to get a complete recording?")
+    laterLabel = tr("Record Future Showing Only")
+    bothLabel = tr("Record Now and Future Showing")
+    if isValid(showing)
+        status = ""
+        if showing.alreadyScheduled then status = tr("Already set to record")
+        cards.push({
+            label: tr("Future showing"),
+            when: joinParts([liveTvGuide.DayLabel(showing.start), liveTvGuide.ClockTime(showing.start), recordAiring.PromptChannel(showing.channelNumber, showing.channelName)]),
+            description: showing.description.Trim(),
+            status: status
+        })
+        if not m.canSearch
+            notes.push({ icon: "pkg:/images/livetv/warning_amber.webp", caution: true, text: tr("Matched by title and description only. Check it's the same program.") })
+        end if
+        if recordAiring.DescriptionsDiffer(description, showing.description)
+            notes.push({ icon: "pkg:/images/livetv/compare_arrows.webp", caution: true, text: tr("The descriptions differ, so this may be a different program.") })
+        end if
+        season = m.program.LookupCI("ParentIndexNumber")
+        episode = m.program.LookupCI("IndexNumber")
+        if not cautious and isValid(season) and isValid(episode)
+            notes.push({ icon: "pkg:/images/livetv/check_circle_outline.webp", text: tr("Same episode (S{season}E{episode})").Replace("{season}", season.toStr()).Replace("{episode}", episode.toStr()) })
+        end if
+        question = tr("Also record the future showing to get a complete recording?")
+        laterWhen = recordAiring.LaterShowingWhen(showing.start, now)
+        laterLabel = tr("Record {when} Only").Replace("{when}", laterWhen)
+        bothLabel = tr("Record Now and {when}").Replace("{when}", laterWhen)
+    end if
+
+    m.prompt = CreateObject("roSGNode", "LiveTvGuideDialog")
+    m.prompt.observeField("action", "onPromptAction")
+    m.prompt.observeField("dismissed", "onPromptDismissed")
+    m.top.appendChild(m.prompt)
+    m.prompt.model = {
+        type: "recordPrompt",
+        width: 1102,
+        title: tr("Record {name}").Replace("{name}", m.program.LookupCI("Name") ?? ""),
+        started: plural(shown, "This showing started 1 minute ago, so the recording will miss the start.", "This showing started {minutes} minutes ago, so the recording will miss the start."),
+        cards: cards,
+        notes: notes,
+        question: question,
+        buttons: [
+            { id: "now", label: tr("Record Now Only"), isDefault: cautious },
+            { id: "later", label: laterLabel },
+            { id: "both", label: bothLabel, isDefault: not cautious }
+        ]
+    }
+    m.prompt.setFocus(true)
+end sub
+
+function joinParts(parts as object) as string
+    kept = []
+    for each part in parts
+        if part <> "" then kept.push(part)
+    end for
+    return kept.join(GUIDE_META_SEPARATOR)
+end function
+
+sub closePrompt()
+    if not isValid(m.prompt) then return
+    m.prompt.unobserveField("action")
+    m.prompt.unobserveField("dismissed")
+    ' Focus leaves the prompt before it goes, or it would be lost with it
+    m.top.setFocus(true)
+    m.top.removeChild(m.prompt)
+    m.prompt = invalid
+end sub
+
+sub onPromptAction(event as object)
+    choice = event.getData().id
+    closePrompt()
+    recordChoice(choice)
+end sub
+
+sub onPromptDismissed()
+    finish("cancelled")
+end sub
+
+sub recordChoice(choice as string)
+    if m.done then return
+    m.choice = choice
+    if choice = "later"
+        schedule()
+        return
+    end if
+    send({ kind: "createTimer", programId: m.programId }, "onTimer")
+end sub
+
+sub onTimer(event as object)
+    if m.done then return
+    if not event.getData().ok
+        finish("failed")
+    else if m.choice = "both"
+        schedule()
+    else
+        finish("recorded")
+    end if
+end sub
+
+sub schedule()
+    if isValid(m.suggestion)
+        send({ kind: "suggestedShowing", programId: m.programId, showing: m.suggestion.payload }, "onScheduled")
+    else
+        send({ kind: "completeShowing", programId: m.programId }, "onScheduled")
+    end if
+end sub
+
+sub onScheduled(event as object)
+    if m.done then return
+    finish(recordAiring.LaterOutcome(m.choice, event.getData().ok))
+end sub
+
+sub finish(outcome as string)
+    if m.done then return
+    m.done = true
+    setLoading(false)
+    closePrompt()
+    m.top.outcome = outcome
+end sub
+
+sub onAbort()
+    finish("cancelled")
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    return true
+end function

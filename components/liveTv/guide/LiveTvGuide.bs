@@ -5,6 +5,7 @@ import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/liveTvGuide.bs"
 import "pkg:/source/utils/liveTvLastChannel.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/recordAiring.bs"
 import "pkg:/source/utils/settingsSync.bs"
 
 const ROW_HEIGHT = 87
@@ -112,6 +113,7 @@ sub resetViewState()
     m.dialogType = ""
     m.dialogProgram = invalid
     m.seriesRule = invalid
+    m.recordAiring = invalid
     m.channelNumber = ""
 end sub
 
@@ -1084,6 +1086,35 @@ sub handleSeriesChoice(key as string)
     end if
 end sub
 
+' Record on a program with no timer yet. Back on the Record prompt leaves the program dialog open.
+sub recordProgram(program as object)
+    request = { program: program }
+    channel = storeChannelForId(program.LookupCI("ChannelId"))
+    if isValid(channel) then request.channel = recordAiring.PromptChannel(channel.LookupCI("ChannelNumber"), channel.LookupCI("Name"))
+    m.dialog.busy = true
+    m.recordAiring = CreateObject("roSGNode", "RecordAiring")
+    m.recordAiring.observeField("outcome", "onRecordAiringDone")
+    m.top.appendChild(m.recordAiring)
+    m.recordAiring.setFocus(true)
+    m.recordAiring.request = request
+end sub
+
+sub onRecordAiringDone(event as object)
+    outcome = event.getData()
+    if isValid(m.dialog) then m.dialog.setFocus(true) else m.top.setFocus(true)
+    m.recordAiring.unobserveField("outcome")
+    m.top.removeChild(m.recordAiring)
+    m.recordAiring = invalid
+    if not isValid(m.dialog) then return
+    if outcome = "cancelled" or outcome = "failed"
+        m.dialog.busy = false
+        if outcome = "failed" then showToast(recordAiring.Message(outcome))
+        return
+    end if
+    message = recordAiring.Message(outcome)
+    storeReload({ then: "dialogDone", success: message, failure: message })
+end sub
+
 sub openSort()
     labels = { number: "Channel Number", name: "Name", favoritesFirst: "Favorites First" }
     options = []
@@ -1158,14 +1189,12 @@ sub onDialogAction(event as object)
         closeDialogNode()
         watchChannel(channelId)
     else if action.id = "record"
-        m.dialog.busy = true
-        success = tr("Program set to record")
-        failure = tr("Unable to create recording")
-        if liveTvGuide.HasTimer(program)
-            success = tr("Recording cancelled")
-            failure = tr("Failed to cancel recording")
+        if not liveTvGuide.HasTimer(program)
+            recordProgram(program)
+            return
         end if
-        storeToggleProgramRecording(program, { then: "dialogDone", success: success, failure: failure })
+        m.dialog.busy = true
+        storeToggleProgramRecording(program, { then: "dialogDone", success: tr("Recording cancelled"), failure: tr("Failed to cancel recording") })
     else if action.id = "seriesSettings"
         m.dialog.busy = true
         storeLoadSeriesRule(program.LookupCI("SeriesTimerId"), { then: "seriesRuleLoaded" })

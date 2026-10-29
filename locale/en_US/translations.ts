@@ -8225,5 +8225,110 @@
         <extracomment>Toast when a series recording can't be read or changed</extracomment>
         <translation>Unable to update series recording</translation>
     </message>
+    <message>
+        <source>Record {name}</source>
+        <extracomment>Title of the Record prompt for a program already airing. {name} is the program</extracomment>
+        <translation>Record {name}</translation>
+    </message>
+    <message>
+        <source>This showing started 1 minute ago, so the recording will miss the start.</source>
+        <extracomment>Record prompt line for a program that started a minute ago</extracomment>
+        <translation>This showing started 1 minute ago, so the recording will miss the start.</translation>
+    </message>
+    <message>
+        <source>This showing started {minutes} minutes ago, so the recording will miss the start.</source>
+        <extracomment>Record prompt line. {minutes} is how long ago the program started</extracomment>
+        <translation>This showing started {minutes} minutes ago, so the recording will miss the start.</translation>
+    </message>
+    <message>
+        <source>1 min already aired</source>
+        <extracomment>Beside the Record prompt's progress bar</extracomment>
+        <translation>1 min already aired</translation>
+    </message>
+    <message>
+        <source>{minutes} min already aired</source>
+        <extracomment>Beside the Record prompt's progress bar</extracomment>
+        <translation>{minutes} min already aired</translation>
+    </message>
+    <message>
+        <source>Future showing</source>
+        <extracomment>Record prompt card for a later showing of the same program</extracomment>
+        <translation>Future showing</translation>
+    </message>
+    <message>
+        <source>Already set to record</source>
+        <extracomment>On the Record prompt's future showing when someone already set it to record</extracomment>
+        <translation>Already set to record</translation>
+    </message>
+    <message>
+        <source>Matched by title and description only. Check it's the same program.</source>
+        <extracomment>Record prompt caution when the plugin matched the future showing by its title and description</extracomment>
+        <translation>Matched by title and description only. Check it's the same program.</translation>
+    </message>
+    <message>
+        <source>The descriptions differ, so this may be a different program.</source>
+        <extracomment>Record prompt caution when the future showing reads differently</extracomment>
+        <translation>The descriptions differ, so this may be a different program.</translation>
+    </message>
+    <message>
+        <source>Same episode (S{season}E{episode})</source>
+        <extracomment>Record prompt note when the future showing is the same episode</extracomment>
+        <translation>Same episode (S{season}E{episode})</translation>
+    </message>
+    <message>
+        <source>Also record the future showing to get a complete recording?</source>
+        <extracomment>Record prompt question when the plugin found a future showing</extracomment>
+        <translation>Also record the future showing to get a complete recording?</translation>
+    </message>
+    <message>
+        <source>Also record a future showing automatically once one is found, to get a complete recording?</source>
+        <extracomment>Record prompt question when no future showing is known yet</extracomment>
+        <translation>Also record a future showing automatically once one is found, to get a complete recording?</translation>
+    </message>
+    <message>
+        <source>Record Now Only</source>
+        <extracomment>Record prompt button that records only what's airing</extracomment>
+        <translation>Record Now Only</translation>
+    </message>
+    <message>
+        <source>Record {when} Only</source>
+        <extracomment>Record prompt button. {when} is a time, Tomorrow, a weekday or a date</extracomment>
+        <translation>Record {when} Only</translation>
+    </message>
+    <message>
+        <source>Record Future Showing Only</source>
+        <extracomment>Record prompt button that records only a later showing</extracomment>
+        <translation>Record Future Showing Only</translation>
+    </message>
+    <message>
+        <source>Record Now and {when}</source>
+        <extracomment>Record prompt button. {when} is a time, Tomorrow, a weekday or a date</extracomment>
+        <translation>Record Now and {when}</translation>
+    </message>
+    <message>
+        <source>Record Now and Future Showing</source>
+        <extracomment>Record prompt button that records both</extracomment>
+        <translation>Record Now and Future Showing</translation>
+    </message>
+    <message>
+        <source>Recording started. A future showing will be recorded too.</source>
+        <extracomment>Toast after recording both the airing and a future showing</extracomment>
+        <translation>Recording started. A future showing will be recorded too.</translation>
+    </message>
+    <message>
+        <source>Recording started, but couldn't request a future showing.</source>
+        <extracomment>Toast when the future showing couldn't be booked</extracomment>
+        <translation>Recording started, but couldn't request a future showing.</translation>
+    </message>
+    <message>
+        <source>The future showing will be recorded.</source>
+        <extracomment>Toast after booking only the future showing</extracomment>
+        <translation>The future showing will be recorded.</translation>
+    </message>
+    <message>
+        <source>Couldn't request the future showing, so nothing will be recorded.</source>
+        <extracomment>Toast when only the future showing was asked for and it couldn't be booked</extracomment>
+        <translation>Couldn't request the future showing, so nothing will be recorded.</translation>
+    </message>
 </context>
 </TS>
