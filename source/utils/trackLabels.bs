@@ -183,20 +183,14 @@ namespace trackLabels
         preferExternal = toBoolean(trackLabels.Setting(settings, "playback.preferExternalSubtitles", false))
         if not preferSdh and not preferText and not preferExternal then return serverIndex
 
-        chosen = invalid
-        for each stream in streams
-            if isStringEqual(trackLabels.Field(stream, "Type"), "Subtitle") and trackLabels.Field(stream, "Index") = serverIndex.toStr()
-                chosen = stream
-                exit for
-            end if
-        end for
+        chosen = trackLabels.SubtitleWithIndex(streams, serverIndex)
         if not isValid(chosen) then return serverIndex
 
         ' An untagged track could be any language, so there's nothing safe to swap it for
         spoken = trackLabels.LanguageKey(trackLabels.Field(chosen, "Language"))
         if spoken = "" or spoken = "und" or spoken = "unknown" then return serverIndex
 
-        forced = trackLabels.Flag(chosen, "IsForced")
+        forced = trackLabels.IsForced(chosen)
         commentary = trackLabels.IsCommentary(chosen)
         hearingImpaired = trackLabels.IsSdh(chosen)
         onlyText = toBoolean(trackLabels.Setting(settings, "playback.subs.onlytext", false))
@@ -205,7 +199,7 @@ namespace trackLabels
         bestRank = trackLabels.VariantRank(chosen, preferSdh, preferText, preferExternal)
         for each stream in streams
             if isStringEqual(trackLabels.Field(stream, "Type"), "Subtitle") and trackLabels.Field(stream, "Index") <> ""
-                sameKind = trackLabels.LanguageKey(trackLabels.Field(stream, "Language")) = spoken and trackLabels.Flag(stream, "IsForced") = forced and trackLabels.IsCommentary(stream) = commentary
+                sameKind = trackLabels.LanguageKey(trackLabels.Field(stream, "Language")) = spoken and trackLabels.IsForced(stream) = forced and trackLabels.IsCommentary(stream) = commentary
                 if not preferSdh then sameKind = sameKind and trackLabels.IsSdh(stream) = hearingImpaired
                 if sameKind and (not onlyText or trackLabels.IsText(stream))
                     rank = trackLabels.VariantRank(stream, preferSdh, preferText, preferExternal)
@@ -219,6 +213,117 @@ namespace trackLabels
         end for
 
         return best
+    end function
+
+    ' The server's subtitle mode still picks the track, but it only reads the forced flag and only
+    ' the subtitle language. Forced mode takes a forced track in any language the viewer reads, the
+    ' subtitle, fallback or audio language, and nothing when there is none. Always and Smart move off
+    ' a track that only its name calls forced onto the full track in the same language.
+    function ModeSubtitle(streams as dynamic, serverIndex as integer, settings as object, audioLanguage as string) as integer
+        if type(streams) <> "roArray" or not isValid(settings) then return serverIndex
+        mode = LCase(toString(trackLabels.Setting(settings, "playback.subs.mode", "Default")))
+
+        if mode = "onlyforced"
+            readable = trackLabels.ReadableLanguages(settings, audioLanguage)
+            ' Subtitles stay off when no forced track fits
+            best = -1
+            bestRank = -1
+            for each stream in streams
+                if isStringEqual(trackLabels.Field(stream, "Type"), "Subtitle") and trackLabels.Field(stream, "Index") <> ""
+                    if trackLabels.IsForced(stream) and trackLabels.ForcedFits(stream, readable)
+                        rank = trackLabels.ForcedRank(stream, settings)
+                        ' A tie keeps the track that comes first
+                        if rank > bestRank
+                            bestRank = rank
+                            best = trackLabels.Field(stream, "Index").ToInt()
+                        end if
+                    end if
+                end if
+            end for
+            return best
+        end if
+
+        if (mode = "always" or mode = "smart") and serverIndex >= 0
+            chosen = trackLabels.SubtitleWithIndex(streams, serverIndex)
+            if isValid(chosen) and not trackLabels.Flag(chosen, "IsForced") and trackLabels.IsForced(chosen)
+                spoken = trackLabels.LanguageKey(trackLabels.Field(chosen, "Language"))
+                for each stream in streams
+                    if isStringEqual(trackLabels.Field(stream, "Type"), "Subtitle") and trackLabels.Field(stream, "Index") <> ""
+                        if trackLabels.LanguageKey(trackLabels.Field(stream, "Language")) = spoken and not trackLabels.IsForced(stream) and not trackLabels.IsCommentary(stream)
+                            return trackLabels.Field(stream, "Index").ToInt()
+                        end if
+                    end if
+                end for
+            end if
+        end if
+
+        return serverIndex
+    end function
+
+    ' Preferred language, then fallback, then English, then ordinary over commentary, then the SDH,
+    ' text and external preferences, then the track the file flags as default
+    function ForcedRank(stream as dynamic, settings as object) as integer
+        preferSdh = toBoolean(trackLabels.Setting(settings, "playback.preferSdhSubtitles", false))
+        preferText = toBoolean(trackLabels.Setting(settings, "playback.preferTextSubtitles", false))
+        preferExternal = toBoolean(trackLabels.Setting(settings, "playback.preferExternalSubtitles", false))
+        spoken = trackLabels.LanguageKey(trackLabels.Field(stream, "Language"))
+        wanted = trackLabels.LanguageKey(toString(trackLabels.Setting(settings, "playback.subs.language", "")))
+        fallback = trackLabels.LanguageKey(toString(trackLabels.Setting(settings, "playback.subs.fallbackLanguage", "")))
+
+        rank = 0
+        if spoken <> "" and spoken = wanted then rank += 256
+        if spoken <> "" and spoken = fallback then rank += 128
+        if spoken = "eng" then rank += 64
+        if not trackLabels.IsCommentary(stream) then rank += 32
+        if preferSdh and trackLabels.IsSdh(stream) then rank += 16
+        if preferText and trackLabels.IsText(stream) then rank += 8
+        if trackLabels.IsExternal(stream) = preferExternal then rank += 4
+        if not preferSdh and not trackLabels.IsSdh(stream) then rank += 2
+        if trackLabels.Flag(stream, "IsDefault") then rank += 1
+        return rank
+    end function
+
+    ' The languages the viewer reads: the subtitle language, the fallback and the audio playing
+    function ReadableLanguages(settings as object, audioLanguage as string) as object
+        readable = []
+        for each code in [toString(trackLabels.Setting(settings, "playback.subs.language", "")), toString(trackLabels.Setting(settings, "playback.subs.fallbackLanguage", "")), audioLanguage]
+            spoken = trackLabels.LanguageKey(code)
+            if trackLabels.NamesLanguage(spoken) then readable.push(spoken)
+        end for
+        return readable
+    end function
+
+    ' A two or three letter code, which leaves out und and the any language setting
+    function NamesLanguage(spoken as string) as boolean
+        return (Len(spoken) = 2 or Len(spoken) = 3) and spoken <> "und"
+    end function
+
+    function SubtitleWithIndex(streams as object, index as integer) as dynamic
+        for each stream in streams
+            if isStringEqual(trackLabels.Field(stream, "Type"), "Subtitle") and trackLabels.Field(stream, "Index") = index.toStr() then return stream
+        end for
+        return invalid
+    end function
+
+    ' A forced track only covers the foreign lines for someone who reads its language. An untagged
+    ' one stays in, since nothing says it's the wrong language.
+    function ForcedFits(stream as dynamic, readable as object) as boolean
+        spoken = trackLabels.LanguageKey(trackLabels.Field(stream, "Language"))
+        if readable.count() = 0 or not trackLabels.NamesLanguage(spoken) then return true
+        for each wanted in readable
+            if wanted = spoken then return true
+        end for
+        return false
+    end function
+
+    ' Files mark forced subtitles in the track name more often than in its flags. "Non-forced"
+    ' doesn't count.
+    function IsForced(stream as dynamic) as boolean
+        if trackLabels.Flag(stream, "IsForced") then return true
+        named = [trackLabels.Field(stream, "DisplayTitle"), trackLabels.Field(stream, "Title"), trackLabels.Field(stream, "Name")]
+        if type(stream) = "roAssociativeArray" then named.push(trackLabels.Field(stream.LookupCI("Track"), "Description"))
+        cleaned = CreateObject("roRegex", "\bnon[\s-]forced\b", "i").ReplaceAll(named.join(" "), "")
+        return CreateObject("roRegex", "\bforced\b", "i").IsMatch(cleaned)
     end function
 
     ' The subtitle picker's Offset row says how far the subtitles are moved: +0.5s, -1.2s or None
