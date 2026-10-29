@@ -479,17 +479,24 @@ for (const [, alias, target] of iconAliases) {
 process.stdout.write(`PASS: achievement icon aliases (${iconAliases.length} checks)\n`);
 
 // MaskGroup ignores the tRNS transparency of a grayscale PNG and draws the whole child, so a mask
-// needs an alpha channel or a palette.
+// needs an alpha channel or a palette. A WebP mask carries its alpha flag in the header, the
+// extended format in its flags byte and the lossless one next to its size.
+const hasAlpha = (data, image) => {
+    if (!image.endsWith('.webp')) return [3, 4, 6].includes(data[25]);
+    const chunk = data.toString('ascii', 12, 16);
+    if (chunk === 'VP8X') return (data[20] & 0x10) !== 0;
+    if (chunk === 'VP8L') return ((data.readUInt32LE(21) >>> 28) & 1) === 1;
+    return false;
+};
 const maskImages = new Set();
 for await (const file of glob('{components,source}/**/*.{bs,xml}')) {
     const code = await readFile(file, 'utf8');
-    for (const [, image] of code.matchAll(/maskUri\s*=\s*"pkg:\/(images\/[^"]+\.png)"/g)) maskImages.add(image);
-    for (const [, image] of code.matchAll(/"pkg:\/(images\/[^"]*mask[^"]*\.png)"/gi)) maskImages.add(image);
+    for (const [, image] of code.matchAll(/maskUri\s*=\s*"pkg:\/(images\/[^"]+\.(?:png|webp))"/g)) maskImages.add(image);
+    for (const [, image] of code.matchAll(/"pkg:\/(images\/[^"]*mask[^"]*\.(?:png|webp))"/gi)) maskImages.add(image);
 }
 assert.ok(maskImages.size > 10, 'The mask scan found the masks');
 for (const image of maskImages) {
-    const colorType = (await readFile(image))[25];
-    assert.ok([3, 4, 6].includes(colorType), `${image} keeps its transparency where MaskGroup reads it`);
+    assert.ok(hasAlpha(await readFile(image), image), `${image} keeps its transparency where MaskGroup reads it`);
 }
 process.stdout.write(`PASS: mask image formats (${maskImages.size} checks)\n`);
 
@@ -721,7 +728,7 @@ for (const nav of ['components/JFOverhang.bs', 'components/Sidebar.bs']) {
 const settingsSource = await readFile('components/settings/settings.bs', 'utf8');
 assert.match(settingsSource, /if requirement = "social" then return achievements\.SocialAvailable\(\)/, 'The friends settings only show where friends are on');
 assert.match(await readFile('settings/settings.json', 'utf8'), /"settingName": "navbar\.show_friends",[^}]*"requires": "social"/, 'The Friends button setting follows them');
-await access('images/icons/friends.png');
+await access('images/icons/friends.webp');
 const glyphTable = await readFile('source/utils/settingsGlyphs.bs', 'utf8');
 const glyphNames = [...glyphTable.matchAll(/^\s+"([a-z0-9_]+)":\s+&h[0-9A-F]+/gm)].map(match => match[1]);
 assert.ok(glyphNames.includes((await readFile('settings/settings.json', 'utf8')).match(/"settingName": "navbar\.show_friends",\s+"glyph": "([a-z0-9_]+)"/)[1]), 'The Friends button setting draws its glyph');
@@ -920,17 +927,19 @@ assert.match(previewTaskSource.match(/sub resolveOutsideTrailer\([^]*?end sub/)[
 assert.doesNotMatch(previewController.match(/sub onPreviewVideoState\([^]*?end sub/)[0], /revealPreview/, 'The playing state alone never reveals the video');
 assert.match(await readFile('components/home/Home.xml', 'utf8'), /<Timer id="previewTimer"/, 'Home carries the preview timer');
 const previewCard = await readFile('components/home/ModernFocusCard.xml', 'utf8');
-assert.equal((previewCard.match(/pkg:\/images\/previewCorner\.png/g) ?? []).length, 4, 'The card draws four corner pieces');
+assert.equal((previewCard.match(/pkg:\/images\/previewCorner\.webp/g) ?? []).length, 4, 'The card draws four corner pieces');
 assert.doesNotMatch(previewCard, /scale="\[-/, 'The corners turn rather than mirror, since a negative scale never mirrors');
 for (const name of ['mountPreview', 'revealPreview', 'unmountPreview']) assert.match(previewCard, new RegExp(`<function name="${name}"`), `The card offers ${name}`);
 const previewCardSource = await readFile('components/home/ModernFocusCard.bs', 'utf8');
 assert.match(previewCardSource.match(/^sub hideCard\(\)[^]*?^end sub/m)[0], /^\s*unmountPreview\(\)/m, 'Hiding the card takes the preview down first');
 assert.doesNotMatch(await readFile('components/seerr/SeerrDiscoveryScreen.bs', 'utf8'), /mountPreview/, 'Discover never mounts a preview');
-const cornerPng = await readFile('images/previewCorner.png');
-assert.ok([3, 4, 6].includes(cornerPng[25]), 'The corner piece keeps its transparency where the device reads it');
-assert.equal(cornerPng.readUInt32BE(16), 8, 'The corner piece is 8 wide');
-assert.equal(cornerPng.readUInt32BE(20), 8, 'The corner piece is 8 high');
-assert.ok(cornerPng.length < 1024, 'The corner piece is small');
+const corner = await readFile('images/previewCorner.webp');
+assert.ok(hasAlpha(corner, 'images/previewCorner.webp'), 'The corner piece keeps its transparency where the device reads it');
+// A lossless WebP packs its width and height, less one, into 14 bits each after the signature
+const cornerBits = corner.readUInt32LE(21);
+assert.equal((cornerBits & 0x3fff) + 1, 8, 'The corner piece is 8 wide');
+assert.equal(((cornerBits >>> 14) & 0x3fff) + 1, 8, 'The corner piece is 8 high');
+assert.ok(corner.length < 1024, 'The corner piece is small');
 process.stdout.write('PASS: home preview wiring (46 checks)\n');
 
 // The Home Screen Backdrop is a choice of off, full screen, corner or top that writes the old
@@ -942,7 +951,7 @@ assert.match(settingsSyncSource, /\{ pluginKey: "homeBackdropStyle", rokuKey: "u
 assert.equal((previewSettingsScreen.match(/"ui\.home\.backdropStyle"\) then (?:currentValue|selectedValue) = getHomeBackdropStyle\(m\.global\.session\.user\.settings\)/g) ?? []).length, 2, 'The row and the picker show the style Home draws');
 assert.doesNotMatch(previewHome, /"ui\.home\.showBackdrop"/, 'Home never reads the old backdrop switch on its own');
 assert.match(previewHome, /maskUri = "pkg:\/images\/backdropCornerMask\.png"/, 'The corner backdrop fades out through its mask');
-assert.match(previewHome, /maskUri = "pkg:\/images\/backdropTopMask\.png"/, 'The top backdrop fades out through its mask');
+assert.match(previewHome, /maskUri = "pkg:\/images\/backdropTopMask\.webp"/, 'The top backdrop fades out through its mask');
 for (const name of ['Full Screen', 'Corner', 'Top']) assert.match(previewStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
 process.stdout.write('PASS: home backdrop style wiring (11 checks)\n');
 
