@@ -6192,6 +6192,16 @@
         <translation>Heavy</translation>
     </message>
     <message>
+        <source>Focus Follower</source>
+        <extracomment>Setting that shows the holiday piece, like Halloween's planchette, that follows the selected item on Home</extracomment>
+        <translation>Focus Follower</translation>
+    </message>
+    <message>
+        <source>A holiday piece, like Halloween's planchette, follows what you select on Home</source>
+        <extracomment>Description of the Focus Follower setting</extracomment>
+        <translation>A holiday piece, like Halloween's planchette, follows what you select on Home</translation>
+    </message>
+    <message>
         <source>Settings Sync</source>
         <extracomment>Title of the settings sync panel and the settings group that opens it</extracomment>
         <translation>Settings Sync</translation>
