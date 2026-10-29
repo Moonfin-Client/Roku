@@ -1,5 +1,8 @@
+import "pkg:/components/recordings/incompleteRecordingWatch.bs"
 import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/incompleteRecordings.bs"
 import "pkg:/source/utils/liveTvGuide.bs"
 import "pkg:/source/utils/misc.bs"
 
@@ -39,10 +42,16 @@ sub init()
     m.bodyScroll = 0
     m.dialog = invalid
     m.selected = invalid
+    m.selectedIncomplete = invalid
     m.tasks = []
     ' The schedule is read again whenever a series rule changes, and those reads can finish in any
     ' order, so each is numbered and only one newer than the last applied replaces the list
     m.timerReads = { started: 0, applied: 0 }
+
+    ' Only this screen reads the plugin's list again once it's a few minutes old
+    incompleteRecordingStore().callFunc("refresh")
+    incompleteRecordingStore().observeFieldScoped("keepResult", "onKeepResult")
+    watchIncompleteRecording("")
 
     buildPills()
     m.timerReads.started++
@@ -419,6 +428,9 @@ function buildCard(card as object) as object
         group.appendChild(icon)
     end if
 
+    badge = invalid
+    if card.kind = "recording" then badge = drawIncompleteBadge(invalid, group, incompleteRecordingStore().callFunc("entryFor", card.item.Id), [INCOMPLETE_BADGE_EDGE, INCOMPLETE_BADGE_EDGE])
+
     border = CreateObject("roSGNode", "Poster")
     border.uri = "pkg:/images/livetv/stroke6w3.9.png"
     border.width = CARD_WIDTH
@@ -444,8 +456,30 @@ function buildCard(card as object) as object
         group.appendChild(subtitle)
     end if
 
-    return { card: card, group: group, border: border, icon: icon, x: 0 }
+    return { card: card, group: group, border: border, icon: icon, badge: badge, x: 0 }
 end function
+
+' The list changed, so every recording card's badge follows it, and an open recording popup picks
+' up its line and Keep as Complete
+sub showIncompleteRecording(entry as dynamic)
+    store = incompleteRecordingStore()
+    for each rail in m.rails
+        for each visual in rail.cards
+            if visual.card.kind = "recording" then visual.badge = drawIncompleteBadge(visual.badge, visual.group, store.callFunc("entryFor", visual.card.item.Id), [INCOMPLETE_BADGE_EDGE, INCOMPLETE_BADGE_EDGE])
+        end for
+    end for
+    if isValid(m.dialog) and isValid(m.selected) and m.selected.kind = "recording" and isValid(entry) <> isValid(m.selectedIncomplete) then openCard(m.selected)
+end sub
+
+sub onKeepResult(event as object)
+    result = event.getData()
+    if not isValid(m.dialog) or not isValid(m.selected) or result.itemId <> guidKey(m.selected.item.Id) then return
+    if result.ok
+        closeDialog()
+    else
+        m.dialog.busy = false
+    end if
+end sub
 
 sub drawFocus()
     drawPills()
@@ -514,16 +548,28 @@ sub closeDialog()
     m.top.removeChild(m.dialog)
     m.dialog = invalid
     m.selected = invalid
+    m.selectedIncomplete = invalid
     m.top.setFocus(true)
 end sub
 
 sub openCard(card as object)
+    closeDialog()
     m.selected = card
     item = card.item
     if card.kind = "recording"
         runTime = item.LookupCI("RunTimeTicks")
         duration = ""
         if isValid(runTime) and runTime > 0 then duration = durationText(runTime)
+        watchIncompleteRecording(item.Id)
+        m.selectedIncomplete = incompleteRecordingStore().callFunc("entryFor", item.Id)
+        incomplete = ""
+        buttons = [{ id: "play", label: tr("Play"), isDefault: true }]
+        if isValid(m.selectedIncomplete)
+            incomplete = incompleteRecordings.DetailText(m.selectedIncomplete, liveTvGuide.use24Hour())
+            if moonfinPlugin.CanKeepAsComplete() then buttons.push({ id: "keepAsComplete", label: tr("Keep as Complete") })
+        end if
+        buttons.push({ id: "delete", label: tr("Delete"), danger: true })
+        buttons.push({ id: "close", label: tr("Close") })
         openDialog({
             type: "recording",
             width: 840,
@@ -533,11 +579,8 @@ sub openCard(card as object)
             subtitle: item.LookupCI("EpisodeTitle") ?? "",
             overview: item.LookupCI("Overview") ?? "",
             meta: joinParts([item.LookupCI("ChannelName"), duration]),
-            buttons: [
-                { id: "play", label: tr("Play"), isDefault: true },
-                { id: "delete", label: tr("Delete"), danger: true },
-                { id: "close", label: tr("Close") }
-            ]
+            incomplete: incomplete,
+            buttons: buttons
         })
         return
     end if
@@ -624,6 +667,9 @@ sub onDialogAction(event as object)
         queue.callFunc("clear")
         queue.callFunc("push", { id: id, type: "video" })
         queue.callFunc("playQueue")
+    else if action.id = "keepAsComplete"
+        m.dialog.busy = true
+        incompleteRecordingStore().callFunc("keepAsComplete", id)
     else if action.id = "delete"
         m.dialog.busy = true
         sendRequest({ kind: "deleteItem", itemId: id, tag: { id: id } })

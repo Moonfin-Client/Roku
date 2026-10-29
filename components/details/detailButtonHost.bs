@@ -1,5 +1,7 @@
 import "pkg:/components/music/playlistViewHost.bs"
+import "pkg:/components/recordings/incompleteRecordingWatch.bs"
 import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/utils/buttonLayout.bs"
 import "pkg:/source/utils/detailActions.bs"
 import "pkg:/source/utils/detailButtons.bs"
@@ -35,6 +37,9 @@ import "pkg:/source/enums/ViewLoadStatus.bs"
 ' How far past the edge a row scrolls to bring a button into view
 const BUTTON_ROW_SCROLL_MARGIN = 50
 
+' The room over the Incomplete line, whatever gap the screen leaves between its other rows
+const INCOMPLETE_LINE_GAP = 8
+
 sub addArrangedButtons(candidates as object)
     order = m.global.session.user.settings[DETAIL_ORDER_SETTING]
     hidden = m.global.session.user.settings[DETAIL_HIDDEN_SETTING]
@@ -46,6 +51,11 @@ sub addArrangedButtons(candidates as object)
     for each candidate in detailActionCandidates(m.top.itemContent.json)
         candidates.push(candidate)
     end for
+
+    m.keepAsCompleteInRow = offersKeepAsComplete()
+    if m.keepAsCompleteInRow
+        candidates.push({ id: "keepAsComplete", config: { icon: "pkg:/images/icons/keep_as_complete.webp", label: tr("Keep as Complete"), action: "keepAsComplete", id: "keepAsCompleteButton" } })
+    end if
 
     ' Kids Mode sets the saved arrangement aside rather than filtering it, since its own short row
     ' is the point and a reorder would otherwise put a button it hides back
@@ -570,6 +580,8 @@ sub handleButtonSelect()
         itemMenuShowArtwork(pageMenuSubject())
     else if buttonAction = "adminControls"
         itemMenuShowIdentify(pageMenuSubject(), false)
+    else if buttonAction = "keepAsComplete"
+        keepIncompleteAsComplete()
     else if buttonAction = "goToSeries"
         m.top.buttonSelected = "goToSeries-button"
     else if buttonAction = "favorite"
@@ -772,10 +784,11 @@ sub onDetailExtrasChanged()
     end if
 end sub
 
-' The row only needs rebuilding when a late trailer or parts answer changes which buttons it holds
+' The row only needs rebuilding when a late trailer or parts answer, or the incomplete recordings
+' list, changes which buttons it holds
 function detailExtrasSignature() as string
     hasParts = isValidAndNotEmpty(chainLookup(m.top, "additionalParts.parts.Items"))
-    return m.top.trailerAvailable.ToStr() + "|" + hasParts.ToStr()
+    return m.top.trailerAvailable.ToStr() + "|" + hasParts.ToStr() + "|" + offersKeepAsComplete().ToStr()
 end function
 
 ' LocalTrailerCount arrives as a number, which isValidAndNotEmpty always reads as empty
@@ -786,3 +799,58 @@ function detailHasTrailer(itemData as object) as boolean
     if countType = "integer" or countType = "roint" or countType = "rointeger" or countType = "longinteger" or countType = "rolonginteger" then return localTrailers > 0
     return false
 end function
+
+' Every style shows the Incomplete line under its facts, and the Keep as Complete button comes and
+' goes with it. A screen supplies incompleteLineParent(), and its layoutContainer() places
+' m.incompleteLine.
+sub watchDetailIncompleteRecording(itemData as object)
+    itemId = ""
+    if not m.top.seerrOnly then itemId = itemData.LookupCI("Id") ?? ""
+    watchIncompleteRecording(itemId)
+end sub
+
+sub showIncompleteRecording(entry as dynamic)
+    m.incompleteEntry = entry
+    if isValid(entry) and not isValid(m.incompleteLine) then m.incompleteLine = incompleteLineParent().createChild("IncompleteDetailLine")
+
+    if isValid(m.incompleteLine)
+        wasShown = m.incompleteLine.visible
+        m.incompleteLine.entry = entry ?? {}
+        if wasShown or m.incompleteLine.visible then layoutContainer()
+    end if
+
+    ' A row already drawn gains or loses the button
+    if isValid(m.keepAsCompleteInRow) and m.keepAsCompleteInRow <> offersKeepAsComplete() then onDetailExtrasChanged()
+end sub
+
+' Keep as Complete clears the mark for everyone on the server, so it's for Live TV managers only
+function offersKeepAsComplete() as boolean
+    return isValid(m.incompleteEntry) and moonfinPlugin.CanKeepAsComplete()
+end function
+
+sub keepIncompleteAsComplete()
+    itemId = chainLookupReturn(m.top.itemContent, "json.Id", "")
+    if not isValidAndNotEmpty(itemId) then return
+
+    store = incompleteRecordingStore()
+    if m.watchingKeepResult <> true
+        m.watchingKeepResult = true
+        store.observeFieldScoped("keepResult", "onKeepAsCompleteAnswered")
+    end if
+    m.keepingAsComplete = guidKey(itemId)
+    store.callFunc("keepAsComplete", itemId)
+end sub
+
+' The button goes away with the mark, so focus moves to Play rather than out of the row
+sub onKeepAsCompleteAnswered(event as object)
+    result = event.getData()
+    if not isValid(m.keepingAsComplete) or result.itemId <> m.keepingAsComplete then return
+    m.keepingAsComplete = invalid
+
+    if result.ok
+        showItemMenuToast(tr("Marked as complete"))
+        if m.top.isInFocusChain() then focusFirstVisibleButton()
+    else
+        showItemMenuToast(tr("Unable to mark as complete"))
+    end if
+end sub

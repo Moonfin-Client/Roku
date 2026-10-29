@@ -1,0 +1,115 @@
+import "pkg:/source/api/MoonfinPlugin.bs"
+import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/misc.bs"
+
+' The list is read again once it is this old and a screen showing recordings asks
+const CACHE_SECONDS = 300
+
+' Whether the plugin offers the list is read off the session, which copies all of it, so a row of
+' cards binding at once reads it once rather than once each
+const GATE_SECONDS = 2
+
+sub init()
+    m.listTask = invalid
+    m.keepTasks = []
+    m.gateCheckedAt = invalid
+    m.gateOpen = false
+    resetList()
+end sub
+
+' A read already under way is dropped, so it can't put back what came before
+sub resetList()
+    if isValid(m.listTask) then m.listTask.unobserveField("result")
+    m.listTask = invalid
+    m.entries = {}
+    m.fetchedAt = invalid
+end sub
+
+' The first ask after a sign in or a new ping reads the list
+function entryFor(itemId as dynamic) as dynamic
+    if not featureOn() then return invalid
+    if not isValid(m.fetchedAt) then refresh()
+
+    key = guidKey(itemId)
+    if key = "" then return invalid
+    return m.entries[key]
+end function
+
+sub refresh()
+    if not featureOn() or isValid(m.listTask) then return
+    if isValid(m.fetchedAt) and UpTime(0) - m.fetchedAt < CACHE_SECONDS then return
+
+    m.listTask = CreateObject("roSGNode", "IncompleteRecordingsTask")
+    m.listTask.observeField("result", "onListResult")
+    m.listTask.job = { kind: "list" }
+    m.listTask.control = TaskControl.RUN
+end sub
+
+' A refused read clears the marks. Any other failure keeps the last list.
+sub onListResult()
+    task = m.listTask
+    if not isValid(task) then return
+    m.listTask = invalid
+    task.unobserveField("result")
+
+    result = task.result
+    m.fetchedAt = UpTime(0)
+    if result.status = "ok"
+        m.entries = result.entries
+    else if result.status = "refused"
+        m.entries = {}
+    else
+        return
+    end if
+
+    m.top.changed = m.top.changed + 1
+end sub
+
+' The list is per server and account, so a sign out or a new ping starts it over
+sub clear()
+    resetList()
+    m.gateCheckedAt = invalid
+    m.top.changed = m.top.changed + 1
+end sub
+
+sub keepAsComplete(itemId as dynamic)
+    task = CreateObject("roSGNode", "IncompleteRecordingsTask")
+    task.observeField("result", "onKeepResult")
+    task.job = { kind: "dismiss", itemId: guidKey(itemId) }
+    ' Kept until it answers so it isn't collected mid flight
+    m.keepTasks.push(task)
+    task.control = TaskControl.RUN
+end sub
+
+' A read already under way may still list the item, so it's dropped and the list read again
+sub onKeepResult(event as object)
+    task = event.getRoSGNode()
+    task.unobserveField("result")
+    kept = []
+    for each pending in m.keepTasks
+        if not pending.isSameNode(task) then kept.push(pending)
+    end for
+    m.keepTasks = kept
+
+    result = task.result
+    if result.ok
+        entries = m.entries
+        resetList()
+        entries.Delete(result.itemId)
+        m.entries = entries
+        m.top.changed = m.top.changed + 1
+        refresh()
+    end if
+
+    m.top.keepResult = result
+end sub
+
+function featureOn() as boolean
+    now = UpTime(0)
+    if not isValid(m.gateCheckedAt) or now - m.gateCheckedAt >= GATE_SECONDS
+        m.gateCheckedAt = now
+        m.gateOpen = moonfinPlugin.IncompleteRecordingsSupported()
+    end if
+
+    return m.gateOpen
+end function

@@ -8131,6 +8131,46 @@
         <translation>Show each library as its own button in the navigation bar instead of in the Libraries menu</translation>
     </message>
     <message>
+        <source>Keep as Complete</source>
+        <extracomment>Detail and Recordings button, and its row in the button layout editor, that clears a recording's Incomplete mark</extracomment>
+        <translation>Keep as Complete</translation>
+    </message>
+    <message>
+        <source>Marked as complete</source>
+        <extracomment>Toast after Keep as Complete clears a recording's Incomplete mark</extracomment>
+        <translation>Marked as complete</translation>
+    </message>
+    <message>
+        <source>Unable to mark as complete</source>
+        <extracomment>Toast when Keep as Complete fails</extracomment>
+        <translation>Unable to mark as complete</translation>
+    </message>
+    <message>
+        <source>Incomplete</source>
+        <extracomment>Marks a Live TV recording that missed part of its program, on cards and at the start of its details line</extracomment>
+        <translation>Incomplete</translation>
+    </message>
+    <message>
+        <source>{0} of {1} min</source>
+        <extracomment>Minutes an incomplete recording caught, out of the program's length</extracomment>
+        <translation>{0} of {1} min</translation>
+    </message>
+    <message>
+        <source>Complete showing scheduled {0}</source>
+        <extracomment>{0} is a weekday and time such as Thu 8:00 PM</extracomment>
+        <translation>Complete showing scheduled {0}</translation>
+    </message>
+    <message>
+        <source>Complete copy recorded {0}</source>
+        <extracomment>{0} is a weekday and time such as Thu 8:00 PM</extracomment>
+        <translation>Complete copy recorded {0}</translation>
+    </message>
+    <message>
+        <source>No complete showing found</source>
+        <extracomment>No later showing of an incomplete recording's program to record</extracomment>
+        <translation>No complete showing found</translation>
+    </message>
+    <message>
         <source>The series recording will skip this showing</source>
         <extracomment>Note on a program a series recording covers but won't record</extracomment>
         <translation>The series recording will skip this showing</translation>

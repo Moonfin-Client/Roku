@@ -77,6 +77,7 @@ const selections = {
     'source/utils/librarySorts.bs': null,
     'source/utils/libraryGroupBy.bs': null,
     'source/utils/libraryCard.bs': null,
+    'source/utils/incompleteRecordings.bs': null,
     'source/utils/favoriteTabs.bs': null,
     'source/utils/homePreview.bs': null,
     'source/utils/remoteSubtitles.bs': null,
@@ -203,9 +204,10 @@ source += '\n' + await readFile('test/home-preview.bs', 'utf8');
 source += '\n' + await readFile('test/remote-subtitles.bs', 'utf8');
 source += '\n' + await readFile('test/playlist-sort-filter.bs', 'utf8');
 source += '\n' + await readFile('test/music-categories.bs', 'utf8');
+source += '\n' + await readFile('test/incomplete-recordings.bs', 'utf8');
 const moonfinPluginFile = await readFile('source/api/MoonfinPlugin.bs', 'utf8');
 source += '\nnamespace moonfinPlugin\n';
-for (const name of ['InfoFromPing', 'WithUserToken', 'AreTmdbThumbsAvailable', 'AreTmdbReviewsSupported', 'AreTmdbDetailsSupported', 'GetTmdbId', 'TmdbThumbURL', 'StudioImageURL', 'IsEnabled', 'IsPluginInstalled', 'ParseBoolSetting', 'RatingsSetting', 'RatingsBool', 'IsRatingsEnabled', 'IsEpisodeRatingsEnabled']) {
+for (const name of ['InfoFromPing', 'WithUserToken', 'AreTmdbThumbsAvailable', 'AreTmdbReviewsSupported', 'AreTmdbDetailsSupported', 'GetTmdbId', 'TmdbThumbURL', 'StudioImageURL', 'IsEnabled', 'IncompleteRecordingsSupported', 'CanKeepAsComplete', 'IsPluginInstalled', 'ParseBoolSetting', 'RatingsSetting', 'RatingsBool', 'IsRatingsEnabled', 'IsEpisodeRatingsEnabled']) {
     const match = moonfinPluginFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
     assert.ok(match, `Missing moonfinPlugin.${name}`);
     source += '\n' + match[0];
