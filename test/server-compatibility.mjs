@@ -570,7 +570,7 @@ process.stdout.write('PASS: spotlight sections (3 checks)\n');
 // A card left in a selection field opens again when a favorite or watched change rewrites it, and
 // that rewrite has to leave the card's type alone.
 const extrasSelections = [
-    ['ModernItemDetails', /sub openSelectedItem\(item as object\)\s+m\.extrasGrid\.selectedItem = item\s+m\.extrasGrid\.selectedItem = invalid/],
+    ['ModernItemDetails', /sub openSelectedItem\(item as object\)[^]*?end if\s+m\.extrasGrid\.selectedItem = item\s+m\.extrasGrid\.selectedItem = invalid/],
     ['SpotlightItemDetails', /m\.extrasGrid\.selectedItem = item\s+m\.extrasGrid\.selectedItem = invalid/],
 ];
 for (const [detailStyle, clearsSelection] of extrasSelections) {
@@ -1140,6 +1140,10 @@ assert.match(trackHostWiring, /SetDefaultAudioTrack\(itemData, false\)/, 'and a 
 assert.match(trackHostWiring, /rememberTrack\("audio", m\.top\.selectedAudioStreamIndex\)/, 'An audio pick on details is remembered');
 assert.match(await readFile('components/manager/ViewCreator.bs', 'utf8'), /trackMemory\.Remember\(m\.view\.videoId, m\.view\.showID, "subtitle"/, 'and so is a subtitle pick in the player');
 assert.match(await readFile('components/ItemGrid/LoadVideoContentTask.bs', 'utf8'), /not rememberedSubtitle and toBoolean/, 'A remembered subtitle isn\'t dropped by the text only setting');
+for (const file of ['ModernItemDetails', 'SpotlightItemDetails', 'MinimalistItemDetails']) {
+    assert.match(await readFile(`components/details/${file}.bs`, 'utf8'), /if picksItemOnScreen\(/, `${file} plays the episode on screen when it's picked from its own list`);
+}
+assert.match(await readFile('components/extras/ExtrasRowList.bs', 'utf8'), /m\.top\.playOnScreen = true/, 'and so does the Classic episode row');
 process.stdout.write('PASS: details wiring\n');
 
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');
