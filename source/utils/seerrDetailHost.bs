@@ -48,8 +48,30 @@ sub startSeerrRequest(action as string)
     m.seerrRequests.mediaType = seerrMediaType()
     m.seerrRequests.details = m.seerrDetails
     m.seerrRequests.returnFocus = seerrFocusTarget()
+
+    ' A season or episode page acts for its series, and Report Issue starts on that one
+    json = seerrItemJson()
+    m.seerrRequests.itemName = toString(json.Name ?? "")
+    m.seerrRequests.initialSeason = 0
+    m.seerrRequests.initialEpisode = 0
+    if IsSeerrSeriesPart(json)
+        m.seerrRequests.itemName = toString(json.SeriesName ?? "")
+        if isStringEqual(json.Type, "Episode")
+            m.seerrRequests.initialSeason = json.ParentIndexNumber ?? 0
+            m.seerrRequests.initialEpisode = json.IndexNumber ?? 0
+        else
+            m.seerrRequests.initialSeason = json.IndexNumber ?? 0
+        end if
+    end if
     m.seerrRequests.callFunc("begin", action)
 end sub
+
+' The library item the screen shows. The Classic season screen keeps its own in seasonData.
+function seerrItemJson() as object
+    json = chainLookupReturn(m.top.itemContent, "json", invalid)
+    if type(json) <> "roAssociativeArray" then json = chainLookupReturn(m.top.seasonData, "json", {})
+    return json
+end function
 
 ' The screen root takes no focus, so the flow hands it back to the button it was opened from
 function seerrFocusTarget() as object
@@ -65,6 +87,7 @@ end function
 function seerrTmdbId() as string
     target = m.top.seerrTarget
     if isValid(target) and isValidAndNotEmpty(target.tmdbId) then return target.tmdbId
+    if isValid(m.seerrSeries) then return GetSeerrTargetFor(m.seerrSeries).tmdbId
 
     return chainLookupReturn(m.top.itemContent, "json.ProviderIds.Tmdb", "")
 end function
@@ -84,18 +107,28 @@ sub onSeerrRequestCompleted()
         return
     end if
 
+    if isValid(m.seerrSeries)
+        loadLibrarySeerrDetails(GetSeerrTargetFor(m.seerrSeries))
+        return
+    end if
     loadLibrarySeerrDetails(GetSeerrTargetFor(m.top.itemContent.json))
 end sub
 
 function seerrMediaType() as string
     target = m.top.seerrTarget
     if isValid(target) and isValidAndNotEmpty(target.mediaType) then return target.mediaType
+    if isValid(m.seerrSeries) then return "tv"
     return isStringEqual(chainLookupReturn(m.top.itemContent, "json.Type", ""), "Series") ? "tv" : "movie"
 end function
 
 sub loadSeerrBlock(itemData as object)
     EnsureSeerrPublicSettings()
     EnsureSeerrUserSettings()
+
+    if IsSeerrSeriesPart(itemData)
+        loadSeriesPartSeerr(itemData)
+        return
+    end if
 
     target = GetSeerrTargetFor(itemData)
     loadLibrarySeerrDetails(target)
@@ -131,7 +164,26 @@ sub onLibrarySeerrDetails(event as object)
 
     m.seerrDetails = response.data
     m.top.seerrButtonsStale = true
-    updateSeerrSeasonMarkers()
+    if not isValid(m.seerrSeries) then updateSeerrSeasonMarkers()
+end sub
+
+' A season or an episode offers its series' Seerr actions and nothing else of Seerr's, so the
+' series is looked up for its TMDB id first
+sub loadSeriesPartSeerr(itemData as object)
+    if isValid(m.top.seerrTarget) or not GetSeerrConfig().enabled then return
+
+    m.seriesPartTask = CreateObject("roSGNode", "JellyfinAPITask")
+    m.seriesPartTask.request = { path: `Items/${itemData.SeriesId}`, params: { userId: m.global.session.user.id } }
+    m.seriesPartTask.observeField("response", "onSeriesPartSeries")
+    m.seriesPartTask.control = "RUN"
+end sub
+
+sub onSeriesPartSeries(event as object)
+    response = event.getData()
+    if not isValid(response) or response.success <> true or not isValid(response.data) then return
+
+    m.seerrSeries = response.data
+    loadLibrarySeerrDetails(GetSeerrTargetFor(response.data))
 end sub
 
 ' Maps season numbers to Seerr availability status (matching Smart-TV and Core)
