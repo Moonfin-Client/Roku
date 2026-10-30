@@ -3278,6 +3278,41 @@
         <translation>Playlist Order</translation>
     </message>
     <message>
+        <source>Alphabetical</source>
+        <extracomment>A sort choice for a collection&apos;s playlist or a person&apos;s credits: by title from A to Z</extracomment>
+        <translation>Alphabetical</translation>
+    </message>
+    <message>
+        <source>Display Options</source>
+        <extracomment>Title of the dialog a person page&apos;s Display button opens, which sorts their credits and groups repeated roles</extracomment>
+        <translation>Display Options</translation>
+    </message>
+    <message>
+        <source>Release Date (Ascending)</source>
+        <extracomment>A sort choice for a person&apos;s credits: oldest release first</extracomment>
+        <translation>Release Date (Ascending)</translation>
+    </message>
+    <message>
+        <source>Release Date (Descending)</source>
+        <extracomment>A sort choice for a person&apos;s credits: newest release first</extracomment>
+        <translation>Release Date (Descending)</translation>
+    </message>
+    <message>
+        <source>Group Contributions</source>
+        <extracomment>Heading in a person page&apos;s Display Options over the switch that groups repeated roles</extracomment>
+        <translation>Group Contributions</translation>
+    </message>
+    <message>
+        <source>Group multiple roles</source>
+        <extracomment>Switch in a person page&apos;s Display Options that shows a title they worked on in several roles once, with every role listed</extracomment>
+        <translation>Group multiple roles</translation>
+    </message>
+    <message>
+        <source>Filmography</source>
+        <extracomment>Title of the Spotlight card that holds the movies and shows a person is in</extracomment>
+        <translation>Filmography</translation>
+    </message>
+    <message>
         <source>You&apos;re set. Here&apos;s what else is in here.</source>
         <translation>You&apos;re set. Here&apos;s what else is in here.</translation>
     </message>

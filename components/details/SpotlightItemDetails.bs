@@ -6,6 +6,7 @@ import "pkg:/components/details/detailScreenHost.bs"
 import "pkg:/components/details/detailTrackHost.bs"
 import "pkg:/components/details/SpotlightCards.bs"
 import "pkg:/components/itemMenu/itemMenuDetailHost.bs"
+import "pkg:/components/personCreditsHost.bs"
 import "pkg:/components/userDataHost.bs"
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
@@ -66,6 +67,10 @@ const SPOTLIGHT_ROW_WIDTH = 1728
 const VERSION_BADGE_HEIGHT = 28
 const VERSION_BADGE_GAP = 16
 const VERSION_BADGE_PAD = 24
+' A person's headshot with its ring, and the name and born line in a column beside it
+const SPOTLIGHT_AVATAR_SIZE = 126
+const SPOTLIGHT_AVATAR_GAP = 24
+const SPOTLIGHT_PERSON_INFO_GAP = 6
 
 sub init()
     observeUserData()
@@ -75,6 +80,8 @@ sub init()
     m.currentCodec = ""
 
     m.titleNode = m.top.findNode("title")
+    m.personAvatar = m.top.findNode("personAvatar")
+    m.personBorn = m.top.findNode("personBorn")
     m.overview = m.top.findNode("overview")
     m.overview.observeField("boxHeight", "onOverviewHeightChanged")
     m.statusBadge = m.top.findNode("statusBadge")
@@ -211,6 +218,7 @@ sub sizeHeroFonts()
     m.overview.fontSize = 22
     m.overview.maxWidth = SPOTLIGHT_OVERVIEW_WIDTH
     m.titleNode.font.size = 52
+    m.personBorn.font.size = 20
 end sub
 
 ' ===== Content =====
@@ -247,9 +255,9 @@ sub renderDetailContent()
     itemData = item.json
     m.top.id = itemData.id
 
-    loadSeerrBlock(itemData)
+    if not isPerson() then loadSeerrBlock(itemData)
 
-    if isValid(m.themeMusicPlayer) and not m.top.seerrOnly
+    if isValid(m.themeMusicPlayer) and not m.top.seerrOnly and not isPerson()
         m.themeMusicPlayer.itemId = itemData.id
     end if
 
@@ -257,7 +265,7 @@ sub renderDetailContent()
 
     updateButtonVisibility(itemData)
 
-    if not isSeries() and not isSeason() and not isMusic() then SetUpTrackOptions(itemData)
+    if not isSeries() and not isSeason() and not isMusic() and not isPerson() then SetUpTrackOptions(itemData)
 
     if m.loadStatus = ViewLoadStatus.RELOAD
         updateCardState({ item: item })
@@ -275,7 +283,9 @@ sub renderDetailContent()
     m.statusBadge.visible = false
     m.upcomingBadge.visible = false
 
-    if isEpisode()
+    if isPerson()
+        populatePersonHeader(itemData)
+    else if isEpisode()
         populateEpisodeMetadataCompact(itemData)
     else if isSeries()
         populateSeriesMetadata(itemData)
@@ -287,14 +297,17 @@ sub renderDetailContent()
         populateMovieMetadata(itemData)
     end if
 
-    populateRatings(itemData)
-    fetchMDBListRatings(itemData)
+    if not isPerson()
+        populateRatings(itemData)
+        fetchMDBListRatings(itemData)
+    end if
     populateGenres(itemData)
     updateStatusBadge(itemData)
     updateUpcomingBadge(itemData)
     updateSeerrPills()
     populateRuntime(itemData)
-    setBackdropImage(itemData)
+    ' A person only has a backdrop when one was set for them, never their headshot stretched out
+    if not isPerson() or isValidAndNotEmpty(itemData.BackdropImageTags) then setBackdropImage(itemData)
 
     setFieldText("title", itemData.name)
     m.titleNode.visible = isValidAndNotEmpty(itemData.name) and not m.logoGroup.visible
@@ -310,6 +323,7 @@ sub renderDetailContent()
     if isValidAndNotEmpty(overviewText)
         overviewText = stripHtmlTags(overviewText)
     end if
+    if isPerson() then overviewText = detailSectionLayout.Shows("biography") ? readableText(overviewText) : ""
     m.overview.text = overviewText
     m.overview.visible = not hideMediaDesc and isValidAndNotEmpty(overviewText)
 
@@ -317,10 +331,14 @@ sub renderDetailContent()
 
     watchDetailIncompleteRecording(itemData)
     layoutHero()
-    loadExtrasForCards()
-    loadStudios(itemData)
-    loadCollections(itemData)
-    loadMusicList(itemData)
+    if isPerson()
+        loadPersonCredits(itemData)
+    else
+        loadExtrasForCards()
+        loadStudios(itemData)
+        loadCollections(itemData)
+        loadMusicList(itemData)
+    end if
     stopLoadingSpinner()
 end sub
 
@@ -404,6 +422,58 @@ end sub
 sub onSeriesEpisodesForCards(event as object)
     updateCardState({ seriesEpisodes: event.getData() })
 end sub
+
+' What the library has a person in, and what Seerr knows they worked on
+sub loadPersonCredits(itemData as object)
+    m.personFilmTask = startPersonFilmography(m.top.id, itemData, PERSON_PAGE_LIMIT, "onPersonFilmographyLoaded")
+    m.personCreditsTask = startSeerrPersonCredits(chainLookupReturn(itemData, "ProviderIds.Tmdb", ""), "onPersonSeerrCreditsLoaded")
+end sub
+
+sub onPersonFilmographyLoaded(event as object)
+    content = event.getData()
+    if not isValid(content) then return
+
+    m.personEntries = content.getChildren(-1, 0)
+    updateCardState(personFilmographyState())
+end sub
+
+sub onPersonSeerrCreditsLoaded(event as object)
+    response = event.getData()
+    if not isValid(response) or not response.success or not isValid(response.data) then return
+
+    m.personSeerrData = response.data
+    updateCardState(personSeerrState())
+end sub
+
+' A new order or grouping draws the cards again from what already arrived
+sub personDisplayChanged()
+    over = {}
+    if isValid(m.personEntries) then over.Append(personFilmographyState())
+    if isValid(m.personSeerrData) then over.Append(personSeerrState())
+    updateCardState(over)
+end sub
+
+function personFilmographyState() as object
+    filmography = splitFilmography(m.personEntries)
+    return { personMovies: filmography.movies, personSeries: filmography.series, personGuest: filmography.guest }
+end function
+
+function personSeerrState() as object
+    shown = shownSeerrCredits(m.personSeerrData, true)
+    return { seerrAppearances: seerrCreditCards(shown.appearances), seerrCrewCredits: seerrCreditCards(shown.crew) }
+end function
+
+' The credits draw as the cards Seerr's own rows use, which open the Seerr page, each carrying the
+' person's part on it
+function seerrCreditCards(credits as object) as object
+    cards = []
+    for each credit in credits
+        card = CreateMediaContentNode(credit.json.SeerrItem)
+        card.addFields({ seerrCredit: credit.json.SeerrCredit ?? "" })
+        cards.push(card)
+    end for
+    return cards
+end function
 
 sub onSpotlightSeerrStale()
     onSeerrButtonsStale()
@@ -729,6 +799,11 @@ function spotlightCardState(over = invalid) as object
         albumTrackTicks: [],
         artistAlbums: [],
         playlistItems: [],
+        personMovies: [],
+        personSeries: [],
+        personGuest: [],
+        seerrAppearances: [],
+        seerrCrewCredits: [],
         seerrRecommendations: m.seerrRecommendations,
         seerrSimilar: m.seerrSimilar,
         fallbackImageUrl: m.backdrop.uri,
@@ -963,6 +1038,24 @@ function isMusic() as boolean
     return isAlbum() or isArtist() or isPlaylist()
 end function
 
+function isPerson() as boolean
+    return LCase(m.top.itemType) = "person"
+end function
+
+' A person's hero is their headshot beside their name, with the year they were born and where
+' under it
+sub populatePersonHeader(itemData as object)
+    m.personBorn.text = personBornParts(itemData).join(" · ")
+    m.personBorn.visible = m.personBorn.text <> ""
+
+    headshotTag = chainLookupReturn(itemData, "ImageTags.Primary", "")
+    m.personAvatar.visible = isValidAndNotEmpty(headshotTag)
+    if not m.personAvatar.visible then return
+
+    m.top.findNode("personAvatarRing").blendColor = themeChrome.Accent()
+    m.top.findNode("personAvatarImage").uri = spotlightServerImageUrl(m.top.itemContent, itemData.Id, "Primary", { "maxHeight": 240, "quality": 90, "tag": headshotTag })
+end sub
+
 ' The music metadata path lives in the modern screen, so Spotlight keeps its own
 ' compact version: the facts line reads off the same fields
 sub populateMusicMetadata(itemData as object)
@@ -1009,8 +1102,13 @@ sub commitButtonRow()
 end sub
 
 ' Item types that own their whole action row. A collection plays through its titles and
-' shuffles them, and so does a playlist. Anything else falls through to the host's default set.
+' shuffles them, and so does a playlist. A person has nothing to play, so only the heart and the
+' actions any page offers. Anything else falls through to the host's default set.
 function typeSpecificButtons() as boolean
+    if isPerson()
+        addArrangedButtons([favoriteCandidate(m.top.itemContent.json)])
+        return true
+    end if
     if isPlaylist()
         addPlaylistButtons()
         return true
@@ -1056,6 +1154,10 @@ sub handleScreenButtonAction(action as string)
 
     if action = "collectionPlay" or action = "collectionShuffle"
         playCollection(action = "collectionShuffle")
+        return
+    end if
+    if action = "personDisplay"
+        openPersonDisplay()
         return
     end if
 
@@ -1257,6 +1359,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     ' The More Actions menu answers the remote itself
     if m.overflowMenu.visible then return false
+    ' A person's Display options keep the remote while they're up, so Left and Right can't reach the page
+    if personDisplayOpen() then return true
 
     ' An open modal answers the remote itself
     if m.sectionModal.visible
@@ -1448,23 +1552,23 @@ sub layoutHero()
         badgeOnText = false
     end if
 
-    if m.titleNode.visible
+    if isPerson()
+        layoutPersonHeader()
+    else if m.titleNode.visible
         if badgeOnText then shareLineWithBadge(m.titleNode)
         m.titleNode.translation = [0, m.heroY]
         m.heroY += m.titleNode.boundingRect().height + SPOTLIGHT_HERO_GAP
         if badgeOnText then placeVersionBadge(textLineEnd(m.titleNode), m.titleNode.translation[1], m.titleNode.boundingRect().height)
     end if
 
-    personBorn = m.top.findNode("personBorn")
-    if isValid(personBorn) and personBorn.visible
-        personBorn.translation = [0, m.heroY]
-        m.heroY += personBorn.boundingRect().height + SPOTLIGHT_HERO_GAP
-    end if
-
+    ' A person's born line stands in for the facts a title carries
     metadataRow = m.top.findNode("metadataRow")
-    layoutMetadataRow()
-    metadataRow.translation = [0, m.heroY]
-    m.heroY += m.metaRowHeight + SPOTLIGHT_HERO_GAP
+    metadataRow.visible = not isPerson()
+    if metadataRow.visible
+        layoutMetadataRow()
+        metadataRow.translation = [0, m.heroY]
+        m.heroY += m.metaRowHeight + SPOTLIGHT_HERO_GAP
+    end if
 
     if isValid(m.incompleteLine) and m.incompleteLine.visible
         m.heroY += INCOMPLETE_LINE_GAP - SPOTLIGHT_HERO_GAP
@@ -1492,6 +1596,25 @@ sub layoutHero()
     if m.buttonRowContainer <> invalid
         m.buttonRowContainer.translation = [0, m.heroY]
     end if
+end sub
+
+' The headshot leads, with the name and born line in a column beside it, the two centered on each other
+sub layoutPersonHeader()
+    infoLeft = 0
+    if m.personAvatar.visible then infoLeft = SPOTLIGHT_AVATAR_SIZE + SPOTLIGHT_AVATAR_GAP
+    m.titleNode.width = m.titleFullWidth - infoLeft
+
+    titleHeight = m.titleNode.boundingRect().height
+    infoHeight = titleHeight
+    if m.personBorn.visible then infoHeight += SPOTLIGHT_PERSON_INFO_GAP + m.personBorn.boundingRect().height
+    headerHeight = infoHeight
+    if m.personAvatar.visible and SPOTLIGHT_AVATAR_SIZE > headerHeight then headerHeight = SPOTLIGHT_AVATAR_SIZE
+
+    infoTop = m.heroY + (headerHeight - infoHeight) / 2
+    m.personAvatar.translation = [0, m.heroY + (headerHeight - SPOTLIGHT_AVATAR_SIZE) / 2]
+    m.titleNode.translation = [infoLeft, infoTop]
+    m.personBorn.translation = [infoLeft, infoTop + titleHeight + SPOTLIGHT_PERSON_INFO_GAP]
+    m.heroY += headerHeight + SPOTLIGHT_HERO_GAP
 end sub
 
 ' The picked version's name, for an item that has more than one, sized to its text
@@ -1568,7 +1691,9 @@ sub applyBackdropTreatment()
     if not isValid(m.backdropScrim) then return
 
     opacityFactor = getBackdropBlurAmount() / 25.0
-    m.backdropScrim.opacity = 0.80 * opacityFactor
+    scrimAlpha = 0.80
+    if isPerson() then scrimAlpha = 0.40
+    m.backdropScrim.opacity = scrimAlpha * opacityFactor
 
     gradientScale = 0.3 + 0.7 * opacityFactor
     if isValid(m.backdropLeftScrim) then m.backdropLeftScrim.opacity = gradientScale

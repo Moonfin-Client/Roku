@@ -466,6 +466,9 @@ function spotlightCardBuilder(state as object) as object
         tracksCard: spotlightBuilderTracksCard,
         playlistCard: spotlightBuilderPlaylistCard,
         albumsCard: spotlightBuilderAlbumsCard,
+        filmographyCard: spotlightBuilderFilmographyCard,
+        seerrCreditsCard: spotlightBuilderSeerrCreditsCard,
+        personBackdrops: spotlightBuilderPersonBackdrops,
         boxSetItemsCard: spotlightBuilderBoxSetItemsCard,
         playlistOrderCard: spotlightBuilderPlaylistOrderCard,
         chaptersExtrasCard: spotlightBuilderChaptersExtrasCard,
@@ -497,7 +500,7 @@ function spotlightBuilderFactories() as object
     else if itemType = "musicartist"
         return ["albums", "similar"]
     else if itemType = "person"
-        return ["filmography"]
+        return ["filmography", "appearances", "crew"]
     else if itemType = "boxset"
         return ["boxset_items", "people", "playlist_order"]
     end if
@@ -527,6 +530,9 @@ function spotlightBuilderMakeCard(id as string) as dynamic
     if id = "tracks" then return m.tracksCard()
     if id = "playlist" then return m.playlistCard()
     if id = "albums" then return m.albumsCard()
+    if id = "filmography" then return m.filmographyCard()
+    if id = "appearances" then return m.seerrCreditsCard(id, tr("Appearances (Seerr)"), m.s.seerrAppearances)
+    if id = "crew" then return m.seerrCreditsCard(id, tr("Crew Contributions (Seerr)"), m.s.seerrCrewCredits)
     if id = "boxset_items" then return m.boxSetItemsCard()
     if id = "playlist_order" then return m.playlistOrderCard()
     if id = "chapters_extras" then return m.chaptersExtrasCard()
@@ -930,6 +936,117 @@ function spotlightBuilderAlbumsCard() as dynamic
         iconKey: "albums",
         sections: [{ kind: "media", title: tr("Albums"), count: albumItems.count(), items: albumItems, aspect: "square" }]
     }
+end function
+
+' What the library has a person in. With no films or shows of theirs, the episodes they guested
+' on stand in.
+function spotlightBuilderFilmographyCard() as dynamic
+    s = m.s
+    hasLibrary = s.personMovies.count() > 0 or s.personSeries.count() > 0
+    if not hasLibrary and s.personGuest.count() = 0 then return invalid
+
+    subtitleParts = []
+    cardSections = []
+    if s.personMovies.count() > 0
+        subtitleParts.push(spotlightCountLabel(s.personMovies.count(), tr("1 movie"), tr("{count} movies")))
+        cardSections.push({ kind: "media", title: tr("Movies"), count: s.personMovies.count(), items: s.personMovies, aspect: "portrait" })
+    end if
+    if s.personSeries.count() > 0
+        subtitleParts.push(spotlightCountLabel(s.personSeries.count(), tr("1 show"), tr("{count} shows")))
+        cardSections.push({ kind: "media", title: tr("TV Shows"), count: s.personSeries.count(), items: s.personSeries, aspect: "portrait" })
+    end if
+    if not hasLibrary
+        subtitleParts.push(spotlightCountLabel(s.personGuest.count(), tr("1 item"), tr("{count} items")))
+        cardSections.push({ kind: "media", title: tr("Filmography"), count: s.personGuest.count(), items: s.personGuest, aspect: "portrait" })
+    end if
+
+    cardImage = m.personBackdrops().filmography
+    if cardImage = "" then cardImage = s.fallbackImageUrl
+
+    return {
+        id: "filmography",
+        title: tr("Filmography"),
+        subtitle: spotlightJoinSubtitle(subtitleParts),
+        imageUrl: cardImage,
+        iconKey: "filmography",
+        sections: cardSections
+    }
+end function
+
+' What Seerr knows a person appeared in or worked on, each card naming their part under it
+function spotlightBuilderSeerrCreditsCard(id as string, title as string, credits as object) as dynamic
+    if credits.count() = 0 then return invalid
+    s = m.s
+
+    cardImage = m.personBackdrops()[id]
+    if cardImage = "" then cardImage = spotlightFirstPosterUrl(s.serverUrl, credits)
+    if cardImage = "" then cardImage = s.fallbackImageUrl
+
+    return {
+        id: id,
+        title: title,
+        subtitle: spotlightCountLabel(credits.count(), tr("1 item"), tr("{count} items")),
+        imageUrl: cardImage,
+        iconKey: id,
+        sections: [{ kind: "seerr", title: title, count: credits.count(), items: credits }]
+    }
+end function
+
+' Each of a person's cards takes a backdrop the others haven't, from its own titles where it can.
+' Only the cards that show take one, so a card with nothing can't leave two others sharing.
+function spotlightBuilderPersonBackdrops() as object
+    if isValid(m.personBackdropPicks) then return m.personBackdropPicks
+    s = m.s
+
+    filmography = []
+    filmography.append(s.personMovies)
+    filmography.append(s.personSeries)
+    filmography.append(s.personGuest)
+
+    pools = []
+    everyUrl = []
+    for each card in [{ id: "filmography", items: filmography }, { id: "appearances", items: s.seerrAppearances }, { id: "crew", items: s.seerrCrewCredits }]
+        if card.items.count() > 0
+            urls = []
+            for each item in card.items
+                url = spotlightBackdropOnlyUrl(item)
+                if url <> "" then urls.push(url)
+            end for
+            pools.push({ id: card.id, urls: urls })
+            everyUrl.append(urls)
+        end if
+    end for
+
+    used = {}
+    used.SetModeCaseSensitive()
+    picks = { filmography: "", appearances: "", crew: "" }
+    for each pool in pools
+        url = spotlightFirstUnused(pool.urls, used)
+        if url = "" then url = spotlightFirstUnused(everyUrl, used)
+        if url = "" and pool.urls.count() > 0 then url = pool.urls[0]
+        if url = "" and everyUrl.count() > 0 then url = everyUrl[0]
+        if url <> "" then used[url] = true
+        picks[pool.id] = url
+    end for
+
+    m.personBackdropPicks = picks
+    return picks
+end function
+
+' Landscape art alone, so a card never ends up on a poster stretched across it. A Seerr title
+' carries its TMDB backdrop.
+function spotlightBackdropOnlyUrl(item as object) as string
+    if isValidAndNotEmpty(item.sdBackgroundImageUrl) then return item.sdBackgroundImageUrl
+    url = detailImages.LandscapeImageUrl(item)
+    if url = detailImages.ItemImageUrl(item) then return ""
+    return url
+end function
+
+function spotlightFirstUnused(urls as object, used as object) as string
+    for each url in urls
+        if not used.DoesExist(url) then return url
+    end for
+    return ""
 end function
 
 function spotlightBuilderBoxSetItemsCard() as dynamic

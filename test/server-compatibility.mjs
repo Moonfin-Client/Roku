@@ -74,7 +74,8 @@ const selections = {
     'source/utils/trackLabels.bs': null,
     'source/utils/fileFacts.bs': null,
     'components/personCreditsHost.bs': ['formatPersonDate', 'personAge'],
-    'components/details/SpotlightCards.bs': ['spotlightEpisodeSeason', 'spotlightEpisodeOrder', 'spotlightEpisodeFirst'],
+    'source/utils/detailImages.bs': null,
+    'components/details/SpotlightCards.bs': ['spotlightEpisodeSeason', 'spotlightEpisodeOrder', 'spotlightEpisodeFirst', 'spotlightBuilderPersonBackdrops', 'spotlightFirstUnused', 'spotlightBackdropOnlyUrl'],
     'source/utils/playbackFacts.bs': null,
     'source/utils/librarySorts.bs': null,
     'source/utils/libraryGroupBy.bs': null,
@@ -85,6 +86,7 @@ const selections = {
     'source/utils/remoteSubtitles.bs': null,
     'source/utils/quickConnectUrl.bs': null,
     'source/utils/playlistSortFilter.bs': null,
+    'source/utils/personCredits.bs': null,
     'source/utils/accessSchedule.bs': null,
     'source/utils/musicCategories.bs': null,
     'components/music/musicCategoryHost.bs': ['landingCell', 'enteredCell'],
@@ -105,7 +107,7 @@ const selections = {
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting'],
-    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'isServerDate', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'shuffleArray'],
+    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'shuffleArray'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
@@ -231,6 +233,8 @@ source += '\n' + await readFile('test/favorite-tabs.bs', 'utf8');
 source += '\n' + await readFile('test/home-preview.bs', 'utf8');
 source += '\n' + await readFile('test/remote-subtitles.bs', 'utf8');
 source += '\n' + await readFile('test/playlist-sort-filter.bs', 'utf8');
+source += '\n' + await readFile('test/person-credits.bs', 'utf8');
+source += '\n' + await readFile('test/spotlight-person.bs', 'utf8');
 source += '\n' + await readFile('test/music-categories.bs', 'utf8');
 source += '\n' + await readFile('test/incomplete-recordings.bs', 'utf8');
 const moonfinPluginFile = await readFile('source/api/MoonfinPlugin.bs', 'utf8');
@@ -1161,6 +1165,31 @@ assert.match(seasonWiring, /buttonLayout\.CountSplit\(configs\.count\(\)/, 'and 
 assert.match(seasonWiring, /action: "goToSeries"/, 'and offers Go to Series');
 assert.equal((await readFile('source/ShowScenes.bs', 'utf8')).match(/group\.itemContent = seasonMetaData\n    group\.objects/g)?.length, 2, 'Both Classic season paths hand the season over before its episodes');
 assert.match(await readFile('components/details/detailButtonHost.bs', 'utf8'), /button\.id <> "extrasButton" then exit for/, 'Extras never folds behind More');
+assert.match(syncWiring, /\{ pluginKey: "personPageSortOption", rokuKey: "ui\.itemdetail\.personSortOption", type: "direct" \}/, 'The person page sort follows the account');
+assert.match(syncWiring, /\{ pluginKey: "personPageGroupItems", rokuKey: "ui\.itemdetail\.personGroupItems", type: "bool" \}/, 'and so does grouping repeated roles');
+const personShowScenes = await readFile('source/ShowScenes.bs', 'utf8');
+assert.match(personShowScenes, /screen = detailScreenComponent\("person"\)\s+if screen <> "ItemDetails"/, 'A person opens in the chosen detail style, with Classic keeping its own screen');
+const personButtonHost = await readFile('components/details/detailButtonHost.bs', 'utf8');
+assert.match(personButtonHost, /= "person" and \(personDisplayForKids or not kidsMode\.Enabled\(\)\)\s+arranged = withPersonDisplay\(arranged\)/, 'A person page puts Display beside Favorite, outside Kids Mode except on Nouveau');
+assert.match(personButtonHost, /if buttonAction = "personDisplay"\s+handleScreenButtonAction\(buttonAction\)\s+return/, 'and Display opens without the page reloading after');
+assert.match(await readFile('components/details/NouveauItemDetails.bs', 'utf8'), /addArrangedButtons\(\[favoriteCandidate\([^\n]*\)\], true\)/, 'Nouveau keeps Display in Kids Mode');
+const personHost = await readFile('components/personCreditsHost.bs', 'utf8');
+assert.match(personHost, /entries = personCredits\.SortCards\(entries, personCredits\.SortOption\(\)\)/, 'The library filmography follows the Display sort');
+assert.match(personHost, /personCredits\.SortCredits\(personCredits\.Shaped\(usable, isCrew, group\), option\)/, 'and Seerr credits are grouped and sorted the same way');
+assert.match(personHost, /if followsDisplay\s+option = personCredits\.SortOption\(\)\s+group = personCredits\.GroupsRoles\(\)/, 'A person drawn from Seerr alone keeps every credit by title');
+assert.match(await readFile('components/PersonDetails.bs', 'utf8'), /shownSeerrCredits\(response\.data, m\.top\.seerrPersonId = ""\)/, 'and the Classic screen tells the two apart');
+const modernPerson = await readFile('components/details/ModernItemDetails.bs', 'utf8');
+assert.match(modernPerson, /if isPerson\(\)\s+renderPersonContent\(itemData\)\s+return/, 'A person on the Modern page skips everything a playable title loads');
+assert.match(modernPerson, /if isPerson\(\)\s+addArrangedButtons\(\[favoriteCandidate\(m\.top\.itemContent\.json\)\]\)\s+return true/, 'and its row is Favorite and Display');
+assert.match(modernPerson, /pushSection\(filmography\.movies, [^\n]*tr\("Movies"\)[^\n]*\n\s+if filmography\.series\.count\(\) > 0 then pushSection\(filmography\.series, [^\n]*tr\("TV Shows"\)/, 'Its tabs are Movies and TV Shows');
+for (const file of ['ModernItemDetails', 'SpotlightItemDetails', 'NouveauItemDetails', '../PersonDetails']) {
+    assert.match(await readFile(`components/details/${file}.bs`, 'utf8'), /if personDisplayOpen\(\) then return true/, `${file} leaves the keys to the Display dialog while it's up`);
+}
+const spotlightPerson = await readFile('components/details/SpotlightItemDetails.bs', 'utf8');
+assert.match(await readFile('components/details/SpotlightCards.bs', 'utf8'), /else if itemType = "person"\s+return \["filmography", "appearances", "crew"\]/, 'A Spotlight person gets Filmography, Appearances and Crew cards');
+assert.match(spotlightPerson, /if isPerson\(\)\s+addArrangedButtons\(\[favoriteCandidate\(m\.top\.itemContent\.json\)\]\)\s+return true/, 'with Favorite and Display beside it');
+assert.match(spotlightPerson, /if not isPerson\(\) or isValidAndNotEmpty\(itemData\.BackdropImageTags\) then setBackdropImage/, 'A person never gets their headshot as a backdrop');
+assert.match(await readFile('components/seerr/SeerrPoster.bs', 'utf8'), /if itemData\.hasField\("seerrCredit"\) then credit = itemData\.seerrCredit/, 'A Seerr credit card names the part under the title');
 process.stdout.write('PASS: details wiring\n');
 
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');

@@ -1,0 +1,131 @@
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+
+' How a person's page orders their credits, and whether a title they worked on in several roles
+' shows once. Both follow the account to its other screens.
+const PERSON_SORT_SETTING = "ui.itemdetail.personSortOption"
+const PERSON_GROUP_SETTING = "ui.itemdetail.personGroupItems"
+
+namespace personCredits
+
+    const SORT_ALPHABETICAL = "alphabetical"
+    const SORT_DATE_ASCENDING = "releaseDateAsc"
+    const SORT_DATE_DESCENDING = "releaseDateDesc"
+
+    function SortOption() as string
+        option = settingOr(PERSON_SORT_SETTING, SORT_ALPHABETICAL)
+        if option = SORT_DATE_ASCENDING or option = SORT_DATE_DESCENDING then return option
+        return SORT_ALPHABETICAL
+    end function
+
+    function GroupsRoles() as boolean
+        return get_user_setting_bool(PERSON_GROUP_SETTING, false)
+    end function
+
+    ' Library titles in the order picked
+    function SortCards(cards as object, option as string) as object
+        keyed = []
+        for each card in cards
+            json = chainLookupReturn(card, "json", {})
+            keyed.push({ title: LCase(toString(json.Name ?? "")), day: releaseDay(json), value: card })
+        end for
+        return personCredits.Sorted(keyed, option)
+    end function
+
+    ' Seerr credits in the order picked
+    function SortCredits(credits as object, option as string) as object
+        keyed = []
+        for each credit in credits
+            keyed.push({ title: LCase(personCredits.CreditTitle(credit)), day: personCredits.CreditDay(credit), value: credit })
+        end for
+        return personCredits.Sorted(keyed, option)
+    end function
+
+    function Sorted(keyed as object, option as string) as object
+        values = []
+        for each entry in stableSorted(keyed, personCredits.Before, option)
+            values.push(entry.value)
+        end for
+        return values
+    end function
+
+    ' A title with no date sinks to the end whichever way the dates run. Titles out the same day go
+    ' by name, turned round along with the dates, and undated ones go by name from A.
+    function Before(first as object, second as object, option as string) as boolean
+        if option <> SORT_DATE_ASCENDING and option <> SORT_DATE_DESCENDING then return first.title < second.title
+        if first.day = "" and second.day = "" then return first.title < second.title
+        if first.day = "" then return false
+        if second.day = "" then return true
+        if first.day = second.day
+            if option = SORT_DATE_ASCENDING then return first.title < second.title
+            return first.title > second.title
+        end if
+        if option = SORT_DATE_ASCENDING then return first.day < second.day
+        return first.day > second.day
+    end function
+
+    function CreditTitle(credit as object) as string
+        for each field in ["title", "name", "originalTitle", "originalName"]
+            value = credit.LookupCI(field)
+            if isValidAndNotEmpty(value) then return toString(value)
+        end for
+        return ""
+    end function
+
+    function CreditDay(credit as object) as string
+        for each field in ["releaseDate", "release_date", "firstAirDate", "first_air_date"]
+            value = credit.LookupCI(field)
+            if isValidAndNotEmpty(value)
+                if isServerDate(value) then return Left(value, 10)
+                return ""
+            end if
+        end for
+        return ""
+    end function
+
+    ' What a credit says the person did: the job on a crew credit, or who they played
+    function RoleOf(credit as object, isCrew as boolean) as string
+        if isCrew
+            job = credit.LookupCI("job")
+            if isValidAndNotEmpty(job) then return toString(job)
+            return toString(credit.LookupCI("department") ?? "")
+        end if
+        return toString(credit.LookupCI("character") ?? "")
+    end function
+
+    ' Seerr lists a title once per credit. Each credit is handed back with its role, or, grouped,
+    ' each title once with every role joined onto it. A film and a show can share an id, so the
+    ' kind is part of what makes a title the same one.
+    function Shaped(credits as object, isCrew as boolean, group as boolean) as object
+        result = []
+        if not group
+            for each credit in credits
+                credit._role = personCredits.RoleOf(credit, isCrew)
+                result.push(credit)
+            end for
+            return result
+        end if
+
+        roles = []
+        positions = {}
+        for each credit in credits
+            mediaType = toString(credit.LookupCI("mediaType") ?? credit.LookupCI("media_type") ?? "")
+            key = `${mediaType}:${toString(credit.LookupCI("id") ?? "")}`
+            role = personCredits.RoleOf(credit, isCrew)
+            if positions.DoesExist(key)
+                held = roles[positions[key]]
+                if role <> "" and not inArray(held, role) then held.push(role)
+            else
+                positions[key] = result.count()
+                result.push(credit)
+                roles.push(role = "" ? [] : [role])
+            end if
+        end for
+
+        for i = 0 to result.count() - 1
+            result[i]._role = roles[i].Join(", ")
+        end for
+        return result
+    end function
+
+end namespace

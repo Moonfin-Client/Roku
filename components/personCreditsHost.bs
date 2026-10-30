@@ -1,9 +1,18 @@
 import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/detailSectionLayout.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/personCredits.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
+import "pkg:/source/utils/settingsSync.bs"
 
-' A person's dates and filmography, shared by the person screen and the Nouveau details screen.
+' A person's dates, filmography and Display options, shared by every screen that draws a person.
+'
+' Hook a screen with the Display button provides:
+'   sub personDisplayChanged(), to redraw the credits in the order and grouping just picked
+
+' How much of a person's filmography a detail page asks for, newest first
+const PERSON_PAGE_LIMIT = 50
 
 ' Dates are read off the string, because roDateTime localizes on parse and shifts the day for
 ' anyone west of UTC
@@ -67,13 +76,23 @@ function personMetaParts(itemData as object) as object
     return parts
 end function
 
-' The filmography comes back as one list, and each kind of work gets its own group. An episode
-' of a series the person is billed on is already covered by that series, so only the rest count
-' as a guest appearance. Guest appearances and music videos each have a switch, and a hidden one
-' comes back empty.
+' The year a person was born and where, for the line under their name
+function personBornParts(itemData as object) as object
+    parts = []
+    if isServerDate(itemData.PremiereDate) then parts.push(Left(itemData.PremiereDate, 4))
+    places = chainLookupReturn(itemData, "ProductionLocations", [])
+    if isValidAndNotEmpty(places) and isValidAndNotEmpty(places[0]) and detailSectionLayout.Shows("birthplace") then parts.push(places[0])
+    return parts
+end function
+
+' The filmography comes back as one list, and each kind of work gets its own group in the order
+' the Display options ask for. An episode of a series the person is billed on is already covered
+' by that series, so only the rest count as a guest appearance. Guest appearances and music videos
+' each have a switch, and a hidden one comes back empty.
 function splitFilmography(entries as object) as object
     filmography = { movies: [], series: [], guest: [], music: [] }
     hidden = detailSectionLayout.HiddenIds()
+    entries = personCredits.SortCards(entries, personCredits.SortOption())
     seriesIds = {}
     for each entry in entries
         if chainLookupReturn(entry, "json.Type", "") = "Series" then seriesIds[chainLookupReturn(entry, "json.Id", "")] = true
@@ -96,52 +115,48 @@ function splitFilmography(entries as object) as object
     return filmography
 end function
 
-' What Seerr knows they appeared in and worked on, leaving out a list the viewer hid
-function shownSeerrCredits(credits as object) as object
+' What Seerr knows they appeared in and worked on, leaving out a list the viewer hid. A person
+' page orders and groups them the way its Display options ask, and a person drawn from Seerr alone
+' lists every credit by title.
+function shownSeerrCredits(credits as object, followsDisplay as boolean) as object
+    option = personCredits.SORT_ALPHABETICAL
+    group = false
+    if followsDisplay
+        option = personCredits.SortOption()
+        group = personCredits.GroupsRoles()
+    end if
+
     hidden = detailSectionLayout.HiddenIds()
     shown = { appearances: [], crew: [] }
-    if not hidden.DoesExist("seerrPersonAppearances") then shown.appearances = usableSeerrCredits(credits.cast, false)
-    if not hidden.DoesExist("seerrPersonCrew") then shown.crew = usableSeerrCredits(credits.crew, true)
+    if not hidden.DoesExist("seerrPersonAppearances") then shown.appearances = usableSeerrCredits(credits.cast, false, option, group)
+    if not hidden.DoesExist("seerrPersonCrew") then shown.crew = usableSeerrCredits(credits.crew, true, option, group)
     return shown
 end function
 
-' Only credits with a poster, never a crew job that is a thank you rather than work on the title,
-' sorted by title. Seerr lists a title once per credit, so it is kept once.
-
-function usableSeerrCredits(credits as object, isCrew as boolean) as object
+' Only credits with a poster, never a crew job that's a thank you rather than work on the title
+function usableSeerrCredits(credits as object, isCrew as boolean, option as string, group as boolean) as object
     list = []
     if not isValidAndNotEmpty(credits) then return list
 
     usable = []
     for each credit in credits
-        posterPath = credit.LookupCI("posterPath")
-        if not isValidAndNotEmpty(posterPath) then continue for
+        if not isValidAndNotEmpty(credit.LookupCI("posterPath")) then continue for
 
         if isCrew
             job = LCase(credit.LookupCI("job") ?? "")
             if job = "thanks" or job = "special thanks" then continue for
         end if
-
-        title = credit.LookupCI("title")
-        if not isValidAndNotEmpty(title) then title = credit.LookupCI("name")
-        usable.push({ title: title ?? "", credit: credit, posterPath: posterPath })
+        usable.push(credit)
     end for
-    usable.SortBy("title", "i")
 
-    ' Films and shows number their ids apart, so the same id can be one of each
     posterBase = GetTmdbImageBaseUrls().posterW342
-    seen = {}
-    for each entry in usable
-        credit = entry.credit
-
+    for each credit in personCredits.SortCredits(personCredits.Shaped(usable, isCrew, group), option)
         mediaType = LCase(credit.LookupCI("mediaType") ?? "")
         if mediaType = "" then mediaType = isValidAndNotEmpty(credit.LookupCI("title")) ? "movie" : "tv"
 
         tmdbId = ""
         rawId = credit.LookupCI("id")
         if isValid(rawId) then tmdbId = rawId.ToStr()
-        if seen.DoesExist(mediaType + ":" + tmdbId) then continue for
-        seen[mediaType + ":" + tmdbId] = true
 
         ' The card caption reads the year off the same field the library entries use
         released = credit.LookupCI("releaseDate")
@@ -155,14 +170,15 @@ function usableSeerrCredits(credits as object, isCrew as boolean) as object
 
         data = {
             Id: tmdbId,
-            name: entry.title,
+            name: personCredits.CreditTitle(credit),
             Type: mediaType = "tv" ? "Series" : "Movie",
             SeerrTmdbId: tmdbId,
             SeerrMediaType: mediaType,
-            SeerrPosterURL: posterBase + entry.posterPath,
+            SeerrPosterURL: posterBase + credit.LookupCI("posterPath"),
             SeerrItem: credit
         }
         if isValid(year) and year > 0 then data.ProductionYear = year
+        if credit._role <> "" then data.SeerrCredit = credit._role
 
         card = createSGNode("HomeData")
         card.json = data
@@ -260,3 +276,85 @@ function startSeerrPersonCredits(tmdbId as string, handler as string) as dynamic
     task.control = TaskControl.RUN
     return task
 end function
+
+' The Display dialog a person page opens from its Display button. Each pick is kept and sent to
+' the server as it's made, the dialog stays up, and the screen redraws through its
+' personDisplayChanged hook.
+sub openPersonDisplay()
+    if not isValid(m.personDisplay)
+        m.personDisplay = m.top.createChild("LibrarySortDialog")
+        m.personDisplay.visible = false
+        m.personDisplay.observeField("chosen", "onPersonDisplayChosen")
+        m.personDisplay.observeField("closed", "onPersonDisplayClosed")
+    end if
+
+    ' Whatever had the remote gets it back once the dialog closes
+    m.personDisplayReturn = m.top
+    while isValid(m.personDisplayReturn) and not m.personDisplayReturn.hasFocus()
+        m.personDisplayReturn = m.personDisplayReturn.focusedChild
+    end while
+
+    m.personDisplay.context = personDisplayContext()
+    m.personDisplay.callFunc("showDialog")
+    m.top.lastFocus = m.personDisplay
+end sub
+
+function personDisplayOpen() as boolean
+    return isValid(m.personDisplay) and m.personDisplay.visible
+end function
+
+function personDisplayContext() as object
+    grouped = []
+    if personCredits.GroupsRoles() then grouped.push("group")
+    return {
+        title: tr("Display Options"),
+        sections: [
+            {
+                key: "sort",
+                title: tr("Sort By"),
+                kind: "radio",
+                options: [
+                    { value: personCredits.SORT_ALPHABETICAL, label: tr("Alphabetical") },
+                    { value: personCredits.SORT_DATE_ASCENDING, label: tr("Release Date (Ascending)") },
+                    { value: personCredits.SORT_DATE_DESCENDING, label: tr("Release Date (Descending)") }
+                ],
+                selected: personCredits.SortOption()
+            },
+            { key: "group", title: tr("Group Contributions"), kind: "check", options: [{ value: "group", label: tr("Group multiple roles") }], selected: grouped }
+        ]
+    }
+end function
+
+sub onPersonDisplayChosen(event as object)
+    choice = event.getData()
+    if not isValid(choice) then return
+
+    if choice.section = "sort"
+        if choice.value = personCredits.SortOption() then return
+        savePersonDisplay(PERSON_SORT_SETTING, choice.value)
+    else if choice.section = "group"
+        savePersonDisplay(PERSON_GROUP_SETTING, personCredits.GroupsRoles() ? "false" : "true")
+    end if
+
+    m.personDisplay.context = personDisplayContext()
+    m.personDisplay.callFunc("refresh")
+    personDisplayChanged()
+end sub
+
+sub savePersonDisplay(key as string, value as string)
+    set_user_setting(key, value)
+    pushData = settingsSync.PreparePush(key, value)
+    if not isValid(pushData) then return
+    task = createObject("roSGNode", "PostTask")
+    task.apiUrl = pushData.url
+    task.stringData = pushData.body
+    task.control = "RUN"
+    ' Held until it finishes, or a task nothing references can be collected mid flight
+    m.personDisplaySync = task
+end sub
+
+sub onPersonDisplayClosed()
+    if not isValid(m.personDisplayReturn) then return
+    m.personDisplayReturn.setFocus(true)
+    m.top.lastFocus = m.personDisplayReturn
+end sub
