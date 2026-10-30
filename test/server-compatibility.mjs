@@ -74,6 +74,7 @@ const selections = {
     'source/utils/trackLabels.bs': null,
     'source/utils/fileFacts.bs': null,
     'components/personCreditsHost.bs': ['formatPersonDate', 'personAge'],
+    'components/details/SpotlightCards.bs': ['spotlightEpisodeSeason', 'spotlightEpisodeOrder', 'spotlightEpisodeFirst'],
     'source/utils/playbackFacts.bs': null,
     'source/utils/librarySorts.bs': null,
     'source/utils/libraryGroupBy.bs': null,
@@ -188,6 +189,7 @@ source += '\n' + (await readFile('source/utils/recordAiring.bs', 'utf8')).replac
 source += '\n' + await readFile('test/record-airing.bs', 'utf8');
 source += '\n' + await readFile('test/server-date.bs', 'utf8');
 source += '\n' + await readFile('test/special-features.bs', 'utf8');
+source += '\n' + await readFile('test/spotlight-episodes.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n' + settingsSyncFile.match(/^    const .+$/gm).join('\n') + '\n';
 for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile']) {
