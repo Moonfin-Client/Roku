@@ -1206,6 +1206,11 @@ assert.match(spotlightPerson, /if not isPerson\(\) or isValidAndNotEmpty\(itemDa
 assert.match(await readFile('components/seerr/SeerrPoster.bs', 'utf8'), /if itemData\.hasField\("seerrCredit"\) then credit = itemData\.seerrCredit/, 'A Seerr credit card names the part under the title');
 process.stdout.write('PASS: details wiring\n');
 
+// Libraries, sign in and accounts
+assert.match(await readFile('components/itemMenu/ItemMenuTask.bs', 'utf8'), /op = "hideFromResume"[^]*?UserItems\/\$\{itemId\}\/HideFromResume`, \{ UserId: taskUserId\(\), Hide: "true" \}\), "POST"\)/, 'Emby hides an item from resume through its own route');
+assert.match(await readFile('components/itemMenu/itemMenuHost.bs', 'utf8'), /if response\.success and response\.request\.op = "played" then itemMenuPatchUserData/, 'and keeps the progress it showed');
+process.stdout.write('PASS: libraries and sign in wiring\n');
+
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');
 const guideDialog = guideSource.match(/sub openProgramDialog\([^]*?end sub/)[0];
 assert.match(guideDialog, /id: "record"[^]*id: "seriesSettings"[^]*id: "recordSeries"[^]*id: "favorite"[^]*id: "watch"[^]*id: "close"/, 'The program dialog keeps Record, Series Settings, Record Series, Favorite, Watch and Close in order');
