@@ -27,6 +27,8 @@ import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
 import "pkg:/source/utils/recordAiring.bs"
 import "pkg:/source/utils/seasonalEffects.bs"
+import "pkg:/source/utils/secondarySubtitle.bs"
+import "pkg:/source/utils/trackMemory.bs"
 
 const REPLAY_RETRIES = 3
 
@@ -150,6 +152,10 @@ sub init()
     playbackOverlay.SetFont(m.seekPreviewTime, 20, true)
     m.seekSettleTimer = m.top.findNode("seekSettleTimer")
     m.seekSettleTimer.observeField("fire", "onSeekSettled")
+    m.secondaryTask = invalid
+    m.offsetTarget = "primary"
+    m.secondaryItemId = ""
+    m.secondaryCaptionGroup = m.top.findNode("secondaryCaptionGroup")
     m.heldSeek = invalid
     m.heldSeekStart = m.top.findNode("heldSeekStart")
     m.heldSeekStart.observeField("fire", "onHeldSeekStart")
@@ -980,14 +986,15 @@ sub onOSDAction()
         return
     end if
 
-    if action = "showsyncmenu"
-        handleShowsyncmenuAction()
+    if action = "showsyncmenu" or action = "showsecondarysyncmenu"
+        handleShowsyncmenuAction(action = "showsecondarysyncmenu")
         return
     end if
 
-    if action = "showsubtitleappearance"
+    if action = "showsubtitleappearance" or action = "showsecondaryappearance"
         handleHideAction(false)
         m.subtitleAppearance.isHdr = m.isHdrOutput
+        m.subtitleAppearance.secondary = action = "showsecondaryappearance"
         m.subtitleAppearance.callFunc("open")
         m.subtitleAppearance.visible = true
         m.subtitleAppearance.setFocus(true)
@@ -1010,12 +1017,21 @@ sub onOSDAction()
     end if
 end sub
 
-sub handleShowsyncmenuAction()
+sub handleShowsyncmenuAction(secondary = false as boolean)
     handleHideAction(false)
 
-    m.subtitleOffsetOverlay.offset = m.subtitleOffset
+    ' The panel moves whichever track opened it
+    m.offsetTarget = secondary ? "secondary" : "primary"
     cues = []
-    if isValid(m.captionTask) and LCase(m.top.globalCaptionMode) = "on" then cues = m.captionTask.callFunc("getCues")
+    if secondary
+        m.subtitleOffsetOverlay.limit = SECONDARY_DELAY_LIMIT_MS
+        m.subtitleOffsetOverlay.offset = m.top.secondarySubtitleDelay
+        if isValid(m.secondaryTask) then cues = m.secondaryTask.callFunc("getCues")
+    else
+        m.subtitleOffsetOverlay.limit = 0
+        m.subtitleOffsetOverlay.offset = m.subtitleOffset
+        if isValid(m.captionTask) and LCase(m.top.globalCaptionMode) = "on" then cues = m.captionTask.callFunc("getCues")
+    end if
     m.subtitleOffsetOverlay.cues = cues
     m.subtitleOffsetOverlay.currentTime = m.top.position
     m.subtitleOffsetOverlay.visible = true
@@ -1029,12 +1045,18 @@ sub hidesyncmenuAction()
 end sub
 
 sub onSubtitleOffsetChanged()
+    if m.offsetTarget = "secondary"
+        m.top.secondarySubtitleDelay = m.subtitleOffsetOverlay.offset
+        return
+    end if
     m.subtitleOffset = m.subtitleOffsetOverlay.offset
     m.global.queueManager.callFunc("setSubtitleOffset", m.subtitleOffset)
 end sub
 
 sub onSubtitleAppearanceChanged()
     if isValid(m.captionTask) then m.captionTask.styleRevision = m.captionTask.styleRevision + 1
+    applySecondaryStyle()
+    placeCaptions()
 end sub
 
 sub onSubtitleAppearanceClosed()
@@ -1071,9 +1093,10 @@ sub onAllowCaptionsChange()
 end sub
 
 ' Custom subtitles draw what comes from the server. A track the device reads from the stream itself
-' can only be drawn by the device, so custom subtitles step aside for it.
+' can only be drawn by the device, so custom subtitles step aside for it. A second track has the
+' player draw the first one too, since only then can it stack the two.
 sub loadCaption()
-    custom = m.global.session.user.settings["playback.subs.custom"] = true
+    custom = m.global.session.user.settings["playback.subs.custom"] = true or m.top.secondarySubtitleIndex >= 0
     ' The device wraps the name of a track it was handed, so the address sits somewhere inside it
     fromServer = Instr(1, LCase(m.top.subtitleTrack), "http") > 0
     m.top.suppressCaptions = custom and (fromServer or m.top.subtitleTrack = "")
@@ -1150,6 +1173,148 @@ end sub
 sub updateCaption()
     m.captionGroup.removeChildrenIndex(m.captionGroup.getChildCount(), 0)
     m.captionGroup.appendChildren(m.captionTask.currentCaption)
+    placeCaptions()
+end sub
+
+' ------------------------------------------------------------------------------------------------
+' The second subtitle track
+' ------------------------------------------------------------------------------------------------
+
+function isLiveContent() as boolean
+    return isValid(m.top.content) and m.top.content.live = true
+end function
+
+function secondarySubtitlesEnabled() as boolean
+    return m.global.session.user.settings["playback.subs.secondary.enabled"] = true
+end function
+
+' Every subtitle track as the pickers see it
+function subtitleJsonList() as object
+    list = []
+    for each item in m.top.fullSubtitleData ?? []
+        list.push(trackLabels.SubtitleJson(item))
+    end for
+    return list
+end function
+
+function secondarySubtitleCandidates() as object
+    settings = m.global.session.user.settings
+    return secondarySubtitle.Candidates(subtitleJsonList(), m.top.selectedSubtitle, settings["playback.subs.secondary.language"], settings)
+end function
+
+' The Subtitles button asks which track first only while the setting is on and there's something
+' for the second one. A track that's already showing keeps the step so it can still be turned off.
+function offersSecondarySubtitles() as boolean
+    if not isValid(m.captionTask) or isLiveContent() then return false
+    if m.top.secondarySubtitleIndex >= 0 then return true
+    return secondarySubtitlesEnabled() and secondarySubtitleCandidates().count() > 0
+end function
+
+' A pick is remembered for the title, off included
+sub selectSecondarySubtitle(index as integer)
+    list = subtitleJsonList()
+    stream = invalid
+    for each json in list
+        if json.Index = index then stream = json
+    end for
+    if index >= 0 and secondarySubtitle.IsEligible(stream)
+        loadSecondary(stream)
+    else
+        clearSecondary()
+        index = -1
+    end if
+    trackMemory.RememberSecondary(m.top.videoId, secondarySubtitle.Selection(list, index))
+end sub
+
+' A new title starts with no second track and no delay, and a fresh load of the same one keeps both
+sub prepareSecondaryForItem(itemId as string)
+    if m.secondaryItemId = itemId then return
+    m.secondaryItemId = itemId
+    clearSecondary()
+    m.top.secondarySubtitleDelay = 0
+end sub
+
+' Puts back the track remembered for this title, unless it's now the first track
+sub restoreSecondarySubtitle()
+    if not secondarySubtitlesEnabled() or not isValid(m.captionTask) or isLiveContent() then return
+    list = subtitleJsonList()
+    restored = secondarySubtitle.RestoreIndex(trackMemory.RememberedSecondary(trackMemory.Load(), m.top.videoId), list)
+    stream = invalid
+    if isValid(restored) and restored >= 0 and restored <> m.top.selectedSubtitle
+        for each json in list
+            if json.Index = restored then stream = json
+        end for
+    end if
+    if isValid(stream) then loadSecondary(stream) else clearSecondary()
+end sub
+
+' Picking the second track's file as the first takes it over
+sub releaseSecondaryIfPrimary(primary as integer)
+    if primary >= 0 and primary = m.top.secondarySubtitleIndex then selectSecondarySubtitle(-1)
+end sub
+
+' Nothing waits on the download. The server may still be pulling the track out of the file, and the
+' lines fill in once it answers.
+sub loadSecondary(stream as object)
+    if not isValid(m.secondaryTask)
+        m.secondaryTask = createObject("roSGNode", "captionTask")
+        m.secondaryTask.observeField("currentCaption", "updateSecondaryCaption")
+        m.secondaryTask.observeField("fetching", "placeCaptions")
+    end if
+    m.secondaryTask.isHdr = m.isHdrOutput
+    applySecondaryStyle()
+    m.secondaryTask.playerState = m.top.state + "on"
+    m.secondaryTask.url = chainLookupReturn(stream, "Track.TrackName", "")
+    m.top.secondarySubtitleIndex = stream.Index
+    if isValid(m.captionTask) then loadCaption()
+end sub
+
+sub clearSecondary()
+    if isValid(m.secondaryTask) then m.secondaryTask.url = ""
+    m.secondaryCaptionGroup.removeChildrenIndex(m.secondaryCaptionGroup.getChildCount(), 0)
+    wasShowing = m.top.secondarySubtitleIndex >= 0
+    m.top.secondarySubtitleIndex = -1
+    if wasShowing and isValid(m.captionTask) then loadCaption()
+    placeCaptions()
+end sub
+
+' The second track follows the first track's style, with its own size and color when they're set
+sub applySecondaryStyle()
+    if not isValid(m.secondaryTask) then return
+    settings = m.global.session.user.settings
+    m.secondaryTask.sizeOverride = Int(Val(toString(settings["playback.subs.secondary.size"] ?? "0")))
+    m.secondaryTask.colorOverride = toString(settings["playback.subs.secondary.color"] ?? "")
+    m.secondaryTask.styleRevision = m.secondaryTask.styleRevision + 1
+end sub
+
+sub updateSecondaryCaption()
+    m.secondaryCaptionGroup.removeChildrenIndex(m.secondaryCaptionGroup.getChildCount(), 0)
+    m.secondaryCaptionGroup.appendChildren(m.secondaryTask.currentCaption)
+    placeCaptions()
+end sub
+
+' The second track stacks right above the first, so the two never overlap however many lines
+' either has. While it's loaded its vertical offset moves the pair, never past the bottom edge.
+sub placeCaptions()
+    if not isValid(m.captionGroup) or not isValid(m.captionTask) then return
+    bottomPercent = m.captionTask.bottomPercent
+    shift = 0
+    if m.top.secondarySubtitleIndex >= 0 and isValid(m.secondaryTask) and not m.secondaryTask.fetching
+        offset = Int(Val(toString(m.global.session.user.settings["playback.subs.secondary.offset"] ?? SECONDARY_DEFAULT_OFFSET).Trim()))
+        shiftPercent = secondarySubtitle.ShiftPercent(offset)
+        if bottomPercent + shiftPercent < 0 then shiftPercent = -bottomPercent
+        shift = Int(1080 * shiftPercent / 100)
+    end if
+    m.captionGroup.translation = [0, -shift]
+
+    if not isValid(m.secondaryCaptionGroup) or m.secondaryCaptionGroup.getChildCount() = 0 then return
+    target = 1080 * (1 - bottomPercent / 100) - shift
+    if m.captionGroup.visible
+        primary = m.captionGroup.boundingRect()
+        if primary.height > 0 then target = primary.y - 8
+    end if
+    own = m.secondaryCaptionGroup.localBoundingRect()
+    m.secondaryCaptionGroup.translation = [0, target - own.y - own.height]
 end sub
 
 ' Event handler for when selectedSubtitle changes
@@ -1437,6 +1602,7 @@ sub onVideoContentLoaded(event as object)
     ' A transcode leaves the picture SDR whatever the file is
     m.isHdrOutput = videoContent[0].isHdr = true and not m.isTranscoded
     if isValid(m.captionTask) then m.captionTask.isHdr = m.isHdrOutput
+    if isValid(m.secondaryTask) then m.secondaryTask.isHdr = m.isHdrOutput
     subtitlesBurnedIn = chainLookupReturn(videoContent[0], "subtitlesBurnedIn", false)
     if subtitlesBurnedIn
         videoContent[0].content.SubtitleTracks = []
@@ -1595,6 +1761,8 @@ sub onVideoContentLoaded(event as object)
     end if
 
     m.top.observeField("selectedSubtitle", "onSubtitleChange")
+    prepareSecondaryForItem(m.top.videoId)
+    restoreSecondarySubtitle()
 
     m.top.setFocus(true)
 
@@ -2251,6 +2419,7 @@ sub onPositionChanged()
         newPos = Int(m.top.position * 1000) - m.subtitleOffset
         m.captionTask.currentPos = newPos
     end if
+    if isValid(m.secondaryTask) then m.secondaryTask.currentPos = Int(m.top.position * 1000) - m.top.secondarySubtitleDelay
 
     noteSkipPromptLanding()
 
@@ -2293,6 +2462,8 @@ sub onState()
     if isValid(m.captionTask)
         m.captionTask.playerState = m.top.state + m.top.globalCaptionMode
     end if
+    ' The second track was turned on in the player, so the device's caption mode doesn't hide it
+    if isValid(m.secondaryTask) then m.secondaryTask.playerState = m.top.state + "on"
 
     if isStringEqual(m.top.state, MediaPlaybackState.PLAYING) or isStringEqual(m.top.state, MediaPlaybackState.ERROR)
         m.streamLoading = false

@@ -8827,5 +8827,40 @@
         <extracomment>Line on a Seerr request naming who asked for it. ^0 is the requester&apos;s name</extracomment>
         <translation>Requested by ^0</translation>
     </message>
+    <message>
+        <source>Secondary Subtitles</source>
+        <extracomment>Setting that shows a second subtitle track at the same time as the first</extracomment>
+        <translation>Secondary Subtitles</translation>
+    </message>
+    <message>
+        <source>Show a second subtitle track at the same time. The subtitle menu then asks for the primary or secondary track first</source>
+        <extracomment>Description of the Secondary Subtitles setting</extracomment>
+        <translation>Show a second subtitle track at the same time. The subtitle menu then asks for the primary or secondary track first</translation>
+    </message>
+    <message>
+        <source>Preferred Secondary Subtitle Language</source>
+        <extracomment>Setting for the language the second subtitle track&apos;s list puts first</extracomment>
+        <translation>Preferred Secondary Subtitle Language</translation>
+    </message>
+    <message>
+        <source>Primary</source>
+        <extracomment>In the player&apos;s subtitle menu, the row that picks the first subtitle track</extracomment>
+        <translation>Primary</translation>
+    </message>
+    <message>
+        <source>Secondary</source>
+        <extracomment>In the player&apos;s subtitle menu, the row that picks the second subtitle track</extracomment>
+        <translation>Secondary</translation>
+    </message>
+    <message>
+        <source>Secondary Subtitle Track</source>
+        <extracomment>Title of the player&apos;s list and appearance panel for the second subtitle track</extracomment>
+        <translation>Secondary Subtitle Track</translation>
+    </message>
+    <message>
+        <source>Vertical Offset</source>
+        <extracomment>Slider that moves the two subtitle tracks up together, as a share of the screen height</extracomment>
+        <translation>Vertical Offset</translation>
+    </message>
 </context>
 </TS>

@@ -190,7 +190,7 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/live-tv-guide.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/recordAiring.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/record-airing.bs', 'utf8');
-for (const [file, test] of [['source/utils/heldSeek.bs', 'test/held-seek.bs']]) {
+for (const [file, test] of [['source/utils/heldSeek.bs', 'test/held-seek.bs'], ['source/utils/secondarySubtitle.bs', 'test/secondary-subtitle.bs']]) {
     source += '\n' + (await readFile(file, 'utf8')).replace(/^import .*$/gm, '') + '\n' + await readFile(test, 'utf8');
 }
 source += '\n' + await readFile('test/server-date.bs', 'utf8');
@@ -1266,8 +1266,13 @@ assert.match((await readFile('source/api/Items.bs', 'utf8')).match(/function sea
 assert.match((await readFile('components/search/SearchResults.bs', 'utf8')).match(/sub onViewsLoaded\([^]*?end sub/)[0], /isStringEqual\(view\.LookupCI\("CollectionType"\), "livetv"\) then m\.searchTask\.liveTv = true/, 'Search adds Live TV programs only on a server with a Live TV library');
 process.stdout.write('PASS: Live TV recording wiring (10 checks)\n');
 
-// Held seeking
+// Held seeking and the second subtitle track
 const heldPlayer = await readFile('components/video/VideoPlayerView.bs', 'utf8');
 assert.match(heldPlayer, /seconds = hold\.direction \* heldSeek\.SecondsFor\(hold\.base, hold\.count\)/, 'A held key steps by the growing hold step');
 assert.match(heldPlayer, /function onKeyEvent\(key as string, press as boolean\) as boolean\s+'[^\n]*\s+if not press and \(key = KeyCode\.LEFT or key = KeyCode\.RIGHT\) then endHeldSeek\(\)/, 'and lets go when the key comes up, before anything else can take the release');
-process.stdout.write('PASS: held seek wiring (2 checks)\n');
+assert.match(heldPlayer, /custom = m\.global\.session\.user\.settings\["playback\.subs\.custom"\] = true or m\.top\.secondarySubtitleIndex >= 0/, 'A second track has the player draw the first one too');
+assert.match(heldPlayer, /if secondary\s+m\.subtitleOffsetOverlay\.limit = SECONDARY_DELAY_LIMIT_MS/, 'The offset panel stops the second track five seconds out');
+assert.match(await readFile('components/manager/ViewCreator.bs', 'utf8'), /if m\.view\.callFunc\("offersSecondarySubtitles"\)\s+m\.subtitleSelector\.mode = "slot"/, 'The Subtitles button asks which track first while a second one is on offer');
+const subtitleSettings = await readFile('components/settings/settings.bs', 'utf8');
+assert.match(subtitleSettings, /"playback\.subs\.language", "playback\.subs\.secondary\.enabled", "playback\.subs\.secondary\.language", "playback\.subs\.fallbackLanguage"/, 'The secondary settings sit after the default language');
+process.stdout.write('PASS: held seek and secondary subtitle wiring (6 checks)\n');
