@@ -1144,6 +1144,12 @@ for (const file of ['ModernItemDetails', 'SpotlightItemDetails', 'MinimalistItem
     assert.match(await readFile(`components/details/${file}.bs`, 'utf8'), /if picksItemOnScreen\(/, `${file} plays the episode on screen when it's picked from its own list`);
 }
 assert.match(await readFile('components/extras/ExtrasRowList.bs', 'utf8'), /m\.top\.playOnScreen = true/, 'and so does the Classic episode row');
+assert.match(await readFile('components/details/detailButtonHost.bs', 'utf8'), /if itemType <> "episode" and itemType <> "season" then return invalid/, 'A season leads back to its series too');
+const seasonWiring = await readFile('components/tvshows/SeasonDetails.bs', 'utf8');
+assert.match(seasonWiring, /buttonLayout\.Arrange\(offered, m\.global\.session\.user\.settings\[DETAIL_ORDER_SETTING\], m\.global\.session\.user\.settings\[DETAIL_HIDDEN_SETTING\]\)/, 'The Classic season row follows the button order and hidden buttons');
+assert.match(seasonWiring, /buttonLayout\.CountSplit\(configs\.count\(\)/, 'and the button count');
+assert.match(seasonWiring, /action: "goToSeries"/, 'and offers Go to Series');
+assert.equal((await readFile('source/ShowScenes.bs', 'utf8')).match(/group\.itemContent = seasonMetaData\n    group\.objects/g)?.length, 2, 'Both Classic season paths hand the season over before its episodes');
 process.stdout.write('PASS: details wiring\n');
 
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');

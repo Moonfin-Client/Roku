@@ -6,12 +6,25 @@ import "pkg:/source/enums/ImageType.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/enums/ViewLoadStatus.bs"
+import "pkg:/source/utils/buttonLayout.bs"
 import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/detailActions.bs"
 import "pkg:/source/utils/detailButtons.bs"
 import "pkg:/source/utils/detailSectionLayout.bs"
+import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/seerrButtons.bs"
 import "pkg:/source/utils/seerrDetailHost.bs"
+
+' The movie page's row metrics, so the two rows read the same
+const SEASON_ROW_WIDTH = 1728
+const SEASON_BUTTON_WIDTH = 157
+const SEASON_BUTTON_GAP = 12
+const SEASON_SCROLL_PAD = 40
+' Where the episodes sit and how far Down scrolls with one row of buttons
+const SEASON_EPISODES_HEADER_Y = 650
+const SEASON_EPISODES_Y = 690
+const SEASON_EPISODES_SCROLL = 460
 
 sub init()
     observeUserData()
@@ -33,6 +46,12 @@ sub init()
     m.seasonTitle = m.top.findNode("seasonTitle")
     m.seasonMeta = m.top.findNode("seasonMeta")
     m.buttonRow = m.top.findNode("buttonRow")
+    m.buttonRowExtra = m.top.findNode("buttonRowExtra")
+    m.buttonRowContainer = m.top.findNode("buttonRowContainer")
+    m.episodeListHeader = m.top.findNode("episodeListHeader")
+    m.overflowMenu = m.top.findNode("overflowMenu")
+    m.overflowMenu.observeField("chosenAction", "onOverflowAction")
+    m.overflowMenu.observeField("closed", "closeOverflowMenu")
     m.episodeList = m.top.findNode("episodeList")
     m.episodesLabel = m.top.findNode("episodesLabel")
     m.episodeCount = m.top.findNode("episodeCount")
@@ -40,6 +59,11 @@ sub init()
 
     m.buttonGroups = []
     m.currentButtonIndex = 0
+    m.primaryCount = 0
+    m.overflowActions = []
+    m.rowScrolls = false
+    m.rowOffset = 0
+    m.episodesScroll = SEASON_EPISODES_SCROLL
 
     m.episodeList.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
 
@@ -70,9 +94,7 @@ sub OnScreenShown(_isReturning = false as boolean)
         group = m.global.sceneManager.callFunc("getActiveScene")
         if isValid(group) then group.lastFocus = m.top.lastFocus
     else if m.buttonGroups.count() > 0
-        m.buttonGroups[0].setFocus(true)
-        m.top.lastFocus = m.buttonGroups[0]
-        highlightButton(0)
+        focusButton(0)
     end if
 
     if m.isFirstRun
@@ -149,7 +171,9 @@ sub updateSeason()
     end if
     m.seasonMeta.text = metaParts.join(" · ")
 
-    buildButtons()
+    ' A refresh after a toggle or a play keeps focus where it was
+    firstLoad = m.loadStatus <> ViewLoadStatus.LOADED
+    if firstLoad then buildButtons() else rebuildButtonsKeepingFocus()
     loadSeerrBlock(json)
 
     m.tvExtrasTask.seasonID = json.Id
@@ -158,12 +182,7 @@ sub updateSeason()
     stopLoadingSpinner()
     m.loadStatus = ViewLoadStatus.LOADED
 
-    ' Set initial focus to first button
-    if m.buttonGroups.count() > 0
-        m.buttonGroups[0].setFocus(true)
-        m.top.lastFocus = m.buttonGroups[0]
-        highlightButton(0)
-    end if
+    if firstLoad then focusButton(0)
 end sub
 
 sub onExtrasDataLoaded()
@@ -174,58 +193,95 @@ end sub
 ' Buttons
 ' ============================================
 
+' Resume and Play lead, then the arranged buttons the other detail pages offer, wrapping onto a
+' second line, scrolling sideways on All or folding behind More past the viewer's count
 sub buildButtons()
     m.buttonRow.removeChildrenIndex(m.buttonRow.getChildCount(), 0)
+    m.buttonRowExtra.removeChildrenIndex(m.buttonRowExtra.getChildCount(), 0)
     m.buttonGroups = []
+    m.overflowActions = []
     m.currentButtonIndex = 0
 
+    configs = []
     if m.top.displayResumeButton
-        addButton({
-            icon: "pkg:/images/icons/detail_play.webp",
-            label: tr("Resume"),
-            action: "resume",
-            id: "resumeButton"
-        })
+        configs.push({ icon: "pkg:/images/icons/detail_play.webp", label: tr("Resume"), action: "resume", id: "resumeButton" })
     end if
+    configs.push({ icon: "pkg:/images/icons/detail_play.webp", label: tr("Play"), action: "play", id: "playButton" })
+    leading = configs.count()
 
-    addButton({
-        icon: "pkg:/images/icons/detail_play.webp",
-        label: tr("Play"),
-        action: "play",
-        id: "playButton"
-    })
-
-    addButton({
-        icon: "pkg:/images/icons/detail_shuffle.webp",
-        label: tr("Shuffle"),
-        action: "shuffle",
-        id: "shuffleButton"
-    })
-
-    isWatched = chainLookupReturn(m.top.itemContent, "json.UserData.Played", false)
-    addButton({
-        icon: "pkg:/images/icons/detail_watched.webp",
-        label: isWatched ? tr("Watched") : tr("Unwatched"),
-        action: "watched",
-        id: "watchedButton"
-    })
-
-    isFavorited = chainLookupReturn(m.top.itemContent, "json.UserData.IsFavorite", false)
-    addButton({
-        icon: "pkg:/images/icons/detail_favorite.webp",
-        label: isFavorited ? tr("Favorited") : tr("Favorite"),
-        action: "favorite",
-        id: "favoriteButton"
-    })
-
+    json = chainLookup(m.top, "itemContent.json")
+    isWatched = chainLookupReturn(json, "UserData.Played", false)
+    isFavorited = chainLookupReturn(json, "UserData.IsFavorite", false)
+    candidates = [
+        { id: "shuffle", config: { icon: "pkg:/images/icons/detail_shuffle.webp", label: tr("Shuffle"), action: "shuffle", id: "shuffleButton" } },
+        { id: "watched", config: { icon: "pkg:/images/icons/detail_watched.webp", label: isWatched ? tr("Watched") : tr("Unwatched"), action: "watched", id: "watchedButton" } },
+        { id: "favorite", config: { icon: "pkg:/images/icons/detail_favorite.webp", label: isFavorited ? tr("Favorited") : tr("Favorite"), action: "favorite", id: "favoriteButton" } }
+    ]
+    if isValidAndNotEmpty(chainLookupReturn(json, "SeriesId", ""))
+        candidates.push({ id: "goToSeries", config: { icon: "pkg:/images/icons/detail_series.webp", label: tr("Go to Series"), action: "goToSeries", id: "goToSeriesButton" } })
+    end if
     ' The series' Seerr actions, once Seerr has answered about it
     for each candidate in seerrButtons.Candidates(m.seerrDetails, "tv")
-        addButton(candidate.config)
+        candidates.push(candidate)
     end for
+    for each candidate in detailActionCandidates(json)
+        candidates.push(candidate)
+    end for
+
+    offered = buttonLayout.InCatalogueOrder(candidates)
+    arranged = kidsMode.Enabled() ? kidsMode.KeepButtons(offered) : buttonLayout.Arrange(offered, m.global.session.user.settings[DETAIL_ORDER_SETTING], m.global.session.user.settings[DETAIL_HIDDEN_SETTING])
+    for each candidate in arranged
+        configs.push(candidate.config)
+    end for
+
+    limit = 0
+    if not kidsMode.Enabled() then limit = buttonLayout.MaxVisibleSetting()
+    m.rowScrolls = limit = -1
+    split = buttonLayout.CountSplit(configs.count(), buttonLayout.ApplyButtonLimit(limit, { maxVisible: 0, overflowAsMenu: false, countCapped: false }))
+    if split.needsOverflow
+        keep = split.visibleCount
+        if keep < leading then keep = leading
+        shown = []
+        for i = 0 to configs.count() - 1
+            if i < keep
+                shown.push(configs[i])
+            else
+                m.overflowActions.push(configs[i])
+            end if
+        end for
+        shown.push({ icon: "pkg:/images/icons/admin_controls.webp", label: tr("More"), action: "toggleMoreActions", id: "moreActionsButton" })
+        configs = shown
+    end if
+
+    capacity = Int((SEASON_ROW_WIDTH + SEASON_BUTTON_GAP) / (SEASON_BUTTON_WIDTH + SEASON_BUTTON_GAP))
+    m.primaryCount = 0
+    for each config in configs
+        row = m.buttonRow
+        if not m.rowScrolls and m.buttonGroups.count() >= capacity then row = m.buttonRowExtra
+        addButton(config, row)
+        if row.isSameNode(m.buttonRow) then m.primaryCount = m.buttonGroups.count()
+    end for
+    if m.overflowMenu.visible then m.overflowMenu.actions = m.overflowActions
+
+    m.buttonRowExtra.visible = m.buttonGroups.count() > m.primaryCount
+    shift = 0
+    if m.buttonRowExtra.visible
+        m.buttonRowExtra.translation = [0, 27 + m.buttonRow.boundingRect().height]
+        shift = m.buttonRowExtra.translation[1] - 9
+    end if
+    m.episodeListHeader.translation = [96, SEASON_EPISODES_HEADER_Y + shift]
+    m.episodeList.translation = [96, SEASON_EPISODES_Y + shift]
+    m.episodesScroll = SEASON_EPISODES_SCROLL + shift
+    m.rowOffset = 0
+    placeButtonRows()
 end sub
 
 ' Seerr answers after the row is drawn, so it's drawn again with focus kept where it was
 sub onSeerrButtonsStale()
+    rebuildButtonsKeepingFocus()
+end sub
+
+sub rebuildButtonsKeepingFocus()
     hadFocus = false
     for each button in m.buttonGroups
         if button.isInFocusChain() then hadFocus = true
@@ -233,17 +289,72 @@ sub onSeerrButtonsStale()
     index = m.currentButtonIndex
     buildButtons()
     if index > m.buttonGroups.count() - 1 then index = m.buttonGroups.count() - 1
-    if hadFocus and index >= 0
-        m.buttonGroups[index].setFocus(true)
-        highlightButton(index)
-    end if
+    if hadFocus and index >= 0 then focusButton(index)
 end sub
 
-sub addButton(config as object)
+sub addButton(config as object, row as object)
     buttonGroup = detailButtons.createButton(config, m.buttonGroups.count())
     buttonGroup.observeField("focusedChild", "onButtonFocusChanged")
-    m.buttonRow.appendChild(buttonGroup)
+    row.appendChild(buttonGroup)
     m.buttonGroups.push(buttonGroup)
+end sub
+
+' A row that scrolls is clipped to its room and moved along to keep the focused button in view.
+' Any other row sits centered.
+sub placeButtonRows()
+    stride = SEASON_BUTTON_WIDTH + SEASON_BUTTON_GAP
+    if not m.rowScrolls
+        m.buttonRowContainer.clippingRect = BUTTON_NO_CLIP
+        centerButtonRowInContainer(m.buttonRow, m.primaryCount, SEASON_BUTTON_WIDTH, SEASON_BUTTON_GAP, 96)
+        centerButtonRowInContainer(m.buttonRowExtra, m.buttonGroups.count() - m.primaryCount, SEASON_BUTTON_WIDTH, SEASON_BUTTON_GAP, 96)
+        return
+    end if
+
+    focusLeft = SEASON_SCROLL_PAD + m.currentButtonIndex * stride
+    rowWidth = SEASON_SCROLL_PAD * 2 + m.buttonGroups.count() * stride - SEASON_BUTTON_GAP
+    if focusLeft < m.rowOffset then m.rowOffset = focusLeft - SEASON_SCROLL_PAD
+    if focusLeft + SEASON_BUTTON_WIDTH > m.rowOffset + SEASON_ROW_WIDTH then m.rowOffset = focusLeft + SEASON_BUTTON_WIDTH - SEASON_ROW_WIDTH + SEASON_SCROLL_PAD
+    if m.rowOffset > rowWidth - SEASON_ROW_WIDTH then m.rowOffset = rowWidth - SEASON_ROW_WIDTH
+    if m.rowOffset < 0 then m.rowOffset = 0
+    m.buttonRowContainer.clippingRect = [0, -100, SEASON_ROW_WIDTH, 400]
+    m.buttonRow.translation = [SEASON_SCROLL_PAD - m.rowOffset, m.buttonRow.translation[1]]
+end sub
+
+sub focusButton(index as integer)
+    if index < 0 or index >= m.buttonGroups.count() then return
+    m.buttonGroups[index].setFocus(true)
+    m.top.lastFocus = m.buttonGroups[index]
+    m.currentButtonIndex = index
+    highlightButton(index)
+    setLastFocus(m.buttonGroups[index])
+    if m.rowScrolls then placeButtonRows()
+end sub
+
+function isExtraRowIndex(index as integer) as boolean
+    return index >= m.primaryCount
+end function
+
+' ===== More =====
+
+sub openOverflowMenu()
+    if m.overflowActions.count() = 0 then return
+    m.overflowMenu.actions = m.overflowActions
+    m.overflowMenu.visible = true
+    m.overflowMenu.setFocus(true)
+end sub
+
+' A toggle changes in place, so the menu stays open on it. Anything else opens something of its own.
+sub onOverflowAction(event as object)
+    action = event.getData()
+    if not isValidAndNotEmpty(action) then return
+    if action <> "watched" and action <> "favorite" then closeOverflowMenu()
+    runAction(action)
+end sub
+
+sub closeOverflowMenu()
+    if not m.overflowMenu.visible then return
+    m.overflowMenu.visible = false
+    focusButton(m.currentButtonIndex)
 end sub
 
 sub highlightButton(index as integer)
@@ -272,10 +383,11 @@ sub handleButtonSelect()
     if m.currentButtonIndex < 0 or m.currentButtonIndex >= m.buttonGroups.count() then return
 
     button = m.buttonGroups[m.currentButtonIndex]
-    if not isValid(button) then return
+    if not isValid(button) or not isValid(button.buttonAction) then return
+    runAction(button.buttonAction)
+end sub
 
-    action = button.buttonAction
-
+sub runAction(action as string)
     if action = "resume"
         if isValid(m.top.seasonData)
             itemToPlay = m.top.seasonData.clone(false)
@@ -291,10 +403,30 @@ sub handleButtonSelect()
         toggleWatched()
     else if action = "favorite"
         toggleFavorite()
+    else if action = "toggleMoreActions"
+        openOverflowMenu()
+    else if action = "goToSeries"
+        m.top.buttonSelected = "goToSeries-button"
+    else if action = "personalRating"
+        showRatingPrompt()
+    else if action = "addToPlaylist"
+        itemMenuLoadPicker(seasonMenuSubject(), "playlists")
+    else if action = "addToCollection"
+        itemMenuLoadPicker(seasonMenuSubject(), "collections")
+    else if action = "deleteItem"
+        confirmDelete()
+    else if action = "changeArtwork"
+        itemMenuShowArtwork(seasonMenuSubject())
+    else if action = "adminControls"
+        itemMenuShowIdentify(seasonMenuSubject(), false)
     else if Left(action, 5) = "seerr"
         startSeerrRequest(action)
     end if
 end sub
+
+function seasonMenuSubject() as object
+    return { card: invalid, json: chainLookupReturn(m.top, "itemContent.json", {}), options: {}, entries: [], returnFocus: seerrFocusTarget() }
+end function
 
 sub toggleWatched()
     seasonData = m.top.seasonData
@@ -313,6 +445,7 @@ end sub
 
 sub onPlaystateTaskStateChange()
     if m.playstateTask.state = "stop"
+        flipUserData("Played")
         m.top.refreshSeasonDetailsData = not m.top.refreshSeasonDetailsData
     end if
 end sub
@@ -330,8 +463,19 @@ end sub
 
 sub onFavoriteTaskStateChange()
     if m.favoriteTask.state = "stop"
+        flipUserData("IsFavorite")
         m.top.refreshSeasonDetailsData = not m.top.refreshSeasonDetailsData
     end if
+end sub
+
+' The refresh reads the episodes again but not the season, so its own mark is turned here
+sub flipUserData(key as string)
+    seasonData = m.top.seasonData
+    if not isChainValid(seasonData, "json.UserData") then return
+    json = seasonData.json
+    json.UserData[key] = not (json.UserData[key] = true)
+    seasonData.json = json
+    rebuildButtonsKeepingFocus()
 end sub
 
 ' ============================================
@@ -370,6 +514,7 @@ end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
+    if m.overflowMenu.visible then return false
 
     ' Determine what's focused
     isButtonFocused = false
@@ -385,28 +530,24 @@ function onKeyEvent(key as string, press as boolean) as boolean
     isEpisodeListFocused = m.episodeList.isInFocusChain()
 
     if isButtonFocused
+        index = m.currentButtonIndex
+        rowFirst = 0
+        rowLast = m.primaryCount - 1
+        if isExtraRowIndex(index)
+            rowFirst = m.primaryCount
+            rowLast = m.buttonGroups.count() - 1
+        end if
+
         if key = KeyCode.LEFT
-            if m.currentButtonIndex > 0
-                newIndex = m.currentButtonIndex - 1
-                m.buttonGroups[newIndex].setFocus(true)
-                m.top.lastFocus = m.buttonGroups[newIndex]
-                m.currentButtonIndex = newIndex
-                highlightButton(newIndex)
-                setLastFocus(m.buttonGroups[newIndex])
-            else
+            if index > rowFirst
+                focusButton(index - 1)
+            else if index = 0
                 return FocusSidebar(m.top)
             end if
             return true
 
         else if key = KeyCode.RIGHT
-            if m.currentButtonIndex < m.buttonGroups.count() - 1
-                newIndex = m.currentButtonIndex + 1
-                m.buttonGroups[newIndex].setFocus(true)
-                m.top.lastFocus = m.buttonGroups[newIndex]
-                m.currentButtonIndex = newIndex
-                highlightButton(newIndex)
-                setLastFocus(m.buttonGroups[newIndex])
-            end if
+            if index < rowLast then focusButton(index + 1)
             return true
 
         else if key = KeyCode.OK
@@ -414,15 +555,27 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
 
         else if key = KeyCode.DOWN
+            if not isExtraRowIndex(index) and m.buttonRowExtra.visible
+                column = index
+                if m.primaryCount + column > m.buttonGroups.count() - 1 then column = m.buttonGroups.count() - 1 - m.primaryCount
+                focusButton(m.primaryCount + column)
+                return true
+            end if
             m.episodeList.setFocus(true)
             m.top.lastFocus = m.episodeList
             setLastFocus(m.episodeList)
             unhighlightAllButtons()
-            scrollContentTo(-460)
+            scrollContentTo(-m.episodesScroll)
             return true
 
         else if key = KeyCode.UP
-            m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
+            if isExtraRowIndex(index)
+                column = index - m.primaryCount
+                if column >= m.primaryCount then column = m.primaryCount - 1
+                focusButton(column)
+                return true
+            end if
+            m.top.lastFocus = m.buttonGroups[index]
             return FocusOverhang(m.top)
         end if
     end if
@@ -431,10 +584,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if key = KeyCode.UP
             if m.episodeList.itemFocused = 0
                 if m.buttonGroups.count() > 0
-                    m.buttonGroups[m.currentButtonIndex].setFocus(true)
-                    m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
-                    highlightButton(m.currentButtonIndex)
-                    setLastFocus(m.buttonGroups[m.currentButtonIndex])
+                    focusButton(m.currentButtonIndex)
                     scrollContentTo(0)
                     return true
                 end if
@@ -462,12 +612,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     if key = KeyCode.BACK
         if isEpisodeListFocused
-            if m.buttonGroups.count() > 0
-                m.buttonGroups[m.currentButtonIndex].setFocus(true)
-                m.top.lastFocus = m.buttonGroups[m.currentButtonIndex]
-                highlightButton(m.currentButtonIndex)
-                setLastFocus(m.buttonGroups[m.currentButtonIndex])
-            end if
+            if m.buttonGroups.count() > 0 then focusButton(m.currentButtonIndex)
             scrollContentTo(0)
             return true
         end if
