@@ -1080,6 +1080,7 @@ for (const file of ['components/JFOverhang.bs', 'components/Sidebar.bs']) {
 assert.match(await readFile('components/home/Home.bs', 'utf8'), /selectedItem = "homeAgain"\s+m\.homeRows\.callFunc\("updateHomeRows"\)\s+if isValid\(m\.mediaBar\) then m\.mediaBar\.callFunc\("drawNewSet"\)/, 'Home pressed on Home draws a new media bar set');
 const mediaBarWiring = await readFile('components/home/MediaBar.bs', 'utf8');
 assert.match(mediaBarWiring, /if newSet and allItems\.count\(\) = 0 then return/, 'An empty new set keeps the one showing');
+assert.match(mediaBarWiring, /if item\.id <> m\.failedBannerId then art = bannerArtUrl\(item\)/, 'Banner art that failed falls back to the backdrop');
 process.stdout.write('PASS: home and media bar wiring\n');
 
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');
