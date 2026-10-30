@@ -1214,6 +1214,7 @@ assert.match(calendarTask, /yesterday\.FromSeconds\(yesterday\.AsSeconds\(\) - 2
 assert.match(calendarTask, /start = Left\(now\.ToISOString\(\), 10\)/, 'and the calendar is read from the start of the day');
 assert.match(await readFile('components/genres/GenresScreen.bs', 'utf8'), /allServers: genreData\.unified = true/, 'A merged genre opens on every server');
 assert.match(libraryScene, /if m\.top\.genreFilter\.allServers = true\s+m\.loadItemsTask\.allServers = true\s+m\.loadItemsTask\.genreNames/, 'asking each one by name');
+assert.match(libraryScene, /server = libraryServer\(\)\s+m\.loadItemsTask\.serverUrl = server\.serverUrl/, 'A library from another server is read from that server');
 assert.match(await readFile('components/ItemGrid/LoadItemsTask2.bs', 'utf8'), /serverParams\.StartIndex = offsets\[key\] \?\? 0[^]*?m\.top\.serverOffsets = offsets/, 'and each server pages on from its own last page');
 process.stdout.write('PASS: libraries and sign in wiring\n');
 
