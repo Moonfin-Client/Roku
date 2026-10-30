@@ -23,6 +23,7 @@ import "pkg:/source/utils/heldSeek.bs"
 import "pkg:/source/utils/liveRecovery.bs"
 import "pkg:/source/utils/liveTvGuide.bs"
 import "pkg:/source/utils/liveTvLastChannel.bs"
+import "pkg:/source/utils/liveWindow.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
 import "pkg:/source/utils/recordAiring.bs"
@@ -61,6 +62,7 @@ sub init()
     m.subtitleOffset = m.global.queueManager.callFunc("getSubtitleOffset")
 
     m.liveChannel = invalid
+    m.liveWindow = invalid
     m.lineup = []
     m.carouselPrograms = {}
     m.carousel = invalid
@@ -928,6 +930,19 @@ sub onOSDAction()
 
     if action = "scrubsettle"
         settleHeldScrub()
+        return
+    end if
+
+    ' A live stream seeks back and forward by the skip lengths inside its window
+    if (action = "rewind" or action = "fastforward") and isValid(m.liveChannel)
+        direction = 1
+        if action = "rewind" then direction = -1
+        if isValid(m.liveWindow) then skipBy(direction * skipSeconds(direction))
+        return
+    end if
+
+    if action = "jumptolive"
+        jumpToLive()
         return
     end if
 
@@ -2406,6 +2421,7 @@ sub onPositionChanged()
     else
         m.osd.progressPercentage = m.top.position / m.top.duration
     end if
+    if isValid(m.liveChannel) then updateLiveWindow()
 
     ' Ensure position text is accurate
     m.positionText.text = secondsToHuman(m.top.position, true)
@@ -3167,11 +3183,37 @@ function clampSeconds(value as float, bounds as object) as float
     return value
 end function
 
-' Where a seek can land, a second short of the end
+' Where a seek can land: a second short of the end, or for a live stream inside its rewind window.
+' A live stream without one has nowhere to go.
 function seekBounds() as dynamic
+    if isValid(m.liveChannel)
+        if isValid(m.liveWindow) then return [m.liveWindow.start, m.liveWindow.edge]
+        return invalid
+    end if
     if m.top.duration <= 0 then return invalid
     return [0, m.top.duration - 1]
 end function
+
+' The window grows as the stream does, and the controls show it once there's a minute to rewind
+sub updateLiveWindow()
+    m.liveWindow = liveWindow.WindowFor(m.top.duration)
+    m.osd.liveWindow = m.liveWindow
+    m.osd.liveRewind = isValid(m.liveWindow)
+    if isValid(m.liveWindow) then m.osd.progressPercentage = liveWindow.Progress(m.liveWindow, m.top.position)
+end sub
+
+' A seek this far on lands at the live point, which Roku keeps short of the playlist's end
+sub jumpToLive()
+    if not isValid(m.liveWindow) then return
+    m.scrubHold = { active: false, wasPlaying: false, target: invalid }
+    m.pendingSeek = invalid
+    hideSeekPreview()
+    m.top.seek = 999999
+    if isStringEqual(m.top.state, MediaPlaybackState.PAUSED)
+        m.wasPaused = false
+        m.top.control = VideoControl.RESUME
+    end if
+end sub
 
 sub onSeekSettled()
     m.pendingSeek = invalid
@@ -4365,6 +4407,17 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if not m.top.trickPlayBar.visible
             if not stateAllowsOSD() then return true
 
+            ' A live stream skips inside its window and brings up the controls, which is all it does
+            ' without one
+            if isValid(m.liveChannel)
+                direction = -1
+                if key = KeyCode.FASTFORWRD then direction = 1
+                if isValid(m.liveWindow) then skipBy(direction * skipSeconds(direction))
+                prepareOSD()
+                showOSD()
+                return true
+            end if
+
             if key = KeyCode.FASTFORWRD
                 handleFastForwardAction()
             else
@@ -4381,6 +4434,14 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
             direction = -1
             if key = KeyCode.RIGHT then direction = 1
+            ' A live stream scrubs on its bar from the window's start to the live point
+            if isValid(m.liveChannel)
+                prepareOSD()
+                showOSD()
+                if isValid(m.liveWindow) then beginHeldSeek(direction, true)
+                return true
+            end if
+
             beginHeldSeek(direction, false)
             return true
         end if

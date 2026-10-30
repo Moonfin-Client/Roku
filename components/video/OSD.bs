@@ -1,6 +1,7 @@
 import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/utils/buttonLayout.bs"
 import "pkg:/source/utils/liveTvGuide.bs"
+import "pkg:/source/utils/liveWindow.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/themeChrome.bs"
 
@@ -46,6 +47,10 @@ sub init()
     m.previousItem = m.top.FindNode("previousItem")
     m.itemBackButton = m.top.findNode("itemBack")
     m.itemNextButton = m.top.findNode("itemNext")
+    ' Kept here since live TV takes these out of the row, and a removed node can't be found again
+    m.rewindButton = m.top.findNode("rewind")
+    m.fastForwardButton = m.top.findNode("fastForward")
+    m.jumpToLiveButton = m.top.findNode("jumpToLive")
     m.liveHeader = m.top.findNode("liveHeader")
     m.liveBadgeFill = m.top.findNode("liveBadgeFill")
     m.liveBadgeLabel = m.top.findNode("liveBadgeLabel")
@@ -95,6 +100,8 @@ sub init()
         button.background = ColorPalette.DARKGREY
         button.focusBackground = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
     end for
+    ' Jump to Live only joins the row while a live stream has a window to rewind
+    setButtonInGroup(m.transportControls, m.jumpToLiveButton, false, 0)
 
     if isValid(m.itemBackButton)
         setButtonInGroup(m.transportControls, m.itemBackButton, true, 0)
@@ -165,19 +172,40 @@ sub applyRecordMark()
     if mark = "skipped" then button.iconColor = "#9E9E9E"
 end sub
 
+' A live stream with a window to rewind seeks on the bar from its start to the live point, with
+' Seek back, Play, Seek forward and Jump to Live. Without one it only plays and pauses.
 sub applyLiveMode()
     live = m.top.liveMode
+    rewind = live and m.top.liveRewind
     m.videoInfo.visible = not live
     m.liveHeader.visible = live
     m.liveTimeline.visible = live
-    for each node in [m.seekbarGroup, m.progressIndicator, m.chapterMarks, m.aboveLeft, m.aboveCenter, m.aboveRight, m.belowLeft, m.belowCenter, m.belowRight]
+    for each node in [m.chapterMarks, m.aboveLeft, m.aboveCenter, m.aboveRight, m.belowLeft, m.belowCenter, m.belowRight]
         node.visible = not live
     end for
+    m.seekbarGroup.visible = not live or rewind
+    m.progressIndicator.visible = not live or rewind
+    m.liveTrack.visible = live and not rewind
     if live
-        for each id in ["itemBack", "rewind", "fastForward", "itemNext"]
-            setButtonInGroup(m.transportControls, m.top.findNode(id), false, 0)
-        end for
+        focused = invalid
+        if m.currentButtonGroup = "transport" then focused = m.transportControls.getChild(m.focusedButtonIndex)
+        setButtonInGroup(m.transportControls, m.itemBackButton, false, 0)
+        setButtonInGroup(m.transportControls, m.itemNextButton, false, 0)
+        setButtonInGroup(m.transportControls, m.rewindButton, rewind, 0)
+        setButtonInGroup(m.transportControls, m.fastForwardButton, rewind, m.transportControls.getChildCount())
+        setButtonInGroup(m.transportControls, m.jumpToLiveButton, rewind, m.transportControls.getChildCount())
+        ' The button that had focus keeps it wherever it moved, or play takes it when it went away
+        if isValid(focused)
+            index = playPauseIndex()
+            for i = 0 to m.transportControls.getChildCount() - 1
+                if m.transportControls.getChild(i).isSameNode(focused) then index = i
+            end for
+            focusOnTransportControls(index)
+        end if
     end if
+    m.rewindButton.icon = live ? "pkg:/images/icons/osd/live_rewind.webp" : "pkg:/images/icons/osd/rewind.webp"
+    m.fastForwardButton.icon = live ? "pkg:/images/icons/osd/live_forward.webp" : "pkg:/images/icons/osd/forward.webp"
+    onPlaybackStateChanged()
     buildSecondaryControls()
     renderLive()
 end sub
@@ -222,8 +250,9 @@ sub renderLive()
     updateLiveTimeline()
 end sub
 
-' The live timeline is the current program's span, not a seek bar. Without guide data it falls
-' back to a clock and a LIVE tag.
+' With a rewind window the bar runs from its start to the live point, the left label is the time
+' of day being watched and the right one how far behind live it is. Otherwise it's the current
+' program's span, or a clock and a LIVE tag without guide data.
 sub updateLiveTimeline()
     program = m.top.liveProgram
     now = liveTvGuide.NowSeconds()
@@ -234,6 +263,19 @@ sub updateLiveTimeline()
     m.liveEpisodeLine.text = episodeLine
     m.liveEpisodeLine.visible = episodeLine <> ""
     m.liveEpisodeLine.translation = [0, 40 - 6 - m.liveEpisodeLine.boundingRect().height]
+
+    window = m.top.liveWindow
+    if m.top.liveRewind and isValid(window) and isValid(window.edge)
+        position = m.top.positionTime
+        if m.top.scrubPosition >= 0 then position = m.top.scrubPosition
+        behind = liveWindow.Behind(window, position)
+        atLive = behind <= LIVE_AT_LIVE_SECONDS
+        m.liveFill.visible = false
+        m.liveStartLabel.text = liveTvGuide.ClockTime(now - Int(behind))
+        m.liveEndLabel.text = atLive ? tr("LIVE") : "-" + secondsToHuman(Int(behind), false)
+        m.jumpToLiveButton.iconColor = atLive ? "#F44336" : "#FFFFFF"
+        return
+    end if
 
     m.liveFill.visible = hasProgram
     if hasProgram
@@ -329,8 +371,10 @@ sub onScrubPositionChanged()
     duration = osdDurationSeconds()
     fraction = 0
     if duration > 0 then fraction = m.top.scrubPosition / duration
+    if m.top.liveRewind and isValid(m.top.liveWindow) then fraction = liveWindow.Progress(m.top.liveWindow, m.top.scrubPosition)
     drawBarAt(fraction)
     renderOSDTimeSlots(m.top.scrubPosition)
+    if m.top.liveMode then updateLiveTimeline()
 end sub
 
 ' The fill and the thumb, the thumb centered on the end of the fill
@@ -369,12 +413,10 @@ end sub
 ' onPlaybackStateChanged: Handler for changes to m.top.playbackState param
 '
 sub onPlaybackStateChanged()
-    if LCase(m.top.playbackState) = "playing"
-        m.videoPlayPause.icon = "pkg:/images/icons/osd/pause.webp"
-        return
-    end if
-
-    m.videoPlayPause.icon = "pkg:/images/icons/osd/play.webp"
+    name = "play"
+    if LCase(m.top.playbackState) = "playing" then name = "pause"
+    if m.top.liveMode then name = "live_" + name
+    m.videoPlayPause.icon = "pkg:/images/icons/osd/" + name + ".webp"
 end sub
 
 ' The logo takes the top line when there is one, and the series name steps aside for it
@@ -619,8 +661,8 @@ sub resetFocusToDefaultButton()
         end if
     end for
 
-    ' Live TV has no seek bar to start on
-    if m.top.liveMode
+    ' Live TV has no seek bar to start on unless it has a window to rewind
+    if m.top.liveMode and not (m.top.liveRewind and m.top.focusTarget = "seekbar")
         if m.top.focusTarget = "secondary" then focusOnSecondaryControls() else focusOnTransportControls()
         return
     end if
@@ -753,6 +795,13 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if key = "play"
         checkDisplaySiblingItem("")
         m.top.action = "videoplaypause"
+        return true
+    end if
+
+    ' With a window to rewind, the remote's Rewind and Fast Forward seek a live stream as the
+    ' buttons do
+    if m.top.liveRewind and (key = "rewind" or key = "fastforward")
+        m.top.action = key
         return true
     end if
 
