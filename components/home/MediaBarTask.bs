@@ -35,53 +35,20 @@ sub getMediaBarData()
         if parentIds.count() = 0 and externalItems.count() = 0 then parentIds = libraryIds
     end if
 
-    fetchLimit = m.top.featuredCount + 5
-    port = CreateObject("roMessagePort")
-    requests = []
-    for each parentId in parentIds
-        req = APIRequest("/Items/", {
-            userId: m.top.userId,
-            parentId: parentId,
-            includeItemTypes: includeTypes,
-            excludeItemTypes: "BoxSet,CollectionFolder",
-            recursive: true,
-            sortBy: "Random",
-            hasBackdrop: true,
-            imageTypes: "Backdrop",
-            limit: fetchLimit,
-            fields: "Overview,People,Genres,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks,ProviderIds,RemoteTrailers",
-            personTypes: "Actor,GuestStar"
-        })
-        if req <> invalid
-            req.setMessagePort(port)
-            if req.AsyncGetToString()
-                requests.push(req)
-            end if
-        end if
-    end for
-
-    ' Parallelize
-    allItems = []
-    completed = 0
-    totalRequests = requests.count()
-    while completed < totalRequests
-        msg = wait(30000, port)
-        if type(msg) <> "roUrlEvent" then exit while
-
-        if msg.GetResponseCode() = 200
-            json = ParseJson(msg.GetString())
-            items = isChainValid(json, "items") ? json.items : []
-            if excludedGenreNames.count() > 0
-                items = filterItemsByExcludedGenres(items, excludedGenreNames)
-            end if
-            allItems.append(items)
-        end if
-        completed++
-    end while
-
-    ' Blocked titles go before the count is taken, so they dont leave the bar short. Library
-    ' titles come first, so one an outside list repeats keeps its server item.
-    pool = parentalControls.WithoutBlockedItems(allItems)
+    query = {
+        userId: m.top.userId,
+        includeItemTypes: includeTypes,
+        excludeItemTypes: "BoxSet,CollectionFolder",
+        recursive: true,
+        sortBy: "Random",
+        hasBackdrop: true,
+        imageTypes: "Backdrop",
+        limit: sourceType = "collection" ? 50 : m.top.featuredCount * 2,
+        fields: "Overview,People,Genres,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks,ProviderIds,RemoteTrailers",
+        personTypes: "Actor,GuestStar"
+    }
+    ' Library titles come first, so one an outside list repeats keeps its server item
+    pool = readSources(shuffleArray(parentIds), query, excludedGenreNames)
     ' A chart can hold hundreds of titles, so beside a library it gets as many places as the bar
     ' has slides
     externalItems = shuffleArray(filterAndDedupeItems(externalItems))
@@ -91,6 +58,46 @@ sub getMediaBarData()
 
     m.top.mediaBarData = { items: pickSlides(pool, m.top.featuredCount, excludedGenreNames) }
 end sub
+
+' Reads the sources six at a time in their shuffled order, and skips one still waiting for a slot
+' once there are twice as many usable titles as the bar shows. Blocked titles and excluded genres
+' are left out as they arrive, so they dont count toward that.
+function readSources(parentIds as object, query as object, excludedGenreNames as object) as object
+    port = CreateObject("roMessagePort")
+    running = {}
+    nextSource = 0
+    items = []
+    seen = {}
+    while true
+        while running.count() < 6 and nextSource < parentIds.count() and items.count() < m.top.featuredCount * 2
+            query.parentId = parentIds[nextSource]
+            nextSource++
+            req = APIRequest("/Items/", query)
+            if req <> invalid
+                req.setMessagePort(port)
+                if req.AsyncGetToString() then running[req.GetIdentity().ToStr()] = req
+            end if
+        end while
+        if running.count() = 0 then exit while
+
+        msg = wait(30000, port)
+        if type(msg) <> "roUrlEvent" then exit while
+        running.Delete(msg.GetSourceIdentity().ToStr())
+
+        if msg.GetResponseCode() = 200
+            json = ParseJson(msg.GetString())
+            fetched = isChainValid(json, "items") ? json.items : []
+            if excludedGenreNames.count() > 0 then fetched = filterItemsByExcludedGenres(fetched, excludedGenreNames)
+            for each item in parentalControls.WithoutBlockedItems(fetched)
+                if not seen.DoesExist(item.Id)
+                    seen[item.Id] = true
+                    items.push(item)
+                end if
+            end for
+        end if
+    end while
+    return items
+end function
 
 ' The first titles of the shuffled pool, with only the outside ones that make it looked up on
 ' TMDB. One that turns out to be an excluded genre or to have no backdrop gives its place to

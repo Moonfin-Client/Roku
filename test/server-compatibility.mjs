@@ -1071,6 +1071,9 @@ process.stdout.write('PASS: classic home info area wiring\n');
 // Home and the media bar
 assert.match(await readFile('source/utils/misc.bs', 'utf8'), /defaultPadding = 360/, 'Modern rows default to the smallest padding');
 assert.match(await readFile('source/utils/misc.bs', 'utf8'), /return \(padding - 10\) \* 2/, 'Classic rows sit 10 closer');
+const mediaBarTaskWiring = await readFile('components/home/MediaBarTask.bs', 'utf8');
+assert.match(mediaBarTaskWiring, /while running\.count\(\) < 6 and nextSource < parentIds\.count\(\) and items\.count\(\) < m\.top\.featuredCount \* 2/, 'The media bar reads six sources at a time and stops at twice what it shows');
+assert.match(mediaBarTaskWiring, /pool = readSources\(shuffleArray\(parentIds\), query, excludedGenreNames\)/, 'It reads its sources in a shuffled order');
 process.stdout.write('PASS: home and media bar wiring\n');
 
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');
