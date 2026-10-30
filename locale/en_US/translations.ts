@@ -8360,5 +8360,85 @@
         <extracomment>Toast when only the future showing was asked for and it couldn't be booked</extracomment>
         <translation>Couldn't request the future showing, so nothing will be recorded.</translation>
     </message>
+    <message>
+        <source>Sorting</source>
+        <extracomment>Heading over the sort settings on the IMDb, TMDB and Seerr list screens</extracomment>
+        <translation>Sorting</translation>
+    </message>
+    <message>
+        <source>IMDb Row Sorting</source>
+        <extracomment>Setting that picks how the IMDb home rows are sorted</extracomment>
+        <translation>IMDb Row Sorting</translation>
+    </message>
+    <message>
+        <source>Sort IMDb rows by name, release date, rating, and more.</source>
+        <extracomment>Description of the IMDb Row Sorting setting</extracomment>
+        <translation>Sort IMDb rows by name, release date, rating, and more.</translation>
+    </message>
+    <message>
+        <source>Sort IMDb rows in ascending or descending order.</source>
+        <extracomment>Description of the Sort Order setting on the IMDb Lists screen</extracomment>
+        <translation>Sort IMDb rows in ascending or descending order.</translation>
+    </message>
+    <message>
+        <source>TMDB Row Sorting</source>
+        <extracomment>Setting that picks how the TMDB home rows are sorted</extracomment>
+        <translation>TMDB Row Sorting</translation>
+    </message>
+    <message>
+        <source>Sort TMDB rows by name, release date, rating, and more.</source>
+        <extracomment>Description of the TMDB Row Sorting setting</extracomment>
+        <translation>Sort TMDB rows by name, release date, rating, and more.</translation>
+    </message>
+    <message>
+        <source>Sort TMDB rows in ascending or descending order.</source>
+        <extracomment>Description of the Sort Order setting on the TMDB Lists screen</extracomment>
+        <translation>Sort TMDB rows in ascending or descending order.</translation>
+    </message>
+    <message>
+        <source>Seerr Row Sorting</source>
+        <extracomment>Setting that picks how the Seerr home rows are sorted</extracomment>
+        <translation>Seerr Row Sorting</translation>
+    </message>
+    <message>
+        <source>Sort Seerr rows by name, release date, rating, and more.</source>
+        <extracomment>Description of the Seerr Row Sorting setting</extracomment>
+        <translation>Sort Seerr rows by name, release date, rating, and more.</translation>
+    </message>
+    <message>
+        <source>Sort Seerr rows in ascending or descending order.</source>
+        <extracomment>Description of the Sort Order setting on the Seerr Rows screen</extracomment>
+        <translation>Sort Seerr rows in ascending or descending order.</translation>
+    </message>
+    <message>
+        <source>Default (List Order)</source>
+        <extracomment>Sort choice that keeps a list in the order it came in</extracomment>
+        <translation>Default (List Order)</translation>
+    </message>
+    <message>
+        <source>Sort Order</source>
+        <extracomment>Setting that picks ascending or descending order</extracomment>
+        <translation>Sort Order</translation>
+    </message>
+    <message>
+        <source>Rating</source>
+        <extracomment>Sort choice that orders titles by their rating</extracomment>
+        <translation>Rating</translation>
+    </message>
+    <message>
+        <source>Popularity</source>
+        <extracomment>Sort choice that orders titles by how popular they are</extracomment>
+        <translation>Popularity</translation>
+    </message>
+    <message>
+        <source>IMDb Lists</source>
+        <extracomment>Heading over the IMDb chart switches</extracomment>
+        <translation>IMDb Lists</translation>
+    </message>
+    <message>
+        <source>TMDB Lists</source>
+        <extracomment>Heading over the TMDB chart switches</extracomment>
+        <translation>TMDB Lists</translation>
+    </message>
 </context>
 </TS>
