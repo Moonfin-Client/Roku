@@ -68,7 +68,7 @@ const selections = {
     'source/utils/settingsMetrics.bs': null,
     'source/utils/ratingSourceList.bs': null,
     'source/utils/homeRowGroups.bs': null,
-    'source/utils/SeerrUtils.bs': ['SeerrEscapeJsonString', 'SeerrJsonFromPairs', 'SeerrFormatJson', 'SeerrFormatJsonValue', 'SeerrStreamingRegion', 'SeerrStreamingProviders'],
+    'source/utils/SeerrUtils.bs': ['SeerrEscapeJsonString', 'SeerrJsonFromPairs', 'SeerrFormatJson', 'SeerrFormatJsonValue', 'SeerrStreamingRegion', 'SeerrStreamingProviders', 'SeerrRequestDownloadSummary', 'SeerrQueueHasWork', 'SeerrDownloadKey', 'SeerrIsNumber'],
     'source/utils/libraryOrder.bs': null,
     'source/utils/detailSectionLayout.bs': null,
     'source/utils/trackLabels.bs': null,
@@ -227,6 +227,8 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/media-bar-external.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/seerrSliders.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/seerr-sliders.bs', 'utf8');
+source += '\n' + (await readFile('source/utils/SeerrUtils.bs', 'utf8')).match(/^const SEERR_(?:MEDIA|REQUEST)_\w+ = .+$/gm).join('\n');
+source += '\n' + await readFile('test/seerr-requests.bs', 'utf8');
 // The whole markdown reader uses loops this interpreter cant parse, and the reviews only need Strip
 source += '\nnamespace messageMarkdown\n' + (await readFile('source/utils/messageMarkdown.bs', 'utf8')).match(/^    function Strip\([^]*?^    end function/m)[0] + '\nend namespace\n';
 source += '\n' + await readFile('test/tmdb-reviews.bs', 'utf8');
