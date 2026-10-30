@@ -1209,6 +1209,9 @@ process.stdout.write('PASS: details wiring\n');
 // Libraries, sign in and accounts
 assert.match(await readFile('components/itemMenu/ItemMenuTask.bs', 'utf8'), /op = "hideFromResume"[^]*?UserItems\/\$\{itemId\}\/HideFromResume`, \{ UserId: taskUserId\(\), Hide: "true" \}\), "POST"\)/, 'Emby hides an item from resume through its own route');
 assert.match(await readFile('components/itemMenu/itemMenuHost.bs', 'utf8'), /if response\.success and response\.request\.op = "played" then itemMenuPatchUserData/, 'and keeps the progress it showed');
+const calendarTask = await readFile('components/home/LoadItemsTask.bs', 'utf8');
+assert.match(calendarTask, /yesterday\.FromSeconds\(yesterday\.AsSeconds\(\) - 24 \* 60 \* 60\)[^]*?if when = "" or when <= since then continue for/, 'A Radarr release stays on the row through its own day');
+assert.match(calendarTask, /start = Left\(now\.ToISOString\(\), 10\)/, 'and the calendar is read from the start of the day');
 process.stdout.write('PASS: libraries and sign in wiring\n');
 
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');
