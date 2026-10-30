@@ -1068,6 +1068,11 @@ assert.match(await readFile('components/home/HomeRows.bs', 'utf8'), /itemHeight 
 assert.match(classicHomeXml, /<RatingsRow id="homeRatings"[^>]*singleLine="true"/, 'Home shows its ratings as single line chips');
 process.stdout.write('PASS: classic home info area wiring\n');
 
+// Home and the media bar
+assert.match(await readFile('source/utils/misc.bs', 'utf8'), /defaultPadding = 360/, 'Modern rows default to the smallest padding');
+assert.match(await readFile('source/utils/misc.bs', 'utf8'), /return \(padding - 10\) \* 2/, 'Classic rows sit 10 closer');
+process.stdout.write('PASS: home and media bar wiring\n');
+
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');
 const guideDialog = guideSource.match(/sub openProgramDialog\([^]*?end sub/)[0];
 assert.match(guideDialog, /id: "record"[^]*id: "seriesSettings"[^]*id: "recordSeries"[^]*id: "favorite"[^]*id: "watch"[^]*id: "close"/, 'The program dialog keeps Record, Series Settings, Record Series, Favorite, Watch and Close in order');
