@@ -1,0 +1,130 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/misc.bs"
+
+' The sign in PIN the Moonfin plugin keeps for an account. The plugin holds a salted slow hash and
+' counts wrong guesses itself, so a PIN set on one device holds on every other and clearing app
+' data hands back no free guesses. Nothing here ever gets the hash back.
+'
+' Each call answers with one of the results below, and a locked answer carries how many seconds
+' to wait.
+
+const SERVER_PIN_VALID = "valid"
+const SERVER_PIN_WRONG = "wrong"
+const SERVER_PIN_LOCKED = "locked"
+' The server holds no PIN for the account
+const SERVER_PIN_NONE = "none"
+' The server couldn't say: no plugin, an older one, a token it no longer takes, or no answer at all
+const SERVER_PIN_UNAVAILABLE = "unavailable"
+
+const SERVER_PIN_TIMEOUT_MS = 15000
+const SERVER_PIN_DEFAULT_RETRY = 30
+
+namespace serverPin
+
+    ' Whether the server keeps a PIN for the account: true, false, or invalid when it couldn't say
+    function Status() as dynamic
+        response = serverPin.Send("GET", "Pin", invalid)
+        enabled = chainLookup(response, "data.enabled")
+        if response.status = 200 and serverPin.IsBoolean(enabled) then return enabled
+        return invalid
+    end function
+
+    function Verify(pin as string) as object
+        return serverPin.VerifyVerdict(serverPin.Send("POST", "Pin/Verify", { pin: pin }))
+    end function
+
+    ' A PIN already on the server has to be named in currentPin, and a wrong one counts as a guess
+    function SetPin(pin as string, currentPin as string) as object
+        body = { pin: pin }
+        if currentPin <> "" then body.currentPin = currentPin
+        return serverPin.WriteVerdict(serverPin.Send("PUT", "Pin", body))
+    end function
+
+    function Remove(currentPin as string) as object
+        body = {}
+        if currentPin <> "" then body.currentPin = currentPin
+        return serverPin.WriteVerdict(serverPin.Send("DELETE", "Pin", body))
+    end function
+
+    ' Clears any account's PIN without it, which the plugin only lets an administrator do
+    function RemoveFor(userId as string) as object
+        response = serverPin.Send("DELETE", `Users/${userId.EncodeUriComponent()}/Pin`, invalid)
+        if response.status = 200 then return { result: SERVER_PIN_VALID }
+        return { result: SERVER_PIN_UNAVAILABLE }
+    end function
+
+    function VerifyVerdict(response as object) as object
+        valid = chainLookup(response, "data.valid")
+        if response.status = 200 and serverPin.IsBoolean(valid)
+            if valid then return { result: SERVER_PIN_VALID }
+            return { result: SERVER_PIN_WRONG }
+        end if
+        if response.status = 404 and serverPin.ErrorIs(response.data, "No PIN is set") then return { result: SERVER_PIN_NONE }
+        if response.status = 429 then return serverPin.Locked(response)
+        return { result: SERVER_PIN_UNAVAILABLE }
+    end function
+
+    function WriteVerdict(response as object) as object
+        if response.status = 200 then return { result: SERVER_PIN_VALID }
+        if response.status = 403 and serverPin.ErrorIs(response.data, "The current PIN is wrong") then return { result: SERVER_PIN_WRONG }
+        if response.status = 429 then return serverPin.Locked(response)
+        return { result: SERVER_PIN_UNAVAILABLE }
+    end function
+
+    function Locked(response as object) as object
+        seconds = -1
+        retry = chainLookup(response, "data.retryAfterSeconds")
+        retryType = type(retry)
+        if retryType = "Integer" or retryType = "roInt" or retryType = "roInteger" or retryType = "LongInteger"
+            seconds = retry
+        else if isValidAndNotEmpty(response.retryAfter)
+            seconds = response.retryAfter.ToInt()
+        end if
+        if seconds < 0 then seconds = SERVER_PIN_DEFAULT_RETRY
+        return { result: SERVER_PIN_LOCKED, wait: seconds }
+    end function
+
+    function IsBoolean(value as dynamic) as boolean
+        return type(value) = "Boolean" or type(value) = "roBoolean"
+    end function
+
+    ' Only the plugin answers with these messages. A server without it, or a proxy in front, answers
+    ' the same statuses with something else.
+    function ErrorIs(data as dynamic, message as string) as boolean
+        return type(data) = "roAssociativeArray" and isStringEqual(data.LookupCI("error") ?? "", message)
+    end function
+
+    function Send(method as string, path as string, body as dynamic) as object
+        req = APIRequest(`/Moonfin/${path}`)
+        if not isValid(req) then return { status: 0, data: invalid, retryAfter: "" }
+
+        port = CreateObject("roMessagePort")
+        req.SetMessagePort(port)
+        req.RetainBodyOnError(true)
+        if method <> "GET" and method <> "POST" then req.SetRequest(method)
+        if isValid(body)
+            req.AddHeader("Content-Type", "application/json")
+            started = req.AsyncPostFromString(FormatJson(body))
+        else if method = "GET"
+            started = req.AsyncGetToString()
+        else
+            started = req.AsyncPostFromString("")
+        end if
+        if not started then return { status: 0, data: invalid, retryAfter: "" }
+
+        event = wait(SERVER_PIN_TIMEOUT_MS, port)
+        if type(event) <> "roUrlEvent"
+            req.AsyncCancel()
+            return { status: 0, data: invalid, retryAfter: "" }
+        end if
+
+        data = invalid
+        text = event.GetString()
+        if isValidAndNotEmpty(text) then data = ParseJson(text)
+        headers = event.GetResponseHeaders()
+        retryAfter = ""
+        if type(headers) = "roAssociativeArray" then retryAfter = headers.LookupCI("retry-after") ?? ""
+        return { status: event.GetResponseCode(), data: data, retryAfter: retryAfter }
+    end function
+
+end namespace

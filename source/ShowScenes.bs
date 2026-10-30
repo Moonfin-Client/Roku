@@ -106,7 +106,13 @@ function LoginFlow()
                 end for
             end if
             shownUsers = publicUsersNodes.count()
-            userSelected = CreateUserSelectGroup(publicUsersNodes)
+            ' Forgot PIN lands on that account's sign in, since only its password clears the PIN
+            forgottenName = signInPin.TakeForgottenUsername(m.global.session.server.url)
+            if forgottenName <> ""
+                userSelected = forgottenName
+            else
+                userSelected = CreateUserSelectGroup(publicUsersNodes)
+            end if
             SendPerformanceBeacon("AppDialogComplete") ' Roku Performance monitoring - Dialog Closed
             if userSelected = "backPressed" or userSelected = "changeServer"
                 session.server.Delete()
@@ -115,7 +121,8 @@ function LoginFlow()
                 SignOut(false)
                 m.global.sceneManager.callFunc("clearScenes")
                 goto start_login
-            else if userSelected <> ""
+            ' Picking the account the Roku already holds would prove nothing, so Forgot PIN skips its token
+            else if userSelected <> "" and forgottenName = ""
                 startLoadingSpinner()
                 session.user.Update("name", userSelected)
 
@@ -463,11 +470,13 @@ function CreateSigninGroup(user = "")
                 else
                     session.user.Login(activeUser)
                 end if
+                if password <> "" then signInPin.NoteProvedSignIn(m.global.session.server.url, m.global.session.user.id)
                 return "true"
             end if
             stopLoadingSpinner()
             group.alert = m.loginError
         else if isNodeEvent(msg, "quickConnectAuthenticated") and msg.getData() = true
+            signInPin.NoteProvedSignIn(m.global.session.server.url, m.global.session.user.id)
             return "true"
         end if
     end while
@@ -506,29 +515,76 @@ function ShowBlockedTitle() as object
     return group
 end function
 
-' Holds the app shut after signing in until the right PIN is in, when PIN Code Protection is on.
-' Every way in comes back through here, so switching account asks again.
-function RunPinGate() as boolean
-    if not signInPin.Enabled() then return true
+' Holds the app shut after signing in until the right PIN is in. Each sign in and switch of account
+' is a new check. Returns "passed", "forgot" when Forgot PIN sends the viewer back to sign in, or
+' "closed" when the app closes under it.
+function RunPinGate() as string
+    userId = chainLookupReturn(m.global.session, "user.id", "")
+    serverUrl = chainLookupReturn(m.global.session, "server.url", "")
+    ' Whether this check follows a sign in with the account's password or Quick Connect, which lets
+    ' Forgot PIN clear the PIN, and whether Forgot PIN is what sent the viewer to sign in
+    proved = signInPin.TakeProvedSignIn(serverUrl, userId)
+    forgotten = signInPin.TakeForgotten(serverUrl, userId) and proved
+
+    ' A Roku that never saw the account's PIN learns of it here, and one an administrator removed
+    ' stops being asked for. Nothing behind the gate shows until the server has said.
+    before = signInPin.RecordFor(userId)
+    record = signInPin.Refresh(before)
+    signInPin.SaveIfChanged(userId, before, record)
+    if not signInPin.IsEnabled(record) then return "passed"
+
+    errorText = ""
+    if forgotten
+        outcome = signInPin.ResetForgotten(record, userId)
+        if outcome.refused = ""
+            signInPin.Save(userId, outcome.record)
+            return "passed"
+        end if
+        errorText = outcome.refused
+    end if
 
     stopLoadingSpinner()
     group = CreateObject("roSGNode", "PinGate")
     m.global.sceneManager.callFunc("pushScene", group)
+    if errorText <> "" then group.errorText = errorText
     port = CreateObject("roMessagePort")
-    group.observeField("unlocked", port)
+    group.observeField("submitted", port)
+    group.observeField("forgotPin", port)
 
     while true
         msg = wait(0, port)
         if type(msg) = "roSGScreenEvent" and msg.isScreenClosed()
-            return false
-        else if isNodeEvent(msg, "unlocked")
-            exit while
+            return "closed"
+        else if isNodeEvent(msg, "submitted")
+            group.verifying = true
+            before = signInPin.RecordFor(userId)
+            result = signInPin.Verify(before, msg.getData())
+            signInPin.SaveIfChanged(userId, before, result.record)
+            group.verifying = false
+            if result.outcome = SIGN_IN_PIN_ACCEPTED then exit while
+            group.errorText = signInPin.Message(result)
+        else if isNodeEvent(msg, "forgotPin")
+            ' Right after signing in with the password or Quick Connect the PIN just clears.
+            ' Otherwise the account goes back to its sign in, and the PIN clears once that proves
+            ' who it is.
+            if not proved
+                signInPin.MarkForgotten(serverUrl, userId, chainLookupReturn(m.global.session, "user.name", ""))
+                return "forgot"
+            end if
+            group.verifying = true
+            outcome = signInPin.ResetForgotten(signInPin.RecordFor(userId), userId)
+            group.verifying = false
+            if outcome.refused = ""
+                signInPin.Save(userId, outcome.record)
+                exit while
+            end if
+            group.errorText = outcome.refused
         end if
     end while
 
     group.visible = false
     startLoadingSpinner()
-    return true
+    return "passed"
 end function
 
 ' Covers the app while the signed in user's access schedule is closed, after stopping what was

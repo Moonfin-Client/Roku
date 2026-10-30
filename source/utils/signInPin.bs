@@ -1,38 +1,222 @@
+import "pkg:/source/api/serverPin.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/pinLockout.bs"
 
-' The PIN that holds the app shut once someone has signed in. It belongs to this Roku rather than
-' to an account, the same as the switch that turns it on, and neither one syncs.
+' Each account's sign in PIN, kept on this Roku by user id. The server holds the real one when the
+' Moonfin plugin is there, and the hash here is a copy of what was last typed, for when the server
+' can't be asked. A server that's down then never locks a family out of the app.
+const SIGN_IN_PINS_KEY = "global.userPins"
+' The one PIN this Roku used to keep for every profile, which an account without its own still
+' falls back to
 const SIGN_IN_PIN_ENABLED_KEY = "global.pinCodeProtection"
 const SIGN_IN_PIN_HASH_KEY = "global.pinCodeHash"
-' The PIN until someone chooses one
 const SIGN_IN_DEFAULT_PIN = "0000"
+
+const SIGN_IN_PIN_ACCEPTED = "accepted"
+const SIGN_IN_PIN_REJECTED = "rejected"
+const SIGN_IN_PIN_LOCKED = "locked"
 
 namespace signInPin
 
-    function Enabled() as boolean
-        return get_setting(SIGN_IN_PIN_ENABLED_KEY, "false") = "true"
+    function NoPin() as object
+        return { enabled: false, hash: "", failed: 0, lockedUntil: 0, server: false }
     end function
 
-    function IsConfigured() as boolean
-        return get_setting(SIGN_IN_PIN_HASH_KEY, "") <> ""
+    function RecordFor(userId as string) as object
+        legacy = {
+            enabled: get_setting(SIGN_IN_PIN_ENABLED_KEY, "false") = "true",
+            hash: get_setting(SIGN_IN_PIN_HASH_KEY, ""),
+            failed: get_setting(SIGN_IN_PIN_FAILED_KEY, "0"),
+            lockedUntil: get_setting(SIGN_IN_PIN_LOCKED_UNTIL_KEY, "0")
+        }
+        return signInPin.RecordFrom(signInPin.StoredPins(), legacy, userId)
     end function
 
-    function Matches(guess as string) as boolean
-        return pinLockout.Matches(guess, get_setting(SIGN_IN_PIN_HASH_KEY, ""), SIGN_IN_DEFAULT_PIN)
+    ' An account with no record of its own falls back to the one PIN the Roku used to keep for every
+    ' profile, so nobody's protection goes away. Its own record takes over the first time it's written.
+    function RecordFrom(pins as object, legacy as object, userId as string) as object
+        own = pins[userId]
+        if type(own) = "roAssociativeArray" then return own
+        if not legacy.enabled then return signInPin.NoPin()
+
+        hash = legacy.hash
+        if hash = "" then hash = pinLockout.HashPin(SIGN_IN_DEFAULT_PIN)
+        return { enabled: true, hash: hash, failed: Int(Val(legacy.failed)), lockedUntil: Int(Val(legacy.lockedUntil)), server: false }
     end function
 
-    ' The PIN is stored as a hash from the first time it is entered, and a correct one clears the
-    ' count of wrong guesses
-    sub Unlocked(entered as string)
-        if not signInPin.IsConfigured() then set_setting(SIGN_IN_PIN_HASH_KEY, pinLockout.HashPin(entered.Trim()))
-        pinLockout.ClearLockout(pinLockout.SignInKeys())
+    function StoredPins() as object
+        text = get_setting(SIGN_IN_PINS_KEY, "")
+        pins = invalid
+        if text <> "" then pins = ParseJson(text)
+        if type(pins) <> "roAssociativeArray" then pins = {}
+        return pins
+    end function
+
+    sub Save(userId as string, record as object)
+        pins = signInPin.StoredPins()
+        pins[userId] = record
+        set_setting(SIGN_IN_PINS_KEY, FormatJson(pins))
     end sub
 
-    ' Choosing a PIN forgets the guesses that came before it
-    sub Save(pin as string)
-        set_setting(SIGN_IN_PIN_HASH_KEY, pinLockout.HashPin(pin.Trim()))
-        pinLockout.ClearLockout(pinLockout.SignInKeys())
+    ' A step that left the record as it was doesn't write it, so an account without a record of its own
+    ' keeps falling back to the Roku's PIN
+    sub SaveIfChanged(userId as string, before as object, after as object)
+        if FormatJson(before) <> FormatJson(after) then signInPin.Save(userId, after)
     end sub
+
+    ' A PIN the server holds is asked for even on a device that never had it turned on
+    function IsEnabled(record as object) as boolean
+        return record.enabled = true or record.server = true
+    end function
+
+    function Patched(record as object, changes as object) as object
+        changed = {}
+        changed.Append(record)
+        changed.Append(changes)
+        return changed
+    end function
+
+    function Settled(record as object, pin as string, server as boolean) as object
+        return signInPin.Patched(record, { enabled: true, hash: pinLockout.HashPin(pin.Trim()), failed: 0, lockedUntil: 0, server: server })
+    end function
+
+    function VerifyHere(record as object, entered as string, now as integer) as object
+        waiting = pinLockout.RecordRemaining(record, now)
+        if waiting > 0 then return { outcome: SIGN_IN_PIN_LOCKED, wait: waiting, record: record }
+        if pinLockout.Matches(entered, record.hash)
+            return { outcome: SIGN_IN_PIN_ACCEPTED, wait: 0, record: signInPin.Patched(record, { failed: 0, lockedUntil: 0 }) }
+        end if
+
+        failure = pinLockout.RecordFailure(record, now)
+        outcome = SIGN_IN_PIN_REJECTED
+        if failure.wait > 0 then outcome = SIGN_IN_PIN_LOCKED
+        return { outcome: outcome, wait: failure.wait, record: signInPin.Patched(record, { failed: failure.failed, lockedUntil: failure.lockedUntil }) }
+    end function
+
+    ' Learns whether the server holds a PIN for the account. It's how a Roku that never saw the PIN
+    ' comes to ask for it, and how a PIN an administrator removed stops being asked for.
+    function Refresh(record as object) as object
+        return signInPin.AfterStatus(record, serverPin.Status())
+    end function
+
+    function AfterStatus(record as object, enabled as dynamic) as object
+        if not isValid(enabled) then return record
+        if enabled
+            if record.server = true then return record
+            return signInPin.Patched(record, { server: true })
+        end if
+        if record.server = true then return signInPin.NoPin()
+        return record
+    end function
+
+    ' Checks a typed PIN with the server when it answers, and with the copy here when it doesn't
+    function Verify(record as object, entered as string) as object
+        result = signInPin.AfterVerify(record, entered, serverPin.Verify(entered), CreateObject("roDateTime").AsSeconds())
+        if result.migrate = true and serverPin.SetPin(entered, "").result = SERVER_PIN_VALID
+            result.record = signInPin.Patched(result.record, { server: true })
+        end if
+        return result
+    end function
+
+    function AfterVerify(record as object, entered as string, verdict as object, now as integer) as object
+        if verdict.result = SERVER_PIN_VALID then return { outcome: SIGN_IN_PIN_ACCEPTED, wait: 0, record: signInPin.Settled(record, entered, true) }
+        if verdict.result = SERVER_PIN_WRONG then return { outcome: SIGN_IN_PIN_REJECTED, wait: 0, record: record }
+        if verdict.result = SERVER_PIN_LOCKED then return { outcome: SIGN_IN_PIN_LOCKED, wait: verdict.wait, record: record }
+        if verdict.result = SERVER_PIN_NONE
+            ' An administrator took the PIN away
+            if record.server = true then return { outcome: SIGN_IN_PIN_ACCEPTED, wait: 0, record: signInPin.NoPin() }
+            ' A PIN only this Roku knows, on a server that now has the plugin. It decides, then moves there.
+            here = signInPin.VerifyHere(record, entered, now)
+            here.migrate = here.outcome = SIGN_IN_PIN_ACCEPTED
+            return here
+        end if
+        return signInPin.VerifyHere(record, entered, now)
+    end function
+
+    ' Why the server turned a change down, or "" when it didn't. A PIN the server holds only changes
+    ' once the server says so, or this Roku would disagree with every other device.
+    function Refusal(verdict as object, record as object) as string
+        if verdict.result = SERVER_PIN_UNAVAILABLE and record.server = true then return tr("Unable to connect to server")
+        if verdict.result = SERVER_PIN_WRONG then return tr("Incorrect PIN")
+        if verdict.result = SERVER_PIN_LOCKED then return pinLockout.TooManyAttempts(verdict.wait)
+        return ""
+    end function
+
+    ' Sets the PIN on the server, keeping a copy here either way. A PIN the server turned down isn't
+    ' kept, or this Roku would hold one nobody else has.
+    function Store(record as object, pin as string, currentPin as string) as object
+        return signInPin.AfterStore(record, pin, serverPin.SetPin(pin, currentPin))
+    end function
+
+    function AfterStore(record as object, pin as string, verdict as object) as object
+        refused = signInPin.Refusal(verdict, record)
+        if refused <> "" then return { refused: refused }
+        return { refused: "", record: signInPin.Settled(record, pin, verdict.result = SERVER_PIN_VALID or record.server = true) }
+    end function
+
+    function Drop(record as object, currentPin as string) as object
+        if record.server = true
+            refused = signInPin.Refusal(serverPin.Remove(currentPin), record)
+            if refused <> "" then return { refused: refused }
+        end if
+        return { refused: "", record: signInPin.NoPin() }
+    end function
+
+    ' Clears a PIN the viewer forgot, after a sign in that proved who they are. A PIN on the server
+    ' can only be cleared there by an administrator, so for anyone else it stays and this says so.
+    function ResetForgotten(record as object, userId as string) as object
+        if record.server = true and serverPin.RemoveFor(userId).result <> SERVER_PIN_VALID
+            return { refused: tr("The PIN on the server couldn't be cleared. If it's still set, ask a server administrator to remove it.") }
+        end if
+        return { refused: "", record: signInPin.NoPin() }
+    end function
+
+    function Message(result as object) as string
+        if result.outcome = SIGN_IN_PIN_LOCKED then return pinLockout.TooManyAttempts(result.wait)
+        return tr("Incorrect PIN")
+    end function
+
+    ' Forgot PIN sends the viewer back to sign in to the account, and only a sign in with its
+    ' password or Quick Connect may then clear the PIN. Picking an account the Roku already holds
+    ' proves nothing. Both marks live only as long as the app runs.
+    function AccountKey(serverUrl as dynamic, userId as dynamic) as string
+        url = LCase(toString(serverUrl ?? ""))
+        while url.Right(1) = "/"
+            url = url.Left(url.Len() - 1)
+        end while
+        return url + "|" + toString(userId ?? "")
+    end function
+
+    sub MarkForgotten(serverUrl as dynamic, userId as dynamic, username as dynamic)
+        m.signInPinForgotten = { key: signInPin.AccountKey(serverUrl, userId), username: toString(username ?? ""), shown: false }
+    end sub
+
+    ' The account Forgot PIN sent the viewer to sign in to, handed over once so Back from that sign
+    ' in reaches the other accounts
+    function TakeForgottenUsername(serverUrl as dynamic) as string
+        forgotten = m.signInPinForgotten
+        if not isValid(forgotten) or forgotten.shown then return ""
+        prefix = signInPin.AccountKey(serverUrl, "")
+        if forgotten.key.Left(prefix.Len()) <> prefix then return ""
+        forgotten.shown = true
+        return forgotten.username
+    end function
+
+    sub NoteProvedSignIn(serverUrl as dynamic, userId as dynamic)
+        m.signInPinProved = signInPin.AccountKey(serverUrl, userId)
+    end sub
+
+    ' Read once, by the PIN check that follows the sign in, so a later check needs a fresh one
+    function TakeProvedSignIn(serverUrl as dynamic, userId as dynamic) as boolean
+        match = isValid(m.signInPinProved) and m.signInPinProved = signInPin.AccountKey(serverUrl, userId)
+        m.signInPinProved = invalid
+        return match
+    end function
+
+    function TakeForgotten(serverUrl as dynamic, userId as dynamic) as boolean
+        match = isValid(m.signInPinForgotten) and m.signInPinForgotten.key = signInPin.AccountKey(serverUrl, userId)
+        if match then m.signInPinForgotten = invalid
+        return match
+    end function
 
 end namespace

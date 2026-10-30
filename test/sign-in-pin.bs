@@ -1,0 +1,65 @@
+' The sign in PIN each account keeps, checked with the server when it answers and with the copy on
+' the Roku when it doesn't
+sub testSignInPin()
+    legacyOff = { enabled: false, hash: "", failed: "0", lockedUntil: "0" }
+    legacyOn = { enabled: true, hash: "", failed: "2", lockedUntil: "0" }
+    assertEqual(signInPin.IsEnabled(signInPin.RecordFrom({}, legacyOff, "u1")), false, "An account with nothing of its own and no PIN on the Roku has none")
+    fallback = signInPin.RecordFrom({}, legacyOn, "u1")
+    assertEqual(fallback.hash, pinLockout.HashPin("0000"), "and otherwise falls back to the Roku's PIN, 0000 until one was chosen")
+    assertEqual(fallback.failed, 2, "with its wrong guesses")
+    own = { enabled: false, hash: "x", failed: 0, lockedUntil: 0, server: true }
+    assertEqual(signInPin.RecordFrom({ u1: own }, legacyOn, "u1").hash, "x", "Its own record takes over once written")
+    assertEqual(signInPin.IsEnabled(own), true, "and a PIN the server holds is asked for even when this Roku never turned it on")
+
+    local = signInPin.Settled(signInPin.NoPin(), "1234", false)
+    assertEqual(signInPin.VerifyHere(local, "1234", 1000).outcome, SIGN_IN_PIN_ACCEPTED, "The PIN on the Roku lets the right one in")
+    wrong = signInPin.VerifyHere(local, "9999", 1000)
+    assertEqual(wrong.outcome, SIGN_IN_PIN_REJECTED, "and turns a wrong one away")
+    assertEqual(wrong.record.failed, 1, "counting it")
+    locked = signInPin.VerifyHere(signInPin.Patched(local, { failed: 5 }), "9999", 1000)
+    assertEqual(locked.outcome, SIGN_IN_PIN_LOCKED, "Past the free guesses a wrong one costs a wait")
+    assertEqual(locked.wait, 30, "of 30 seconds at first")
+    assertEqual(signInPin.VerifyHere(locked.record, "1234", 1010).outcome, SIGN_IN_PIN_LOCKED, "and even the right PIN waits it out")
+    assertEqual(signInPin.VerifyHere(locked.record, "1234", 1031).outcome, SIGN_IN_PIN_ACCEPTED, "then gets in")
+
+    synced = signInPin.Patched(local, { server: true })
+    assertEqual(signInPin.AfterStatus(local, true).server, true, "A server that holds the PIN marks it as the server's")
+    assertEqual(signInPin.IsEnabled(signInPin.AfterStatus(synced, false)), false, "and one an administrator removed stops being asked for")
+    assertEqual(signInPin.AfterStatus(local, false).enabled, true, "A PIN only this Roku knows stays when the server holds none")
+    assertEqual(signInPin.AfterStatus(synced, invalid).server, true, "and nothing changes when the server can't say")
+
+    assertEqual(signInPin.AfterVerify(local, "5555", { result: SERVER_PIN_VALID }, 1000).record.server, true, "The server's yes settles the PIN as the server's")
+    assertEqual(signInPin.AfterVerify(local, "1234", { result: SERVER_PIN_WRONG }, 1000).outcome, SIGN_IN_PIN_REJECTED, "and its no turns the PIN away whatever the Roku holds")
+    assertEqual(signInPin.AfterVerify(local, "1234", { result: SERVER_PIN_LOCKED, wait: 120 }, 1000).wait, 120, "A lockout on the server says how long it lasts")
+    assertEqual(signInPin.IsEnabled(signInPin.AfterVerify(synced, "0000", { result: SERVER_PIN_NONE }, 1000).record), false, "A PIN an administrator took away lets anyone in")
+    assertEqual(signInPin.AfterVerify(local, "1234", { result: SERVER_PIN_NONE }, 1000).migrate, true, "A PIN only this Roku knows decides, then moves to the server")
+    assertEqual(signInPin.AfterVerify(local, "1234", { result: SERVER_PIN_UNAVAILABLE }, 1000).outcome, SIGN_IN_PIN_ACCEPTED, "A server that can't answer leaves it to the copy here")
+
+    assertEqual(signInPin.AfterStore(synced, "4321", { result: SERVER_PIN_UNAVAILABLE }).refused, "Unable to connect to server", "A PIN the server holds only changes once the server says so")
+    assertEqual(signInPin.AfterStore(local, "4321", { result: SERVER_PIN_UNAVAILABLE }).record.server, false, "while one only this Roku knows changes here")
+    assertEqual(signInPin.AfterStore(local, "4321", { result: SERVER_PIN_VALID }).record.server, true, "and moves to the server once it takes it")
+    assertEqual(signInPin.AfterStore(synced, "4321", { result: SERVER_PIN_WRONG }).refused, "Incorrect PIN", "A wrong current PIN is turned down")
+
+    assertEqual(signInPin.AccountKey("http://Server:8096//", "u1"), "http://server:8096|u1", "An account is known by its server and id")
+    signInPin.MarkForgotten("http://Server/", "u1", "alice")
+    assertEqual(signInPin.TakeForgotten("http://server", "u2"), false, "Forgot PIN is kept for one account")
+    assertEqual(signInPin.TakeForgottenUsername("http://other"), "", "on one server")
+    assertEqual(signInPin.TakeForgottenUsername("http://SERVER/"), "alice", "and sign in asks for that account's password")
+    assertEqual(signInPin.TakeForgottenUsername("http://server"), "", "once, so Back reaches the other accounts")
+    assertEqual(signInPin.TakeForgotten("http://server", "u1"), true, "The check after that sign in takes the mark")
+    assertEqual(signInPin.TakeForgotten("http://server", "u1"), false, "and only once")
+    signInPin.NoteProvedSignIn("http://server/", "u1")
+    assertEqual(signInPin.TakeProvedSignIn("http://server", "u2"), false, "A proved sign in counts only for its account")
+    signInPin.NoteProvedSignIn("http://server/", "u1")
+    assertEqual(signInPin.TakeProvedSignIn("http://server", "u1"), true, "and answers once")
+    assertEqual(signInPin.TakeProvedSignIn("http://server", "u1"), false, "so a later check needs a fresh one")
+
+    assertEqual(serverPin.VerifyVerdict({ status: 200, data: { valid: false } }).result, SERVER_PIN_WRONG, "The plugin names a wrong PIN")
+    assertEqual(serverPin.VerifyVerdict({ status: 404, data: { error: "No PIN is set" } }).result, SERVER_PIN_NONE, "and an account without one")
+    assertEqual(serverPin.VerifyVerdict({ status: 404, data: invalid }).result, SERVER_PIN_UNAVAILABLE, "while a server without the plugin says nothing it can read")
+    assertEqual(serverPin.Locked({ status: 429, data: { retryAfterSeconds: 45 }, retryAfter: "10" }).wait, 45, "A lockout waits as long as the plugin says")
+    assertEqual(serverPin.Locked({ status: 429, data: invalid, retryAfter: "10" }).wait, 10, "or as Retry-After says")
+    assertEqual(serverPin.Locked({ status: 429, data: invalid, retryAfter: "" }).wait, 30, "or 30 seconds")
+    assertEqual(serverPin.WriteVerdict({ status: 403, data: { error: "The current PIN is wrong" } }).result, SERVER_PIN_WRONG, "A change with the wrong current PIN is told apart")
+    assertEqual(serverPin.WriteVerdict({ status: 403, data: { error: "Forbidden" } }).result, SERVER_PIN_UNAVAILABLE, "from any other refusal")
+end sub

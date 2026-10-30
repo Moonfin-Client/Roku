@@ -12,8 +12,8 @@ const PIN_FREE_ATTEMPTS = 5
 const PIN_LOCKOUT_STEP = 30
 const PIN_MAX_LOCKOUT = 900
 
-' Kept on the device rather than with an account, so switching account doesnt hand back fresh
-' guesses. Each PIN keeps its own count.
+' Kept on the device rather than with an account, so switching account doesn't hand back fresh
+' guesses. The sign in pair is the count of the one PIN the Roku used to keep for every profile.
 const KIDS_PIN_FAILED_KEY = "global.kids.pinFailedAttempts"
 const KIDS_PIN_LOCKED_UNTIL_KEY = "global.kids.pinLockedUntil"
 const SIGN_IN_PIN_FAILED_KEY = "global.pinFailedAttempts"
@@ -23,10 +23,6 @@ namespace pinLockout
 
     function KidsKeys() as object
         return { failed: KIDS_PIN_FAILED_KEY, until: KIDS_PIN_LOCKED_UNTIL_KEY }
-    end function
-
-    function SignInKeys() as object
-        return { failed: SIGN_IN_PIN_FAILED_KEY, until: SIGN_IN_PIN_LOCKED_UNTIL_KEY }
     end function
 
     function HashPin(pin as string) as string
@@ -62,25 +58,32 @@ namespace pinLockout
 
     ' How many seconds until another guess is taken, or zero when one is taken now
     function Remaining(keys as object) as integer
-        until = Int(Val(get_setting(keys.until, "0")))
-        if until = 0 then return 0
+        return RecordRemaining({ lockedUntil: Int(Val(get_setting(keys.until, "0"))) }, CreateObject("roDateTime").AsSeconds())
+    end function
 
-        left = until - CreateObject("roDateTime").AsSeconds()
+    ' Records a wrong guess and answers how long the next one has to wait
+    function RegisterFailure(keys as object) as integer
+        failure = RecordFailure({ failed: Int(Val(get_setting(keys.failed, "0"))), lockedUntil: 0 }, CreateObject("roDateTime").AsSeconds())
+        set_setting(keys.failed, failure.failed.toStr())
+        if failure.wait > 0 then set_setting(keys.until, failure.lockedUntil.toStr())
+        return failure.wait
+    end function
+
+    ' The same for a PIN that keeps its count on a record, as each account's sign in PIN does.
+    ' lockedUntil is in seconds.
+    function RecordRemaining(record as object, now as integer) as integer
+        left = Int(record.lockedUntil ?? 0) - now
         return left > 0 ? left : 0
     end function
 
-    ' Records a wrong guess and answers how long the next one has to wait. The count keeps
-    ' climbing past the cap so the wait stays at the ceiling rather than starting over.
-    function RegisterFailure(keys as object) as integer
-        failed = Int(Val(get_setting(keys.failed, "0"))) + 1
-        set_setting(keys.failed, failed.toStr())
-        if failed <= PIN_FREE_ATTEMPTS then return 0
+    ' The count keeps climbing past the cap so the wait stays at the ceiling rather than starting over
+    function RecordFailure(record as object, now as integer) as object
+        failed = Int(record.failed ?? 0) + 1
+        if failed <= PIN_FREE_ATTEMPTS then return { wait: 0, failed: failed, lockedUntil: Int(record.lockedUntil ?? 0) }
 
         wait = PIN_LOCKOUT_STEP * (failed - PIN_FREE_ATTEMPTS)
         if wait > PIN_MAX_LOCKOUT then wait = PIN_MAX_LOCKOUT
-        set_setting(keys.until, (CreateObject("roDateTime").AsSeconds() + wait).toStr())
-
-        return wait
+        return { wait: wait, failed: failed, lockedUntil: now + wait }
     end function
 
     sub ClearLockout(keys as object)

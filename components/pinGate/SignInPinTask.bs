@@ -1,0 +1,52 @@
+import "pkg:/source/utils/signInPin.bs"
+
+sub init()
+    m.top.functionName = "runSignInPinTask"
+end sub
+
+' The account's record is saved here as each step changes it
+sub runSignInPinTask()
+    request = m.top.request
+    userId = request.userId
+    record = signInPin.RecordFor(userId)
+
+    ' The PIN may have been set or removed on another device since
+    if request.op = "refresh"
+        signInPin.SaveIfChanged(userId, record, signInPin.Refresh(record))
+        m.top.response = { refused: "" }
+        return
+    end if
+
+    flow = request.flow
+    entered = request.pin
+    if not flow.verify
+        stored = signInPin.Store(record, entered, flow.current)
+        if stored.refused = "" then signInPin.Save(userId, stored.record)
+        m.top.response = { refused: stored.refused }
+        return
+    end if
+
+    checked = signInPin.Verify(record, entered)
+    signInPin.SaveIfChanged(userId, record, checked.record)
+    if checked.outcome <> SIGN_IN_PIN_ACCEPTED
+        m.top.response = { refused: signInPin.Message(checked) }
+        return
+    end if
+
+    ' The server wants the current PIN again to replace it
+    if flow.purpose = "change"
+        m.top.response = { refused: "", next: { purpose: "change", verify: false, current: entered } }
+        return
+    end if
+
+    ' A PIN the server holds has no off switch, only removal
+    if flow.purpose = "disable" and checked.record.server <> true
+        signInPin.Save(userId, signInPin.Patched(checked.record, { enabled: false }))
+        m.top.response = { refused: "" }
+        return
+    end if
+
+    dropped = signInPin.Drop(checked.record, entered)
+    if dropped.refused = "" then signInPin.Save(userId, dropped.record)
+    m.top.response = { refused: dropped.refused }
+end sub

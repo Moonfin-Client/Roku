@@ -4438,19 +4438,9 @@
         <translation>PIN Code</translation>
     </message>
     <message>
-        <source>Default PIN: 0000</source>
-        <extracomment>Description of the PIN Code setting before a PIN has been chosen</extracomment>
-        <translation>Default PIN: 0000</translation>
-    </message>
-    <message>
         <source>Enter a 4-digit PIN used to unlock the app when PIN protection is enabled.</source>
         <extracomment>Shown beside the keypad when choosing the PIN the PIN screen asks for</extracomment>
         <translation>Enter a 4-digit PIN used to unlock the app when PIN protection is enabled.</translation>
-    </message>
-    <message>
-        <source>Configured 4-digit PIN</source>
-        <extracomment>Description of the PIN Code setting once a PIN has been chosen</extracomment>
-        <translation>Configured 4-digit PIN</translation>
     </message>
     <message>
         <source>Saved Servers</source>
@@ -4631,6 +4621,41 @@
         <source>Active</source>
         <extracomment>Badge under the account in use on the user switcher, drawn in capitals</extracomment>
         <translation>Active</translation>
+    </message>
+    <message>
+        <source>PIN synced</source>
+        <extracomment>Description of the Enable PIN Code switch when the account&apos;s PIN is kept on the server and holds on every device</extracomment>
+        <translation>PIN synced</translation>
+    </message>
+    <message>
+        <source>Set a new PIN code</source>
+        <extracomment>Description of the Change PIN setting</extracomment>
+        <translation>Set a new PIN code</translation>
+    </message>
+    <message>
+        <source>Remove PIN</source>
+        <extracomment>Setting that removes the account&apos;s sign in PIN after asking for it</extracomment>
+        <translation>Remove PIN</translation>
+    </message>
+    <message>
+        <source>Remove PIN code protection</source>
+        <extracomment>Description of the Remove PIN setting</extracomment>
+        <translation>Remove PIN code protection</translation>
+    </message>
+    <message>
+        <source>Enter your 4-digit PIN</source>
+        <extracomment>Shown in the keypad when Settings asks for the current sign in PIN before turning it off, changing it or removing it</extracomment>
+        <translation>Enter your 4-digit PIN</translation>
+    </message>
+    <message>
+        <source>Forgot PIN?</source>
+        <extracomment>Button on the PIN screen that clears the PIN once the account signs in again with its password or Quick Connect</extracomment>
+        <translation>Forgot PIN?</translation>
+    </message>
+    <message>
+        <source>The PIN on the server couldn&apos;t be cleared. If it&apos;s still set, ask a server administrator to remove it.</source>
+        <extracomment>Shown on the PIN screen when Forgot PIN couldn&apos;t clear a PIN the server keeps, which only an administrator can do</extracomment>
+        <translation>The PIN on the server couldn&apos;t be cleared. If it&apos;s still set, ask a server administrator to remove it.</translation>
     </message>
     <message>
         <source>Unable to connect to server</source>

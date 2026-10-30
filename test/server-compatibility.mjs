@@ -228,6 +228,23 @@ for (const name of ['Empty', 'WithPick', 'Take', 'Push', 'Pick', 'RememberedAudi
 }
 source += '\n    function Load() as object\n        return trackMemory.Empty()\n    end function\nend namespace\n';
 source += '\n' + await readFile('test/track-memory.bs', 'utf8');
+// The PIN decisions without the registry or the server, and with a stand in for the hash, which
+// this interpreter has no digest for
+for (const [file, constants, space, names, extra] of [
+    ['source/utils/pinLockout.bs', /^const PIN_\w+ = .+$/gm, 'pinLockout', ['IsPinShaped', 'Matches', 'RecordRemaining', 'RecordFailure', 'FormatWait', 'TooManyAttempts'], '    function HashPin(pin as string) as string\n        return "#" + pin\n    end function\n'],
+    ['source/api/serverPin.bs', /^const SERVER_PIN_\w+ = .+$/gm, 'serverPin', ['VerifyVerdict', 'WriteVerdict', 'Locked', 'IsBoolean', 'ErrorIs'], ''],
+    ['source/utils/signInPin.bs', /^const SIGN_IN_\w+ = .+$/gm, 'signInPin', ['NoPin', 'RecordFrom', 'IsEnabled', 'Patched', 'Settled', 'VerifyHere', 'AfterStatus', 'AfterVerify', 'Refusal', 'AfterStore', 'Message', 'AccountKey', 'MarkForgotten', 'TakeForgottenUsername', 'NoteProvedSignIn', 'TakeProvedSignIn', 'TakeForgotten'], '']
+]) {
+    const text = await readFile(file, 'utf8');
+    source += '\n' + text.match(constants).join('\n') + `\nnamespace ${space}\n` + extra;
+    for (const name of names) {
+        const match = text.match(new RegExp(`^    (?:function|sub) ${name}\\([^]*?^    end (?:function|sub)`, 'm'));
+        assert.ok(match, `Missing ${space}.${name}`);
+        source += '\n' + match[0];
+    }
+    source += '\nend namespace\n';
+}
+source += '\n' + await readFile('test/sign-in-pin.bs', 'utf8');
 source += '\n' + await readFile('test/file-facts.bs', 'utf8');
 source += '\n' + await readFile('test/playback-facts.bs', 'utf8');
 source += '\n' + await readFile('test/favorite-tabs.bs', 'utf8');
@@ -1220,6 +1237,14 @@ assert.match(await readFile('components/genres/GenresScreen.bs', 'utf8'), /allSe
 assert.match(libraryScene, /if m\.top\.genreFilter\.allServers = true\s+m\.loadItemsTask\.allServers = true\s+m\.loadItemsTask\.genreNames/, 'asking each one by name');
 assert.match(libraryScene, /server = libraryServer\(\)\s+m\.loadItemsTask\.serverUrl = server\.serverUrl/, 'A library from another server is read from that server');
 assert.match(await readFile('components/ItemGrid/LoadItemsTask2.bs', 'utf8'), /serverParams\.StartIndex = offsets\[key\] \?\? 0[^]*?m\.top\.serverOffsets = offsets/, 'and each server pages on from its own last page');
+const pinGateFlow = await readFile('source/ShowScenes.bs', 'utf8');
+assert.match(pinGateFlow, /record = signInPin\.Refresh\(before\)\s+signInPin\.SaveIfChanged\(userId, before, record\)\s+if not signInPin\.IsEnabled\(record\) then return "passed"/, 'The PIN gate asks the server before it shows');
+assert.match(pinGateFlow, /if password <> "" then signInPin\.NoteProvedSignIn/, 'A password sign in proves who the account is');
+assert.match(pinGateFlow, /forgottenName = signInPin\.TakeForgottenUsername\(m\.global\.session\.server\.url\)/, 'and Forgot PIN lands on that sign in');
+assert.match(await readFile('source/Main.bs', 'utf8'), /if pinGate = "forgot"[^]*?unset_setting\("active_user"\)[^]*?goto app_start/, 'Forgot PIN signs the account out to sign in again');
+const pinSettings = await readFile('components/settings/settings.bs', 'utf8');
+assert.match(pinSettings, /if selectedSetting\.settingName = SIGN_IN_PIN_ENABLED_KEY\s+if signInPin\.IsEnabled\(signInPinRecord\(\)\)\s+openSignInPinFlow\("disable"\)/, 'Turning the PIN off asks for it first');
+assert.doesNotMatch(pinSettings, /lockBehindPin/, 'and turning it on no longer locks the app straight away');
 process.stdout.write('PASS: libraries and sign in wiring\n');
 
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');

@@ -766,6 +766,7 @@ function settingsRowSpec(settingItem as object) as object
 
     settingName = settingItem.settingName ?? ""
     description = tr(settingItem.description ?? "")
+    if settingName = SIGN_IN_PIN_ENABLED_KEY and signInPinRecord().server = true then description = tr("PIN synced")
     spec = { id: settingName, title: tr(settingItem.title ?? ""), glyph: settingItem.glyph ?? "tune", logo: settingItem.logo ?? "" }
 
     if rowType = SettingType.BOOL
@@ -784,7 +785,6 @@ function settingsRowSpec(settingItem as object) as object
     end if
 
     value = getSettingCurrentValueLabel(settingItem)
-    if settingName = "pin.setCode" then value = tr(signInPinDescription())
     if rowType = SettingType.RADIO and settingItem.slider = true
         spec.kind = "slider"
         spec.sliderCount = settingItem.options.Count()
@@ -832,6 +832,7 @@ end function
 ' "true" or "false" for a switch row. A rating's switch shows whether it is on the blocked list
 ' rather than a stored setting.
 function boolSettingDisplay(settingItem as object) as string
+    if isStringEqual(settingItem.settingName, SIGN_IN_PIN_ENABLED_KEY) then return signInPin.IsEnabled(signInPinRecord()) ? "true" : "false"
     if isStringEqual(settingItem.settingName, "parental.rating")
         return inArray(parentalControls.BlockedRatings(), settingItem.rating) ? "true" : "false"
     end if
@@ -1013,7 +1014,7 @@ sub openKidsPin(mode as string)
     m.kidsPinMode = mode
     signingIn = mode = "signIn"
     m.integerSetting.textEditBox.secureMode = signingIn
-    if signingIn then m.integerSetting.textEditBox.hintText = tr("4 digits")
+    if signingIn then m.integerSetting.textEditBox.hintText = m.signInPinFlow.verify ? tr("Enter your 4-digit PIN") : tr("4 digits")
     m.integerSetting.text = ""
     m.integerSetting.visible = true
     m.integerSetting.setFocus(true)
@@ -1236,25 +1237,81 @@ sub toggleDetailSection(sectionRow as object)
     m.settingsMenu.setFocus(true)
 end sub
 
-' Choosing a PIN forgets the guesses that came before it, and the row says one is set from here on
+' The switch, Change PIN and Remove PIN all start here. Turning the PIN off, changing it and
+' removing it all take the current one first.
+sub openSignInPinFlow(purpose as string)
+    m.signInPinFlow = { purpose: purpose, verify: purpose <> "enable", current: "", from: getFocusedSetting() }
+    openKidsPin("signIn")
+end sub
+
 sub submitSignInPin(entered as string)
+    if isValid(m.signInPinTask) then return
     if not pinLockout.IsPinShaped(entered)
         ShowToast(tr("PIN must be exactly 4 digits."))
         return
     end if
 
-    signInPin.Save(entered)
-    m.kidsPinMode = ""
-    hideEditingControls()
+    m.signInPinTask = CreateObject("roSGNode", "SignInPinTask")
+    flow = m.signInPinFlow
+    m.signInPinTask.request = { op: "flow", userId: m.global.session.user.id, flow: { purpose: flow.purpose, verify: flow.verify, current: flow.current }, pin: entered }
+    m.signInPinTask.observeField("response", "onSignInPinStep")
+    m.signInPinTask.control = "RUN"
+end sub
 
-    pinRow = getFocusedSetting()
-    if isValid(pinRow) then refreshCurrentItemValue(pinRow)
+sub onSignInPinStep(event as object)
+    response = event.getData()
+    m.signInPinTask = invalid
+    m.integerSetting.text = ""
+    if response.refused <> ""
+        ShowToast(response.refused)
+        return
+    end if
+
+    if isValid(response.next)
+        response.next.from = m.signInPinFlow.from
+        m.signInPinFlow = response.next
+        openKidsPin("signIn")
+        return
+    end if
+
+    from = m.signInPinFlow.from
+    m.kidsPinMode = ""
+    m.signInPinFlow = invalid
+    hideEditingControls()
+    showSignInPinRows(from)
+end sub
+
+' The Manage rows come and go with the PIN, and focus goes back to the row the change started from
+' while it's still there
+sub showSignInPinRows(focusOn as dynamic)
+    refreshMenu()
+    index = -1
+    if isValid(focusOn) then index = rowIndexOf(focusOn)
+    if index < 0
+        for i = 0 to m.visibleItemsMap.count() - 1
+            if isStringEqual(chainLookupReturn(m.visibleItemsMap[i], "settingName", ""), SIGN_IN_PIN_ENABLED_KEY) then index = i
+        end for
+    end if
+    if index >= 0 then m.settingsMenu.jumpToItem = index
     m.settingsMenu.setFocus(true)
 end sub
 
-function signInPinDescription() as string
-    if signInPin.IsConfigured() then return "Configured 4-digit PIN"
-    return "Default PIN: 0000"
+sub refreshSignInPin()
+    m.signInPinRefresh = CreateObject("roSGNode", "SignInPinTask")
+    m.signInPinRefresh.request = { op: "refresh", userId: m.global.session.user.id }
+    m.signInPinRefresh.observeField("response", "onSignInPinRefreshed")
+    m.signInPinRefresh.control = "RUN"
+end sub
+
+sub onSignInPinRefreshed()
+    m.signInPinRefresh = invalid
+    if m.kidsPinMode <> "" then return
+    section = m.userLocation.peek()
+    if isValid(section) and section.title = "PIN Code" then showSignInPinRows(getFocusedSetting())
+end sub
+
+function signInPinRecord() as object
+    return signInPin.RecordFor(m.global.session.user.id)
 end function
 
 ' The settings screen is standing on entries the mode has just taken away, and the home screen
@@ -1917,7 +1974,7 @@ function reorderSettingsForFlutter(configTree as object) as object
 
     ' Single settings move first, while every screen is still attached to the tree.
     signIn = takeSettings(configTree, ["global.rememberme", "global.saveCredentials"])
-    pinCode = takeSettings(configTree, ["global.pinCodeProtection", "pin.setCode"])
+    pinCode = takeSettings(configTree, ["global.pinCodeProtection", "pin.setCode", "pin.remove"])
     family = takeSettings(configTree, ["kids.turnOn", "parental.blockedRatings", "ui.home.recommendationsParentalCap"])
     syncSettings = takeSettings(configTree, ["plugin.enabled", "plugin.syncProfiles"])
     ' The sync switch lives on the sync panel, and taking it keeps it out of Additional Settings
@@ -2004,18 +2061,19 @@ function reorderSettingsForFlutter(configTree as object) as object
 
     reordered = []
 
-    ' The PIN is turned on, then changed, on a screen of its own
+    ' The PIN is turned on, then changed or removed, on a screen of its own
     for each item in pinCode
-        if item.settingName = "pin.setCode" then item.requires = "setting:global.pinCodeProtection"
+        if item.settingName <> SIGN_IN_PIN_ENABLED_KEY then item.requires = "signInPin"
     end for
     pinScreen = {
         title: "PIN Code",
         description: "Require a PIN to access your account",
         glyph: "pin",
         clean: true,
-        children: [settingsSection("General"), pinCode[0], { title: "Manage", type: SettingType.SECTION, requires: "setting:global.pinCodeProtection" }]
+        children: [settingsSection("General"), pinCode[0], { title: "Manage", type: SettingType.SECTION, requires: "signInPin" }]
     }
     pushSettingIfValid(pinScreen.children, pinCode[1])
+    pushSettingIfValid(pinScreen.children, pinCode[2])
 
     accountChildren = [settingsSection("Sign-in")]
     accountChildren.Append(signIn)
@@ -2518,7 +2576,12 @@ sub settingSelected()
     end if
 
     if isValid(selectedItem.settingName) and selectedItem.settingName = "pin.setCode"
-        openKidsPin("signIn")
+        openSignInPinFlow("change")
+        return
+    end if
+
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "pin.remove"
+        openSignInPinFlow("remove")
         return
     end if
 
@@ -2779,6 +2842,7 @@ sub settingSelected()
     else if selectedItem.children <> invalid and selectedItem.children.Count() > 0
         LoadMenu(selectedItem)
         m.settingsMenu.setFocus(true)
+        if selectedItem.title = "PIN Code" then refreshSignInPin()
     else
         return
     end if
@@ -2789,6 +2853,15 @@ sub refreshMenu()
 end sub
 
 sub boolSettingChanged(selectedSetting as object)
+    if selectedSetting.settingName = SIGN_IN_PIN_ENABLED_KEY
+        if signInPin.IsEnabled(signInPinRecord())
+            openSignInPinFlow("disable")
+        else
+            openSignInPinFlow("enable")
+        end if
+        return
+    end if
+
     rawValue = get_user_setting(selectedSetting.settingName)
     if not isValid(rawValue) and isValid(m.global.session.user.settings[selectedSetting.settingName])
         rawValue = m.global.session.user.settings[selectedSetting.settingName]
@@ -2844,16 +2917,6 @@ sub boolSettingChanged(selectedSetting as object)
     hideEditingControls()
     m.settingsMenu.setFocus(true)
     refreshDependentRows(selectedSetting.settingName)
-
-    if selectedSetting.settingName = SIGN_IN_PIN_ENABLED_KEY and newValue = "true" then lockBehindPin()
-end sub
-
-' Turning the PIN on locks the app straight away, the same as signing in with it on would
-sub lockBehindPin()
-    dismissPanel()
-    gate = CreateObject("roSGNode", "PinGate")
-    gate.dismissOnUnlock = true
-    m.global.sceneManager.callFunc("pushScene", gate)
 end sub
 
 sub onRadioChosen()
@@ -3383,6 +3446,7 @@ function settingRequirementMet(requirement as string) as boolean
     if requirement = "plugin" then return moonfinPlugin.IsEnabled()
     if requirement = "kidsMode" then return kidsMode.Enabled()
     if requirement = "notKidsMode" then return not kidsMode.Enabled()
+    if requirement = "signInPin" then return signInPin.IsEnabled(signInPinRecord())
     ' Either side of an || is enough, and each side can still join conditions with &&
     if Left(requirement, 8) = "setting:"
         for each alternative in requirement.Split("||")
