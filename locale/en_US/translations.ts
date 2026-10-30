@@ -680,10 +680,6 @@
         <translation>Series finished</translation>
     </message>
     <message>
-        <source>Server not found, is it online?</source>
-        <translation>Server not found, is it online?</translation>
-    </message>
-    <message>
         <source>Show messages button</source>
         <translation>Show messages button</translation>
     </message>
@@ -894,10 +890,6 @@
     <message>
         <source>Change User</source>
         <translation>Change User</translation>
-    </message>
-    <message>
-        <source>Change Server</source>
-        <translation>Change Server</translation>
     </message>
     <message>
         <source>Sign Out</source>
@@ -4459,6 +4451,191 @@
         <source>Configured 4-digit PIN</source>
         <extracomment>Description of the PIN Code setting once a PIN has been chosen</extracomment>
         <translation>Configured 4-digit PIN</translation>
+    </message>
+    <message>
+        <source>Saved Servers</source>
+        <extracomment>Heading over the servers this device has signed in to, on the server list</extracomment>
+        <translation>Saved Servers</translation>
+    </message>
+    <message>
+        <source>Discovered Servers</source>
+        <extracomment>Heading over the servers found on the local network, on the server list</extracomment>
+        <translation>Discovered Servers</translation>
+    </message>
+    <message>
+        <source>None found</source>
+        <extracomment>Shown under Discovered Servers when no server answered on the local network</extracomment>
+        <translation>None found</translation>
+    </message>
+    <message>
+        <source>Add Server</source>
+        <extracomment>Button at the foot of the server list, and the title of the dialog it opens</extracomment>
+        <translation>Add Server</translation>
+    </message>
+    <message>
+        <source>By address, or with an Emby Connect account</source>
+        <extracomment>Line under the Add Server button on the server list</extracomment>
+        <translation>By address, or with an Emby Connect account</translation>
+    </message>
+    <message>
+        <source>Remove Server</source>
+        <extracomment>Title of the question asked when OK is held on a saved server</extracomment>
+        <translation>Remove Server</translation>
+    </message>
+    <message>
+        <source>Remove &quot;{0}&quot; from your servers?</source>
+        <extracomment>Question asked before removing a saved server. {0} is the server&apos;s name</extracomment>
+        <translation>Remove &quot;{0}&quot; from your servers?</translation>
+    </message>
+    <message>
+        <source>Choose how you&apos;d like to connect.</source>
+        <extracomment>Line under the title of the Add Server dialog&apos;s first step</extracomment>
+        <translation>Choose how you&apos;d like to connect.</translation>
+    </message>
+    <message>
+        <source>Server Address</source>
+        <extracomment>Choice on the Add Server dialog, and the label over the address field</extracomment>
+        <translation>Server Address</translation>
+    </message>
+    <message>
+        <source>Jellyfin or Emby on your network or online</source>
+        <extracomment>Line under the Server Address choice on the Add Server dialog</extracomment>
+        <translation>Jellyfin or Emby on your network or online</translation>
+    </message>
+    <message>
+        <source>Emby Connect</source>
+        <extracomment>Choice on the Add Server dialog, and the title of the Emby Connect sign in</extracomment>
+        <translation>Emby Connect</translation>
+    </message>
+    <message>
+        <source>Sign in with your Emby Connect account</source>
+        <extracomment>Line under the Emby Connect choice and the Emby Connect sign in title</extracomment>
+        <translation>Sign in with your Emby Connect account</translation>
+    </message>
+    <message>
+        <source>The same address you&apos;d open in a browser, including the port.</source>
+        <extracomment>Line under the title of the Add Server dialog&apos;s address step</extracomment>
+        <translation>The same address you&apos;d open in a browser, including the port.</translation>
+    </message>
+    <message>
+        <source>Enter the server name or ip address</source>
+        <extracomment>Title of the keyboard that types a server address</extracomment>
+        <translation>Enter the server name or ip address</translation>
+    </message>
+    <message>
+        <source>Connect</source>
+        <extracomment>Button that tries the typed server address</extracomment>
+        <translation>Connect</translation>
+    </message>
+    <message>
+        <source>Works with Jellyfin and Emby.</source>
+        <extracomment>Hint under the Connect button on the Add Server dialog</extracomment>
+        <translation>Works with Jellyfin and Emby.</translation>
+    </message>
+    <message>
+        <source>Checking {0}</source>
+        <extracomment>Hint while a server address is tried. {0} is the address</extracomment>
+        <translation>Checking {0}</translation>
+    </message>
+    <message>
+        <source>Check the address and port, and that the server is running.</source>
+        <extracomment>Why a server address didn&apos;t connect, under Unable to connect to server</extracomment>
+        <translation>Check the address and port, and that the server is running.</translation>
+    </message>
+    <message>
+        <source>Server found</source>
+        <extracomment>Title of the Add Server step that shows the server that answered</extracomment>
+        <translation>Server found</translation>
+    </message>
+    <message>
+        <source>Jellyfin</source>
+        <extracomment>Chip naming the kind of server Add Server found</extracomment>
+        <translation>Jellyfin</translation>
+    </message>
+    <message>
+        <source>Emby</source>
+        <extracomment>Chip naming the kind of server Add Server found</extracomment>
+        <translation>Emby</translation>
+    </message>
+    <message>
+        <source>Version {0}</source>
+        <extracomment>Chip with the version of the server Add Server found. {0} is the version</extracomment>
+        <translation>Version {0}</translation>
+    </message>
+    <message>
+        <source>Continue to choose who&apos;s signing in.</source>
+        <extracomment>Line under the server Add Server found</extracomment>
+        <translation>Continue to choose who&apos;s signing in.</translation>
+    </message>
+    <message>
+        <source>Use a different address</source>
+        <extracomment>Button that goes back to the address step from the server Add Server found</extracomment>
+        <translation>Use a different address</translation>
+    </message>
+    <message>
+        <source>Continue</source>
+        <extracomment>Button that opens the server Add Server found</extracomment>
+        <translation>Continue</translation>
+    </message>
+    <message>
+        <source>Who&apos;s watching?</source>
+        <extracomment>Title of the screen that lists a server&apos;s accounts</extracomment>
+        <translation>Who&apos;s watching?</translation>
+    </message>
+    <message>
+        <source>Connecting to {0}</source>
+        <extracomment>Line under the Sign In title. {0} is the server&apos;s name</extracomment>
+        <translation>Connecting to {0}</translation>
+    </message>
+    <message>
+        <source>Enter this code on your server&apos;s web dashboard:</source>
+        <extracomment>Line over the Quick Connect code on the sign in screen</extracomment>
+        <translation>Enter this code on your server&apos;s web dashboard:</translation>
+    </message>
+    <message>
+        <source>Waiting for authorization...</source>
+        <extracomment>Shown under the Quick Connect code until another device approves it</extracomment>
+        <translation>Waiting for authorization...</translation>
+    </message>
+    <message>
+        <source>Or scan this with a phone that&apos;s signed in to your server</source>
+        <extracomment>Caption under the Quick Connect QR code</extracomment>
+        <translation>Or scan this with a phone that&apos;s signed in to your server</translation>
+    </message>
+    <message>
+        <source>Quick Connect is disabled</source>
+        <extracomment>Shown when the server has Quick Connect switched off, as the sign in screen moves to the password form</extracomment>
+        <translation>Quick Connect is disabled</translation>
+    </message>
+    <message>
+        <source>The sign in request timed out. Try again.</source>
+        <extracomment>Shown when a Quick Connect code was never approved</extracomment>
+        <translation>The sign in request timed out. Try again.</translation>
+    </message>
+    <message>
+        <source>Email or Username</source>
+        <extracomment>Placeholder in the first field of the Emby Connect sign in</extracomment>
+        <translation>Email or Username</translation>
+    </message>
+    <message>
+        <source>Select Server</source>
+        <extracomment>Button on the user switcher that goes to the server list</extracomment>
+        <translation>Select Server</translation>
+    </message>
+    <message>
+        <source>Sign Out All Users</source>
+        <extracomment>Button on the user switcher that signs every saved account out</extracomment>
+        <translation>Sign Out All Users</translation>
+    </message>
+    <message>
+        <source>Active</source>
+        <extracomment>Badge under the account in use on the user switcher, drawn in capitals</extracomment>
+        <translation>Active</translation>
+    </message>
+    <message>
+        <source>Unable to connect to server</source>
+        <extracomment>Shown when the server couldn&apos;t be reached to make a change it has to agree to</extracomment>
+        <translation>Unable to connect to server</translation>
     </message>
     <message>
         <source>Blocked Ratings</source>

@@ -1,480 +1,333 @@
-import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/loginStyle.bs"
 import "pkg:/source/utils/misc.bs"
-import "pkg:/source/utils/tvKeyboard.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+
+const SERVER_CARD_WIDTH = 1169
+const SERVER_CARD_PAD = 54
+const SERVER_CONTENT_WIDTH = 1060
+const SERVER_TILE_HEIGHT = 112
+const SERVER_TILE_GAP = 7
+const SERVER_SECTION_HEIGHT = 33
+const SERVER_SECTION_GAP = 33
+const SERVER_ADD_HEIGHT = 106
+const SERVER_LOGO_HEIGHT = 134
+' How long OK is held on a saved server before it offers to remove it
+const SERVER_HOLD_SECONDS = 0.5
 
 sub init()
     m.top.optionsAvailable = false
-    m.top.setFocus(true)
-
-    m.mainGroup = m.top.findNode("mainGroup")
-    m.serverPicker = m.top.findNode("serverPicker")
-    m.serverPickerContainer = m.top.findNode("serverPickerContainer")
-    m.serverUrlTextbox = m.top.findNode("serverUrlTextbox")
-    m.serverUrlContainer = m.top.findNode("serverUrlContainer")
-    m.serverUrlOutline = m.top.findNode("serverUrlOutline")
-    m.discoveredLabel = m.top.findNode("discoveredLabel")
+    m.top.overhangVisible = false
+    m.page = m.top.findNode("page")
+    m.logo = m.top.findNode("logo")
+    m.statusLine = m.top.findNode("statusLine")
+    m.card = m.top.findNode("card")
+    m.cardFill = m.top.findNode("cardFill")
+    m.cardBorder = m.top.findNode("cardBorder")
+    m.rows = m.top.findNode("rows")
+    m.addServerTile = m.top.findNode("addServerTile")
     m.versionLabel = m.top.findNode("versionLabel")
+    m.dialog = m.top.findNode("addServerDialog")
+    m.removeDialog = m.top.findNode("removeDialog")
+    m.listFocus = m.top.findNode("listFocus")
 
-    m.embyConnectButton = m.top.findNode("embyConnectButton")
-    m.addServerButton = m.top.findNode("addServerButton")
-    m.connectButton = m.top.findNode("connectButton")
-    m.cancelButton = m.top.findNode("cancelButton")
+    m.statusLine.font.size = 22
+    m.versionLabel.font.size = 20
+    m.versionLabel.text = "Moonfin version " + LCase(m.global.app.version)
 
-    m.serverUrlOutline.blendColor = "0x00A4DCFF"
+    m.dialog.observeField("connectAddress", "onDialogConnect")
+    m.dialog.observeField("embyConnectChosen", "onDialogEmbyConnect")
+    m.dialog.observeField("continueChosen", "onDialogContinue")
+    m.dialog.observeField("closed", "closeDialog")
+    m.removeDialog.observeField("answer", "onRemoveAnswered")
 
-    m.serverPickerContainer.color = ColorPalette.TRANSPARENT
-    m.serverUrlTextbox.backgroundUri = "pkg:/images/transparent.webp"
-    m.serverUrlContainer.color = "0x2a2e40FF"
+    m.holdTimer = CreateObject("roSGNode", "Timer")
+    m.holdTimer.duration = SERVER_HOLD_SECONDS
+    m.holdTimer.observeField("fire", "onHoldFired")
 
-    m.serverUrlTextbox.textColor = ColorPalette.DARKGREY
-    m.serverUrlTextbox.hintTextColor = ColorPalette.MIDGREY
-    m.serverUrlTextbox.observeField("text", "onServerUrlTextChanged")
+    m.holding = false
+    m.saved = savedServers()
+    m.discovered = []
+    m.discovering = true
+    m.focusIndex = -1
+    buildRows()
+    focusItem(m.items.count() - 1)
 
-    loginStyle.ApplyButton(m.embyConnectButton)
-    loginStyle.ApplyButton(m.addServerButton)
-
-    loginStyle.ApplyButton(m.connectButton)
-
-    loginStyle.ApplyButton(m.cancelButton)
-
-    m.discoveredLabelY = 40
-    m.serverPickerY = 85
-    m.serverRowHeight = 100
-    m.serverRowSpacing = 10
-    m.maxVisibleRows = 3
-    m.gapBelowList = 15
-    m.addButtonHeight = 84
-    m.mainBottomPadding = 50
-    m.mainCenterY = 425
-    m.versionGap = 20
-    m.versionLabelBaseX = 844
-    m.manualMainY = 215
-    m.manualMainHeight = 290
-
-    m.addServerButton.observeField("buttonSelected", "onAddServerButtonSelected")
-    m.connectButton.observeField("buttonSelected", "onConnectButtonSelected")
-    m.cancelButton.observeField("buttonSelected", "onCancelButtonSelected")
-
-    if isValid(m.versionLabel)
-        m.versionLabel.text = "Moonfin version " + LCase(m.global.app.version)
-    end if
-
-    m.isManualEntryMode = false
-    setDiscoveredMode()
-
-    m.top.observeField("serverUrl", "clearErrorMessage")
-
-    ScanForServers()
+    m.discovery = CreateObject("roSGNode", "ServerDiscoveryTask")
+    m.discovery.observeField("content", "onDiscoveryDone")
+    m.discovery.control = TaskControl.RUN
 end sub
 
-sub updateDiscoveredLayout()
-    total = getServerCount()
-    visibleRows = total
-    if visibleRows > m.maxVisibleRows then visibleRows = m.maxVisibleRows
-    if visibleRows < 0 then visibleRows = 0
+function savedServers() as object
+    saved = []
+    text = get_setting("saved_servers")
+    if not isValidAndNotEmpty(text) then return saved
+    data = ParseJson(text)
+    if not isValid(data) or type(data.serverList) <> "roArray" then return saved
+    for each server in data.serverList
+        if isValidAndNotEmpty(server.baseUrl) then saved.push(server)
+    end for
+    return saved
+end function
 
-    listHeight = 0
-    if visibleRows > 0
-        listHeight = (visibleRows * m.serverRowHeight) + ((visibleRows - 1) * m.serverRowSpacing)
+' Every server found that isn't already saved, which the list shows once
+sub onDiscoveryDone(event as object)
+    found = event.getData()
+    m.discovered = []
+    if type(found) = "roArray"
+        for each server in found
+            if isValidAndNotEmpty(server.baseUrl) and not isSaved(server.baseUrl) then m.discovered.push(server)
+        end for
+    end if
+    m.discovering = false
+
+    focusedUrl = ""
+    if m.focusIndex >= 0 and m.focusIndex < m.items.count() and m.items[m.focusIndex].isSubtype("LoginServerTile") then focusedUrl = m.items[m.focusIndex].baseUrl
+    buildRows()
+    index = m.items.count() - 1
+    for i = 0 to m.items.count() - 2
+        if m.items[i].baseUrl = focusedUrl then index = i
+    end for
+    focusItem(index)
+end sub
+
+function isSaved(url as string) as boolean
+    for each server in m.saved
+        if LCase(server.baseUrl) = LCase(url) then return true
+    end for
+    return false
+end function
+
+' The card's rows, from the top: saved servers, discovered servers, then Add Server
+sub buildRows()
+    m.rows.removeChildrenIndex(m.rows.getChildCount(), 0)
+    m.items = []
+    y = SERVER_CARD_PAD
+
+    if m.saved.count() > 0
+        y = addSection(tr("Saved Servers"), y)
+        for each server in m.saved
+            y = addTile(server.name ?? server.baseUrl, server.baseUrl, true, y)
+        end for
+        y += SERVER_SECTION_GAP - SERVER_TILE_GAP
     end if
 
-    rowsForNode = visibleRows
-    if rowsForNode < 1 then rowsForNode = 1
-    m.serverPicker.numRows = rowsForNode
+    y = addSection(tr("Discovered Servers"), y)
+    if m.discovering
+        spinner = m.rows.createChild("Spinner")
+        spinner.poster.width = 40
+        spinner.poster.height = 40
+        spinner.translation = [SERVER_CARD_PAD + (SERVER_CONTENT_WIDTH - 40) / 2, y + 27]
+        y += 94
+    else if m.discovered.count() = 0
+        none = m.rows.createChild("Label")
+        none.font.size = 23
+        none.color = "#FFFFFF66"
+        none.text = tr("None found")
+        none.height = 73
+        none.vertAlign = "center"
+        none.translation = [SERVER_CARD_PAD, y]
+        y += 73
+    else
+        for each server in m.discovered
+            y = addTile(server.name ?? server.baseUrl, server.baseUrl, false, y)
+        end for
+        y -= SERVER_TILE_GAP
+    end if
 
-    if m.isManualEntryMode
-        applyManualLayout()
-        m.serverPickerContainer.height = 0
-        m.serverPickerContainer.visible = false
+    y += 27
+    m.addServerTile.translation = [SERVER_CARD_PAD, y]
+    m.items.push(m.addServerTile)
+    cardHeight = y + SERVER_ADD_HEIGHT + SERVER_CARD_PAD
+    m.cardFill.height = cardHeight
+    m.cardBorder.height = cardHeight
+    m.cardHeight = cardHeight
+    layoutPage()
+end sub
+
+function addSection(title as string, y as float) as float
+    label = m.rows.createChild("Label")
+    label.font = "font:SmallBoldSystemFont"
+    label.font.size = 23
+    label.color = "#FFFFFF"
+    label.text = title
+    label.height = SERVER_SECTION_HEIGHT
+    label.vertAlign = "center"
+    label.translation = [SERVER_CARD_PAD, y]
+    return y + SERVER_SECTION_HEIGHT + 13
+end function
+
+function addTile(name as string, url as string, saved as boolean, y as float) as float
+    tile = m.rows.createChild("LoginServerTile")
+    tile.title = name
+    tile.detailText = url
+    tile.serverType = "jellyfin"
+    if registry_read(serverIdentityKey(url), "ServerTypes") = "emby" then tile.serverType = "emby"
+    tile.baseUrl = url
+    tile.isSaved = saved
+    tile.translation = [SERVER_CARD_PAD, y]
+    m.items.push(tile)
+    return y + SERVER_TILE_HEIGHT + SERVER_TILE_GAP
+end function
+
+' The logo, an error line, the card and the version, together a fifth of the way down whatever
+' room is left
+sub layoutPage()
+    statusHeight = 0
+    if m.statusLine.text <> "" then statusHeight = m.statusLine.boundingRect().height + 27
+    m.statusLine.visible = statusHeight > 0
+
+    height = 27 + SERVER_LOGO_HEIGHT + 46 + statusHeight + m.cardHeight + 60 + 27
+    top = loginStyle.ColumnTop(height)
+    m.logo.translation = [664, top + 27]
+    y = top + 27 + SERVER_LOGO_HEIGHT + 46
+    m.statusLine.translation = [376, y]
+    y += statusHeight
+    m.card.translation = [376, y]
+    m.versionLabel.translation = [376, y + m.cardHeight + 27]
+    m.pageHeight = height
+    keepFocusInView()
+end sub
+
+sub focusItem(index as integer)
+    if index < 0 or index >= m.items.count() then return
+    m.focusIndex = index
+    for i = 0 to m.items.count() - 1
+        m.items[i].highlighted = i = index
+    end for
+    m.listFocus.setFocus(true)
+    keepFocusInView()
+end sub
+
+' A list taller than the screen moves so the focused row stays on it
+sub keepFocusInView()
+    if not isValid(m.pageHeight) or m.pageHeight <= 1080 or m.focusIndex < 0
+        m.page.translation = [0, 0]
         return
     end if
+    item = m.items[m.focusIndex]
+    top = m.card.translation[1] + item.translation[1]
+    bottom = top + SERVER_TILE_HEIGHT
+    shift = -m.page.translation[1]
+    if bottom - shift > 1040 then shift = bottom - 1040
+    if top - shift < 40 then shift = top - 40
+    if shift < 0 then shift = 0
+    m.page.translation = [0, -shift]
+end sub
 
-    m.serverPickerContainer.height = listHeight
-
-    addY = m.serverPickerY
-    if visibleRows > 0
-        addY = m.serverPickerY + listHeight + m.gapBelowList
+sub onErrorMessageChanged()
+    message = m.top.errorMessage
+    if m.dialog.visible
+        m.dialog.connecting = false
+        m.dialog.noticeText = message
+        return
     end if
-    m.addServerButton.translation = [40, addY]
-    m.embyConnectButton.translation = [610, addY]
+    m.statusLine.text = message
+    layoutPage()
+end sub
 
-    mainHeight = addY + m.addButtonHeight + m.mainBottomPadding
-    m.mainGroup.translation = [360, m.manualMainY]
-    m.mainGroup.height = mainHeight
+sub onFoundServerChanged()
+    if m.dialog.visible then m.dialog.foundServer = m.top.foundServer
+end sub
 
-    if isValid(m.versionLabel)
-        m.versionLabel.translation = [m.versionLabelBaseX, m.manualMainY + mainHeight + m.versionGap]
+sub openDialog()
+    m.statusLine.text = ""
+    layoutPage()
+    m.dialog.visible = true
+    m.dialog.callFunc("open")
+end sub
+
+sub closeDialog()
+    m.dialog.visible = false
+    focusItem(m.items.count() - 1)
+end sub
+
+sub onDialogConnect()
+    m.top.connectRequest = { url: m.dialog.connectAddress, fromDialog: true }
+end sub
+
+sub onDialogEmbyConnect()
+    m.dialog.visible = false
+    m.top.embyConnectRequested = true
+end sub
+
+sub onDialogContinue()
+    m.top.continueSelected = true
+end sub
+
+sub onRestoreFocus()
+    focusItem(m.items.count() - 1)
+end sub
+
+sub openTile(tile as object)
+    m.statusLine.text = ""
+    layoutPage()
+    m.top.connectRequest = { url: tile.baseUrl, fromDialog: false }
+end sub
+
+sub onHoldFired()
+    if not m.holding then return
+    m.holdFired = true
+    tile = m.items[m.focusIndex]
+    m.removeDialog.title = tr("Remove Server")
+    m.removeDialog.message = substitute(tr("Remove ""{0}"" from your servers?"), tile.title)
+    m.removeDialog.confirmLabel = tr("Remove")
+    m.removeDialog.callFunc("show")
+end sub
+
+sub onRemoveAnswered()
+    m.removeDialog.visible = false
+    if m.removeDialog.answer
+        url = m.items[m.focusIndex].baseUrl
+        m.top.forgetServer = url
+        kept = []
+        for each server in m.saved
+            if LCase(server.baseUrl) <> LCase(url) then kept.push(server)
+        end for
+        m.saved = kept
+        buildRows()
     end if
-
-    m.serverPickerContainer.visible = (visibleRows > 0)
-end sub
-
-sub applyManualLayout()
-    m.mainGroup.translation = [360, m.manualMainY]
-    m.mainGroup.height = m.manualMainHeight
-
-    if isValid(m.versionLabel)
-        m.versionLabel.translation = [m.versionLabelBaseX, 525]
-    end if
-end sub
-
-sub setDiscoveredMode()
-    m.isManualEntryMode = false
-    m.discoveredLabel.text = tr("Discovered Servers")
-
-    m.serverPickerContainer.visible = true
-    m.addServerButton.visible = true
-    m.embyConnectButton.visible = true
-    m.embyConnectButton.focus = false
-
-    m.serverUrlContainer.visible = false
-    m.serverUrlOutline.visible = false
-    m.connectButton.visible = false
-    m.cancelButton.visible = false
-
-    m.connectButton.focus = false
-    m.cancelButton.focus = false
-    m.addServerButton.focus = false
-
-    if hasServers()
-        m.serverPicker.setFocus(true)
-    else
-        m.addServerButton.setFocus(true)
-        m.addServerButton.focus = true
-    end if
-
-    updateDiscoveredLayout()
-end sub
-
-sub setManualMode()
-    m.isManualEntryMode = true
-    m.discoveredLabel.text = tr("Connect to Server")
-
-    m.serverPickerContainer.visible = false
-    m.addServerButton.visible = false
-    m.embyConnectButton.visible = false
-
-    m.serverUrlContainer.visible = true
-    m.connectButton.visible = true
-    m.cancelButton.visible = true
-
-    applyManualLayout()
-    focusServerUrlInput()
-end sub
-
-sub focusServerUrlInput()
-    m.serverUrlContainer.setFocus(true)
-    m.serverUrlOutline.visible = true
-    m.connectButton.focus = false
-    m.cancelButton.focus = false
-end sub
-
-sub focusConnectButton()
-    m.serverUrlOutline.visible = false
-    m.connectButton.setFocus(true)
-    m.connectButton.focus = true
-    m.cancelButton.focus = false
-end sub
-
-sub focusCancelButton()
-    m.serverUrlOutline.visible = false
-    m.cancelButton.setFocus(true)
-    m.cancelButton.focus = true
-    m.connectButton.focus = false
-end sub
-
-function getServerCount() as integer
-    if not isValid(m.serverPicker) then return 0
-    if not isValid(m.serverPicker.content) then return 0
-    return m.serverPicker.content.getChildCount()
-end function
-
-function hasServers() as boolean
-    return getServerCount() > 0
-end function
-
-function getSelectedServer()
-    if getServerCount() = 0 then return invalid
-
-    focusedIndex = m.serverPicker.itemFocused
-    if focusedIndex < 0 then focusedIndex = 0
-
-    return m.serverPicker.content.getChild(focusedIndex)
-end function
-
-sub triggerConnect()
-    if isValid(m.connectButton)
-        m.connectButton.buttonSelected = true
-    end if
-end sub
-
-sub onServerUrlTextChanged()
-    ' Change text color to white if there's text, otherwise grey for placeholder
-    if m.serverUrlTextbox.text <> "" and m.serverUrlTextbox.text <> invalid
-        m.serverUrlTextbox.textColor = ColorPalette.WHITE
-    else
-        m.serverUrlTextbox.textColor = ColorPalette.DARKGREY
-    end if
-end sub
-
-sub onAddServerButtonSelected()
-    if m.addServerButton.buttonSelected
-        setManualMode()
-    end if
-end sub
-
-sub onConnectButtonSelected()
-    if m.connectButton.buttonSelected and m.isManualEntryMode
-        m.top.serverUrl = m.serverUrlTextbox.text
-    end if
-end sub
-
-sub onCancelButtonSelected()
-    if m.cancelButton.buttonSelected
-        setDiscoveredMode()
-    end if
+    focusItem(m.items.count() - 1)
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
-    if not press then return true
+    focused = invalid
+    if m.focusIndex >= 0 and m.focusIndex < m.items.count() then focused = m.items[m.focusIndex]
 
-    if key = KeyCode.RIGHT
-        if not m.isManualEntryMode and m.addServerButton.hasFocus()
-            m.addServerButton.focus = false
-            m.embyConnectButton.setFocus(true)
-            m.embyConnectButton.focus = true
-            return true
+    ' A press on a saved server only opens it once OK comes back up before the hold runs out
+    if key = KeyCode.OK and not press
+        if m.holding and not m.holdFired
+            m.holdTimer.control = "stop"
+            openTile(focused)
         end if
-        if m.isManualEntryMode
-            if m.cancelButton.hasFocus()
-                focusConnectButton()
-                return true
-            end if
-        else if m.serverPicker.hasFocus()
-            selectedServer = getSelectedServer()
-            if chainLookupReturn(selectedServer, "isSavedServer", false)
-                selectedServer.itemHasDeleteFocus = true
-                return true
-            end if
-        end if
+        m.holding = false
+        return true
     end if
-
-    if key = KeyCode.LEFT
-        if not m.isManualEntryMode and m.embyConnectButton.hasFocus()
-            m.embyConnectButton.focus = false
-            m.addServerButton.setFocus(true)
-            m.addServerButton.focus = true
-            return true
-        end if
-        if m.isManualEntryMode
-            if m.connectButton.hasFocus()
-                focusCancelButton()
-                return true
-            end if
-        else if m.serverPicker.hasFocus()
-            selectedServer = getSelectedServer()
-            if isValid(selectedServer)
-                selectedServer.itemHasDeleteFocus = false
-            end if
-            return true
-        end if
-    end if
-
-    if key = KeyCode.OK
-        if m.isManualEntryMode
-            if m.serverUrlContainer.hasFocus()
-                ShowKeyboard()
-                return true
-            end if
-
-            if m.cancelButton.hasFocus()
-                setDiscoveredMode()
-                return true
-            end if
-
-            if m.connectButton.hasFocus()
-                return false
-            end if
-
-            return false
-        end if
-
-        if m.serverPicker.hasFocus()
-            selectedServer = getSelectedServer()
-            if not isValid(selectedServer) then return true
-
-            if chainLookupReturn(selectedServer, "itemHasDeleteFocus", false)
-                m.top.forgetServer = selectedServer.baseUrl
-                return true
-            end if
-
-            m.top.serverUrl = selectedServer.baseUrl
-            triggerConnect()
-            return true
-        end if
-
-        if m.addServerButton.hasFocus()
-            setManualMode()
-            return true
-        end if
-
-        return false
-    end if
-
-    if key = KeyCode.DOWN
-        if m.isManualEntryMode
-            if m.serverUrlContainer.hasFocus()
-                focusConnectButton()
-                return true
-            end if
-            return false
-        end if
-
-        if m.serverPicker.hasFocus() and hasServers() and m.serverPicker.itemFocused = getServerCount() - 1
-            m.addServerButton.setFocus(true)
-            m.addServerButton.focus = true
-            return true
-        end if
-
-        return false
-    end if
+    if not press then return false
 
     if key = KeyCode.UP
-        if m.isManualEntryMode
-            if m.connectButton.hasFocus() or m.cancelButton.hasFocus()
-                focusServerUrlInput()
-                return true
-            end if
-            return false
+        focusItem(m.focusIndex - 1)
+        return true
+    else if key = KeyCode.DOWN
+        focusItem(m.focusIndex + 1)
+        return true
+    else if key = KeyCode.LEFT or key = KeyCode.RIGHT
+        return true
+    else if key = KeyCode.OK
+        if not isValid(focused) then return true
+        if focused.isSubtype("AddServerTile")
+            openDialog()
+        else if focused.isSaved
+            m.holding = true
+            m.holdFired = false
+            m.holdTimer.control = "start"
+        else
+            openTile(focused)
         end if
-
-        if (m.addServerButton.hasFocus() or m.embyConnectButton.hasFocus()) and hasServers()
-            m.serverPicker.setFocus(true)
-            m.addServerButton.focus = false
-            m.embyConnectButton.focus = false
-            return true
-        end if
-
-        return false
-    end if
-
-    if key = KeyCode.BACK
-        if m.isManualEntryMode
-            setDiscoveredMode()
-            return true
-        end if
-
-        if m.serverPicker.hasFocus()
-            selectedServer = getSelectedServer()
-            if chainLookupReturn(selectedServer, "itemHasDeleteFocus", false)
-                selectedServer.itemHasDeleteFocus = false
-                return true
-            end if
-        end if
-
-        return false
+        return true
     end if
 
     return false
 end function
-
-sub ScanForServers()
-    m.ssdpScanner = createObject("roSGNode", "ServerDiscoveryTask")
-    m.ssdpScanner.observeField("content", "ScanForServersComplete")
-    m.ssdpScanner.control = TaskControl.RUN
-    startLoadingSpinner(false)
-    updateDiscoveredLayout()
-end sub
-
-sub ScanForServersComplete(event)
-    m.servers = event.getData()
-    if not isValid(m.servers)
-        m.servers = []
-    end if
-
-    debugFakeDiscovered = false
-    if debugFakeDiscovered
-        fakeA = {
-            name: "Fake Server A",
-            baseUrl: "http://192.168.1.101:8096",
-            iconUrl: "pkg:/images/jellyfin.webp"
-        }
-        fakeB = {
-            name: "Fake Server B",
-            baseUrl: "http://192.168.1.102:8096",
-            iconUrl: "pkg:/images/jellyfin.webp"
-        }
-
-        m.servers.push(fakeA)
-        m.servers.push(fakeB)
-    end if
-
-    items = createObject("roSGNode", "ServerData")
-    for each server in m.servers
-        server.isSavedServer = false
-        server.subtype = "ServerData"
-        items.update([server], true)
-    end for
-
-    saved = get_setting("saved_servers")
-    if isValid(saved)
-        savedServers = ParseJson(saved)
-        for each server in savedServers.serverList
-            alreadyListed = false
-            for each listed in m.servers
-                if LCase(listed.baseUrl) = server.baseUrl
-                    alreadyListed = true
-                    exit for
-                end if
-            end for
-            if alreadyListed = false
-                server.isSavedServer = true
-                items.update([server], true)
-                m.servers.push(server)
-            end if
-        end for
-    end if
-
-    m.serverPicker.content = items
-    updateDiscoveredLayout()
-    stopLoadingSpinner()
-
-    if m.top.isInFocusChain() and not m.isManualEntryMode and not m.embyConnectButton.hasFocus()
-        if hasServers()
-            m.serverPicker.setFocus(true)
-            m.addServerButton.focus = false
-            m.embyConnectButton.focus = false
-        else
-            m.addServerButton.setFocus(true)
-            m.addServerButton.focus = true
-        end if
-    end if
-end sub
-
-sub ShowKeyboard()
-    m.keyboard = tvKeyboard.Open(m.top.getScene(), {
-        title: tr("Enter the server name or ip address"),
-        text: m.serverUrlTextbox.text,
-        chips: tvKeyboard.AddressChips()
-    })
-    m.keyboard.observeField("submitted", "onKeyboardSubmitted")
-    m.keyboard.observeField("cancelled", "onKeyboardClosed")
-end sub
-
-sub onKeyboardSubmitted(event as object)
-    m.serverUrlTextbox.text = event.getRoSGNode().text
-    onKeyboardClosed(event)
-end sub
-
-sub onKeyboardClosed(_event as object)
-    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled"])
-    m.keyboard = invalid
-end sub
-
-sub clearErrorMessage()
-    m.top.errorMessage = ""
-end sub

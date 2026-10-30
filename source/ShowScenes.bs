@@ -64,6 +64,8 @@ function LoginFlow()
 
         savedUsers = getSavedUsers()
         numSavedUsers = savedUsers.count()
+        ' How many accounts Who's watching listed, which Back from sign in returns to
+        shownUsers = 0
 
         if numPubUsers > 0 or numSavedUsers > 0
             publicUsersNodes = []
@@ -103,7 +105,7 @@ function LoginFlow()
                     end if
                 end for
             end if
-            ' push all users to the user select view
+            shownUsers = publicUsersNodes.count()
             userSelected = CreateUserSelectGroup(publicUsersNodes)
             SendPerformanceBeacon("AppDialogComplete") ' Roku Performance monitoring - Dialog Closed
             if userSelected = "backPressed" or userSelected = "changeServer"
@@ -154,7 +156,7 @@ function LoginFlow()
         passwordEntry = CreateSigninGroup(userSelected)
         SendPerformanceBeacon("AppDialogComplete") ' Roku Performance monitoring - Dialog Closed
         if passwordEntry = "backPressed"
-            if numPubUsers > 0
+            if shownUsers > 0
                 goto user_select
             else
                 session.server.Delete()
@@ -301,129 +303,95 @@ function CreateServerGroup() as string
     screen = CreateObject("roSGNode", "SetServerScreen")
     m.global.sceneManager.callFunc("pushScene", screen)
     port = CreateObject("roMessagePort")
-
-    if isValid(m.global.session.server.url)
-        screen.serverUrl = m.global.session.server.url
-    end if
-
-    connectButton = screen.findNode("connectButton")
-    if isValid(connectButton)
-        connectButton.observeField("buttonSelected", port)
-    end if
-
-    screen.findNode("embyConnectButton").observeField("buttonSelected", port)
+    screen.observeField("connectRequest", port)
+    screen.observeField("embyConnectRequested", port)
+    screen.observeField("continueSelected", port)
     screen.observeField("forgetServer", port)
     screen.observeField("backPressed", port)
 
+    ' The server Add Server found, opened once Continue is chosen
+    foundName = ""
     while true
         msg = wait(0, port)
         if type(msg) = "roSGScreenEvent" and msg.isScreenClosed()
             return "false"
         else if isNodeEvent(msg, "backPressed")
             return "backPressed"
-        else if type(msg) = "roSGNodeEvent"
-            node = msg.getNode()
-
-            if node = "embyConnectButton"
-                if CreateEmbyConnectGroup()
-                    m.embyConnectAuthenticated = true
-                    screen.visible = false
-                    return m.global.session.server.name
-                end if
-            else if node = "connectButton"
-                m.scene.isLoading = true
-
-                serverUrl = inferServerUrl(screen.serverUrl)
-
-                isConnected = session.server.UpdateURL(serverUrl)
-                serverInfoResult = invalid
-                if isConnected
-                    set_setting("server", serverUrl)
-                    serverInfoResult = ServerInfo()
-                    'If this is a different server from what we know, reset username/password setting
-                    if m.global.session.server.url <> serverUrl
-                        set_setting("username", "")
-                        set_setting("password", "")
-                    end if
-                    set_setting("server", serverUrl)
-                end if
-                m.scene.isLoading = false
-
-                if isConnected = false or serverInfoResult = invalid
-                    ' Maybe don't unset setting, but offer as a prompt
-                    ' Server not found, is it online? New values / Retry
-                    screen.errorMessage = tr("Server not found, is it online?")
-                    SignOut(false)
-                else
-
-                    if isValid(serverInfoResult.Error) and serverInfoResult.Error
-                        ' If server redirected received, update the URL
-                        if isValid(serverInfoResult.UpdatedUrl)
-                            serverUrl = serverInfoResult.UpdatedUrl
-
-                            isConnected = session.server.UpdateURL(serverUrl)
-                            if isConnected
-                                set_setting("server", serverUrl)
-                                screen.visible = false
-                                return ""
-                            end if
-                        end if
-                        ' Display Error Message to user
-                        message = tr("Error: ")
-                        if isValid(serverInfoResult.ErrorCode)
-                            message = message + "[" + serverInfoResult.ErrorCode.toStr() + "] "
-                        end if
-                        screen.errorMessage = message + tr(serverInfoResult.ErrorMessage)
-                        SignOut(false)
-                    else
-                        screen.visible = false
-                        if isValid(serverInfoResult.serverName)
-                            return serverInfoResult.ServerName
-                        else
-                            return "Connected"
-                        end if
-                    end if
-                end if
-            else if msg.getField() = "forgetServer"
-                serverPicker = screen.findNode("serverPicker")
-                itemToDelete = invalid
-
-                if isValid(serverPicker) and isValid(serverPicker.content)
-                    childCount = serverPicker.content.getChildCount()
-                    if serverPicker.itemFocused >= 0 and serverPicker.itemFocused < childCount
-                        itemToDelete = serverPicker.content.getChild(serverPicker.itemFocused)
-                    end if
-                end if
-
-                urlToDelete = msg.GetData()
-                if isValid(urlToDelete)
-                    DeleteFromServerList(urlToDelete)
-
-                    if isValid(itemToDelete) and isValid(serverPicker) and isValid(serverPicker.content)
-                        serverPicker.content.removeChild(itemToDelete)
-                    end if
-
-                    hasRemainingServers = false
-                    if isValid(serverPicker) and isValid(serverPicker.content)
-                        hasRemainingServers = serverPicker.content.getChildCount() > 0
-                    end if
-
-                    if hasRemainingServers
-                        serverPicker.setFocus(true)
-                    else
-                        addServerButton = screen.findNode("addServerButton")
-                        if isValid(addServerButton)
-                            addServerButton.setFocus(true)
-                        end if
-                    end if
-                end if
+        else if isNodeEvent(msg, "embyConnectRequested")
+            if CreateEmbyConnectGroup()
+                m.embyConnectAuthenticated = true
+                screen.visible = false
+                return m.global.session.server.name
+            end if
+            screen.restoreFocus = true
+        else if isNodeEvent(msg, "continueSelected")
+            screen.visible = false
+            return foundName
+        else if isNodeEvent(msg, "forgetServer")
+            DeleteFromServerList(msg.getData())
+        else if isNodeEvent(msg, "connectRequest")
+            request = msg.getData()
+            result = probeServer(request.url)
+            if result.redirected
+                screen.visible = false
+                return ""
+            else if not result.ok
+                screen.errorMessage = result.message
+            else if request.fromDialog = true
+                foundName = result.name
+                serverType = "jellyfin"
+                if isEmbyServer() then serverType = "emby"
+                screen.foundServer = { name: result.name, serverType: serverType, version: m.global.session.server.version ?? "", url: m.global.session.server.url }
+            else
+                screen.visible = false
+                return result.name
             end if
         end if
     end while
 
-    ' Just hide it when done, in case we need to come back
-    screen.visible = false
     return ""
+end function
+
+' Connects to an address the way the server list and Add Server both do, following a redirect.
+' Returns ok, the server's name, whether it moved to a redirect, and why it failed.
+function probeServer(address as string) as object
+    m.scene.isLoading = true
+    serverUrl = inferServerUrl(address)
+    isConnected = session.server.UpdateURL(serverUrl)
+    serverInfoResult = invalid
+    if isConnected
+        set_setting("server", serverUrl)
+        serverInfoResult = ServerInfo()
+        ' A different server from the one known doesn't keep the old username and password
+        if m.global.session.server.url <> serverUrl
+            set_setting("username", "")
+            set_setting("password", "")
+        end if
+    end if
+    m.scene.isLoading = false
+
+    if isConnected = false or serverInfoResult = invalid
+        SignOut(false)
+        return { ok: false, redirected: false, message: tr("Check the address and port, and that the server is running.") }
+    end if
+
+    if isValid(serverInfoResult.Error) and serverInfoResult.Error
+        if isValid(serverInfoResult.UpdatedUrl)
+            serverUrl = serverInfoResult.UpdatedUrl
+            if session.server.UpdateURL(serverUrl)
+                set_setting("server", serverUrl)
+                return { ok: true, redirected: true, name: "", message: "" }
+            end if
+        end if
+        message = tr(serverInfoResult.ErrorMessage ?? "")
+        if isValid(serverInfoResult.ErrorCode) then message = "[" + serverInfoResult.ErrorCode.toStr() + "] " + message
+        SignOut(false)
+        return { ok: false, redirected: false, message: message }
+    end if
+
+    name = "Connected"
+    if isValid(serverInfoResult.ServerName) then name = serverInfoResult.ServerName
+    return { ok: true, redirected: false, name: name, message: "" }
 end function
 
 function CreateUserSelectGroup(users = [])
@@ -435,8 +403,7 @@ function CreateUserSelectGroup(users = [])
     group.findNode("userRow").observeField("userSelected", port)
     group.observeField("changeServer", port)
 
-    addUserButton = group.findNode("addUser")
-    addUserButton.observeField("buttonSelected", port)
+    group.observeField("addUserSelected", port)
 
     group.observeField("backPressed", port)
 
@@ -451,7 +418,7 @@ function CreateUserSelectGroup(users = [])
             return "changeServer"
         else if type(msg) = "roSGNodeEvent" and msg.getField() = "userSelected"
             return msg.GetData()
-        else if type(msg) = "roSGNodeEvent" and LCase(msg.getNode()) = "adduser"
+        else if isNodeEvent(msg, "addUserSelected")
             session.user.Update("id", "")
             return ""
         end if
@@ -471,17 +438,7 @@ function CreateSigninGroup(user = "")
     port = CreateObject("roMessagePort")
 
     group.observeField("quickConnectAuthenticated", port)
-
-    quickConnect = group.findNode("quickConnect")
-    quickConnect.observeField("buttonSelected", port)
-
-    button = group.findNode("submit")
-    button.observeField("buttonSelected", port)
-
-    config = group.findNode("configOptions")
-    username = config.content.getChild(0)
-    password = config.content.getChild(1)
-
+    group.observeField("submitSelected", port)
     group.observeField("backPressed", port)
 
     while true
@@ -493,45 +450,25 @@ function CreateSigninGroup(user = "")
             group.unobserveField("backPressed")
             group.backPressed = false
             return "backPressed"
-        else if type(msg) = "roSGNodeEvent"
-            node = msg.getNode()
-            if isStringEqual(node, "submit")
-                startLoadingSpinner()
-                ' Validate credentials
-                activeUser = get_token(username.value, password.value)
-                if isValid(activeUser)
-                    if should_save_credentials()
-                        session.user.Login(activeUser, true)
-                        set_user_setting("token", activeUser.token)
-                        set_user_setting("username", username.value)
-                    else
-                        session.user.Login(activeUser)
-                    end if
-                    return "true"
-                end if
-                stopLoadingSpinner()
-                group.alert = m.loginError
-            else if isStringEqual(node, "quickConnect")
-                if isEmbyServer()
-                    if CreateEmbyConnectGroup()
-                        SaveServerList()
-                        return "true"
-                    end if
-                    continue while
-                end if
-                json = initQuickConnect()
-                if json = invalid
-                    m.global.sceneManager.callFunc("standardDialog", "Quick Connect Error", { data: ["<p>" + tr("There was an error detecting Quick Connect. Quick Connect is disabled on your server.") + "</p>"] })
+        else if isNodeEvent(msg, "submitSelected")
+            startLoadingSpinner()
+            username = group.username
+            password = group.password
+            activeUser = get_token(username, password)
+            if isValid(activeUser)
+                if should_save_credentials()
+                    session.user.Login(activeUser, true)
+                    set_user_setting("token", activeUser.token)
+                    set_user_setting("username", username)
                 else
-                    group.quickConnectJson = json
-                    group.showQuickConnect = true
+                    session.user.Login(activeUser)
                 end if
-            else if msg.getField() = "quickConnectAuthenticated"
-                authenticated = msg.getData()
-                if authenticated
-                    return "true"
-                end if
+                return "true"
             end if
+            stopLoadingSpinner()
+            group.alert = m.loginError
+        else if isNodeEvent(msg, "quickConnectAuthenticated") and msg.getData() = true
+            return "true"
         end if
     end while
 

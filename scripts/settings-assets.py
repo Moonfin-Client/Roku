@@ -41,6 +41,8 @@ EXTRA_GLYPHS = [
     'toggle_on', 'toggle_off', 'radio_button_checked', 'radio_button_unchecked', 'check_circle',
     'check_circle_outline', 'cancel_outlined', 'arrow_drop_down', 'autorenew', 'data_usage', 'block',
     'highlight_off', 'close',
+    # The server, account and sign in screens
+    'arrow_back', 'error', 'language', 'person',
 ]
 
 

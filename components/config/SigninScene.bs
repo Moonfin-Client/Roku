@@ -1,140 +1,117 @@
 import "pkg:/source/api/userauth.bs"
 import "pkg:/source/enums/KeyCode.bs"
-import "pkg:/source/enums/String.bs"
 import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/loginStyle.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/quickConnectUrl.bs"
+import "pkg:/source/utils/tvKeyboard.bs"
 
 ' How much air is left between the form and the keyboard, and how far up the
 ' form is allowed to go before it would run off the top
 const SIGNIN_KEYBOARD_GAP = 24
 const SIGNIN_MIN_TOP = 20
 
-'' Five minutes of polling, which outlasts the code the server hands out
+' Five minutes of polling, which outlasts the code the server hands out
 const QUICK_CONNECT_MAX_ATTEMPTS = 100
 
-' With the QR beside the code the sign in column moves left to make room for it, and the Back
-' button gives up this much width to stay inside that column
-const QUICK_CONNECT_QR_SHIFT = 190
-const QUICK_CONNECT_QR_BACK_NARROWING = 380
+const SIGNIN_PAD = 54
+const SIGNIN_COLUMN = 893
+' The sign in column narrows beside the QR, which sits this far to its right
+const SIGNIN_QR_COLUMN = 494
+const SIGNIN_QR_GAP = 67
+const SIGNIN_QR_SIZE = 367
+const SIGNIN_LOGO_HEIGHT = 107
+const SIGNIN_PILL_MIN = 200
+const SIGNIN_DIGIT_WIDTH = 62
 
 sub init()
     m.isConnectAccount = LCase(m.top.subtype()) = "embyconnectscene"
-    m.top.setFocus(true)
     m.top.optionsAvailable = false
 
+    m.signInGroup = m.top.findNode("signInGroup")
+    m.logo = m.top.findNode("logo")
+    m.card = m.top.findNode("card")
+    m.cardFill = m.top.findNode("cardFill")
+    m.cardBorder = m.top.findNode("cardBorder")
+    m.column = m.top.findNode("column")
+    m.signInTitle = m.top.findNode("signInTitle")
     m.connectingTo = m.top.findNode("connectingTo")
-
-    m.submit = m.top.findNode("submit")
     m.quickConnect = m.top.findNode("quickConnect")
     m.passwordTab = m.top.findNode("passwordTab")
-    m.passwordTab.observeField("buttonSelected", "hideQuickConnect")
-    m.back = m.top.findNode("back")
-    m.back.observeField("buttonSelected", "onBackPressed")
-
-    m.signInGroup = m.top.findNode("signInGroup")
-    m.signInHome = m.signInGroup.translation
-
-    m.errorContainer = m.top.findNode("errorContainer")
-    m.errorContainer.color = "#CC0000"
-
-    m.config = m.top.findNode("configOptions")
-    m.config.focusBitmapBlendColor = "0x00A4DCFF" ' Blue focus
-
-    username_field = CreateObject("roSGNode", "ConfigData")
-    username_field.label = m.isConnectAccount ? tr("Emby username or email") : tr("Username")
-    username_field.type = "string"
-    username_field.value = string.EMPTY
-
-    password_field = CreateObject("roSGNode", "ConfigData")
-    password_field.label = tr("Password")
-    password_field.type = "password"
-    registryPassword = get_setting("password")
-    if not m.isConnectAccount and isValid(registryPassword)
-        password_field.value = registryPassword
-    end if
-
-    items = [username_field, password_field]
-    m.config.configItems = items
-
     m.quickConnectGroup = m.top.findNode("quickConnectGroup")
-    m.quickConnectCode = m.top.findNode("quickConnectCode")
+    m.qcInstruction = m.top.findNode("qcInstruction")
+    m.codeDigits = m.top.findNode("codeDigits")
+    m.codeSpinner = m.top.findNode("codeSpinner")
+    m.qcSpinner = m.top.findNode("qcSpinner")
     m.quickConnectStatus = m.top.findNode("quickConnectStatus")
-    m.quickConnectBack = m.top.findNode("quickConnectBack")
+    m.usernameField = m.top.findNode("usernameField")
+    m.passwordField = m.top.findNode("passwordField")
+    m.errorLine = m.top.findNode("errorLine")
+    m.back = m.top.findNode("back")
+    m.submit = m.top.findNode("submit")
+    m.qrGroup = m.top.findNode("qrGroup")
+    m.quickConnectQr = m.top.findNode("quickConnectQr")
+
+    m.signInTitle.font.size = 40
+    m.connectingTo.font.size = 20
+    m.qcInstruction.font.size = 23
+    m.qcInstruction.text = tr("Enter this code on your server's web dashboard:")
+    m.quickConnectStatus.font.size = 20
+    m.quickConnectStatus.text = tr("Waiting for authorization...")
+    m.errorLine.font.size = 23
+    qrCaption = m.top.findNode("quickConnectQrCaption")
+    qrCaption.font.size = 20
+    qrCaption.text = tr("Or scan this with a phone that's signed in to your server")
+    m.codeSpinner.poster.width = 60
+    m.codeSpinner.poster.height = 60
+    m.qcSpinner.poster.width = 46
+    m.qcSpinner.poster.height = 46
+
+    m.quickConnect.text = tr("Quick Connect")
+    m.passwordTab.text = tr("Password")
+    m.back.text = tr("Back")
+    m.submit.text = tr("Sign In")
+    m.usernameField.placeholder = m.isConnectAccount ? tr("Email or Username") : tr("Username")
+    m.passwordField.placeholder = tr("Password")
+    if not m.isConnectAccount
+        registryPassword = get_setting("password")
+        if isValid(registryPassword) then m.passwordField.value = registryPassword
+    end if
 
     m.quickConnectTimer = m.top.findNode("quickConnectTimer")
     m.quickConnectTimer.observeField("fire", "quickConnectStatus")
 
-    m.quickConnectGroup.visible = false
-    m.quickConnectBack.observeField("buttonSelected", "onBackPressed")
+    m.showPills = showsQuickConnect()
+    m.namedUser = false
+    m.focusId = ""
+    m.mode = "form"
 
-    for each button in [m.submit, m.back, m.quickConnect, m.passwordTab, m.quickConnectBack]
-        loginStyle.ApplyButton(button)
-    end for
-
-    initQuickConnectQr()
     initServerName()
-    checkQuickConnectEnabled()
-end sub
-
-' Remembers where the sign in column sits by default, so the QR layout is always an offset from
-' that and leaving it puts everything back exactly where it was
-sub initQuickConnectQr()
-    m.signInTitle = m.top.findNode("signInTitle")
-    m.quickConnectQr = m.top.findNode("quickConnectQr")
-    m.quickConnectQrCaption = m.top.findNode("quickConnectQrCaption")
-    m.quickConnectQrCaption.text = tr("Or scan this with a phone that's signed in to your server")
-    m.qrHome = {
-        title: m.signInTitle.translation,
-        connecting: m.connectingTo.translation,
-        quickConnect: m.quickConnect.translation,
-        passwordTab: m.passwordTab.translation,
-        group: m.quickConnectGroup.translation,
-        back: m.quickConnectBack.translation,
-        backWidth: m.quickConnectBack.width
-    }
-end sub
-
-sub setQuickConnectQrLayout(beside as boolean)
-    shift = beside ? QUICK_CONNECT_QR_SHIFT : 0
-    m.signInTitle.translation = [m.qrHome.title[0] - shift, m.qrHome.title[1]]
-    m.connectingTo.translation = [m.qrHome.connecting[0] - shift, m.qrHome.connecting[1]]
-    m.quickConnect.translation = [m.qrHome.quickConnect[0] - shift, m.qrHome.quickConnect[1]]
-    m.passwordTab.translation = [m.qrHome.passwordTab[0] - shift, m.qrHome.passwordTab[1]]
-    m.quickConnectGroup.translation = [m.qrHome.group[0] - shift, m.qrHome.group[1]]
-    if beside
-        m.quickConnectBack.width = m.qrHome.backWidth - QUICK_CONNECT_QR_BACK_NARROWING
-        m.quickConnectBack.translation = [m.qrHome.back[0] + QUICK_CONNECT_QR_BACK_NARROWING / 2, m.qrHome.back[1]]
-    else
-        m.quickConnectBack.width = m.qrHome.backWidth
-        m.quickConnectBack.translation = m.qrHome.back
+    if m.showPills
+        m.mode = "qc"
+        requestQuickConnect()
     end if
-    m.quickConnectQr.visible = beside
-    m.quickConnectQrCaption.visible = beside
+    layout()
+    if m.mode = "form" then focusOn(firstField()) else focusOn("back")
 end sub
 
-' The QR goes up with the code. It stays away when there is no link to make from this server's
-' address.
-sub showQuickConnectQr(code as dynamic)
-    link = quickConnectUrl.Approval(get_setting("server"), code)
-    setQuickConnectQrLayout(link <> "")
-    if link <> "" then m.quickConnectQr.text = link
-end sub
+' Emby has no Quick Connect here, so it and Emby Connect go straight to the password form
+function showsQuickConnect() as boolean
+    return not m.isConnectAccount and not isEmbyServer()
+end function
 
 sub initServerName()
     if m.isConnectAccount
-        m.top.findNode("signInTitle").text = "Emby Connect"
-        m.connectingTo.text = tr("Sign in with your Emby account to find your servers.")
+        m.signInTitle.text = tr("Emby Connect")
+        m.connectingTo.text = tr("Sign in with your Emby Connect account")
         return
     end if
+    m.signInTitle.text = tr("Sign In")
     serverName = m.global.session.server.name
     if not isValidAndNotEmpty(serverName)
         serverUrl = get_setting("server") ?? ""
-        if serverUrl = ""
-            m.connectingTo.text = tr("")
-            return
-        end if
+        if serverUrl = "" then return
 
         serverName = serverUrl.replace("https://", "").replace("http://", "")
         colonPos = serverName.instr(":")
@@ -144,22 +121,179 @@ sub initServerName()
         if slashPos >= 0 and slashPos < endPos then endPos = slashPos
         serverName = serverName.left(endPos)
     end if
-
-    m.connectingTo.text = tr("Connecting to ") + serverName
+    m.connectingTo.text = substitute(tr("Connecting to {0}"), serverName)
 end sub
 
-sub checkQuickConnectEnabled()
-    if m.isConnectAccount = true
-        m.quickConnect.visible = false
-        m.passwordTab.visible = false
-        return
+' A picked account only asks for its password
+sub onUserChange()
+    if m.isConnectAccount then return
+    name = m.top.user
+    if name = "" and isValid(get_setting("username")) then name = get_setting("username")
+    m.usernameField.value = name
+    m.top.username = name
+    m.namedUser = m.top.user <> ""
+    layout()
+    if m.mode = "form" then focusOn(firstField())
+end sub
+
+sub onPasswordSet()
+    if m.passwordField.value <> m.top.password then m.passwordField.value = m.top.password
+end sub
+
+sub onAlertChange()
+    m.errorLine.text = m.top.alert
+    layout()
+end sub
+
+function firstField() as string
+    if m.namedUser then return "password"
+    return "username"
+end function
+
+' Every part laid out for the view showing: the Quick Connect code with its QR beside it, or the form
+sub layout()
+    qrShown = m.mode = "qc" and m.qrGroup.visible
+    columnWidth = SIGNIN_COLUMN
+    if qrShown then columnWidth = SIGNIN_QR_COLUMN
+    cardWidth = columnWidth + SIGNIN_PAD * 2
+    if qrShown then cardWidth += SIGNIN_QR_GAP + SIGNIN_QR_SIZE
+
+    for each label in [m.signInTitle, m.connectingTo, m.qcInstruction, m.quickConnectStatus, m.errorLine]
+        label.width = columnWidth
+    end for
+    m.usernameField.width = columnWidth
+    m.passwordField.width = columnWidth
+
+    m.signInTitle.translation = [0, SIGNIN_PAD]
+    m.connectingTo.translation = [0, SIGNIN_PAD + 33 + 7]
+    y = SIGNIN_PAD + 33 + 7 + 33 + 40
+
+    m.quickConnect.visible = m.showPills
+    m.passwordTab.visible = m.showPills
+    if m.showPills
+        for each pill in [m.quickConnect, m.passwordTab]
+            pill.width = 0
+            if pill.drawnWidth < SIGNIN_PILL_MIN then pill.width = SIGNIN_PILL_MIN
+        end for
+        left = (columnWidth - m.quickConnect.drawnWidth - 20 - m.passwordTab.drawnWidth) / 2
+        m.quickConnect.translation = [left, y]
+        m.passwordTab.translation = [left + m.quickConnect.drawnWidth + 20, y]
+        y += 72 + 40
     end if
-    if isEmbyServer()
-        m.quickConnect.text = "Emby Connect"
-        m.quickConnect.visible = true
-        m.passwordTab.visible = false
-        return
+
+    inQuickConnect = m.mode = "qc"
+    m.quickConnectGroup.visible = inQuickConnect
+    m.usernameField.visible = not inQuickConnect and not m.namedUser
+    m.passwordField.visible = not inQuickConnect
+    m.submit.visible = not inQuickConnect
+
+    if inQuickConnect
+        m.qcInstruction.translation = [0, y]
+        y += 33 + 33
+        layoutCode(columnWidth, y)
+        y += 33 + 33
+        m.qcSpinner.translation = [(columnWidth - 46) / 2, y]
+        y += 46 + 20
+        m.quickConnectStatus.translation = [0, y]
+        y += 33 + 40
+    else
+        if m.usernameField.visible
+            m.usernameField.translation = [0, y]
+            y += m.usernameField.height + 27
+        end if
+        m.passwordField.translation = [0, y]
+        y += m.passwordField.height
     end if
+
+    m.errorLine.visible = m.top.alert <> ""
+    if m.errorLine.visible
+        y += 20
+        m.errorLine.translation = [0, y]
+        y += m.errorLine.boundingRect().height
+    end if
+    if not inQuickConnect then y += 40
+
+    if inQuickConnect
+        m.back.translation = [(columnWidth - m.back.drawnWidth) / 2, y]
+    else
+        left = (columnWidth - m.back.drawnWidth - 20 - m.submit.drawnWidth) / 2
+        m.back.translation = [left, y]
+        m.submit.translation = [left + m.back.drawnWidth + 20, y]
+    end if
+    cardHeight = y + 79 + SIGNIN_PAD
+
+    if qrShown
+        qrHeight = SIGNIN_QR_SIZE + 13 + m.top.findNode("quickConnectQrCaption").boundingRect().height
+        m.qrGroup.translation = [SIGNIN_PAD + columnWidth + SIGNIN_QR_GAP, SIGNIN_PAD + (cardHeight - SIGNIN_PAD * 2 - qrHeight) / 2]
+    end if
+
+    m.cardFill.width = cardWidth
+    m.cardBorder.width = cardWidth
+    m.cardFill.height = cardHeight
+    m.cardBorder.height = cardHeight
+    top = loginStyle.ColumnTop(27 + SIGNIN_LOGO_HEIGHT + 46 + cardHeight + 27)
+    m.logo.translation = [(1920 - 474) / 2, top + 27]
+    m.card.translation = [(1920 - cardWidth) / 2, top + 27 + SIGNIN_LOGO_HEIGHT + 46]
+    m.cardHeight = cardHeight
+end sub
+
+' The code is drawn a digit at a time, evenly spaced, with a gap between its halves. Until it
+' arrives a spinner holds its place.
+sub layoutCode(columnWidth as float, y as float)
+    m.codeDigits.removeChildrenIndex(m.codeDigits.getChildCount(), 0)
+    code = ""
+    json = m.top.quickConnectJson
+    if isValid(json) and isValid(json.Code) then code = json.Code
+    m.codeSpinner.visible = code = ""
+    m.codeSpinner.translation = [(columnWidth - 60) / 2, y - 14]
+    if code = "" then return
+
+    shown = code
+    if Len(code) = 6 then shown = Left(code, 3) + " " + Mid(code, 4)
+    left = (columnWidth - Len(shown) * SIGNIN_DIGIT_WIDTH) / 2
+    for i = 1 to Len(shown)
+        digit = m.codeDigits.createChild("Label")
+        digit.font = "font:LargeBoldSystemFont"
+        digit.font.size = 80
+        digit.color = loginStyle.ACCENT_HEX
+        digit.text = Mid(shown, i, 1)
+        digit.width = SIGNIN_DIGIT_WIDTH
+        digit.height = 33
+        digit.horizAlign = "center"
+        digit.vertAlign = "center"
+        digit.translation = [left + (i - 1) * SIGNIN_DIGIT_WIDTH, y]
+    end for
+end sub
+
+' What has the remote, drawn the way that piece looks while it does
+sub focusOn(id as string)
+    m.focusId = id
+    m.quickConnect.highlighted = id = "qc"
+    m.passwordTab.highlighted = id = "pw"
+    m.usernameField.highlighted = id = "username"
+    m.passwordField.highlighted = id = "password"
+    m.back.highlighted = id = "back"
+    m.submit.highlighted = id = "submit"
+    ' Emby Connect can't sign in until both fields have something in them
+    m.submit.enabled = not m.isConnectAccount or (m.usernameField.value <> "" and m.passwordField.value <> "")
+    m.quickConnect.style = m.mode = "qc" ? "selected" : "outline"
+    m.passwordTab.style = m.mode = "form" ? "selected" : "outline"
+    m.top.setFocus(true)
+    layout()
+end sub
+
+sub showForm()
+    stopQuickConnect()
+    m.mode = "form"
+    m.qrGroup.visible = false
+    focusOn(firstField())
+end sub
+
+' Asks the server for a code. A server with Quick Connect switched off says so and leaves the form.
+sub requestQuickConnect()
+    m.mode = "qc"
+    m.top.quickConnectJson = {}
+    m.qrGroup.visible = false
     ' Runs in a task because roUrlTransfer can't be created on the render thread.
     m.quickConnectInitTask = CreateObject("roSGNode", "QuickConnect")
     m.quickConnectInitTask.mode = "initiate"
@@ -170,12 +304,21 @@ end sub
 sub onQuickConnectInitiated(event as object)
     data = event.getData()
     clearQuickConnectInitTask()
+    if m.mode <> "qc" then return
 
-    if not isValid(data) then return
-    if data.enabled <> true then return
+    if not isValid(data) or data.enabled <> true
+        m.top.alert = tr("Quick Connect is disabled")
+        showForm()
+        return
+    end if
 
     m.top.quickConnectJson = data.json
-    showQuickConnect()
+    link = quickConnectUrl.Approval(get_setting("server"), data.json.Code)
+    m.qrGroup.visible = link <> ""
+    if link <> "" then m.quickConnectQr.text = link
+    m.quickConnectAttempts = 0
+    m.quickConnectTimer.control = "start"
+    layout()
 end sub
 
 sub clearQuickConnectInitTask()
@@ -186,82 +329,15 @@ sub clearQuickConnectInitTask()
     m.quickConnectInitTask = invalid
 end sub
 
-sub onAlertChange()
-    m.errorContainer.visible = isValidAndNotEmpty(m.top.alert)
-
-    errorMessage = m.top.findNode("errorMessage")
-    errorMessage.text = m.top.alert
-
-    ' Some messages run to several lines, so the box grows to hold them instead of covering the first.
-    textHeight = errorMessage.boundingRect().height
-    m.errorContainer.height = textHeight + 26
-    if m.errorContainer.height < 60 then m.errorContainer.height = 60
-end sub
-
-sub onUserChange()
-    if m.isConnectAccount = true then return
-    username_field = m.config.content.getChild(0)
-
-    if isStringEqual(m.top.user, string.EMPTY) and isValid(get_setting("username"))
-        username_field.value = get_setting("username")
-    else
-        username_field.value = m.top.user
-    end if
-
-    ' Username has been provided, focus on password field
-    if not isStringEqual(username_field.value, string.EMPTY)
-        m.config.jumpToItem = 1
-    end if
-end sub
-
-sub showQuickConnect()
-    if m.isConnectAccount = true or isEmbyServer() then return
-    m.top.findNode("signInFormContainer").visible = false
-    m.quickConnectGroup.visible = true
-
-    m.config.setFocus(false)
-    m.config.jumpToItem = -1
-
-    loginStyle.SetTabSelected(m.quickConnect, true)
-    loginStyle.SetTabSelected(m.passwordTab, false)
-
-    json = m.top.quickConnectJson
-    if not isValid(json)
-        m.top.alert = tr("Quick Connect not available.")
-        hideQuickConnect()
-        return
-    end if
-
-    m.quickConnectCode.text = json.Code
-    showQuickConnectQr(json.Code)
-
-    m.quickConnectAttempts = 0
-    m.quickConnectTimer.control = "start"
-
-    m.top.lastFocus = m.quickConnectBack
-    m.quickConnectBack.setFocus(true)
-end sub
-
-sub hideQuickConnect()
-    if isValid(m.quickConnectTimer)
-        m.quickConnectTimer.control = "stop"
-    end if
+' The code request stops once the viewer leaves this view
+sub stopQuickConnect()
+    if isValid(m.quickConnectTimer) then m.quickConnectTimer.control = "stop"
     if isValid(m.checkTask)
         m.checkTask.control = "stop"
         m.checkTask.unobserveField("authenticated")
         m.checkTask = invalid
     end if
     clearQuickConnectInitTask()
-
-    m.top.showQuickConnect = false
-    setQuickConnectQrLayout(false)
-    m.quickConnectGroup.visible = false
-    m.top.findNode("signInFormContainer").visible = true
-
-    loginStyle.SetTabSelected(m.passwordTab, true)
-    loginStyle.SetTabSelected(m.quickConnect, false)
-
-    m.submit.setFocus(true)
 end sub
 
 sub onQuickConnectAuthenticated()
@@ -289,7 +365,7 @@ sub onQuickConnectAuthenticated()
 
     if authenticated = -2
         m.top.alert = signInRefusedMessage()
-        hideQuickConnect()
+        showForm()
         return
     end if
 
@@ -298,7 +374,7 @@ sub onQuickConnectAuthenticated()
     m.quickConnectAttempts = m.quickConnectAttempts + 1
     if m.quickConnectAttempts >= QUICK_CONNECT_MAX_ATTEMPTS
         m.top.alert = tr("The sign in request timed out. Try again.")
-        hideQuickConnect()
+        showForm()
         return
     end if
 
@@ -314,154 +390,132 @@ sub quickConnectStatus()
     m.checkTask.control = "run"
 end sub
 
-sub onShowQuickConnect()
-    showQuickConnect()
+sub openKeyboard(field as string)
+    m.keyboardField = field
+    node = m.usernameField
+    if field = "password" then node = m.passwordField
+    m.keyboard = tvKeyboard.Open(m.top.getScene(), {
+        title: node.placeholder,
+        text: node.value,
+        secure: field = "password",
+        chips: m.isConnectAccount and field = "username" ? tvKeyboard.EmailChips() : []
+    })
+    m.keyboard.observeField("submitted", "onKeyboardSubmitted")
+    m.keyboard.observeField("cancelled", "onKeyboardClosed")
+    m.keyboard.observeField("visible", "onKeyboardVisibleChanged")
 end sub
 
-sub onBackPressed()
-    m.top.backPressed = true
+' Done on the username moves on to the password, and Done on the password signs in
+sub onKeyboardSubmitted(event as object)
+    text = event.getRoSGNode().text
+    field = m.keyboardField
+    onKeyboardClosed(event)
+    if field = "username"
+        m.usernameField.value = text
+        m.top.username = text
+        focusOn("password")
+    else
+        m.passwordField.value = text
+        m.top.password = text
+        focusOn("submit")
+        if m.submit.enabled then m.top.submitSelected = true
+    end if
+end sub
+
+sub onKeyboardClosed(_event as object)
+    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled", "visible"])
+    m.keyboard = invalid
+    m.signInGroup.translation = [0, 0]
+end sub
+
+' The keyboard covers the foot of the screen, so the form lifts far enough to keep the field
+' being filled in sight and settles back once it closes
+sub onKeyboardVisibleChanged()
+    if not isValid(m.keyboard) or not m.keyboard.visible
+        m.signInGroup.translation = [0, 0]
+        return
+    end if
+
+    bottom = m.card.translation[1] + m.cardHeight + SIGNIN_KEYBOARD_GAP
+    overlap = bottom - m.keyboard.panelTop
+    if overlap <= 0 then return
+    lift = overlap
+    if m.card.translation[1] - lift < SIGNIN_MIN_TOP then lift = m.card.translation[1] - SIGNIN_MIN_TOP
+    m.signInGroup.translation = [0, -lift]
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
-    ' Returns true if user navigates to a new focusable element
     if not press then return false
 
-    if m.quickConnectGroup.visible
-        if key = KeyCode.BACK
-            m.top.backPressed = true
-            return true
-        end if
-
-        if key = KeyCode.UP and m.quickConnectBack.hasFocus()
-            m.quickConnectBack.focus = false
-            m.quickConnect.setFocus(true)
-            m.quickConnect.focus = true
-            setLastFocus(m.quickConnect)
-            return true
-        end if
-
-        if key = KeyCode.DOWN and (m.quickConnect.hasFocus() or m.passwordTab.hasFocus())
-            if m.quickConnect.hasFocus() then m.quickConnect.focus = false
-            if m.passwordTab.hasFocus() then m.passwordTab.focus = false
-            m.quickConnectBack.setFocus(true)
-            m.quickConnectBack.focus = true
-            setLastFocus(m.quickConnectBack)
-            return true
-        end if
-    end if
-
-    list = m.top.findNode("configOptions")
-
     if key = KeyCode.BACK
+        stopQuickConnect()
         m.top.backPressed = true
         return true
     end if
 
-    if key = KeyCode.DOWN and list.isInFocusChain()
-        limit = list.content.getChildren(-1, 0).count() - 1
-        if limit = list.itemFocused
-            m.submit.setFocus(true)
-            m.submit.focus = true
-            setLastFocus(m.submit)
-            return true
+    id = m.focusId
+    if m.mode = "qc"
+        if key = KeyCode.UP or key = KeyCode.LEFT
+            focusOn("qc")
+        else if key = KeyCode.RIGHT
+            if id = "back" or id = "qc" then focusOn("pw")
+        else if key = KeyCode.DOWN
+            focusOn("back")
+        else if key = KeyCode.OK
+            if id = "pw"
+                m.top.alert = ""
+                showForm()
+            else if id = "back"
+                stopQuickConnect()
+                m.top.backPressed = true
+            end if
         end if
-        return false
-    end if
-
-    if key = KeyCode.UP and m.submit.hasFocus()
-        m.submit.focus = false
-        list.setFocus(true)
-        setLastFocus(list)
         return true
     end if
 
-    if key = KeyCode.UP and list.isInFocusChain()
-        if not m.quickConnect.visible then return true
-        m.quickConnect.setFocus(true)
-        m.quickConnect.focus = true
-        setLastFocus(m.quickConnect)
-        return true
+    fields = []
+    if not m.namedUser then fields.push("username")
+    fields.push("password")
+    if key = KeyCode.UP
+        if id = "back" or id = "submit"
+            focusOn(fields.peek())
+        else if id = "password" and not m.namedUser
+            focusOn("username")
+        else if (id = "username" or id = "password") and m.showPills
+            focusOn("qc")
+        end if
+    else if key = KeyCode.DOWN
+        if id = "qc" or id = "pw"
+            focusOn(fields[0])
+        else if id = "username"
+            focusOn("password")
+        else if id = "password"
+            if m.submit.enabled then focusOn("submit") else focusOn("back")
+        end if
+    else if key = KeyCode.LEFT
+        if id = "submit" then focusOn("back")
+        if id = "pw" then focusOn("qc")
+    else if key = KeyCode.RIGHT
+        if id = "back" then focusOn("submit")
+        if id = "qc" then focusOn("pw")
+    else if key = KeyCode.OK
+        if id = "username" or id = "password"
+            openKeyboard(id)
+        else if id = "submit" and m.submit.enabled
+            m.top.username = m.usernameField.value
+            m.top.password = m.passwordField.value
+            m.top.submitSelected = true
+        else if id = "back"
+            m.top.backPressed = true
+        else if id = "qc"
+            m.top.alert = ""
+            requestQuickConnect()
+            focusOn("back")
+        end if
     end if
-
-    if key = KeyCode.DOWN and m.quickConnect.hasFocus()
-        m.quickConnect.focus = false
-        list.setFocus(true)
-        setLastFocus(list)
-        return true
-    end if
-
-    if key = KeyCode.DOWN and m.passwordTab.hasFocus()
-        m.passwordTab.focus = false
-        list.setFocus(true)
-        setLastFocus(list)
-        return true
-    end if
-
-    if key = KeyCode.RIGHT and m.quickConnect.hasFocus() and m.passwordTab.visible
-        m.quickConnect.focus = false
-        m.passwordTab.setFocus(true)
-        m.passwordTab.focus = true
-        setLastFocus(m.passwordTab)
-        return true
-    end if
-
-    if key = KeyCode.LEFT and m.passwordTab.hasFocus()
-        m.passwordTab.focus = false
-        m.quickConnect.setFocus(true)
-        m.quickConnect.focus = true
-        setLastFocus(m.quickConnect)
-        return true
-    end if
-
-    if key = KeyCode.LEFT and m.submit.hasFocus()
-        m.submit.focus = false
-        m.back.setFocus(true)
-        m.back.focus = true
-        setLastFocus(m.back)
-        return true
-    end if
-
-    if key = KeyCode.RIGHT and m.back.hasFocus()
-        m.back.focus = false
-        m.submit.setFocus(true)
-        m.submit.focus = true
-        setLastFocus(m.submit)
-        return true
-    end if
-
-    ' StandardButton's onKeyEvent handles OK press and sets buttonSelected
-    ' No need to handle OK here anymore
-
-    return false
+    return true
 end function
 
-' The keyboard covers the foot of the screen, so the form lifts far enough to
-' keep the field being filled in sight and settles back once it closes
 sub OnScreenShown(_isReturning = false as boolean)
-    ' Nothing else hands the form focus, so a first show puts it there and a return goes back
-    ' to wherever it was
-    if isValid(m.top.lastFocus)
-        m.top.lastFocus.setFocus(true)
-    else if not m.quickConnectGroup.visible
-        m.config.setFocus(true)
-    end if
-
-    if isValid(m.keyboard) then return
-
-    m.keyboard = m.top.getScene().findNode("tvKeyboard")
-    if isValid(m.keyboard) then m.keyboard.observeField("visible", "onKeyboardVisibleChanged")
-end sub
-
-sub onKeyboardVisibleChanged()
-    if not m.keyboard.visible
-        m.signInGroup.translation = m.signInHome
-        return
-    end if
-
-    overlap = (m.signInHome[1] + m.signInGroup.height + SIGNIN_KEYBOARD_GAP) - m.keyboard.panelTop
-    if overlap <= 0 then return
-
-    lift = m.signInHome[1] - overlap
-    if lift < SIGNIN_MIN_TOP then lift = SIGNIN_MIN_TOP
-    m.signInGroup.translation = [m.signInHome[0], lift]
+    m.top.setFocus(true)
 end sub

@@ -120,7 +120,7 @@ const selections = {
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
-    'components/config/SigninScene.bs': ['checkQuickConnectEnabled'],
+    'components/config/SigninScene.bs': ['showsQuickConnect'],
     'source/utils/parsedUrl.bs': ['ParsedUrl', '__ParsedUrl_ToString'],
     'source/api/baserequest.bs': ['buildParams', 'buildServerURL', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer', 'APIRequest', 'APIRequestForServer', 'authRequest', 'authRequestForServer', 'setCertificateAuthority', 'getJson', 'noteAccessRefused', 'noteRefusalIn', 'postPlaybackInfo', 'requestCanceled'],
 };
@@ -311,15 +311,19 @@ try {
     await rm(directory, { recursive: true, force: true });
 }
 
-// Verify that the packaged entry screen exposes both routes and wires Connect.
-const entry = await readFile('components/config/SetServerScreen.xml', 'utf8');
-assert.match(entry, /id="addServerButton"\s+text="Enter Server URL"/);
-assert.match(entry, /id="embyConnectButton"\s+text="Emby Connect"/);
-assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if CreateEmbyConnectGroup\(\)/);
+// The server list opens Add Server, which offers an address or Emby Connect and shows the server it
+// found before anyone signs in
+assert.match(await readFile('components/config/SetServerScreen.xml', 'utf8'), /<AddServerDialog id="addServerDialog"/, 'Add Server opens over the server list');
+assert.match(await readFile('components/config/SetServerScreen.bs', 'utf8'), /const SERVER_HOLD_SECONDS = 0\.5/, 'Holding OK on a saved server offers to remove it');
+const addServerDialog = await readFile('components/login/AddServerDialog.bs', 'utf8');
+assert.match(addServerDialog, /m\.top\.embyConnectChosen = true/, 'Add Server offers Emby Connect');
+assert.match(addServerDialog, /sub onFoundServerChanged\(\)[^]*?showStep\("found"\)/, 'and shows the server it found');
+const serverFlow = await readFile('source/ShowScenes.bs', 'utf8');
+assert.match(serverFlow, /else if request\.fromDialog = true[^]*?screen\.foundServer = \{/, 'which the sign in flow answers before opening the server');
+assert.match(serverFlow, /if CreateEmbyConnectGroup\(\)/);
+assert.match(serverFlow, /if shownUsers > 0\s+goto user_select/, 'Back from sign in returns to the accounts Who\'s watching listed');
 assert.match(await readFile('components/embyConnect/EmbyConnectScene.xml', 'utf8'), /extends="SigninScene"/);
-const signinShown = (await readFile('components/config/SigninScene.bs', 'utf8')).match(/sub OnScreenShown\([^]*?end sub/)[0];
-assert.match(signinShown, /m\.top\.lastFocus\.setFocus\(true\)\s+else if not m\.quickConnectGroup\.visible\s+m\.config\.setFocus\(true\)/, 'Sign-in hands the form focus when Quick Connect has not');
-process.stdout.write('PASS: sign-in entry wiring (5 checks)\n');
+process.stdout.write('PASS: sign-in entry wiring (8 checks)\n');
 
 for (const detailStyle of ['components/details/SpotlightItemDetails.bs', 'components/details/MinimalistItemDetails.bs']) {
     const detailSource = await readFile(detailStyle, 'utf8');
