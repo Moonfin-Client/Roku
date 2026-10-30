@@ -8506,6 +8506,11 @@
         <translation>Request failed</translation>
     </message>
     <message>
+        <source>Requested by</source>
+        <extracomment>Line on a Seerr request tile when the requester&apos;s name goes on the line under it</extracomment>
+        <translation>Requested by</translation>
+    </message>
+    <message>
         <source>Requested by ^0</source>
         <extracomment>Line on a Seerr request naming who asked for it. ^0 is the requester&apos;s name</extracomment>
         <translation>Requested by ^0</translation>
