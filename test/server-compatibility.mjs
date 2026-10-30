@@ -1081,6 +1081,9 @@ assert.match(await readFile('components/home/Home.bs', 'utf8'), /selectedItem = 
 const mediaBarWiring = await readFile('components/home/MediaBar.bs', 'utf8');
 assert.match(mediaBarWiring, /if newSet and allItems\.count\(\) = 0 then return/, 'An empty new set keeps the one showing');
 assert.match(mediaBarWiring, /if item\.id <> m\.failedBannerId then art = bannerArtUrl\(item\)/, 'Banner art that failed falls back to the backdrop');
+const homeRowsWiring = await readFile('components/home/HomeRows.bs', 'utf8');
+assert.match(homeRowsWiring, /m\.emptySections\[sectionTitle\] = true/, 'A section that comes back empty is remembered');
+assert.equal((homeRowsWiring.match(/if not sectionExists\(sectionName\) and not knownEmpty\(sectionName\)/g) || []).length, 12, 'Every placeholder skips a section known to be empty');
 process.stdout.write('PASS: home and media bar wiring\n');
 
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');
