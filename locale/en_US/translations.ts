@@ -8451,6 +8451,26 @@
         <translation>Seerr Discovery Rows</translation>
     </message>
     <message>
+        <source>All Items</source>
+        <extracomment>Seerr browse filter choice that shows every title</extracomment>
+        <translation>All Items</translation>
+    </message>
+    <message>
+        <source>Available Only</source>
+        <extracomment>Seerr browse filter choice that shows only titles already in the library</extracomment>
+        <translation>Available Only</translation>
+    </message>
+    <message>
+        <source>Title</source>
+        <extracomment>Seerr browse sort choice that orders titles by name</extracomment>
+        <translation>Title</translation>
+    </message>
+    <message>
+        <source>Seerr Settings</source>
+        <extracomment>Heading of the dialog the gear button opens on the Seerr browse screen</extracomment>
+        <translation>Seerr Settings</translation>
+    </message>
+    <message>
         <source>S^0</source>
         <extracomment>Short season label on a season pick in the Seerr request dialog. ^0 is the season number</extracomment>
         <translation>S^0</translation>

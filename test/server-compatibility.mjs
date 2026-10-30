@@ -1107,6 +1107,10 @@ assert.match(seasonDetailsWiring, /loadSeerrBlock\(json\)/, 'A season page looks
 assert.match(seasonDetailsWiring, /if Left\(action, 5\) = "seerr"/, 'and hands its Seerr buttons to the request flow');
 assert.match(await readFile('source/utils/seerrDetailHost.bs', 'utf8'), /initialSeason/, 'Report Issue starts on the season or episode it was opened from');
 assert.match(await readFile('source/utils/seerrButtons.bs', 'utf8'), /seerrRequestRules\.Cancelable\(requests, true, CanManageRequests\(permissions\), CurrentSeerrUserId\(\)\)/, 'Cancel only shows for a request the viewer can take back');
+const browseWiring = await readFile('components/seerr/SeerrGenreBrowseScreen.bs', 'utf8');
+assert.match(browseWiring, /const SEERR_POSTER_SIZE_SETTING = "ui\.seerr\.posterSize"/, 'The browse screen keeps a poster size of its own');
+assert.doesNotMatch(syncWiring, /ui\.seerr\.posterSize/, 'and it stays on the device');
+assert.match(browseWiring, /libraryCard\.PosterSize\(get_user_setting\(SEERR_POSTER_SIZE_SETTING\), library\)/, 'It follows the library size until one is picked');
 const requestsWiring = await readFile('components/seerr/SeerrRequestsScreen.bs', 'utf8');
 assert.match(requestsWiring, /if status = SEERR_REQUEST_PENDING and m\.canManageRequests then return \["approve", "decline"\]/, 'A moderator answers a pending request from its poster');
 assert.match(requestsWiring, /chainLookupReturn\(entry, "requestedBy\.id", -1\) = m\.seerrUserId then return \["cancel"\]/, 'and anyone else can take back their own');
