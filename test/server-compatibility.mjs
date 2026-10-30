@@ -190,6 +190,16 @@ source += '\n' + await readFile('test/record-airing.bs', 'utf8');
 source += '\n' + await readFile('test/server-date.bs', 'utf8');
 source += '\n' + await readFile('test/special-features.bs', 'utf8');
 source += '\n' + await readFile('test/spotlight-episodes.bs', 'utf8');
+// The rest of the Minimalist rules reach for the server and the session, which these tests don't have
+const minimalistRulesFile = await readFile('source/utils/minimalistRules.bs', 'utf8');
+source += '\n' + minimalistRulesFile.match(/^const MINIMALIST_(?:TYPES|EPISODE_TYPES) = .+$/gm).join('\n') + '\nnamespace minimalistRules\n';
+for (const name of ['Draws', 'ShowsEpisodes', 'ShowsExtrasButton']) {
+    const match = minimalistRulesFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
+    assert.ok(match, `Missing minimalistRules.${name}`);
+    source += '\n' + match[0];
+}
+source += '\nend namespace\n';
+source += '\n' + await readFile('test/minimalist-extras.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n' + settingsSyncFile.match(/^    const .+$/gm).join('\n') + '\n';
 for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile']) {
@@ -1150,6 +1160,7 @@ assert.match(seasonWiring, /buttonLayout\.Arrange\(offered, m\.global\.session\.
 assert.match(seasonWiring, /buttonLayout\.CountSplit\(configs\.count\(\)/, 'and the button count');
 assert.match(seasonWiring, /action: "goToSeries"/, 'and offers Go to Series');
 assert.equal((await readFile('source/ShowScenes.bs', 'utf8')).match(/group\.itemContent = seasonMetaData\n    group\.objects/g)?.length, 2, 'Both Classic season paths hand the season over before its episodes');
+assert.match(await readFile('components/details/detailButtonHost.bs', 'utf8'), /button\.id <> "extrasButton" then exit for/, 'Extras never folds behind More');
 process.stdout.write('PASS: details wiring\n');
 
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');
