@@ -38,6 +38,8 @@ const MATCH_CHUNK = 40
 ' How the library's provider ids are read on Jellyfin, a page at a time and kept for a while
 const LIBRARY_INDEX_PAGE = 1000
 const LIBRARY_INDEX_TTL_SECONDS = 30 * 60
+' How many Seerr titles have their details read at once for the Recently Added row
+const SEERR_DETAILS_BATCH = 6
 
 const FIELDS = "DateCreated,Type,UserData,Overview,Genres,CommunityRating,CriticRating,OfficialRating,RunTimeTicks,ProductionYear,SeriesName,ParentIndexNumber,IndexNumber,Status,ImageTags,BackdropImageTags,ParentBackdropItemId,ParentBackdropImageTags,ParentThumbItemId,ParentThumbImageTag,SeriesId,SeriesPrimaryImageTag,ParentLogoItemId,ParentLogoImageTag,PrimaryImageTag,PrimaryImageAspectRatio"
 
@@ -2540,7 +2542,9 @@ function loadCustomDynamicList(listName as string, additionalData as dynamic) as
             response = unwrapSeerrProxyResponse(getJson(req))
 
             if response <> invalid and isChainValid(response, "results")
-                results = sortedRow("seerr", seerrMediaEntries(response.results, isRequests))
+                found = response.results
+                if endpoint = "/api/v1/media" then found = hydrateRecentlyAdded(found)
+                results = sortedRow("seerr", seerrMediaEntries(found, isRequests))
             end if
         end if
     else
@@ -2624,6 +2628,72 @@ function seerrMediaEntries(resultsArray as object, isRequests as boolean) as obj
         entries.push(externalList.SortEntry(resItem, seerrCardNode(toNormalizedString(tmdbId), title, mediaType, posterPath, backdropPath, resItem)))
     end for
     return entries
+end function
+
+' Seerr's recently added list is its own media records, which carry the TMDB id but no title or
+' artwork, so each becomes a card filled in from the title's details
+function hydrateRecentlyAdded(records as object) as object
+    paths = []
+    for each record in records
+        if type(record) = "roAssociativeArray" and isValid(record.tmdbId) and (isStringEqual(record.mediaType, "movie") or isStringEqual(record.mediaType, "tv"))
+            paths.push(`${record.mediaType}/${toNormalizedString(record.tmdbId)}`)
+        end if
+    end for
+    details = seerrDetailsByPath(paths)
+
+    items = []
+    for each record in records
+        if type(record) <> "roAssociativeArray" then continue for
+        item = { id: record.tmdbId ?? record.id, mediaType: record.mediaType, mediaInfo: record }
+        found = details[`${toNormalizedString(record.mediaType)}/${toNormalizedString(record.tmdbId)}`]
+        if isValid(found)
+            for each key in ["title", "name", "posterPath", "backdropPath", "overview", "releaseDate", "firstAirDate", "voteAverage", "popularity"]
+                if isValid(found.LookupCI(key)) then item[key] = found.LookupCI(key)
+            end for
+        end if
+        items.push(item)
+    end for
+    return items
+end function
+
+' Each title's Seerr details by its "movie/<id>" or "tv/<id>" path, a batch at a time, one request
+' per title however many entries share it. A failed one is left out.
+function seerrDetailsByPath(paths as object) as object
+    found = {}
+    seen = {}
+    unique = []
+    for each path in paths
+        if not seen.DoesExist(path)
+            seen[path] = true
+            unique.push(path)
+        end if
+    end for
+
+    port = CreateObject("roMessagePort")
+    for first = 0 to unique.count() - 1 step SEERR_DETAILS_BATCH
+        running = {}
+        last = first + SEERR_DETAILS_BATCH - 1
+        if last > unique.count() - 1 then last = unique.count() - 1
+        for i = first to last
+            req = APIRequest("/Moonfin/Seerr/Api/" + unique[i], {})
+            if isValid(req)
+                req.setMessagePort(port)
+                if req.AsyncGetToString() then running[req.GetIdentity().ToStr()] = { req: req, path: unique[i] }
+            end if
+        end for
+
+        while running.count() > 0
+            msg = wait(30000, port)
+            if type(msg) <> "roUrlEvent" then exit while
+            entry = running[msg.GetSourceIdentity().ToStr()]
+            running.Delete(msg.GetSourceIdentity().ToStr())
+            if isValid(entry) and msg.GetResponseCode() = 200
+                data = unwrapSeerrProxyResponse(ParseJson(msg.GetString()))
+                if type(data) = "roAssociativeArray" then found[entry.path] = data
+            end if
+        end while
+    end for
+    return found
 end function
 
 ' A Seerr slider's first page, under the title Seerr gives it now. A slider Seerr no longer has,

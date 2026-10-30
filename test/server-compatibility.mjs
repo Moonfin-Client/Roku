@@ -1099,6 +1099,10 @@ assert.match(syncWiring, /if source = "seerr" then return settingsSync\.SliderRo
 assert.match(syncWiring, /if not homeRowLayout\.IsSliderRow\(id\) then order\.push\(id\)/, 'Slider rows stay out of the flat order');
 process.stdout.write('PASS: home and media bar wiring\n');
 
+// Seerr requests
+assert.match(await readFile('components/home/LoadItemsTask.bs', 'utf8'), /if endpoint = "\/api\/v1\/media" then found = hydrateRecentlyAdded\(found\)/, 'Recently Added cards take their titles and art from the details');
+process.stdout.write('PASS: Seerr request wiring\n');
+
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');
 const guideDialog = guideSource.match(/sub openProgramDialog\([^]*?end sub/)[0];
 assert.match(guideDialog, /id: "record"[^]*id: "seriesSettings"[^]*id: "recordSeries"[^]*id: "favorite"[^]*id: "watch"[^]*id: "close"/, 'The program dialog keeps Record, Series Settings, Record Series, Favorite, Watch and Close in order');
