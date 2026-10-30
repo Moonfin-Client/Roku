@@ -3278,6 +3278,26 @@
         <translation>Playlist Order</translation>
     </message>
     <message>
+        <source>Playlist Sort Options</source>
+        <extracomment>Title of the picker for the order a collection&apos;s playlist is shown and played in</extracomment>
+        <translation>Playlist Sort Options</translation>
+    </message>
+    <message>
+        <source>Server Order</source>
+        <extracomment>A collection playlist sort choice: the order the server keeps the collection in</extracomment>
+        <translation>Server Order</translation>
+    </message>
+    <message>
+        <source>Release Order (Ascending)</source>
+        <extracomment>A collection playlist sort choice: oldest release first</extracomment>
+        <translation>Release Order (Ascending)</translation>
+    </message>
+    <message>
+        <source>Release Order (Descending)</source>
+        <extracomment>A collection playlist sort choice: newest release first</extracomment>
+        <translation>Release Order (Descending)</translation>
+    </message>
+    <message>
         <source>Alphabetical</source>
         <extracomment>A sort choice for a collection&apos;s playlist or a person&apos;s credits: by title from A to Z</extracomment>
         <translation>Alphabetical</translation>
@@ -3311,6 +3331,11 @@
         <source>Filmography</source>
         <extracomment>Title of the Spotlight card that holds the movies and shows a person is in</extracomment>
         <translation>Filmography</translation>
+    </message>
+    <message>
+        <source>Custom Order</source>
+        <extracomment>A collection playlist sort choice: the order someone arranged the collection in through Moonbase</extracomment>
+        <translation>Custom Order</translation>
     </message>
     <message>
         <source>You&apos;re set. Here&apos;s what else is in here.</source>

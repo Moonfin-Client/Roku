@@ -17,6 +17,7 @@ import "pkg:/source/utils/mediaBadges.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/nouveauLayout.bs"
 import "pkg:/source/utils/seerrDetailHost.bs"
+import "pkg:/source/utils/seerrMissingCollection.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/themeApply.bs"
 import "pkg:/source/utils/tmdbReviews.bs"
@@ -240,6 +241,7 @@ function newSectionData() as object
         seerrResolved: false,
         collection: [],
         collectionOrder: [],
+        parentCollections: [],
         person: { movies: [], series: [], guest: [], music: [], appearances: [], crew: [] }
     }
 end function
@@ -439,13 +441,16 @@ sub loadSections()
 
     ' A collection's page is its titles, and nothing similar or extra to go with them
     if isCollection()
-        m.membersTask = startCollectionMembersTask("onCollectionMembersLoaded")
+        m.membersTask = startCollectionMembersTask("onCollectionMembersLoaded", true)
         return
     end if
 
+    itemData = m.top.itemContent.json
     loadTask = CreateObject("roSGNode", "LoadExtrasTask")
     loadTask.itemId = m.top.id
     loadTask.itemType = m.top.itemType
+    loadTask.providerIds = itemData.ProviderIds ?? {}
+    loadTask.includeCollections = true
 
     if isEpisode()
         loadTask.isEpisode = true
@@ -456,7 +461,6 @@ sub loadSections()
         loadTask.showID = m.top.itemContent.id
     end if
 
-    itemData = m.top.itemContent.json
     if isValidAndNotEmpty(itemData._serverUrl)
         loadTask.serverUrl = itemData._serverUrl
         loadTask.serverUserId = itemData._userId
@@ -483,6 +487,7 @@ end sub
 sub onExtrasLoaded(event as object)
     content = event.getData()
     if not isValid(content) then return
+    m.sectionData.parentCollections = []
 
     for i = 0 to content.getChildCount() - 1
         row = content.getChild(i)
@@ -503,6 +508,8 @@ sub onExtrasLoaded(event as object)
             m.sectionData.crew = people.crew
         else if row.title = "similar"
             m.sectionData.similar = items
+        else if row.title = "parentCollection"
+            m.sectionData.parentCollections.push({ name: row.collectionName, items: items })
         else if row.title = "nextup" and items.count() > 0
             m.sectionData.nextUpId = chainLookupReturn(items[0], "id", "")
         else if row.title = "episodes" and items.count() > 0
@@ -521,8 +528,9 @@ sub onReviewsLoaded()
     if m.sectionData.reviews.count() > 0 then rebuildSections()
 end sub
 
+' The titles the library is missing are slotted in by release, leaving the server's order alone
 sub onCollectionMembersLoaded()
-    m.sectionData.collection = m.membersTask.items ?? []
+    m.sectionData.collection = seerrMissingCollection.SlotByRelease(m.membersTask.items ?? [], m.membersTask.missing ?? [])
     m.sectionData.collectionOrder = m.membersTask.order ?? []
     rebuildSections()
 end sub
@@ -626,6 +634,8 @@ sub rebuildSections()
             buildChaptersRail()
         else if id = NOUVEAU_SECTION_EXTRAS
             buildExtrasRail()
+        else if id = NOUVEAU_SECTION_PARENT_COLLECTIONS
+            buildParentCollectionRails()
         else if id = NOUVEAU_SECTION_DISCOVERY
             buildDiscoveryRails()
         else if id = NOUVEAU_SECTION_PEOPLE
@@ -657,6 +667,7 @@ function sectionState() as object
         similarLoaded: m.sectionData.similarLoaded,
         similarCount: m.sectionData.similar.count(),
         reviewCount: m.sectionData.reviews.count(),
+        parentCollectionCount: m.sectionData.parentCollections.count(),
         seerrExpected: seerrListed and nouveauLayout.SeerrDiscoveryExpected(LCase(m.top.itemType), seerrAvailable, hasProviderId),
         seerrResolved: m.sectionData.seerrResolved,
         seerrSimilarCount: m.sectionData.seerrSimilar.count(),
@@ -809,7 +820,19 @@ end function
 
 ' The collection keeps the order the server gave it
 sub buildCollectionRail()
-    items = m.sectionData.collection
+    addCollectionRail(tr("Collection"), m.sectionData.collection, true)
+end sub
+
+' A rail for each collection the title is in, drawn the same way as a collection's own
+sub buildParentCollectionRails()
+    leads = true
+    for each collection in m.sectionData.parentCollections
+        addCollectionRail(collection.name, collection.items, leads)
+        leads = false
+    end for
+end sub
+
+sub addCollectionRail(title as string, items as object, leads as boolean)
     if items.count() = 0 then return
 
     cards = []
@@ -822,13 +845,13 @@ sub buildCollectionRail()
     end for
 
     addRail({
-        title: tr("Collection"),
+        title: title,
         component: "NouveauCaptionCard",
         gap: NOUVEAU_TV_RAIL_GAP,
         cardSize: [m.metrics.collectionWidth, m.metrics.collectionHeight],
         stopsPerCard: 1,
         cards: cards,
-        leadsSection: true
+        leadsSection: leads
     }, "poster", items)
 end sub
 
