@@ -9,6 +9,7 @@ import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/libraryFilters.bs"
 import "pkg:/source/utils/librarySorts.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/multiserver.bs"
 
 ' How many ids one item request carries when My Rating reads back what was rated
 const RATED_PAGE = 100
@@ -351,6 +352,7 @@ sub loadItems()
         params.ExcludeItemTypes = excluded
     end if
 
+    if not isValid(data) and m.top.allServers and isItemsRequest then data = fetchAllServers(url, params)
     if not isValid(data) then data = fetchData(url, params)
 
     if isValid(data) and foldersFirst and isItemsRequest
@@ -594,6 +596,49 @@ sub loadItems()
     ' Reset hasExecuted for next pagination batch
     m.top.hasExecuted = false
 end sub
+
+' A genre merged across servers is read from every one of them, each from where its own last page
+' ended, and the titles keep the server they came from. Together they count as one list.
+function fetchAllServers(url as string, params as object) as dynamic
+    offsets = m.top.serverOffsets
+    if m.top.startIndex = 0 or type(offsets) <> "roAssociativeArray" then offsets = {}
+    merged = { Items: [], TotalRecordCount: 0 }
+    answered = false
+    for each userSession in getAllServerSessions()
+        key = serverIdentityKey(userSession.serverUrl)
+        serverParams = {}
+        serverParams.Append(params)
+        serverParams.StartIndex = offsets[key] ?? 0
+        serverParams.UserId = userSession.userId
+
+        request = CreateObject("roUrlTransfer")
+        request.SetUrl(buildURLForSession(userSession, url, serverParams))
+        addServerAuthorization(request, buildAuthHeaderForSession(userSession), userSession.serverUrl)
+        request.AddHeader("Content-Type", "application/json")
+        request.SetCertificatesFile("common:/certs/ca-bundle.crt")
+        request.InitClientCertificates()
+        request.EnableEncodings(true)
+        body = request.GetToString()
+        data = invalid
+        if isValidAndNotEmpty(body) then data = ParseJson(body)
+        if not isValid(data) or type(data.Items) <> "roArray" then continue for
+
+        answered = true
+        offsets[key] = serverParams.StartIndex + data.Items.count()
+        merged.TotalRecordCount += data.TotalRecordCount ?? data.Items.count()
+        for each item in data.Items
+            item.AddReplace("_serverUrl", userSession.serverUrl)
+            item.AddReplace("_userId", userSession.userId)
+            item.AddReplace("_authToken", userSession.authToken)
+            item.AddReplace("_serverId", userSession.serverId)
+            item.AddReplace("_serverName", userSession.serverName)
+            merged.Items.push(item)
+        end for
+    end for
+    m.top.serverOffsets = offsets
+    if not answered then return invalid
+    return merged
+end function
 
 ' One request against whichever server the task points at, or invalid when it fails
 function fetchData(url as string, params as object) as dynamic

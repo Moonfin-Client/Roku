@@ -1212,6 +1212,9 @@ assert.match(await readFile('components/itemMenu/itemMenuHost.bs', 'utf8'), /if 
 const calendarTask = await readFile('components/home/LoadItemsTask.bs', 'utf8');
 assert.match(calendarTask, /yesterday\.FromSeconds\(yesterday\.AsSeconds\(\) - 24 \* 60 \* 60\)[^]*?if when = "" or when <= since then continue for/, 'A Radarr release stays on the row through its own day');
 assert.match(calendarTask, /start = Left\(now\.ToISOString\(\), 10\)/, 'and the calendar is read from the start of the day');
+assert.match(await readFile('components/genres/GenresScreen.bs', 'utf8'), /allServers: genreData\.unified = true/, 'A merged genre opens on every server');
+assert.match(libraryScene, /if m\.top\.genreFilter\.allServers = true\s+m\.loadItemsTask\.allServers = true\s+m\.loadItemsTask\.genreNames/, 'asking each one by name');
+assert.match(await readFile('components/ItemGrid/LoadItemsTask2.bs', 'utf8'), /serverParams\.StartIndex = offsets\[key\] \?\? 0[^]*?m\.top\.serverOffsets = offsets/, 'and each server pages on from its own last page');
 process.stdout.write('PASS: libraries and sign in wiring\n');
 
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');
