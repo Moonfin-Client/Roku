@@ -14,6 +14,7 @@ import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/embyFeatures.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/trackLabels.bs"
+import "pkg:/source/utils/trackMemory.bs"
 
 sub init()
     m.top.filter = "All"
@@ -212,7 +213,7 @@ sub loadItems()
     if m.top.selectedAudioStreamIndex = 0
         currentItem = m.global.queueManager.callFunc("getCurrentItem")
         if isChainValid(currentItem, "json")
-            m.top.selectedAudioStreamIndex = FindPreferredAudioStream(currentItem.json.MediaStreams)
+            m.top.selectedAudioStreamIndex = FindPreferredAudioStream(currentItem.json.MediaStreams, currentItem.json)
         end if
     end if
 
@@ -509,6 +510,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
 
     requestedSubtitleIndex = m.top.selectedSubtitleIndex
     defaultSubtitleIndex = SubtitleSelection.NONE
+    rememberedSubtitle = false
     if requestedSubtitleIndex = SubtitleSelection.NOTSET and isValidAndNotEmpty(m.playbackInfo.MediaSources)
         defaultSubtitleIndex = m.playbackInfo.MediaSources[0].LookupCI("DefaultSubtitleStreamIndex") ?? SubtitleSelection.NONE
 
@@ -516,12 +518,17 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
         ' and any burn in carry the new one
         if meta.live = false
             streams = m.playbackInfo.MediaSources[0].MediaStreams
-            audioLanguage = ""
-            for each stream in streams
-                if isStringEqual(stream.LookupCI("Type") ?? "", "Audio") and stream.LookupCI("Index") = audio_stream_idx then audioLanguage = stream.LookupCI("Language") ?? ""
-            end for
-            modeSubtitleIndex = trackLabels.ModeSubtitle(streams, defaultSubtitleIndex, m.global.session.user.settings, audioLanguage)
-            preferredSubtitleIndex = trackLabels.PreferredSubtitle(streams, modeSubtitleIndex, m.global.session.user.settings)
+            ' A track remembered for the title or its series comes before the subtitle settings
+            preferredSubtitleIndex = trackMemory.RememberedSubtitle(trackMemory.Load(), video.id, chainLookup(meta, "json.SeriesId"), trackMemory.OfType(streams, "Subtitle"))
+            rememberedSubtitle = preferredSubtitleIndex <> SubtitleSelection.NOTSET
+            if not rememberedSubtitle
+                audioLanguage = ""
+                for each stream in streams
+                    if isStringEqual(stream.LookupCI("Type") ?? "", "Audio") and stream.LookupCI("Index") = audio_stream_idx then audioLanguage = stream.LookupCI("Language") ?? ""
+                end for
+                modeSubtitleIndex = trackLabels.ModeSubtitle(streams, defaultSubtitleIndex, m.global.session.user.settings, audioLanguage)
+                preferredSubtitleIndex = trackLabels.PreferredSubtitle(streams, modeSubtitleIndex, m.global.session.user.settings)
+            end if
             if preferredSubtitleIndex <> defaultSubtitleIndex
                 defaultSubtitleIndex = preferredSubtitleIndex
                 requestedSubtitleIndex = preferredSubtitleIndex
@@ -539,8 +546,8 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
 
     ' Use either the user's selected subtitles, or the default track
     if m.top.selectedSubtitleIndex = SubtitleSelection.NOTSET
-        ' Ignore the track if the user only wants text subtitles and it isn't one
-        if defaultSubtitleIndex <> SubtitleSelection.NONE and toBoolean(trackLabels.Setting(m.global.session.user.settings, "playback.subs.onlytext", false))
+        ' Ignore the track if the user only wants text subtitles and it isn't one, unless they picked it
+        if defaultSubtitleIndex <> SubtitleSelection.NONE and not rememberedSubtitle and toBoolean(trackLabels.Setting(m.global.session.user.settings, "playback.subs.onlytext", false))
             if not isSubtitleStreamText(defaultSubtitleIndex)
                 defaultSubtitleIndex = SubtitleSelection.NONE
             end if
@@ -1176,7 +1183,7 @@ function sortSubtitles(MediaStreams, source = invalid as dynamic, videoId = "" a
     return { "all": allTracks, "text": textTracks }
 end function
 
-function FindPreferredAudioStream(streams as dynamic) as integer
+function FindPreferredAudioStream(streams as dynamic, itemJson = invalid as dynamic) as integer
     preferredAudioTrackIndex = m.global.queueManager.callFunc("getPreferredAudioTrackIndex")
     preferredLanguage = getPreferredLanguage("playback.audioPreferredLanguage")
     playDefault = chainLookupReturn(m.global.session, "user.settings.`playback.playDefaultAudioTrack`", false)
@@ -1188,11 +1195,19 @@ function FindPreferredAudioStream(streams as dynamic) as integer
         if jsonResponse = invalid or jsonResponse.MediaStreams = invalid then return 1
 
         streams = jsonResponse.MediaStreams
+        itemJson = jsonResponse
     end if
 
     ' User selected something other than the first track?
     if preferredAudioTrackIndex >= 0
         return preferredAudioTrackIndex
+    end if
+
+    ' Then a track remembered for the title, or its series on an episode
+    remembered = trackMemory.RememberedAudio(trackMemory.Load(), m.top.itemId, chainLookup(itemJson, "SeriesId"), trackMemory.OfType(streams, "Audio"))
+    if remembered >= 0
+        position = trackMemory.Position(streams, "Audio", remembered)
+        if position >= 0 then return position
     end if
 
     ' No selection, but they have Default as their preference?

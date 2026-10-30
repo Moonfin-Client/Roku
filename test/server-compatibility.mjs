@@ -201,6 +201,17 @@ source += '\n' + await readFile('test/seasonal-effects.bs', 'utf8');
 source += '\n' + await readFile('test/audio-track.bs', 'utf8');
 source += '\n' + await readFile('test/audio-quality.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-selection.bs', 'utf8');
+// The registry reads and writes stay out, since this interpreter has no registry, so nothing is
+// remembered when a screen asks
+const trackMemoryFile = await readFile('source/utils/trackMemory.bs', 'utf8');
+source += '\n' + trackMemoryFile.match(/^const TRACK_MEMORY_\w+ = .+$/gm).join('\n') + '\nnamespace trackMemory\n';
+for (const name of ['Empty', 'WithPick', 'Take', 'Push', 'Pick', 'RememberedAudio', 'RememberedSubtitle', 'SeriesPref', 'MatchSeries', 'NamedTracks', 'OfType', 'Position', 'StreamWithIndex', 'HasIndex', 'StreamIndex', 'TrackLanguage', 'TrackName', 'SaysForced']) {
+    const match = trackMemoryFile.match(new RegExp(`^    (?:function|sub) ${name}\\([^]*?^    end (?:function|sub)`, 'm'));
+    assert.ok(match, `Missing trackMemory.${name}`);
+    source += '\n' + match[0];
+}
+source += '\n    function Load() as object\n        return trackMemory.Empty()\n    end function\nend namespace\n';
+source += '\n' + await readFile('test/track-memory.bs', 'utf8');
 source += '\n' + await readFile('test/file-facts.bs', 'utf8');
 source += '\n' + await readFile('test/playback-facts.bs', 'utf8');
 source += '\n' + await readFile('test/favorite-tabs.bs', 'utf8');
@@ -1118,6 +1129,15 @@ const requestsWiring = await readFile('components/seerr/SeerrRequestsScreen.bs',
 assert.match(requestsWiring, /if status = SEERR_REQUEST_PENDING and m\.canManageRequests then return \["approve", "decline"\]/, 'A moderator answers a pending request from its poster');
 assert.match(requestsWiring, /chainLookupReturn\(entry, "requestedBy\.id", -1\) = m\.seerrUserId then return \["cancel"\]/, 'and anyone else can take back their own');
 process.stdout.write('PASS: Seerr request wiring\n');
+
+// Details
+const trackHostWiring = await readFile('components/details/detailTrackHost.bs', 'utf8');
+assert.match(trackHostWiring, /trackMemory\.RememberedSubtitle\(trackMemory\.Load\(\)/, 'The details screen shows a remembered subtitle as chosen');
+assert.match(trackHostWiring, /SetDefaultAudioTrack\(itemData, false\)/, 'and a new version starts from the server\'s audio rather than a remembered one');
+assert.match(trackHostWiring, /rememberTrack\("audio", m\.top\.selectedAudioStreamIndex\)/, 'An audio pick on details is remembered');
+assert.match(await readFile('components/manager/ViewCreator.bs', 'utf8'), /trackMemory\.Remember\(m\.view\.videoId, m\.view\.showID, "subtitle"/, 'and so is a subtitle pick in the player');
+assert.match(await readFile('components/ItemGrid/LoadVideoContentTask.bs', 'utf8'), /not rememberedSubtitle and toBoolean/, 'A remembered subtitle isn\'t dropped by the text only setting');
+process.stdout.write('PASS: details wiring\n');
 
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');
 const guideDialog = guideSource.match(/sub openProgramDialog\([^]*?end sub/)[0];

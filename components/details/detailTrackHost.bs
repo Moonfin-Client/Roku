@@ -2,6 +2,7 @@ import "pkg:/source/utils/detailCompatibility.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/remoteSubtitles.bs"
 import "pkg:/source/utils/trackLabels.bs"
+import "pkg:/source/utils/trackMemory.bs"
 
 import "pkg:/source/enums/MediaStreamType.bs"
 import "pkg:/source/enums/PlaybackMethod.bs"
@@ -75,10 +76,14 @@ sub SetUpAudioOptions(streams)
         selectedSubtitle = preferredSubtitle.StreamIndex
     else
         ' Without a pick of the viewer's own, the track playback will turn on shows as chosen
-        audioLanguage = ""
-        if m.top.selectedAudioStreamIndex >= 0 and m.top.selectedAudioStreamIndex < streams.Count() then audioLanguage = streams[m.top.selectedAudioStreamIndex].LookupCI("Language") ?? ""
-        modeSubtitle = trackLabels.ModeSubtitle(streams, detailServerSubtitleIndex(), m.global.session.user.settings, audioLanguage)
-        selectedSubtitle = trackLabels.PreferredSubtitle(streams, modeSubtitle, m.global.session.user.settings)
+        json = chainLookup(m.top, "itemContent.json")
+        selectedSubtitle = trackMemory.RememberedSubtitle(trackMemory.Load(), chainLookup(json, "Id"), chainLookup(json, "SeriesId"), trackMemory.OfType(streams, "Subtitle"))
+        if selectedSubtitle = SubtitleSelection.NOTSET
+            audioLanguage = ""
+            if m.top.selectedAudioStreamIndex >= 0 and m.top.selectedAudioStreamIndex < streams.Count() then audioLanguage = streams[m.top.selectedAudioStreamIndex].LookupCI("Language") ?? ""
+            modeSubtitle = trackLabels.ModeSubtitle(streams, detailServerSubtitleIndex(), m.global.session.user.settings, audioLanguage)
+            selectedSubtitle = trackLabels.PreferredSubtitle(streams, modeSubtitle, m.global.session.user.settings)
+        end if
     end if
 
     audioTracks = []
@@ -137,10 +142,15 @@ sub SetCurrentVideoCodec(itemData)
     end for
 end sub
 
-sub SetDefaultAudioTrack(itemData)
+' A new version starts from the server's choice rather than a remembered one
+sub SetDefaultAudioTrack(itemData, useMemory = true as boolean)
     if not isValidAndNotEmpty(chainLookup(itemData, "mediaStreams")) then return
 
     preferredAudioTrackIndex = m.global.queueManager.callFunc("getPreferredAudioTrackIndex")
+    if preferredAudioTrackIndex < 0 and useMemory
+        remembered = trackMemory.RememberedAudio(trackMemory.Load(), itemData.LookupCI("Id"), itemData.LookupCI("SeriesId"), trackMemory.OfType(itemData.mediaStreams, "Audio"))
+        if remembered >= 0 then preferredAudioTrackIndex = trackMemory.Position(itemData.mediaStreams, "Audio", remembered)
+    end if
     preferredAudioTrackName = m.global.queueManager.callFunc("getPreferredAudioTrackName")
     preferredLanguage = getPreferredLanguage("playback.audioPreferredLanguage")
     firstAudioTrack = -1
@@ -198,6 +208,7 @@ sub onAudioStreamIndexChanged()
         m.top.selectedAudioStreamIndex = m.audioSelector.audioStreamIndex
         m.global.queueManager.callFunc("setPreferredAudioTrackIndex", m.audioSelector.audioStreamIndex)
         m.global.queueManager.callFunc("setPreferredAudioTrackName", m.audioSelector.audioStreamName)
+        rememberTrack("audio", m.top.selectedAudioStreamIndex)
 
         if isValid(m.top.itemContent)
             m.top.itemContent.selectedAudioStreamIndex = m.top.selectedAudioStreamIndex
@@ -215,7 +226,21 @@ sub onSubtitleStreamChanged()
     if isValid(m.subtitleSelector.subtitleStream)
         m.global.queueManager.callFunc("setPreferredSubtitleTrack", m.subtitleSelector.subtitleStream)
         updateSubtitleTrackSelection(m.subtitleSelector.subtitleStream)
+        rememberTrack("subtitle", m.subtitleSelector.subtitleStream.StreamIndex)
     end if
+end sub
+
+' Keeps a pick for the title, and its series on an episode. Audio is picked by its place in the
+' version's streams and saved by the server's index for it.
+sub rememberTrack(kind as string, pick as integer)
+    json = chainLookup(m.top, "itemContent.json")
+    streams = detailMediaStreams(chainLookupReturn(json, "mediaStreams", []))
+    index = pick
+    if kind = "audio"
+        if pick < 0 or pick >= streams.Count() then return
+        index = streams[pick].LookupCI("Index") ?? pick
+    end if
+    trackMemory.Remember(chainLookup(json, "Id"), chainLookup(json, "SeriesId"), kind, index, trackMemory.OfType(streams, kind))
 end sub
 
 sub onSubtitleDownloadRequested()
@@ -332,7 +357,7 @@ sub onVersionSelected()
                 if isValid(mediaSource.RunTimeTicks)
                     itemData.RunTimeTicks = mediaSource.RunTimeTicks
                 end if
-                SetDefaultAudioTrack(itemData)
+                SetDefaultAudioTrack(itemData, false)
                 SetUpAudioOptions(itemData.mediaStreams)
                 exit for
             end if

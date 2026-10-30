@@ -1,0 +1,253 @@
+import "pkg:/source/enums/SubtitleSelection.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/trackLabels.bs"
+
+' The audio and subtitle tracks picked for a title, and for its series on an episode, so the next
+' play starts on them. A series pick is kept as what the track was rather than where it sat, since
+' episodes list their tracks in different orders. Kept on this device only.
+const TRACK_MEMORY_SECTION = "trackMemory"
+const TRACK_MEMORY_KEY = "picks"
+' The registry has little room, so only the latest titles and series are kept
+const TRACK_MEMORY_TITLES = 100
+const TRACK_MEMORY_SERIES = 50
+
+namespace trackMemory
+
+    ' A title is kept as [id, audio index, subtitle index] and a series as [id, audio, subtitle]
+    ' where each track is [language, name, place among its language], oldest first
+    function Empty() as object
+        return { "titles": [], "series": [] }
+    end function
+
+    function Load() as object
+        raw = CreateObject("roRegistrySection", TRACK_MEMORY_SECTION).Read(TRACK_MEMORY_KEY)
+        memory = invalid
+        if raw <> "" then memory = ParseJson(raw)
+        if type(memory) <> "roAssociativeArray" or type(memory.titles) <> "roArray" or type(memory.series) <> "roArray" then return trackMemory.Empty()
+        return memory
+    end function
+
+    ' Saves a pick made on the details screen or in the player. index is the server's stream index,
+    ' and -1 turns subtitles off.
+    sub Remember(itemId as dynamic, seriesId as dynamic, kind as string, index as integer, streams as dynamic)
+        if not isValidAndNotEmpty(itemId) then return
+        memory = trackMemory.Load()
+        trackMemory.WithPick(memory, itemId, toString(seriesId ?? ""), kind, index, streams)
+        section = CreateObject("roRegistrySection", TRACK_MEMORY_SECTION)
+        section.Write(TRACK_MEMORY_KEY, FormatJson(memory))
+        section.Flush()
+    end sub
+
+    ' Turning audio off isn't a thing, so an audio pick that names no track only clears the series
+    sub WithPick(memory as object, itemId as string, seriesId as string, kind as string, index as integer, streams as dynamic)
+        slot = 2
+        if kind = "audio" then slot = 1
+
+        if slot = 2 or index >= 0
+            entry = trackMemory.Take(memory.titles, itemId)
+            if index < 0 then index = -1
+            entry[slot] = index
+            trackMemory.Push(memory.titles, entry, TRACK_MEMORY_TITLES)
+        end if
+        if seriesId = "" then return
+
+        pref = invalid
+        if slot = 2 or index >= 0 then pref = trackMemory.SeriesPref(streams, index)
+        entry = trackMemory.Take(memory.series, seriesId)
+        entry[slot] = pref
+        if isValid(entry[1]) or isValid(entry[2]) then trackMemory.Push(memory.series, entry, TRACK_MEMORY_SERIES)
+    end sub
+
+    ' Takes an id's entry out of the list so it can go back in last, or starts a new one
+    function Take(list as object, id as string) as object
+        for i = 0 to list.count() - 1
+            if list[i][0] = id
+                entry = list[i]
+                list.Delete(i)
+                return entry
+            end if
+        end for
+        return [id, invalid, invalid]
+    end function
+
+    sub Push(list as object, entry as object, cap as integer)
+        list.push(entry)
+        while list.count() > cap
+            list.Shift()
+        end while
+    end sub
+
+    function Pick(list as object, id as string, slot as integer) as dynamic
+        for each entry in list
+            if entry[0] = id then return entry[slot]
+        end for
+        return invalid
+    end function
+
+    ' The audio track remembered for the title, or else for its series when one of the episode's
+    ' own tracks can still be it. -1 leaves the choice to the language settings.
+    function RememberedAudio(memory as object, itemId as dynamic, seriesId as dynamic, streams as dynamic) as integer
+        picked = trackMemory.Pick(memory.titles, toString(itemId ?? ""), 1)
+        if isValid(picked) and isValid(trackMemory.StreamWithIndex(streams, picked)) then return picked
+        if not isValidAndNotEmpty(seriesId) then return -1
+
+        matched = trackMemory.MatchSeries(streams, trackMemory.Pick(memory.series, toString(seriesId), 1))
+        if not isValid(matched) or matched < 0 then return -1
+        return matched
+    end function
+
+    ' The subtitle remembered for the title or its series: a stream index, NONE when it was turned
+    ' off, or NOTSET when nothing is remembered
+    function RememberedSubtitle(memory as object, itemId as dynamic, seriesId as dynamic, streams as dynamic) as integer
+        picked = trackMemory.Pick(memory.titles, toString(itemId ?? ""), 2)
+        if isValid(picked)
+            if picked < 0 then return SubtitleSelection.NONE
+            if isValid(trackMemory.StreamWithIndex(streams, picked)) then return picked
+        end if
+        if not isValidAndNotEmpty(seriesId) then return SubtitleSelection.NOTSET
+
+        matched = trackMemory.MatchSeries(streams, trackMemory.Pick(memory.series, toString(seriesId), 2))
+        if not isValid(matched) then return SubtitleSelection.NOTSET
+        if matched < 0 then return SubtitleSelection.NONE
+        return matched
+    end function
+
+    ' What to remember of a picked track for the rest of the series: its language, its name and
+    ' its place among the tracks of the same language and kind
+    function SeriesPref(streams as dynamic, index as integer) as dynamic
+        if index < 0 then return ["none", "", 0]
+        selected = trackMemory.StreamWithIndex(streams, index)
+        if not isValid(selected) then return invalid
+
+        language = trackMemory.TrackLanguage(selected)
+        title = trackMemory.TrackName(selected)
+        forced = trackMemory.SaysForced(title)
+        place = 0
+        for each stream in streams
+            if trackMemory.HasIndex(stream, index) then exit for
+            if trackLabels.IsForced(stream) = forced and language <> "" and trackMemory.TrackLanguage(stream) = language then place++
+        end for
+        return [language, title, place]
+    end function
+
+    ' The stream index that best answers a series pick, -1 when the series is remembered as off,
+    ' or invalid when none of the tracks can be it
+    function MatchSeries(streams as dynamic, pref as dynamic) as dynamic
+        if type(pref) <> "roArray" or pref.count() < 3 then return invalid
+        if toString(pref[0]) = "none" then return -1
+        language = toString(pref[0])
+        target = toString(pref[1])
+        if language = "" and target = "" then return invalid
+
+        candidates = []
+        for each stream in streams ?? []
+            if isValid(trackMemory.StreamIndex(stream)) then candidates.push(stream)
+        end for
+
+        ' An untagged track leaves only its name to go on, so it matches or it doesn't
+        if language = ""
+            named = trackMemory.NamedTracks(candidates, target, false)
+            if named.count() = 0 then named = trackMemory.NamedTracks(candidates, target, true)
+            if named.count() = 0 then return invalid
+            return trackMemory.StreamIndex(named[0])
+        end if
+
+        matching = []
+        for each stream in candidates
+            if trackMemory.TrackLanguage(stream) = language then matching.push(stream)
+        end for
+        if matching.count() = 0 then return invalid
+
+        ' A name only settles it when one track answers to it, since files often give every track
+        ' in a language the same name
+        named = trackMemory.NamedTracks(matching, target, false)
+        if named.count() = 1 then return trackMemory.StreamIndex(named[0])
+
+        ' The place only counts tracks of the same kind, so a forced track listed first can't
+        ' stand in for the full one
+        forced = trackMemory.SaysForced(target)
+        positional = []
+        for each stream in matching
+            if trackLabels.IsForced(stream) = forced then positional.push(stream)
+        end for
+        if positional.count() = 0 then positional = matching
+
+        place = pref[2]
+        if isValid(place) and place >= 0 and place < positional.count() then return trackMemory.StreamIndex(positional[place])
+        if named.count() > 1 then return trackMemory.StreamIndex(named[0])
+        loose = trackMemory.NamedTracks(positional, target, true)
+        if loose.count() > 0 then return trackMemory.StreamIndex(loose[0])
+        return trackMemory.StreamIndex(positional[0])
+    end function
+
+    ' The tracks going by that name. A loose match also takes one name containing the other, for
+    ' releases wording the same track differently.
+    function NamedTracks(streams as object, target as string, loose as boolean) as object
+        found = []
+        if target = "" then return found
+        for each stream in streams
+            title = trackMemory.TrackName(stream)
+            if title <> ""
+                if title = target or (loose and (Instr(1, title, target) > 0 or Instr(1, target, title) > 0)) then found.push(stream)
+            end if
+        end for
+        return found
+    end function
+
+    function StreamWithIndex(streams as dynamic, index as integer) as dynamic
+        for each stream in streams ?? []
+            if trackMemory.HasIndex(stream, index) then return stream
+        end for
+        return invalid
+    end function
+
+    function HasIndex(stream as dynamic, index as integer) as boolean
+        own = trackMemory.StreamIndex(stream)
+        return isValid(own) and own = index
+    end function
+
+    ' The streams of one kind, Audio or Subtitle, out of a version's whole list
+    function OfType(streams as dynamic, kind as string) as object
+        found = []
+        for each stream in streams ?? []
+            if isStringEqual(trackLabels.Field(stream, "Type"), kind) then found.push(stream)
+        end for
+        return found
+    end function
+
+    ' Where the stream of that kind and index sits in the whole list, or -1
+    function Position(streams as dynamic, kind as string, index as integer) as integer
+        if not isValid(streams) then return -1
+        for i = 0 to streams.count() - 1
+            if isStringEqual(trackLabels.Field(streams[i], "Type"), kind) and trackMemory.HasIndex(streams[i], index) then return i
+        end for
+        return -1
+    end function
+
+    function StreamIndex(stream as dynamic) as dynamic
+        if type(stream) <> "roAssociativeArray" then return invalid
+        return stream.LookupCI("Index")
+    end function
+
+    ' A language code read the way the settings spell it, or nothing for an untagged track
+    function TrackLanguage(stream as dynamic) as string
+        code = trackLabels.Field(stream, "Language")
+        if code = "" and type(stream) = "roAssociativeArray" then code = trackLabels.Field(stream.LookupCI("Track"), "Language")
+        if code.Trim() = "" then return ""
+        primary = LCase(code.Trim()).Split("-")[0].Split("_")[0]
+        if not CreateObject("roRegex", "^[a-z]{2,3}$", "").IsMatch(primary) or primary = "und" then return ""
+        return trackLabels.LanguageKey(primary)
+    end function
+
+    ' Leading track numbers vary between files, so they're dropped before two names are compared
+    function TrackName(stream as dynamic) as string
+        title = LCase(trackLabels.StreamTitle(stream).Trim())
+        return CreateObject("roRegex", "^\d+\s*-\s*", "").Replace(title, "").Trim()
+    end function
+
+    function SaysForced(text as string) as boolean
+        cleaned = CreateObject("roRegex", "\bnon[\s-]forced\b", "i").ReplaceAll(text, "")
+        return CreateObject("roRegex", "\bforced\b", "i").IsMatch(cleaned)
+    end function
+
+end namespace
