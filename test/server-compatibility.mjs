@@ -190,6 +190,9 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/live-tv-guide.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/recordAiring.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/record-airing.bs', 'utf8');
+for (const [file, test] of [['source/utils/heldSeek.bs', 'test/held-seek.bs']]) {
+    source += '\n' + (await readFile(file, 'utf8')).replace(/^import .*$/gm, '') + '\n' + await readFile(test, 'utf8');
+}
 source += '\n' + await readFile('test/server-date.bs', 'utf8');
 source += '\n' + await readFile('test/special-features.bs', 'utf8');
 source += '\n' + await readFile('test/spotlight-episodes.bs', 'utf8');
@@ -1262,3 +1265,9 @@ assert.match(recordingsSource, /else if response\.kind = "cancelTimer"\s+'[^\n]*
 assert.match((await readFile('source/api/Items.bs', 'utf8')).match(/function searchMedia\([^]*?end function/)[0], /if includePrograms\s+liveTv = api\.items\.Get\(\{[^}]*"IncludeItemTypes": "LiveTvProgram"/, 'Search only asks for Live TV programs when it is told to');
 assert.match((await readFile('components/search/SearchResults.bs', 'utf8')).match(/sub onViewsLoaded\([^]*?end sub/)[0], /isStringEqual\(view\.LookupCI\("CollectionType"\), "livetv"\) then m\.searchTask\.liveTv = true/, 'Search adds Live TV programs only on a server with a Live TV library');
 process.stdout.write('PASS: Live TV recording wiring (10 checks)\n');
+
+// Held seeking
+const heldPlayer = await readFile('components/video/VideoPlayerView.bs', 'utf8');
+assert.match(heldPlayer, /seconds = hold\.direction \* heldSeek\.SecondsFor\(hold\.base, hold\.count\)/, 'A held key steps by the growing hold step');
+assert.match(heldPlayer, /function onKeyEvent\(key as string, press as boolean\) as boolean\s+'[^\n]*\s+if not press and \(key = KeyCode\.LEFT or key = KeyCode\.RIGHT\) then endHeldSeek\(\)/, 'and lets go when the key comes up, before anything else can take the release');
+process.stdout.write('PASS: held seek wiring (2 checks)\n');

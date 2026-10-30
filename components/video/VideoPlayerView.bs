@@ -19,6 +19,7 @@ import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/diagnostics.bs"
 import "pkg:/source/utils/embyFeatures.bs"
 import "pkg:/source/utils/episodeBrowser.bs"
+import "pkg:/source/utils/heldSeek.bs"
 import "pkg:/source/utils/liveRecovery.bs"
 import "pkg:/source/utils/liveTvGuide.bs"
 import "pkg:/source/utils/liveTvLastChannel.bs"
@@ -149,6 +150,11 @@ sub init()
     playbackOverlay.SetFont(m.seekPreviewTime, 20, true)
     m.seekSettleTimer = m.top.findNode("seekSettleTimer")
     m.seekSettleTimer.observeField("fire", "onSeekSettled")
+    m.heldSeek = invalid
+    m.heldSeekStart = m.top.findNode("heldSeekStart")
+    m.heldSeekStart.observeField("fire", "onHeldSeekStart")
+    m.heldSeekRepeat = m.top.findNode("heldSeekRepeat")
+    m.heldSeekRepeat.observeField("fire", "stepHeldSeek")
 
     ' The loading animation stands in for the bars the device would draw, and for the app's
     ' spinner that was up while this screen opened
@@ -905,7 +911,7 @@ sub onOSDAction()
     end if
 
     if action.Left(6) = "scrub,"
-        scrubBy(action.Mid(6).ToInt())
+        beginHeldSeek(action.Mid(6).ToInt(), true)
         return
     end if
 
@@ -1493,6 +1499,7 @@ sub onVideoContentLoaded(event as object)
     startEmbyPreview(isLiveStream)
 
     ' A new item starts its scrub state and sheets over
+    endHeldSeek()
     m.scrubHold = { active: false, wasPlaying: false, target: invalid }
     hideSeekPreview()
     if m.sheetsFor <> m.top.id
@@ -2871,6 +2878,69 @@ function seekStepSeconds() as integer
     return seconds
 end function
 
+function skipSeconds(direction as integer) as integer
+    key = "playback.skipBackLength"
+    if direction > 0 then key = "playback.skipForwardLength"
+    seconds = (m.global.session.user.settings[key] ?? "10").toStr().toInt()
+    if seconds <= 0 then seconds = 10
+    return seconds
+end function
+
+' A hold moves the way its first press did, on the seek bar or with the controls hidden, growing
+' from that press's own step. Every press starts over, so separate presses move the set step.
+sub beginHeldSeek(direction as integer, onSeekBar as boolean)
+    baseSeconds = seekStepSeconds()
+    if not onSeekBar then baseSeconds = skipSeconds(direction)
+    m.heldSeek = { direction: direction, onSeekBar: onSeekBar, base: baseSeconds, count: 0, since: CreateObject("roTimespan") }
+    m.heldSeekRepeat.control = "stop"
+    m.heldSeekStart.control = "start"
+    stepHeldSeek()
+end sub
+
+sub onHeldSeekStart()
+    m.heldSeekRepeat.control = "start"
+    stepHeldSeek()
+end sub
+
+sub stepHeldSeek()
+    hold = m.heldSeek
+    if not isValid(hold) then return
+    ' A key whose release never arrived stops stepping on its own
+    if hold.since.TotalMilliseconds() > HELD_SEEK_LIMIT_MS
+        endHeldSeek()
+        return
+    end if
+    hold.count++
+    seconds = hold.direction * heldSeek.SecondsFor(hold.base, hold.count)
+    if hold.onSeekBar then scrubBy(seconds) else skipBy(seconds)
+end sub
+
+sub endHeldSeek()
+    m.heldSeek = invalid
+    m.heldSeekStart.control = "stop"
+    m.heldSeekRepeat.control = "stop"
+end sub
+
+' How far the next step goes, which the preview fetches its sheets by
+function nextSeekStepSeconds() as integer
+    if isValid(m.heldSeek) and m.heldSeek.onSeekBar then return heldSeek.SecondsFor(m.heldSeek.base, m.heldSeek.count + 1)
+    return seekStepSeconds()
+end function
+
+' With the controls hidden Left and Right skip, and steps that come while a seek lands build on
+' where the last one aimed
+sub skipBy(delta as integer)
+    bounds = seekBounds()
+    if not isValid(bounds) then return
+    target = clampSeconds((m.pendingSeek ?? m.top.position) + delta, bounds)
+    m.pendingSeek = target
+    holdSkipPrompts(target)
+    m.top.seek = target
+    m.seekSettleTimer.control = "start"
+    setVideoEndingTime(target)
+    m.positionText.text = secondsToHuman(target, true)
+end sub
+
 function trickplayPreviewOn() as boolean
     return m.global.session.user.settings["playback.trickplay.enabled"] <> false and isValid(m.trickplayDataFinal)
 end function
@@ -2888,13 +2958,11 @@ function trickplayWidthFor(widths as object) as string
     return best.toStr()
 end function
 
-' Each press moves by the seek step. With pause while scrubbing on and a preview to scrub by, the
+' Each press moves by its step. With pause while scrubbing on and a preview to scrub by, the
 ' first press pauses and later ones only move the target. Otherwise every press seeks.
-sub scrubBy(direction as integer)
-    duration = m.top.duration
-    if duration <= 0 then return
-    limit = duration - 1
-    delta = direction * seekStepSeconds()
+sub scrubBy(delta as integer)
+    bounds = seekBounds()
+    if not isValid(bounds) then return
 
     pauseSetting = m.global.session.user.settings["playback.trickplay.pauseWhileScrubbing"]
     if not m.scrubHold.active and pauseSetting <> false and trickplayPreviewOn()
@@ -2905,12 +2973,12 @@ sub scrubBy(direction as integer)
     m.seekSettleTimer.control = "stop"
 
     if m.scrubHold.active
-        target = clampSeconds((m.scrubHold.target ?? m.top.position) + delta, limit)
+        target = clampSeconds((m.scrubHold.target ?? m.top.position) + delta, bounds)
         m.scrubHold.target = target
         holdSkipPrompts()
     else
         ' A seek is still landing while the presses come, so each builds on where the last one aimed
-        target = clampSeconds((m.pendingSeek ?? m.top.position) + delta, limit)
+        target = clampSeconds((m.pendingSeek ?? m.top.position) + delta, bounds)
         m.pendingSeek = target
         holdSkipPrompts(target)
         m.top.seek = target
@@ -2919,13 +2987,19 @@ sub scrubBy(direction as integer)
 
     m.osd.scrubPosition = target
     showSeekPreview(target)
-    prefetchSheets(target * 1000, direction > 0)
+    prefetchSheets(target * 1000, delta > 0)
 end sub
 
-function clampSeconds(value as float, limit as float) as float
-    if value < 0 then return 0
-    if value > limit then return limit
+function clampSeconds(value as float, bounds as object) as float
+    if value < bounds[0] then return bounds[0]
+    if value > bounds[1] then return bounds[1]
     return value
+end function
+
+' Where a seek can land, a second short of the end
+function seekBounds() as dynamic
+    if m.top.duration <= 0 then return invalid
+    return [0, m.top.duration - 1]
 end function
 
 sub onSeekSettled()
@@ -3035,7 +3109,7 @@ sub prefetchSheets(positionMs as float, forward as boolean)
     if not trickplayPreviewOn() then return
     info = m.trickplayDataFinal
     perSheet = info.TileWidth * info.TileHeight
-    stepMs = seekStepSeconds() * 1000
+    stepMs = nextSeekStepSeconds() * 1000
     direction = forward ? 1 : -1
     lastMs = (info.ThumbnailCount - 1) * info.Interval
     endMs = (m.top.duration - 1) * 1000
@@ -4015,6 +4089,9 @@ sub openGuide()
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
+    ' Releases bubble up from the controls too, so this catches a hold however it started
+    if not press and (key = KeyCode.LEFT or key = KeyCode.RIGHT) then endHeldSeek()
+
     ' While a failed channel's card is up the remote belongs to Retry, apart from Up for the channel
     ' changer and Back to leave
     if m.liveLost and not isValid(m.carousel) and key <> KeyCode.BACK
@@ -4131,23 +4208,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if not m.osd.visible and not m.top.trickPlayBar.visible
             if not stateAllowsOSD() then return true
 
-            skipFwd = val(m.global.session.user.settings["playback.skipForwardLength"] ?? "10")
-            skipBack = val(m.global.session.user.settings["playback.skipBackLength"] ?? "10")
-            if skipFwd <= 0 then skipFwd = 10
-            if skipBack <= 0 then skipBack = 10
-
-            if key = KeyCode.RIGHT
-                newPosition = m.top.position + skipFwd
-                if newPosition > m.top.duration then newPosition = m.top.duration
-            else
-                newPosition = m.top.position - skipBack
-                if newPosition < 0 then newPosition = 0
-            end if
-
-            holdSkipPrompts(newPosition)
-            m.top.seek = newPosition
-            setVideoEndingTime(newPosition)
-            m.positionText.text = secondsToHuman(newPosition, true)
+            direction = -1
+            if key = KeyCode.RIGHT then direction = 1
+            beginHeldSeek(direction, false)
             return true
         end if
     end if
