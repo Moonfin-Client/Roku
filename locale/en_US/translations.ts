@@ -8450,5 +8450,65 @@
         <extracomment>Line under a row in the Home Rows editor that comes from a Seerr Discover slider</extracomment>
         <translation>Seerr Discovery Rows</translation>
     </message>
+    <message>
+        <source>S^0</source>
+        <extracomment>Short season label on a season pick in the Seerr request dialog. ^0 is the season number</extracomment>
+        <translation>S^0</translation>
+    </message>
+    <message>
+        <source>Series Continuing · Future Seasons Can Be Requested</source>
+        <extracomment>Banner in the Seerr request dialog for a series that is still airing and fully in the library</extracomment>
+        <translation>Series Continuing · Future Seasons Can Be Requested</translation>
+    </message>
+    <message>
+        <source>Episode ^0</source>
+        <extracomment>Episode pick in the Seerr Report Issue dialog. ^0 is the episode number</extracomment>
+        <translation>Episode ^0</translation>
+    </message>
+    <message>
+        <source>What&apos;s wrong?</source>
+        <extracomment>Label over the text box in the Seerr Report Issue dialog</extracomment>
+        <translation>What&apos;s wrong?</translation>
+    </message>
+    <message>
+        <source>Submit Report</source>
+        <extracomment>Button that sends a Seerr issue report</extracomment>
+        <translation>Submit Report</translation>
+    </message>
+    <message>
+        <source>Keep</source>
+        <extracomment>Button in the Cancel Request dialog that keeps the request</extracomment>
+        <translation>Keep</translation>
+    </message>
+    <message>
+        <source>Cancel request for &quot;^0&quot;?</source>
+        <extracomment>Question in the Cancel Request dialog. ^0 is the title</extracomment>
+        <translation>Cancel request for &quot;^0&quot;?</translation>
+    </message>
+    <message>
+        <source>Cancel ^0 requests for &quot;^1&quot;?</source>
+        <extracomment>Question in the Cancel Request dialog when a title has several open requests. ^0 is how many and ^1 is the title</extracomment>
+        <translation>Cancel ^0 requests for &quot;^1&quot;?</translation>
+    </message>
+    <message>
+        <source>Failed to cancel request</source>
+        <extracomment>Note shown when Seerr refuses to cancel a request</extracomment>
+        <translation>Failed to cancel request</translation>
+    </message>
+    <message>
+        <source>Failed to update request</source>
+        <extracomment>Note shown when Seerr refuses to approve or decline a request</extracomment>
+        <translation>Failed to update request</translation>
+    </message>
+    <message>
+        <source>Request failed</source>
+        <extracomment>Note shown when Seerr refuses a request and gives no reason</extracomment>
+        <translation>Request failed</translation>
+    </message>
+    <message>
+        <source>Requested by ^0</source>
+        <extracomment>Line on a Seerr request naming who asked for it. ^0 is the requester&apos;s name</extracomment>
+        <translation>Requested by ^0</translation>
+    </message>
 </context>
 </TS>

@@ -228,6 +228,7 @@ source += '\n' + await readFile('test/media-bar-external.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/seerrSliders.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/seerr-sliders.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/SeerrUtils.bs', 'utf8')).match(/^const SEERR_(?:MEDIA|REQUEST)_\w+ = .+$/gm).join('\n');
+source += '\n' + (await readFile('source/utils/seerrRequestRules.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/seerr-requests.bs', 'utf8');
 // The whole markdown reader uses loops this interpreter cant parse, and the reviews only need Strip
 source += '\nnamespace messageMarkdown\n' + (await readFile('source/utils/messageMarkdown.bs', 'utf8')).match(/^    function Strip\([^]*?^    end function/m)[0] + '\nend namespace\n';
@@ -1101,6 +1102,7 @@ process.stdout.write('PASS: home and media bar wiring\n');
 
 // Seerr requests
 assert.match(await readFile('components/home/LoadItemsTask.bs', 'utf8'), /if endpoint = "\/api\/v1\/media" then found = hydrateRecentlyAdded\(found\)/, 'Recently Added cards take their titles and art from the details');
+assert.match(await readFile('source/utils/seerrButtons.bs', 'utf8'), /seerrRequestRules\.Cancelable\(requests, true, CanManageRequests\(permissions\), CurrentSeerrUserId\(\)\)/, 'Cancel only shows for a request the viewer can take back');
 process.stdout.write('PASS: Seerr request wiring\n');
 
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');

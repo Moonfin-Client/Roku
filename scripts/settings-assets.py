@@ -37,6 +37,10 @@ EXTRA_GLYPHS = [
     'expand_more', 'expand_less',
     # The music category screens' buttons
     'sort_by_alpha', 'play_arrow', 'album', 'queue_music',
+    # The Seerr request, issue and requests screens
+    'toggle_on', 'toggle_off', 'radio_button_checked', 'radio_button_unchecked', 'check_circle',
+    'check_circle_outline', 'cancel_outlined', 'arrow_drop_down', 'autorenew', 'data_usage', 'block',
+    'highlight_off', 'close',
 ]
 
 

@@ -1,0 +1,760 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/playbackOverlay.bs"
+import "pkg:/source/utils/settingsGlyphs.bs"
+
+' The dialogs are sized in dp, and one dp is this many pixels on a 1080p screen
+const DP = 1.66957
+' The dialog panel, and the room the scrim leaves around it
+const PANEL_PAD_Y = 33
+const PANEL_MAX_HEIGHT = 946
+const PANEL_BORDER = 2
+const TITLE_SIZE = 33
+const TITLE_PAD_X = 40
+const TITLE_PAD_BOTTOM = 20
+const BODY_GAP = 13
+' The confirm box
+const ALERT_PAD = 40
+const ALERT_TITLE_SIZE = 40
+const ALERT_TITLE_GAP = 27
+const ALERT_MIN_WIDTH = 467
+const ALERT_MAX_WIDTH = 935
+
+const FOCUSED_TEXT = "#000000DE"
+const MUTED = "#FFFFFF61"
+const SECONDARY = "#FFFFFF8A"
+const DIVIDER = "#FFFFFF1F"
+const AVAILABLE = "#22C55E"
+const ERROR = "#EF4444"
+
+sub init()
+    m.panel = m.top.findNode("panel")
+    m.panelFill = m.top.findNode("panelFill")
+    m.panelBorder = m.top.findNode("panelBorder")
+    m.title = m.top.findNode("title")
+    m.titleRule = m.top.findNode("titleRule")
+    m.viewport = m.top.findNode("viewport")
+    m.body = m.top.findNode("body")
+    m.footer = m.top.findNode("footer")
+    m.items = []
+    m.focused = -1
+    m.fonts = {}
+    m.top.focusable = true
+end sub
+
+function px(value as float) as integer
+    return Int(value * DP + 0.5)
+end function
+
+' ===== Layout =====
+
+sub render()
+    palette = playbackOverlay.Palette()
+    m.accent = playbackOverlay.WithAlpha(palette.accent, 255)
+    m.inputBorder = palette.chipBorder
+    alert = m.top.variant = "alert"
+
+    m.body.removeChildrenIndex(m.body.getChildCount(), 0)
+    m.footer.removeChildrenIndex(m.footer.getChildCount(), 0)
+    m.items = []
+    m.lines = []
+
+    width = m.top.panelWidth
+    if alert then width = alertWidth()
+    padding = m.top.bodyPadding
+    if not isValid(padding) or padding.count() < 3
+        padding = [8, 24, 20]
+        if alert then padding = [0, 24, 24]
+    end if
+    m.bodyX = px(padding[1])
+    m.bodyWidth = width - m.bodyX * 2
+    m.panelWidthPx = width
+
+    ' The title, its rule and where the body starts
+    m.title.font = fontFor(m.top.dialogTitle, alert ? ALERT_TITLE_SIZE : TITLE_SIZE, not alert)
+    m.title.text = m.top.dialogTitle
+    if alert
+        m.title.width = width - ALERT_PAD * 2
+        m.title.translation = [ALERT_PAD, ALERT_PAD]
+        m.titleRule.visible = false
+        bodyTop = ALERT_PAD + m.title.boundingRect().height + ALERT_TITLE_GAP
+        endPad = 0
+    else
+        m.title.width = width - TITLE_PAD_X * 2
+        m.title.translation = [TITLE_PAD_X, PANEL_PAD_Y]
+        ruleTop = PANEL_PAD_Y + m.title.boundingRect().height + TITLE_PAD_BOTTOM
+        m.titleRule.visible = true
+        m.titleRule.translation = [PANEL_BORDER, ruleTop]
+        m.titleRule.width = width - PANEL_BORDER * 2
+        bodyTop = ruleTop + m.titleRule.height + BODY_GAP
+        endPad = PANEL_PAD_Y
+    end if
+
+    y = px(padding[0])
+    for each element in m.top.elements ?? []
+        y += px(element.gap ?? 0)
+        y += layoutElement(element, y)
+        y += px(element.after ?? 0)
+    end for
+    contentHeight = y + px(padding[2])
+
+    footerHeight = 0
+    if m.top.showCancel then footerHeight = layoutCancel()
+
+    viewHeight = contentHeight
+    room = PANEL_MAX_HEIGHT - bodyTop - footerHeight - endPad
+    if viewHeight > room then viewHeight = room
+    m.viewHeight = viewHeight
+    m.contentHeight = contentHeight
+    m.viewport.translation = [0, bodyTop]
+    m.viewport.clippingRect = [0, 0, width, viewHeight]
+    m.footer.translation = [0, bodyTop + viewHeight]
+    height = bodyTop + viewHeight + footerHeight + endPad
+
+    surface = palette.surface
+    if isValidAndNotEmpty(m.top.surfaceColor) then surface = m.top.surfaceColor
+    if alert
+        m.panelFill.uri = "pkg:/images/seerr/fill27.9.png"
+        m.panelFill.blendColor = playbackOverlay.WithAlpha(surface, 255)
+        m.panelBorder.visible = false
+    else
+        m.panelFill.uri = "pkg:/images/playback/panel33.9.png"
+        m.panelFill.blendColor = playbackOverlay.WithAlpha(surface, 230)
+        m.panelBorder.uri = "pkg:/images/playback/panelborder33.9.png"
+        m.panelBorder.blendColor = palette.chipBorder
+        m.panelBorder.visible = true
+    end if
+    for each layer in [m.panelFill, m.panelBorder]
+        layer.width = width
+        layer.height = height
+    end for
+    m.panel.translation = [Int((1920 - width) / 2), Int((1080 - height) / 2)]
+
+    m.focused = -1
+    target = 0
+    for i = 0 to m.items.count() - 1
+        if m.items[i].id = m.top.focusId then target = i
+    end for
+    if m.items.count() > 0 then moveFocus(target)
+end sub
+
+' The confirm box fits its words, between its narrowest and widest
+function alertWidth() as integer
+    probe = CreateObject("roSGNode", "Label")
+    probe.font = fontFor(m.top.dialogTitle, ALERT_TITLE_SIZE, false)
+    probe.text = m.top.dialogTitle
+    widest = probe.boundingRect().width
+    for each element in m.top.elements ?? []
+        if element.kind = "text"
+            probe.font = fontFor(element.text, px(14), false)
+            probe.text = element.text
+            if probe.boundingRect().width > widest then widest = probe.boundingRect().width
+        end if
+    end for
+    width = widest + ALERT_PAD * 2
+    if width < ALERT_MIN_WIDTH then width = ALERT_MIN_WIDTH
+    if width > ALERT_MAX_WIDTH then width = ALERT_MAX_WIDTH
+    return width
+end function
+
+' Lays one element out at y and returns how tall it is
+function layoutElement(element as object, y as integer) as integer
+    kind = element.kind
+    if kind = "toggle" then return layoutToggle(element, y)
+    if kind = "radio" then return layoutRadio(element, y)
+    if kind = "expander" then return layoutExpander(element, y)
+    if kind = "divider" then return layoutDivider(element, y)
+    if kind = "chips" then return layoutChips(element, y)
+    if kind = "selector" then return layoutSelector(element, y)
+    if kind = "spinner" then return layoutSpinner(y)
+    if kind = "note" then return layoutNote(element, y)
+    if kind = "label" then return layoutLabel(element, y)
+    if kind = "text" then return layoutLabel({ text: element.text, size: 14, color: "#FFFFFFB3", wrap: true }, y)
+    if kind = "quota" then return layoutQuota(element, y)
+    if kind = "banner" then return layoutBanner(element, y)
+    if kind = "field" then return layoutField(element, y)
+    if kind = "buttons" then return layoutButtons(element, y)
+    if kind = "option" then return layoutOption(element, y, m.body, 0)
+    if kind = "textActions" then return layoutTextActions(element, y)
+    return 0
+end function
+
+' A row that fills solid when focused and turns everything on it dark to read on the fill. One
+' that can't be pressed isn't focusable and its title dims.
+function focusRow(element as object, y as integer, height as integer) as object
+    group = m.body.createChild("Group")
+    group.translation = [m.bodyX, y]
+    fill = addPoster(group, "pkg:/images/seerr/fill13.9.png", 0, 0, m.bodyWidth, height, "#FFFFFFFF")
+    ring = addPoster(group, "pkg:/images/seerr/stroke13w1_5.9.png", 0, 0, m.bodyWidth, height, m.accent)
+    fill.visible = false
+    ring.visible = false
+    row = { group: group, colored: [], kind: "row", fill: fill, ring: ring }
+    if element.enabled <> false then addItem(element.id, y, height, m.bodyX, m.bodyWidth, row)
+    return row
+end function
+
+function layoutToggle(element as object, y as integer) as integer
+    checkbox = element.checkbox = true
+    padY = px(12)
+    padX = px(8)
+    iconSize = checkbox ? px(22) : px(34)
+    lineHeight = Int(px(14) * 1.43)
+    height = padY * 2
+    if iconSize > lineHeight then height += iconSize else height += lineHeight
+    row = focusRow(element, y, height)
+
+    iconColor = element.value = true ? m.accent : MUTED
+    glyphName = element.value = true ? "toggle_on" : "toggle_off"
+    if checkbox then glyphName = element.value = true ? "check_box" : "check_box_outline_blank"
+
+    x = padX
+    right = m.bodyWidth - padX
+    if checkbox
+        addColored(row, addGlyph(row.group, glyphName, iconSize, iconColor, x, Int((height - iconSize) / 2)), iconColor)
+        x += iconSize + px(12)
+    else
+        right -= iconSize
+        addColored(row, addGlyph(row.group, glyphName, iconSize, iconColor, right, Int((height - iconSize) / 2)), iconColor)
+        right -= px(12)
+    end if
+
+    if isValidAndNotEmpty(element.trailing)
+        trailing = addText(row.group, element.trailing, px(11.5), false, element.trailingColor ?? "#FFFFFF", 0, 0, 0)
+        trailingWidth = trailing.boundingRect().width
+        trailing.translation = [right - trailingWidth, Int((height - trailing.boundingRect().height) / 2)]
+        addColored(row, trailing, trailing.color)
+        right -= trailingWidth + px(12)
+    end if
+
+    titleColor = element.enabled = false ? MUTED : "#FFFFFF"
+    title = addText(row.group, element.title, px(14), false, titleColor, x, 0, right - x)
+    title.translation = [x, Int((height - title.boundingRect().height) / 2)]
+    addColored(row, title, titleColor)
+    return height
+end function
+
+function layoutRadio(element as object, y as integer) as integer
+    padY = px(12)
+    iconSize = px(20)
+    height = padY * 2 + Int(px(14) * 1.43)
+    row = focusRow(element, y, height)
+
+    iconColor = element.selected = true ? m.accent : MUTED
+    glyph = addGlyph(row.group, element.selected = true ? "radio_button_checked" : "radio_button_unchecked", iconSize, iconColor, px(8), Int((height - iconSize) / 2))
+    addColored(row, glyph, iconColor)
+    x = px(8) + iconSize + px(12)
+    title = addText(row.group, element.title, px(14), false, "#FFFFFF", x, 0, m.bodyWidth - x - px(8))
+    title.translation = [x, Int((height - title.boundingRect().height) / 2)]
+    addColored(row, title, "#FFFFFF")
+    return height
+end function
+
+function layoutExpander(element as object, y as integer) as integer
+    padY = px(12)
+    iconSize = px(24)
+    height = padY * 2 + iconSize
+    row = focusRow(element, y, height)
+
+    color = "#FFFFFFB3"
+    glyph = addGlyph(row.group, element.open = true ? "expand_less" : "expand_more", iconSize, color, m.bodyWidth - px(8) - iconSize, Int((height - iconSize) / 2))
+    addColored(row, glyph, color)
+    title = addText(row.group, element.title, px(14), false, color, px(8), 0, m.bodyWidth - px(16) - iconSize)
+    title.translation = [px(8), Int((height - title.boundingRect().height) / 2)]
+    addColored(row, title, color)
+    return height
+end function
+
+function layoutDivider(element as object, y as integer) as integer
+    pad = 0
+    if element.tight <> true then pad = px(7.5)
+    rule = m.body.createChild("Rectangle")
+    rule.color = DIVIDER
+    rule.width = m.bodyWidth
+    rule.height = 2
+    rule.translation = [m.bodyX, y + pad]
+    return pad * 2 + 2
+end function
+
+' Pills that wrap across the width. A pill that can't be picked can't take focus, and one already
+' in the library carries a check.
+function layoutChips(element as object, y as integer) as integer
+    padX = px(14)
+    padY = px(8)
+    gap = px(8)
+    textSize = px(13)
+    checkSize = px(14)
+    height = padY * 2 + Int(textSize * 1.43)
+    left = m.bodyX + px(8)
+    right = m.bodyX + m.bodyWidth
+    x = left
+    top = y + px(8)
+
+    for each chip in element.items ?? []
+        label = CreateObject("roSGNode", "Label")
+        label.font = fontFor(chip.label, textSize, false)
+        label.text = chip.label
+        width = padX * 2 + label.boundingRect().width
+        if chip.available = true then width += checkSize + px(6)
+        if x > left and x + width > right
+            x = left
+            top += height + gap
+        end if
+
+        group = m.body.createChild("Group")
+        group.translation = [x, top]
+        fillColor = "#FFFFFF14"
+        textColor = "#FFFFFFB3"
+        if chip.enabled = false
+            fillColor = "#FFFFFF0A"
+            textColor = MUTED
+        end if
+        if chip.selected = true
+            fillColor = m.accent
+            textColor = "#FFFFFF"
+        end if
+        addPoster(group, "pkg:/images/livetv/fill28.9.png", 0, 0, width, height, fillColor)
+        textX = padX
+        if chip.available = true
+            addGlyph(group, "check_circle", checkSize, AVAILABLE, padX, Int((height - checkSize) / 2))
+            textX += checkSize + px(6)
+        end if
+        label.color = textColor
+        label.translation = [textX, Int((height - label.boundingRect().height) / 2)]
+        group.appendChild(label)
+        ring = addPoster(group, "pkg:/images/seerr/stroke28w3.9.png", 0, 0, width, height, m.accent)
+        ring.visible = false
+
+        if chip.enabled <> false then addItem(chip.id, top, height, x, width, { kind: "ring", ring: ring })
+        x += width + gap
+    end for
+
+    return top + height - y
+end function
+
+function layoutSelector(element as object, y as integer) as integer
+    padY = px(14)
+    padX = px(12)
+    arrow = px(24)
+    height = padY * 2 + Int(px(14) * 1.43)
+    group = m.body.createChild("Group")
+    group.translation = [m.bodyX, y]
+    addPoster(group, "pkg:/images/seerr/stroke13w1_5.9.png", 0, 0, m.bodyWidth, height, m.inputBorder)
+    ring = addPoster(group, "pkg:/images/seerr/stroke13w3.9.png", -2, -2, m.bodyWidth + 4, height + 4, m.accent)
+    ring.visible = false
+
+    label = addText(group, element.label, px(14), false, SECONDARY, padX, 0, 0)
+    label.translation = [padX, Int((height - label.boundingRect().height) / 2)]
+    arrowX = m.bodyWidth - padX - arrow
+    addGlyph(group, "arrow_drop_down", arrow, SECONDARY, arrowX, Int((height - arrow) / 2))
+    valueRight = arrowX - px(8)
+    valueLeft = padX + label.boundingRect().width + px(32)
+    value = addText(group, element.value, px(14), false, "#FFFFFF", valueLeft, 0, valueRight - valueLeft)
+    value.horizAlign = "right"
+    value.translation = [valueLeft, Int((height - value.boundingRect().height) / 2)]
+
+    addItem(element.id, y, height, m.bodyX, m.bodyWidth, { kind: "ring", ring: ring })
+    return height
+end function
+
+function layoutSpinner(y as integer) as integer
+    size = px(36)
+    spinner = m.body.createChild("Spinner")
+    spinner.poster.width = size
+    spinner.poster.height = size
+    spinner.translation = [m.bodyX + Int((m.bodyWidth - size) / 2), y + px(16)]
+    return size + px(16) * 2
+end function
+
+function layoutNote(element as object, y as integer) as integer
+    note = addText(m.body, element.text, px(14), false, SECONDARY, m.bodyX + px(8), y + px(8), m.bodyWidth - px(16))
+    return note.boundingRect().height + px(8) * 2
+end function
+
+function layoutLabel(element as object, y as integer) as integer
+    width = 0
+    if element.wrap = true then width = m.bodyWidth
+    label = addText(m.body, element.text, px(element.size ?? 14), element.bold = true, element.color ?? "#FFFFFF", m.bodyX, y, width)
+    if element.wrap <> true
+        label.width = m.bodyWidth
+        label.ellipsizeOnBoundary = true
+    end if
+    return label.boundingRect().height
+end function
+
+function layoutQuota(element as object, y as integer) as integer
+    padY = px(10)
+    padX = px(12)
+    iconSize = px(16)
+    textSize = px(12.5)
+    height = padY * 2 + Int(textSize * 1.43)
+    color = element.blocked = true ? ERROR : "#FFFFFFB3"
+    group = m.body.createChild("Group")
+    group.translation = [m.bodyX, y]
+    addPoster(group, "pkg:/images/seerr/fill13.9.png", 0, 0, m.bodyWidth, height, element.blocked = true ? "#EF44441A" : "#FFFFFF14")
+    addGlyph(group, element.blocked = true ? "block" : "data_usage", iconSize, color, padX, Int((height - iconSize) / 2))
+    x = padX + iconSize + px(8)
+    label = addText(group, element.text, textSize, false, color, x, 0, m.bodyWidth - x - padX)
+    label.translation = [x, Int((height - label.boundingRect().height) / 2)]
+    return height
+end function
+
+function layoutBanner(element as object, y as integer) as integer
+    padY = px(10)
+    padX = px(14)
+    iconSize = px(20)
+    height = padY * 2 + iconSize
+    group = m.body.createChild("Group")
+    group.translation = [m.bodyX, y]
+    addPoster(group, "pkg:/images/seerr/fill13.9.png", 0, 0, m.bodyWidth, height, "#22C55E26")
+    addPoster(group, "pkg:/images/seerr/stroke13w1_5.9.png", 0, 0, m.bodyWidth, height, "#22C55E66")
+    addGlyph(group, "autorenew", iconSize, AVAILABLE, padX, padY)
+    x = padX + iconSize + px(10)
+    label = addText(group, element.text, px(13), false, "#FFFFFF", x, 0, m.bodyWidth - x - padX)
+    label.translation = [x, Int((height - label.boundingRect().height) / 2)]
+    return height
+end function
+
+' A text box that opens the keyboard. Its border thickens and takes the accent while focused.
+function layoutField(element as object, y as integer) as integer
+    pad = px(16)
+    height = pad * 2 + Int(px(14) * 1.43)
+    group = m.body.createChild("Group")
+    group.translation = [m.bodyX, y]
+    addPoster(group, "pkg:/images/livetv/fill20.9.png", 0, 0, m.bodyWidth, height, "#2A2A2AFF")
+    border = addPoster(group, "pkg:/images/seerr/stroke20w1_5.9.png", 0, 0, m.bodyWidth, height, m.inputBorder)
+    ring = addPoster(group, "pkg:/images/seerr/stroke20w4.9.png", 0, 0, m.bodyWidth, height, m.accent)
+    ring.visible = false
+    text = element.text ?? ""
+    color = "#FFFFFF"
+    if text = ""
+        text = element.placeholder ?? ""
+        color = SECONDARY
+    end if
+    label = addText(group, text, px(14), false, color, pad, 0, m.bodyWidth - pad * 2)
+    label.ellipsizeOnBoundary = true
+    label.translation = [pad, Int((height - label.boundingRect().height) / 2)]
+    addItem(element.id, y, height, m.bodyX, m.bodyWidth, { kind: "field", ring: ring, border: border })
+    return height
+end function
+
+' One or two actions sharing the width. A disabled one still takes focus and does nothing.
+function layoutButtons(element as object, y as integer) as integer
+    buttons = element.items ?? []
+    if buttons.count() = 0 then return 0
+    gap = px(12)
+    height = px(14) * 2 + Int(px(15) * 1.43)
+    width = Int((m.bodyWidth - gap * (buttons.count() - 1)) / buttons.count())
+    x = m.bodyX
+    for each button in buttons
+        enabled = button.enabled <> false
+        group = m.body.createChild("Group")
+        group.translation = [x, y]
+        fillColor = "#FFFFFF1A"
+        if button.primary = true
+            fillColor = button.color ?? "#FF8F00"
+            if not enabled then fillColor = "#FFFFFF1F"
+        end if
+        addPoster(group, "pkg:/images/livetv/fill17.9.png", 0, 0, width, height, fillColor)
+
+        textColor = button.foreground ?? "#FFFFFF"
+        if not enabled then textColor = MUTED
+        if button.busy = true
+            spinnerSize = px(18)
+            label = invalid
+            if isValidAndNotEmpty(button.busyLabel) then label = addText(group, button.busyLabel, px(15), true, textColor, 0, 0, 0)
+            contentWidth = spinnerSize
+            if isValid(label) then contentWidth += px(10) + label.boundingRect().width
+            spinner = group.createChild("Spinner")
+            spinner.poster.width = spinnerSize
+            spinner.poster.height = spinnerSize
+            left = Int((width - contentWidth) / 2)
+            spinner.translation = [left, Int((height - spinnerSize) / 2)]
+            if isValid(label) then label.translation = [left + spinnerSize + px(10), Int((height - label.boundingRect().height) / 2)]
+        else
+            label = addText(group, button.label, px(15), true, textColor, 0, 0, 0)
+            contentWidth = label.boundingRect().width
+            iconSize = px(18)
+            if isValidAndNotEmpty(button.icon) then contentWidth += iconSize + px(8)
+            if contentWidth > width - px(16)
+                label.width = width - px(16) - (contentWidth - label.boundingRect().width)
+                contentWidth = width - px(16)
+            end if
+            left = Int((width - contentWidth) / 2)
+            if isValidAndNotEmpty(button.icon)
+                addGlyph(group, button.icon, iconSize, button.iconColor ?? textColor, left, Int((height - iconSize) / 2))
+                left += iconSize + px(8)
+            end if
+            label.translation = [left, Int((height - label.boundingRect().height) / 2)]
+        end if
+
+        ring = addPoster(group, "pkg:/images/seerr/stroke17w3.9.png", 0, 0, width, height, m.accent)
+        ring.visible = false
+        addItem(button.id, y, height, x, width, { kind: "ring", ring: ring, enabled: enabled })
+        x += width + gap
+    end for
+    return height
+end function
+
+' A picker row: the current choice wears a filled check, the rest an empty ring, and the focused
+' row takes a wash of the accent
+function layoutOption(element as object, y as integer, parent as object, x as integer) as integer
+    padY = px(14)
+    padX = px(24)
+    iconSize = px(20)
+    textSize = px(16)
+    height = padY * 2 + Int(textSize * 1.17)
+    group = parent.createChild("Group")
+    group.translation = [x, y]
+    wash = group.createChild("Rectangle")
+    wash.width = m.panelWidthPx
+    wash.height = height
+    wash.color = playbackOverlay.WithAlpha(m.accent, 51)
+    wash.visible = false
+    iconColor = element.selected = true ? m.accent : MUTED
+    addGlyph(group, element.selected = true ? "check_circle" : "radio_button_unchecked", iconSize, iconColor, padX, Int((height - iconSize) / 2))
+    textX = padX + iconSize + px(12)
+    color = element.dimmed = true ? "#FFFFFF80" : "#FFFFFFCC"
+    label = addText(group, element.label, textSize, false, color, textX, 0, m.panelWidthPx - textX - padX)
+    label.ellipsizeOnBoundary = true
+    label.translation = [textX, Int((height - label.boundingRect().height) / 2)]
+    focusColor = element.dimmed = true ? color : "#FFFFFFF2"
+    addItem(element.id, y, height, x, m.panelWidthPx, { kind: "option", wash: wash, label: label, color: color, focusColor: focusColor }, parent.isSameNode(m.footer))
+    return height
+end function
+
+' The dimmed Cancel under a picker's list, with a rule above it
+function layoutCancel() as integer
+    gap = px(4)
+    rule = m.footer.createChild("Rectangle")
+    rule.color = "#FFFFFF14"
+    rule.width = m.panelWidthPx
+    rule.height = 2
+    rule.translation = [0, gap]
+    return gap * 2 + 2 + layoutOption({ id: "cancel", label: tr("Cancel"), dimmed: true }, gap * 2 + 2, m.footer, 0)
+end function
+
+' The confirm box's actions, words on the right that take a wash when focused
+function layoutTextActions(element as object, y as integer) as integer
+    height = px(40)
+    padX = px(12)
+    gap = px(8)
+    right = m.bodyX + m.bodyWidth
+    actions = element.items ?? []
+    positions = []
+    for i = actions.count() - 1 to 0 step -1
+        action = actions[i]
+        color = action.destructive = true ? "#E57373" : m.accent
+        label = addText(m.body, action.label, px(14), false, color, 0, 0, 0)
+        width = label.boundingRect().width + padX * 2
+        x = right - width
+        wash = addPoster(m.body, "pkg:/images/playback/panel33.9.png", x, y, width, height, playbackOverlay.WithAlpha(color, 26))
+        wash.visible = false
+        m.body.removeChild(label)
+        m.body.appendChild(label)
+        label.translation = [x + padX, y + Int((height - label.boundingRect().height) / 2)]
+        positions.unshift({ id: action.id, x: x, width: width, wash: wash })
+        right = x - gap
+    end for
+    for each position in positions
+        addItem(position.id, y, height, position.x, position.width, { kind: "wash", wash: position.wash })
+    end for
+    return height
+end function
+
+' ===== Focus =====
+
+' Items sharing a top share a line, so Left and Right move along it and Up and Down move between
+' lines to whichever item sits nearest across. Lines are made top to bottom, the footer last.
+sub addItem(id as dynamic, y as integer, height as integer, x as integer, width as integer, visual as object, inFooter = false as boolean)
+    item = visual
+    item.id = id ?? ""
+    item.y = y
+    item.height = height
+    item.x = x
+    item.width = width
+    item.inFooter = inFooter
+    if not isValid(item.enabled) then item.enabled = true
+
+    ' The footer measures from its own top, so it's kept apart from the body
+    top = y
+    if inFooter then top = 100000 + y
+    lineIndex = -1
+    for i = 0 to m.lines.count() - 1
+        if m.lines[i].top = top then lineIndex = i
+    end for
+    if lineIndex < 0
+        m.lines.push({ top: top, items: [] })
+        lineIndex = m.lines.count() - 1
+    end if
+    item.line = lineIndex
+    m.lines[lineIndex].items.push(m.items.count())
+    m.items.push(item)
+end sub
+
+sub addColored(row as object, node as object, color as string)
+    row.colored.push({ node: node, color: color })
+end sub
+
+sub moveFocus(index as integer)
+    if m.focused >= 0 and m.focused < m.items.count() then showFocus(m.items[m.focused], false)
+    m.focused = index
+    item = m.items[index]
+    showFocus(item, true)
+    m.top.focusId = item.id
+    scrollTo(item)
+end sub
+
+sub showFocus(item as object, focused as boolean)
+    kind = item.kind
+    if kind = "row"
+        item.fill.visible = focused
+        item.ring.visible = focused
+        for each entry in item.colored
+            entry.node.color = focused ? FOCUSED_TEXT : entry.color
+        end for
+    else if kind = "ring"
+        item.ring.visible = focused
+    else if kind = "field"
+        item.ring.visible = focused
+        item.border.visible = not focused
+    else if kind = "option"
+        item.wash.visible = focused
+        item.label.color = focused ? item.focusColor : item.color
+    else if kind = "wash"
+        item.wash.visible = focused
+    end if
+end sub
+
+' Keeps the focused item in view when the body is taller than the panel allows
+sub scrollTo(item as object)
+    y = item.y
+    if item.inFooter or m.contentHeight <= m.viewHeight then return
+    offset = -m.body.translation[1]
+    if y < offset then offset = y - px(8)
+    if y + item.height > offset + m.viewHeight then offset = y + item.height - m.viewHeight + px(8)
+    if offset < 0 then offset = 0
+    if offset > m.contentHeight - m.viewHeight then offset = m.contentHeight - m.viewHeight
+    m.body.translation = [0, -offset]
+end sub
+
+function nearestOnLine(lineIndex as integer, centerX as float) as integer
+    best = -1
+    bestDistance = 0
+    for each index in m.lines[lineIndex].items
+        item = m.items[index]
+        distance = Abs(item.x + item.width / 2 - centerX)
+        if best < 0 or distance < bestDistance
+            best = index
+            bestDistance = distance
+        end if
+    end for
+    return best
+end function
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if not m.top.visible then return false
+
+    if key = KeyCode.BACK
+        m.top.closed = true
+        return true
+    end if
+    if m.focused < 0 then return true
+
+    item = m.items[m.focused]
+    if key = KeyCode.OK
+        if item.enabled then m.top.activated = item.id
+        return true
+    end if
+
+    lineItems = m.lines[item.line].items
+    position = -1
+    for i = 0 to lineItems.count() - 1
+        if lineItems[i] = m.focused then position = i
+    end for
+
+    if key = KeyCode.LEFT
+        if position > 0 then moveFocus(lineItems[position - 1])
+        return true
+    end if
+    if key = KeyCode.RIGHT
+        if position < lineItems.count() - 1 then moveFocus(lineItems[position + 1])
+        return true
+    end if
+
+    if key = KeyCode.UP or key = KeyCode.DOWN
+        line = item.line + (key = KeyCode.UP ? -1 : 1)
+        if line >= 0 and line < m.lines.count() then moveFocus(nearestOnLine(line, item.x + item.width / 2))
+        return true
+    end if
+
+    return true
+end function
+
+' ===== Drawing =====
+
+function addPoster(parent as object, uri as string, x as integer, y as integer, width as integer, height as integer, blend as string) as object
+    poster = parent.createChild("Poster")
+    poster.uri = uri
+    poster.translation = [x, y]
+    poster.width = width
+    poster.height = height
+    poster.blendColor = blend
+    return poster
+end function
+
+function addText(parent as object, text as string, size as integer, bold as boolean, color as string, x as integer, y as integer, width as integer) as object
+    label = parent.createChild("Label")
+    label.font = fontFor(text, size, bold)
+    label.color = color
+    label.text = text
+    label.translation = [x, y]
+    if width > 0
+        label.wrap = true
+        label.lineSpacing = Int(size * 0.43)
+        label.width = width
+    end if
+    return label
+end function
+
+function addGlyph(parent as object, name as string, size as integer, color as string, x as integer, y as integer) as object
+    key = `glyph${size}`
+    if not m.fonts.DoesExist(key)
+        font = CreateObject("roSGNode", "Font")
+        font.uri = settingsGlyphs.FONT_URI
+        font.size = size
+        m.fonts[key] = font
+    end if
+    glyph = parent.createChild("Label")
+    glyph.font = m.fonts[key]
+    glyph.text = settingsGlyphs.Char(name)
+    glyph.color = color
+    glyph.width = size
+    glyph.height = size
+    glyph.horizAlign = "center"
+    glyph.vertAlign = "center"
+    glyph.translation = [x, y]
+    return glyph
+end function
+
+' Roboto only draws Latin, Greek and Cyrillic, so text in any other script keeps the system font
+function fontFor(text as string, size as integer, bold as boolean) as object
+    uri = bold ? "pkg:/fonts/Roboto-Bold.ttf" : "pkg:/fonts/Roboto-Regular.ttf"
+    if not robotoDraws(text) then uri = bold ? "font:BoldSystemFontFile" : "font:SystemFontFile"
+    key = `${uri}${size}`
+    if not m.fonts.DoesExist(key)
+        font = CreateObject("roSGNode", "Font")
+        font.uri = uri
+        font.size = size
+        m.fonts[key] = font
+    end if
+    return m.fonts[key]
+end function
+
+function robotoDraws(text as string) as boolean
+    for i = 1 to Len(text)
+        code = Asc(Mid(text, i, 1))
+        if code >= &h0530 and not (code >= &h1E00 and code <= &h1EFF) and not (code >= &h2000 and code <= &h20CF) then return false
+    end for
+    return true
+end function

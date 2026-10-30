@@ -1,14 +1,19 @@
+import "pkg:/components/itemMenu/itemMenuToastHost.bs"
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/seerrButtons.bs"
+import "pkg:/source/utils/seerrRequestRules.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/tvKeyboard.bs"
 
-' Asking Seerr for a title, and taking the ask back. The ask itself is one dialog, the same
-' one the other clients put up. Shared so both detail screens behave the same.
+' Asking Seerr for a title, taking the ask back, answering open requests and reporting an issue,
+' each in a Seerr sheet. Shared so every detail screen behaves the same.
 
 sub init()
     m.apiTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.sheet = invalid
+    m.sheetKind = ""
+    m.picker = invalid
 end sub
 
 ' The detail screens hand over what they already fetched rather than asking again
@@ -17,8 +22,7 @@ sub begin(action as string)
     if not isValid(details) then return
 
     if action = "seerrCancelHd" or action = "seerrCancel4k"
-        m.pendingRequests = seerrButtons.PendingRequests(details.mediaInfo, action = "seerrCancel4k")
-        onCancelRequestPressed()
+        ShowCancel(action = "seerrCancel4k")
     else if action = "seerrRequest4k"
         ShowRequestDialog(true, false)
     else if action = "seerrRequest"
@@ -27,11 +31,29 @@ sub begin(action as string)
     else if action = "seerrWatchlist"
         ToggleWatchlist()
     else if action = "seerrReportIssue"
-        StartReportIssue()
+        ShowReportIssue()
     else if action = "seerrManage"
         ShowManageRequests()
     end if
 end sub
+
+function IsTv() as boolean
+    return isStringEqual(m.top.mediaType, "tv")
+end function
+
+' The reason Seerr sent back, or a line of our own when it sent none
+function FailureText(response as dynamic, fallback as string) as string
+    reason = chainLookupReturn(response, "error", "")
+    if isValidAndNotEmpty(reason) and reason <> "Plugin request failed" then return reason
+    return fallback
+end function
+
+' The title as Seerr names it
+function ItemTitle() as string
+    title = chainLookupReturn(m.top.details, "title", "")
+    if not isValidAndNotEmpty(title) then title = chainLookupReturn(m.top.details, "name", "")
+    return title
+end function
 
 ' ===== Watchlist =====
 
@@ -67,216 +89,355 @@ sub onWatchlistToggled(event as object)
     stopLoadingSpinner()
 
     if not isValid(response) or not response.success
-        ShowMessage(tr("Request Failed"), tr("Could not update the watchlist."))
+        showItemMenuToast(FailureText(response, tr("Could not update the watchlist.")))
         return
     end if
 
     m.top.watchlistState = not (m.top.details.onUserWatchlist = true)
 end sub
 
+' ===== The sheets =====
+
+function OpenSheet(kind as string, variant as string, title as string, padding as dynamic) as object
+    CloseSheet()
+    m.sheet = CreateObject("roSGNode", "SeerrSheet")
+    m.sheet.variant = variant
+    m.sheet.dialogTitle = title
+    if isValid(padding) then m.sheet.bodyPadding = padding
+    m.sheet.observeField("activated", "onSheetActivated")
+    m.sheet.observeField("closed", "CloseSheet")
+    m.sheetKind = kind
+    m.top.getScene().appendChild(m.sheet)
+    return m.sheet
+end function
+
+sub ShowSheet(elements as object)
+    m.sheet.elements = elements
+    m.sheet.callFunc("render")
+    if not isValid(m.picker) then m.sheet.setFocus(true)
+end sub
+
+sub CloseSheet()
+    ClosePicker()
+    if not isValid(m.sheet) then return
+    m.sheet.unobserveField("activated")
+    m.sheet.unobserveField("closed")
+    if isValid(m.top.returnFocus) then m.top.returnFocus.setFocus(true)
+    m.top.getScene().removeChild(m.sheet)
+    m.sheet = invalid
+    m.sheetKind = ""
+end sub
+
+sub onSheetActivated(event as object)
+    id = event.getData()
+    if m.sheetKind = "cancel"
+        if id = "confirm" then ConfirmCancel() else CloseSheet()
+    else if m.sheetKind = "manage"
+        ResolveRequest(id)
+    else if m.sheetKind = "report"
+        onReportAction(id)
+    end if
+end sub
+
+sub OpenPicker(title as string, labels as object, selected as integer, callback as string)
+    m.picker = CreateSeerrPicker(title, labels, selected)
+    m.picker.observeField("activated", callback)
+    m.picker.observeField("closed", "ClosePicker")
+    m.top.getScene().appendChild(m.picker)
+    m.picker.setFocus(true)
+end sub
+
+sub ClosePicker()
+    if not isValid(m.picker) then return
+    m.picker.unobserveField("activated")
+    m.picker.unobserveField("closed")
+    if isValid(m.sheet) then m.sheet.setFocus(true)
+    m.top.getScene().removeChild(m.picker)
+    m.picker = invalid
+end sub
+
 ' ===== Reporting an issue =====
 
-sub StartReportIssue()
-    m.issueType = 0
-    m.issueSeason = 0
-    m.issueEpisode = 0
+' A series with only one season starts on it
+sub ShowReportIssue()
+    details = m.top.details
+    m.reportSeasons = seerrRequestRules.SeasonNumbers(chainLookupReturn(details, "seasons", invalid), chainLookupReturn(details, "numberOfSeasons", 0))
+    m.reportType = 1
+    m.reportSeason = 0
+    m.reportEpisode = 0
+    if IsTv() and m.reportSeasons.count() = 1 then m.reportSeason = m.reportSeasons[0]
+    m.reportMessage = ""
+    m.reportSending = false
 
-    ShowDialog(tr("Report Issue"), "", [tr("Video"), tr("Audio"), tr("Subtitles"), tr("Other")], "onIssueTypeChosen")
+    sheet = OpenSheet("report", "core", tr("Report Issue"), invalid)
+    sheet.focusId = "type:1"
+    RenderReport()
 end sub
 
-sub onIssueTypeChosen(event as object)
-    index = event.getData()
-    CloseDialog()
-    if index < 0 then return
-
-    ' Seerr numbers the kinds one to four in the order they were offered
-    m.issueType = index + 1
-
-    if isStringEqual(m.top.mediaType, "tv")
-        ShowSeasonPrompt()
-        return
-    end if
-
-    ShowIssueKeyboard()
-end sub
-
-sub ShowSeasonPrompt()
-    m.issueSeasonNumbers = []
-    options = [tr("All Seasons")]
-
-    seasons = chainLookupReturn(m.top.details, "seasons", invalid)
-    if isValid(seasons) and type(seasons) = "roArray"
-        for each season in seasons
-            number = chainLookupReturn(season, "seasonNumber", invalid)
-            if isValid(number) and number > 0
-                m.issueSeasonNumbers.push({ number: number, episodes: chainLookupReturn(season, "episodeCount", 0) })
-                options.push(Substitute(tr("Season ^0"), number.toStr()))
-            end if
-        end for
-    end if
-
-    if options.count() = 1
-        ShowIssueKeyboard()
-        return
-    end if
-
-    ShowDialog(tr("Report Issue"), "", options, "onIssueSeasonChosen")
-end sub
-
-sub onIssueSeasonChosen(event as object)
-    index = event.getData()
-    CloseDialog()
-    if index < 0 then return
-
-    if index = 0
-        ShowIssueKeyboard()
-        return
-    end if
-
-    chosen = m.issueSeasonNumbers[index - 1]
-    m.issueSeason = chosen.number
-
-    if chosen.episodes <= 0
-        ShowIssueKeyboard()
-        return
-    end if
-
-    options = [tr("All Episodes")]
-    for episode = 1 to chosen.episodes
-        options.push(`E${episode.toStr()}`)
+sub RenderReport()
+    elements = []
+    labels = [tr("Video"), tr("Audio"), tr("Subtitles"), tr("Other")]
+    for i = 0 to labels.count() - 1
+        elements.push({ kind: "radio", id: `type:${i + 1}`, title: labels[i], selected: m.reportType = i + 1 })
     end for
-
-    ShowDialog(Substitute(tr("Season ^0"), chosen.number.toStr()), "", options, "onIssueEpisodeChosen")
+    if IsTv() and m.reportSeasons.count() > 0
+        elements.push({ kind: "divider" })
+        elements.push({ kind: "selector", id: "season", label: tr("Season"), value: SeasonLabel(m.reportSeason), gap: 4 })
+        if m.reportSeason > 0 then elements.push({ kind: "selector", id: "episode", label: tr("Episode"), value: EpisodeLabel(m.reportEpisode), gap: 12 })
+    end if
+    elements.push({ kind: "label", text: tr("What's wrong?"), size: 13, color: "#FFFFFFB3", gap: 16 })
+    elements.push({ kind: "field", id: "message", text: m.reportMessage, placeholder: tr("What's wrong?"), gap: 8 })
+    canSend = m.reportMessage.Trim() <> "" and not m.reportSending
+    elements.push({ kind: "buttons", gap: 20, items: [
+        { id: "cancel", label: tr("Cancel"), enabled: not m.reportSending },
+        { id: "submit", label: tr("Submit Report"), primary: true, busy: m.reportSending, enabled: canSend }
+    ] })
+    ShowSheet(elements)
 end sub
 
-sub onIssueEpisodeChosen(event as object)
-    index = event.getData()
-    CloseDialog()
-    if index < 0 then return
+function SeasonLabel(season as integer) as string
+    if season > 0 then return Substitute(tr("Season ^0"), season.ToStr())
+    return tr("All Seasons")
+end function
 
-    if index > 0 then m.issueEpisode = index
+function EpisodeLabel(episode as integer) as string
+    if episode > 0 then return Substitute(tr("Episode ^0"), episode.ToStr())
+    return tr("All Episodes")
+end function
 
-    ShowIssueKeyboard()
+function ReportEpisodeCount() as integer
+    seasons = chainLookupReturn(m.top.details, "seasons", invalid)
+    if type(seasons) <> "roArray" then return 0
+    for each season in seasons
+        if chainLookupReturn(season, "seasonNumber", -1) = m.reportSeason then return chainLookupReturn(season, "episodeCount", 0)
+    end for
+    return 0
+end function
+
+sub onReportAction(id as string)
+    if Left(id, 5) = "type:"
+        m.reportType = Mid(id, 6).ToInt()
+        RenderReport()
+    else if id = "season"
+        labels = []
+        selected = 0
+        values = [0]
+        values.Append(m.reportSeasons)
+        for i = 0 to values.count() - 1
+            labels.push(SeasonLabel(values[i]))
+            if values[i] = m.reportSeason then selected = i
+        end for
+        m.reportSeasonValues = values
+        OpenPicker(tr("Season"), labels, selected, "onReportSeasonPicked")
+    else if id = "episode"
+        labels = []
+        for i = 0 to ReportEpisodeCount()
+            labels.push(EpisodeLabel(i))
+        end for
+        selected = m.reportEpisode
+        if selected > labels.count() - 1 then selected = labels.count() - 1
+        OpenPicker(tr("Episode"), labels, selected, "onReportEpisodePicked")
+    else if id = "message"
+        m.keyboard = tvKeyboard.Open(m.top.getScene(), { title: tr("What's wrong?"), text: m.reportMessage })
+        m.keyboard.observeField("submitted", "onReportMessage")
+        m.keyboard.observeField("cancelled", "onReportKeyboardClosed")
+    else if id = "cancel"
+        CloseSheet()
+    else if id = "submit"
+        SendReport()
+    end if
 end sub
 
-sub ShowIssueKeyboard()
-    m.keyboard = tvKeyboard.Open(m.top.getScene(), {
-        title: tr("Describe the issue...")
-    })
-    m.keyboard.observeField("submitted", "onIssueMessageSubmitted")
-    m.keyboard.observeField("cancelled", "onIssueKeyboardClosed")
+sub onReportSeasonPicked(event as object)
+    id = event.getData()
+    if id <> "cancel"
+        m.reportSeason = m.reportSeasonValues[id.ToInt()]
+        m.reportEpisode = 0
+    end if
+    ClosePicker()
+    RenderReport()
 end sub
 
-sub onIssueMessageSubmitted(event as object)
-    message = event.getRoSGNode().text
-    onIssueKeyboardClosed(event)
+sub onReportEpisodePicked(event as object)
+    id = event.getData()
+    if id <> "cancel" then m.reportEpisode = id.ToInt()
+    ClosePicker()
+    RenderReport()
+end sub
 
-    if not isValidAndNotEmpty(message) then return
+sub onReportMessage(event as object)
+    m.reportMessage = event.getRoSGNode().text
+    onReportKeyboardClosed(event)
+    RenderReport()
+end sub
 
-    startLoadingSpinner()
+sub onReportKeyboardClosed(_event as object)
+    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled"])
+    m.keyboard = invalid
+end sub
 
+sub SendReport()
+    message = m.reportMessage.Trim()
+    if message = "" or m.reportSending then return
+    m.reportSending = true
+    RenderReport()
+
+    season = 0
+    episode = 0
+    if IsTv()
+        season = m.reportSeason
+        if season > 0 then episode = m.reportEpisode
+    end if
     m.issueTask = CreateObject("roSGNode", "SeerrAPITask")
     m.issueTask.request = {
         method: "POST",
         endpoint: "/api/v1/issue",
         bodyJson: SeerrJsonFromPairs([
-            { key: "issueType", value: m.issueType },
+            { key: "issueType", value: m.reportType },
             { key: "message", value: message },
             { key: "mediaId", value: chainLookupReturn(m.top.details, "mediaInfo.id", 0) },
-            { key: "problemSeason", value: m.issueSeason },
-            { key: "problemEpisode", value: m.issueEpisode }
+            { key: "problemSeason", value: season },
+            { key: "problemEpisode", value: episode }
         ])
     }
     m.issueTask.observeField("response", "onIssueReported")
     m.issueTask.control = TaskControl.RUN
 end sub
 
-sub onIssueKeyboardClosed(_event as object)
-    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled"])
-    m.keyboard = invalid
-    if isValid(m.top.returnFocus) then m.top.returnFocus.setFocus(true)
-end sub
-
+' A report that didn't go through leaves the form open as it was
 sub onIssueReported(event as object)
     response = event.getData()
-    stopLoadingSpinner()
-
-    if not isValid(response) or not response.success
-        ShowMessage(tr("Request Failed"), tr("Could not report the issue."))
+    if m.sheetKind <> "report" then return
+    if isValid(response) and response.success = true
+        CloseSheet()
         return
     end if
-
-    ShowMessage(tr("Success"), tr("Issue reported."))
+    m.reportSending = false
+    RenderReport()
 end sub
 
 ' ===== Moderating requests =====
 
 sub ShowManageRequests()
-    m.manageable = seerrButtons.AllPendingRequests(m.top.details.mediaInfo)
-    if m.manageable.count() = 0 then return
+    m.managed = seerrButtons.AllPendingRequests(m.top.details.mediaInfo)
+    if m.managed.count() = 0 then return
 
-    options = []
-    for each request in m.manageable
-        options.push(ManageRequestLabel(request))
-    end for
-
-    ShowDialog(tr("Manage Requests"), "", options, "onManageRequestChosen")
+    m.manageBusy = false
+    OpenSheet("manage", "core", tr("Manage Requests"), [0, 0, 0])
+    RenderManage()
 end sub
 
-function ManageRequestLabel(request as object) as string
-    who = chainLookupReturn(request, "requestedBy.displayName", "")
-    if not isValidAndNotEmpty(who) then who = tr("Unknown")
+' Each request waiting on the title, with its own Approve and Decline. Only one answer goes out at
+' a time, so the buttons wait while one is out.
+sub RenderManage()
+    elements = []
+    for each request in m.managed
+        id = request.id.ToStr()
+        elements.push({ kind: "label", text: RequesterLabel(request), size: 14, gap: 12, after: 8 })
+        elements.push({ kind: "buttons", items: [
+            { id: `approve:${id}`, label: tr("Approve"), icon: "check_circle_outline", primary: true, color: "#388E3C", enabled: not m.manageBusy },
+            { id: `decline:${id}`, label: tr("Decline"), icon: "cancel_outlined", foreground: "#E57373", enabled: not m.manageBusy }
+        ] })
+    end for
+    ShowSheet(elements)
+end sub
 
-    label = `${who} · ${request.is4k = true ? "4K" : "HD"}`
-
-    numbers = []
-    seasons = chainLookupReturn(request, "seasons", invalid)
-    if isValid(seasons) and type(seasons) = "roArray"
-        for each season in seasons
-            number = chainLookupReturn(season, "seasonNumber", invalid)
-            if isValid(number) and number > 0 then numbers.push(number.toStr())
-        end for
-    end if
-    if numbers.count() > 0 then label += ` · ${tr("Seasons")} ${numbers.join(", ")}`
-
+function RequesterLabel(request as object) as string
+    label = Substitute(tr("Requested by ^0"), SeerrRequesterName(request))
+    if request.is4k = true then label += " · " + tr("4K")
     return label
 end function
 
-sub onManageRequestChosen(event as object)
-    index = event.getData()
-    CloseDialog()
-    if index < 0 or index >= m.manageable.count() then return
+sub ResolveRequest(id as string)
+    if m.manageBusy then return
+    parts = id.Split(":")
+    if parts.count() <> 2 then return
 
-    m.managed = m.manageable[index]
-    ShowDialog(ManageRequestLabel(m.managed), "", [tr("Approve"), tr("Decline"), tr("Cancel")], "onManageActionChosen")
-end sub
-
-sub onManageActionChosen(event as object)
-    index = event.getData()
-    CloseDialog()
-    if index < 0 or index > 1 then return
-
-    startLoadingSpinner()
-
+    m.manageBusy = true
+    m.resolvingId = parts[1]
+    RenderManage()
     m.manageTask = CreateObject("roSGNode", "SeerrAPITask")
-    m.manageTask.request = {
-        method: "POST",
-        endpoint: `/api/v1/request/${m.managed.id.toStr()}/${index = 0 ? "approve" : "decline"}`
-    }
-    m.manageTask.observeField("response", "onManageActionDone")
+    m.manageTask.request = { method: "POST", endpoint: `/api/v1/request/${parts[1]}/${parts[0]}` }
+    m.manageTask.observeField("response", "onRequestResolved")
     m.manageTask.control = TaskControl.RUN
 end sub
 
-sub onManageActionDone(event as object)
+' Answering the last request leaves nothing to manage, so the sheet closes
+sub onRequestResolved(event as object)
     response = event.getData()
-    stopLoadingSpinner()
+    m.manageBusy = false
+    if m.sheetKind <> "manage" then return
 
-    if not isValid(response) or not response.success
-        ShowMessage(tr("Request Failed"), tr("Could not update the request."))
+    if not isValid(response) or response.success <> true
+        showItemMenuToast(FailureText(response, tr("Failed to update request")))
+        RenderManage()
         return
     end if
 
+    remaining = []
+    for each request in m.managed
+        if request.id.ToStr() <> m.resolvingId then remaining.push(request)
+    end for
+    m.managed = remaining
     m.top.requestCompleted = true
+    if m.managed.count() = 0
+        CloseSheet()
+    else
+        RenderManage()
+    end if
+end sub
+
+' ===== Taking a request back =====
+
+' Every request handed in is on the one track, which the title names
+sub ShowCancel(is4k as boolean)
+    requests = chainLookupReturn(m.top.details, "mediaInfo.requests", invalid)
+    m.cancelTargets = seerrRequestRules.Cancelable(requests, is4k, CanManageRequests(GetCurrentUserSeerrPermissions()), CurrentSeerrUserId())
+    count = m.cancelTargets.count()
+    if count = 0 then return
+
+    label = is4k ? tr("Cancel 4K Request") : tr("Cancel Request")
+    message = Substitute(tr(`Cancel request for "^0"?`), ItemTitle())
+    if count > 1 then message = Substitute(tr(`Cancel ^0 requests for "^1"?`), count.ToStr(), ItemTitle())
+
+    sheet = OpenSheet("cancel", "alert", label, invalid)
+    sheet.surfaceColor = "#1A1A2E"
+    sheet.focusId = "keep"
+    ShowSheet([
+        { kind: "text", text: message },
+        { kind: "textActions", gap: 24, items: [
+            { id: "keep", label: tr("Keep") },
+            { id: "confirm", label: label, destructive: true }
+        ] }
+    ])
+end sub
+
+' One after another, then the title is read again. A failure stops the rest.
+sub ConfirmCancel()
+    CloseSheet()
+    m.cancelQueue = m.cancelTargets
+    CancelNext()
+end sub
+
+sub CancelNext()
+    if m.cancelQueue.count() = 0
+        m.top.requestCompleted = true
+        return
+    end if
+    request = m.cancelQueue.Shift()
+    m.cancelTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.cancelTask.request = { method: "DELETE", endpoint: `/api/v1/request/${request.id.ToStr()}` }
+    m.cancelTask.observeField("response", "onRequestCancelled")
+    m.cancelTask.control = TaskControl.RUN
+end sub
+
+sub onRequestCancelled(event as object)
+    response = event.getData()
+    if not isValid(response) or response.success <> true
+        showItemMenuToast(FailureText(response, tr("Failed to cancel request")))
+        return
+    end if
+    CancelNext()
 end sub
 
 ' ===== The request dialog =====
@@ -329,9 +490,6 @@ end sub
 sub SubmitRequest(result as object)
     if not isValid(result) then return
 
-    startLoadingSpinner()
-    m.lastRequestIs4k = result.is4k
-
     pairs = [
         { key: "mediaType", value: m.top.mediaType },
         { key: "mediaId", value: m.top.tmdbId.toInt() },
@@ -360,180 +518,12 @@ sub SubmitRequest(result as object)
     m.apiTask.control = TaskControl.RUN
 end sub
 
+' A request that goes through reads the title again quietly, and one that doesn't says why
 sub onRequestSubmitted(event as object)
     response = event.getData()
-    stopLoadingSpinner()
-
-    qualityLabel = m.lastRequestIs4k = true ? "4K" : "HD"
-
-    if response.success
-        ShowSuccessAndReload(Substitute(tr("^0 request submitted."), qualityLabel))
+    if isValid(response) and response.success = true
+        m.top.requestCompleted = true
         return
     end if
-
-    if response.statusCode = 403
-        ShowMessage(tr("Permission Denied"), tr("You don't have permission to make this request. Ask your Seerr administrator to adjust your permissions."))
-        return
-    end if
-
-    if response.statusCode = 409
-        ShowMessage(tr("Request Failed"), tr("This title was already requested."))
-        return
-    end if
-
-    ShowMessage(tr("Request Failed"), RequestErrorMessage(response, qualityLabel))
-end sub
-
-' The task unwraps whatever reason Seerr sent, and falls back to a message of its own
-' that says nothing, so the status code stands in for it
-function RequestErrorMessage(response as object, qualityLabel as string) as string
-    if isValidAndNotEmpty(response.error) and response.error <> "Plugin request failed"
-        return response.error
-    end if
-
-    status = 0
-    if isValid(response.statusCode) then status = response.statusCode
-
-    return Substitute(tr("Could not submit the ^0 request (HTTP ^1)."), qualityLabel, status.toStr())
-end function
-
-' ===== Taking a request back =====
-
-sub onCancelRequestPressed()
-    if not isValid(m.pendingRequests) or m.pendingRequests.count() = 0
-        ShowMessage(tr("No Requests"), tr("There are no pending requests to cancel."))
-        return
-    end if
-
-    ShowDialog(tr("Cancel Request"), CancelDescription(), [tr("Keep Request"), tr("Cancel Request")], "onCancelConfirmResponse")
-end sub
-
-' One request names its track, several are counted per track
-function CancelDescription() as string
-    title = chainLookupReturn(m.top.details, "title", "")
-    if not isValidAndNotEmpty(title) then title = chainLookupReturn(m.top.details, "name", "")
-
-    if m.pendingRequests.count() = 1
-        quality = m.pendingRequests[0].is4k = true ? "4K" : "HD"
-        return Substitute(tr(`Cancel ^0 request for "^1"?`), quality, title)
-    end if
-
-    hdCount = 0
-    fourKCount = 0
-    for each request in m.pendingRequests
-        if request.is4k = true
-            fourKCount++
-        else
-            hdCount++
-        end if
-    end for
-
-    parts = []
-    if hdCount > 0 then parts.push(Substitute(tr("^0 HD"), hdCount.toStr()))
-    if fourKCount > 0 then parts.push(Substitute(tr("^0 4K"), fourKCount.toStr()))
-
-    return Substitute(tr(`Cancel ^0 requests for "^1"?`), parts.join(` ${tr("and")} `), title)
-end function
-
-sub onCancelConfirmResponse(event as object)
-    confirmed = event.getData() = 1
-    CloseDialog()
-
-    if confirmed then CancelPendingRequests()
-end sub
-
-sub CancelPendingRequests()
-    if not isValid(m.pendingRequests) or m.pendingRequests.count() = 0 then return
-
-    startLoadingSpinner()
-
-    m.cancelRequestsRemaining = m.pendingRequests.count()
-    m.cancelRequestsSuccess = 0
-    m.cancelRequestsFailed = 0
-    m.cancelTasks = []
-
-    for each request in m.pendingRequests
-        CancelSingleRequest(request.id)
-    end for
-end sub
-
-sub CancelSingleRequest(requestId as integer)
-    task = CreateObject("roSGNode", "SeerrAPITask")
-    task.request = {
-        method: "DELETE",
-        endpoint: `/api/v1/request/${requestId.toStr()}`
-    }
-    task.observeField("response", "onCancelRequestResponse")
-
-    ' Held onto, otherwise the node goes out of scope while the call is still in flight
-    m.cancelTasks.push(task)
-    task.control = TaskControl.RUN
-end sub
-
-sub onCancelRequestResponse(event as object)
-    response = event.getData()
-
-    m.cancelRequestsRemaining = m.cancelRequestsRemaining - 1
-    if response.success
-        m.cancelRequestsSuccess = m.cancelRequestsSuccess + 1
-    else
-        m.cancelRequestsFailed = m.cancelRequestsFailed + 1
-    end if
-
-    if m.cancelRequestsRemaining > 0 then return
-
-    stopLoadingSpinner()
-    m.cancelTasks = []
-
-    if m.cancelRequestsFailed = 0
-        if m.cancelRequestsSuccess = 1
-            ShowSuccessAndReload(tr("Request cancelled."))
-        else
-            ShowSuccessAndReload(Substitute(tr("^0 requests cancelled."), m.cancelRequestsSuccess.toStr()))
-        end if
-    else if m.cancelRequestsSuccess = 0
-        ShowMessage(tr("Request Failed"), tr("Could not cancel the request. You may not have permission."))
-    else
-        ' Some of the tracks were taken, so the host still refetches
-        ShowSuccessAndReload(Substitute(tr("^0 cancelled, ^1 failed."), m.cancelRequestsSuccess.toStr(), m.cancelRequestsFailed.toStr()))
-    end if
-end sub
-
-' ===== Panels =====
-
-sub ShowDialog(title as string, message as string, options as object, callback as string)
-    m.messageDialog = CreateObject("roSGNode", "ListPromptDialog")
-    m.messageDialog.dialogTitle = title
-    m.messageDialog.message = message
-    m.messageDialog.options = options
-    m.messageDialog.returnFocus = m.top.returnFocus
-    m.messageDialog.observeField("optionSelected", callback)
-
-    m.top.getScene().appendChild(m.messageDialog)
-    m.messageDialog.callFunc("showDialog")
-end sub
-
-sub CloseDialog()
-    if not isValid(m.messageDialog) then return
-
-    m.messageDialog.unobserveField("optionSelected")
-    m.top.getScene().removeChild(m.messageDialog)
-    m.messageDialog = invalid
-end sub
-
-sub ShowMessage(title as string, message as string)
-    ShowDialog(title, message, [tr("OK")], "onMessageDialogClosed")
-end sub
-
-sub onMessageDialogClosed(_event as object)
-    CloseDialog()
-end sub
-
-sub ShowSuccessAndReload(message as string)
-    ShowDialog(tr("Success"), message, [tr("OK")], "onSuccessDialogClosed")
-end sub
-
-sub onSuccessDialogClosed(_event as object)
-    CloseDialog()
-    m.top.requestCompleted = true
+    showItemMenuToast(FailureText(response, tr("Request failed")))
 end sub
