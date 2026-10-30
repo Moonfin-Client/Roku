@@ -3,6 +3,7 @@ import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/seerrBrowseRows.bs"
+import "pkg:/source/utils/seerrSliders.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/themeChrome.bs"
 
@@ -216,6 +217,99 @@ sub LoadDiscoveryCategories()
     for i = 0 to categories.Count() - 1
         LoadRowContent(i)
     end for
+    loadSliders()
+end sub
+
+' The custom sliders a Seerr admin set up come after this screen's rows, in Seerr's order. A
+' failed read just leaves them out.
+sub loadSliders()
+    m.sliderRun = (m.sliderRun ?? 0) + 1
+    task = CreateObject("roSGNode", "SeerrAPITask")
+    task.addFields({ sliderRun: m.sliderRun })
+    task.request = { method: "GET", endpoint: seerrSliders.LIST_PATH, queryParams: {} }
+    task.observeField("response", "onSlidersLoaded")
+    m.slidersTask = task
+    task.control = "RUN"
+end sub
+
+sub onSlidersLoaded(event as object)
+    task = event.getRoSGNode()
+    task.unobserveField("response")
+    m.slidersTask = invalid
+    response = event.getData()
+    if task.sliderRun <> m.sliderRun or not isValid(response) or response.success <> true then return
+    m.sliderQueue = seerrSliders.Supported(seerrSliders.ParseList(response.data))
+    loadNextSliders()
+end sub
+
+' Two sliders at a time, each added once its first page is in so one that comes back empty
+' leaves no row behind
+sub loadNextSliders()
+    m.sliderBatch = []
+    while m.sliderBatch.Count() < 2 and m.sliderQueue.Count() > 0
+        slider = m.sliderQueue.Shift()
+        request = seerrSliders.Request(slider)
+        endpoint = "/api/v1/" + request.path
+        params = { "page": "1" }
+        params.Append(request.params)
+
+        task = CreateObject("roSGNode", "SeerrAPITask")
+        task.addFields({ sliderRun: m.sliderRun, batchIndex: m.sliderBatch.Count() })
+        task.request = { method: "GET", endpoint: endpoint, queryParams: params }
+        task.observeField("response", "onSliderPageLoaded")
+        m.sliderBatch.push({ title: slider.title, endpoint: endpoint, params: params, task: task, response: invalid, done: false })
+        task.control = "RUN"
+    end while
+end sub
+
+sub onSliderPageLoaded(event as object)
+    task = event.getRoSGNode()
+    task.unobserveField("response")
+    if task.sliderRun <> m.sliderRun then return
+
+    entry = m.sliderBatch[task.batchIndex]
+    entry.response = event.getData()
+    entry.done = true
+    entry.task = invalid
+    for each waiting in m.sliderBatch
+        if not waiting.done then return
+    end for
+
+    for each loaded in m.sliderBatch
+        if isValid(loaded.response) and loaded.response.success = true then addSliderRow(loaded)
+    end for
+    loadNextSliders()
+end sub
+
+sub addSliderRow(loaded as object)
+    body = loaded.response.data
+    results = discoverableResults(seerrSliders.Results(body))
+    if results.Count() = 0 then return
+
+    rowNode = CreateObject("roSGNode", "ContentNode")
+    rowNode.title = loaded.title
+    rowNode.addFields({
+        endpoint: loaded.endpoint,
+        queryParams: loaded.params,
+        mediaType: "all",
+        isRequestsRow: false,
+        isGenreRow: false,
+        isNetworkRow: false,
+        isStudioRow: false
+    })
+    for each item in results
+        mediaNode = CreateMediaContentNode(item)
+        if mediaNode <> invalid
+            prepareModernNode(mediaNode)
+            rowNode.appendChild(mediaNode)
+        end if
+    end for
+
+    rowKey = "row_" + m.categoryRows.content.getChildCount().ToStr()
+    m.rowPages[rowKey] = 1
+    m.rowHasMore[rowKey] = seerrSliders.TotalPages(body) > 1
+    m.categoryData.push({ name: loaded.title, isSliderRow: true })
+    m.categoryRows.content.appendChild(rowNode)
 end sub
 
 sub LoadRowContent(rowIndex as integer, isLoadingMore = false as boolean)
@@ -567,34 +661,17 @@ sub onDiscoveryResponse(event as object)
             ' Handle regular discovery data
             results = response.data.results
 
+            sliderRow = categoryData <> invalid and categoryData.isSliderRow = true
+            if sliderRow
+                results = seerrSliders.Results(response.data)
+                m.rowHasMore[rowKey] = m.rowPages[rowKey] < seerrSliders.TotalPages(response.data)
+            end if
+
             if results <> invalid and type(results) = "roArray"
-                ' Use cached NSFW setting
-                blockNsfw = m.blockNsfwCache
-
-                ' Three-stage filter: library availability, blacklist, NSFW
-                filteredResults = []
-
-                for i = 0 to results.Count() - 1
-                    item = results[i]
-                    includeItem = true
-
-                    if IsItemAvailable(item)
-                        includeItem = false
-                    else if IsItemBlacklisted(item)
-                        includeItem = false
-                    else if blockNsfw and IsItemNsfw(item)
-                        includeItem = false
-                    end if
-
-                    if includeItem
-                        filteredResults.push(item)
-                    end if
-                end for
-
-                results = filteredResults
+                results = discoverableResults(results)
 
                 ' Check if there are more pages (typically 20 results per page)
-                if results.Count() < 20
+                if results.Count() < 20 and not sliderRow
                     m.rowHasMore[rowKey] = false
                 end if
 
@@ -625,6 +702,16 @@ sub onDiscoveryResponse(event as object)
     end if
 
 end sub
+
+' Leaves out what the library already has, what Seerr blacklisted and, when they're blocked, NSFW titles
+function discoverableResults(results as object) as object
+    blockNsfw = m.blockNsfwCache
+    kept = []
+    for each item in results
+        if not IsItemAvailable(item) and not IsItemBlacklisted(item) and not (blockNsfw and IsItemNsfw(item)) then kept.push(item)
+    end for
+    return kept
+end function
 
 sub ShowMediaDetails(mediaItem as object)
     ShowSeerrDetails(mediaItem)

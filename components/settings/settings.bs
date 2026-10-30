@@ -23,6 +23,7 @@ import "pkg:/source/utils/parentalFilter.bs"
 import "pkg:/source/utils/pinLockout.bs"
 import "pkg:/source/utils/remoteSubtitles.bs"
 import "pkg:/source/utils/seasonalRow.bs"
+import "pkg:/source/utils/seerrSliders.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/settingsMetrics.bs"
 import "pkg:/source/utils/settingsSync.bs"
@@ -272,6 +273,8 @@ end function
 
 const SUBTITLE_DOWNLOAD_LANGUAGES_SETTING = "playback.subs.downloadLanguages"
 const TRANSCODE_AUDIO_CODECS_SETTING = "playback.transcodeAudioCodecs"
+const SEERR_SLIDER_SETTING = "seerr.slider"
+const SEERR_SLIDERS_TITLE = "Seerr Discover Sliders"
 
 ' Only the codecs a streamed transcode can turn into something else are offered
 function transcodeAudioCodecChoices() as object
@@ -835,6 +838,12 @@ function boolSettingDisplay(settingItem as object) as string
     if isStringEqual(settingItem.settingName, "ui.itemdetail.section")
         return detailSectionLayout.HiddenIds().DoesExist(settingItem.sectionId) ? "false" : "true"
     end if
+    if isStringEqual(settingItem.settingName, SEERR_SLIDER_SETTING)
+        placed = buttonLayout.ToIds(get_user_setting(homeRowLayout.ORDER_SETTING))
+        off = buttonLayout.HiddenLookup(get_user_setting(homeRowLayout.HIDDEN_SETTING))
+        picked = homeRowLayout.DynamicLookup()
+        return isValid(picked[LCase(settingItem.sectionId)]) and homeRowLayout.IsEnabled(settingItem.sectionId, placed, off, picked) ? "true" : "false"
+    end if
 
     rawVal = get_user_setting(settingItem.settingName)
     if not isValid(rawVal) and isValid(m.global.session.user.settings[settingItem.settingName])
@@ -919,7 +928,7 @@ sub syncHomeRowsToServer()
 
     pushData = settingsSync.ProfilePush({
         homeSections: settingsSync.HomeSectionsPayload(),
-        homeRowOrder: homeRowLayout.Arranged()
+        homeRowOrder: settingsSync.RowOrderPayload()
     })
 
     m.homeRowsSyncTask = createObject("roSGNode", "PostTask")
@@ -1155,6 +1164,67 @@ function detailSectionRows() as object
     end for
     return rows
 end function
+
+' The custom sliders a Seerr admin set up come after the rows this app knows, read fresh each time
+' the screen opens. A failed read just leaves them off the screen.
+sub openSeerrRows(screen as object)
+    m.seerrRowsScreen = screen
+    startLoadingSpinner()
+    m.seerrSlidersTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.seerrSlidersTask.request = { method: "GET", endpoint: seerrSliders.LIST_PATH, queryParams: {} }
+    m.seerrSlidersTask.observeField("response", "onSeerrRowsSliders")
+    m.seerrSlidersTask.control = "RUN"
+end sub
+
+sub onSeerrRowsSliders(event as object)
+    m.seerrSlidersTask.unobserveField("response")
+    m.seerrSlidersTask = invalid
+    stopLoadingSpinner()
+    response = event.getData()
+    sliders = []
+    if isValid(response) and response.success = true then sliders = seerrSliders.Supported(seerrSliders.ParseList(response.data))
+
+    screen = m.seerrRowsScreen
+    children = []
+    for each child in screen.children
+        if not isStringEqual(child.settingName ?? "", SEERR_SLIDER_SETTING) and not (isStringEqual(child.type, SettingType.SECTION) and isStringEqual(child.title, SEERR_SLIDERS_TITLE)) then children.push(child)
+    end for
+    if sliders.Count() > 0
+        children.push(settingsSection(SEERR_SLIDERS_TITLE))
+        for each slider in sliders
+            record = seerrSliders.Record(slider)
+            children.push({ title: slider.title, settingName: SEERR_SLIDER_SETTING, sectionId: record.id, record: record, type: SettingType.BOOL, glyph: "list_alt" })
+        end for
+    end if
+    screen.children = children
+    LoadMenu(screen)
+    m.settingsMenu.setFocus(true)
+end sub
+
+' The first press puts a slider's row at the end of Home and later ones only switch it on and off,
+' so the place it was given is kept
+sub toggleSeerrSlider(sliderRow as object)
+    id = sliderRow.sectionId
+    order = buttonLayout.ToIds(get_user_setting(homeRowLayout.ORDER_SETTING))
+    hidden = buttonLayout.ToIds(get_user_setting(homeRowLayout.HIDDEN_SETTING))
+    shown = boolSettingDisplay(sliderRow) = "true"
+
+    if not isValid(homeRowLayout.DynamicLookup()[LCase(id)])
+        picks = homeRowLayout.DynamicRows()
+        picks.push(sliderRow.record)
+        homeRowLayout.SaveDynamic(picks)
+    end if
+    kept = []
+    for each hiddenId in hidden
+        if hiddenId <> id then kept.push(hiddenId)
+    end for
+    if shown then kept.push(id)
+    if not shown and not inArray(order, id) then order.push(id)
+
+    saveHomeRowLayout(order, kept)
+    refreshCurrentItemValue(sliderRow)
+    m.settingsMenu.setFocus(true)
+end sub
 
 ' Each press writes straight away, since there is no order to arrange first
 sub toggleDetailSection(sectionRow as object)
@@ -2039,6 +2109,7 @@ function reorderSettingsForFlutter(configTree as object) as object
         pushSettingIfValid(homeChildren, calendars)
         if isValid(seerrRows)
             seerrRows.title = "Seerr Rows"
+            seerrRows.settingName = "seerr.rowsScreen"
             homeChildren.push(seerrRows)
         end if
         ' The hidden section slots stay with the screen that owns them.
@@ -2469,6 +2540,16 @@ sub settingSelected()
 
     if isValid(selectedItem.settingName) and selectedItem.settingName = "ui.itemdetail.section"
         toggleDetailSection(selectedItem)
+        return
+    end if
+
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "seerr.rowsScreen"
+        openSeerrRows(selectedItem)
+        return
+    end if
+
+    if isValid(selectedItem.settingName) and selectedItem.settingName = SEERR_SLIDER_SETTING
+        toggleSeerrSlider(selectedItem)
         return
     end if
 

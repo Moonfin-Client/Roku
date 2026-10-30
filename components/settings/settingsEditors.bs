@@ -6,6 +6,7 @@ import "pkg:/source/utils/homeRowGroups.bs"
 import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/multiserver.bs"
 import "pkg:/source/utils/ratingSourceList.bs"
+import "pkg:/source/utils/seerrSliders.bs"
 import "pkg:/source/utils/settingsIcons.bs"
 
 ' The home rows, the action and player buttons, the metadata row and the rating sources are each
@@ -78,7 +79,7 @@ function editorRowsFor(kind as string, resetTo as dynamic) as object
         picked = homeRowLayout.DynamicLookup()
         for each row in buttonLayout.Ordered(homeRowLayout.Offered(), stored)
             ' A reset keeps no picks, so they come back as items to turn on
-            if not isValid(resetTo) or not isValid(homeRowLayout.SourceFromId(row.id))
+            if not isValid(resetTo) or not (isValid(homeRowLayout.SourceFromId(row.id)) or homeRowLayout.IsSliderRow(row.id))
                 rows.push({ id: row.id, label: tr(row.label), subtitle: pickedRowSource(row.id), enabled: homeRowLayout.IsEnabled(row.id, placed, off, picked) })
             end if
         end for
@@ -106,6 +107,7 @@ end function
 
 ' A collection from another signed in server names that server
 function pickedRowSource(rowId as string) as string
+    if homeRowLayout.IsSliderRow(rowId) then return tr("Seerr Discovery Rows")
     fromId = homeRowLayout.SourceFromId(rowId)
     if not isValid(fromId) then return ""
     if fromId.source = "genres" then return tr("Genres row")
@@ -386,6 +388,7 @@ sub loadRowsEditor()
     end for
 
     checkLiveTv()
+    fetchSliders()
     for each listEntry in homeRowLayout.Sources()
         if homeRowLayout.RowToggleOn(listEntry.key)
             fetchList(listEntry.key, invalid)
@@ -428,9 +431,50 @@ sub onLiveTvChecked(event as object)
     libraries = event.getData()
     event.getRoSGNode().unobserveField("content")
     if isValidAndNotEmpty(libraries)
-        m.rowsLoad.leftOut = { livetv: true, onnow: true }
+        hasLiveTv = false
         for each library in libraries
-            if isStringEqual(chainLookupReturn(library, "json.collectiontype", ""), "livetv") then m.rowsLoad.leftOut = {}
+            if isStringEqual(chainLookupReturn(library, "json.collectiontype", ""), "livetv") then hasLiveTv = true
+        end for
+        if not hasLiveTv
+            m.rowsLoad.leftOut.livetv = true
+            m.rowsLoad.leftOut.onnow = true
+        end if
+    end if
+    rowsLoadDone()
+end sub
+
+' Slider rows follow Seerr: renamed to their current titles, dropped once Seerr no longer has them
+' and left out while Seerr has them switched off. Without Seerr they're left out, and a failed read
+' leaves them as they are.
+sub fetchSliders()
+    if not GetSeerrConfig().enabled
+        for each entry in homeRowLayout.DynamicRows()
+            if homeRowLayout.IsSliderRow(entry.id) then m.rowsLoad.leftOut[entry.id] = true
+        end for
+        return
+    end if
+    task = CreateObject("roSGNode", "SeerrAPITask")
+    task.request = { method: "GET", endpoint: seerrSliders.LIST_PATH, queryParams: {} }
+    task.observeField("response", "onSlidersFetched")
+    runRowsLoadTask(task)
+end sub
+
+sub onSlidersFetched(event as object)
+    event.getRoSGNode().unobserveField("response")
+    response = event.getData()
+    if isValid(response) and response.success = true and type(response.data) = "roArray"
+        sliders = seerrSliders.ParseList(response.data)
+        reconciled = seerrSliders.Reconciled(homeRowLayout.DynamicRows(), sliders)
+        if reconciled.changed
+            homeRowLayout.SaveDynamic(reconciled.picks)
+            if reconciled.gone.Count() > 0 then homeRowLayout.ForgetPicks(reconciled.gone)
+        end if
+        for each pick in reconciled.picks
+            if homeRowLayout.IsSliderRow(pick.id)
+                fromId = seerrSliders.FromRowId(pick.id)
+                live = seerrSliders.Find(sliders, fromId.sliderId, fromId.sliderType)
+                if not isValid(live) or not live.enabled then m.rowsLoad.leftOut[pick.id] = true
+            end if
         end for
     end if
     rowsLoadDone()

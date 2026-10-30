@@ -5,6 +5,7 @@ import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/seasonalEffects.bs"
+import "pkg:/source/utils/seerrSliders.bs"
 import "pkg:/source/utils/themeApply.bs"
 import "pkg:/source/utils/themeRegistry.bs"
 
@@ -571,7 +572,7 @@ namespace settingsSync
         ' Both layout keys go together, since a row order arriving without sections makes the
         ' server drop the sections it holds
         profileData["homeSections"] = settingsSync.HomeSectionsPayload()
-        profileData["homeRowOrder"] = homeRowLayout.Arranged()
+        profileData["homeRowOrder"] = settingsSync.RowOrderPayload()
 
         return profileData
     end function
@@ -633,6 +634,12 @@ namespace settingsSync
                 owner = homeRowLayout.ServerId()
                 fromId = homeRowLayout.SourceFromId(entry.id)
                 if isValid(fromId) then owner = fromId.server
+                section = isValid(listEntry) ? listEntry.section : entry.source
+                ' A Seerr slider names the slider as its section and the slider's type as its item
+                if isValid(entry.section)
+                    section = entry.section
+                    owner = homeRowLayout.ServerKey()
+                end if
 
                 sections.push({
                     kind: "pluginDynamic",
@@ -641,7 +648,7 @@ namespace settingsSync
                     order: order,
                     serverId: owner,
                     pluginSource: entry.source,
-                    pluginSection: isValid(listEntry) ? listEntry.section : entry.source,
+                    pluginSection: section,
                     pluginAdditionalData: entry.itemId,
                     pluginDisplayText: entry.title
                 })
@@ -657,6 +664,16 @@ namespace settingsSync
         end for
 
         return sections
+    end function
+
+    ' The other clients leave Seerr sliders out of the flat order, since only a section can say
+    ' which slider a row stands for
+    function RowOrderPayload() as object
+        order = []
+        for each id in homeRowLayout.Arranged()
+            if not homeRowLayout.IsSliderRow(id) then order.push(id)
+        end for
+        return order
     end function
 
     ' The keys this device keeps the synced settings under, the layout and the Seerr rows
@@ -1156,8 +1173,10 @@ namespace settingsSync
 
                 order.push(picked.id)
                 if not picked.enabled then hidden.push(picked.id)
-                dynamicRows.push({ id: picked.id, source: picked.source, itemId: picked.itemId, title: picked.title })
-                if picked.enabled then gates[picked.gate] = true
+                record = { id: picked.id, source: picked.source, itemId: picked.itemId, title: picked.title }
+                if isValid(picked.section) then record.section = picked.section
+                dynamicRows.push(record)
+                if picked.enabled and isValid(picked.gate) then gates[picked.gate] = true
                 continue for
             end if
 
@@ -1202,6 +1221,7 @@ namespace settingsSync
     ' same item stay one row.
     function PickedRowFromSection(section as object, serverKey as string) as object
         source = LCase(homeRowLayout.AsText(chainLookupReturn(section, "pluginSource", "")))
+        if source = "seerr" then return settingsSync.SliderRowFromSection(section, serverKey)
         listEntry = homeRowLayout.SourceFor(source)
         if not isValid(listEntry) then return invalid
 
@@ -1224,6 +1244,25 @@ namespace settingsSync
             title: homeRowLayout.AsText(chainLookupReturn(section, "pluginDisplayText", "")),
             enabled: settingsSync.ToBooleanValue(chainLookupReturn(section, "enabled", true), true),
             gate: listEntry.gate
+        }
+    end function
+
+    ' A Seerr slider row for this server. One from another server is kept as it arrived, since
+    ' another server's Seerr may number its sliders the same way.
+    function SliderRowFromSection(section as object, serverKey as string) as object
+        sliderId = homeRowLayout.AsText(chainLookupReturn(section, "pluginSection", ""))
+        sliderType = homeRowLayout.AsText(chainLookupReturn(section, "pluginAdditionalData", ""))
+        sectionServer = homeRowLayout.AsText(chainLookupReturn(section, "serverId", ""))
+        if sliderId = "" or sliderType = "" or not settingsSync.IsSameServer(sectionServer, serverKey) then return invalid
+
+        return {
+            id: seerrSliders.RowId(sliderId, sliderType),
+            source: "seerr",
+            section: sliderId,
+            itemId: sliderType,
+            title: homeRowLayout.AsText(chainLookupReturn(section, "pluginDisplayText", "")),
+            enabled: settingsSync.ToBooleanValue(chainLookupReturn(section, "enabled", true), true),
+            gate: invalid
         }
     end function
 

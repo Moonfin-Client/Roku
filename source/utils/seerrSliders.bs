@@ -1,0 +1,172 @@
+import "pkg:/source/utils/homeRowLayout.bs"
+import "pkg:/source/utils/misc.bs"
+
+' The discover sliders a Seerr admin adds to Seerr's own Discover page, shown after the Discover
+' screen's rows and as Home rows. Types 1 to 12 are Seerr's own rows, which this app draws itself,
+' so only the custom ones are read.
+namespace seerrSliders
+
+    const LIST_PATH = "settings/discover"
+    const MOVIE_KEYWORD = 13
+    const MOVIE_GENRE = 14
+    const TV_KEYWORD = 15
+    const TV_GENRE = 16
+    const SEARCH = 17
+    const STUDIO = 18
+    const NETWORK = 19
+    const MOVIE_STREAMING = 20
+    const TV_STREAMING = 21
+
+    ' An entry without a numeric id or type is skipped rather than failing the whole list
+    function Parse(json as dynamic) as dynamic
+        if type(json) <> "roAssociativeArray" then return invalid
+        id = json.LookupCI("id")
+        kind = json.LookupCI("type")
+        if not seerrSliders.isNumber(id) or not seerrSliders.isNumber(kind) then return invalid
+        flag = json.LookupCI("enabled")
+        return {
+            id: Int(id),
+            type: Int(kind),
+            enabled: not ((type(flag) = "Boolean" or type(flag) = "roBoolean") and flag = false),
+            title: homeRowLayout.AsText(json.LookupCI("title")),
+            data: homeRowLayout.AsText(json.LookupCI("data"))
+        }
+    end function
+
+    function isNumber(value as dynamic) as boolean
+        kind = type(value)
+        return kind = "Integer" or kind = "roInt" or kind = "roInteger" or kind = "LongInteger" or kind = "Float" or kind = "roFloat" or kind = "Double" or kind = "roDouble"
+    end function
+
+    ' The sliders Seerr answered with, in its order
+    function ParseList(data as dynamic) as object
+        sliders = []
+        if type(data) <> "roArray" then return sliders
+        for each entry in data
+            slider = seerrSliders.Parse(entry)
+            if isValid(slider) then sliders.push(slider)
+        end for
+        return sliders
+    end function
+
+    ' The Seerr route behind a slider's results, the same ones Seerr's own Discover page uses, or
+    ' invalid for a type this app doesn't know
+    function Request(slider as object) as dynamic
+        data = slider.data
+        if data = "" then return invalid
+        kind = slider.type
+        if kind = seerrSliders.MOVIE_KEYWORD then return { path: "discover/movies", params: { "keywords": data } }
+        if kind = seerrSliders.TV_KEYWORD then return { path: "discover/tv", params: { "keywords": data } }
+        if kind = seerrSliders.MOVIE_GENRE then return { path: "discover/movies", params: { "genre": data } }
+        if kind = seerrSliders.TV_GENRE then return { path: "discover/tv", params: { "genre": data } }
+        if kind = seerrSliders.SEARCH then return { path: "search", params: { "query": data } }
+        if kind = seerrSliders.STUDIO then return { path: "discover/movies/studio/" + data.EncodeUriComponent(), params: {} }
+        if kind = seerrSliders.NETWORK then return { path: "discover/tv/network/" + data.EncodeUriComponent(), params: {} }
+        if kind = seerrSliders.MOVIE_STREAMING then return seerrSliders.streamingRequest("discover/movies", data)
+        if kind = seerrSliders.TV_STREAMING then return seerrSliders.streamingRequest("discover/tv", data)
+        return invalid
+    end function
+
+    ' Seerr stores a streaming slider's data as "<region>,<provider ids>"
+    function streamingRequest(path as string, data as string) as dynamic
+        parts = data.Split(",")
+        region = parts[0].Trim()
+        providers = ""
+        if parts.Count() > 1 then providers = parts[1].Trim()
+        if region = "" or providers = "" then return invalid
+        return { path: path, params: { "watchRegion": region, "watchProviders": providers } }
+    end function
+
+    ' A slider without a title has nothing to label its row with
+    function IsSupported(slider as object) as boolean
+        return slider.enabled and slider.title <> "" and isValid(seerrSliders.Request(slider))
+    end function
+
+    function Supported(sliders as object) as object
+        kept = []
+        for each slider in sliders
+            if seerrSliders.IsSupported(slider) then kept.push(slider)
+        end for
+        return kept
+    end function
+
+    ' Search can turn up people, and only titles make cards
+    function Results(body as dynamic) as object
+        kept = []
+        if type(body) <> "roAssociativeArray" then return kept
+        found = body.LookupCI("results")
+        if type(found) <> "roArray" then return kept
+        for each item in found
+            if type(item) = "roAssociativeArray"
+                mediaType = homeRowLayout.AsText(item.LookupCI("mediaType"))
+                if mediaType = "" then mediaType = homeRowLayout.AsText(item.LookupCI("media_type"))
+                if mediaType = "movie" or mediaType = "tv" then kept.push(item)
+            end if
+        end for
+        return kept
+    end function
+
+    function TotalPages(body as dynamic) as integer
+        if type(body) <> "roAssociativeArray" then return 1
+        pages = body.LookupCI("totalPages")
+        if not seerrSliders.isNumber(pages) or pages < 1 then return 1
+        return Int(pages)
+    end function
+
+    ' A slider's Home row. Its section is the slider's id and its item the slider's type, so a slider
+    ' replaced by one of another type isn't mistaken for it.
+    function RowId(sliderId as dynamic, sliderType as dynamic) as string
+        return `pluginDynamic:seerr:${homeRowLayout.ServerKey()}:${homeRowLayout.AsText(sliderId)}:${homeRowLayout.AsText(sliderType)}`
+    end function
+
+    ' The server, slider id and type a slider row names. The server is a url with colons of its
+    ' own, so it's whatever the two ends leave.
+    function FromRowId(id as dynamic) as dynamic
+        if not homeRowLayout.IsSliderRow(id) then return invalid
+        text = homeRowLayout.AsText(id)
+        parts = text.Split(":")
+        if parts.Count() < 5 then return invalid
+        sliderType = parts[parts.Count() - 1]
+        sliderId = parts[parts.Count() - 2]
+        head = Len("pluginDynamic:seerr:")
+        return { server: Mid(text, head + 1, Len(text) - head - Len(sliderId) - Len(sliderType) - 2), sliderId: sliderId, sliderType: sliderType }
+    end function
+
+    function Find(sliders as object, sliderId as dynamic, sliderType as dynamic) as dynamic
+        for each slider in sliders
+            if slider.id.ToStr() = homeRowLayout.AsText(sliderId) and slider.type.ToStr() = homeRowLayout.AsText(sliderType) then return slider
+        end for
+        return invalid
+    end function
+
+    ' The record a slider row keeps among the picked rows
+    function Record(slider as object) as object
+        return { id: seerrSliders.RowId(slider.id, slider.type), source: "seerr", section: slider.id.ToStr(), itemId: slider.type.ToStr(), title: slider.title }
+    end function
+
+    ' This server's slider rows brought in line with Seerr: renamed to their current titles and
+    ' dropped once Seerr no longer has them. One Seerr switched off keeps its entry.
+    function Reconciled(picks as object, sliders as object) as object
+        result = { picks: [], gone: [], changed: false }
+        for each pick in picks
+            if not homeRowLayout.IsSliderRow(pick.id) or not homeRowLayout.IsOwnServer(pick.id)
+                result.picks.push(pick)
+            else
+                fromId = seerrSliders.FromRowId(pick.id)
+                live = seerrSliders.Find(sliders, fromId.sliderId, fromId.sliderType)
+                if not isValid(live)
+                    result.gone.push(pick.id)
+                    result.changed = true
+                else
+                    if live.title <> "" and live.title <> pick.title
+                        pick.title = live.title
+                        result.changed = true
+                    end if
+                    result.picks.push(pick)
+                end if
+            end if
+        end for
+        return result
+    end function
+
+end namespace

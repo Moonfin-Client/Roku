@@ -8440,5 +8440,15 @@
         <extracomment>Heading over the TMDB chart switches</extracomment>
         <translation>TMDB Lists</translation>
     </message>
+    <message>
+        <source>Seerr Discover Sliders</source>
+        <extracomment>Heading over the custom rows a Seerr admin added to Seerr's Discover page</extracomment>
+        <translation>Seerr Discover Sliders</translation>
+    </message>
+    <message>
+        <source>Seerr Discovery Rows</source>
+        <extracomment>Line under a row in the Home Rows editor that comes from a Seerr Discover slider</extracomment>
+        <translation>Seerr Discovery Rows</translation>
+    </message>
 </context>
 </TS>

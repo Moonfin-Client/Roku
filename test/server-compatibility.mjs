@@ -220,11 +220,13 @@ source += '\n' + await readFile('test/ratings-scope.bs', 'utf8');
 // The rest of the row layout uses loops this interpreter cant parse, and the outside lists only need these
 const homeRowLayoutFile = await readFile('source/utils/homeRowLayout.bs', 'utf8');
 source += '\nnamespace homeRowLayout\n' + homeRowLayoutFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['Catalogue', 'Passthrough', 'AsText']) {
+for (const name of ['Catalogue', 'Passthrough', 'AsText', 'Sources', 'SourceFor', 'ServerId', 'ServerKey', 'SourceFromId', 'IsOwnServer', 'IsSliderRow']) {
     source += '\n' + homeRowLayoutFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/media-bar-external.bs', 'utf8');
+source += '\n' + (await readFile('source/utils/seerrSliders.bs', 'utf8')).replace(/^import .*$/gm, '');
+source += '\n' + await readFile('test/seerr-sliders.bs', 'utf8');
 // The whole markdown reader uses loops this interpreter cant parse, and the reviews only need Strip
 source += '\nnamespace messageMarkdown\n' + (await readFile('source/utils/messageMarkdown.bs', 'utf8')).match(/^    function Strip\([^]*?^    end function/m)[0] + '\nend namespace\n';
 source += '\n' + await readFile('test/tmdb-reviews.bs', 'utf8');
@@ -1091,6 +1093,8 @@ for (const key of ['imdb', 'tmdb', 'seerr']) {
     assert.match(syncWiring, new RegExp(`\\{ pluginKey: "${key}RowsSortBy", rokuKey: "${key}\\.rowsSortBy", type: "direct" \\}`), `The ${key} sort syncs`);
     assert.match(syncWiring, new RegExp(`\\{ pluginKey: "${key}RowsSortOrder", rokuKey: "${key}\\.rowsSortOrder", type: "direct" \\}`), `The ${key} sort order syncs`);
 }
+assert.match(syncWiring, /if source = "seerr" then return settingsSync\.SliderRowFromSection\(section, serverKey\)/, 'A Seerr slider section from the server becomes a slider row');
+assert.match(syncWiring, /if not homeRowLayout\.IsSliderRow\(id\) then order\.push\(id\)/, 'Slider rows stay out of the flat order');
 process.stdout.write('PASS: home and media bar wiring\n');
 
 const guideSource = await readFile('components/liveTv/guide/LiveTvGuide.bs', 'utf8');
