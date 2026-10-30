@@ -11,6 +11,13 @@ import "pkg:/source/utils/settingsSync.bs"
 
 const LOADING_WAIT_TIME = 2
 
+' Picked rows past the first eight sections wait until focus comes within two rows above them or
+' five below, and then load three at a time
+const EAGER_SECTION_COUNT = 8
+const NEAR_ROWS_ABOVE = 2
+const NEAR_ROWS_BELOW = 5
+const LATE_ROW_LOADS = 3
+
 ' Settings are stored flat, so the key is one path segment, and a plugin sync writes it as a string
 function prefersThumbnails() as boolean
     preferThumbnails = chainLookupReturn(m.global.session, "user.settings.`ui.home.preferThumbnails`", false)
@@ -81,6 +88,10 @@ sub init()
     m.top.setfocus(true)
 
     m.top.observeField("rowItemSelected", "itemSelected")
+    m.top.observeField("rowItemFocused", "loadRowsNearFocus")
+    m.heldBackRows = {}
+    m.lateRows = {}
+    m.lateRowQueue = []
 
     m.LoadLibrariesTask = createObject("roSGNode", "LoadItemsTask")
 
@@ -238,6 +249,47 @@ sub startHomeRowsLoading()
 end sub
 
 
+function holdsBack(index as integer, sectionName as string) as boolean
+    return index >= EAGER_SECTION_COUNT and isValid(homeRowLayout.SourceFromId(sectionName)) and internalRowEnabled(sectionName)
+end function
+
+' A held back row keeps its place with a titled placeholder, or with what it showed before
+sub holdBack(rowId as string)
+    m.heldBackRows[rowId] = true
+    title = customDynamicRowTitle(rowId)
+    if not isValidAndNotEmpty(title) then title = rowId
+    if sectionExists(title, rowId) or knownEmpty(title) then return
+
+    row = m.top.content.CreateChild("HomeRow")
+    row.id = rowId
+    row.title = title
+    row.imageWidth = getPosterSize(false)[0]
+    row.cursorSize = getPosterSize(false)
+end sub
+
+sub loadRowsNearFocus()
+    if m.heldBackRows.count() = 0 then return
+    focused = m.top.rowItemFocused
+    if not isValid(focused) or focused.count() = 0 then return
+
+    for index = focused[0] - NEAR_ROWS_ABOVE to focused[0] + NEAR_ROWS_BELOW
+        row = m.top.content.getChild(index)
+        if isValid(row) and m.heldBackRows.DoesExist(row.id)
+            m.heldBackRows.Delete(row.id)
+            m.lateRowQueue.push(row.id)
+        end if
+    end for
+    startLateRows()
+end sub
+
+sub startLateRows()
+    while m.lateRows.count() < LATE_ROW_LOADS and m.lateRowQueue.count() > 0
+        rowId = m.lateRowQueue.Shift()
+        m.lateRows[rowId] = true
+        createCustomDynamicRow({ id: rowId })
+    end while
+end sub
+
 function getExpectedRowContribution(sectionName as string) as integer
     if not isValidAndNotEmpty(sectionName) or sectionName = "none"
         return 0
@@ -348,11 +400,11 @@ sub processUserSections()
     homeRowLayout.MigrateSinceYouWatched()
     m.cachedRowOrder = invalid
 
+    m.heldBackRows = {}
+    m.lateRowQueue = []
     for i = 0 to homeSectionCount() - 1
         sectionName = getResolvedSectionName(i)
-
-
-        m.expectedRowCount = m.expectedRowCount + getExpectedRowContribution(sectionName)
+        if not holdsBack(i, sectionName) then m.expectedRowCount = m.expectedRowCount + getExpectedRowContribution(sectionName)
     end for
 
     ' Add home sections in order based on user settings
@@ -362,7 +414,9 @@ sub processUserSections()
 
 
         sectionLoaded = false
-        if sectionName <> "none"
+        if holdsBack(i, sectionName)
+            holdBack(sectionName)
+        else if sectionName <> "none"
             sectionLoaded = addHomeSection(sectionName)
         end if
 
@@ -380,6 +434,11 @@ sub processUserSections()
 
     if loadedSections = 0
         m.overhang.setfocus(true)
+    end if
+
+    if m.heldBackRows.count() > 0
+        sortHomeRows()
+        setRowItemSize()
     end if
 
     ' Start the timer for creating the content rows before we set the cursor size
@@ -2596,11 +2655,17 @@ function createCustomDynamicRow(row as object) as boolean
 end function
 
 sub updateCustomDynamicRowItems(event as object)
-    m.processedRowCount++
-
     task = event.getRoSGNode()
     rowId = task.itemsToLoad
     itemData = getTaskContentAndCleanup(rowId)
+
+    ' A held back row lands after Home counted itself loaded
+    if m.lateRows.DoesExist(rowId)
+        m.lateRows.Delete(rowId)
+        startLateRows()
+    else
+        m.processedRowCount++
+    end if
 
     if rowId = "seasonal"
         mappedName = seasonalRowTitle(task.rowKey)
@@ -2614,6 +2679,7 @@ sub updateCustomDynamicRowItems(event as object)
 
     ' Found by its key, since a picked row can carry the same title as another one
     if not isValidAndNotEmpty(itemData)
+        m.emptySections[LCase(sectionName).Replace(" ", "")] = true
         removeHomeRowById(rowId)
         return
     end if
