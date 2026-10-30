@@ -2,6 +2,7 @@ import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/libraryCard.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/seerrRequestRules.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 
 ' Picked on this screen and kept on this device. Until then the grid follows the library size.
@@ -26,22 +27,31 @@ sub init()
     m.starIcon = m.top.findNode("starIcon")
     m.metaOverview = m.top.findNode("metaOverview")
 
+    m.collectionButton = m.top.findNode("collectionButton")
     m.sortButton = m.top.findNode("sortButton")
     m.filterButton = m.top.findNode("filterButton")
     m.settingsButton = m.top.findNode("settingsButton")
+    m.collectionButton.text = tr("Request Collection")
+    ' Wide enough for its label in the bold face focus gives it
+    measure = CreateObject("roSGNode", "Label")
+    measure.font = "font:SmallBoldSystemFont"
+    measure.text = m.collectionButton.text
+    m.collectionButton.width = measure.boundingRect().width + 48
     m.sortButton.text = tr("Sort")
     m.filterButton.text = tr("Filter")
-    m.toolbar = [m.sortButton, m.filterButton, m.settingsButton]
+    m.toolbar = [m.collectionButton, m.sortButton, m.filterButton, m.settingsButton]
     for each button in m.toolbar
         button.background = "#FFFFFF1A"
         button.focusBackground = "#FFFFFF33"
         button.color = "#FFFFFF"
         button.focusColor = "#FFFFFF"
     end for
+    m.collectionButton.observeField("buttonSelected", "ShowCollectionRequest")
     m.sortButton.observeField("buttonSelected", "ShowSortDialog")
     m.filterButton.observeField("buttonSelected", "ShowFilterDialog")
     m.settingsButton.observeField("buttonSelected", "ShowSettingsDialog")
     m.browseSheet = invalid
+    m.collectionParts = []
     layoutToolbar()
 
     ' Observe interface fields
@@ -193,7 +203,10 @@ sub onContentResponse(event as object)
     if response.success and response.data <> invalid
         results = response.data.results
         ' A collection lists its titles under parts rather than results
-        if results = invalid then results = response.data.parts
+        if results = invalid
+            results = response.data.parts
+            showCollectionParts(results)
+        end if
 
         if results <> invalid and type(results) = "roArray"
             ' Filter results based on current filter setting
@@ -505,6 +518,65 @@ sub CloseBrowseSheet()
     m.browseReturn.setFocus(true)
     m.top.getScene().removeChild(m.browseSheet)
     m.browseSheet = invalid
+end sub
+
+' ===== Requesting a collection =====
+
+' Blocklisted films stay out of the sheet, and the button only shows when one of the rest can
+' still be asked for on a track this viewer may use
+sub showCollectionParts(parts as dynamic)
+    m.collectionParts = []
+    if type(parts) = "roArray"
+        for each part in parts
+            if chainLookupReturn(part, "mediaInfo.status", 0) <> SEERR_MEDIA_BLOCKLISTED then m.collectionParts.push(part)
+        end for
+    end if
+
+    permissions = GetCurrentUserSeerrPermissions()
+    can4k = CanRequest4K(permissions, "movie")
+    requestable = false
+    for each part in m.collectionParts
+        if seerrRequestRules.PartRequestable(part, false) or (can4k and seerrRequestRules.PartRequestable(part, true)) then requestable = true
+    end for
+    show = CanRequestMovies(permissions) and requestable
+    if not show and m.collectionButton.hasFocus() then m.sortButton.setFocus(true)
+    m.collectionButton.visible = show
+    layoutToolbar()
+end sub
+
+sub ShowCollectionRequest()
+    permissions = GetCurrentUserSeerrPermissions()
+    m.collectionDialog = CreateObject("roSGNode", "SeerrRequestDialog")
+    m.collectionDialog.mediaType = "movie"
+    m.collectionDialog.parts = m.collectionParts
+    m.collectionDialog.canRequest4k = CanRequest4K(permissions, "movie")
+    m.collectionDialog.canRequestAdvanced = HasAdvancedRequestPermission(permissions)
+    m.collectionDialog.seerrUserId = CurrentSeerrUserId()
+    m.collectionDialog.returnFocus = m.collectionButton
+    m.collectionDialog.observeField("submitted", "onCollectionRequested")
+    m.collectionDialog.observeField("wasCancelled", "CloseCollectionRequest")
+    m.top.getScene().appendChild(m.collectionDialog)
+    m.collectionDialog.callFunc("showDialog")
+end sub
+
+sub CloseCollectionRequest()
+    if not isValid(m.collectionDialog) then return
+    m.collectionDialog.unobserveField("submitted")
+    m.collectionDialog.unobserveField("wasCancelled")
+    m.top.getScene().removeChild(m.collectionDialog)
+    m.collectionDialog = invalid
+end sub
+
+sub onCollectionRequested()
+    result = m.collectionDialog.result
+    CloseCollectionRequest()
+
+    title = tr("Request Collection")
+    if result.quotaStopped = true then title = tr("Request limit reached")
+    body = `${result.requested} ${tr("requested")}`
+    if result.failed > 0 then body += ` · ${result.failed} ${tr("failed")}`
+    m.top.getScene().findNode("notificationBanner").callFunc("enqueue", [{ title: title, body: body }])
+    Reload()
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean

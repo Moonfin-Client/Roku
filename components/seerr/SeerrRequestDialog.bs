@@ -27,13 +27,20 @@ sub showDialog()
     m.advancedOpen = false
     m.advancedLoading = false
     m.servers = invalid
+    m.selectedParts = []
+    m.partsPicked = false
+    m.sending = false
+    m.progress = invalid
     clearAdvancedSelection()
 
     loadQuota()
     if m.top.canRequestAdvanced then loadServers()
 
     m.sheet.focusId = ""
-    if showsToggle()
+    if isCollection()
+        m.selectedParts = seerrRequestRules.FirstSelectable(m.top.parts, false, invalid)
+        m.sheet.focusId = "allParts"
+    else if showsToggle()
         m.sheet.focusId = "4k"
     else if isTv()
         m.sheet.focusId = "allSeasons"
@@ -47,6 +54,10 @@ function isTv() as boolean
     return isStringEqual(m.top.mediaType, "tv")
 end function
 
+function isCollection() as boolean
+    return isValidAndNotEmpty(m.top.parts)
+end function
+
 function showsToggle() as boolean
     return m.top.qualityToggle and m.top.canRequest4k
 end function
@@ -54,6 +65,10 @@ end function
 ' ===== The sheet =====
 
 sub rebuild()
+    if isCollection()
+        rebuildCollection()
+        return
+    end if
     tv = isTv()
     details = m.top.details
     mediaInfo = chainLookupReturn(details, "mediaInfo", invalid)
@@ -116,6 +131,78 @@ sub rebuild()
     m.sheet.callFunc("render")
 end sub
 
+' Every film the collection holds, ticked as far as the quota stretches, with the ones it can't
+' take saying why
+sub rebuildCollection()
+    parts = m.top.parts
+    requestable = 0
+    rows = []
+    for each part in parts
+        canTake = seerrRequestRules.PartRequestable(part, m.selected4k)
+        if canTake then requestable++
+        status = seerrRequestRules.PartStatus(part, m.selected4k)
+        trailing = ""
+        trailingColor = invalid
+        if not canTake and seerrRequestRules.IsAvailableStatus(status)
+            trailing = tr("Available")
+            trailingColor = "#81C784"
+        else if not canTake and (status = SEERR_MEDIA_PENDING or status = SEERR_MEDIA_PROCESSING)
+            trailing = tr("Requested")
+            trailingColor = "#90CAF9"
+        end if
+        rows.push({ kind: "toggle", id: `part:${part.id}`, title: partTitle(part), checkbox: true, value: canTake and seerrRequestRules.Has(m.selectedParts, part.id), trailing: trailing, trailingColor: trailingColor, enabled: canTake and not m.sending })
+    end for
+
+    quota = quotaDetail()
+    cap = seerrRequestRules.SelectionCap(quota, requestable)
+    picked = m.selectedParts.count()
+    limited = not seerrRequestRules.IsUnlimited(quota)
+    overCap = limited and picked > cap
+    m.partCap = cap
+
+    elements = [
+        { kind: "toggle", id: "allParts", title: `${tr("Select All")} (${requestable})`, checkbox: true, value: picked >= cap and cap > 0, enabled: not m.sending },
+        { kind: "divider", tight: true },
+        { kind: "list", items: rows, maxHeight: 280 }
+    ]
+    if m.top.canRequest4k then elements.push({ kind: "toggle", id: "4k", title: tr("4K"), value: m.selected4k, enabled: not m.sending })
+    if m.top.canRequestAdvanced
+        elements.push({ kind: "divider" })
+        elements.push({ kind: "expander", id: "advanced", title: tr("Advanced Options"), open: m.advancedOpen })
+        if m.advancedOpen then addAdvanced(elements)
+    end if
+    if limited then elements.push({ kind: "quota", text: Substitute(tr("^0 of ^1 movie requests remaining"), toString(quota.remaining ?? 0), toString(quota.limit ?? 0)), blocked: overCap, gap: 12 })
+    m.blocked = overCap or picked = 0
+
+    busyLabel = ""
+    if isValid(m.progress) then busyLabel = Substitute(tr("Requesting ^0 of ^1..."), m.progress.current.ToStr(), m.progress.total.ToStr())
+    elements.push({ kind: "buttons", gap: 20, items: [
+        { id: "cancel", label: tr("Cancel"), enabled: not m.sending },
+        { id: "submit", label: Substitute(tr("Request ^0 movies"), picked.ToStr()), primary: true, color: "#6366F1", enabled: not m.sending and not m.blocked, busy: m.sending and isValid(m.progress), busyLabel: busyLabel }
+    ] })
+
+    m.sheet.dialogTitle = tr("Request Collection")
+    m.sheet.elements = elements
+    m.sheet.callFunc("render")
+end sub
+
+function partTitle(part as object) as string
+    name = part.title ?? part.name ?? ""
+    date = part.releaseDate ?? part.release_date ?? ""
+    if Len(date) >= 4 then return `${name} (${Left(date, 4)})`
+    return name
+end function
+
+sub togglePart(id as integer)
+    m.partsPicked = true
+    if seerrRequestRules.Has(m.selectedParts, id)
+        m.selectedParts = withoutValue(m.selectedParts, id)
+    else if m.selectedParts.count() < m.partCap
+        m.selectedParts.push(id)
+    end if
+    rebuild()
+end sub
+
 sub addAdvanced(elements as object)
     if m.advancedLoading
         elements.push({ kind: "spinner", gap: 8 })
@@ -132,14 +219,26 @@ end sub
 
 sub onActivated(event as object)
     id = event.getData()
+    if m.sending then return
     if id = "cancel"
         cancelDialog()
     else if id = "submit"
-        submit()
+        if isCollection() then sendParts() else submit()
+    else if id = "allParts"
+        m.partsPicked = true
+        if m.selectedParts.count() >= m.partCap and m.partCap > 0
+            m.selectedParts = []
+        else
+            m.selectedParts = seerrRequestRules.FirstSelectable(m.top.parts, m.selected4k, quotaDetail())
+        end if
+        rebuild()
+    else if Left(id, 5) = "part:"
+        togglePart(Mid(id, 6).ToInt())
     else if id = "4k"
         ' Server picks only fill a blank, so switching track clears the old track's choices or a
         ' 4K request would go out to the HD server
         m.selected4k = not m.selected4k
+        if isCollection() then m.selectedParts = seerrRequestRules.FirstSelectable(m.top.parts, m.selected4k, quotaDetail())
         clearAdvancedSelection()
         if m.top.canRequestAdvanced then applyServerDefaults()
         rebuild()
@@ -175,6 +274,7 @@ function withoutValue(list as object, value as dynamic) as object
 end function
 
 sub cancelDialog()
+    if m.sending then return
     releaseFocus()
     m.top.wasCancelled = true
 end sub
@@ -205,6 +305,73 @@ sub submit()
 
     releaseFocus()
     m.top.result = result
+    m.top.submitted = true
+end sub
+
+' One film at a time. A duplicate counts as asked for, and a quota refusal stops the run since
+' the rest would be refused the same way.
+sub sendParts()
+    if m.blocked then return
+    m.sending = true
+    m.sendQueue = m.selectedParts
+    m.sendIndex = 0
+    m.sendOk = 0
+    m.sendFailed = 0
+    m.quotaStopped = false
+    sendNextPart()
+end sub
+
+sub sendNextPart()
+    if m.sendIndex >= m.sendQueue.count()
+        finishSending()
+        return
+    end if
+
+    m.progress = { current: m.sendIndex + 1, total: m.sendQueue.count() }
+    rebuild()
+    ' A fresh task each time, since the last one is still finishing when its answer arrives
+    m.sendTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.sendTask.request = {
+        method: "POST",
+        endpoint: "/api/v1/request",
+        bodyJson: SeerrJsonFromPairs(requestPairs(m.sendQueue[m.sendIndex]))
+    }
+    m.sendTask.observeField("response", "onPartSent")
+    m.sendTask.control = TaskControl.RUN
+end sub
+
+function requestPairs(tmdbId as integer) as object
+    pairs = [
+        { key: "mediaType", value: "movie" },
+        { key: "mediaId", value: tmdbId },
+        { key: "is4k", value: m.selected4k }
+    ]
+    if isValid(m.selectedServer) then pairs.push({ key: "serverId", value: m.selectedServer.id })
+    if isValid(m.selectedProfileId) then pairs.push({ key: "profileId", value: m.selectedProfileId })
+    if isValidAndNotEmpty(m.selectedRootFolder) then pairs.push({ key: "rootFolder", value: m.selectedRootFolder })
+    return pairs
+end function
+
+sub onPartSent(event as object)
+    response = event.getData()
+    status = chainLookupReturn(response, "statusCode", 0)
+    if chainLookupReturn(response, "success", false) = true or status = 409
+        m.sendOk++
+    else if status = 403 and Instr(1, LCase(toString(chainLookupReturn(response, "error", ""))), "quota") > 0
+        m.quotaStopped = true
+        finishSending()
+        return
+    else
+        m.sendFailed++
+    end if
+    m.sendIndex++
+    sendNextPart()
+end sub
+
+sub finishSending()
+    m.sending = false
+    releaseFocus()
+    m.top.result = { requested: m.sendOk, failed: m.sendFailed, quotaStopped: m.quotaStopped }
     m.top.submitted = true
 end sub
 
@@ -358,6 +525,8 @@ sub onQuotaLoaded(event as object)
     if not isValid(response) or not response.success or not isValid(response.data) then return
 
     m.quota = response.data
+    ' The picks were made before the quota was known, so they follow it until the viewer changes one
+    if isCollection() and not m.partsPicked then m.selectedParts = seerrRequestRules.FirstSelectable(m.top.parts, m.selected4k, quotaDetail())
     rebuild()
 end sub
 

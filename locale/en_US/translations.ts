@@ -8471,6 +8471,36 @@
         <translation>Seerr Settings</translation>
     </message>
     <message>
+        <source>Request Collection</source>
+        <extracomment>Button and dialog heading for requesting every film in a Seerr collection</extracomment>
+        <translation>Request Collection</translation>
+    </message>
+    <message>
+        <source>Select All</source>
+        <extracomment>Checkbox at the top of the Request Collection dialog. The count of films that can be requested follows it</extracomment>
+        <translation>Select All</translation>
+    </message>
+    <message>
+        <source>Request ^0 movies</source>
+        <extracomment>Submit button of the Request Collection dialog. ^0 is how many films are ticked</extracomment>
+        <translation>Request ^0 movies</translation>
+    </message>
+    <message>
+        <source>Requesting ^0 of ^1...</source>
+        <extracomment>Submit button of the Request Collection dialog while it sends. ^0 is the film being sent and ^1 how many in all</extracomment>
+        <translation>Requesting ^0 of ^1...</translation>
+    </message>
+    <message>
+        <source>requested</source>
+        <extracomment>After a count in the note shown once a collection request finishes, as in 3 requested</extracomment>
+        <translation>requested</translation>
+    </message>
+    <message>
+        <source>failed</source>
+        <extracomment>After a count in the note shown once a collection request finishes, as in 1 failed</extracomment>
+        <translation>failed</translation>
+    </message>
+    <message>
         <source>S^0</source>
         <extracomment>Short season label on a season pick in the Seerr request dialog. ^0 is the season number</extracomment>
         <translation>S^0</translation>
