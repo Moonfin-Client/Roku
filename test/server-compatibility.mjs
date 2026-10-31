@@ -744,7 +744,7 @@ assert.match(itemMenuTask, /taskRequest\(`Playlists\/\$\{request\.playlistId\}\/
 const itemMenuHostSource = await readFile('components/itemMenu/itemMenuHost.bs', 'utf8');
 assert.match(itemMenuHostSource.match(/sub itemMenuChangePlaylist\([^]*?end sub/)[0], /rows\.removeChildIndex\(from\)[^]*?m\.top\.callFunc\("playlistRowsChanged", target\)[^]*?runItemMenuTask/, 'The row goes before the server answers');
 assert.match(itemMenuHostSource.match(/sub onItemMenuPlaylistChanged\([^]*?end sub/)[0], /rows\.insertChild\(row, request\.from\)/, 'And comes back if the server refuses');
-assert.match(mainActions, /APIRequest\(`\/Playlists\/\$\{playlistID\}\/Items`, \{ EntryIds: entryID \}\)[^]*?req\.SetRequest\("DELETE"\)/, 'The delete names the entry id');
+assert.match(mainActions, /APIRequest\(`\/Playlists\/\$\{playlistID\}\/Items`, \{ EntryIds: entryID \}\)[^]*?requestResponse\(req, "DELETE"\)/, 'The delete names the entry id');
 assert.match(mainActions.match(/sub removeItemFromMyList\([^]*?end sub/)[0], /MainAction\.removeItemFromPlaylist\(playlistID, MainAction\.playlistEntryId\(playlistID, itemID\)\)/, 'My List takes a title out by its entry id too');
 const playlistViewHost = await readFile('components/music/playlistViewHost.bs', 'utf8');
 assert.match(playlistViewHost.match(/function playlistViewRows\([^]*?end function/)[0], /m\.top\.activeTracks = shownRows\s+return shownRows/, 'A playlist screen shows the rows playback reads');
