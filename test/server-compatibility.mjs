@@ -202,7 +202,7 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/live-tv-guide.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/recordAiring.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/record-airing.bs', 'utf8');
-for (const [file, test] of [['source/utils/heldSeek.bs', 'test/held-seek.bs'], ['source/utils/secondarySubtitle.bs', 'test/secondary-subtitle.bs'], ['source/utils/liveWindow.bs', 'test/live-window.bs']]) {
+for (const [file, test] of [['source/utils/heldSeek.bs', 'test/held-seek.bs'], ['source/utils/secondarySubtitle.bs', 'test/secondary-subtitle.bs'], ['source/utils/liveWindow.bs', 'test/live-window.bs'], ['source/utils/subtitleText.bs', 'test/subtitle-text.bs']]) {
     source += '\n' + (await readFile(file, 'utf8')).replace(/^import .*$/gm, '') + '\n' + await readFile(test, 'utf8');
 }
 source += '\n' + await readFile('test/server-date.bs', 'utf8');
