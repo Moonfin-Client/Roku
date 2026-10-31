@@ -1,0 +1,91 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Requests to a Plex server or plex.tv. The identity rides in the query, as Plex's own apps send it,
+' and every answer is asked for as JSON.
+
+const PLEX_TIMEOUT_MS = 15000
+const PLEX_PLAYBACK_TIMEOUT_MS = 120000
+const PLEX_PRODUCT = "Moonfin for Roku"
+const PLEX_DEVICE_NAME = "Roku"
+
+namespace plexHttp
+
+    ' Who the app is to Plex, by the names Plex's own apps use. plex.tv ties a sign in code to the
+    ' client that asked for it, so the identifier is the device's own and never changes with the user.
+    function Identity() as object
+        return {
+            "X-Plex-Product": PLEX_PRODUCT,
+            "X-Plex-Version": CreateObject("roAppInfo").GetVersion(),
+            "X-Plex-Client-Identifier": CreateObject("roDeviceInfo").GetChannelClientID(),
+            "X-Plex-Device-Name": PLEX_DEVICE_NAME
+        }
+    end function
+
+    ' One request, answered as { status, data }, where data is the parsed JSON or {} for an empty body
+    function Send(ctx as object, path as string, query = {} as object, method = "GET" as string, timeoutMs = PLEX_TIMEOUT_MS as integer, headers = {} as object, body = "" as string) as object
+        params = plexHttp.Identity()
+        if isValidAndNotEmpty(ctx.token) then params["X-Plex-Token"] = ctx.token
+        params.Append(query)
+        target = path
+        if path.Left(7) <> "http://" and path.Left(8) <> "https://" then target = ctx.base + path
+        separator = "?"
+        if Instr(1, target, "?") > 0 then separator = "&"
+        reply = plexHttp.Transfer(target + separator + plexUrls.Query(params), method, headers, timeoutMs, body)
+        return { status: reply.status, data: plexHttp.Parse(reply.text) }
+    end function
+
+    ' The MediaContainer of an answer that came back, or {} for one that didn't
+    function Container(ctx as object, path as string, query = {} as object, timeoutMs = PLEX_TIMEOUT_MS as integer) as object
+        reply = plexHttp.Send(ctx, path, query, "GET", timeoutMs)
+        if reply.status < 200 or reply.status >= 300 then return {}
+        return plexHttp.MediaContainer(reply.data)
+    end function
+
+    function MediaContainer(data as dynamic) as object
+        if type(data) <> "roAssociativeArray" then return {}
+        found = data.LookupCI("MediaContainer")
+        if type(found) <> "roAssociativeArray" then return {}
+        return found
+    end function
+
+    ' Plex sends a few keys twice, once as a value and once as a list, differing only in case. A lookup
+    ' here ignores case, so the lists are renamed before they're read.
+    function Parse(text as string) as object
+        ' An error page is HTML, and parsing it only logs an error
+        first = text.Trim().Left(1)
+        if first <> "{" and first <> "[" then return {}
+        text = text.Replace(Chr(34) + "Guid" + Chr(34) + ":[", Chr(34) + "Guids" + Chr(34) + ":[")
+        text = text.Replace(Chr(34) + "Rating" + Chr(34) + ":[", Chr(34) + "Ratings" + Chr(34) + ":[")
+        data = ParseJson(text)
+        if type(data) <> "roAssociativeArray" then return {}
+        return data
+    end function
+
+    function Transfer(url as string, method as string, headers as object, timeoutMs as integer, body = "" as string) as object
+        req = CreateObject("roUrlTransfer")
+        req.SetUrl(url)
+        req.AddHeader("Accept", "application/json")
+        for each name in headers
+            req.AddHeader(name, headers[name])
+        end for
+        if LCase(url.Left(8)) = "https://" then setCertificateAuthority(req)
+        req.RetainBodyOnError(true)
+        port = CreateObject("roMessagePort")
+        req.SetMessagePort(port)
+        if method = "POST"
+            started = req.AsyncPostFromString(body)
+        else
+            if method <> "GET" then req.SetRequest(method)
+            started = req.AsyncGetToString()
+        end if
+        if not started then return { status: 0, text: "" }
+        event = wait(timeoutMs, port)
+        if type(event) <> "roUrlEvent"
+            req.AsyncCancel()
+            return { status: 0, text: "" }
+        end if
+        return { status: event.GetResponseCode(), text: event.GetString() }
+    end function
+
+end namespace

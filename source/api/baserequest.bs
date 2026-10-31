@@ -1,4 +1,5 @@
 import "pkg:/source/utils/diagnostics.bs"
+import "pkg:/source/utils/plexUrls.bs"
 import "pkg:/source/utils/serverCompatibility.bs"
 ' Functions for making requests to the API
 function buildParams(params = {} as object) as string
@@ -84,9 +85,23 @@ function buildServerURL(serverUrl as string, path as string, params = {} as obje
     return full_url
 end function
 
+' On a Plex server a media route becomes the real Plex address, and any other route keeps its Jellyfin
+' path for the Plex bridge, with the account's token so the bridge knows whose request it is
+function plexServerURL(serverUrl as string, path as string, params as object, token as string) as string
+    base = plexUrls.OriginOf(serverUrl)
+    media = plexUrls.MediaURL(base, path, params, token)
+    if media <> invalid then return media
+    signed = {}
+    signed.Append(params)
+    signed["X-Plex-Token"] = token
+    return buildServerURL(base, path, signed)
+end function
+
 function buildURL(path as string, params = {} as object) as dynamic
     serverURL = get_url()
     if serverURL = invalid then return invalid
+
+    if isPlexServer(serverURL) then return plexServerURL(serverURL, path, params, toString(getAuthTokenFromRegistry() ?? ""))
 
     emby = isEmbyServer(serverURL)
     if emby
@@ -130,10 +145,43 @@ sub noteRefusalIn(req as object)
     if InStr(1, req.GetFailureReason(), "403") > 0 then noteAccessRefused()
 end sub
 
+' A Jellyfin route on a Plex server is answered by the Plex bridge in Jellyfin's shapes, as { status,
+' data }, or invalid when the request isn't for a Plex server. The bridge runs as a task of its own, so
+' its code stays out of every screen that makes requests.
+function plexAnswer(req as object, method as string, body = "" as string, timeoutMs = 30000 as integer) as dynamic
+    url = req.GetUrl()
+    if not plexUrls.Owns(url) then return invalid
+    bridge = CreateObject("roSGNode", "PlexBridgeTask")
+    port = CreateObject("roMessagePort")
+    bridge.observeField("answer", port)
+    bridge.request = { url: url, method: method, body: body, timeoutMs: timeoutMs }
+    bridge.control = "RUN"
+    if wait(timeoutMs, port) = invalid
+        bridge.control = "STOP"
+        return { status: 0, data: invalid }
+    end if
+    answer = bridge.answer
+    if type(answer) <> "roAssociativeArray" then return { status: 0, data: invalid }
+    if answer.status = 403 then noteAccessRefused()
+    return answer
+end function
+
+function plexAnswered(answer as object) as boolean
+    return answer.status >= 200 and answer.status < 300
+end function
+
+function plexAnswerText(answer as object) as string
+    if answer.data = invalid then return ""
+    if type(answer.data) = "roString" or type(answer.data) = "String" then return answer.data
+    return FormatJson(answer.data)
+end function
+
 ' APIRequest hands back invalid when there is no server to build a URL against,
 ' so callers can reach here before a server has been picked
 function getJson(req)
     if req = invalid then return invalid
+    plex = plexAnswer(req, "GET")
+    if plex <> invalid then return plex.data
 
     started = diagnostics.StartTrace("GET", req)
     data = req.GetToString()
@@ -158,6 +206,8 @@ end function
 ' getJson for a lookup that is only worth a short wait
 function getJsonWithin(req, timeoutMs as integer) as dynamic
     if req = invalid then return invalid
+    plex = plexAnswer(req, "GET", "", timeoutMs)
+    if plex <> invalid then return plex.data
 
     started = diagnostics.StartTrace("GET", req)
     req.setMessagePort(CreateObject("roMessagePort"))
@@ -185,6 +235,8 @@ function getJsonWithin(req, timeoutMs as integer) as dynamic
 end function
 
 function postVoid(req, data = "" as string) as boolean
+    plex = plexAnswer(req, "POST", data)
+    if plex <> invalid then return plexAnswered(plex)
     started = diagnostics.StartTrace("POST", req)
     req.setMessagePort(CreateObject("roMessagePort"))
     req.AddHeader("Content-Type", "application/json")
@@ -249,6 +301,8 @@ function getVoid(req) as boolean
 end function
 
 function postJson(req, data = "" as string)
+    plex = plexAnswer(req, "POST", data)
+    if plex <> invalid then return plex.data
     started = diagnostics.StartTrace("POST", req)
     req.setMessagePort(CreateObject("roMessagePort"))
     req.AddHeader("Content-Type", "application/json")
@@ -274,6 +328,8 @@ function postJson(req, data = "" as string)
 end function
 
 function deleteVoid(req)
+    plex = plexAnswer(req, "DELETE")
+    if plex <> invalid then return plexAnswered(plex)
     started = diagnostics.StartTrace("DELETE", req)
     req.setMessagePort(CreateObject("roMessagePort"))
     req.AddHeader("Content-Type", "application/json")
@@ -417,12 +473,16 @@ end function
 
 function getString(req)
     if req = invalid then return ""
+    plex = plexAnswer(req, "GET")
+    if plex <> invalid then return plexAnswerText(plex)
 
     data = req.GetToString()
     return data
 end function
 
 function postString(req, data = "" as string)
+    plex = plexAnswer(req, "POST", data)
+    if plex <> invalid then return plexAnswerText(plex)
     req.setMessagePort(CreateObject("roMessagePort"))
     req.AddHeader("Content-Type", "application/json")
     req.AsyncPostFromString(data)
@@ -566,8 +626,13 @@ function buildAuthHeaderForServer(serverData as object) as string
     return auth
 end function
 
-function buildURLForServer(serverUrl as string, path as string, params = {} as object, userId = "" as string) as string
+function buildURLForServer(serverUrl as string, path as string, params = {} as object, userId = "" as string, authToken = "" as string) as string
     if serverUrl = "" then return ""
+
+    if isPlexServer(serverUrl)
+        if authToken = "" then authToken = savedServerToken(serverUrl, userId)
+        return plexServerURL(serverUrl, path, params, authToken)
+    end if
 
     emby = isEmbyServer(serverUrl)
     if emby
@@ -583,7 +648,7 @@ function buildURLForServer(serverUrl as string, path as string, params = {} as o
 end function
 
 function APIRequestForServer(serverUrl as string, userId as string, authToken as string, url as string, params = {} as object) as dynamic
-    full_url = buildURLForServer(serverUrl, url, params, userId)
+    full_url = buildURLForServer(serverUrl, url, params, userId, authToken)
     if full_url = "" then return invalid
 
     req = CreateObject("roUrlTransfer")
@@ -665,6 +730,8 @@ end sub
 function requestResponse(req as object, method = "GET" as string, body = "" as string, timeoutMs = 30000 as integer, cancelNode = invalid as dynamic) as object
     if req = invalid then return { status: 0, data: invalid }
     if requestCanceled(cancelNode) then return { status: 0, data: invalid }
+    plex = plexAnswer(req, method, body, timeoutMs)
+    if plex <> invalid then return plex
     port = CreateObject("roMessagePort")
     req.SetMessagePort(port)
     if method = "POST"

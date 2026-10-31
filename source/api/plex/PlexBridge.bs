@@ -1,0 +1,228 @@
+import "pkg:/source/api/plex/PlexPlayback.bs"
+import "pkg:/source/api/plex/PlexWrites.bs"
+
+' Answers the app's Jellyfin requests for a Plex server, by route, in the shapes the app reads. A
+' route Plex has no way to answer is turned down with 501, and the Moonfin plugin's routes with 404,
+' which is how the app learns the plugin isn't there.
+
+namespace plexBridge
+
+    function Answer(request as object) as object
+        url = plexUrls.Str(request.url ?? "")
+        base = plexUrls.BaseOf(url)
+        if base = "" then return { status: 0, data: invalid }
+        rest = url.Mid(base.Len())
+        questionAt = Instr(1, rest, "?")
+        path = rest
+        q = {}
+        if questionAt > 0
+            path = rest.Left(questionAt - 1)
+            q = plexBridge.QueryOf(rest.Mid(questionAt))
+        end if
+        token = plexUrls.Str(q.LookupCI("X-Plex-Token") ?? "")
+        q.Delete("X-Plex-Token")
+        body = {}
+        if plexUrls.Str(request.body ?? "") <> ""
+            parsed = ParseJson(request.body)
+            if type(parsed) = "roAssociativeArray" then body = parsed
+        end if
+        userId = plexUrls.Str(q.LookupCI("UserId") ?? "")
+        if userId = "" and isChainValid(m.global, "session.user.id") then userId = plexUrls.Str(m.global.session.user.id)
+        ctx = { base: base, token: token, userId: userId }
+        routePath = pathRoute(path)
+        return plexBridge.Route(ctx, UCase(plexUrls.Str(request.method ?? "GET")), routePath.Split("/"), LCase(routePath).Split("/"), q, body)
+    end function
+
+    function QueryOf(text as string) as object
+        values = {}
+        for each pair in text.Split("&")
+            if pair <> ""
+                equalsAt = Instr(1, pair, "=")
+                if equalsAt > 0
+                    values[pair.Left(equalsAt - 1).DecodeUriComponent()] = pair.Mid(equalsAt).DecodeUriComponent()
+                else
+                    values[pair.DecodeUriComponent()] = ""
+                end if
+            end if
+        end for
+        return values
+    end function
+
+    function Ok(data as dynamic) as object
+        return { status: 200, data: data }
+    end function
+
+    function Found(data as dynamic) as object
+        if data = invalid then return { status: 404, data: invalid }
+        return { status: 200, data: data }
+    end function
+
+    function NoContent() as object
+        return { status: 204, data: invalid }
+    end function
+
+    function Unsupported() as object
+        return { status: 501, data: invalid }
+    end function
+
+    function Missing() as object
+        return { status: 404, data: invalid }
+    end function
+
+    function Route(ctx as object, method as string, parts as object, low as object, q as object, body as object) as object
+        first = low[0]
+        count = low.Count()
+        ' The Moonfin plugin and its achievements live on Jellyfin and Emby servers only
+        if first = "moonfin" or first = "plugins" then return plexBridge.Missing()
+
+        if first = "system"
+            if count >= 2 and low[1] = "info" then return plexBridge.PublicInfo(ctx)
+            return plexBridge.Missing()
+        end if
+        if first = "users" then return plexBridge.Users(ctx, method, parts, low)
+        if first = "quickconnect"
+            if count = 2 and low[1] = "enabled" then return plexBridge.Ok(false)
+            return plexBridge.Unsupported()
+        end if
+        if first = "displaypreferences"
+            if method = "GET" then return plexBridge.Missing()
+            return plexBridge.NoContent()
+        end if
+        if first = "sessions" then return plexBridge.Sessions(ctx, low, body)
+        if first = "livestreams" then return plexBridge.NoContent()
+        if first = "videos"
+            if count = 2 and low[1] = "activeencodings" then return plexPlayback.StopTranscode(ctx, plexUrls.Str(q.LookupCI("PlaySessionId") ?? ""))
+            if count = 3 and low[2] = "additionalparts" then return plexBridge.Ok(plexItems.AdditionalParts(ctx, parts[1]))
+            ' The bridge's own route, since Plex decides on a stream before it starts one
+            if count = 3 and low[2] = "previewstream" then return plexPlayback.PreviewStream(ctx, parts[1], q)
+            return plexBridge.Unsupported()
+        end if
+        if first = "userviews"
+            if count = 1 then return plexBridge.Ok(plexItems.Libraries(ctx, plexItems.Flag(q.LookupCI("includeHidden")) = true))
+            return plexBridge.Ok([])
+        end if
+        if first = "items" then return plexBridge.Items(ctx, method, parts, low, q, body)
+        if first = "mediasegments" and count = 2 then return plexBridge.Ok(plexItems.MediaSegments(ctx, parts[1]))
+        if first = "persons"
+            if count = 1 then return plexBridge.Ok(plexItems.Persons(ctx, q))
+            return plexBridge.Missing()
+        end if
+        if first = "genres" and count = 1 then return plexBridge.Ok(plexItems.LibraryTags(ctx, "genre", PLEX_GENRE_PREFIX, "Genre", q, "Movie,Series"))
+        if first = "musicgenres" and count = 1 then return plexBridge.Ok(plexItems.LibraryTags(ctx, "genre", PLEX_GENRE_PREFIX, "MusicGenre", q, "MusicAlbum"))
+        if first = "studios" and count = 1 then return plexBridge.Ok(plexItems.LibraryTags(ctx, "studio", PLEX_STUDIO_PREFIX, "Studio", q))
+        if first = "shows" then return plexBridge.Shows(ctx, parts, low, q)
+        if first = "useritems" then return plexBridge.UserItems(ctx, parts, low, q)
+        if first = "userfavoriteitems" and count = 2 then return plexWrites.Favorite(ctx, parts[1], method <> "DELETE")
+        if first = "userplayeditems" and count = 2 then return plexWrites.Watched(ctx, parts[1], method <> "DELETE")
+        if first = "search" then return plexBridge.Ok({ "SearchHints": [], "TotalRecordCount": 0 })
+        if first = "artists"
+            if count >= 3 and low[2] = "similar" then return plexBridge.Ok(plexItems.Similar(ctx, parts[1], q))
+            if count = 1 or (count = 2 and low[1] = "albumartists")
+                artists = {}
+                artists.Append(q)
+                artists["IncludeItemTypes"] = "MusicArtist"
+                return plexBridge.Ok(plexItems.GetItems(ctx, artists))
+            end if
+            return plexBridge.Missing()
+        end if
+        if first = "playlists" and count = 4 and low[2] = "users" then return plexBridge.Ok({ "CanEdit": true })
+        if first = "livetv" then return plexBridge.LiveTv(low)
+        if first = "localization" or first = "clientlog" then return plexBridge.Missing()
+        return plexBridge.Unsupported()
+    end function
+
+    function PublicInfo(ctx as object) as object
+        identity = plexHttp.Container(ctx, "/identity")
+        if not isValidAndNotEmpty(identity.LookupCI("machineIdentifier")) then return { status: 0, data: invalid }
+        name = ""
+        if isValidAndNotEmpty(ctx.token) then name = plexUrls.Str(plexHttp.Container(ctx, "/").LookupCI("friendlyName") ?? "")
+        return plexBridge.Ok({ "Id": identity.LookupCI("machineIdentifier"), "Version": plexMapper.Version(identity.LookupCI("version")), "ProductName": "Plex Media Server", "ServerName": name })
+    end function
+
+    function Users(ctx as object, method as string, parts as object, low as object) as object
+        count = low.Count()
+        if count = 1 then return plexBridge.Unsupported()
+        second = low[1]
+        if second = "public" then return plexBridge.Ok([])
+        if second = "authenticatebyname" or second = "authenticatewithquickconnect" then return plexBridge.Unsupported()
+        if second = "configuration" then return plexBridge.NoContent()
+        userId = ctx.userId
+        if second <> "me" then userId = parts[1]
+        if count > 2 then return plexBridge.Missing()
+        if method <> "GET" then return plexBridge.NoContent()
+        ' A token Plex turns away signs the user out, as it would on Jellyfin
+        root = plexHttp.Send(ctx, "/")
+        if root.status = 401 then return { status: 401, data: invalid }
+        return plexBridge.Ok(plexItems.ReadUser(ctx, userId))
+    end function
+
+    function Sessions(ctx as object, low as object, body as object) as object
+        count = low.Count()
+        if count = 1 then return plexBridge.Ok([])
+        if low[1] <> "playing" then return plexBridge.NoContent()
+        if count = 2 then return plexPlayback.Report(ctx, body, "playing")
+        if low[2] = "stopped" then return plexPlayback.Report(ctx, body, "stopped")
+        if low[2] = "progress"
+            state = "playing"
+            if body.LookupCI("IsPaused") = true then state = "paused"
+            return plexPlayback.Report(ctx, body, state)
+        end if
+        return plexBridge.NoContent()
+    end function
+
+    function Items(ctx as object, method as string, parts as object, low as object, q as object, body as object) as object
+        count = low.Count()
+        if count = 1
+            if method = "GET" then return plexBridge.Ok(plexItems.GetItems(ctx, q))
+            return plexBridge.Unsupported()
+        end if
+        if count = 2
+            if low[1] = "latest" then return plexBridge.Ok(plexItems.Latest(ctx, q))
+            if low[1] = "filters" then return plexBridge.Ok(plexItems.QueryFilters(ctx, q, false))
+            if low[1] = "filters2" then return plexBridge.Ok(plexItems.QueryFilters(ctx, q, true))
+            if method = "GET" then return plexBridge.Found(plexItems.GetItem(ctx, parts[1]))
+            return plexBridge.Unsupported()
+        end if
+        itemId = parts[1]
+        action = low[2]
+        if action = "images"
+            if plexUrls.IsPrefixedId(itemId) then return plexBridge.Ok([])
+            return plexBridge.Ok([{ "ImageType": "Primary" }])
+        end if
+        if action = "localtrailers" then return plexBridge.Ok(plexItems.LocalTrailers(ctx, itemId))
+        if action = "specialfeatures" then return plexBridge.Ok(plexItems.Extras(ctx, itemId))
+        if action = "similar" then return plexBridge.Ok(plexItems.Similar(ctx, itemId, q))
+        if action = "intros" then return plexBridge.Ok(plexItems.Intros(ctx, itemId))
+        if action = "themesongs" then return plexBridge.Ok(plexItems.ThemeSongs(ctx, itemId, plexItems.Flag(q.LookupCI("InheritFromParent")) <> false))
+        if action = "playbackinfo" then return plexPlayback.PlaybackInfo(ctx, itemId, q, body)
+        if action = "collections" then return plexBridge.Missing()
+        return plexBridge.Unsupported()
+    end function
+
+    function Shows(ctx as object, parts as object, low as object, q as object) as object
+        count = low.Count()
+        if count = 2 and low[1] = "nextup" then return plexBridge.Ok(plexItems.NextUp(ctx, q))
+        if count <> 3 then return plexBridge.Unsupported()
+        if low[2] = "nextup" then return plexBridge.Ok(plexItems.NextUp(ctx, q, parts[1]))
+        if low[2] = "seasons" then return plexBridge.Ok(plexItems.Seasons(ctx, parts[1]))
+        if low[2] = "episodes" then return plexBridge.Ok(plexItems.Episodes(ctx, parts[1], q))
+        return plexBridge.Unsupported()
+    end function
+
+    function UserItems(ctx as object, parts as object, low as object, q as object) as object
+        count = low.Count()
+        if count = 2 and low[1] = "resume" then return plexBridge.Ok(plexItems.Resume(ctx, q))
+        if count = 3 and low[2] = "hidefromresume" then return plexWrites.HideFromResume(ctx, parts[1])
+        ' Plex has no likes
+        return plexBridge.Unsupported()
+    end function
+
+    ' Plex's guide isn't read, so Live TV lists come back empty
+    function LiveTv(low as object) as object
+        if low.Count() >= 2 and (low[1] = "channels" or low[1] = "programs" or low[1] = "recordings" or low[1] = "timers" or low[1] = "seriestimers")
+            return plexBridge.Ok({ "Items": [], "TotalRecordCount": 0, "StartIndex": 0 })
+        end if
+        return plexBridge.Unsupported()
+    end function
+
+end namespace

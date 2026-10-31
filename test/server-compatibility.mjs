@@ -122,7 +122,9 @@ const selections = {
     'components/account/AccountDialog.bs': ['accountImageURL'],
     'components/config/SigninScene.bs': ['showsQuickConnect'],
     'source/utils/parsedUrl.bs': ['ParsedUrl', '__ParsedUrl_ToString'],
-    'source/api/baserequest.bs': ['buildParams', 'buildServerURL', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer', 'APIRequest', 'APIRequestForServer', 'authRequest', 'authRequestForServer', 'setCertificateAuthority', 'getJson', 'noteAccessRefused', 'noteRefusalIn', 'postPlaybackInfo', 'requestCanceled'],
+    'source/utils/plexUrls.bs': null,
+    'source/api/plex/PlexMapper.bs': null,
+    'source/api/baserequest.bs': ['plexServerURL', 'plexAnswer', 'plexAnswered', 'plexAnswerText', 'buildParams', 'buildServerURL', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer', 'APIRequest', 'APIRequestForServer', 'authRequest', 'authRequestForServer', 'setCertificateAuthority', 'getJson', 'noteAccessRefused', 'noteRefusalIn', 'postPlaybackInfo', 'requestCanceled'],
 };
 let source = 'namespace bslib\n' + bslib.source + '\nend namespace\n' + await readFile('source/enums/String.bs', 'utf8');
 for (const [file, names] of Object.entries(selections)) {
@@ -178,6 +180,16 @@ source += '\n' + await readFile('test/episode-browser.bs', 'utf8');
 source += '\n' + await readFile('test/anime-markers.bs', 'utf8');
 source += '\n' + await readFile('test/transcode-audio.bs', 'utf8');
 source += '\n' + await readFile('test/person-role.bs', 'utf8');
+// The rest of the Plex playback rules reach for the server
+const plexPlaybackFile = await readFile('source/api/plex/PlexPlayback.bs', 'utf8');
+source += '\n' + plexPlaybackFile.match(/^const PLEX_HLS_AUDIO_CODECS = .+$/m)[0] + '\nnamespace plexPlayback\n';
+for (const name of ['Names', 'HlsAudio']) {
+    const match = plexPlaybackFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
+    assert.ok(match, `Missing plexPlayback.${name}`);
+    source += '\n' + match[0];
+}
+source += '\nend namespace\n';
+source += '\n' + await readFile('test/plex-mapper.bs', 'utf8');
 // The rest of the guide rules use loops this interpreter cant parse
 const liveTvGuideFile = await readFile('source/utils/liveTvGuide.bs', 'utf8');
 source += '\n' + liveTvGuideFile.match(/^const GUIDE_MINUTE = .+$/m)[0] + '\nnamespace liveTvGuide\n';

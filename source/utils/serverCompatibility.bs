@@ -1,11 +1,14 @@
 ' Server identity is learned from public info, never from a user-chosen server name.
 function detectServerType(info as dynamic) as string
     if type(info) <> "roAssociativeArray" then return ""
+    ' A Plex server answers /identity with its machine id and nothing Jellyfin or Emby would send
+    if isValidAndNotEmpty(chainLookup(info, "MediaContainer.machineIdentifier")) then return "plex"
     product = info.LookupCI("ProductName")
     if type(product) = "roString" or type(product) = "String"
         product = LCase(product)
         if Instr(1, product, "jellyfin") > 0 then return "jellyfin"
         if Instr(1, product, "emby") > 0 then return "emby"
+        if Instr(1, product, "plex") > 0 then return "plex"
     end if
 
     ' Older Emby public-info responses omit ProductName (as in Moonfin-Core).
@@ -22,24 +25,35 @@ function detectServerType(info as dynamic) as string
 end function
 
 ' An explicit target must not inherit the active server's type during multi-server playback.
-function isEmbyServer(serverUrl = "" as string) as boolean
+function serverTypeOf(serverUrl = "" as string) as string
     serverUrl = serverIdentityKey(serverUrl)
     if isValid(m.global)
         identity = m.global.serverIdentity
         if type(identity) = "roAssociativeArray"
-            if serverUrl = "" or serverUrl = serverIdentityKey(identity.url)
-                return identity.serverType = "emby"
-            end if
-            return registry_read(serverUrl, "ServerTypes") = "emby"
+            current = serverIdentityKey(toString(identity.url ?? ""))
+            if serverUrl = "" then serverUrl = current
+            ' A server being connected to has no type until its info answers, and asking for that info
+            ' already needs the type it was saved with
+            if serverUrl = current and toString(identity.serverType ?? "") <> "" then return identity.serverType
+            if serverUrl = "" then return ""
+            return toString(registry_read(serverUrl, "ServerTypes") ?? "")
         end if
     end if
     if isChainValid(m.global, "session.server.url")
         if serverUrl = "" or serverUrl = serverIdentityKey(m.global.session.server.url)
-            return m.global.session.server.serverType = "emby"
+            return toString(m.global.session.server.serverType ?? "")
         end if
     end if
-    if serverUrl = "" then return false
-    return registry_read(serverUrl, "ServerTypes") = "emby"
+    if serverUrl = "" then return ""
+    return toString(registry_read(serverUrl, "ServerTypes") ?? "")
+end function
+
+function isEmbyServer(serverUrl = "" as string) as boolean
+    return serverTypeOf(serverUrl) = "emby"
+end function
+
+function isPlexServer(serverUrl = "" as string) as boolean
+    return serverTypeOf(serverUrl) = "plex"
 end function
 
 function serverIdentityKey(url as string) as string
@@ -93,28 +107,40 @@ function authenticatedImageParams(serverUrl as string, params as object) as obje
     if not isEmbyServer(serverUrl) then return params
     result = serverCompatibleParams(params, true)
     if isValidAndNotEmpty(result.api_key) then return result
-    token = invalid
+    token = savedServerToken(serverUrl)
+    if token <> "" then result["api_key"] = token
+    return result
+end function
+
+' The token for a server: the given user's when one is named, else the signed in user's when it's the
+' active server, else the first saved user's on that server
+function savedServerToken(serverUrl as string, userId = "" as string) as string
+    if userId <> ""
+        savedUrl = registry_read("serverUrl", userId)
+        if isValidAndNotEmpty(savedUrl) and serverIdentityKey(savedUrl) = serverIdentityKey(serverUrl)
+            token = registry_read("token", userId)
+            if isValidAndNotEmpty(token) then return token
+        end if
+    end if
     if isChainValid(m.global, "session.server.url")
         if serverIdentityKey(m.global.session.server.url) = serverIdentityKey(serverUrl)
-            if isChainValid(m.global, "session.user.authToken") then token = m.global.session.user.authToken
+            if isChainValid(m.global, "session.user.authToken")
+                if isValidAndNotEmpty(m.global.session.user.authToken) then return m.global.session.user.authToken
+            end if
         end if
     end if
-    if not isValidAndNotEmpty(token)
-        users = ParseJson(get_setting("available_users", "[]"))
-        if type(users) = "roArray"
-            for each user in users
-                savedUrl = registry_read("serverUrl", user.id)
-                if isValidAndNotEmpty(savedUrl)
-                    if serverIdentityKey(savedUrl) = serverIdentityKey(serverUrl)
-                        token = registry_read("token", user.id)
-                        if isValidAndNotEmpty(token) then exit for
-                    end if
-                end if
-            end for
+    users = ParseJson(get_setting("available_users", "[]"))
+    if type(users) <> "roArray" then return ""
+    for each user in users
+        savedUrl = registry_read("serverUrl", user.id)
+        if isValidAndNotEmpty(savedUrl)
+            if serverIdentityKey(savedUrl) = serverIdentityKey(serverUrl)
+                token = registry_read("token", user.id)
+                if isValidAndNotEmpty(token) then return token
+            end if
         end if
-    end if
-    if isValidAndNotEmpty(token) then result["api_key"] = token
-    return result
+    end for
+    return ""
 end function
 
 ' A server may return an error object or no playable sources (e.g. Live TV

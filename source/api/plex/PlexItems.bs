@@ -1,0 +1,758 @@
+import "pkg:/source/api/plex/PlexHttp.bs"
+import "pkg:/source/api/plex/PlexMapper.bs"
+import "pkg:/source/utils/config.bs"
+
+' Libraries, items, home rows and searches from a Plex server, answered in Jellyfin's shapes. ctx is
+' { base, token, userId }, and q is the Jellyfin request's query.
+
+const PLEX_LIBRARY_IDENTIFIER = "com.plexapp.plugins.library"
+' How many cinema trailers come before a movie, on top of any pre-roll
+const PLEX_CINEMA_TRAILER_COUNT = 2
+const PLEX_TRICKPLAY_WIDTH = 320
+const PLEX_TRICKPLAY_INTERVAL_MS = 10000
+
+namespace plexItems
+
+    function Split(value as dynamic, separator = "," as string) as object
+        found = []
+        if value = invalid then return found
+        pieces = value
+        if type(value) <> "roArray" then pieces = plexUrls.Str(value).Split(separator)
+        for each piece in pieces
+            text = plexUrls.Str(piece).Trim()
+            if text <> "" then found.push(text)
+        end for
+        return found
+    end function
+
+    ' A query value is text, and comparing text with true or false stops the script
+    function Flag(value as dynamic) as dynamic
+        if type(value) = "Boolean" or type(value) = "roBoolean" then return value
+        text = LCase(plexUrls.Str(value))
+        if text = "true" then return true
+        if text = "false" then return false
+        return invalid
+    end function
+
+    function AnyOf(values as object) as dynamic
+        if values.Count() = 0 then return invalid
+        return values.Join(",")
+    end function
+
+    function Number(value as dynamic) as dynamic
+        if value = invalid or plexUrls.Str(value) = "" then return invalid
+        return plexUrls.Str(value).ToInt()
+    end function
+
+    function Paging(startIndex as dynamic, limit as dynamic) as object
+        if limit = invalid then return {}
+        if startIndex = invalid then startIndex = 0
+        return { "X-Plex-Container-Start": startIndex, "X-Plex-Container-Size": limit }
+    end function
+
+    function Page(items as object, startIndex as dynamic, limit as dynamic) as object
+        start = 0
+        if startIndex <> invalid then start = startIndex
+        if start < 0 then start = 0
+        if start > items.Count() then start = items.Count()
+        finish = items.Count()
+        if limit <> invalid and start + limit < finish then finish = start + limit
+        kept = []
+        for i = start to finish - 1
+            kept.push(items[i])
+        end for
+        return plexMapper.ItemsResult(kept, items.Count(), start)
+    end function
+
+    function OfTypes(items as object, types as object) as object
+        if types.Count() = 0 then return items
+        kept = []
+        for each item in items
+            if inArray(types, item.Type) then kept.push(item)
+        end for
+        return kept
+    end function
+
+    ' Plex keeps one watched state and rating for a movie split over several files, so a file's id
+    ' stands for the movie
+    function KeyOf(itemId as dynamic) as string
+        part = plexMapper.PartOf(itemId)
+        if part <> invalid then return part.key
+        return plexUrls.Str(itemId)
+    end function
+
+    function First(value as dynamic) as dynamic
+        if type(value) = "roArray" and value.Count() > 0 and type(value[0]) = "roAssociativeArray" then return value[0]
+        return invalid
+    end function
+
+    function PlexItem(ctx as object, id as string) as dynamic
+        return plexItems.First(plexHttp.Container(ctx, "/library/metadata/" + plexItems.KeyOf(id)).LookupCI("Metadata"))
+    end function
+
+    ' A sidecar subtitle loads without the client's headers, so its address carries the token
+    function TokenStreams(ctx as object, streams as dynamic) as dynamic
+        if type(streams) <> "roArray" then return streams
+        for each stream in streams
+            if isValidAndNotEmpty(stream.LookupCI("DeliveryUrl")) then stream["DeliveryUrl"] = plexUrls.WithToken(stream.LookupCI("DeliveryUrl"), ctx.token)
+        end for
+        return streams
+    end function
+
+    function WithStreamTokens(ctx as object, item as object) as object
+        if type(item.LookupCI("MediaSources")) <> "roArray" then return item
+        for each source in item.LookupCI("MediaSources")
+            plexItems.TokenStreams(ctx, source.LookupCI("MediaStreams"))
+        end for
+        return item
+    end function
+
+    ' Everything Plex can filter by, in Jellyfin's terms. A filter Plex can't apply answers with
+    ' nothing, since ignoring it would show items the filter was meant to leave out.
+    function GetItems(ctx as object, q as object) as object
+        includeItemTypes = plexItems.Split(q.LookupCI("IncludeItemTypes"))
+        excludeItemTypes = plexItems.Split(q.LookupCI("ExcludeItemTypes"))
+        filters = plexItems.Split(q.LookupCI("Filters"))
+        isFavorite = plexItems.Flag(q.LookupCI("IsFavorite")) = true or inArray(filters, "IsFavorite")
+        playFilters = []
+        for each f in filters
+            if f <> "IsFavorite" then playFilters.push(f)
+        end for
+        personIds = plexItems.Split(q.LookupCI("PersonIds"))
+        genreIds = plexItems.Split(q.LookupCI("GenreIds"))
+        artistIds = plexItems.Split(q.LookupCI("ArtistIds") ?? q.LookupCI("AlbumArtistIds"))
+        searchTerm = plexUrls.Str(q.LookupCI("SearchTerm") ?? "")
+        isHd = plexItems.Flag(q.LookupCI("IsHD"))
+        is4K = plexItems.Flag(q.LookupCI("Is4K"))
+        playFilterKeys = { "IsPlayed": { "unwatched": "0" }, "IsUnplayed": { "unwatched": "1" }, "IsResumable": { "inProgress": "1" } }
+
+        cantFilter = plexItems.Split(q.LookupCI("SeriesStatus")).Count() > 0 or plexItems.Split(q.LookupCI("VideoTypes")).Count() > 0
+        for each name in ["MinPremiereDate", "MaxOfficialRating", "HasParentalRating", "AnyProviderIdEquals", "HasSubtitles", "HasTrailer", "HasSpecialFeature", "HasThemeSong", "HasThemeVideo", "Is3D"]
+            if plexUrls.Str(q.LookupCI(name) ?? "") <> "" then cantFilter = true
+        end for
+        if is4K = true and isHd = false then cantFilter = true
+        if artistIds.Count() > 1 then cantFilter = true
+        for each id in personIds
+            if plexMapper.KeyOf(id, PLEX_PERSON_PREFIX) = invalid then cantFilter = true
+        end for
+        for each id in genreIds
+            if plexMapper.KeyOf(id, PLEX_GENRE_PREFIX) = invalid then cantFilter = true
+        end for
+        for each f in playFilters
+            if playFilterKeys.LookupCI(f) = invalid then cantFilter = true
+        end for
+        if cantFilter then return plexMapper.ItemsResult([])
+
+        startIndex = plexItems.Number(q.LookupCI("StartIndex"))
+        limit = plexItems.Number(q.LookupCI("Limit"))
+
+        ids = plexItems.Split(q.LookupCI("Ids"))
+        if ids.Count() > 0
+            keys = []
+            for each id in ids
+                keys.push(plexItems.KeyOf(id))
+            end for
+            found = plexMapper.Items(plexHttp.Container(ctx, "/library/metadata/" + keys.Join(",")).LookupCI("Metadata"))
+            return plexItems.Done(found, excludeItemTypes, invalid, 0)
+        end if
+
+        ' Everything a person is in, acting or not. This list ignores sorting, so the newest come first.
+        personKey = invalid
+        if personIds.Count() = 1 then personKey = plexMapper.KeyOf(personIds[0], PLEX_PERSON_PREFIX)
+        if not isValidAndNotEmpty(q.LookupCI("ParentId")) and personKey <> invalid
+            found = plexItems.OfTypes(plexMapper.Items(plexHttp.Container(ctx, "/library/people/" + personKey + "/media").LookupCI("Metadata")), includeItemTypes)
+            plexItems.SortByYearDescending(found)
+            return plexItems.Done(found, excludeItemTypes, invalid, 0)
+        end if
+
+        ' An artist's albums are its children and its tracks are its leaves
+        parent = invalid
+        if artistIds.Count() > 0 then parent = artistIds[0]
+        if parent = invalid and isValidAndNotEmpty(q.LookupCI("ParentId")) then parent = plexUrls.Str(q.LookupCI("ParentId"))
+
+        ' A search across every library goes through Plex's hub search, which also lists titles it
+        ' matched through their cast, artist or genre. Those carry a reason and are left out.
+        if parent = invalid and searchTerm <> ""
+            ' Without the flag, a collection comes back as a tag and not the item
+            hubQuery = { "query": searchTerm, "includeCollections": 1 }
+            if limit <> invalid then hubQuery["limit"] = limit
+            hubs = plexHttp.Container(ctx, "/hubs/search", hubQuery)
+            matches = []
+            for each hub in plexMapper.List(hubs.LookupCI("Hub"))
+                if plexMapper.IsObject(hub)
+                    for each meta in plexMapper.List(hub.LookupCI("Metadata"))
+                        if plexMapper.IsObject(meta) and meta.LookupCI("reason") = invalid then matches.push(meta)
+                    end for
+                end if
+            end for
+            return plexItems.Done(plexItems.OfTypes(plexMapper.Items(matches), includeItemTypes), excludeItemTypes, invalid, 0)
+        end if
+
+        ' Plex lists across libraries only by type, so favorites of every kind ask for every type
+        numbers = plexMapper.TypeNumbers()
+        types = []
+        if includeItemTypes.Count() > 0
+            for each name in includeItemTypes
+                typeNumber = numbers.LookupCI(name)
+                if typeNumber <> invalid then types.push(typeNumber)
+            end for
+        else if isFavorite
+            for each name in numbers
+                types.push(numbers[name])
+            end for
+        end if
+        sectionKey = plexMapper.KeyOf(parent, PLEX_SECTION_PREFIX)
+        path = ""
+        ' Playlists sit outside the libraries, filed by where their items live
+        if includeItemTypes.Count() = 1 and includeItemTypes[0] = "Playlist"
+            path = "/playlists"
+        else if parent = invalid
+            if types.Count() = 0 then return plexMapper.ItemsResult([])
+            path = "/library/all"
+        else if sectionKey <> invalid
+            path = "/library/sections/" + sectionKey + "/all"
+        else
+            leaves = plexItems.Flag(q.LookupCI("Recursive")) = true and (inArray(types, numbers.Episode) or inArray(types, numbers.Audio))
+            if leaves
+                path = "/library/metadata/" + parent + "/allLeaves"
+            else
+                path = "/library/metadata/" + parent + "/children"
+            end if
+        end if
+
+        query = {}
+        sort = plexItems.SortQuery(q)
+        if types.Count() > 0 and path.Right(4) = "/all"
+            names = []
+            for each typeNumber in types
+                names.push(typeNumber.toStr())
+            end for
+            query["type"] = names.Join(",")
+        end if
+        if path = "/playlists" and sectionKey <> invalid then query["sectionID"] = sectionKey
+        if sort <> "" then query["sort"] = sort
+        if searchTerm <> "" then query["title"] = searchTerm
+        ' Plex compares titles as strings, so a first letter is the range up to the next one
+        startsWith = plexUrls.Str(q.LookupCI("NameStartsWith") ?? "")
+        if startsWith <> ""
+            query["titleSort>"] = startsWith
+            query["titleSort<<"] = startsWith.Left(startsWith.Len() - 1) + Chr(Asc(startsWith.Right(1)) + 1)
+        end if
+        if isValidAndNotEmpty(q.LookupCI("NameStartsWithOrGreater")) then query["titleSort>"] = plexUrls.Str(q.LookupCI("NameStartsWithOrGreater"))
+        if isValidAndNotEmpty(q.LookupCI("NameLessThan")) then query["titleSort<<"] = plexUrls.Str(q.LookupCI("NameLessThan"))
+        if inArray(plexItems.Split(q.LookupCI("Fields")), "ProviderIds") then query["includeGuids"] = 1
+        for each f in playFilters
+            query.Append(playFilterKeys.LookupCI(f))
+        end for
+        ' Each repeated genre param must match, while commas match any one
+        genreKeys = []
+        for each id in genreIds
+            genreKeys.push(plexMapper.KeyOf(id, PLEX_GENRE_PREFIX))
+        end for
+        genreFilters = []
+        names = plexItems.AnyOf(plexItems.Split(q.LookupCI("Genres"), "|"))
+        if names <> invalid then genreFilters.push(names)
+        keys = plexItems.AnyOf(genreKeys)
+        if keys <> invalid then genreFilters.push(keys)
+        if genreFilters.Count() > 0 then query["genre"] = genreFilters
+        query["year"] = plexItems.AnyOf(plexItems.Split(q.LookupCI("Years")))
+        query["contentRating"] = plexItems.AnyOf(plexItems.Split(q.LookupCI("OfficialRatings"), "|"))
+        query["label"] = plexItems.AnyOf(plexItems.Split(q.LookupCI("Tags"), "|"))
+        query["studio"] = plexItems.AnyOf(plexItems.Split(q.LookupCI("Studios"), "|"))
+        ' Plex filters people one role at a time, so only acting credits match
+        actorKeys = []
+        for each id in personIds
+            actorKeys.push(plexMapper.KeyOf(id, PLEX_PERSON_PREFIX))
+        end for
+        query["actor"] = plexItems.AnyOf(actorKeys)
+        query["audioLanguage"] = plexItems.AnyOf(plexItems.Split(q.LookupCI("AudioLanguages")))
+        query["subtitleLanguage"] = plexItems.AnyOf(plexItems.Split(q.LookupCI("SubtitleLanguages")))
+        if is4K = true
+            query["resolution"] = "4k"
+        else if isHd = true
+            query["resolution"] = "720,1080,4k"
+        else if isHd = false
+            query["resolution"] = "sd,480,576"
+        end if
+        if isFavorite then query["userRating"] = PLEX_FAVORITE_RATING.toStr()
+        query.Append(plexItems.Paging(startIndex, limit))
+
+        result = plexHttp.Container(ctx, path, query)
+        ' Children and leaves come back unfiltered, so the type check happens here
+        found = plexItems.OfTypes(plexMapper.Items(result.LookupCI("Metadata")), includeItemTypes)
+        return plexItems.Done(found, excludeItemTypes, result.LookupCI("totalSize"), startIndex)
+    end function
+
+    ' Later fields only break ties, so the sort stops at the first one Plex can't do. With nothing left,
+    ' Plex keeps its own order, which is disc and track order for an album.
+    function SortQuery(q as object) as string
+        fields = { "SortName": "titleSort", "Name": "titleSort", "DateCreated": "addedAt", "PremiereDate": "originallyAvailableAt", "ProductionYear": "year", "CommunityRating": "audienceRating", "CriticRating": "rating", "DatePlayed": "lastViewedAt", "PlayCount": "viewCount", "Runtime": "duration", "OfficialRating": "contentRating", "Random": "random" }
+        descending = plexUrls.Str(q.LookupCI("SortOrder") ?? "") = "Descending"
+        sort = []
+        for each field in plexItems.Split(q.LookupCI("SortBy"))
+            plexField = fields.LookupCI(field)
+            if plexField = invalid then exit for
+            if descending and plexField <> "random" then plexField += ":desc"
+            sort.push(plexField)
+        end for
+        return sort.Join(",")
+    end function
+
+    function Done(items as object, excludeItemTypes as object, total as dynamic, startIndex as dynamic) as object
+        kept = items
+        if excludeItemTypes.Count() > 0
+            kept = []
+            for each item in items
+                if not inArray(excludeItemTypes, item.Type) then kept.push(item)
+            end for
+        end if
+        if total = invalid then total = kept.Count()
+        start = 0
+        if startIndex <> invalid then start = startIndex
+        return plexMapper.ItemsResult(kept, total, start)
+    end function
+
+    sub SortByYearDescending(items as object)
+        for i = 1 to items.Count() - 1
+            j = i
+            while j > 0 and (items[j - 1].ProductionYear ?? 0) < (items[j].ProductionYear ?? 0)
+                held = items[j]
+                items[j] = items[j - 1]
+                items[j - 1] = held
+                j--
+            end while
+        end for
+    end sub
+
+    function LibrarySections(ctx as object) as object
+        found = []
+        for each section in plexMapper.List(plexHttp.Container(ctx, "/library/sections").LookupCI("Directory"))
+            if plexMapper.IsObject(section) then found.push(section)
+        end for
+        return found
+    end function
+
+    function Libraries(ctx as object, includeHidden as boolean) as object
+        views = []
+        for each section in plexItems.LibrarySections(ctx)
+            if includeHidden or section.LookupCI("hidden") <> true then views.push(plexMapper.SectionToView(section))
+        end for
+        return plexMapper.ItemsResult(views)
+    end function
+
+    function GetItem(ctx as object, itemId as string) as dynamic
+        sectionKey = plexMapper.KeyOf(itemId, PLEX_SECTION_PREFIX)
+        if sectionKey <> invalid
+            for each section in plexItems.LibrarySections(ctx)
+                if plexUrls.Str(section.LookupCI("key")) = sectionKey then return plexMapper.SectionToView(section)
+            end for
+            return invalid
+        end if
+        personKey = plexMapper.KeyOf(itemId, PLEX_PERSON_PREFIX)
+        if personKey <> invalid
+            person = plexItems.First(plexHttp.Container(ctx, "/library/people/" + personKey).LookupCI("Directory"))
+            if person = invalid then return invalid
+            return plexMapper.PersonToJellyfin(person)
+        end if
+        part = plexMapper.PartOf(itemId)
+        if part <> invalid
+            meta = plexItems.PlexItem(ctx, part.key)
+            if meta = invalid then return invalid
+            item = plexMapper.PartItem(meta, part.mediaIndex, part.partIndex)
+            if item = invalid then return invalid
+            plexItems.AddTrickplay(meta, item, part.mediaIndex, part.partIndex)
+            return plexItems.WithStreamTokens(ctx, item)
+        end if
+        meta = plexItems.First(plexHttp.Container(ctx, "/library/metadata/" + itemId, { "includeGuids": 1, "includeChapters": 1 }).LookupCI("Metadata"))
+        if meta = invalid then return invalid
+        item = plexMapper.ItemToJellyfin(meta)
+        plexItems.AddTrickplay(meta, item, 0, 0)
+        ' Only the owner can remove a collection
+        state = plexItems.ServerState(ctx)
+        if state.mayDeleteMedia = true or (state.owner = true and item.Type = "BoxSet") then item["CanDelete"] = true
+        return plexItems.WithStreamTokens(ctx, item)
+    end function
+
+    ' What the server has told this account so far, kept in the global node since every bridge run
+    ' starts with an empty m
+    function ServerState(ctx as object) as object
+        states = m.global.plexServerState
+        if type(states) <> "roAssociativeArray" then return {}
+        return states.LookupCI(ctx.base + "|" + ctx.token) ?? {}
+    end function
+
+    sub SaveServerState(ctx as object, changes as object)
+        states = m.global.plexServerState
+        if type(states) <> "roAssociativeArray" then states = {}
+        key = ctx.base + "|" + ctx.token
+        state = states.LookupCI(key) ?? {}
+        state.Append(changes)
+        states[key] = state
+        m.global.plexServerState = states
+    end sub
+
+    ' Plex's Continue Watching mixes started items with the next episode of each show, which are
+    ' Jellyfin's resume and next up rows
+    function ContinueWatching(ctx as object, started as boolean) as object
+        kept = []
+        for each meta in plexMapper.List(plexHttp.Container(ctx, "/hubs/continueWatching/items").LookupCI("Metadata"))
+            if plexMapper.IsObject(meta) and (meta.LookupCI("viewOffset") <> invalid) = started then kept.push(meta)
+        end for
+        return plexMapper.Items(kept)
+    end function
+
+    function Resume(ctx as object, q as object) as object
+        mediaTypes = plexItems.Split(q.LookupCI("MediaTypes"))
+        parentId = plexUrls.Str(q.LookupCI("ParentId") ?? "")
+        kept = []
+        for each item in plexItems.ContinueWatching(ctx, true)
+            matchesType = mediaTypes.Count() = 0 or inArray(mediaTypes, item.MediaType)
+            ' A series asks for its own episodes in progress
+            matchesParent = parentId = "" or item.SeriesId = parentId or item.ParentId = parentId
+            if matchesType and matchesParent then kept.push(item)
+        end for
+        return plexItems.Page(kept, plexItems.Number(q.LookupCI("StartIndex")), plexItems.Number(q.LookupCI("Limit")))
+    end function
+
+    function NextUp(ctx as object, q as object, seriesId = "" as string) as object
+        if seriesId = "" then seriesId = plexUrls.Str(q.LookupCI("SeriesId") ?? "")
+        if seriesId <> ""
+            show = plexItems.First(plexHttp.Container(ctx, "/library/metadata/" + seriesId, { "includeOnDeck": 1 }).LookupCI("Metadata"))
+            episode = invalid
+            if show <> invalid then episode = chainLookup(show, "OnDeck.Metadata")
+            if plexMapper.IsObject(episode) then return plexMapper.ItemsResult([plexMapper.ItemToJellyfin(episode)])
+            return plexMapper.ItemsResult([])
+        end if
+        return plexItems.Page(plexItems.ContinueWatching(ctx, false), plexItems.Number(q.LookupCI("StartIndex")), plexItems.Number(q.LookupCI("Limit")))
+    end function
+
+    function Latest(ctx as object, q as object) as object
+        limit = plexItems.Number(q.LookupCI("Limit"))
+        if limit = invalid then limit = 16
+        sectionKey = plexMapper.KeyOf(plexUrls.Str(q.LookupCI("ParentId") ?? ""), PLEX_SECTION_PREFIX)
+        path = "/library/recentlyAdded"
+        if sectionKey <> invalid then path = "/library/sections/" + sectionKey + "/recentlyAdded"
+        found = plexMapper.Items(plexHttp.Container(ctx, path, plexItems.Paging(0, limit)).LookupCI("Metadata"))
+        return plexItems.OfTypes(found, plexItems.Split(q.LookupCI("IncludeItemTypes")))
+    end function
+
+    ' Plex lists genres and studios per library, under the same key in every library, so a server-wide
+    ' list merges each library's list. Only name and random order apply.
+    function LibraryTags(ctx as object, filter as string, prefix as string, kind as string, q as object, defaultTypes = "" as string) as object
+        sections = []
+        parentKey = plexMapper.KeyOf(plexUrls.Str(q.LookupCI("ParentId") ?? ""), PLEX_SECTION_PREFIX)
+        if parentKey <> invalid
+            sections.push(parentKey)
+        else if not isValidAndNotEmpty(q.LookupCI("ParentId"))
+            for each section in plexItems.LibrarySections(ctx)
+                if section.LookupCI("key") <> invalid then sections.push(plexUrls.Str(section.LookupCI("key")))
+            end for
+        end if
+        typeNames = q.LookupCI("IncludeItemTypes")
+        if not isValidAndNotEmpty(typeNames) then typeNames = defaultTypes
+        numbers = plexMapper.TypeNumbers()
+        types = []
+        for each name in plexItems.Split(typeNames)
+            if numbers.LookupCI(name) <> invalid then types.push(numbers.LookupCI(name).toStr())
+        end for
+        query = {}
+        if types.Count() > 0 then query["type"] = types.Join(",")
+        byId = {}
+        order = []
+        for each key in sections
+            for each tag in plexMapper.List(plexHttp.Container(ctx, "/library/sections/" + key + "/" + filter, query).LookupCI("Directory"))
+                if plexMapper.IsObject(tag) and plexMapper.IsText(tag.LookupCI("title"))
+                    id = prefix + plexUrls.Str(tag.LookupCI("key"))
+                    if byId.LookupCI(id) = invalid then order.push(id)
+                    byId[id] = { "Id": id, "Name": tag.LookupCI("title"), "Type": kind }
+                end if
+            end for
+        end for
+        items = []
+        for each id in order
+            items.push(byId[id])
+        end for
+        if plexUrls.Str(q.LookupCI("SortBy") ?? "") = "Random"
+            shuffleArray(items)
+        else
+            items.SortBy("Name", "i")
+            if plexUrls.Str(q.LookupCI("SortOrder") ?? "") = "Descending" then items.Reverse()
+        end if
+        return plexItems.Page(items, plexItems.Number(q.LookupCI("StartIndex")), plexItems.Number(q.LookupCI("Limit")))
+    end function
+
+    function Persons(ctx as object, q as object) as object
+        query = { "query": plexUrls.Str(q.LookupCI("SearchTerm") ?? "") }
+        limit = plexItems.Number(q.LookupCI("Limit"))
+        if limit <> invalid then query["limit"] = limit
+        hubs = plexHttp.Container(ctx, "/hubs/search", query)
+        ' Plex lists a person once per library and role, so each name is kept once
+        names = {}
+        people = []
+        for each hub in plexMapper.List(hubs.LookupCI("Hub"))
+            if plexMapper.IsObject(hub) and inArray(["actor", "director", "writer"], hub.LookupCI("type"))
+                for each person in plexMapper.List(hub.LookupCI("Directory"))
+                    if plexMapper.IsObject(person) and plexMapper.IsText(person.LookupCI("tag")) and names.LookupCI(person.LookupCI("tag")) = invalid
+                        names[person.LookupCI("tag")] = true
+                        people.push(plexMapper.PersonToJellyfin(person))
+                    end if
+                end for
+            end if
+        end for
+        return plexMapper.ItemsResult(people)
+    end function
+
+    ' What Plex keeps alongside an item. A trailer Plex streams itself, like a show's, only comes as the
+    ' item's primary extra.
+    function Extras(ctx as object, itemId as string) as object
+        meta = plexItems.First(plexHttp.Container(ctx, "/library/metadata/" + itemId, { "includeExtras": 1 }).LookupCI("Metadata"))
+        if meta = invalid then return []
+        found = plexMapper.Items(chainLookup(meta, "Extras.Metadata"))
+        primary = meta.LookupCI("primaryExtraKey")
+        if plexMapper.IsText(primary)
+            listed = false
+            for each extra in found
+                if primary = "/library/metadata/" + extra.Id then listed = true
+            end for
+            if not listed
+                primaryExtras = plexMapper.Items(plexHttp.Container(ctx, primary).LookupCI("Metadata"))
+                primaryExtras.Append(found)
+                found = primaryExtras
+            end if
+        end if
+        return found
+    end function
+
+    function LocalTrailers(ctx as object, itemId as string) as object
+        trailers = []
+        for each extra in plexItems.Extras(ctx, itemId)
+            if extra.LookupCI("ExtraType") = "Trailer" then trailers.push(extra)
+        end for
+        return trailers
+    end function
+
+    function Seasons(ctx as object, seriesId as string) as object
+        seasonItems = []
+        for each item in plexMapper.Items(plexHttp.Container(ctx, "/library/metadata/" + seriesId + "/children").LookupCI("Metadata"))
+            if item.Type = "Season" then seasonItems.push(item)
+        end for
+        return plexMapper.ItemsResult(seasonItems)
+    end function
+
+    ' A season's episodes or every episode of the show. Plex can't start from an episode, shuffle or
+    ' limit this list, so that's done here.
+    function Episodes(ctx as object, seriesId as string, q as object) as object
+        seasonId = plexUrls.Str(q.LookupCI("SeasonId") ?? "")
+        path = "/library/metadata/" + seriesId + "/allLeaves"
+        if seasonId <> "" then path = "/library/metadata/" + seasonId + "/children"
+        leafItems = plexMapper.Items(plexHttp.Container(ctx, path).LookupCI("Metadata"))
+        startItemId = plexUrls.Str(q.LookupCI("StartItemId") ?? "")
+        if startItemId <> ""
+            for i = 0 to leafItems.Count() - 1
+                if leafItems[i].Id = startItemId
+                    kept = []
+                    for j = i to leafItems.Count() - 1
+                        kept.push(leafItems[j])
+                    end for
+                    leafItems = kept
+                    exit for
+                end if
+            end for
+        end if
+        if plexUrls.Str(q.LookupCI("SortBy") ?? "") = "Random" then shuffleArray(leafItems)
+        return plexItems.Page(leafItems, plexItems.Number(q.LookupCI("StartIndex")), plexItems.Number(q.LookupCI("Limit")))
+    end function
+
+    function Similar(ctx as object, itemId as string, q as object) as object
+        limit = plexItems.Number(q.LookupCI("Limit"))
+        if limit = invalid then limit = 15
+        return plexMapper.ItemsResult(plexMapper.Items(plexHttp.Container(ctx, "/library/metadata/" + itemId + "/similar", plexItems.Paging(0, limit)).LookupCI("Metadata")))
+    end function
+
+    ' Plex takes the items to add as one URI naming them on this server
+    function ItemsUri(ctx as object, itemIds as object) as string
+        state = plexItems.ServerState(ctx)
+        machineId = plexUrls.Str(state.machineId ?? "")
+        if machineId = ""
+            machineId = plexUrls.Str(plexHttp.Container(ctx, "/identity").LookupCI("machineIdentifier") ?? "")
+            if machineId <> "" then plexItems.SaveServerState(ctx, { machineId: machineId })
+        end if
+        return "server://" + machineId + "/" + PLEX_LIBRARY_IDENTIFIER + "/library/metadata/" + itemIds.Join(",")
+    end function
+
+    ' Plex hands out its cinema trailers and the server's pre-roll only in a play queue that asks for
+    ' them, where they come ahead of the item
+    function Intros(ctx as object, itemId as string) as object
+        queue = plexHttp.Send(ctx, "/playQueues", { "type": "video", "uri": plexItems.ItemsUri(ctx, [itemId]), "extrasPrefixCount": PLEX_CINEMA_TRAILER_COUNT }, "POST")
+        items = plexMapper.Items(plexHttp.MediaContainer(queue.data).LookupCI("Metadata"))
+        kept = []
+        for each item in items
+            if item.Id = itemId then exit for
+            kept.push(item)
+        end for
+        return plexMapper.ItemsResult(kept)
+    end function
+
+    function MediaSegments(ctx as object, itemId as string) as object
+        ' A split movie's markers count from the start of the whole movie
+        if plexMapper.PartOf(itemId) <> invalid then return plexMapper.ItemsResult([])
+        kinds = { "intro": "Intro", "credits": "Outro", "commercial": "Commercial" }
+        meta = plexItems.First(plexHttp.Container(ctx, "/library/metadata/" + itemId, { "includeMarkers": 1 }).LookupCI("Metadata"))
+        segments = []
+        if meta <> invalid
+            for each marker in plexMapper.List(meta.LookupCI("Marker"))
+                if plexMapper.IsObject(marker)
+                    kind = kinds.LookupCI(plexUrls.Str(marker.LookupCI("type")))
+                    start = marker.LookupCI("startTimeOffset")
+                    finish = marker.LookupCI("endTimeOffset")
+                    if kind <> invalid and plexMapper.IsNumber(start) and plexMapper.IsNumber(finish)
+                        segments.push({ "Id": itemId + "-" + plexUrls.Str(marker.LookupCI("type")) + "-" + plexUrls.Str(start).Trim(), "ItemId": itemId, "Type": kind, "StartTicks": plexMapper.Ticks(start), "EndTicks": plexMapper.Ticks(finish) })
+                    end if
+                end if
+            end for
+        end if
+        return plexMapper.ItemsResult(segments)
+    end function
+
+    ' The values a library's filter picker offers, read from Plex's own lists for that library, in
+    ' Jellyfin's Filters and Filters2 shapes
+    function QueryFilters(ctx as object, q as object, detailed as boolean) as object
+        empty = { "Genres": [], "Tags": [], "OfficialRatings": [], "Years": [] }
+        section = plexMapper.KeyOf(plexUrls.Str(q.LookupCI("ParentId") ?? ""), PLEX_SECTION_PREFIX)
+        if section = invalid then return empty
+        query = {}
+        typeNumber = plexMapper.TypeNumbers().LookupCI(plexUrls.Str(plexItems.Split(q.LookupCI("IncludeItemTypes"))[0] ?? ""))
+        if typeNumber <> invalid then query["type"] = typeNumber
+        lists = {}
+        for each filter in ["genre", "year", "contentRating", "label"]
+            entries = []
+            for each entry in plexMapper.List(plexHttp.Container(ctx, "/library/sections/" + section + "/" + filter, query).LookupCI("Directory"))
+                if plexMapper.IsObject(entry) then entries.push(entry)
+            end for
+            lists[filter] = entries
+        end for
+        genres = []
+        for each entry in lists.genre
+            if plexMapper.IsText(entry.LookupCI("title"))
+                if detailed
+                    genres.push({ "Name": entry.LookupCI("title"), "Id": PLEX_GENRE_PREFIX + plexUrls.Str(entry.LookupCI("key")) })
+                else
+                    genres.push(entry.LookupCI("title"))
+                end if
+            end if
+        end for
+        years = []
+        for each entry in lists.year
+            year = plexUrls.Str(entry.LookupCI("key")).ToInt()
+            if year > 0 then years.push(year)
+        end for
+        return { "Genres": genres, "Tags": plexItems.Titles(lists.label), "OfficialRatings": plexItems.Titles(lists.contentRating), "Years": years }
+    end function
+
+    function Titles(entries as object) as object
+        found = []
+        for each entry in entries
+            if plexMapper.IsText(entry.LookupCI("title")) then found.push(entry.LookupCI("title"))
+        end for
+        return found
+    end function
+
+    function AdditionalParts(ctx as object, itemId as string) as object
+        ' A part is one file of its own
+        if plexMapper.PartOf(itemId) <> invalid then return plexMapper.ItemsResult([])
+        source = plexMapper.SourceOf(itemId)
+        meta = plexItems.PlexItem(ctx, source.key)
+        if meta = invalid then return plexMapper.ItemsResult([])
+        return plexMapper.ItemsResult(plexMapper.AdditionalParts(meta, source.mediaIndex))
+    end function
+
+    ' A Plex show keeps one theme song, played straight from its own path, which is what the song's id holds
+    function ThemeSongs(ctx as object, itemId as string, inheritFromParent as boolean) as object
+        if plexUrls.IsPrefixedId(itemId) then return plexMapper.ItemsResult([])
+        meta = plexItems.PlexItem(ctx, plexItems.KeyOf(itemId))
+        if meta = invalid then return plexMapper.ItemsResult([])
+        theme = meta.LookupCI("theme")
+        if theme = invalid and inheritFromParent then theme = meta.LookupCI("grandparentTheme") ?? meta.LookupCI("parentTheme")
+        if not plexMapper.IsText(theme) then return plexMapper.ItemsResult([])
+        return plexMapper.ItemsResult([{ "Id": theme, "Type": "Audio", "Name": "" }])
+    end function
+
+    ' Plex keeps a file's seek previews in a BIF index and hands out the frame nearest any offset, so
+    ' each preview is a sheet of one, a frame interval apart, read through the file part's id. Keyed
+    ' by media source, then width, the way Jellyfin keys its own.
+    function TrickplayFor(meta as object, sourceId as string, mediaIndex as integer, partIndex as integer) as dynamic
+        medias = plexMapper.Medias(meta)
+        if mediaIndex >= medias.Count() then return invalid
+        media = medias[mediaIndex]
+        mediaParts = plexMapper.Parts(media)
+        if partIndex >= mediaParts.Count() then return invalid
+        part = mediaParts[partIndex]
+        aspectRatio = Val(plexUrls.Str(media.LookupCI("aspectRatio") ?? ""))
+        duration = part.LookupCI("duration")
+        ' Plex only marks a part that has its previews built
+        if part.LookupCI("indexes") <> "sd" or not plexMapper.IsNumber(duration) or duration <= 0 or aspectRatio <= 0 then return invalid
+        count = Int(duration / PLEX_TRICKPLAY_INTERVAL_MS)
+        if count * PLEX_TRICKPLAY_INTERVAL_MS < duration then count++
+        info = {
+            "Width": PLEX_TRICKPLAY_WIDTH,
+            "Height": Int(PLEX_TRICKPLAY_WIDTH / aspectRatio + 0.5),
+            "TileWidth": 1,
+            "TileHeight": 1,
+            "Interval": PLEX_TRICKPLAY_INTERVAL_MS,
+            "ThumbnailCount": count,
+            "PlexPartId": plexUrls.Str(part.LookupCI("id")).Trim()
+        }
+        widths = {}
+        widths[PLEX_TRICKPLAY_WIDTH.toStr()] = info
+        found = {}
+        found[sourceId] = widths
+        return found
+    end function
+
+    sub AddTrickplay(meta as object, item as object, mediaIndex as integer, partIndex as integer)
+        sources = item.LookupCI("MediaSources")
+        if type(sources) <> "roArray" or sources.Count() = 0 then return
+        trickplay = {}
+        if item.Id.Left(PLEX_PART_PREFIX.Len()) = PLEX_PART_PREFIX
+            found = plexItems.TrickplayFor(meta, item.Id, mediaIndex, partIndex)
+            if found <> invalid then trickplay.Append(found)
+        else
+            for i = 0 to sources.Count() - 1
+                found = plexItems.TrickplayFor(meta, plexUrls.Str(sources[i].LookupCI("Id")), i, 0)
+                if found <> invalid then trickplay.Append(found)
+            end for
+        end if
+        if trickplay.Count() > 0 then item["Trickplay"] = trickplay
+    end sub
+
+    ' Plex's own account check: the owner may read /myplex/account and anyone else is turned away
+    function ReadUser(ctx as object, userId as string) as object
+        root = plexHttp.Container(ctx, "/")
+        account = plexHttp.Send(ctx, "/myplex/account")
+        owner = account.status >= 200 and account.status < 300
+        mayDeleteMedia = owner and root.LookupCI("allowMediaDeletion") = true
+        plexItems.SaveServerState(ctx, { owner: owner, mayDeleteMedia: mayDeleteMedia })
+        name = ""
+        if userId <> "" then name = plexUrls.Str(registry_read("username", userId) ?? "")
+        return {
+            "Id": userId,
+            "Name": name,
+            "ServerId": root.LookupCI("machineIdentifier"),
+            "PrimaryImageTag": "plex",
+            "Policy": {
+                "IsAdministrator": owner,
+                "EnableContentDownloading": root.LookupCI("allowSync") = true,
+                "EnableContentDeletion": mayDeleteMedia,
+                "EnableSubtitleManagement": true,
+                "EnableCollectionManagement": owner,
+                "EnableLiveTvManagement": owner,
+                "EnableLiveTvAccess": true,
+                "EnableAllFolders": true,
+                "EnabledFolders": [],
+                "BlockedMediaFolders": []
+            },
+            "Configuration": {}
+        }
+    end function
+
+end namespace

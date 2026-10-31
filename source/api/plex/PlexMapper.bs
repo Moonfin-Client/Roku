@@ -1,0 +1,547 @@
+import "pkg:/source/utils/misc.bs"
+
+' Plex metadata in the Jellyfin item shape the rest of the app reads. Keys are quoted so they keep
+' their case if the item is ever written out as JSON.
+
+' Library keys and tag ids share a number space with ratingKeys, so they carry a prefix
+const PLEX_SECTION_PREFIX = "section-"
+const PLEX_PERSON_PREFIX = "person-"
+const PLEX_GENRE_PREFIX = "genre-"
+const PLEX_STUDIO_PREFIX = "studio-"
+' A movie split over several files plays one file at a time, and each file after the first is an item of its own
+const PLEX_PART_PREFIX = "part-"
+' Plex has no favorites, so a 10 rating stands in for one
+const PLEX_FAVORITE_RATING = 10
+const PLEX_PQ = "smpte2084"
+const PLEX_HLG = "arib-std-b67"
+
+namespace plexMapper
+
+    function ItemTypes() as object
+        return { "movie": "Movie", "show": "Series", "season": "Season", "episode": "Episode", "artist": "MusicArtist", "album": "MusicAlbum", "track": "Audio", "collection": "BoxSet", "playlist": "Playlist", "photo": "Photo" }
+    end function
+
+    function TypeNumbers() as object
+        return { "Movie": 1, "Series": 2, "Season": 3, "Episode": 4, "MusicArtist": 8, "MusicAlbum": 9, "Audio": 10, "BoxSet": 18 }
+    end function
+
+    function List(value as dynamic) as object
+        if type(value) = "roArray" then return value
+        return []
+    end function
+
+    function IsObject(value as dynamic) as boolean
+        return type(value) = "roAssociativeArray"
+    end function
+
+    function IsText(value as dynamic) as boolean
+        return type(value) = "roString" or type(value) = "String"
+    end function
+
+    function IsNumber(value as dynamic) as boolean
+        kind = type(value)
+        return kind = "Integer" or kind = "roInt" or kind = "roInteger" or kind = "LongInteger" or kind = "roLongInteger" or kind = "Float" or kind = "roFloat" or kind = "Double" or kind = "roDouble"
+    end function
+
+    ' Plex ends its version with the build's hash, which means nothing to a reader
+    function Version(versionText as dynamic) as dynamic
+        if not plexMapper.IsText(versionText) then return invalid
+        return versionText.Split("-")[0]
+    end function
+
+    ' The item, version and file a part id points at
+    function PartOf(id as dynamic) as dynamic
+        match = CreateObject("roRegex", "^part-(\d+)-(\d+)-(\d+)$", "").Match(plexUrls.Str(id))
+        if match.Count() < 4 then return invalid
+        return { key: match[1], mediaIndex: match[2].ToInt(), partIndex: match[3].ToInt() }
+    end function
+
+    ' A media source id is the ratingKey and the version's place among the item's Media. A bare
+    ' ratingKey is the first.
+    function SourceOf(id as dynamic) as object
+        text = plexUrls.Str(id)
+        dash = 0
+        for i = text.Len() to 1 step -1
+            if text.Mid(i - 1, 1) = "-"
+                dash = i
+                exit for
+            end if
+        end for
+        if dash = 0 then return { key: text, mediaIndex: 0 }
+        return { key: text.Left(dash - 1), mediaIndex: text.Mid(dash).ToInt() }
+    end function
+
+    function KeyOf(id as dynamic, prefix as string) as dynamic
+        if not plexMapper.IsText(id) then return invalid
+        if id.Left(prefix.Len()) <> prefix then return invalid
+        return id.Mid(prefix.Len())
+    end function
+
+    function ItemsResult(entries as object, total = invalid as dynamic, startIndex = 0 as integer) as object
+        if total = invalid then total = entries.Count()
+        return { "Items": entries, "TotalRecordCount": total, "StartIndex": startIndex }
+    end function
+
+    function PersonToJellyfin(person as object) as object
+        imageTags = {}
+        if plexMapper.IsText(person.LookupCI("thumb")) then imageTags["Primary"] = person.LookupCI("thumb")
+        return { "Id": PLEX_PERSON_PREFIX + plexUrls.Str(person.LookupCI("id")), "Name": person.LookupCI("tag"), "Type": "Person", "ImageTags": imageTags }
+    end function
+
+    function SectionToView(section as object) as object
+        kinds = { "movie": "movies", "show": "tvshows", "artist": "music", "photo": "photos" }
+        return {
+            "Id": PLEX_SECTION_PREFIX + plexUrls.Str(section.LookupCI("key")),
+            "Name": section.LookupCI("title"),
+            "Type": "CollectionFolder",
+            "CollectionType": kinds.LookupCI(plexUrls.Str(section.LookupCI("type"))) ?? "mixed",
+            "IsFolder": true,
+            "ImageTags": {}
+        }
+    end function
+
+    function Tags(value as dynamic) as object
+        names = []
+        for each tag in plexMapper.List(value)
+            if plexMapper.IsObject(tag) and plexMapper.IsText(tag.LookupCI("tag")) then names.push(tag.LookupCI("tag"))
+        end for
+        return names
+    end function
+
+    ' Plex people come with full image addresses, which the image builder passes through
+    function People(value as dynamic, kind as string) as object
+        found = []
+        for each person in plexMapper.List(value)
+            if plexMapper.IsObject(person) and plexMapper.IsText(person.LookupCI("tag")) and person.LookupCI("id") <> invalid
+                entry = { "Id": PLEX_PERSON_PREFIX + plexUrls.Str(person.LookupCI("id")), "Name": person.LookupCI("tag"), "Type": kind }
+                if person.LookupCI("role") <> invalid then entry["Role"] = person.LookupCI("role")
+                if plexMapper.IsText(person.LookupCI("thumb")) then entry["PrimaryImageTag"] = person.LookupCI("thumb")
+                found.push(entry)
+            end if
+        end for
+        return found
+    end function
+
+    ' The lists Plex sends as Guid arrive renamed Guids, see plexHttp.Parse
+    function ProviderIds(guids as dynamic) as object
+        names = { "imdb": "Imdb", "tmdb": "Tmdb", "tvdb": "Tvdb" }
+        ids = {}
+        for each guid in plexMapper.List(guids)
+            if plexMapper.IsObject(guid)
+                pieces = plexUrls.Str(guid.LookupCI("id")).Split("://")
+                if pieces.Count() = 2
+                    name = names.LookupCI(pieces[0])
+                    if name <> invalid then ids[name] = pieces[1]
+                end if
+            end if
+        end for
+        return ids
+    end function
+
+    function Parts(media as dynamic) as object
+        found = []
+        if not plexMapper.IsObject(media) then return found
+        for each part in plexMapper.List(media.LookupCI("Part"))
+            if plexMapper.IsObject(part) then found.push(part)
+        end for
+        return found
+    end function
+
+    function Medias(meta as object) as object
+        found = []
+        for each media in plexMapper.List(meta.LookupCI("Media"))
+            if plexMapper.IsObject(media) then found.push(media)
+        end for
+        return found
+    end function
+
+    function Date(value as dynamic) as dynamic
+        if not plexMapper.IsText(value) then return invalid
+        match = CreateObject("roRegex", "^(\d{4})-(\d{2})-(\d{2})", "").Match(value)
+        if match.Count() < 4 then return invalid
+        return match[1] + "-" + match[2] + "-" + match[3] + "T00:00:00.000Z"
+    end function
+
+    function Epoch(seconds as dynamic) as string
+        moment = CreateObject("roDateTime")
+        moment.FromSeconds(seconds)
+        return moment.ToISOString()
+    end function
+
+    function Ticks(ms as dynamic) as dynamic
+        return ms * 10000&
+    end function
+
+    ' The dynamic range in the names Jellyfin uses, worked out by Jellyfin's rules, since the HDR and
+    ' Dolby Vision handling reads those names
+    function VideoRange(stream as object) as object
+        transfer = LCase(plexUrls.Str(stream.LookupCI("colorTrc") ?? ""))
+        base = "SDR"
+        if transfer = PLEX_PQ or transfer = PLEX_HLG then base = "HDR"
+        hdr10Plus = stream.LookupCI("HDR10PlusPresent") = true
+        profile = stream.LookupCI("DOVIProfile")
+        compat = stream.LookupCI("DOVIBLCompatID")
+
+        range = invalid
+        if inArray([5, 7, 8, 10], profile) and inArray([0, 1, 2, 4, 6], compat) and stream.LookupCI("DOVIRPUPresent") = true and stream.LookupCI("DOVIBLPresent") = true
+            dolby = [base, "DOVIInvalid"]
+            if profile = 5 or (profile = 10 and compat = 0)
+                dolby = ["HDR", "DOVI"]
+            else if profile = 7
+                dolby = ["HDR", "DOVIWithEL"]
+            else if compat = 1
+                dolby = ["HDR", "DOVIWithHDR10"]
+            else if compat = 4
+                dolby = ["HDR", "DOVIWithHLG"]
+            else if compat = 2
+                dolby = ["SDR", "DOVIWithSDR"]
+            end if
+            ' A base layer whose colors don't match what it claims is out of spec
+            expected = invalid
+            if dolby[1] = "DOVIWithHDR10" or dolby[1] = "DOVIWithEL"
+                expected = PLEX_PQ
+            else if dolby[1] = "DOVIWithHLG"
+                expected = PLEX_HLG
+            end if
+            colorSpace = LCase(plexUrls.Str(stream.LookupCI("colorSpace") ?? ""))
+            primaries = LCase(plexUrls.Str(stream.LookupCI("colorPrimaries") ?? ""))
+            if expected <> invalid and (colorSpace <> "bt2020nc" or transfer <> expected or primaries <> "bt2020")
+                range = [base, "DOVIInvalid"]
+            else if dolby[1] = "DOVIWithHDR10" and hdr10Plus
+                range = ["HDR", "DOVIWithHDR10Plus"]
+            else if dolby[1] = "DOVIWithEL" and hdr10Plus
+                range = ["HDR", "DOVIWithELHDR10Plus"]
+            else
+                range = dolby
+            end if
+        else if transfer = PLEX_PQ
+            range = ["HDR", "HDR10"]
+            if hdr10Plus then range = ["HDR", "HDR10Plus"]
+        else if transfer = PLEX_HLG
+            range = ["HDR", "HLG"]
+        else
+            range = ["SDR", "SDR"]
+        end if
+        return { "VideoRange": range[0], "VideoRangeType": range[1] }
+    end function
+
+    sub AssignDefined(target as object, source as object)
+        for each key in source
+            if source[key] <> invalid then target[key] = source[key]
+        end for
+    end sub
+
+    ' Closed captions ride inside the video stream and share its index, so they're left out
+    function Streams(part as dynamic) as object
+        kinds = { "1": "Video", "2": "Audio", "3": "Subtitle" }
+        found = []
+        if not plexMapper.IsObject(part) then return found
+        for each stream in plexMapper.List(part.LookupCI("Stream"))
+            if plexMapper.IsObject(stream)
+                kind = kinds.LookupCI(plexUrls.Str(stream.LookupCI("streamType")).Trim())
+                if kind <> invalid and stream.LookupCI("embeddedInVideo") = invalid
+                    found.push(plexMapper.StreamToJellyfin(stream, kind))
+                end if
+            end if
+        end for
+        return found
+    end function
+
+    function StreamToJellyfin(stream as object, kind as string) as object
+        index = stream.LookupCI("index")
+        if index = invalid then index = stream.LookupCI("id")
+        entry = { "Index": index, "Type": kind }
+        plexMapper.AssignDefined(entry, { "Codec": stream.LookupCI("codec"), "Language": stream.LookupCI("languageCode"), "DisplayTitle": stream.LookupCI("displayTitle"), "Title": stream.LookupCI("title") })
+        entry["IsDefault"] = stream.LookupCI("default") = true
+        entry["IsForced"] = stream.LookupCI("forced") = true
+        entry["IsHearingImpaired"] = stream.LookupCI("hearingImpaired") = true
+        key = stream.LookupCI("key")
+        entry["IsExternal"] = key <> invalid
+        if plexMapper.IsText(key)
+            entry["DeliveryUrl"] = key
+            entry["DeliveryMethod"] = "External"
+            entry["SupportsExternalStream"] = true
+        end if
+        bitrate = invalid
+        if plexMapper.IsNumber(stream.LookupCI("bitrate")) then bitrate = stream.LookupCI("bitrate") * 1000
+        frameRate = invalid
+        if plexMapper.IsNumber(stream.LookupCI("frameRate")) then frameRate = stream.LookupCI("frameRate")
+        plexMapper.AssignDefined(entry, {
+            "Width": stream.LookupCI("width"),
+            "Height": stream.LookupCI("height"),
+            "Channels": stream.LookupCI("channels"),
+            "BitRate": bitrate,
+            "Profile": stream.LookupCI("profile"),
+            "RealFrameRate": frameRate,
+            "AverageFrameRate": frameRate,
+            "BitDepth": stream.LookupCI("bitDepth"),
+            "Level": stream.LookupCI("level"),
+            "SampleRate": stream.LookupCI("samplingRate"),
+            "ChannelLayout": stream.LookupCI("audioChannelLayout"),
+            "DvProfile": stream.LookupCI("DOVIProfile"),
+            "DvBlSignalCompatibilityId": stream.LookupCI("DOVIBLCompatID")
+        })
+        if kind = "Video"
+            entry["IsInterlaced"] = stream.LookupCI("scanType") = "interlaced"
+            entry.Append(plexMapper.VideoRange(stream))
+        end if
+        return entry
+    end function
+
+    function MediaSource(id as string, itemId as string, media as object, part as dynamic) as object
+        ' A split movie's source plays one file, so it runs that file's length
+        duration = invalid
+        if plexMapper.IsObject(part) then duration = part.LookupCI("duration")
+        if duration = invalid then duration = media.LookupCI("duration")
+        bitrate = invalid
+        if plexMapper.IsNumber(media.LookupCI("bitrate")) then bitrate = media.LookupCI("bitrate") * 1000
+        runTime = invalid
+        if plexMapper.IsNumber(duration) then runTime = plexMapper.Ticks(duration)
+        size = invalid
+        file = invalid
+        key = invalid
+        if plexMapper.IsObject(part)
+            size = part.LookupCI("size")
+            file = part.LookupCI("file")
+            key = part.LookupCI("key")
+        end if
+        source = { "Id": id, "ItemId": itemId }
+        ' The part's own address, which serves the original file
+        plexMapper.AssignDefined(source, { "Container": media.LookupCI("container"), "Bitrate": bitrate, "RunTimeTicks": runTime, "Size": size, "Path": file, "DirectStreamUrl": key })
+        source["MediaStreams"] = plexMapper.Streams(part)
+        return source
+    end function
+
+    function Logo(meta as object) as dynamic
+        for each image in plexMapper.List(meta.LookupCI("Image"))
+            if plexMapper.IsObject(image) and image.LookupCI("type") = "clearLogo" and plexMapper.IsText(image.LookupCI("url")) then return image.LookupCI("url")
+        end for
+        return invalid
+    end function
+
+    ' Image tags hold the Plex image path itself, because a season or episode borrows its backdrop and
+    ' logo from the show and only the path says which
+    function ItemToJellyfin(meta as object) as object
+        kind = plexUrls.Str(meta.LookupCI("type") ?? "")
+        id = plexUrls.Str(meta.LookupCI("ratingKey"))
+        duration = invalid
+        if plexMapper.IsNumber(meta.LookupCI("duration")) then duration = meta.LookupCI("duration")
+        viewOffset = invalid
+        if plexMapper.IsNumber(meta.LookupCI("viewOffset")) then viewOffset = meta.LookupCI("viewOffset")
+        leafCount = invalid
+        if plexMapper.IsNumber(meta.LookupCI("leafCount")) then leafCount = meta.LookupCI("leafCount")
+        viewedLeafCount = meta.LookupCI("viewedLeafCount") ?? 0
+        viewCount = meta.LookupCI("viewCount") ?? 0
+        isChild = kind = "episode" or kind = "season"
+        seriesKey = meta.LookupCI("grandparentRatingKey")
+        if seriesKey = invalid then seriesKey = meta.LookupCI("parentRatingKey")
+        seriesId = plexUrls.Str(seriesKey)
+        ' Seasons and episodes borrow the show's art. Anything else owns its own, even a collection whose
+        ' art lives outside /library/metadata.
+        ownPrefix = "/library/metadata/" + id + "/"
+
+        art = invalid
+        if plexMapper.IsText(meta.LookupCI("art")) then art = meta.LookupCI("art")
+        logoPath = plexMapper.Logo(meta)
+        mediaList = plexMapper.Medias(meta)
+        sources = []
+        ' The most files any version has, so a split version that isn't the first still gets its other files queued
+        partCount = 0
+        for index = 0 to mediaList.Count() - 1
+            mediaParts = plexMapper.Parts(mediaList[index])
+            sources.push(plexMapper.MediaSource(id + "-" + index.toStr(), id, mediaList[index], mediaParts[0]))
+            if mediaParts.Count() > partCount then partCount = mediaParts.Count()
+        end for
+        ratingImage = plexUrls.Str(meta.LookupCI("ratingImage") ?? "")
+        rating = invalid
+        if plexMapper.IsNumber(meta.LookupCI("rating")) then rating = meta.LookupCI("rating")
+        fromTomatoes = ratingImage.Left(14) = "rottentomatoes"
+        isTrack = kind = "track"
+        albumArtist = invalid
+        albumArtistId = invalid
+        if kind = "album"
+            albumArtist = meta.LookupCI("parentTitle")
+            albumArtistId = meta.LookupCI("parentRatingKey")
+        else if isTrack
+            albumArtist = meta.LookupCI("grandparentTitle")
+            albumArtistId = meta.LookupCI("grandparentRatingKey")
+        end if
+
+        item = {
+            "Id": id,
+            "Name": meta.LookupCI("title"),
+            "Type": plexMapper.ItemTypes().LookupCI(kind) ?? "Video",
+            "IsFolder": inArray(["show", "season", "artist", "album", "collection", "playlist"], kind)
+        }
+        if meta.LookupCI("titleSort") <> invalid then item["SortName"] = meta.LookupCI("titleSort")
+        if kind = "movie" or kind = "episode" or kind = "clip" then item["MediaType"] = "Video"
+        extraTypes = { "trailer": "Trailer", "deletedScene": "DeletedScene", "interview": "Interview", "behindTheScenes": "BehindTheScenes", "sceneOrSample": "Scene", "featurette": "Featurette", "short": "Short" }
+        if kind = "clip" and extraTypes.LookupCI(plexUrls.Str(meta.LookupCI("subtype"))) <> invalid then item["ExtraType"] = extraTypes.LookupCI(plexUrls.Str(meta.LookupCI("subtype")))
+        if isTrack then item["MediaType"] = "Audio"
+        playlistTypes = { "video": "Video", "audio": "Audio", "photo": "Photo" }
+        if kind = "playlist" and playlistTypes.LookupCI(plexUrls.Str(meta.LookupCI("playlistType"))) <> invalid then item["MediaType"] = playlistTypes.LookupCI(plexUrls.Str(meta.LookupCI("playlistType")))
+        if meta.LookupCI("playlistItemID") <> invalid then item["PlaylistItemId"] = plexUrls.Str(meta.LookupCI("playlistItemID")).Trim()
+        ' Removing a playlist only drops the list, never the media in it
+        if kind = "playlist" then item["CanDelete"] = true
+        if meta.LookupCI("summary") <> invalid then item["Overview"] = meta.LookupCI("summary")
+        if meta.LookupCI("year") <> invalid then item["ProductionYear"] = meta.LookupCI("year")
+        premiere = plexMapper.Date(meta.LookupCI("originallyAvailableAt"))
+        if premiere <> invalid then item["PremiereDate"] = premiere
+        if plexMapper.IsNumber(meta.LookupCI("addedAt")) then item["DateCreated"] = plexMapper.Epoch(meta.LookupCI("addedAt"))
+        if duration <> invalid then item["RunTimeTicks"] = plexMapper.Ticks(duration)
+        if plexMapper.IsNumber(meta.LookupCI("audienceRating"))
+            item["CommunityRating"] = meta.LookupCI("audienceRating")
+        else if rating <> invalid and not fromTomatoes
+            item["CommunityRating"] = rating
+        end if
+        if rating <> invalid and fromTomatoes then item["CriticRating"] = Int(rating * 10 + 0.5)
+        if meta.LookupCI("contentRating") <> invalid then item["OfficialRating"] = meta.LookupCI("contentRating")
+        item["Genres"] = plexMapper.Tags(meta.LookupCI("Genre"))
+        if meta.LookupCI("studio") <> invalid then item["Studios"] = [{ "Name": meta.LookupCI("studio") }]
+        if meta.LookupCI("tagline") <> invalid then item["Taglines"] = [meta.LookupCI("tagline")]
+        credits = plexMapper.People(meta.LookupCI("Role"), "Actor")
+        credits.Append(plexMapper.People(meta.LookupCI("Director"), "Director"))
+        credits.Append(plexMapper.People(meta.LookupCI("Writer"), "Writer"))
+        item["People"] = credits
+        item["ProviderIds"] = plexMapper.ProviderIds(meta.LookupCI("Guids"))
+        if type(meta.LookupCI("Chapter")) = "roArray"
+            chapters = []
+            for each chapter in meta.LookupCI("Chapter")
+                if plexMapper.IsObject(chapter)
+                    ' Some files put their first chapter a moment before the start
+                    start = chapter.LookupCI("startTimeOffset") ?? 0
+                    if start < 0 then start = 0
+                    entry = { "StartPositionTicks": plexMapper.Ticks(start) }
+                    if plexMapper.IsText(chapter.LookupCI("tag")) then entry["Name"] = chapter.LookupCI("tag")
+                    if plexMapper.IsText(chapter.LookupCI("thumb")) then entry["ImageTag"] = chapter.LookupCI("thumb")
+                    chapters.push(entry)
+                end if
+            end for
+            item["Chapters"] = chapters
+        end if
+        ' An extra's index is only its place among the extras
+        if meta.LookupCI("index") <> invalid and kind <> "clip" then item["IndexNumber"] = meta.LookupCI("index")
+        if meta.LookupCI("parentIndex") <> invalid then item["ParentIndexNumber"] = meta.LookupCI("parentIndex")
+        if meta.LookupCI("parentRatingKey") <> invalid then item["ParentId"] = plexUrls.Str(meta.LookupCI("parentRatingKey")).Trim()
+        if isChild
+            item["SeriesId"] = seriesId.Trim()
+            item["SeriesName"] = meta.LookupCI("grandparentTitle") ?? meta.LookupCI("parentTitle")
+            seriesThumb = meta.LookupCI("grandparentThumb") ?? meta.LookupCI("parentThumb")
+            if plexMapper.IsText(seriesThumb) then item["SeriesPrimaryImageTag"] = seriesThumb
+        end if
+        if kind = "episode"
+            item["SeasonId"] = plexUrls.Str(meta.LookupCI("parentRatingKey")).Trim()
+            item["SeasonName"] = meta.LookupCI("parentTitle")
+        end if
+        if plexMapper.IsText(albumArtist)
+            item["AlbumArtist"] = albumArtist
+            item["AlbumArtists"] = [{ "Name": albumArtist, "Id": plexUrls.Str(albumArtistId).Trim() }]
+            ' A track only names its own artist, in originalTitle, when it differs from the album's
+            if isTrack
+                item["Artists"] = [meta.LookupCI("originalTitle") ?? albumArtist]
+            else
+                item["Artists"] = [albumArtist]
+            end if
+        end if
+        if isTrack
+            item["Album"] = meta.LookupCI("parentTitle")
+            item["AlbumId"] = plexUrls.Str(meta.LookupCI("parentRatingKey")).Trim()
+            if meta.LookupCI("parentThumb") <> invalid then item["AlbumPrimaryImageTag"] = meta.LookupCI("parentThumb")
+        end if
+        if (kind = "show" or kind = "collection") and meta.LookupCI("childCount") <> invalid then item["ChildCount"] = meta.LookupCI("childCount")
+        if (kind = "season" or kind = "playlist") and leafCount <> invalid then item["ChildCount"] = leafCount
+        if leafCount <> invalid then item["RecursiveItemCount"] = leafCount
+        imageTags = {}
+        ' A playlist has no poster, only Plex's tiles of what's in it
+        thumb = meta.LookupCI("thumb") ?? meta.LookupCI("composite")
+        if plexMapper.IsText(thumb) then imageTags["Primary"] = thumb
+        ownsLogo = logoPath <> invalid and (not isChild or logoPath.Left(ownPrefix.Len()) = ownPrefix)
+        ownsArt = art <> invalid and (not isChild or art.Left(ownPrefix.Len()) = ownPrefix)
+        if ownsLogo then imageTags["Logo"] = logoPath
+        item["ImageTags"] = imageTags
+        item["BackdropImageTags"] = []
+        if ownsArt then item["BackdropImageTags"] = [art]
+        if art <> invalid and not ownsArt
+            item["ParentBackdropItemId"] = seriesId.Trim()
+            item["ParentBackdropImageTags"] = [art]
+        end if
+        if logoPath <> invalid and not ownsLogo
+            item["ParentLogoItemId"] = seriesId.Trim()
+            item["ParentLogoImageTag"] = logoPath
+        end if
+        played = viewCount > 0
+        if leafCount <> invalid then played = leafCount > 0 and viewedLeafCount >= leafCount
+        position = 0
+        if viewOffset <> invalid then position = viewOffset
+        userData = {
+            "PlaybackPositionTicks": plexMapper.Ticks(position),
+            "PlayCount": viewCount,
+            "IsFavorite": meta.LookupCI("userRating") = PLEX_FAVORITE_RATING,
+            "Played": played
+        }
+        ' Plex doesn't count what's been watched in a playlist
+        if leafCount <> invalid and kind <> "playlist" then userData["UnplayedItemCount"] = leafCount - viewedLeafCount
+        if viewOffset <> invalid and duration <> invalid and duration > 0 then userData["PlayedPercentage"] = viewOffset * 100.0 / duration
+        if plexMapper.IsNumber(meta.LookupCI("lastViewedAt")) then userData["LastPlayedDate"] = plexMapper.Epoch(meta.LookupCI("lastViewedAt"))
+        item["UserData"] = userData
+        ' An empty list reads as unplayable, so the key stays out without media
+        if sources.Count() > 0
+            item["MediaSources"] = sources
+            item["MediaStreams"] = sources[0].MediaStreams
+        end if
+        if partCount > 1 then item["PartCount"] = partCount
+        return item
+    end function
+
+    ' One file of a movie split over several, as an item that plays just that file. It has no parts of
+    ' its own, so it never queues the others again.
+    function PartItem(meta as object, mediaIndex as integer, partIndex as integer) as dynamic
+        mediaList = plexMapper.Medias(meta)
+        if mediaIndex >= mediaList.Count() then return invalid
+        media = mediaList[mediaIndex]
+        mediaParts = plexMapper.Parts(media)
+        if partIndex >= mediaParts.Count() then return invalid
+        part = mediaParts[partIndex]
+        item = plexMapper.ItemToJellyfin(meta)
+        item.Delete("PartCount")
+        id = PLEX_PART_PREFIX + item.Id + "-" + mediaIndex.toStr() + "-" + partIndex.toStr()
+        source = plexMapper.MediaSource(id, id, media, part)
+        ' A server on Windows names its files with backslashes
+        file = plexUrls.Str(part.LookupCI("file") ?? item.Name).Replace("\", "/").Split("/").Peek()
+        dot = 0
+        for i = file.Len() to 1 step -1
+            if file.Mid(i - 1, 1) = "."
+                dot = i
+                exit for
+            end if
+        end for
+        if dot > 0 then file = file.Left(dot - 1)
+        item["Id"] = id
+        item["Name"] = file
+        item["MediaSources"] = [source]
+        item["MediaStreams"] = source.MediaStreams
+        item["UserData"] = {}
+        if source.RunTimeTicks <> invalid then item["RunTimeTicks"] = source.RunTimeTicks
+        return item
+    end function
+
+    function AdditionalParts(meta as object, mediaIndex as integer) as object
+        found = []
+        mediaList = plexMapper.Medias(meta)
+        if mediaIndex >= mediaList.Count() then return found
+        count = plexMapper.Parts(mediaList[mediaIndex]).Count()
+        for p = 1 to count - 1
+            found.push(plexMapper.PartItem(meta, mediaIndex, p))
+        end for
+        return found
+    end function
+
+    function Items(metadata as dynamic) as object
+        found = []
+        for each meta in plexMapper.List(metadata)
+            if plexMapper.IsObject(meta) then found.push(plexMapper.ItemToJellyfin(meta))
+        end for
+        return found
+    end function
+
+end namespace

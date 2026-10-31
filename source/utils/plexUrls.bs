@@ -1,0 +1,166 @@
+' Addresses on a Plex server. Players and posters load these without the app's headers, so the token
+' rides in the query. Nothing here touches the network, since posters build their addresses on the
+' render thread.
+
+const PLEX_AVATAR_URL = "https://plex.tv/users/{0}/avatar"
+
+namespace plexUrls
+
+    ' The scheme, host and port of an address, which is how a Plex server is saved
+    function OriginOf(url as string) as string
+        scheme = Instr(1, url, "://")
+        if scheme = 0 then return ""
+        slash = Instr(scheme + 3, url, "/")
+        queryAt = Instr(scheme + 3, url, "?")
+        cut = slash
+        if cut = 0 or (queryAt > 0 and queryAt < cut) then cut = queryAt
+        if cut = 0 then return url
+        return url.Left(cut - 1)
+    end function
+
+    ' The Plex server an address is on, or "" when it isn't one the app knows
+    function BaseOf(url as string) as string
+        origin = plexUrls.OriginOf(url)
+        if origin = "" or not isPlexServer(origin) then return ""
+        return origin
+    end function
+
+    ' Plex's own routes start in lowercase, unlike any Jellyfin route the app asks for
+    function IsNative(path as string) as boolean
+        if path.Left(1) <> "/" then path = "/" + path
+        for each prefix in ["/library/", "/photo/:/", "/video/:/", "/music/:/", "/:/", "/playQueues", "/hubs/", "/identity"]
+            if path.Left(prefix.Len()) = prefix then return true
+        end for
+        return false
+    end function
+
+    ' A Jellyfin route on a Plex server, which the bridge answers
+    function Owns(url as string) as boolean
+        base = plexUrls.BaseOf(url)
+        if base = "" then return false
+        return not plexUrls.IsNative(url.Mid(base.Len()))
+    end function
+
+    function WithToken(url as string, token as string) as string
+        if token = "" then return url
+        separator = "?"
+        if Instr(1, url, "?") > 0 then separator = "&"
+        return url + separator + "X-Plex-Token=" + token.EncodeUriComponent()
+    end function
+
+    ' A list repeats its key, which Plex reads as every value having to match. Spaces go as %20, since
+    ' Plex reads a + in its client profile as the break between two directives.
+    function Query(params as object) as string
+        pairs = []
+        for each key in params
+            value = params[key]
+            if type(value) = "roArray"
+                for each entry in value
+                    pairs.push(key.EncodeUriComponent() + "=" + plexUrls.Text(entry).EncodeUriComponent())
+                end for
+            else if value <> invalid
+                pairs.push(key.EncodeUriComponent() + "=" + plexUrls.Text(value).EncodeUriComponent())
+            end if
+        end for
+        return pairs.Join("&")
+    end function
+
+    ' A query value. Plex reads a flag as 1 or 0.
+    function Text(value as dynamic) as string
+        if type(value) = "roBoolean" or type(value) = "Boolean"
+            if value then return "1"
+            return "0"
+        end if
+        return plexUrls.Str(value)
+    end function
+
+    ' A value as text. str() writes a large whole number as 2.76441e+08, and Plex's ids and times are
+    ' large whole numbers, so those are written out in full. A call to str() in here would call this.
+    function Str(value as dynamic) as string
+        kind = type(value)
+        if kind = "roString" or kind = "String" then return value
+        if kind = "Integer" or kind = "roInt" or kind = "roInteger" or kind = "LongInteger" or kind = "roLongInteger" then return value.toStr()
+        if kind = "Float" or kind = "roFloat" or kind = "Double" or kind = "roDouble"
+            if value = Int(value) and Abs(value) < 2147483647 then return Int(value).toStr()
+            return value.ToStr()
+        end if
+        return toString(value)
+    end function
+
+    ' Ids the app makes up for things Plex keeps no picture of under that key
+    function IsPrefixedId(id as string) as boolean
+        for each prefix in ["section-", "genre-", "studio-", "person-"]
+            if id.Left(prefix.Len()) = prefix then return true
+        end for
+        return false
+    end function
+
+    ' The tag is the Plex image path the mapper kept, or a full address for cast photos, which plex.tv
+    ' serves. The transcoder wants both sides and fits the image inside them, so a generous other side
+    ' leaves the given one in charge.
+    function ImageURL(base as string, itemId as string, kindName as string, params as object, token as string) as string
+        tag = plexUrls.Str(params.LookupCI("tag") ?? "")
+        if tag.Left(7) = "http://" or tag.Left(8) = "https://" then return tag
+        path = ""
+        if tag.Left(1) = "/"
+            path = tag
+        else
+            if itemId = "" or plexUrls.IsPrefixedId(itemId) then return ""
+            routes = { "Primary": "thumb", "Backdrop": "art", "Thumb": "art", "Logo": "clearLogo", "Banner": "banner", "Chapter": "thumb" }
+            path = "/library/metadata/" + itemId + "/" + (routes.LookupCI(kindName) ?? "thumb")
+        end if
+        width = plexUrls.Size(params, ["maxWidth", "fillWidth", "width"])
+        height = plexUrls.Size(params, ["maxHeight", "fillHeight", "height"])
+        if width = 0 and height = 0 then return plexUrls.WithToken(base + path, token)
+        if width = 0 then width = height * 4
+        if height = 0 then height = width * 4
+        queryAt = { "width": width, "height": height, "url": path }
+        blur = plexUrls.Size(params, ["blur"])
+        if blur > 0 then queryAt["blur"] = blur
+        return plexUrls.WithToken(base + "/photo/:/transcode?" + plexUrls.Query(queryAt), token)
+    end function
+
+    function Size(params as object, names as object) as integer
+        for each name in names
+            value = params.LookupCI(name)
+            if value <> invalid
+                amount = Int(Val(plexUrls.Str(value)))
+                if amount > 0 then return amount
+            end if
+        end for
+        return 0
+    end function
+
+    ' The real address behind a media route the app built in Jellyfin's terms, "" for a picture Plex
+    ' doesn't have, or invalid when the route is one the bridge answers instead
+    function MediaURL(base as string, path as string, params as object, token as string) as dynamic
+        if plexUrls.IsNative(path)
+            url = base + path
+            if params.Count() > 0
+                separator = "?"
+                if Instr(1, url, "?") > 0 then separator = "&"
+                url += separator + plexUrls.Query(params)
+            end if
+            return plexUrls.WithToken(url, token)
+        end if
+
+        route = pathRoute(path)
+        ' A theme song's id is its own Plex path
+        if LCase(route.Left(6)) = "audio/" and Instr(1, route, "/library/") > 0
+            themePath = route.Mid(6)
+            if LCase(themePath.Right(7)) = "/stream" then themePath = themePath.Left(themePath.Len() - 7)
+            if themePath.Left(1) <> "/" then themePath = "/" + themePath
+            return plexUrls.WithToken(base + themePath, token)
+        end if
+
+        segments = route.Split("/")
+        if segments.Count() >= 4 and LCase(segments[0]) = "items" and LCase(segments[2]) = "images"
+            return plexUrls.ImageURL(base, segments[1], segments[3], params, token)
+        end if
+        if segments.Count() >= 3 and LCase(segments[0]) = "users" and LCase(segments[2]) = "images"
+            return Substitute(PLEX_AVATAR_URL, segments[1])
+        end if
+        return invalid
+    end function
+
+end namespace
