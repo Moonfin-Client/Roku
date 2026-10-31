@@ -8862,5 +8862,10 @@
         <extracomment>Slider that moves the two subtitle tracks up together, as a share of the screen height</extracomment>
         <translation>Vertical Offset</translation>
     </message>
+    <message>
+        <source>Plex servers don&apos;t take client logs.</source>
+        <extracomment>Shown when sending the diagnostic log while signed in to a Plex server</extracomment>
+        <translation>Plex servers don&apos;t take client logs.</translation>
+    </message>
 </context>
 </TS>
