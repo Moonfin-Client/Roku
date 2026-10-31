@@ -73,23 +73,17 @@ sub search()
     activeRequests = {}
     allItems = []
     hintItems = []
-    totalCount = 0
 
     for each userSession in allSessions
-        itemsInfo = startSearchRequest(userSession, port, "items", query)
-        if isValid(itemsInfo)
-            activeRequests[itemsInfo.id] = { session: userSession, type: "items", request: itemsInfo.request }
-        end if
-
-        personsInfo = startSearchRequest(userSession, port, "persons", query)
-        if isValid(personsInfo)
-            activeRequests[personsInfo.id] = { session: userSession, type: "persons", request: personsInfo.request }
-        end if
-
-        hintsInfo = startSearchRequest(userSession, port, "hints", query)
-        if isValid(hintsInfo)
-            activeRequests[hintsInfo.id] = { session: userSession, type: "hints", request: hintsInfo.request }
-        end if
+        for each kind in ["items", "persons", "hints"]
+            started = startSearchRequest(userSession, port, kind, query)
+            if not isValid(started) then continue for
+            if started.DoesExist("answered")
+                takeSearchAnswer(kind, started.answered, userSession, allItems, hintItems)
+            else
+                activeRequests[started.id] = { session: userSession, type: kind, request: started.request }
+            end if
+        end for
     end for
 
     startTime = CreateObject("roDateTime").AsSeconds()
@@ -116,34 +110,7 @@ sub search()
 
             if isValid(requestInfo)
                 activeRequests.Delete(requestId)
-
-                userSession = requestInfo.session
-                responseCode = msg.GetResponseCode()
-
-                if responseCode = 200
-                    responseBody = msg.GetString()
-                    data = ParseJson(responseBody)
-
-                    if requestInfo.type = "hints"
-                        if isChainValid(data, "SearchHints")
-                            for each hint in data.SearchHints
-                                hintItem = itemFromSearchHint(hint)
-                                if isValid(hintItem)
-                                    searchNode = transformToSearchData(hintItem, userSession)
-                                    if isValid(searchNode) then hintItems.push(searchNode)
-                                end if
-                            end for
-                        end if
-                    else if isValid(data) and isChainValid(data, "Items")
-                        for each item in data.Items
-                            searchNode = transformToSearchData(item, userSession)
-                            if isValid(searchNode)
-                                allItems.push(searchNode)
-                                totalCount++
-                            end if
-                        end for
-                    end if
-                end if
+                if msg.GetResponseCode() = 200 then takeSearchAnswer(requestInfo.type, ParseJson(msg.GetString()), requestInfo.session, allItems, hintItems)
             end if
         end if
     end while
@@ -161,12 +128,11 @@ sub search()
             seenIds[node.id] = true
         end if
         allItems.push(node)
-        totalCount++
     end for
 
     results = normalizeSearchResults({
         Items: allItems,
-        TotalRecordCount: totalCount
+        TotalRecordCount: allItems.Count()
     })
 
     publishSearchResults(results, query, requestToken, false)
@@ -176,6 +142,24 @@ sub search()
     if isSearchRequestStale(requestToken) then return
 
     publishSearchResults(results, query, requestToken, true)
+end sub
+
+sub takeSearchAnswer(kind as string, data as dynamic, userSession as object, allItems as object, hintItems as object)
+    if kind = "hints"
+        if not isChainValid(data, "SearchHints") then return
+        for each hint in data.SearchHints
+            hintItem = itemFromSearchHint(hint)
+            if isValid(hintItem)
+                searchNode = transformToSearchData(hintItem, userSession)
+                if isValid(searchNode) then hintItems.push(searchNode)
+            end if
+        end for
+    else if isChainValid(data, "Items")
+        for each item in data.Items
+            searchNode = transformToSearchData(item, userSession)
+            if isValid(searchNode) then allItems.push(searchNode)
+        end for
+    end if
 end sub
 
 sub appendSearchResults(results as object, items as object)
@@ -249,6 +233,9 @@ function startSearchRequest(userSession as object, port as object, searchType as
     request.InitClientCertificates()
     request.SetMessagePort(port)
     request.EnableEncodings(true)
+
+    ' A Plex server only answers through its bridge, which answers right away
+    if plexUrls.Owns(url) then return { answered: getJson(request) }
 
     if request.AsyncGetToString()
         return {

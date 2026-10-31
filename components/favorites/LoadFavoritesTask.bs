@@ -232,15 +232,33 @@ function startRequest(userSession as object, params as object, port as object) a
     request.SetMessagePort(port)
     request.EnableEncodings(true)
 
-    if not request.AsyncGetToString() then return invalid
+    requestId = request.GetIdentity().ToStr()
+    ' A Plex server only answers through its bridge, which answers right away
+    if plexUrls.Owns(request.GetUrl())
+        if not isValid(m.plexAnswers) then m.plexAnswers = {}
+        m.plexAnswers[requestId] = getJson(request)
+    else if not request.AsyncGetToString()
+        return invalid
+    end if
 
-    return { id: request.GetIdentity().ToStr(), request: request }
+    return { id: requestId, request: request }
 end function
 
 ' Waits on every request in one batch and hands back what each of them answered
 function awaitAll(port as object, pending as object, keepAlive as object) as object
     answers = []
     startedAt = CreateObject("roDateTime").AsSeconds()
+
+    plexAnswers = m.plexAnswers ?? {}
+    for each requestId in pending.Keys()
+        if plexAnswers.DoesExist(requestId)
+            answer = answerOf(pending[requestId], plexAnswers[requestId])
+            if isValid(answer) then answers.push(answer)
+            plexAnswers.Delete(requestId)
+            pending.Delete(requestId)
+            keepAlive.Delete(requestId)
+        end if
+    end for
 
     while pending.count() > 0
         msg = wait(1000, port)
@@ -262,17 +280,20 @@ function awaitAll(port as object, pending as object, keepAlive as object) as obj
 
         if msg.GetResponseCode() <> 200 then continue while
 
-        data = ParseJson(msg.GetString())
-        if not isValid(data) then continue while
-
-        answers.push({
-            tag: tag,
-            items: isValid(data.Items) ? data.Items : [],
-            total: isValid(data.TotalRecordCount) ? data.TotalRecordCount : 0
-        })
+        answer = answerOf(tag, ParseJson(msg.GetString()))
+        if isValid(answer) then answers.push(answer)
     end while
 
     return answers
+end function
+
+function answerOf(tag as dynamic, data as dynamic) as dynamic
+    if not isValid(data) then return invalid
+    return {
+        tag: tag,
+        items: isValid(data.Items) ? data.Items : [],
+        total: isValid(data.TotalRecordCount) ? data.TotalRecordCount : 0
+    }
 end function
 
 ' One request, waited on by itself
