@@ -1,5 +1,5 @@
 <h1 align="center">Moonfin for Roku</h1>
-<h3 align="center">Premium Jellyfin and Emby client for Roku TV, Roku Streaming Stick, Roku Ultra, and Roku Express devices</h3>
+<h3 align="center">Premium Jellyfin, Emby and Plex client for Roku TV, Roku Streaming Stick, Roku Ultra, and Roku Express devices</h3>
 
 ---
 
@@ -16,7 +16,7 @@
 
 > **[Back to main Moonfin project](https://github.com/Moonfin-Client)**
 
-Moonfin for Roku is an enhanced fork of the official Jellyfin Roku client that works with both Jellyfin and Emby servers. It brings the full Moonfin experience to Roku hardware. It shares its look, screens, and settings with the other Moonfin clients, and it syncs your preferences through the Moonbase server plugin.
+Moonfin for Roku is an enhanced fork of the official Jellyfin Roku client that works with Jellyfin, Emby and Plex servers. It brings the full Moonfin experience to Roku hardware. It shares its look, screens, and settings with the other Moonfin clients, and it syncs your preferences through the Moonbase server plugin.
 
 ## Features
 
@@ -25,12 +25,14 @@ Moonfin for Roku is an enhanced fork of the official Jellyfin Roku client that w
 - **A featured media bar** with six styles: Moonfin, MakD, Banner, Gallery, Bookshelf, and the rounded Aya hero.
 - **A home screen full of rows** you pick and order yourself, with no cap on how many. Choose from Seerr rows, IMDb and TMDB charts, Radarr and Sonarr calendars, Favorites, Collections, Genres, Playlists, Audio, Since You Watched, Rewatch, and Recently Released, plus rows for one specific collection, genre, or playlist. The whole layout syncs.
 - **Seerr built into the detail screen.** Request in HD or 4K with smart season selection, track your requests and issues, filter NSFW content, and get Seerr results in global search. See [Seerr Setup](https://github.com/Moonfin-Client/Roku/wiki/Seerr-Setup).
-- **Multi-server and Emby support**, including Emby Connect, Quick Connect, and seamless playback across your connected Jellyfin and Emby servers.
-- **Settings sync** through the [Moonfin server plugin](https://github.com/Moonfin-Client/Plugin). Your theme, layouts, row order, hidden items, and much more follow you between devices.
-- **Playback done right**: trickplay previews while scrubbing, pre-playback track selection, fast forward and rewind at 3x, 15x, and 50x, HDR10+ and Dolby Vision with fallbacks, manual subtitle sync, theme music, and rearrangeable player buttons.
+- **Jellyfin, Emby and Plex.** Sign in with a server address, a Plex account or Emby Connect, use Quick Connect with a QR code on Jellyfin, and play across your connected Jellyfin and Emby servers. Plex Home users and their PINs work too.
+- **Settings sync** through the [Moonfin server plugin](https://github.com/Moonfin-Client/Plugin). Your theme, layouts, row order, hidden items, and much more follow you between devices, and Settings is laid out the same way as the other Moonfin apps.
+- **Playback done right**: trickplay previews while scrubbing, pre-playback track selection, an episode browser in the player, dual subtitles, fast forward and rewind at 3x, 15x, and 50x, HDR10+ and Dolby Vision with fallbacks, manual subtitle sync, theme music, and rearrangeable player buttons.
+- **Live TV** with a full screen guide, rewind and Jump to Live, and recording from the guide or the player, with series rules that pick which episodes to record.
+- **Libraries and music your way**, with Classic, Modern and Docked library styles, three music library styles, and a rebuilt music player that keeps going while you browse.
 - **A setup wizard on first run** that shows live previews built from your own artwork, and skips anything you have already chosen.
 - **Ratings that follow your sources**, including TMDB episode ratings and extra sources like Letterboxd and MDBList through the plugin.
-- **Quality of life everywhere**: an in-app keyboard that follows your language, in-library search with a full sort and filter dialog, a shuffle dialog with five picks at a time, an account switcher on the navigation bar avatar, inline Quick Connect at sign-in, and in-app diagnostic logging with a log viewer.
+- **Quality of life everywhere**: four keyboard styles, in-library search with a full sort and filter dialog, a shuffle dialog with five picks at a time, an account switcher on the navigation bar avatar, sign in PINs kept on your server, and in-app diagnostic logging with a log viewer.
 
 The full list is on the [Features](https://github.com/Moonfin-Client/Roku/wiki/Features) wiki page.
 
@@ -61,7 +63,7 @@ The full list is on the [Features](https://github.com/Moonfin-Client/Roku/wiki/F
 
 **The easy way:** add [Moonfin](https://channelstore.roku.com/details/92a83c9f4112b76a7bcee3dc076254ca:3251a91bf7af7339652d5409ccfdcb39/moonfin) from the Roku Channel Store. It installs on your devices and updates itself from then on.
 
-Moonfin needs Roku OS 9.1 or newer, which covers most Roku devices from 2018 onwards. Once it's installed, [Getting Started](https://github.com/Moonfin-Client/Roku/wiki/Getting-Started) walks through connecting to your server and signing in with Quick Connect or Emby Connect.
+Moonfin needs Roku OS 9.1 or newer, which covers most Roku devices from 2018 onwards. Once it's installed, [Getting Started](https://github.com/Moonfin-Client/Roku/wiki/Getting-Started) walks through connecting to your server and signing in with Quick Connect, Plex or Emby Connect.
 
 Seerr is optional. It connects through the [Moonfin server plugin](https://github.com/Moonfin-Client/Plugin), so there is nothing to type on the Roku. See [Seerr Setup](https://github.com/Moonfin-Client/Roku/wiki/Seerr-Setup).
 
