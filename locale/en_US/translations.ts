@@ -4463,11 +4463,6 @@
         <translation>Add Server</translation>
     </message>
     <message>
-        <source>By address, or with an Emby Connect account</source>
-        <extracomment>Line under the Add Server button on the server list</extracomment>
-        <translation>By address, or with an Emby Connect account</translation>
-    </message>
-    <message>
         <source>Remove Server</source>
         <extracomment>Title of the question asked when OK is held on a saved server</extracomment>
         <translation>Remove Server</translation>
@@ -4516,11 +4511,6 @@
         <source>Connect</source>
         <extracomment>Button that tries the typed server address</extracomment>
         <translation>Connect</translation>
-    </message>
-    <message>
-        <source>Works with Jellyfin and Emby.</source>
-        <extracomment>Hint under the Connect button on the Add Server dialog</extracomment>
-        <translation>Works with Jellyfin and Emby.</translation>
     </message>
     <message>
         <source>Checking {0}</source>
@@ -8863,9 +8853,114 @@
         <translation>Vertical Offset</translation>
     </message>
     <message>
+        <source>{0} isn&apos;t shared with this account.</source>
+        <extracomment>Shown when a Plex Home member picks a server that isn&apos;t shared with them. {0} is the server name</extracomment>
+        <translation>{0} isn&apos;t shared with this account.</translation>
+    </message>
+    <message>
+        <source>By address, or with a Plex or Emby Connect account</source>
+        <extracomment>Subtitle of the Add Server tile on the server list</extracomment>
+        <translation>By address, or with a Plex or Emby Connect account</translation>
+    </message>
+    <message>
+        <source>Connecting to server...</source>
+        <extracomment>Status while the Plex sign-in connects to the chosen server</extracomment>
+        <translation>Connecting to server...</translation>
+    </message>
+    <message>
+        <source>Connection timed out. Check the address and your network.</source>
+        <extracomment>Plex sign-in error when the request timed out</extracomment>
+        <translation>Connection timed out. Check the address and your network.</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t reach server. Check the address and that the server is running.</source>
+        <extracomment>Plex sign-in error when the server didn&apos;t answer</extracomment>
+        <translation>Couldn&apos;t reach server. Check the address and that the server is running.</translation>
+    </message>
+    <message>
+        <source>Failed to connect. Check the address and try again.</source>
+        <extracomment>Plex sign-in error for any other failure</extracomment>
+        <translation>Failed to connect. Check the address and try again.</translation>
+    </message>
+    <message>
+        <source>Go to plex.tv/link on any device and enter this code</source>
+        <extracomment>Instruction above the code on the Plex sign-in screen</extracomment>
+        <translation>Go to plex.tv/link on any device and enter this code</translation>
+    </message>
+    <message>
+        <source>Invalid username or password.</source>
+        <extracomment>Sign-in error when the account details were turned down</extracomment>
+        <translation>Invalid username or password.</translation>
+    </message>
+    <message>
+        <source>No Plex servers found on this account</source>
+        <extracomment>Shown on the Plex server list when the account has no servers</extracomment>
+        <translation>No Plex servers found on this account</translation>
+    </message>
+    <message>
+        <source>Or scan this with a phone that&apos;s signed in to Plex</source>
+        <extracomment>Caption under the QR code on the Plex sign-in screen</extracomment>
+        <translation>Or scan this with a phone that&apos;s signed in to Plex</translation>
+    </message>
+    <message>
+        <source>PIN</source>
+        <extracomment>Placeholder of the password field when a Plex Home member signs in with their PIN</extracomment>
+        <translation>PIN</translation>
+    </message>
+    <message>
         <source>Plex servers don&apos;t take client logs.</source>
         <extracomment>Shown when sending the diagnostic log while signed in to a Plex server</extracomment>
         <translation>Plex servers don&apos;t take client logs.</translation>
+    </message>
+    <message>
+        <source>Select a Server</source>
+        <extracomment>Title of the list of Plex servers on the account</extracomment>
+        <translation>Select a Server</translation>
+    </message>
+    <message>
+        <source>Server error. Please try again later.</source>
+        <extracomment>Plex sign-in error when plex.tv answered with a server error</extracomment>
+        <translation>Server error. Please try again later.</translation>
+    </message>
+    <message>
+        <source>Signing in...</source>
+        <extracomment>Label of the Sign In button while the Plex password sign-in runs</extracomment>
+        <translation>Signing in...</translation>
+    </message>
+    <message>
+        <source>Sign in with a password</source>
+        <extracomment>Button on the Plex code screen that switches to the email and password form</extracomment>
+        <translation>Sign in with a password</translation>
+    </message>
+    <message>
+        <source>Sign in with Plex</source>
+        <extracomment>Title of the Plex sign-in screen and of its choice in the Add Server dialog</extracomment>
+        <translation>Sign in with Plex</translation>
+    </message>
+    <message>
+        <source>Unable to connect to {0}</source>
+        <extracomment>Plex server list error when the chosen server didn&apos;t answer. {0} is the server name</extracomment>
+        <translation>Unable to connect to {0}</translation>
+    </message>
+    <message>
+        <source>Use your Plex account to find its servers</source>
+        <extracomment>Detail line of the Plex choice in the Add Server dialog</extracomment>
+        <translation>Use your Plex account to find its servers</translation>
+    </message>
+    <message>
+        <source>Verification code</source>
+        <extracomment>Field on the Plex password form that appears when the account has two-step verification</extracomment>
+        <translation>Verification code</translation>
+    </message>
+    <message>
+        <source>Waiting for you to approve the code...</source>
+        <extracomment>Status under the code on the Plex sign-in screen while the app waits for approval</extracomment>
+        <translation>Waiting for you to approve the code...</translation>
+    </message>
+    <message>
+        <source>Works with Jellyfin and Emby. A Plex address opens the Plex sign-in.</source>
+        <extracomment>Hint under the address field in the Add Server dialog</extracomment>
+        <translation>Works with Jellyfin and Emby. A Plex address opens the Plex sign-in.</translation>
     </message>
 </context>
 </TS>

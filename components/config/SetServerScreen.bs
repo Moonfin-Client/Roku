@@ -3,6 +3,7 @@ import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/loginStyle.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/plexServers.bs"
 import "pkg:/source/utils/serverCompatibility.bs"
 
 const SERVER_CARD_WIDTH = 1169
@@ -39,6 +40,7 @@ sub init()
 
     m.dialog.observeField("connectAddress", "onDialogConnect")
     m.dialog.observeField("embyConnectChosen", "onDialogEmbyConnect")
+    m.dialog.observeField("plexChosen", "onDialogPlex")
     m.dialog.observeField("continueChosen", "onDialogContinue")
     m.dialog.observeField("closed", "closeDialog")
     m.removeDialog.observeField("answer", "onRemoveAnswered")
@@ -72,15 +74,25 @@ function savedServers() as object
     return saved
 end function
 
-' Every server found that isn't already saved, which the list shows once
+' Every server found that isn't already saved, which the list shows once. A saved Plex server found
+' at another address moves to it, and isn't listed twice.
 sub onDiscoveryDone(event as object)
     found = event.getData()
     m.discovered = []
+    moved = false
     if type(found) = "roArray"
         for each server in found
-            if isValidAndNotEmpty(server.baseUrl) and not isSaved(server.baseUrl) then m.discovered.push(server)
+            if isValidAndNotEmpty(server.baseUrl) and not isSaved(server.baseUrl)
+                if server.serverType = "plex" and plexServers.Find(server.machineId ?? "") <> invalid
+                    plexServers.MoveTo(server.machineId, server.baseUrl)
+                    moved = true
+                else
+                    m.discovered.push(server)
+                end if
+            end if
         end for
     end if
+    if moved then m.saved = savedServers()
     m.discovering = false
 
     focusedUrl = ""
@@ -132,7 +144,7 @@ sub buildRows()
         y += 73
     else
         for each server in m.discovered
-            y = addTile(server.name ?? server.baseUrl, server.baseUrl, false, y)
+            y = addTile(server.name ?? server.baseUrl, server.baseUrl, false, y, server.serverType ?? "")
         end for
         y -= SERVER_TILE_GAP
     end if
@@ -159,12 +171,13 @@ function addSection(title as string, y as float) as float
     return y + SERVER_SECTION_HEIGHT + 13
 end function
 
-function addTile(name as string, url as string, saved as boolean, y as float) as float
+function addTile(name as string, url as string, saved as boolean, y as float, serverType = "" as string) as float
     tile = m.rows.createChild("LoginServerTile")
     tile.title = name
     tile.detailText = url
-    tile.serverType = "jellyfin"
-    if registry_read(serverIdentityKey(url), "ServerTypes") = "emby" then tile.serverType = "emby"
+    if serverType = "" then serverType = toString(registry_read(serverIdentityKey(url), "ServerTypes") ?? "")
+    if serverType <> "emby" and serverType <> "plex" then serverType = "jellyfin"
+    tile.serverType = serverType
     tile.baseUrl = url
     tile.isSaved = saved
     tile.translation = [SERVER_CARD_PAD, y]
@@ -253,17 +266,45 @@ sub onDialogEmbyConnect()
     m.top.embyConnectRequested = true
 end sub
 
+sub onDialogPlex()
+    m.dialog.visible = false
+    m.top.plexSignInRequested = { uri: "", machineId: "", discovered: discoveredPlex() }
+end sub
+
+' Plex servers the network answered with, whose addresses go ahead of plex.tv's for the same server
+function discoveredPlex() as object
+    found = []
+    for each server in m.discovered
+        if server.serverType = "plex" then found.push({ id: server.machineId, address: server.baseUrl })
+    end for
+    return found
+end function
+
 sub onDialogContinue()
     m.top.continueSelected = true
 end sub
 
 sub onRestoreFocus()
+    ' A Plex address typed into Add Server leaves the dialog up behind the Plex sign in
+    if m.dialog.visible
+        m.dialog.connecting = false
+        m.dialog.visible = false
+    end if
     focusItem(m.items.count() - 1)
 end sub
 
 sub openTile(tile as object)
     m.statusLine.text = ""
     layoutPage()
+    ' A Plex server found on the network signs in through plex.tv, at the address it answered from
+    if not tile.isSaved
+        for each server in m.discovered
+            if server.baseUrl = tile.baseUrl and server.serverType = "plex"
+                m.top.plexSignInRequested = { uri: server.baseUrl, machineId: server.machineId, discovered: discoveredPlex() }
+                return
+            end if
+        end for
+    end if
     m.top.connectRequest = { url: tile.baseUrl, fromDialog: false }
 end sub
 

@@ -1,5 +1,7 @@
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/EmbyConnectFlow.bs"
+import "pkg:/source/PlexSignInFlow.bs"
+import "pkg:/source/api/plexTv.bs"
 import "pkg:/source/enums/ImageType.bs"
 import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/utils/blockedContent.bs"
@@ -18,6 +20,7 @@ function LoginFlow()
     serverUrl = get_setting("server")
     if isValid(serverUrl)
         m.scene.isLoading = true
+        if isPlexServer(serverUrl) then serverUrl = PlexStartupAddress(serverUrl)
         startOver = not session.server.UpdateURL(serverUrl)
         m.scene.isLoading = false
     else
@@ -34,7 +37,7 @@ function LoginFlow()
             return false
         end if
         SaveServerList()
-        if m.embyConnectAuthenticated = true
+        if m.embyConnectAuthenticated = true or m.plexAuthenticated = true
             LoadUserAbilities()
             m.global.sceneManager.callFunc("clearScenes")
             return true
@@ -105,6 +108,7 @@ function LoginFlow()
                     end if
                 end for
             end if
+            if isPlexServer() then AddPlexHomeUsers(publicUsersNodes)
             shownUsers = publicUsersNodes.count()
             ' Forgot PIN lands on that account's sign in, since only its password clears the PIN
             forgottenName = signInPin.TakeForgottenUsername(m.global.session.server.url)
@@ -212,8 +216,8 @@ function LoginFlow()
 end function
 
 sub ServerVersionCheck(systemVersion as string)
-    ' Emby versions are independent of Jellyfin's minimum supported version.
-    if isEmbyServer() then return
+    ' Emby and Plex versions are independent of Jellyfin's minimum supported version.
+    if isEmbyServer() or isPlexServer() then return
     meetsRequirements = serverVersionMeetsMinimumRequirements(systemVersion, minimumServerVersion)
     if not meetsRequirements
         m.scene.isLoading = false
@@ -307,11 +311,13 @@ end sub
 
 function CreateServerGroup() as string
     m.embyConnectAuthenticated = false
+    m.plexAuthenticated = false
     screen = CreateObject("roSGNode", "SetServerScreen")
     m.global.sceneManager.callFunc("pushScene", screen)
     port = CreateObject("roMessagePort")
     screen.observeField("connectRequest", port)
     screen.observeField("embyConnectRequested", port)
+    screen.observeField("plexSignInRequested", port)
     screen.observeField("continueSelected", port)
     screen.observeField("forgetServer", port)
     screen.observeField("backPressed", port)
@@ -331,6 +337,13 @@ function CreateServerGroup() as string
                 return m.global.session.server.name
             end if
             screen.restoreFocus = true
+        else if isNodeEvent(msg, "plexSignInRequested")
+            if CreatePlexSignInGroup(msg.getData())
+                m.plexAuthenticated = true
+                screen.visible = false
+                return m.global.session.server.name
+            end if
+            screen.restoreFocus = true
         else if isNodeEvent(msg, "continueSelected")
             screen.visible = false
             return foundName
@@ -339,7 +352,21 @@ function CreateServerGroup() as string
         else if isNodeEvent(msg, "connectRequest")
             request = msg.getData()
             result = probeServer(request.url)
-            if result.redirected
+            ' An address that isn't Jellyfin or Emby may be a Plex server, which signs in through plex.tv
+            plexServer = invalid
+            if not result.ok and not result.redirected and request.fromDialog = true
+                m.scene.isLoading = true
+                plexServer = plexTv.FindServerAt(request.url)
+                m.scene.isLoading = false
+            end if
+            if plexServer <> invalid
+                if CreatePlexSignInGroup({ uri: plexServer.uri, machineId: plexServer.machineId, discovered: [] })
+                    m.plexAuthenticated = true
+                    screen.visible = false
+                    return m.global.session.server.name
+                end if
+                screen.restoreFocus = true
+            else if result.redirected
                 screen.visible = false
                 return ""
             else if not result.ok
@@ -363,7 +390,12 @@ end function
 ' Returns ok, the server's name, whether it moved to a redirect, and why it failed.
 function probeServer(address as string) as object
     m.scene.isLoading = true
-    serverUrl = inferServerUrl(address)
+    ' A Plex server has no Jellyfin info route to probe, so a saved one opens at its best known address
+    if isPlexServer(address)
+        serverUrl = PlexStartupAddress(address)
+    else
+        serverUrl = inferServerUrl(address)
+    end if
     isConnected = session.server.UpdateURL(serverUrl)
     serverInfoResult = invalid
     if isConnected
@@ -437,6 +469,7 @@ function CreateUserSelectGroup(users = [])
 end function
 
 function CreateSigninGroup(user = "")
+    if isPlexServer() then return PlexSigninGroup(user)
     ' Get and Save Jellyfin user login credentials
     group = CreateObject("roSGNode", "SigninScene")
     group.user = user

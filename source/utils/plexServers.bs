@@ -1,0 +1,74 @@
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/plexUrls.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+
+' What the app keeps about each Plex server, by its machine id: the address it was last reached at
+' and every address plex.tv or the network has offered for it, best first
+
+const PLEX_SERVERS_SECTION = "PlexServers"
+
+namespace plexServers
+
+    sub Save(machineId as string, url as string, candidates as object)
+        if machineId = "" then return
+        registry_write(machineId, FormatJson({ "url": url, "candidates": candidates }), PLEX_SERVERS_SECTION)
+    end sub
+
+    function Find(machineId as string) as dynamic
+        if machineId = "" then return invalid
+        text = registry_read(machineId, PLEX_SERVERS_SECTION)
+        if not isValidAndNotEmpty(text) then return invalid
+        entry = ParseJson(text)
+        if type(entry) <> "roAssociativeArray" then return invalid
+        return entry
+    end function
+
+    function MachineIdAt(url as string) as string
+        wanted = serverIdentityKey(url)
+        section = CreateObject("roRegistrySection", PLEX_SERVERS_SECTION)
+        for each machineId in section.GetKeyList()
+            entry = plexServers.Find(machineId)
+            if entry <> invalid and serverIdentityKey(plexUrls.Str(entry.url ?? "")) = wanted then return machineId
+        end for
+        return ""
+    end function
+
+    ' A saved server found at a new address moves there, along with everything kept under its old
+    ' one: its place in the saved list, its type, its accounts and the server the app opens with
+    sub MoveTo(machineId as string, newUrl as string)
+        entry = plexServers.Find(machineId)
+        if entry = invalid then return
+        oldUrl = plexUrls.Str(entry.url ?? "")
+        if oldUrl = "" or serverIdentityKey(oldUrl) = serverIdentityKey(newUrl) then return
+
+        candidates = [newUrl]
+        for each candidate in entry.candidates ?? []
+            if serverIdentityKey(candidate) <> serverIdentityKey(newUrl) then candidates.push(candidate)
+        end for
+        plexServers.Save(machineId, newUrl, candidates)
+
+        registry_delete(serverIdentityKey(oldUrl), "ServerTypes")
+        registry_write(serverIdentityKey(newUrl), "plex", "ServerTypes")
+
+        saved = ParseJson(get_setting("saved_servers") ?? "")
+        if type(saved) = "roAssociativeArray" and type(saved.serverList) = "roArray"
+            for each server in saved.serverList
+                if serverIdentityKey(plexUrls.Str(server.baseUrl ?? "")) = serverIdentityKey(oldUrl) then server.baseUrl = LCase(newUrl)
+            end for
+            set_setting("saved_servers", FormatJson(saved))
+        end if
+
+        users = ParseJson(get_setting("available_users", "[]"))
+        if type(users) = "roArray"
+            for each user in users
+                if serverIdentityKey(plexUrls.Str(registry_read("serverUrl", user.id) ?? "")) = serverIdentityKey(oldUrl) then registry_write("serverUrl", newUrl, user.id)
+                if serverIdentityKey(plexUrls.Str(user.server ?? "")) = serverIdentityKey(oldUrl) then user.server = newUrl
+            end for
+            set_setting("available_users", FormatJson(users))
+        end if
+
+        if serverIdentityKey(plexUrls.Str(get_setting("server") ?? "")) = serverIdentityKey(oldUrl) then set_setting("server", newUrl)
+    end sub
+
+end namespace

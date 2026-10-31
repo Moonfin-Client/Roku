@@ -190,6 +190,16 @@ for (const name of ['Names', 'HlsAudio']) {
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/plex-mapper.bs', 'utf8');
+// The rest of plex.tv goes to the network
+const plexTvFile = await readFile('source/api/plexTv.bs', 'utf8');
+source += '\n' + plexTvFile.match(/^const PLEX_PORT = .+$/m)[0] + '\nnamespace plexTv\n';
+for (const name of ['ConnectionRank', 'ServerFromResource', 'Settled', 'MachineIdOf', 'AddressCandidates']) {
+    const match = plexTvFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
+    assert.ok(match, `Missing plexTv.${name}`);
+    source += '\n' + match[0];
+}
+source += '\nend namespace\n';
+source += '\n' + await readFile('test/plex-tv.bs', 'utf8');
 // The rest of the guide rules use loops this interpreter cant parse
 const liveTvGuideFile = await readFile('source/utils/liveTvGuide.bs', 'utf8');
 source += '\n' + liveTvGuideFile.match(/^const GUIDE_MINUTE = .+$/m)[0] + '\nnamespace liveTvGuide\n';

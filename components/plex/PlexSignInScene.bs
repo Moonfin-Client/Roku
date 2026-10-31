@@ -1,0 +1,622 @@
+import "pkg:/source/utils/plexLink.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/loginStyle.bs"
+import "pkg:/source/utils/plexServers.bs"
+import "pkg:/source/utils/tvKeyboard.bs"
+
+const PLEX_SIGNIN_PAD = 54
+const PLEX_SIGNIN_COLUMN = 893
+' The column narrows beside the QR, which sits this far to its right
+const PLEX_SIGNIN_QR_COLUMN = 494
+const PLEX_SIGNIN_QR_GAP = 67
+const PLEX_SIGNIN_QR_SIZE = 367
+const PLEX_SIGNIN_LOGO_HEIGHT = 107
+const PLEX_SIGNIN_DIGIT_WIDTH = 62
+const PLEX_SIGNIN_TILE_HEIGHT = 126
+const PLEX_SIGNIN_TILE_GAP = 16
+const PLEX_SIGNIN_KEYBOARD_GAP = 24
+const PLEX_SIGNIN_MIN_TOP = 20
+
+sub init()
+    m.top.optionsAvailable = false
+    m.top.overhangVisible = false
+    m.signInGroup = m.top.findNode("signInGroup")
+    m.logo = m.top.findNode("logo")
+    m.statusBox = m.top.findNode("statusBox")
+    m.statusFill = m.top.findNode("statusFill")
+    m.statusText = m.top.findNode("statusText")
+    m.card = m.top.findNode("card")
+    m.cardFill = m.top.findNode("cardFill")
+    m.cardBorder = m.top.findNode("cardBorder")
+    m.title = m.top.findNode("title")
+    m.instruction = m.top.findNode("instruction")
+    m.codeDigits = m.top.findNode("codeDigits")
+    m.codeSpinner = m.top.findNode("codeSpinner")
+    m.waitSpinner = m.top.findNode("waitSpinner")
+    m.waiting = m.top.findNode("waiting")
+    m.usernameField = m.top.findNode("usernameField")
+    m.passwordField = m.top.findNode("passwordField")
+    m.codeField = m.top.findNode("codeField")
+    m.serverList = m.top.findNode("serverList")
+    m.errorLine = m.top.findNode("errorLine")
+    m.back = m.top.findNode("back")
+    m.action = m.top.findNode("action")
+    m.qrGroup = m.top.findNode("qrGroup")
+    m.qr = m.top.findNode("qr")
+    m.pollTimer = m.top.findNode("pollTimer")
+    m.pollTimer.observeField("fire", "pollPin")
+
+    m.title.font.size = 40
+    m.instruction.font.size = 23
+    m.instruction.text = tr("Go to plex.tv/link on any device and enter this code")
+    m.waiting.font.size = 20
+    m.waiting.text = tr("Waiting for you to approve the code...")
+    m.errorLine.font.size = 23
+    m.statusText.font.size = 23
+    m.qrCaption = m.top.findNode("qrCaption")
+    m.qrCaption.font.size = 20
+    m.qrCaption.text = tr("Or scan this with a phone that's signed in to Plex")
+    m.codeSpinner.poster.width = 60
+    m.codeSpinner.poster.height = 60
+    m.waitSpinner.poster.width = 46
+    m.waitSpinner.poster.height = 46
+    m.back.text = tr("Back")
+    m.usernameField.placeholder = tr("Email or Username")
+    m.passwordField.placeholder = tr("Password")
+    m.codeField.placeholder = tr("Verification code")
+
+    m.mode = "code"
+    m.focusId = ""
+    m.pin = invalid
+    m.pinTask = invalid
+    m.polling = false
+    m.pollTask = invalid
+    m.connecting = false
+    m.needsCode = false
+    m.servers = []
+    m.token = ""
+    m.clock = CreateObject("roTimespan")
+    requestPin()
+    showCode()
+end sub
+
+sub setStatus(text as string)
+    m.statusText.text = text
+    m.statusBox.visible = text <> ""
+    layout()
+end sub
+
+sub setError(text as string)
+    m.errorLine.text = text
+    layout()
+end sub
+
+sub showCode()
+    m.mode = "code"
+    m.title.text = tr("Sign in with Plex")
+    m.action.text = tr("Sign in with a password")
+    m.action.style = "outline"
+    focusOn("action")
+end sub
+
+sub showPassword()
+    m.mode = "password"
+    m.title.text = tr("Sign in with Plex")
+    m.action.text = tr("Sign In")
+    m.action.style = "primary"
+    focusOn("username")
+end sub
+
+' Only the latest request counts, so a code still on its way after Back is dropped
+sub requestPin()
+    m.pin = invalid
+    m.qrGroup.visible = false
+    m.pinTask = runTask("createPin", {}, "onPinCreated")
+    layout()
+end sub
+
+sub onPinCreated(event as object)
+    task = event.getRoSGNode()
+    result = event.getData()
+    task.unobserveField("result")
+    if not isValid(m.pinTask) or not task.isSameNode(m.pinTask) then return
+    m.pinTask = invalid
+    if result.ok <> true
+        setError(plexLink.ErrorMessage(result.status ?? 0))
+        return
+    end if
+    m.pin = { id: result.id, code: result.code, expiresAtMs: m.clock.TotalMilliseconds() + (result.expiresIn ?? 900) * 1000 }
+    m.qr.text = plexLink.LinkUrl(result.code)
+    m.qrGroup.visible = m.mode = "code"
+    m.polling = true
+    m.pollTimer.control = "start"
+    layout()
+end sub
+
+' Polls every second. An expired code or one plex.tv no longer knows is swapped for a new one without
+' a word. A failed network or a busy plex.tv just tries again on the next tick.
+sub pollPin()
+    if not m.polling or m.pin = invalid then return
+    if m.clock.TotalMilliseconds() >= m.pin.expiresAtMs
+        requestPin()
+        return
+    end if
+    if isValid(m.pollTask) then return
+    m.pollTask = runTask("checkPin", { pinId: m.pin.id }, "onPinChecked")
+end sub
+
+sub onPinChecked(event as object)
+    result = event.getData()
+    event.getRoSGNode().unobserveField("result")
+    m.pollTask = invalid
+    if not m.polling then return
+    if result.ok = true and result.token <> ""
+        signedIn(result.token)
+        return
+    end if
+    status = result.status ?? 0
+    if result.ok <> true and status = 404
+        requestPin()
+        return
+    end if
+    if result.ok <> true and status >= 400 and status < 500 and status <> 429
+        stopPolling()
+        m.pin = invalid
+        setError(plexLink.ErrorMessage(status))
+        return
+    end if
+    m.pollTimer.control = "start"
+end sub
+
+sub stopPolling()
+    m.polling = false
+    m.pollTimer.control = "stop"
+end sub
+
+sub submitPassword()
+    if m.connecting or m.usernameField.value.Trim() = "" or m.passwordField.value = "" then return
+    m.connecting = true
+    setError("")
+    m.action.text = tr("Signing in...")
+    request = { login: m.usernameField.value.Trim(), password: m.passwordField.value }
+    if m.needsCode then request.code = m.codeField.value.Trim()
+    runTask("signIn", request, "onSignedIn")
+    focusOn(m.focusId)
+end sub
+
+' The first try sends no code. An account with two step sign in asks for one, which opens its field
+' without an error.
+sub onSignedIn(event as object)
+    result = event.getData()
+    event.getRoSGNode().unobserveField("result")
+    m.connecting = false
+    m.action.text = tr("Sign In")
+    if result.ok = true
+        signedIn(result.token)
+        return
+    end if
+    if result.needsCode = true and not m.needsCode
+        m.needsCode = true
+        focusOn("code")
+        return
+    end if
+    setError(plexLink.ErrorMessage(result.status ?? 0))
+    focusOn(m.focusId)
+end sub
+
+sub signedIn(token as string)
+    stopPolling()
+    m.token = token
+    m.connecting = true
+    setError("")
+    setStatus(tr("Connecting to server..."))
+    runTask("servers", { token: token }, "onServersListed")
+end sub
+
+' Each server's addresses, best first: one typed in Add Server, ones found on the network, the one it
+' was saved at, then plex.tv's own
+sub onServersListed(event as object)
+    result = event.getData()
+    event.getRoSGNode().unobserveField("result")
+    m.connecting = false
+    setStatus("")
+    if result.ok <> true
+        m.pin = invalid
+        m.qrGroup.visible = false
+        if m.mode <> "password" then showCode()
+        setError(plexLink.ErrorMessage(result.status ?? 0))
+        return
+    end if
+    m.servers = []
+    for each server in result.servers
+        connections = []
+        if m.top.typedUri <> "" and m.top.typedMachineId = server.id then addAddress(connections, m.top.typedUri)
+        for each found in m.top.discovered ?? []
+            if found.id = server.id then addAddress(connections, found.address)
+        end for
+        saved = plexServers.Find(server.id)
+        if saved <> invalid then addAddress(connections, plexUrls.Str(saved.url ?? ""))
+        for each uri in server.connections
+            addAddress(connections, uri)
+        end for
+        server.connections = connections
+        m.servers.push(server)
+    end for
+    showServers()
+    if m.servers.Count() = 0
+        setError(tr("No Plex servers found on this account"))
+    else if m.servers.Count() = 1
+        ' The list stays behind, so a failed connect can be tried again
+        connectTo(0)
+    end if
+end sub
+
+sub addAddress(connections as object, uri as string)
+    if uri <> "" and not inArray(connections, uri) then connections.push(uri)
+end sub
+
+sub showServers()
+    m.mode = "servers"
+    m.title.text = tr("Select a Server")
+    m.qrGroup.visible = false
+    m.serverList.removeChildrenIndex(m.serverList.getChildCount(), 0)
+    for each server in m.servers
+        tile = m.serverList.createChild("LoginChoiceCard")
+        tile.markUri = "pkg:/images/login/plex.webp"
+        tile.tint = "#F2BC45"
+        tile.tileColor = "#E5A00D24"
+        tile.title = server.name
+        detail = server.connections[0] ?? ""
+        if server.version <> "" then detail += " " + Chr(8226) + " " + server.version
+        tile.detail = detail
+    end for
+    if m.servers.Count() > 0 then focusOn("server0") else focusOn("back")
+end sub
+
+sub connectTo(index as integer)
+    if m.connecting or index >= m.servers.Count() then return
+    m.connecting = true
+    m.connectIndex = index
+    setError("")
+    setStatus(tr("Connecting to server..."))
+    runTask("connect", { token: m.token, server: m.servers[index] }, "onConnected")
+end sub
+
+sub onConnected(event as object)
+    result = event.getData()
+    event.getRoSGNode().unobserveField("result")
+    m.connecting = false
+    setStatus("")
+    server = m.servers[m.connectIndex]
+    if result.ok <> true
+        if result.status <> invalid and result.status <> 0
+            setError(plexLink.ErrorMessage(result.status))
+        else
+            setError(substitute(tr("Unable to connect to {0}"), server.name))
+        end if
+        return
+    end if
+    m.top.result = { token: m.token, account: result.account, server: server, uri: result.uri, connections: server.connections }
+end sub
+
+function runTask(mode as string, request as object, handler as string) as object
+    task = CreateObject("roSGNode", "PlexSignInTask")
+    task.mode = mode
+    task.request = request
+    task.observeField("result", handler)
+    task.control = "RUN"
+    return task
+end function
+
+sub layout()
+    qrShown = m.mode = "code" and m.qrGroup.visible
+    columnWidth = PLEX_SIGNIN_COLUMN
+    if qrShown then columnWidth = PLEX_SIGNIN_QR_COLUMN
+    cardWidth = columnWidth + PLEX_SIGNIN_PAD * 2
+    if qrShown then cardWidth += PLEX_SIGNIN_QR_GAP + PLEX_SIGNIN_QR_SIZE
+
+    for each label in [m.title, m.instruction, m.waiting, m.errorLine]
+        label.width = columnWidth
+    end for
+    for each field in [m.usernameField, m.passwordField, m.codeField]
+        field.width = columnWidth
+    end for
+
+    inCode = m.mode = "code"
+    inPassword = m.mode = "password"
+    inServers = m.mode = "servers"
+    m.instruction.visible = inCode
+    m.codeDigits.visible = inCode
+    m.waiting.visible = inCode and m.pin <> invalid
+    m.waitSpinner.visible = m.waiting.visible
+    m.usernameField.visible = inPassword
+    m.passwordField.visible = inPassword
+    m.codeField.visible = inPassword and m.needsCode
+    m.serverList.visible = inServers
+    m.action.visible = not inServers
+
+    m.title.translation = [0, PLEX_SIGNIN_PAD]
+    y = PLEX_SIGNIN_PAD + 48 + 30
+
+    m.codeSpinner.visible = false
+    if inCode
+        m.instruction.translation = [0, y]
+        y += m.instruction.boundingRect().height + 33
+        layoutCode(columnWidth, y)
+        y += 80 + 30
+        if m.waiting.visible
+            m.waitSpinner.translation = [(columnWidth - 46) / 2, y]
+            y += 46 + 13
+            m.waiting.translation = [0, y]
+            y += 33 + 20
+        end if
+    else if inPassword
+        for each field in [m.usernameField, m.passwordField, m.codeField]
+            if field.visible
+                field.translation = [0, y]
+                y += field.height + 27
+            end if
+        end for
+        y -= 27
+    else
+        tiles = m.serverList.getChildCount()
+        for i = 0 to tiles - 1
+            m.serverList.getChild(i).translation = [(columnWidth - 790) / 2, y]
+            y += PLEX_SIGNIN_TILE_HEIGHT + PLEX_SIGNIN_TILE_GAP
+        end for
+        if tiles > 0 then y -= PLEX_SIGNIN_TILE_GAP
+    end if
+
+    m.errorLine.visible = m.errorLine.text <> ""
+    if m.errorLine.visible
+        y += 20
+        m.errorLine.translation = [0, y]
+        y += m.errorLine.boundingRect().height
+    end if
+    y += 40
+
+    m.back.enabled = not m.connecting
+    m.action.enabled = not m.connecting and (not inPassword or (m.usernameField.value.Trim() <> "" and m.passwordField.value <> ""))
+    if m.action.visible
+        left = (columnWidth - m.back.drawnWidth - 20 - m.action.drawnWidth) / 2
+        m.back.translation = [left, y]
+        m.action.translation = [left + m.back.drawnWidth + 20, y]
+    else
+        m.back.translation = [(columnWidth - m.back.drawnWidth) / 2, y]
+    end if
+    cardHeight = y + 79 + PLEX_SIGNIN_PAD
+
+    if qrShown
+        qrHeight = PLEX_SIGNIN_QR_SIZE + 13 + m.qrCaption.boundingRect().height
+        m.qrGroup.translation = [PLEX_SIGNIN_PAD + columnWidth + PLEX_SIGNIN_QR_GAP, PLEX_SIGNIN_PAD + (cardHeight - PLEX_SIGNIN_PAD * 2 - qrHeight) / 2]
+    end if
+
+    m.cardFill.width = cardWidth
+    m.cardBorder.width = cardWidth
+    m.cardFill.height = cardHeight
+    m.cardBorder.height = cardHeight
+
+    statusHeight = 0
+    if m.statusBox.visible
+        statusWidth = m.statusText.boundingRect().width + 60
+        m.statusFill.width = statusWidth
+        m.statusText.width = statusWidth
+        statusHeight = 60 + 27
+    end if
+    top = loginStyle.ColumnTop(27 + PLEX_SIGNIN_LOGO_HEIGHT + 46 + statusHeight + cardHeight + 27)
+    m.logo.translation = [(1920 - 474) / 2, top + 27]
+    cardTop = top + 27 + PLEX_SIGNIN_LOGO_HEIGHT + 46
+    if m.statusBox.visible
+        m.statusBox.translation = [(1920 - m.statusFill.width) / 2, cardTop]
+        cardTop += statusHeight
+    end if
+    m.card.translation = [(1920 - cardWidth) / 2, cardTop]
+    m.cardHeight = cardHeight
+end sub
+
+' The code is drawn as plex.tv sends it, a letter at a time, evenly spaced. Until it arrives a spinner
+' holds its place.
+sub layoutCode(columnWidth as float, y as float)
+    m.codeDigits.removeChildrenIndex(m.codeDigits.getChildCount(), 0)
+    code = ""
+    if m.pin <> invalid then code = m.pin.code
+    m.codeSpinner.visible = code = "" and m.errorLine.text = ""
+    m.codeSpinner.translation = [(columnWidth - 60) / 2, y + 10]
+    if code = "" then return
+    left = (columnWidth - Len(code) * PLEX_SIGNIN_DIGIT_WIDTH) / 2
+    for i = 1 to Len(code)
+        digit = m.codeDigits.createChild("Label")
+        digit.font = "font:LargeBoldSystemFont"
+        digit.font.size = 80
+        digit.color = loginStyle.ACCENT_HEX
+        digit.text = Mid(code, i, 1)
+        digit.width = PLEX_SIGNIN_DIGIT_WIDTH
+        digit.height = 80
+        digit.horizAlign = "center"
+        digit.vertAlign = "center"
+        digit.translation = [left + (i - 1) * PLEX_SIGNIN_DIGIT_WIDTH, y]
+    end for
+end sub
+
+sub focusOn(id as string)
+    m.focusId = id
+    m.usernameField.highlighted = id = "username"
+    m.passwordField.highlighted = id = "password"
+    m.codeField.highlighted = id = "code"
+    m.back.highlighted = id = "back"
+    m.action.highlighted = id = "action"
+    for i = 0 to m.serverList.getChildCount() - 1
+        m.serverList.getChild(i).highlighted = id = "server" + i.toStr()
+    end for
+    m.top.setFocus(true)
+    layout()
+end sub
+
+sub openKeyboard(field as string)
+    m.keyboardField = field
+    node = m.usernameField
+    if field = "password" then node = m.passwordField
+    if field = "code" then node = m.codeField
+    m.keyboard = tvKeyboard.Open(m.top.getScene(), {
+        title: node.placeholder,
+        text: node.value,
+        secure: field = "password",
+        chips: field = "username" ? tvKeyboard.EmailChips() : []
+    })
+    m.keyboard.observeField("submitted", "onKeyboardSubmitted")
+    m.keyboard.observeField("cancelled", "onKeyboardClosed")
+    ' Scoped, since letting go of every visible observer would take the keyboard's own with it
+    m.keyboard.observeFieldScoped("visible", "onKeyboardVisibleChanged")
+end sub
+
+' Done on the username moves on to the password. Done on the password moves on to the code when it's
+' asked for, and otherwise signs in.
+sub onKeyboardSubmitted(event as object)
+    text = event.getRoSGNode().text
+    field = m.keyboardField
+    onKeyboardClosed(event)
+    if field = "username"
+        m.usernameField.value = text
+        focusOn("password")
+    else if field = "password"
+        m.passwordField.value = text
+        if m.needsCode
+            focusOn("code")
+        else
+            focusOn("action")
+            submitPassword()
+        end if
+    else
+        m.codeField.value = text
+        focusOn("action")
+        submitPassword()
+    end if
+end sub
+
+sub onKeyboardClosed(_event as object)
+    if isValid(m.keyboard) then m.keyboard.unobserveFieldScoped("visible")
+    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled"])
+    m.keyboard = invalid
+    m.signInGroup.translation = [0, 0]
+end sub
+
+sub onKeyboardVisibleChanged()
+    if not isValid(m.keyboard) or not m.keyboard.visible
+        m.signInGroup.translation = [0, 0]
+        return
+    end if
+    bottom = m.card.translation[1] + m.cardHeight + PLEX_SIGNIN_KEYBOARD_GAP
+    overlap = bottom - m.keyboard.panelTop
+    if overlap <= 0 then return
+    lift = overlap
+    if m.card.translation[1] - lift < PLEX_SIGNIN_MIN_TOP then lift = m.card.translation[1] - PLEX_SIGNIN_MIN_TOP
+    m.signInGroup.translation = [0, -lift]
+end sub
+
+' Back from the password form returns to the code, asking for a new one only if polling had stopped.
+' Anywhere else it leaves the sign in, unless something is still connecting.
+sub goBack()
+    if m.connecting then return
+    if m.mode = "password"
+        setError("")
+        showCode()
+        if not m.polling or m.pin = invalid
+            requestPin()
+        else
+            m.qrGroup.visible = true
+            layout()
+        end if
+        return
+    end if
+    stopPolling()
+    m.top.backPressed = true
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if key = KeyCode.BACK
+        goBack()
+        return true
+    end if
+
+    id = m.focusId
+    if m.mode = "code"
+        if key = KeyCode.LEFT
+            focusOn("back")
+        else if key = KeyCode.RIGHT
+            focusOn("action")
+        else if key = KeyCode.OK
+            if id = "back"
+                goBack()
+            else if not m.connecting
+                setError("")
+                m.qrGroup.visible = false
+                showPassword()
+            end if
+        end if
+        return true
+    end if
+
+    if m.mode = "servers"
+        count = m.serverList.getChildCount()
+        index = -1
+        if id.Left(6) = "server" then index = id.Mid(6).ToInt()
+        if key = KeyCode.UP
+            if id = "back" and count > 0
+                focusOn("server" + (count - 1).toStr())
+            else if index > 0
+                focusOn("server" + (index - 1).toStr())
+            end if
+        else if key = KeyCode.DOWN
+            if index >= 0 and index < count - 1
+                focusOn("server" + (index + 1).toStr())
+            else if index >= 0
+                focusOn("back")
+            end if
+        else if key = KeyCode.OK
+            if id = "back"
+                goBack()
+            else if index >= 0
+                connectTo(index)
+            end if
+        end if
+        return true
+    end if
+
+    fields = ["username", "password"]
+    if m.needsCode then fields.push("code")
+    at = -1
+    for i = 0 to fields.Count() - 1
+        if fields[i] = id then at = i
+    end for
+    if key = KeyCode.UP
+        if id = "back" or id = "action"
+            focusOn(fields.Peek())
+        else if at > 0
+            focusOn(fields[at - 1])
+        end if
+    else if key = KeyCode.DOWN
+        if at >= 0 and at < fields.Count() - 1
+            focusOn(fields[at + 1])
+        else if at >= 0
+            if m.action.enabled then focusOn("action") else focusOn("back")
+        end if
+    else if key = KeyCode.LEFT
+        if id = "action" then focusOn("back")
+    else if key = KeyCode.RIGHT
+        if id = "back" and m.action.enabled then focusOn("action")
+    else if key = KeyCode.OK
+        if at >= 0
+            openKeyboard(id)
+        else if id = "back"
+            goBack()
+        else if id = "action"
+            submitPassword()
+        end if
+    end if
+    return true
+end function
+
+sub OnScreenShown(_isReturning = false as boolean)
+    m.top.setFocus(true)
+end sub
