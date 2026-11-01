@@ -1084,6 +1084,11 @@ assert.match(scheduleWatcher, /if m\.exempt then return\s+delay = POLL_SECONDS\s
 assert.match(scheduleWatcher, /if m\.serverClock <> invalid\s+server = accessSchedule\.ServerWallClock\(m\.serverClock, now\.AsSeconds\(\)\)/, 'The schedule is judged on the server clock when the plugin reports it');
 assert.match(scheduleWatcher, /if result\.clockMissing then m\.askClock = false\s+if result\.clock <> invalid or result\.clockMissing then m\.serverClock = result\.clock/, 'A server without Moonfin/Time is not asked again and a failed read keeps the last clock');
 assert.match(scheduleWatcher, /m\.task\.askClock = m\.askClock\n/, 'The server clock is asked for once the time is up too, since the plugin answers it outside the schedule');
+assert.match(scheduleWatcher, /setBlocked\(true, withDate\(status\.next, wallSeconds\)\)/, 'The next opening carries its date on the clock the schedule was judged on');
+assert.match(scheduleWatcher, /wallSeconds = server\.wallSeconds[^]*?wallSeconds = now\.AsSeconds\(\)/, 'That clock is the server wall clock with the plugin, and this device\'s local clock without it');
+const timesUpSource = await readFile('components/accessSchedule/TimesUp.bs', 'utf8');
+assert.match(timesUpSource, /months\[opening\.month - 1\], opening\.dayOfMonth\.ToStr\(\)/, 'Times up names the date the opening carries');
+assert.doesNotMatch(timesUpSource, /ToLocalTime/, 'Times up never moves the opening into this device\'s zone');
 process.stdout.write('PASS: access schedule wiring (10 checks)\n');
 
 // The library header, its dialogs and its settings: Home goes home, the display choices sync, and
