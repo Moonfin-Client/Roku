@@ -1,0 +1,322 @@
+import "pkg:/components/setup/setupPreviewDraw.bs"
+import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/utils/buttonLayout.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/playbackOverlay.bs"
+import "pkg:/source/utils/subtitleStyle.bs"
+import "pkg:/source/utils/themeChrome.bs"
+
+' The sample is an episode with chapters and subtitles, 10:04 long
+const SAMPLE_DURATION = 604
+' Where the player's controls put the title, the clock, the seek bar and the time labels
+const OSD_LOGO_HEIGHT = 108
+const OSD_LOGO_MAX_WIDTH = 1310
+const OSD_LOGO_GAP = 8
+const OSD_HEADER_X = 103
+const OSD_HEADER_Y = 61
+const OSD_BAR_X = 103
+const OSD_BAR_Y = 820
+const OSD_BAR_WIDTH = 1714
+
+' The player mid-episode: its controls with the title, the time, the seek bar and every button the
+' viewer kept, over the subtitles
+sub init()
+    redraw()
+end sub
+
+sub redraw()
+    loading = m.top.findNode("loadingPreview")
+    if isValid(loading) then loading.active = false
+    m.top.removeChildrenIndex(m.top.getChildCount(), 0)
+    m.logo = invalid
+
+    pal = setupPreviewDraw.Palette()
+    items = m.top.items
+    values = m.top.values ?? {}
+    moment = m.top.moment
+    intro = values["playback.mediasegments.intro"] ?? "asktoskip"
+    nextUp = values["playback.nextupbehavior"] ?? "extended"
+
+    setupPreviewDraw.Rect(m.top, 0, 0, 1920, 1080, "0x000000FF")
+    ' Before the stream starts the picture is still black, under the player's own loading layer
+    if moment = "loading"
+        loading = m.top.createChild("LoadingAnimation")
+        loading.id = "loadingPreview"
+        loading.values = values
+        loading.dimmed = true
+        loading.label = tr("Loading Stream...")
+        loading.active = true
+        return
+    end if
+    setupPreviewDraw.Art(m.top, 0, 0, 1920, 1080, setupPreviewDraw.ItemField(items, 0, "backdropUrl"), pal.surfaceVariant)
+
+    position = 252
+    if moment = "intro"
+        position = 42
+        if intro = "skip" then position = 90
+    else if moment = "end"
+        position = 598
+    end if
+
+    controls = moment <> "playing"
+    ' The player dims the picture while its controls are up, under the subtitles
+    if controls then setupPreviewDraw.Rect(m.top, 0, 0, 1920, 1080, "0x0000004D")
+    drawSubtitle(values, m.top.hdr)
+    if controls
+        drawHeader(items)
+        drawSeekBar(values, position)
+        drawButtons(values, moment)
+    end if
+
+    if moment = "seek" and values["playback.trickplay.enabled"] <> "false" then drawSeekPreview(items)
+    if moment = "end" then drawNextUp(nextUp, items, pal)
+    if moment = "intro" and intro = "asktoskip" then drawSkipIntro()
+end sub
+
+' Drawn the way the player draws it: by the app with the style settings while Custom Subtitles is
+' on, and by the Roku itself otherwise, in its own caption style
+sub drawSubtitle(values as object, hdr as boolean)
+    if values["playback.subs.mode"] = "None" then return
+    text = subtitleLine(values["playback.subs.language"] ?? "")
+    if values["playback.subs.custom"] <> "true"
+        drawRokuCaption(text)
+        return
+    end if
+
+    suffix = ""
+    if hdr and values["playback.subs.style.hdrSeparate"] = "true" then suffix = "Hdr"
+    look = subtitleStyle.FromSettings(values, suffix)
+    cue = subtitleStyle.Cue([text], look, "")
+    m.top.appendChild(cue)
+    cue.translation = subtitleStyle.Placement(cue.boundingRect(), look.bottomPercent)
+end sub
+
+' The Roku's own captions in its default style, white on a black box near the bottom. They follow
+' the Roku's caption settings, which the app can't draw, so this is the look they start with.
+sub drawRokuCaption(text as string)
+    label = setupPreviewDraw.TextLabel(m.top, text, 0, 0, 40, "0xFFFFFFFF", false)
+    bounds = label.boundingRect()
+    boxWidth = bounds.width + 24
+    boxHeight = bounds.height + 8
+    x = (1920 - boxWidth) / 2
+    y = 1080 * 0.9 - boxHeight
+    setupPreviewDraw.Rect(m.top, x, y, boxWidth, boxHeight, "0x000000FF")
+    m.top.removeChild(label)
+    m.top.appendChild(label)
+    label.translation = [x + 12, y + 4]
+end sub
+
+sub drawHeader(items as object)
+    m.titleGroup = m.top.createChild("LayoutGroup")
+    m.titleGroup.layoutDirection = "vert"
+    m.titleGroup.itemSpacings = [4]
+    m.seriesName = m.titleGroup.createChild("Label")
+    m.seriesName.color = "#FFFFFFB3"
+    m.seriesName.width = OSD_LOGO_MAX_WIDTH
+    playbackOverlay.SetFont(m.seriesName, 21, false)
+    m.seriesName.text = setupPreviewDraw.ItemField(items, 0, "title")
+    title = m.titleGroup.createChild("Label")
+    title.color = "#FFFFFF"
+    title.width = OSD_LOGO_MAX_WIDTH
+    playbackOverlay.SetFont(title, 27, true)
+    title.text = `S1:E4 - ${tr("Episode")} 4`
+
+    uri = setupPreviewDraw.ItemField(items, 0, "logoUrl")
+    if uri <> ""
+        m.logo = m.top.createChild("Poster")
+        m.logo.translation = [OSD_HEADER_X, OSD_HEADER_Y]
+        m.logo.height = OSD_LOGO_HEIGHT
+        m.logo.loadDisplayMode = "scaleToFit"
+        m.logo.visible = false
+        m.logo.observeField("loadStatus", "onLogoStatus")
+        m.logo.uri = uri
+    end if
+    layoutHeader()
+
+    m.clock = m.top.createChild("Clock")
+    m.clock.translation = [1618, OSD_HEADER_Y]
+end sub
+
+' The logo keeps the box's height and takes only the width it needs, so it sits flush left
+sub onLogoStatus(event as object)
+    logo = event.getRoSGNode()
+    if not isValid(m.logo) or not logo.isSameNode(m.logo) then return
+    status = LCase(logo.loadStatus)
+    if status = "ready" and logo.bitmapHeight > 0
+        width = logo.bitmapWidth * OSD_LOGO_HEIGHT / logo.bitmapHeight
+        if width > OSD_LOGO_MAX_WIDTH then width = OSD_LOGO_MAX_WIDTH
+        logo.width = width
+        logo.visible = true
+    else if status <> "failed"
+        return
+    end if
+    layoutHeader()
+end sub
+
+sub layoutHeader()
+    hasLogo = isValid(m.logo) and m.logo.visible
+    m.seriesName.visible = not hasLogo
+    top = OSD_HEADER_Y
+    if hasLogo then top += OSD_LOGO_HEIGHT + OSD_LOGO_GAP
+    m.titleGroup.translation = [OSD_HEADER_X, top]
+end sub
+
+sub drawSeekBar(values as object, position as integer)
+    progress = position / SAMPLE_DURATION
+    track = m.top.createChild("Rectangle")
+    track.translation = [OSD_BAR_X, OSD_BAR_Y]
+    track.width = OSD_BAR_WIDTH
+    track.height = 8
+    track.color = ColorPalette.BLACK77
+    fill = track.createChild("Rectangle")
+    fill.width = OSD_BAR_WIDTH * progress
+    fill.height = 8
+    fill.color = themeChrome.Token("rangeProgress", "#00a4dc")
+    setupPreviewDraw.Icon(m.top, "pkg:/images/icons/circle.webp", OSD_BAR_X + OSD_BAR_WIDTH * progress - 10, OSD_BAR_Y - 8, 20, themeChrome.Token("rangeThumb", "0xFFFFFFFF"))
+
+    if values["playback.showChapterMarkers"] = "true"
+        for each startSeconds in [151, 302, 453]
+            setupPreviewDraw.Rect(m.top, OSD_BAR_X + OSD_BAR_WIDTH * startSeconds / SAMPLE_DURATION - 1.5, OSD_BAR_Y + 4 - 7.25, 3, 14.5, "#FFFFFFE6")
+        end for
+    end if
+
+    slots = [
+        { key: "playback.timeAboveLeft", x: 103, y: 780, align: "left" },
+        { key: "playback.timeAboveCenter", x: 810, y: 780, align: "center" },
+        { key: "playback.timeAboveRight", x: 1517, y: 780, align: "right" },
+        { key: "playback.timeBelowLeft", x: 103, y: 855, align: "left" },
+        { key: "playback.timeBelowCenter", x: 810, y: 855, align: "center" },
+        { key: "playback.timeBelowRight", x: 1517, y: 855, align: "right" }
+    ]
+    now = localSeconds()
+    for each slot in slots
+        text = osdTimeText(values[slot.key] ?? "none", position, SAMPLE_DURATION, now)
+        if text <> ""
+            label = m.top.createChild("Label")
+            label.font = "font:MediumSystemFont"
+            label.color = "0xffffffFF"
+            label.width = 300
+            label.horizAlign = slot.align
+            label.translation = [slot.x, slot.y]
+            label.text = text
+        end if
+    end for
+end sub
+
+' What one of the player's time labels reads, the way its controls word it. The clock times come
+' from the player's own clock, so they follow the 24-hour setting.
+function osdTimeText(slotMode as string, position as integer, duration as integer, now as integer) as string
+    if slotMode = "elapsed" then return secondsToHuman(position, true)
+    if slotMode = "endsAt" then return tr("Ends at") + " " + clockAt(now + duration - position)
+    if slotMode = "time" then return clockAt(now)
+    if slotMode = "timeRemaining" then return "-" + secondsToHuman(duration - position, true)
+    if slotMode = "totalDuration" or slotMode = "totalTime" then return secondsToHuman(duration, true)
+    return ""
+end function
+
+function clockAt(seconds as integer) as string
+    return m.clock.callFunc("getFormattedTime", seconds, true)
+end function
+
+function localSeconds() as integer
+    now = CreateObject("roDateTime")
+    now.ToLocalTime()
+    return now.AsSeconds()
+end function
+
+' The player queues the season around an episode once it starts, so this one has a next button
+sub drawButtons(values as object, moment as string)
+    ' A scrub with a frame to look at pauses the video while Pause While Scrubbing is on
+    playIcon = "pause"
+    if moment = "seek" and values["playback.trickplay.enabled"] <> "false" and values["playback.trickplay.pauseWhileScrubbing"] <> "false" then playIcon = "play"
+    icons = ["previous", "rewind", playIcon, "forward", "next"]
+
+    transport = m.top.createChild("LayoutGroup")
+    transport.layoutDirection = "horiz"
+    transport.itemSpacings = [buttonLayout.OSD_SPACING]
+    transport.translation = [buttonLayout.OSD_ROW_X, buttonLayout.OSD_ROW_Y]
+    for each icon in icons
+        button = transport.createChild("IconButton")
+        button.padding = buttonLayout.OSD_TRANSPORT_PADDING
+        button.height = buttonLayout.OSD_TRANSPORT_HEIGHT
+        button.width = buttonLayout.OSD_TRANSPORT_WIDTH
+        button.icon = `pkg:/images/icons/osd/${icon}.webp`
+    end for
+
+    secondary = m.top.createChild("LayoutGroup")
+    secondary.layoutDirection = "horiz"
+    secondary.itemSpacings = [buttonLayout.OSD_SPACING]
+    secondary.translation = [buttonLayout.OsdSecondaryX(icons.Count()), buttonLayout.OSD_ROW_Y]
+    for each candidate in arrangedOsdButtons(values)
+        secondary.appendChild(buttonLayout.OsdSecondaryButton(candidate))
+    end for
+end sub
+
+' The sample has chapters, a season and subtitles, so every button the viewer kept shows
+function arrangedOsdButtons(values as object) as object
+    return buttonLayout.Arrange(buttonLayout.OsdCandidates(true, true, true), values[OSD_ORDER_SETTING], values[OSD_HIDDEN_SETTING])
+end function
+
+sub drawSkipIntro()
+    prompt = setupPreviewDraw.TextLabel(m.top, tr("Skip Intro"), 0, 0, 30, "0x000000FF", true)
+    width = prompt.boundingRect().width + 80
+    x = 1920 - 72 - width
+    setupPreviewDraw.Round(m.top, x, 1080 - 252 - 80, width, 80, 40, "0xFFFFFFFF")
+    m.top.removeChild(prompt)
+    m.top.appendChild(prompt)
+    prompt.translation = [x, 1080 - 252 - 80]
+    prompt.width = width
+    prompt.height = 80
+    prompt.horizAlign = "center"
+    prompt.vertAlign = "center"
+end sub
+
+' The frame a scrub is aiming at, boxed the way the player boxes it: 320 wide with 8 of padding
+' inside a 2 border and the time under it, centered and 160 above the bar
+sub drawSeekPreview(items as object)
+    boxWidth = 340
+    boxHeight = 10 + 180 + 8 + 28 + 10
+    boxX = 960 - boxWidth / 2
+    boxY = 828 - 160 - boxHeight
+    setupPreviewDraw.Round(m.top, boxX, boxY, boxWidth, boxHeight, 8, "0x000000F2")
+    setupPreviewDraw.Ring(m.top, boxX, boxY, boxWidth, boxHeight, 8, "0xFFFFFF33")
+    setupPreviewDraw.Art(m.top, boxX + 10, boxY + 10, 320, 180, setupPreviewDraw.ItemField(items, 0, "backdropUrl"), "0x222222FF")
+    stamp = setupPreviewDraw.TextLabel(m.top, "4:12", boxX + 10, boxY + 10 + 180 + 8, 20, "0xFFFFFFFF", true)
+    stamp.width = 320
+    stamp.horizAlign = "center"
+end sub
+
+sub drawNextUp(nextUp as string, items as object, pal as object)
+    nextTitle = setupPreviewDraw.ItemField(items, 1, "title")
+    if nextUp = "extended"
+        x = 1920 - 64 - 540
+        setupPreviewDraw.Round(m.top, x, 56, 540, 420, 24, "0x000000D9")
+        setupPreviewDraw.RoundArt(m.top, x, 56, 540, 280, setupPreviewDraw.ItemField(items, 1, "backdropUrl"), pal.surfaceVariant, 18, "0x000000FF")
+        setupPreviewDraw.TextLabel(m.top, UCase(tr("Up Next")), x + 24, 360, 22, pal.accent, true)
+        name = setupPreviewDraw.TextLabel(m.top, nextTitle, x + 24, 396, 32, "0xFFFFFFFF", true)
+        name.width = 492
+    else if nextUp = "minimal"
+        label = setupPreviewDraw.TextLabel(m.top, `${tr("Up Next")}: ${nextTitle}`, 0, 0, 28, "0xFFFFFFFF", true)
+        width = label.boundingRect().width + 64
+        x = 1920 - 64 - width
+        setupPreviewDraw.Round(m.top, x, 56, width, 72, 36, "0x000000CC")
+        m.top.removeChild(label)
+        m.top.appendChild(label)
+        label.translation = [x, 56]
+        label.width = width
+        label.height = 72
+        label.horizAlign = "center"
+        label.vertAlign = "center"
+    end if
+end sub
+
+function subtitleLine(language as string) as string
+    lines = {
+        spa: "Espera, ¿oíste eso?",
+        fre: "Attends, tu as entendu ça ?",
+        fra: "Attends, tu as entendu ça ?",
+        ger: "Warte, hast du das gehört?",
+        deu: "Warte, hast du das gehört?"
+    }
+    return lines[language] ?? "Wait, did you hear that?"
+end function

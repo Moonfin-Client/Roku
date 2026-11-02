@@ -8962,5 +8962,25 @@
         <extracomment>Hint under the address field in the Add Server dialog</extracomment>
         <translation>Works with Jellyfin and Emby. A Plex address opens the Plex sign-in.</translation>
     </message>
+    <message>
+        <source>Live preview</source>
+        <extracomment>Label over the preview beside the settings list that draws a screen of the app as settings change</extracomment>
+        <translation>Live preview</translation>
+    </message>
+    <message>
+        <source>Shows on the {0} preview</source>
+        <extracomment>Under the settings live preview, says the focused setting changes the named preview screen. {0} is the screen, like Home</extracomment>
+        <translation>Shows on the {0} preview</translation>
+    </message>
+    <message>
+        <source>Not shown in the preview</source>
+        <extracomment>Under the settings live preview, says the focused setting has no visible effect in the preview</extracomment>
+        <translation>Not shown in the preview</translation>
+    </message>
+    <message>
+        <source>Saved</source>
+        <extracomment>Tag on the saved choice while a settings picker tries another one in the live preview</extracomment>
+        <translation>Saved</translation>
+    </message>
 </context>
 </TS>

@@ -90,6 +90,12 @@ const selections = {
     'source/utils/personCredits.bs': null,
     'source/utils/accessSchedule.bs': null,
     'source/utils/musicCategories.bs': null,
+    'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'optionRange', 'optionsFit'],
+    'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt'],
+    'components/settings/settingsEditors.bs': ['editorArrangement'],
+    'components/settings/settings.bs': ['settingPath'],
+    'source/utils/playbackOverlay.bs': null,
+    'source/utils/subtitleStyle.bs': null,
     'components/music/musicCategoryHost.bs': ['landingCell', 'enteredCell'],
     'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
     'components/extras/LoadExtrasTask.bs': ['personRoleIn', 'sortedFeatures', 'featureComesFirst'],
@@ -108,7 +114,7 @@ const selections = {
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting'],
-    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'shuffleArray'],
+    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'shuffleArray'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
@@ -281,6 +287,17 @@ source += '\n' + await readFile('test/person-credits.bs', 'utf8');
 source += '\n' + await readFile('test/spotlight-person.bs', 'utf8');
 source += '\n' + await readFile('test/music-categories.bs', 'utf8');
 source += '\n' + await readFile('test/incomplete-recordings.bs', 'utf8');
+// The rest of the arrangement helpers use loops this interpreter can't parse, and the stand ins in
+// test/detail-sections.bs cover them
+const buttonLayoutFile = await readFile('source/utils/buttonLayout.bs', 'utf8');
+source += '\n' + buttonLayoutFile.match(/^const OSD_\w+ = .+$/gm).join('\n') + '\nnamespace buttonLayout\n' + buttonLayoutFile.match(/^    const OSD_\w+ = .+$/gm).join('\n') + '\n';
+for (const name of ['OsdCandidates', 'OsdSecondaryX', 'Ordered', 'Arrange']) {
+    const match = buttonLayoutFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
+    assert.ok(match, `Missing buttonLayout.${name}`);
+    source += '\n' + match[0];
+}
+source += '\nend namespace\n';
+source += '\n' + await readFile('test/settings-live-preview.bs', 'utf8');
 const moonfinPluginFile = await readFile('source/api/MoonfinPlugin.bs', 'utf8');
 source += '\nnamespace moonfinPlugin\n';
 for (const name of ['InfoFromPing', 'WithUserToken', 'AreTmdbThumbsAvailable', 'AreTmdbReviewsSupported', 'AreTmdbDetailsSupported', 'GetTmdbId', 'TmdbThumbURL', 'StudioImageURL', 'IsEnabled', 'IncompleteRecordingsSupported', 'CanKeepAsComplete', 'ExtendedCompleteShowingsSupported', 'IsPluginInstalled', 'ParseBoolSetting', 'RatingsSetting', 'RatingsBool', 'IsRatingsEnabled', 'IsEpisodeRatingsEnabled']) {
@@ -664,8 +681,17 @@ process.stdout.write('PASS: live load wiring (3 checks)\n');
 const episodePick = playerView.match(/sub onEpisodePicked\([^]*?end sub/)[0];
 assert.match(episodePick, /ReportPlayback\("stop"\)\s+m\.top\.unobserveField\("state"\)/, 'Switching episodes reports the old one stopped before the state observer comes off');
 assert.match(episodePick, /startingPoint = episodeBrowser\.ResumeTicks\(episode\)[^]*?callFunc\("push", episode\)/, 'The picked episode carries its resume point into the queue');
-assert.match(await readFile('components/video/OSD.bs', 'utf8'), /id: "episodes", nodeId: "showEpisodes"/, 'The player offers the Episodes button');
+assert.match(await readFile('source/utils/buttonLayout.bs', 'utf8'), /id: "episodes", nodeId: "showEpisodes"/, 'The player offers the Episodes button');
+assert.match(await readFile('components/video/OSD.bs', 'utf8'), /buttonLayout\.OsdCandidates\(m\.top\.hasChapters, m\.top\.hasEpisodes, m\.top\.hasSubtitles\)/, 'from the same list the settings preview draws');
 assert.match(await readFile('source/utils/buttonLayout.bs', 'utf8'), /id: "chapters"[^]*?id: "episodes"[^]*?id: "subtitles"/, 'Episodes sits between Chapters and Subtitles in Player Buttons');
+// Every setting that changes how subtitles look shows on the Player preview, and the style rows reach their own screen
+const settingsScreen = await readFile('components/settings/settings.bs', 'utf8');
+const previewTable = settingsScreen.match(/function previewSceneTable\(\)[^]*?end function/)[0];
+const subtitleLooks = [...(await readFile('settings/settings.json', 'utf8')).matchAll(/"settingName": "(playback\.subs\.(?:custom|style\.\w+))"/g)].map(match => match[1]);
+assert.ok(subtitleLooks.length >= 22, 'The subtitle style settings are found');
+for (const key of subtitleLooks) assert.ok(previewTable.includes(`"${key}": "player"`), `${key} shows on the Player preview`);
+const styleRows = settingsScreen.match(/Left\(item\.settingName \?\? "", (\d+)\) = "(playback\.subs\.style\.)"/);
+assert.equal(Number(styleRows[1]), styleRows[2].length, 'The style rows are matched on their whole prefix');
 const episodeOverlay = await readFile('components/video/EpisodeBrowserOverlay.bs', 'utf8');
 const episodeOverlayXml = await readFile('components/video/EpisodeBrowserOverlay.xml', 'utf8');
 assert.match(episodeOverlayXml, /<DetailTabBar id="seasonBar" visible="false" escapeLeft="true" \/>/, 'The episode browser picks seasons on the shared tab bar');
@@ -841,6 +867,9 @@ const glyphTable = await readFile('source/utils/settingsGlyphs.bs', 'utf8');
 const glyphNames = [...glyphTable.matchAll(/^\s+"([a-z0-9_]+)":\s+&h[0-9A-F]+/gm)].map(match => match[1]);
 assert.ok(glyphNames.includes((await readFile('settings/settings.json', 'utf8')).match(/"settingName": "navbar\.show_friends",\s+"glyph": "([a-z0-9_]+)"/)[1]), 'The Friends button setting draws its glyph');
 process.stdout.write('PASS: friends and chat wiring (19 checks)\n');
+assert.match(settingsSource, /if requirement = "liveTv" then return libraryOrder\.HasLiveTv\(libraryOrder\.Loaded\(\)\)/, 'The Live TV button setting goes by the libraries the bar loaded');
+assert.match(await readFile('settings/settings.json', 'utf8'), /"settingName": "navbar\.show_livetv",[^}]*"requires": "liveTv"/, 'and only shows where one of them is Live TV');
+process.stdout.write('PASS: Live TV button setting (2 checks)\n');
 
 // The seasonal effects sync under Core's names, run only while home is on screen, and draw
 // from images that all ship with the app

@@ -1,0 +1,512 @@
+import "pkg:/components/setup/setupPreviewDraw.bs"
+import "pkg:/source/api/MoonfinPlugin.bs"
+import "pkg:/source/utils/achievementsModel.bs"
+import "pkg:/source/utils/buttonLayout.bs"
+import "pkg:/source/utils/detailMetadataLayout.bs"
+import "pkg:/source/utils/kidsMode.bs"
+import "pkg:/source/utils/libraryOrder.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/playbackOverlay.bs"
+import "pkg:/source/utils/ratingsRow.bs"
+import "pkg:/source/utils/themeChrome.bs"
+
+' The stage is the setup wizard's, so the previews' rounded art comes out at the radius it was
+' cut for
+const STAGE_WIDTH = 1040
+const STAGE_HEIGHT = 585
+const STAGE_TOP = 56
+const SHADOW_MARGIN = 96
+const INSPECTOR_TOP = 657
+const INSPECTOR_HEIGHT = 271
+const INSPECTOR_PAD = 28
+const CHIP_HEIGHT = 44
+const CHIP_GAP = 10
+const LABEL_LEFT = 24
+const OPTION_GAP = 10
+const OPTION_MARKER = 28
+
+sub init()
+    m.header = m.top.findNode("header")
+    m.holder = m.top.findNode("holder")
+    m.inspector = m.top.findNode("inspector")
+    m.cover = m.top.findNode("cover")
+    m.stroke = m.top.findNode("stroke")
+    m.sceneKey = ""
+    m.headerKey = ""
+    m.inspectorKey = ""
+
+    m.inspector.translation = [0, INSPECTOR_TOP]
+    m.holder.translation = [0, STAGE_TOP]
+    m.holder.clippingRect = [0, 0, STAGE_WIDTH, STAGE_HEIGHT]
+    shadow = m.top.findNode("shadow")
+    shadow.translation = [-SHADOW_MARGIN, STAGE_TOP + 24 - SHADOW_MARGIN]
+    shadow.width = STAGE_WIDTH + 2 * SHADOW_MARGIN
+    shadow.height = STAGE_HEIGHT + 2 * SHADOW_MARGIN
+    for each frame in [m.cover, m.stroke]
+        frame.translation = [0, STAGE_TOP]
+        frame.width = STAGE_WIDTH
+        frame.height = STAGE_HEIGHT
+    end for
+end sub
+
+sub onItemsChanged()
+    m.sceneKey = ""
+    redraw()
+end sub
+
+sub redraw()
+    state = m.top.state
+    if not isValid(state) or not isValid(state.values) then return
+    pal = setupPreviewDraw.Palette()
+    ' Rectangles ignore masks on Roku, so the stage's corners are painted in the page color
+    m.cover.blendColor = state.pageColor
+    m.stroke.blendColor = playbackOverlay.WithAlpha(pal.onSurface, 51)
+    drawHeader(state, pal)
+    drawScene(state)
+    drawInspector(state, pal)
+end sub
+
+' The remote reaches the chips from the list, and the chosen one is painted the way the category
+' pill paints its own, white while the row has focus.
+sub drawHeader(state as object, pal as object)
+    accent = state.accent ?? pal.accent
+    key = FormatJson([state.scene, state.chipsFocused = true, accent, pal.accent, pal.onSurface])
+    if key = m.headerKey then return
+    m.headerKey = key
+
+    m.header.removeChildrenIndex(m.header.getChildCount(), 0)
+    chips = m.header.createChild("Group")
+    chips.clippingRect = [0, 0, STAGE_WIDTH, CHIP_HEIGHT]
+    pieces = []
+    widths = []
+    for each chip in state.chips ?? []
+        selected = chip.id = state.scene
+        fill = "0xFFFFFF38"
+        ink = playbackOverlay.WithAlpha(pal.onSurface, 179)
+        uri = "pkg:/images/setup/ring20.9.png"
+        if selected
+            fill = accent
+            ink = "0xFFFFFFFF"
+            uri = "pkg:/images/livetv/fill20.9.png"
+            if state.chipsFocused = true
+                fill = "0xFFFFFFFF"
+                ink = "0x000000FF"
+            end if
+        end if
+        shape = setupPreviewDraw.Shape(chips, uri, 0, 0, 0, CHIP_HEIGHT, fill)
+        label = setupPreviewDraw.TextLabel(chips, chip.label, 0, 0, 22, ink, true)
+        pieces.push([shape, label])
+        widths.push(label.boundingRect().width + 40)
+    end for
+
+    layout = headerLayout(widths, CHIP_GAP, STAGE_WIDTH, LABEL_LEFT)
+    x = layout.start
+    for i = 0 to pieces.Count() - 1
+        pieces[i][0].translation = [x, 0]
+        pieces[i][0].width = widths[i]
+        label = pieces[i][1]
+        label.translation = [x, 0]
+        label.width = widths[i]
+        label.height = CHIP_HEIGHT
+        label.horizAlign = "center"
+        label.vertAlign = "center"
+        x = x + widths[i] + CHIP_GAP
+    end for
+
+    if layout.labelWidth <= 0 then return
+    setupPreviewDraw.Shape(m.header, "pkg:/images/icons/circle.webp", 0, 16, 12, 12, pal.accent)
+    title = setupPreviewDraw.TextLabel(m.header, UCase(tr("Live preview")), LABEL_LEFT, 7, 22, playbackOverlay.WithAlpha(pal.onSurface, 153), true)
+    title.width = layout.labelWidth
+end sub
+
+' Where the chips start and how wide the label may run. The chips keep their own widths, the label
+' gives way to them, and they never start left of the stage, so the first one always shows whole.
+function headerLayout(chipWidths as object, gap as float, stageWidth as float, labelLeft as float) as object
+    total = 0
+    for each width in chipWidths
+        total = total + width + gap
+    end for
+    start = stageWidth - total + gap
+    if start < 0 then start = 0
+    room = start - labelLeft - gap * 2
+    ' A sliver of the label would only show its ellipsis
+    if room < 60 then room = 0
+    return { start: start, labelWidth: room }
+end function
+
+' The scene is built again only when what it draws changed, since a preview is a few dozen nodes
+sub drawScene(state as object)
+    config = sceneConfig(state)
+    key = config.component + FormatJson(config.fields) + config.variant
+    if key = m.sceneKey then return
+    m.sceneKey = key
+
+    loading = m.holder.findNode("loadingPreview")
+    if isValid(loading) then loading.active = false
+    m.holder.removeChildrenIndex(m.holder.getChildCount(), 0)
+    preview = m.holder.createChild(config.component)
+    preview.setFields(config.fields)
+    ' Every preview draws on a full screen canvas and shrinks to the stage
+    preview.scale = [STAGE_WIDTH / 1920, STAGE_HEIGHT / 1080]
+    preview.items = config.items
+end sub
+
+function sceneConfig(state as object) as object
+    values = state.values
+    focusKey = state.focusKey ?? ""
+    items = m.top.items ?? []
+
+    if state.scene = "details"
+        hide = values["ui.itemdetail.hideMediaDescription"] = "true"
+        shown = items
+        if hide then shown = withoutOverview(items)
+        style = values["ui.itemdetail.style"] ?? "modern"
+        episode = focusKey = "plugin.tmdb.episodeRatings"
+        fields = { variant: style, ratings: ratingsFields("", sampleItem(not episode), episode), pageLayout: detailLayout(values, style) }
+        return { component: "SetupDetailPreview", fields: fields, items: shown, variant: hide.ToStr() }
+    end if
+    if state.scene = "player"
+        moment = "middle"
+        if focusKey = "playback.mediasegments.intro" then moment = "intro"
+        if focusKey = "playback.nextupbehavior" then moment = "end"
+        if Left(focusKey, 20) = "ui.loadingAnimation." then moment = "loading"
+        if Left(focusKey, 19) = "playback.trickplay." then moment = "seek"
+        ' A subtitle's look is judged as it plays, so the controls step out of the way
+        styleKey = Left(focusKey, 20) = "playback.subs.style."
+        if styleKey or focusKey = "playback.subs.custom" then moment = "playing"
+        hdr = styleKey and (Right(focusKey, 3) = "Hdr" or focusKey = "playback.subs.style.hdrSeparate")
+        return { component: "SettingsPlayerPreview", fields: { moment: moment, values: values, hdr: hdr }, items: items, variant: "" }
+    end if
+    if state.scene = "search"
+        return { component: "SettingsKeyboardPreview", fields: { keyboardStyle: values["ui.keyboard.style"] ?? "docked" }, items: items, variant: "" }
+    end if
+    ' Hiding descriptions takes the overview off everything on Home, the way the real one does
+    hideHome = values["ui.home.hideMediaDescription"] = "true"
+    if hideHome then items = withoutOverview(items)
+    variant = hideHome.ToStr()
+    if focusKey = "ui.home.mediaBarMode" or focusKey = "ui.overlayColor" or focusKey = "ui.overlayOpacity" or Left(focusKey, 20) = "ui.mediaBar.ratings."
+        opacity = -1.0
+        if values["ui.overlayOpacity"] <> "" then opacity = Val(values["ui.overlayOpacity"])
+        fields = { mode: values["ui.home.mediaBarMode"] ?? "moonfin", overlayColor: values["ui.overlayColor"] ?? "", overlayOpacity: opacity, ratings: ratingsFields("mediaBar", sampleItem(false), false) }
+        return { component: "SetupMediaBarPreview", fields: fields, items: items, variant: variant }
+    end if
+    if focusKey = "ui.home.rowsStyle" or focusKey = "ui.home.hideMediaDescription" or Left(focusKey, 16) = "ui.home.ratings."
+        modern = values["ui.home.rowsStyle"] <> "v1"
+        episode = focusKey = "ui.home.ratings.episodeRatings"
+        ' The modern card shows only the plugin's scores
+        onItem = sampleItem(not episode)
+        if modern then onItem = {}
+        return { component: "SetupHomeRowsPreview", fields: { modern: modern, ratings: ratingsFields("home", onItem, episode) }, items: items, variant: variant }
+    end if
+    return { component: "SetupNavbarPreview", fields: navbarFields(values, state.avatar ?? ""), items: items, variant: variant }
+end function
+
+function navbarFields(values as object, avatar as string) as object
+    buttons = navbarButtons(values, navbarContext())
+    position = values["navbar.position"] ?? "top"
+    opacity = Val(values["navbar.opacity"] ?? "0.7")
+    color = formatOverlayColor(values["navbar.color"], "0x475569FF")
+    ' The sidebar never goes below 60 percent, and a theme paints the top bar in its own surface
+    if position = "left" and opacity < 0.6 then opacity = 0.6
+    if position <> "left" and themeChrome.IsActive() then color = themeChrome.Surface()
+    return {
+        position: position,
+        buttons: buttons,
+        avatar: avatar,
+        expanded: values["navbar.alwaysExpanded"] = "true",
+        showClock: values["ui.showClock"] <> "false",
+        clock24: values["playback.use24hourclock"] = "true",
+        barColor: Left(color, 8) + themeChrome.ByteToHex(Int(opacity * 255 + 0.5))
+    }
+end function
+
+' The bar's buttons in the order the real one builds them, each kept by its switch and the checks
+' the real bar makes. The sidebar puts Genres ahead of Favorites.
+function navbarButtons(values as object, nav as object) as object
+    buttons = [
+        { uri: "pkg:/images/icons/home.webp", label: tr("Home") },
+        { uri: "pkg:/images/icons/search-light.webp", label: tr("Search") }
+    ]
+    if values["navbar.show_shuffle"] <> "false" then buttons.push({ uri: "pkg:/images/icons/shuffle.webp", label: tr("Shuffle") })
+    favorites = invalid
+    genres = invalid
+    if values["navbar.show_favorites"] <> "false" then favorites = { uri: "pkg:/images/icons/heart.webp", label: tr("Favorites") }
+    if values["navbar.show_genres"] <> "false" then genres = { uri: "pkg:/images/icons/masks.webp", label: tr("Genres") }
+    pair = [favorites, genres]
+    if values["navbar.position"] = "left" then pair = [genres, favorites]
+    for each button in pair
+        if isValid(button) then buttons.push(button)
+    end for
+
+    kids = nav.kids = true
+    libraries = nav.libraries ?? []
+    showLiveTv = not kids and values["navbar.show_livetv"] <> "false" and libraryOrder.HasLiveTv(libraries)
+    if showLiveTv then buttons.push({ uri: "pkg:/images/icons/livetv.webp", label: tr("Live TV") })
+    if not kids and nav.seerr = true and values["navbar.show_seerr"] = "true" then buttons.push({ uri: "pkg:/images/icons/settings/seerr.webp", label: tr("Seerr") })
+
+    if not kids and values["navbar.show_libraries"] <> "false"
+        if values["navbar.show_libraries_individually"] = "true"
+            for each library in libraries
+                if not (showLiveTv and isStringEqual(library.collectionType, "livetv")) then buttons.push({ glyph: libraryOrder.Icon(library), label: (library.name ?? "") + (library.serverSuffix ?? "") })
+            end for
+        else
+            buttons.push({ uri: "pkg:/images/icons/library.webp", label: tr("Libraries") })
+        end if
+    end if
+
+    ' The real bar also waits for a server message, but here that would make the switch look broken
+    if values["navbar.show_messages"] = "true" then buttons.push({ uri: "pkg:/images/icons/messages.webp", label: tr("Messages") })
+    if not kids and values["navbar.show_friends"] = "true" and nav.social = true then buttons.push({ uri: "pkg:/images/icons/friends.webp", label: tr("Friends") })
+    buttons.push({ uri: "pkg:/images/icons/settings.webp", label: tr("Settings") })
+    return buttons
+end function
+
+' What the real bars check before they add a button
+function navbarContext() as object
+    userSession = m.global.session
+    return {
+        kids: kidsMode.Enabled(),
+        libraries: libraryOrder.Loaded(),
+        seerr: LCase(toString(userSession.user.settings["seerr.enabled"])) = "true",
+        social: achievementsModel.SocialAvailable(userSession.achievementsInfo)
+    }
+end function
+
+' The sample title's own scores. An episode has no critic score.
+function sampleItem(withCritic as boolean) as object
+    sample = { CommunityRating: 7.8 }
+    if withCritic then sample.CriticRating = 91
+    return sample
+end function
+
+' What the plugin sends for the sample title, every source it knows in the order it sends them
+function samplePluginRatings() as object
+    return [
+        { source: "imdb", value: 7.9 },
+        { source: "tmdb", score: 78 },
+        { source: "trakt", score: 81 },
+        { source: "tomatoes", score: 91 },
+        { source: "tomatoes_audience", score: 87 },
+        { source: "metacritic", score: 74 },
+        { source: "metacriticuser", score: 71 },
+        { source: "letterboxd", value: 3.9 },
+        { source: "rogerebert", value: 3.5 },
+        { source: "myanimelist", value: 8.1 }
+    ]
+end function
+
+' The scores one surface draws for the sample title, through the rules the real screens follow.
+' Home rows ("home") and the media bar ("mediaBar") keep their own settings, the details page
+' reads the plugin's. They're all switches and editors, so the saved values are what they draw.
+function ratingsFields(scope as string, onItem as object, episode as boolean) as object
+    fromPlugin = []
+    if episode
+        if moonfinPlugin.IsEpisodeRatingsEnabled(scope) and moonfinPlugin.IsRatingSourceEnabled("tmdb", scope) then fromPlugin = moonfinPlugin.BuildDisplayRatings([{ source: "tmdb_episode", value: 7.6 }], scope)
+    else if moonfinPlugin.IsRatingsEnabled(scope)
+        fromPlugin = moonfinPlugin.BuildDisplayRatings(samplePluginRatings(), scope)
+    end if
+    return {
+        data: ratingsRow.Merge(ratingsRow.ServerEntries(onItem, scope), fromPlugin),
+        showNames: moonfinPlugin.RatingsBool(scope, "showRatingNames", false),
+        showBadges: moonfinPlugin.RatingsBool(scope, "showRatingBadges", true)
+    }
+end function
+
+function detailLayout(values as object, style as string) as object
+    metadata = []
+    for each entry in detailMetadataLayout.Arrange(detailMetadataLayout.DetailMetadata(), values[DETAIL_METADATA_ORDER_SETTING], values[DETAIL_METADATA_HIDDEN_SETTING])
+        metadata.push(entry.id)
+    end for
+    blur = Int(Val(values["ui.backdrop.detailBlurAmount"] ?? "10"))
+    if blur < 0 or blur > 25 then blur = 10
+    return {
+        buttons: detailButtons(values, style),
+        metadata: metadata,
+        showBackdrop: values["ui.itemdetail.showBackdrop"] <> "false",
+        blurAmount: blur,
+        technical: values["ui.library.showTechnicalDetails"] <> "false"
+    }
+end function
+
+' A movie's buttons after Play, in the saved order without the hidden ones, folded behind More the
+' way the style and Action Buttons on Screen fold the real row
+function detailButtons(values as object, style as string) as object
+    offered = [
+        { id: "shuffle", icon: "detail_shuffle", label: tr("Shuffle") },
+        { id: "trailer", icon: "detail_trailer", label: tr("Trailer") },
+        { id: "watched", icon: "detail_watched", label: tr("Unwatched") },
+        { id: "favorite", icon: "detail_favorite", label: tr("Favorite") },
+        { id: "playlist", icon: "add_to_playlist", label: tr("Add to Playlist") }
+    ]
+    arranged = buttonLayout.Arrange(offered, values[DETAIL_ORDER_SETTING], values[DETAIL_HIDDEN_SETTING])
+    limit = (values[DETAIL_MAX_VISIBLE_SETTING] ?? "0").Trim().ToInt()
+    if limit < -1 or limit > 10 then limit = 0
+
+    kept = arranged.Count()
+    if style = "nouveau"
+        split = buttonLayout.NouveauSplit(arranged.Count(), limit)
+        if split.needsOverflow then kept = split.visibleCount
+    else
+        styleCap = { maxVisible: 0, overflowAsMenu: false, countCapped: false }
+        if style = "spotlight" or style = "minimalist" then styleCap = { maxVisible: 5, overflowAsMenu: true, countCapped: true }
+        ' Play takes a place in the row and counts toward the cap
+        split = buttonLayout.CountSplit(arranged.Count() + 1, buttonLayout.ApplyButtonLimit(limit, styleCap))
+        if split.needsOverflow then kept = split.visibleCount - 1
+    end if
+    if kept >= arranged.Count() then return arranged
+
+    shown = []
+    for i = 0 to kept - 1
+        shown.push(arranged[i])
+    end for
+    shown.push({ id: "more", icon: "dotDotDot", label: tr("More Actions") })
+    return shown
+end function
+
+function withoutOverview(items as object) as object
+    shown = []
+    for each item in items
+        copy = {}
+        copy.Append(item)
+        copy.overview = ""
+        shown.push(copy)
+    end for
+    return shown
+end function
+
+sub drawInspector(state as object, pal as object)
+    key = FormatJson([state.entry, state.cardColor, state.cardOpacity, pal.accent, pal.onSurface])
+    if key = m.inspectorKey then return
+    m.inspectorKey = key
+
+    m.inspector.removeChildrenIndex(m.inspector.getChildCount(), 0)
+    entry = state.entry
+    if not isValid(entry) then return
+
+    card = setupPreviewDraw.Shape(m.inspector, "pkg:/images/settings/card27.9.png", 0, 0, STAGE_WIDTH, INSPECTOR_HEIGHT, state.cardColor)
+    card.opacity = state.cardOpacity
+    textWidth = STAGE_WIDTH - INSPECTOR_PAD * 2
+    muted = playbackOverlay.WithAlpha(pal.onSurface, 153)
+
+    y = 24
+    if entry.status <> ""
+        dotInk = muted
+        statusInk = muted
+        if entry.shows
+            dotInk = pal.accent
+            statusInk = pal.onSurface
+        end if
+        setupPreviewDraw.Shape(m.inspector, "pkg:/images/icons/circle.webp", INSPECTOR_PAD, y + 9, 12, 12, dotInk)
+        setupPreviewDraw.TextLabel(m.inspector, entry.status, INSPECTOR_PAD + 22, y, 22, statusInk, true)
+        y = y + 38
+    end if
+
+    title = setupPreviewDraw.TextLabel(m.inspector, entry.title, INSPECTOR_PAD, y, 32, pal.onSurface, true)
+    title.width = textWidth
+    y = y + 48
+    ' A setting's own tile already reads out its description, so it shows where it lives instead
+    if isValidAndNotEmpty(entry.path)
+        path = setupPreviewDraw.TextLabel(m.inspector, entry.path, INSPECTOR_PAD, y, 22, muted, false)
+        path.width = textWidth
+    else if entry.description <> ""
+        description = setupPreviewDraw.Paragraph(m.inspector, entry.description, INSPECTOR_PAD, y, textWidth, 22, 2, muted)
+        ' Left to size itself, the label leaves no room for the second line's spacing
+        description.height = 72
+    end if
+
+    options = entry.options ?? []
+    if options.Count() = 0 or options.Count() > 8 then return
+    row = m.inspector.createChild("Group")
+    row.translation = [INSPECTOR_PAD, INSPECTOR_HEIGHT - INSPECTOR_PAD - CHIP_HEIGHT]
+    row.clippingRect = [0, 0, textWidth, CHIP_HEIGHT]
+    chips = []
+    widths = []
+    for i = 0 to options.Count() - 1
+        chip = row.createChild("Group")
+        widths.push(drawOption(chip, options[i], i = entry.live, entry.trying and i = entry.saved and i <> entry.live, pal))
+        chips.push(chip)
+    end for
+
+    shown = optionRange(widths, OPTION_GAP, textWidth, OPTION_MARKER, entry.live)
+    markerY = (CHIP_HEIGHT - OPTION_MARKER) / 2
+    x = 0
+    if shown.firstShown > 0
+        setupPreviewDraw.Icon(row, "pkg:/images/icons/dotDotDot.webp", x, markerY, OPTION_MARKER, muted)
+        x = OPTION_MARKER + OPTION_GAP
+    end if
+    for i = 0 to chips.Count() - 1
+        chips[i].visible = i >= shown.firstShown and i <= shown.lastShown
+        if chips[i].visible
+            chips[i].translation = [x, 0]
+            x = x + widths[i] + OPTION_GAP
+        end if
+    end for
+    if shown.lastShown < chips.Count() - 1 then setupPreviewDraw.Icon(row, "pkg:/images/icons/dotDotDot.webp", x, markerY, OPTION_MARKER, muted)
+end sub
+
+' Which chips the row shows whole when they don't all fit. It runs from the first one, or slides on
+' just far enough to hold the one in the preview, and leaves room for dots on each side it cuts.
+function optionRange(widths as object, spacing as float, room as float, markerWidth as float, keep as integer) as object
+    firstShown = 0
+    lastShown = -1
+    while lastShown + 1 < widths.Count() and optionsFit(widths, spacing, room, markerWidth, firstShown, lastShown + 1)
+        lastShown++
+    end while
+    if keep > lastShown and keep < widths.Count()
+        firstShown = keep
+        lastShown = keep
+        while firstShown > 0 and optionsFit(widths, spacing, room, markerWidth, firstShown - 1, lastShown)
+            firstShown--
+        end while
+    end if
+    return { firstShown: firstShown, lastShown: lastShown }
+end function
+
+function optionsFit(widths as object, spacing as float, room as float, markerWidth as float, firstShown as integer, lastShown as integer) as boolean
+    total = 0
+    for i = firstShown to lastShown
+        total = total + widths[i]
+        if i > firstShown then total = total + spacing
+    end for
+    if firstShown > 0 then total = total + markerWidth + spacing
+    if lastShown < widths.Count() - 1 then total = total + markerWidth + spacing
+    return total <= room
+end function
+
+' The one drawn in the preview is filled, and the saved one is outlined in the accent while another
+' is tried. Returns the chip's width.
+function drawOption(parent as object, text as string, live as boolean, saved as boolean, pal as object) as float
+    ink = pal.onSurface
+    if live then ink = "0x000000FF"
+    label = setupPreviewDraw.TextLabel(parent, text, 0, 0, 22, ink, true)
+    textWidth = label.boundingRect().width
+    width = textWidth + 36
+    tag = invalid
+    if saved
+        tag = setupPreviewDraw.TextLabel(parent, UCase(tr("Saved")), 0, 0, 16, playbackOverlay.WithAlpha(pal.onSurface, 179), true)
+        width = width + tag.boundingRect().width + 10
+    end if
+
+    if live
+        setupPreviewDraw.Shape(parent, "pkg:/images/livetv/fill20.9.png", 0, 0, width, CHIP_HEIGHT, "0xFFFFFFFF")
+    else
+        setupPreviewDraw.Shape(parent, "pkg:/images/livetv/fill20.9.png", 0, 0, width, CHIP_HEIGHT, "0xFFFFFF0F")
+        ring = "0xFFFFFF24"
+        if saved then ring = pal.accent
+        setupPreviewDraw.Shape(parent, "pkg:/images/setup/ring20.9.png", 0, 0, width, CHIP_HEIGHT, ring)
+    end if
+    ' The text goes back on top of the chip
+    parent.removeChild(label)
+    parent.appendChild(label)
+    label.translation = [18, 0]
+    label.height = CHIP_HEIGHT
+    label.vertAlign = "center"
+    if isValid(tag)
+        parent.removeChild(tag)
+        parent.appendChild(tag)
+        tag.translation = [18 + textWidth + 10, 0]
+        tag.height = CHIP_HEIGHT
+        tag.vertAlign = "center"
+    end if
+    return width
+end function
