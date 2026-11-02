@@ -95,6 +95,7 @@ const selections = {
     'components/settings/settingsEditors.bs': ['editorArrangement'],
     'components/settings/settings.bs': ['settingPath'],
     'components/details/stage/StageChipRow.bs': ['columnShares'],
+    'components/details/QuickLookItemDetails.bs': ['buttonCap'],
     'source/utils/playbackOverlay.bs': null,
     'source/utils/subtitleStyle.bs': null,
     'components/music/musicCategoryHost.bs': ['landingCell', 'enteredCell'],
@@ -147,6 +148,7 @@ for (const [file, names] of Object.entries(selections)) {
     }
 }
 source += '\n' + (await readFile('source/ShowScenes.bs', 'utf8')).match(/^const minimumServerVersion = .+$/m)[0];
+source += '\n' + (await readFile('components/details/QuickLookItemDetails.bs', 'utf8')).match(/^const QL_MAX_BUTTONS = .+$/m)[0];
 source += '\n' + (await readFile('source/api/EmbyConnect.bs', 'utf8')).replace(/^import .*$/gm, '').replace(/    function Request\([^]*?    end function/, await readFile('test/emby-connect-transport.bs', 'utf8'));
 source += '\n' + await readFile('test/emby-connect.bs', 'utf8');
 source += '\n' + await readFile('test/emby-features.bs', 'utf8');
@@ -1248,6 +1250,9 @@ assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(
 assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "stage" then return "StageItemDetails"/, 'A title only in Seerr opens in Stage too');
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "premiere"\)[^]*?minimalistRules\.Draws\(itemType\) then return "PremiereItemDetails"\s+return "ModernItemDetails"/, 'Premiere draws the video pages and hands the rest to Modern');
 assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "premiere" then return "PremiereItemDetails"/, 'A title only in Seerr opens in Premiere too');
+assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "quickLook"\)[^]*?minimalistRules\.Draws\(itemType\) and not \(isValid\(top\) and top\.isSubtype\("QuickLookItemDetails"\)\) then return "QuickLookItemDetails"\s+return "ModernItemDetails"/, 'Quick Look draws Stage\'s pages in its drawer, and what the drawer opens and every other page is Modern');
+assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "quickLook" then return "QuickLookItemDetails"/, 'A title only in Seerr opens in the drawer too');
+assert.match(await readFile('components/data/SceneManager.bs', 'utf8'), /if not drawsOverScene\(newGroup\) then currentGroup\.visible = false/, 'The screen under the drawer stays showing');
 for (const file of ['ModernItemDetails', 'SpotlightItemDetails', 'MinimalistItemDetails']) {
     assert.match(await readFile(`components/details/${file}.bs`, 'utf8'), /if picksItemOnScreen\(/, `${file} plays the episode on screen when it's picked from its own list`);
 }

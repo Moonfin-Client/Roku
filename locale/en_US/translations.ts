@@ -1282,6 +1282,31 @@
         <translation>The title centered over a full screen backdrop, with everything else down the page.</translation>
     </message>
     <message>
+        <source>Quick Look</source>
+        <extracomment>The details screen style that opens a drawer over the screen the title was picked on</extracomment>
+        <translation>Quick Look</translation>
+    </message>
+    <message>
+        <source>A drawer over the screen you were on, with play and the basics, and the full page a press away.</source>
+        <extracomment>Setup wizard description of the Quick Look details screen</extracomment>
+        <translation>A drawer over the screen you were on, with play and the basics, and the full page a press away.</translation>
+    </message>
+    <message>
+        <source>Open full page</source>
+        <extracomment>Button at the foot of the Quick Look drawer that opens the title&apos;s full details page</extracomment>
+        <translation>Open full page</translation>
+    </message>
+    <message>
+        <source>Back to close</source>
+        <extracomment>Hint on the Quick Look drawer saying the Back button closes it</extracomment>
+        <translation>Back to close</translation>
+    </message>
+    <message>
+        <source>^0 of ^1</source>
+        <extracomment>How many of a season&apos;s episodes were watched, on a season card in the Quick Look drawer. ^0 is the number watched and ^1 the number in the season.</extracomment>
+        <translation>^0 of ^1</translation>
+    </message>
+    <message>
         <source>The poster up front, with play under it and the details beside it.</source>
         <extracomment>Setup wizard description of the Stage details screen</extracomment>
         <translation>The poster up front, with play under it and the details beside it.</translation>
@@ -6948,8 +6973,8 @@
         <translation>Choose which time labels appear around the playback progress bar.</translation>
     </message>
     <message>
-        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes. Stage leads with the poster, with play under it and the details beside it. Premiere centers the title over a backdrop that fills the screen, with every section down the page under it.</source>
-        <translation>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes. Stage leads with the poster, with play under it and the details beside it. Premiere centers the title over a backdrop that fills the screen, with every section down the page under it.</translation>
+        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes. Stage leads with the poster, with play under it and the details beside it. Premiere centers the title over a backdrop that fills the screen, with every section down the page under it. Quick Look opens a drawer over the screen you were on, with the full page a press away.</source>
+        <translation>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes. Stage leads with the poster, with play under it and the details beside it. Premiere centers the title over a backdrop that fills the screen, with every section down the page under it. Quick Look opens a drawer over the screen you were on, with the full page a press away.</translation>
     </message>
     <message>
         <source>Classic keeps per-row image type and info overlay. Modern uses portrait-to-backdrop rows.</source>
