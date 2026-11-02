@@ -718,6 +718,11 @@
         <translation>Spotlight</translation>
     </message>
     <message>
+        <source>Stage</source>
+        <extracomment>Details screen style that leads with the poster, with play under it and the details beside it</extracomment>
+        <translation>Stage</translation>
+    </message>
+    <message>
         <source>Stats</source>
         <extracomment>Records and figures from what the viewer has watched</extracomment>
         <translation>Stats</translation>
@@ -1265,6 +1270,11 @@
         <source>Full-screen, with sections stacked instead of tabs.</source>
         <extracomment>Setup wizard description of the Nouveau details screen</extracomment>
         <translation>Full-screen, with sections stacked instead of tabs.</translation>
+    </message>
+    <message>
+        <source>The poster up front, with play under it and the details beside it.</source>
+        <extracomment>Setup wizard description of the Stage details screen</extracomment>
+        <translation>The poster up front, with play under it and the details beside it.</translation>
     </message>
     <message>
         <source>Year</source>
@@ -6928,8 +6938,8 @@
         <translation>Choose which time labels appear around the playback progress bar.</translation>
     </message>
     <message>
-        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes.</source>
-        <translation>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes.</translation>
+        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes. Stage leads with the poster, with play under it and the details beside it.</source>
+        <translation>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes. Stage leads with the poster, with play under it and the details beside it.</translation>
     </message>
     <message>
         <source>Classic keeps per-row image type and info overlay. Modern uses portrait-to-backdrop rows.</source>
