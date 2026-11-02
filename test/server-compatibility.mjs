@@ -94,6 +94,7 @@ const selections = {
     'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt'],
     'components/settings/settingsEditors.bs': ['editorArrangement'],
     'components/settings/settings.bs': ['settingPath'],
+    'components/details/stage/StageChipRow.bs': ['columnShares'],
     'source/utils/playbackOverlay.bs': null,
     'source/utils/subtitleStyle.bs': null,
     'components/music/musicCategoryHost.bs': ['landingCell', 'enteredCell'],
@@ -1245,6 +1246,8 @@ assert.match(await readFile('components/ItemGrid/LoadVideoContentTask.bs', 'utf8
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if itemType = "playlist" then return "ModernItemDetails"/, 'A playlist opens in Modern under every style but Classic');
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "stage"\)[^]*?minimalistRules\.Draws\(itemType\) then return "StageItemDetails"\s+return "ModernItemDetails"/, 'Stage draws the video pages and hands the rest to Modern');
 assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "stage" then return "StageItemDetails"/, 'A title only in Seerr opens in Stage too');
+assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "premiere"\)[^]*?minimalistRules\.Draws\(itemType\) then return "PremiereItemDetails"\s+return "ModernItemDetails"/, 'Premiere draws the video pages and hands the rest to Modern');
+assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "premiere" then return "PremiereItemDetails"/, 'A title only in Seerr opens in Premiere too');
 for (const file of ['ModernItemDetails', 'SpotlightItemDetails', 'MinimalistItemDetails']) {
     assert.match(await readFile(`components/details/${file}.bs`, 'utf8'), /if picksItemOnScreen\(/, `${file} plays the episode on screen when it's picked from its own list`);
 }
