@@ -88,7 +88,7 @@ namespace silo
                 end if
             end for
         end if
-        parsed = { method: UCase(method), server: server, segments: segments, route: lowered, query: query, body: invalid }
+        parsed = { method: UCase(method), server: server, segments: segments, route: lowered, query: query, body: invalid, rawPath: rest, rawBody: body }
         if isString(body) and body <> ""
             parsed.body = ParseJson(body)
         else if type(body) = "roAssociativeArray" or type(body) = "roArray"
@@ -172,6 +172,7 @@ namespace silo
         if first = "sessions" and count >= 2 and route[1] = "capabilities" then return silo.NoContent()
 
         if r.account = "" then return silo.StatusOnly(401)
+        if first = "moonfin" then return silo.MoonbaseForward(r)
         if r.method = "GET"
             answer = silo.ReadRoute(r, first, count)
             if answer <> invalid then return answer
@@ -276,6 +277,35 @@ namespace silo
         if first = "videos" and count = 2 and route[1] = "activeencodings" then return silo.NoContent()
         if first = "livestreams" then return silo.NoContent()
         return invalid
+    end function
+
+    ' Moonbase for Silo is a plugin under its installation id, found by plugin id in
+    ' /api/v2/settings/plugins and served at /api/v2/plugin-content/plugins/<id>. Ported from
+    ' Smart-TV's siloMoonbase.js. Answers "" when the server has none
+    function MoonbaseBase(r as object) as string
+        kept = silo.RecallAnswer("siloMoonbase", r.server, 300)
+        if kept <> invalid then return kept
+        answer = silo.Call(r.server, "/api/v2/settings/plugins", { account: r.account, profileId: r.profileId })
+        ' Unreachable isn't the same as not installed: asked again next time
+        if not answer.ok then return ""
+        base = ""
+        for each plugin in silo.ItemsOf(answer.data)
+            if plugin.plugin_id = "moonfin.moonbase" and plugin.id <> invalid
+                base = silo.ServerKey(r.server) + "/api/v2/plugin-content/plugins/" + plugin.id.ToStr().EncodeUriComponent()
+            end if
+        end for
+        silo.KeepAnswer("siloMoonbase", r.server, base, 8)
+        return base
+    end function
+
+    ' A Moonbase route, sent to the plugin with Silo's headers: the bearer token and the profile
+    function MoonbaseForward(r as object) as object
+        base = silo.MoonbaseBase(r)
+        if base = "" then return silo.StatusOnly(404)
+        answer = silo.Call(r.server, base + r.rawPath, { method: r.method, body: r.rawBody, account: r.account, profileId: r.profileId })
+        ' A Moonbase removed or reinstalled under a new id is looked up again
+        if answer.status = 404 then silo.KeepAnswer("siloMoonbase", r.server, invalid, 8)
+        return { status: answer.status, data: answer.data }
     end function
 
     function Listing(result as dynamic) as object
