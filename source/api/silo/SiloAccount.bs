@@ -1,6 +1,7 @@
 import "pkg:/source/api/silo/SiloMapper.bs"
 import "pkg:/source/api/silo/SiloSession.bs"
 import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/diagnostics.bs"
 import "pkg:/source/utils/misc.bs"
 
 ' Finding a Silo server, signing in and the household behind the login. Ported from Smart-TV's
@@ -38,10 +39,12 @@ namespace silo
         account = invalid
         if type(pair) = "roAssociativeArray" then account = pair.user
         if tokens.access = "" or tokens.refresh = "" or type(account) <> "roAssociativeArray" or not isValid(account.id)
+            diagnostics.Auth("Silo token pair incomplete: access " + (tokens.access <> "").ToStr() + ", refresh " + (tokens.refresh <> "").ToStr() + ", account " + type(account), diagnostics.LEVEL_WARN)
             return { ok: false, status: 502, message: tr("The server's sign-in answer was incomplete. Try again."), data: invalid }
         end if
         accountId = account.id.ToStr()
         silo.SaveTokens(server, accountId, tokens)
+        if not isValid(silo.LoadTokens(server, accountId)) then diagnostics.Auth("Silo tokens didn't stay in the registry", diagnostics.LEVEL_WARN)
         if account.password_change_required = true
             ' Silo answers everything but a password change with 403 until it's done, and that is
             ' only offered in Silo's own apps for now
@@ -57,6 +60,7 @@ namespace silo
         profiles = []
         if answer.ok and type(answer.data) = "roAssociativeArray" and type(answer.data.items) = "roArray" then profiles = answer.data.items
         if profiles.Count() = 0
+            diagnostics.Auth("Silo listed no profiles: " + answer.status.ToStr(), diagnostics.LEVEL_WARN)
             silo.EndLogin(server, accountId)
             return { ok: false, status: 502, message: tr("The server listed no profile for this account."), data: invalid }
         end if
@@ -198,7 +202,11 @@ namespace silo
     ' An approval carries the token pair once; it's kept in this thread for DeviceSignIn
     function DevicePoll(server as string, secret as string) as boolean
         answer = silo.Call(server, "/api/v2/auth/device/poll", { method: "POST", refresh: false, profile: false, body: { device_code: secret } })
-        if not answer.ok or type(answer.data) <> "roAssociativeArray" then return false
+        if not answer.ok or type(answer.data) <> "roAssociativeArray"
+            diagnostics.Auth("Silo device sign-in poll failed: " + answer.status.ToStr(), diagnostics.LEVEL_WARN)
+            return false
+        end if
+        if answer.data.status <> "pending" then diagnostics.Auth("Silo device sign-in poll: " + (answer.data.status ?? "").ToStr() + ", tokens " + type(answer.data.tokens), diagnostics.LEVEL_WARN)
         if answer.data.status = "approved" and type(answer.data.tokens) = "roAssociativeArray"
             if type(m.siloApprovedDevices) <> "roAssociativeArray" then m.siloApprovedDevices = {}
             m.siloApprovedDevices[secret] = answer.data.tokens
@@ -213,8 +221,13 @@ namespace silo
             pair = m.siloApprovedDevices[secret]
             m.siloApprovedDevices.Delete(secret)
         end if
-        if pair = invalid then return { ok: false, status: 409, message: "", data: invalid }
-        return silo.OpenLogin(server, pair)
+        if pair = invalid
+            diagnostics.Auth("Silo device sign-in: no approved token pair in this task", diagnostics.LEVEL_WARN)
+            return { ok: false, status: 409, message: "", data: invalid }
+        end if
+        result = silo.OpenLogin(server, pair)
+        if not result.ok then diagnostics.Auth("Silo device sign-in failed: " + result.status.ToStr() + " " + result.message, diagnostics.LEVEL_WARN)
+        return result
     end function
     ' Whether a profile is PIN-locked and hasn't been unlocked on this login yet
     function ProfileNeedsPin(profileId as string) as boolean
