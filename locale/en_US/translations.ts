@@ -1621,6 +1621,16 @@
         <extracomment>Help text in search results</extracomment>
     </message>
     <message>
+        <source>Smart Search</source>
+        <extracomment>Search results row of library titles the server matched to a query written in plain words</extracomment>
+        <translation>Smart Search</translation>
+    </message>
+    <message>
+        <source>Smart Search on Seerr</source>
+        <extracomment>Search results row of titles not in the library that the server matched to a query written in plain words, which can be requested through Seerr</extracomment>
+        <translation>Smart Search on Seerr</translation>
+    </message>
+    <message>
         <source>%1 of %2</source>
         <translation>%1 of %2</translation>
         <extracomment>Item position and count. %1 = current item. %2 = total number of items</extracomment>
