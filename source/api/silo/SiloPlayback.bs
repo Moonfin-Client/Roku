@@ -611,10 +611,12 @@ namespace silo
         q = r.query
         if r.profileId = "" then return silo.StatusOnly(401)
         file = silo.PlaybackFileOf(r, itemId, q.LookupCI("MediaSourceId") ?? "")
+        silo.Trace("play " + itemId + ": source " + (q.LookupCI("MediaSourceId") ?? "none") + " -> title " + file.itemId + ", file " + file.fileId + ", versions " + file.sources.Count().ToStr())
         if file.fileId = "" then return silo.StatusOnly(404)
         caps = silo.CapabilitiesOf(body.DeviceProfile)
         context = silo.PlaybackContext(caps, getAuthHeaderContext().appVersion ?? "")
         server = silo.PlaybackCapabilities(r)
+        silo.Trace("play: server playback " + server.reason + ", ok " + server.ok.ToStr())
         if not server.ok then return { status: 503, data: { ErrorCode: "SiloUnavailable", Message: tr("Playback isn't available on this server.") } }
         startBody = {
             protocol_version: 3,
@@ -650,6 +652,9 @@ namespace silo
             startBody.installation_id = server.installationId
             answer = silo.SendWithRetries(r, "POST", "/api/v2/playback/start", startBody, silo.START_RETRY_MS)
         end if
+        problemText = ""
+        if isValid(answer.problem) then problemText = " " + answer.problem.code + " " + answer.problem.detail
+        silo.Trace("play: start answered " + answer.status.ToStr() + problemText)
         if not answer.ok
             if silo.IsClientUpgradeRequired(answer) then return { status: 426, data: { ErrorCode: "SiloUpgrade", Message: tr("This server needs a newer version of Moonfin to play.") } }
             return silo.StatusOnly(answer.status)
@@ -660,6 +665,7 @@ namespace silo
         sessionId = ""
         if type(decision) = "roAssociativeArray" and isString(decision.session_id) then sessionId = decision.session_id
         if sessionId = "" and type(plan) = "roAssociativeArray" and isString(plan.session_id) then sessionId = plan.session_id
+        if type(decision) = "roAssociativeArray" then silo.Trace("play: outcome " + (decision.outcome ?? "").ToStr() + ", session " + sessionId)
         if type(decision) <> "roAssociativeArray" or decision.outcome <> "playable" or type(plan) <> "roAssociativeArray" or sessionId = "" then return silo.Refusal(decision)
         source = silo.SourceOfPlan(r, plan, file.itemId, file.source)
         playing = {
@@ -690,7 +696,7 @@ namespace silo
         playing.subtitleStreamIndex = source.DefaultSubtitleStreamIndex
         playing.offsetTicks = source.SiloTimelineOffsetTicks
         silo.SavePlaybackSession(playing, playing.sessionId)
-        diagnostics.Playback("Silo plan " + (playing.plan.delivery ?? "").ToStr() + " for " + playing.itemId)
+        silo.Trace("play: plan " + (playing.plan.delivery ?? "").ToStr() + ", container " + (source.Container ?? "").ToStr() + ", direct " + source.SupportsDirectPlay.ToStr() + ", stream " + silo.PathOf(source.Path ?? ""))
         return silo.Ok({ PlaySessionId: playing.sessionId, MediaSources: [source] })
     end function
 
@@ -769,7 +775,9 @@ namespace silo
         }
         if failure then sent.failure = { classification: "playback_error" }
         if playing.bandwidthCapKbps <> invalid then sent.bandwidth_cap_kbps = playing.bandwidthCapKbps
+        silo.Trace("play: replan " + operation + " of " + playing.sessionId)
         answer = silo.SendWithRetries(r, "POST", "/api/v2/playback/" + playing.sessionId.EncodeUriComponent() + "/replan", sent, silo.REPLAN_RETRY_MS, true)
+        silo.Trace("play: replan answered " + answer.status.ToStr())
         if not answer.ok
             if answer.status = 404 or answer.status = 410 or (answer.status = 409 and isValid(answer.problem) and answer.problem.code = "installation_changed")
                 ' The playing is gone on Silo: this request starts a new one
