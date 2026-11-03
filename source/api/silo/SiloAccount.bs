@@ -168,8 +168,78 @@ namespace silo
             if profile.id.ToStr() = profileId then wanted = profile
         end for
         if wanted = invalid then return { status: 404 }
+        silo.RememberProfile(profileId, server, accountId, wanted.has_pin = true)
         silo.RememberAvatar(wanted)
         configuration = siloMap.SettingsToConfiguration(silo.ReadSettings(server, accountId, profileId))
         return { status: 200, user: siloMap.ProfileToUser(wanted, read.account, configuration) }
+    end function
+    ' Sign-in on another device (Silo's device sign-in, as the app's Quick Connect): an eight-digit
+    ' code shown here, or the verification page with it filled in as a QR code, approved by a
+    ' signed-in Silo login
+
+    function DeviceSignInAvailable(server as string) as boolean
+        answer = silo.Call(server, "/api/v2/auth/device/capability", { refresh: false, profile: false })
+        return answer.ok and type(answer.data) = "roAssociativeArray" and answer.data.state = "available" and answer.data.allowed <> false
+    end function
+
+    function DeviceStart(server as string) as dynamic
+        if not silo.DeviceSignInAvailable(server) then return invalid
+        context = getAuthHeaderContext()
+        body = { device_platform: "roku" }
+        if isValidAndNotEmpty(context.deviceName) then body.device_name = context.deviceName.Left(128)
+        answer = silo.Call(server, "/api/v2/auth/device/start", { method: "POST", refresh: false, profile: false, body: body })
+        if not answer.ok or type(answer.data) <> "roAssociativeArray" then return invalid
+        code = CreateObject("roRegex", "[\s-]", "").ReplaceAll((answer.data.user_code ?? "").ToStr(), "")
+        if code = "" or not isValidAndNotEmpty(answer.data.device_code) then return invalid
+        link = silo.ResolveUrl(server, siloMap.TextOf(answer.data.verification_uri_complete))
+        return { Code: code, Secret: answer.data.device_code, Authenticated: false, VerificationUriComplete: link }
+    end function
+
+    ' An approval carries the token pair once; it's kept in this thread for DeviceSignIn
+    function DevicePoll(server as string, secret as string) as boolean
+        answer = silo.Call(server, "/api/v2/auth/device/poll", { method: "POST", refresh: false, profile: false, body: { device_code: secret } })
+        if not answer.ok or type(answer.data) <> "roAssociativeArray" then return false
+        if answer.data.status = "approved" and type(answer.data.tokens) = "roAssociativeArray"
+            if type(m.siloApprovedDevices) <> "roAssociativeArray" then m.siloApprovedDevices = {}
+            m.siloApprovedDevices[secret] = answer.data.tokens
+            return true
+        end if
+        return false
+    end function
+
+    function DeviceSignIn(server as string, secret as string) as object
+        pair = invalid
+        if type(m.siloApprovedDevices) = "roAssociativeArray"
+            pair = m.siloApprovedDevices[secret]
+            m.siloApprovedDevices.Delete(secret)
+        end if
+        if pair = invalid then return { ok: false, status: 409, message: "", data: invalid }
+        return silo.OpenLogin(server, pair)
+    end function
+    ' Whether a profile is PIN-locked and hasn't been unlocked on this login yet
+    function ProfileNeedsPin(profileId as string) as boolean
+        entry = silo.ProfileEntry(profileId)
+        if not isValid(entry) or entry.hasPin <> true then return false
+        return silo.ProfileProof(profileId) = ""
+    end function
+
+    ' Checks a profile's PIN and keeps the proof that unlocks the profile for this login. PIN checks
+    ' are never replayed after a refresh, since Silo counts them against its rate limit. Answers
+    ' "" when it unlocked, else what to show
+    function VerifyProfilePin(profileId as string, pin as string) as string
+        entry = silo.ProfileEntry(profileId)
+        if not isValid(entry) then return tr("This profile is no longer signed in.")
+        answer = silo.Call(entry.server, "/api/v2/profiles/" + profileId.EncodeUriComponent() + "/verify-pin", { method: "POST", account: entry.account, profile: false, refresh: false, body: { pin: pin } })
+        if answer.status = 429 then return tr("Too many attempts. Try again later.")
+        if not answer.ok then return tr("Incorrect PIN")
+        if type(answer.data) <> "roAssociativeArray" or answer.data.valid <> true or not isValidAndNotEmpty(answer.data.profile_token) then return tr("Incorrect PIN")
+        expires = 0
+        if isValidAndNotEmpty(answer.data.expires_at)
+            stamp = CreateObject("roDateTime")
+            stamp.FromISO8601String(answer.data.expires_at)
+            expires = stamp.AsSeconds()
+        end if
+        silo.SetProfileProof(profileId, answer.data.profile_token, expires)
+        return ""
     end function
 end namespace
