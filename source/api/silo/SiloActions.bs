@@ -1,0 +1,142 @@
+import "pkg:/source/api/silo/SiloCatalog.bs"
+import "pkg:/source/api/silo/SiloMapper.bs"
+import "pkg:/source/utils/misc.bs"
+
+' What the profile changes: favorites, watched state, ratings and its own collections. Ported from
+' the writes in Smart-TV's siloItems.js.
+namespace silo
+    ' Silo keeps favorites, watched state and ratings on titles: films, shows, seasons and episodes
+    function IsTitleId(itemId as string) as boolean
+        kind = siloMap.TypeOfId(itemId)
+        return kind = "movie" or kind = "series" or kind = "season" or kind = "episode"
+    end function
+
+    function Write(r as object, method as string, path as string, body = invalid as dynamic, headers = invalid as dynamic) as object
+        answer = silo.Call(r.server, path, { method: method, body: body, headers: headers, account: r.account, profileId: r.profileId })
+        if answer.ok then silo.ForgetCatalog()
+        return answer
+    end function
+
+    ' The item's user data after a change, as Jellyfin answers its user data routes
+    function UserDataAfter(r as object, itemId as string, patch as object) as object
+        silo.ForgetCatalog()
+        item = silo.GetItem(r, itemId)
+        data = {}
+        if item <> invalid and type(item.UserData) = "roAssociativeArray" then data.Append(item.UserData)
+        data.Append(patch)
+        data["Key"] = itemId
+        data["ItemId"] = itemId
+        return silo.Ok(data)
+    end function
+
+    ' The app's ratings are out of 10; Silo's are 1 to 5 stars
+    function StarsFromRating(rating as dynamic) as integer
+        stars = Cint(rating / 2)
+        if stars < 1 then stars = 1
+        if stars > 5 then stars = 5
+        return stars
+    end function
+
+    function WriteRoute(r as object, first as string, count as integer) as dynamic
+        route = r.route
+        segments = r.segments
+        method = r.method
+        if (first = "userfavoriteitems" or first = "userplayeditems") and count = 2
+            itemId = segments[1]
+            if not silo.IsTitleId(itemId) then return silo.StatusOnly(400)
+            turnOn = method = "POST"
+            if first = "userfavoriteitems"
+                verb = "DELETE"
+                if turnOn then verb = "PUT"
+                answer = silo.Write(r, verb, "/api/v2/favorites/" + itemId.EncodeUriComponent())
+                if not answer.ok then return silo.StatusOnly(answer.status)
+                return silo.UserDataAfter(r, itemId, { IsFavorite: turnOn })
+            end if
+            ' Either way Silo drops the resume point
+            verb = "DELETE"
+            if turnOn then verb = "POST"
+            answer = silo.Write(r, verb, "/api/v2/watched/" + itemId.EncodeUriComponent())
+            if not answer.ok then return silo.StatusOnly(answer.status)
+            return silo.UserDataAfter(r, itemId, { Played: turnOn, PlaybackPositionTicks: 0& })
+        end if
+
+        if first = "useritems" and count = 3
+            itemId = segments[1]
+            action = route[2]
+            if not silo.IsTitleId(itemId) then return silo.StatusOnly(400)
+            ratingPath = "/api/v2/ratings/" + itemId.EncodeUriComponent()
+            if action = "rating"
+                if method = "DELETE"
+                    answer = silo.Write(r, "DELETE", ratingPath)
+                    if not answer.ok then return silo.StatusOnly(answer.status)
+                    return silo.UserDataAfter(r, itemId, { Rating: invalid, Likes: invalid })
+                end if
+                ' Silo has stars and no likes: a like is five stars and a dislike one, read back as 10 and 2
+                likes = LCase(r.query.LookupCI("Likes") ?? "") = "true"
+                stars = 1
+                if likes then stars = 5
+                answer = silo.Write(r, "PUT", ratingPath, { rating: stars })
+                if not answer.ok then return silo.StatusOnly(answer.status)
+                return silo.UserDataAfter(r, itemId, { Likes: likes, Rating: stars * 2 })
+            end if
+            if action = "userdata" and method = "POST" and type(r.body) = "roAssociativeArray"
+                rating = r.body.LookupCI("Rating")
+                if rating <> invalid and not isString(rating)
+                    stars = silo.StarsFromRating(rating)
+                    answer = silo.Write(r, "PUT", ratingPath, { rating: stars })
+                    if not answer.ok then return silo.StatusOnly(answer.status)
+                    return silo.UserDataAfter(r, itemId, { Rating: stars * 2 })
+                end if
+                return silo.StatusOnly(400)
+            end if
+        end if
+
+        if first = "collections"
+            if count = 1 and method = "POST" then return silo.CreateCollection(r)
+            if count = 3 and route[2] = "items" then return silo.EditCollection(r, segments[1], method)
+        end if
+        return invalid
+    end function
+
+    ' Only manual collections the profile made itself can be changed; a library's belong to the library
+    function OwnCollectionPath(collectionId as string) as string
+        parsed = siloMap.ParseCollectionId(collectionId)
+        if parsed = invalid or parsed.libraryId <> "" then return ""
+        return "/api/v2/collections/" + parsed.id.EncodeUriComponent()
+    end function
+
+    function EditCollection(r as object, collectionId as string, method as string) as object
+        path = silo.OwnCollectionPath(collectionId)
+        if path = "" then return silo.StatusOnly(403)
+        for each itemId in siloMap.SplitList(r.query.LookupCI("Ids"))
+            body = invalid
+            verb = "DELETE"
+            if method = "POST"
+                verb = "PUT"
+                body = { position: 0 }
+            end if
+            answer = silo.Write(r, verb, path + "/items/" + itemId.EncodeUriComponent(), body)
+            if not answer.ok then return silo.StatusOnly(answer.status)
+        end for
+        return silo.NoContent()
+    end function
+
+    function CreateCollection(r as object) as object
+        name = r.query.LookupCI("Name") ?? ""
+        ids = siloMap.SplitList(r.query.LookupCI("Ids"))
+        if type(r.body) = "roAssociativeArray"
+            if name = "" then name = r.body.LookupCI("Name") ?? ""
+            if ids.Count() = 0 and type(r.body.LookupCI("Ids")) = "roArray" then ids = r.body.LookupCI("Ids")
+        end if
+        if name.Trim() = "" then return silo.StatusOnly(400)
+        answer = silo.Write(r, "POST", "/api/v2/collections", { name: name.Trim(), collection_type: "manual" })
+        if not answer.ok then return silo.StatusOnly(answer.status)
+        created = siloMap.CollectionToBoxSet(answer.data, r.server)
+        if created = invalid then return silo.StatusOnly(502)
+        path = silo.OwnCollectionPath(created.Id)
+        for each itemId in ids
+            silo.Write(r, "PUT", path + "/items/" + itemId.EncodeUriComponent(), { position: 0 })
+        end for
+        return silo.Ok({ Id: created.Id })
+    end function
+end namespace
