@@ -1,0 +1,131 @@
+import "pkg:/source/api/silo/SiloCatalog.bs"
+import "pkg:/source/api/silo/SiloImages.bs"
+import "pkg:/source/api/silo/SiloMapper.bs"
+import "pkg:/source/utils/misc.bs"
+
+' What the player shows around a Silo title: skip markers and seek previews, in the shapes the app
+' reads from Jellyfin. Ported from Smart-TV's siloPlayerExtras.js.
+namespace silo
+    ' A file's markers (GET /markers/files/{id}, /markers/items/{id}) as Jellyfin MediaSegmentDtos in
+    ' start order. marker_segments lists every occurrence (a recap, an intro and a second intro after a
+    ' cold open), so it is used when Silo sends it; older answers carry one segment per kind. A segment
+    ' without an end runs to runTimeSeconds when known and is dropped otherwise. Credits are Outro
+    function MarkersToSegments(markers as dynamic, itemId as string, runTimeSeconds = 0 as dynamic) as object
+        types = { intro: "Intro", credits: "Outro", recap: "Recap", preview: "Preview" }
+        found = []
+        if type(markers) = "roAssociativeArray"
+            occurrences = siloMap.Maps(markers.marker_segments)
+            if occurrences.Count() > 0
+                for each one in occurrences
+                    if isString(one.kind) and siloMap.IsNumber(one.start_seconds) then found.Push({ kind: one.kind, start: one.start_seconds, stopAt: one.end_seconds })
+                end for
+            else
+                for each kind in ["intro", "credits", "recap", "preview"]
+                    segment = markers[kind]
+                    if type(segment) = "roAssociativeArray"
+                        start = segment.start_seconds ?? segment.start
+                        stopAt = segment.end_seconds ?? segment.end
+                        if siloMap.IsNumber(start) then found.Push({ kind: kind, start: start, stopAt: stopAt })
+                    end if
+                end for
+            end if
+        end if
+        seen = {}
+        entries = []
+        for each one in found
+            kind = types[LCase(one.kind.Trim())]
+            start = one.start
+            if start < 0 then start = 0
+            stopAt = one.stopAt
+            if not siloMap.IsNumber(stopAt) and siloMap.IsNumber(runTimeSeconds) and runTimeSeconds > 0 then stopAt = runTimeSeconds
+            if kind <> invalid and siloMap.IsNumber(stopAt) and stopAt > start
+                startTicks = siloMap.TicksOf(start)
+                endTicks = siloMap.TicksOf(stopAt)
+                key = kind + "|" + startTicks.ToStr() + "|" + endTicks.ToStr()
+                if not seen.DoesExist(key)
+                    seen[key] = true
+                    entries.Push({ sortkey: start, kind: kind, startTicks: startTicks, endTicks: endTicks })
+                end if
+            end if
+        end for
+        entries.SortBy("sortkey")
+        perType = {}
+        segments = []
+        for each entry in entries
+            count = perType[entry.kind] ?? -1
+            count++
+            perType[entry.kind] = count
+            ' Unique per occurrence: the player tells segments apart by id
+            segments.Push({ Id: "silo-" + LCase(entry.kind) + "-" + itemId + "-" + count.ToStr(), ItemId: itemId, Type: entry.kind, StartTicks: entry.startTicks, EndTicks: entry.endTicks })
+        end for
+        return segments
+    end function
+
+    ' Silo's markers of the file that plays, or of the title's first file before one plays
+    function MediaSegments(r as object, itemId as string) as object
+        playing = silo.LiveSessionOf(itemId)
+        answer = invalid
+        runTime = 0
+        if playing <> invalid
+            fileId = siloMap.IdOf(playing.plan.effective_media_file_id)
+            if type(playing.source) = "roAssociativeArray" and playing.source.RunTimeTicks <> invalid then runTime = playing.source.RunTimeTicks / 10000000#
+            if fileId <> "" then answer = silo.ApiGet(r, "/api/v2/markers/files/" + fileId.EncodeUriComponent())
+        end if
+        if answer = invalid then answer = silo.ApiGet(r, "/api/v2/markers/items/" + itemId.EncodeUriComponent())
+        items = []
+        if answer.ok then items = silo.MarkersToSegments(answer.data, itemId, runTime)
+        return { Items: items, TotalRecordCount: items.Count(), StartIndex: 0 }
+    end function
+
+    ' One file's seek previews (GET /watch/{id}/trickplay) as Jellyfin's Trickplay entry for the file:
+    ' { <width>: { Width, Height, TileWidth, TileHeight, ThumbnailCount, Interval } }. Silo lays
+    ' thumbnails out on its sheets the way Jellyfin does, so the tile arithmetic is the same; the
+    ' sheets' signed addresses ride along as SiloSheets, by sheet index. Invalid without a size, an
+    ' interval or sheets
+    function TrickplayToManifest(trickplay as dynamic, server as string) as dynamic
+        if type(trickplay) <> "roAssociativeArray" then return invalid
+        width = trickplay.thumbnail_width
+        height = trickplay.thumbnail_height
+        columns = trickplay.tile_columns
+        rows = trickplay.tile_rows
+        interval = trickplay.interval_ms
+        for each value in [width, height, columns, rows, interval]
+            if not siloMap.IsNumber(value) or value <= 0 then return invalid
+        end for
+        sheets = siloMap.Maps(trickplay.sheets)
+        if sheets.Count() = 0 then return invalid
+        urls = []
+        position = 0
+        for each sheet in sheets
+            url = silo.ResolveUrl(server, siloMap.TextOf(sheet.url))
+            if url <> ""
+                index = position
+                if siloMap.IsNumber(sheet.index) and sheet.index >= 0 then index = Int(sheet.index)
+                while urls.Count() <= index
+                    urls.Push("")
+                end while
+                urls[index] = url
+            end if
+            position++
+        end for
+        count = trickplay.thumbnail_count
+        if not siloMap.IsNumber(count) or count <= 0 then count = sheets.Count() * columns * rows
+        entry = { Width: Int(width), Height: Int(height), TileWidth: Int(columns), TileHeight: Int(rows), ThumbnailCount: Int(count), Interval: Int(interval), SiloSheets: urls }
+        manifest = {}
+        manifest[Int(width).ToStr()] = entry
+        return manifest
+    end function
+
+    ' The item's Trickplay, for the first file it has, as Jellyfin's item field: by file, then width
+    sub AddTrickplay(r as object, item as object)
+        if type(item.MediaSources) <> "roArray" or item.MediaSources.Count() = 0 then return
+        fileId = item.MediaSources[0].Id
+        answer = silo.ApiGet(r, "/api/v2/watch/" + item.Id.EncodeUriComponent() + "/trickplay", { file_id: fileId })
+        if not answer.ok then return
+        manifest = silo.TrickplayToManifest(answer.data, r.server)
+        if manifest = invalid then return
+        trickplay = {}
+        trickplay[fileId] = manifest
+        item["Trickplay"] = trickplay
+    end sub
+end namespace
