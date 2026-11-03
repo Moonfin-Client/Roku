@@ -1,9 +1,12 @@
 import "pkg:/source/api/plex/PlexPlayback.bs"
 import "pkg:/source/api/plex/PlexWrites.bs"
 
+' Sign in waits on Moonbase's Ping, and most Plex servers have no companion
+const PLEX_MOONBASE_PING_MS = 3000
+
 ' Answers the app's Jellyfin requests for a Plex server, by route, in the shapes the app reads. A
-' route Plex has no way to answer is turned down with 501, and the Moonfin plugin's routes with 404,
-' which is how the app learns the plugin isn't there.
+' route Plex has no way to answer is turned down with 501. The Moonfin plugin's routes go to Moonbase
+' for Plex, and a 404 when there's none is how the app learns the plugin isn't there.
 
 namespace plexBridge
 
@@ -28,7 +31,7 @@ namespace plexBridge
         end if
         userId = plexUrls.Str(q.LookupCI("UserId") ?? "")
         if userId = "" and isChainValid(m.global, "session.user.id") then userId = plexUrls.Str(m.global.session.user.id)
-        ctx = { base: base, token: token, userId: userId }
+        ctx = { base: base, token: token, userId: userId, rawBody: plexUrls.Str(request.body ?? "") }
         routePath = pathRoute(path)
         return plexBridge.Route(ctx, UCase(plexUrls.Str(request.method ?? "GET")), routePath.Split("/"), LCase(routePath).Split("/"), q, body)
     end function
@@ -72,8 +75,9 @@ namespace plexBridge
     function Route(ctx as object, method as string, parts as object, low as object, q as object, body as object) as object
         first = low[0]
         count = low.Count()
-        ' The Moonfin plugin and its achievements live on Jellyfin and Emby servers only
-        if first = "moonfin" or first = "plugins" then return plexBridge.Missing()
+        if first = "moonfin" then return plexBridge.Moonbase(ctx, method, parts, low, q)
+        ' Achievements live on Jellyfin and Emby servers only
+        if first = "plugins" then return plexBridge.Missing()
 
         if first = "system"
             if count >= 2 and low[1] = "info" then return plexBridge.PublicInfo(ctx)
@@ -129,6 +133,33 @@ namespace plexBridge
         if first = "livetv" then return plexBridge.LiveTv(low)
         if first = "localization" or first = "clientlog" then return plexBridge.Missing()
         return plexBridge.Unsupported()
+    end function
+
+    ' Moonbase for Plex answers the plugin's routes itself. Until its Ping has found it on the server
+    ' signed in to, only the Ping goes out, so a Plex server without one turns the rest down at once.
+    function Moonbase(ctx as object, method as string, parts as object, low as object, q as object) as object
+        endpoint = low[1] ?? ""
+        reachable = chainLookupReturn(m.global, "session.pluginInfo.installed", false) = true and LCase(ctx.base) = LCase(plexUrls.OriginOf(toString(get_url() ?? "")))
+        if endpoint <> "ping" and not reachable then return plexBridge.Missing()
+
+        timeoutMs = PLEX_TIMEOUT_MS
+        if endpoint = "ping" then timeoutMs = PLEX_MOONBASE_PING_MS
+        q["X-Plex-Token"] = ctx.token
+        headers = {}
+        if ctx.rawBody <> "" then headers["Content-Type"] = "application/json"
+        reply = plexHttp.Transfer(plexUrls.MoonbaseOrigin(ctx.base) + "/" + parts.Join("/") + "?" + plexUrls.Query(q), method, headers, timeoutMs, ctx.rawBody)
+        if reply.status < 200 or reply.status >= 300 then return { status: reply.status, data: invalid }
+
+        ' Smart search finds Plex's own metadata, which is read like any other Plex answer
+        if endpoint = "smartsearch"
+            data = plexHttp.Parse(reply.text)
+            data["Items"] = plexMapper.Items(data.LookupCI("Items"))
+            return plexBridge.Ok(data)
+        end if
+        data = invalid
+        text = reply.text.Trim()
+        if text.Left(1) = "{" or text.Left(1) = "[" then data = ParseJson(text)
+        return { status: reply.status, data: data }
     end function
 
     function PublicInfo(ctx as object) as object
