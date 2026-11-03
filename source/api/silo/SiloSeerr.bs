@@ -1,0 +1,588 @@
+import "pkg:/source/api/silo/SiloCatalog.bs"
+import "pkg:/source/api/silo/SiloImages.bs"
+import "pkg:/source/api/silo/SiloMapper.bs"
+import "pkg:/source/api/silo/SiloSession.bs"
+import "pkg:/source/utils/misc.bs"
+
+' The request screens on Silo, through Silo's own requests feature (/api/v2/requests) instead of a
+' Seerr server. Ported from Smart-TV's siloSeerr.js (Moonfin-Core's SiloSeerrHttpClient).
+'
+' The screens speak Seerr's API through Moonbase's /Moonfin/Seerr/Api proxy, so each Seerr path is
+' answered here with Silo's reply rewritten into the JSON Seerr would have sent. What Silo has no
+' counterpart for (issues, people, collections, quotas, Radarr and Sonarr choices) answers empty. The
+' Discover rows an admin adds on Silo come through as search sliders whose query names the row.
+' Silo's request ids are 64-bit numbers, handed to the screens as such, so they map straight back.
+namespace silo
+    const SILO_ROW_PREFIX = "silo-row:"
+
+    function SeerrGet(r as object, path as string, query = invalid as dynamic) as object
+        answer = silo.Call(r.server, "/api/v2" + path, { account: r.account, profileId: r.profileId, query: query })
+        if answer.ok and type(answer.data) = "roAssociativeArray" then return answer.data
+        return {}
+    end function
+
+    function SeerrList(value as dynamic) as object
+        if type(value) = "roArray" then return value
+        return []
+    end function
+
+    function SeerrType(kind as dynamic) as string
+        if kind = "series" then return "tv"
+        return "movie"
+    end function
+
+    function SiloMediaType(kind as dynamic) as string
+        if kind = "tv" then return "series"
+        return "movie"
+    end function
+
+    ' A 31-bit FNV-1a hash, the same on every run, for ids made from names (genres, cast, row keys)
+    function StableId(text as string) as integer
+        ' In 16-bit halves, so every step fits a 32-bit integer: the prime is 256 * 65536 + 403
+        high = 33052
+        low = 40389
+        for i = 0 to text.Len() - 1
+            code = Asc(text.Mid(i, 1))
+            ' BrightScript has no xor
+            low = (low or code) - (low and code)
+            lowProduct = low * 403
+            high = (high * 403 + low * 256 + lowProduct \ 65536) mod 65536
+            low = lowProduct mod 65536
+        end for
+        return (high mod 32768) * 65536 + low
+    end function
+
+    function MediaStatusOf(availability as dynamic, state as dynamic) as integer
+        if availability = "available" then return 5
+        if state = "pending" then return 2
+        if state = "approved" or state = "processing" then return 3
+        if state = "partially_available" then return 4
+        if state = "available" then return 5
+        return 1
+    end function
+
+    function RequestStatusOf(state as dynamic) as integer
+        if state = "pending" then return 1
+        if state = "declined" or state = "cancelled" then return 3
+        if state = "failed" then return 4
+        if state = "available" then return 5
+        return 2
+    end function
+
+    ' A Silo request id as the number the screens get: text of digits becomes a 64-bit number
+    function RequestNumber(id as dynamic) as dynamic
+        if id = invalid then return 0
+        text = id.ToStr()
+        ' Past 31 bits a number may lose digits on the way, so those stay text
+        if CreateObject("roRegex", "^\d{1,9}$", "").IsMatch(text) then return text.ToInt()
+        return text
+    end function
+
+    function SeerrMediaInfo(result as object) as object
+        req = result.request
+        if type(req) <> "roAssociativeArray" then req = {}
+        state = req.state
+        info = { id: result.tmdb_id, tmdbId: result.tmdb_id, status: silo.MediaStatusOf(result.availability, state), jellyfinMediaId: result.library_content_id, requests: [] }
+        if req.request_id <> invalid
+            entry = { id: silo.RequestNumber(req.request_id), status: silo.RequestStatusOf(state), type: silo.SeerrType(result.media_type), is4k: false }
+            if req.requested_by_viewer = true then entry.requestedBy = { id: m.siloSeerrMe ?? 0 }
+            info.requests.Push(entry)
+        end if
+        if type(result.seasons) = "roArray"
+            seasons = []
+            for each season in result.seasons
+                if type(season) = "roAssociativeArray"
+                    status = 1
+                    if season.availability = "available"
+                        status = 5
+                    else if season.availability = "partial"
+                        status = 4
+                    else if season.requested = true
+                        status = 3
+                    end if
+                    seasons.Push({ seasonNumber: season.season_number, status: status })
+                end if
+            end for
+            info.seasons = seasons
+        end if
+        return info
+    end function
+
+    function DiscoverItem(result as object) as object
+        kind = silo.SeerrType(result.media_type)
+        item = { id: result.tmdb_id, mediaType: kind, posterPath: result.poster_path, backdropPath: result.backdrop_path, overview: result.overview, voteAverage: result.vote_average, popularity: result.popularity, genreIds: [], adult: false, mediaInfo: silo.SeerrMediaInfo(result) }
+        if kind = "tv"
+            item.name = result.title
+            item.firstAirDate = result.release_date
+        else
+            item.title = result.title
+            item.releaseDate = result.release_date
+        end if
+        return item
+    end function
+
+    ' shift is how many pages the row was moved on by
+    function SeerrPage(body as object, shift = 0 as integer, onlyMissing = false as boolean) as object
+        results = []
+        for each result in silo.SeerrList(body.results)
+            if type(result) = "roAssociativeArray" and (not onlyMissing or result.library_content_id = invalid) then results.Push(silo.DiscoverItem(result))
+        end for
+        at = 1
+        if siloMap.IsNumber(body.page) then at = body.page
+        ' Silo names the page to read next when page+1 would repeat titles, and the screens ask for page+1
+        nextAt = at
+        if siloMap.IsNumber(body.next_page) then nextAt = body.next_page - 1
+        total = 1
+        if siloMap.IsNumber(body.total_pages) then total = body.total_pages
+        totalPages = total - shift
+        if totalPages < 1 then totalPages = 1
+        totalResults = results.Count()
+        if siloMap.IsNumber(body.total_results) then totalResults = body.total_results
+        return { page: nextAt - shift, totalPages: totalPages, totalResults: totalResults, results: results }
+    end function
+
+    function EmptySeerrPage() as object
+        return { page: 1, totalPages: 0, totalResults: 0, results: [] }
+    end function
+
+    ' One page of a Discover row. A shuffled row opens a random one of its first three pages, in a
+    ' random order, so it's different on each visit; later pages carry on from there
+    function SeerrRow(r as object, key as string, path as string, at as integer, reorder = false as boolean) as object
+        if type(m.siloSeerrShift) <> "roAssociativeArray" then m.siloSeerrShift = {}
+        if reorder and at = 1 then m.siloSeerrShift[key] = Rnd(3) - 1
+        shift = 0
+        if reorder then shift = m.siloSeerrShift[key] ?? 0
+        body = silo.SeerrGet(r, path, { page: at + shift })
+        if shift > 0 and silo.SeerrList(body.results).Count() = 0
+            ' A row shorter than the skip opens on its first page after all
+            m.siloSeerrShift[key] = 0
+            shift = 0
+            body = silo.SeerrGet(r, path, { page: at })
+        end if
+        out = silo.SeerrPage(body, shift)
+        if reorder then out.results = silo.Shuffled(out.results)
+        return out
+    end function
+
+    function BuiltInRow(r as object, key as string, at as integer) as object
+        return silo.SeerrRow(r, key, "/requests/discover/" + key, at, true)
+    end function
+
+    ' Trending films and series together, as Seerr's trending row has them
+    function SeerrTrending(r as object, at as integer) as object
+        films = silo.BuiltInRow(r, "trending_movies", at)
+        shows = silo.BuiltInRow(r, "trending_series", at)
+        results = []
+        results.Append(films.results)
+        results.Append(shows.results)
+        results = silo.Shuffled(results)
+        pageAt = films.page
+        if shows.page < pageAt then pageAt = shows.page
+        pages = films.totalPages
+        if shows.totalPages < pages then pages = shows.totalPages
+        return { page: pageAt, totalPages: pages, totalResults: results.Count(), results: results }
+    end function
+
+    ' Titles already in the library are left out: search lists them under the library's own results
+    function SeerrSearch(r as object, query as string, at as integer) as object
+        prefix = silo.SILO_ROW_PREFIX
+        if query.Left(prefix.Len()) = prefix
+            key = query.Mid(prefix.Len())
+            return silo.SeerrRow(r, key, "/requests/discover/rows/" + key.EncodeUriComponent(), at, true)
+        end if
+        return silo.SeerrPage(silo.SeerrGet(r, "/requests/search", { q: query, media_type: "all", page: at }), 0, true)
+    end function
+
+    ' The rows an admin added to Silo's Discover page, as search sliders. Their ids come from the row
+    ' key, so a Home row made from one keeps finding it
+    function SeerrSliders(r as object) as object
+        builtIn = ["trending_movies", "trending_series", "popular_movies", "popular_series", "upcoming_movies", "on_air_series"]
+        titleRows = ["tmdb_chart", "tmdb_discover", "tmdb_list", "mdblist"]
+        out = []
+        for each row in silo.SeerrList(silo.SeerrGet(r, "/requests/discover").row_order)
+            if type(row) = "roAssociativeArray" and isString(row.key) and not inArray(builtIn, row.key) and inArray(titleRows, row.type)
+                title = ""
+                if row.title <> invalid then title = row.title.ToStr()
+                out.Push({ id: silo.StableId(row.key), type: 17, enabled: true, title: title, data: silo.SILO_ROW_PREFIX + row.key })
+            end if
+        end for
+        return out
+    end function
+
+    function SeerrGenres(r as object) as object
+        out = []
+        for each genre in silo.SeerrList(silo.SeerrGet(r, "/requests/discover/genres").items)
+            if type(genre) = "roAssociativeArray" and isString(genre.slug)
+                name = genre.display_name ?? genre.slug
+                out.Push({ id: silo.StableId(genre.slug), name: name, backdrops: [], siloSlug: genre.slug })
+            end if
+        end for
+        return out
+    end function
+
+    function SeerrSort(sortBy as dynamic) as string
+        field = ""
+        if isString(sortBy) then field = sortBy.Split(".")[0]
+        if field = "vote_average" then return "vote_average"
+        if field = "primary_release_date" or field = "first_air_date" then return "release_date"
+        return "popularity"
+    end function
+
+    ' Silo browses by one genre, studio or network at a time; the other filters have no counterpart
+    function SeerrBrowseGenre(r as object, genre as dynamic, kind as string, sortBy as dynamic, at as integer) as object
+        slug = ""
+        wanted = (genre ?? "").ToStr().ToInt()
+        for each known in silo.SeerrGenres(r)
+            if known.id = wanted then slug = known.siloSlug
+        end for
+        if slug = ""
+            row = "popular_movies"
+            if kind = "tv" then row = "popular_series"
+            return silo.SeerrPage(silo.SeerrGet(r, "/requests/discover/" + row, { page: at }))
+        end if
+        return silo.SeerrPage(silo.SeerrGet(r, "/requests/discover/browse/genre/" + slug.EncodeUriComponent(), { media_type: silo.SiloMediaType(kind), sort: silo.SeerrSort(sortBy), page: at }))
+    end function
+
+    ' A studio or network by its TMDB id, browsed through the slug Silo lists it under
+    function SeerrBrowseBrand(r as object, kind as string, tmdbId as dynamic, sortBy as dynamic, at as integer) as object
+        wanted = (tmdbId ?? "").ToStr()
+        for each brand in silo.SeerrList(silo.SeerrGet(r, "/requests/discover/" + kind + "s").items)
+            if type(brand) = "roAssociativeArray" and brand.tmdb_id <> invalid and brand.tmdb_id.ToStr() = wanted
+                return silo.SeerrPage(silo.SeerrGet(r, "/requests/discover/browse/" + kind + "/" + brand.slug.ToStr().EncodeUriComponent(), { sort: silo.SeerrSort(sortBy), page: at }))
+            end if
+        end for
+        return silo.EmptySeerrPage()
+    end function
+
+    function SeerrDetail(r as object, kind as string, tmdbId as string) as object
+        return silo.SeerrGet(r, "/requests/detail/" + silo.SiloMediaType(kind) + "/" + tmdbId.EncodeUriComponent())
+    end function
+
+    function SeerrTitle(r as object, kind as string, tmdbId as string) as object
+        d = silo.SeerrDetail(r, kind, tmdbId)
+        cast = []
+        for each credit in silo.SeerrList(d.cast)
+            if type(credit) = "roAssociativeArray"
+                name = (credit.name ?? "").ToStr()
+                cast.Push({ id: silo.StableId(name), name: name, character: credit.character, profilePath: credit.profile_path, order: credit.order })
+            end if
+        end for
+        crew = []
+        if isValidAndNotEmpty(d.director) then crew.Push({ id: silo.StableId(d.director), name: d.director, job: "Director", department: "Directing" })
+        for each name in silo.SeerrList(d.creators)
+            if isString(name) then crew.Push({ id: silo.StableId(name), name: name, job: "Creator", department: "Writing" })
+        end for
+        genres = []
+        for each genre in silo.SeerrList(d.genres)
+            if isString(genre) then genres.Push({ id: silo.StableId(genre), name: genre })
+        end for
+        out = { id: d.tmdb_id, tagline: d.tagline, posterPath: d.poster_path, backdropPath: d.backdrop_path, overview: d.overview, status: d.status, voteAverage: d.vote_average, voteCount: d.vote_count, genres: genres, credits: { cast: cast, crew: crew }, externalIds: { tmdbId: d.tmdb_id, tvdbId: d.tvdb_id, imdbId: d.imdb_id }, mediaInfo: silo.SeerrMediaInfo(d), keywords: [], relatedVideos: [], watchProviders: [] }
+        if kind = "movie"
+            out.mediaType = "movie"
+            out.title = (d.title ?? "").ToStr()
+            out.releaseDate = d.release_date
+            out.runtime = d.runtime
+            return out
+        end if
+        out.mediaType = "tv"
+        out.name = d.title
+        out.firstAirDate = d.first_air_date ?? d.release_date
+        out.lastAirDate = d.last_air_date
+        out.numberOfSeasons = d.number_of_seasons
+        out.numberOfEpisodes = d.number_of_episodes
+        networks = []
+        for each network in silo.SeerrList(d.networks)
+            if isString(network) then networks.Push({ id: silo.StableId(network), name: network })
+        end for
+        out.networks = networks
+        seasons = []
+        for each season in silo.SeerrList(d.seasons)
+            if type(season) = "roAssociativeArray" then seasons.Push({ seasonNumber: season.season_number, name: season.name, episodeCount: season.episode_count, airDate: season.air_date, posterPath: season.poster_path })
+        end for
+        out.seasons = seasons
+        return out
+    end function
+
+    ' Silo has one list of recommendations on the detail, which stands in for similar titles too
+    function SeerrRecommendations(r as object, kind as string, tmdbId as string, at as integer) as object
+        if at > 1 then return silo.EmptySeerrPage()
+        recs = silo.SeerrList(silo.SeerrDetail(r, kind, tmdbId).recommendations)
+        return silo.SeerrPage({ page: 1, total_pages: 1, total_results: recs.Count(), results: recs })
+    end function
+
+    ' ---- Requests
+
+    function MapSeerrRequest(req as object) as object
+        kind = silo.SeerrType(req.media_type)
+        status = silo.RequestStatusOf(req.state)
+        media = { id: req.tmdb_id, mediaType: kind, tmdbId: req.tmdb_id, tvdbId: req.tvdb_id, imdbId: req.imdb_id, status: silo.MediaStatusOf(invalid, req.state), posterPath: req.poster_path, backdropPath: req.backdrop_path, overview: req.overview, jellyfinMediaId: req.library_content_id }
+        if kind = "tv"
+            media.name = req.title
+        else
+            media.title = req.title
+        end if
+        seasons = []
+        for each number in silo.SeerrList(req.seasons)
+            if siloMap.IsNumber(number) then seasons.Push({ id: number, seasonNumber: number, status: status, createdAt: req.created_at, updatedAt: req.updated_at })
+        end for
+        out = { id: silo.RequestNumber(req.id), status: status, createdAt: req.created_at, updatedAt: req.updated_at, type: kind, is4k: false, media: media, seasonCount: seasons.Count(), seasons: seasons }
+        if req.requested_by_user_id <> invalid then out.requestedBy = { id: req.requested_by_user_id.ToStr().ToInt() }
+        return out
+    end function
+
+    ' Whether a mapped request passes a Seerr list filter
+    function SeerrFilterKeeps(req as object, filter as string) as boolean
+        media = req.media.status
+        if filter = "pending" then return req.status = 1
+        if filter = "approved" then return req.status = 2
+        if filter = "processing" then return media = 3
+        if filter = "available" then return media = 5 or media = 4
+        if filter = "unavailable" then return media <> 5
+        if filter = "failed" then return req.status = 4
+        if filter = "completed" then return req.status = 5
+        return true
+    end function
+
+    ' Whether the viewer can manage Silo's requests, which only Silo's acting admin can
+    function SeerrIsAdmin(r as object) as boolean
+        kept = silo.RecallAnswer("siloSeerrAdmin", r.profileId, 600)
+        if kept <> invalid then return kept
+        answer = silo.Call(r.server, "/api/v2/admin/requests/capabilities", { account: r.account, profileId: r.profileId })
+        admin = answer.ok
+        if answer.ok or answer.status = 401 or answer.status = 403 then silo.KeepAnswer("siloSeerrAdmin", r.profileId, admin, 8)
+        return admin
+    end function
+
+    ' Silo records requests against the account, while the app's user is a profile, so the account is
+    ' the requests user
+    function SeerrCurrentUser(r as object) as object
+        manage = silo.SeerrIsAdmin(r)
+        account = silo.SeerrGet(r, "/account/me")
+        me = 0
+        if account.id <> invalid then me = account.id.ToStr().ToInt()
+        m.siloSeerrMe = me
+        permissions = 32 + 262144 + 524288
+        if manage then permissions = permissions + 16
+        return { id: me, displayName: account.username, permissions: permissions }
+    end function
+
+    function SeerrStatus(r as object) as object
+        answer = silo.SeerrGet(r, "/requests/status")
+        enabled = answer.requests_enabled = true
+        out = { enabled: enabled, authenticated: enabled and answer.allowed <> false, seerrUserId: invalid, displayName: invalid, permissions: 0 }
+        if enabled
+            user = silo.SeerrCurrentUser(r)
+            out.seerrUserId = user.id
+            out.displayName = user.displayName
+            out.permissions = user.permissions
+        end if
+        return out
+    end function
+
+    ' Reads Silo's cursor pages until count requests are in hand or there are no more. Seerr pages
+    ' by offset, Silo by cursor, and the lists are short enough to read from the start
+    function ReadSeerrRequests(r as object, path as string, query as object, count as integer, filter as string) as object
+        out = []
+        cursor = ""
+        more = true
+        guard = 0
+        while more and out.Count() < count and guard < 40
+            guard++
+            sent = {}
+            sent.Append(query)
+            sent.limit = 50
+            if cursor <> "" then sent.cursor = cursor
+            body = silo.SeerrGet(r, path, sent)
+            items = silo.SeerrList(body.items)
+            for each item in items
+                if type(item) = "roAssociativeArray"
+                    mapped = silo.MapSeerrRequest(item)
+                    if silo.SeerrFilterKeeps(mapped, filter) then out.Push(mapped)
+                end if
+            end for
+            cursor = ""
+            if type(body.page) = "roAssociativeArray" and isValidAndNotEmpty(body.page.next_cursor) then cursor = body.page.next_cursor
+            more = cursor <> "" and items.Count() > 0
+        end while
+        return { requests: out, more: more }
+    end function
+
+    function SeerrRequests(r as object, q as object) as object
+        take = (q.take ?? "20").ToInt()
+        skip = (q.skip ?? "0").ToInt()
+        filter = q.filter ?? ""
+        by = q.requestedBy
+        me = m.siloSeerrMe ?? 0
+        found = invalid
+        if not silo.SeerrIsAdmin(r) or (by <> invalid and by.ToInt() = me)
+            found = silo.ReadSeerrRequests(r, "/requests/mine", {}, skip + take, filter)
+        else
+            views = { pending: "needs_approval", approved: "in_progress", processing: "in_progress", failed: "failed", available: "done", completed: "done" }
+            query = {}
+            if views.DoesExist(filter) then query.view = views[filter]
+            if by <> invalid then query.requested_by_user_id = by
+            found = silo.ReadSeerrRequests(r, "/admin/requests", query, skip + take, filter)
+        end if
+        results = silo.Slice(found.requests, skip, take).Items
+        known = found.requests.Count()
+        if found.more then known++
+        pages = 1
+        if take > 0 then pages = Int((known + take - 1) / take)
+        pageAt = 1
+        if take > 0 then pageAt = Int(skip / take) + 1
+        return { pageInfo: { pages: pages, pageSize: take, results: known, page: pageAt }, results: results }
+    end function
+
+    ' Silo's create takes the title and artwork, which Seerr looks up itself, so the detail is read
+    ' first. Silo has no 4K requests or per-request server choice, so those are left out
+    function SeerrCreateRequest(r as object, body as dynamic) as object
+        if type(body) <> "roAssociativeArray" then return silo.StatusOnly(400)
+        kind = "movie"
+        if body.mediaType = "tv" then kind = "tv"
+        tmdbId = (body.mediaId ?? "").ToStr()
+        d = silo.SeerrDetail(r, kind, tmdbId)
+        sent = { media_type: silo.SiloMediaType(kind), tmdb_id: body.mediaId, title: (d.title ?? "").ToStr() }
+        if d.tvdb_id <> invalid then sent.tvdb_id = d.tvdb_id
+        if isValidAndNotEmpty(d.imdb_id) then sent.imdb_id = d.imdb_id
+        if siloMap.IsNumber(d.year) and d.year > 0 then sent.year = Int(d.year)
+        if d.overview <> invalid then sent.overview = d.overview
+        if d.poster_path <> invalid then sent.poster_path = d.poster_path
+        if d.backdrop_path <> invalid then sent.backdrop_path = d.backdrop_path
+        if kind = "tv" and type(body.seasons) = "roArray" then sent.seasons = body.seasons
+        answer = silo.Call(r.server, "/api/v2/requests", { method: "POST", body: sent, account: r.account, profileId: r.profileId })
+        if not answer.ok then return silo.StatusOnly(answer.status)
+        if type(answer.data) = "roAssociativeArray" then return silo.Ok(silo.MapSeerrRequest(answer.data))
+        return silo.Ok({})
+    end function
+
+    function SeerrWatchlist(r as object, at as integer) as object
+        if at > 1 then return silo.EmptySeerrPage()
+        results = []
+        for each title in silo.SeerrList(silo.SeerrGet(r, "/watchlist/titles", { limit: 100 }).items)
+            if type(title) = "roAssociativeArray"
+                title.availability = "missing"
+                results.Push(silo.DiscoverItem(title))
+            end if
+        end for
+        return { page: 1, totalPages: 1, totalResults: results.Count(), results: results }
+    end function
+
+    function SeerrPost(r as object, path as string, body = {} as object) as object
+        answer = silo.Call(r.server, path, { method: "POST", body: body, account: r.account, profileId: r.profileId })
+        if not answer.ok then return silo.StatusOnly(answer.status)
+        return silo.Ok(answer.data ?? {})
+    end function
+
+    ' Answers one Seerr API path the way Seerr would, from Silo. parts are the path's segments after
+    ' /Moonfin/Seerr/Api
+    function SeerrAnswer(r as object, parts as object) as object
+        q = r.query
+        at = (q.page ?? "1").ToInt()
+        if at < 1 then at = 1
+        verb = r.method
+        first = ""
+        if parts.Count() > 0 then first = LCase(parts[0])
+        second = ""
+        if parts.Count() > 1 then second = parts[1]
+        third = ""
+        if parts.Count() > 2 then third = LCase(parts[2])
+
+        if first = "request"
+            if verb = "POST" and second = "" then return silo.SeerrCreateRequest(r, r.body)
+            if second = "count"
+                if not silo.SeerrIsAdmin(r) then return silo.Ok({})
+                pending = (silo.SeerrGet(r, "/admin/requests/counts").needs_approval ?? 0)
+                return silo.Ok({ total: pending, pending: pending })
+            end if
+            if second = "" then return silo.Ok(silo.SeerrRequests(r, q))
+            requestPath = second.EncodeUriComponent()
+            ' Seerr deletes a request; Silo cancels it, which keeps its history
+            if verb = "DELETE" then return silo.SeerrPost(r, "/api/v2/requests/" + requestPath + "/cancel")
+            if third = "approve" or third = "decline" or third = "retry" then return silo.SeerrPost(r, "/api/v2/admin/requests/" + requestPath + "/" + third)
+            return silo.Ok(silo.MapSeerrRequest(silo.SeerrGet(r, "/requests/" + requestPath)))
+        end if
+        if first = "watchlist"
+            if verb = "POST" and type(r.body) = "roAssociativeArray"
+                answer = silo.Call(r.server, "/api/v2/watchlist/titles/" + silo.SiloMediaType(r.body.mediaType) + "/" + (r.body.tmdbId ?? "").ToStr().EncodeUriComponent(), { method: "PUT", account: r.account, profileId: r.profileId })
+                return silo.StatusOnly(answer.status)
+            end if
+            if verb = "DELETE"
+                answer = silo.Call(r.server, "/api/v2/watchlist/titles/" + silo.SiloMediaType(q.mediaType) + "/" + second.EncodeUriComponent(), { method: "DELETE", account: r.account, profileId: r.profileId })
+                return silo.StatusOnly(answer.status)
+            end if
+            return silo.Ok(silo.SeerrWatchlist(r, at))
+        end if
+        if first = "auth" and LCase(second) = "me" then return silo.Ok(silo.SeerrCurrentUser(r))
+        if first = "search" then return silo.Ok(silo.SeerrSearch(r, q.query ?? "", at))
+        if first = "settings" and LCase(second) = "discover" then return silo.Ok(silo.SeerrSliders(r))
+        if (first = "movie" or first = "tv") and second <> ""
+            if third = "recommendations" or third = "similar" then return silo.Ok(silo.SeerrRecommendations(r, first, second, at))
+            return silo.Ok(silo.SeerrTitle(r, first, second))
+        end if
+        if first = "discover"
+            kind = LCase(second)
+            if kind = "trending" then return silo.Ok(silo.SeerrTrending(r, at))
+            if kind = "watchlist" then return silo.Ok(silo.SeerrWatchlist(r, at))
+            if kind = "genreslider" then return silo.Ok(silo.SeerrGenres(r))
+            mediaType = "movie"
+            if kind = "tv" then mediaType = "tv"
+            if third = "upcoming"
+                row = "upcoming_movies"
+                if mediaType = "tv" then row = "on_air_series"
+                return silo.Ok(silo.SeerrPage(silo.SeerrGet(r, "/requests/discover/" + row, { page: at })))
+            end if
+            if third = "studio" or third = "network"
+                brand = ""
+                if parts.Count() > 3 then brand = parts[3]
+                return silo.Ok(silo.SeerrBrowseBrand(r, third, brand, q.sortBy, at))
+            end if
+            brandKey = "studio"
+            if mediaType = "tv" then brandKey = "network"
+            if isValidAndNotEmpty(q[brandKey]) then return silo.Ok(silo.SeerrBrowseBrand(r, brandKey, q[brandKey], q.sortBy, at))
+            ' Seerr's plain movie and series lists are its popular ones
+            if not isValidAndNotEmpty(q.genre)
+                row = "popular_movies"
+                if mediaType = "tv" then row = "popular_series"
+                return silo.Ok(silo.BuiltInRow(r, row, at))
+            end if
+            return silo.Ok(silo.SeerrBrowseGenre(r, q.genre, mediaType, q.sortBy, at))
+        end if
+        if first = "issue"
+            if LCase(second) = "count" then return silo.Ok({})
+            return silo.Ok({ pageInfo: { pages: 0, pageSize: 20, results: 0, page: 1 }, results: [] })
+        end if
+        if first = "media" then return silo.Ok({ results: [] })
+        if first = "blacklist" then return silo.Ok({ pageInfo: { pages: 0, pageSize: 20, results: 0, page: 1 }, results: [] })
+        if first = "languages" or first = "service" then return silo.Ok([])
+        if first = "settings"
+            if LCase(second) = "radarr" or LCase(second) = "sonarr" then return silo.Ok([])
+            return silo.Ok({})
+        end if
+        ' Quotas, people, collections: Silo has no counterpart
+        return silo.Ok({})
+    end function
+
+    ' Moonbase's Seerr routes on Silo: the proxy, status, config, sign-in. parts follow /Moonfin/Seerr
+    function SeerrRoute(r as object, parts as object) as object
+        kind = ""
+        if parts.Count() > 0 then kind = LCase(parts[0])
+        if kind = "api"
+            rest = []
+            for i = 1 to parts.Count() - 1
+                rest.Push(parts[i])
+            end for
+            if rest.Count() > 0 and LCase(rest[0]) = "api" and rest.Count() > 1 and LCase(rest[1]) = "v1"
+                rest.Shift()
+                rest.Shift()
+            end if
+            return silo.SeerrAnswer(r, rest)
+        end if
+        if kind = "status" then return silo.Ok(silo.SeerrStatus(r))
+        ' Silo stores its localized "Requests" as the feature's name
+        if kind = "config" then return silo.Ok({ displayName: tr("Requests"), enabled: true })
+        if kind = "login" or kind = "logout" then return silo.Ok({ success: true })
+        ' Radarr and Sonarr calendars aren't ported yet
+        if kind = "radarr" or kind = "sonarr" then return silo.Ok([])
+        return silo.StatusOnly(404)
+    end function
+end namespace

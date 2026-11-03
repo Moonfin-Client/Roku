@@ -198,7 +198,7 @@ for (const name of [
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/achievement-unlocks.bs', 'utf8');
-for (const file of ['source/api/silo/SiloSession.bs', 'source/api/silo/SiloMapper.bs', 'source/api/silo/SiloMediaSources.bs', 'source/api/silo/SiloImages.bs', 'source/api/silo/SiloAccount.bs', 'source/api/silo/SiloPager.bs', 'source/api/silo/SiloCatalog.bs', 'source/api/silo/SiloHome.bs', 'source/api/silo/SiloActions.bs', 'source/api/silo/SiloPlayback.bs', 'source/api/silo/SiloExtras.bs', 'source/api/silo/SiloRouter.bs']) {
+for (const file of ['source/api/silo/SiloSession.bs', 'source/api/silo/SiloMapper.bs', 'source/api/silo/SiloMediaSources.bs', 'source/api/silo/SiloImages.bs', 'source/api/silo/SiloAccount.bs', 'source/api/silo/SiloPager.bs', 'source/api/silo/SiloCatalog.bs', 'source/api/silo/SiloHome.bs', 'source/api/silo/SiloActions.bs', 'source/api/silo/SiloPlayback.bs', 'source/api/silo/SiloExtras.bs', 'source/api/silo/SiloSeerr.bs', 'source/api/silo/SiloRouter.bs']) {
     source += '\n' + (await readFile(file, 'utf8')).replace(/^import .*$/gm, '');
 }
 source += '\n' + await readFile('test/silo.bs', 'utf8');
