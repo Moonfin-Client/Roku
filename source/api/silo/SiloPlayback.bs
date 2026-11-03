@@ -385,8 +385,11 @@ namespace silo
         out = {}
         if type(source) = "roAssociativeArray" then out.Append(source)
         fileId = siloMap.IdOf(plan.effective_media_file_id)
-        if fileId = "" and type(source) = "roAssociativeArray" then fileId = source.Id ?? ""
-        out["Id"] = fileId
+        if fileId = "" and type(source) = "roAssociativeArray" then fileId = source.SiloFileId ?? ""
+        ownerId = ""
+        if type(source) = "roAssociativeArray" then ownerId = source.ItemId ?? ""
+        out["Id"] = siloMap.VersionId(ownerId, fileId)
+        out["SiloFileId"] = fileId
         container = siloMap.TextOf(stream.container)
         if container = "" and type(plan.source) = "roAssociativeArray" then container = siloMap.TextOf(plan.source.container)
         if container = "" and type(source) = "roAssociativeArray" then container = source.Container ?? ""
@@ -547,29 +550,34 @@ namespace silo
     ' The app names a title's default version by the title's own id, as Jellyfin does, so a source id
     ' that isn't one of Silo's files means the default file
     function PlaybackFileOf(r as object, itemId as string, mediaSourceId as string) as object
-        if siloMap.LibraryIdOf(mediaSourceId) = "" then mediaSourceId = ""
+        wanted = siloMap.FileIdOf(mediaSourceId)
+        owner = siloMap.ItemIdOfSource(itemId)
+        if owner <> ""
+            if wanted = "" then wanted = siloMap.FileIdOf(itemId)
+            itemId = owner
+        end if
         sources = []
-        item = silo.GetItem(r, itemId, mediaSourceId)
+        item = silo.GetItem(r, itemId, wanted)
         if item <> invalid and type(item.MediaSources) = "roArray" then sources = item.MediaSources
         source = invalid
         for each candidate in sources
-            if mediaSourceId = "" or candidate.Id = mediaSourceId
+            if wanted = "" or candidate.SiloFileId = wanted
                 source = candidate
                 exit for
             end if
         end for
         if source = invalid and sources.Count() > 0 then source = sources[0]
-        fileId = mediaSourceId
-        if source <> invalid then fileId = source.Id
-        explicit = sources.Count() > 1 and source <> invalid and sources[0].Id <> fileId
-        return { fileId: fileId, source: source, sources: sources, explicit: explicit }
+        fileId = wanted
+        if source <> invalid then fileId = source.SiloFileId
+        explicit = sources.Count() > 1 and source <> invalid and sources[0].SiloFileId <> fileId
+        return { fileId: fileId, itemId: itemId, source: source, sources: sources, explicit: explicit }
     end function
 
     ' The file a plan plays when Silo picked another version than the one asked for
     function SourceOfPlan(r as object, plan as object, itemId as string, known as dynamic) as dynamic
         effective = siloMap.IdOf(plan.effective_media_file_id)
         if effective = "" then return known
-        if type(known) = "roAssociativeArray" and known.Id = effective then return known
+        if type(known) = "roAssociativeArray" and known.SiloFileId = effective then return known
         file = silo.PlaybackFileOf(r, itemId, effective)
         if file.source <> invalid then return file.source
         return known
@@ -579,7 +587,13 @@ namespace silo
     function PlaybackInfo(r as object, itemId as string) as object
         body = r.body
         if type(body) <> "roAssociativeArray" then body = {}
-        live = silo.LiveSessionOf(itemId)
+        owner = siloMap.ItemIdOfSource(itemId)
+        live = invalid
+        if owner <> ""
+            live = silo.LiveSessionOf(owner)
+        else
+            live = silo.LiveSessionOf(itemId)
+        end if
         if live <> invalid then return silo.Replan(r, live)
         return silo.StartPlayback(r, itemId, body)
     end function
@@ -638,13 +652,13 @@ namespace silo
         if type(decision) = "roAssociativeArray" and isString(decision.session_id) then sessionId = decision.session_id
         if sessionId = "" and type(plan) = "roAssociativeArray" and isString(plan.session_id) then sessionId = plan.session_id
         if type(decision) <> "roAssociativeArray" or decision.outcome <> "playable" or type(plan) <> "roAssociativeArray" or sessionId = "" then return silo.Refusal(decision)
-        source = silo.SourceOfPlan(r, plan, itemId, file.source)
+        source = silo.SourceOfPlan(r, plan, file.itemId, file.source)
         playing = {
             sessionId: sessionId,
             server: r.server,
             account: r.account,
             profileId: r.profileId,
-            itemId: itemId,
+            itemId: file.itemId,
             attemptId: startBody.playback_attempt_id,
             installationId: server.installationId,
             plan: plan,
