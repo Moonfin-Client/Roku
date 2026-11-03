@@ -1,4 +1,6 @@
 import "pkg:/source/api/silo/SiloAccount.bs"
+import "pkg:/source/api/silo/SiloCatalog.bs"
+import "pkg:/source/api/silo/SiloHome.bs"
 import "pkg:/source/api/silo/SiloMapper.bs"
 import "pkg:/source/api/silo/SiloSession.bs"
 import "pkg:/source/utils/config.bs"
@@ -83,6 +85,8 @@ namespace silo
         else if type(body) = "roAssociativeArray" or type(body) = "roArray"
             parsed.body = body
         end if
+        parsed.serverId = ""
+        if isChainValid(m.global, "session.server.url") and silo.ServerKey(m.global.session.server.url) = server then parsed.serverId = m.global.session.server.id ?? ""
         parsed.profileId = silo.ProfileOfRequest(parsed)
         parsed.account = silo.ProfileAccount(parsed.profileId)
         return parsed
@@ -158,7 +162,132 @@ namespace silo
         ' Silo takes no Jellyfin client capabilities report and keeps no Jellyfin sessions list
         if first = "sessions" and count >= 2 and route[1] = "capabilities" then return silo.NoContent()
 
+        if r.account = "" then return silo.StatusOnly(401)
+        if r.method = "GET"
+            answer = silo.ReadRoute(r, first, count)
+            if answer <> invalid then return answer
+        end if
+        if first = "displaypreferences" then return silo.NoContent()
         return invalid
+    end function
+
+    ' The reads: libraries, items, details, seasons, episodes, home rows, people, genres, studios
+    function ReadRoute(r as object, first as string, count as integer) as dynamic
+        route = r.route
+        segments = r.segments
+        q = r.query
+        if first = "userviews" and count = 1
+            views = silo.ViewsOf(r)
+            if views = invalid then return silo.StatusOnly(502)
+            return silo.Ok({ Items: views, TotalRecordCount: views.Count(), StartIndex: 0 })
+        end if
+        if first = "useritems" and count = 2 and route[1] = "resume" then return silo.Ok(silo.ResumeItems(r))
+        if first = "items"
+            if count = 1 then return silo.Listing(silo.GetItems(r))
+            if count = 2
+                if route[1] = "latest" then return silo.Ok(silo.LatestItems(r))
+                if route[1] = "filters" then return silo.FilterAnswer(r, false)
+                if route[1] = "filters2" then return silo.FilterAnswer(r, true)
+                return silo.FoundOr(silo.GetItem(r, segments[1]))
+            end if
+            if count = 3
+                itemId = segments[1]
+                action = route[2]
+                if action = "similar" then return silo.Listing(silo.SimilarTo(r, itemId, silo.QueryInt(q, "Limit", 15)))
+                if action = "localtrailers" then return silo.Ok(silo.ExtrasFor(r, itemId, true))
+                if action = "specialfeatures" then return silo.Ok(silo.ExtrasFor(r, itemId, false))
+                if action = "ancestors" then return silo.Ok(silo.AncestorsOf(r, itemId))
+                ' Silo has no intros or additional parts
+                if action = "intros" or action = "additionalparts" then return silo.Ok(silo.Empty())
+                if action = "images" then return silo.ImageList(r, itemId)
+            end if
+        end if
+        if (first = "movies" or first = "shows" or first = "trailers") and count = 3 and route[2] = "similar"
+            return silo.Listing(silo.SimilarTo(r, segments[1], silo.QueryInt(q, "Limit", 15)))
+        end if
+        if first = "shows"
+            if count = 2 and route[1] = "nextup" then return silo.Ok(silo.NextUp(r))
+            if count = 3 and route[2] = "seasons" then return silo.Listing(silo.SeasonsOf(r, segments[1]))
+            if count = 3 and route[2] = "episodes"
+                seasonId = q.LookupCI("SeasonId") ?? ""
+                episodes = silo.EpisodesOf(r, segments[1], seasonId)
+                if episodes = invalid then return silo.StatusOnly(502)
+                season = q.LookupCI("Season")
+                if seasonId = "" and season <> invalid and season <> ""
+                    kept = []
+                    for each episode in episodes.Items
+                        if episode.ParentIndexNumber = season.ToInt() then kept.Push(episode)
+                    end for
+                    episodes["Items"] = kept
+                end if
+                return silo.Ok(silo.Slice(episodes.Items, silo.QueryInt(q, "StartIndex", 0), silo.QueryInt(q, "Limit", 0)))
+            end if
+        end if
+        if first = "genres"
+            if count = 1
+                values = silo.FilterValues(r, q.LookupCI("ParentId"), q.LookupCI("IncludeItemTypes"))
+                if values = invalid then return silo.StatusOnly(502)
+                return silo.Ok(silo.NamedList(values.genres ?? [], false, LCase(q.LookupCI("SortOrder") ?? "") = "descending", silo.QueryInt(q, "StartIndex", 0), silo.QueryInt(q, "Limit", 0)))
+            end if
+            if count = 2 then return silo.Ok(siloMap.NamedItem(segments[1], false))
+        end if
+        if first = "studios"
+            if count = 1
+                values = silo.FilterValues(r, q.LookupCI("ParentId"), q.LookupCI("IncludeItemTypes"), { skip_technical: true })
+                if values = invalid then return silo.StatusOnly(502)
+                names = []
+                if type(values.networks) = "roArray" then names.Append(values.networks)
+                if type(values.studios) = "roArray" then names.Append(values.studios)
+                return silo.Ok(silo.NamedList(names, true, LCase(q.LookupCI("SortOrder") ?? "") = "descending", silo.QueryInt(q, "StartIndex", 0), silo.QueryInt(q, "Limit", 0)))
+            end if
+            if count = 2 then return silo.Ok(siloMap.NamedItem(segments[1], true))
+        end if
+        if first = "persons" and count = 1 then return silo.Ok(silo.SearchPeople(r, q.LookupCI("SearchTerm") ?? "", silo.QueryInt(q, "Limit", 24)))
+        if first = "displaypreferences" then return silo.Ok({ Id: segments.Peek(), SortBy: "SortName", SortOrder: "Ascending", RememberIndexing: false, RememberSorting: false, CustomPrefs: {} })
+        return invalid
+    end function
+
+    function Listing(result as dynamic) as object
+        if result = invalid then return silo.StatusOnly(502)
+        return silo.Ok(result)
+    end function
+
+    function FoundOr(item as dynamic) as object
+        if item = invalid then return silo.StatusOnly(404)
+        return silo.Ok(item)
+    end function
+
+    ' Jellyfin's filter values: names on Items/Filters, named items on Items/Filters2
+    function FilterAnswer(r as object, named as boolean) as object
+        values = silo.FilterValues(r, r.query.LookupCI("ParentId"), r.query.LookupCI("IncludeItemTypes"))
+        genres = []
+        ratings = []
+        if values <> invalid
+            if type(values.genres) = "roArray" then genres = values.genres
+            if type(values.content_ratings) = "roArray" then ratings = values.content_ratings
+        end if
+        if not named then return silo.Ok({ Genres: genres, OfficialRatings: ratings, Tags: [], Years: [] })
+        genreItems = []
+        for each genre in genres
+            if isString(genre) and genre <> "" then genreItems.Push({ Name: genre, Id: siloMap.GenreId(genre) })
+        end for
+        return silo.Ok({ Genres: genreItems, Tags: [] })
+    end function
+
+    ' The pictures an item has, as Jellyfin's image list
+    function ImageList(r as object, itemId as string) as object
+        item = silo.GetItem(r, itemId)
+        if item = invalid then return silo.StatusOnly(404)
+        images = []
+        for each kind in item.ImageTags
+            images.Push({ ImageType: kind, ImageTag: item.ImageTags[kind] })
+        end for
+        index = 0
+        for each tag in item.BackdropImageTags
+            images.Push({ ImageType: "Backdrop", ImageIndex: index, ImageTag: tag })
+            index++
+        end for
+        return silo.Ok(images)
     end function
 
     function UserAnswer(r as object) as object

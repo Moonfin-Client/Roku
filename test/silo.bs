@@ -80,6 +80,79 @@ sub testSilo()
     assertEqual(silo.ResolveUrl("https://silo.test", "https://cdn.test/x.jpg"), "https://cdn.test/x.jpg", "Absolute pictures are kept")
 end sub
 
+sub testSiloCatalog()
+    ' Ids
+    assertEqual(siloMap.TypeOfId("episode-imdb-tt1-2-3"), "episode", "Ids say their type")
+    assertEqual(siloMap.TypeOfId("42"), "", "A number has no type")
+    assertEqual(siloMap.SeasonIdFor("series-imdb-tt1", 2), "season-imdb-tt1-2", "A season id comes from its series")
+    season = siloMap.ParseSeasonId("season-imdb-tt1-12")
+    assertEqual(season.seriesId + "/" + season.seasonNumber.ToStr(), "series-imdb-tt1/12", "Season ids name their series and number")
+    episode = siloMap.ParseEpisodeId("episode-tmdb-9-0-4")
+    assertEqual(episode.seriesId + "/" + episode.seasonNumber.ToStr() + "/" + episode.episodeNumber.ToStr(), "series-tmdb-9/0/4", "Episode ids name series, season and episode")
+    assertEqual(siloMap.ParseEpisodeId("movie-1"), invalid, "Other ids aren't episodes")
+    libBox = siloMap.ParseCollectionId("silo-libcollection:3:abc")
+    assertEqual(libBox.libraryId + "/" + libBox.id, "3/abc", "Library collection ids carry the library")
+    assertEqual(siloMap.ParseCollectionId("silo-collection:7").libraryId, "", "Personal collections have no library")
+    assertEqual(siloMap.ParseCollectionId("silo-libcollection:3"), invalid, "A library collection id needs both parts")
+    assertEqual(siloMap.GenreNameOf(siloMap.GenreId("Sci-Fi & Fantasy")), "Sci-Fi & Fantasy", "Genre ids carry their names")
+    assertEqual(siloMap.LibraryIdOf("12"), "12", "Numbers are library ids")
+    assertEqual(siloMap.LibraryIdOf("movie-1"), "", "Titles aren't libraries")
+
+    ' Query mapping
+    assertEqual(FormatJson(siloMap.TypesForQuery("Movie,BoxSet,Series")), "[""movie"",""series""]", "Types Silo can't serve drop out")
+    assertEqual(siloMap.TypesForQuery("MusicAlbum").Count(), 0, "Nothing Silo has is an empty list")
+    assertEqual(siloMap.TypesForQuery(invalid), invalid, "No types named is no filter")
+    assertEqual(FormatJson(siloMap.TypesForQuery(invalid, "Video")), "[""movie"",""episode""]", "Video media is films and episodes")
+    assertEqual(siloMap.CatalogScopeFor(["movie", "series"]), "video", "Films and shows are the video scope")
+    assertEqual(siloMap.SearchScopeFor(["movie", "series", "episode"], true), "video_with_episodes", "Searches take episodes along when Silo can")
+    assertEqual(siloMap.SortFor("SortName,ProductionYear", "Descending"), "-title", "The first sort term is Silo's sort")
+    assertEqual(siloMap.SortFor("Random", "Ascending"), "", "Random isn't one of Silo's sorts")
+    assertEqual(siloMap.WantsRandom("Random"), true, "Random is noticed")
+    groups = siloMap.RuleGroups({ genres: ["Drama", "Drama"], filters: ["IsUnplayed", "IsFavorite"], isHd: false })
+    assertEqual(groups.Count(), 6, "Genres, unwatched, favorites and three not-HD groups")
+    assertEqual(groups[0].rules.Count(), 1, "A repeated genre is asked once")
+    assertEqual(groups[1].rules[0].field + " " + groups[1].rules[0].value.ToStr(), "watched false", "Unplayed is not watched")
+
+    ' Libraries
+    views = siloMap.LibrariesToViews([{ id: 2, type: "series", name: "TV", sort_order: 2 }, { id: 1, type: "movies", name: "Films", sort_order: 1 }, { id: 3, type: "audiobooks", name: "Books" }], "http://silo.test")
+    assertEqual(views.Count(), 2, "Audiobook libraries aren't shown")
+    assertEqual(views[0].Id + views[0].CollectionType, "1movies", "Libraries follow Silo's order and type")
+    ordered = siloMap.InViewOrder(views, ["2"])
+    assertEqual(ordered[0].Id, "2", "The profile's own order comes first")
+
+    ' Items
+    dto = siloMap.ItemToBaseItem({ content_id: "episode-tmdb-5-1-2", title: "Pilot", season_number: 1, episode_number: 2, series_id: "series-tmdb-5", series_title: "Show", still_url: "/a/still.webp", runtime: 30, user_state: { played: false, is_favorite: true }, position_seconds: 600, duration_seconds: 1800 }, "http://silo.test")
+    assertEqual(dto.Type, "Episode", "Episodes map to Episode")
+    assertEqual(dto.SeasonId, "season-tmdb-5-1", "Episodes name their season")
+    assertEqual(dto.ImageTags.Primary, "/a/still.webp", "An episode's still is its picture")
+    assertEqual(dto.UserData.IsFavorite, true, "Favorites carry over")
+    assertEqual(dto.UserData.PlaybackPositionTicks, 6000000000&, "Positions are ticks")
+    assertEqual(Int(dto.UserData.PlayedPercentage), 33, "Progress is a percentage")
+    assertEqual(dto.RunTimeTicks, 18000000000&, "Runtime minutes become ticks")
+    keys = []
+    for each key in dto.ImageTags
+        keys.Push(key)
+    end for
+    assertEqual(keys.Join(","), "Primary", "Image types keep Jellyfin's casing")
+    movie = siloMap.ItemToBaseItem({ content_id: "movie-1", type: "movie", title: "The Film", rating_tmdb: 7.26, extras: [{ kind: "trailer", content_id: "x-1" }, { kind: "featurette", content_id: "x-2" }], cast: [{ name: "B", order: 2 }, { name: "A", order: 1, person_id: 9 }], crew: [{ name: "C", job: "Director" }] }, "http://silo.test")
+    assertEqual(movie.SortName, "Film, The", "Leading articles move to the end of the sort name")
+    assertEqual(movie.CommunityRating, 7.3, "Ratings keep one decimal")
+    assertEqual(movie.LocalTrailerCount.ToStr() + "/" + movie.SpecialFeatureCount.ToStr(), "1/1", "Extras are counted by kind")
+    assertEqual(movie.People[0].Name + movie.People[0].Id + movie.People[1].Name + movie.People[2].Type, "A9BDirector", "Cast in billing order, then crew")
+    assertEqual(siloMap.ItemToBaseItem({ content_id: "book-1", type: "audiobook" }, "http://silo.test"), invalid, "Types the app can't show are left out")
+
+    ' Paging
+    state = silo.NewPageState()
+    silo.AddPage(state, 0, { items: [1, 2, 3], nextCursor: "c2", windowCursor: "w", hasMore: true, total: 7, totalExact: true })
+    assertEqual(FormatJson(silo.PageItemsAt(state, 1, 5)), "[2,3]", "Kept pages answer what they hold")
+    assertEqual(silo.PageTotalFor(state, 3), 7, "An exact total is the total")
+    silo.AddPage(state, 3, { items: [4], nextCursor: "", windowCursor: "", hasMore: false, total: -1, totalExact: false })
+    assertEqual(state.knownEnd, 4, "A last page ends the list")
+    assertEqual(silo.PageSignature("/c", { limit: 5, cursor: "x", type: "movie", a: 1 }), "/c?a=1&type=""movie""", "Signatures leave the paging out")
+    assertEqual(FormatJson(silo.Slice([1, 2, 3, 4], 1, 2).Items), "[2,3]", "Slices page a list")
+    assertEqual(silo.Slice([1, 2], 5, 2).Items.Count(), 0, "A slice past the end is empty")
+end sub
+
 function RegistryReadAll(section as string) as dynamic
     if section = "ServerTypes" then return m.serverTypes
     return {}
