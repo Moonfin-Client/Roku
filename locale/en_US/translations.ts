@@ -7482,8 +7482,22 @@
         <translation>Show ratings on individual episodes</translation>
     </message>
     <message>
-        <source>Show season availability badges on media details pages</source>
-        <translation>Show season availability badges on media details pages</translation>
+        <source>Show the Seerr status on posters and seasons across the app</source>
+        <translation>Show the Seerr status on posters and seasons across the app</translation>
+    </message>
+    <message>
+        <source>Badge Style</source>
+        <extracomment>Seerr setting that picks how posters show their request status</extracomment>
+        <translation>Badge Style</translation>
+    </message>
+    <message>
+        <source>Badge puts Seerr's dot in a corner. Banner runs the status across the top of the poster.</source>
+        <translation>Badge puts Seerr's dot in a corner. Banner runs the status across the top of the poster.</translation>
+    </message>
+    <message>
+        <source>Badge</source>
+        <extracomment>Badge Style option that marks a poster with Seerr's small status dot</extracomment>
+        <translation>Badge</translation>
     </message>
     <message>
         <source>Show the Next Up overlay instead of the Skip Outro button.</source>
