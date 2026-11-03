@@ -1,0 +1,175 @@
+import "pkg:/source/api/silo/SiloMapper.bs"
+import "pkg:/source/api/silo/SiloSession.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Finding a Silo server, signing in and the household behind the login. Ported from Smart-TV's
+' siloApi.js (probeSilo, authenticateByName, openLogin, householdOf, logout, currentUser).
+namespace silo
+    ' Whether a native Silo answers at server, as Jellyfin's PublicSystemInfo, or invalid when it
+    ' isn't one. An API this build can't speak answers { SiloUnsupported: true, ServerIsNewer }.
+    function Probe(server as string) as dynamic
+        base = silo.ServerKey(server)
+        if base = "" then return invalid
+        answer = silo.Call(base, "/api/v2/system/info", { timeoutMs: 10000 })
+        if silo.IsClientUpgradeRequired(answer) then return { SiloUnsupported: true, ServerIsNewer: true }
+        if not answer.ok or not siloMap.IsSystemInfo(answer.data) then return invalid
+        if answer.data.api_major <> silo.API_MAJOR then return { SiloUnsupported: true, ServerIsNewer: answer.data.api_major > silo.API_MAJOR }
+        identity = silo.Call(base, "/api/v2/system/identity", { timeoutMs: 10000 })
+        branding = silo.Call(base, "/api/v2/theme/branding", { timeoutMs: 10000 })
+        setupInfo = silo.Call(base, "/api/v2/system/setup", { timeoutMs: 10000 })
+        info = siloMap.PublicInfo(answer.data, identity.data, branding.data, setupInfo.data)
+        if info.Id = "" then return invalid
+        return info
+    end function
+
+    ' Signs the account in and acts as its primary profile. The token pair belongs to the account and
+    ' is kept in the Silo session store. Answers { ok, status, message, data } where data is Jellyfin's
+    ' AuthenticationResult plus SiloUsers, the whole household.
+    function SignIn(server as string, username as string, password as string) as object
+        answer = silo.Call(server, "/api/v2/auth/login", { method: "POST", refresh: false, profile: false, body: { username: username, password: password } })
+        if not answer.ok then return silo.SignInFailure(answer)
+        return silo.OpenLogin(server, answer.data)
+    end function
+
+    ' Opens the login a token pair names
+    function OpenLogin(server as string, pair as dynamic) as object
+        tokens = silo.TokensFrom(pair)
+        account = invalid
+        if type(pair) = "roAssociativeArray" then account = pair.user
+        if tokens.access = "" or tokens.refresh = "" or type(account) <> "roAssociativeArray" or not isValid(account.id)
+            return { ok: false, status: 502, message: tr("The server's sign-in answer was incomplete. Try again."), data: invalid }
+        end if
+        accountId = account.id.ToStr()
+        silo.SaveTokens(server, accountId, tokens)
+        if account.password_change_required = true
+            ' Silo answers everything but a password change with 403 until it's done, and that is
+            ' only offered in Silo's own apps for now
+            silo.EndLogin(server, accountId)
+            return { ok: false, status: 403, message: tr("This account needs a new password. Set one in Silo's web app, then sign in here with it."), data: invalid }
+        end if
+        return silo.Household(server, accountId, account, tokens.access)
+    end function
+
+    ' The household of an open login, signed in as its primary profile
+    function Household(server as string, accountId as string, account as object, accessToken as string) as object
+        answer = silo.Call(server, "/api/v2/profiles", { account: accountId, profile: false })
+        profiles = []
+        if answer.ok and type(answer.data) = "roAssociativeArray" and type(answer.data.items) = "roArray" then profiles = answer.data.items
+        if profiles.Count() = 0
+            silo.EndLogin(server, accountId)
+            return { ok: false, status: 502, message: tr("The server listed no profile for this account."), data: invalid }
+        end if
+        primary = profiles[0]
+        for each profile in profiles
+            if profile.is_primary = true then primary = profile
+        end for
+        users = []
+        for each profile in profiles
+            silo.RememberProfile(profile.id.ToStr(), server, accountId, profile.has_pin = true)
+            silo.RememberAvatar(profile)
+            users.Push(siloMap.ProfileToUser(profile, account))
+        end for
+        return {
+            ok: true,
+            status: 200,
+            message: "",
+            data: {
+                AccessToken: accessToken,
+                User: siloMap.ProfileToUser(primary, account),
+                SiloAccountId: accountId,
+                SiloUsers: users
+            }
+        }
+    end function
+
+    ' A profile's avatar is its user picture
+    sub RememberAvatar(profile as object)
+        entry = silo.ProfileEntry(profile.id.ToStr())
+        if not isValid(entry) then return
+        avatar = ""
+        if isString(profile.avatar_url) then avatar = profile.avatar_url
+        if entry.avatar = avatar then return
+        entry.avatar = avatar
+        registry_write(profile.id.ToStr(), FormatJson(entry), silo.PROFILES)
+    end sub
+
+    function SignInFailure(answer as object) as object
+        code = ""
+        if isValid(answer.problem) then code = answer.problem.code
+        message = ""
+        if answer.status = 0
+            message = tr("The server did not respond. Check the connection and try again.")
+        else if answer.status = 401 or code = "invalid_credentials"
+            message = tr("Username or password is incorrect, or access is denied.")
+        else if answer.status = 429
+            message = tr("Too many attempts. Try again later.")
+            if answer.retryAfter <> "" then message = tr("Too many attempts. Try again in %1 seconds.").Replace("%1", answer.retryAfter)
+        else if answer.status = 503
+            message = tr("The server is busy. Try again in a moment.")
+        else if silo.IsClientUpgradeRequired(answer)
+            message = tr("This server needs a newer version of Moonfin.")
+        else if answer.status = 403
+            message = signInRefusedMessage()
+            if isValid(answer.problem) and answer.problem.detail <> "" then message = answer.problem.detail
+        else
+            message = tr("Login failed. Server response:") + " " + answer.status.ToStr()
+        end if
+        return { ok: false, status: answer.status, message: message, data: invalid }
+    end function
+
+    ' Ends the login on Silo too, so its refresh token dies with it. Signed out here whatever Silo answers.
+    sub EndLogin(server as string, accountId as string)
+        if accountId = "" then return
+        silo.Call(server, "/api/v2/auth/logout", { method: "POST", account: accountId, profile: false, refresh: false, timeoutMs: 5000 })
+        silo.CloseSession(server, accountId)
+    end sub
+
+    ' The account and its profiles change rarely, and a screen asks for the user several times as it
+    ' opens, so they're kept for a few seconds per thread
+    function AccountAndProfiles(server as string, accountId as string) as dynamic
+        key = silo.ServerKey(server) + "|" + accountId
+        now = silo.NowSeconds()
+        if type(m.siloAccountRead) = "roAssociativeArray" and m.siloAccountRead.key = key and now - m.siloAccountRead.at < 5
+            return m.siloAccountRead.value
+        end if
+        account = silo.Call(server, "/api/v2/account/me", { account: accountId, profile: false })
+        if not account.ok then return { status: account.status }
+        profiles = silo.Call(server, "/api/v2/profiles", { account: accountId, profile: false })
+        if not profiles.ok then return { status: profiles.status }
+        items = []
+        if type(profiles.data) = "roAssociativeArray" and type(profiles.data.items) = "roArray" then items = profiles.data.items
+        value = { status: 200, account: account.data, profiles: items }
+        m.siloAccountRead = { key: key, at: now, value: value }
+        return value
+    end function
+
+    function ReadSettings(server as string, accountId as string, profileId as string) as object
+        keys = []
+        for each entry in siloMap.SettingKeys().Items()
+            keys.Push(entry.value)
+        end for
+        answer = silo.Call(server, "/api/v2/settings/values/effective", { account: accountId, profileId: profileId, query: { keys: keys } })
+        values = {}
+        if answer.ok and type(answer.data) = "roAssociativeArray" and type(answer.data.items) = "roArray"
+            for each setting in answer.data.items
+                if type(setting) = "roAssociativeArray" and isString(setting.key) then values[setting.key] = setting.value
+            end for
+        end if
+        return values
+    end function
+
+    ' The acting profile as Jellyfin's UserDto, or { status } when it can't be read
+    function CurrentUser(server as string, accountId as string, profileId as string) as object
+        read = silo.AccountAndProfiles(server, accountId)
+        if read.status <> 200 then return read
+        wanted = invalid
+        for each profile in read.profiles
+            if profile.id.ToStr() = profileId then wanted = profile
+        end for
+        if wanted = invalid then return { status: 404 }
+        silo.RememberAvatar(wanted)
+        configuration = siloMap.SettingsToConfiguration(silo.ReadSettings(server, accountId, profileId))
+        return { status: 200, user: siloMap.ProfileToUser(wanted, read.account, configuration) }
+    end function
+end namespace

@@ -42,8 +42,9 @@ function passwordLoginError(status as integer) as string
 end function
 
 function get_token(user as string, password as string)
-    response = passwordLoginRequest(get_url(), user, password)
     m.loginError = ""
+    if isSiloServer() then return siloSignIn(user, password)
+    response = passwordLoginRequest(get_url(), user, password)
     if not validPasswordLogin(response)
         m.loginError = passwordLoginError(response.status)
         return invalid
@@ -53,6 +54,43 @@ function get_token(user as string, password as string)
     userdata.callFunc("saveToRegistry")
     return userdata
 end function
+
+' Signs a Silo account in as its primary profile. Every profile of the household is saved as a user of
+' the server, so the user picker lists them all
+function siloSignIn(user as string, password as string) as dynamic
+    result = silo.SignIn(get_url(), user.Trim(), password)
+    if not result.ok
+        m.loginError = result.message
+        return invalid
+    end if
+    userdata = CreateObject("roSGNode", "UserData")
+    userdata.json = result.data
+    userdata.callFunc("saveToRegistry")
+    saveSiloHousehold(result.data)
+    return userdata
+end function
+
+' Each profile gets the login's token under its own id, like a user signed in on its own
+sub saveSiloHousehold(answer as object)
+    if type(answer.SiloUsers) <> "roArray" then return
+    users = parseJson(get_setting("available_users", "[]"))
+    if type(users) <> "roArray" then users = []
+    serverUrl = m.global.session.server.url
+    for each profile in answer.SiloUsers
+        known = false
+        for each saved in users
+            if saved.id = profile.Id then known = true
+        end for
+        if not known then users.push({ id: profile.Id, username: profile.Name, server: serverUrl })
+        if profile.Id <> answer.User.Id and should_save_credentials()
+            registry_write("token", answer.AccessToken, profile.Id)
+            registry_write("username", profile.Name, profile.Id)
+            registry_write("serverId", m.global.session.server.id, profile.Id)
+            registry_write("serverUrl", LCase(serverUrl), profile.Id)
+        end if
+    end for
+    set_setting("available_users", formatJson(users))
+end sub
 
 function AboutMe(id = "" as string)
     if id = ""
@@ -74,6 +112,7 @@ sub SignOut(deleteSavedEntry = true as boolean)
     m.global.audioPlayer.control = "stop"
 
     if deleteSavedEntry
+        endSiloLoginIfLast(currentSessionUserId())
         if isChainValid(m.global, "session.server.url") then forgetServerIdentity(m.global.session.server.url, currentSessionUserId())
         unset_user_setting("token")
         unset_user_setting("username")
@@ -113,6 +152,7 @@ end sub
 
 ' Each signed in user gets its own registry section keyed by their id
 sub DeleteUserRegistrySection(userId as string)
+    endSiloLoginIfLast(userId)
     serverUrl = registry_read("serverUrl", userId)
     forgetServerIdentity(serverUrl, userId)
     registry_delete("token", userId)
@@ -149,6 +189,12 @@ function AvailableUsers()
 end function
 
 function ServerInfo()
+    serverUrl = get_url() ?? ""
+    if registry_read(serverIdentityKey(serverUrl), "ServerTypes") = "silo"
+        info = siloServerInfo(serverUrl)
+        if isValid(info) then return info
+    end if
+
     url = "System/Info/Public"
     req = APIRequest(url)
 
@@ -198,9 +244,25 @@ function ServerInfo()
         end if
     end if
 
-    ' otherwise return error message
-    return { "Error": true, "ErrorMessage": "Does not appear to be a Jellyfin or Emby Server" }
+    ' A Silo's web app answers the Jellyfin probe with a page
+    info = siloServerInfo(serverUrl)
+    if isValid(info) then return info
 
+    ' otherwise return error message
+    return { "Error": true, "ErrorMessage": "Does not appear to be a Jellyfin, Emby or Silo Server" }
+
+end function
+
+' Silo's public info as Jellyfin's, or invalid when no Silo answers
+function siloServerInfo(serverUrl as string) as dynamic
+    info = silo.Probe(serverUrl)
+    if info = invalid then return invalid
+    if info.SiloUnsupported = true
+        if info.ServerIsNewer then return { "Error": true, "ErrorMessage": "This Silo server needs a newer version of Moonfin" }
+        return { "Error": true, "ErrorMessage": "This Silo server is too old for this version of Moonfin" }
+    end if
+    info.Error = false
+    return info
 end function
 
 function GetPublicUsers()
@@ -278,6 +340,21 @@ function AuthenticateViaQuickConnect(secret) as object
     userdata.callFunc("saveToRegistry")
     return { ok: true, refused: false }
 end function
+
+' A Silo login is shared by the account's profiles, so it ends on the server only when the last
+' saved profile that uses it signs out
+sub endSiloLoginIfLast(userId as string)
+    entry = silo.ProfileEntry(userId)
+    if not isValid(entry) then return
+    silo.ForgetProfile(userId)
+    for each account in AvailableUsers()
+        if account.id <> userId and isValidAndNotEmpty(registry_read("token", account.id))
+            other = silo.ProfileEntry(account.id)
+            if isValid(other) and other.server = entry.server and other.account = entry.account then return
+        end if
+    end for
+    silo.EndLogin(entry.server, entry.account)
+end sub
 
 sub forgetServerIdentity(serverUrl as dynamic, removedUserId as string)
     if not isValidAndNotEmpty(serverUrl) then return

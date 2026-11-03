@@ -1,0 +1,86 @@
+sub testSilo()
+    ' Detection and public info
+    assertEqual(detectServerType({ ProductName: "Silo", Version: "1.0.0", Id: "abc" }), "silo", "Silo detection")
+    assertEqual(isSiloSystemInfo({ server_version: "527e4043", api_major: 2 }), true, "Silo's system info is recognised")
+    assertEqual(isSiloSystemInfo({ server_version: "527e4043", api_major: "2" }), false, "A text api_major isn't Silo's")
+    assertEqual(isSiloSystemInfo({ Version: "10.9.0" }), false, "Jellyfin's info isn't Silo's")
+    info = siloMap.PublicInfo({ server_version: "1.2.3", api_major: 2 }, { server_id: "srv-1" }, { server_name: "Home Silo", login_subtitle: " Welcome " }, { needs_setup: true })
+    assertEqual(info.Id, "srv-1", "Public info takes the server id from identity")
+    assertEqual(info.ServerName, "Home Silo", "Public info takes the branded name")
+    assertEqual(info.ProductName, "Silo", "Public info names the product")
+    assertEqual(info.StartupWizardCompleted, false, "needs_setup means the wizard isn't done")
+    assertEqual(info.LoginDisclaimer, "Welcome", "The login subtitle becomes the disclaimer")
+    assertEqual(siloMap.PublicInfo({ server_version: "1", api_major: 2 }, invalid, invalid, invalid).ServerName, "Silo", "An unbranded server is called Silo")
+
+    ' Profiles as users
+    account = { id: 7, username: "owner", role: "admin", download_allowed: true }
+    user = siloMap.ProfileToUser({ id: "p-1", name: "Kid", is_primary: false, has_pin: true, is_child: true }, account)
+    assertEqual(user.Id, "p-1", "A profile's id is the user id")
+    assertEqual(user.SiloAccountId, "7", "The account id is kept as text")
+    assertEqual(user.Policy.IsAdministrator, false, "Only the primary profile of an admin account administers")
+    assertEqual(user.SiloHasPin, true, "A PIN profile says so")
+    primary = siloMap.ProfileToUser({ id: "p-0", name: "", is_primary: true }, account)
+    assertEqual(primary.Policy.IsAdministrator, true, "The admin account's primary profile administers")
+    assertEqual(primary.Name, "owner", "A nameless profile takes the account's name")
+
+    ' Settings
+    config = siloMap.SettingsToConfiguration({ "ui.library_order": [3, 1, "x", 0], "playback.subtitle_mode": "off", "playback.show_forced_subtitles": false, "playback.auto_play_next": false, "playback.audio_language": " eng " })
+    assertEqual(config.OrderedViews.Join(","), "3,1", "Library order keeps positive ids as text")
+    assertEqual(config.SubtitleMode, "None", "Off without forced subtitles is None")
+    assertEqual(config.EnableNextEpisodeAutoPlay, false, "Autoplay follows the setting")
+    assertEqual(config.AudioLanguagePreference, "eng", "Audio language is trimmed")
+    assertEqual(siloMap.SubtitleModeToJellyfin("off", true), "OnlyForced", "Off with forced subtitles is OnlyForced")
+    assertEqual(siloMap.SubtitleModeToJellyfin("auto"), "Default", "Auto is Default")
+    back = siloMap.ConfigurationToSettings({ SubtitleMode: "OnlyForced", OrderedViews: ["2", "2", "5"], EnableNextEpisodeAutoPlay: true }, {})
+    assertEqual(back["playback.subtitle_mode"], "off", "OnlyForced is Silo's off")
+    assertEqual(back["playback.show_forced_subtitles"], true, "OnlyForced shows forced subtitles")
+    assertEqual(FormatJson(back["ui.library_order"]), "[2,5]", "Library order goes back as unique numbers")
+    assertEqual(back["playback.audio_language"], invalid, "An empty language is no setting")
+
+    ' Tokens
+    now = 1000000
+    tokens = { access: "a", refresh: "r", expiresAt: now + 3600, lifetime: 3600 }
+    assertEqual(silo.NeedsRefresh(tokens, now), false, "A fresh token isn't refreshed")
+    assertEqual(silo.NeedsRefresh(tokens, now + 2900), true, "A token past four fifths of its life is refreshed")
+    assertEqual(silo.NeedsRefresh({ access: "a", refresh: "", expiresAt: now, lifetime: 3600 }, now), false, "No refresh token, no refresh")
+    assertEqual(silo.NeedsStreamRefresh(tokens, now + 100), false, "A stream token under a tenth used is kept")
+    assertEqual(silo.NeedsStreamRefresh(tokens, now + 400), true, "A stream token past a tenth of its life is refreshed first")
+
+    ' Requests
+    assertEqual(silo.ServerKey(" HTTP://Silo.Test:8090/ "), "http://silo.test:8090", "Server keys are lowercase without a trailing slash")
+    assertEqual(silo.ServerKey("silo.test"), "http://silo.test", "A bare host is http")
+    assertEqual(silo.CleanDeviceId("Roku 4800/x#1"), "Roku4800x1", "Device ids keep only what Silo accepts")
+    assertEqual(silo.EncodeQuery({ keys: ["a b", "c"] }), "keys=a%20b&keys=c", "Lists repeat their key")
+    assertEqual(silo.EncodeQuery({ limit: 20, sorted: true, gone: invalid }), "limit=20&sorted=true", "Numbers and booleans are written, invalid is left out")
+    assertEqual(silo.PathOf("http://silo.test/api/v2/x?token=secret"), "/api/v2/x", "Logged paths drop the query")
+    problem = silo.ProblemOf({ type: "https://siloserver.org/docs/api/v2/problems/not_found", title: "Not found", status: 404 })
+    assertEqual(problem.code, "not_found", "A problem's code is the last segment of its type")
+    assertEqual(silo.ProblemOf({ items: [] }), invalid, "Other bodies aren't problems")
+    assertEqual(silo.IsClientUpgradeRequired({ status: 410, problem: { code: "client_upgrade_required" } }), true, "A retired API asks for an upgrade")
+
+    ' Routing
+    m.global.serverIdentity = { url: "http://silo.test:8090", serverType: "silo" }
+    assertEqual(silo.ServerOfUrl("http://silo.test:8090/Items?Ids=1"), "http://silo.test:8090", "Jellyfin paths on a Silo are routed")
+    assertEqual(silo.ServerOfUrl("http://silo.test:8090/api/v2/catalog"), "", "Native paths go out as they are")
+    assertEqual(silo.ServerOfUrl("http://silo.test:80901/Items"), "", "Another port isn't the same server")
+    parsed = silo.ParseRequest("get", "http://silo.test:8090/Users/p-9/Items/movie%2Dtmdb%2D1?Fields=Overview%2CGenres&Limit=5&Flag", invalid)
+    assertEqual(parsed.route.Join("/"), "users/p-9/items/movie-tmdb-1", "Paths are split and decoded")
+    assertEqual(parsed.segments[1], "p-9", "Segments keep their case")
+    assertEqual(parsed.query.Fields, "Overview,Genres", "Query values are decoded")
+    assertEqual(parsed.query.Flag, "", "A bare query key is kept")
+    assertEqual(parsed.method, "GET", "Methods are upper case")
+    m.global.serverIdentity = { url: "", serverType: "" }
+
+    ' Artwork
+    assertEqual(silo.ImageURL("http://silo.test", "Items/movie-1/Images/Primary", { tag: "/api/v2/artwork/a.webp?sig=x", maxHeight: 300 }), "http://silo.test/api/v2/artwork/a.webp?sig=x", "A Silo image tag is the picture's address")
+    silo.RegisterImage("http://silo.test", "movie-2", "Backdrop", "/api/v2/artwork/b.webp", 1)
+    assertEqual(silo.ImageURL("http://silo.test/", "/Items/movie-2/Images/Backdrop/1", {}), "http://silo.test/api/v2/artwork/b.webp", "Pictures mapped in this thread are found without a tag")
+    assertEqual(silo.ImageURL("http://silo.test", "Items/movie-3/Images/Primary", {}), "", "An unknown picture is none")
+    assertEqual(silo.ResolveUrl("https://silo.test", "//cdn.test/x.jpg"), "https://cdn.test/x.jpg", "Scheme-relative pictures take the server's scheme")
+    assertEqual(silo.ResolveUrl("https://silo.test", "https://cdn.test/x.jpg"), "https://cdn.test/x.jpg", "Absolute pictures are kept")
+end sub
+
+function RegistryReadAll(section as string) as dynamic
+    if section = "ServerTypes" then return m.serverTypes
+    return {}
+end function

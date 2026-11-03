@@ -269,6 +269,7 @@ end function
 function probeServerCandidates(candidates as object, embyOnly = false as boolean, probeState = invalid as dynamic) as string
     port = CreateObject("roMessagePort")
     hosts = CreateObject("roAssociativeArray")
+    siloHosts = CreateObject("roAssociativeArray")
     reqs = []
     for each endpoint in candidates
         req = CreateObject("roUrlTransfer")
@@ -285,6 +286,19 @@ function probeServerCandidates(candidates as object, embyOnly = false as boolean
             reqs.push(req) ' keep in scope outside of loop, else -10001
             hosts.addreplace(req.getidentity().ToStr(), `${finalUrl}${endpoint.query = "" ? "" : `?${endpoint.query}`}`)
         end if
+        ' A Silo answers its own system info, and its web app answers the Jellyfin probe with a page
+        if not embyOnly and endpoint.query = ""
+            siloReq = CreateObject("roUrlTransfer")
+            siloReq.seturl(`${finalUrl}/api/v2/system/info`)
+            siloReq.AddHeader("Accept", "application/json")
+            siloReq.setMessagePort(port)
+            if isStringEqual(endpoint.proto, "https") then siloReq.setCertificatesFile("common:/certs/ca-bundle.crt")
+            if siloReq.AsyncGetToString()
+                reqs.push(siloReq)
+                hosts.addreplace(siloReq.getidentity().ToStr(), finalUrl)
+                siloHosts.addreplace(siloReq.getidentity().ToStr(), true)
+            end if
+        end if
     end for
     handled = 0
     if reqs.count() > 0
@@ -299,7 +313,15 @@ function probeServerCandidates(candidates as object, embyOnly = false as boolean
                 ' TODO
                 ' if response code is a 300 redirect then we should return the redirect url
                 ' Make sure this happens or make it happen
-                if resp.GetResponseCode() = 200 and isSupportedMediaServer(resp.GetString())
+                if resp.GetResponseCode() = 200 and siloHosts.DoesExist(resp.GetSourceIdentity().ToStr())
+                    if isSiloSystemInfo(ParseJson(resp.GetString()))
+                        selectedUrl = hosts.lookup(resp.GetSourceIdentity().ToStr())
+                        for each pending in reqs
+                            pending.AsyncCancel()
+                        end for
+                        return selectedUrl
+                    end if
+                else if resp.GetResponseCode() = 200 and isSupportedMediaServer(resp.GetString())
                     serverType = detectServerType(ParseJson(resp.GetString()))
                     if not embyOnly or serverType = "emby"
                         selectedUrl = hosts.lookup(resp.GetSourceIdentity().ToStr())
@@ -887,6 +909,13 @@ sub stopLoadingSpinner()
         m.scene.isLoading = false
     end if
 end sub
+
+function isSiloSystemInfo(data as dynamic) as boolean
+    if type(data) <> "roAssociativeArray" then return false
+    if not isString(data.server_version) then return false
+    major = data.api_major
+    return type(major) = "roInt" or type(major) = "Integer" or type(major) = "roFloat" or type(major) = "Float" or type(major) = "Double" or type(major) = "roDouble" or type(major) = "LongInteger"
+end function
 
 function isSupportedMediaServer(systemInfo as string) as boolean
     return detectServerType(ParseJson(systemInfo)) <> ""

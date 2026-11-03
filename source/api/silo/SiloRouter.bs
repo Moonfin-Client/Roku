@@ -1,0 +1,170 @@
+import "pkg:/source/api/silo/SiloAccount.bs"
+import "pkg:/source/api/silo/SiloMapper.bs"
+import "pkg:/source/api/silo/SiloSession.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/diagnostics.bs"
+import "pkg:/source/utils/misc.bs"
+
+' The Jellyfin requests the app sends, answered from Silo's native API. Every request helper in
+' baserequest.bs hands a request for a Silo server here instead of sending it, so the screens keep
+' speaking Jellyfin while Silo is spoken on the wire. Smart-TV does the same by swapping its api
+' methods (siloApi.js), Moonfin-Core with its Silo server package.
+namespace silo
+    ' The Silo server a URL belongs to, or "" when it isn't one. Native /api/v2 addresses are left
+    ' alone: they're already Silo's.
+    function ServerOfUrl(url as dynamic) as string
+        if not isString(url) or url = "" then return ""
+        lower = LCase(url)
+        found = ""
+        if isValid(m.global)
+            identity = m.global.serverIdentity
+            if type(identity) = "roAssociativeArray" and identity.serverType = "silo"
+                key = silo.ServerKey(identity.url)
+                if key <> "" and lower.Left(key.Len()) = key then found = key
+            end if
+        end if
+        if found = ""
+            known = RegistryReadAll("ServerTypes") ?? {}
+            for each key in known
+                if known[key] = "silo"
+                    base = silo.ServerKey(key)
+                    if base <> "" and lower.Left(base.Len()) = base and base.Len() > found.Len() then found = base
+                end if
+            end for
+        end if
+        if found = "" then return ""
+        rest = lower.Mid(found.Len())
+        if rest <> "" and rest.Left(1) <> "/" and rest.Left(1) <> "?" then return ""
+        if rest.Left(8) = "/api/v2/" then return ""
+        return found
+    end function
+
+    function Owns(req as dynamic) as boolean
+        if req = invalid then return false
+        return silo.ServerOfUrl(req.GetUrl()) <> ""
+    end function
+
+    ' A request as the router reads it: method, server, path segments and query
+    function ParseRequest(method as string, url as string, body as dynamic) as dynamic
+        server = silo.ServerOfUrl(url)
+        if server = "" then return invalid
+        rest = url.Mid(server.Len())
+        pathPart = rest
+        queryPart = ""
+        mark = Instr(1, rest, "?")
+        if mark > 0
+            pathPart = rest.Left(mark - 1)
+            queryPart = rest.Mid(mark)
+        end if
+        segments = []
+        for each segment in pathPart.Split("/")
+            if segment <> "" then segments.Push(segment.DecodeUriComponent())
+        end for
+        lowered = []
+        for each segment in segments
+            lowered.Push(LCase(segment))
+        end for
+        query = {}
+        if queryPart <> ""
+            for each pair in queryPart.Split("&")
+                if pair <> ""
+                    eq = Instr(1, pair, "=")
+                    if eq > 0
+                        query[pair.Left(eq - 1).DecodeUriComponent()] = pair.Mid(eq).Replace("+", " ").DecodeUriComponent()
+                    else
+                        query[pair.DecodeUriComponent()] = ""
+                    end if
+                end if
+            end for
+        end if
+        parsed = { method: UCase(method), server: server, segments: segments, route: lowered, query: query, body: invalid }
+        if isString(body) and body <> ""
+            parsed.body = ParseJson(body)
+        else if type(body) = "roAssociativeArray" or type(body) = "roArray"
+            parsed.body = body
+        end if
+        parsed.profileId = silo.ProfileOfRequest(parsed)
+        parsed.account = silo.ProfileAccount(parsed.profileId)
+        return parsed
+    end function
+
+    ' The profile a request acts as: the one it names, else the signed-in one on that server, else a
+    ' saved one of that server
+    function ProfileOfRequest(parsed as object) as string
+        named = parsed.query.LookupCI("UserId") ?? ""
+        if named = "" and parsed.route.Count() > 1 and parsed.route[0] = "users" and parsed.route[1] <> "public" and parsed.route[1] <> "authenticatebyname" and parsed.route[1] <> "me"
+            named = parsed.segments[1]
+        end if
+        if named <> "" and silo.ProfileAccount(named) <> "" then return named
+        if isChainValid(m.global, "session.server.url") and isChainValid(m.global, "session.user.id")
+            if silo.ServerKey(m.global.session.server.url) = parsed.server
+                if isValidAndNotEmpty(m.global.session.user.id) then return m.global.session.user.id
+            end if
+        end if
+        users = ParseJson(get_setting("available_users", "[]"))
+        if type(users) = "roArray"
+            for each user in users
+                entry = silo.ProfileEntry(user.id ?? "")
+                if isValid(entry) and entry.server = parsed.server then return user.id
+            end for
+        end if
+        return ""
+    end function
+
+    ' Answers { status, data } for a Jellyfin request to a Silo server
+    function Respond(method as string, url as string, body = invalid as dynamic) as object
+        request = silo.ParseRequest(method, url, body)
+        if request = invalid then return { status: 404, data: invalid }
+        answer = silo.Dispatch(request)
+        if answer = invalid
+            diagnostics.Network("Silo: " + request.method + " /" + request.route.Join("/") + " isn't supported yet", diagnostics.LEVEL_WARN)
+            return { status: 501, data: invalid }
+        end if
+        return answer
+    end function
+
+    function Ok(data as dynamic) as object
+        return { status: 200, data: data }
+    end function
+
+    function NoContent() as object
+        return { status: 204, data: invalid }
+    end function
+
+    function StatusOnly(status as integer) as object
+        return { status: status, data: invalid }
+    end function
+
+    function Dispatch(r as object) as dynamic
+        route = r.route
+        count = route.Count()
+        if count = 0 then return invalid
+        first = route[0]
+
+        if first = "system" and count >= 2 and route[1] = "info"
+            info = silo.Probe(r.server)
+            if info = invalid then return silo.StatusOnly(404)
+            return silo.Ok(info)
+        end if
+
+        if first = "users"
+            if count = 2 and route[1] = "public" then return silo.Ok([])
+            if r.method = "GET" and (count = 2 or (count = 1 and r.query.LookupCI("UserId") <> invalid))
+                return silo.UserAnswer(r)
+            end if
+            if count = 2 and route[1] = "me" then return silo.UserAnswer(r)
+        end if
+
+        ' Silo takes no Jellyfin client capabilities report and keeps no Jellyfin sessions list
+        if first = "sessions" and count >= 2 and route[1] = "capabilities" then return silo.NoContent()
+
+        return invalid
+    end function
+
+    function UserAnswer(r as object) as object
+        if r.account = "" then return silo.StatusOnly(401)
+        result = silo.CurrentUser(r.server, r.account, r.profileId)
+        if result.status <> 200 then return silo.StatusOnly(result.status)
+        return silo.Ok(result.user)
+    end function
+end namespace

@@ -1,0 +1,70 @@
+import "pkg:/source/api/silo/SiloSession.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Artwork on a Silo server. Silo has no image address that can be built from an item id: each
+' picture comes signed, inside the item that shows it. The mapper hands the picture's own address
+' over as the item's image tag, and an image URL asked with that tag is the picture. Callers that
+' ask without a tag find the picture in this thread's record of what it mapped (Smart-TV's
+' utils/siloUrls.js keeps the same record, for every caller).
+namespace silo
+    const MAX_IMAGES = 4000
+
+    ' Records a picture of itemId and answers its tag, or "" when there's no picture
+    function RegisterImage(server as string, itemId as string, imageType as string, url as dynamic, index = 0 as integer) as string
+        if not isString(url) then return ""
+        url = url.Trim()
+        if url = "" or itemId = "" then return ""
+        if type(m.siloImages) <> "roAssociativeArray" or m.siloImages.Count() > silo.MAX_IMAGES then m.siloImages = {}
+        m.siloImages[silo.ImageKey(server, itemId, imageType, index)] = url
+        return url
+    end function
+
+    function ImageKey(server as string, itemId as string, imageType as string, index as integer) as string
+        return silo.ServerKey(server) + "|" + itemId + "|" + LCase(imageType) + "|" + index.ToStr()
+    end function
+
+    ' A picture address as a full URL on server
+    function ResolveUrl(server as string, url as string) as string
+        if url = "" then return ""
+        lower = LCase(url)
+        if lower.Left(7) = "http://" or lower.Left(8) = "https://" then return url
+        if url.Left(2) = "//"
+            if LCase(server).Left(8) = "https://" then return "https:" + url
+            return "http:" + url
+        end if
+        base = server
+        while base.Right(1) = "/"
+            base = base.Left(base.Len() - 1)
+        end while
+        if url.Left(1) = "/" then return base + url
+        return base + "/" + url
+    end function
+
+    ' The Silo picture a Jellyfin image path names, or "" for none. Size options are ignored: Silo sizes
+    ' a picture when the item is read, and a signed address can't be resized
+    function ImageURL(server as string, path as string, params as dynamic) as string
+        segments = []
+        for each segment in path.Split("?")[0].Split("/")
+            if segment <> "" then segments.Push(segment)
+        end for
+        if segments.Count() < 4 then return ""
+        kind = LCase(segments[0])
+        if LCase(segments[2]) <> "images" then return ""
+        tag = ""
+        if type(params) = "roAssociativeArray" then tag = params.LookupCI("tag") ?? ""
+        if isString(tag) and tag <> "" and (tag.Left(1) = "/" or LCase(tag).Left(4) = "http") then return silo.ResolveUrl(server, tag)
+
+        if kind = "users"
+            entry = silo.ProfileEntry(segments[1])
+            if isValid(entry) and isValidAndNotEmpty(entry.avatar) then return silo.ResolveUrl(server, entry.avatar)
+            return ""
+        end if
+        if kind <> "items" then return ""
+        index = 0
+        if segments.Count() > 4 then index = segments[4].ToInt()
+        if type(m.siloImages) <> "roAssociativeArray" then return ""
+        url = m.siloImages[silo.ImageKey(server, segments[1], segments[3], index)]
+        if not isString(url) then return ""
+        return silo.ResolveUrl(server, url)
+    end function
+end namespace

@@ -95,7 +95,7 @@ const selections = {
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting'],
-    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad'],
+    'source/utils/misc.bs': ['isLocalhost', 'isSupportedMediaServer', 'isSiloSystemInfo', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
@@ -198,6 +198,10 @@ for (const name of [
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/achievement-unlocks.bs', 'utf8');
+for (const file of ['source/api/silo/SiloSession.bs', 'source/api/silo/SiloMapper.bs', 'source/api/silo/SiloImages.bs', 'source/api/silo/SiloAccount.bs', 'source/api/silo/SiloRouter.bs']) {
+    source += '\n' + (await readFile(file, 'utf8')).replace(/^import .*$/gm, '');
+}
+source += '\n' + await readFile('test/silo.bs', 'utf8');
 source += '\n' + await readFile('test/friends-chat.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
