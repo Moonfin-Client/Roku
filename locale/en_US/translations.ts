@@ -1292,6 +1292,16 @@
         <translation>A drawer over the screen you were on, with play and the basics, and the full page a press away.</translation>
     </message>
     <message>
+        <source>Frost</source>
+        <extracomment>The details screen style that floats the title in a glass window over a blurred copy of its art, with tabs under the buttons</extracomment>
+        <translation>Frost</translation>
+    </message>
+    <message>
+        <source>The title in a glass window over its blurred art, with tabs under the buttons.</source>
+        <extracomment>Setup wizard description of the Frost details screen</extracomment>
+        <translation>The title in a glass window over its blurred art, with tabs under the buttons.</translation>
+    </message>
+    <message>
         <source>Open full page</source>
         <extracomment>Button at the foot of the Quick Look drawer that opens the title&apos;s full details page</extracomment>
         <translation>Open full page</translation>
@@ -6973,8 +6983,8 @@
         <translation>Choose which time labels appear around the playback progress bar.</translation>
     </message>
     <message>
-        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes. Stage leads with the poster, with play under it and the details beside it. Premiere centers the title over a backdrop that fills the screen, with every section down the page under it. Quick Look opens a drawer over the screen you were on, with the full page a press away.</source>
-        <translation>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes. Stage leads with the poster, with play under it and the details beside it. Premiere centers the title over a backdrop that fills the screen, with every section down the page under it. Quick Look opens a drawer over the screen you were on, with the full page a press away.</translation>
+        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes. Stage leads with the poster, with play under it and the details beside it. Premiere centers the title over a backdrop that fills the screen, with every section down the page under it. Quick Look opens a drawer over the screen you were on, with the full page a press away. Frost floats the title in a glass window over a blurred copy of its art, with its parts in tabs under the buttons.</source>
+        <translation>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes. Stage leads with the poster, with play under it and the details beside it. Premiere centers the title over a backdrop that fills the screen, with every section down the page under it. Quick Look opens a drawer over the screen you were on, with the full page a press away. Frost floats the title in a glass window over a blurred copy of its art, with its parts in tabs under the buttons.</translation>
     </message>
     <message>
         <source>Classic keeps per-row image type and info overlay. Modern uses portrait-to-backdrop rows.</source>
