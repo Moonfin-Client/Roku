@@ -134,7 +134,15 @@ namespace silo
     ' Roku's player plays the original file and HLS; Silo's progressive remux is a piped fragmented
     ' MP4 with no index, so HLS is asked for instead, which also keeps a copied Dolby Vision track.
     ' Sidecars and streams are fetched without the app's headers, so every address carries its token.
-    function CapabilitiesOf(deviceProfile as dynamic) as object
+    ' Whether this Roku decodes multichannel AAC; many don't, and play a 5.1 AAC stream silent
+    function DecodesMultichannelAac() as boolean
+        info = CreateObject("roDeviceInfo")
+        if info = invalid then return false
+        answer = info.CanDecodeAudio({ Codec: "aac", ChCnt: 6 })
+        return type(answer) = "roAssociativeArray" and answer.result = true
+    end function
+
+    function CapabilitiesOf(deviceProfile as dynamic, serverFeatures = [] as object, multichannelAac = true as boolean) as object
         if type(deviceProfile) <> "roAssociativeArray" then deviceProfile = {}
         directPlay = silo.ProfilesOf(deviceProfile.DirectPlayProfiles)
         codecProfiles = silo.ProfilesOf(deviceProfile.CodecProfiles)
@@ -211,6 +219,16 @@ namespace silo
         hlsHdr.Append(hdr)
         hlsHdr.dolby_vision_profiles = []
         out.deliveries.hls.hdr_details = hlsHdr
+        ' As Silo's own Roku app: without multichannel AAC, AAC is held to two channels, by codec where
+        ' Silo takes that, else the whole HLS stream (a converted track is AAC there)
+        if not multichannelAac
+            if siloContains(serverFeatures, "codec_channel_ceilings_v1")
+                out.deliveries.original_http.max_channels_by_codec = { aac: 2 }
+                out.deliveries.hls.max_channels_by_codec = { aac: 2 }
+            else
+                out.deliveries.hls.max_channels = 2
+            end if
+        end if
         return out
     end function
 
@@ -607,10 +625,12 @@ namespace silo
         file = silo.PlaybackFileOf(r, itemId, q.LookupCI("MediaSourceId") ?? "")
         silo.Trace("play " + itemId + ": source " + (q.LookupCI("MediaSourceId") ?? "none") + " -> title " + file.itemId + ", file " + file.fileId + ", versions " + file.sources.Count().ToStr())
         if file.fileId = "" then return silo.StatusOnly(404)
-        caps = silo.CapabilitiesOf(body.DeviceProfile)
-        context = silo.PlaybackContext(caps, getAuthHeaderContext().appVersion ?? "")
         server = silo.PlaybackCapabilities(r)
         silo.Trace("play: server playback " + server.reason + ", ok " + server.ok.ToStr())
+        multichannelAac = silo.DecodesMultichannelAac()
+        caps = silo.CapabilitiesOf(body.DeviceProfile, server.features, multichannelAac)
+        silo.Trace("play: decodes video " + caps.clientCapabilities.codecs_video.Join(",") + ", audio " + caps.clientCapabilities.codecs_audio.Join(",") + ", multichannel AAC " + multichannelAac.ToStr())
+        context = silo.PlaybackContext(caps, getAuthHeaderContext().appVersion ?? "")
         if not server.ok then return { status: 503, data: { ErrorCode: "SiloUnavailable", Message: tr("Playback isn't available on this server.") } }
         startBody = {
             protocol_version: 3,
@@ -690,6 +710,10 @@ namespace silo
         playing.subtitleStreamIndex = source.DefaultSubtitleStreamIndex
         playing.offsetTicks = source.SiloTimelineOffsetTicks
         silo.SavePlaybackSession(playing, playing.sessionId)
+        audioTrack = invalid
+        if type(playing.plan.selected_tracks) = "roAssociativeArray" then audioTrack = playing.plan.selected_tracks.audio
+        if type(audioTrack) = "roAssociativeArray" then silo.Trace("play: audio " + FormatJson(audioTrack))
+        if type(playing.plan.decision_reason) = "roString" or type(playing.plan.decision_reason) = "String" then silo.Trace("play: reason " + playing.plan.decision_reason)
         silo.Trace("play: plan " + (playing.plan.delivery ?? "").ToStr() + ", container " + (source.Container ?? "").ToStr() + ", direct " + source.SupportsDirectPlay.ToStr() + ", stream " + silo.PathOf(source.Path ?? ""))
         return silo.Ok({ PlaySessionId: playing.sessionId, MediaSources: [source] })
     end function
