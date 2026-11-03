@@ -68,6 +68,7 @@ const selections = {
     'source/utils/settingsMetrics.bs': null,
     'source/utils/ratingSourceList.bs': null,
     'source/utils/homeRowGroups.bs': null,
+    'source/utils/searchGroups.bs': null,
     'source/utils/SeerrUtils.bs': ['SeerrEscapeJsonString', 'SeerrJsonFromPairs', 'SeerrFormatJson', 'SeerrFormatJsonValue', 'SeerrStreamingRegion', 'SeerrStreamingProviders', 'SeerrRequestDownloadSummary', 'SeerrQueueHasWork', 'SeerrDownloadKey', 'SeerrIsNumber', 'IsSeerrSeriesPart'],
     'source/utils/libraryOrder.bs': null,
     'source/utils/detailSectionLayout.bs': null,
@@ -180,6 +181,7 @@ source += '\n' + await readFile('test/library-order.bs', 'utf8');
 source += '\n' + await readFile('test/detail-sections.bs', 'utf8');
 source += '\n' + await readFile('test/rating-sources.bs', 'utf8');
 source += '\n' + await readFile('test/home-row-groups.bs', 'utf8');
+source += '\n' + await readFile('test/search-groups.bs', 'utf8');
 source += '\n' + await readFile('test/settings-metrics.bs', 'utf8');
 source += '\n' + await readFile('test/library-filters.bs', 'utf8');
 source += '\n' + await readFile('test/library-group-by.bs', 'utf8');

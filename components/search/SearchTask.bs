@@ -7,6 +7,7 @@ import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/multiserver.bs"
 import "pkg:/source/utils/parentalControls.bs"
+import "pkg:/source/utils/searchGroups.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 
 ' How long the rest of the results wait for people before showing without them, and how long
@@ -74,6 +75,7 @@ sub search()
     activeRequests = {}
     allItems = []
     hintItems = []
+    fullPages = {}
 
     for each userSession in allSessions
         for each kind in ["items", "persons", "hints"]
@@ -81,6 +83,7 @@ sub search()
             if not isValid(started) then continue for
             if started.DoesExist("answered")
                 takeSearchAnswer(kind, started.answered, userSession, allItems, hintItems)
+                noteFullPage(kind, started.answered, userSession, fullPages)
             else
                 activeRequests[started.id] = { session: userSession, type: kind, request: started.request }
             end if
@@ -111,13 +114,25 @@ sub search()
 
             if isValid(requestInfo)
                 activeRequests.Delete(requestId)
-                if msg.GetResponseCode() = 200 then takeSearchAnswer(requestInfo.type, ParseJson(msg.GetString()), requestInfo.session, allItems, hintItems)
+                if msg.GetResponseCode() = 200
+                    data = ParseJson(msg.GetString())
+                    takeSearchAnswer(requestInfo.type, data, requestInfo.session, allItems, hintItems)
+                    noteFullPage(requestInfo.type, data, requestInfo.session, fullPages)
+                end if
             end if
         end if
     end while
 
+    for each key in fullPages
+        userSession = fullPages[key]
+        if not isEmbyServer(userSession.serverUrl) and not isPlexServer(userSession.serverUrl)
+            hintItems.Append(refillServerSearch(userSession, query, allItems, hintItems))
+        end if
+    end for
+
     ' Hints are the only route a plugin has, and they are merged once every server
-    ' has answered so the fuller item record wins where both found the same thing
+    ' has answered so the fuller item record wins where both found the same thing.
+    ' The refilled groups go in with them, since they can find what the page had.
     seenIds = {}
     for each node in allItems
         if isValidAndNotEmpty(node.id) then seenIds[node.id] = true
@@ -162,6 +177,44 @@ sub takeSearchAnswer(kind as string, data as dynamic, userSession as object, all
         end for
     end if
 end sub
+
+' Notes a server whose items or hints filled the page, so its short groups are searched again
+sub noteFullPage(kind as string, data as dynamic, userSession as object, fullPages as object)
+    page = invalid
+    if kind = "items" and isChainValid(data, "Items") then page = data.Items
+    if kind = "hints" and isChainValid(data, "SearchHints") then page = data.SearchHints
+    if isValid(page) and page.Count() >= SEARCH_PAGE_SIZE then fullPages[userSession.serverUrl] = userSession
+end sub
+
+' Searches each group the server's full page left short of a row again, all at once
+function refillServerSearch(userSession as object, query as string, allItems as object, hintItems as object) as object
+    ' Items and hints mostly find the same things, so each one is counted once
+    types = []
+    counted = {}
+    for each list in [allItems, hintItems]
+        for each node in list
+            json = node.json
+            if isValid(json) and toString(json._serverUrl) = userSession.serverUrl and not counted.DoesExist(node.id)
+                counted[node.id] = true
+                types.push(node.type)
+            end if
+        end for
+    end for
+
+    port = CreateObject("roMessagePort")
+    pending = {}
+    for each groupTypes in searchGroups.Refills(types)
+        started = startSearchRequest(userSession, port, "refill", query, groupTypes)
+        if isValid(started) and not started.DoesExist("answered") then pending[started.id] = started.request
+    end for
+
+    nodes = []
+    for each item in awaitSearchAnswers(port, pending)
+        node = transformToSearchData(item, userSession)
+        if isValid(node) then nodes.push(node)
+    end for
+    return nodes
+end function
 
 sub appendSearchResults(results as object, items as object)
     results.Items.Append(items)
@@ -210,18 +263,21 @@ sub appendSeerrResults(results as object, query as string)
     results.TotalRecordCount = results.Items.Count()
 end sub
 
-function startSearchRequest(userSession as object, port as object, searchType as string, query as string) as object
+function startSearchRequest(userSession as object, port as object, searchType as string, query as string, types = "" as string) as object
     url = ""
 
-    if searchType = "items"
+    if searchType = "items" or searchType = "refill"
+        if searchType = "items" then types = searchItemTypes(userSession.serverUrl)
+        limit = SEARCH_PAGE_SIZE
+        if searchType = "refill" then limit = searchGroups.RESULT_CAP
         url = buildURLForSession(userSession, "/Items", {
             searchTerm: query,
             fields: "ChildCount,ItemCounts,Genres,RecursiveItemCount,ImageTags,BackdropImageTags",
-            IncludeItemTypes: "LiveTvChannel,Movie,BoxSet,Series,Episode,Video,Audio,MusicAlbum,MusicArtist,Playlist",
+            IncludeItemTypes: types,
             EnableTotalRecordCount: false,
             ImageTypeLimit: 1,
             Recursive: true,
-            limit: 100
+            limit: limit
         })
     else if searchType = "persons"
         url = buildURLForSession(userSession, "/Persons", {
@@ -235,7 +291,7 @@ function startSearchRequest(userSession as object, port as object, searchType as
         url = buildURLForSession(userSession, "/Search/Hints", {
             userId: userSession.userId,
             searchTerm: query,
-            limit: 100,
+            limit: SEARCH_PAGE_SIZE,
             includePeople: true,
             includeMedia: true,
             includeArtists: true,

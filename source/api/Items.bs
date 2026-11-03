@@ -4,6 +4,7 @@ import "pkg:/source/enums/SubtitleSelection.bs"
 import "pkg:/source/utils/blockedContent.bs"
 import "pkg:/source/utils/detailCompatibility.bs"
 import "pkg:/source/utils/parentalControls.bs"
+import "pkg:/source/utils/searchGroups.bs"
 
 function ItemGetPlaybackInfo(id as string, startTimeTicks = 0 as longinteger)
     params = {
@@ -140,6 +141,8 @@ function ItemPostPlaybackInfoForServer(serverData as object, id as string, media
     return postPlaybackInfo(req, body, isEmbyServer(serverData.serverUrl))
 end function
 
+const SEARCH_PAGE_SIZE = 100
+
 ' Plugins can only contribute search results through /Search/Hints, and that is new
 ' in Jellyfin 12, so older servers stay on the plain /Items search.
 function serverSupportsSearchHints() as boolean
@@ -158,7 +161,7 @@ function searchViaHints(query as string) as dynamic
     hintData = api.search.GetHints({
         "userId": m.global.session.user.id,
         "searchTerm": query,
-        "limit": 100,
+        "limit": SEARCH_PAGE_SIZE,
         "includePeople": true,
         "includeMedia": true,
         "includeArtists": true,
@@ -253,18 +256,94 @@ function itemFromSearchHint(hint as dynamic) as dynamic
     return item
 end function
 
+' Emby and Plex searches have never asked for books or audiobooks, so only Jellyfin's does
+function searchItemTypes(serverUrl = "" as string) as string
+    types = "LiveTvChannel,Movie,BoxSet,Series,Episode,Video,Audio,MusicAlbum,MusicArtist,Playlist"
+    if isEmbyServer(serverUrl) or isPlexServer(serverUrl) then return types
+
+    return "Book,AudioBook," + types
+end function
+
 function searchViaItems(query as string) as dynamic
-    return api.items.Get({
+    return api.items.Get(searchItemsParams(query, searchItemTypes(), SEARCH_PAGE_SIZE))
+end function
+
+function searchItemsParams(query as string, types as string, limit as integer) as object
+    return {
         "userid": m.global.session.user.id,
         "searchTerm": query,
         "fields": "ChildCount, ItemCounts, Genres, RecursiveItemCount",
-        "IncludeItemTypes": "LiveTvChannel,Movie,BoxSet,Series,Episode,Video,Audio,MusicAlbum,MusicArtist,Playlist",
+        "IncludeItemTypes": types,
         "EnableTotalRecordCount": false,
         "ImageTypeLimit": 1,
         "Recursive": true,
-        "limit": 100
-    })
+        "limit": limit
+    }
 end function
+
+' A full page from Jellyfin searches each group it left short of a row again, all at
+' once, and adds what those found
+sub refillSearchPage(query as string, items as object)
+    if items.Count() < SEARCH_PAGE_SIZE or isEmbyServer() or isPlexServer() then return
+
+    types = []
+    for each item in items
+        types.push(item.LookupCI("Type"))
+    end for
+
+    port = CreateObject("roMessagePort")
+    pending = {}
+    for each groupTypes in searchGroups.Refills(types)
+        req = APIRequest("/items/", searchItemsParams(query, groupTypes, searchGroups.RESULT_CAP))
+        if isValid(req)
+            req.SetMessagePort(port)
+            if req.AsyncGetToString() then pending[req.GetIdentity().ToStr()] = req
+        end if
+    end for
+
+    appendNewSearchItems(items, awaitSearchAnswers(port, pending))
+end sub
+
+' Waits up to ten seconds in all on every request in pending and gives back the items
+' they found. Whatever hasn't answered by then is canceled.
+function awaitSearchAnswers(port as object, pending as object) as object
+    found = []
+    clock = CreateObject("roTimespan")
+    while pending.Count() > 0 and clock.TotalMilliseconds() < 10000
+        msg = wait(10000 - clock.TotalMilliseconds(), port)
+        if type(msg) = "roUrlEvent"
+            id = msg.GetSourceIdentity().ToStr()
+            if pending.DoesExist(id)
+                pending.Delete(id)
+                if msg.GetResponseCode() = 200
+                    data = ParseJson(msg.GetString())
+                    if isChainValid(data, "Items") then found.Append(data.Items)
+                end if
+            end if
+        end if
+    end while
+
+    for each id in pending
+        pending[id].AsyncCancel()
+    end for
+    return found
+end function
+
+sub appendNewSearchItems(items as object, found as object)
+    seen = {}
+    for each item in items
+        id = toString(item.LookupCI("Id"))
+        if id <> "" then seen[id] = true
+    end for
+
+    for each item in found
+        id = toString(item.LookupCI("Id"))
+        if id <> "" and not seen.DoesExist(id)
+            seen[id] = true
+            items.push(item)
+        end if
+    end for
+end sub
 
 function searchMedia(query as string, includePrograms = false as boolean)
     if query = "" then return { Items: [], TotalRecordCount: 0 }
@@ -272,6 +351,7 @@ function searchMedia(query as string, includePrograms = false as boolean)
     data = invalid
     if serverSupportsSearchHints() then data = searchViaHints(query)
     if not isValid(data) then data = searchViaItems(query)
+    if isChainValid(data, "Items") then refillSearchPage(query, data.Items)
 
     liveTv = invalid
     if includePrograms
