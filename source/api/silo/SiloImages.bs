@@ -15,16 +15,68 @@ namespace silo
         url = url.Trim()
         if url = "" or itemId = "" then return ""
         if type(m.siloImages) <> "roAssociativeArray" or m.siloImages.Count() > silo.MAX_IMAGES then m.siloImages = {}
-        m.siloImages[silo.ImageKey(server, itemId, imageType, index)] = url
+        key = silo.ImageKey(server, itemId, imageType, index)
+        if m.siloImages[key] <> url
+            m.siloImages[key] = url
+            ' Published for the other threads with the next flush
+            if type(m.siloImagesByItem) <> "roAssociativeArray" or m.siloImagesByItem.Count() > silo.MAX_IMAGES then m.siloImagesByItem = {}
+            if type(m.siloImagesPending) <> "roAssociativeArray" then m.siloImagesPending = {}
+            field = silo.ImageField(itemId)
+            pictures = m.siloImagesByItem[field]
+            if type(pictures) <> "roAssociativeArray"
+                pictures = {}
+                m.siloImagesByItem[field] = pictures
+            end if
+            pictures[key] = url
+            m.siloImagesPending[field] = true
+        end if
         return url
     end function
 
+    ' Screens build many picture addresses from an item id alone, on the render thread, which
+    ' mapped none of them. So what a task maps is also kept on one node of the global node, a field
+    ' per item, written in one go after each answer
+    function ImageStore() as dynamic
+        if type(m.global) <> "roSGNode" then return invalid
+        if not m.global.hasField("siloImageStore") then m.global.addFields({ siloImageStore: CreateObject("roSGNode", "Node") })
+        return m.global.siloImageStore
+    end function
+
+    function ImageField(itemId as string) as string
+        return "i_" + CreateObject("roRegex", "[^A-Za-z0-9_]", "").ReplaceAll(itemId, "_")
+    end function
+
+    sub FlushImages()
+        if type(m.siloImagesPending) <> "roAssociativeArray" or m.siloImagesPending.Count() = 0 then return
+        store = silo.ImageStore()
+        if store = invalid then return
+        fields = {}
+        for each field in m.siloImagesPending
+            fields[field] = m.siloImagesByItem[field]
+        end for
+        m.siloImagesPending = {}
+        store.update(fields, true)
+    end sub
+
     ' The picture recorded for itemId in this thread, or ""
     function ImageFor(server as string, itemId as string, imageType as string, index = 0 as integer) as string
-        if type(m.siloImages) <> "roAssociativeArray" then return ""
-        url = m.siloImages[silo.ImageKey(server, itemId, imageType, index)]
-        if not isString(url) then return ""
-        return url
+        key = silo.ImageKey(server, itemId, imageType, index)
+        if type(m.siloImages) = "roAssociativeArray"
+            url = m.siloImages[key]
+            if isString(url) then return url
+        end if
+        return ""
+    end function
+
+    ' A picture another thread mapped
+    function SharedImageFor(server as string, itemId as string, imageType as string, index = 0 as integer) as string
+        store = silo.ImageStore()
+        if store = invalid then return ""
+        pictures = store.getField(silo.ImageField(itemId))
+        if type(pictures) <> "roAssociativeArray" then return ""
+        url = pictures[silo.ImageKey(server, itemId, imageType, index)]
+        if isString(url) then return url
+        return ""
     end function
 
     function ImageKey(server as string, itemId as string, imageType as string, index as integer) as string
@@ -70,6 +122,18 @@ namespace silo
         if kind <> "items" then return ""
         index = 0
         if segments.Count() > 4 then index = segments[4].ToInt()
-        return silo.ResolveUrl(server, silo.ImageFor(server, segments[1], segments[3], index))
+        found = silo.ImageFor(server, segments[1], segments[3], index)
+        if found = "" then found = silo.SharedImageFor(server, segments[1], segments[3], index)
+        url = silo.ResolveUrl(server, found)
+        ' A picture asked for without its tag, on a thread that didn't map the item, can't be found.
+        ' Said once per image type, so the caller that needs a tag shows up in the console
+        if url = ""
+            if type(m.siloImageMisses) <> "roAssociativeArray" then m.siloImageMisses = {}
+            if not m.siloImageMisses.DoesExist(segments[3])
+                m.siloImageMisses[segments[3]] = true
+                print "[Moonfin network] WARN: Silo image without a tag: " + segments[3] + " of " + segments[1]
+            end if
+        end if
+        return url
     end function
 end namespace
