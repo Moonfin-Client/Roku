@@ -36,6 +36,8 @@ const NEXT_UP_PLAY = 0
 const NEXT_UP_DISMISS = 1
 
 sub init()
+    m.timelineOffset = 0
+    m.mediaRuntime = 0
     m.top.observeField("availableAudioTracks", "applyChosenAudioTrack")
 
     ' Carries on through the rest of the queue, the way it does in the other clients
@@ -344,7 +346,7 @@ sub handleChapterSkipAction(action as string)
         if gotoChapter > m.chapters.count() - 1 then return
 
         newPosition = m.chapters[gotoChapter].StartPositionTicks / 10000000#
-        m.top.seek = newPosition
+        seekMedia(newPosition)
         setVideoEndingTime(newPosition)
         m.positionText.text = secondsToHuman(newPosition, true)
         return
@@ -356,7 +358,7 @@ sub handleChapterSkipAction(action as string)
         if gotoChapter < 0 then gotoChapter = 0
 
         newPosition = m.chapters[gotoChapter].StartPositionTicks / 10000000#
-        m.top.seek = newPosition
+        seekMedia(newPosition)
         setVideoEndingTime(newPosition)
         m.positionText.text = secondsToHuman(newPosition, true)
         return
@@ -381,12 +383,12 @@ sub handleItemSkipAction(action as string)
     end if
 
     if action = "itemback"
-        currentPos = isValid(m.top.position) ? m.top.position : 0
+        currentPos = mediaPosition()
         queuePos = isChainValid(m.global, "queueManager") ? m.global.queueManager.callFunc("getPosition") : 0
         if not isValid(queuePos) then queuePos = 0
 
         if currentPos > 3 or queuePos <= 0
-            m.top.seek = 0
+            seekMedia(0)
             setVideoEndingTime(0)
             m.positionText.text = secondsToHuman(0, true)
         else
@@ -447,8 +449,8 @@ sub startScrubbing(direction as integer)
     m.scrubActive = true
     m.scrubDirection = direction
     m.scrubSpeedIndex = direction = 1 ? 3 : 2
-    m.scrubPositionStart = m.top.position
-    m.scrubPosition = m.top.position
+    m.scrubPositionStart = mediaPosition()
+    m.scrubPosition = mediaPosition()
 
     m.top.control = VideoControl.PAUSE
 
@@ -467,7 +469,7 @@ sub stopScrubbing()
     m.scrubActive = false
     m.scrubDirection = 0
 
-    m.top.seek = m.scrubPosition
+    seekMedia(m.scrubPosition)
 
     m.scrubInfo = m.top.findNode("scrubInfo")
     if isValid(m.scrubInfo)
@@ -491,15 +493,15 @@ sub onScrubTimer()
     m.scrubPosition = m.scrubPosition + speed * m.scrubTimer.duration
 
     if m.scrubPosition < 0 then m.scrubPosition = 0
-    if m.scrubPosition > m.top.duration then m.scrubPosition = m.top.duration
+    if m.scrubPosition > mediaDuration() then m.scrubPosition = mediaDuration()
 
 
     if isValid(m.scrubTime)
-        m.scrubTime.text = secondsToHuman(m.scrubPosition, true) + " / " + secondsToHuman(m.top.duration, true)
+        m.scrubTime.text = secondsToHuman(m.scrubPosition, true) + " / " + secondsToHuman(mediaDuration(), true)
     end if
 
-    if isValid(m.progressBar) and m.top.duration > 0
-        scrubPct = m.scrubPosition / m.top.duration
+    if isValid(m.progressBar) and mediaDuration() > 0
+        scrubPct = m.scrubPosition / mediaDuration()
         m.progressBar.width = 1714 * scrubPct
     end if
 
@@ -554,7 +556,7 @@ sub handleChapterListAction()
     m.chapterOverlay.observeField("dismissed", "closeChapterList")
     m.top.appendChild(m.chapterOverlay)
     m.chapterOverlay.chapters = chapters
-    m.chapterOverlay.currentIndex = currentChapterIndexAt(m.top.position)
+    m.chapterOverlay.currentIndex = currentChapterIndexAt(mediaPosition())
     m.chapterOverlay.callFunc("open")
     m.chapterOverlay.setFocus(true)
 end sub
@@ -573,9 +575,9 @@ sub onChapterPicked()
     dropScrub()
     seekTime = m.chapterOverlay.selected
     closeChapterList()
-    duration = m.top.duration
+    duration = mediaDuration()
     if duration > 1 and seekTime > duration - 1 then seekTime = duration - 1
-    m.top.seek = seekTime
+    seekMedia(seekTime)
     m.positionText.text = secondsToHuman(seekTime, true)
 end sub
 
@@ -675,7 +677,7 @@ function getCurrentChapterIndex() as integer
 
     ' Give a 15 second buffer to compensate for user expectation and roku video position inaccuracy
     ' Web client uses 10 seconds, but this wasn't enough for Roku in testing
-    currentPosition = m.top.position + 15
+    currentPosition = mediaPosition() + 15
     currentChapter = 0
 
     for i = m.chapters.count() - 1 to 0 step -1
@@ -935,7 +937,7 @@ sub handleShowsyncmenuAction()
     cues = []
     if isValid(m.captionTask) and LCase(m.top.globalCaptionMode) = "on" then cues = m.captionTask.callFunc("getCues")
     m.subtitleOffsetOverlay.cues = cues
-    m.subtitleOffsetOverlay.currentTime = m.top.position
+    m.subtitleOffsetOverlay.currentTime = mediaPosition()
     m.subtitleOffsetOverlay.visible = true
 end sub
 
@@ -1038,7 +1040,7 @@ end sub
 ' Loads the item again from where it is, with this subtitle picked. A subtitle downloaded during
 ' playback isnt in the stream the player opened, so this is also how one gets shown.
 sub reloadWithSubtitle(index as integer)
-    m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
+    m.global.queueManager.callFunc("setTopStartingPoint", int(mediaPosition()) * 10000000&)
 
     stopForReload()
 
@@ -1061,7 +1063,7 @@ sub onAudioIndexChange()
     end if
 
     ' Save the current video position
-    m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
+    m.global.queueManager.callFunc("setTopStartingPoint", int(mediaPosition()) * 10000000&)
 
     stopForReload()
 
@@ -1108,7 +1110,7 @@ end sub
 ' when the in place retry does not.
 sub retryPlaybackFromServer()
     if m.top.position > 0
-        m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
+        m.global.queueManager.callFunc("setTopStartingPoint", int(mediaPosition()) * 10000000&)
     end if
 
     m.top.control = VideoControl.STOP
@@ -1298,6 +1300,8 @@ sub onVideoContentLoaded(event as object)
 
     m.isTranscoded = videoContent[0].isTranscoded
     m.top.isTranscoded = m.isTranscoded = true
+    m.timelineOffset = videoContent[0].timelineOffset ?? 0
+    m.mediaRuntime = videoContent[0].mediaRuntime ?? 0
     m.videoCodec = videoContent[0].videoCodec ?? ""
     m.streamSummary = streamSummary(videoContent[0])
     diagnostics.Playback(`Playing ${m.streamSummary}`)
@@ -1515,8 +1519,8 @@ sub displayTrickplayImage(trickPosition as integer)
     offsetVert = 900 - m.trickplayDataFinal.Height
 
     if m.scrubActive
-        if m.top.duration > 0
-            scrubPct = m.scrubPosition / m.top.duration
+        if mediaDuration() > 0
+            scrubPct = m.scrubPosition / mediaDuration()
             offsetHoriz = 103 + 1714 * scrubPct - m.trickplayDataFinal.Width / 2
         else
             offsetHoriz = 103
@@ -1837,7 +1841,7 @@ sub checkSegmentSkipButton()
 
     matchFound = false
 
-    currentPositionTicks = int(m.top.position) * 10000000&
+    currentPositionTicks = int(mediaPosition()) * 10000000&
     for i = 0 to m.mediaSegments.TotalRecordCount - 1
         mediaSegment = m.mediaSegments.items[i]
 
@@ -1867,22 +1871,24 @@ end sub
 ' When Video Player state changes
 sub onPositionChanged()
     ' Pass video position data into OSD
-    if m.top.duration = 0
+    position = mediaPosition()
+    duration = mediaDuration()
+    if duration = 0
         m.osd.progressPercentage = 0
     else
-        m.osd.progressPercentage = m.top.position / m.top.duration
+        m.osd.progressPercentage = position / duration
     end if
 
     ' Ensure position text is accurate
-    m.positionText.text = secondsToHuman(m.top.position, true)
+    m.positionText.text = secondsToHuman(position, true)
 
-    m.osd.positionTime = m.top.position
-    m.osd.remainingPositionTime = m.top.duration - m.top.position
-    if m.subtitleOffsetOverlay.visible then m.subtitleOffsetOverlay.currentTime = m.top.position
+    m.osd.positionTime = position
+    m.osd.remainingPositionTime = duration - position
+    if m.subtitleOffsetOverlay.visible then m.subtitleOffsetOverlay.currentTime = position
 
     ' A positive offset holds the subtitles back, so the task is asked for an earlier moment
     if isValid(m.captionTask)
-        newPos = Int(m.top.position * 1000) - m.subtitleOffset
+        newPos = Int(position * 1000) - m.subtitleOffset
         m.captionTask.currentPos = newPos
     end if
 
@@ -1900,11 +1906,11 @@ end sub
 ' The card comes up as the item runs out
 sub checkNextUp()
     if m.nextUp.visible or isValid(m.episodeOverlay) then return
-    if m.top.duration <= 0 then return
+    if mediaDuration() <= 0 then return
     if m.osd.visible then return
     if m.top.trickPlayBar.visible then return
 
-    remaining = m.top.duration - m.top.position
+    remaining = mediaDuration() - mediaPosition()
     threshold = isStringEqual(nextUpBehaviour(), "extended") ? 1 : 0.5
 
     if remaining > threshold then return
@@ -2135,9 +2141,42 @@ sub setVideoEndingTime(videoSeekPosition = 0 as integer)
     m.osd.videoEndingTime = videoEndingTime
 end sub
 
+' Where the title is, in its own seconds. A Silo stream can start partway into the title, and the
+' player counts from where it starts
+function mediaPosition() as float
+    return (m.top.position ?? 0) + m.timelineOffset
+end function
+
+' How long the title is. A Silo remux only reaches as far as the server has made it, so its
+' runtime comes from the file rather than the player
+function mediaDuration() as float
+    if m.mediaRuntime > 0 then return m.mediaRuntime
+    return m.top.duration
+end function
+
+' Whether the stream that plays holds this point of the title, so the player can seek to it
+function streamHolds(target as float) as boolean
+    if m.timelineOffset = 0 and m.mediaRuntime <= 0 then return true
+    local = target - m.timelineOffset
+    return local >= 0 and local <= m.top.duration - 1
+end function
+
+' Seeks to a point of the title. One outside the stream that plays loads the item again from
+' there, as Silo makes a stream from any point
+sub seekMedia(target as float)
+    if streamHolds(target)
+        m.top.seek = target - m.timelineOffset
+        return
+    end if
+    m.global.queueManager.callFunc("setTopStartingPoint", int(target) * 10000000&)
+    stopForReload()
+    m.LoadMetaDataTask.itemId = m.top.id
+    runLoad()
+end sub
+
 function getRemainingTime(videoSeekPosition = 0 as integer)
     if not isChainValid(m.positionText, "text")
-        return m.top.duration - m.top.position
+        return mediaDuration() - mediaPosition()
     end if
 
     seekTime = 0#
@@ -2162,9 +2201,9 @@ function getRemainingTime(videoSeekPosition = 0 as integer)
         seekTime = videoSeekPosition
     end if
 
-    seekTime = seekTime = 0 ? m.top.position : seekTime
+    seekTime = seekTime = 0 ? mediaPosition() : seekTime
 
-    return m.top.duration - seekTime
+    return mediaDuration() - seekTime
 end function
 
 sub onTrickPlayBarTextChange()
@@ -2185,7 +2224,7 @@ sub onTrickPlayBarTextChange()
     end if
 
     if not isValid(m.positionText)
-        displayTrickplayImage(m.top.position)
+        displayTrickplayImage(mediaPosition())
         return
     end if
 
@@ -2207,7 +2246,7 @@ sub onTrickPlayBarTextChange()
     ' add seconds
     seekTime += seekPosition[seekPosition.count() - 1].toint()
 
-    seekTime = seekTime = 0 ? m.top.position : seekTime
+    seekTime = seekTime = 0 ? mediaPosition() : seekTime
 
     displayTrickplayImage(seekTime)
 end sub
@@ -2431,16 +2470,16 @@ end function
 sub skipCurrentSegment()
     seekPosition = m.currentSegmentEndTicks / 10000000#
 
-    if seekPosition > (m.top.duration - 2)
+    if seekPosition > (mediaDuration() - 2)
         if m.global.queueManager.callFunc("getPosition") < m.global.queueManager.callFunc("getCount") - 1
             handleItemSkipAction("itemnext")
             return
         else
-            seekPosition = m.top.duration - 1
+            seekPosition = mediaDuration() - 1
         end if
     end if
 
-    m.top.seek = seekPosition
+    seekMedia(seekPosition)
 end sub
 
 sub prepareOSD()
@@ -2457,7 +2496,7 @@ sub showOSD(focusTarget = "seekbar" as string)
     m.osd.setFocus(true)
     m.pauseOverlay.visible = true
     ' The controls coming up is the cue that a scrub may follow, so the sheets ahead start loading
-    if not m.scrubHold.active then prefetchSheets(m.top.position * 1000, true)
+    if not m.scrubHold.active then prefetchSheets(mediaPosition() * 1000, true)
 end sub
 
 ' ------------------------------------------------------------------------------------------------
@@ -2531,7 +2570,7 @@ end function
 ' Each press moves by the seek step. With pause while scrubbing on and a preview to scrub by, the
 ' first press pauses and later ones only move the target. Otherwise every press seeks.
 sub scrubBy(direction as integer)
-    duration = m.top.duration
+    duration = mediaDuration()
     if duration <= 0 then return
     limit = duration - 1
     delta = direction * seekStepSeconds()
@@ -2545,13 +2584,14 @@ sub scrubBy(direction as integer)
     m.seekSettleTimer.control = "stop"
 
     if m.scrubHold.active
-        target = clampSeconds((m.scrubHold.target ?? m.top.position) + delta, limit)
+        target = clampSeconds((m.scrubHold.target ?? mediaPosition()) + delta, limit)
         m.scrubHold.target = target
     else
         ' A seek is still landing while the presses come, so each builds on where the last one aimed
-        target = clampSeconds((m.pendingSeek ?? m.top.position) + delta, limit)
+        target = clampSeconds((m.pendingSeek ?? mediaPosition()) + delta, limit)
         m.pendingSeek = target
-        m.top.seek = target
+        ' A point the stream lacks reloads the item, so it waits for the presses to settle
+        if streamHolds(target) then seekMedia(target)
         m.seekSettleTimer.control = "start"
     end if
 
@@ -2567,6 +2607,7 @@ function clampSeconds(value as float, limit as float) as float
 end function
 
 sub onSeekSettled()
+    if isValid(m.pendingSeek) and not streamHolds(m.pendingSeek) then seekMedia(m.pendingSeek)
     m.pendingSeek = invalid
     hideSeekPreview()
 end sub
@@ -2576,7 +2617,7 @@ function resumeHeldScrub() as boolean
     if not m.scrubHold.active then return false
     target = m.scrubHold.target
     m.scrubHold = { active: false, wasPlaying: false, target: invalid }
-    if isValid(target) then m.top.seek = target
+    if isValid(target) then seekMedia(target)
     hideSeekPreview()
     ' The scrub made this pause, so the unpause rewind has nothing to undo
     m.wasPaused = false
@@ -2587,7 +2628,7 @@ end function
 ' Seeks to where the scrub was aiming but stays paused, so play picks up from there
 sub settleHeldScrub()
     if not m.scrubHold.active or not isValid(m.scrubHold.target) then return
-    m.top.seek = m.scrubHold.target
+    seekMedia(m.scrubHold.target)
     m.scrubHold.target = invalid
     hideSeekPreview()
 end sub
@@ -2672,7 +2713,7 @@ sub prefetchSheets(positionMs as float, forward as boolean)
     stepMs = seekStepSeconds() * 1000
     direction = forward ? 1 : -1
     lastMs = (info.ThumbnailCount - 1) * info.Interval
-    endMs = (m.top.duration - 1) * 1000
+    endMs = (mediaDuration() - 1) * 1000
     if endMs < lastMs then lastMs = endMs
 
     targets = [positionMs]
@@ -3487,14 +3528,14 @@ function onKeyEvent(key as string, press as boolean) as boolean
             if skipBack <= 0 then skipBack = 10
 
             if key = KeyCode.RIGHT
-                newPosition = m.top.position + skipFwd
-                if newPosition > m.top.duration then newPosition = m.top.duration
+                newPosition = mediaPosition() + skipFwd
+                if newPosition > mediaDuration() then newPosition = mediaDuration()
             else
-                newPosition = m.top.position - skipBack
+                newPosition = mediaPosition() - skipBack
                 if newPosition < 0 then newPosition = 0
             end if
 
-            m.top.seek = newPosition
+            seekMedia(newPosition)
             setVideoEndingTime(newPosition)
             m.positionText.text = secondsToHuman(newPosition, true)
             return true
