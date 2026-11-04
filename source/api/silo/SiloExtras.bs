@@ -172,6 +172,102 @@ namespace silo
         return { Items: songs, TotalRecordCount: songs.Count(), StartIndex: 0 }
     end function
 
+    ' Silo's subtitle search results (POST /subtitles/search) for file fileId as Jellyfin's
+    ' RemoteSubtitleInfo. The app hands a download back only the result's id, and Silo wants the
+    ' whole result, so the id carries it (its JSON in hex). Ported from Smart-TV's
+    ' siloRemoteSubtitles.js
+    function SubtitleResults(answer as dynamic, fileId as string) as object
+        out = []
+        if type(answer) <> "roAssociativeArray" then return out
+        for each result in siloMap.Maps(answer.results)
+            if isString(result.id)
+                kept = { media_file_id: fileId, subtitle_id: result.id, hearing_impaired: result.hearing_impaired = true }
+                for each key in ["provider", "language", "release_name", "score"]
+                    if result[key] <> invalid then kept[key] = result[key]
+                end for
+                info = { Id: silo.HexOf(FormatJson(kept)), HearingImpaired: result.hearing_impaired = true }
+                if result.release_name <> invalid then info["Name"] = result.release_name
+                if result.provider <> invalid then info["ProviderName"] = result.provider
+                if result.format <> invalid then info["Format"] = result.format
+                if result.language <> invalid then info["Language"] = result.language
+                if result.downloads <> invalid then info["DownloadCount"] = result.downloads
+                out.Push(info)
+            end if
+        end for
+        return out
+    end function
+
+    ' Text as six hex digits per character, which any path carries
+    function HexOf(text as string) as string
+        digits = "0123456789abcdef"
+        out = ""
+        for i = 0 to text.Len() - 1
+            code = Asc(text.Mid(i, 1))
+            for each place in [1048576, 65536, 4096, 256, 16, 1]
+                out = out + digits.Mid((code \ place) mod 16, 1)
+            end for
+        end for
+        return out
+    end function
+
+    ' The text HexOf made, or "" for anything else
+    function TextOfHex(hex as string) as string
+        digits = "0123456789abcdef"
+        if hex.Len() mod 6 <> 0 then return ""
+        out = ""
+        for i = 0 to hex.Len() - 1 step 6
+            code = 0
+            for j = 0 to 5
+                digit = Instr(1, digits, LCase(hex.Mid(i + j, 1))) - 1
+                if digit < 0 then return ""
+                code = code * 16 + digit
+            end for
+            out = out + Chr(code)
+        end for
+        return out
+    end function
+
+    ' The search result a subtitle id carries, or invalid for an id that isn't one of these
+    function SubtitleResultOf(id as string) as dynamic
+        text = silo.TextOfHex(id)
+        if text.Left(1) <> "{" then return invalid
+        result = ParseJson(text)
+        if type(result) <> "roAssociativeArray" or not isString(result.subtitle_id) then return invalid
+        return result
+    end function
+
+    ' The file subtitles are found for: the one playing for the title, else its default
+    function SubtitleFileOf(r as object, itemId as string) as string
+        owner = siloMap.ItemIdOfSource(itemId)
+        if owner = "" then owner = itemId
+        playing = silo.LiveSessionOf(owner)
+        if playing <> invalid
+            fileId = siloMap.IdOf(playing.plan.effective_media_file_id)
+            if fileId <> "" then return fileId
+        end if
+        return silo.PlaybackFileOf(r, itemId, "").fileId
+    end function
+
+    ' Subtitles the server's providers find for the title's file in one language. With no provider
+    ' set up Silo finds nothing
+    function SearchSubtitles(r as object, itemId as string, language as string) as object
+        fileId = silo.SubtitleFileOf(r, itemId)
+        if fileId = "" then return silo.StatusOnly(404)
+        answer = silo.Call(r.server, "/api/v2/subtitles/search", { method: "POST", account: r.account, profileId: r.profileId, body: { media_file_id: fileId, languages: [siloMap.TwoLetterLanguage(language)] } })
+        if not answer.ok then return silo.StatusOnly(answer.status)
+        return silo.Ok(silo.SubtitleResults(answer.data, fileId))
+    end function
+
+    ' Saves a found subtitle to the file on the server, which then lists it among the title's
+    ' subtitles. Silo marks this not retryable, so it is sent once
+    function DownloadSubtitle(r as object, subtitleId as string) as object
+        result = silo.SubtitleResultOf(subtitleId)
+        if result = invalid then return silo.StatusOnly(400)
+        answer = silo.Call(r.server, "/api/v2/subtitles/download", { method: "POST", account: r.account, profileId: r.profileId, body: result })
+        if answer.ok then silo.ForgetCatalog()
+        return silo.StatusOnly(answer.status)
+    end function
+
     ' The item's Trickplay, for the first file it has, as Jellyfin's item field: by file, then width
     sub AddTrickplay(r as object, item as object)
         if type(item.MediaSources) <> "roArray" or item.MediaSources.Count() = 0 then return
