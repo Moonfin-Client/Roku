@@ -1,0 +1,131 @@
+import "pkg:/source/utils/misc.bs"
+
+namespace mediaBarNewRelease
+
+    ' The fewest episodes a season released at once has. A two episode premiere is still a season
+    ' aired week by week.
+    const SEASON_DROP_EPISODES = 3
+    const SECONDS_PER_DAY = 86400
+
+    ' When an episode aired in seconds since the epoch, or 0 when the server sent no date
+    function AiredAt(episode as object) as integer
+        premiere = episode.LookupCI("PremiereDate")
+        if not isServerDate(premiere) then return 0
+        date = CreateObject("roDateTime")
+        ' Jellyfin writes seven fractional digits
+        date.FromISO8601String(Left(premiere, 19) + "Z")
+        return date.AsSeconds()
+    end function
+
+    ' An episode that's really on the server and aired within the last days. A Virtual episode is
+    ' one the server only knows from metadata.
+    function IsRecentlyAired(episode as dynamic, now as integer, days as integer) as boolean
+        if type(episode) <> "roAssociativeArray" then return false
+        if LCase(toString(episode.LookupCI("LocationType"))) = "virtual" then return false
+        aired = mediaBarNewRelease.AiredAt(episode)
+        return aired > 0 and aired <= now and aired >= now - days * mediaBarNewRelease.SECONDS_PER_DAY
+    end function
+
+    function RecentlyAired(episodes as dynamic, now as integer, days as integer) as object
+        result = []
+        if type(episodes) <> "roArray" then return result
+        for each episode in episodes
+            if mediaBarNewRelease.IsRecentlyAired(episode, now, days) then result.push(episode)
+        end for
+        return result
+    end function
+
+    function SeasonOf(episode as object) as integer
+        season = episode.LookupCI("ParentIndexNumber")
+        if isValid(season) then return season
+        return 0
+    end function
+
+    function HighestSeason(episodes as object) as integer
+        latest = mediaBarNewRelease.SeasonOf(episodes[0])
+        for each episode in episodes
+            season = mediaBarNewRelease.SeasonOf(episode)
+            if season > latest then latest = season
+        end for
+        return latest
+    end function
+
+    ' The air day in UTC, which is how the server writes it
+    function AirDay(episode as object) as string
+        premiere = episode.LookupCI("PremiereDate")
+        if not isServerDate(premiere) then return ""
+        return Left(premiere, 10)
+    end function
+
+    ' The latest season's id when several of its recent episodes share an air day, which is the
+    ' only case worth fetching the whole season for. Empty otherwise. recent holds only episodes
+    ' that aired in the window.
+    function SeasonToCheck(recent as object) as string
+        if recent.count() = 0 then return ""
+        season = mediaBarNewRelease.HighestSeason(recent)
+        perDay = {}
+        seasonId = ""
+        dropped = false
+        for each episode in recent
+            if mediaBarNewRelease.SeasonOf(episode) = season
+                if seasonId = "" then seasonId = toString(episode.LookupCI("SeasonId"))
+                day = mediaBarNewRelease.AirDay(episode)
+                perDay[day] = (perDay[day] ?? 0) + 1
+                if perDay[day] >= mediaBarNewRelease.SEASON_DROP_EPISODES then dropped = true
+            end if
+        end for
+        if not dropped then return ""
+        return seasonId
+    end function
+
+    ' latestSeason holds every episode of the latest season when SeasonToCheck asked for it. A
+    ' season whose episodes on the server all came out on one day was released at once. Anything
+    ' else is new episodes, a split season's second part too.
+    function ReleaseOf(recent as object, latestSeason as dynamic) as dynamic
+        if recent.count() = 0 then return invalid
+
+        if type(latestSeason) = "roArray"
+            present = []
+            airDays = {}
+            for each episode in latestSeason
+                if type(episode) = "roAssociativeArray" and LCase(toString(episode.LookupCI("LocationType"))) <> "virtual"
+                    present.push(episode)
+                    airDays[mediaBarNewRelease.AirDay(episode)] = true
+                end if
+            end for
+            if present.count() >= mediaBarNewRelease.SEASON_DROP_EPISODES and airDays.count() = 1 and not airDays.DoesExist("")
+                season = mediaBarNewRelease.SeasonOf(present[0])
+                kind = "newSeason"
+                if season <= 1 then kind = "newSeries"
+                return { kind: kind, season: season }
+            end if
+        end if
+
+        season = mediaBarNewRelease.HighestSeason(recent)
+        latest = invalid
+        for each episode in recent
+            if mediaBarNewRelease.SeasonOf(episode) = season
+                if latest = invalid or mediaBarNewRelease.AiredAt(episode) >= mediaBarNewRelease.AiredAt(latest) then latest = episode
+            end if
+        end for
+        release = { kind: "newEpisodes", season: season }
+        number = latest.LookupCI("IndexNumber")
+        if isValid(number) then release.episode = number
+        return release
+    end function
+
+    function Label(release as object) as string
+        kind = release.kind ?? ""
+        if kind = "newSeries" then return tr("New Series")
+        if kind = "newSeason" then return tr("New Season")
+        if kind = "newEpisodes" then return tr("New Episodes")
+        return ""
+    end function
+
+    function Detail(release as object) as string
+        season = (release.season ?? 0).toStr()
+        if release.kind <> "newEpisodes" then return Substitute(tr("Season {0}"), season)
+        if not isValid(release.episode) then return ""
+        return `S${season}:E${release.episode.toStr()}`
+    end function
+end namespace

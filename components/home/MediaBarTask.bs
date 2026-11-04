@@ -2,8 +2,11 @@ import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/api/sdk.bs"
 import "pkg:/source/utils/externalList.bs"
+import "pkg:/source/utils/mediaBarNewRelease.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/parentalControls.bs"
+
+const MEDIA_BAR_FIELDS = "Overview,People,Genres,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks,ProviderIds,RemoteTrailers"
 
 sub init()
     m.top.functionName = "getMediaBarData"
@@ -44,11 +47,17 @@ sub getMediaBarData()
         hasBackdrop: true,
         imageTypes: "Backdrop",
         limit: sourceType = "collection" ? 50 : m.top.featuredCount * 2,
-        fields: "Overview,People,Genres,CommunityRating,OfficialRating,ProductionYear,RunTimeTicks,ProviderIds,RemoteTrailers",
+        fields: MEDIA_BAR_FIELDS,
         personTypes: "Actor,GuestStar"
     }
-    ' Library titles come first, so one an outside list repeats keeps its server item
-    pool = readSources(shuffleArray(parentIds), query, excludedGenreNames)
+    ' The dated sources read the newest titles instead, and one with nothing in its window falls
+    ' back to the random draw. Library titles come first, so one an outside list repeats keeps its
+    ' server item.
+    pool = []
+    if sourceType = "recentlyadded" or sourceType = "recentlyreleased" or sourceType = "newreleases"
+        pool = readDatedSources(shuffleArray(parentIds), sourceType, includeTypes, excludedGenreNames)
+    end if
+    if pool.count() = 0 then pool = readSources(shuffleArray(parentIds), query, excludedGenreNames)
     ' A chart can hold hundreds of titles, so beside a library it gets as many places as the bar
     ' has slides
     externalItems = shuffleArray(filterAndDedupeItems(externalItems))
@@ -62,7 +71,7 @@ end sub
 ' Reads the sources six at a time in their shuffled order, and skips one still waiting for a slot
 ' once there are twice as many usable titles as the bar shows. Blocked titles and excluded genres
 ' are left out as they arrive, so they dont count toward that.
-function readSources(parentIds as object, query as object, excludedGenreNames as object) as object
+function readSources(parentIds as object, query as object, excludedGenreNames as object, path = "/Items/" as string) as object
     port = CreateObject("roMessagePort")
     running = {}
     nextSource = 0
@@ -72,7 +81,7 @@ function readSources(parentIds as object, query as object, excludedGenreNames as
         while running.count() < 6 and nextSource < parentIds.count() and items.count() < m.top.featuredCount * 2
             query.parentId = parentIds[nextSource]
             nextSource++
-            req = APIRequest("/Items/", query)
+            req = APIRequest(path, query)
             if req <> invalid
                 ' A Plex server is answered by its bridge, one source at a time
                 if plexUrls.Owns(req.GetUrl())
@@ -94,8 +103,55 @@ function readSources(parentIds as object, query as object, excludedGenreNames as
     return items
 end function
 
+' The newest titles of a dated source, read the way the random draw is. New Seasons & Episodes
+' asks for the episodes, since a series' own date is its first season's.
+function readDatedSources(parentIds as object, sourceType as string, includeTypes as string, excludedGenreNames as object) as object
+    query = { userId: m.top.userId, includeItemTypes: includeTypes, limit: 40, fields: MEDIA_BAR_FIELDS, personTypes: "Actor,GuestStar" }
+    if sourceType = "recentlyadded" then return withBackdrops(readSources(parentIds, query, excludedGenreNames, "/Items/Latest"))
+
+    query.recursive = true
+    query.sortBy = "PremiereDate"
+    query.sortOrder = "Descending"
+    query.excludeItemTypes = "BoxSet,CollectionFolder"
+    query.hasBackdrop = true
+    if sourceType = "recentlyreleased"
+        query.maxPremiereDate = CreateObject("roDateTime").ToISOString()
+        return readSources(parentIds, query, excludedGenreNames)
+    end if
+
+    ' Movies only, so nothing here, and the bar falls back to random titles
+    if includeTypes = "Movie" then return []
+    days = m.top.newReleaseDays
+    now = CreateObject("roDateTime").AsSeconds()
+    since = CreateObject("roDateTime")
+    since.FromSeconds(now - days * 86400)
+    episodeQuery = { userId: m.top.userId, includeItemTypes: "Episode", recursive: true, sortBy: "PremiereDate", sortOrder: "Descending", minPremiereDate: since.ToISOString(), limit: 300 }
+    seriesIds = []
+    for each episode in mediaBarNewRelease.RecentlyAired(readSources(parentIds, episodeQuery, []), now, days)
+        seriesId = toString(episode.LookupCI("SeriesId"))
+        if seriesId <> "" and not inArray(seriesIds, seriesId) then seriesIds.push(seriesId)
+        if seriesIds.count() >= 40 then exit for
+    end for
+    if seriesIds.count() = 0 then return []
+
+    items = []
+    keepFetched(getJson(APIRequest("/Items/", { userId: m.top.userId, ids: seriesIds.Join(","), fields: MEDIA_BAR_FIELDS, personTypes: "Actor,GuestStar" })), items, {}, excludedGenreNames)
+    return withBackdrops(items)
+end function
+
+' The Latest list and a lookup by id can't be asked for backdrops only
+function withBackdrops(items as object) as object
+    kept = []
+    for each item in items
+        tags = item.LookupCI("BackdropImageTags")
+        if type(tags) = "roArray" and tags.count() > 0 then kept.push(item)
+    end for
+    return kept
+end function
+
 sub keepFetched(json as dynamic, items as object, seen as object, excludedGenreNames as object)
-    fetched = isChainValid(json, "items") ? json.items : []
+    ' The Latest list comes back as a bare array
+    fetched = type(json) = "roArray" ? json : (isChainValid(json, "items") ? json.items : [])
     if excludedGenreNames.count() > 0 then fetched = filterItemsByExcludedGenres(fetched, excludedGenreNames)
     for each item in parentalControls.WithoutBlockedItems(fetched)
         if not seen.DoesExist(item.Id)

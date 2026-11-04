@@ -1,0 +1,75 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/mediaBarNewRelease.bs"
+import "pkg:/source/utils/misc.bs"
+
+sub init()
+    m.top.functionName = "loadReleases"
+end sub
+
+' Asks about six series at once. One that can't be asked about just goes without a label.
+sub loadReleases()
+    days = m.top.days
+    now = CreateObject("roDateTime").AsSeconds()
+    since = CreateObject("roDateTime")
+    since.FromSeconds(now - days * 86400)
+    ' The server may ignore the date floor or list episodes it only knows from metadata, so every
+    ' episode is checked again once it arrives
+    query = {
+        userId: m.top.userId,
+        includeItemTypes: "Episode",
+        recursive: true,
+        sortBy: "PremiereDate",
+        sortOrder: "Descending",
+        minPremiereDate: since.ToISOString(),
+        limit: 100,
+        enableTotalRecordCount: false
+    }
+
+    seriesIds = m.top.seriesIds ?? []
+    recentById = {}
+    port = CreateObject("roMessagePort")
+    running = {}
+    nextSeries = 0
+    while true
+        while running.count() < 6 and nextSeries < seriesIds.count()
+            seriesId = seriesIds[nextSeries]
+            nextSeries++
+            query.parentId = seriesId
+            req = APIRequest("/Items/", query)
+            if req <> invalid
+                ' A Plex server is answered by its bridge, one series at a time
+                if plexUrls.Owns(req.GetUrl())
+                    recentById[seriesId] = getJson(req)
+                else
+                    req.setMessagePort(port)
+                    if req.AsyncGetToString() then running[req.GetIdentity().ToStr()] = { req: req, seriesId: seriesId }
+                end if
+            end if
+        end while
+        if running.count() = 0 then exit while
+
+        msg = wait(30000, port)
+        if type(msg) <> "roUrlEvent" then exit while
+        key = msg.GetSourceIdentity().ToStr()
+        entry = running[key]
+        running.Delete(key)
+        if isValid(entry) and msg.GetResponseCode() = 200 then recentById[entry.seriesId] = ParseJson(msg.GetString())
+    end while
+
+    releases = {}
+    for each seriesId in recentById
+        json = recentById[seriesId]
+        recent = mediaBarNewRelease.RecentlyAired(isChainValid(json, "items") ? json.items : [], now, days)
+        ' Only a season with several recent episodes on one day can have come out at once, so
+        ' only then is the whole season fetched
+        seasonId = mediaBarNewRelease.SeasonToCheck(recent)
+        season = invalid
+        if seasonId <> ""
+            seasonJson = getJson(APIRequest("/Items/", { userId: m.top.userId, parentId: seasonId, includeItemTypes: "Episode", recursive: true, limit: 200, enableTotalRecordCount: false }))
+            if isChainValid(seasonJson, "items") then season = seasonJson.items
+        end if
+        release = mediaBarNewRelease.ReleaseOf(recent, season)
+        if isValid(release) then releases[seriesId] = release
+    end for
+    m.top.releases = releases
+end sub

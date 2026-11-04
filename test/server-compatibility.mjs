@@ -321,6 +321,8 @@ for (const name of ['Catalogue', 'Passthrough', 'AsText', 'Sources', 'SourceFor'
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/media-bar-external.bs', 'utf8');
+source += '\n' + (await readFile('source/utils/mediaBarNewRelease.bs', 'utf8')).replace(/^import .*$/gm, '');
+source += '\n' + await readFile('test/media-bar-new-release.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/seerrSliders.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/seerr-sliders.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/SeerrUtils.bs', 'utf8')).match(/^const SEERR_(?:MEDIA|REQUEST)_\w+ = .+$/gm).join('\n');
