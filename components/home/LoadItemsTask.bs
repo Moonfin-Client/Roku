@@ -2948,7 +2948,7 @@ function customRowCard(item as dynamic, owned = {} as object) as dynamic
         if not isValidAndNotEmpty(tmdbId) then tmdbId = providerIds.LookupCI("tmdb")
     end if
 
-    if not isValidAndNotEmpty(tmdbId) then return invalid
+    if not isValidAndNotEmpty(tmdbId) and not isValidAndNotEmpty(imdbId) then return invalid
 
     title = item.LookupCI("name")
     if not isValidAndNotEmpty(title) then title = item.LookupCI("title")
@@ -3064,18 +3064,27 @@ function loadSeasonalRow() as object
     return results
 end function
 
-' formatWatchingNowSubtitle: Generates a high-contrast subtitle string from live stats.
-function formatWatchingNowSubtitle(users as integer, movies as integer, shows as integer) as string
-    if users > 0
-        if movies > 0 or shows > 0
-            return `${users.toStr()} users - ${movies.toStr()} movies, ${shows.toStr()} shows`
-        end if
-        return `${users.toStr()} users`
-    end if
-    return ""
+' formatWatchingNowSubtitle: The live counts, in Core's words
+function formatWatchingNowSubtitle(data as object) as string
+    text = tr("{users} watching now · {movies} movies · {shows} shows")
+    if isStringEqual(data.LookupCI("mode"), "today") then text = tr("{users} watched today · {movies} movies · {shows} shows")
+    return text.Replace("{users}", groupedCount(data.LookupCI("users"))).Replace("{movies}", groupedCount(data.LookupCI("movies"))).Replace("{shows}", groupedCount(data.LookupCI("shows")))
 end function
 
-' normalizeWatchingNowItem: Normalizes an MDBList watching item with provider IDs and artwork.
+' A count in threes with commas, the way Core's decimal pattern writes it
+function groupedCount(value as dynamic) as string
+    digits = toNormalizedString(value ?? 0)
+    if digits = "" then digits = "0"
+    grouped = ""
+    while digits.Len() > 3
+        grouped = "," + digits.Right(3) + grouped
+        digits = digits.Left(digits.Len() - 3)
+    end while
+    return digits + grouped
+end function
+
+' normalizeWatchingNowItem: An MDBList title in the shape the external row cards are built from, or
+' invalid when it has neither a TMDB nor an IMDb id
 function normalizeWatchingNowItem(rawItem as object) as object
     if not isValid(rawItem) then return invalid
 
@@ -3089,42 +3098,33 @@ function normalizeWatchingNowItem(rawItem as object) as object
 
     rawType = LCase(toNormalizedString(rawItem.LookupCI("media_type")))
     itemType = (rawType = "show" or rawType = "tv" or rawType = "series") ? "Series" : "Movie"
-    mediaType = (itemType = "Series") ? "tv" : "movie"
 
     title = toNormalizedString(rawItem.LookupCI("title"))
     if title = "" then title = "Unknown"
 
-    year = rawItem.LookupCI("year")
     backdrop = rawItem.LookupCI("backdrop")
-    logo = rawItem.LookupCI("logo")
     poster = rawItem.LookupCI("poster")
     if not isValidAndNotEmpty(poster) then poster = backdrop
-    watchers = rawItem.LookupCI("watchers") ?? 0
+    watchers = toNormalizedString(rawItem.LookupCI("watchers")).ToInt()
+    logoUrl = rawItem.LookupCI("logo")
+    if type(logoUrl) <> "String" and type(logoUrl) <> "roString" then logoUrl = ""
 
     providerIds = {}
     if tmdbStr <> "" then providerIds.Tmdb = tmdbStr
     if imdbStr <> "" then providerIds.Imdb = imdbStr
 
-    item = {
-        title: title,
+    return {
         name: title,
         type: itemType,
-        mediaType: mediaType,
         tmdbId: tmdbStr,
-        id: tmdbStr,
         providerIds: providerIds,
-        ProviderIds: providerIds,
-        productionYear: year,
-        year: year,
+        productionYear: rawItem.LookupCI("year"),
         backdropUrl: backdrop,
-        backdrop_path: backdrop,
         posterUrl: poster,
-        poster_path: poster,
-        logoUrl: logo,
-        watchers: watchers,
-        isWatchingNow: true
+        logoUrl: logoUrl,
+        rawMediaType: rawType = "" ? "movie" : rawType,
+        watchers: watchers
     }
-    return item
 end function
 
 ' loadWatchingNowRow: Currently watching items from MDBList with live watcher stats.
@@ -3132,19 +3132,15 @@ end function
 ' @return {object} HomeData nodes, empty when the endpoint fails or returns no items
 function loadWatchingNowRow() as object
     m.top.rowKey = ""
-    m.top.rowTitle = tr("Watching on MDBList")
     m.top.rowSubtitle = ""
 
-    data = getJson(APIRequest("/Moonfin/MdbList/WatchingNow", {}))
+    data = getJson(APIRequest("/Moonfin/MdbList/WatchingNow", { profile: "tv" }))
     if not isValid(data) then return []
 
     rawItems = chainLookupReturn(data, "items", [])
     if rawItems.Count() = 0 then return []
 
-    users = data.LookupCI("users") ?? 0
-    movies = data.LookupCI("movies") ?? 0
-    shows = data.LookupCI("shows") ?? 0
-    m.top.rowSubtitle = formatWatchingNowSubtitle(users, movies, shows)
+    m.top.rowSubtitle = formatWatchingNowSubtitle(data)
 
     normalized = []
     for each raw in rawItems
@@ -3153,14 +3149,16 @@ function loadWatchingNowRow() as object
     end for
     if normalized.Count() = 0 then return []
 
-    owned = libraryMatches(normalized)
-
+    ' As in Core, every card is an outside title that opens in Seerr, owned or not
     results = []
-    for each item in normalized
-        card = customRowCard(item, owned)
+    for i = 0 to normalized.Count() - 1
+        item = normalized[i]
+        card = customRowCard(item, {})
         if isValid(card)
-            card.usePoster = false
-            if isValid(card.backdropURL) and card.backdropURL <> ""
+            json = card.json
+            json.WatchingNow = { rank: i + 1, watchers: item.watchers, mediaType: item.rawMediaType, logo: item.logoUrl }
+            card.json = json
+            if card.backdropURL <> ""
                 card.thumbnailURL = card.backdropURL
                 card.widePosterURL = card.backdropURL
             end if
@@ -3168,8 +3166,7 @@ function loadWatchingNowRow() as object
         end if
     end for
 
-    filtered = parentalControls.WithoutUnratedOrBlockedItems(results)
-    return filtered
+    return parentalControls.WithoutUnratedOrBlockedItems(results)
 end function
 
 ' internalRowNode: Builds a home card for one of the opt in internal rows

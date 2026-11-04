@@ -9131,5 +9131,30 @@
         <extracomment>A number of days</extracomment>
         <translation>90 days</translation>
     </message>
+    <message>
+        <source>Watching on MDBList</source>
+        <extracomment>Home row of what MDBList users are watching right now, and the setting that turns it on</extracomment>
+        <translation>Watching on MDBList</translation>
+    </message>
+    <message>
+        <source>Show what MDBList users are currently watching</source>
+        <extracomment>Description of the Watching on MDBList setting</extracomment>
+        <translation>Show what MDBList users are currently watching</translation>
+    </message>
+    <message>
+        <source>{users} watching now · {movies} movies · {shows} shows</source>
+        <extracomment>Live counts under the Watching on MDBList row title. Keep {users}, {movies} and {shows}</extracomment>
+        <translation>{users} watching now · {movies} movies · {shows} shows</translation>
+    </message>
+    <message>
+        <source>{users} watched today · {movies} movies · {shows} shows</source>
+        <extracomment>Counts for the day under the Watching on MDBList row title. Keep {users}, {movies} and {shows}</extracomment>
+        <translation>{users} watched today · {movies} movies · {shows} shows</translation>
+    </message>
+    <message>
+        <source>{count} watching</source>
+        <extracomment>How many MDBList users are watching a title, on its Watching on MDBList card. Keep {count}</extracomment>
+        <translation>{count} watching</translation>
+    </message>
 </context>
 </TS>
