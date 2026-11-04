@@ -774,7 +774,17 @@ assert.match(rowLayoutSource, /\{ id: "mdblist_watching_now", label: "Watching o
 assert.match(rowLayoutSource, /mdblist_watching_now: "mdblist\.watchingnow\.enabled"/, 'The watching now row answers to its own switch');
 assert.match(rowLayoutSource.match(/function IsEnabled\([^]*?end function/)[0], /if id = "mdblist_watching_now" then return homeRowLayout\.RowToggleOn\(id\)/, 'A layout without the watching now row leaves it to the switch');
 assert.match(loadItemsSource.match(/function loadWatchingNowRow\([^]*?end function/)[0], /WithoutUnratedOrBlockedItems\(results\)/, 'Watching now row applies unrated and blocked filters');
-process.stdout.write('PASS: watching now row wiring (6 checks)\n');
+assert.match(loadItemsSource.match(/function loadWatchingNowRow\([^]*?end function/)[0], /APIRequest\("\/Moonfin\/MdbList\/WatchingNow", \{ profile: "tv" \}\)/, 'Watching now asks with the tv profile');
+assert.match(loadItemsSource.match(/function customRowCard\([^]*?end function/)[0], /if not isValidAndNotEmpty\(tmdbId\) and not isValidAndNotEmpty\(imdbId\) then return invalid/, 'Chart titles with only an IMDb id keep their card');
+const watchingNowRows = await readFile('components/home/HomeRows.bs', 'utf8');
+assert.match(watchingNowRows.match(/sub onWatchingNowRefreshFired\([^]*?end sub/)[0], /kidsMode\.Enabled\(\) or /, 'Kids Mode stops the watching now refresh');
+assert.match(watchingNowRows.match(/sub onWatchingNowRefreshFired\([^]*?end sub/)[0], /activeScene\.isSubType\("VideoPlayerView"\) then return/, 'The watching now refresh waits out the video player, as in Core');
+assert.match(watchingNowRows.match(/sub updateCustomDynamicRowItems\([^]*?end sub/)[0], /if homeRowIndexById\(rowId\) >= 0 then return/, 'A failed or empty refresh keeps the watching now cards up, as in Core');
+assert.match(loadItemsSource.match(/function loadWatchingNowRow\([^]*?end function/)[0], /customRowCard\(item, \{\}\)/, 'Watching now cards are outside titles, as in Core');
+assert.match(await readFile('components/home/Home.xml', 'utf8'), /rowTitleComponentName="HomeRowTitle"/, 'Home rows draw their titles with the row title component');
+assert.match(await readFile('source/utils/misc.bs', 'utf8'), /if isStringEqual\(rowId, "mdblist_watching_now"\) then return false/, 'Watching now keeps its wide cards in modern rows');
+assert.match((await readFile('components/settings/settings.bs', 'utf8')).match(/sub dismissPanel\([^]*?end sub/)[0], /if m\.homeRowsSwitched = true[^]*?behind\.callFunc\("reload"\)/, 'Closing settings reloads Home after a row is switched on or off');
+process.stdout.write('PASS: watching now row wiring (15 checks)\n');
 
 // A picked collection row asks for its members alone, follows a stored Playlist Order and opens
 // a series into its episodes in order when asked
