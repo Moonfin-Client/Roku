@@ -9156,5 +9156,30 @@
         <extracomment>How many MDBList users are watching a title, on its Watching on MDBList card. Keep {count}</extracomment>
         <translation>{count} watching</translation>
     </message>
+    <message>
+        <source>Card Size</source>
+        <extracomment>Home Screen setting for how big the cards on the home rows are</extracomment>
+        <translation>Card Size</translation>
+    </message>
+    <message>
+        <source>Grandparents</source>
+        <extracomment>The biggest Card Size, bigger than Extra Large</extracomment>
+        <translation>Grandparents</translation>
+    </message>
+    <message>
+        <source>Image Type per Row</source>
+        <extracomment>Home Screen setting that opens a list of the home rows, each with a choice of poster, thumbnail or banner art</extracomment>
+        <translation>Image Type per Row</translation>
+    </message>
+    <message>
+        <source>Configure image type for each enabled home row</source>
+        <extracomment>Description of the Image Type per Row setting</extracomment>
+        <translation>Configure image type for each enabled home row</translation>
+    </message>
+    <message>
+        <source>Images</source>
+        <extracomment>Header over the list of home rows on the Image Type per Row screen</extracomment>
+        <translation>Images</translation>
+    </message>
 </context>
 </TS>

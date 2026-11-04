@@ -85,6 +85,7 @@ const selections = {
     'source/utils/librarySorts.bs': null,
     'source/utils/libraryGroupBy.bs': null,
     'source/utils/libraryCard.bs': null,
+    'source/utils/homeCards.bs': null,
     'source/utils/incompleteRecordings.bs': null,
     'source/utils/favoriteTabs.bs': null,
     'source/utils/homePreview.bs': null,
@@ -121,7 +122,7 @@ const selections = {
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting'],
-    'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'shuffleArray'],
+    'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'shuffleArray'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
@@ -245,11 +246,12 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/minimalist-extras.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n' + settingsSyncFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile']) {
+for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin', 'ImageTypeName', 'EncodeRowImageTypes', 'RowImageTypeKeys', 'DecodeRowImageTypes', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile']) {
     source += '\n' + settingsSyncFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/settings-sync-values.bs', 'utf8');
+source += '\n' + await readFile('test/home-cards.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/keyboardLayouts.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/keyboard-layouts.bs', 'utf8');
 source += '\n' + await readFile('test/settings-sync-profile.bs', 'utf8');
@@ -782,7 +784,7 @@ assert.match(watchingNowRows.match(/sub onWatchingNowRefreshFired\([^]*?end sub/
 assert.match(watchingNowRows.match(/sub updateCustomDynamicRowItems\([^]*?end sub/)[0], /if homeRowIndexById\(rowId\) >= 0 then return/, 'A failed or empty refresh keeps the watching now cards up, as in Core');
 assert.match(loadItemsSource.match(/function loadWatchingNowRow\([^]*?end function/)[0], /customRowCard\(item, \{\}\)/, 'Watching now cards are outside titles, as in Core');
 assert.match(await readFile('components/home/Home.xml', 'utf8'), /rowTitleComponentName="HomeRowTitle"/, 'Home rows draw their titles with the row title component');
-assert.match(await readFile('source/utils/misc.bs', 'utf8'), /if isStringEqual\(rowId, "mdblist_watching_now"\) then return false/, 'Watching now keeps its wide cards in modern rows');
+assert.match(await readFile('source/utils/misc.bs', 'utf8'), /if isSeerrFilterRow\(rowId\) or inArray\(\["mdblist_watching_now", "studios", "audio", "resumeaudio"\], rowId\) then return false/, 'Watching now keeps its wide cards in modern rows, as do Seerr\'s browse rows, Studios and audio rows');
 assert.match((await readFile('components/settings/settings.bs', 'utf8')).match(/sub dismissPanel\([^]*?end sub/)[0], /if m\.homeRowsSwitched = true[^]*?behind\.callFunc\("reload"\)/, 'Closing settings reloads Home after a row is switched on or off');
 process.stdout.write('PASS: watching now row wiring (15 checks)\n');
 
@@ -1040,11 +1042,14 @@ assert.match(await readFile('components/home/Home.xml', 'utf8'), /<ModernFocusCa
 
 // Settings are stored flat, so a dotted path that splits the key never finds Prefer Thumbnails
 const homeRowsSource = await readFile('components/home/HomeRows.bs', 'utf8');
-assert.doesNotMatch(homeRowsSource, /"user\.settings\.ui\.home\.preferThumbnails"/, 'Prefer Thumbnails is read by its flat key');
-assert.match(homeRowsSource, /chainLookupReturn\(m\.global\.session, "user\.settings\.`ui\.home\.preferThumbnails`", false\)/, 'Prefer Thumbnails has one reader');
-assert.match(homeRowsSource.match(/sub updateCustomDynamicRowItems\([^]*?end sub/)[0], /row\.usePoster = not prefersThumbnails\(\)/, 'Seerr, chart and seasonal rows follow Prefer Thumbnails');
-assert.match(homeRowsSource.match(/sub updateSinceYouWatchedItems\([^]*?end sub/)[0], /row\.usePoster = not prefersThumbnails\(\)/, 'Since you watched follows Prefer Thumbnails');
-assert.match(homeRowsSource.match(/function internalRowConfig\([^]*?end function/)[0], /radarr_calendar: \{[^}]*usePoster: not prefersThumbnails\(\) \}[^]*sonarr_calendar: \{[^}]*usePoster: not prefersThumbnails\(\) \}/, 'The calendar rows follow Prefer Thumbnails');
+assert.doesNotMatch(miscSource, /"user\.settings\.ui\.home\.preferThumbnails"/, 'Prefer Thumbnails is read by its flat key');
+assert.match(miscSource, /chainLookupReturn\(m\.global\.session, "user\.settings\.`ui\.home\.preferThumbnails`", false\)/, 'Prefer Thumbnails has one reader');
+// Every row's cards take Core's sizes and the art for the row's image type in one place
+assert.doesNotMatch(homeRowsSource, /usePoster = not prefersThumbnails\(\)|imageWidth = row\.imageWidth/, 'No row picks its own card size or art');
+assert.match(homeRowsSource.match(/sub layOutRow\([^]*?end sub/)[0], /imageType = homeCards\.RowImageType\(rowId, musicRow\)/, 'A Classic row takes its image type');
+assert.match(homeRowsSource.match(/sub layOutRow\([^]*?end sub/)[0], /row\.modernCards = modern and not musicRow and useModernCardsForRow\(rowId\)/, 'Music rows keep square cards that never widen in Modern');
+assert.match(homeRowsSource.match(/sub setRowItemSize\([^]*?end sub/)[0], /heights\.push\(ROW_TITLE_BAND \+ room \+ row\.cursorSize\[1\]\)[^]*?if FormatJson\(heights\) <> FormatJson\(m\.top\.rowHeights\) then m\.top\.rowHeights = heights/, 'and each row is as tall as its tallest card, written only when it changes');
+assert.match(await readFile('components/home/HomeItem.bs', 'utf8'), /isStringEqual\(itemData\.type, ItemType\.EPISODE\) and not prefersThumbnails\(\) then wide\.Reverse\(\)/, 'Prefer Thumbnails picks an episode\'s own image over its series\' art');
 const homeData = await readFile('components/data/HomeData.bs', 'utf8');
 assert.match(homeData, /sub setTitledThumb\([^]*?m\.top\.thumbnailURL = thumbUrl\s+m\.top\.widePosterURL = thumbUrl/, 'The titled thumb leads a card\'s wide art');
 assert.doesNotMatch(homeData.match(/sub setTitledThumb\([^]*?end sub/)[0], /backdropURL/, 'The page behind a card keeps the plain backdrop');
@@ -1158,7 +1163,9 @@ assert.match(await readFile('components/ItemGrid/LoadItemsTask2.bs', 'utf8'), /F
 assert.match(settingsSyncSource, /\{ pluginKey: "libraryCardTitles", rokuKey: "ui\.library\.cardTitles", type: "bool" \}/, 'Titles Under Posters syncs under Core\'s name');
 assert.match(settingsSyncSource, /\{ pluginKey: "libraryPosterSize", rokuKey: "ui\.library\.posterSize", type: "direct" \}/, 'The library poster size syncs under Core\'s name');
 assert.match(settingsSyncSource, /\{ pluginKey: "playlistPosterSize", rokuKey: "ui\.library\.playlistPosterSize", type: "direct" \}/, 'The playlist poster size syncs under Core\'s name');
-assert.match(settingsSyncSource, /pluginKey: "posterSize", rokuKey: "ui\.posterSize"[^}]*receiveOnly: true/, 'The general poster size is only read');
+assert.match(settingsSyncSource, /\{ pluginKey: "posterSize", rokuKey: "ui\.posterSize", type: "direct" \}/, 'Card Size syncs both ways under Core\'s name');
+assert.match(settingsSyncSource, /\{ pluginKey: "homeImageTypeContinueWatching", rokuKey: "ui\.home\.rowImageType\.resume", type: "imageType" \}/, 'Continue Watching\'s image type syncs on its own key');
+assert.match(settingsSyncSource, /\{ pluginKey: "homeRowsImageTypeOverride", rokuKey: "ui\.home\.rowsImageTypeOverride", type: "bool", receiveOnly: true \}/, 'The type for every row only arrives');
 assert.equal(findSetting(settingsTree, 'ui.library.cardTitles').default, 'true', 'Titles Under Posters starts on');
 assert.equal(findSetting(settingsTree, 'itemgrid.forgetFilters'), null, 'Forget Filters is gone');
 assert.doesNotMatch(mainSource, /clearOldLibraryFilters/, 'Filters are no longer wiped at start');
@@ -1217,7 +1224,7 @@ const overviewTop = Number(classicHomeSource.match(/const OVERVIEW_TOP = (\d+)/)
 const overviewLine = Number(classicHomeSource.match(/const OVERVIEW_LINE_HEIGHT = (\d+)/)[1]);
 assert.equal(120 + overviewTop + 3 * overviewLine, 440, 'Three overview lines end above the rows');
 assert.match(classicHomeSource, /m\.homeRows\.translation = m\.modernHomeRows \? \[111, 170\] : \[111, 450\]/, 'The rows stay at 450');
-assert.match(await readFile('components/home/HomeRows.bs', 'utf8'), /itemHeight = 380\s+if not isModernHomeRows\(\) then itemHeight = 415/, 'Classic rows make room for the second line under the cards');
+assert.match(await readFile('components/home/HomeRows.bs', 'utf8'), /const CLASSIC_CAPTION_ROOM = 118\s+const MODERN_CAPTION_ROOM = 123\s+const MODERN_INFO_ROOM = 292/, 'Rows keep room under the cards for three caption lines, and Modern rows for the focused card\'s details');
 assert.match(classicHomeXml, /<RatingsRow id="homeRatings"[^>]*singleLine="true"/, 'Home shows its ratings as single line chips');
 process.stdout.write('PASS: classic home info area wiring\n');
 

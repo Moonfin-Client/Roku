@@ -1,7 +1,7 @@
 import "pkg:/source/api/MoonfinPlugin.bs"
-import "pkg:/source/constants/HomeRowItemSizes.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/homeCards.bs"
 import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/misc.bs"
@@ -18,30 +18,17 @@ const NEAR_ROWS_ABOVE = 2
 const NEAR_ROWS_BELOW = 5
 const LATE_ROW_LOADS = 3
 
-' Settings are stored flat, so the key is one path segment, and a plugin sync writes it as a string
-function prefersThumbnails() as boolean
-    preferThumbnails = chainLookupReturn(m.global.session, "user.settings.`ui.home.preferThumbnails`", false)
-    if type(preferThumbnails) = "String" or type(preferThumbnails) = "roString"
-        return LCase(preferThumbnails) = "true"
-    end if
-
-    return preferThumbnails = true
-end function
-
-' Helper function to get poster size based on user preference
-function getPosterSize(preferWide = true as boolean) as object
-    if prefersThumbnails()
-        ' When prefer thumbnails is enabled, always use wide posters
-        return homeRowItemSizes.WIDE_POSTER
-    else
-        ' When prefer thumbnails is disabled, use the preferWide parameter
-        if preferWide
-            return homeRowItemSizes.WIDE_POSTER
-        else
-            return homeRowItemSizes.MOVIE_POSTER
-        end if
-    end if
-end function
+' A row's height beyond its cards. The title above them takes 56. Under them a row keeps room for three
+' lines of caption and 16 clear of the next row's title, so no padding setting lets them touch. That's
+' 16, the 30 tall name and two 28 tall lines in Classic, and 5 and three 34 tall lines in Modern. A
+' Modern row of widening cards keeps Core's room for the focused card's title, details, ratings and
+' three lines of overview instead, 175 points and 8 more when it shows ratings. Those points are 1920 /
+' 1150 pixels, without the TV's 0.8, since Home's focused card keeps its own bigger fonts.
+const ROW_TITLE_BAND = 56
+const CLASSIC_CAPTION_ROOM = 118
+const MODERN_CAPTION_ROOM = 123
+const MODERN_INFO_ROOM = 292
+const MODERN_RATINGS_ROOM = 14
 
 ' Helper function to check if Featured Media is enabled via toggle (not home sections)
 function isFeaturedMediaEnabled() as boolean
@@ -89,6 +76,7 @@ sub init()
 
     m.top.observeField("rowItemSelected", "itemSelected")
     m.top.observeField("rowItemFocused", "loadRowsNearFocus")
+    m.top.observeField("translation", "fitRowCount")
     m.heldBackRows = {}
     m.lateRows = {}
     m.lateRowQueue = []
@@ -151,13 +139,11 @@ function getTaskContentAndCleanup(taskType as string) as object
 end function
 
 sub updateSize()
-    ' Translation is set in Home.xml, don't override it here. Classic cards carry a second line of
-    ' text under the name.
-    itemHeight = 380
-    if not isModernHomeRows() then itemHeight = 415
+    ' Translation is set in Home.xml, don't override it here
+    poster = homeCards.CardBox(homeCards.CardSizeName(), 2 / 3)
 
     'Set width of Rows to cut off at edge of Safe Zone
-    m.top.itemSize = [1703, itemHeight]
+    m.top.itemSize = [1703, ROW_TITLE_BAND + CLASSIC_CAPTION_ROOM + poster[1]]
 
     m.top.itemSpacing = [0, homeRowsVerticalSpacing(isModernHomeRows())]
 
@@ -165,8 +151,7 @@ sub updateSize()
     ' makes its own room by sliding the following cells aside (reflow).
     m.top.rowItemSpacing = [20, 0]
 
-    ' Default size to movie poster (portrait primary images)
-    m.top.rowItemSize = homeRowItemSizes.MOVIE_POSTER
+    m.top.rowItemSize = poster
 
     m.top.visible = true
 end sub
@@ -242,6 +227,11 @@ end function
 
 
 sub startHomeRowsLoading()
+    ' Read once per load, since every row that lands lays the list out again
+    m.cardSizeName = homeCards.CardSizeName()
+    m.modernRows = isModernHomeRows()
+    m.infoRoom = MODERN_INFO_ROOM
+    if moonfinPlugin.IsRatingsEnabled("home") then m.infoRoom += MODERN_RATINGS_ROOM
     m.pendingProbeCount = 0
     m.initialHomeRowsStarted = false
     m.initialHomeRowsStarted = true
@@ -263,8 +253,6 @@ sub holdBack(rowId as string)
     row = m.top.content.CreateChild("HomeRow")
     row.id = rowId
     row.title = title
-    row.imageWidth = getPosterSize(false)[0]
-    row.cursorSize = getPosterSize(false)
 end sub
 
 sub loadRowsNearFocus()
@@ -658,23 +646,38 @@ sub removeHomeSection(sectionTitleToRemove as string)
     setRowItemSize()
 end sub
 
-' setRowItemSize: Loops through all home sections and sets the correct item sizes per row
+' setRowItemSize: Sizes every row's cards the way Core does for the account's card size and each
+' row's image type. A row is as tall as its tallest card.
 '
 sub setRowItemSize()
     if not isValid(m.top.content) then return
 
-    modern = isModernHomeRows()
-
-    homeSections = m.top.content.getChildren(-1, 0)
-    newSizeArray = CreateObject("roArray", homeSections.count(), false)
-
-    for i = 0 to homeSections.count() - 1
-        if homeSections[i].getChildCount() > 0 then m.emptySections.Delete(LCase(homeSections[i].title).Replace(" ", ""))
-        cursor = isValid(homeSections[i].cursorSize) ? homeSections[i].cursorSize : homeRowItemSizes.MOVIE_POSTER
-        if modern and useModernCardsForRow(homeSections[i].id) then cursor = forceModernPortraitRow(homeSections[i], cursor)
-        newSizeArray[i] = cursor
+    if not isValid(m.cardSizeName) then return
+    modern = m.modernRows
+    sizeName = m.cardSizeName
+    captionRoom = CLASSIC_CAPTION_ROOM
+    if modern then captionRoom = MODERN_CAPTION_ROOM
+    sizes = []
+    heights = []
+    variable = []
+    anyVariable = false
+    for each row in m.top.content.getChildren(-1, 0)
+        if row.getChildCount() > 0 then m.emptySections.Delete(LCase(row.title).Replace(" ", ""))
+        layOutRow(row, modern, sizeName)
+        room = captionRoom
+        if row.modernCards then room = m.infoRoom
+        sizes.push(row.cursorSize)
+        heights.push(ROW_TITLE_BAND + room + row.cursorSize[1])
+        variable.push(row.variableWidth)
+        if row.variableWidth then anyVariable = true
     end for
-    m.top.rowItemSize = newSizeArray
+
+    ' Each write lays the whole list out again, so only what changed goes in
+    if FormatJson(sizes) <> FormatJson(m.top.rowItemSize) then m.top.rowItemSize = sizes
+    if FormatJson(heights) <> FormatJson(m.top.rowHeights) then m.top.rowHeights = heights
+    if anyVariable then m.variableWidthUsed = true
+    if m.variableWidthUsed = true and FormatJson(variable) <> FormatJson(m.top.variableWidthItems) then m.top.variableWidthItems = variable
+    fitRowCount()
 
     ' If we have processed the expected number of content rows, stop the loading timer and run the complete function
     if m.expectedRowCount = m.processedRowCount
@@ -683,24 +686,86 @@ sub setRowItemSize()
     end if
 end sub
 
-' In modern rows every video card is portrait until focused, so wide landscape
-' rows are converted to portrait here. Square art (music, albums) is left alone.
-function forceModernPortraitRow(row as object, cursor as object) as object
-    if not isValid(cursor) or cursor.count() < 2 then return cursor
-    if cursor[0] <> homeRowItemSizes.WIDE_POSTER[0] then return cursor
+' The list clips to its first numRows rows, so short rows keep one more to reach the bottom of the
+' screen, where Core shows the next row's title. Home moves the rows when the media bar steps aside.
+sub fitRowCount()
+    reach = 1080 - m.top.translation[1]
+    spacing = m.top.itemSpacing[1]
+    shown = 0
+    for each rowHeight in m.top.rowHeights
+        if reach <= 0 then exit for
+        shown++
+        reach -= rowHeight + spacing
+    end for
+    if shown < 2 then shown = 2
+    if m.top.numRows <> shown then m.top.numRows = shown
+end sub
 
-    portrait = homeRowItemSizes.MOVIE_POSTER
-    row.cursorSize = portrait
-    row.imageWidth = portrait[0]
-    row.usePoster = true
+' Gives a row's cards their size and the art to show. Modern cards are posters at the portrait height,
+' and My Media's static cards are 16:9 at that height.
+sub layOutRow(row as object, modern as boolean, sizeName as string)
+    laidOutFor = `${sizeName}|${modern}|${row.getChildCount()}`
+    if row.laidOutFor = laidOutFor then return
 
     items = row.getChildren(-1, 0)
-    for each item in items
-        if item.hasField("imageWidth") then item.imageWidth = portrait[0]
-        if item.hasField("usePoster") then item.usePoster = true
-    end for
+    rowId = row.id
+    audioRow = rowId = "audio" or rowId = "resumeaudio"
+    musicRow = audioRow or isMusicOnlyRow(rowId, items)
+    ' Core keeps music rows square in Modern, and their focused card doesn't widen
+    row.modernCards = modern and not musicRow and useModernCardsForRow(rowId)
+    fixedBox = invalid
+    if row.modernCards
+        imageType = "poster"
+        fixedBox = homeCards.CardBox(sizeName, 2 / 3)
+    else if modern and rowId = "smalllibrarytiles"
+        imageType = "thumb"
+        fixedBox = homeCards.CardBox(sizeName, 16 / 9, true)
+    else
+        imageType = homeCards.RowImageType(rowId, musicRow)
+    end if
 
-    return portrait
+    ' A row of same sized cards keeps their size, and only a row of mixed ones sizes each card, since
+    ' writing to hundreds of cards is slow. A card's shape only depends on its type.
+    cell = fixedBox
+    variableWidth = false
+    boxes = []
+    if not isValid(cell)
+        typeBoxes = {}
+        for each item in items
+            cardBox = typeBoxes[item.type]
+            if not isValid(cardBox)
+                cardBox = homeCards.CardBox(sizeName, homeCards.AspectFor(item.type, rowId, audioRow, imageType))
+                typeBoxes[item.type] = cardBox
+            end if
+            boxes.push(cardBox)
+            if not isValid(cell)
+                cell = [cardBox[0], cardBox[1]]
+            else
+                if cardBox[0] <> cell[0] or cardBox[1] <> cell[1] then variableWidth = true
+                if cardBox[1] > cell[1] then cell[1] = cardBox[1]
+            end if
+        end for
+    end if
+    if variableWidth
+        for i = 0 to items.count() - 1
+            items[i].setFields({ imageWidth: boxes[i][0], imageHeight: boxes[i][1], FHDItemWidth: boxes[i][0] })
+        end for
+    end if
+    if not isValid(cell) then cell = homeCards.CardBox(sizeName, homeCards.AspectFor("", rowId, audioRow, imageType))
+
+    row.imageType = imageType
+    row.cursorSize = cell
+    row.variableWidth = variableWidth
+    row.laidOutFor = laidOutFor
+end sub
+
+' Core draws a Recently Added row of nothing but music as square posters
+function isMusicOnlyRow(rowId as string, items as object) as boolean
+    if rowId <> "latestmedia" or items.count() = 0 then return false
+    for each item in items
+        if not inArray(["audio", "musicalbum", "musicartist"], item.type) then return false
+    end for
+    return true
 end function
 
 ' loadingTimerComplete: Event handler for when loading wait time has expired
@@ -867,8 +932,6 @@ sub createLibraryRow()
 
     row = CreateObject("roSGNode", "HomeRow")
     row.title = sectionName
-    row.imageWidth = getPosterSize(true)[0]
-    row.cursorSize = getPosterSize(true)
 
     excludeList = []
     if isValid(m.global.session.user.configuration) and isValid(m.global.session.user.configuration.MyMediaExcludes)
@@ -938,18 +1001,9 @@ sub createLatestInRows()
                 sectionName = `${tr("Recently Added")} ${colType}`
             end if
 
-            imagesize = getPosterSize(false)
-            if colType = "movies"
-                imagesize = getPosterSize(false)
-            else if colType = "music"
-                imagesize = homeRowItemSizes.MUSIC_ALBUM
-            end if
-
             if not sectionExists(sectionName) and not knownEmpty(sectionName)
                 row = m.top.content.CreateChild("HomeRow")
                 row.title = sectionName
-                row.imageWidth = imagesize[0]
-                row.cursorSize = imagesize
             end if
 
             try
@@ -975,22 +1029,9 @@ sub createLatestInRows()
         if not isStringEqual(lib.collectionType, "boxsets") and not isStringEqual(lib.collectionType, "livetv") and not isStringEqual(lib.json.CollectionType, "Program")
             sectionName = `${tr("Recently Added in")} ${lib.name}`
 
-            ' Determine poster size based on content type and user preference
-            imagesize = getPosterSize(false) ' Default to portrait, but respect thumbnail toggle
-
-            if isValid(lib.json.CollectionType)
-                if isStringEqual(lib.json.CollectionType, "movies")
-                    imagesize = getPosterSize(false) ' Movies use portrait, or wide if thumbnails enabled
-                else if isStringEqual(lib.json.CollectionType, "music")
-                    imagesize = homeRowItemSizes.MUSIC_ALBUM
-                end if
-            end if
-
             if not sectionExists(sectionName) and not knownEmpty(sectionName)
                 row = m.top.content.CreateChild("HomeRow")
                 row.title = sectionName
-                row.imageWidth = imagesize[0]
-                row.cursorSize = imagesize
             end if
 
             try
@@ -1020,22 +1061,9 @@ sub createRecentlyReleasedRow()
         if not isStringEqual(lib.collectionType, "boxsets") and not isStringEqual(lib.collectionType, "livetv") and not isStringEqual(lib.json.CollectionType, "Program")
             sectionName = `${tr("Recently Released in")} ${lib.name}`
 
-            ' Determine poster size based on content type and user preference
-            imagesize = getPosterSize(false) ' Default to portrait, but respect thumbnail toggle
-
-            if isValid(lib.json.CollectionType)
-                if isStringEqual(lib.json.CollectionType, "movies")
-                    imagesize = getPosterSize(false) ' Movies use portrait, or wide if thumbnails enabled
-                else if isStringEqual(lib.json.CollectionType, "music")
-                    imagesize = homeRowItemSizes.MUSIC_ALBUM
-                end if
-            end if
-
             if not sectionExists(sectionName) and not knownEmpty(sectionName)
                 row = m.top.content.CreateChild("HomeRow")
                 row.title = sectionName
-                row.imageWidth = imagesize[0]
-                row.cursorSize = imagesize
             end if
 
             try
@@ -1118,14 +1146,8 @@ sub updateSinceYouWatchedItems(msg)
 
     row = CreateObject("roSGNode", "HomeRow")
     row.title = sectionName
-    row.imageWidth = getPosterSize(false)[0]
-    row.cursorSize = getPosterSize(false)
-    ' A wide row shows wide art. Modern turns it back to posters before it's drawn.
-    row.usePoster = not prefersThumbnails()
 
     for each item in itemData
-        item.usePoster = row.usePoster
-        item.imageWidth = row.imageWidth
         row.appendChild(item)
     end for
 
@@ -1141,8 +1163,6 @@ sub createRewatchRow()
     if not sectionExists(sectionName) and not knownEmpty(sectionName)
         row = m.top.content.CreateChild("HomeRow")
         row.title = sectionName
-        row.imageWidth = getPosterSize(false)[0]
-        row.cursorSize = getPosterSize(false)
     end if
 
     task = getOrCreateTask("rewatch")
@@ -1165,13 +1185,8 @@ sub updateRewatchItems()
 
     row = CreateObject("roSGNode", "HomeRow")
     row.title = sectionName
-    row.imageWidth = getPosterSize(false)[0]
-    row.cursorSize = getPosterSize(false)
-    row.usePoster = not prefersThumbnails()
 
     for each item in itemData
-        item.usePoster = row.usePoster
-        item.imageWidth = row.imageWidth
         row.appendChild(item)
     end for
 
@@ -1250,8 +1265,6 @@ sub createLiveTVRow()
     if not sectionExists(sectionName) and not knownEmpty(sectionName)
         row = m.top.content.CreateChild("HomeRow")
         row.title = sectionName
-        row.imageWidth = getPosterSize(false)[0]
-        row.cursorSize = getPosterSize(false)
     end if
 
     ' Load the On Now Data (lazy task creation)
@@ -1268,8 +1281,6 @@ sub createContinueWatchingRow()
     if not sectionExists(sectionName) and not knownEmpty(sectionName)
         row = m.top.content.CreateChild("HomeRow")
         row.title = sectionName
-        row.imageWidth = getPosterSize(true)[0]
-        row.cursorSize = getPosterSize(true)
     end if
 
     if isMultiServerEnabled() and hasMultipleLoggedInServers()
@@ -1346,16 +1357,6 @@ sub onMultiServerContinueWatchingComplete()
     row = CreateObject("roSGNode", "HomeRow")
     row.id = "resume"
     row.title = sectionName
-    preferThumbnails = prefersThumbnails()
-    row.usePoster = not preferThumbnails
-
-    if preferThumbnails
-        row.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-        row.cursorSize = homeRowItemSizes.WIDE_POSTER
-    else
-        row.imageWidth = homeRowItemSizes.MOVIE_POSTER[0]
-        row.cursorSize = homeRowItemSizes.MOVIE_POSTER
-    end if
 
     showServerName = hasMultipleLoggedInServers()
 
@@ -1365,8 +1366,6 @@ sub onMultiServerContinueWatchingComplete()
             if isChainValid(item, "UserData.PlayedPercentage")
                 tmp.PlayedPercentage = item.UserData.PlayedPercentage
             end if
-            tmp.usePoster = row.usePoster
-            tmp.imageWidth = row.imageWidth
             row.appendChild(tmp)
         end if
     end for
@@ -1402,8 +1401,6 @@ sub createMergedContinueWatchingRow()
         ' The merged title isnt one the sort can match, so the placeholder is found by its id
         row.id = "resume"
         row.title = sectionName
-        row.imageWidth = getPosterSize(true)[0]
-        row.cursorSize = getPosterSize(true)
     end if
 
     ' Load the Merged Continue Watching Data (lazy task creation)
@@ -1420,8 +1417,6 @@ sub createContinueListeningRow()
     if not sectionExists(sectionName) and not knownEmpty(sectionName)
         row = m.top.content.CreateChild("HomeRow")
         row.title = sectionName
-        row.imageWidth = getPosterSize(false)[0]
-        row.cursorSize = getPosterSize(false)
     end if
 
     ' Load the Continue Listening Data (lazy task creation)
@@ -1438,8 +1433,6 @@ sub createNextUpRow()
     if not sectionExists(sectionName) and not knownEmpty(sectionName)
         row = m.top.content.CreateChild("HomeRow")
         row.title = sectionName
-        row.imageWidth = getPosterSize(false)[0]
-        row.cursorSize = getPosterSize(false)
     end if
 
     if isMultiServerEnabled() and hasMultipleLoggedInServers()
@@ -1515,9 +1508,6 @@ sub onMultiServerNextUpComplete()
     row = CreateObject("roSGNode", "HomeRow")
     row.id = "nextup"
     row.title = sectionName
-    row.imageWidth = getPosterSize(false)[0]
-    row.cursorSize = getPosterSize(false)
-    row.usePoster = not prefersThumbnails()
 
     ' Check if we should show server names
     showServerName = hasMultipleLoggedInServers()
@@ -1525,8 +1515,6 @@ sub onMultiServerNextUpComplete()
     for each item in sortedResults
         tmp = createHomeDataFromMultiServerItem(item, showServerName)
         if isValid(tmp)
-            tmp.usePoster = row.usePoster
-            tmp.imageWidth = row.imageWidth
             row.appendChild(tmp)
         end if
     end for
@@ -1620,18 +1608,10 @@ sub onMultiServerLibrariesLoaded(msg as object)
 
         sectionName = tr("Recently Added in") + " " + libraryName + serverSuffix
 
-        ' Determine poster size based on content type
-        imagesize = getPosterSize(false)
-        if collectionType = "music"
-            imagesize = homeRowItemSizes.MUSIC_ALBUM
-        end if
-
         ' Create placeholder row
         if not sectionExists(sectionName) and not knownEmpty(sectionName)
             latestRow = m.top.content.CreateChild("HomeRow")
             latestRow.title = sectionName
-            latestRow.imageWidth = imagesize[0]
-            latestRow.cursorSize = imagesize
         end if
 
         ' Create task to load latest items for this library
@@ -1703,25 +1683,13 @@ sub onMultiServerLatestPerLibraryComplete(msg as object)
 
     ' Create the row
     row = CreateObject("roSGNode", "HomeRow")
+    row.id = "latestmedia"
     row.title = sectionName
-    row.usePoster = not prefersThumbnails()
-
-    ' Set image size based on content type
-    if metadata.collectionType = "music"
-        row.imageWidth = homeRowItemSizes.MUSIC_ALBUM[0]
-        row.cursorSize = homeRowItemSizes.MUSIC_ALBUM
-    else
-        posterSize = getPosterSize(false)
-        row.imageWidth = posterSize[0]
-        row.cursorSize = posterSize
-    end if
 
     ' Don't show server name on individual items since it's in the row title
     for each item in sortedResults
         tmp = createHomeDataFromMultiServerItem(item, false)
         if isValid(tmp)
-            tmp.usePoster = row.usePoster
-            tmp.imageWidth = row.imageWidth
             row.appendChild(tmp)
         end if
     end for
@@ -1789,19 +1757,14 @@ sub onMultiServerRecentlyReleasedComplete()
 
     ' Create the row
     row = CreateObject("roSGNode", "HomeRow")
+    row.id = "recentlyreleased"
     row.title = sectionName
-    row.imageWidth = getPosterSize(false)[0]
-    row.cursorSize = getPosterSize(false)
 
     ' Check if we should show server names
     showServerName = hasMultipleLoggedInServers()
-
-    row.usePoster = not prefersThumbnails()
     for each item in results
         tmp = createHomeDataFromMultiServerItem(item, showServerName)
         if isValid(tmp)
-            tmp.usePoster = row.usePoster
-            tmp.imageWidth = row.imageWidth
             row.appendChild(tmp)
         end if
     end for
@@ -1869,13 +1832,11 @@ sub onMultiServerFavoritesComplete()
 
     ' Create the row
     row = CreateObject("roSGNode", "HomeRow")
+    row.id = "favorites"
     row.title = sectionName
-    row.imageWidth = getPosterSize(false)[0]
-    row.cursorSize = getPosterSize(false)
 
     ' Check if we should show server names
     showServerName = hasMultipleLoggedInServers()
-    row.usePoster = not prefersThumbnails()
 
     for each item in results
         ' Skip books and audio
@@ -1885,12 +1846,6 @@ sub onMultiServerFavoritesComplete()
 
         tmp = createHomeDataFromMultiServerItem(item, showServerName)
         if isValid(tmp)
-            usePoster = row.usePoster
-            if itemType = "episode" or itemType = "musicartist"
-                usePoster = false
-            end if
-            tmp.usePoster = usePoster
-            tmp.imageWidth = row.imageWidth
             row.appendChild(tmp)
         end if
     end for
@@ -1912,8 +1867,6 @@ sub createMyListRow()
     if not sectionExists(sectionName) and not knownEmpty(sectionName)
         row = m.top.content.CreateChild("HomeRow")
         row.title = sectionName
-        row.imageWidth = getPosterSize(false)[0]
-        row.cursorSize = getPosterSize(false)
     end if
 
     ' Load the My List Data (lazy task creation)
@@ -1930,8 +1883,6 @@ sub createFavoritesRow()
     if not sectionExists(sectionName) and not knownEmpty(sectionName)
         row = m.top.content.CreateChild("HomeRow")
         row.title = sectionName
-        row.imageWidth = getPosterSize(false)[0]
-        row.cursorSize = getPosterSize(false)
     end if
 
     ' Load the Favorites Data (lazy task creation)
@@ -1971,19 +1922,7 @@ sub updateFavoritesItems()
     ' remake row using the new data
     row = CreateObject("roSGNode", "HomeRow")
     row.title = sectionName
-    row.imageWidth = getPosterSize(false)[0]
-    row.cursorSize = getPosterSize(false)
-
-    row.usePoster = not prefersThumbnails()
     for each item in itemData
-        usePoster = row.usePoster
-
-        if lcase(item.type) = "episode" or lcase(item.type) = "audio" or lcase(item.type) = "musicartist"
-            usePoster = false
-        end if
-
-        item.usePoster = usePoster
-        item.imageWidth = row.imageWidth
         row.appendChild(item)
     end for
 
@@ -2006,19 +1945,7 @@ sub updateMyListItems()
     ' remake row using the new data
     row = CreateObject("roSGNode", "HomeRow")
     row.title = sectionName
-    row.imageWidth = getPosterSize(false)[0]
-    row.cursorSize = getPosterSize(false)
-
-    row.usePoster = not prefersThumbnails()
     for each item in itemData
-        usePoster = row.usePoster
-
-        if lcase(item.type) = "episode" or lcase(item.type) = "audio" or lcase(item.type) = "musicartist"
-            usePoster = false
-        end if
-
-        item.usePoster = usePoster
-        item.imageWidth = row.imageWidth
         row.appendChild(item)
     end for
 
@@ -2039,24 +1966,10 @@ sub buildContinueWatchingRow(taskKey as string)
     row = CreateObject("roSGNode", "HomeRow")
     row.title = sectionName
 
-    preferThumbnails = prefersThumbnails()
-    row.usePoster = not preferThumbnails
-
-    if preferThumbnails
-        row.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-        row.cursorSize = homeRowItemSizes.WIDE_POSTER
-    else
-        row.imageWidth = homeRowItemSizes.MOVIE_POSTER[0]
-        row.cursorSize = homeRowItemSizes.MOVIE_POSTER
-    end if
-
     for each item in itemData
         if isChainValid(item, "json.UserData.PlayedPercentage")
             item.PlayedPercentage = item.json.UserData.PlayedPercentage
         end if
-
-        item.usePoster = row.usePoster
-        item.imageWidth = row.imageWidth
         row.appendChild(item)
     end for
 
@@ -2087,16 +2000,11 @@ sub updateContinueListeningItems()
     ' remake row using the new data
     row = CreateObject("roSGNode", "HomeRow")
     row.title = sectionName
-    row.imageWidth = getPosterSize(false)[0]
-    row.cursorSize = getPosterSize(false)
 
     for each item in itemData
         if hasValidProperties(item, "json") and hasValidProperties(item.json, "UserData", "PlayedPercentage")
             item.PlayedPercentage = item.json.UserData.PlayedPercentage
         end if
-
-        item.usePoster = row.usePoster
-        item.imageWidth = row.imageWidth
         row.appendChild(item)
     end for
 
@@ -2123,13 +2031,8 @@ sub updateNextUpItems()
     ' remake row using the new data
     row = CreateObject("roSGNode", "HomeRow")
     row.title = tr("Next Up")
-    row.imageWidth = getPosterSize(false)[0]
-    row.cursorSize = getPosterSize(false)
-    row.usePoster = not prefersThumbnails()
 
     for each item in itemData
-        item.usePoster = row.usePoster
-        item.imageWidth = row.imageWidth
         row.appendChild(item)
     end for
 
@@ -2154,26 +2057,11 @@ sub updateLatestItems(msg)
         return
     end if
 
-    imagesize = getPosterSize(false)
-
-    if isValid(node.metadata.contentType)
-        if LCase(node.metadata.contentType) = "movies"
-            imagesize = getPosterSize(false)
-        else if LCase(node.metadata.contentType) = "music"
-            imagesize = homeRowItemSizes.MUSIC_ALBUM
-        end if
-    end if
-
     ' remake row using new data
     row = CreateObject("roSGNode", "HomeRow")
     row.title = sectionName
-    row.imageWidth = imagesize[0]
-    row.cursorSize = imagesize
-    row.usePoster = not prefersThumbnails()
 
     for each item in itemData
-        item.usePoster = row.usePoster
-        item.imageWidth = row.imageWidth
         row.appendChild(item)
     end for
 
@@ -2198,26 +2086,11 @@ sub updateRecentlyReleasedItems(msg)
         return
     end if
 
-    imagesize = getPosterSize(false)
-
-    if isValid(node.metadata.contentType)
-        if LCase(node.metadata.contentType) = "movies"
-            imagesize = getPosterSize(false)
-        else if LCase(node.metadata.contentType) = "music"
-            imagesize = homeRowItemSizes.MUSIC_ALBUM
-        end if
-    end if
-
     ' remake row using new data
     row = CreateObject("roSGNode", "HomeRow")
     row.title = sectionName
-    row.imageWidth = imagesize[0]
-    row.cursorSize = imagesize
-    row.usePoster = not prefersThumbnails()
 
     for each item in itemData
-        item.usePoster = row.usePoster
-        item.imageWidth = row.imageWidth
         row.appendChild(item)
     end for
 
@@ -2240,22 +2113,16 @@ sub updateOnNowItems()
 
     ' remake row using the new data
     row = CreateObject("roSGNode", "HomeRow")
+    row.id = onNowSection()
     row.title = tr("On Now")
-    row.imageWidth = getPosterSize(true)[0]
-    row.cursorSize = getPosterSize(true)
 
     for each item in itemData
-        row.usePoster = false
+        item.usePoster = false
 
         if (not isValid(item.thumbnailURL) or item.thumbnailURL = "") and isValid(item.json) and isValid(item.json.imageURL)
             item.thumbnailURL = item.json.imageURL
-            row.usePoster = true
-            row.imageWidth = getPosterSize(true)[0]
-            row.cursorSize = getPosterSize(true)
+            item.usePoster = true
         end if
-
-        item.usePoster = row.usePoster
-        item.imageWidth = row.imageWidth
         row.appendChild(item)
     end for
 
@@ -2710,19 +2577,10 @@ sub updateCustomDynamicRowItems(event as object)
     row.title = sectionName
     if rowId = "mdblist_watching_now"
         row.subtitle = task.rowSubtitle
-        row.imageWidth = homeRowItemSizes.WIDE_POSTER[0]
-        row.cursorSize = homeRowItemSizes.WIDE_POSTER
-        row.usePoster = false
         startWatchingNowRefreshTimer()
-    else
-        row.imageWidth = getPosterSize(false)[0]
-        row.cursorSize = getPosterSize(false)
-        row.usePoster = not prefersThumbnails()
     end if
 
     for each item in itemData
-        item.usePoster = row.usePoster
-        item.imageWidth = row.imageWidth
         row.appendChild(item)
     end for
 
@@ -2766,7 +2624,7 @@ end sub
 ' cover the multi server case.
 '
 ' @param {string} taskKey - Task key, as set on LoadItemsTask.itemsToLoad
-' @return {object} the row's section key, localized title and poster preference, or invalid
+' @return {object} the row's section key and localized title, or invalid
 ' Merging puts both calendars in one row, so the row that carries them both says so and
 ' the other one steps aside
 function calendarsMerged() as boolean
@@ -2782,14 +2640,14 @@ end function
 
 function internalRowConfig(taskKey as string) as object
     configs = {
-        collections: { sectionKey: "collections", title: tr("Collections"), usePoster: true },
-        studios: { sectionKey: "studios", title: tr("Studios"), usePoster: true },
-        radarr_calendar: { sectionKey: "radarr_calendar", title: arrCalendarTitle("radarr"), usePoster: not prefersThumbnails() },
-        sonarr_calendar: { sectionKey: "sonarr_calendar", title: arrCalendarTitle("sonarr"), usePoster: not prefersThumbnails() },
-        genres: { sectionKey: "genres", title: tr("Genres"), usePoster: true },
-        audio: { sectionKey: "audio", title: tr("Audio"), usePoster: false },
+        collections: { sectionKey: "collections", title: tr("Collections") },
+        studios: { sectionKey: "studios", title: tr("Studios") },
+        radarr_calendar: { sectionKey: "radarr_calendar", title: arrCalendarTitle("radarr") },
+        sonarr_calendar: { sectionKey: "sonarr_calendar", title: arrCalendarTitle("sonarr") },
+        genres: { sectionKey: "genres", title: tr("Genres") },
+        audio: { sectionKey: "audio", title: tr("Audio") },
         ' The plain "playlists" task feeds the playlist picker, which needs a different node type
-        homeplaylists: { sectionKey: "playlists", title: tr("Playlists"), usePoster: true }
+        homeplaylists: { sectionKey: "playlists", title: tr("Playlists") }
     }
 
     return configs[taskKey]
@@ -2866,13 +2724,8 @@ sub updateInternalRowItems(event as object)
 
     row = CreateObject("roSGNode", "HomeRow")
     row.title = config.title
-    row.imageWidth = getPosterSize(false)[0]
-    row.cursorSize = getPosterSize(false)
-    row.usePoster = config.usePoster
 
     for each item in itemData
-        item.usePoster = row.usePoster
-        item.imageWidth = row.imageWidth
         row.appendChild(item)
     end for
 

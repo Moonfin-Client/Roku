@@ -16,6 +16,9 @@ namespace settingsSync
     const PROFILE_SETTING = "plugin.syncProfile"
     ' The profile a TV follows until the user picks another
     const DEVICE_PROFILE = "tv"
+    ' Each Home row's image type is kept under this and the row's id, the way Core keeps it
+    const ROW_IMAGE_TYPE_KEY = "ui.home.rowImageType."
+    const CONTINUE_WATCHING_ROW = "resume"
 
     ' Two settings have a switch here and a property on the server, but mean different
     ' things on each side, so they are left unmapped rather than wired up to corrupt values:
@@ -48,8 +51,8 @@ namespace settingsSync
             { pluginKey: "libraryCardTitles", rokuKey: "ui.library.cardTitles", type: "bool" },
             { pluginKey: "libraryPosterSize", rokuKey: "ui.library.posterSize", type: "direct" },
             { pluginKey: "playlistPosterSize", rokuKey: "ui.library.playlistPosterSize", type: "direct" },
-            ' The library sizes fall back to this one until one is picked, and nothing here sets it
-            { pluginKey: "posterSize", rokuKey: "ui.posterSize", type: "direct", receiveOnly: true },
+            ' Home's Card Size, which the library sizes fall back to until one is picked
+            { pluginKey: "posterSize", rokuKey: "ui.posterSize", type: "direct" },
             ' Whether focused cards grow, which the Seerr screens follow. Nothing here sets it.
             { pluginKey: "cardFocusExpansion", rokuKey: "ui.cardFocusExpansion", type: "bool", receiveOnly: true },
             ' Core's focus color by name, which the Seerr screens ring focus in
@@ -78,6 +81,11 @@ namespace settingsSync
             { pluginKey: "detailUseSeriesThumbnails", rokuKey: "ui.itemdetail.useSeriesThumbnails", type: "bool" },
             { pluginKey: "hideHomeMediaDescription", rokuKey: "ui.home.hideMediaDescription", type: "bool" },
             { pluginKey: "homeRowsStyle", rokuKey: "ui.home.rowsStyle", type: "direct" },
+            ' Continue Watching keeps its image type on a key of its own, apart from the list of the other
+            ' rows. Nothing here sets the type for every row at once.
+            { pluginKey: "homeImageTypeContinueWatching", rokuKey: "ui.home.rowImageType.resume", type: "imageType" },
+            { pluginKey: "homeRowsImageTypeOverride", rokuKey: "ui.home.rowsImageTypeOverride", type: "bool", receiveOnly: true },
+            { pluginKey: "homeRowsImageType", rokuKey: "ui.home.rowsImageType", type: "imageType", receiveOnly: true },
             { pluginKey: "modernCardsOnMyMediaRow", rokuKey: "ui.home.modernCardsOnMyMediaRow", type: "bool" },
             { pluginKey: "episodePreviewEnabled", rokuKey: "ui.home.episodePreviewEnabled", type: "bool" },
             { pluginKey: "mediaPreviewMode", rokuKey: "ui.home.mediaPreviewMode", type: "direct" },
@@ -379,6 +387,13 @@ namespace settingsSync
             end if
         end for
 
+        ' The list only names the rows someone picked a type for, so the rest keep theirs
+        rowTypes = settingsSync.DecodeRowImageTypes(profile.homeRowImageTypes)
+        for each rowId in rowTypes
+            tmpSettings[settingsSync.ROW_IMAGE_TYPE_KEY + rowId] = rowTypes[rowId]
+            registry_write(settingsSync.ROW_IMAGE_TYPE_KEY + rowId, rowTypes[rowId], m.global.session.user.id)
+        end for
+
         appliedThemeId = tmpSettings["ui.theme.customThemeId"]
         if isValidAndNotEmpty(appliedThemeId)
             settingsSync.ApplyThemeColorsFromId(appliedThemeId, tmpSettings)
@@ -533,6 +548,8 @@ namespace settingsSync
         end if
 
         mapping = settingsSync.FindMappingByRokuKey(rokuKey)
+        ' A row's image type goes out with every other row's, as the one list the plugin keeps
+        if not isValid(mapping) and Left(rokuKey, Len(settingsSync.ROW_IMAGE_TYPE_KEY)) = settingsSync.ROW_IMAGE_TYPE_KEY then return settingsSync.ProfilePush({ "homeRowImageTypes": settingsSync.RowImageTypes() })
         if not isValid(mapping) then return invalid
 
         pluginValue = settingsSync.RokuToPlugin(rokuValue, mapping.type)
@@ -578,6 +595,8 @@ namespace settingsSync
             end if
         end for
 
+        rowTypes = settingsSync.RowImageTypes()
+        if rowTypes <> "" then profileData["homeRowImageTypes"] = rowTypes
         profileData["seerrRows"] = settingsSync.SeerrRowsPayload()
         ' Both layout keys go together, since a row order arriving without sections makes the
         ' server drop the sections it holds
@@ -699,7 +718,18 @@ namespace settingsSync
         end for
 
         keys.Append([homeRowLayout.HIDDEN_SETTING, homeRowLayout.DYNAMIC_SETTING, homeRowLayout.PASSTHROUGH_SETTING])
+        keys.Append(settingsSync.RowImageTypeKeys(settingsSync.StoredSettings()))
         return keys
+    end function
+
+    function RowImageTypes() as string
+        return settingsSync.EncodeRowImageTypes(settingsSync.StoredSettings())
+    end function
+
+    function StoredSettings() as object
+        stored = RegistryReadAll(m.global.session.user.id)
+        if not isValid(stored) then return {}
+        return stored
     end function
 
     ' Puts every synced setting back the way a device that never synced has it, which is the
@@ -946,6 +976,11 @@ namespace settingsSync
             valStr = LCase(pluginValue.toStr())
             if valStr = "badge" or valStr = "banner" then return valStr
             return invalid
+        else if conversionType = "imageType"
+            ' A type this build doesn't draw keeps the one stored here
+            valStr = settingsSync.ImageTypeName(pluginValue, "")
+            if valStr = "" then return invalid
+            return valStr
         else if conversionType = "subtitleModeFormat"
             valStr = LCase(pluginValue.toStr())
             for each mode in settingsSync.SubtitleModes()
@@ -978,6 +1013,10 @@ namespace settingsSync
         rokuStr = rokuValue.toStr()
 
         if conversionType = "direct" or conversionType = "keyboardStyle" or conversionType = "seerrBadgeStyle"
+            return rokuStr
+        else if conversionType = "imageType"
+            rokuStr = settingsSync.ImageTypeName(rokuStr, "")
+            if rokuStr = "" then return invalid
             return rokuStr
         else if conversionType = "detailStyle"
             ' This client's ids are exactly the enum names the Flutter client syncs,
@@ -1325,5 +1364,51 @@ namespace settingsSync
             end for
         end for
     end sub
+
+    ' The per-row types as the plugin keeps them, one list of row:type pairs for every row a type
+    ' was picked for. Continue Watching syncs on a key of its own.
+    function EncodeRowImageTypes(stored as object) as string
+        pairs = []
+        for each key in settingsSync.RowImageTypeKeys(stored)
+            rowId = LCase(Mid(key, Len(settingsSync.ROW_IMAGE_TYPE_KEY) + 1))
+            picked = settingsSync.ImageTypeName(stored[key], "")
+            if rowId <> settingsSync.CONTINUE_WATCHING_ROW and picked <> "" then pairs.push(rowId + ":" + picked)
+        end for
+        pairs.Sort()
+        return pairs.Join(",")
+    end function
+
+    function RowImageTypeKeys(stored as object) as object
+        found = []
+        for each key in stored
+            if LCase(Left(key, Len(settingsSync.ROW_IMAGE_TYPE_KEY))) = LCase(settingsSync.ROW_IMAGE_TYPE_KEY) then found.push(key)
+        end for
+        return found
+    end function
+
+    ' The plugin's list as row id to type. A pair without a known type is skipped, the other
+    ' clients' word for the playlists row is read as it, and Continue Watching is left to its own key.
+    function DecodeRowImageTypes(value as dynamic) as object
+        types = {}
+        if not isString(value) then return types
+        for each part in value.Split(",")
+            pair = part.Split(":")
+            if pair.Count() = 2
+                rowId = LCase(pair[0].Trim())
+                if rowId = "watchlist" then rowId = "playlists"
+                picked = settingsSync.ImageTypeName(pair[1].Trim(), "")
+                if rowId <> "" and rowId <> "none" and rowId <> settingsSync.CONTINUE_WATCHING_ROW and picked <> "" then types[rowId] = picked
+            end if
+        end for
+        return types
+    end function
+
+    ' A type this app draws, whatever its case, or the fallback
+    function ImageTypeName(value as dynamic, fallback as string) as string
+        for each known in ["poster", "thumb", "banner"]
+            if isStringEqual(value, known) then return known
+        end for
+        return fallback
+    end function
 
 end namespace
