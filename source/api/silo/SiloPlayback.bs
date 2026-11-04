@@ -235,6 +235,22 @@ namespace silo
         return out
     end function
 
+    ' The app's retry after a failed stream sends Jellyfin's device profile without direct play,
+    ' which to Silo would read as a Roku that decodes nothing
+    function IsStepDown(deviceProfile as dynamic) as boolean
+        return type(deviceProfile) = "roAssociativeArray" and silo.ProfilesOf(deviceProfile.DirectPlayProfiles).Count() = 0
+    end function
+
+    ' The device profile to read what the Roku decodes from: a retry's gets the Roku's own list back
+    ' (kept aside by playbackDeviceProfile), and keeps the codec the retry rules out
+    function RetryProfile(deviceProfile as dynamic) as dynamic
+        if not silo.IsStepDown(deviceProfile) or type(deviceProfile.SiloDirectPlayProfiles) <> "roArray" then return deviceProfile
+        profile = {}
+        profile.Append(deviceProfile)
+        profile.DirectPlayProfiles = deviceProfile.SiloDirectPlayProfiles
+        return profile
+    end function
+
     function DeliveryOf(supported as boolean, failureReason as string, containers as object, video as object, audio as object, subtitles as object, channels as dynamic, claims as object, features as object) as object
         delivery = { enabled: true, supported_on_device: supported, containers: containers, video_codecs: video, audio_decode_codecs: audio, audio_passthrough_codecs: [], subtitles: subtitles, features: features, auth_header_refresh: false, validated_claims: claims, transformations: [] }
         if not supported then delivery.failure_reason = failureReason
@@ -656,7 +672,9 @@ namespace silo
         server = silo.PlaybackCapabilities(r)
         silo.Trace("play: server playback " + server.reason + ", ok " + server.ok.ToStr())
         multichannelAac = silo.DecodesMultichannelAac()
-        caps = silo.CapabilitiesOf(body.DeviceProfile, server.features, multichannelAac)
+        caps = silo.CapabilitiesOf(silo.RetryProfile(body.DeviceProfile), server.features, multichannelAac)
+        ' A retry after a failed stream steps away from the original file, and Silo picks the route
+        if silo.IsStepDown(body.DeviceProfile) then caps.deliveries.original_http = silo.DeliveryOf(false, "client_playback_failed", [], [], [], caps.deliveries.original_http.subtitles, invalid, [], [])
         silo.Trace("play: decodes video " + caps.clientCapabilities.codecs_video.Join(",") + ", audio " + caps.clientCapabilities.codecs_audio.Join(",") + ", multichannel AAC " + multichannelAac.ToStr())
         context = silo.PlaybackContext(caps, getAuthHeaderContext().appVersion ?? "")
         if not server.ok then return { status: 503, data: { ErrorCode: "SiloUnavailable", Message: tr("Playback isn't available on this server.") } }
