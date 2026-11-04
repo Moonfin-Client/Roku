@@ -2,9 +2,10 @@
 ' days the user may use the server. Jellyfin applies it by the rules below, so the app does too,
 ' to say so when the time is up instead of letting everything start failing.
 '
-' Times are given as a day of the week (0 is Sunday) and the second of that day, on this device's
-' clock. The server checks on its own clock, which can be in another time zone, so Status lets its
-' answer decide when there is one.
+' Times are given as a day of the week (0 is Sunday) and the second of that day. The server checks
+' on its own clock, which can be in another time zone, so they are the server's wall clock when the
+' plugin reports it (ServerClock) and this device's clock when it doesn't. In that case Status
+' lets the server's answer decide.
 
 namespace accessSchedule
 
@@ -75,6 +76,48 @@ namespace accessSchedule
         return invalid
     end function
 
+    ' How the server's clock differs from this device's, from the answer of the plugin's
+    ' Moonfin/Time, as { skew, offset }: the seconds the server's UTC is ahead of this device's, and
+    ' the server's offset from UTC. Kept instead of a moment so it stays right as time passes.
+    ' Invalid when the answer is missing or doesn't carry a UTC time and an offset.
+    function ServerClock(time as dynamic, deviceUtcSeconds as integer) as dynamic
+        if type(time) <> "roAssociativeArray" then return invalid
+        utcTime = time.utcTime
+        offset = time.utcOffsetSeconds
+        if type(utcTime) <> "roString" and type(utcTime) <> "String" then return invalid
+        if type(offset) <> "roInt" and type(offset) <> "Integer" and type(offset) <> "roFloat" and type(offset) <> "Float" and type(offset) <> "Double" and type(offset) <> "roDouble" then return invalid
+
+        moment = CreateObject("roDateTime")
+        moment.FromISO8601String(utcTime)
+        if moment.AsSeconds() = 0 then return invalid
+        return { skew: moment.AsSeconds() - deviceUtcSeconds, offset: Cint(offset) }
+    end function
+
+    ' The server's day of the week and second of the day when this device's UTC clock reads the
+    ' given seconds, as { day, secondOfDay, wallSeconds }, on the server's wall clock whatever zone
+    ' this device is in. wallSeconds is that wall clock read as if it were UTC, for OpeningDate.
+    function ServerWallClock(clock as object, deviceUtcSeconds as integer) as object
+        ' Left in UTC on purpose: the offset, not this device's zone, makes it the server's time
+        wallSeconds = deviceUtcSeconds + clock.skew + clock.offset
+        moment = CreateObject("roDateTime")
+        moment.FromSeconds(wallSeconds)
+        return {
+            day: moment.GetDayOfWeek(),
+            secondOfDay: moment.GetHours() * 3600 + moment.GetMinutes() * 60 + moment.GetSeconds(),
+            wallSeconds: wallSeconds
+        }
+    end function
+
+    ' The calendar date an opening from NextAccess falls on, as { month, dayOfMonth } with month
+    ' 1 to 12, on the same wall clock the schedule was judged on: wallSeconds is that clock now,
+    ' read as if it were UTC. Never put in this device's zone, so it agrees with the opening's
+    ' weekday and time of day when the server's calendar is a day ahead of or behind this device's.
+    function OpeningDate(wallSeconds as integer, opening as object) as object
+        moment = CreateObject("roDateTime")
+        moment.FromSeconds(wallSeconds + opening.seconds)
+        return { month: moment.GetMonth(), dayOfMonth: moment.GetDayOfMonth() }
+    end function
+
     ' Whether the user is turned away now and, while they are, when they're next let in. The
     ' opening is worked out on this device's clock, so it's only named when that clock agrees.
     function Status(entries as object, refused as dynamic, day as integer, secondOfDay as integer) as object
@@ -102,6 +145,22 @@ namespace accessSchedule
             end for
         end for
         return best
+    end function
+
+    ' Whether a refusal from a look that lasted lookDelta seconds still stands: the answer was
+    ' given before the look ended, so an entry opening in the meantime means the no was handed
+    ' down just before it, and the schedule past the opening settles the answer
+    function RefusalStands(entries as object, day as integer, secondOfDay as integer, lookDelta as integer) as boolean
+        for offset = 0 to accessSchedule.LOOK_AHEAD_DAYS - 1
+            target = (day + offset) mod 7
+            for each entry in entries
+                if accessSchedule.Covers(entry, target)
+                    seconds = offset * accessSchedule.SECONDS_PER_DAY + entry.start - secondOfDay
+                    if seconds > 0 and seconds <= lookDelta then return false
+                end if
+            end for
+        end for
+        return true
     end function
 
     ' How long until the answer of IsAllowed could change, in seconds: every start, and the second

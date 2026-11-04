@@ -15,9 +15,12 @@ sub init()
     m.timer.observeField("fire", "onTimer")
     m.entries = []
     m.exempt = false
+    m.askClock = true
+    m.serverClock = invalid
     m.task = invalid
     m.lookAgain = false
     m.lastRefusalLook = 0
+    m.lookStartUtc = 0
     m.clock = CreateObject("roTimespan")
     m.top.blocked = false
 
@@ -30,8 +33,11 @@ sub onUserChange()
     cancelTask()
     m.entries = []
     m.exempt = false
+    m.askClock = true
+    m.serverClock = invalid
     m.lookAgain = false
     m.lastRefusalLook = 0
+    m.lookStartUtc = 0
     setBlocked(false, invalid)
     if m.top.userId <> "" then look()
 end sub
@@ -69,8 +75,13 @@ sub look()
         m.lookAgain = true
         return
     end if
+    m.lookStartUtc = CreateObject("roDateTime").AsSeconds()
     m.task = CreateObject("roSGNode", "AccessScheduleTask")
     m.task.userId = m.top.userId
+    ' Asked once the time is up too: the plugin answers it outside the schedule, so the next opening
+    ' is told in the server's time even when the app starts with the account closed. A plugin that
+    ' refuses it then keeps the clock read while the user was let in.
+    m.task.askClock = m.askClock
     m.task.observeField("result", "onResult")
     m.task.control = "run"
 end sub
@@ -83,6 +94,10 @@ sub onResult(event as object)
     if result.ok
         m.entries = result.entries
         m.exempt = result.exempt
+        ' Not asked again once the server has said it can't tell the time. A look that failed to
+        ' get it keeps the last one rather than going back to this device's clock.
+        if result.clockMissing then m.askClock = false
+        if result.clock <> invalid or result.clockMissing then m.serverClock = result.clock
         apply(result.refused)
     else
         ' A schedule that couldn't be read leaves the last answer in place
@@ -96,16 +111,45 @@ sub onResult(event as object)
 end sub
 
 sub apply(refused as dynamic)
+    ' The server's clock when the plugin reports it, since that is what it judges the schedule
+    ' against; otherwise this device's
     now = CreateObject("roDateTime")
-    now.ToLocalTime()
-    day = now.GetDayOfWeek()
-    secondOfDay = now.GetHours() * 3600 + now.GetMinutes() * 60 + now.GetSeconds()
+    if m.serverClock <> invalid
+        server = accessSchedule.ServerWallClock(m.serverClock, now.AsSeconds())
+        day = server.day
+        secondOfDay = server.secondOfDay
+        wallSeconds = server.wallSeconds
+    else
+        now.ToLocalTime()
+        day = now.GetDayOfWeek()
+        secondOfDay = now.GetHours() * 3600 + now.GetMinutes() * 60 + now.GetSeconds()
+        wallSeconds = now.AsSeconds()
+    end if
 
+    ' The refusal is the answer of a look that was still under way at this moment, so it gives
+    ' way when an entry opens in the meantime: the schedule, past the opening it predates, settles
+    ' the answer rather than a stale no holding on until the next check
+    if m.lookStartUtc <> 0
+        lookAt = CreateObject("roDateTime")
+        lookAt.FromSeconds(m.lookStartUtc)
+        if m.serverClock <> invalid
+            serverAt = accessSchedule.ServerWallClock(m.serverClock, m.lookStartUtc)
+            lookDay = serverAt.day
+            lookSecond = serverAt.secondOfDay
+            lookDelta = wallSeconds - serverAt.wallSeconds
+        else
+            lookAt.ToLocalTime()
+            lookDay = lookAt.GetDayOfWeek()
+            lookSecond = lookAt.GetHours() * 3600 + lookAt.GetMinutes() * 60 + lookAt.GetSeconds()
+            lookDelta = wallSeconds - lookAt.AsSeconds()
+        end if
+        if not accessSchedule.RefusalStands(m.entries, lookDay, lookSecond, lookDelta) then refused = invalid
+    end if
     status = accessSchedule.Status(m.entries, refused, day, secondOfDay)
     if m.exempt or not status.blocked
         setBlocked(false, invalid)
     else
-        setBlocked(true, status.next)
+        setBlocked(true, withDate(status.next, wallSeconds))
     end if
 
     ' An administrator has no schedule to enforce, so only a refused request looks again
@@ -116,6 +160,16 @@ sub apply(refused as dynamic)
     if boundary <> invalid and boundary < delay then delay = boundary
     startTimer(delay)
 end sub
+
+' The opening with its calendar date on the clock it was worked out on, so the screen names the
+' same day as its weekday and time
+function withDate(opening as dynamic, wallSeconds as integer) as dynamic
+    if type(opening) <> "roAssociativeArray" then return opening
+    date = accessSchedule.OpeningDate(wallSeconds, opening)
+    opening.month = date.month
+    opening.dayOfMonth = date.dayOfMonth
+    return opening
+end function
 
 sub startTimer(seconds as integer)
     if seconds < 1 then seconds = 1
