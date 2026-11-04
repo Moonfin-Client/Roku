@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdtemp, rm, glob, access, readdir } from 'node:fs/promises';
+import { readFile as rawReadFile, writeFile, mkdtemp, rm, glob, access, readdir } from 'node:fs/promises';
+const readFile = async (...args) => {
+    const res = await rawReadFile(...args);
+    return typeof res === 'string' ? res.replace(/\r\n/g, '\n') : res;
+};
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Writable } from 'node:stream';
