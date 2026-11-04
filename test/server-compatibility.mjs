@@ -761,6 +761,15 @@ assert.match(loadItemsSource.match(/function loadSeasonalRow\([^]*?end function/
 assert.match(await readFile('components/home/LoadItemsTask.xml', 'utf8'), /<field id="rowKey" type="string"/, 'The row task reports which holiday it loaded');
 process.stdout.write('PASS: seasonal row wiring (11 checks)\n');
 
+// Watching Now row wiring
+assert.match(settingsSyncSource, /\{ pluginKey: "mdblistWatchingNowEnabled", rokuKey: "mdblist\.watchingnow\.enabled", type: "bool" \}/, 'The watching now switch syncs as a bool');
+assert.match(settingsSyncSource.match(/function GetRowToggleMappings\([^]*?end function/)[0], /"mdblist_watching_now"/, 'The pulled layout drives the watching now switch');
+assert.match(rowLayoutSource, /\{ id: "mdblist_watching_now", label: "Watching on MDBList" \}/, 'The catalogue offers the watching now row');
+assert.match(rowLayoutSource, /mdblist_watching_now: "mdblist\.watchingnow\.enabled"/, 'The watching now row answers to its own switch');
+assert.match(rowLayoutSource.match(/function IsEnabled\([^]*?end function/)[0], /if id = "mdblist_watching_now" then return homeRowLayout\.RowToggleOn\(id\)/, 'A layout without the watching now row leaves it to the switch');
+assert.match(loadItemsSource.match(/function loadWatchingNowRow\([^]*?end function/)[0], /WithoutUnratedOrBlockedItems\(results\)/, 'Watching now row applies unrated and blocked filters');
+process.stdout.write('PASS: watching now row wiring (6 checks)\n');
+
 // A picked collection row asks for its members alone, follows a stored Playlist Order and opens
 // a series into its episodes in order when asked
 assert.match(loadItemsSource.match(/function loadPickedRow\([^]*?end function/)[0], /else if isStringEqual\(picked\.source, "collections"\)\s+params\.ParentId = itemId\s+items = collectionRowItems\(params, settings\)/, 'A collection is asked for its members without Recursive');
