@@ -325,6 +325,8 @@ for (const name of ['Catalogue', 'Passthrough', 'AsText', 'Sources', 'SourceFor'
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/media-bar-external.bs', 'utf8');
+source += '\n' + (await readFile('source/utils/mediaBarNewRelease.bs', 'utf8')).replace(/^import .*$/gm, '');
+source += '\n' + await readFile('test/media-bar-new-release.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/seerrSliders.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/seerr-sliders.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/SeerrUtils.bs', 'utf8')).match(/^const SEERR_(?:MEDIA|REQUEST)_\w+ = .+$/gm).join('\n');
@@ -1022,7 +1024,7 @@ const discoverSource = await readFile('components/seerr/SeerrDiscoveryScreen.bs'
 assert.match(discoverSource, /m\.modernRows = isModernHomeRows\(\)\s+m\.modernFocusCard = m\.top\.findNode\("modernFocusCard"\)/, 'Discover reads the home rows style');
 assert.match(discoverSource, /if m\.modernRows then applyModernLayout\(\)/, 'Only modern rows change Discover\'s layout');
 assert.match(discoverSource.match(/function discoverCardUris\([^]*?end function/)[0], /TmdbThumbURL\(item\.mediaType, item\.tmdbId\)[^]*?\[item\.backdropUrl, item\.hdPosterUrl\]/, 'The card tries the thumb, then the backdrop, then the poster');
-assert.match(discoverSource, /details\.mediaType = requestInfo\.type/, 'A request card takes its media type from the request');
+assert.match(discoverSource, /details\.mediaType = entry\.mediaType/, 'A request card takes its media type from the request');
 assert.match(await readFile('components/seerr/SeerrDiscoveryScreen.xml', 'utf8'), /<ModernFocusCard id="modernFocusCard"/, 'Discover hosts the shared card');
 assert.match(await readFile('components/home/Home.xml', 'utf8'), /<ModernFocusCard id="modernFocusCard" translation="\[111, 225\]"/, 'Home hosts the shared card where its own used to be');
 
@@ -1247,7 +1249,9 @@ const browseWiring = await readFile('components/seerr/SeerrGenreBrowseScreen.bs'
 assert.match(browseWiring, /const SEERR_POSTER_SIZE_SETTING = "ui\.seerr\.posterSize"/, 'The browse screen keeps a poster size of its own');
 assert.doesNotMatch(syncWiring, /ui\.seerr\.posterSize/, 'and it stays on the device');
 assert.match(browseWiring, /libraryCard\.PosterSize\(get_user_setting\(SEERR_POSTER_SIZE_SETTING\), library\)/, 'It follows the library size until one is picked');
+assert.match(discoverSource, /posterSize = libraryCard\.PosterSize\(invalid, get_user_setting\("ui\.posterSize"\)\)/, 'Discover follows the account\'s poster size, with Grandparents drawn as Extra Large');
 assert.match(browseWiring, /CanRequestMovies\(permissions\) and requestable/, 'Request Collection only shows when a film can still be asked for');
+assert.match(browseWiring, /"sortBy": sortValue\(\)/, 'Browse quotes sortBy, since a bare key reaches Seerr lowercased on the device');
 const requestsWiring = await readFile('components/seerr/SeerrRequestsScreen.bs', 'utf8');
 assert.match(requestsWiring, /if status = SEERR_REQUEST_PENDING and m\.canManageRequests then return \["approve", "decline"\]/, 'A moderator answers a pending request from its poster');
 assert.match(requestsWiring, /chainLookupReturn\(entry, "requestedBy\.id", -1\) = m\.seerrUserId then return \["cancel"\]/, 'and anyone else can take back their own');

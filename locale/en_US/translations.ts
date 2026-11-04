@@ -9061,5 +9061,75 @@
         <extracomment>Tag on the saved choice while a settings picker tries another one in the live preview</extracomment>
         <translation>Saved</translation>
     </message>
+    <message>
+        <source>New Seasons &amp; Episodes</source>
+        <extracomment>Media bar source: series with episodes that aired recently</extracomment>
+        <translation>New Seasons &amp; Episodes</translation>
+    </message>
+    <message>
+        <source>Choose where Media Bar items come from: random library titles, collections/playlists, the newest titles, or series with new episodes.</source>
+        <extracomment>Description of the Media Bar Source setting</extracomment>
+        <translation>Choose where Media Bar items come from: random library titles, collections/playlists, the newest titles, or series with new episodes.</translation>
+    </message>
+    <message>
+        <source>New Release Banner</source>
+        <extracomment>Setting that flags series in the media bar when new episodes aired recently</extracomment>
+        <translation>New Release Banner</translation>
+    </message>
+    <message>
+        <source>Flag series with a new season or new episodes that aired recently.</source>
+        <extracomment>Description of the New Release Banner setting</extracomment>
+        <translation>Flag series with a new season or new episodes that aired recently.</translation>
+    </message>
+    <message>
+        <source>New Release Window</source>
+        <extracomment>Setting for how many days an episode counts as new in the media bar</extracomment>
+        <translation>New Release Window</translation>
+    </message>
+    <message>
+        <source>How long after an episode airs it still counts as new.</source>
+        <extracomment>Description of the New Release Window setting</extracomment>
+        <translation>How long after an episode airs it still counts as new.</translation>
+    </message>
+    <message>
+        <source>New Series</source>
+        <extracomment>Media bar label on a series whose first season was released recently</extracomment>
+        <translation>New Series</translation>
+    </message>
+    <message>
+        <source>New Season</source>
+        <extracomment>Media bar label on a series whose latest season was released all at once recently</extracomment>
+        <translation>New Season</translation>
+    </message>
+    <message>
+        <source>New Episodes</source>
+        <extracomment>Media bar label on a series with one or more episodes that aired recently</extracomment>
+        <translation>New Episodes</translation>
+    </message>
+    <message>
+        <source>7 days</source>
+        <extracomment>A number of days</extracomment>
+        <translation>7 days</translation>
+    </message>
+    <message>
+        <source>14 days</source>
+        <extracomment>A number of days</extracomment>
+        <translation>14 days</translation>
+    </message>
+    <message>
+        <source>30 days</source>
+        <extracomment>A number of days</extracomment>
+        <translation>30 days</translation>
+    </message>
+    <message>
+        <source>60 days</source>
+        <extracomment>A number of days</extracomment>
+        <translation>60 days</translation>
+    </message>
+    <message>
+        <source>90 days</source>
+        <extracomment>A number of days</extracomment>
+        <translation>90 days</translation>
+    </message>
 </context>
 </TS>
