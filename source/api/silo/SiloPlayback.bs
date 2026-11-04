@@ -342,6 +342,23 @@ namespace silo
         return ""
     end function
 
+    ' A sidecar on the player's clock: a stream that starts partway into the title counts from there,
+    ' so Silo moves the cues back by that much (timestamp_offset, WebVTT only; it converts SRT)
+    function TimedSidecarUrl(url as string, format as string, offsetSeconds as dynamic) as string
+        if not siloMap.IsNumber(offsetSeconds) or offsetSeconds <= 0 or (format <> "vtt" and format <> "srt") then return url
+        mark = Instr(1, url, "?")
+        path = url
+        query = ""
+        if mark > 0
+            path = url.Left(mark - 1)
+            query = url.Mid(mark)
+        end if
+        path = path.Left(path.Len() - format.Len()) + "vtt"
+        joiner = "?"
+        if query <> "" then joiner = "?" + query + "&"
+        return path + joiner + "timestamp_offset=-" + (Int(offsetSeconds * 1000 + 0.5) / 1000#).ToStr()
+    end function
+
     ' The file's streams with the plan's subtitles: downloaded ones added, the ones Silo serves as
     ' sidecars given their address, and a burned-in one marked so. Answers { streams, selected }
     function PlanStreams(plan as object, source as dynamic, server as string, accessToken as string, requestedIndex as dynamic) as object
@@ -371,17 +388,21 @@ namespace silo
             end if
         end if
         original = plan.delivery = "original_http"
+        offset = invalid
+        if type(plan.timeline) = "roAssociativeArray" then offset = plan.timeline.timeline_offset_seconds
         for each entry in inventory
             if isValidAndNotEmpty(entry.url) and entry.delivery = "sidecar" and siloMap.IsNumber(entry.combined_index)
                 index = byCombined[Int(entry.combined_index).ToStr()]
                 ' A remux carries only the subtitle it was made with, so the file's other tracks wait for a replan
                 if index <> invalid and (original or entry.source <> "embedded" or index = selected or index = requestedIndex)
                     format = silo.SidecarFormat(entry.url)
+                    url = silo.TimedSidecarUrl(entry.url, format, offset)
+                    if url <> entry.url then format = "vtt"
                     if format <> ""
                         for each stream in streams
                             if stream.Type = "Subtitle" and stream.Index = index
                                 stream["DeliveryMethod"] = "External"
-                                stream["DeliveryUrl"] = silo.AuthorizeUrl(silo.PlanUrl(server, entry.url), server, accessToken)
+                                stream["DeliveryUrl"] = silo.AuthorizeUrl(silo.PlanUrl(server, url), server, accessToken)
                                 stream["IsExternalUrl"] = true
                                 stream["SiloSidecarCodec"] = format
                                 if format = "vtt" then stream["Codec"] = "webvtt"
