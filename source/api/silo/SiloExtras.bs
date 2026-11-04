@@ -118,6 +118,60 @@ namespace silo
         return manifest
     end function
 
+    ' A title's theme songs (its detail's themes: owner_id, items of id, title, container,
+    ' duration_seconds) as Jellyfin's audio items
+    function ThemeSongsOf(detail as dynamic, itemId as string) as object
+        songs = []
+        if type(detail) <> "roAssociativeArray" or type(detail.themes) <> "roAssociativeArray" then return songs
+        themes = detail.themes
+        owner = siloMap.TextOf(themes.owner_id)
+        if owner = "" then owner = itemId
+        for each song in siloMap.Maps(themes.items)
+            id = siloMap.IdOf(song.id)
+            if id <> ""
+                name = siloMap.TextOf(song.title)
+                if name = "" then name = "Theme"
+                item = { Id: id, Name: name, Type: "Audio", MediaType: "Audio", ParentId: owner, SiloThemeOwnerId: owner }
+                if siloMap.TextOf(song.container) <> "" then item["Container"] = song.container
+                if siloMap.IsNumber(song.duration_seconds) and song.duration_seconds > 0 then item["RunTimeTicks"] = siloMap.TicksOf(song.duration_seconds)
+                songs.Push(item)
+            end if
+        end for
+        return songs
+    end function
+
+    ' A Roku Audio node's streamformat for a theme grant's media type. A converted theme is AAC in MP4
+    function ThemeStreamFormat(contentType as dynamic, delivery as dynamic) as string
+        if siloMap.TextOf(delivery) = "converted" then return "mp4"
+        kind = LCase(siloMap.TextOf(contentType).Split(";")[0].Trim())
+        if kind = "audio/mpeg" or kind = "audio/mp3" then return "mp3"
+        if kind = "audio/mp4" or kind = "audio/m4a" or kind = "audio/x-m4a" then return "mp4"
+        if kind = "audio/aac" or kind = "audio/aacp" then return "es.aac-adts"
+        if kind = "audio/flac" or kind = "audio/x-flac" then return "flac"
+        return ""
+    end function
+
+    ' The title's theme songs when Silo serves them, the first with the address it plays from: a
+    ' short-lived grant, asked for now since the song plays as soon as the list arrives. Silo
+    ' converts a theme the Roku can't play to AAC in MP4
+    function ThemeSongs(r as object, itemId as string) as object
+        owner = siloMap.ItemIdOfSource(itemId)
+        if owner <> "" then itemId = owner
+        caps = silo.ApiGet(r, "/api/v2/catalog/themes/capabilities")
+        if not caps.ok or type(caps.data) <> "roAssociativeArray" or caps.data.state <> "available" or caps.data.allowed = false then return silo.Empty()
+        songs = silo.ThemeSongsOf(silo.DetailJson(r, itemId), itemId)
+        if songs.Count() > 0
+            first = songs[0]
+            formats = [{ container: "mp3", audio_codec: "mp3" }, { container: "mp4", audio_codec: "aac" }, { container: "m4a", audio_codec: "aac" }, { container: "aac", audio_codec: "aac" }, { container: "flac", audio_codec: "flac" }]
+            grant = silo.Call(r.server, "/api/v2/catalog/items/" + first.SiloThemeOwnerId.EncodeUriComponent() + "/themes/" + first.Id.EncodeUriComponent() + "/playback", { method: "POST", account: r.account, profileId: r.profileId, body: { accepted_formats: formats } })
+            if grant.ok and type(grant.data) = "roAssociativeArray" and siloMap.TextOf(grant.data.url) <> ""
+                first["SiloStreamUrl"] = silo.ResolveUrl(r.server, grant.data.url)
+                first["SiloStreamFormat"] = silo.ThemeStreamFormat(grant.data.content_type, grant.data.delivery)
+            end if
+        end if
+        return { Items: songs, TotalRecordCount: songs.Count(), StartIndex: 0 }
+    end function
+
     ' The item's Trickplay, for the first file it has, as Jellyfin's item field: by file, then width
     sub AddTrickplay(r as object, item as object)
         if type(item.MediaSources) <> "roArray" or item.MediaSources.Count() = 0 then return
