@@ -21,6 +21,17 @@ namespace silo
         return {}
     end function
 
+    ' SeerrGet kept for lifetime seconds, so a screen asking the same thing several times asks once.
+    ' A failed read isn't kept
+    function SeerrGetKept(r as object, path as string, lifetime as integer) as object
+        key = r.profileId + "|" + path
+        kept = silo.RecallAnswer("siloSeerrKept", key, lifetime)
+        if kept <> invalid then return kept
+        body = silo.SeerrGet(r, path)
+        if body.Count() > 0 then silo.KeepAnswer("siloSeerrKept", key, body, 16)
+        return body
+    end function
+
     function SeerrList(value as dynamic) as object
         if type(value) = "roArray" then return value
         return []
@@ -149,7 +160,7 @@ namespace silo
     ' random order, so it's different on each visit; later pages carry on from there
     function SeerrRow(r as object, key as string, path as string, at as integer, reorder = false as boolean) as object
         if type(m.siloSeerrShift) <> "roAssociativeArray" then m.siloSeerrShift = {}
-        if reorder and at = 1 then m.siloSeerrShift[key] = Rnd(3) - 1
+        if reorder and at = 1 then m.siloSeerrShift[key] = silo.RandomBelow(CreateObject("roDeviceInfo"), 3)
         shift = 0
         if reorder then shift = m.siloSeerrShift[key] ?? 0
         body = silo.SeerrGet(r, path, { page: at + shift })
@@ -211,7 +222,7 @@ namespace silo
 
     function SeerrGenres(r as object) as object
         out = []
-        for each genre in silo.SeerrList(silo.SeerrGet(r, "/requests/discover/genres").items)
+        for each genre in silo.SeerrList(silo.SeerrGetKept(r, "/requests/discover/genres", 600).items)
             if type(genre) = "roAssociativeArray" and isString(genre.slug)
                 name = genre.display_name ?? genre.slug
                 out.Push({ id: silo.StableId(genre.slug), name: name, backdrops: [], siloSlug: genre.slug })
@@ -246,7 +257,7 @@ namespace silo
     ' A studio or network by its TMDB id, browsed through the slug Silo lists it under
     function SeerrBrowseBrand(r as object, kind as string, tmdbId as dynamic, sortBy as dynamic, at as integer) as object
         wanted = (tmdbId ?? "").ToStr()
-        for each brand in silo.SeerrList(silo.SeerrGet(r, "/requests/discover/" + kind + "s").items)
+        for each brand in silo.SeerrList(silo.SeerrGetKept(r, "/requests/discover/" + kind + "s", 600).items)
             if type(brand) = "roAssociativeArray" and brand.tmdb_id <> invalid and brand.tmdb_id.ToStr() = wanted
                 return silo.SeerrPage(silo.SeerrGet(r, "/requests/discover/browse/" + kind + "/" + brand.slug.ToStr().EncodeUriComponent(), { sort: silo.SeerrSort(sortBy), page: at }))
             end if
@@ -255,7 +266,7 @@ namespace silo
     end function
 
     function SeerrDetail(r as object, kind as string, tmdbId as string) as object
-        return silo.SeerrGet(r, "/requests/detail/" + silo.SiloMediaType(kind) + "/" + tmdbId.EncodeUriComponent())
+        return silo.SeerrGetKept(r, "/requests/detail/" + silo.SiloMediaType(kind) + "/" + tmdbId.EncodeUriComponent(), 10)
     end function
 
     function SeerrTitle(r as object, kind as string, tmdbId as string) as object
@@ -441,6 +452,8 @@ namespace silo
         if body.mediaType = "tv" then kind = "tv"
         tmdbId = (body.mediaId ?? "").ToStr()
         d = silo.SeerrDetail(r, kind, tmdbId)
+        ' Silo refuses a request without a title, so a detail read that failed ends here
+        if (d.title ?? "") = "" then return silo.StatusOnly(502)
         ' Silo takes its ids as numbers, and its own detail gives some as text
         sent = { media_type: silo.SiloMediaType(kind), tmdb_id: tmdbId.ToInt(), title: (d.title ?? "").ToStr() }
         if d.tvdb_id <> invalid and d.tvdb_id.ToStr().ToInt() > 0 then sent.tvdb_id = d.tvdb_id.ToStr().ToInt()
@@ -460,6 +473,8 @@ namespace silo
         end if
         answer = silo.Call(r.server, "/api/v2/requests", { method: "POST", body: sent, account: r.account, profileId: r.profileId })
         if not answer.ok then return silo.StatusOnly(answer.status)
+        ' The title now shows as requested, on every thread's kept detail too
+        silo.ForgetCatalog()
         if type(answer.data) = "roAssociativeArray" then return silo.Ok(silo.MapSeerrRequest(answer.data))
         return silo.Ok({})
     end function

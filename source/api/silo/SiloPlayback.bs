@@ -775,7 +775,7 @@ namespace silo
         if type(audioTrack) = "roAssociativeArray" then silo.Trace("play: audio " + FormatJson(audioTrack))
         if type(playing.plan.decision_reason) = "roString" or type(playing.plan.decision_reason) = "String" then silo.Trace("play: reason " + playing.plan.decision_reason)
         silo.Trace("play: plan " + (playing.plan.delivery ?? "").ToStr() + ", container " + (source.Container ?? "").ToStr() + ", direct " + source.SupportsDirectPlay.ToStr() + ", stream " + silo.PathOf(source.Path ?? ""))
-        return silo.Ok({ PlaySessionId: playing.sessionId, MediaSources: [source] })
+        return silo.Ok({ PlaySessionId: silo.PlayerSessionId(playing), MediaSources: [source] })
     end function
 
     ' A new request for the title already playing changes the session's plan: another track, a
@@ -875,7 +875,7 @@ namespace silo
         playing.source = silo.SourceOfPlan(r, nextPlan, playing.itemId, playing.source)
         playing.plan = nextPlan
         playing.planAttemptId = silo.NewUuid()
-        playing.replannedAt = silo.NowSeconds()
+        playing.planNumber = (playing.planNumber ?? 0) + 1
         return silo.PlayingAnswer(r, playing, subtitleAsked)
     end function
 
@@ -894,11 +894,23 @@ namespace silo
         return seconds
     end function
 
+    ' The id the player reports under: the Silo session, and after a replan the plan's number too, so a
+    ' report from the stream a replan replaced can be told from one from the stream now playing
+    function PlayerSessionId(playing as object) as string
+        if (playing.planNumber ?? 0) = 0 then return playing.sessionId
+        return playing.sessionId + "~" + playing.planNumber.ToStr()
+    end function
+
     function SessionOfReport(r as object) as dynamic
         if type(r.body) <> "roAssociativeArray" then return invalid
-        sessionId = r.body.LookupCI("PlaySessionId") ?? ""
-        if sessionId = "" then return invalid
-        return silo.PlaybackSessions()[sessionId]
+        reported = r.body.LookupCI("PlaySessionId") ?? ""
+        if reported = "" then return invalid
+        return silo.PlaybackSessions()[reported.Split("~")[0]]
+    end function
+
+    ' Whether a report comes from a stream a later replan of its session replaced
+    function IsReplacedStream(r as object, playing as object) as boolean
+        return (r.body.LookupCI("PlaySessionId") ?? "") <> silo.PlayerSessionId(playing)
     end function
 
     ' One sample: where the title is, paused or not, numbered. A sample Silo already has under its
@@ -928,8 +940,8 @@ namespace silo
         playing = silo.SessionOfReport(r)
         if playing = invalid then return silo.NoContent()
         ' A track change or seek reload stops the player while its new PlaybackInfo replans this same
-        ' session, so a stop arriving just after that replan belongs to the stream it replaced
-        if siloMap.IsNumber(playing.replannedAt) and silo.NowSeconds() - playing.replannedAt < 10 then return silo.NoContent()
+        ' session, so a stop that arrives after the replan, from the stream it replaced, ends nothing
+        if silo.IsReplacedStream(r, playing) then return silo.NoContent()
         silo.SavePlaybackSession(invalid, playing.sessionId)
         if playing.ended = true then return silo.NoContent()
         positionTicks = r.body.LookupCI("PositionTicks")
