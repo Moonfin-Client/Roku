@@ -9,9 +9,18 @@ import "pkg:/source/utils/misc.bs"
 namespace silo
     ' Whether a native Silo answers at server, as Jellyfin's PublicSystemInfo, or invalid when it
     ' isn't one. An API this build can't speak answers { SiloUnsupported: true, ServerIsNewer }.
+    ' Kept a minute, since session start, the login flow and System/Info each ask in turn
     function Probe(server as string) as dynamic
         base = silo.ServerKey(server)
         if base = "" then return invalid
+        kept = silo.RecallAnswer("siloProbes", base, 60)
+        if kept <> invalid then return kept
+        info = silo.ProbeNow(base)
+        if info <> invalid then silo.KeepAnswer("siloProbes", base, info, 4)
+        return info
+    end function
+
+    function ProbeNow(base as string) as dynamic
         answer = silo.Call(base, "/api/v2/system/info", { timeoutMs: 10000 })
         if silo.IsClientUpgradeRequired(answer) then return { SiloUnsupported: true, ServerIsNewer: true }
         if not answer.ok or not siloMap.IsSystemInfo(answer.data) then return invalid
@@ -125,7 +134,7 @@ namespace silo
     ' Ends the login on Silo too, so its refresh token dies with it. Signed out here whatever Silo answers.
     sub EndLogin(server as string, accountId as string)
         if accountId = "" then return
-        silo.Call(server, "/api/v2/auth/logout", { method: "POST", account: accountId, profile: false, refresh: false, timeoutMs: 5000 })
+        silo.Call(server, "/api/v2/auth/logout", { method: "POST", account: accountId, profile: false, replay: false, timeoutMs: 5000 })
         silo.CloseSession(server, accountId)
     end sub
 
@@ -242,8 +251,9 @@ namespace silo
     function VerifyProfilePin(profileId as string, pin as string) as string
         entry = silo.ProfileEntry(profileId)
         if not isValid(entry) then return tr("This profile is no longer signed in.")
-        answer = silo.Call(entry.server, "/api/v2/profiles/" + profileId.EncodeUriComponent() + "/verify-pin", { method: "POST", account: entry.account, profile: false, refresh: false, body: { pin: pin } })
+        answer = silo.Call(entry.server, "/api/v2/profiles/" + profileId.EncodeUriComponent() + "/verify-pin", { method: "POST", account: entry.account, profile: false, replay: false, body: { pin: pin } })
         if answer.status = 429 then return tr("Too many attempts. Try again later.")
+        if answer.status = 401 then return tr("This profile is no longer signed in.")
         if not answer.ok then return tr("Incorrect PIN")
         if type(answer.data) <> "roAssociativeArray" or answer.data.valid <> true or not isValidAndNotEmpty(answer.data.profile_token) then return tr("Incorrect PIN")
         expires = 0

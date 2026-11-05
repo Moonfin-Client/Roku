@@ -337,7 +337,7 @@ namespace silo
     function PlanUrl(server as string, url as dynamic) as string
         path = siloMap.TextOf(url)
         if path.Left(14) = "/api/v1/stream" or path.Left(18) = "/api/v1/playback/t" then path = "/api/v2" + path.Mid(7)
-        if path.Left(8) = "/stream/" or path.Left(21) = "/playback/transcode/" then path = "/api/v2" + path
+        if path.Left(8) = "/stream/" or path.Left(20) = "/playback/transcode/" then path = "/api/v2" + path
         return silo.ResolveUrl(server, path)
     end function
 
@@ -518,6 +518,10 @@ namespace silo
         if playing = invalid
             sessions.Delete(sessionId)
         else
+            ' A replan holds its copy through a slow request while progress reports number on, so
+            ' saving it never takes the count back
+            stored = sessions[sessionId]
+            if type(stored) = "roAssociativeArray" and siloMap.IsNumber(stored.sequence) and stored.sequence > playing.sequence then playing.sequence = stored.sequence
             sessions[sessionId] = playing
         end if
         m.global.siloPlayback = sessions
@@ -779,7 +783,9 @@ namespace silo
     function Replan(r as object, playing as object) as object
         q = r.query
         plan = playing.plan
-        failure = LCase(q.LookupCI("EnableDirectPlay") ?? "") = "false" and plan.delivery = "original_http"
+        ' The app's retry after a failed stream turns direct play off, and after a failed server stream
+        ' sends the profile without direct play too (IsStepDown)
+        failure = LCase(q.LookupCI("EnableDirectPlay") ?? "") = "false" and (plan.delivery = "original_http" or silo.IsStepDown(chainLookup(r.body, "DeviceProfile")))
         audioAsked = silo.QueryIndex(q, "AudioStreamIndex")
         subtitleAsked = silo.QueryIndex(q, "SubtitleStreamIndex")
         trackChange = not failure and ((audioAsked <> invalid and audioAsked <> playing.audioStreamIndex) or (subtitleAsked <> invalid and subtitleAsked <> playing.subtitleStreamIndex))
@@ -869,6 +875,7 @@ namespace silo
         playing.source = silo.SourceOfPlan(r, nextPlan, playing.itemId, playing.source)
         playing.plan = nextPlan
         playing.planAttemptId = silo.NewUuid()
+        playing.replannedAt = silo.NowSeconds()
         return silo.PlayingAnswer(r, playing, subtitleAsked)
     end function
 
@@ -920,6 +927,9 @@ namespace silo
     function ReportStopped(r as object) as object
         playing = silo.SessionOfReport(r)
         if playing = invalid then return silo.NoContent()
+        ' A track change or seek reload stops the player while its new PlaybackInfo replans this same
+        ' session, so a stop arriving just after that replan belongs to the stream it replaced
+        if siloMap.IsNumber(playing.replannedAt) and silo.NowSeconds() - playing.replannedAt < 10 then return silo.NoContent()
         silo.SavePlaybackSession(invalid, playing.sessionId)
         if playing.ended = true then return silo.NoContent()
         positionTicks = r.body.LookupCI("PositionTicks")
