@@ -1,0 +1,337 @@
+import "pkg:/components/music/musicCategoryHost.bs"
+
+const ALBUM_COLUMNS = 6
+const ALBUM_GAP = 30
+' The words under a cover: the gap, the title's line and the artist's
+const ALBUM_TEXT = 68
+const PANEL_GAP = 27
+const PANEL_PAD = 30
+const PANEL_LEFT = 495
+const PANEL_MIN = 303
+const TRACK_ROW = 57
+
+sub categoryLoad()
+    m.category = "albums"
+    m.sorts = {
+        recent: { sortBy: "DateCreated,SortName", sortOrder: "Descending", title: tr("Recently Added") },
+        az: { sortBy: "SortName", sortOrder: "Ascending", title: tr("A to Z") },
+        year: { sortBy: "ProductionYear,PremiereDate,SortName", sortOrder: "Descending", title: tr("Year") },
+        artist: { sortBy: "AlbumArtist,SortName", sortOrder: "Ascending", title: tr("Artist") }
+    }
+    m.sortKey = "recent"
+    m.genre = invalid
+    m.genres = invalid
+    m.right = 1920 - CATEGORY_INSET
+    m.columnWidth = Int((m.right - m.left - (ALBUM_COLUMNS - 1) * ALBUM_GAP) / ALBUM_COLUMNS)
+    m.dialog.observeField("chosen", "onGenreChosen")
+    m.dialog.observeField("closed", "onDialogClosed")
+    reloadAlbums()
+    startLoadingSpinner(false)
+end sub
+
+sub reloadAlbums()
+    m.items = []
+    m.fetched = 0
+    m.total = 0
+    m.openIndex = -1
+    setRows("main", [categoryStrip(), albumsHeader()])
+    loadAlbumPage()
+end sub
+
+sub loadAlbumPage()
+    m.paging = true
+    order = m.sorts[m.sortKey]
+    params = { parentId: m.libraryId, includeItemTypes: "MusicAlbum", recursive: true, sortBy: order.sortBy, sortOrder: order.sortOrder, fields: "PrimaryImageAspectRatio,Genres,ChildCount", imageTypeLimit: 1, enableImageTypes: "Primary", startIndex: m.fetched, limit: musicCategories.PAGE_SIZE }
+    if isValid(m.genre) then params.genreIds = m.genre.id
+    categoryRequest("page", "Items", params, "onAlbumPage")
+end sub
+
+sub onAlbumPage(event as object)
+    data = categoryResponse(event, "page")
+    if not isValid(data) then return
+    m.paging = false
+    items = responseItems(data)
+    m.items.append(items)
+    m.fetched += items.count()
+    m.total = totalOf(data, m.fetched)
+    if items.count() = 0 then m.total = m.fetched
+
+    first = m.fetched = items.count()
+    keep = m.regions.main.rows.count() - 1
+    if first then keep = 0
+    setRows("main", albumRows(), keep)
+    if first
+        stopLoadingSpinner()
+        if m.focusRow < 0 then focusFirstItem("main")
+    end if
+end sub
+
+function albumsHeader() as object
+    row = headerRow(tr("Albums"), musicCategories.CountText(m.total, tr("1 album"), tr("{count} albums")), m.left)
+    segments = []
+    for each key in ["recent", "az", "year", "artist"]
+        segments.push({ title: m.sorts[key].title, action: { sort: key }, key: "sort:" + key, selected: key = m.sortKey })
+    end for
+    filter = pillSpec(tr("Filter"), "filter_list")
+    if isValid(m.genre)
+        filter.title = m.genre.name
+        filter.iconInk = m.accent
+    end if
+    width = segmentsWidth(segments, 22, 20) + CONTROL_GAP + specWidth(filter)
+    x = placeSegments(row, segments, m.right - width, HEADER_HEIGHT - SEGMENT_HEIGHT - 5, SEGMENT_HEIGHT, 22, 20)
+    placeButtons(row, [{ spec: filter, action: { do: "filter" }, key: "filter" }], x + CONTROL_GAP, HEADER_HEIGHT - PILL_HEIGHT, 0)
+    return row
+end function
+
+function albumRows() as object
+    rows = [categoryStrip(), albumsHeader()]
+    y = m.contentTop
+    if m.items.count() = 0
+        if not m.paging then rows.push(emptyRow(tr("No items found"), y))
+        return rows
+    end if
+
+    cellHeight = m.columnWidth + ALBUM_TEXT
+    m.albumRowIndex = -1
+    row = invalid
+    for i = 0 to m.items.count() - 1
+        column = i mod ALBUM_COLUMNS
+        if column = 0
+            if isValid(row)
+                y += cellHeight + ALBUM_GAP
+                if m.albumRowIndex = rows.count() - 1 then y = addPanel(rows, y - ALBUM_GAP + PANEL_GAP) + ALBUM_GAP
+            end if
+            row = newRow(y, cellHeight)
+            rows.push(row)
+        end if
+        item = m.items[i]
+        spec = { kind: "card", width: m.columnWidth, title: item.Name ?? "", subtitle: subtitleOf(item), image: coverOf(item, m.columnWidth), glyph: "album", titleSize: 21, subtitleSize: 20, textGap: 12 }
+        addCell(row, m.left + column * (m.columnWidth + ALBUM_GAP), 0, m.columnWidth, cellHeight, spec, { album: i }, toString(item.Id))
+        if i = m.openIndex then m.albumRowIndex = rows.count() - 1
+    end for
+    if m.albumRowIndex = rows.count() - 1 then addPanel(rows, y + cellHeight + PANEL_GAP)
+    return rows
+end function
+
+' Down from its album lands on Play, and Up from the panel's top line goes back to the album.
+' Hands back the panel's bottom.
+function addPanel(rows as object, top as integer) as integer
+    album = m.items[m.openIndex]
+    width = m.right - m.left
+    textX = m.left + PANEL_PAD + 6
+    tracksX = textX + PANEL_LEFT + 48
+    tracksWidth = m.right - PANEL_PAD - 6 - tracksX
+    columnWidth = (tracksWidth - 36) \ 2
+
+    tracks = m.panelTracks ?? []
+    height = PANEL_MIN
+    trackLines = (tracks.count() + 1) \ 2
+    if PANEL_PAD * 2 + trackLines * TRACK_ROW > height then height = PANEL_PAD * 2 + trackLines * TRACK_ROW
+
+    panel = newRow(top, height)
+    panel.decor.push({ kind: "box", x: m.left, y: 0, width: width, height: height, opacity: 0.06 })
+    albumColumn = m.openIndex mod ALBUM_COLUMNS
+    panel.decor.push({ kind: "notch", x: m.left + albumColumn * (m.columnWidth + ALBUM_GAP) + m.columnWidth \ 2, y: 0, size: 24, opacity: 0.06 })
+
+    y = PANEL_PAD
+    panel.decor.push(labelDecor(UCase(tr("Album")), textX, y, 18, true, m.accent))
+    nameLabel = labelDecor(album.Name ?? "", textX, y + 27, 42, true, m.ink)
+    nameLabel.width = PANEL_LEFT
+    panel.decor.push(nameLabel)
+    year = ""
+    if isValid(album.ProductionYear) then year = album.ProductionYear.toStr()
+    byline = labelDecor(musicCategories.Joined([subtitleOf(album), year], m.separator), textX, y + 87, 22, false, themeChrome.WithAlpha(m.ink, "BF"))
+    byline.width = PANEL_LEFT
+    panel.decor.push(byline)
+    facts = labelDecor(albumFacts(album, tracks), textX, y + 119, 21, false, m.soft)
+    facts.width = PANEL_LEFT
+    panel.decor.push(facts)
+    placeButtons(panel, [
+        { spec: buttonSpec(tr("Play"), "play_arrow", true), action: { panel: "play" }, key: "panel:play" },
+        { spec: buttonSpec(tr("Shuffle"), "shuffle"), action: { panel: "shuffle" }, key: "panel:shuffle" },
+        { spec: buttonSpec(tr("Open Album"), "album"), action: { panel: "open" }, key: "panel:open" }
+    ], textX, y + 177, CONTROL_GAP)
+
+    if not isValid(m.panelTracks)
+        panel.decor.push(labelDecor(tr("Loading..."), tracksX, y + 12, 21, false, m.soft))
+    end if
+    for i = 0 to tracks.count() - 1
+        track = tracks[i]
+        number = track.IndexNumber ?? i + 1
+        spec = { kind: "row", width: columnWidth, height: TRACK_ROW, title: track.Name ?? "", leading: number.toStr(), trailing: runtimeOf(track), leadingSize: 21, leadingWidth: 30, titleSize: 21, trailingSize: 20, padX: 15, gap: 18 }
+        addCell(panel, tracksX + (i mod 2) * (columnWidth + 36), y + (i \ 2) * TRACK_ROW, columnWidth, TRACK_ROW, spec, { track: i }, "track:" + toString(track.Id))
+    end for
+
+    panel.upTo = [m.albumRowIndex, albumColumn]
+    rows[m.albumRowIndex].downTo = [rows.count(), 0]
+    rows.push(panel)
+    return top + height
+end function
+
+function albumFacts(album as object, tracks as object) as string
+    count = album.ChildCount ?? 0
+    if tracks.count() > 0 then count = tracks.count()
+    ticks = album.RunTimeTicks
+    if not isValid(ticks) and tracks.count() > 0
+        ticks = 0&
+        for each track in tracks
+            ticks += track.RunTimeTicks ?? 0
+        end for
+    end if
+    genre = ""
+    if isValidAndNotEmpty(album.Genres) then genre = album.Genres[0]
+    return musicCategories.Joined([musicCategories.CountText(count, tr("1 track"), tr("{count} tracks")), musicCategories.Duration(ticks), genre], m.separator)
+end function
+
+' =====================================================================
+' THE PANEL
+' =====================================================================
+
+sub openPanel(index as integer)
+    ' Every row from the first panel, the old one or the new, moves
+    firstChanged = albumRowOf(index) + 1
+    if m.openIndex >= 0 and albumRowOf(m.openIndex) + 1 < firstChanged then firstChanged = albumRowOf(m.openIndex) + 1
+    m.openIndex = index
+    m.panelTracks = invalid
+    album = m.items[index]
+    categoryRequest("tracks", "Items", { parentId: album.Id, includeItemTypes: "Audio", sortBy: "ParentIndexNumber,IndexNumber,SortName", fields: "PrimaryImageAspectRatio" }, "onPanelTracks")
+    redrawFrom(firstChanged)
+end sub
+
+sub closePanel()
+    if m.openIndex < 0 then return
+    index = m.openIndex
+    m.openIndex = -1
+    m.tasks.delete("tracks")
+    ' With the focus moved onto the album first, the redraw keeps it there rather than landing on
+    ' the first album and coming back
+    m.focusRegion = "main"
+    m.focusRow = albumRowOf(index)
+    m.focusCell = index mod ALBUM_COLUMNS
+    redrawFrom(albumRowOf(index) + 1)
+end sub
+
+sub onPanelTracks(event as object)
+    data = categoryResponse(event, "tracks")
+    if not isValid(data) or m.openIndex < 0 then return
+    m.panelTracks = responseItems(data)
+    m.albumTracks = { id: m.items[m.openIndex].Id, tracks: m.panelTracks }
+    redrawFrom(albumRowOf(m.openIndex) + 1)
+end sub
+
+' The strip and the header come first, then one row per six albums
+function albumRowOf(index as integer) as integer
+    return 2 + index \ ALBUM_COLUMNS
+end function
+
+sub redrawFrom(firstChanged as integer)
+    setRows("main", albumRows(), firstChanged)
+end sub
+
+sub panelAction(action as string)
+    album = m.items[m.openIndex]
+    if action = "open"
+        openItem(album)
+    else if action = "shuffle"
+        requestTracks({ parentId: album.Id, recursive: true, sortBy: "Random", limit: 300 }, "")
+    else if isValid(m.panelTracks) and m.panelTracks.count() > 0
+        playTracks(m.panelTracks, 0)
+    else
+        requestTracks({ parentId: album.Id, sortBy: "ParentIndexNumber,IndexNumber,SortName" }, "")
+    end if
+end sub
+
+' =====================================================================
+' GENRE FILTER
+' =====================================================================
+
+sub openGenreFilter()
+    if isValid(m.genres)
+        showGenreDialog()
+        return
+    end if
+    startLoadingSpinner(false)
+    categoryRequest("genres", "Genres", { parentId: m.libraryId, includeItemTypes: "MusicAlbum", recursive: true, sortBy: "SortName", sortOrder: "Ascending" }, "onGenresLoaded")
+end sub
+
+sub onGenresLoaded(event as object)
+    data = categoryResponse(event, "genres")
+    if not isValid(data) then return
+    stopLoadingSpinner()
+    m.genres = responseItems(data)
+    showGenreDialog()
+end sub
+
+sub showGenreDialog()
+    options = [{ value: "", label: tr("All Genres") }]
+    for each genre in m.genres
+        options.push({ value: toString(genre.Id), label: genre.Name ?? "" })
+    end for
+    picked = ""
+    if isValid(m.genre) then picked = m.genre.id
+    m.dialog.context = { title: tr("Filter by Genre"), closeOnPick: true, sections: [{ key: "genre", title: "", kind: "radio", options: options, selected: picked }] }
+    m.dialog.callFunc("showDialog")
+    m.top.lastFocus = m.dialog
+    drawFocus()
+end sub
+
+sub onGenreChosen(event as object)
+    choice = event.getData()
+    if not isValid(choice) then return
+    picked = invalid
+    for each genre in m.genres
+        if isStringEqual(toString(genre.Id), choice.value) then picked = { id: choice.value, name: genre.Name ?? "" }
+    end for
+    if picked = invalid and m.genre = invalid then return
+    if isValid(picked) and isValid(m.genre) and picked.id = m.genre.id then return
+    m.genre = picked
+    m.reloadAfterDialog = true
+end sub
+
+' The dialog hands the remote back as it closes, so the grid loads again only then
+sub onDialogClosed()
+    if m.reloadAfterDialog = true
+        m.reloadAfterDialog = false
+        reloadAlbums()
+    end if
+    focusByKey("main", "filter")
+end sub
+
+' =====================================================================
+' HOOKS
+' =====================================================================
+
+sub categoryActivate(action as object)
+    if isValid(action.album)
+        if action.album = m.openIndex
+            closePanel()
+        else
+            openPanel(action.album)
+        end if
+    else if isValid(action.track)
+        playSong(m.panelTracks[action.track])
+    else if isValid(action.panel)
+        panelAction(action.panel)
+    else if isValid(action.sort)
+        if action.sort = m.sortKey then return
+        m.sortKey = action.sort
+        reloadAlbums()
+    else if action.do = "filter"
+        openGenreFilter()
+    end if
+end sub
+
+sub categoryFocused()
+    if m.paging or m.fetched >= m.total then return
+    if m.focusRow >= m.regions.main.rows.count() - 3 then loadAlbumPage()
+end sub
+
+function categoryBack() as boolean
+    if isValid(m.dialog) and m.dialog.visible then return true
+    if m.openIndex < 0 then return false
+    closePanel()
+    return true
+end function
+
+sub categoryRowShown(_regionId as string, _index as integer)
+end sub

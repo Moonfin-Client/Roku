@@ -1,0 +1,266 @@
+import "pkg:/source/utils/misc.bs"
+
+' Moves only when focus does, so it costs nothing while focus stays put
+
+const MARGIN = 4
+const SCREEN_WIDTH = 1920
+const SCREEN_HEIGHT = 1080
+' How far a pointer's tip reaches onto the artwork, and the gap under a top bar button
+const TIP_INSET = 7
+const BUTTON_GAP = 10
+' Room around each drawing for its shadow
+const SHADOW = 6.7
+
+' The art points up, and Roku turns positive angles counterclockwise
+const POINT_RIGHT = -1.5707963
+const POINT_LEFT = 1.5707963
+const HALF_TURN = 3.1415927
+
+' Each drawing's size and the point in it that sits on its spot, in pixels, from Moonfin-Core's
+' follower art. A part is drawn under or over it, centered that far from the anchor.
+function followerStyles() as object
+    return {
+        planchette: { art: "follower-planchette", size: 93, anchor: [46.5, 46.5], points: true },
+        cupidArrow: { art: "follower-cupidArrow", size: 114, anchor: [57, 57], points: true },
+        sparkler: { art: "follower-sparkler", size: 80, anchor: [40, 40], points: true, over: { art: "follower-sparks", size: 88, center: [0, -28] } },
+        sleigh: { art: "follower-sleigh", size: 120, anchor: [60, 65.3] },
+        bunnyEars: { art: "follower-bunnyEars", size: 80, anchor: [40, 73.3], onlyOnCards: true },
+        easterEgg: { art: "follower-easterEgg", size: 70, anchor: [35, 61.1], onlyOnNav: true, swing: 0.6 },
+        lantern: { art: "follower-lantern", size: 90, anchor: [45, 6.7], swing: 1, under: { art: "follower-lantern-glow", size: 89, center: [0, 37.6] } },
+        diya: { art: "follower-diya", size: 87, anchor: [43.5, 75.9], swing: 0.2, over: { art: "follower-flame", size: 62, center: [29.4, -36.7] } },
+        rainbow: { size: 0, anchor: [0, 0] }
+    }
+end function
+
+sub init()
+    m.body = m.top.findNode("body")
+    m.turn = m.top.findNode("turn")
+    m.sway = m.top.findNode("sway")
+    m.under = m.top.findNode("under")
+    m.art = m.top.findNode("art")
+    m.over = m.top.findNode("over")
+    m.rainbow = m.top.findNode("rainbow")
+    m.glide = m.top.findNode("glide")
+    m.glidePosition = m.top.findNode("glidePosition")
+    m.glideTurn = m.top.findNode("glideTurn")
+    m.stretch = m.top.findNode("stretch")
+    m.stretchPosition = m.top.findNode("stretchPosition")
+    m.stretchScale = m.top.findNode("stretchScale")
+    m.swing = m.top.findNode("swing")
+    m.swingTurn = m.top.findNode("swingTurn")
+    m.fade = m.top.findNode("fade")
+    m.fadeBody = m.top.findNode("fadeBody")
+    m.fadeRainbow = m.top.findNode("fadeRainbow")
+    m.flicker = m.top.findNode("flicker")
+    m.breathe = m.top.findNode("breathe")
+    m.style = invalid
+    m.shown = false
+    m.looping = false
+    m.spot = ""
+    ' The sleigh faces right, or left with -1
+    m.facing = 1
+end sub
+
+sub onStyle()
+    m.style = followerStyles()[m.top.style]
+    if not isValid(m.style) then return
+    isRainbow = m.top.style = "rainbow"
+    m.rainbow.visible = isRainbow
+    m.body.visible = not isRainbow
+    if isRainbow then return
+    placePoster(m.art, m.style.art, m.style.size, [-m.style.anchor[0], -m.style.anchor[1]])
+    placePart(m.under, m.style.under)
+    placePart(m.over, m.style.over)
+end sub
+
+sub placePoster(poster as object, art as string, size as float, at as object)
+    poster.uri = "pkg:/images/seasonal/" + art + ".webp"
+    poster.width = size
+    poster.height = size
+    poster.translation = at
+end sub
+
+sub placePart(poster as object, part as dynamic)
+    poster.visible = isValid(part)
+    if not isValid(part) then return
+    half = part.size / 2
+    placePoster(poster, part.art, part.size, [part.center[0] - half, part.center[1] - half])
+    poster.scaleRotateCenter = [half, half]
+end sub
+
+sub onTarget()
+    style = m.style
+    if not isValid(style) then return
+    target = m.top.target
+    rect = target.rect
+    onCard = target.landing = "card"
+    if not isValid(rect) or rect.count() < 4 or (onCard and style.onlyOnNav = true) or (not onCard and style.onlyOnCards = true)
+        hide()
+        return
+    end if
+    if m.top.style = "rainbow"
+        pointRainbow(rect)
+        return
+    end if
+
+    if m.top.style = "sleigh"
+        if onCard then m.facing = 1
+        if target.landing = "right" then m.facing = -1
+        art = "follower-sleigh"
+        if m.facing < 0 then art = "follower-sleigh-left"
+        m.art.uri = "pkg:/images/seasonal/" + art + ".webp"
+    end if
+
+    spot = spotFor(style, target.landing, rect, target.edge)
+    x = clampTo(spot[0], style.anchor[0] + MARGIN, SCREEN_WIDTH - (style.size - style.anchor[0]) - MARGIN)
+    y = clampTo(spot[1], style.anchor[1] + MARGIN, SCREEN_HEIGHT - (style.size - style.anchor[1]) - MARGIN)
+    angle = spot[2]
+
+    ' Moving along a row asks for the same spot again, since the card stays in place
+    key = x.toStr() + " " + y.toStr() + " " + angle.toStr() + " " + m.facing.toStr()
+    if m.shown and key = m.spot then return
+    m.spot = key
+
+    if not m.shown
+        ' It fades in where it lands, already facing the right way
+        m.glide.control = "stop"
+        m.swing.control = "stop"
+        m.body.translation = [x, y]
+        m.turn.rotation = angle
+        m.sway.rotation = 0
+        m.shown = true
+        fadeTo(1)
+        syncLoops()
+        return
+    end if
+
+    from = m.body.translation
+    turnFrom = m.turn.rotation
+    m.glide.control = "stop"
+    m.glidePosition.keyValue = [from, [x, y]]
+    if style.points = true
+        turn = angle - turnFrom
+        while turn > HALF_TURN
+            turn = turn - 2 * HALF_TURN
+        end while
+        while turn < -HALF_TURN
+            turn = turn + 2 * HALF_TURN
+        end while
+        m.glideTurn.key = [0.0, 1.0]
+        m.glideTurn.keyValue = [turnFrom, turnFrom + turn]
+    else if m.top.style = "sleigh"
+        ' The sleigh tips its nose with the climb and levels out as it arrives
+        tilt = clampTo(-(y - from[1]) * 0.0006 * m.facing, -0.3, 0.3)
+        m.glideTurn.key = [0.0, 0.5, 1.0]
+        m.glideTurn.keyValue = [turnFrom, tilt, 0.0]
+    else
+        m.glideTurn.key = [0.0, 1.0]
+        m.glideTurn.keyValue = [turnFrom, turnFrom]
+    end if
+    m.glide.control = "start"
+
+    ' Hanging and resting ones lean back against the move, then swing upright again
+    if isValid(style.swing)
+        lean = clampTo(-(x - from[0]) * 0.0006, -0.35, 0.35) * style.swing
+        m.swing.control = "stop"
+        m.swingTurn.keyValue = [m.sway.rotation, lean, -0.6 * lean, 0.35 * lean, -0.15 * lean, 0.0]
+        m.swing.control = "start"
+    end if
+end sub
+
+' Where the anchor goes and which way a pointer turns, as [x, y, angle]
+function spotFor(style as object, landing as string, rect as object, edge as dynamic) as object
+    left = rect[0]
+    top = rect[1]
+    width = rect[2]
+    height = rect[3]
+    centerX = left + width / 2
+    centerY = top + height / 2
+    name = m.top.style
+    if style.points = true
+        reach = style.anchor[1] - SHADOW
+        if landing = "below" then return [centerX, top + height + BUTTON_GAP + reach, 0]
+        if landing = "right" then return [edge + 80, centerY, POINT_LEFT]
+        ' Home parks the focused card at the start of its row, under the row title, so the
+        ' free space is the margin to its left
+        return [left + TIP_INSET - reach, centerY, POINT_RIGHT]
+    end if
+    if name = "sleigh"
+        if landing = "below" then return [centerX, top + height + BUTTON_GAP + 32, 0]
+        if landing = "right" then return [edge + 66, centerY, 0]
+        return [left - 39, centerY, 0]
+    end if
+    if name = "bunnyEars"
+        inset = width * 0.3
+        if inset > 67 then inset = 67
+        return [left + width - inset, top, 0]
+    end if
+    if name = "lantern"
+        if landing = "below" then return [centerX, top + height + 3, 0]
+        if landing = "right" then return [edge + 67, top, 0]
+        return [left - 40, top + 3, 0]
+    end if
+    ' The diya and the egg rest under a button or beside the sidebar, and the diya sits at the
+    ' bottom of a card
+    if landing = "below" then return [centerX, top + height + BUTTON_GAP + style.size - 2 * SHADOW, 0]
+    if landing = "right" then return [edge + 67, centerY + 33, 0]
+    return [left - 43, top + height, 0]
+end function
+
+sub pointRainbow(rect as object)
+    width = rect[2]
+    y = rect[1] + rect[3] + BUTTON_GAP
+    ' The bar is laid out from its left and stretches about its middle
+    position = [rect[0] + width / 2 - 60, y]
+    scale = [width / 120, 1]
+    key = position[0].toStr() + " " + y.toStr() + " " + width.toStr()
+    if m.shown and key = m.spot then return
+    m.spot = key
+
+    if not m.shown
+        m.stretch.control = "stop"
+        m.rainbow.translation = position
+        m.rainbow.scale = scale
+        m.shown = true
+        fadeTo(1)
+        return
+    end if
+    m.stretch.control = "stop"
+    m.stretchPosition.keyValue = [m.rainbow.translation, position]
+    m.stretchScale.keyValue = [m.rainbow.scale, scale]
+    m.stretch.control = "start"
+end sub
+
+sub hide()
+    if m.shown then fadeTo(0)
+    m.shown = false
+    syncLoops()
+end sub
+
+sub fadeTo(opacity as float)
+    m.fade.control = "stop"
+    m.fadeBody.keyValue = [m.body.opacity, opacity]
+    m.fadeRainbow.keyValue = [m.rainbow.opacity, opacity]
+    m.fade.control = "start"
+end sub
+
+sub onRunning()
+    syncLoops()
+end sub
+
+' The flame, the sparks and the glow loop only while it shows and Home is on screen
+sub syncLoops()
+    looping = m.shown and m.top.running
+    if looping = m.looping then return
+    m.looping = looping
+    control = "stop"
+    if looping then control = "start"
+    if m.over.visible then m.flicker.control = control
+    if m.under.visible then m.breathe.control = control
+end sub
+
+function clampTo(value as float, low as float, high as float) as float
+    if value < low then return low
+    if value > high then return high
+    return value
+end function

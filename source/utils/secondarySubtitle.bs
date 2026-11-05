@@ -1,0 +1,122 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/trackLabels.bs"
+
+' A second subtitle track the player draws above the first. Only text the server can hand over as
+' lines qualifies. The tracks are the picker's json: Index, Language, Codec, IsExternal, IsForced,
+' IsHearingImpaired, IsTextSubtitleStream, IsEmbeddedNative and Track with its Description.
+
+const SECONDARY_DEFAULT_OFFSET = 8
+const SECONDARY_OFFSET_MAX = 40
+const SECONDARY_OFFSET_STEP = 2
+const SECONDARY_SIZE_MIN = 16
+const SECONDARY_SIZE_MAX = 144
+const SECONDARY_SIZE_STEP = 4
+const SECONDARY_DELAY_LIMIT_MS = 5000
+
+namespace secondarySubtitle
+
+    ' The value and its label, where the empty value follows the first track's color
+    function ColorOptions() as object
+        return [["", "Default"], ["#ffffff", "White"], ["#ffff00", "Yellow"], ["#00ff00", "Green"], ["#00ffff", "Cyan"], ["#0000ff", "Blue"], ["#ff00ff", "Magenta"], ["#ff0000", "Red"]]
+    end function
+
+    ' A text track the server can't pull out of the file has no lines to fetch
+    function IsEligible(stream as dynamic) as boolean
+        if not isValid(stream) then return false
+        if stream.LookupCI("IsTextSubtitleStream") <> true or stream.LookupCI("IsEmbeddedNative") = true then return false
+        return inArray(["srt", "subrip", "vtt", "webvtt"], LCase(toString(stream.LookupCI("Codec") ?? "")))
+    end function
+
+    ' The tracks the secondary picker lists, in the primary picker's order, with the preferred
+    ' secondary language moved to the top. The language only sorts, it never turns a track on.
+    function Candidates(streams as dynamic, primaryIndex as integer, preferredLanguage as dynamic, settings as object) as object
+        eligible = []
+        for each stream in streams ?? []
+            if stream.LookupCI("Index") <> primaryIndex and secondarySubtitle.IsEligible(stream)
+                eligible.push({ stream: stream, score: trackLabels.ScoreSubtitle(stream, settings) })
+            end if
+        end for
+        eligible.SortBy("score", "r")
+
+        wanted = LCase(toString(preferredLanguage ?? ""))
+        if wanted = "anylanguage" or wanted = "none" then wanted = ""
+        matching = []
+        others = []
+        for each entry in eligible
+            if wanted <> "" and trackLabels.LanguageKey(trackLabels.Field(entry.stream, "Language")) = trackLabels.LanguageKey(wanted)
+                matching.push(entry.stream)
+            else
+                others.push(entry.stream)
+            end if
+        end for
+        matching.Append(others)
+        return matching
+    end function
+
+    function IdentityOf(stream as object) as object
+        identity = {}
+        fields = { language: "Language", codec: "Codec", isExternal: "IsExternal", isForced: "IsForced", isHearingImpaired: "IsHearingImpaired" }
+        for each key in fields
+            value = stream.LookupCI(fields[key])
+            if isValid(value) then identity[key] = value
+        end for
+        title = chainLookup(stream, "Track.Description")
+        if isValid(title) then identity.displayTitle = title
+        return identity
+    end function
+
+    ' Built in a fixed key order, so a stored identity compares the same however it was read back
+    function SignatureOf(identity as object) as string
+        pairs = []
+        for each key in ["language", "displayTitle", "codec", "isExternal", "isForced", "isHearingImpaired"]
+            value = identity.LookupCI(key)
+            if isValid(value) then pairs.push([key, value])
+        end for
+        return FormatJson(pairs)
+    end function
+
+    ' What gets remembered for a title: off, or the track by index, position and what it is
+    function Selection(streams as dynamic, index as integer) as object
+        list = streams ?? []
+        if index >= 0
+            for ordinal = 0 to list.count() - 1
+                if list[ordinal].LookupCI("Index") = index then return { index: index, ordinal: ordinal, identity: secondarySubtitle.IdentityOf(list[ordinal]) }
+            end for
+        end if
+        return { off: true }
+    end function
+
+    ' The track a remembered pick points at: the same index if it's still the same track, else the
+    ' only track that matches, else the same position if that still matches. -1 means off or gone,
+    ' invalid means nothing was remembered.
+    function RestoreIndex(saved as dynamic, streams as dynamic) as dynamic
+        if type(saved) <> "roAssociativeArray" then return invalid
+        if saved.off = true or type(saved.identity) <> "roAssociativeArray" then return -1
+        signature = secondarySubtitle.SignatureOf(saved.identity)
+        list = streams ?? []
+
+        matching = []
+        for each stream in list
+            if secondarySubtitle.IsEligible(stream) and secondarySubtitle.SignatureOf(secondarySubtitle.IdentityOf(stream)) = signature
+                if stream.LookupCI("Index") = saved.index then return saved.index
+                matching.push(stream)
+            end if
+        end for
+        if matching.count() = 1 then return matching[0].LookupCI("Index")
+
+        ordinal = saved.ordinal
+        if type(ordinal) = "roInt" or type(ordinal) = "Integer" or type(ordinal) = "roInteger"
+            if ordinal >= 0 and ordinal < list.count()
+                atOrdinal = list[ordinal]
+                if secondarySubtitle.IsEligible(atOrdinal) and secondarySubtitle.SignatureOf(secondarySubtitle.IdentityOf(atOrdinal)) = signature then return atOrdinal.LookupCI("Index")
+            end if
+        end if
+        return -1
+    end function
+
+    ' While the second track is loaded its vertical offset moves the pair, as a share of the height
+    function ShiftPercent(offset as integer) as integer
+        return offset - SECONDARY_DEFAULT_OFFSET
+    end function
+
+end namespace

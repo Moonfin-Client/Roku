@@ -6,6 +6,7 @@ import "pkg:/components/details/detailPopulationHost.bs"
 import "pkg:/components/details/detailScreenHost.bs"
 import "pkg:/components/details/detailTrackHost.bs"
 import "pkg:/components/itemMenu/itemMenuDetailHost.bs"
+import "pkg:/components/personCreditsHost.bs"
 import "pkg:/components/userDataHost.bs"
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
@@ -83,11 +84,16 @@ const TAB_RANK_ITEMS = 2
 const TAB_RANK_CAST = 3
 const TAB_RANK_CREW = 4
 const TAB_RANK_STUDIOS = 5
-const TAB_RANK_CHAPTERS = 6
-const TAB_RANK_EXTRAS = 7
-const TAB_RANK_DETAILS = 8
-const TAB_RANK_COLLECTION = 9
-const TAB_RANK_OTHER = 10
+' After the collection's own tabs, so it still opens on what it holds
+const TAB_RANK_PLAYLIST = 6
+const TAB_RANK_CHAPTERS = 7
+const TAB_RANK_EXTRAS = 8
+const TAB_RANK_DETAILS = 9
+const TAB_RANK_COLLECTION = 10
+const TAB_RANK_OTHER = 11
+' The sort pill over a collection's playlist rows
+const SORT_PILL_HEIGHT = 50
+const SORT_PILL_GAP = 20
 
 sub init()
     observeUserData()
@@ -134,6 +140,8 @@ sub init()
     m.logoGroup = m.top.findNode("logoGroup")
     m.logoShadow = m.top.findNode("logoShadow")
     m.titleNode = m.top.findNode("title")
+    m.personAvatar = m.top.findNode("personAvatar")
+    m.personBorn = m.top.findNode("personBorn")
     m.overview = m.top.findNode("overview")
     ' Opening the overview changes how much room it takes, so the rest of the
     ' hero moves down to make way for it
@@ -193,6 +201,8 @@ sub init()
     m.seasonEpisodes = invalid
     m.trackGrid = m.top.findNode("trackGrid")
     m.trackGrid.observeField("itemSelected", "onTrackSelected")
+    m.collectionSortPill = m.top.findNode("collectionSortPill")
+    m.collectionSortPill.observeField("selected", "openCollectionSort")
     m.artistAlbumGrid = m.top.findNode("artistAlbumGrid")
     m.artistAlbumGrid.observeField("itemSelected", "onArtistAlbumSelected")
     m.musicList = invalid
@@ -241,7 +251,7 @@ sub sizeHeroFonts()
     heroSize = fontApply.ThemeTextSize(HERO_TEXT_SIZE)
     badgeSize = fontApply.ThemeTextSize(HERO_BADGE_TEXT_SIZE)
 
-    for each id in ["releaseYear", "officialRating", "seasonCount", "episodeNumber", "runtime", "endsAt", "metaGenres", "techSize", "techSeparator", "tagline"]
+    for each id in ["releaseYear", "officialRating", "seasonCount", "episodeNumber", "runtime", "endsAt", "metaGenres", "techSize", "techSeparator", "tagline", "personBorn"]
         node = m.top.findNode(id)
         if isValid(node) then node.font.size = heroSize
     end for
@@ -352,6 +362,7 @@ sub buildTabsFromContent(content as object)
             label = tr("Items")
             rank = TAB_RANK_ITEMS
             m.collectionMembers = items
+            m.collectionOrder = row.order
         else if rowKind = "parentCollection"
             collectionRows.push({ label: label, items: items, size: sz })
             continue for
@@ -378,6 +389,10 @@ sub buildTabsFromContent(content as object)
 
     if hasDetailsInfo()
         m.sectionTabs.push({ label: tr("Details"), kind: "details", index: -1, rank: TAB_RANK_DETAILS })
+    end if
+
+    if isCollection() and detailSectionLayout.Shows("playlistOrder") and collectionQueue().count() > 0
+        m.sectionTabs.push({ label: tr("Playlist"), kind: "collectionPlaylist", index: -1, rank: TAB_RANK_PLAYLIST })
     end if
 
     ' The tabs run in a fixed order, whatever order the loader handed its rows over in. The sort
@@ -621,6 +636,10 @@ end sub
 ' The main loop opens whatever lands here. Clearing it right away keeps a later favorite or
 ' watched change to the card from opening it again
 sub openSelectedItem(item as object)
+    if picksItemOnScreen(item)
+        playItemOnScreen()
+        return
+    end if
     m.extrasGrid.selectedItem = item
     m.extrasGrid.selectedItem = invalid
 end sub
@@ -821,6 +840,10 @@ end sub
 sub onEpisodeRowSelected()
     idx = m.episodeRowGrid.itemSelected
     if not isValid(m.seasonEpisodes) or idx < 0 or idx >= m.seasonEpisodes.count() then return
+    if picksItemOnScreen(m.seasonEpisodes[idx])
+        playItemOnScreen()
+        return
+    end if
     m.top.selectedItem = m.seasonEpisodes[idx]
 end sub
 
@@ -862,7 +885,7 @@ end sub
 sub populateTrackGrid()
     if not isValid(m.musicList) then return
     if isPlaylist()
-        m.trackGrid.content = m.musicList
+        m.trackGrid.content = playlistViewRows(m.musicList)
         return
     end if
 
@@ -890,10 +913,45 @@ sub populateTrackGrid()
     m.trackGrid.content = content
 end sub
 
-' A row moved or taken out by the menu, with the cursor going to the row now at index
+' The collection's playlist as rows, each at the index it plays from
+sub populateCollectionPlaylistGrid()
+    content = CreateObject("roSGNode", "ContentNode")
+    queue = collectionQueue()
+    for position = 0 to queue.count() - 1
+        json = queue[position].json
+        tmp = CreateObject("roSGNode", "PlaylistItemData")
+        tmp.id = json.Id
+        tmp.title = json.Name ?? ""
+        tmp.type = json.Type
+        tmp.RunTimeTicks = json.RunTimeTicks ?? 0
+        tmp.ProductionYear = json.ProductionYear ?? 0
+        tmp.OfficialRating = json.OfficialRating ?? ""
+        tmp.seriesname = json.SeriesName ?? ""
+        tmp.ParentIndexNumber = json.ParentIndexNumber ?? 0
+        tmp.IndexNumber = json.IndexNumber ?? 0
+        content.appendChild(tmp)
+    end for
+    m.trackGrid.content = content
+end sub
+
+sub collectionSortChanged()
+    m.collectionSortPill.text = collectionSort.Label(collectionSortOption())
+    populateCollectionPlaylistGrid()
+end sub
+
+' A row moved or taken out by the menu, with the cursor going to the row now at index. A new sort
+' or filter, or a row the menu marked, comes with -1 and the cursor stays where it is. The action
+' row draws again, since Play and Shuffle follow how many rows show.
 sub playlistRowsChanged(index as integer)
+    if index < 0 or not playlistViewInOrder() then index = m.trackGrid.itemFocused
+    populateTrackGrid()
     populateMusicMetadata(m.top.itemContent.json)
     layoutMetadataRow()
+    clearButtonRow()
+    addButtons(m.top.itemContent.json)
+    commitButtonRow()
+    if not m.buttonRow.isInFocusChain() then unhighlightAllButtons()
+    if not isValid(m.trackGrid.content) then return
 
     count = m.trackGrid.content.getChildCount()
     if count = 0
@@ -904,7 +962,9 @@ sub playlistRowsChanged(index as integer)
 end sub
 
 sub onTrackSelected()
-    if isPlaylist()
+    if isCollection()
+        playCollectionFrom(m.trackGrid.itemSelected)
+    else if isPlaylist()
         m.top.playlistItemSelected = m.trackGrid.itemSelected
     else
         m.top.playSong = m.trackGrid.itemSelected
@@ -1010,6 +1070,7 @@ sub onTabSelected()
     m.chaptersGrid.visible = false
     m.episodeRowGrid.visible = false
     m.trackGrid.visible = false
+    m.collectionSortPill.visible = false
     m.artistAlbumGrid.visible = false
     m.collectionRows.visible = false
     m.fileInfo.visible = false
@@ -1031,6 +1092,13 @@ sub onTabSelected()
         m.activeGrid = m.episodeRowGrid
     else if tabDef.kind = "tracks"
         populateTrackGrid()
+        m.trackGrid.visible = true
+        m.activeGrid = m.trackGrid
+    else if tabDef.kind = "collectionPlaylist"
+        populateCollectionPlaylistGrid()
+        m.collectionSortPill.text = collectionSort.Label(collectionSortOption())
+        m.collectionSortPill.visible = true
+        m.trackGrid.translation = [0, m.collectionSortPill.translation[1] + SORT_PILL_HEIGHT + SORT_PILL_GAP]
         m.trackGrid.visible = true
         m.activeGrid = m.trackGrid
     else if tabDef.kind = "albums"
@@ -1162,13 +1230,25 @@ sub onTabBarEscape()
             return
         end if
 
-        if isValid(m.activeGrid) and m.activeGrid.visible and isValid(m.activeGrid.content)
+        if m.collectionSortPill.visible
+            focusContentNode(m.collectionSortPill)
+            scrollContentTo(scrollAmount)
+            return
+        end if
+
+        if isValid(m.activeGrid) and m.activeGrid.visible and isValid(m.activeGrid.content) and m.activeGrid.content.getChildCount() > 0
             m.activeGrid.setFocus(true)
             m.top.lastFocus = m.activeGrid
             setLastFocus(m.activeGrid)
             scrollContentTo(scrollAmount)
         end if
     end if
+end sub
+
+sub focusContentNode(node as object)
+    node.setFocus(true)
+    m.top.lastFocus = node
+    setLastFocus(node)
 end sub
 
 sub focusButtonsFromTabs()
@@ -1229,6 +1309,11 @@ sub renderDetailContent()
     itemData = item.json
     m.top.id = itemData.id
 
+    if isPerson()
+        renderPersonContent(itemData)
+        return
+    end if
+
     loadSeerrBlock(itemData)
 
     if isValid(m.themeMusicPlayer) and not m.top.seerrOnly
@@ -1276,6 +1361,7 @@ sub renderDetailContent()
     populateRatings(itemData)
     fetchMDBListRatings(itemData)
     watchAnimeMarker(item, m.top.seerrOnly ? invalid : itemData)
+    watchDetailIncompleteRecording(itemData)
     populateGenres(itemData)
     updateStatusBadge(itemData)
     updateUpcomingBadge(itemData)
@@ -1310,12 +1396,72 @@ sub renderDetailContent()
     stopLoadingSpinner()
 end sub
 
+' A person has nothing to play, rate or describe as a file. Their hero is a headshot, the name,
+' the year and place they were born and the biography, and the tabs are what the library has them in.
+sub renderPersonContent(itemData as object)
+    updateButtonVisibility(itemData)
+
+    tag = chainLookupReturn(itemData, "ImageTags.Primary", "")
+    m.personAvatar.visible = isValidAndNotEmpty(tag)
+    if m.personAvatar.visible then m.top.findNode("personAvatarImage").uri = getImageURL(itemData.id, "Primary", { "maxHeight": 360, "quality": 90, "Tag": tag }, getServerInfoFromItem(itemData))
+
+    setFieldText("title", itemData.name)
+
+    m.personBorn.text = personBornParts(itemData).join(` ${fontApply.ThemeSeparator()} `)
+    m.personBorn.visible = m.personBorn.text <> ""
+
+    overviewText = ""
+    if detailSectionLayout.Shows("biography") then overviewText = readableText(stripHtmlTags(itemData.overview ?? ""))
+    setFieldText("overview", overviewText)
+    m.overview.visible = overviewText <> ""
+
+    m.metadataRow.visible = false
+    layoutContainer()
+
+    m.personFilmTask = startPersonFilmography(itemData.id, itemData, PERSON_PAGE_LIMIT, "onPersonFilmographyLoaded")
+end sub
+
+sub onPersonFilmographyLoaded(event as object)
+    content = event.getData()
+    if not isValid(content) then return
+
+    m.personEntries = content.getChildren(-1, 0)
+    ' The cards carry the title alone, like the other poster grids here
+    for each entry in m.personEntries
+        entry.subTitle = ""
+    end for
+    personDisplayChanged()
+end sub
+
+' The Movies and TV Shows tabs, drawn again in the order just picked on the tab that was open
+sub personDisplayChanged()
+    if not isValid(m.personEntries) then return
+
+    selected = m.tabBar.selectedIndex
+    filmography = splitFilmography(m.personEntries)
+    m.sectionItems = []
+    m.sectionSize = []
+    m.sectionTabs = []
+    if filmography.movies.count() > 0 then pushSection(filmography.movies, [180, 305], tr("Movies"), "section", TAB_RANK_OTHER)
+    if filmography.series.count() > 0 then pushSection(filmography.series, [180, 305], tr("TV Shows"), "section", TAB_RANK_OTHER)
+    buildTabBar()
+    if selected >= 0 and selected < m.sectionTabs.count() then m.tabBar.selectedIndex = selected
+end sub
+
 ' ============================================
 ' Item type helper
 ' ============================================
 
+function isPerson() as boolean
+    return LCase(m.top.itemType) = "person"
+end function
+
 function collectionMembers() as object
     return m.collectionMembers ?? []
+end function
+
+function collectionOrder() as object
+    return m.collectionOrder ?? []
 end function
 
 sub collectionMemberRemoved(itemId as string)
@@ -1357,7 +1503,7 @@ sub applyBackdropTreatment()
 
     opacityFactor = getBackdropBlurAmount() / 25.0
 
-    backdropScrim.opacity = 0.80 * opacityFactor
+    backdropScrim.opacity = (isPerson() ? 0.40 : 0.80) * opacityFactor
 
     gradientScale = 0.3 + 0.7 * opacityFactor
 
@@ -1485,8 +1631,16 @@ sub populateMusicMetadata(itemData as object)
     else if isPlaylist()
         if isValid(episodeHeaderNode) then episodeHeaderNode.visible = false
         if listCount = 0 and isChainValid(itemData, "ChildCount") then listCount = itemData.ChildCount
+        ticks = itemData.RunTimeTicks ?? 0
+        ' A sort or a filter counts what shows
+        if playlistViewCount() >= 0 and not playlistViewInOrder()
+            listCount = playlistViewCount()
+            ticks = playlistViewTicks()
+            setFieldText("seasonCount", "")
+            setFieldText("runtime", "")
+        end if
         if listCount > 0 then setFieldText("seasonCount", stri(listCount).trim() + " " + tr("Songs"))
-        if isValid(itemData.RunTimeTicks) and itemData.RunTimeTicks > 0 then setFieldText("runtime", ticksToHuman(itemData.RunTimeTicks))
+        if ticks > 0 then setFieldText("runtime", ticksToHuman(ticks))
     else
         if isValid(episodeHeaderNode) then episodeHeaderNode.visible = false
         if listCount > 0 then setFieldText("seasonCount", stri(listCount).trim() + " " + tr("Albums"))
@@ -1606,12 +1760,15 @@ sub layoutContainer()
     m.top.findNode("tagline").width = hasUpNext ? HERO_WIDTH_WITH_UP_NEXT : HERO_WIDTH
     m.overview.maxWidth = hasUpNext ? HERO_WIDTH_WITH_UP_NEXT : OVERVIEW_WIDTH
 
+    if m.personAvatar.visible then placeHeroRow(m.personAvatar, m.personAvatar.boundingRect().height, HERO_GAP)
     header = m.top.findNode("episodeHeader")
     if header.visible then placeHeroRow(header, header.boundingRect().height, HERO_GAP)
     if m.logoGroup.visible then placeHeroRow(m.logoGroup, m.logoImage.height, HERO_GAP)
     if m.titleNode.visible then placeHeroRow(m.titleNode, m.titleNode.boundingRect().height, HERO_GAP)
+    if m.personBorn.visible then placeHeroRow(m.personBorn, m.personBorn.boundingRect().height, HERO_GAP)
 
-    placeHeroRow(m.metadataRow, m.metaRowHeight, HERO_GAP)
+    if m.metadataRow.visible then placeHeroRow(m.metadataRow, m.metaRowHeight, HERO_GAP)
+    if isValid(m.incompleteLine) and m.incompleteLine.visible then placeHeroRow(m.incompleteLine, m.incompleteLine.boundingRect().height, INCOMPLETE_LINE_GAP)
     if isValid(m.animePills) and m.animePills.visible then placeHeroRow(m.animePills, m.animePills.rowHeight, HERO_GAP)
     if m.techRow.visible then placeHeroRow(m.techRow, m.techRowHeight, HERO_GAP)
 
@@ -1636,10 +1793,11 @@ sub layoutContainer()
     placeHeroRow(m.tabBar, TAB_BAR_HEIGHT, HERO_TABS_GAP)
 
     contentY = m.heroY + TAB_CONTENT_GAP
-    for each id in ["fileInfo", "tabGrid", "collectionRows", "castGrid", "studioGrid", "chaptersGrid", "episodeRowGrid", "trackGrid", "artistAlbumGrid", "seerrBlock"]
+    for each id in ["fileInfo", "tabGrid", "collectionRows", "castGrid", "studioGrid", "chaptersGrid", "episodeRowGrid", "trackGrid", "artistAlbumGrid", "seerrBlock", "collectionSortPill"]
         grid = m.top.findNode(id)
         if isValid(grid) then grid.translation = [0, contentY]
     end for
+    if m.collectionSortPill.visible then m.trackGrid.translation = [0, contentY + SORT_PILL_HEIGHT + SORT_PILL_GAP]
 
     m.layingOut = false
 end sub
@@ -1651,6 +1809,10 @@ sub placeHeroRow(node as object, height as float, gap as float)
     m.heroY += height
     m.heroPlaced = true
 end sub
+
+function incompleteLineParent() as object
+    return m.container
+end function
 
 ' The pills for an anime episode or movie, between the facts and the technical row
 sub showAnimeMarker(marker as dynamic)
@@ -1680,7 +1842,7 @@ sub setPosterImage(itemData as object)
 end sub
 
 sub updatePlayedIndicator()
-    if not isValid(m.playedIndicator) then return
+    if not isValid(m.playedIndicator) or isPerson() then return
 
     itemContent = m.top.itemContent
     if not isChainValid(itemContent, "json") then return
@@ -1722,11 +1884,11 @@ end sub
 sub addSeasonButtons()
     hasResume = m.top.displayResumeButton
     if hasResume
-        addButton({ icon: "pkg:/images/icons/detail_play.png", label: tr("Resume"), action: "seasonResume", id: "resumeButton" })
+        addButton({ icon: "pkg:/images/icons/detail_play.webp", label: tr("Resume"), action: "seasonResume", id: "resumeButton" })
     end if
 
     addButton({
-        icon: hasResume ? "pkg:/images/icons/detail_restart.png" : "pkg:/images/icons/detail_play.png",
+        icon: hasResume ? "pkg:/images/icons/detail_restart.webp" : "pkg:/images/icons/detail_play.webp",
         label: hasResume ? tr("Restart") : tr("Play"),
         action: "seasonPlay",
         id: "playButton"
@@ -1735,41 +1897,35 @@ sub addSeasonButtons()
     isWatched = chainLookupReturn(m.top.itemContent, "json.UserData.Played", false)
     isFavorited = chainLookupReturn(m.top.itemContent, "json.UserData.IsFavorite", false)
 
-    addArrangedButtons([
-        { id: "shuffle", config: { icon: "pkg:/images/icons/detail_shuffle.png", label: tr("Shuffle"), action: "seasonShuffle", id: "shuffleButton" } },
-        { id: "watched", config: { icon: "pkg:/images/icons/detail_watched.png", label: isWatched ? tr("Watched") : tr("Unwatched"), active: isWatched, action: "watched", id: "watchedButton" } },
-        { id: "favorite", config: { icon: "pkg:/images/icons/detail_favorite.png", label: isFavorited ? tr("Favorited") : tr("Favorite"), active: isFavorited, action: "favorite", id: "favoriteButton" } }
-    ])
+    candidates = [
+        { id: "shuffle", config: { icon: "pkg:/images/icons/detail_shuffle.webp", label: tr("Shuffle"), action: "seasonShuffle", id: "shuffleButton" } },
+        { id: "watched", config: { icon: "pkg:/images/icons/detail_watched.webp", label: isWatched ? tr("Watched") : tr("Unwatched"), active: isWatched, action: "watched", id: "watchedButton" } },
+        { id: "favorite", config: { icon: "pkg:/images/icons/detail_favorite.webp", label: isFavorited ? tr("Favorited") : tr("Favorite"), active: isFavorited, action: "favorite", id: "favoriteButton" } }
+    ]
+    goToSeries = goToSeriesCandidate(chainLookup(m.top, "itemContent.json"))
+    if isValid(goToSeries) then candidates.push(goToSeries)
+    addArrangedButtons(candidates)
 end sub
 
 ' Music keeps its own row. The other clients give albums, artists and playlists
 ' screens of their own, so this row is not the one being arranged.
 sub addMusicButtons()
     if isPlaylist()
-        addButton({ icon: "pkg:/images/icons/detail_play.png", label: tr("Play"), action: "musicPlayAll", id: "playButton" })
-
-        isWatched = chainLookupReturn(m.top.itemContent, "json.UserData.Played", false)
-        isFavorited = chainLookupReturn(m.top.itemContent, "json.UserData.IsFavorite", false)
-
-        addArrangedButtons([
-            { id: "shuffle", config: { icon: "pkg:/images/icons/detail_shuffle.png", label: tr("Shuffle"), action: "musicShufflePlaylist", id: "shuffleButton" } },
-            { id: "watched", config: { icon: "pkg:/images/icons/detail_watched.png", label: isWatched ? tr("Watched") : tr("Unwatched"), active: isWatched, action: "watched", id: "watchedButton" } },
-            { id: "favorite", config: { icon: "pkg:/images/icons/detail_favorite.png", label: isFavorited ? tr("Favorited") : tr("Favorite"), active: isFavorited, action: "favorite", id: "favoriteButton" } }
-        ])
+        addPlaylistButtons()
         return
     end if
 
     if isArtist()
-        addButton({ icon: "pkg:/images/icons/detail_play.png", label: tr("Play"), action: "musicPlayArtist", id: "playButton" })
-        addButton({ icon: "pkg:/images/icons/instantMix.png", label: tr("Instant Mix"), action: "musicInstantMix", id: "instantMixButton" })
+        addButton({ icon: "pkg:/images/icons/detail_play.webp", label: tr("Play"), action: "musicPlayArtist", id: "playButton" })
+        addButton({ icon: "pkg:/images/icons/instantMix.webp", label: tr("Instant Mix"), action: "musicInstantMix", id: "instantMixButton" })
     else
-        addButton({ icon: "pkg:/images/icons/detail_play.png", label: tr("Play All"), action: "musicPlayAlbum", id: "playButton" })
-        addButton({ icon: "pkg:/images/icons/detail_shuffle.png", label: tr("Shuffle"), action: "musicShuffleAlbum", id: "shuffleButton" })
-        addButton({ icon: "pkg:/images/icons/instantMix.png", label: tr("Instant Mix"), action: "musicInstantMix", id: "instantMixButton" })
+        addButton({ icon: "pkg:/images/icons/detail_play.webp", label: tr("Play All"), action: "musicPlayAlbum", id: "playButton" })
+        addButton({ icon: "pkg:/images/icons/detail_shuffle.webp", label: tr("Shuffle"), action: "musicShuffleAlbum", id: "shuffleButton" })
+        addButton({ icon: "pkg:/images/icons/instantMix.webp", label: tr("Instant Mix"), action: "musicInstantMix", id: "instantMixButton" })
     end if
 
     isFavorited = chainLookupReturn(m.top.itemContent, "json.UserData.IsFavorite", false)
-    addButton({ icon: "pkg:/images/icons/detail_favorite.png", label: isFavorited ? tr("Favorited") : tr("Favorite"), active: isFavorited, action: "favorite", id: "favoriteButton" })
+    addButton({ icon: "pkg:/images/icons/detail_favorite.webp", label: isFavorited ? tr("Favorited") : tr("Favorite"), active: isFavorited, action: "favorite", id: "favoriteButton" })
 end sub
 
 ' How one button config becomes a row entry. The classic screen queues configs and
@@ -1783,6 +1939,11 @@ end sub
 
 ' Item types that own their whole action row
 function typeSpecificButtons() as boolean
+    if isPerson()
+        addArrangedButtons([favoriteCandidate(m.top.itemContent.json)])
+        return true
+    end if
+
     if isCollection()
         addCollectionButtons()
         return true
@@ -1850,6 +2011,8 @@ end sub
 ' Actions only one screen offers, the season and music rows the classic screen
 ' never draws
 sub handleScreenButtonAction(action as string)
+    if playlistViewAction(action) then return
+
     if action = "collectionPlay" or action = "collectionShuffle"
         playCollection(action = "collectionShuffle")
     else if action = "seasonResume"
@@ -1868,10 +2031,8 @@ sub handleScreenButtonAction(action as string)
         m.top.instantMixSelected = not m.top.instantMixSelected
     else if action = "musicPlayArtist"
         m.top.playArtistSelected = not m.top.playArtistSelected
-    else if action = "musicPlayAll"
-        m.top.playAll = not m.top.playAll
-    else if action = "musicShufflePlaylist"
-        m.top.shufflePlay = not m.top.shufflePlay
+    else if action = "personDisplay"
+        openPersonDisplay()
     end if
 end sub
 
@@ -1908,7 +2069,9 @@ end sub
 
 ' How far the page moves so the tab content clears the header. The description is
 ' most of that height, so a title without one already sits high enough to leave alone.
+' A person's headshot takes about as much room, so it counts the same way.
 function contentScrollOffset() as integer
+    if isPerson() and m.personAvatar.visible then return -500
     if not isValid(m.overview) or not m.overview.visible then return 0
     return -500
 end function
@@ -1920,6 +2083,7 @@ end function
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
     if m.overflowMenu.visible then return false
+    if personDisplayOpen() then return true
 
     ' A picker left open across a screensaver can come back without focus, which
     ' would leave this screen answering the remote from behind it
@@ -1982,8 +2146,25 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return false
     end if
 
+    ' The sort pill sits between the tabs and a collection's playlist rows
+    if m.collectionSortPill.hasFocus()
+        if key = KeyCode.DOWN
+            if isValid(m.trackGrid.content) and m.trackGrid.content.getChildCount() > 0 then focusContentNode(m.trackGrid)
+            return true
+        else if key = KeyCode.UP or key = KeyCode.BACK
+            focusContentNode(m.tabBar)
+            scrollContentTo(0)
+            return true
+        end if
+        return false
+    end if
+
     if key = KeyCode.UP and isValid(m.activeGrid) and m.activeGrid.isInFocusChain()
         if onFirstGridRow()
+            if m.collectionSortPill.visible and m.activeGrid.isSameNode(m.trackGrid)
+                focusContentNode(m.collectionSortPill)
+                return true
+            end if
             if isValid(m.tabBar) and m.tabsBuilt
                 m.tabBar.setFocus(true)
                 m.top.lastFocus = m.tabBar
@@ -2074,8 +2255,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
         if m.activeGrid.isSameNode(m.collectionRows) then return showItemMenu(collectionRowCard(), itemMenuPageOptions())
         if m.activeGrid.isSameNode(m.trackGrid) and isPlaylist()
-            row = itemMenuGridCard(m.trackGrid)
-            if isValid(row) then return showItemMenu(row, playlistRowOptions(row, chainLookupReturn(m.top, "itemContent.json.Id", "")))
+            row = playlistViewRow(m.trackGrid.itemFocused)
+            if isValid(row) then return showItemMenu(row, playlistViewRowOptions(row, chainLookupReturn(m.top, "itemContent.json.Id", "")))
         end if
     end if
 

@@ -1,5 +1,6 @@
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
+import "pkg:/source/utils/settingsGlyphs.bs"
 
 const TILE_WIDTH = 176
 const TILE_PAD = 8
@@ -10,8 +11,15 @@ const CAPTION_TOP = 258
 const TITLE_HEIGHT = 30
 const STATUS_SLOT_HEIGHT = 38
 const BY_HEIGHT = 26
+' The requester and date lines sit a step under the title
+const CAPTION_FONT = 22
 const BADGE_HEIGHT = 24
 const BADGE_PAD_X = 8
+' The round buttons at the foot of the poster
+const ACTION_SIZE = 42
+const ACTION_ICON = 25
+const ACTION_INSET = 9
+const ACTION_BOTTOM = 15
 
 sub init()
     m.tileBg = m.top.findNode("tileBg")
@@ -28,14 +36,25 @@ sub init()
     m.progressTrack = m.top.findNode("progressTrack")
     m.progressFill = m.top.findNode("progressFill")
     m.requestedBy = m.top.findNode("requestedBy")
+    m.requester = m.top.findNode("requester")
     m.requestedOn = m.top.findNode("requestedOn")
+    m.actions = m.top.findNode("actions")
+    m.actions.translation = [TILE_PAD, TILE_PAD]
+    m.glyphFont = CreateObject("roSGNode", "Font")
+    m.glyphFont.uri = settingsGlyphs.FONT_URI
+    m.glyphFont.size = ACTION_ICON
+    m.buttons = []
+    m.shown = invalid
+    for each label in [m.requestedBy, m.requester, m.requestedOn]
+        label.font.size = CAPTION_FONT
+    end for
 
     layout()
 end sub
 
-sub layout()
+sub layout(split = false as boolean)
     m.tileBg.width = TILE_WIDTH
-    m.tileBg.height = TileHeight()
+    m.tileBg.height = TileHeight() + (split ? BY_HEIGHT : 0)
 
     m.poster.width = POSTER_WIDTH
     m.poster.height = POSTER_HEIGHT
@@ -69,8 +88,12 @@ sub layout()
     m.requestedBy.width = POSTER_WIDTH
     m.requestedBy.translation = [TILE_PAD, CAPTION_TOP + TITLE_HEIGHT + STATUS_SLOT_HEIGHT]
 
+    m.requester.width = POSTER_WIDTH
+    m.requester.translation = [TILE_PAD, CAPTION_TOP + TITLE_HEIGHT + STATUS_SLOT_HEIGHT + BY_HEIGHT]
+    m.requester.visible = split
+
     m.requestedOn.width = POSTER_WIDTH
-    m.requestedOn.translation = [TILE_PAD, CAPTION_TOP + TITLE_HEIGHT + STATUS_SLOT_HEIGHT + BY_HEIGHT]
+    m.requestedOn.translation = [TILE_PAD, CAPTION_TOP + TITLE_HEIGHT + STATUS_SLOT_HEIGHT + BY_HEIGHT * (split ? 2 : 1)]
 end sub
 
 function TileHeight() as integer
@@ -84,6 +107,13 @@ sub onContentChanged()
     request = content.request
     if not isValid(request) then return
 
+    ' The grid binds the same node again when its focus fields change, which only needs a redraw
+    if isValid(m.shown) and m.shown.isSameNode(content)
+        showFocus()
+        return
+    end if
+    m.shown = content
+
     media = request.media
     m.poster.uri = SeerrPosterUrl(media, "w342")
 
@@ -91,12 +121,61 @@ sub onContentChanged()
     applyTypeBadge(request, media)
     applyStatus(request)
 
-    who = chainLookupReturn(request, "requestedBy.displayName", "")
-    if not isValidAndNotEmpty(who) then who = tr("Unknown")
-
-    m.requestedBy.text = who
+    ' The name goes under its own label only when the screen found one too long for the line
+    who = SeerrRequesterName(request)
+    layout(content.splitRequester)
+    if content.splitRequester
+        m.requestedBy.text = tr("Requested by")
+        m.requester.text = who
+    else
+        m.requestedBy.text = Substitute(tr("Requested by ^0"), who)
+    end if
     m.requestedOn.text = SeerrFormatDate(request.createdAt)
+
+    buildActions(content.actions ?? [])
+    showFocus()
 end sub
+
+' Two buttons sit at either side of the poster, a lone one at the left
+sub buildActions(actions as object)
+    m.actions.removeChildrenIndex(m.actions.getChildCount(), 0)
+    m.buttons = []
+    for i = 0 to actions.count() - 1
+        style = actionStyle(actions[i])
+        x = ACTION_INSET
+        if i > 0 then x = POSTER_WIDTH - ACTION_INSET - ACTION_SIZE
+        button = m.actions.createChild("Group")
+        button.translation = [x, POSTER_HEIGHT - ACTION_BOTTOM - ACTION_SIZE]
+        button.scaleRotateCenter = [ACTION_SIZE / 2, ACTION_SIZE / 2]
+        fill = button.createChild("Poster")
+        fill.uri = "pkg:/images/icons/circle.webp"
+        fill.width = ACTION_SIZE
+        fill.height = ACTION_SIZE
+        fill.blendColor = "#000000B3"
+        ring = button.createChild("Poster")
+        ring.uri = "pkg:/images/seerr/ring56w3.png"
+        ring.width = ACTION_SIZE
+        ring.height = ACTION_SIZE
+        ring.blendColor = style.color
+        ring.visible = false
+        glyph = button.createChild("Label")
+        glyph.font = m.glyphFont
+        glyph.text = settingsGlyphs.Char(style.glyph)
+        glyph.color = style.color
+        glyph.width = ACTION_SIZE
+        glyph.height = ACTION_SIZE
+        glyph.horizAlign = "center"
+        glyph.vertAlign = "center"
+        m.buttons.push({ group: button, ring: ring })
+    end for
+end sub
+
+function actionStyle(action as string) as object
+    if action = "approve" then return { glyph: "check_circle_outline", color: "#22C55E" }
+    if action = "decline" then return { glyph: "highlight_off", color: "#EF4444" }
+    if action = "retry" then return { glyph: "refresh", color: "#EAB308" }
+    return { glyph: "close", color: "#FFFFFF" }
+end function
 
 sub applyTypeBadge(request as object, media as object)
     isSeries = isStringEqual(chainLookupReturn(media, "mediaType", "movie"), "tv")
@@ -104,6 +183,7 @@ sub applyTypeBadge(request as object, media as object)
     label = isSeries ? tr("Series") : tr("Movie")
     if request.is4k = true then label += " · 4K"
 
+    m.typeLabel.width = 0
     m.typeLabel.text = UCase(label)
     width = m.typeLabel.boundingRect().width + (BADGE_PAD_X * 2)
     m.typeLabel.width = width
@@ -146,9 +226,17 @@ function stripeColor(name as string) as string
     return "#00A4DC"
 end function
 
-sub onFocusChanged()
-    focused = m.top.focusPercent > 0.5 and m.top.itemHasFocus
+' The tile shows focus while it holds it, and a button while that one does
+sub showFocus()
+    content = m.top.itemContent
+    if not isValid(content) then return
 
+    focused = content.lit and content.stop = 0
     m.tileBg.opacity = focused ? 0.08 : 0
     m.posterFocus.visible = focused
+    for i = 0 to m.buttons.count() - 1
+        on = content.lit and content.stop = i + 1
+        m.buttons[i].ring.visible = on
+        m.buttons[i].group.scale = on ? [1.05, 1.05] : [1, 1]
+    end for
 end sub

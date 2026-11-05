@@ -1,0 +1,408 @@
+import "pkg:/source/api/plex/PlexItems.bs"
+
+' Playback on a Plex server in Jellyfin's PlaybackInfo shape, decided by Plex's own transcoder, and the
+' timeline reports that keep Plex's resume points and watched state.
+
+const PLEX_ANY_CONTAINER = "mkv,mp4,mov,avi,mpegts,webm,asf,ogg,mpeg"
+const PLEX_ANY_MUSIC_CONTAINER = "mp3,flac,mp4,ogg,wav,aac"
+const PLEX_ANY_VIDEO_CODEC = "h264,hevc,mpeg1video,mpeg2video,mpeg4,vc1,vp8,vp9,av1"
+const PLEX_ANY_AUDIO_CODEC = "aac,ac3,eac3,mp3,dca,truehd,flac,opus,vorbis,pcm"
+' What Plex can put in an HLS transport stream. It turns the whole conversion down when the list names anything else.
+const PLEX_HLS_AUDIO_CODECS = "aac,ac3,eac3,mp3"
+
+namespace plexPlayback
+
+    function NewSession() as string
+        id = ""
+        hex = "0123456789abcdef"
+        for i = 1 to 32
+            id += hex.Mid(Rnd(16) - 1, 1)
+        end for
+        return id
+    end function
+
+    ' Container and codec names in Plex's terms. Plex reads a missing list as none, where Jellyfin reads
+    ' it as any. The device profile also names h264 and hevc by aliases Plex doesn't know.
+    function Names(value as dynamic, any as string) as string
+        renamed = { "ts": "mpegts", "m2ts": "mpegts", "m4v": "mp4", "m4a": "mp4", "m4b": "mp4", "ogm": "ogg", "ogv": "ogg", "oga": "ogg", "wmv": "asf", "wma": "asf", "vob": "mpeg", "mpg": "mpeg", "dts": "dca", "h265": "hevc", "mpeg4 avc": "h264" }
+        mapped = []
+        for each name in plexUrls.Str(value ?? "").Split(",")
+            trimmed = name.Trim()
+            if trimmed <> ""
+                plexName = renamed.LookupCI(trimmed) ?? trimmed
+                if not inArray(mapped, plexName) then mapped.push(plexName)
+            end if
+        end for
+        if mapped.Count() = 0 then return any
+        return mapped.Join(",")
+    end function
+
+    ' The audio a transcode may end in, in the profile's order, or aac when it names none Plex can stream
+    function HlsAudio(value as dynamic) as string
+        allowed = PLEX_HLS_AUDIO_CODECS.Split(",")
+        kept = []
+        for each codec in plexPlayback.Names(value, "aac").Split(",")
+            codec = LCase(codec)
+            if inArray(allowed, codec) and not inArray(kept, codec) then kept.push(codec)
+        end for
+        if kept.Count() = 0 then return "aac"
+        return kept.Join(",")
+    end function
+
+    ' A device profile condition as a Plex limitation, or invalid for one Plex has no way to say. Plex
+    ' ignores notMatch, so a NotEquals is left out.
+    function Limitation(condition as object) as dynamic
+        bounds = { "Width": "video.width", "Height": "video.height", "VideoLevel": "video.level", "VideoBitDepth": "video.bitDepth" }
+        kind = plexUrls.Str(condition.LookupCI("Condition") ?? "")
+        prop = plexUrls.Str(condition.LookupCI("Property") ?? "")
+        if kind = "LessThanEqual" and bounds.LookupCI(prop) <> invalid then return "type=upperBound&name=" + bounds.LookupCI(prop) + "&value=" + plexUrls.Str(condition.LookupCI("Value") ?? "")
+        if (kind = "Equals" or kind = "EqualsAny") and prop = "VideoProfile" then return "type=match&name=video.profile&list=" + plexUrls.Str(condition.LookupCI("Value") ?? "")
+        return invalid
+    end function
+
+    function HlsProfile(profile as dynamic, kind as string) as dynamic
+        for each candidate in plexMapper.List(chainLookup(profile, "TranscodingProfiles"))
+            if plexMapper.IsObject(candidate) and candidate.LookupCI("Type") = kind and candidate.LookupCI("Protocol") = "hls" and candidate.LookupCI("Container") = "ts" then return candidate
+        end for
+        return invalid
+    end function
+
+    ' The app's Jellyfin device profile in Plex's client profile terms, so Plex makes the direct play
+    ' and transcode calls Jellyfin would
+    function ClientProfile(profile as dynamic) as string
+        ' The player switches audio tracks itself, so a file whose chosen track isn't the first can still direct play
+        directives = ["add-settings(DirectPlayStreamSelection=true)"]
+        for each p in plexMapper.List(chainLookup(profile, "DirectPlayProfiles"))
+            if plexMapper.IsObject(p) and p.LookupCI("Type") = "Video"
+                directives.push("add-direct-play-profile(type=videoProfile&container=" + plexPlayback.Names(p.LookupCI("Container"), PLEX_ANY_CONTAINER) + "&videoCodec=" + plexPlayback.Names(p.LookupCI("VideoCodec"), PLEX_ANY_VIDEO_CODEC) + "&audioCodec=" + plexPlayback.Names(p.LookupCI("AudioCodec"), PLEX_ANY_AUDIO_CODEC) + ")")
+            else if plexMapper.IsObject(p) and p.LookupCI("Type") = "Audio"
+                directives.push("add-direct-play-profile(type=musicProfile&container=" + plexPlayback.Names(p.LookupCI("Container"), PLEX_ANY_MUSIC_CONTAINER) + "&audioCodec=" + plexPlayback.Names(p.LookupCI("AudioCodec"), PLEX_ANY_AUDIO_CODEC) + ")")
+            end if
+        end for
+        ' The decoder's limits, so Plex doesn't direct play what the TV can't decode. A limit that only
+        ' holds for some streams of a codec is skipped, since a Plex limitation can't be narrowed that way.
+        for each p in plexMapper.List(chainLookup(profile, "CodecProfiles"))
+            if plexMapper.IsObject(p) and p.LookupCI("Type") = "Video" and plexMapper.List(p.LookupCI("ApplyConditions")).Count() = 0
+                for each codec in plexPlayback.Names(p.LookupCI("Codec"), "*").Split(",")
+                    for each condition in plexMapper.List(p.LookupCI("Conditions"))
+                        limit = invalid
+                        if plexMapper.IsObject(condition) then limit = plexPlayback.Limitation(condition)
+                        if limit <> invalid
+                            required = ""
+                            if condition.LookupCI("IsRequired") = true then required = "&isRequired=true"
+                            directives.push("add-limitation(scope=videoCodec&scopeName=" + codec + "&" + limit + required + ")")
+                        end if
+                    end for
+                end for
+            end if
+        end for
+        videoHls = plexPlayback.HlsProfile(profile, "Video")
+        audioHls = plexPlayback.HlsProfile(profile, "Audio")
+        videoCodecs = invalid
+        videoAudio = invalid
+        if videoHls <> invalid
+            videoCodecs = videoHls.LookupCI("VideoCodec")
+            videoAudio = videoHls.LookupCI("AudioCodec")
+        end if
+        musicAudio = invalid
+        if audioHls <> invalid then musicAudio = audioHls.LookupCI("AudioCodec")
+        directives.push("add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts&videoCodec=" + plexPlayback.Names(videoCodecs, "h264") + "&audioCodec=" + plexPlayback.HlsAudio(videoAudio) + ")")
+        directives.push("add-transcode-target(type=musicProfile&context=streaming&protocol=hls&container=mpegts&audioCodec=" + plexPlayback.HlsAudio(musicAudio) + ")")
+        return directives.Join("+")
+    end function
+
+    ' Plex's call on a play, as { ok, directPlay, why, error }
+    function Decide(ctx as object, transcoder as string, query as object) as object
+        decision = plexHttp.Container(ctx, transcoder + "/decision", query, PLEX_PLAYBACK_TIMEOUT_MS)
+        part = plexItems.First(chainLookup(plexItems.First(chainLookup(plexItems.First(decision.LookupCI("Metadata")) ?? {}, "Media")) ?? {}, "Part"))
+        decided = ""
+        if part <> invalid then decided = plexUrls.Str(part.LookupCI("decision") ?? "")
+        if decided <> "directplay" and decided <> "transcode"
+            return { ok: false, error: plexUrls.Str(decision.LookupCI("generalDecisionText") ?? "") }
+        end if
+        return { ok: true, directPlay: decided = "directplay", why: decision.LookupCI("directPlayDecisionText") }
+    end function
+
+    ' Whether the player reads a subtitle from the file it plays. Plex can't take a track out of a file,
+    ' so a track the player can't read only shows burned into a transcode.
+    function ReadsFromFile(stream as object, profile as dynamic) as boolean
+        if stream.LookupCI("key") <> invalid then return true
+        codec = LCase(plexUrls.Str(stream.LookupCI("codec") ?? ""))
+        for each candidate in plexMapper.List(chainLookup(profile, "SubtitleProfiles"))
+            if plexMapper.IsObject(candidate) and candidate.LookupCI("Method") = "Embed" and LCase(plexUrls.Str(candidate.LookupCI("Format") ?? "")) = codec then return true
+        end for
+        return false
+    end function
+
+    function Sessions() as object
+        stored = m.global.plexPlaySessions
+        if type(stored) <> "roAssociativeArray" then return {}
+        return stored
+    end function
+
+    sub SaveSession(sessionId as string, entry as dynamic)
+        stored = plexPlayback.Sessions()
+        if entry = invalid
+            stored.Delete(sessionId)
+        else
+            stored[sessionId] = entry
+        end if
+        m.global.plexPlaySessions = stored
+    end sub
+
+    ' Answers in Jellyfin's PlaybackInfo shape from Plex's own transcode decision, with the file's own
+    ' address as the source's direct stream
+    function PlaybackInfo(ctx as object, itemId as string, q as object, body as object) as object
+        ' A part id names its own file. Anything else plays the first file of the version its source id names.
+        target = plexMapper.PartOf(itemId)
+        key = itemId
+        if target <> invalid then key = target.key
+        meta = plexItems.PlexItem(ctx, key)
+        if meta = invalid then return { status: 404, data: invalid }
+        medias = plexMapper.Medias(meta)
+        if medias.Count() = 0 then return { status: 404, data: invalid }
+        mediaIndex = 0
+        if target <> invalid
+            mediaIndex = target.mediaIndex
+        else
+            mediaIndex = plexMapper.SourceOf(q.LookupCI("MediaSourceId") ?? key).mediaIndex
+        end if
+        if mediaIndex >= medias.Count() then mediaIndex = medias.Count() - 1
+        media = medias[mediaIndex]
+        mediaParts = plexMapper.Parts(media)
+        partIndex = 0
+        if target <> invalid then partIndex = target.partIndex
+        if partIndex >= mediaParts.Count() then return { status: 404, data: invalid }
+        part = mediaParts[partIndex]
+        ' Closed captions stay out here too, as they do in the item's streams
+        streams = []
+        for each stream in plexMapper.List(part.LookupCI("Stream"))
+            if plexMapper.IsObject(stream) and stream.LookupCI("embeddedInVideo") = invalid then streams.push(stream)
+        end for
+        profile = body.LookupCI("DeviceProfile")
+
+        ' The app picks tracks by the Index the mapper gave them, while Plex selects them by its own stream ids
+        audioIndex = plexItems.Number(q.LookupCI("AudioStreamIndex"))
+        subtitleIndex = plexItems.Number(q.LookupCI("SubtitleStreamIndex"))
+        audioPick = plexPlayback.StreamAt(streams, audioIndex)
+        subtitlePick = plexPlayback.StreamAt(streams, subtitleIndex)
+        if audioPick <> invalid or subtitleIndex <> invalid
+            choice = { "allParts": 1 }
+            if audioPick <> invalid then choice["audioStreamID"] = audioPick.LookupCI("id")
+            if subtitleIndex <> invalid
+                choice["subtitleStreamID"] = 0
+                if subtitlePick <> invalid then choice["subtitleStreamID"] = subtitlePick.LookupCI("id")
+            end if
+            plexHttp.Send(ctx, "/library/parts/" + plexUrls.Str(part.LookupCI("id")).Trim(), choice, "PUT")
+        end if
+        audio = audioPick
+        if audio = invalid then audio = plexPlayback.Selected(streams, 2)
+        subtitle = subtitlePick
+        if subtitleIndex = invalid then subtitle = plexPlayback.Selected(streams, 3)
+        shownSubtitle = -1
+        if subtitle <> invalid then shownSubtitle = plexPlayback.IndexOf(subtitle)
+
+        ' Burning an embedded subtitle in rules out a direct play, so only the transcode asks for it. Plex
+        ' can't decode a track it lists as codec none (WebVTT), and burning one kills its transcoder.
+        burnSubtitle = subtitle <> invalid and subtitle.LookupCI("key") = invalid and subtitle.LookupCI("codec") <> "none"
+        ' A picked track the player can't read from the file goes through the transcoder to be burned in
+        enableDirectPlay = plexItems.Flag(q.LookupCI("EnableDirectPlay")) <> false
+        if subtitleIndex <> invalid and subtitlePick <> invalid and burnSubtitle and not plexPlayback.ReadsFromFile(subtitlePick, profile) then enableDirectPlay = false
+
+        params = plexHttp.Identity()
+        params["path"] = "/library/metadata/" + key
+        params["mediaIndex"] = mediaIndex.toStr()
+        params["partIndex"] = partIndex.toStr()
+        params["protocol"] = "hls"
+        params["fastSeek"] = "1"
+        params["directPlay"] = "1"
+        if not enableDirectPlay then params["directPlay"] = "0"
+        ' The app turns direct stream off to go through the transcoder, which still copies a video the
+        ' profile takes. Plex would re-encode the video for that, so only the audio follows it.
+        params["directStream"] = "1"
+        params["directStreamAudio"] = "1"
+        if plexItems.Flag(q.LookupCI("EnableDirectStream")) = false then params["directStreamAudio"] = "0"
+        maxBitrate = Val(plexUrls.Str(q.LookupCI("MaxStreamingBitrate") ?? "0"))
+        if maxBitrate > 0 then params["maxVideoBitrate"] = Int(maxBitrate / 1000).toStr()
+        params["subtitles"] = "none"
+        params["X-Plex-Platform"] = "Generic"
+        params["X-Plex-Client-Profile-Extra"] = plexPlayback.ClientProfile(profile)
+        ' Plex turns down an HLS start for a track on the video transcoder
+        transcoder = "/video/:/transcode/universal"
+        if meta.LookupCI("type") = "track" then transcoder = "/music/:/transcode/universal"
+
+        ' A detail page only asks what would happen, and a decision under a session would open one
+        isPlayback = plexItems.Flag(q.LookupCI("IsPlayback")) = true
+        ' The first decision goes without a session or a burn, because Plex keeps a session's first answer
+        ' and a burn would rule out direct play. It's also the one whose reason counts.
+        decision = plexPlayback.Decide(ctx, transcoder, params)
+        if not decision.ok then return { status: 500, data: { "ErrorCode": "NoCompatibleStream", "Message": decision.error } }
+        playSession = plexPlayback.NewSession()
+        start = {}
+        start.Append(params)
+        start["directPlay"] = "0"
+        start["subtitles"] = "none"
+        if burnSubtitle then start["subtitles"] = "burn"
+        start["session"] = playSession
+        start["X-Plex-Session-Identifier"] = playSession
+        ' Plex can refuse a start whose session has no decision of its own
+        if isPlayback and not decision.directPlay then plexPlayback.Decide(ctx, transcoder, start)
+
+        if isPlayback
+            plexPlayback.EndReplacedSessions(ctx, key)
+            entry = { key: key, offset: 0, total: 0, duration: part.LookupCI("duration") ?? media.LookupCI("duration") ?? meta.LookupCI("duration") ?? 0, position: 0 }
+            if mediaParts.Count() > 1
+                offset = 0
+                for i = 0 to partIndex - 1
+                    offset += mediaParts[i].LookupCI("duration") ?? 0
+                end for
+                entry.offset = offset
+                entry.total = media.LookupCI("duration") ?? 0
+            end if
+            plexPlayback.SaveSession(playSession, entry)
+        end if
+
+        source = invalid
+        if target <> invalid
+            source = plexMapper.PartItem(meta, mediaIndex, partIndex).MediaSources[0]
+        else
+            source = plexMapper.ItemToJellyfin(meta).MediaSources[mediaIndex]
+        end if
+        plexItems.TokenStreams(ctx, source.MediaStreams)
+        source["Path"] = part.LookupCI("key")
+        source["SupportsDirectPlay"] = decision.directPlay
+        source["SupportsDirectStream"] = false
+        source["SupportsTranscoding"] = not decision.directPlay
+        if audio <> invalid then source["DefaultAudioStreamIndex"] = plexPlayback.IndexOf(audio)
+        source["DefaultSubtitleStreamIndex"] = shownSubtitle
+        if not decision.directPlay
+            source["TranscodingUrl"] = transcoder + "/start.m3u8?" + plexUrls.Query(start)
+            source["TranscodingSubProtocol"] = "hls"
+            source["TranscodingContainer"] = "ts"
+            reasons = []
+            if plexMapper.IsText(decision.why) then reasons.push(decision.why)
+            source["TranscodeReasons"] = reasons
+            if burnSubtitle
+                for each stream in source.MediaStreams
+                    if stream.Type = "Subtitle" and stream.Index = shownSubtitle then stream["DeliveryMethod"] = "Encode"
+                end for
+            end if
+        end if
+        return { status: 200, data: { "PlaySessionId": playSession, "MediaSources": [source] } }
+    end function
+
+    ' A short transcode a card can show: 720p h264 at 4 Mbps with stereo aac, nothing burned in, under
+    ' the card's own session so stopping it never touches real playback
+    function PreviewStream(ctx as object, itemId as string, q as object) as object
+        target = plexMapper.PartOf(itemId)
+        key = itemId
+        mediaIndex = plexMapper.SourceOf(plexUrls.Str(q.LookupCI("MediaSourceId") ?? itemId)).mediaIndex
+        partIndex = 0
+        if target <> invalid
+            key = target.key
+            mediaIndex = target.mediaIndex
+            partIndex = target.partIndex
+        end if
+        sessionId = plexUrls.Str(q.LookupCI("PlaySessionId") ?? "")
+        params = plexHttp.Identity()
+        params["path"] = "/library/metadata/" + key
+        params["mediaIndex"] = plexUrls.Str(mediaIndex)
+        params["partIndex"] = plexUrls.Str(partIndex)
+        params["protocol"] = "hls"
+        params["fastSeek"] = "1"
+        params["directPlay"] = "0"
+        params["directStream"] = "0"
+        params["directStreamAudio"] = "0"
+        params["maxVideoBitrate"] = "4000"
+        params["videoResolution"] = "1280x720"
+        params["subtitles"] = "none"
+        params["session"] = sessionId
+        params["X-Plex-Session-Identifier"] = sessionId
+        params["X-Plex-Platform"] = "Generic"
+        params["X-Plex-Client-Profile-Extra"] = plexPlayback.ClientProfile({ "TranscodingProfiles": [{ "Type": "Video", "Protocol": "hls", "Container": "ts", "VideoCodec": "h264", "AudioCodec": "aac" }] }) + "+add-limitation(scope=videoAudioCodec&scopeName=aac&type=upperBound&name=audio.channels&value=2)"
+        plexPlayback.Decide(ctx, "/video/:/transcode/universal", params)
+        return { status: 200, data: { "Url": plexUrls.WithToken(ctx.base + "/video/:/transcode/universal/start.m3u8?" + plexUrls.Query(params), ctx.token) } }
+    end function
+
+    function StreamAt(streams as object, index as dynamic) as dynamic
+        if index = invalid then return invalid
+        for each stream in streams
+            if plexPlayback.IndexOf(stream) = index then return stream
+        end for
+        return invalid
+    end function
+
+    function Selected(streams as object, streamType as integer) as dynamic
+        for each stream in streams
+            if stream.LookupCI("streamType") = streamType and stream.LookupCI("selected") = true then return stream
+        end for
+        return invalid
+    end function
+
+    function IndexOf(stream as object) as dynamic
+        return stream.LookupCI("index") ?? stream.LookupCI("id")
+    end function
+
+    ' A play that takes another one's place, after a track switch, ends the one before it at its last
+    ' position and stops its transcode
+    sub EndReplacedSessions(ctx as object, key as string)
+        stored = plexPlayback.Sessions()
+        for each sessionId in stored
+            entry = stored[sessionId]
+            if plexMapper.IsObject(entry) and entry.key = key
+                plexPlayback.SendTimeline(ctx, entry, sessionId, entry.position ?? 0, "stopped")
+                plexPlayback.StopTranscode(ctx, sessionId)
+                plexPlayback.SaveSession(sessionId, invalid)
+            end if
+        end for
+    end sub
+
+    ' Plex keeps resume points and watched state through its timeline, which ignores a report that has
+    ' no runtime and turns down one past the end
+    function Report(ctx as object, info as object, state as string) as object
+        sessionId = plexUrls.Str(info.LookupCI("PlaySessionId") ?? "")
+        positionMs = Int((info.LookupCI("PositionTicks") ?? 0) / 10000)
+        entry = invalid
+        if sessionId <> "" then entry = plexPlayback.Sessions().LookupCI(sessionId)
+        if entry = invalid
+            itemId = plexUrls.Str(info.LookupCI("ItemId") ?? "")
+            if itemId = "" then return { status: 204, data: invalid }
+            ' A stop without a play session stays a resume point on Plex even at the very end, so one
+            ' past 90% is marked watched instead
+            runTime = info.LookupCI("RunTimeTicks") ?? 0
+            if state = "stopped" and sessionId = "" and runTime > 0 and (info.LookupCI("PositionTicks") ?? 0) >= runTime * 0.9
+                plexHttp.Send(ctx, "/:/scrobble", { "key": plexItems.KeyOf(itemId), "identifier": PLEX_LIBRARY_IDENTIFIER })
+                return { status: 204, data: invalid }
+            end if
+            entry = { key: plexItems.KeyOf(itemId), offset: 0, total: 0, duration: Int(runTime / 10000) }
+        end if
+        plexPlayback.SendTimeline(ctx, entry, sessionId, positionMs, state)
+        if sessionId <> ""
+            if state = "stopped"
+                plexPlayback.SaveSession(sessionId, invalid)
+            else if plexMapper.IsObject(plexPlayback.Sessions().LookupCI(sessionId))
+                entry.position = positionMs
+                plexPlayback.SaveSession(sessionId, entry)
+            end if
+        end if
+        return { status: 204, data: invalid }
+    end function
+
+    sub SendTimeline(ctx as object, entry as object, sessionId as string, positionMs as integer, state as string)
+        duration = entry.total
+        if not (duration > 0) then duration = entry.duration
+        time = (entry.offset ?? 0) + positionMs
+        if duration > 0 and time > duration then time = duration
+        query = { "ratingKey": entry.key, "key": "/library/metadata/" + entry.key, "state": state, "time": time }
+        if duration > 0 then query["duration"] = duration
+        if sessionId <> "" then query["X-Plex-Session-Identifier"] = sessionId
+        plexHttp.Send(ctx, "/:/timeline", query)
+    end sub
+
+    ' This ends a track's transcode too
+    function StopTranscode(ctx as object, sessionId as string) as object
+        if sessionId <> "" then plexHttp.Send(ctx, "/video/:/transcode/universal/stop", { "session": sessionId })
+        return { status: 204, data: invalid }
+    end function
+
+end namespace

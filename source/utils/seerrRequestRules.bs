@@ -1,0 +1,166 @@
+import "pkg:/source/utils/misc.bs"
+
+' What a Seerr request can offer, who can take one back and what it spends of the viewer's quota
+namespace seerrRequestRules
+
+    ' Whether a series is still running. An unknown status counts as ended, so a lookup that found
+    ' nothing never opens a request on a guess.
+    function IsContinuing(status as dynamic) as boolean
+        value = LCase(toString(status ?? "").Trim())
+        return value <> "" and value <> "ended" and value <> "canceled"
+    end function
+
+    ' The seasons Seerr reports, specials left out. A server that sends no season list still has
+    ' the count, so the numbers are filled in from that instead.
+    function SeasonNumbers(seasons as dynamic, fallbackCount as dynamic) as object
+        numbers = []
+        if type(seasons) = "roArray"
+            for each season in seasons
+                number = chainLookupReturn(season, "seasonNumber", invalid)
+                if isValid(number) and number > 0 then numbers.push(number)
+            end for
+        end if
+        if numbers.count() > 0 then return numbers
+
+        if not isValid(fallbackCount) then return numbers
+        for i = 1 to fallbackCount
+            numbers.push(i)
+        end for
+        return numbers
+    end function
+
+    ' Whether a list of season numbers or film ids holds one, since inArray only matches strings
+    function Has(list as dynamic, value as dynamic) as boolean
+        if type(list) <> "roArray" then return false
+        for each entry in list
+            if entry = value then return true
+        end for
+        return false
+    end function
+
+    ' Partly available or available. A blocklisted or deleted season isn't in the library, so it
+    ' can be asked for again.
+    function IsAvailableStatus(status as dynamic) as boolean
+        return isValid(status) and (status = 4 or status = 5)
+    end function
+
+    ' Seerr's own rule for what is still open: pending or approved
+    function ActiveRequests(requests as dynamic) as object
+        active = []
+        if type(requests) <> "roArray" then return active
+        for each request in requests
+            status = chainLookupReturn(request, "status", 0)
+            if status = 1 or status = 2 then active.push(request)
+        end for
+        return active
+    end function
+
+    ' What this viewer can take back on one track: a request manager any open request, anyone else
+    ' only their own pending ones. Without a known viewer every request would match an absent owner.
+    function Cancelable(requests as dynamic, is4k as boolean, canManage as boolean, userId as integer) as object
+        found = []
+        for each request in seerrRequestRules.ActiveRequests(requests)
+            if (chainLookupReturn(request, "is4k", false) = true) = is4k
+                if canManage
+                    found.push(request)
+                else if userId > 0 and chainLookupReturn(request, "status", 0) = 1 and chainLookupReturn(request, "requestedBy.id", -1) = userId
+                    found.push(request)
+                end if
+            end if
+        end for
+        return found
+    end function
+
+    ' The seasons this track already has in the library
+    function AvailableSeasons(mediaSeasons as dynamic, is4k as boolean) as object
+        numbers = []
+        if type(mediaSeasons) <> "roArray" then return numbers
+        for each season in mediaSeasons
+            status = chainLookupReturn(season, is4k ? "status4k" : "status", invalid)
+            number = chainLookupReturn(season, "seasonNumber", invalid)
+            if isValid(number) and seerrRequestRules.IsAvailableStatus(status) and not seerrRequestRules.Has(numbers, number) then numbers.push(number)
+        end for
+        return numbers
+    end function
+
+    ' The seasons the request sheet can't offer, being in the library or named by an open
+    ' request on this track
+    function TakenSeasons(mediaSeasons as dynamic, requests as dynamic, is4k as boolean) as object
+        taken = seerrRequestRules.AvailableSeasons(mediaSeasons, is4k)
+        for each request in seerrRequestRules.ActiveRequests(requests)
+            if (chainLookupReturn(request, "is4k", false) = true) = is4k
+                seasons = chainLookupReturn(request, "seasons", [])
+                if type(seasons) = "roArray"
+                    for each season in seasons
+                        number = chainLookupReturn(season, "seasonNumber", invalid)
+                        if isValid(number) and not seerrRequestRules.Has(taken, number) then taken.push(number)
+                    end for
+                end if
+            end if
+        end for
+        return taken
+    end function
+
+    ' TV quota counts seasons, movie quota counts one per request
+    function SeasonsNeeded(tv as boolean, allSeasons as boolean, picked as integer, total as integer, taken as integer) as integer
+        if not tv then return 1
+        if not allSeasons then return picked
+        needed = total - taken
+        if needed < 1 then needed = 1
+        if needed > total then needed = total
+        return needed
+    end function
+
+    ' No quota, no limit or a limit of zero all mean the viewer can ask for as much as they like
+    function IsUnlimited(quota as dynamic) as boolean
+        if type(quota) <> "roAssociativeArray" then return true
+        limit = quota.limit
+        return not isValid(limit) or limit = 0
+    end function
+
+    function QuotaBlocked(quota as dynamic, needed as integer) as boolean
+        if seerrRequestRules.IsUnlimited(quota) then return false
+        if chainLookupReturn(quota, "restricted", false) = true then return true
+        remaining = quota.remaining
+        return isValid(remaining) and needed > remaining
+    end function
+
+    ' A collection part's status on one track, with no status read as unknown
+    function PartStatus(part as dynamic, is4k as boolean) as integer
+        status = chainLookupReturn(part, is4k ? "mediaInfo.status4k" : "mediaInfo.status", 0)
+        if not isValid(status) or status = 0 then return 1
+        return status
+    end function
+
+    ' A part can be asked for when Seerr has no record of it, or its record on this track is
+    ' unknown or deleted and it isn't blocklisted
+    function PartRequestable(part as dynamic, is4k as boolean) as boolean
+        if not isValid(chainLookupReturn(part, "mediaInfo", invalid)) then return true
+        if chainLookupReturn(part, "mediaInfo.status", 0) = 6 then return false
+        status = seerrRequestRules.PartStatus(part, is4k)
+        return status = 1 or status = 7
+    end function
+
+    ' How many parts one request can take, since a movie quota can cap it below the number on offer
+    function SelectionCap(quota as dynamic, count as integer) as integer
+        if seerrRequestRules.IsUnlimited(quota) or not isValid(quota.remaining) then return count
+        remaining = quota.remaining
+        if remaining < 0 then remaining = 0
+        if remaining < count then return remaining
+        return count
+    end function
+
+    ' The parts a collection request starts with, as many as the quota lets it take
+    function FirstSelectable(parts as dynamic, is4k as boolean, quota as dynamic) as object
+        requestable = []
+        for each part in parts ?? []
+            if seerrRequestRules.PartRequestable(part, is4k) then requestable.push(part.id)
+        end for
+        picked = []
+        for i = 0 to seerrRequestRules.SelectionCap(quota, requestable.count()) - 1
+            picked.push(requestable[i])
+        end for
+        return picked
+    end function
+
+end namespace

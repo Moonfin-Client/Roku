@@ -1,0 +1,222 @@
+import "pkg:/components/music/musicCategoryHost.bs"
+
+const LIST_WIDTH = 570
+const LIST_ROW = 93
+const LIST_GAP = 54
+const HERO_ART = 300
+const SONG_ROW = 66
+' The strip and the header come before the first playlist's row
+const LIST_FIRST = 2
+
+sub categoryLoad()
+    m.category = "playlists"
+    m.listTop = m.headerTop + HEADER_HEIGHT + 18
+    m.detailX = m.left + LIST_WIDTH + LIST_GAP
+    m.detailWidth = 1920 - CATEGORY_INSET - m.detailX
+    m.items = []
+    m.fetched = 0
+    m.total = 0
+    m.paging = true
+    m.shown = -1
+    m.regions.main.right = "side"
+    m.regions.side.left = "main"
+    m.regions.side.enter = [0, 0]
+    m.regions.side.up = "strip"
+    ' The songs scroll under the header rather than over the strip
+    m.regions.side.viewTop = m.headerTop + 33
+    m.top.findNode("sideClip").clippingRect = [0, m.headerTop + 20, 1920, 1080]
+    m.showTimer = m.top.findNode("showTimer")
+    m.showTimer.observeField("fire", "onShowTimer")
+    setRows("main", playlistRows())
+    loadPlaylistPage()
+    startLoadingSpinner(false)
+end sub
+
+' The music playlists the way the library's Playlists row asks for them, kept to the ones that
+' hold audio
+sub loadPlaylistPage()
+    m.paging = true
+    categoryRequest("page", "Items", { includeItemTypes: "Playlist", mediaTypes: "Audio", recursive: true, sortBy: "SortName", sortOrder: "Ascending", fields: "PrimaryImageAspectRatio,ChildCount", imageTypeLimit: 1, enableImageTypes: "Primary", startIndex: m.fetched, limit: musicCategories.PAGE_SIZE }, "onPlaylistPage")
+end sub
+
+sub onPlaylistPage(event as object)
+    data = categoryResponse(event, "page")
+    if not isValid(data) then return
+    m.paging = false
+    items = responseItems(data)
+    for each playlist in items
+        if isStringEqual(playlist.LookupCI("MediaType"), "Audio") then m.items.push(playlist)
+    end for
+    m.fetched += items.count()
+    m.total = totalOf(data, m.fetched)
+    if items.count() = 0 then m.total = m.fetched
+
+    first = m.fetched = items.count()
+    keep = m.regions.main.rows.count() - 1
+    if first then keep = 0
+    setRows("main", playlistRows(), keep)
+    if first
+        stopLoadingSpinner()
+        if m.items.count() > 0 then showPlaylist(0)
+        if m.focusRow < 0 then focusFirstItem("main")
+    end if
+end sub
+
+function playlistRows() as object
+    header = headerRow(tr("Playlists"), musicCategories.CountText(m.total, tr("1 playlist"), tr("{count} playlists")), m.left)
+    rows = [categoryStrip(), header]
+    if m.items.count() = 0
+        if not m.paging then rows.push(emptyRow(tr("No items found"), m.listTop))
+        return rows
+    end if
+    for i = 0 to m.items.count() - 1
+        playlist = m.items[i]
+        row = newRow(m.listTop + i * LIST_ROW, LIST_ROW)
+        meta = musicCategories.Joined([musicCategories.CountText(playlist.ChildCount, tr("1 song"), tr("{count} songs")), musicCategories.Duration(playlist.RunTimeTicks)], m.separator)
+        spec = { kind: "row", width: LIST_WIDTH, height: LIST_ROW, title: playlist.Name ?? "", subtitle: meta, image: coverOf(playlist, 69), glyph: "queue_music", artSize: 69, titleSize: 22, subtitleSize: 20, padX: 18, gap: 21 }
+        addCell(row, m.left, 0, LIST_WIDTH, LIST_ROW, spec, { playlist: i }, toString(playlist.Id))
+        row.cells[0].lit = i = m.shown and m.focusRegion = "side"
+        rows.push(row)
+    end for
+    rows[LIST_FIRST].revealTop = CATEGORY_TOP
+    return rows
+end function
+
+' =====================================================================
+' THE PLAYLIST BESIDE THE LIST
+' =====================================================================
+
+sub showPlaylist(index as integer)
+    m.showTimer.control = "stop"
+    if index = m.shown then return
+    setLit("main", m.shown + LIST_FIRST, 0, false)
+    m.shown = index
+    m.regions.main.memory = [index + LIST_FIRST, 0]
+    m.songs = []
+    m.songFetched = 0
+    m.songTotal = 0
+    m.songPaging = true
+    side = m.regions.side
+    side.anim.control = "stop"
+    side.scroll = 0
+    side.from = 0
+    side.group.translation = [0, 0]
+    setRows("side", detailRows())
+    loadSongPage()
+end sub
+
+sub loadSongPage()
+    m.songPaging = true
+    playlist = m.items[m.shown]
+    categoryRequest("songs", "Playlists/" + toString(playlist.Id) + "/Items", { fields: "PrimaryImageAspectRatio", startIndex: m.songFetched, limit: musicCategories.PAGE_SIZE }, "onSongPage")
+end sub
+
+sub onSongPage(event as object)
+    data = categoryResponse(event, "songs")
+    if not isValid(data) then return
+    m.songPaging = false
+    items = responseItems(data)
+    m.songs.append(items)
+    m.songFetched += items.count()
+    m.songTotal = totalOf(data, m.songFetched)
+    if items.count() = 0 then m.songTotal = m.songFetched
+    keep = m.regions.side.rows.count()
+    if m.songFetched = items.count() then keep = 1
+    setRows("side", detailRows(), keep)
+end sub
+
+function detailRows() as object
+    playlist = m.items[m.shown]
+    top = m.headerTop + 33
+    hero = newRow(top, HERO_ART)
+    hero.pinTop = true
+    hero.decor.push({ kind: "tile", x: m.detailX, y: 0, spec: { kind: "card", width: HERO_ART, image: coverOf(playlist, HERO_ART), glyph: "queue_music" } })
+    textX = m.detailX + HERO_ART + 42
+    textRoom = m.detailX + m.detailWidth - textX
+    hero.decor.push(labelDecor(UCase(tr("Playlist")), textX, 65, 18, true, m.accent))
+    title = labelDecor(playlist.Name ?? "", textX, 97, 60, true, m.ink)
+    title.width = textRoom
+    hero.decor.push(title)
+    meta = labelDecor(musicCategories.Joined([musicCategories.CountText(playlist.ChildCount, tr("1 song"), tr("{count} songs")), musicCategories.Duration(playlist.RunTimeTicks)], m.separator), textX, 178, 22, false, themeChrome.WithAlpha(m.ink, "BF"))
+    meta.width = textRoom
+    hero.decor.push(meta)
+    placeButtons(hero, [
+        { spec: buttonSpec(tr("Play"), "play_arrow", true), action: { do: "play" }, key: "play" },
+        { spec: buttonSpec(tr("Shuffle"), "shuffle"), action: { do: "shuffle" }, key: "shuffle" },
+        { spec: buttonSpec(tr("Open Playlist"), "queue_music"), action: { do: "open" }, key: "open" }
+    ], textX, HERO_ART - 66, CONTROL_GAP)
+    rows = [hero]
+
+    y = top + HERO_ART + 33
+    if m.songs.count() = 0 and m.songPaging
+        loading = newRow(y, SONG_ROW)
+        loading.decor.push(labelDecor(tr("Loading..."), m.detailX + 18, 18, 21, false, m.soft))
+        rows.push(loading)
+        return rows
+    end if
+    for i = 0 to m.songs.count() - 1
+        song = m.songs[i]
+        row = newRow(y + i * SONG_ROW, SONG_ROW)
+        spec = { kind: "row", width: m.detailWidth, height: SONG_ROW, title: song.Name ?? "", subtitle: subtitleOf(song), trailing: runtimeOf(song), leading: (i + 1).toStr(), image: coverOf(song, 48), glyph: "music_note", artSize: 48, leadingSize: 21, leadingWidth: 33, titleSize: 22, subtitleSize: 20, trailingSize: 20, padX: 18, gap: 21 }
+        addCell(row, m.detailX, 0, m.detailWidth, SONG_ROW, spec, { song: i }, "song:" + i.toStr())
+        rows.push(row)
+    end for
+    return rows
+end function
+
+sub onShowTimer()
+    cell = focusedCell()
+    if m.focusRegion = "main" and isValid(cell) and isValid(cell.action.playlist) then showPlaylist(cell.action.playlist)
+end sub
+
+' =====================================================================
+' HOOKS
+' =====================================================================
+
+sub categoryActivate(action as object)
+    if isValid(action.playlist)
+        showPlaylist(action.playlist)
+        leaveSide("side")
+        return
+    end if
+    playlist = m.items[m.shown]
+    if isValid(action.song)
+        requestTracks({ parentId: playlist.Id, limit: 2000 }, toString(m.songs[action.song].Id))
+    else if action.do = "play"
+        requestTracks({ parentId: playlist.Id, limit: 2000 }, "")
+    else if action.do = "shuffle"
+        requestTracks({ parentId: playlist.Id, sortBy: "Random", limit: 2000 }, "")
+    else if action.do = "open"
+        openItem(playlist)
+    end if
+end sub
+
+' The list shows the focused playlist a moment after the focus stops on it, so scrolling past
+' rows doesn't ask for each one. Coming over to the right shows it at once and tints it.
+sub categoryFocused()
+    if m.focusRegion = "main"
+        setLit("main", m.shown + LIST_FIRST, 0, false)
+        cell = focusedCell()
+        if isValid(cell) and isValid(cell.action.playlist) and cell.action.playlist <> m.shown
+            m.showTimer.control = "stop"
+            m.showTimer.control = "start"
+        end if
+        if not m.paging and m.fetched < m.total and m.focusRow >= m.regions.main.rows.count() - 4 then loadPlaylistPage()
+        return
+    end if
+
+    listFocus = m.regions.main.memory
+    if isValid(listFocus) and listFocus[0] >= LIST_FIRST and listFocus[0] - LIST_FIRST <> m.shown
+        showPlaylist(listFocus[0] - LIST_FIRST)
+        return
+    end if
+    setLit("main", m.shown + LIST_FIRST, 0, true)
+    if not m.songPaging and m.songFetched < m.songTotal and m.focusRow >= m.regions.side.rows.count() - 4 then loadSongPage()
+end sub
+
+function categoryBack() as boolean
+    return false
+end function
+
+sub categoryRowShown(_regionId as string, _index as integer)
+end sub

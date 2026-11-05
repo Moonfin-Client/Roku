@@ -1,5 +1,5 @@
 '
-' Task used to discover Jellyfin and Emby servers on the local network
+' Task used to discover Jellyfin, Emby and Plex servers on the local network
 '
 sub init()
     m.top.functionName = "execute"
@@ -9,9 +9,10 @@ sub execute()
     m.servers = []
     m.serverUrlMap = {}
     m.locationUrlMap = {}
-    'send both requests at the same time
+    'send every request at the same time
     SendSSDPBroadcast()
     SendClientDiscoveryBroadcast()
+    SendPlexDiscovery()
 
     ts = CreateObject("roTimespan")
     maxTimeMs = 2200
@@ -31,6 +32,11 @@ sub execute()
         msg = Wait(100, m.clientDiscovery.port)
         if msg <> invalid
             ProcessClientDiscoveryResponse(msg)
+        end if
+
+        msg = Wait(100, m.plexDiscovery.port)
+        if msg <> invalid
+            ProcessPlexDiscoveryResponse(msg)
         end if
 
     end while
@@ -79,6 +85,52 @@ sub ProcessClientDiscoveryResponse(message)
         catch _e
         end try
     end if
+end sub
+
+' Plex answers its own search, GDM, on port 32414. The answer comes from the server itself, so the
+' sender's address and the port it names are where it can be reached.
+sub SendPlexDiscovery()
+    m.plexDiscovery = {
+        port: CreateObject("roMessagePort"),
+        socket: CreateObject("roDatagramSocket")
+    }
+    m.plexDiscovery.socket.SetMessagePort(m.plexDiscovery.port)
+    m.plexDiscovery.socket.NotifyReadable(true)
+    m.plexDiscovery.socket.SetBroadcast(true)
+    search = "M-SEARCH * HTTP/1.1" + Chr(13) + Chr(10) + Chr(13) + Chr(10)
+    for each target in ["239.0.0.250:32414", "255.255.255.255:32414"]
+        address = CreateObject("roSocketAddress")
+        address.SetAddress(target)
+        m.plexDiscovery.socket.SetSendToAddress(address)
+        m.plexDiscovery.socket.SendStr(search)
+    end for
+end sub
+
+sub ProcessPlexDiscoveryResponse(message)
+    if Type(message) <> "roSocketEvent" or message.GetSocketId() <> m.plexDiscovery.socket.GetId() or not m.plexDiscovery.socket.IsReadable() then return
+    reply = m.plexDiscovery.socket.ReceiveStr(4096)
+    sender = m.plexDiscovery.socket.GetReceivedFromAddress()
+    if sender = invalid then return
+    fields = {}
+    for each line in reply.Split(Chr(10))
+        colon = Instr(1, line, ":")
+        if colon > 0 then fields[LCase(line.Left(colon - 1).Trim())] = line.Mid(colon).Trim()
+    end for
+    if Instr(1, LCase(fields["content-type"] ?? ""), "plex/media-server") = 0 then return
+    machineId = fields["resource-identifier"] ?? ""
+    if machineId = "" then return
+    port = fields["port"] ?? "32400"
+    name = fields["name"] ?? ""
+    if name = "" then name = "Plex Media Server"
+    AddServer({
+        name: name,
+        baseUrl: "http://" + sender.GetHostName() + ":" + port,
+        serverType: "plex",
+        machineId: machineId,
+        iconUrl: "pkg:/images/logo-icon120.jpg",
+        iconWidth: 120,
+        iconHeight: 120
+    })
 end sub
 
 sub SendSSDPBroadcast()

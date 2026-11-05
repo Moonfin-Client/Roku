@@ -8,6 +8,7 @@ import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
+import "pkg:/source/utils/externalList.bs"
 import "pkg:/source/utils/HomeRecommendations.bs"
 import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/kidsMode.bs"
@@ -17,6 +18,7 @@ import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/parentalFilter.bs"
 import "pkg:/source/utils/seasonalRow.bs"
 import "pkg:/source/utils/seerrBrowseRows.bs"
+import "pkg:/source/utils/seerrSliders.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 
 ' Items a "Recently Added" row holds, both per library and after libraries are merged
@@ -36,6 +38,8 @@ const MATCH_CHUNK = 40
 ' How the library's provider ids are read on Jellyfin, a page at a time and kept for a while
 const LIBRARY_INDEX_PAGE = 1000
 const LIBRARY_INDEX_TTL_SECONDS = 30 * 60
+' How many Seerr titles have their details read at once for the Recently Added row
+const SEERR_DETAILS_BATCH = 6
 
 const FIELDS = "DateCreated,Type,UserData,Overview,Genres,CommunityRating,CriticRating,OfficialRating,RunTimeTicks,ProductionYear,SeriesName,ParentIndexNumber,IndexNumber,Status,ImageTags,BackdropImageTags,ParentBackdropItemId,ParentBackdropImageTags,ParentThumbItemId,ParentThumbImageTag,SeriesId,SeriesPrimaryImageTag,ParentLogoItemId,ParentLogoImageTag,PrimaryImageTag,PrimaryImageAspectRatio"
 
@@ -160,6 +164,7 @@ function loadLibraries() as object
             Type: item.LookupCI("Type"),
             CollectionType: item.LookupCI("CollectionType"),
             ImageTags: item.LookupCI("ImageTags"),
+            PrimaryImageAspectRatio: item.LookupCI("PrimaryImageAspectRatio"),
             UserData: item.LookupCI("UserData"),
             ParentThumbImageTag: item.LookupCI("ParentThumbImageTag"),
             ParentBackdropImageTags: item.LookupCI("ParentBackdropImageTags"),
@@ -310,7 +315,8 @@ function firstItems(items as object, limit as integer) as object
 end function
 
 ' The series an episode or season belongs to, drawn from what the entry carries, or invalid when
-' it cant say which series. Its watched state was the entry's own, so the card goes without one.
+' it cant say which series. Its watched state and year were the entry's own, so the card goes
+' without them.
 function seriesCardForLatestItem(item as object) as dynamic
     itemType = item.LookupCI("Type")
     if not isStringEqual(itemType, "Episode") and not isStringEqual(itemType, "Season") then return invalid
@@ -330,7 +336,7 @@ function seriesCardForLatestItem(item as object) as dynamic
         imageTags.AddReplace("Primary", seriesImage)
         card.AddReplace("ImageTags", imageTags)
     end if
-    for each field in ["IndexNumber", "ParentIndexNumber", "ProviderIds", "UserData", "RunTimeTicks"]
+    for each field in ["IndexNumber", "ParentIndexNumber", "ProviderIds", "UserData", "RunTimeTicks", "ProductionYear"]
         card.Delete(field)
     end for
     return card
@@ -1867,7 +1873,6 @@ function loadNextUp() as object
     if addViewAll
         tmp = createSGNode("HomeData")
         tmp.type = ItemType.COLLECTIONFOLDER
-        tmp.usePoster = false
         tmp.json = {
             IsFolder: true,
             Name: tr("View All Next Up"),
@@ -2036,7 +2041,6 @@ function loadMyList() as object
         tmp = createSGNode("HomeData")
         tmp.id = playlistID
         tmp.type = ItemType.COLLECTIONFOLDER
-        tmp.usePoster = false
         tmp.json = {
             id: playlistID,
             PlaylistID: playlistID,
@@ -2183,9 +2187,19 @@ sub loadItems()
         return
     end if
 
+    if lowerItemsToLoad = "mdblist_watching_now"
+        m.top.content = loadWatchingNowRow()
+        return
+    end if
+
     ' A chart's titles come from outside the library, so one with no rating was never looked
     ' up and stays out once a rating is blocked. Seerr carries no ratings at all, so its rows
     ' keep the usual filter.
+    if homeRowLayout.IsSliderRow(m.top.itemsToLoad)
+        m.top.content = parentalControls.WithoutBlockedItems(loadSeerrSliderRow(m.top.itemsToLoad))
+        return
+    end if
+
     if lowerItemsToLoad.startsWith("imdb_") or lowerItemsToLoad.startsWith("tmdb_") or lowerItemsToLoad.startsWith("plugindynamic:")
         m.top.content = parentalControls.WithoutUnratedOrBlockedItems(loadCustomDynamicList(m.top.itemsToLoad, m.top.additionalData))
         return
@@ -2398,6 +2412,8 @@ function decodeSeerrBase64(base64String as string) as string
 end function
 
 function unwrapSeerrProxyResponse(data as object) as object
+    ' A list comes back as it is, since only an object can carry the base64 envelope
+    if type(data) = "roArray" then return data
     if not isValid(data) or type(data) <> "roAssociativeArray"
         return invalid
     end if
@@ -2468,20 +2484,8 @@ function loadCustomDynamicList(listName as string, additionalData as dynamic) as
         paramsJson = FormatJson(paramsMap)
     else if lowerListName.startsWith("tmdb_")
         source = "tmdb_chart"
-        chartType = listName
-        if listName = "tmdb_popular_movies" then chartType = "movie/popular"
-        if listName = "tmdb_top_rated_movies" then chartType = "movie/top_rated"
-        if listName = "tmdb_now_playing_movies" then chartType = "movie/now_playing"
-        if listName = "tmdb_upcoming_movies" then chartType = "movie/upcoming"
-        if listName = "tmdb_popular_tv" then chartType = "tv/popular"
-        if listName = "tmdb_top_rated_tv" then chartType = "tv/top_rated"
-        if listName = "tmdb_airing_today_tv" then chartType = "tv/airing_today"
-        if listName = "tmdb_on_the_air_tv" then chartType = "tv/on_the_air"
-        if listName = "tmdb_trending_movie_daily" then chartType = "trending/movie/day"
-        if listName = "tmdb_trending_movie_weekly" then chartType = "trending/movie/week"
-        if listName = "tmdb_trending_tv_daily" then chartType = "trending/tv/day"
-        if listName = "tmdb_trending_tv_weekly" then chartType = "trending/tv/week"
-        if listName = "tmdb_trending_all_weekly" then chartType = "trending/all/week"
+        chartType = externalList.TmdbChartPath(listName)
+        if chartType = "" then chartType = listName
 
         paramsJson = FormatJson({ source: source, type: chartType })
     else if lowerListName.startsWith("seerr_")
@@ -2522,11 +2526,12 @@ function loadCustomDynamicList(listName as string, additionalData as dynamic) as
             queryParams = { page: "1" }
         end if
 
-        ' The browse rows are tiles rather than media, so they build their own nodes
-        if chartType = "seerr_studios" or chartType = "studios" then return seerrTileRow("studio")
-        if chartType = "seerr_networks" or chartType = "networks" then return seerrTileRow("network")
-        if chartType = "seerr_movie_genres" or chartType = "genreMovies" then return seerrGenreTileRow("movie")
-        if chartType = "seerr_series_genres" or chartType = "genreTv" then return seerrGenreTileRow("tv")
+        ' The browse rows are tiles rather than media, so they build their own nodes. Only the
+        ' shortcuts keep their own order.
+        if chartType = "seerr_studios" or chartType = "studios" then return sortedSeerrTiles(seerrTileRow("studio"))
+        if chartType = "seerr_networks" or chartType = "networks" then return sortedSeerrTiles(seerrTileRow("network"))
+        if chartType = "seerr_movie_genres" or chartType = "genreMovies" then return sortedSeerrTiles(seerrGenreTileRow("movie"))
+        if chartType = "seerr_series_genres" or chartType = "genreTv" then return sortedSeerrTiles(seerrGenreTileRow("tv"))
         if chartType = "seerr_shortcuts" or chartType = "shortcuts" then return seerrShortcutRow()
 
         if endpoint <> ""
@@ -2541,55 +2546,21 @@ function loadCustomDynamicList(listName as string, additionalData as dynamic) as
             response = unwrapSeerrProxyResponse(getJson(req))
 
             if response <> invalid and isChainValid(response, "results")
-                resultsArray = response.results
-                for each item in resultsArray
-                    if not isValid(item) then continue for
-
-                    resItem = item
-                    if isRequests
-                        if item.media <> invalid
-                            resItem = item.media
-                            resItem.mediaType = item.type
-                        else
-                            continue for
-                        end if
-                    end if
-
-                    mediaType = resItem.LookupCI("mediaType")
-                    if not isValidAndNotEmpty(mediaType) then mediaType = resItem.LookupCI("media_type")
-                    if not isValidAndNotEmpty(mediaType) then mediaType = (resItem.type = "Series" or resItem.type = "tv") ? "tv" : "movie"
-
-                    tmdbId = resItem.LookupCI("tmdbId")
-                    if not isValid(tmdbId) then tmdbId = resItem.LookupCI("id")
-                    if not isValid(tmdbId) then continue for
-
-                    title = resItem.LookupCI("title")
-                    if not isValidAndNotEmpty(title) then title = resItem.LookupCI("name")
-                    title = toNormalizedString(title)
-                    if title = "" then title = "Unknown"
-
-                    posterPath = resItem.LookupCI("posterPath")
-                    if not isValidAndNotEmpty(posterPath) then posterPath = resItem.LookupCI("poster_path")
-
-                    backdropPath = resItem.LookupCI("backdropPath")
-                    if not isValidAndNotEmpty(backdropPath) then backdropPath = resItem.LookupCI("backdrop_path")
-
-                    resItem.mediaType = mediaType
-
-                    results.push(seerrCardNode(toNormalizedString(tmdbId), title, mediaType, posterPath, backdropPath, resItem))
-                end for
+                found = response.results
+                if endpoint = "/api/v1/media" then found = hydrateRecentlyAdded(found)
+                results = sortedRow("seerr", seerrMediaEntries(found, isRequests))
             end if
         end if
     else
-        data = getJson(APIRequest("/Moonfin/CustomRows/Items", {
+        data = getJson(APIRequest("/Moonfin/CustomRows/Items", externalList.Localized({
             source: source,
             type: chartType,
             params: paramsJson
-        }))
+        })))
 
         if data <> invalid and chainLookupReturn(data, "success", false) = true and isChainValid(data, "items")
             rowType = ""
-            if source = "tmdb_chart" then rowType = chartItemType(chartType)
+            if source = "tmdb_chart" then rowType = externalList.ChartItemType(chartType)
             items = []
             for each item in data.items
                 if isValid(item)
@@ -2597,6 +2568,18 @@ function loadCustomDynamicList(listName as string, additionalData as dynamic) as
                     items.push(item)
                 end if
             end for
+
+            ' The whole chart is sorted, and custom rows keep the order they were set up with
+            chart = ""
+            if lowerListName.startsWith("imdb_") then chart = "imdb"
+            if lowerListName.startsWith("tmdb_") then chart = "tmdb"
+            if chart <> ""
+                entries = []
+                for each item in items
+                    entries.push(externalList.SortEntry(item, item))
+                end for
+                items = sortedRow(chart, entries)
+            end if
 
             owned = libraryMatches(items)
             for each item in items
@@ -2609,14 +2592,153 @@ function loadCustomDynamicList(listName as string, additionalData as dynamic) as
     return results
 end function
 
-' TMDB's movie and TV charts dont say what each result is, so the chart's path decides. Trending
-' says per result, which matters for the list that mixes both
-function chartItemType(path as string) as string
-    route = LCase(path)
-    if route.startsWith("trending/") then route = route.Mid(9)
-    if route.startsWith("tv/") then return "Series"
-    if route.startsWith("movie/") then return "Movie"
-    return ""
+' Seerr's media results as cards, each with what it sorts by. A request carries its title under media.
+function seerrMediaEntries(resultsArray as object, isRequests as boolean) as object
+    entries = []
+    for each item in resultsArray
+        if not isValid(item) then continue for
+
+        resItem = item
+        if isRequests
+            if item.media <> invalid
+                resItem = item.media
+                resItem.mediaType = item.type
+            else
+                continue for
+            end if
+        end if
+
+        mediaType = resItem.LookupCI("mediaType")
+        if not isValidAndNotEmpty(mediaType) then mediaType = resItem.LookupCI("media_type")
+        if not isValidAndNotEmpty(mediaType) then mediaType = (resItem.type = "Series" or resItem.type = "tv") ? "tv" : "movie"
+
+        tmdbId = resItem.LookupCI("tmdbId")
+        if not isValid(tmdbId) then tmdbId = resItem.LookupCI("id")
+        if not isValid(tmdbId) then continue for
+
+        title = resItem.LookupCI("title")
+        if not isValidAndNotEmpty(title) then title = resItem.LookupCI("name")
+        title = toNormalizedString(title)
+        if title = "" then title = "Unknown"
+
+        posterPath = resItem.LookupCI("posterPath")
+        if not isValidAndNotEmpty(posterPath) then posterPath = resItem.LookupCI("poster_path")
+
+        backdropPath = resItem.LookupCI("backdropPath")
+        if not isValidAndNotEmpty(backdropPath) then backdropPath = resItem.LookupCI("backdrop_path")
+
+        resItem.mediaType = mediaType
+
+        ' A request's media is the media info itself, so its status sits at the top
+        mediaStatus = chainLookupReturn(resItem, "mediaInfo.status", 0)
+        if isRequests then mediaStatus = resItem.status ?? 0
+        card = seerrCardNode(toNormalizedString(tmdbId), title, mediaType, posterPath, backdropPath, resItem)
+        json = card.json
+        json.SeerrStatus = mediaStatus
+        card.json = json
+        entries.push(externalList.SortEntry(resItem, card))
+    end for
+    return entries
+end function
+
+' Seerr's recently added list is its own media records, which carry the TMDB id but no title or
+' artwork, so each becomes a card filled in from the title's details
+function hydrateRecentlyAdded(records as object) as object
+    paths = []
+    for each record in records
+        if type(record) = "roAssociativeArray" and isValid(record.tmdbId) and (isStringEqual(record.mediaType, "movie") or isStringEqual(record.mediaType, "tv"))
+            paths.push(`${record.mediaType}/${toNormalizedString(record.tmdbId)}`)
+        end if
+    end for
+    details = seerrDetailsByPath(paths)
+
+    items = []
+    for each record in records
+        if type(record) <> "roAssociativeArray" then continue for
+        item = { id: record.tmdbId ?? record.id, mediaType: record.mediaType, mediaInfo: record }
+        found = details[`${toNormalizedString(record.mediaType)}/${toNormalizedString(record.tmdbId)}`]
+        if isValid(found)
+            for each key in ["title", "name", "posterPath", "backdropPath", "overview", "releaseDate", "firstAirDate", "voteAverage", "popularity"]
+                if isValid(found.LookupCI(key)) then item[key] = found.LookupCI(key)
+            end for
+        end if
+        items.push(item)
+    end for
+    return items
+end function
+
+' Each title's Seerr details by its "movie/<id>" or "tv/<id>" path, a batch at a time, one request
+' per title however many entries share it. A failed one is left out.
+function seerrDetailsByPath(paths as object) as object
+    found = {}
+    seen = {}
+    unique = []
+    for each path in paths
+        if not seen.DoesExist(path)
+            seen[path] = true
+            unique.push(path)
+        end if
+    end for
+
+    port = CreateObject("roMessagePort")
+    for first = 0 to unique.count() - 1 step SEERR_DETAILS_BATCH
+        running = {}
+        last = first + SEERR_DETAILS_BATCH - 1
+        if last > unique.count() - 1 then last = unique.count() - 1
+        for i = first to last
+            req = APIRequest("/Moonfin/Seerr/Api/" + unique[i], {})
+            if isValid(req)
+                req.setMessagePort(port)
+                if req.AsyncGetToString() then running[req.GetIdentity().ToStr()] = { req: req, path: unique[i] }
+            end if
+        end for
+
+        while running.count() > 0
+            msg = wait(30000, port)
+            if type(msg) <> "roUrlEvent" then exit while
+            entry = running[msg.GetSourceIdentity().ToStr()]
+            running.Delete(msg.GetSourceIdentity().ToStr())
+            if isValid(entry) and msg.GetResponseCode() = 200
+                data = unwrapSeerrProxyResponse(ParseJson(msg.GetString()))
+                if type(data) = "roAssociativeArray" then found[entry.path] = data
+            end if
+        end while
+    end for
+    return found
+end function
+
+' A Seerr slider's first page, under the title Seerr gives it now. A slider Seerr no longer has,
+' or has switched off, gives no row.
+function loadSeerrSliderRow(rowId as string) as object
+    m.top.rowTitle = ""
+    fromId = seerrSliders.FromRowId(rowId)
+    if not isValid(fromId) or not homeRowLayout.IsOwnServer(rowId) or not GetSeerrConfig().enabled then return []
+
+    sliders = seerrSliders.ParseList(unwrapSeerrProxyResponse(getJson(APIRequest("/Moonfin/Seerr/Api/" + seerrSliders.LIST_PATH, {}))))
+    slider = seerrSliders.Find(sliders, fromId.sliderId, fromId.sliderType)
+    if not isValid(slider) or not seerrSliders.IsSupported(slider) then return []
+
+    request = seerrSliders.Request(slider)
+    params = { "page": "1" }
+    params.Append(request.params)
+    body = unwrapSeerrProxyResponse(getJson(APIRequest("/Moonfin/Seerr/Api/" + request.path, params)))
+    m.top.rowTitle = slider.title
+    return sortedRow("seerr", seerrMediaEntries(seerrSliders.Results(body), false))
+end function
+
+' The order the IMDb, TMDB or Seerr rows' sort settings ask for
+function sortedRow(rows as string, entries as object) as object
+    settings = m.global.session.user.settings
+    return externalList.Sorted(entries, getStringSetting(settings, rows + ".rowsSortBy", "none"), getStringSetting(settings, rows + ".rowsSortOrder", "ascending"))
+end function
+
+' Seerr's tiles sort by their name alone
+function sortedSeerrTiles(tiles as object) as object
+    entries = []
+    for each tile in tiles
+        entries.push({ name: LCase(tile.title), year: 0, rating: 0, popularity: 0, value: tile })
+    end for
+    return sortedRow("seerr", entries)
 end function
 
 ' TMDB numbers movies and shows separately, so its id only names a title together with the
@@ -2873,7 +2995,6 @@ function seerrCardNode(tmdbId as string, title as string, mediaType as string, p
     tmp = createSGNode("HomeData")
     tmp.name = title
     tmp.type = (mediaType = "tv") ? "Series" : "Movie"
-    tmp.usePoster = true
     if posterUrl <> "" then tmp.posterURL = posterUrl
     if backdropUrl <> "" then tmp.backdropURL = backdropUrl
 
@@ -2939,6 +3060,111 @@ function loadSeasonalRow() as object
     results.append(parentalControls.WithoutUnratedOrBlockedItems(suggestions))
     if results.count() > 0 then m.top.rowKey = holiday
     return results
+end function
+
+' formatWatchingNowSubtitle: The live counts, in Core's words
+function formatWatchingNowSubtitle(data as object) as string
+    text = tr("{users} watching now · {movies} movies · {shows} shows")
+    if isStringEqual(data.LookupCI("mode"), "today") then text = tr("{users} watched today · {movies} movies · {shows} shows")
+    return text.Replace("{users}", groupedCount(data.LookupCI("users"))).Replace("{movies}", groupedCount(data.LookupCI("movies"))).Replace("{shows}", groupedCount(data.LookupCI("shows")))
+end function
+
+' A count in threes with commas, the way Core's decimal pattern writes it
+function groupedCount(value as dynamic) as string
+    digits = toNormalizedString(value ?? 0)
+    if digits = "" then digits = "0"
+    grouped = ""
+    while digits.Len() > 3
+        grouped = "," + digits.Right(3) + grouped
+        digits = digits.Left(digits.Len() - 3)
+    end while
+    return digits + grouped
+end function
+
+' normalizeWatchingNowItem: An MDBList title in the shape the external row cards are built from, or
+' invalid when it has neither a TMDB nor an IMDb id
+function normalizeWatchingNowItem(rawItem as object) as object
+    if not isValid(rawItem) then return invalid
+
+    tmdbId = rawItem.LookupCI("tmdb_id")
+    imdbId = rawItem.LookupCI("imdb_id")
+
+    tmdbStr = isValid(tmdbId) ? toNormalizedString(tmdbId) : ""
+    imdbStr = isValid(imdbId) ? toNormalizedString(imdbId) : ""
+
+    if tmdbStr = "" and imdbStr = "" then return invalid
+
+    rawType = LCase(toNormalizedString(rawItem.LookupCI("media_type")))
+    itemType = (rawType = "show" or rawType = "tv" or rawType = "series") ? "Series" : "Movie"
+
+    title = toNormalizedString(rawItem.LookupCI("title"))
+    if title = "" then title = "Unknown"
+
+    backdrop = rawItem.LookupCI("backdrop")
+    poster = rawItem.LookupCI("poster")
+    if not isValidAndNotEmpty(poster) then poster = backdrop
+    watchers = toNormalizedString(rawItem.LookupCI("watchers")).ToInt()
+    logoUrl = rawItem.LookupCI("logo")
+    if type(logoUrl) <> "String" and type(logoUrl) <> "roString" then logoUrl = ""
+
+    providerIds = {}
+    if tmdbStr <> "" then providerIds.Tmdb = tmdbStr
+    if imdbStr <> "" then providerIds.Imdb = imdbStr
+
+    return {
+        name: title,
+        type: itemType,
+        tmdbId: tmdbStr,
+        providerIds: providerIds,
+        productionYear: rawItem.LookupCI("year"),
+        backdropUrl: backdrop,
+        posterUrl: poster,
+        logoUrl: logoUrl,
+        rawMediaType: rawType = "" ? "movie" : rawType,
+        watchers: watchers
+    }
+end function
+
+' loadWatchingNowRow: Currently watching items from MDBList with live watcher stats.
+'
+' @return {object} HomeData nodes, empty when the endpoint fails or returns no items
+function loadWatchingNowRow() as object
+    m.top.rowKey = ""
+    m.top.rowSubtitle = ""
+
+    data = getJson(APIRequest("/Moonfin/MdbList/WatchingNow", { profile: "tv" }))
+    if not isValid(data) then return []
+
+    rawItems = chainLookupReturn(data, "items", [])
+    if rawItems.Count() = 0 then return []
+
+    m.top.rowSubtitle = formatWatchingNowSubtitle(data)
+
+    normalized = []
+    for each raw in rawItems
+        item = normalizeWatchingNowItem(raw)
+        if isValid(item) then normalized.push(item)
+    end for
+    if normalized.Count() = 0 then return []
+
+    ' As in Core, every card is an outside title that opens in Seerr, owned or not
+    results = []
+    for i = 0 to normalized.Count() - 1
+        item = normalized[i]
+        card = customRowCard(item, {})
+        if isValid(card)
+            json = card.json
+            json.WatchingNow = { rank: i + 1, watchers: item.watchers, mediaType: item.rawMediaType, logo: item.logoUrl }
+            card.json = json
+            if card.backdropURL <> ""
+                card.thumbnailURL = card.backdropURL
+                card.widePosterURL = card.backdropURL
+            end if
+            results.push(card)
+        end if
+    end for
+
+    return parentalControls.WithoutUnratedOrBlockedItems(results)
 end function
 
 ' internalRowNode: Builds a home card for one of the opt in internal rows
@@ -3106,32 +3332,6 @@ function playableMembers(items as object) as object
     return playable
 end function
 
-' Anything the order leaves out keeps the server's order after the rest
-function arrangeByStoredOrder(items as object, order as object) as object
-    position = {}
-    for i = 0 to order.Count() - 1
-        position[guidKey(order[i])] = i
-    end for
-
-    slots = {}
-    rest = []
-    for each item in items
-        key = guidKey(item.LookupCI("Id"))
-        if position.DoesExist(key)
-            slots[position[key].ToStr()] = item
-        else
-            rest.push(item)
-        end if
-    end for
-
-    arranged = []
-    for i = 0 to order.Count() - 1
-        if slots.DoesExist(i.ToStr()) then arranged.push(slots[i.ToStr()])
-    end for
-    arranged.Append(rest)
-    return arranged
-end function
-
 ' Replaces each series with its episodes for the collection rows that asked for it, keeping
 ' movies and anything else where they were
 function expandSeriesToEpisodes(members as object, limit as integer) as object
@@ -3184,7 +3384,6 @@ function seerrBrowseTile(browseType as string, id as integer, name as string, me
     tile.name = name
     tile.title = name
     tile.type = "SeerrBrowse"
-    tile.usePoster = false
     if artUrl <> "" then tile.posterURL = artUrl
 
     return tile
@@ -3270,7 +3469,6 @@ function seerrShortcutRow() as object
         tile.name = entry.name
         tile.title = entry.name
         tile.type = "SeerrShortcut"
-        tile.usePoster = false
         if still <> "" then tile.posterURL = still
 
         results.push(tile)
@@ -3304,7 +3502,8 @@ end function
 
 function arrCalendarItems(service as string) as object
     now = CreateObject("roDateTime")
-    start = now.ToISOString()
+    ' From the start of the day, so a release earlier today still comes back
+    start = Left(now.ToISOString(), 10)
     ' roDateTime has no way to step forward, so the end of the window is rebuilt from seconds
     now.FromSeconds(now.AsSeconds() + CALENDAR_WINDOW_DAYS * 24 * 60 * 60)
 
@@ -3324,14 +3523,18 @@ sub appendRadarrCalendar(results as object, settings as object)
     if getBoolSetting(settings, "calendar.radarr.showPhysical", true) then kinds.push({ field: "physicalRelease", label: tr("Physical") })
     if kinds.count() = 0 then return
 
-    today = CreateObject("roDateTime").ToISOString()
+    ' Radarr gives a release as midnight UTC on its day, which is the day before anywhere west of
+    ' UTC, so a release stays on the row through its own day
+    yesterday = CreateObject("roDateTime")
+    yesterday.FromSeconds(yesterday.AsSeconds() - 24 * 60 * 60)
+    since = yesterday.ToISOString()
 
     for each movie in arrCalendarItems("Radarr")
         soonest = ""
         kindLabel = ""
         for each kind in kinds
             when = toNormalizedString(movie.LookupCI(kind.field))
-            if when = "" or when < today then continue for
+            if when = "" or when <= since then continue for
             if soonest = "" or when < soonest
                 soonest = when
                 kindLabel = kind.label
@@ -3472,7 +3675,6 @@ function calendarNode(item as object, title as string, itemType as string, airs 
 
     node.json = payload
     node.title = title
-    node.usePoster = true
 
     return node
 end function

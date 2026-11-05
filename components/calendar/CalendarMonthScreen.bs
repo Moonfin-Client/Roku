@@ -1,0 +1,390 @@
+import "pkg:/components/calendar/calendarHost.bs"
+import "pkg:/source/utils/misc.bs"
+
+const PANEL_WIDTH = 668
+const PANEL_GAP = 40
+const CELL_INSET = 5
+
+sub init()
+    m.top.optionsAvailable = false
+    m.monthTitle = m.top.findNode("monthTitle")
+    m.prevButton = m.top.findNode("prevButton")
+    m.nextButton = m.top.findNode("nextButton")
+    m.todayButton = m.top.findNode("todayButton")
+    m.weekdays = m.top.findNode("weekdays")
+    m.grid = m.top.findNode("grid")
+    m.loading = m.top.findNode("loading")
+    m.panel = m.top.findNode("panel")
+    m.dayName = m.top.findNode("dayName")
+    m.dayDate = m.top.findNode("dayDate")
+    m.dayList = m.top.findNode("dayList")
+    m.emptyDay = m.top.findNode("emptyDay")
+    m.keys = m.top.createChild("Group")
+    m.keys.focusable = true
+
+    calendarInit()
+    m.top.findNode("background").color = m.calBackground
+    m.zone = "grid"
+    m.headerIndex = 0
+    m.cells = []
+    m.days = []
+    m.dayEntries = []
+    m.weekStart = calendarEntries.WeekStartOf(m.calPrefs.weekStart, CreateObject("roDeviceInfo").GetCurrentLocale())
+
+    layoutScreen()
+    m.dayList.observeField("itemSelected", "onDayRowSelected")
+    m.top.observeField("focusedChild", "paintFocus")
+    m.started = false
+    pickDay(m.calToday)
+end sub
+
+sub layoutScreen()
+    insets = calendarInsets()
+    m.left = insets.left
+    m.insetTop = insets.top
+    m.gridWidth = 1920 - insets.left - insets.right - PANEL_WIDTH - PANEL_GAP
+    ' The 28 tall weekday names sit under the 73 tall title, with a gap above and below them
+    m.gridTop = insets.top + 73 + 20 + 28 + 10
+    m.gridHeight = 1080 - insets.bottom - m.gridTop
+
+    m.monthTitle.font = fontOfSize(50, true)
+    m.monthTitle.translation = [insets.left, insets.top]
+    m.monthTitle.height = 73
+    m.monthTitle.vertAlign = "center"
+
+    for each button in [m.prevButton, m.nextButton, m.todayButton]
+        button.accent = m.calAccent
+        button.onAccent = m.calOnAccent
+    end for
+    m.todayButton.text = tr("Today")
+    x = insets.left + m.gridWidth - m.todayButton.buttonWidth
+    m.todayButton.translation = [x, insets.top + (73 - m.todayButton.buttonHeight) / 2]
+    x -= 21 + m.nextButton.buttonWidth
+    m.nextButton.translation = [x, insets.top + (73 - m.nextButton.buttonHeight) / 2]
+    x -= 14 + m.prevButton.buttonWidth
+    m.prevButton.translation = [x, insets.top + (73 - m.prevButton.buttonHeight) / 2]
+    m.headerButtons = [m.prevButton, m.nextButton, m.todayButton]
+
+    m.grid.translation = [insets.left, m.gridTop]
+    m.loading.font = fontOfSize(27, false)
+    m.loading.translation = [insets.left, m.gridTop]
+    m.loading.width = m.gridWidth
+    m.loading.height = m.gridHeight
+
+    panelLeft = insets.left + m.gridWidth + PANEL_GAP
+    m.panel.translation = [panelLeft, insets.top]
+    m.dayName.font = fontOfSize(37, true)
+    m.dayName.height = 54
+    m.dayName.vertAlign = "center"
+    m.dayDate.font = fontOfSize(23, false)
+    m.dayDate.translation = [0, 54]
+    m.dayDate.height = 32
+    m.dayDate.vertAlign = "center"
+    listTop = 54 + 32 + 20
+    m.dayList.translation = [0, listTop]
+    m.dayList.itemWidth = PANEL_WIDTH
+    m.dayList.viewHeight = 1080 - insets.bottom - insets.top - listTop
+    m.emptyDay.font = fontOfSize(25, false)
+    m.emptyDay.text = tr("Nothing on this day")
+    m.emptyDay.translation = [0, listTop]
+    m.emptyDay.width = PANEL_WIDTH
+    m.emptyDay.height = 300
+end sub
+
+' Opened from a style that has loaded, the entries come along. Otherwise they're loaded here.
+sub OnScreenShown(isReturning = false as boolean)
+    if not m.started
+        m.started = true
+        calendarLoad(m.top.shared)
+        ' Shared entries have already drawn the grid
+        if m.calLoading then render()
+    else if isReturning
+        followSettings()
+    end if
+    ' Settings opens over this screen rather than in place of it, so its changes are heard here
+    m.global.unobserveFieldScoped("session")
+    m.global.observeFieldScoped("session", "followSettings")
+    focusZone()
+end sub
+
+sub OnScreenHidden()
+    m.global.unobserveFieldScoped("session")
+end sub
+
+sub followSettings()
+    m.weekStart = calendarEntries.WeekStartOf(settingOr("calendar.weekStart", "locale"), CreateObject("roDeviceInfo").GetCurrentLocale())
+    ' A change that doesn't reload has already redrawn the grid
+    if calendarFollowSettings() and m.calLoading then render()
+end sub
+
+sub onCalendarChanged()
+    render()
+end sub
+
+' Picking a day moves the grid to its month
+sub pickDay(day as integer)
+    m.selected = day
+    civil = calendarEntries.CivilOf(day)
+    m.year = civil.year
+    m.month = civil.month
+end sub
+
+sub shiftMonth(by as integer)
+    month = m.month + by
+    year = m.year
+    if month < 1
+        month = 12
+        year -= 1
+    else if month > 12
+        month = 1
+        year += 1
+    end if
+    first = calendarEntries.DayNumber(year, month, 1)
+    today = calendarEntries.CivilOf(m.calToday)
+    if today.year = year and today.month = month then first = m.calToday
+    pickDay(first)
+    render()
+end sub
+
+function canGoBack() as boolean
+    return calendarEntries.DayNumber(m.year, m.month, 1) > m.calWindowStart
+end function
+
+function canGoForward() as boolean
+    return calendarEntries.DayNumber(m.year, m.month, 1) + calendarEntries.DaysInMonth(m.year, m.month) < m.calWindowEnd
+end function
+
+sub render()
+    m.monthTitle.text = calendarEntries.MonthTitle(m.year, m.month)
+    m.prevButton.dimmed = not canGoBack()
+    m.nextButton.dimmed = not canGoForward()
+
+    m.days = calendarEntries.GridDays(m.year, m.month, m.weekStart)
+    rows = Int(m.days.Count() / 7)
+    cellWidth = m.gridWidth / 7
+    cellHeight = m.gridHeight / rows
+
+    m.weekdays.removeChildrenIndex(m.weekdays.getChildCount(), 0)
+    m.weekdays.translation = [m.left, m.insetTop + 73 + 20]
+    weekdayFont = fontOfSize(20, true)
+    for i = 0 to 6
+        label = m.weekdays.createChild("Label")
+        label.font = weekdayFont
+        label.color = "#FFFFFF8C"
+        label.text = calendarEntries.WeekdayShort(calendarEntries.Weekday(m.days[i]))
+        label.width = cellWidth
+        label.height = 28
+        label.vertAlign = "center"
+        label.horizAlign = "center"
+        label.translation = [i * cellWidth, 0]
+    end for
+
+    m.loading.visible = m.calLoading or m.calProblem <> ""
+    m.grid.visible = not m.loading.visible
+    if m.calLoading
+        m.loading.text = tr("Loading...")
+    else if m.calProblem <> ""
+        m.loading.text = calendarProblemText(m.calProblem)
+    end if
+
+    while m.cells.Count() < m.days.Count()
+        m.cells.push(m.grid.createChild("CalendarDayCell"))
+    end while
+    for i = 0 to m.cells.Count() - 1
+        cell = m.cells[i]
+        cell.visible = i < m.days.Count()
+        if cell.visible
+            day = m.days[i]
+            cell.translation = [(i mod 7) * cellWidth + CELL_INSET, Int(i / 7) * cellHeight + CELL_INSET]
+            cell.data = cellData(day, cellWidth - CELL_INSET * 2, cellHeight - CELL_INSET * 2)
+        end if
+    end for
+    m.selectedIndex = 0
+    for i = 0 to m.days.Count() - 1
+        if m.days[i] = m.selected then m.selectedIndex = i
+    end for
+    renderPanel()
+    paintFocus()
+end sub
+
+function cellData(day as integer, width as float, height as float) as object
+    entries = calendarEntries.OnDay(m.calEntries, day)
+    lines = []
+    premiere = false
+    for each entry in entries
+        if lines.Count() < 2 then lines.push({ title: entry.title, color: calendarColor(entry) })
+        if entry.badge = "seriesPremiere" or entry.badge = "seasonPremiere" then premiere = true
+    end for
+    more = ""
+    if entries.Count() > 2 then more = tr("+{count} more").Replace("{count}", (entries.Count() - 2).ToStr())
+    civil = calendarEntries.CivilOf(day)
+    return {
+        width: width,
+        height: height,
+        number: civil.day.ToStr(),
+        inMonth: civil.month = m.month,
+        selected: day = m.selected,
+        today: day = m.calToday,
+        premiere: premiere and m.calPrefs.badges,
+        newLabel: tr("NEW"),
+        accent: m.calAccent,
+        focusColor: m.calFocusColor,
+        lines: lines,
+        more: more
+    }
+end function
+
+' The picked day's name, its date and its entries as compact agenda rows
+sub renderPanel()
+    m.dayName.text = calendarEntries.DayName(m.selected, m.calToday)
+    m.dayDate.text = calendarEntries.FullDate(m.selected)
+    m.dayEntries = calendarEntries.OnDay(m.calEntries, m.selected)
+    built = calendarRowsContent(m.dayEntries, false, true)
+    m.dayList.rowHeights = built.heights
+    m.dayList.content = built.content
+    m.dayList.visible = m.dayEntries.Count() > 0
+    m.emptyDay.visible = not m.dayList.visible and not m.calLoading and m.calProblem = ""
+    if m.zone = "panel" and not m.dayList.visible then m.zone = "grid"
+end sub
+
+' Focusing a cell picks that day, moving the grid when the day is in another month
+sub focusCell(index as integer)
+    if index < 0 or index >= m.days.Count() then return
+    previous = m.selectedIndex
+    day = m.days[index]
+    sameMonth = calendarEntries.CivilOf(day).month = m.month
+    pickDay(day)
+    if not sameMonth
+        render()
+        return
+    end if
+    m.selectedIndex = index
+    m.cells[previous].data = cellData(m.days[previous], m.cells[previous].data.width, m.cells[previous].data.height)
+    m.cells[index].data = cellData(day, m.cells[index].data.width, m.cells[index].data.height)
+    renderPanel()
+    paintFocus()
+end sub
+
+sub paintFocus()
+    active = m.keys.hasFocus()
+    for i = 0 to m.cells.Count() - 1
+        m.cells[i].focused = active and m.zone = "grid" and i = m.selectedIndex
+    end for
+    for i = 0 to 2
+        m.headerButtons[i].focused = active and m.zone = "header" and m.headerIndex = i
+    end for
+end sub
+
+sub focusZone()
+    if m.zone = "panel" and m.dayList.visible
+        m.dayList.setFocus(true)
+    else
+        if m.zone = "panel" then m.zone = "grid"
+        m.keys.setFocus(true)
+    end if
+    paintFocus()
+end sub
+
+sub setZone(zone as string)
+    m.zone = zone
+    focusZone()
+end sub
+
+sub onDayRowSelected()
+    index = m.dayList.itemSelected
+    if index >= 0 and index < m.dayEntries.Count() then calendarSelect(m.dayEntries[index])
+end sub
+
+function goToNav(edge as string) as boolean
+    if m.zone = "panel"
+        m.top.lastFocus = m.dayList
+    else
+        m.top.lastFocus = m.keys
+    end if
+    if edge = "up" then return FocusOverhang(m.top)
+    return FocusSidebar(m.top)
+end function
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if m.zone = "panel"
+        if key = "left"
+            setZone("grid")
+            return true
+        end if
+        if key = "up"
+            setZone("header")
+            return true
+        end if
+        return false
+    end if
+
+    if m.zone = "header"
+        if key = "left"
+            if m.headerIndex = 0 then return goToNav("left")
+            m.headerIndex -= 1
+            paintFocus()
+            return true
+        end if
+        if key = "right"
+            if m.headerIndex < 2 then m.headerIndex += 1
+            paintFocus()
+            return true
+        end if
+        if key = "down"
+            setZone("grid")
+            return true
+        end if
+        if key = "up" then return goToNav("up")
+        if key = "OK"
+            ' Focus goes back to the picked day once the month changes
+            if m.headerIndex = 0 and canGoBack()
+                shiftMonth(-1)
+                setZone("grid")
+            else if m.headerIndex = 1 and canGoForward()
+                shiftMonth(1)
+                setZone("grid")
+            else if m.headerIndex = 2
+                pickDay(m.calToday)
+                render()
+                setZone("grid")
+            end if
+            return true
+        end if
+        return false
+    end if
+
+    column = m.selectedIndex mod 7
+    if key = "left"
+        if column = 0 then return goToNav("left")
+        focusCell(m.selectedIndex - 1)
+        return true
+    end if
+    if key = "right"
+        if column = 6
+            if m.dayList.visible then setZone("panel")
+            return true
+        end if
+        focusCell(m.selectedIndex + 1)
+        return true
+    end if
+    if key = "up"
+        if m.selectedIndex < 7
+            m.headerIndex = 2
+            setZone("header")
+        else
+            focusCell(m.selectedIndex - 7)
+        end if
+        return true
+    end if
+    if key = "down"
+        if m.selectedIndex + 7 < m.days.Count() then focusCell(m.selectedIndex + 7)
+        return true
+    end if
+    if key = "OK"
+        if m.dayEntries.Count() > 0 then setZone("panel")
+        return true
+    end if
+    return false
+end function

@@ -1,0 +1,63 @@
+' The guide's episode line, the recording marks, the series choices and the timers the schedule keeps
+sub testLiveTvGuide()
+    assertEqual(liveTvGuide.EpisodeLine({ EpisodeTitle: "Pilot", ParentIndexNumber: 1, IndexNumber: 5 }), "Pilot (S1:E5)", "The episode line puts the numbering after the title")
+    assertEqual(liveTvGuide.EpisodeLine({ EpisodeTitle: "Pilot" }), "Pilot", "The episode line is the title alone without numbers")
+    assertEqual(liveTvGuide.EpisodeLine({ ParentIndexNumber: 2, IndexNumber: 3 }), "(S2:E3)", "The episode line is the numbering alone without a title")
+    assertEqual(liveTvGuide.EpisodeLine({}), "", "The episode line is empty without either")
+    assertEqual(liveTvGuide.EpisodeLine({ Name: "College Football", EpisodeTitle: "College Football" }), "", "A title that repeats the program name is left out")
+    assertEqual(liveTvGuide.EpisodeLine({ Name: "College Football", EpisodeTitle: "College Football", ParentIndexNumber: 2, IndexNumber: 9 }), "(S2:E9)", "The numbering stays when the repeated title goes")
+    assertEqual(liveTvGuide.EpisodeLine({ Name: "College Football", EpisodeTitle: "South Alabama at Kentucky" }), "South Alabama at Kentucky", "A title of its own stays")
+    assertEqual(liveTvGuide.EpisodeLine({ EpisodeTitle: "\" + chr(34) + "Raygun\" + chr(34) }), chr(34) + "Raygun" + chr(34), "Escaped quotes in the title are unescaped")
+
+    assertEqual(liveTvGuide.RecordingMark({ TimerId: "t1" }), "record", "A program with its own timer wears the record mark")
+    assertEqual(liveTvGuide.RecordingMark({ TimerId: "t1", SeriesTimerId: "s1" }), "series", "A showing a series rule records wears the series mark")
+    assertEqual(liveTvGuide.RecordingMark({ SeriesTimerId: "s1" }), "skipped", "A showing the series rule passes over wears the grey mark")
+    assertEqual(liveTvGuide.RecordingMark({}), "", "A program with no recording wears no mark")
+
+    assertEqual(liveTvGuide.SeriesChoiceOf({ RecordNewOnly: true, SkipEpisodesInLibrary: true }), "newOnly", "A rule recording first airings reads as New Episodes Only")
+    assertEqual(liveTvGuide.SeriesChoiceOf({ RecordNewOnly: false, SkipEpisodesInLibrary: true }), "notRecorded", "A rule skipping recorded episodes reads as Episodes Not Already Recorded")
+    assertEqual(liveTvGuide.SeriesChoiceOf({ RecordNewOnly: false, SkipEpisodesInLibrary: false }), "all", "A rule with neither reads as All Episodes")
+    flags = liveTvGuide.SeriesChoiceFlags("newOnly")
+    assertEqual(flags.RecordNewOnly, true, "New Episodes Only records first airings")
+    assertEqual(flags.SkipEpisodesInLibrary, true, "New Episodes Only skips episodes in the library")
+    assertEqual(FormatJson(liveTvGuide.SeriesChoiceFlags("all")), "{" + chr(34) + "RecordNewOnly" + chr(34) + ":false," + chr(34) + "SkipEpisodesInLibrary" + chr(34) + ":false}", "The flags keep the server's casing")
+
+    now = liveTvGuide.ParseTime("2026-10-29T20:00:00Z")
+    assertEqual(liveTvGuide.IsUpcomingTimer({ Status: "New", EndDate: "2026-10-29T21:00:00Z" }, now), true, "A waiting timer stays on the schedule")
+    assertEqual(liveTvGuide.IsUpcomingTimer({ Status: "InProgress" }, now), true, "A timer without an end stays on the schedule")
+    assertEqual(liveTvGuide.IsUpcomingTimer({ Status: "Cancelled", EndDate: "2026-10-29T21:00:00Z" }, now), false, "A cancelled timer leaves the schedule")
+    assertEqual(liveTvGuide.IsUpcomingTimer({ Status: "Error" }, now), false, "A failed timer leaves the schedule")
+    assertEqual(liveTvGuide.IsUpcomingTimer({ Status: "New", EndDate: "2026-10-29T20:00:00Z" }, now), false, "A timer whose showing is over leaves the schedule")
+    assertEqual(liveTvGuide.UpcomingTimers([{ Status: "Completed" }, { Status: "New" }], now).count(), 1, "The schedule keeps only what is still to record")
+end sub
+
+' What the player's Record button shows for the program airing
+sub testLiveRecording()
+    now = liveTvGuide.ParseTime("2026-10-29T20:10:00Z")
+    program = { Id: "p-1", Name: "Jeopardy!" }
+
+    state = liveTvGuide.LiveRecording(program, [], now)
+    assertEqual(state.mark, "", "Nothing recording shows the plain button")
+    assertEqual(isValid(state.timer), false, "Nothing recording has no timer")
+
+    waiting = { Id: "t1", ProgramId: "p1", Status: "New" }
+    running = { Id: "t2", ProgramId: "p-1", Status: "InProgress" }
+    assertEqual(liveTvGuide.TimerFor(program, [waiting, running]).Id, "t2", "A running timer wins over one still waiting, and ids match without their dashes")
+    assertEqual(liveTvGuide.TimerFor(program, [{ Id: "t3", ProgramId: "p1", Status: "Cancelled" }]), invalid, "A cancelled timer doesnt count")
+    assertEqual(liveTvGuide.TimerFor({ Id: "other", TimerId: "t1" }, [waiting]).Id, "t1", "The program's own timer id finds its timer")
+
+    assertEqual(liveTvGuide.LiveRecording(program, [waiting], now).mark, "scheduled", "A timer that hasnt started yet stays white")
+    assertEqual(liveTvGuide.LiveRecording(program, [running], now).mark, "record", "A running recording turns the button red")
+
+    rule = { Id: "t4", ProgramId: "p1", Status: "InProgress", SeriesTimerId: "s-1" }
+    later = { Id: "t5", ProgramId: "p2", Status: "New", SeriesTimerId: "s1", StartDate: "2026-10-30T20:00:00Z" }
+    soonest = { Id: "t6", ProgramId: "p3", Status: "New", SeriesTimerId: "s1", StartDate: "2026-10-29T21:00:00Z" }
+    state = liveTvGuide.LiveRecording(program, [rule, later, soonest], now)
+    assertEqual(state.mark, "series", "A showing the series rule records wears the series mark")
+    assertEqual(state.seriesTimerId, "s-1", "The rule's id is kept as the server sent it")
+    assertEqual(state.nextStart, liveTvGuide.ParseTime("2026-10-29T21:00:00Z"), "The rule's next recording is its soonest showing still to come")
+
+    state = liveTvGuide.LiveRecording({ Id: "p1", SeriesTimerId: "s1" }, [later], now)
+    assertEqual(state.mark, "skipped", "A showing the rule passes over wears the grey mark")
+    assertEqual(liveTvGuide.LiveRecording({ Id: "p1", SeriesTimerId: "s1" }, [], now).nextStart, 0, "A rule with nothing coming up has no next recording")
+end sub

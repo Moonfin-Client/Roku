@@ -3,6 +3,7 @@ import "pkg:/components/settings/settingsEditors.bs"
 import "pkg:/components/settings/settingsRows.bs"
 import "pkg:/components/settings/settingsStyle.bs"
 import "pkg:/source/api/Achievements.bs"
+import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/sdk.bs"
 import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/enums/KeyCode.bs"
@@ -14,14 +15,18 @@ import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/detailMetadataLayout.bs"
 import "pkg:/source/utils/detailSectionLayout.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
+import "pkg:/source/utils/homeCards.bs"
+import "pkg:/source/utils/homePreview.bs"
 import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/kidsMode.bs"
+import "pkg:/source/utils/libraryOrder.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/parentalFilter.bs"
 import "pkg:/source/utils/pinLockout.bs"
 import "pkg:/source/utils/remoteSubtitles.bs"
 import "pkg:/source/utils/seasonalRow.bs"
+import "pkg:/source/utils/seerrSliders.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
 import "pkg:/source/utils/settingsMetrics.bs"
 import "pkg:/source/utils/settingsSync.bs"
@@ -33,6 +38,16 @@ import "pkg:/source/utils/userConfigSync.bs"
 
 const TOAST_LINE_HEIGHT = 45
 const TOAST_CHARACTER_WIDTH = 16
+
+' The live preview layout: the category pill across the top, the list column on the left and the
+' preview beside it
+const LIST_X = 48
+const BODY_Y = 128
+const BODY_HEIGHT = 928
+const TOP_BAR_Y = 24
+const TOP_BAR_HEIGHT = 80
+' The preview's scene chips from left to right
+const PREVIEW_SCENES = ["home", "details", "player", "search"]
 
 sub init()
     m.top.optionsAvailable = false
@@ -46,8 +61,11 @@ sub init()
 
     m.settingsMenu = m.top.findNode("settingsMenu")
     m.titleBar = m.top.findNode("titleBar")
-    m.scrim = m.top.findNode("scrim")
-    m.panel = m.top.findNode("panel")
+    m.layout = m.top.findNode("layout")
+    m.backdrop = m.top.findNode("backdrop")
+    m.screenTitle = m.top.findNode("screenTitle")
+    m.categoryPill = m.top.findNode("categoryPill")
+    m.livePreview = m.top.findNode("livePreview")
     m.panelFill = m.top.findNode("panelFill")
     m.openAnim = m.top.findNode("openAnim")
     m.closeAnim = m.top.findNode("closeAnim")
@@ -66,17 +84,11 @@ sub init()
     m.integerSetting.observeField("escape", "onKeyGridEscape")
 
     applySettingsStyle()
-    ' The panel slides in from the right edge when it opens
-    if m.animate
-        m.panel.translation = [1920, 0]
-        m.panel.opacity = 0
-        m.scrim.opacity = 0
-    end if
+    ' The screen fades in when it opens
+    if m.animate then m.layout.opacity = 0
 
-    m.settingsMenu.setFocus(true)
     m.settingsMenu.observeField("itemFocused", "settingFocused")
     m.settingsMenu.observeField("itemSelected", "settingSelected")
-    m.settingsMenu.observeField("scrollOffset", "onListScrolled")
 
     m.colorgrid.observeField("itemSelected", "onColorSelected")
     m.sliderSaveTimer = m.top.findNode("sliderSaveTimer")
@@ -108,7 +120,105 @@ sub init()
     m.themeOptions = []
 
     m.configTree = reorderSettingsForFlutter(GetConfigTree())
-    LoadMenu({ children: m.configTree })
+
+    m.previewScene = "home"
+    m.previewKey = ""
+    m.tryKey = ""
+    m.tryValue = invalid
+    m.tryIndex = -1
+    m.chipsFocused = false
+    m.chipScene = ""
+    ' A smaller size than the bar asks for, since a poster sharing its uri can stall in loading
+    m.previewAvatar = UserImageURL(chainLookupReturn(m.global, "session.user.id", ""), { maxHeight: "128", maxWidth: "128" })
+    m.previewScenes = previewSceneTable()
+    m.previewChips = []
+    for each sceneId in PREVIEW_SCENES
+        m.previewChips.push({ id: sceneId, label: previewSceneName(sceneId) })
+    end for
+    m.previewDefaults = {}
+    for each key in m.previewScenes
+        item = findConfigTreeKey(key, m.configTree)
+        m.previewDefaults[key] = ""
+        if isValid(item) and isValid(item.default) then m.previewDefaults[key] = item.default
+    end for
+    ' The previews draw the library's own art and titles
+    m.previewItemsTask = createObject("roSGNode", "SetupPreviewItemsTask")
+    m.previewItemsTask.observeField("items", "onPreviewItemsLoaded")
+    m.previewItemsTask.control = "RUN"
+
+    m.pillFocused = true
+    m.categoryIndex = -1
+    m.categoryPill.observeField("selectedIndex", "onCategoryPicked")
+    buildCategories()
+    showCategory(0)
+    focusPill(true)
+end sub
+
+sub onPreviewItemsLoaded()
+    m.livePreview.items = m.previewItemsTask.items
+end sub
+
+' The pill's segments: every top level screen this account can open. Kids Mode leaves only the
+' way out, which gets a screen of its own like the rest.
+sub buildCategories()
+    m.categories = []
+    labels = []
+    for each section in m.configTree
+        if isValid(section.visible) and not section.visible and not m.showSecretMenu then continue for
+        if isValid(section.requires) and not settingRequirementMet(section.requires) then continue for
+        category = section
+        if not isValid(section.children) then category = { title: "Kids Mode", description: section.description, children: [section] }
+        m.categories.push(category)
+        labels.push(tr(category.title))
+    end for
+    m.categoryPill.labels = labels
+end sub
+
+sub onCategoryPicked()
+    index = m.categoryPill.selectedIndex
+    if index <> m.categoryIndex then showCategory(index)
+end sub
+
+' A category's own screen goes in the list column, with nothing of the last one left behind
+sub showCategory(index as integer)
+    if index < 0 or index >= m.categories.Count() then return
+    flushSliderSave()
+    commitOpenEditor()
+    closePicker()
+    m.categoryIndex = index
+    if m.categoryPill.selectedIndex <> index then m.categoryPill.selectedIndex = index
+    category = m.categories[index]
+    m.categoryEntry = previewEntry(tr(category.title), tr(category.description ?? ""))
+    m.userLocation = []
+    LoadMenu(category)
+    updatePreview()
+end sub
+
+' Down from the pill steps onto the first row, and the list's own Up and Back come back to it
+sub focusPill(focused as boolean)
+    m.pillFocused = focused
+    m.chipsFocused = false
+    m.categoryPill.focusRing = focused
+    if focused
+        focusTitleAction(false)
+        m.categoryPill.setFocus(true)
+    else
+        m.settingsMenu.setFocus(true)
+    end if
+    updatePreview()
+end sub
+
+' Right from the list steps onto the scene chips, on the one showing. The list keeps its row, so
+' leaving the chips goes back to the setting they were reached from.
+sub focusChips(focused as boolean)
+    m.chipsFocused = focused
+    if focused
+        m.chipScene = m.previewScene
+        m.livePreview.setFocus(true)
+    else
+        m.settingsMenu.setFocus(true)
+    end if
+    updatePreview()
 end sub
 
 sub onKeypressTimerFire()
@@ -127,10 +237,18 @@ sub applySettingsStyle()
     m.style = BuildSettingsStyle(false)
     m.cleanStyle = BuildSettingsStyle(true)
     palette = m.style.palette
-    m.panelFill.blendColor = palette.panel.color
-    m.panelFill.opacity = palette.panel.opacity
+    m.backdrop.color = palette.background
+    m.panelFill.blendColor = palette.dialog.color
+    m.panelFill.opacity = palette.dialog.opacity
+    m.screenTitle.font = palette.fonts.appTitle
+    m.screenTitle.color = palette.title
+    m.screenTitle.text = tr("Settings")
+    m.categoryPill.accent = palette.header
+    titleWidth = m.screenTitle.boundingRect().width
+    m.categoryPill.area = [LIST_X + titleWidth + 40, TOP_BAR_Y, 1872 - LIST_X - titleWidth - 40, TOP_BAR_HEIGHT]
     m.animate = not palette.lowTier
     m.settingsMenu.animate = m.animate
+    updatePreview()
 end sub
 
 ' Every single choice in settings is made in this dialog over the panel, which opens on what's
@@ -155,6 +273,7 @@ end sub
 function newPickerDialog(title as string, options as object) as object
     closePicker()
     dialog = CreateObject("roSGNode", "SettingsPickerDialog")
+    dialog.area = [LIST_X, BODY_Y, settingsMetrics.PANEL_WIDTH, BODY_HEIGHT]
     dialog.style = m.sectionStyle
     dialog.title = title
     dialog.options = options
@@ -173,9 +292,256 @@ sub closePicker()
     m.picker.unobserveField("chosen")
     m.picker.unobserveField("saved")
     m.picker.unobserveField("closed")
+    m.picker.unobserveField("focusedOption")
     m.settingsMenu.setFocus(true)
     m.top.removeChild(m.picker)
     m.picker = invalid
+    m.tryKey = ""
+    m.tryValue = invalid
+    m.tryIndex = -1
+    updatePreview()
+end sub
+
+' The option a picker has in focus stands in for the saved one in the preview until it closes
+sub onPickerOptionFocused()
+    index = m.picker.focusedOption
+    if not isValid(m.pickerSetting) or index < 0 or index >= m.pickerOptions.Count() then return
+    m.tryKey = m.pickerSetting.settingName
+    m.tryValue = m.pickerOptions[index].id
+    m.tryIndex = index
+    updatePreview()
+end sub
+
+' Which preview screen each setting changes. Settings missing here leave the preview where it was.
+function previewSceneTable() as object
+    return {
+        "navbar.position": "home",
+        "navbar.alwaysExpanded": "home",
+        "navbar.show_shuffle": "home",
+        "navbar.show_favorites": "home",
+        "navbar.show_genres": "home",
+        "navbar.show_livetv": "home",
+        "navbar.show_seerr": "home",
+        "navbar.show_calendar": "home",
+        "navbar.show_libraries": "home",
+        "navbar.show_libraries_individually": "home",
+        "navbar.show_messages": "home",
+        "navbar.show_friends": "home",
+        "navbar.color": "home",
+        "navbar.opacity": "home",
+        "ui.showClock": "home",
+        "playback.use24hourclock": "home",
+        "ui.home.rowsStyle": "home",
+        "ui.home.hideMediaDescription": "home",
+        "ui.home.ratings.enabled": "home",
+        "ui.home.ratings.ratingSources": "home",
+        "ui.home.ratings.episodeRatings": "home",
+        "ui.home.ratings.showRatingNames": "home",
+        "ui.home.ratings.showRatingBadges": "home",
+        "ui.home.mediaBarMode": "home",
+        "ui.overlayColor": "home",
+        "ui.overlayOpacity": "home",
+        "ui.mediaBar.ratings.enabled": "home",
+        "ui.mediaBar.ratings.ratingSources": "home",
+        "ui.mediaBar.ratings.showRatingNames": "home",
+        "ui.mediaBar.ratings.showRatingBadges": "home",
+        "ui.itemdetail.style": "details",
+        "ui.itemdetail.hideMediaDescription": "details",
+        "ui.itemdetail.showBackdrop": "details",
+        "ui.backdrop.detailBlurAmount": "details",
+        "ui.library.showTechnicalDetails": "details",
+        "ui.itemdetail.metadataLayout": "details",
+        "ui.itemdetail.metadataOrder": "details",
+        "ui.itemdetail.hiddenMetadata": "details",
+        "ui.itemdetail.buttonLayout": "details",
+        "ui.itemdetail.buttonOrder": "details",
+        "ui.itemdetail.hiddenButtons": "details",
+        "ui.itemdetail.buttonsMaxVisible": "details",
+        "plugin.mdblist.enabled": "details",
+        "plugin.mdblist.ratingSources": "details",
+        "plugin.mdblist.showRatingNames": "details",
+        "plugin.mdblist.showRatingBadges": "details",
+        "plugin.tmdb.episodeRatings": "details",
+        "ui.itemdetail.showRatings": "details",
+        "playback.showChapterMarkers": "player",
+        "playback.timeAboveLeft": "player",
+        "playback.timeAboveCenter": "player",
+        "playback.timeAboveRight": "player",
+        "playback.timeBelowLeft": "player",
+        "playback.timeBelowCenter": "player",
+        "playback.timeBelowRight": "player",
+        "ui.osd.buttonLayout": "player",
+        "ui.osd.buttonOrder": "player",
+        "ui.osd.hiddenButtons": "player",
+        "playback.subs.mode": "player",
+        "playback.subs.language": "player",
+        "playback.subs.custom": "player",
+        "playback.subs.style.size": "player",
+        "playback.subs.style.position": "player",
+        "playback.subs.style.positionAbsolute": "player",
+        "playback.subs.style.opacity": "player",
+        "playback.subs.style.color": "player",
+        "playback.subs.style.shadowColor": "player",
+        "playback.subs.style.shadowOpacity": "player",
+        "playback.subs.style.shadowBlur": "player",
+        "playback.subs.style.backgroundColor": "player",
+        "playback.subs.style.background": "player",
+        "playback.subs.style.hdrSeparate": "player",
+        "playback.subs.style.sizeHdr": "player",
+        "playback.subs.style.positionHdr": "player",
+        "playback.subs.style.positionAbsoluteHdr": "player",
+        "playback.subs.style.opacityHdr": "player",
+        "playback.subs.style.colorHdr": "player",
+        "playback.subs.style.shadowColorHdr": "player",
+        "playback.subs.style.shadowOpacityHdr": "player",
+        "playback.subs.style.shadowBlurHdr": "player",
+        "playback.subs.style.backgroundColorHdr": "player",
+        "playback.subs.style.backgroundHdr": "player",
+        "playback.mediasegments.intro": "player",
+        "playback.nextupbehavior": "player",
+        "playback.trickplay.enabled": "player",
+        "playback.trickplay.pauseWhileScrubbing": "player",
+        "playback.trickplay.forcecustom": "player",
+        "ui.loadingAnimation.image": "player",
+        "ui.loadingAnimation.size": "player",
+        "ui.loadingAnimation.position": "player",
+        "ui.loadingAnimation.speed": "player",
+        "ui.loadingAnimation.showText": "player",
+        "ui.keyboard.style": "search"
+    }
+end function
+
+function previewSceneFor(settingName as string) as string
+    return m.previewScenes[settingName] ?? ""
+end function
+
+function previewSceneName(sceneId as string) as string
+    names = { home: tr("Home"), details: tr("Details Page"), player: tr("Player"), search: tr("Search") }
+    return names[sceneId] ?? ""
+end function
+
+' The saved values the previews draw, with the option a picker is trying in place of its own. It
+' reads the way getUserSettingValue does, but takes the session once, since every read of it copies
+' the whole thing and this runs on each key press.
+function previewValues() as object
+    user = chainLookupReturn(m.global, "session.user", {})
+    settings = user.settings ?? {}
+    saved = invalid
+    if isValid(user.id) then saved = CreateObject("roRegistrySection", user.id)
+    values = {}
+    for each key in m.previewDefaults
+        value = invalid
+        if isValid(saved) and saved.Exists(key) then value = saved.Read(key)
+        if not isValid(value) then value = settings[key]
+        if not isValid(value) then value = m.previewDefaults[key]
+        values[key] = dynamicToDisplayString(value)
+    end for
+    values.Append(editorPreviewValues(m.editor))
+    if m.tryKey <> "" then values[m.tryKey] = dynamicToDisplayString(m.tryValue)
+    ' A slider shows its step before the save, which waits for the presses to stop
+    pending = m.sliderPending
+    if isValid(pending) then values[pending.item.settingName] = dynamicToDisplayString(pending.item.options[pending.index].id)
+    return values
+end function
+
+function previewEntry(title as string, description as string) as object
+    return { title: title, description: description, path: "", status: "", shows: false, options: [], saved: -1, live: -1, trying: false }
+end function
+
+function previewEntryFor(item as object) as object
+    settingName = item.settingName ?? ""
+    rowType = item.type ?? ""
+    entry = previewEntry(tr(item.title ?? ""), tr(item.description ?? ""))
+    screens = [m.categoryEntry.title]
+    for i = 1 to m.userLocation.Count() - 1
+        screens.push(tr(m.userLocation[i].pathTitle ?? m.userLocation[i].title ?? ""))
+    end for
+    entry.path = settingPath(screens, m.rowBands ?? [], m.settingsMenu.itemFocused, entry.title)
+    sceneId = previewSceneFor(settingName)
+    ' Rows the preview draws say so, editors included, and the rest only when they hold a value
+    if settingName = "" or (sceneId = "" and not inArray([SettingType.BOOL, SettingType.RADIO, SettingType.integer, SettingType.string, SettingType.COLORGRID], rowType)) then return entry
+
+    entry.shows = sceneId <> ""
+    entry.status = tr("Not shown in the preview")
+    if entry.shows then entry.status = Substitute(tr("Shows on the {0} preview"), previewSceneName(sceneId))
+
+    if rowType = SettingType.RADIO and item.slider <> true and isValid(item.options) and item.options.Count() <= 8
+        for each option in item.options
+            entry.options.push(tr(option.title ?? ""))
+        end for
+        entry.saved = currentOptionIndex(item)
+        entry.live = entry.saved
+        if m.tryKey = settingName and m.tryIndex >= 0
+            entry.live = m.tryIndex
+            entry.trying = m.tryIndex <> entry.saved
+        end if
+    end if
+    return entry
+end function
+
+' Where a row sits: the category, each screen opened on the way and the heading it's under. A
+' heading of nothing ends the one before it, and a name never shows twice in a row or again as
+' the row's own.
+function settingPath(screens as object, bands as object, index as integer, title as string) as string
+    parts = []
+    for each screen in screens
+        if parts.Count() = 0 or LCase(parts.Peek()) <> LCase(screen) then parts.push(screen)
+    end for
+    heading = invalid
+    for i = index to 0 step -1
+        if i < bands.Count()
+            for each band in bands[i]
+                if band.band = "header" then heading = band.text
+            end for
+        end if
+        if isValid(heading) then exit for
+    end for
+    if isValidAndNotEmpty(heading) and (parts.Count() = 0 or LCase(parts.Peek()) <> LCase(heading)) then parts.push(heading)
+    if parts.Count() > 1 and LCase(parts.Peek()) = LCase(title) then parts.Pop()
+    return parts.Join(" › ")
+end function
+
+' The preview speaks for the category until a row takes focus, then for that row
+sub updatePreview()
+    if not isValid(m.categoryEntry) then return
+    entry = m.categoryEntry
+    focusKey = ""
+    if not m.pillFocused
+        item = getFocusedSetting()
+        if isValid(item)
+            entry = previewEntryFor(item)
+            focusKey = item.settingName ?? ""
+        end if
+    end if
+    ' A row the preview doesn't draw, like one inside an editor, leaves it on the last one that did
+    sceneId = previewSceneFor(focusKey)
+    if sceneId <> ""
+        m.previewScene = sceneId
+        m.previewKey = focusKey
+    end if
+
+    shownScene = m.previewScene
+    shownKey = m.previewKey
+    if m.chipsFocused
+        shownScene = m.chipScene
+        ' Another scene shows its usual look, not the one the last setting picked
+        if shownScene <> m.previewScene then shownKey = ""
+    end if
+
+    palette = m.style.palette
+    m.livePreview.state = {
+        scene: shownScene,
+        focusKey: shownKey,
+        values: previewValues(),
+        entry: entry,
+        chips: m.previewChips,
+        chipsFocused: m.chipsFocused,
+        accent: palette.header,
+        avatar: m.previewAvatar,
+        pageColor: palette.background,
+        cardColor: palette.dialog.color,
+        cardOpacity: palette.dialog.opacity
+    }
 end sub
 
 function getFocusedSetting() as dynamic
@@ -210,8 +576,21 @@ function isMediaBarMultiSelectSetting(settingName as dynamic) as boolean
     if isStringEqual(settingName, "ui.home.mediaBarLibraryIds") then return true
     if isStringEqual(settingName, "ui.home.mediaBarCollectionIds") then return true
     if isStringEqual(settingName, "ui.home.mediaBarExcludedGenres") then return true
+    if isStringEqual(settingName, "ui.home.mediaBarExternalLists") then return true
+    if isStringEqual(settingName, CALENDAR_LIBRARIES_SETTING) then return true
     return false
 end function
+
+' The calendar's library pick shares the media bar's picker
+const CALENDAR_LIBRARIES_SETTING = "calendar.libraryIds"
+
+' The bar fetches its titles again after any of these change
+sub noteMediaBarSourceChange(settingName as string)
+    sources = ["ui.home.mediaBarContentType", "ui.home.mediaBarSourceType", "ui.home.featuredMediaItems", "ui.home.mediaBarNewReleaseBanner", "ui.home.mediaBarNewReleaseDays"]
+    if isStringEqual(settingName, CALENDAR_LIBRARIES_SETTING) then return
+    if not isMediaBarMultiSelectSetting(settingName) and not inArray(sources, settingName) then return
+    if m.global.hasField("mediaBarSourcesChanged") then m.global.mediaBarSourcesChanged = m.global.mediaBarSourcesChanged + 1
+end sub
 
 function parseStringArraySetting(value as dynamic) as object
     if not isValid(value) then return []
@@ -246,7 +625,7 @@ function getMediaBarSelectorSummary(settingName as string, currentValue as dynam
     selectedIds = parseStringArraySetting(currentValue)
     selectedCount = selectedIds.Count()
 
-    if isStringEqual(settingName, "ui.home.mediaBarLibraryIds")
+    if isStringEqual(settingName, "ui.home.mediaBarLibraryIds") or isStringEqual(settingName, CALENDAR_LIBRARIES_SETTING)
         if selectedCount = 0 then return tr("All Libraries")
         return `${selectedCount.toStr()} ${tr("selected")}`
     end if
@@ -257,10 +636,34 @@ function getMediaBarSelectorSummary(settingName as string, currentValue as dynam
     end if
 
     if selectedCount = 0 then return tr("None")
+    if isStringEqual(settingName, "ui.home.mediaBarExternalLists") then return `${selectedCount.toStr()} ${tr("selected")}`
     return `${selectedCount.toStr()} ${tr("excluded")}`
 end function
 
 const SUBTITLE_DOWNLOAD_LANGUAGES_SETTING = "playback.subs.downloadLanguages"
+const TRANSCODE_AUDIO_CODECS_SETTING = "playback.transcodeAudioCodecs"
+const SEERR_SLIDER_SETTING = "seerr.slider"
+const SEERR_SLIDERS_TITLE = "Seerr Discover Sliders"
+
+' Only the codecs a streamed transcode can turn into something else are offered
+function transcodeAudioCodecChoices() as object
+    profile = { TranscodingProfiles: getTranscodingProfiles() }
+    choices = []
+    for each option in transcodeAudioCodecOptions()
+        if canTranscodeAudioCodecAway(profile, option.id) then choices.push(option)
+    end for
+    return choices
+end function
+
+function transcodeAudioCodecsSummary(currentValue as dynamic) as string
+    picked = parseStringArraySetting(currentValue)
+    names = []
+    for each option in transcodeAudioCodecOptions()
+        if isGuidInArray(option.id, picked) then names.push(option.title)
+    end for
+    if names.count() = 0 then return tr("None")
+    return names.join(", ")
+end function
 
 ' The languages the default subtitle language offers, less its "any" entry
 function subtitleDownloadLanguageOptions() as object
@@ -334,6 +737,32 @@ sub placeSeasonalRow(enabled as boolean)
     saveHomeRowLayout(kept, remaining)
 end sub
 
+' placeWatchingNowRow: Places the Watching on MDBList row the way Core does. Turning it on moves it
+' right after the last row that's on, and turning it off hides it where it is.
+sub placeWatchingNowRow(enabled as boolean)
+    homeRowLayout.MigrateLegacySlots()
+    order = buttonLayout.ToIds(get_user_setting(homeRowLayout.ORDER_SETTING))
+    hidden = buttonLayout.ToIds(get_user_setting(homeRowLayout.HIDDEN_SETTING))
+
+    kept = []
+    for each id in order
+        if id <> "mdblist_watching_now" then kept.push(id)
+    end for
+
+    remaining = []
+    for each id in hidden
+        if id <> "mdblist_watching_now" then remaining.push(id)
+    end for
+
+    if enabled
+        kept.push("mdblist_watching_now")
+    else
+        remaining.push("mdblist_watching_now")
+    end if
+
+    saveHomeRowLayout(kept, remaining)
+end sub
+
 sub loadMediaBarPickerOptions(settingItem as object)
     if not isValid(settingItem) then return
 
@@ -343,7 +772,7 @@ sub loadMediaBarPickerOptions(settingItem as object)
     end if
 
     contentType = get_user_setting("ui.home.mediaBarContentType")
-    if not isValidAndNotEmpty(contentType)
+    if not isValidAndNotEmpty(contentType) or isStringEqual(settingItem.settingName, CALENDAR_LIBRARIES_SETTING)
         contentType = "both"
     end if
 
@@ -588,6 +1017,7 @@ sub onMediaBarSelectorSaved()
     serialized = FormatJson(selectedIds)
     set_user_setting(settingItem.settingName, serialized)
     syncSettingToServer(settingItem.settingName, serialized)
+    noteMediaBarSourceChange(settingItem.settingName)
     refreshCurrentItemValue(settingItem)
     m.mediaBarSelectorDialogOptions = []
 end sub
@@ -624,10 +1054,14 @@ function getSettingCurrentValueLabel(settingItem as dynamic) as string
     if not isValid(currentValue) and isValid(m.global.session.user.settings[settingItem.settingName])
         currentValue = m.global.session.user.settings[settingItem.settingName]
     end if
+    if not isValid(currentValue) then currentValue = settingItem.default
 
     if isMediaBarMultiSelectSetting(settingItem.settingName)
         return getMediaBarSelectorSummary(settingItem.settingName, currentValue)
     end if
+
+    if isStringEqual(settingItem.settingName, "ui.home.mediaPreviewMode") then currentValue = homePreview.Mode(m.global.session.user.settings)
+    if isStringEqual(settingItem.settingName, "ui.home.backdropStyle") then currentValue = getHomeBackdropStyle(m.global.session.user.settings)
 
     if isStringEqual(settingItem.settingName, seasonalRow.HIDDEN_HOLIDAYS_SETTING)
         return seasonalHolidaysSummary(currentValue)
@@ -635,6 +1069,10 @@ function getSettingCurrentValueLabel(settingItem as dynamic) as string
 
     if isStringEqual(settingItem.settingName, SUBTITLE_DOWNLOAD_LANGUAGES_SETTING)
         return subtitleDownloadLanguagesSummary(currentValue)
+    end if
+
+    if isStringEqual(settingItem.settingName, TRANSCODE_AUDIO_CODECS_SETTING)
+        return transcodeAudioCodecsSummary(currentValue)
     end if
 
     if isStringEqual(settingItem.type, SettingType.BOOL)
@@ -713,6 +1151,7 @@ sub refreshRow(index as integer)
     else
         m.settingsMenu.callFunc("refreshItem", index)
     end if
+    updatePreview()
 end sub
 
 ' What an entry shows as a row: its kind, the line under its title and what sits on the end
@@ -724,6 +1163,7 @@ function settingsRowSpec(settingItem as object) as object
 
     settingName = settingItem.settingName ?? ""
     description = tr(settingItem.description ?? "")
+    if settingName = SIGN_IN_PIN_ENABLED_KEY and signInPinRecord().server = true then description = tr("PIN synced")
     spec = { id: settingName, title: tr(settingItem.title ?? ""), glyph: settingItem.glyph ?? "tune", logo: settingItem.logo ?? "" }
 
     if rowType = SettingType.BOOL
@@ -742,7 +1182,6 @@ function settingsRowSpec(settingItem as object) as object
     end if
 
     value = getSettingCurrentValueLabel(settingItem)
-    if settingName = "pin.setCode" then value = tr(signInPinDescription())
     if rowType = SettingType.RADIO and settingItem.slider = true
         spec.kind = "slider"
         spec.sliderCount = settingItem.options.Count()
@@ -751,7 +1190,7 @@ function settingsRowSpec(settingItem as object) as object
         return spec
     end if
 
-    opensList = isMediaBarMultiSelectSetting(settingName) or isStringEqual(settingName, seasonalRow.HIDDEN_HOLIDAYS_SETTING) or isStringEqual(settingName, SUBTITLE_DOWNLOAD_LANGUAGES_SETTING)
+    opensList = isMediaBarMultiSelectSetting(settingName) or isStringEqual(settingName, seasonalRow.HIDDEN_HOLIDAYS_SETTING) or isStringEqual(settingName, SUBTITLE_DOWNLOAD_LANGUAGES_SETTING) or isStringEqual(settingName, TRANSCODE_AUDIO_CODECS_SETTING)
     if rowType = SettingType.RADIO or rowType = SettingType.integer or rowType = SettingType.COLORGRID or (rowType = SettingType.string and not opensList)
         spec.kind = "picker"
         spec.subtitle = description
@@ -790,11 +1229,18 @@ end function
 ' "true" or "false" for a switch row. A rating's switch shows whether it is on the blocked list
 ' rather than a stored setting.
 function boolSettingDisplay(settingItem as object) as string
+    if isStringEqual(settingItem.settingName, SIGN_IN_PIN_ENABLED_KEY) then return signInPin.IsEnabled(signInPinRecord()) ? "true" : "false"
     if isStringEqual(settingItem.settingName, "parental.rating")
         return inArray(parentalControls.BlockedRatings(), settingItem.rating) ? "true" : "false"
     end if
     if isStringEqual(settingItem.settingName, "ui.itemdetail.section")
         return detailSectionLayout.HiddenIds().DoesExist(settingItem.sectionId) ? "false" : "true"
+    end if
+    if isStringEqual(settingItem.settingName, SEERR_SLIDER_SETTING)
+        placed = buttonLayout.ToIds(get_user_setting(homeRowLayout.ORDER_SETTING))
+        off = buttonLayout.HiddenLookup(get_user_setting(homeRowLayout.HIDDEN_SETTING))
+        picked = homeRowLayout.DynamicLookup()
+        return isValid(picked[LCase(settingItem.sectionId)]) and homeRowLayout.IsEnabled(settingItem.sectionId, placed, off, picked) ? "true" : "false"
     end if
 
     rawVal = get_user_setting(settingItem.settingName)
@@ -880,7 +1326,7 @@ sub syncHomeRowsToServer()
 
     pushData = settingsSync.ProfilePush({
         homeSections: settingsSync.HomeSectionsPayload(),
-        homeRowOrder: homeRowLayout.Arranged()
+        homeRowOrder: settingsSync.RowOrderPayload()
     })
 
     m.homeRowsSyncTask = createObject("roSGNode", "PostTask")
@@ -907,6 +1353,7 @@ function stepSlider(direction as integer) as boolean
     m.settingsMenu.callFunc("refreshItem", m.settingsMenu.itemFocused)
     m.sliderSaveTimer.control = "stop"
     m.sliderSaveTimer.control = "start"
+    updatePreview()
     return true
 end function
 
@@ -965,7 +1412,7 @@ sub openKidsPin(mode as string)
     m.kidsPinMode = mode
     signingIn = mode = "signIn"
     m.integerSetting.textEditBox.secureMode = signingIn
-    if signingIn then m.integerSetting.textEditBox.hintText = tr("4 digits")
+    if signingIn then m.integerSetting.textEditBox.hintText = m.signInPinFlow.verify ? tr("Enter your 4-digit PIN") : tr("4 digits")
     m.integerSetting.text = ""
     m.integerSetting.visible = true
     m.integerSetting.setFocus(true)
@@ -1100,7 +1547,7 @@ end sub
 ' Switches for the parts of the Details screen, limited to what the chosen style draws. The hidden
 ' list is shared, so a section switched off under one style stays off after switching to another
 function detailSectionRows() as object
-    style = normalizeDetailScreenStyleToken(getUserSettingValue("ui.itemdetail.style", "modern"))
+    style = normalizeDetailScreenStyleToken(getUserSettingValue("ui.itemdetail.style", "frost"))
     offered = detailSectionLayout.Offered(style, GetSeerrConfig().enabled)
 
     rows = [{ title: "Only the sections the current Details screen style can show are listed. Hiding one hides it in every style that has it.", type: SettingType.NOTE }]
@@ -1117,6 +1564,92 @@ function detailSectionRows() as object
     return rows
 end function
 
+' Core's list of the Home rows that are on, in Home's order. Rows whose cards never change are left
+' out, and so are Live TV and music rows when no library has them. A picked row isn't listed, as in
+' Core.
+function rowImageTypeRows() as object
+    libraries = libraryOrder.Loaded()
+    hasMusic = false
+    for each library in libraries
+        if isStringEqual(library.collectionType, "music") then hasMusic = true
+    end for
+    labels = {}
+    for each row in homeRowLayout.Catalogue()
+        labels[row.id] = row.label
+    end for
+    options = [{ title: "Poster", id: "poster" }, { title: "Thumbnail", id: "thumb" }, { title: "Banner", id: "banner" }]
+
+    rows = [{ title: "Images", type: SettingType.SECTION }]
+    for each rowId in homeRowLayout.Arranged()
+        listed = isValid(labels[rowId]) and homeRowLayout.RowToggleOn(rowId) and not inArray(["mdblist_watching_now", "resumeaudio"], rowId)
+        if rowId = "livetv" and not libraryOrder.HasLiveTv(libraries) then listed = false
+        if rowId = "audio" and not hasMusic then listed = false
+        if listed then rows.push({ title: labels[rowId], settingName: settingsSync.ROW_IMAGE_TYPE_KEY + rowId, type: SettingType.RADIO, default: homeCards.StoredType(rowId), glyph: "image_outlined", options: options })
+    end for
+    return rows
+end function
+
+' The custom sliders a Seerr admin set up come after the rows this app knows, read fresh each time
+' the screen opens. A failed read just leaves them off the screen.
+sub openSeerrRows(screen as object)
+    m.seerrRowsScreen = screen
+    startLoadingSpinner()
+    m.seerrSlidersTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.seerrSlidersTask.request = { method: "GET", endpoint: seerrSliders.LIST_PATH, queryParams: {} }
+    m.seerrSlidersTask.observeField("response", "onSeerrRowsSliders")
+    m.seerrSlidersTask.control = "RUN"
+end sub
+
+sub onSeerrRowsSliders(event as object)
+    m.seerrSlidersTask.unobserveField("response")
+    m.seerrSlidersTask = invalid
+    stopLoadingSpinner()
+    response = event.getData()
+    sliders = []
+    if isValid(response) and response.success = true then sliders = seerrSliders.Supported(seerrSliders.ParseList(response.data))
+
+    screen = m.seerrRowsScreen
+    children = []
+    for each child in screen.children
+        if not isStringEqual(child.settingName ?? "", SEERR_SLIDER_SETTING) and not (isStringEqual(child.type, SettingType.SECTION) and isStringEqual(child.title, SEERR_SLIDERS_TITLE)) then children.push(child)
+    end for
+    if sliders.Count() > 0
+        children.push(settingsSection(SEERR_SLIDERS_TITLE))
+        for each slider in sliders
+            record = seerrSliders.Record(slider)
+            children.push({ title: slider.title, settingName: SEERR_SLIDER_SETTING, sectionId: record.id, record: record, type: SettingType.BOOL, glyph: "list_alt" })
+        end for
+    end if
+    screen.children = children
+    LoadMenu(screen)
+    m.settingsMenu.setFocus(true)
+end sub
+
+' The first press puts a slider's row at the end of Home and later ones only switch it on and off,
+' so the place it was given is kept
+sub toggleSeerrSlider(sliderRow as object)
+    id = sliderRow.sectionId
+    order = buttonLayout.ToIds(get_user_setting(homeRowLayout.ORDER_SETTING))
+    hidden = buttonLayout.ToIds(get_user_setting(homeRowLayout.HIDDEN_SETTING))
+    shown = boolSettingDisplay(sliderRow) = "true"
+
+    if not isValid(homeRowLayout.DynamicLookup()[LCase(id)])
+        picks = homeRowLayout.DynamicRows()
+        picks.push(sliderRow.record)
+        homeRowLayout.SaveDynamic(picks)
+    end if
+    kept = []
+    for each hiddenId in hidden
+        if hiddenId <> id then kept.push(hiddenId)
+    end for
+    if shown then kept.push(id)
+    if not shown and not inArray(order, id) then order.push(id)
+
+    saveHomeRowLayout(order, kept)
+    refreshCurrentItemValue(sliderRow)
+    m.settingsMenu.setFocus(true)
+end sub
+
 ' Each press writes straight away, since there is no order to arrange first
 sub toggleDetailSection(sectionRow as object)
     hidden = FormatJson(detailSectionLayout.Toggle(get_user_setting(DETAIL_SECTIONS_HIDDEN_SETTING), sectionRow.sectionId))
@@ -1127,25 +1660,81 @@ sub toggleDetailSection(sectionRow as object)
     m.settingsMenu.setFocus(true)
 end sub
 
-' Choosing a PIN forgets the guesses that came before it, and the row says one is set from here on
+' The switch, Change PIN and Remove PIN all start here. Turning the PIN off, changing it and
+' removing it all take the current one first.
+sub openSignInPinFlow(purpose as string)
+    m.signInPinFlow = { purpose: purpose, verify: purpose <> "enable", current: "", from: getFocusedSetting() }
+    openKidsPin("signIn")
+end sub
+
 sub submitSignInPin(entered as string)
+    if isValid(m.signInPinTask) then return
     if not pinLockout.IsPinShaped(entered)
         ShowToast(tr("PIN must be exactly 4 digits."))
         return
     end if
 
-    signInPin.Save(entered)
-    m.kidsPinMode = ""
-    hideEditingControls()
+    m.signInPinTask = CreateObject("roSGNode", "SignInPinTask")
+    flow = m.signInPinFlow
+    m.signInPinTask.request = { op: "flow", userId: m.global.session.user.id, flow: { purpose: flow.purpose, verify: flow.verify, current: flow.current }, pin: entered }
+    m.signInPinTask.observeField("response", "onSignInPinStep")
+    m.signInPinTask.control = "RUN"
+end sub
 
-    pinRow = getFocusedSetting()
-    if isValid(pinRow) then refreshCurrentItemValue(pinRow)
+sub onSignInPinStep(event as object)
+    response = event.getData()
+    m.signInPinTask = invalid
+    m.integerSetting.text = ""
+    if response.refused <> ""
+        ShowToast(response.refused)
+        return
+    end if
+
+    if isValid(response.next)
+        response.next.from = m.signInPinFlow.from
+        m.signInPinFlow = response.next
+        openKidsPin("signIn")
+        return
+    end if
+
+    from = m.signInPinFlow.from
+    m.kidsPinMode = ""
+    m.signInPinFlow = invalid
+    hideEditingControls()
+    showSignInPinRows(from)
+end sub
+
+' The Manage rows come and go with the PIN, and focus goes back to the row the change started from
+' while it's still there
+sub showSignInPinRows(focusOn as dynamic)
+    refreshMenu()
+    index = -1
+    if isValid(focusOn) then index = rowIndexOf(focusOn)
+    if index < 0
+        for i = 0 to m.visibleItemsMap.count() - 1
+            if isStringEqual(chainLookupReturn(m.visibleItemsMap[i], "settingName", ""), SIGN_IN_PIN_ENABLED_KEY) then index = i
+        end for
+    end if
+    if index >= 0 then m.settingsMenu.jumpToItem = index
     m.settingsMenu.setFocus(true)
 end sub
 
-function signInPinDescription() as string
-    if signInPin.IsConfigured() then return "Configured 4-digit PIN"
-    return "Default PIN: 0000"
+sub refreshSignInPin()
+    m.signInPinRefresh = CreateObject("roSGNode", "SignInPinTask")
+    m.signInPinRefresh.request = { op: "refresh", userId: m.global.session.user.id }
+    m.signInPinRefresh.observeField("response", "onSignInPinRefreshed")
+    m.signInPinRefresh.control = "RUN"
+end sub
+
+sub onSignInPinRefreshed()
+    m.signInPinRefresh = invalid
+    if m.kidsPinMode <> "" then return
+    section = m.userLocation.peek()
+    if isValid(section) and section.title = "PIN Code" then showSignInPinRows(getFocusedSetting())
+end sub
+
+function signInPinRecord() as object
+    return signInPin.RecordFor(m.global.session.user.id)
 end function
 
 ' The settings screen is standing on entries the mode has just taken away, and the home screen
@@ -1252,6 +1841,7 @@ sub onPluginPingComplete()
         tmpSession = m.global.session
         tmpSession.AddReplace("pluginInfo", pluginInfo)
         m.global.setFields({ session: tmpSession })
+        if m.global.hasField("incompleteRecordingStore") then m.global.incompleteRecordingStore.callFunc("clear")
     else
         ShowToast("Could not connect to Moonfin Plugin. Ensure the plugin is installed on your Jellyfin server.", "error")
         set_user_setting("plugin.enabled", "false")
@@ -1601,6 +2191,17 @@ sub dismissPanel(animated = false as boolean)
 
     OnScreenHidden()
 
+    ' A row switched on or off changes which rows exist, so Home lays them out again from scratch
+    if m.homeRowsSwitched = true
+        m.homeRowsSwitched = false
+        behind = m.global.sceneManager.callFunc("getActiveScene")
+        if isValid(behind) and behind.isSubtype("Home")
+            behind.callFunc("reload")
+        else
+            m.global.homeNeedsRefresh = true
+        end if
+    end if
+
     ' The rows behind the panel read themselves again once, rather than on every rating toggled or
     ' every setting a load or reset brought in. Any other screen leaves it to the home screen to
     ' do on the way back.
@@ -1807,20 +2408,22 @@ function reorderSettingsForFlutter(configTree as object) as object
 
     ' Single settings move first, while every screen is still attached to the tree.
     signIn = takeSettings(configTree, ["global.rememberme", "global.saveCredentials"])
-    pinCode = takeSettings(configTree, ["global.pinCodeProtection", "pin.setCode"])
+    pinCode = takeSettings(configTree, ["global.pinCodeProtection", "pin.setCode", "pin.remove"])
     family = takeSettings(configTree, ["kids.turnOn", "parental.blockedRatings", "ui.home.recommendationsParentalCap"])
     syncSettings = takeSettings(configTree, ["plugin.enabled", "plugin.syncProfiles"])
     ' The sync switch lives on the sync panel, and taking it keeps it out of Additional Settings
     takeSettingByName(configTree, "plugin.settingsSync")
     clock = takeSettings(configTree, ["ui.showClock", "playback.use24hourclock"])
     behavior = takeSettings(configTree, ["load.allowwhatsnew"])
+    input = takeSettings(configTree, ["ui.keyboard.style"])
     themePicker = takeSettings(configTree, ["ui.theme.picker"])
-    display = takeSettings(configTree, ["useFallbackFont", "ui.home.showBackdrop", "ui.itemdetail.showBackdrop", "ui.library.showBackdrops", "ui.backdrop.homeBlurAmount", "ui.watchedIndicator", "ui.tvshows.disableUnwatchedEpisodeCount"])
+    display = takeSettings(configTree, ["useFallbackFont", "ui.backdrop.homeBlurAmount", "ui.watchedIndicator", "ui.tvshows.disableUnwatchedEpisodeCount"])
     shuffleContent = takeSettingByName(configTree, "shuffle_content_type")
 
     homeRows = takeSettings(configTree, ["ui.home.rowLayout"])
-    homeLooks = takeSettings(configTree, ["ui.home.rowsStyle", "ui.home.modernCardsOnMyMediaRow", "ui.home.episodePreviewEnabled", "ui.home.previewAudioEnabled", "ui.home.classicRowsPadding", "ui.home.modernRowsPadding", "ui.home.preferThumbnails", "ui.home.hideMediaDescription"])
-    continueWatching = takeSettings(configTree, ["ui.details.maxdaysnextup", "ui.home.mergeContinueWatchingNextUp"])
+    homeLooks = takeSettings(configTree, ["ui.home.rowsStyle", "ui.home.modernCardsOnMyMediaRow", "ui.home.mediaPreviewMode", "ui.home.previewAudioEnabled", "ui.home.classicRowsPadding", "ui.home.modernRowsPadding", "ui.posterSize", "ui.home.rowImageTypes", "ui.home.preferThumbnails", "ui.home.backdropStyle", "ui.home.hideMediaDescription"])
+    homeRatings = takeSettings(configTree, ["ui.home.ratings.enabled", "ui.home.ratings.ratingSources", "ui.home.ratings.episodeRatings", "ui.home.ratings.showRatingNames", "ui.home.ratings.showRatingBadges"])
+    continueWatching = takeSettings(configTree, ["ui.home.mergeContinueWatchingNextUp", "ui.home.continueWatchingDefaultAction", "ui.details.maxdaysnextup"])
     recentlyAdded = takeSettings(configTree, ["ui.home.recentlyReleasedSeriesType", "ui.home.mergeRecentRowsByType"])
     rowTypes = [
         { title: "AUDIO", settings: takeSettings(configTree, ["ui.home.displayAudioRows"]) },
@@ -1833,7 +2436,7 @@ function reorderSettingsForFlutter(configTree as object) as object
         { title: "STUDIOS", settings: takeSettings(configTree, ["ui.home.displayStudiosRows"]) }
     ]
 
-    detailsDisplay = takeSettings(configTree, ["ui.itemdetail.style", "ui.backdrop.detailBlurAmount", "ui.itemdetail.buttonLayout", "ui.itemdetail.buttonsMaxVisible"])
+    detailsDisplay = takeSettings(configTree, ["ui.itemdetail.style", "ui.itemdetail.showBackdrop", "ui.backdrop.detailBlurAmount", "ui.itemdetail.buttonLayout", "ui.itemdetail.buttonsMaxVisible"])
     detailsContent = takeSettings(configTree, ["ui.itemdetail.metadataLayout", "ui.itemdetail.sections", "ui.itemdetail.expandedTabs", "ui.library.showTechnicalDetails", "ui.itemdetail.hideMediaDescription", "ui.itemdetail.useSeriesThumbnails"])
     recommendations = takeSettings(configTree, ["ui.home.recommendationSource"])
     ratingSettings = takeSettings(configTree, ["plugin.mdblist.enabled", "plugin.mdblist.ratingSources", "plugin.tmdb.episodeRatings", "plugin.mdblist.showRatingNames", "plugin.mdblist.showRatingBadges", "ui.itemdetail.showRatings"])
@@ -1845,11 +2448,12 @@ function reorderSettingsForFlutter(configTree as object) as object
     musicTime = takeSettings(configTree, ["playback.musicTimeDisplay"])
     streaming = takeSettings(configTree, ["playback.media.forceTranscode"])
     videoStartDelay = takeSettings(configTree, ["playback.videoStartDelay"])
-    cinemaMode = takeSettings(configTree, ["playback.cinemamode"])
+    liveTvDirect = takeSettings(configTree, ["playback.liveTvDirect"])
+    cinemaMode = takeSettings(configTree, ["playback.cinemamode", "playback.cinemamode.skip"])
     audioStream = takeSettings(configTree, ["playback.audioPreferredLanguage", "playback.audioFallbackLanguage", "playback.playDefaultAudioTrack", "playback.preferAudioDescription"])
-    audioAdvanced = takeSettings(configTree, ["playback.media.maxAudioChannels", "playback.preferredAudioCodec"])
+    audioAdvanced = takeSettings(configTree, ["playback.media.maxAudioChannels", "playback.transcodeAudioCodecs", "playback.preferredAudioCodec"])
     subtitleMode = takeSettings(configTree, ["playback.subs.mode", "playback.subs.downloadLanguages"])
-    subtitleStream = takeSettings(configTree, ["playback.subs.language", "playback.subs.fallbackLanguage", "playback.preferSdhSubtitles"])
+    subtitleStream = takeSettings(configTree, ["playback.subs.language", "playback.subs.secondary.enabled", "playback.subs.secondary.language", "playback.subs.fallbackLanguage", "playback.preferSdhSubtitles"])
     customSubtitles = takeSettings(configTree, ["playback.subs.custom"])
     subtitleRendering = takeSettings(configTree, ["playback.subs.assdirectplay", "playback.subs.burnin", "playback.subs.onlytext"])
 
@@ -1869,12 +2473,14 @@ function reorderSettingsForFlutter(configTree as object) as object
     detailsScreen = takeChildByTitle(userInterface, "Details Screen")
 
     seerr = takeChildByTitle(pluginRootSection, "Seerr")
+    calendarPage = takeChildByTitle(pluginRootSection, "Calendar")
     achievementBadges = takeChildByTitle(pluginRootSection, "Achievement Badges")
     friends = takeChildByTitle(pluginRootSection, "Friends")
     externalLists = findSettingsChildByTitle(pluginRootSection, "External Lists")
     imdbLists = takeChildByTitle(externalLists, "IMDb Lists")
     tmdbLists = takeChildByTitle(externalLists, "TMDB Lists")
     seasonalRowList = takeChildByTitle(externalLists, "Seasonal Row")
+    watchingNowList = takeChildByTitle(externalLists, "Watching on MDBList")
     calendars = takeChildByTitle(externalLists, "Upcoming Calendars")
     seerrRows = takeChildByTitle(externalLists, "Seerr Lists")
 
@@ -1891,18 +2497,19 @@ function reorderSettingsForFlutter(configTree as object) as object
 
     reordered = []
 
-    ' The PIN is turned on, then changed, on a screen of its own
+    ' The PIN is turned on, then changed or removed, on a screen of its own
     for each item in pinCode
-        if item.settingName = "pin.setCode" then item.requires = "setting:global.pinCodeProtection"
+        if item.settingName <> SIGN_IN_PIN_ENABLED_KEY then item.requires = "signInPin"
     end for
     pinScreen = {
         title: "PIN Code",
         description: "Require a PIN to access your account",
         glyph: "pin",
         clean: true,
-        children: [settingsSection("General"), pinCode[0], { title: "Manage", type: SettingType.SECTION, requires: "setting:global.pinCodeProtection" }]
+        children: [settingsSection("General"), pinCode[0], { title: "Manage", type: SettingType.SECTION, requires: "signInPin" }]
     }
     pushSettingIfValid(pinScreen.children, pinCode[1])
+    pushSettingIfValid(pinScreen.children, pinCode[2])
 
     accountChildren = [settingsSection("Sign-in")]
     accountChildren.Append(signIn)
@@ -1932,6 +2539,8 @@ function reorderSettingsForFlutter(configTree as object) as object
     generalChildren.Append(clock)
     generalChildren.push(settingsSection("Behavior"))
     generalChildren.Append(behavior)
+    generalChildren.push(settingsSection("Input"))
+    generalChildren.Append(input)
     reordered.push({
         title: "General",
         requires: "notKidsMode",
@@ -1985,13 +2594,17 @@ function reorderSettingsForFlutter(configTree as object) as object
         pushSettingIfValid(homeChildren, featuredMediaBar)
         homeChildren.push(settingsSection("Looks"))
         homeChildren.Append(homeLooks)
+        homeChildren.push(settingsSection("Ratings"))
+        homeChildren.Append(homeRatings)
         homeChildren.push(settingsSection("External Sources"))
         pushSettingIfValid(homeChildren, imdbLists)
         pushSettingIfValid(homeChildren, tmdbLists)
         pushSettingIfValid(homeChildren, seasonalRowList)
+        pushSettingIfValid(homeChildren, watchingNowList)
         pushSettingIfValid(homeChildren, calendars)
         if isValid(seerrRows)
             seerrRows.title = "Seerr Rows"
+            seerrRows.settingName = "seerr.rowsScreen"
             homeChildren.push(seerrRows)
         end if
         ' The hidden section slots stay with the screen that owns them.
@@ -2066,6 +2679,7 @@ function reorderSettingsForFlutter(configTree as object) as object
         qualityChildren = [settingsSection("Streaming")]
         pushSettingIfValid(qualityChildren, bitrateLimit)
         pushSettingIfValid(qualityChildren, maxResolution)
+        qualityChildren.Append(liveTvDirect)
         qualityChildren.Append(streaming)
         qualityChildren.push(settingsSection("Decoding & Rendering"))
         pushSettingIfValid(qualityChildren, compatibility)
@@ -2089,11 +2703,14 @@ function reorderSettingsForFlutter(configTree as object) as object
             ' The style rows and the HDR ones under them get a screen of their own
             customization = []
             for each item in subtitles.children
-                if Left(item.settingName ?? "", 21) = "playback.subs.style." then customization.push(item)
+                if Left(item.settingName ?? "", 20) = "playback.subs.style." then customization.push(item)
             end for
             for each item in customization
                 takeSettingByName(subtitles.children, item.settingName)
+                ' The screen opens only with Custom Subtitles on, so a row keeps just its other requirements
+                rule = (item.requires ?? "").Replace("setting:playback.subs.custom&&", "").Replace("setting:playback.subs.custom", "")
                 item.requires = invalid
+                if rule <> "" then item.requires = rule
             end for
             if isValid(hdrSubtitles)
                 customization.push(settingsSection("HDR"))
@@ -2118,6 +2735,8 @@ function reorderSettingsForFlutter(configTree as object) as object
             subtitleChildren.Append(subtitleRendering)
             for each item in subtitleStream
                 item.requires = subtitlesOn
+                ' The second track's language only shows while there can be a second track
+                if item.settingName = "playback.subs.secondary.language" then item.requires = subtitlesOn + "&&setting:playback.subs.secondary.enabled"
             end for
             subtitles.children = subtitleChildren
         end if
@@ -2127,7 +2746,7 @@ function reorderSettingsForFlutter(configTree as object) as object
             segments = takeChildByTitle(automation, "Media Segment Actions")
             automationChildren = [settingsSection("Playback Enhancements")]
             automationChildren.Append(cinemaMode)
-            if isValid(segments) then automationChildren.Append(takeSettings(segments.children, ["playback.mediasegments.intro", "playback.mediasegments.recap", "playback.mediasegments.preview", "playback.mediasegments.commercial", "playback.mediasegments.outro", "playback.mediasegments.countdown"]))
+            if isValid(segments) then automationChildren.Append(takeSettings(segments.children, ["playback.mediasegments.intro", "playback.mediasegments.recap", "playback.mediasegments.preview", "playback.mediasegments.commercial", "playback.mediasegments.outro", "playback.mediasegments.autohide", "playback.mediasegments.countdown"]))
             automationChildren.push(settingsSection("Automatic Queuing"))
             automationChildren.Append(takeSettings(automation.children, ["playback.autoplaynextepisode", "episodeQueueLimit", "playback.nextupbehavior", "playback.nextuptimeout", "playback.nextupbuttonseconds", "playback.replaceskipoutrowithnextup", "playback.showNextUpAfterFinish", "stillwatchingPopupInactivityTime"]))
             pushRemainingSettings(automationChildren, automation)
@@ -2165,13 +2784,15 @@ function reorderSettingsForFlutter(configTree as object) as object
     integrationsChildren = []
     if isValid(seerr) then seerr.clean = true
     pushSettingIfValid(integrationsChildren, seerr)
+    if isValid(calendarPage) then calendarPage.clean = true
+    pushSettingIfValid(integrationsChildren, calendarPage)
     pushSettingIfValid(integrationsChildren, achievementBadges)
     pushSettingIfValid(integrationsChildren, friends)
     if integrationsChildren.count() > 0
         reordered.push({
             title: "Integrations",
             requires: "notKidsMode",
-            description: "Seerr, Achievement Badges, and friends.",
+            description: "Seerr, Calendar, Achievement Badges, and friends.",
             glyph: "hub",
             clean: true,
             children: integrationsChildren
@@ -2319,7 +2940,7 @@ sub showSection(configSection as object)
 
     isRoot = m.userLocation.Count() <= 1
     title = tr("Settings")
-    if not isRoot and isValid(configSection.title)
+    if isValid(configSection.title)
         ' A menu can name itself apart from the row that opens it
         title = tr(configSection.pathTitle ?? configSection.title)
     end if
@@ -2327,17 +2948,12 @@ sub showSection(configSection as object)
     m.titleBar.isRoot = isRoot
     m.titleBar.action = configSection.titleAction ?? ""
     m.titleBar.title = title
-    m.titleBar.scrolled = false
     focusTitleAction(false)
 end sub
 
 sub settingFocused()
     hideEditingControls()
-end sub
-
-' The first screen's title takes a tint while its list is scrolled under it
-sub onListScrolled()
-    m.titleBar.scrolled = m.settingsMenu.scrollOffset > 0
+    updatePreview()
 end sub
 
 ' Up from the first row reaches the title bar's action, when the screen has one
@@ -2399,7 +3015,12 @@ sub settingSelected()
     end if
 
     if isValid(selectedItem.settingName) and selectedItem.settingName = "pin.setCode"
-        openKidsPin("signIn")
+        openSignInPinFlow("change")
+        return
+    end if
+
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "pin.remove"
+        openSignInPinFlow("remove")
         return
     end if
 
@@ -2421,6 +3042,22 @@ sub settingSelected()
 
     if isValid(selectedItem.settingName) and selectedItem.settingName = "ui.itemdetail.section"
         toggleDetailSection(selectedItem)
+        return
+    end if
+
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "ui.home.rowImageTypes"
+        selectedItem.children = rowImageTypeRows()
+        LoadMenu(selectedItem)
+        return
+    end if
+
+    if isValid(selectedItem.settingName) and selectedItem.settingName = "seerr.rowsScreen"
+        openSeerrRows(selectedItem)
+        return
+    end if
+
+    if isValid(selectedItem.settingName) and selectedItem.settingName = SEERR_SLIDER_SETTING
+        toggleSeerrSlider(selectedItem)
         return
     end if
 
@@ -2476,7 +3113,7 @@ sub settingSelected()
         return
     end if
 
-    if isValid(selectedItem.settingName) and selectedItem.settingName = RATING_SOURCES_SETTING
+    if isValid(selectedItem.settingName) and isStringEqual(selectedItem.type, "ratingSources")
         openEditor("ratingSources", selectedItem)
         return
     end if
@@ -2521,6 +3158,11 @@ sub settingSelected()
         return
     end if
 
+    if isValid(selectedItem.settingName) and isStringEqual(selectedItem.settingName, TRANSCODE_AUDIO_CODECS_SETTING)
+        showMediaBarSelectorDialog(selectedItem, transcodeAudioCodecChoices(), false, 0)
+        return
+    end if
+
     if selectedItem.type <> invalid
         if isStringEqual(selectedItem.type, SettingType.BOOL)
             boolSettingChanged(selectedItem)
@@ -2558,7 +3200,9 @@ sub settingSelected()
                 end if
             end if
 
-            selectedValue = m.global.session.user.settings[selectedItem.settingName]
+            selectedValue = m.global.session.user.settings[selectedItem.settingName] ?? selectedItem.default
+            if isStringEqual(selectedItem.settingName, "ui.home.mediaPreviewMode") then selectedValue = homePreview.Mode(m.global.session.user.settings)
+            if isStringEqual(selectedItem.settingName, "ui.home.backdropStyle") then selectedValue = getHomeBackdropStyle(m.global.session.user.settings)
             radioOptions = selectedItem.options
 
             if Left(chainLookupReturn(selectedItem, "settingName", ""), 17) = "homeScreenSection"
@@ -2633,6 +3277,7 @@ sub settingSelected()
             m.pickerSetting = selectedItem
             m.pickerOptions = options
             openPicker(tr(selectedItem.title), options, selectedIndex, "onRadioChosen")
+            m.picker.observeField("focusedOption", "onPickerOptionFocused")
             return
         end if
 
@@ -2643,6 +3288,7 @@ sub settingSelected()
     else if selectedItem.children <> invalid and selectedItem.children.Count() > 0
         LoadMenu(selectedItem)
         m.settingsMenu.setFocus(true)
+        if selectedItem.title = "PIN Code" then refreshSignInPin()
     else
         return
     end if
@@ -2653,6 +3299,15 @@ sub refreshMenu()
 end sub
 
 sub boolSettingChanged(selectedSetting as object)
+    if selectedSetting.settingName = SIGN_IN_PIN_ENABLED_KEY
+        if signInPin.IsEnabled(signInPinRecord())
+            openSignInPinFlow("disable")
+        else
+            openSignInPinFlow("enable")
+        end if
+        return
+    end if
+
     rawValue = get_user_setting(selectedSetting.settingName)
     if not isValid(rawValue) and isValid(m.global.session.user.settings[selectedSetting.settingName])
         rawValue = m.global.session.user.settings[selectedSetting.settingName]
@@ -2688,11 +3343,23 @@ sub boolSettingChanged(selectedSetting as object)
         end if
         ' The store keeps its own copy of both switches, so it is told as they change
         if Left(selectedSetting.settingName, 12) = "diagnostics." then diagnostics.Apply()
-        ' The top bar and the sidebar redraw their clocks from this
-        if selectedSetting.settingName = "ui.showClock" and isValid(m.global)
+        ' The top bar and the sidebar redraw their clocks from this, and Home rebuilds its seasonal followers
+        if (selectedSetting.settingName = "ui.showClock" or selectedSetting.settingName = "seasonal.follower") and isValid(m.global)
             m.global.overlaySettingsChanged = m.global.overlaySettingsChanged + 1
         end if
-        if selectedSetting.settingName = "seasonal.row.enabled" then placeSeasonalRow(newValue = "true")
+        if selectedSetting.settingName = "seasonal.row.enabled"
+            placeSeasonalRow(newValue = "true")
+            m.homeRowsSwitched = true
+        end if
+        if selectedSetting.settingName = "mdblist.watchingnow.enabled"
+            placeWatchingNowRow(newValue = "true")
+            m.homeRowsSwitched = true
+        end if
+        ' The bar and the rows behind it lay themselves out again for the peek
+        if selectedSetting.settingName = "ui.home.mediaBarRowPeek" and m.global.hasField("mediaBarModeChanged")
+            m.global.mediaBarModeChanged = m.global.mediaBarModeChanged + 1
+        end if
+        noteMediaBarSourceChange(selectedSetting.settingName)
     end if
 
     if isStringEqual(selectedSetting.settingName, "playback.playDefaultAudioTrack")
@@ -2704,16 +3371,6 @@ sub boolSettingChanged(selectedSetting as object)
     hideEditingControls()
     m.settingsMenu.setFocus(true)
     refreshDependentRows(selectedSetting.settingName)
-
-    if selectedSetting.settingName = SIGN_IN_PIN_ENABLED_KEY and newValue = "true" then lockBehindPin()
-end sub
-
-' Turning the PIN on locks the app straight away, the same as signing in with it on would
-sub lockBehindPin()
-    dismissPanel()
-    gate = CreateObject("roSGNode", "PinGate")
-    gate.dismissOnUnlock = true
-    m.global.sceneManager.callFunc("pushScene", gate)
 end sub
 
 sub onRadioChosen()
@@ -2742,10 +3399,25 @@ sub applyRadioChoice(selectedSetting as object, selectedValue as dynamic)
         applyNavbarPosition(selectedValue)
     end if
 
+    ' Home lays its cards out again for a new size or image type
+    if selectedSetting.settingName = "ui.posterSize" or Left(selectedSetting.settingName, Len(settingsSync.ROW_IMAGE_TYPE_KEY)) = settingsSync.ROW_IMAGE_TYPE_KEY then m.homeRowsSwitched = true
+
     if isStringEqual(selectedSetting.settingName, "playback.media.forceTranscode")
         if isStringEqual(selectedValue, PlaybackMethod.PLAYNORMALLY)
             m.global.queueManager.callFunc("setForceTranscode", PlaybackMethod.PLAYNORMALLY)
         end if
+    end if
+
+    ' Media Preview and the Home Screen Backdrop keep the on and off switch older apps read beside
+    ' the choice, and the rows under Media Preview follow its switch
+    dependsOn = ""
+    if isStringEqual(selectedSetting.settingName, "ui.home.mediaPreviewMode") then dependsOn = "ui.home.episodePreviewEnabled"
+    if isStringEqual(selectedSetting.settingName, "ui.home.backdropStyle") then dependsOn = "ui.home.showBackdrop"
+    if dependsOn <> ""
+        switchOn = "true"
+        if isStringEqual(selectedValue, "off") then switchOn = "false"
+        set_user_setting(dependsOn, switchOn)
+        syncSettingToServer(dependsOn, switchOn)
     end if
 
     if userConfigSync.FieldFor(selectedSetting.settingName) <> ""
@@ -2755,6 +3427,7 @@ sub applyRadioChoice(selectedSetting as object, selectedValue as dynamic)
     end if
 
     syncSettingToServer(selectedSetting.settingName, selectedValue)
+    noteMediaBarSourceChange(selectedSetting.settingName)
 
     if Left(chainLookupReturn(selectedSetting, "settingName", ""), 17) = "homeScreenSection"
         syncHomeRowsToServer()
@@ -2763,7 +3436,7 @@ sub applyRadioChoice(selectedSetting as object, selectedValue as dynamic)
     refreshCurrentItemValue(selectedSetting)
     hideEditingControls()
     m.settingsMenu.setFocus(true)
-    refreshDependentRows(selectedSetting.settingName)
+    refreshDependentRows(selectedSetting.settingName, dependsOn)
 end sub
 
 ' Swaps the top bar and the sidebar over straight away, rather than on the next launch
@@ -2800,7 +3473,7 @@ end sub
 
 ' JFScreen hook called when screen is shown
 sub OnScreenShown(_isReturning = false as boolean)
-    if isValid(m.settingsMenu) then m.settingsMenu.setFocus(true)
+    if isValid(m.settingsMenu) then focusPill(m.pillFocused)
     if m.opened then return
     m.opened = true
     if m.animate then m.openAnim.control = "start"
@@ -2841,13 +3514,47 @@ sub checkMagicKeyPressSequence(key as string)
     end for
 
     m.showSecretMenu = true
-    LoadMenu({ children: m.configTree })
+    buildCategories()
+    showCategory(m.categoryIndex)
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
     ' A panel on its way out takes no more keys
     if m.closing then return true
+
+    ' The pill moves between categories itself. Down and OK step into the list.
+    if m.categoryPill.hasFocus()
+        if key = "down" or key = "OK"
+            focusPill(false)
+        else if key = "back" or key = "options"
+            dismissPanel(true)
+        end if
+        return true
+    end if
+
+    if m.chipsFocused
+        if key = "left" or key = "right"
+            at = 0
+            for i = 0 to PREVIEW_SCENES.Count() - 1
+                if PREVIEW_SCENES[i] = m.chipScene then at = i
+            end for
+            if key = "left" then at = at - 1 else at = at + 1
+            if at < 0
+                focusChips(false)
+            else if at < PREVIEW_SCENES.Count()
+                m.chipScene = PREVIEW_SCENES[at]
+                updatePreview()
+            end if
+        else if key = "back"
+            focusChips(false)
+        else if key = "up"
+            focusPill(true)
+        else if key = "options"
+            dismissPanel(true)
+        end if
+        return true
+    end if
 
     checkMagicKeyPressSequence(key)
     listFocused = m.settingsMenu.hasFocus()
@@ -2861,11 +3568,21 @@ function onKeyEvent(key as string, press as boolean) as boolean
             focusTitleAction(false)
             return true
         end if
-        if key = "up" or key = "left" or key = "right" then return true
+        if key = "up"
+            focusPill(true)
+            return true
+        end if
+        if key = "left" or key = "right" then return true
     end if
 
     if key = "up" and listFocused and m.titleBar.action <> ""
         focusTitleAction(true)
+        return true
+    end if
+
+    ' Up past the first row climbs to the pill
+    if key = "up" and listFocused
+        focusPill(true)
         return true
     end if
 
@@ -2889,8 +3606,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         end if
 
+        ' A category's own screen goes back to the pill, and Back there closes Settings
         if listFocused or m.titleActionFocused
-            dismissPanel(true)
+            focusPill(true)
             return true
         end if
     end if
@@ -2900,9 +3618,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return true
     end if
 
-    ' Right opens a row the way OK does
     if key = "right" and listFocused
-        settingSelected()
+        focusChips(true)
         return true
     end if
 
@@ -2961,7 +3678,7 @@ sub adjustDetailsBackdropBlurItem(item as dynamic)
         }
     end if
 
-    if not isStringEqual(dynamicToDisplayString(getUserSettingValue("ui.itemdetail.style", "modern")), "modern")
+    if not isStringEqual(dynamicToDisplayString(getUserSettingValue("ui.itemdetail.style", "frost")), "modern")
         item.title = m.detailBlurItemDefaults.title
         item.description = m.detailBlurItemDefaults.description
         item.options = m.detailBlurItemDefaults.options
@@ -3008,6 +3725,18 @@ sub showLibraryOrderPanel()
     dialog.observeField("closed", "onLibraryOrderPanelClosed")
     showPickerPanel(dialog)
     dialog.callFunc("showDialog")
+    fitToListColumn(dialog)
+end sub
+
+' A settings screen drawn as a panel of its own takes the list column's place, so the preview
+' beside it stays in view
+sub fitToListColumn(screen as object)
+    screen.findNode("panel").translation = [LIST_X, BODY_Y]
+    fill = screen.findNode("panelFill")
+    fill.width = settingsMetrics.PANEL_WIDTH
+    fill.height = BODY_HEIGHT
+    list = screen.findNode("checklist")
+    if isValid(list) then list.viewHeight = BODY_HEIGHT - settingsMetrics.TITLE_BAR_HEIGHT
 end sub
 
 ' A panel closed right after a move is still saving, and is held until the server has the order,
@@ -3048,6 +3777,7 @@ sub showSettingsSyncPanel()
     m.syncedLook = syncedLook()
     m.top.appendChild(m.settingsSyncPanel)
     m.settingsSyncPanel.callFunc("showDialog")
+    fitToListColumn(m.settingsSyncPanel)
 end sub
 
 sub onSettingsSyncPanelClosed()
@@ -3064,6 +3794,7 @@ function syncedLook() as object
     return {
         navPosition: dynamicToDisplayString(getUserSettingValue("navbar.position", "top")),
         mediaBarMode: dynamicToDisplayString(getUserSettingValue("ui.home.mediaBarMode", "")),
+        rowPeek: dynamicToDisplayString(getUserSettingValue("ui.home.mediaBarRowPeek", "")),
         themeId: dynamicToDisplayString(getUserSettingValue("ui.theme.customThemeId", ""))
     }
 end function
@@ -3076,7 +3807,8 @@ sub onSettingsSyncApplied()
     m.syncedLook = after
 
     if not isStringEqual(after.navPosition, before.navPosition) then applyNavbarPosition(after.navPosition)
-    if not isStringEqual(after.mediaBarMode, before.mediaBarMode) and m.global.hasField("mediaBarModeChanged")
+    barMoved = not isStringEqual(after.mediaBarMode, before.mediaBarMode) or not isStringEqual(after.rowPeek, before.rowPeek)
+    if barMoved and m.global.hasField("mediaBarModeChanged")
         m.global.mediaBarModeChanged = m.global.mediaBarModeChanged + 1
     end if
     if not isStringEqual(after.themeId, before.themeId)
@@ -3084,7 +3816,10 @@ sub onSettingsSyncApplied()
         applySettingsStyle()
         RefreshCurrentMenu()
     end if
+    updatePreview()
     diagnostics.Apply()
+    ' A load or reset can move where the bar draws from, which nothing above tracks
+    if m.global.hasField("mediaBarSourcesChanged") then m.global.mediaBarSourcesChanged = m.global.mediaBarSourcesChanged + 1
 
     m.syncSettingsApplied = true
 end sub
@@ -3099,6 +3834,10 @@ sub onDiagnosticsSendRequested(event as object)
     dialog = event.getRoSGNode()
     if not dialog.sendRequested then return
 
+    if isPlexServer()
+        dialog.status = tr("Plex servers don't take client logs.")
+        return
+    end if
     if isEmbyServer() and not chainLookupReturn(m.global, "session.pluginInfo.clientLogSupported", false)
         dialog.status = tr("Diagnostic uploads require a Moonfin plugin version with client log support.")
         return
@@ -3223,13 +3962,27 @@ end sub
 function settingRequirementMet(requirement as string) as boolean
     if requirement = "achievements" then return achievements.IsAvailable()
     if requirement = "social" then return achievements.SocialAvailable()
+    if requirement = "liveTv" then return libraryOrder.HasLiveTv(libraryOrder.Loaded())
+    if requirement = "plugin" then return moonfinPlugin.IsEnabled()
+    if requirement = "calendar" then return moonfinPlugin.IsCalendarAvailable()
     if requirement = "kidsMode" then return kidsMode.Enabled()
     if requirement = "notKidsMode" then return not kidsMode.Enabled()
+    if requirement = "signInPin" then return signInPin.IsEnabled(signInPinRecord())
+    ' Either side of an || is enough, and each side can still join conditions with &&
     if Left(requirement, 8) = "setting:"
-        for each condition in requirement.Split("&&")
-            if not settingConditionMet(Mid(condition, 9)) then return false
+        for each alternative in requirement.Split("||")
+            if settingAlternativeMet(alternative) then return true
         end for
+        return false
     end if
+    return true
+end function
+
+function settingAlternativeMet(alternative as string) as boolean
+    for each condition in alternative.Split("&&")
+        if Left(condition, 8) = "setting:" then condition = Mid(condition, 9)
+        if not settingConditionMet(condition) then return false
+    end for
     return true
 end function
 
@@ -3259,11 +4012,13 @@ function settingConditionMet(condition as string) as boolean
     return matches
 end function
 
-' Rows that depend on the setting just changed come and go with it, and focus stays on the setting
-sub refreshDependentRows(settingName as string)
+' Rows that depend on the setting just changed come and go with it, and focus stays on the setting.
+' A setting that writes another switch along with itself names the switch those rows read.
+sub refreshDependentRows(settingName as string, dependsOn = "" as string)
     section = m.userLocation.peek()
     if not isValid(section) or not isValid(section.children) then return
-    needle = "setting:" + settingName
+    if dependsOn = "" then dependsOn = settingName
+    needle = "setting:" + dependsOn
     dependent = false
     for each item in section.children
         if Instr(1, chainLookupReturn(item, "requires", ""), needle) > 0

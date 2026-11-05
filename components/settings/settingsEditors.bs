@@ -1,3 +1,4 @@
+import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/utils/buttonLayout.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/detailMetadataLayout.bs"
@@ -5,6 +6,7 @@ import "pkg:/source/utils/homeRowGroups.bs"
 import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/multiserver.bs"
 import "pkg:/source/utils/ratingSourceList.bs"
+import "pkg:/source/utils/seerrSliders.bs"
 import "pkg:/source/utils/settingsIcons.bs"
 
 ' The home rows, the action and player buttons, the metadata row and the rating sources are each
@@ -12,21 +14,49 @@ import "pkg:/source/utils/settingsIcons.bs"
 ' and OK switches it, and the arrangement is written once when the screen closes, and only when
 ' it changed.
 
-const RATING_SOURCES_SETTING = "plugin.mdblist.ratingSources"
-
 sub openEditor(kind as string, settingItem as object)
     title = settingItem.title
-    if kind = "ratingSources" then title = "Ratings"
+    if kind = "ratingSources"
+        title = "Ratings"
+        ' Home rows and the media bar each keep a list of their own
+        m.ratingSourcesSetting = settingItem.settingName
+    end if
     if kind = "rows"
         loadRowsEditor()
+        return
+    end if
+    m.keepAsCompleteOffered = false
+    if kind = "detailButtons" and moonfinPlugin.CanKeepAsComplete()
+        checkKeepAsCompleteLiveTv(title)
         return
     end if
     showEditor(kind, title, {}, [])
 end sub
 
+' Keep as Complete only belongs in the row on a server with Live TV, so the editor waits behind the
+' spinner while the libraries are read
+sub checkKeepAsCompleteLiveTv(title as string)
+    startLoadingSpinner()
+    m.keepAsCompleteEditorTitle = title
+    m.keepAsCompleteLiveTvTask = createObject("roSGNode", "LoadItemsTask")
+    m.keepAsCompleteLiveTvTask.observeField("content", "onKeepAsCompleteLiveTvChecked")
+    m.keepAsCompleteLiveTvTask.control = "RUN"
+end sub
+
+sub onKeepAsCompleteLiveTvChecked(event as object)
+    event.getRoSGNode().unobserveField("content")
+    m.keepAsCompleteLiveTvTask = invalid
+    for each library in event.getData() ?? []
+        if isStringEqual(chainLookupReturn(library, "json.collectiontype", ""), "livetv") then m.keepAsCompleteOffered = true
+    end for
+
+    stopLoadingSpinner()
+    showEditor("detailButtons", m.keepAsCompleteEditorTitle, {}, [])
+    m.settingsMenu.setFocus(true)
+end sub
+
 sub showEditor(kind as string, title as string, leftOut as object, fetched as object)
-    ' General is the one disabled group that starts open, since it's short
-    m.editor = { kind: kind, rows: editorRowsFor(kind, invalid), resetKey: "", openGroups: { general: true }, leftOut: leftOut, fetched: fetched, found: [] }
+    m.editor = { kind: kind, rows: editorRowsFor(kind, invalid), resetKey: "", openGroups: {}, leftOut: leftOut, fetched: fetched, found: [] }
     addFoundRows()
     m.editor.openedKey = editorKey(m.editor.rows)
     LoadMenu({ title: title, editor: kind, clean: true, titleAction: "restore", children: [] })
@@ -48,7 +78,7 @@ function editorRowsFor(kind as string, resetTo as dynamic) as object
         picked = homeRowLayout.DynamicLookup()
         for each row in buttonLayout.Ordered(homeRowLayout.Offered(), stored)
             ' A reset keeps no picks, so they come back as items to turn on
-            if not isValid(resetTo) or not isValid(homeRowLayout.SourceFromId(row.id))
+            if not isValid(resetTo) or not (isValid(homeRowLayout.SourceFromId(row.id)) or homeRowLayout.IsSliderRow(row.id))
                 rows.push({ id: row.id, label: tr(row.label), subtitle: pickedRowSource(row.id), enabled: homeRowLayout.IsEnabled(row.id, placed, off, picked) })
             end if
         end for
@@ -56,7 +86,7 @@ function editorRowsFor(kind as string, resetTo as dynamic) as object
     end if
 
     if kind = "ratingSources"
-        enabled = ratingSourceList.Normalize(get_user_setting(RATING_SOURCES_SETTING))
+        enabled = ratingSourceList.Normalize(get_user_setting(m.ratingSourcesSetting))
         if enabled.Count() = 0 or isValid(resetTo) then enabled = ratingSourceList.Defaults()
         return editorRowsFrom(enabled)
     end if
@@ -76,6 +106,7 @@ end function
 
 ' A collection from another signed in server names that server
 function pickedRowSource(rowId as string) as string
+    if homeRowLayout.IsSliderRow(rowId) then return tr("Seerr Discovery Rows")
     fromId = homeRowLayout.SourceFromId(rowId)
     if not isValid(fromId) then return ""
     if fromId.source = "genres" then return tr("Genres row")
@@ -93,7 +124,21 @@ end function
 function editorTarget(kind as string) as object
     if kind = "osdButtons" then return { catalogue: buttonLayout.OsdButtons(), orderKey: OSD_ORDER_SETTING, hiddenKey: OSD_HIDDEN_SETTING }
     if kind = "metadata" then return { catalogue: detailMetadataLayout.DetailMetadata(), orderKey: DETAIL_METADATA_ORDER_SETTING, hiddenKey: DETAIL_METADATA_HIDDEN_SETTING }
-    return { catalogue: buttonLayout.DetailButtons(), orderKey: DETAIL_ORDER_SETTING, hiddenKey: DETAIL_HIDDEN_SETTING }
+    return { catalogue: detailButtonsCatalogue(), orderKey: DETAIL_ORDER_SETTING, hiddenKey: DETAIL_HIDDEN_SETTING }
+end function
+
+' Keep as Complete is only offered when the server has Live TV, its plugin tracks incomplete
+' recordings and the account can manage them. A save still keeps its place, since ids outside the
+' catalogue are carried through.
+function detailButtonsCatalogue() as object
+    catalogue = buttonLayout.DetailButtons()
+    if m.keepAsCompleteOffered = true then return catalogue
+
+    offered = []
+    for each entry in catalogue
+        if entry.id <> "keepAsComplete" then offered.push(entry)
+    end for
+    return offered
 end function
 
 function editorKey(rows as object) as string
@@ -263,6 +308,7 @@ sub editorToggle()
     rows[index].enabled = not rows[index].enabled
     m.editor.rows = rows
     refreshEditorRows([item])
+    updatePreview()
 end sub
 
 ' A row switched on joins the end of the enabled rows, and one switched off goes back among the
@@ -343,6 +389,7 @@ sub loadRowsEditor()
     end for
 
     checkLiveTv()
+    fetchSliders()
     for each listEntry in homeRowLayout.Sources()
         if listEntry.key = "server" and not isSiloServer() then continue for
         if homeRowLayout.RowToggleOn(listEntry.key)
@@ -386,9 +433,50 @@ sub onLiveTvChecked(event as object)
     libraries = event.getData()
     event.getRoSGNode().unobserveField("content")
     if isValidAndNotEmpty(libraries)
-        m.rowsLoad.leftOut = { livetv: true, onnow: true }
+        hasLiveTv = false
         for each library in libraries
-            if isStringEqual(chainLookupReturn(library, "json.collectiontype", ""), "livetv") then m.rowsLoad.leftOut = {}
+            if isStringEqual(chainLookupReturn(library, "json.collectiontype", ""), "livetv") then hasLiveTv = true
+        end for
+        if not hasLiveTv
+            m.rowsLoad.leftOut.livetv = true
+            m.rowsLoad.leftOut.onnow = true
+        end if
+    end if
+    rowsLoadDone()
+end sub
+
+' Slider rows follow Seerr: renamed to their current titles, dropped once Seerr no longer has them
+' and left out while Seerr has them switched off. Without Seerr they're left out, and a failed read
+' leaves them as they are.
+sub fetchSliders()
+    if not GetSeerrConfig().enabled
+        for each entry in homeRowLayout.DynamicRows()
+            if homeRowLayout.IsSliderRow(entry.id) then m.rowsLoad.leftOut[entry.id] = true
+        end for
+        return
+    end if
+    task = CreateObject("roSGNode", "SeerrAPITask")
+    task.request = { method: "GET", endpoint: seerrSliders.LIST_PATH, queryParams: {} }
+    task.observeField("response", "onSlidersFetched")
+    runRowsLoadTask(task)
+end sub
+
+sub onSlidersFetched(event as object)
+    event.getRoSGNode().unobserveField("response")
+    response = event.getData()
+    if isValid(response) and response.success = true and type(response.data) = "roArray"
+        sliders = seerrSliders.ParseList(response.data)
+        reconciled = seerrSliders.Reconciled(homeRowLayout.DynamicRows(), sliders)
+        if reconciled.changed
+            homeRowLayout.SaveDynamic(reconciled.picks)
+            if reconciled.gone.Count() > 0 then homeRowLayout.ForgetPicks(reconciled.gone)
+        end if
+        for each pick in reconciled.picks
+            if homeRowLayout.IsSliderRow(pick.id)
+                fromId = seerrSliders.FromRowId(pick.id)
+                live = seerrSliders.Find(sliders, fromId.sliderId, fromId.sliderType)
+                if not isValid(live) or not live.enabled then m.rowsLoad.leftOut[pick.id] = true
+            end if
         end for
     end if
     rowsLoadDone()
@@ -456,6 +544,7 @@ sub editorReset()
     addFoundRows()
     m.editor.resetKey = editorKey(m.editor.rows)
     showSection(m.userLocation.peek())
+    updatePreview()
 end sub
 
 ' Rows that changed lay themselves out again, and the rows under them move if one grew
@@ -514,8 +603,8 @@ sub commitOpenEditor()
 
     if editor.kind = "ratingSources"
         stored = FormatJson(ratingSourceList.ToStored(editorEnabledIds(editor.rows)))
-        set_user_setting(RATING_SOURCES_SETTING, stored)
-        syncSettingToServer(RATING_SOURCES_SETTING, stored)
+        set_user_setting(m.ratingSourcesSetting, stored)
+        syncSettingToServer(m.ratingSourcesSetting, stored)
         return
     end if
 
@@ -525,12 +614,29 @@ sub commitOpenEditor()
         saveButtonLayout(target, [], [])
         return
     end if
+    arranged = editorArrangement(editor.rows)
+    merged = buttonLayout.WithUnknownIds(target.catalogue, arranged.order, arranged.hidden, get_user_setting(target.orderKey), get_user_setting(target.hiddenKey))
+    saveButtonLayout(target, merged.order, merged.hidden)
+end sub
+
+function editorArrangement(rows as object) as object
     order = []
     hidden = []
-    for each row in editor.rows
+    for each row in rows
         order.push(row.id)
         if not row.enabled then hidden.push(row.id)
     end for
-    merged = buttonLayout.WithUnknownIds(target.catalogue, order, hidden, get_user_setting(target.orderKey), get_user_setting(target.hiddenKey))
-    saveButtonLayout(target, merged.order, merged.hidden)
-end sub
+    return { order: order, hidden: hidden }
+end function
+
+' The open editor's arrangement as the settings it saves to, which the preview draws before the
+' save. Home rows and rating sources have no arrangement there.
+function editorPreviewValues(editor as dynamic) as object
+    if not isValid(editor) or editor.kind = "rows" or editor.kind = "ratingSources" then return {}
+    target = editorTarget(editor.kind)
+    arranged = editorArrangement(editor.rows)
+    values = {}
+    values[target.orderKey] = FormatJson(arranged.order)
+    values[target.hiddenKey] = FormatJson(arranged.hidden)
+    return values
+end function

@@ -890,6 +890,12 @@ sub onSelectedItemEvent(msg)
             return
         end if
 
+        ' The upcoming rows' See All card opens the month grid at today
+        if isValid(selectedItem.json) and isStringEqual(selectedItem.json.Type, "CalendarSeeAll")
+            m.global.sceneManager.callFunc("pushScene", CreateObject("roSGNode", "CalendarMonthScreen"))
+            return
+        end if
+
         ' Calendar cards stand for releases that are not on the server yet, so their ids
         ' mean nothing to Jellyfin. They carry a TMDB id instead, which is what the Seerr
         ' page needs to show the release and its request state.
@@ -907,6 +913,9 @@ sub onSelectedItemEvent(msg)
 
         if isStringEqual(selectedItemType, "collectionfolder")
             onLibrarySelection(selectedItem)
+        else if isStringEqual(selectedItemType, "seerrbrowse") or isStringEqual(selectedItemType, "seerrshortcut")
+            stopLoadingSpinner()
+            openSeerrBrowseTile(selectedItem, selectedItemType)
         else if isStringEqual(selectedItemType, "boxset")
             group = CreateMovieDetailsGroup(selectedItem)
         else if isStringEqual(selectedItemType, "genre")
@@ -953,8 +962,8 @@ sub onSelectedItemEvent(msg)
         else if selectedItemType = "episode" or selectedItemType = "recording"
             group = CreateMovieDetailsGroup(selectedItem)
             ' One episode to the next takes the old screen's place, so Back leaves the run of
-            ' episodes in one press
-            if selectedItemType = "episode" and isValid(group) and isValid(activeScene) and activeScene.hasField("itemType") and isStringEqual(activeScene.itemType, "episode")
+            ' episodes in one press. Quick Look's drawer shows over the page instead.
+            if selectedItemType = "episode" and isValid(group) and not group.isSubtype("QuickLookItemDetails") and isValid(activeScene) and activeScene.hasField("itemType") and isStringEqual(activeScene.itemType, "episode")
                 m.global.sceneManager.callFunc("removeScene", activeScene)
             end if
         else if selectedItemType = "series"
@@ -969,7 +978,8 @@ sub onSelectedItemEvent(msg)
                 stopLoadingSpinner()
                 message_dialog(tr("Error loading Season"))
             end if
-        else if selectedItemType = "movie"
+        else if selectedItemType = "movie" or (selectedItemType = "video" and isValid(activeScene) and activeScene.isSubtype("QuickLookItemDetails"))
+            ' A video picked anywhere else plays, but its own drawer is asking for its full page
             group = CreateMovieDetailsGroup(selectedItem)
         else if selectedItemType = "person"
             CreatePersonView(selectedItem)
@@ -1078,6 +1088,11 @@ sub onSelectedItemEvent(msg)
 
             stopLoadingSpinner()
             message_dialog("This type is not yet supported: " + (selectedItemType ?? ""))
+        end if
+
+        ' Open full page takes the drawer's place, so Back from the page goes to the screen under it
+        if isValid(activeScene) and activeScene.isSubtype("QuickLookItemDetails") and isStringEqual(activeScene.id, itemId) and not activeScene.isSameNode(m.global.sceneManager.callFunc("getActiveScene"))
+            m.global.sceneManager.callFunc("removeScene", activeScene)
         end if
 
         ' Clear the selectedItem field to prevent re-triggering when scene regains focus
@@ -1292,13 +1307,20 @@ sub onPlaylistItemSelectedEvent(msg)
     selectedIndex = msg.getData()
     screenContent = msg.getRoSGNode()
 
-    MainAction.playItem(screenContent.listData.getChildren(-1, 0), { method: "set", resetShuffle: true, position: selectedIndex })
+    tracksNode = screenContent.activeTracks ?? screenContent.listData
+    MainAction.playItem(tracksNode.getChildren(-1, 0), { method: "set", resetShuffle: true, position: selectedIndex })
 end sub
 
 ' User clicked "Play All" on playlist details
 sub onPlaylistPlayAllEvent(msg)
     startLoadingSpinner()
     screenContent = msg.getRoSGNode()
+
+    tracksNode = screenContent.activeTracks ?? screenContent.listData
+    if isValid(tracksNode) and tracksNode.getChildCount() > 0
+        MainAction.playItem(tracksNode.getChildren(-1, 0), { method: "set", resetShuffle: true, position: 0 })
+        return
+    end if
 
     playlistId = chainLookupReturn(screenContent, "pageContent.id", "")
     if playlistId = ""
@@ -1330,6 +1352,12 @@ sub onPlaylistShuffleEvent(msg)
 
     startLoadingSpinner()
     screenContent = msg.getRoSGNode()
+
+    tracksNode = screenContent.activeTracks ?? screenContent.listData
+    if isValid(tracksNode) and tracksNode.getChildCount() > 0
+        MainAction.playItem(shuffleArray(tracksNode.getChildren(-1, 0)), { method: "set", resetShuffle: true, position: 0 })
+        return
+    end if
 
     playlistId = chainLookupReturn(screenContent, "pageContent.id", "")
     if playlistId = ""
@@ -2050,10 +2078,7 @@ sub processLibraryItemPopup(selectedPopupButton as string, itemID as string, par
         activeScene = m.global.sceneManager.callFunc("getActiveScene")
         if not isValid(activeScene) then return
 
-        itemGrid = activeScene.findNode("itemGrid")
-        if not isValid(itemGrid) then return
-
-        itemGrid.content.removeChildIndex(itemGrid.itemFocused)
+        removeFromLibraryGrid(activeScene, itemID)
 
         return
     end if
@@ -2093,15 +2118,25 @@ sub processLibraryItemPopup(selectedPopupButton as string, itemID as string, par
 
         if isChainValid(activeScene, "parentItem.collectionType")
             if isStringEqual(activeScene.parentItem.collectionType, CollectionType.MYLIST)
-                itemGrid = activeScene.findNode("itemGrid")
-                if not isValid(itemGrid) then return
-
-                itemGrid.content.removeChildIndex(itemGrid.itemFocused)
+                removeFromLibraryGrid(activeScene, itemID)
             end if
         end if
 
         return
     end if
+end sub
+
+' A library can show the item in rows, sideways or in more than one group, so it takes the item
+' out of each view itself. Any other grid loses the card that has focus.
+sub removeFromLibraryGrid(screen as object, itemId as string)
+    if screen.isSubType("VisualLibraryScene")
+        screen.callFunc("removeItem", itemId)
+        return
+    end if
+
+    itemGrid = screen.findNode("itemGrid")
+    if not isValid(itemGrid) then return
+    itemGrid.content.removeChildIndex(itemGrid.itemFocused)
 end sub
 
 ' Servers name a channel either TvChannel or LiveTvChannel, so both tune

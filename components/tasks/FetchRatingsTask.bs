@@ -41,64 +41,63 @@ sub fetchRatings()
     end if
 
     ' Check the relevant toggle before the cache so disabling takes effect
+    scope = m.top.scope
     isEpisode = isStringEqual(itemType, "Episode")
     if isEpisode
-        featureEnabled = moonfinPlugin.IsEpisodeRatingsEnabled() and moonfinPlugin.IsRatingSourceEnabled("tmdb")
+        featureEnabled = moonfinPlugin.IsEpisodeRatingsEnabled(scope) and moonfinPlugin.IsRatingSourceEnabled("tmdb", scope)
     else
-        featureEnabled = moonfinPlugin.IsRatingsEnabled()
+        featureEnabled = moonfinPlugin.IsRatingsEnabled(scope)
     end if
     if not featureEnabled
         m.top.ratings = { success: false, data: [] }
         return
     end if
 
-    ' Session memo cache: refocusing the same item must not refetch
+    ' Session memo cache: refocusing the same item must not refetch. It keeps the ratings as the
+    ' plugin sent them, since each surface picks its own sources from them.
     cacheKey = itemId
     if cacheKey = "" then cacheKey = itemType + "_" + tmdbId
-    cached = readRatingsCache("ratings_" + cacheKey)
-    if isValid(cached)
-        m.top.ratings = cached
-        return
+    fetched = readRatingsCache("ratings_" + cacheKey)
+    if not isValid(fetched)
+        if isEpisode
+            fetched = fetchEpisodeRatings(seriesId, seasonNumber, episodeNumber)
+        else
+            fetched = fetchMdbListRatings(itemType, tmdbId)
+        end if
+        if isValid(fetched) then writeRatingsCache("ratings_" + cacheKey, fetched)
     end if
 
-    if isEpisode
-        result = fetchEpisodeDisplayRatings(seriesId, seasonNumber, episodeNumber)
-    else
-        result = fetchMdbListDisplayRatings(itemType, tmdbId)
-    end if
-
-    if isValid(result)
-        writeRatingsCache("ratings_" + cacheKey, result)
-        m.top.ratings = result
+    if isValid(fetched)
+        m.top.ratings = { success: true, data: moonfinPlugin.BuildDisplayRatings(fetched, scope) }
     else
         m.top.ratings = { success: false, data: [] }
     end if
 end sub
 
-function fetchMdbListDisplayRatings(itemType as string, tmdbId as string) as object
+function fetchMdbListRatings(itemType as string, tmdbId as string) as object
     if not isValidAndNotEmpty(tmdbId) then return invalid
 
     contentType = moonfinPlugin.GetContentType(itemType)
     if contentType = "" then return invalid
 
-    if isValid(readRatingsCache(MDBLIST_UNCONFIGURED_KEY)) then return { success: true, data: [] }
+    if isValid(readRatingsCache(MDBLIST_UNCONFIGURED_KEY)) then return []
 
     result = moonfinPlugin.FetchRatings(contentType, tmdbId)
 
     if result.status = moonfinPlugin.RATINGS_UNCONFIGURED
         writeRatingsCache(MDBLIST_UNCONFIGURED_KEY, true)
-        return { success: true, data: [] }
+        return []
     end if
 
     ' A rate limit or an outage is left uncached so the ratings arrive once it recovers
     if result.status <> moonfinPlugin.RATINGS_OK then return invalid
 
-    return { success: true, data: moonfinPlugin.BuildDisplayRatings(result.ratings) }
+    return result.ratings ?? []
 end function
 
 ' MDBList has no episode ratings, so episodes use the plugin's TMDB proxy
 ' instead, addressed by the SERIES tmdb id plus season/episode numbers
-function fetchEpisodeDisplayRatings(seriesId as string, seasonNumber as dynamic, episodeNumber as dynamic) as object
+function fetchEpisodeRatings(seriesId as string, seasonNumber as dynamic, episodeNumber as dynamic) as object
     if not isValidAndNotEmpty(seriesId) then return invalid
     if not isValid(seasonNumber) or not isValid(episodeNumber) then return invalid
 
@@ -109,16 +108,15 @@ function fetchEpisodeDisplayRatings(seriesId as string, seasonNumber as dynamic,
     if not isValid(rating) then return invalid
 
     voteAverage = rating.voteAverage
-    if not isValid(voteAverage) or voteAverage <= 0 then return { success: true, data: [] }
+    if not isValid(voteAverage) or voteAverage <= 0 then return []
 
-    displayRatings = moonfinPlugin.BuildDisplayRatings([{
+    return [{
         source: "tmdb_episode",
         value: voteAverage,
         score: invalid,
         votes: rating.voteCount,
         url: invalid
-    }])
-    return { success: true, data: displayRatings }
+    }]
 end function
 
 ' Resolves the series' TMDB id from its Jellyfin item (an episode's own Tmdb

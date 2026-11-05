@@ -1,0 +1,128 @@
+import "pkg:/source/utils/liveTvGuide.bs"
+import "pkg:/source/utils/misc.bs"
+
+' The Record prompt's rules for a program already airing, shared by the guide and the player.
+' Times are seconds since the epoch.
+
+' How long after a program's start pressing Record still counts as on time
+const RECORD_PROMPT_GRACE = 60
+
+namespace recordAiring
+
+    ' A program that started over a minute ago, with season and episode numbers to find the same
+    ' episode by, can have a complete showing recorded later by a viewer who may manage recordings
+    function OffersCompleteShowing(program as object, now as integer, canKeep as boolean) as boolean
+        if not canKeep then return false
+        if not isValid(program.LookupCI("ParentIndexNumber")) or not isValid(program.LookupCI("IndexNumber")) then return false
+        return now - liveTvGuide.ParseTime(program.LookupCI("StartDate")) > RECORD_PROMPT_GRACE
+    end function
+
+    function isOptionalText(value as dynamic) as boolean
+        return not isValid(value) or isString(value)
+    end function
+
+    ' The plugin's flags are only trusted when they really are true, since a mismatched type stops
+    ' a comparison cold
+    function isTrue(value as dynamic) as boolean
+        kind = type(value)
+        return (kind = "Boolean" or kind = "roBoolean") and value
+    end function
+
+    ' What the plugin found for a program already airing: whether it can search for a complete
+    ' showing, and a specific future showing to confirm. A showing missing what the prompt shows,
+    ' or one that has already started, is left out.
+    function Options(data as object, now as integer) as object
+        canSearch = recordAiring.isTrue(data.canSearch)
+        raw = data.showing
+        showing = invalid
+        if type(raw) = "roAssociativeArray" and isString(raw.programId) and raw.programId <> "" and isString(raw.name) and raw.name.Trim() <> "" and isString(raw.description) and (canSearch or raw.description.Trim() <> "") and recordAiring.isOptionalText(raw.channelName) and recordAiring.isOptionalText(raw.channelNumber)
+            start = liveTvGuide.ParseTime(raw.startDate)
+            if start > now
+                showing = {
+                    payload: raw,
+                    start: start,
+                    description: raw.description,
+                    channelName: raw.channelName,
+                    channelNumber: raw.channelNumber,
+                    ' Someone already set this showing to record, and confirming it adopts that timer
+                    alreadyScheduled: recordAiring.isTrue(raw.alreadyScheduled)
+                }
+            end if
+        end if
+        return { canSearch: canSearch, showing: showing }
+    end function
+
+    ' "16.1 WPTODT": a channel's number and name, skipping whichever is missing
+    function PromptChannel(number as dynamic, name as dynamic) as string
+        parts = []
+        for each part in [number, name]
+            text = ""
+            if isString(part)
+                text = part.Trim()
+            else if isValid(part)
+                text = part.toStr().Trim()
+            end if
+            if text <> "" then parts.push(text)
+        end for
+        return parts.join(" ")
+    end function
+
+    ' Two program descriptions say different things, ignoring case and spacing. A missing one proves
+    ' nothing either way.
+    function DescriptionsDiffer(a as dynamic, b as dynamic) as boolean
+        spaces = CreateObject("roRegex", "\s+", "")
+        normalized = []
+        for each text in [a, b]
+            if not isString(text) then text = ""
+            normalized.push(LCase(spaces.ReplaceAll(text.Trim(), " ")))
+        end for
+        return normalized[0] <> "" and normalized[1] <> "" and normalized[0] <> normalized[1]
+    end function
+
+    ' When a later showing airs, as the Record prompt's buttons name it: a time today, Tomorrow, a
+    ' weekday within the week, otherwise a short date
+    function LaterShowingWhen(start as integer, now as integer) as string
+        ' Rounded so a daylight saving change doesnt shorten a day to 23 hours
+        days = cint((liveTvGuide.StartOfDay(start) - liveTvGuide.StartOfDay(now)) / 86400)
+        if days <= 0 then return liveTvGuide.ClockTime(start)
+        if days = 1 then return tr("Tomorrow")
+        wall = CreateObject("roDateTime")
+        wall.FromSeconds(start)
+        wall.ToLocalTime()
+        if days < 7
+            weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+            return tr(weekdays[wall.GetDayOfWeek()])
+        end if
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        return tr(months[wall.GetMonth() - 1]) + " " + wall.GetDayOfMonth().toStr()
+    end function
+
+    ' A future showing that only matched on title and description, or whose description reads
+    ' differently, puts the default on recording only what airs now
+    function IsCautious(showing as dynamic, canSearch as boolean, description as dynamic) as boolean
+        if not isValid(showing) then return false
+        return not canSearch or recordAiring.DescriptionsDiffer(description, showing.description)
+    end function
+
+    ' How a Record that asked for the future showing ended, from whether the showing was booked
+    function LaterOutcome(choice as string, scheduled as boolean) as string
+        if choice = "later"
+            if scheduled then return "laterShowingOnly"
+            return "laterShowingOnlyFailed"
+        end if
+        if scheduled then return "recordedWithLaterShowing"
+        return "recordedLaterShowingFailed"
+    end function
+
+    ' The toast for a finished Record, or empty after a cancel
+    function Message(outcome as string) as string
+        if outcome = "recorded" then return tr("Program set to record")
+        if outcome = "recordedWithLaterShowing" then return tr("Recording started. A future showing will be recorded too.")
+        if outcome = "recordedLaterShowingFailed" then return tr("Recording started, but couldn't request a future showing.")
+        if outcome = "laterShowingOnly" then return tr("The future showing will be recorded.")
+        if outcome = "laterShowingOnlyFailed" then return tr("Couldn't request the future showing, so nothing will be recorded.")
+        if outcome = "failed" then return tr("Unable to create recording")
+        return ""
+    end function
+
+end namespace

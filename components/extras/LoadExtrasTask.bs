@@ -113,12 +113,18 @@ sub loadAllExtras()
         return
     end if
 
-    ' A collection's page is its titles, with nothing similar, no extras and no collection of its own
+    ' A collection's page is its titles, with nothing similar, no extras and no collection of its own.
+    ' The titles the library is missing are slotted in by release, and a blocked title still counts
+    ' as owned so it isn't offered as missing.
     itemKind = LCase(m.top.itemType)
     if itemKind = "boxset"
         membersNode = resultsNode.createChild("ContentNode")
         membersNode.title = "collectionItems"
-        for each item in parentalControls.WithoutBlockedItems(collectionTitles(m.top.itemId, "", "PrimaryImageAspectRatio,ProductionYear,ProviderIds"))
+        membersNode.addFields({ order: storedCollectionOrder(m.top.itemId) })
+        held = collectionTitles(m.top.itemId, "", "PrimaryImageAspectRatio,ProductionYear,PremiereDate,ProviderIds")
+        missing = []
+        if showsMissing() then missing = seerrMissingCollection.Find({ Id: m.top.itemId, ProviderIds: m.top.providerIds }, held)
+        for each item in seerrMissingCollection.SlotByRelease(parentalControls.WithoutBlockedItems(held), missing)
             membersNode.appendChild(collectionCard(item))
         end for
         m.top.content = resultsNode
@@ -177,6 +183,11 @@ sub loadAllExtras()
                 nextupNode.appendChild(item)
             end for
         end if
+
+        if m.top.seasonsOnly
+            m.top.content = resultsNode
+            return
+        end if
     end if
 
     ' Load same-season episodes for episode detail views
@@ -207,13 +218,13 @@ sub loadAllExtras()
         end for
     end if
 
-    if m.top.includeCollections and (itemKind = "movie" or itemKind = "video") and not hidden.DoesExist("collections") then loadParentCollection(resultsNode)
+    if m.top.includeCollections and (itemKind = "movie" or itemKind = "video" or itemKind = "series") and not hidden.DoesExist("collections") then loadParentCollection(resultsNode)
 
     m.top.content = resultsNode
 end sub
 
-' Every collection the film is in that holds anything else, with the titles the library is
-' missing slotted in by release
+' Every collection the title is in that holds anything else, led by the collection itself so there's
+' a way into it, then its titles with the ones the library is missing in release order
 sub loadParentCollection(resultsNode as object)
     for each collection in findParents({ Id: m.top.itemId, ProviderIds: m.top.providerIds })
         ' A blocked title is left out of the row but still counts as owned, so it isnt offered as
@@ -228,6 +239,7 @@ sub loadParentCollection(resultsNode as object)
         parentNode = resultsNode.createChild("ContentNode")
         parentNode.title = "parentCollection"
         parentNode.addFields({ collectionName: isValidAndNotEmpty(collection.Name) ? collection.Name : tr("Collection") })
+        parentNode.appendChild(collectionCard(collection))
         for each item in seerrMissingCollection.MergeByRelease(members, missing)
             parentNode.appendChild(collectionCard(item))
         end for
@@ -791,7 +803,8 @@ function loadOnlineSimilar() as object
             SeerrTmdbId: tmdbKey,
             SeerrMediaType: mediaType,
             SeerrPosterURL: posterUrl,
-            SeerrItem: res
+            SeerrItem: res,
+            SeerrStatus: chainLookupReturn(res, "mediaInfo.status", 0)
         }
         results.push(tmp)
         count = count + 1
@@ -964,9 +977,22 @@ function loadJellyfinSimilar(limit as integer, bypass as boolean) as object
     return similar
 end function
 
+' Special features by their number, then by name. One with no number counts as 0, and a tie keeps
+' the server's order.
+function sortedFeatures(items as object) as object
+    return stableSorted(items, featureComesFirst)
+end function
+
+function featureComesFirst(a as object, b as object, _context as dynamic) as boolean
+    numberA = a.IndexNumber ?? 0
+    numberB = b.IndexNumber ?? 0
+    if numberA <> numberB then return numberA < numberB
+    return LCase(a.Name ?? "") < LCase(b.Name ?? "")
+end function
+
 function loadSpecials() as object
     specials = []
-    for each item in responseItems(fetch(`/Items/${m.top.itemId}/SpecialFeatures`, {}))
+    for each item in sortedFeatures(responseItems(fetch(`/Items/${m.top.itemId}/SpecialFeatures`, {})))
         ' Some servers list the title among its own extras
         if item.Id = m.top.itemId then continue for
 

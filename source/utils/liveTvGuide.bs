@@ -165,8 +165,9 @@ namespace liveTvGuide
     ' Programs
     ' ---------------------------------------------------------------------------------------------
 
+    ' A date the server doesn't have reads as none, so a timer with no end stays on the schedule
     function ParseTime(value as dynamic) as integer
-        if not isString(value) or value = "" then return 0
+        if not isServerDate(value) then return 0
         parsed = CreateObject("roDateTime")
         parsed.FromISO8601String(value)
         return parsed.AsSeconds()
@@ -195,10 +196,13 @@ namespace liveTvGuide
     end function
 
     ' The episode title and its (S1:E5) numbering, each on its own when the listing carries only one
-    ' of them. Empty when the listing carries neither.
+    ' of them. Empty when the listing carries neither. A title that only repeats the program's name,
+    ' as sports listings often send, is left out.
     function EpisodeLine(program as dynamic) as string
         if not isValid(program) then return ""
         title = liveTvGuide.EpisodeTitleOf(program).Trim()
+        programName = chainLookupReturn(program, "Name", "")
+        if isString(programName) and title = programName.Trim() then title = ""
         label = liveTvGuide.SeasonEpisodeLabel(program)
         if label <> "" then label = "(" + label + ")"
         if title <> "" and label <> "" then return title + " " + label
@@ -211,6 +215,109 @@ namespace liveTvGuide
 
     function HasSeriesTimer(program as dynamic) as boolean
         return isValid(chainLookupReturn(program, "SeriesTimerId", invalid))
+    end function
+
+    ' The mark a program wears: the series mark whenever a rule covers it, grey when that rule
+    ' skips this showing, and the plain one for a recording of its own
+    function RecordingMark(program as dynamic) as string
+        if liveTvGuide.HasSeriesTimer(program)
+            if liveTvGuide.HasTimer(program) then return "series"
+            return "skipped"
+        end if
+        if liveTvGuide.HasTimer(program) then return "record"
+        return ""
+    end function
+
+    sub ShowRecordingMark(icon as object, mark as string)
+        icon.visible = mark <> ""
+        if mark = "" then return
+        icon.uri = "pkg:/images/livetv/smart_record.webp"
+        if mark = "record" then icon.uri = "pkg:/images/livetv/record.webp"
+        icon.blendColor = "#E0685C"
+        if mark = "skipped" then icon.blendColor = "#9E9E9E"
+    end sub
+
+    ' The episodes a series rule records, from every showing down to first airings only
+    function SeriesChoices() as object
+        return [
+            { key: "all", label: tr("All Episodes"), detail: tr("Every showing, including repeats"), flags: { "RecordNewOnly": false, "SkipEpisodesInLibrary": false } },
+            { key: "notRecorded", label: tr("Episodes Not Already Recorded"), detail: tr("Skips episodes already in your library and records each episode once"), flags: { "RecordNewOnly": false, "SkipEpisodesInLibrary": true } },
+            { key: "newOnly", label: tr("New Episodes Only"), detail: tr("First airings only, no repeats"), flags: { "RecordNewOnly": true, "SkipEpisodesInLibrary": true } }
+        ]
+    end function
+
+    function SeriesChoiceOf(rule as dynamic) as string
+        if chainLookupReturn(rule, "RecordNewOnly", false) = true then return "newOnly"
+        if chainLookupReturn(rule, "SkipEpisodesInLibrary", false) = true then return "notRecorded"
+        return "all"
+    end function
+
+    function SeriesChoiceFlags(key as string) as object
+        for each choice in liveTvGuide.SeriesChoices()
+            if choice.key = key then return choice.flags
+        end for
+        return {}
+    end function
+
+    ' A canceled, finished or failed timer, or one whose showing is over, has nothing left to record
+    function IsUpcomingTimer(timer as dynamic, now as integer) as boolean
+        status = chainLookupReturn(timer, "Status", "")
+        if status = "Cancelled" or status = "Completed" or status = "Error" then return false
+        ending = liveTvGuide.ParseTime(chainLookupReturn(timer, "EndDate", ""))
+        return ending = 0 or ending > now
+    end function
+
+    function UpcomingTimers(timers as dynamic, now as integer) as object
+        kept = []
+        for each timer in timers ?? []
+            if liveTvGuide.IsUpcomingTimer(timer, now) then kept.push(timer)
+        end for
+        return kept
+    end function
+
+    ' The timer recording this showing, a running one ahead of one still waiting. Canceled and
+    ' finished timers dont count.
+    function TimerFor(program as object, timers as object) as dynamic
+        timerId = guidKey(program.LookupCI("TimerId"))
+        programId = guidKey(program.LookupCI("Id"))
+        waiting = invalid
+        for each timer in timers
+            matches = (timerId <> "" and guidKey(timer.LookupCI("Id")) = timerId) or (programId <> "" and guidKey(timer.LookupCI("ProgramId")) = programId)
+            status = timer.LookupCI("Status")
+            if matches and status = "InProgress" then return timer
+            if matches and status = "New" and not isValid(waiting) then waiting = timer
+        end for
+        return waiting
+    end function
+
+    ' What the player's Record button and dialog show for the program airing: its timer, its series
+    ' rule, the mark, and the rule's next recording. The mark only turns red while the recording
+    ' runs, and a series rule's mark is grey on a showing it passes over.
+    function LiveRecording(program as object, timers as object, now as integer) as object
+        timer = liveTvGuide.TimerFor(program, timers)
+        seriesTimerId = ""
+        if isValid(timer) and isValidAndNotEmpty(timer.LookupCI("SeriesTimerId")) then seriesTimerId = timer.LookupCI("SeriesTimerId")
+        if seriesTimerId = "" and isValidAndNotEmpty(program.LookupCI("SeriesTimerId")) then seriesTimerId = program.LookupCI("SeriesTimerId")
+
+        ' When the rule records next, or 0 when the guide has nothing coming up for it
+        nextStart = 0
+        if seriesTimerId <> ""
+            rule = guidKey(seriesTimerId)
+            for each candidate in timers
+                start = liveTvGuide.ParseTime(candidate.LookupCI("StartDate"))
+                if candidate.LookupCI("Status") = "New" and guidKey(candidate.LookupCI("SeriesTimerId")) = rule and start > now and (nextStart = 0 or start < nextStart) then nextStart = start
+            end for
+        end if
+
+        mark = ""
+        if seriesTimerId <> ""
+            mark = "skipped"
+            if isValid(timer) then mark = "series"
+        else if isValid(timer)
+            mark = "scheduled"
+            if timer.LookupCI("Status") = "InProgress" then mark = "record"
+        end if
+        return { timer: timer, seriesTimerId: seriesTimerId, mark: mark, nextStart: nextStart }
     end function
 
     function IsLiveAt(program as object, now as integer) as boolean

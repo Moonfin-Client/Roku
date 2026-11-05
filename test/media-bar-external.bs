@@ -1,0 +1,87 @@
+sub testMediaBarExternal()
+    savedGlobal = m.global
+    savedRegistry = m.registry["jf-user"]
+
+    ' The ids every client syncs map to the queries the home rows send
+    imdbQuery = externalList.RequestFor("imdb_top_250_movies", [])
+    assertEqual(imdbQuery.source + "|" + imdbQuery.type + "|" + imdbQuery.params, "imdb|imdb_top_250_movies|{}", "An IMDb chart is asked for by its own id")
+    tmdbQuery = externalList.RequestFor("tmdb_trending_movie_weekly", [])
+    assertEqual(tmdbQuery.source + "|" + tmdbQuery.type, "tmdb_chart|trending/movie/week", "A TMDB chart is asked for by its path")
+    assertEqual(ParseJson(tmdbQuery.params).type, "trending/movie/week", "The path rides along in the params too")
+    assertEqual(externalList.TmdbChartPath("tmdb_on_the_air_tv"), "tv/on_the_air", "Each TMDB chart id has its path")
+    assertEqual(externalList.TmdbChartPath("imdb_top_250_movies"), "", "An IMDb chart has no TMDB path")
+    assertEqual(externalList.RequestFor("custom_row_404", []), invalid, "A custom row nobody has any more names nothing")
+
+    ids = []
+    for each chart in externalList.Charts()
+        ids.push(chart.id)
+    end for
+    assertEqual(ids.Count(), 19, "The picker offers the six IMDb charts and the thirteen TMDB ones")
+    assertEqual(inArray(ids, "imdb_top_english_movies") and inArray(ids, "tmdb_trending_all_weekly"), true, "Both kinds of chart are offered")
+    assertEqual(inArray(ids, "seerr_trending"), false, "Seerr rows are not lists")
+
+    ' Custom rows are read from the sections the server sent that this app keeps aside
+    m.global = { session: { server: { url: "https://jellyfin.test", serverType: "jellyfin" }, user: { id: "jf-user", settings: {} } } }
+    ' Written out by hand, since this interpreter's FormatJson leaves quotes inside strings unescaped
+    m.registry["jf-user"] = { "ui.home.sectionPassthrough": "[{""kind"":""pluginDynamic"",""pluginSource"":""custom"",""pluginSection"":""custom_row_1700000000000"",""pluginDisplayText"":""Oscar Winners"",""pluginAdditionalData"":""{\""source\"":\""letterboxd\"",\""type\"":\""user_list\"",\""params\"":{\""user\"":\""someone\""}}""},{""kind"":""pluginDynamic"",""pluginSource"":""seerr"",""pluginSection"":""12"",""pluginDisplayText"":""A slider""}]" }
+    custom = externalList.CustomRows()
+    assertEqual(custom.Count(), 1, "Only custom rows are offered, not Seerr sliders")
+    assertEqual(custom[0].id + "|" + custom[0].label, "custom_row_1700000000000|Oscar Winners", "A custom row goes by its section id and its title")
+    customQuery = externalList.RequestFor("custom_row_1700000000000", custom)
+    assertEqual(customQuery.source + "|" + customQuery.type, "letterboxd|user_list", "A custom row asks for what it was set up with")
+    assertEqual(ParseJson(customQuery.params).user, "someone", "Its params go along")
+
+    assertEqual(externalList.ImageUrl("/x.jpg", "w1280"), "https://image.tmdb.org/t/p/w1280/x.jpg", "A TMDB path gets the image host")
+    assertEqual(externalList.ImageUrl("https://m.media-amazon.com/p.jpg", "w500"), "https://m.media-amazon.com/p.jpg", "A full URL is kept")
+    assertEqual(externalList.ImageUrl(invalid, "w500"), "", "No path, no image")
+
+    ' A list title becomes something the bar reads like a library item
+    show = externalSlideItem({ id: 220542, name: "The Apothecary Diaries", type: "Series", productionYear: 2023, providerIds: { Tmdb: "220542" }, officialRating: "TV-14", posterUrl: "/p.jpg", backdropUrl: "/b.jpg" }, "")
+    assertEqual(show.Type + "|" + show.Id + "|" + show.SeerrItem.mediaType, "Series|220542|tv", "A show keeps its type and opens as tv in Seerr")
+    assertEqual(show.BackdropUrl, "https://image.tmdb.org/t/p/w1280/b.jpg", "Its list backdrop is the fallback art")
+    assertEqual(show.PosterUrl, "https://image.tmdb.org/t/p/w500/p.jpg", "Its poster is there for the bookshelf")
+    assertEqual(externalSlideItem({ name: "Typed by the chart", type: "Movie", providerIds: { Tmdb: 1 } }, "Series").Type, "Series", "A chart's path decides the type over the title's own")
+    imdbOnly = externalSlideItem({ name: "Old", providerIds: { Imdb: "tt0000001" } }, "")
+    assertEqual(imdbOnly.Id + "|" + imdbOnly.Type, "tt0000001|Movie", "An IMDb id stands in, and an untyped title is a movie")
+    assertEqual(externalSlideItem({ name: "Nothing" }, ""), invalid, "A title with no id is dropped")
+
+    ' What TMDB holds wins over the list, and the runtime stays a LongInteger
+    applyExternalDetails(show, { overview: "Maomao", rating: 8.7, genres: ["Animation", "Mystery"], runTimeTicks: 85200000000&, backdropPath: "/plain.jpg", logoPath: "/logo.png", trailerUrl: "https://www.youtube.com/watch?v=3lfb_KeqdEM" })
+    assertEqual(show.Overview, "Maomao", "The overview comes from TMDB")
+    assertEqual(show.CommunityRating, 8.7, "So does the rating")
+    assertEqual(type(show.RunTimeTicks), "LongInteger", "The runtime is a LongInteger")
+    assertEqual(show.BackdropUrl, "https://image.tmdb.org/t/p/w1280/plain.jpg", "The textless backdrop replaces the list one")
+    assertEqual(show.LogoUrl, "https://image.tmdb.org/t/p/w500/logo.png", "The logo is TMDB's at w500")
+    assertEqual(show.RemoteTrailers[0].Url, "https://www.youtube.com/watch?v=3lfb_KeqdEM", "The trailer goes where the bar looks for one")
+    short = externalSlideItem({ name: "Short", providerIds: { Tmdb: "2" }, backdropUrl: "/s.jpg" }, "")
+    applyExternalDetails(short, { runTimeTicks: 600000000, rating: invalid })
+    assertEqual(type(short.RunTimeTicks), "LongInteger", "A short runtime is widened too")
+    applyExternalDetails(short, invalid)
+    assertEqual(short.BackdropUrl, "https://image.tmdb.org/t/p/w1280/s.jpg", "No details leaves the list's art")
+
+    ' A library title and the same title from a list count once, the library one kept
+    library = { Id: "abc", Name: "Shawshank", Type: "Movie", ProviderIds: { Tmdb: "278", Imdb: "tt0111161" } }
+    fromImdb = externalSlideItem({ name: "The Shawshank Redemption", type: "Movie", providerIds: { Imdb: "tt0111161" } }, "")
+    fromTmdb = externalSlideItem({ name: "The Shawshank Redemption", providerIds: { Tmdb: "278" } }, "Movie")
+    sameIdShow = externalSlideItem({ name: "A show", providerIds: { Tmdb: "278" } }, "Series")
+    kept = filterAndDedupeItems([library, fromImdb, fromTmdb, sameIdShow])
+    assertEqual(kept.Count(), 2, "Repeats by TMDB or IMDb id go")
+    assertEqual(kept[0].Id + "|" + kept[1].Type, "abc|Series", "The library title stays, and a show sharing a movie's TMDB id is another title")
+
+    ' Outside titles without a backdrop or in an excluded genre give their place to the next
+    m.global.session.pluginInfo = { installed: false }
+    excluded = { horror: true }
+    scary = externalSlideItem({ name: "Scary", providerIds: { Tmdb: "10" }, backdropUrl: "/h.jpg" }, "Movie")
+    scary.Genres = ["Horror"]
+    bare = externalSlideItem({ name: "Bare", providerIds: { Tmdb: "11" } }, "Movie")
+    fine = externalSlideItem({ name: "Fine", providerIds: { Tmdb: "12" }, backdropUrl: "/f.jpg" }, "Movie")
+    untyped = externalSlideItem({ name: "Unknown genres", providerIds: { Tmdb: "13" }, backdropUrl: "/u.jpg" }, "Movie")
+    assertEqual(keepSlide({ Name: "Library horror", Genres: ["Horror"] }, excluded), true, "Library titles were filtered when fetched")
+    picked = pickSlides([scary, bare, fine, untyped, library], 2, excluded)
+    assertEqual(picked.Count(), 2, "The bar still fills up")
+    assertEqual(picked[0].Name + "|" + picked[1].Name, "Fine|Unknown genres", "An excluded genre and a missing backdrop are skipped, and unknown genres stay")
+    assertEqual(pickSlides([fine], 5, {}).Count(), 1, "A short pool gives what it has")
+
+    m.registry["jf-user"] = savedRegistry
+    m.global = savedGlobal
+end sub

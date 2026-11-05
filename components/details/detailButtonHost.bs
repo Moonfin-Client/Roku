@@ -1,4 +1,8 @@
+import "pkg:/components/music/playlistViewHost.bs"
+import "pkg:/components/recordings/incompleteRecordingWatch.bs"
 import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/trailerSearch.bs"
+import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/utils/buttonLayout.bs"
 import "pkg:/source/utils/detailActions.bs"
 import "pkg:/source/utils/detailButtons.bs"
@@ -34,7 +38,10 @@ import "pkg:/source/enums/ViewLoadStatus.bs"
 ' How far past the edge a row scrolls to bring a button into view
 const BUTTON_ROW_SCROLL_MARGIN = 50
 
-sub addArrangedButtons(candidates as object)
+' The room over the Incomplete line, whatever gap the screen leaves between its other rows
+const INCOMPLETE_LINE_GAP = 8
+
+sub addArrangedButtons(candidates as object, personDisplayForKids = false as boolean)
     order = m.global.session.user.settings[DETAIL_ORDER_SETTING]
     hidden = m.global.session.user.settings[DETAIL_HIDDEN_SETTING]
 
@@ -46,10 +53,26 @@ sub addArrangedButtons(candidates as object)
         candidates.push(candidate)
     end for
 
+    if not offersFavorite(m.top.itemContent.json)
+        kept = []
+        for each candidate in candidates
+            if candidate.id <> "favorite" then kept.push(candidate)
+        end for
+        candidates = kept
+    end if
+
+    m.keepAsCompleteInRow = offersKeepAsComplete()
+    if m.keepAsCompleteInRow
+        candidates.push({ id: "keepAsComplete", config: { icon: "pkg:/images/icons/keep_as_complete.webp", label: tr("Keep as Complete"), action: "keepAsComplete", id: "keepAsCompleteButton" } })
+    end if
+
     ' Kids Mode sets the saved arrangement aside rather than filtering it, since its own short row
     ' is the point and a reorder would otherwise put a button it hides back
     offered = buttonLayout.InCatalogueOrder(candidates)
     arranged = kidsMode.Enabled() ? kidsMode.KeepButtons(offered) : buttonLayout.Arrange(offered, order, hidden)
+    if LCase(chainLookupReturn(m.top.itemContent, "json.Type", "")) = "person" and (personDisplayForKids or not kidsMode.Enabled())
+        arranged = withPersonDisplay(arranged)
+    end if
 
     for each candidate in arranged
         addButton(candidate.config)
@@ -57,12 +80,12 @@ sub addArrangedButtons(candidates as object)
 end sub
 
 ' The Action Buttons on Screen setting laid over the cap a style asks for. Returns how many
-' buttons stay in the row, or -1 when nothing folds. Play, Resume and Restart count toward the
-' cap but never fold, so the row always keeps those.
+' buttons stay in the row, or -1 when nothing folds. Play, Resume, Restart and Extras count toward
+' the cap but never fold, so the row always keeps those.
 function cappedButtonCount(buttons as object, styleCap as object) as integer
     leading = 0
     for each button in buttons
-        if button.id <> "resumeButton" and button.id <> "restartButton" and button.id <> "playButton" then exit for
+        if button.id <> "resumeButton" and button.id <> "restartButton" and button.id <> "playButton" and button.id <> "extrasButton" then exit for
         leading++
     end for
 
@@ -100,7 +123,7 @@ sub foldButtonsIntoMenu(keep as integer)
     end while
 
     appendButtonNode({
-        icon: "pkg:/images/icons/dotDotDot.png",
+        icon: "pkg:/images/icons/dotDotDot.webp",
         label: tr("More Actions"),
         action: "toggleMoreActions",
         id: "moreActionsButton"
@@ -325,7 +348,7 @@ sub addButtons(itemData as object)
 
     if hasProgress
         addButton({
-            icon: "pkg:/images/icons/detail_play.png",
+            icon: "pkg:/images/icons/detail_play.webp",
             label: tr("Resume"),
             detail: getFormattedRuntime(positionTicks),
             action: "resume",
@@ -336,7 +359,7 @@ sub addButtons(itemData as object)
     ' With a resume point on offer the second button starts over instead, which
     ' is how the other clients pair the two
     addButton({
-        icon: hasProgress ? "pkg:/images/icons/detail_restart.png" : "pkg:/images/icons/detail_play.png",
+        icon: hasProgress ? "pkg:/images/icons/detail_restart.webp" : "pkg:/images/icons/detail_play.webp",
         label: hasProgress ? tr("Restart") : tr("Play"),
         action: hasProgress ? "restart" : "play",
         id: hasProgress ? "restartButton" : "playButton"
@@ -349,7 +372,7 @@ sub addButtons(itemData as object)
     if isValid(itemData.MediaSources) and itemData.MediaSources.Count() > 1
         candidates.push({
             id: "version", config: {
-                icon: "pkg:/images/icons/detail_version.png",
+                icon: "pkg:/images/icons/detail_version.webp",
                 label: tr("Versions"),
                 action: "versionTrack",
                 id: "versionButton"
@@ -365,7 +388,7 @@ sub addButtons(itemData as object)
         if audioCount > 1
             candidates.push({
                 id: "audio", config: {
-                    icon: "pkg:/images/icons/detail_audio.png",
+                    icon: "pkg:/images/icons/detail_audio.webp",
                     label: tr("Audio"),
                     action: "audioTrack",
                     id: "audioTrackButton"
@@ -379,7 +402,7 @@ sub addButtons(itemData as object)
     if isStringEqual(itemData.MediaType, "Video") and isValidAndNotEmpty(mediaSources) and mediaSources[0].Type <> "Placeholder"
         candidates.push({
             id: "subtitles", config: {
-                icon: "pkg:/images/icons/osd/subtitles.png",
+                icon: "pkg:/images/icons/osd/subtitles.webp",
                 label: tr("Subtitle"),
                 action: "subtitleTrack",
                 id: "subtitleButton"
@@ -389,7 +412,7 @@ sub addButtons(itemData as object)
 
     m.builtExtrasSignature = detailExtrasSignature()
     if isValidAndNotEmpty(chainLookup(m.top, "additionalParts.parts.Items"))
-        candidates.push({ id: "parts", config: { icon: "pkg:/images/icons/detail_play.png", label: tr("Parts"), action: "parts", id: "partButton" } })
+        candidates.push({ id: "parts", config: { icon: "pkg:/images/icons/detail_play.webp", label: tr("Parts"), action: "parts", id: "partButton" } })
     end if
 
     if m.top.trailerAvailable then candidates.push(trailerCandidate())
@@ -397,16 +420,8 @@ sub addButtons(itemData as object)
     candidates.push(watchedCandidate(itemData))
     candidates.push(favoriteCandidate(itemData))
 
-    if isEpisode()
-        candidates.push({
-            id: "goToSeries", config: {
-                icon: "pkg:/images/icons/detail_series.png",
-                label: tr("Go to Series"),
-                action: "goToSeries",
-                id: "goToSeriesButton"
-            }
-        })
-    end if
+    goToSeries = goToSeriesCandidate(itemData)
+    if isValid(goToSeries) then candidates.push(goToSeries)
 
     addArrangedButtons(candidates)
 end sub
@@ -415,7 +430,7 @@ sub addSeriesButtons()
     hasResume = m.top.displayResumeButton
     if hasResume
         addButton({
-            icon: "pkg:/images/icons/detail_play.png",
+            icon: "pkg:/images/icons/detail_play.webp",
             label: tr("Resume"),
             action: "seriesResume",
             id: "resumeButton"
@@ -425,7 +440,7 @@ sub addSeriesButtons()
     ' With a resume point on offer the second button starts over instead, which
     ' is how the other clients pair the two
     addButton({
-        icon: hasResume ? "pkg:/images/icons/detail_restart.png" : "pkg:/images/icons/detail_play.png",
+        icon: hasResume ? "pkg:/images/icons/detail_restart.webp" : "pkg:/images/icons/detail_play.webp",
         label: hasResume ? tr("Restart") : tr("Play"),
         action: "seriesPlay",
         id: "playButton"
@@ -435,7 +450,7 @@ sub addSeriesButtons()
     candidates = []
     candidates.push({
         id: "shuffle", config: {
-            icon: "pkg:/images/icons/detail_shuffle.png",
+            icon: "pkg:/images/icons/detail_shuffle.webp",
             label: tr("Shuffle"),
             action: "seriesShuffle",
             id: "shuffleButton"
@@ -451,17 +466,62 @@ sub addSeriesButtons()
 end sub
 
 function trailerCandidate() as object
-    return { id: "trailer", config: { icon: "pkg:/images/icons/detail_trailer.png", label: tr("Trailer"), action: "trailer", id: "trailerButton" } }
+    return { id: "trailer", config: { icon: "pkg:/images/icons/detail_trailer.webp", label: tr("Trailer"), action: "trailer", id: "trailerButton" } }
 end function
 
 function watchedCandidate(itemData as object) as object
     isWatched = chainLookupReturn(itemData, "UserData.Played", false)
-    return { id: "watched", config: markActiveButton({ icon: "pkg:/images/icons/detail_watched.png", label: isWatched ? tr("Watched") : tr("Unwatched"), action: "watched", id: "watchedButton" }, isWatched, CLASSIC_WATCHED_INK) }
+    return { id: "watched", config: markActiveButton({ icon: "pkg:/images/icons/detail_watched.webp", label: isWatched ? tr("Watched") : tr("Unwatched"), action: "watched", id: "watchedButton" }, isWatched, CLASSIC_WATCHED_INK) }
+end function
+
+' A person's Display button sits beside the heart, outside the arrangement the viewer saves, and
+' leads the row when the heart is hidden
+function withPersonDisplay(arranged as object) as object
+    display = { id: "personDisplay", config: { icon: "pkg:/images/icons/tune.webp", label: tr("Display"), action: "personDisplay", id: "personDisplayButton" } }
+    shown = []
+    placed = false
+    for each candidate in arranged
+        shown.push(candidate)
+        if candidate.id = "favorite"
+            shown.push(display)
+            placed = true
+        end if
+    end for
+    if not placed then shown.Unshift(display)
+    return shown
 end function
 
 function favoriteCandidate(itemData as object) as object
     isFavorited = chainLookupReturn(itemData, "UserData.IsFavorite", false)
-    return { id: "favorite", config: markActiveButton({ icon: "pkg:/images/icons/detail_favorite.png", label: isFavorited ? tr("Favorited") : tr("Favorite"), action: "favorite", id: "favoriteButton" }, isFavorited, CLASSIC_FAVORITE_INK) }
+    return { id: "favorite", config: markActiveButton({ icon: "pkg:/images/icons/detail_favorite.webp", label: isFavorited ? tr("Favorited") : tr("Favorite"), action: "favorite", id: "favoriteButton" }, isFavorited, CLASSIC_FAVORITE_INK) }
+end function
+
+' A playlist plays and shuffles the rows its page shows, so a sort or a filter carries over. Before
+' the rows arrive both buttons show and play the playlist from the server.
+sub addPlaylistButtons()
+    itemData = m.top.itemContent.json
+    count = playlistViewCount()
+    if count <> 0 then addButton({ icon: "pkg:/images/icons/detail_play.webp", label: tr("Play"), action: "playlistPlay", id: "playButton" })
+
+    candidates = []
+    if count < 0 or count > 1
+        candidates.push({ id: "shuffle", config: { icon: "pkg:/images/icons/detail_shuffle.webp", label: tr("Shuffle"), action: "playlistShuffle", id: "shuffleButton" } })
+    end if
+    candidates.push(watchedCandidate(itemData))
+    candidates.push(favoriteCandidate(itemData))
+    addArrangedButtons(candidates)
+
+    for each config in playlistViewButtons()
+        addButton(config)
+    end for
+end sub
+
+' A season or an episode leads back to its series
+function goToSeriesCandidate(itemData as dynamic) as dynamic
+    itemType = LCase(m.top.itemType)
+    if itemType <> "episode" and itemType <> "season" then return invalid
+    if not isValidAndNotEmpty(chainLookupReturn(itemData, "SeriesId", "")) then return invalid
+    return { id: "goToSeries", config: { icon: "pkg:/images/icons/detail_series.webp", label: tr("Go to Series"), action: "goToSeries", id: "goToSeriesButton" } }
 end function
 
 sub handleButtonSelect()
@@ -473,6 +533,10 @@ sub handleButtonSelect()
     buttonAction = buttonGroup.buttonAction
     if buttonAction = invalid then return
 
+    runButtonAction(buttonAction)
+end sub
+
+sub runButtonAction(buttonAction as string)
     if Left(buttonAction, 5) = "seerr"
         startSeerrRequest(buttonAction)
         return
@@ -480,6 +544,12 @@ sub handleButtonSelect()
 
     if buttonAction = "toggleMoreActions"
         openOverflowMenu()
+        return
+    end if
+
+    ' A person's Display options open over the page, so there's nothing to load again after
+    if buttonAction = "personDisplay"
+        handleScreenButtonAction(buttonAction)
         return
     end if
 
@@ -549,6 +619,8 @@ sub handleButtonSelect()
         itemMenuShowArtwork(pageMenuSubject())
     else if buttonAction = "adminControls"
         itemMenuShowIdentify(pageMenuSubject(), false)
+    else if buttonAction = "keepAsComplete"
+        keepIncompleteAsComplete()
     else if buttonAction = "goToSeries"
         m.top.buttonSelected = "goToSeries-button"
     else if buttonAction = "favorite"
@@ -751,17 +823,73 @@ sub onDetailExtrasChanged()
     end if
 end sub
 
-' The row only needs rebuilding when a late trailer or parts answer changes which buttons it holds
+' The row only needs rebuilding when a late trailer or parts answer, or the incomplete recordings
+' list, changes which buttons it holds
 function detailExtrasSignature() as string
     hasParts = isValidAndNotEmpty(chainLookup(m.top, "additionalParts.parts.Items"))
-    return m.top.trailerAvailable.ToStr() + "|" + hasParts.ToStr()
+    return m.top.trailerAvailable.ToStr() + "|" + hasParts.ToStr() + "|" + offersKeepAsComplete().ToStr()
 end function
 
 ' LocalTrailerCount arrives as a number, which isValidAndNotEmpty always reads as empty
 function detailHasTrailer(itemData as object) as boolean
-    if isValidAndNotEmpty(itemData.RemoteTrailers) then return true
+    if isValidAndNotEmpty(itemData.RemoteTrailers) or trailerSearch.Offers(itemData) then return true
     localTrailers = itemData.LocalTrailerCount
     countType = LCase(type(localTrailers))
     if countType = "integer" or countType = "roint" or countType = "rointeger" or countType = "longinteger" or countType = "rolonginteger" then return localTrailers > 0
     return false
 end function
+
+' Every style shows the Incomplete line under its facts, and the Keep as Complete button comes and
+' goes with it. A screen supplies incompleteLineParent(), and its layoutContainer() places
+' m.incompleteLine.
+sub watchDetailIncompleteRecording(itemData as object)
+    itemId = ""
+    if not m.top.seerrOnly then itemId = itemData.LookupCI("Id") ?? ""
+    watchIncompleteRecording(itemId)
+end sub
+
+sub showIncompleteRecording(entry as dynamic)
+    m.incompleteEntry = entry
+    if isValid(entry) and not isValid(m.incompleteLine) then m.incompleteLine = incompleteLineParent().createChild("IncompleteDetailLine")
+
+    if isValid(m.incompleteLine)
+        wasShown = m.incompleteLine.visible
+        m.incompleteLine.entry = entry ?? {}
+        if wasShown or m.incompleteLine.visible then layoutContainer()
+    end if
+
+    ' A row already drawn gains or loses the button
+    if isValid(m.keepAsCompleteInRow) and m.keepAsCompleteInRow <> offersKeepAsComplete() then onDetailExtrasChanged()
+end sub
+
+' Keep as Complete clears the mark for everyone on the server, so it's for Live TV managers only
+function offersKeepAsComplete() as boolean
+    return isValid(m.incompleteEntry) and moonfinPlugin.CanKeepAsComplete()
+end function
+
+sub keepIncompleteAsComplete()
+    itemId = chainLookupReturn(m.top.itemContent, "json.Id", "")
+    if not isValidAndNotEmpty(itemId) then return
+
+    store = incompleteRecordingStore()
+    if m.watchingKeepResult <> true
+        m.watchingKeepResult = true
+        store.observeFieldScoped("keepResult", "onKeepAsCompleteAnswered")
+    end if
+    m.keepingAsComplete = guidKey(itemId)
+    store.callFunc("keepAsComplete", itemId)
+end sub
+
+' The button goes away with the mark, so focus moves to Play rather than out of the row
+sub onKeepAsCompleteAnswered(event as object)
+    result = event.getData()
+    if not isValid(m.keepingAsComplete) or result.itemId <> m.keepingAsComplete then return
+    m.keepingAsComplete = invalid
+
+    if result.ok
+        showItemMenuToast(tr("Marked as complete"))
+        if m.top.isInFocusChain() then focusFirstVisibleButton()
+    else
+        showItemMenuToast(tr("Unable to mark as complete"))
+    end if
+end sub

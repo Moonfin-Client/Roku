@@ -1,0 +1,264 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/themeApply.bs"
+import "pkg:/source/utils/themeChrome.bs"
+
+' A row of chips the screen walks with the remote. The row takes focus as a whole and the screen
+' moves focusIndex along it, so the keys stay with the screen that knows where the row leads.
+'
+' With columns on, the chips sit in a box under a heading per label instead, the way the other
+' clients list who directed and wrote a film and the studios behind it.
+
+const CHIP_HEIGHT = 66
+const CHIP_PAD = 26
+const CHIP_GAP = 17
+const CHIP_ICON = 28
+const CHIP_PART_GAP = 15
+const CHIP_VALUE_MAX = 400
+const SHARE_GAP = 13
+
+const BOX_PAD_TOP = 30
+const BOX_PAD_BOTTOM = 26
+const BOX_HEADING_GAP = 16
+const BOX_CHIP_HEIGHT = 52
+const BOX_CHIP_PAD = 20
+const BOX_CHIP_GAP = 13
+
+sub init()
+    m.track = m.top.findNode("track")
+    m.parts = []
+    m.labelFont = m.top.findNode("labelFont")
+    m.valueFont = m.top.findNode("valueFont")
+    m.headingFont = m.top.findNode("headingFont")
+    m.headingFont.font.size = 20
+    m.labelFont.font.size = 22
+    m.valueFont.font.size = 26
+    themeApply.ApplyToItem(m.top)
+end sub
+
+sub onChipsChanged()
+    m.track.removeChildrenIndex(m.track.getChildCount(), 0)
+    m.parts = []
+    chips = m.top.chips ?? []
+    if m.top.columns
+        layoutColumns(chips)
+    else
+        layoutRow(chips)
+    end if
+    showFocus()
+end sub
+
+sub layoutRow(chips as object)
+    ' Sharing one row, each chip leaves its name off and is at most an even share of the row wide
+    shared = m.top.shareRow and chips.count() > 0
+    share = 0
+    if shared then share = (m.top.maxWidth - SHARE_GAP * (chips.count() - 1)) / chips.count()
+    x = 0
+    y = 0
+    for each chip in chips
+        node = m.track.createChild("Group")
+        fill = chipShape(node, "pkg:/images/icons/pill-focus.9.png", CHIP_HEIGHT)
+        border = chipShape(node, "pkg:/images/details/tabborderfocus.9.png", CHIP_HEIGHT)
+
+        at = CHIP_PAD
+        icon = invalid
+        if isValidAndNotEmpty(chip.icon)
+            icon = node.createChild("Poster")
+            icon.uri = chip.icon
+            icon.width = CHIP_ICON
+            icon.height = CHIP_ICON
+            icon.translation = [at, (CHIP_HEIGHT - CHIP_ICON) / 2]
+            at += CHIP_ICON + CHIP_PART_GAP
+        end if
+
+        label = chipLabel(node, m.labelFont.font, shared ? "" : (chip.label ?? ""), at, 0, CHIP_HEIGHT)
+        if not shared then at += label.width + CHIP_PART_GAP
+
+        widest = CHIP_VALUE_MAX
+        if shared and share - at - CHIP_PAD < widest then widest = share - at - CHIP_PAD
+        value = chipLabel(node, m.valueFont.font, chip.value ?? "", at, widest, CHIP_HEIGHT)
+        at += value.width + CHIP_PAD
+
+        fill.width = at
+        border.width = at
+        if x > 0 and x + at > m.top.maxWidth
+            x = 0
+            y += CHIP_HEIGHT + CHIP_GAP
+        end if
+        node.translation = [x, y]
+        m.parts.push({ fill: fill, border: border, icon: icon, label: label, value: value, muted: "#FFFFFF9E" })
+        x += at + (shared ? SHARE_GAP : CHIP_GAP)
+    end for
+
+    m.top.rowHeight = chips.count() > 0 ? y + CHIP_HEIGHT : 0
+end sub
+
+' One column per label, each with its heading and its names stacked under it
+sub layoutColumns(chips as object)
+    groups = []
+    byLabel = {}
+    for each chip in chips
+        key = chip.label ?? ""
+        if not byLabel.DoesExist(key)
+            byLabel[key] = { label: key, chips: [] }
+            groups.push(byLabel[key])
+        end if
+        byLabel[key].chips.push(chip)
+    end for
+    if groups.count() = 0
+        m.top.rowHeight = 0
+        return
+    end if
+
+    width = m.top.maxWidth
+    shares = columnShares(groups, m.top.weighByText)
+    panel = chipShape(m.track, "pkg:/images/details/surface17.9.png", 0)
+    panel.width = width
+    panel.blendColor = "#FFFFFF"
+    panel.opacity = 0.04
+    outline = chipShape(m.track, "pkg:/images/details/cardborder12.9.png", 0)
+    outline.width = width
+    outline.blendColor = "#FFFFFF"
+    outline.opacity = 0.12
+
+    tallest = 0
+    dividers = []
+    left = 0
+    for i = 0 to groups.count() - 1
+        columnWidth = width * shares[i]
+        if i > 0
+            divider = m.track.createChild("Rectangle")
+            divider.color = "#FFFFFF1F"
+            divider.width = 2
+            divider.translation = [left, 0]
+            dividers.push(divider)
+        end if
+
+        heading = m.track.createChild("Label")
+        heading.font = m.headingFont.font
+        heading.color = "#FFFFFF8C"
+        heading.text = UCase(groups[i].label)
+        heading.horizAlign = "center"
+        heading.width = columnWidth
+        heading.translation = [left, BOX_PAD_TOP]
+        y = BOX_PAD_TOP + heading.boundingRect().height + BOX_HEADING_GAP
+
+        ' One to a line, or side by side as far as the column has room when the columns are weighed
+        ' by their text
+        room = columnWidth - BOX_CHIP_PAD * 2
+        chipLine = []
+        lineWidth = 0
+        for each chip in groups[i].chips
+            node = m.track.createChild("Group")
+            fill = chipShape(node, "pkg:/images/details/surface11.9.png", BOX_CHIP_HEIGHT)
+            border = chipShape(node, "pkg:/images/details/outline11.9.png", BOX_CHIP_HEIGHT)
+            name = chipLabel(node, m.labelFont.font, chip.value ?? "", BOX_CHIP_PAD, columnWidth - BOX_CHIP_PAD * 4, BOX_CHIP_HEIGHT)
+            chipWidth = name.width + BOX_CHIP_PAD * 2
+            fill.width = chipWidth
+            border.width = chipWidth
+            m.parts.push({ fill: fill, border: border, icon: invalid, label: name, value: name, muted: "#FFFFFF" })
+
+            if chipLine.count() > 0 and (not m.top.weighByText or lineWidth + BOX_CHIP_GAP + chipWidth > room)
+                centerLine(chipLine, lineWidth, left + columnWidth / 2, y)
+                y += BOX_CHIP_HEIGHT + BOX_CHIP_GAP
+                chipLine = []
+                lineWidth = 0
+            end if
+            if chipLine.count() > 0 then lineWidth += BOX_CHIP_GAP
+            chipLine.push({ node: node, x: lineWidth })
+            lineWidth += chipWidth
+        end for
+        if chipLine.count() > 0
+            centerLine(chipLine, lineWidth, left + columnWidth / 2, y)
+            y += BOX_CHIP_HEIGHT + BOX_CHIP_GAP
+        end if
+        if y > tallest then tallest = y
+        left += columnWidth
+    end for
+
+    height = tallest - BOX_CHIP_GAP + BOX_PAD_BOTTOM
+    panel.height = height
+    outline.height = height
+    for each divider in dividers
+        divider.height = height
+    end for
+    m.top.rowHeight = height
+end sub
+
+' Each column's share of the box. They're even, or each gets a share by how much text it holds,
+' counted in letters and held between 20 and 60 so one name still fits on a line and no list takes
+' the whole box.
+function columnShares(groups as object, weighByText as boolean) as object
+    weights = []
+    total = 0
+    for each group in groups
+        weight = 1
+        if weighByText
+            weight = 0
+            for each chip in group.chips
+                weight += Len(chip.value ?? "")
+            end for
+            if weight < 20 then weight = 20
+            if weight > 60 then weight = 60
+        end if
+        weights.push(weight)
+        total += weight
+    end for
+
+    shares = []
+    for each weight in weights
+        shares.push(weight / total)
+    end for
+    return shares
+end function
+
+sub centerLine(chipLine as object, lineWidth as float, center as float, y as float)
+    for each entry in chipLine
+        entry.node.translation = [center - lineWidth / 2 + entry.x, y]
+    end for
+end sub
+
+function chipShape(parent as object, uri as string, height as integer) as object
+    shape = parent.createChild("Poster")
+    shape.uri = uri
+    shape.loadDisplayMode = "scaleToFit"
+    shape.height = height
+    return shape
+end function
+
+' Measured before it is given a height, since a Label with one reports that instead of its text
+function chipLabel(parent as object, font as object, text as string, x as float, widest as float, height as integer) as object
+    label = parent.createChild("Label")
+    label.font = font
+    label.text = text
+    width = label.boundingRect().width
+    if widest > 0 and width > widest then width = widest
+    label.width = width
+    label.height = height
+    label.vertAlign = "center"
+    label.translation = [x, 0]
+    return label
+end function
+
+sub showFocus()
+    focusedInk = themeChrome.Token("onButtonFocused", "#000000FF")
+    for i = 0 to m.parts.count() - 1
+        chip = m.parts[i]
+        focused = i = m.top.focusIndex
+        if focused
+            chip.fill.blendColor = themeChrome.Token("buttonFocused", "#FFFFFF")
+            chip.fill.opacity = 0.95
+            chip.border.blendColor = themeChrome.Token("inputBorderFocused", "#FFFFFF")
+            chip.border.opacity = 1
+            chip.label.color = focusedInk
+            chip.value.color = focusedInk
+        else
+            chip.fill.blendColor = "#FFFFFF"
+            chip.fill.opacity = 0.06
+            chip.border.blendColor = "#FFFFFF"
+            chip.border.opacity = 0.22
+            chip.label.color = chip.muted
+            chip.value.color = "#FFFFFF"
+        end if
+        if isValid(chip.icon) then chip.icon.blendColor = focused ? focusedInk : chip.muted
+    end for
+end sub

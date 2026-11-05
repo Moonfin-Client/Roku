@@ -14,6 +14,7 @@ import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/embyFeatures.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/trackLabels.bs"
+import "pkg:/source/utils/trackMemory.bs"
 
 sub init()
     m.top.filter = "All"
@@ -23,19 +24,25 @@ end sub
 
 ' Helper function to get playback info using appropriate server
 function getPlaybackInfo(id as string, mediaSourceId = "" as string, audioTrackIndex = -1 as integer, subtitleTrackIndex = SubtitleSelection.NOTSET as integer, startTimeTicks = 0 as longinteger, options = {} as object) as object
+    result = requestPlaybackInfo(id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
+    ' An answer naming an error, like no compatible stream for a pinned source, is a failure
+    if type(result) = "roAssociativeArray" and isValid(result.LookupCI("ErrorCode")) then return invalid
+    if not usablePlaybackInfo(result) then return invalid
+    return result
+end function
+
+' The server's answer as it came, before anything checks it can play
+function requestPlaybackInfo(id as string, mediaSourceId as string, audioTrackIndex as integer, subtitleTrackIndex as integer, startTimeTicks as longinteger, options as object) as dynamic
     if m.top.playbackMethod <> ""
         options.playbackMethod = m.top.playbackMethod
         options.transcodeCodec = m.top.transcodeCodec
     end if
+    ' Live TV keeps the TS profile's audio list whatever Transcode Audio Codecs picks
+    if m.loadIsLive = true then options.isLiveTV = true
 
     serverData = playbackServerData()
-    if isValid(serverData)
-        result = ItemPostPlaybackInfoForServer(serverData, id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
-    else
-        result = ItemPostPlaybackInfo(id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
-    end if
-    if not usablePlaybackInfo(result) then return invalid
-    return result
+    if isValid(serverData) then return ItemPostPlaybackInfoForServer(serverData, id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
+    return ItemPostPlaybackInfo(id, mediaSourceId, audioTrackIndex, subtitleTrackIndex, startTimeTicks, options)
 end function
 
 function playbackResourceURL(path as string) as string
@@ -208,7 +215,7 @@ sub loadItems()
     if m.top.selectedAudioStreamIndex = 0
         currentItem = m.global.queueManager.callFunc("getCurrentItem")
         if isChainValid(currentItem, "json")
-            m.top.selectedAudioStreamIndex = FindPreferredAudioStream(currentItem.json.MediaStreams)
+            m.top.selectedAudioStreamIndex = FindPreferredAudioStream(currentItem.json.MediaStreams, currentItem.json)
         end if
     end if
 
@@ -352,11 +359,11 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     end if
 
     video.mediaSegments = {}
+    ' Plex doesn't say whether an item has markers, so they're always asked for
     if isValidAndNotEmpty(meta.json.MediaSources)
-        if isValid(meta.json.MediaSources[0].HasSegments)
-            if meta.json.MediaSources[0].HasSegments
-                video.mediaSegments = getMediaSegmentsForPlayback(video.id, serverData)
-            end if
+        hasSegments = meta.json.MediaSources[0].HasSegments
+        if isPlexServer(m.top.serverUrl) or (isValid(hasSegments) and hasSegments)
+            video.mediaSegments = getMediaSegmentsForPlayback(video.id, serverData)
         end if
     end if
 
@@ -462,10 +469,31 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     end if
     video.content.PlayStart = playStartSec
 
+    m.loadIsLive = meta.live
     mediaSourceId = initialPlaybackSource(meta.json, mediaSourceId, video.id, meta.live, m.top.serverUrl)
+    onEmby = isEmbyServer(m.top.serverUrl)
+    if onEmby and isStreamlessStaticSource(meta.json, mediaSourceId) then mediaSourceId = ""
 
     siloTrace("load: metadata " + toString(meta.type) + ", asking PlaybackInfo with source " + toString(mediaSourceId))
     m.playbackInfo = getPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, m.top.selectedSubtitleIndex, playbackPosition)
+    if not isValid(m.playbackInfo) and canRetryWithoutMediaSourceId(meta.json, mediaSourceId)
+        mediaSourceId = ""
+        m.playbackInfo = getPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, m.top.selectedSubtitleIndex, playbackPosition)
+    end if
+
+    ' The same placeholder reached through an item that came without its sources. One with several
+    ' versions is left alone, since what comes back without the id would be its other versions.
+    sourceCount = 0
+    if type(meta.json.LookupCI("MediaSources")) = "roArray" then sourceCount = meta.json.LookupCI("MediaSources").Count()
+    if onEmby and mediaSourceId <> "" and sourceCount <= 1 and isUnprobedPlaceholder(playbackSourceFor(m.playbackInfo, mediaSourceId))
+        retry = requestPlaybackInfo(video.id, "", audio_stream_idx, m.top.selectedSubtitleIndex, playbackPosition, {})
+        probed = probedSources(retry)
+        if probed.Count() > 0
+            retry.MediaSources = probed
+            m.playbackInfo = retry
+            mediaSourceId = ""
+        end if
+    end if
     if not isValid(m.playbackInfo)
         siloTrace("load: PlaybackInfo gave nothing usable")
         video.errorMsg = "Error loading playback info"
@@ -494,13 +522,25 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
 
     requestedSubtitleIndex = m.top.selectedSubtitleIndex
     defaultSubtitleIndex = SubtitleSelection.NONE
+    rememberedSubtitle = false
     if requestedSubtitleIndex = SubtitleSelection.NOTSET and isValidAndNotEmpty(m.playbackInfo.MediaSources)
         defaultSubtitleIndex = m.playbackInfo.MediaSources[0].LookupCI("DefaultSubtitleStreamIndex") ?? SubtitleSelection.NONE
 
         ' When a prefer setting swaps the server's track, the server is asked again so the stream
         ' and any burn in carry the new one
         if meta.live = false
-            preferredSubtitleIndex = trackLabels.PreferredSubtitle(m.playbackInfo.MediaSources[0].MediaStreams, defaultSubtitleIndex, m.global.session.user.settings)
+            streams = m.playbackInfo.MediaSources[0].MediaStreams
+            ' A track remembered for the title or its series comes before the subtitle settings
+            preferredSubtitleIndex = trackMemory.RememberedSubtitle(trackMemory.Load(), video.id, chainLookup(meta, "json.SeriesId"), trackMemory.OfType(streams, "Subtitle"))
+            rememberedSubtitle = preferredSubtitleIndex <> SubtitleSelection.NOTSET
+            if not rememberedSubtitle
+                audioLanguage = ""
+                for each stream in streams
+                    if isStringEqual(stream.LookupCI("Type") ?? "", "Audio") and stream.LookupCI("Index") = audio_stream_idx then audioLanguage = stream.LookupCI("Language") ?? ""
+                end for
+                modeSubtitleIndex = trackLabels.ModeSubtitle(streams, defaultSubtitleIndex, m.global.session.user.settings, audioLanguage)
+                preferredSubtitleIndex = trackLabels.PreferredSubtitle(streams, modeSubtitleIndex, m.global.session.user.settings)
+            end if
             if preferredSubtitleIndex <> defaultSubtitleIndex
                 defaultSubtitleIndex = preferredSubtitleIndex
                 requestedSubtitleIndex = preferredSubtitleIndex
@@ -518,8 +558,8 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
 
     ' Use either the user's selected subtitles, or the default track
     if m.top.selectedSubtitleIndex = SubtitleSelection.NOTSET
-        ' Ignore the track if the user only wants text subtitles and it isn't one
-        if defaultSubtitleIndex <> SubtitleSelection.NONE and toBoolean(trackLabels.Setting(m.global.session.user.settings, "playback.subs.onlytext", false))
+        ' Ignore the track if the user only wants text subtitles and it isn't one, unless they picked it
+        if defaultSubtitleIndex <> SubtitleSelection.NONE and not rememberedSubtitle and toBoolean(trackLabels.Setting(m.global.session.user.settings, "playback.subs.onlytext", false))
             if not isSubtitleStreamText(defaultSubtitleIndex)
                 defaultSubtitleIndex = SubtitleSelection.NONE
             end if
@@ -586,6 +626,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     ' Direct play video
     if video.directPlaySupported
         video.isTranscoded = false
+        if meta.live then video.content.StreamFormat = liveDirectStreamFormat(m.playbackInfo.MediaSources[0])
         addVideoContentURL(video, mediaSourceId, audio_stream_idx)
         siloTrace("load: direct play " + silo.PathOf(toString(video.content.url)))
         setCertificateAuthority(video.content)
@@ -748,6 +789,14 @@ function transcodeCopiesVideo(transcodingUrl as string) as boolean
     return true
 end function
 
+' The stream format for a live source played directly. With Live TV Direct Play on, a tuner
+' channel is its raw transport stream, not HLS. Everything else keeps the live default.
+function liveDirectStreamFormat(source as dynamic) as string
+    if not chainLookupReturn(m.global, "session.user.settings.`playback.liveTvDirect`", false) then return "hls"
+    if isStringEqual(chainLookupReturn(source, "Container", ""), "ts") then return "ts"
+    return "hls"
+end function
+
 sub addVideoContentURL(video, mediaSourceId, audio_stream_idx)
     ' Get multi-server info if available
     serverUrl = m.top.serverUrl
@@ -762,6 +811,14 @@ sub addVideoContentURL(video, mediaSourceId, audio_stream_idx)
             video.content.url = playbackResourceURL(resource)
         else
             video.content.url = m.playbackInfo.MediaSources[0].Path
+        end if
+    else if isPlexServer(serverUrl)
+        ' A Plex file plays from its own part address
+        partPath = m.playbackInfo.MediaSources[0].Path
+        if useMultiServer
+            video.content.url = buildURLForServer(serverUrl, partPath)
+        else
+            video.content.url = buildURL(partPath)
         end if
     else
         params = {
@@ -864,7 +921,7 @@ sub addAudioStreamsToVideo(video)
     ' let it play, so each track says whether the profile takes it. A single track has nothing to
     ' switch to, which spares probing the device.
     profiles = invalid
-    if audioStreams.Count() > 1 then profiles = GetDirectPlayProfiles()
+    if audioStreams.Count() > 1 then profiles = applyTranscodeAudioCodecs({ DirectPlayProfiles: GetDirectPlayProfiles() }, transcodeAudioCodecPicks(m.global.session.user.settings), false).DirectPlayProfiles
     container = m.playbackInfo.MediaSources[0].LookupCI("Container") ?? ""
     for each stream in audioStreams
         stream.AddReplace("PlaysDirect", audioPlaysDirect(profiles, container, stream.LookupCI("Codec") ?? ""))
@@ -1121,7 +1178,8 @@ function sortSubtitles(MediaStreams, source = invalid as dynamic, videoId = "" a
             needsReload = stream.LookupCI("SiloReplan") = true
             codec = LCase(stream.LookupCI("Codec") ?? "")
             if not isValid(deliveryUrl) and not needsReload and isStringEqual(stream.LookupCI("DeliveryMethod"), "Embed") and stream.IsExternal <> true
-                if (codec = "srt" or codec = "subrip") and chainLookupReturn(source, "SupportsTranscoding", true) <> false
+                ' Plex can't take a track out of a file, so one it didn't burn in is read from the file
+                if (codec = "srt" or codec = "subrip") and chainLookupReturn(source, "SupportsTranscoding", true) <> false and not isPlexServer(m.top.serverUrl)
                     ' Left in the file, but the server can still pull the text out as its own file
                     deliveryUrl = `/Videos/${videoId}/${chainLookupReturn(source, "Id", videoId)}/Subtitles/${stream.index}/0/Stream.vtt`
                 else
@@ -1177,7 +1235,7 @@ function sortSubtitles(MediaStreams, source = invalid as dynamic, videoId = "" a
     return { "all": allTracks, "text": textTracks }
 end function
 
-function FindPreferredAudioStream(streams as dynamic) as integer
+function FindPreferredAudioStream(streams as dynamic, itemJson = invalid as dynamic) as integer
     preferredAudioTrackIndex = m.global.queueManager.callFunc("getPreferredAudioTrackIndex")
     preferredLanguage = getPreferredLanguage("playback.audioPreferredLanguage")
     playDefault = chainLookupReturn(m.global.session, "user.settings.`playback.playDefaultAudioTrack`", false)
@@ -1189,11 +1247,19 @@ function FindPreferredAudioStream(streams as dynamic) as integer
         if jsonResponse = invalid or jsonResponse.MediaStreams = invalid then return 1
 
         streams = jsonResponse.MediaStreams
+        itemJson = jsonResponse
     end if
 
     ' User selected something other than the first track?
     if preferredAudioTrackIndex >= 0
         return preferredAudioTrackIndex
+    end if
+
+    ' Then a track remembered for the title, or its series on an episode
+    remembered = trackMemory.RememberedAudio(trackMemory.Load(), m.top.itemId, chainLookup(itemJson, "SeriesId"), trackMemory.OfType(streams, "Audio"))
+    if remembered >= 0
+        position = trackMemory.Position(streams, "Audio", remembered)
+        if position >= 0 then return position
     end if
 
     ' No selection, but they have Default as their preference?

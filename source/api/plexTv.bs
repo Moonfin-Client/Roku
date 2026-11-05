@@ -1,0 +1,263 @@
+import "pkg:/source/api/plex/PlexHttp.bs"
+import "pkg:/source/api/plex/PlexMapper.bs"
+import "pkg:/source/utils/plexLink.bs"
+
+' plex.tv sign in, the account's servers, and finding where a Plex server answers
+
+const PLEX_TV = "https://plex.tv"
+const PLEX_PROBE_TIMEOUT_MS = 4000
+' After one address answers, the ones ahead of it only get this much longer
+const PLEX_PROBE_GRACE_MS = 1000
+const PLEX_PORT = "32400"
+' plex.tv's error codes for an account that needs its two step code, and for a wrong Home PIN
+const PLEX_NEEDS_CODE = 1029
+const PLEX_WRONG_PIN = 1041
+
+namespace plexTv
+
+    function Identity() as object
+        params = plexHttp.Identity()
+        params["X-Plex-Platform"] = "Generic"
+        return params
+    end function
+
+    ' One plex.tv request, as { ok, status, data, code, message }, where code is plex.tv's own error code
+    function Request(url as string, method = "GET" as string, token = "" as string, query = {} as object, form = invalid as dynamic) as object
+        params = plexTv.Identity()
+        params.Append(query)
+        if token <> "" then params["X-Plex-Token"] = token
+        headers = {}
+        body = ""
+        if form <> invalid
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+            body = plexUrls.Query(form)
+        end if
+        reply = plexHttp.Transfer(url + "?" + plexUrls.Query(params), method, headers, PLEX_TIMEOUT_MS, body)
+        data = invalid
+        ' plex.tv answers some failures with a plain page
+        if reply.text <> "" then data = ParseJson(reply.text)
+        ok = reply.status >= 200 and reply.status < 300
+        answer = { ok: ok, status: reply.status, data: data, code: 0, message: "" }
+        if not ok and type(data) = "roAssociativeArray"
+            firstError = invalid
+            if type(data.LookupCI("errors")) = "roArray" and data.LookupCI("errors").Count() > 0 then firstError = data.LookupCI("errors")[0]
+            if type(firstError) = "roAssociativeArray"
+                answer.code = firstError.LookupCI("code") ?? 0
+                answer.message = plexUrls.Str(firstError.LookupCI("message") ?? "")
+            end if
+        end if
+        return answer
+    end function
+
+    ' A sign in code, counted from expiresIn so a wrong TV clock can't expire every code as soon as it
+    ' arrives
+    function CreatePin() as object
+        answer = plexTv.Request(PLEX_TV + "/api/v2/pins", "POST")
+        if not answer.ok or type(answer.data) <> "roAssociativeArray" then return { ok: false, status: answer.status }
+        return { ok: true, id: plexUrls.Str(answer.data.LookupCI("id")).Trim(), code: plexUrls.Str(answer.data.LookupCI("code") ?? ""), expiresIn: answer.data.LookupCI("expiresIn") ?? 900 }
+    end function
+
+    ' The account token once the user approves the code, else ""
+    function CheckPin(pinId as string) as object
+        answer = plexTv.Request(PLEX_TV + "/api/v2/pins/" + pinId)
+        if not answer.ok then return { ok: false, status: answer.status, token: "" }
+        token = ""
+        if type(answer.data) = "roAssociativeArray" and isValidAndNotEmpty(answer.data.LookupCI("authToken")) then token = answer.data.LookupCI("authToken")
+        return { ok: true, status: answer.status, token: token }
+    end function
+
+    ' The verification code is the account's two step code, when it has one
+    function SignIn(login as string, password as string, verificationCode = "" as string) as object
+        form = { "login": login, "password": password, "rememberMe": "true" }
+        if verificationCode <> "" then form["verificationCode"] = verificationCode
+        answer = plexTv.Request(PLEX_TV + "/api/v2/users/signin", "POST", "", {}, form)
+        if answer.ok and type(answer.data) = "roAssociativeArray" and isValidAndNotEmpty(answer.data.LookupCI("authToken"))
+            return { ok: true, token: answer.data.LookupCI("authToken") }
+        end if
+        return { ok: false, status: answer.status, code: answer.code, needsCode: answer.code = PLEX_NEEDS_CODE }
+    end function
+
+    ' The account's uuid, which is also the key to its public avatar, and its display name
+    function Account(token as string) as object
+        answer = plexTv.Request(PLEX_TV + "/api/v2/user", "GET", token)
+        if not answer.ok or type(answer.data) <> "roAssociativeArray" then return { ok: false, status: answer.status }
+        name = answer.data.LookupCI("title")
+        if not isValidAndNotEmpty(name) then name = answer.data.LookupCI("username")
+        return { ok: true, id: plexUrls.Str(answer.data.LookupCI("uuid") ?? ""), name: plexUrls.Str(name ?? "") }
+    end function
+
+    function HomeUsers(token as string) as object
+        answer = plexTv.Request(PLEX_TV + "/api/v2/home/users", "GET", token)
+        found = []
+        if not answer.ok or type(answer.data) <> "roAssociativeArray" then return found
+        for each user in plexMapper.List(answer.data.LookupCI("users"))
+            if type(user) = "roAssociativeArray" and plexMapper.IsText(user.LookupCI("uuid")) and plexMapper.IsText(user.LookupCI("title"))
+                found.push({ id: user.LookupCI("uuid"), name: user.LookupCI("title"), hasPin: user.LookupCI("protected") = true })
+            end if
+        end for
+        return found
+    end function
+
+    ' The Home member's plex.tv token, with wrongPin set when the PIN didn't match
+    function SwitchHomeUser(token as string, userId as string, pin as string) as object
+        query = {}
+        if pin <> "" then query["pin"] = pin
+        answer = plexTv.Request(PLEX_TV + "/api/v2/home/users/" + userId + "/switch", "POST", token, query)
+        if answer.ok and type(answer.data) = "roAssociativeArray" and isValidAndNotEmpty(answer.data.LookupCI("authToken"))
+            return { ok: true, token: answer.data.LookupCI("authToken") }
+        end if
+        return { ok: false, status: answer.status, wrongPin: answer.code = PLEX_WRONG_PIN }
+    end function
+
+    function ConnectionRank(connection as object) as integer
+        if connection.LookupCI("relay") = true then return 2
+        if connection.LookupCI("local") = true then return 0
+        return 1
+    end function
+
+    ' Best first: local, then remote, relay last. Some routers block plex.direct names because they
+    ' point at private IPs, so each local one is followed by its plain address.
+    function ServerFromResource(resource as object) as object
+        plainAllowed = resource.LookupCI("httpsRequired") <> true
+        ranked = [[], [], []]
+        for each connection in plexMapper.List(resource.LookupCI("connections"))
+            if type(connection) = "roAssociativeArray" and plexMapper.IsText(connection.LookupCI("uri"))
+                ranked[plexTv.ConnectionRank(connection)].push(connection)
+            end if
+        end for
+        connections = []
+        for each bucket in ranked
+            for each connection in bucket
+                uri = connection.LookupCI("uri")
+                connections.push(uri)
+                if plainAllowed and connection.LookupCI("local") = true and connection.LookupCI("relay") <> true and uri.Left(6) = "https:" and plexMapper.IsText(connection.LookupCI("address"))
+                    connections.push("http://" + connection.LookupCI("address") + ":" + plexUrls.Str(connection.LookupCI("port")).Trim())
+                end if
+            end for
+        end for
+        return {
+            id: plexUrls.Str(resource.LookupCI("clientIdentifier") ?? ""),
+            name: plexUrls.Str(resource.LookupCI("name") ?? ""),
+            version: plexUrls.Str(plexMapper.Version(resource.LookupCI("productVersion")) ?? ""),
+            accessToken: plexUrls.Str(resource.LookupCI("accessToken") ?? ""),
+            connections: connections
+        }
+    end function
+
+    function Servers(token as string) as object
+        answer = plexTv.Request("https://clients.plex.tv/api/v2/resources", "GET", token, { "includeHttps": 1, "includeRelay": 1 })
+        if not answer.ok then return { ok: false, status: answer.status, servers: [] }
+        found = []
+        for each resource in plexMapper.List(answer.data)
+            if type(resource) = "roAssociativeArray" and Instr(1, plexUrls.Str(resource.LookupCI("provides") ?? ""), "server") > 0
+                found.push(plexTv.ServerFromResource(resource))
+            end if
+        end for
+        return { ok: true, servers: found }
+    end function
+
+    ' The machine id a Plex server answers with at each address, asked of every address at once.
+    ' After the first one that matches, the ones ahead of it only get a moment more, so an address that
+    ' never answers, like a container's, doesn't hold things up for its whole timeout. Returns the
+    ' first of the uris, in their order, that answered with the machine id, or "".
+    function FirstAnswering(uris as object, machineId as string, deadlineMs = PLEX_PROBE_TIMEOUT_MS as integer) as string
+        if uris.Count() = 0 then return ""
+        port = CreateObject("roMessagePort")
+        transfers = []
+        results = []
+        for each uri in uris
+            req = CreateObject("roUrlTransfer")
+            req.SetUrl(uri + "/identity")
+            req.AddHeader("Accept", "application/json")
+            if LCase(uri.Left(8)) = "https://" then setCertificateAuthority(req)
+            req.SetMessagePort(port)
+            started = req.AsyncGetToString()
+            transfers.push(req)
+            if started then results.push(invalid) else results.push(false)
+        end for
+        clock = CreateObject("roTimespan")
+        graceEnds = -1
+        while true
+            chosen = plexTv.Settled(uris, results)
+            if chosen <> invalid then exit while
+            remaining = deadlineMs - clock.TotalMilliseconds()
+            if graceEnds >= 0 and graceEnds - clock.TotalMilliseconds() < remaining then remaining = graceEnds - clock.TotalMilliseconds()
+            if remaining <= 0
+                for i = 0 to results.Count() - 1
+                    if results[i] = invalid then results[i] = false
+                end for
+                exit while
+            end if
+            event = wait(remaining, port)
+            if type(event) = "roUrlEvent"
+                for i = 0 to transfers.Count() - 1
+                    if transfers[i].GetIdentity() = event.GetSourceIdentity()
+                        found = invalid
+                        if event.GetResponseCode() = 200 then found = ParseJson(event.GetString())
+                        results[i] = plexTv.MachineIdOf(found) = machineId and machineId <> ""
+                        if results[i] = true and graceEnds < 0 then graceEnds = clock.TotalMilliseconds() + PLEX_PROBE_GRACE_MS
+                    end if
+                end for
+            end if
+        end while
+        for each req in transfers
+            req.AsyncCancel()
+        end for
+        chosen = plexTv.Settled(uris, results)
+        if chosen = invalid then return ""
+        return chosen
+    end function
+
+    ' The first answering uri once every one ahead of it has a result, "" once none can, else invalid
+    function Settled(uris as object, results as object) as dynamic
+        for i = 0 to results.Count() - 1
+            if results[i] = invalid then return invalid
+            if results[i] = true then return uris[i]
+        end for
+        return ""
+    end function
+
+    function MachineIdOf(data as dynamic) as string
+        if type(data) <> "roAssociativeArray" then return ""
+        return plexUrls.Str(chainLookup(data, "MediaContainer.machineIdentifier") ?? "")
+    end function
+
+    ' The addresses to look for a Plex server at for a typed one. Plex's own port goes first when none
+    ' was typed, and a bare address means http, since a LAN IP has no certificate to match.
+    function AddressCandidates(address as string) as object
+        raw = address.Trim()
+        if raw = "" then return []
+        if Instr(1, raw, "://") = 0 then raw = "http://" + raw
+        while raw.Right(1) = "/"
+            raw = raw.Left(raw.Len() - 1)
+        end while
+        match = CreateObject("roRegex", "^(https?)://(\[[^\]]+\]|[^/:]+)(:\d+)?(.*)$", "i").Match(raw)
+        if match.Count() < 5 then return []
+        if match[3] <> "" then return [raw]
+        return [match[1] + "://" + match[2] + ":" + PLEX_PORT + match[4], raw]
+    end function
+
+    ' Where a Plex server answers at a typed address, as { uri, machineId }, or invalid when nothing
+    ' there is one
+    function FindServerAt(address as string) as dynamic
+        for each candidate in plexTv.AddressCandidates(address)
+            req = CreateObject("roUrlTransfer")
+            req.SetUrl(candidate + "/identity")
+            req.AddHeader("Accept", "application/json")
+            if LCase(candidate.Left(8)) = "https://" then setCertificateAuthority(req)
+            port = CreateObject("roMessagePort")
+            req.SetMessagePort(port)
+            if req.AsyncGetToString()
+                event = wait(PLEX_PROBE_TIMEOUT_MS, port)
+                if type(event) = "roUrlEvent" and event.GetResponseCode() = 200
+                    machineId = plexTv.MachineIdOf(ParseJson(event.GetString()))
+                    if machineId <> "" then return { uri: candidate, machineId: machineId }
+                else
+                    req.AsyncCancel()
+                end if
+            end if
+        end for
+        return invalid
+    end function
+
+end namespace

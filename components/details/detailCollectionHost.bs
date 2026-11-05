@@ -1,4 +1,5 @@
 import "pkg:/source/enums/TaskControl.bs"
+import "pkg:/source/utils/collectionSort.bs"
 import "pkg:/source/utils/misc.bs"
 
 ' A collection's action row and how it plays, shared by every details screen that draws one.
@@ -8,6 +9,8 @@ import "pkg:/source/utils/misc.bs"
 '
 ' Hooks each screen provides:
 '   function collectionMembers() as object
+'   function collectionOrder() as object, the ids the collection was arranged in through Moonbase
+'   sub collectionSortChanged(), only on a screen that opens the sort picker
 
 ' Takes a title out of the list Play reads, and says whether it was there
 function dropCollectionMember(itemId as string) as boolean
@@ -29,14 +32,14 @@ end function
 sub addCollectionButtons()
     itemData = chainLookupReturn(m.top.itemContent, "json", {})
     addButton({
-        icon: "pkg:/images/icons/detail_play.png",
+        icon: "pkg:/images/icons/detail_play.webp",
         label: tr("Play"),
         action: "collectionPlay",
         id: "playButton"
     })
 
     candidates = [
-        { id: "shuffle", config: { icon: "pkg:/images/icons/detail_shuffle.png", label: tr("Shuffle"), action: "collectionShuffle", id: "shuffleButton" } },
+        { id: "shuffle", config: { icon: "pkg:/images/icons/detail_shuffle.webp", label: tr("Shuffle"), action: "collectionShuffle", id: "shuffleButton" } },
         watchedCandidate(itemData),
         favoriteCandidate(itemData)
     ]
@@ -44,16 +47,34 @@ sub addCollectionButtons()
     addArrangedButtons(candidates)
 end sub
 
-' What in a collection can be handed straight to the player. A series in there opens rather
-' than plays, so it stays out of the queue instead of stopping the run when it comes round.
+' What plays and what the playlist lists, the same titles in the same order
 function collectionQueue() as object
-    queue = []
-    for each item in collectionMembers()
-        itemType = chainLookupReturn(item, "json.Type", "")
-        if itemType = "Movie" or itemType = "Video" or itemType = "Episode" or itemType = "MusicVideo" then queue.push(item)
-    end for
-    return queue
+    return collectionSort.Apply(collectionPlaylist(collectionMembers()), collectionSortOption(), collectionOrder())
 end function
+
+' The order the viewer picked, or the one the page opens on until they pick
+function collectionSortOption() as string
+    if isValid(m.collectionSortPick) then return m.collectionSortPick
+    return collectionSort.Initial(collectionOrder())
+end function
+
+sub openCollectionSort()
+    m.global.sceneManager.callFunc("radioDialog", tr("Playlist Sort Options"), { data: collectionSort.Choices(collectionSortOption(), collectionOrder().count() > 0) })
+    m.global.sceneManager.observeFieldScoped("returnData", "onCollectionSortPicked")
+end sub
+
+sub onCollectionSortPicked()
+    m.global.sceneManager.unobserveFieldScoped("returnData")
+    picked = m.global.sceneManager.returnData
+    if not isValid(picked) or not isString(picked.Name) or picked.Name = collectionSortOption() then return
+    m.collectionSortPick = picked.Name
+
+    ' A dialog hands the remote back as it closes, so the screen draws the new order once it has
+    m.collectionSortTimer = CreateObject("roSGNode", "Timer")
+    m.collectionSortTimer.duration = 0.05
+    m.collectionSortTimer.observeField("fire", "collectionSortChanged")
+    m.collectionSortTimer.control = "start"
+end sub
 
 function isPartWatched(item as object) as boolean
     return chainLookupReturn(item, "json.UserData.PlaybackPositionTicks", 0) > 0 and not chainLookupReturn(item, "json.UserData.Played", false)
@@ -93,12 +114,23 @@ sub playCollection(shuffle as boolean)
         if start < 0 then start = 0
     end if
 
-    ' Only the first title resumes, the rest of the run starts each one from the top
+    startCollectionQueue(queue, start, not shuffle)
+end sub
+
+' The playlist from the title picked in it, which sits at the same index in the queue
+sub playCollectionFrom(index as integer)
+    queue = collectionQueue()
+    if index < 0 or index >= queue.count() then return
+    startCollectionQueue(queue, index, true)
+end sub
+
+' Only the first title resumes, the rest of the run starts each one from the top
+sub startCollectionQueue(queue as object, start as integer, resume as boolean)
     for each item in queue
         item.startingPoint = 0
     end for
     target = queue[start]
-    if not shuffle and isPartWatched(target) then target.startingPoint = chainLookupReturn(target, "json.UserData.PlaybackPositionTicks", 0)
+    if resume and isPartWatched(target) then target.startingPoint = chainLookupReturn(target, "json.UserData.PlaybackPositionTicks", 0)
 
     m.global.queueManager.callFunc("clear")
     ' Cinema mode intros are left out of a collection run
@@ -117,10 +149,11 @@ sub refreshCollectionMembers()
     m.collectionRefreshTask = startCollectionMembersTask("onCollectionMembersRefreshed")
 end sub
 
-function startCollectionMembersTask(handler as string) as object
+function startCollectionMembersTask(handler as string, findsMissing = false as boolean) as object
     task = CreateObject("roSGNode", "LoadCollectionsTask")
     task.mode = "members"
     task.titlesOnly = true
+    task.findsMissing = findsMissing
     task.itemJson = m.top.itemContent.json
     task.observeField("done", handler)
     task.control = TaskControl.RUN

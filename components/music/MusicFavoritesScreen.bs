@@ -1,0 +1,201 @@
+import "pkg:/components/music/musicCategoryHost.bs"
+
+const SONG_ROW = 78
+const SONG_GAP = 54
+const GRID_GAP = 30
+const TAB_HEIGHT = 60
+
+sub categoryLoad()
+    m.category = "favorites"
+    m.right = 1920 - CATEGORY_INSET
+    m.tabs = {
+        songs: { title: tr("Songs"), path: "Items", params: { includeItemTypes: "Audio", parentId: m.libraryId, recursive: true } },
+        albums: { title: tr("Albums"), path: "Items", params: { includeItemTypes: "MusicAlbum", parentId: m.libraryId, recursive: true } },
+        artists: { title: tr("Artists"), path: "Artists", params: { parentId: m.libraryId, fields: "PrimaryImageAspectRatio,SortName" } },
+        playlists: { title: tr("Playlists"), path: "Items", params: { includeItemTypes: "Playlist", mediaTypes: "Audio", recursive: true, fields: "PrimaryImageAspectRatio,ChildCount" } }
+    }
+    m.order = ["songs", "albums", "artists", "playlists"]
+    m.tabKey = ""
+    m.counted = 0
+    for each key in m.order
+        favorite = m.tabs[key]
+        favorite.items = []
+        favorite.fetched = 0
+        favorite.total = 0
+        favorite.params.isFavorite = true
+        favorite.params.sortBy = "SortName"
+        favorite.params.sortOrder = "Ascending"
+        categoryRequest("count:" + key, favorite.path, tabQuery(key, 0, 0), "onTabCount", { key: key })
+    end for
+    setRows("main", [categoryStrip(), favoritesHeader()])
+    startLoadingSpinner(false)
+end sub
+
+function tabQuery(key as string, startIndex as integer, limit as integer) as object
+    params = {}
+    params.append(m.tabs[key].params)
+    params.startIndex = startIndex
+    params.limit = limit
+    return params
+end function
+
+' Every tab is counted at once, then the screen opens on the tab a See All asked for or the
+' first that has anything
+sub onTabCount(event as object)
+    key = event.getRoSGNode().request.context.key
+    data = categoryResponse(event, "count:" + key)
+    if not isValid(data) then return
+    m.tabs[key].total = totalOf(data, 0)
+    m.counted++
+    if m.counted < m.order.count() then return
+
+    stopLoadingSpinner()
+    start = m.top.start
+    if not m.tabs.doesExist(start) or m.tabs[start].total = 0 then start = ""
+    for each candidate in m.order
+        if start = "" and m.tabs[candidate].total > 0 then start = candidate
+    end for
+    if start = ""
+        setRows("main", [categoryStrip(), favoritesHeader(), emptyRow(tr("No favorites found"), m.headerTop + HEADER_HEIGHT + 21)])
+        focusFirstItem("main")
+        return
+    end if
+    m.tabKey = start
+    setRows("main", favoriteRows())
+    loadTabPage()
+end sub
+
+sub loadTabPage()
+    favorite = m.tabs[m.tabKey]
+    favorite.paging = true
+    categoryRequest("page:" + m.tabKey, favorite.path, tabQuery(m.tabKey, favorite.fetched, musicCategories.PAGE_SIZE), "onTabPage", { key: m.tabKey })
+end sub
+
+sub onTabPage(event as object)
+    key = event.getRoSGNode().request.context.key
+    data = categoryResponse(event, "page:" + key)
+    if not isValid(data) then return
+    favorite = m.tabs[key]
+    favorite.paging = false
+    items = responseItems(data)
+    for each item in items
+        if key <> "playlists" or isStringEqual(item.LookupCI("MediaType"), "Audio") then favorite.items.push(item)
+    end for
+    first = favorite.fetched = 0
+    favorite.fetched += items.count()
+    if items.count() = 0 then favorite.total = favorite.fetched
+    if key <> m.tabKey then return
+
+    keep = m.regions.main.rows.count() - 1
+    if first then keep = 0
+    setRows("main", favoriteRows(), keep)
+    if m.focusRow < 0 then focusFirstItem("main")
+end sub
+
+function favoritesHeader() as object
+    row = headerRow(tr("Favorites"), "", m.left)
+    if m.tabKey = "" then return row
+    segments = []
+    for each key in m.order
+        favorite = m.tabs[key]
+        if favorite.total > 0 then segments.push({ title: favorite.title + " " + favorite.total.toStr(), action: { tab: key }, key: "tab:" + key, selected: key = m.tabKey })
+    end for
+    placeSegments(row, segments, m.left + textWidth(tr("Favorites"), 51, true) + 36, (HEADER_HEIGHT - TAB_HEIGHT) \ 2, TAB_HEIGHT, 27, 22)
+    if m.tabKey = "songs"
+        buttons = [
+            { spec: pillSpec(tr("Play"), "play_arrow", true), action: { do: "play" }, key: "play" },
+            { spec: pillSpec(tr("Shuffle"), "shuffle"), action: { do: "shuffle" }, key: "shuffle" }
+        ]
+        width = specWidth(buttons[0].spec) + CONTROL_GAP + specWidth(buttons[1].spec)
+        placeButtons(row, buttons, m.right - width, (HEADER_HEIGHT - PILL_HEIGHT) \ 2, CONTROL_GAP)
+    end if
+    return row
+end function
+
+function favoriteRows() as object
+    rows = [categoryStrip(), favoritesHeader()]
+    favorite = m.tabs[m.tabKey]
+    top = m.headerTop + HEADER_HEIGHT + 21
+    if m.tabKey = "songs"
+        ' Two columns of songs, their text lined up with the header's
+        left = m.left - 18
+        columnWidth = (m.right + 18 - left - SONG_GAP) \ 2
+        for i = 0 to favorite.items.count() - 1 step 2
+            row = newRow(top + (i \ 2) * SONG_ROW, SONG_ROW)
+            for j = i to i + 1
+                if j < favorite.items.count()
+                    song = favorite.items[j]
+                    spec = { kind: "row", width: columnWidth, height: SONG_ROW, title: song.Name ?? "", subtitle: songSubtitle(song), trailing: runtimeOf(song), image: coverOf(song, 57), glyph: "music_note", artSize: 57, titleSize: 22, subtitleSize: 20, trailingSize: 20, padX: 18, gap: 21 }
+                    addCell(row, left + (j - i) * (columnWidth + SONG_GAP), 0, columnWidth, SONG_ROW, spec, { song: j }, toString(song.Id))
+                end if
+            end for
+            rows.push(row)
+        end for
+        return rows
+    end if
+
+    columns = 6
+    round = m.tabKey = "artists"
+    if round then columns = 7
+    columnWidth = (m.right - m.left - (columns - 1) * GRID_GAP) \ columns
+    size = columnWidth
+    if round and size > 192 then size = 192
+    placeholder = "album"
+    if round then placeholder = "person"
+    if m.tabKey = "playlists" then placeholder = "queue_music"
+    cellHeight = size + 68
+    for i = 0 to favorite.items.count() - 1
+        if i mod columns = 0 then rows.push(newRow(top + (i \ columns) * (cellHeight + GRID_GAP), cellHeight))
+        item = favorite.items[i]
+        spec = { kind: "card", width: size, round: round, title: item.Name ?? "", subtitle: subtitleOf(item), image: coverOf(item, size), glyph: placeholder, titleSize: 21, subtitleSize: 20, textGap: 12 }
+        x = m.left + (i mod columns) * (columnWidth + GRID_GAP)
+        if round
+            spec.textWidth = columnWidth
+            spec.centered = true
+            x += (columnWidth - size) \ 2
+        end if
+        addCell(rows.peek(), x, 0, size, cellHeight, spec, { item: item }, toString(item.Id))
+    end for
+    return rows
+end function
+
+function favoriteSongs(startIndex as integer, sortBy as string) as object
+    params = tabQuery("songs", startIndex, 300)
+    params.sortBy = sortBy
+    return params
+end function
+
+' =====================================================================
+' HOOKS
+' =====================================================================
+
+sub categoryActivate(action as object)
+    if isValid(action.tab)
+        if action.tab = m.tabKey then return
+        m.tabKey = action.tab
+        setRows("main", favoriteRows())
+        if m.tabs[m.tabKey].fetched = 0 then loadTabPage()
+    else if isValid(action.song)
+        requestTracks(favoriteSongs(action.song, "SortName"), "")
+    else if isValid(action.item)
+        openItem(action.item)
+    else if action.do = "play"
+        requestTracks(favoriteSongs(0, "SortName"), "")
+    else if action.do = "shuffle"
+        requestTracks(favoriteSongs(0, "Random"), "")
+    end if
+end sub
+
+sub categoryFocused()
+    if m.tabKey = "" then return
+    favorite = m.tabs[m.tabKey]
+    if favorite.paging = true or favorite.fetched >= favorite.total then return
+    if m.focusRow >= m.regions.main.rows.count() - 4 then loadTabPage()
+end sub
+
+function categoryBack() as boolean
+    return false
+end function
+
+sub categoryRowShown(_regionId as string, _index as integer)
+end sub

@@ -1,0 +1,137 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/playbackOverlay.bs"
+
+' The outline is four copies of the text, this far out at the smallest shadow size
+const SUBTITLE_SHADOW_OFFSET = 2
+' Subtitles never run wider than this share of the screen
+const SUBTITLE_MAX_WIDTH_PERCENT = 90
+
+' How the player draws the subtitles it renders itself. The settings preview draws its sample line
+' through the same rules, so the two can't drift apart.
+namespace subtitleStyle
+
+    ' The look the style settings ask for, or their HDR twins when the suffix is "Hdr". Settings
+    ' that were never set read as the defaults.
+    function FromSettings(settings as object, suffix as string) as object
+        sizes = { small: 36, medium: 44, large: 52, xlarge: 60 }
+        offsets = { bottom: 10, lower: 20, middle: 30, higher: 40 }
+        position = subtitleStyle.ValueOf(settings, "position" + suffix, "bottom")
+        bottomPercent = offsets[position] ?? 10
+        if position = "absolute" then bottomPercent = 100 - Val(subtitleStyle.ValueOf(settings, "positionAbsolute" + suffix, "90"))
+
+        ' Zero reads as full, so the text can never be turned invisible by accident
+        opacity = Val(subtitleStyle.ValueOf(settings, "opacity" + suffix, "100"))
+        if opacity <= 0 then opacity = 100
+
+        blur = Val(subtitleStyle.ValueOf(settings, "shadowBlur" + suffix, "0.1"))
+        if blur <= 0 then blur = 0.1
+
+        return {
+            fontSize: sizes[subtitleStyle.ValueOf(settings, "size" + suffix, "medium")] ?? 44,
+            bottomPercent: bottomPercent,
+            textOpacity: opacity / 100,
+            textColor: subtitleStyle.Rgba(subtitleStyle.ValueOf(settings, "color" + suffix, "#ffffff"), 100),
+            shadowColor: subtitleStyle.Rgba(subtitleStyle.ValueOf(settings, "shadowColor" + suffix, "#000000"), Val(subtitleStyle.ValueOf(settings, "shadowOpacity" + suffix, "100"))),
+            shadowOffset: SUBTITLE_SHADOW_OFFSET + Int((blur - 0.1) * 4 + 0.5),
+            backgroundColor: subtitleStyle.Rgba(subtitleStyle.ValueOf(settings, "backgroundColor" + suffix, "#000000"), Val(subtitleStyle.ValueOf(settings, "background" + suffix, "0")))
+        }
+    end function
+
+    function ValueOf(settings as object, name as string, fallback as string) as string
+        stored = settings["playback.subs.style." + name]
+        if not isValid(stored) then return fallback
+        return stored.toStr()
+    end function
+
+    ' A #RRGGBBAA color from a #RRGGBB or #RRGGBBAA setting, with its own alpha scaled by the opacity
+    function Rgba(hex as string, opacityPercent as float) as string
+        digits = hex.Replace("#", "")
+        if Len(digits) < 6 then digits = "ffffff"
+        alpha = 1.0
+        if Len(digits) >= 8 then alpha = Val(Mid(digits, 7, 2), 16) / 255
+        alpha = alpha * opacityPercent / 100
+        if alpha < 0 then alpha = 0
+        if alpha > 1 then alpha = 1
+        return "#" + UCase(Left(digits, 6)) + playbackOverlay.HexByte(Int(alpha * 255 + 0.5))
+    end function
+
+    ' A cue's lines, each outlined, 1.4 times the text size apart on the background color. The text
+    ' opacity is set on the whole cue, so it fades the background with the text.
+    function Cue(texts as object, look as object, fontUri as string) as object
+        lines = []
+        for each text in texts
+            lines.push(subtitleStyle.OutlinedLine(text, look, fontUri))
+        end for
+
+        group = CreateObject("roSGNode", "LayoutGroup")
+        group.appendchildren(lines)
+        group.layoutDirection = "vert"
+        group.horizalignment = "center"
+        group.vertalignment = "top"
+        if lines.count() > 0
+            spacing = look.fontSize * 1.4 - lines[0].getChild(lines[0].getChildCount() - 1).boundingRect().height
+            if spacing < 0 then spacing = 0
+            group.itemSpacings = [spacing]
+        end if
+
+        bounds = group.BoundingRect()
+        backed = CreateObject("roSGNode", "Group")
+        backed.opacity = look.textOpacity
+        background = backed.createChild("Poster")
+        background.uri = "pkg:/images/livetv/fill3.9.png"
+        background.blendColor = look.backgroundColor
+        background.width = bounds.width + 32
+        background.height = bounds.height + 16
+        backed.appendchild(group)
+        group.translation = [16 - bounds.x, 8 - bounds.y]
+
+        if group.getchildCount() = 0
+            background.width = 0
+            background.height = 0
+        end if
+
+        return backed
+    end function
+
+    ' Centered, with the bottom edge the chosen share of the screen up from the bottom
+    function Placement(bounds as object, bottomPercent as float) as object
+        return [(1920 - bounds.width) / 2, 1080 * (1 - bottomPercent / 100) - bounds.height]
+    end function
+
+    ' A line with its outline: four copies in the shadow color, out on the diagonals, under the text
+    function OutlinedLine(text as string, look as object, fontUri as string) as object
+        line = CreateObject("roSGNode", "Group")
+        d = look.shadowOffset
+        for each offset in [[-d, -d], [d, -d], [-d, d], [d, d]]
+            shadow = subtitleStyle.TextLabel(text, look.shadowColor, look.fontSize, fontUri)
+            shadow.translation = offset
+            line.appendChild(shadow)
+        end for
+        line.appendChild(subtitleStyle.TextLabel(text, look.textColor, look.fontSize, fontUri))
+        return line
+    end function
+
+    ' The fallback font covers scripts the system font lacks
+    function TextLabel(text as string, color as string, size as integer, fontUri as string) as object
+        label = CreateObject("roSGNode", "Label")
+        label.text = text
+        if fontUri <> ""
+            font = CreateObject("roSGNode", "Font")
+            font.uri = fontUri
+            font.size = size
+            label.font = font
+        else
+            label.font = "font:SmallestSystemFont"
+            label.font.size = size
+        end if
+        label.color = color
+        label.horizAlign = "center"
+        maxWidth = 1920 * SUBTITLE_MAX_WIDTH_PERCENT / 100 - 32
+        if label.boundingRect().width > maxWidth
+            label.width = maxWidth
+            label.wrap = true
+        end if
+        return label
+    end function
+
+end namespace

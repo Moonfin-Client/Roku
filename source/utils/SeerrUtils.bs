@@ -13,6 +13,7 @@ const SEERR_PERMISSION_REQUEST_4K = 1024
 const SEERR_PERMISSION_REQUEST_4K_MOVIE = 2048
 const SEERR_PERMISSION_REQUEST_4K_TV = 4096
 const SEERR_PERMISSION_REQUEST_ADVANCED = 8192
+const SEERR_PERMISSION_REQUEST_MOVIE = 262144
 const SEERR_PERMISSION_MANAGE_ISSUES = 1048576
 const SEERR_PERMISSION_VIEW_ISSUES = 2097152
 const SEERR_PERMISSION_CREATE_ISSUES = 4194304
@@ -714,6 +715,13 @@ function GetSeerrDisplayName() as string
     return "Seerr"
 end function
 
+' A season or an episode, which Seerr only knows as part of its series
+function IsSeerrSeriesPart(itemData as dynamic) as boolean
+    if type(itemData) <> "roAssociativeArray" then return false
+    if not isStringEqual(itemData.Type, "Season") and not isStringEqual(itemData.Type, "Episode") then return false
+    return isValidAndNotEmpty(itemData.SeriesId)
+end function
+
 ' Which Seerr title a library item stands for. Only movies and series have a counterpart,
 ' and an episode or a season resolves through its series page instead.
 function GetSeerrTargetFor(itemData as object) as object
@@ -887,7 +895,7 @@ function SeerrFormatJsonValue(value as dynamic) as string
         return "null"
     else if type(value) = "String" or type(value) = "roString"
         return SeerrEscapeJsonString(value)
-    else if type(value) = "Integer" or type(value) = "roInt"
+    else if SeerrIsNumber(value)
         return value.ToStr()
     else if type(value) = "Boolean" or type(value) = "roBoolean"
         if value
@@ -1145,6 +1153,31 @@ function SeerrMediaTitle(media as object) as string
     return tr("Unknown")
 end function
 
+function SeerrRequesterName(request as object) as string
+    for each key in ["displayName", "username", "email"]
+        name = chainLookupReturn(request, `requestedBy.${key}`, "")
+        if isValidAndNotEmpty(name) then return name
+    end for
+    return tr("Unknown")
+end function
+
+' A picker sheet over a Seerr dialog: the choices with the current one checked and focused, then a
+' dimmed Cancel. With no current choice the first one takes focus.
+function CreateSeerrPicker(title as string, labels as object, selected as integer) as object
+    rows = []
+    for i = 0 to labels.count() - 1
+        rows.push({ kind: "option", id: i.ToStr(), label: labels[i], selected: i = selected })
+    end for
+    picker = CreateObject("roSGNode", "SeerrSheet")
+    picker.dialogTitle = title
+    picker.bodyPadding = [0, 0, 0]
+    picker.showCancel = true
+    picker.elements = rows
+    picker.focusId = selected.ToStr()
+    picker.callFunc("render")
+    return picker
+end function
+
 function CanManageIssues(permissions as integer) as boolean
     return HasSeerrPermission(permissions, SEERR_PERMISSION_MANAGE_ISSUES)
 end function
@@ -1157,6 +1190,10 @@ end function
 
 function CanManageRequests(permissions as integer) as boolean
     return HasSeerrPermission(permissions, SEERR_PERMISSION_MANAGE_REQUESTS)
+end function
+
+function CanRequestMovies(permissions as integer) as boolean
+    return HasSeerrPermission(permissions, SEERR_PERMISSION_REQUEST) or HasSeerrPermission(permissions, SEERR_PERMISSION_REQUEST_MOVIE)
 end function
 
 ' What a request reads as, the way the other clients work it out. The media status wins over
@@ -1241,22 +1278,29 @@ function SeerrRequestDownloadSummary(request as object) as object
     if mediaStatus <> SEERR_MEDIA_PROCESSING and mediaStatus <> SEERR_MEDIA_PARTIAL then return invalid
     if not SeerrQueueHasWork(queue) then return invalid
 
+    ' Sonarr lists a season pack once per episode, each with the whole pack's size and the same
+    ' download id, so each download counts once. An entry with no download id is a release Sonarr
+    ' or Radarr is holding back rather than downloading.
     total = 0.0
     left = 0.0
+    seen = {}
     for each entry in queue
-        if entry = invalid then continue for
-        if entry.size <> invalid then total += entry.size
-        if entry.sizeLeft <> invalid then left += entry.sizeLeft
+        key = SeerrDownloadKey(entry)
+        if key <> "" and not seen.DoesExist(key)
+            seen[key] = true
+            size = entry.size
+            total += size
+            sizeLeft = 0.0
+            if SeerrIsNumber(entry.sizeLeft) then sizeLeft = entry.sizeLeft
+            if sizeLeft < 0 then sizeLeft = 0
+            if sizeLeft > size then sizeLeft = size
+            left += sizeLeft
+        end if
     end for
 
     if total <= 0 then return invalid
 
-    done = total - left
-    if done < 0 then done = 0
-    fraction = done / total
-    if fraction > 1 then fraction = 1
-
-    return { fraction: fraction, done: done, total: total, isImporting: left <= 0 }
+    return { fraction: (total - left) / total, done: total - left, total: total, isImporting: left <= 0 }
 end function
 
 ' The done half is read in the total's unit, so a part finished download says 1.6 GB / 4.4 GB
@@ -1306,6 +1350,20 @@ function isValidStringValue(value as dynamic) as boolean
     if value = invalid then return false
     if type(value) <> "String" and type(value) <> "roString" then return false
     return value <> ""
+end function
+
+' The download a queue entry belongs to, or nothing for one without a size or a download id
+function SeerrDownloadKey(entry as dynamic) as string
+    if type(entry) <> "roAssociativeArray" then return ""
+    if not SeerrIsNumber(entry.size) or entry.size <= 0 then return ""
+    downloadId = entry.downloadId
+    if not isValid(downloadId) or (SeerrIsNumber(downloadId) and downloadId = 0) then return ""
+    return toString(downloadId)
+end function
+
+function SeerrIsNumber(value as dynamic) as boolean
+    kind = type(value)
+    return kind = "Integer" or kind = "roInt" or kind = "roInteger" or kind = "LongInteger" or kind = "roLongInteger" or kind = "Float" or kind = "roFloat" or kind = "Double" or kind = "roDouble"
 end function
 
 function SeerrParseBool(value as dynamic, defaultValue = false as boolean) as boolean
@@ -1519,13 +1577,15 @@ function SearchSeerr(query as string, timeoutMs = 1500 as integer) as object
     if response.data = invalid or type(response.data) <> "roAssociativeArray" then return []
     if type(response.data.results) <> "roArray" then return []
 
-    ' Convert Seerr results to standard format
+    return SeerrSearchCards(response.data.results)
+end function
+
+' Seerr search answers as cards that open the Seerr details screen
+function SeerrSearchCards(items as object) as object
     results = []
-    for each item in response.data.results
-        ' Create content node for this result
+    for each item in items
         contentNode = CreateMediaContentNode(item)
         if contentNode <> invalid
-            ' Add Seerr-specific fields for identification
             contentNode.addFields({
                 isSeerrResult: true,
                 seerrItem: item
@@ -1570,6 +1630,10 @@ function SeerrDetailScreenComponent() as string
     if style = "spotlight" then return "SpotlightItemDetails"
     if style = "nouveau" then return "NouveauItemDetails"
     if style = "minimalist" then return "MinimalistItemDetails"
+    if style = "stage" then return "StageItemDetails"
+    if style = "premiere" then return "PremiereItemDetails"
+    if style = "quickLook" then return "QuickLookItemDetails"
+    if style = "frost" then return "FrostItemDetails"
 
     return "ModernItemDetails"
 end function

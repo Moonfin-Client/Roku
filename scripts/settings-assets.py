@@ -32,6 +32,21 @@ EXTRA_GLYPHS = [
     'check', 'check_box', 'check_box_outline_blank', 'chevron_right', 'arrow_left', 'arrow_right',
     'keyboard_arrow_up', 'keyboard_arrow_down', 'lock_outline', 'restore', 'refresh', 'tune',
     'extension', 'restart_alt', 'play_arrow_rounded',
+    # The library header controls and the Sort & Filter group headings
+    'home', 'sort', 'category_outlined', 'filter_list', 'shuffle', 'settings', 'grid_view',
+    'expand_more', 'expand_less',
+    # The music category screens' buttons
+    'sort_by_alpha', 'play_arrow', 'album', 'queue_music',
+    # The Seerr request, issue and requests screens
+    'toggle_on', 'toggle_off', 'radio_button_checked', 'radio_button_unchecked', 'check_circle',
+    'check_circle_outline', 'cancel_outlined', 'arrow_drop_down', 'autorenew', 'data_usage', 'block',
+    'highlight_off', 'close',
+    # The server, account and sign in screens
+    'arrow_back', 'error', 'language', 'person',
+    # The calendar screens' buttons, messages and art fallbacks
+    'calendar_month_rounded', 'chevron_left_rounded', 'chevron_right_rounded', 'today_rounded',
+    'refresh_rounded', 'event_busy_rounded', 'event_available_rounded', 'add_rounded', 'tv_rounded',
+    'info_outline_rounded', 'movie_outlined',
 ]
 
 
@@ -49,7 +64,7 @@ def collect_glyph_names():
 
     char_call = re.compile(r'(?:Char|Glyph)\(\s*"([a-z0-9_]+)"\s*\)')
     glyph_field = re.compile(r'\bglyph\s*:\s*"([a-z0-9_]+)"', re.I)
-    map_value = re.compile(r':\s*"([a-z0-9_]+)"')
+    map_value = re.compile(r'(?::|\?\?)\s*"([a-z0-9_]+)"')
     for folder in ('components', 'source'):
         for base, _, files in os.walk(os.path.join(ROOT, folder)):
             for name in files:
@@ -248,6 +263,11 @@ def write_glow(path, radius, sigma, spread, margin):
     nine_patch(path, radius, alpha, margin)
 
 
+def write_cover(path, radius, inset):
+    """Solid outside a rounded rectangle set in by the inset, painted in the page color to round off the corners of what sits under it."""
+    nine_patch(path, radius, lambda x, y, content: 1 - coverage(x, y, rounded_shape(content, radius, inset)))
+
+
 def write_dot(path, diameter):
     pixels = []
     centre = diameter / 2
@@ -281,6 +301,32 @@ def write_images():
     write_square(os.path.join(IMAGES_OUT, 'square.9.png'), 2)
     write_square(os.path.join(IMAGES_OUT, 'square3s.9.png'), 4, 2 * dp)
     write_dot(os.path.join(IMAGES_OUT, 'dot96.png'), 96)
+    # The Glass keyboard panel and the keycaps in the keyboard hints
+    keyboard = os.path.join(ROOT, 'images/keyboard')
+    write_fill(os.path.join(keyboard, 'panel48.9.png'), 48)
+    write_stroke(os.path.join(keyboard, 'panel48s.9.png'), 48, 2)
+    write_stroke(os.path.join(keyboard, 'cap10s.9.png'), 10, 2)
+    # The ring around the pills on the classic home info row, which fill with images/makd/dotspill14.9.png
+    home = os.path.join(ROOT, 'images/home')
+    os.makedirs(home, exist_ok=True)
+    write_stroke(os.path.join(home, 'pill14s1.9.png'), 14, 1)
+    write_setup_images()
+
+
+def write_setup_images():
+    """The setup wizard's preview stage: its 2 px ring, the corners that round off the preview, and its shadow."""
+    setup = os.path.join(ROOT, 'images/setup')
+    os.makedirs(setup, exist_ok=True)
+    write_stroke(os.path.join(setup, 'stage24s2.9.png'), 24, 2)
+    write_cover(os.path.join(setup, 'stage24cover.9.png'), 24, 2)
+    # The stage shadow's 80 px blur is a Gaussian with a sigma of 40, faded out by 96 px
+    write_glow(os.path.join(setup, 'stage24shadow.9.png'), 24, 40, 0, 96)
+    # The previews are shrunk onto the stage, but Roku draws a 9-patch's corners at their own size,
+    # so these are cut at the radii the real screens' masks (8, 14, 16 and 18) end up with there
+    for radius in (4, 8, 9, 10):
+        write_cover(os.path.join(setup, f'corners{radius}.9.png'), radius, 0)
+    # The hairline round the detail screens' 75 px buttons, at its size on the stage
+    write_stroke(os.path.join(setup, 'ring20.9.png'), 20, 1)
 
 
 def main():

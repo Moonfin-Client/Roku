@@ -1,5 +1,8 @@
+import "pkg:/components/recordings/incompleteRecordingWatch.bs"
 import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/incompleteRecordings.bs"
 import "pkg:/source/utils/liveTvGuide.bs"
 import "pkg:/source/utils/misc.bs"
 
@@ -39,10 +42,20 @@ sub init()
     m.bodyScroll = 0
     m.dialog = invalid
     m.selected = invalid
+    m.selectedIncomplete = invalid
     m.tasks = []
+    ' The schedule is read again whenever a series rule changes, and those reads can finish in any
+    ' order, so each is numbered and only one newer than the last applied replaces the list
+    m.timerReads = { started: 0, applied: 0 }
+
+    ' Only this screen reads the plugin's list again once it's a few minutes old
+    incompleteRecordingStore().callFunc("refresh")
+    incompleteRecordingStore().observeFieldScoped("keepResult", "onKeepResult")
+    watchIncompleteRecording("")
 
     buildPills()
-    sendRequest({ kind: "recordings" })
+    m.timerReads.started++
+    sendRequest({ kind: "recordings", tag: { read: m.timerReads.started } })
 end sub
 
 sub OnScreenShown(_isReturning = false as boolean)
@@ -71,6 +84,13 @@ sub onResponse(event as object)
     m.tasks = kept
 
     response = event.getData()
+    if response.kind = "timers"
+        if response.ok and applyTimers(response.tag.read, response.timers)
+            buildPills()
+            buildBody()
+        end if
+        return
+    end if
     if response.kind <> "recordings" and not response.ok
         if isValid(m.dialog) then m.dialog.busy = false
         return
@@ -79,7 +99,7 @@ sub onResponse(event as object)
     if response.kind = "recordings"
         m.spinner.visible = false
         m.rows = response.rows
-        m.timers = response.timers ?? []
+        applyTimers(response.tag.read, response.timers ?? [])
         m.seriesTimers = response.seriesTimers ?? []
         buildPills()
         buildBody()
@@ -89,13 +109,38 @@ sub onResponse(event as object)
         end for
         finishAction()
     else if response.kind = "cancelTimer"
+        ' A read started before the cancel can still return the canceled timer
+        m.timerReads.started++
+        m.timerReads.applied = m.timerReads.started
         m.timers = withoutId(m.timers, response.tag.id)
         finishAction()
     else if response.kind = "cancelSeriesTimer"
         m.seriesTimers = withoutId(m.seriesTimers, response.tag.id)
+        reloadTimers()
+        finishAction()
+    else if response.kind = "updateSeriesTimer"
+        updated = []
+        for each rule in m.seriesTimers
+            if rule.Id = response.tag.rule.Id then updated.push(response.tag.rule) else updated.push(rule)
+        end for
+        m.seriesTimers = updated
+        reloadTimers()
         finishAction()
     end if
 end sub
+
+' A series rule decides which showings are booked, so the schedule is read again once it changes
+sub reloadTimers()
+    m.timerReads.started++
+    sendRequest({ kind: "timers", tag: { read: m.timerReads.started } })
+end sub
+
+function applyTimers(read as integer, timers as object) as boolean
+    if read < m.timerReads.applied then return false
+    m.timerReads.applied = read
+    m.timers = liveTvGuide.UpcomingTimers(timers, liveTvGuide.NowSeconds())
+    return true
+end function
 
 function withoutId(items as object, id as string) as object
     kept = []
@@ -142,7 +187,7 @@ sub buildPills()
         icon = invalid
         if spec.tab = "back"
             icon = CreateObject("roSGNode", "Poster")
-            icon.uri = "pkg:/images/livetv/back.png"
+            icon.uri = "pkg:/images/livetv/back.webp"
             icon.width = 27
             icon.height = 27
             icon.translation = [21, (PILL_HEIGHT - 27) / 2]
@@ -359,7 +404,7 @@ function buildCard(card as object) as object
     icon = invalid
     if card.imageUrl <> ""
         mask = CreateObject("roSGNode", "MaskGroup")
-        mask.maskUri = "pkg:/images/livetv/cardmask.png"
+        mask.maskUri = "pkg:/images/livetv/cardmask.webp"
         mask.maskSize = [CARD_WIDTH, CARD_THUMB_HEIGHT]
         image = CreateObject("roSGNode", "Poster")
         image.width = CARD_WIDTH
@@ -374,14 +419,17 @@ function buildCard(card as object) as object
         icon.height = 72
         icon.translation = [(CARD_WIDTH - 72) / 2, (CARD_THUMB_HEIGHT - 72) / 2]
         if card.isSeries
-            icon.uri = "pkg:/images/livetv/smart_record.png"
+            icon.uri = "pkg:/images/livetv/smart_record.webp"
             icon.blendColor = "#FFFFFF26"
         else
-            icon.uri = "pkg:/images/livetv/dvr.png"
+            icon.uri = "pkg:/images/livetv/dvr.webp"
             icon.blendColor = "#FFFFFF33"
         end if
         group.appendChild(icon)
     end if
+
+    badge = invalid
+    if card.kind = "recording" then badge = drawIncompleteBadge(invalid, group, incompleteRecordingStore().callFunc("entryFor", card.item.Id), [INCOMPLETE_BADGE_EDGE, INCOMPLETE_BADGE_EDGE])
 
     border = CreateObject("roSGNode", "Poster")
     border.uri = "pkg:/images/livetv/stroke6w3.9.png"
@@ -408,8 +456,30 @@ function buildCard(card as object) as object
         group.appendChild(subtitle)
     end if
 
-    return { card: card, group: group, border: border, icon: icon, x: 0 }
+    return { card: card, group: group, border: border, icon: icon, badge: badge, x: 0 }
 end function
+
+' The list changed, so every recording card's badge follows it, and an open recording popup picks
+' up its line and Keep as Complete
+sub showIncompleteRecording(entry as dynamic)
+    store = incompleteRecordingStore()
+    for each rail in m.rails
+        for each visual in rail.cards
+            if visual.card.kind = "recording" then visual.badge = drawIncompleteBadge(visual.badge, visual.group, store.callFunc("entryFor", visual.card.item.Id), [INCOMPLETE_BADGE_EDGE, INCOMPLETE_BADGE_EDGE])
+        end for
+    end for
+    if isValid(m.dialog) and isValid(m.selected) and m.selected.kind = "recording" and isValid(entry) <> isValid(m.selectedIncomplete) then openCard(m.selected)
+end sub
+
+sub onKeepResult(event as object)
+    result = event.getData()
+    if not isValid(m.dialog) or not isValid(m.selected) or result.itemId <> guidKey(m.selected.item.Id) then return
+    if result.ok
+        closeDialog()
+    else
+        m.dialog.busy = false
+    end if
+end sub
 
 sub drawFocus()
     drawPills()
@@ -478,16 +548,28 @@ sub closeDialog()
     m.top.removeChild(m.dialog)
     m.dialog = invalid
     m.selected = invalid
+    m.selectedIncomplete = invalid
     m.top.setFocus(true)
 end sub
 
 sub openCard(card as object)
+    closeDialog()
     m.selected = card
     item = card.item
     if card.kind = "recording"
         runTime = item.LookupCI("RunTimeTicks")
         duration = ""
         if isValid(runTime) and runTime > 0 then duration = durationText(runTime)
+        watchIncompleteRecording(item.Id)
+        m.selectedIncomplete = incompleteRecordingStore().callFunc("entryFor", item.Id)
+        incomplete = ""
+        buttons = [{ id: "play", label: tr("Play"), isDefault: true }]
+        if isValid(m.selectedIncomplete)
+            incomplete = incompleteRecordings.DetailText(m.selectedIncomplete, liveTvGuide.use24Hour())
+            if moonfinPlugin.CanKeepAsComplete() then buttons.push({ id: "keepAsComplete", label: tr("Keep as Complete") })
+        end if
+        buttons.push({ id: "delete", label: tr("Delete"), danger: true })
+        buttons.push({ id: "close", label: tr("Close") })
         openDialog({
             type: "recording",
             width: 840,
@@ -497,22 +579,29 @@ sub openCard(card as object)
             subtitle: item.LookupCI("EpisodeTitle") ?? "",
             overview: item.LookupCI("Overview") ?? "",
             meta: joinParts([item.LookupCI("ChannelName"), duration]),
+            incomplete: incomplete,
+            buttons: buttons
+        })
+        return
+    end if
+
+    if card.kind = "seriesTimer"
+        openDialog({
+            type: "confirm",
+            width: 700,
+            titleGap: 18,
+            surfaceColor: "#1A1A2EFF",
+            dangerColor: RECORDING_DANGER.Mid(1),
+            title: card.title,
             buttons: [
-                { id: "play", label: tr("Play"), isDefault: true },
-                { id: "delete", label: tr("Delete"), danger: true },
-                { id: "close", label: tr("Close") }
+                { id: "close", label: tr("Close"), isDefault: true },
+                { id: "seriesSettings", label: tr("Series Settings") },
+                { id: "yes", label: tr("Cancel Series Recording"), danger: true }
             ]
         })
         return
     end if
 
-    name = card.title
-    title = tr("Cancel Series Recording?")
-    text = tr("Stop recording {name}?")
-    if card.kind = "timer"
-        title = tr("Cancel Recording?")
-        text = tr("Cancel scheduled recording of {name}?")
-    end if
     ' No is the default target so a stray OK press cant cancel anything
     openDialog({
         type: "confirm",
@@ -520,13 +609,25 @@ sub openCard(card as object)
         titleGap: 18,
         surfaceColor: "#1A1A2EFF",
         dangerColor: RECORDING_DANGER.Mid(1),
-        title: title,
-        text: text.Replace("{name}", chr(34) + name + chr(34)),
+        title: tr("Cancel Recording?"),
+        text: tr("Cancel scheduled recording of {name}?").Replace("{name}", chr(34) + card.title + chr(34)),
         buttons: [
             { id: "no", label: tr("No"), isDefault: true },
             { id: "yes", label: tr("Yes, Cancel"), danger: true }
         ]
     })
+end sub
+
+' Which episodes the rule records, its current choice checked and focused
+sub openSeriesChoices(card as object)
+    selected = liveTvGuide.SeriesChoiceOf(card.item)
+    choices = []
+    for each choice in liveTvGuide.SeriesChoices()
+        choices.push({ label: choice.label, detail: choice.detail, selected: choice.key = selected })
+    end for
+    closeDialog()
+    m.selected = { kind: "seriesChoice", item: card.item, title: card.title }
+    openDialog({ type: "series", width: 840, titleGap: 18, title: tr("Which episodes should be recorded?"), choices: choices })
 end sub
 
 function durationText(ticks as dynamic) as string
@@ -543,7 +644,22 @@ sub onDialogAction(event as object)
     card = m.selected
     if not isValid(card) then return
     id = card.item.Id
-    if action.id = "close" or action.id = "no"
+    if card.kind = "seriesChoice"
+        key = liveTvGuide.SeriesChoices()[action.option].key
+        if liveTvGuide.SeriesChoiceOf(card.item) = key
+            closeDialog()
+            return
+        end if
+        rule = {}
+        rule.append(card.item)
+        rule.append(liveTvGuide.SeriesChoiceFlags(key))
+        m.dialog.busy = true
+        sendRequest({ kind: "updateSeriesTimer", rule: rule, tag: { rule: rule } })
+        return
+    end if
+    if action.id = "seriesSettings"
+        openSeriesChoices(card)
+    else if action.id = "close" or action.id = "no"
         closeDialog()
     else if action.id = "play"
         closeDialog()
@@ -551,6 +667,9 @@ sub onDialogAction(event as object)
         queue.callFunc("clear")
         queue.callFunc("push", { id: id, type: "video" })
         queue.callFunc("playQueue")
+    else if action.id = "keepAsComplete"
+        m.dialog.busy = true
+        incompleteRecordingStore().callFunc("keepAsComplete", id)
     else if action.id = "delete"
         m.dialog.busy = true
         sendRequest({ kind: "deleteItem", itemId: id, tag: { id: id } })

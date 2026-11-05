@@ -1,4 +1,5 @@
 import "pkg:/components/anime/animeMarkerWatch.bs"
+import "pkg:/components/recordings/incompleteRecordingWatch.bs"
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
 import "pkg:/source/enums/ColorPalette.bs"
@@ -7,6 +8,7 @@ import "pkg:/source/enums/PosterLoadStatus.bs"
 import "pkg:/source/enums/SeriesStatus.bs"
 import "pkg:/source/enums/String.bs"
 import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/homeCards.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/playedState.bs"
 import "pkg:/source/utils/themeApply.bs"
@@ -18,12 +20,18 @@ const PLACEHOLDER_MIN_SIZE = 16
 ' How far the progress track sits in from each poster edge
 const PROGRESS_INSET = 6
 
+' How far below the art a classic card's name and then its second line start, and a modern card's name
+const CLASSIC_TEXT_GAP = 16
+const CLASSIC_SUBTEXT_GAP = 46
+const MODERN_TEXT_GAP = 5
+
 ' Room left around a browse tile's logo so it reads as a logo rather than artwork, and the
 ' solid ground it sits on. ColorPalette only carries part opaque blacks.
 const BROWSE_TILE_INSET = 24
 const BROWSE_TILE_BACKGROUND = "0x000000FF"
 
 sub init()
+    m.seeAllCard = false
     findNodes()
     m.itemPoster.observeField("loadStatus", "onPosterLoadStatusChanged")
     setColors()
@@ -32,6 +40,9 @@ sub init()
     ' card. The scene sets modernShift on this item's content node.
     m.modernEnabled = isModernHomeRows()
     m.modernObservedNode = invalid
+    m.layoutRow = invalid
+    ' The art a card asked for, before it was sized for the card
+    m.artSource = ""
 
     ' Track focus change timing to detect and prevent oscillations
     m.lastFocusChangeTime = 0
@@ -46,17 +57,15 @@ end sub
 sub setColors()
     if not isAllValid([m.itemProgress, m.itemProgressBackground, m.backdrop]) then findNodes()
 
-    if isValid(m.itemProgress)
-        m.itemProgress.blendColor = chainLookupReturn(m.global.session, "user.settings.colorHomeRowItemProgress", ColorPalette.TRIADBLUE)
-    end if
-
-    if isValid(m.itemProgressBackground)
-        m.itemProgressBackground.blendColor = chainLookupReturn(m.global.session, "user.settings.colorHomeRowItemProgressBackground", ColorPalette.BLACK90)
-    end if
-
-    if isValid(m.backdrop)
-        m.backdrop.color = chainLookupReturn(m.global.session, "user.settings.colorHomeRowItemBackground", ColorPalette.ELEMENTBACKGROUND)
-    end if
+    ' Every read of the session copies all of it, and a row binds its cards as it scrolls, so the
+    ' colors come from one read
+    colors = chainLookupReturn(m.global.session, "user.settings", {})
+    if isValid(m.itemProgress) then m.itemProgress.blendColor = colors.colorHomeRowItemProgress ?? ColorPalette.TRIADBLUE
+    if isValid(m.itemProgressBackground) then m.itemProgressBackground.blendColor = colors.colorHomeRowItemProgressBackground ?? ColorPalette.BLACK90
+    if isValid(m.backdrop) then m.backdrop.color = colors.colorHomeRowItemBackground ?? ColorPalette.ELEMENTBACKGROUND
+    if isValid(m.itemText) then m.itemText.color = colors.colorHomeRowItemTitle ?? ColorPalette.WHITE
+    if isValid(m.posterText) then m.posterText.color = colors.colorHomeRowItemTitle ?? ColorPalette.WHITE
+    if isValid(m.itemIcon) then m.itemIcon.blendcolor = colors.colorHomeMyListIcon ?? ColorPalette.WHITE
 end sub
 
 sub findNodes()
@@ -74,13 +83,13 @@ sub findNodes()
     m.modernShiftInterp = m.top.findNode("modernShiftInterp")
     m.modernShiftPosterOpacity = m.top.findNode("modernShiftPosterOpacity")
     m.modernShiftTextOpacity = m.top.findNode("modernShiftTextOpacity")
+    m.itemSubtext = m.top.findNode("itemSubtext")
+    m.classicNameFont = m.top.findNode("classicNameFont")
+    m.classicLineFont = m.top.findNode("classicLineFont")
 end sub
 
 sub initItemText()
     m.itemText = m.top.findNode("itemText")
-    if isValid(m.itemText)
-        m.itemText.color = chainLookupReturn(m.global.session, "user.settings.colorHomeRowItemTitle", ColorPalette.WHITE)
-    end if
 end sub
 
 sub initItemPoster()
@@ -89,9 +98,6 @@ end sub
 
 sub initPosterText()
     m.posterText = m.top.findNode("posterText")
-    if isValid(m.posterText)
-        m.posterText.color = chainLookupReturn(m.global.session, "user.settings.colorHomeRowItemTitle", ColorPalette.WHITE)
-    end if
 end sub
 
 ' The name stands in for artwork the item does not have. A wide card gets a bigger name
@@ -100,10 +106,10 @@ sub setPosterText(itemData as object)
     if not isValid(m.posterText) then initPosterText()
     if not isValid(m.posterText) then return
 
-    m.posterText.width = itemData.imageWidth
+    m.posterText.width = m.cardWidth
     m.posterText.height = m.itemPoster.height
 
-    textSize = Int(itemData.imageWidth / 8)
+    textSize = Int(m.cardWidth / 8)
     if textSize > PLACEHOLDER_MAX_SIZE then textSize = PLACEHOLDER_MAX_SIZE
     if textSize < PLACEHOLDER_MIN_SIZE then textSize = PLACEHOLDER_MIN_SIZE
     m.posterText.font.size = textSize
@@ -120,7 +126,7 @@ sub showPosterText(visible as boolean)
     if not isValid(m.posterText) then return
 
     hasIcon = isValidAndNotEmpty(chainLookupReturn(m.top.itemContent, "iconUrl", ""))
-    m.posterText.visible = visible and not hasIcon
+    m.posterText.visible = visible and (not hasIcon or m.seeAllCard)
 end sub
 
 sub initBackdrop()
@@ -129,9 +135,6 @@ end sub
 
 sub initItemIcon()
     m.itemIcon = m.top.findNode("itemIcon")
-    if not isValid(m.itemIcon) then return
-
-    m.itemIcon.blendcolor = chainLookupReturn(m.global.session, "user.settings.colorHomeMyListIcon", ColorPalette.WHITE)
 end sub
 
 sub itemContentChanged()
@@ -143,12 +146,10 @@ sub itemContentChanged()
     if not isValid(itemData) then return
     localGlobal = m.global
 
-    ' A card's content hangs off the row it was appended to, so the parent has the row id
+    ' A card's content hangs off the row it was appended to, which says whether its cards widen
     parentRow = itemData.getParent()
-    rowId = ""
-    if isValid(parentRow) then rowId = parentRow.id
-
-    if m.modernEnabled and useModernCardsForRow(rowId)
+    followRowLayout(parentRow)
+    if m.modernEnabled and isValid(parentRow) and parentRow.modernCards = true
         setupModernShiftObserver(itemData)
     else if isValid(m.modernObservedNode)
         m.modernObservedNode.unobserveFieldScoped("modernShift")
@@ -178,39 +179,99 @@ sub itemContentChanged()
     if not isValid(m.backdrop) then initBackdrop()
     if not isValid(m.itemIcon) then initItemIcon()
 
-    m.itemPoster.width = itemData.imageWidth
+    ' A row of same sized cards keeps their size, and a row of mixed ones gives each card its own
+    width = itemData.imageWidth
+    height = itemData.imageHeight ?? 270
+    m.cardImageType = "poster"
+    if isValid(parentRow)
+        m.cardImageType = parentRow.imageType
+        if parentRow.variableWidth <> true
+            cell = parentRow.cursorSize
+            width = cell[0]
+            height = cell[1]
+        end if
+    end if
+    m.cardWidth = width
+    m.itemPoster.width = width
+    m.itemPoster.height = height
+    m.backdrop.height = height
+    ' The upcoming rows' See All card puts the calendar glyph above the middle and the words in it
+    m.seeAllCard = isStringEqual(itemData.type, "CalendarSeeAll")
+    iconSize = 80
+    iconTop = (height - iconSize) / 2
+    if m.seeAllCard
+        iconSize = 60
+        iconTop = height * 0.3 - iconSize / 2
+    end if
+    m.itemIcon.width = iconSize
+    m.itemIcon.height = iconSize
+    m.itemIcon.opacity = m.seeAllCard ? 0.6 : 1.0
+    m.itemIcon.translation = [(width - iconSize) / 2, iconTop]
+    m.itemProgressBackground.translation = [PROGRESS_INSET, height - PROGRESS_INSET - m.itemProgressBackground.height]
+    m.posterMask.visible = true
 
     ' Art for a title outside the library comes at TMDB's size rather than the card's, so it's
     ' scaled down as it loads. A wide row of 1280 pixel backdrops would fill texture memory.
     m.outsideCard = isValid(json) and (isValid(json.SeerrTmdbId) or isValid(json.CalendarDate))
-    m.itemPoster.loadWidth = m.outsideCard ? itemData.imageWidth : 0
+    m.itemPoster.loadWidth = m.outsideCard ? width : 0
     m.itemPoster.loadHeight = m.outsideCard ? m.itemPoster.height : 0
+
+    ' A Seerr title can carry its status on the poster. It rides on the poster so it fades with it,
+    ' and the marks along the top edge drop below it.
+    m.seerrStatusMark = drawSeerrStatus(m.seerrStatusMark, m.itemPoster, seerrCardStatus(itemData), width)
+    seerrInset = seerrStatusInset(m.seerrStatusMark)
 
     ' Reposition played indicator to top-right corner of poster
     if isValid(m.playedIndicator)
-        m.playedIndicator.translation = [itemData.imageWidth - 50, 10]
-        m.playedIndicator.favoriteOffset = [10 - (itemData.imageWidth - 50), 0]
+        m.playedIndicator.translation = [width - 50, 10 + seerrInset]
+        m.playedIndicator.favoriteOffset = [10 - (width - 50), 0]
     end if
 
-    m.itemText.maxWidth = itemData.imageWidth
-    m.itemText.height = 34
-    m.itemText.font.size = 25
+    m.itemText.maxWidth = width
     m.itemText.horizAlign = "left"
-    m.itemText.vertAlign = "bottom"
+    if m.modernEnabled
+        m.itemText.translation = [2, height + MODERN_TEXT_GAP]
+        m.itemText.height = 34
+        m.itemText.font.size = 25
+        m.itemText.vertAlign = "bottom"
+    else
+        ' Classic cards carry two lines under the art, the name and then the year or the episode
+        m.itemText.font = m.classicNameFont.font
+        m.itemText.translation = [0, height + CLASSIC_TEXT_GAP]
+        m.itemText.height = 30
+        m.itemText.vertAlign = "center"
+        m.itemSubtext.font = m.classicLineFont.font
+        m.itemSubtext.translation = [0, height + CLASSIC_SUBTEXT_GAP]
+    end if
+    m.itemSubtext.maxWidth = width
+    m.itemSubtext.text = ""
+    m.itemSubtext.visible = not m.modernEnabled
 
-    m.backdrop.width = itemData.imageWidth
+    m.backdrop.width = width
 
     ' A cell keeps whatever the last item left here, so the bar starts hidden and only an
     ' item with progress turns it back on
     if isValid(m.itemProgressBackground) then m.itemProgressBackground.visible = false
 
     setPosterText(itemData)
+    showWatchingNow(chainLookupReturn(json, "WatchingNow", invalid), width)
 
     m.animeAboveProgress = (itemData.LookupCI("PlayedPercentage") ?? 0) > 0
     watchAnimeMarker(itemData, json, true)
+    watchIncompleteRecording(chainLookupReturn(json, "Id", ""))
 
     if isAllValid([m.itemIcon, itemData.iconUrl])
         m.itemIcon.uri = itemData.iconUrl
+    end if
+
+    ' The See All card has no art or label, so a recycled cell drops the last card's poster and name
+    if m.seeAllCard
+        m.itemPoster.uri = ""
+        m.itemText.text = ""
+        m.backdrop.visible = true
+        m.itemIcon.visible = true
+        showPosterText(true)
+        return
     end if
 
     itemDataType = isValid(itemData.type) ? LCase(itemData.type) : ""
@@ -293,15 +354,155 @@ sub itemContentChanged()
 
 end sub
 
+' Core's Watching on MDBList card. Its parts are laid out at twice Core's points and scaled down to
+' Core's size on a TV. The rank and the kind of title sit along the top, the logo or the name low in
+' the middle and the watchers under it, over a scrim and with no name below the card. It's built the
+' first time a card needs it.
+sub showWatchingNow(info as dynamic, cardWidth as integer)
+    on = isValid(info)
+    m.itemText.visible = not on
+    if on then m.itemSubtext.visible = false
+    if not isValid(m.watchingNow)
+        if not on then return
+        buildWatchingNow()
+    end if
+    m.watchingNow.visible = on
+    if not on then return
+
+    partsScale = homeCards.PIXELS_PER_POINT / 2
+    m.watchingNow.scale = [partsScale, partsScale]
+    width = cardWidth / partsScale
+    height = m.itemPoster.height / partsScale
+    m.wnScrim.width = width
+    m.wnScrim.height = height
+
+    m.wnRank.text = info.rank.ToStr()
+
+    m.wnTypeText.text = UCase(info.mediaType)
+    badgeWidth = m.wnTypeText.boundingRect().width + 24
+    for each part in [m.wnTypeFill, m.wnTypeRing]
+        part.width = badgeWidth
+    end for
+    m.wnType.translation = [width - 24 - badgeWidth, 20]
+
+    m.wnWatchers.text = tr("{count} watching").Replace("{count}", info.watchers.ToStr())
+    m.wnWatchersRow.translation = [24, height - 16 - 26]
+
+    ' The logo keeps to the bottom of its box, which needs the logo's size, so it's placed once it loads
+    m.wnLogoBox = [28, height - 52 - 88, width - 56, 88]
+    m.wnTitle.translation = [m.wnLogoBox[0], m.wnLogoBox[1]]
+    m.wnTitle.width = m.wnLogoBox[2]
+    m.wnTitle.height = m.wnLogoBox[3]
+    m.wnTitle.text = m.top.itemContent.name
+    m.wnLogo.visible = false
+    m.wnTitle.visible = info.logo = ""
+    m.wnLogo.loadWidth = m.wnLogoBox[2]
+    m.wnLogo.loadHeight = m.wnLogoBox[3]
+    m.wnLogo.uri = info.logo
+    ' A cell handed the logo it already shows never hears from loadStatus again
+    if info.logo <> "" then onWatchingNowLogoStatus()
+end sub
+
+sub buildWatchingNow()
+    m.watchingNow = m.posterMask.createChild("Group")
+
+    m.wnScrim = m.watchingNow.createChild("Poster")
+    m.wnScrim.uri = "pkg:/images/home/watchingNowScrim.webp"
+
+    m.wnRank = m.watchingNow.createChild("Label")
+    m.wnRank.translation = [24, 16]
+    m.wnRank.color = "#FFFFFF"
+    m.wnRank.font = watchingNowFont(36)
+
+    m.wnType = m.watchingNow.createChild("Group")
+    m.wnTypeFill = m.wnType.createChild("Poster")
+    m.wnTypeFill.uri = "pkg:/images/details/badgefill6.9.png"
+    m.wnTypeFill.blendColor = "#000000A6"
+    m.wnTypeFill.height = 30
+    m.wnTypeRing = m.wnType.createChild("Poster")
+    m.wnTypeRing.uri = "pkg:/images/details/outline6.9.png"
+    m.wnTypeRing.blendColor = "#FFFFFF3D"
+    m.wnTypeRing.height = 30
+    m.wnTypeText = m.wnType.createChild("Label")
+    m.wnTypeText.translation = [12, 0]
+    m.wnTypeText.height = 30
+    m.wnTypeText.vertAlign = "center"
+    m.wnTypeText.color = "#FFFFFF"
+    m.wnTypeText.font = watchingNowFont(20)
+
+    m.wnLogo = m.watchingNow.createChild("Poster")
+    m.wnLogo.loadDisplayMode = "scaleToFit"
+    m.wnLogo.observeField("loadStatus", "onWatchingNowLogoStatus")
+
+    m.wnTitle = m.watchingNow.createChild("Label")
+    m.wnTitle.wrap = true
+    m.wnTitle.maxLines = 2
+    m.wnTitle.horizAlign = "center"
+    m.wnTitle.vertAlign = "bottom"
+    m.wnTitle.color = "#FFFFFF"
+    m.wnTitle.font = watchingNowFont(28)
+
+    m.wnWatchersRow = m.watchingNow.createChild("Group")
+    glow = m.wnWatchersRow.createChild("Poster")
+    glow.uri = "pkg:/images/icons/circle.webp"
+    glow.width = 22
+    glow.height = 22
+    glow.translation = [0, 2]
+    glow.blendColor = "#22C55E"
+    glow.opacity = 0.35
+    dot = m.wnWatchersRow.createChild("Poster")
+    dot.uri = "pkg:/images/icons/circle.webp"
+    dot.width = 14
+    dot.height = 14
+    dot.translation = [4, 6]
+    dot.blendColor = "#22C55E"
+    m.wnWatchers = m.wnWatchersRow.createChild("Label")
+    m.wnWatchers.translation = [34, 0]
+    m.wnWatchers.height = 26
+    m.wnWatchers.vertAlign = "center"
+    m.wnWatchers.color = "#FFFFFF"
+    m.wnWatchers.font = watchingNowFont(22)
+end sub
+
+function watchingNowFont(size as integer) as object
+    font = CreateObject("roSGNode", "Font")
+    font.uri = "font:BoldSystemFontFile"
+    font.size = size
+    return font
+end function
+
+sub onWatchingNowLogoStatus()
+    status = m.wnLogo.loadStatus
+    if status = PosterLoadStatus.FAILED
+        m.wnLogo.visible = false
+        m.wnTitle.visible = true
+        return
+    end if
+    if status <> PosterLoadStatus.READY or m.wnLogo.bitmapWidth = 0 or m.wnLogo.bitmapHeight = 0 then return
+
+    area = m.wnLogoBox
+    scale = area[2] / m.wnLogo.bitmapWidth
+    if area[3] / m.wnLogo.bitmapHeight < scale then scale = area[3] / m.wnLogo.bitmapHeight
+    drawnWidth = m.wnLogo.bitmapWidth * scale
+    drawnHeight = m.wnLogo.bitmapHeight * scale
+    m.wnLogo.width = drawnWidth
+    m.wnLogo.height = drawnHeight
+    m.wnLogo.translation = [area[0] + (area[2] - drawnWidth) / 2, area[1] + area[3] - drawnHeight]
+    m.wnLogo.visible = true
+    m.wnTitle.visible = false
+end sub
+
 ' A studio or network tile carries a wide logo rather than a poster, so it sits whole and
 ' smaller inside the card on a dark ground instead of being cropped to fill it
 sub displayBrowseTileInfo(itemData as object)
     m.itemText.text = itemData.name
+    ' The name already sits under the card, so the placeholder would only cover the logo
+    showPosterText(false)
 
     ' Sizing and fit go on before the uri, since the load takes the mode it is given at the
     ' time and setting it after leaves the logo cropped to fill the card
     m.itemPoster.loadDisplayMode = "scaleToFit"
-    m.itemPoster.width = itemData.imageWidth - (BROWSE_TILE_INSET * 2)
+    m.itemPoster.width = m.cardWidth - (BROWSE_TILE_INSET * 2)
     m.itemPoster.height = m.backdrop.height - (BROWSE_TILE_INSET * 2)
     m.itemPoster.translation = [BROWSE_TILE_INSET, BROWSE_TILE_INSET]
     m.itemPoster.uri = itemData.posterURL
@@ -332,36 +533,48 @@ sub displayCollectionInfo(itemData as object)
         m.itemIcon.uri = itemData.iconUrl
     end if
 
+    ' A library's own art is wide with its name drawn in, which a poster card would crop, so the card
+    ' shows the name instead, as Core does for that and for a library with no art
+    json = itemData.json
+    if m.cardImageType = "poster" and (not isValidAndNotEmpty(chainLookupReturn(json, "ImageTags.Primary", "")) or chainLookupReturn(json, "PrimaryImageAspectRatio", 0) >= 1)
+        setCardArt("")
+        m.posterMask.visible = false
+        m.backdrop.visible = true
+        m.itemIcon.visible = true
+        showPosterText(true)
+        return
+    end if
+
     if isValidAndNotEmpty(itemData.widePosterURL)
-        m.itemPoster.uri = itemData.widePosterURL
+        setCardArt(itemData.widePosterURL)
     else
-        m.itemPoster.uri = itemData.posterURL
+        setCardArt(itemData.posterURL)
     end if
 end sub
 
 sub displayPhotoAlbumInfo(itemData as object)
     m.itemText.text = itemData.name
-    m.itemPoster.uri = ImageURL(itemData.LookupCI("id"))
+    setCardArt(ImageURL(itemData.LookupCI("id")))
 end sub
 
 sub displayPhotoInfo(itemData as object)
     m.itemText.text = itemData.name
-    m.itemPoster.uri = ImageURL(itemData.LookupCI("id"))
+    setCardArt(ImageURL(itemData.LookupCI("id")))
 end sub
 
 sub displaySeasonInfo(itemData as object)
     m.itemText.text = itemData.json.SeriesName
-    m.itemPoster.uri = ImageURL(itemData.LookupCI("id"))
+    setCardArt(ImageURL(itemData.LookupCI("id")))
 end sub
 
 sub displayTVChannelInfo(itemData as object)
     m.itemText.text = itemData.name
-    m.itemPoster.uri = ImageURL(itemData.LookupCI("id"))
+    setCardArt(ImageURL(itemData.LookupCI("id")))
 end sub
 
 sub displayAudioInfo(itemData as object)
     m.itemText.text = itemData.name
-    m.itemPoster.uri = ImageURL(itemData.LookupCI("id"))
+    setCardArt(ImageURL(itemData.LookupCI("id")))
 end sub
 
 sub displayAudioBookInfo(itemData as object)
@@ -370,40 +583,55 @@ sub displayAudioBookInfo(itemData as object)
     end if
 
     m.itemText.text = itemData.name
-    m.itemPoster.uri = ImageURL(itemData.LookupCI("id"))
+    setCardArt(ImageURL(itemData.LookupCI("id")))
 end sub
 
 sub displayMusicAlbumInfo(itemData as object)
     m.itemText.text = itemData.name
-    m.itemPoster.uri = itemData.posterURL
+    setCardArt(itemData.posterURL)
 end sub
 
 sub displaySeriesInfo(itemData as object)
     m.itemText.text = itemData.name
-
-    ' A poster row leads with the primary image, and a thumbnail row with the wide art
-    if itemData.usePoster = true
-        if isValidAndNotEmpty(itemData.posterURL)
-            m.itemPoster.uri = itemData.posterURL
-        else if isValidAndNotEmpty(itemData.thumbnailURL)
-            m.itemPoster.uri = itemData.thumbnailURL
-        else if isValidAndNotEmpty(itemData.widePosterURL)
-            m.itemPoster.uri = itemData.widePosterURL
-        end if
-    else
-        if isValidAndNotEmpty(itemData.thumbnailURL)
-            m.itemPoster.uri = itemData.thumbnailURL
-        else if isValidAndNotEmpty(itemData.widePosterURL)
-            m.itemPoster.uri = itemData.widePosterURL
-        else if isValidAndNotEmpty(itemData.posterURL)
-            m.itemPoster.uri = itemData.posterURL
-        end if
-    end if
+    m.itemSubtext.text = productionYear(itemData)
+    showCardArt(itemData)
 end sub
 
 sub displayBoxsetInfo(itemData as object)
     m.itemText.text = itemData.name
-    m.itemPoster.uri = itemData.posterURL
+    showCardArt(itemData)
+end sub
+
+' A poster row leads with the primary image, a thumbnail row with the wide art and a banner row with
+' the banner, or a title from outside the library with its plain backdrop, each falling back to the
+' others. An episode's wide art is its own image, or its series' art unless Prefer Thumbnails is on.
+sub showCardArt(itemData as object)
+    wide = [itemData.LookupCI("thumbnailURL"), itemData.LookupCI("widePosterURL")]
+    if isStringEqual(itemData.type, ItemType.EPISODE) and not prefersThumbnails() then wide.Reverse()
+    poster = itemData.LookupCI("posterURL")
+    imageType = m.cardImageType
+    art = [poster]
+    art.Append(wide)
+    if isStringEqual(imageType, "thumb") or isStringEqual(imageType, "banner")
+        art = wide
+        art.push(poster)
+        if isStringEqual(imageType, "banner")
+            art.Unshift(outsideCardBackdrop())
+            art.Unshift(itemData.LookupCI("bannerURL"))
+        end if
+    end if
+
+    for each uri in art
+        if isValidAndNotEmpty(uri)
+            setCardArt(uri)
+            return
+        end if
+    end for
+end sub
+
+sub setCardArt(uri as dynamic)
+    m.artSource = uri
+    m.itemPoster.uri = homeCards.SizedImageUrl(uri, Int(m.itemPoster.width), Int(m.itemPoster.height))
 end sub
 
 sub displayVideoInfo(itemData as object)
@@ -415,43 +643,65 @@ sub displayVideoInfo(itemData as object)
 
     ' For videos, prioritize thumbnail first, then fall back to primary
     if isValidAndNotEmpty(itemData.thumbnailURL)
-        m.itemPoster.uri = itemData.thumbnailURL
+        setCardArt(itemData.thumbnailURL)
     else if isValidAndNotEmpty(itemData.posterURL)
-        m.itemPoster.uri = itemData.posterURL
+        setCardArt(itemData.posterURL)
     end if
 end sub
 
 sub displayMovieInfo(itemData as object)
     m.itemText.text = itemData.name
+    m.itemSubtext.text = productionYear(itemData)
 
     if itemData.PlayedPercentage > 0
         drawProgressBar(itemData)
     end if
 
-    ' If usePoster is set (e.g. Recently Added), show primary poster first
-    ' Otherwise (e.g. Continue Watching), show thumbnail/backdrop first
-    if itemData.usePoster = true
-        if isValidAndNotEmpty(itemData.posterURL)
-            m.itemPoster.uri = itemData.posterURL
-        else if isValidAndNotEmpty(itemData.thumbnailURL)
-            m.itemPoster.uri = itemData.thumbnailURL
-        end if
-    else
-        if isValidAndNotEmpty(itemData.thumbnailURL)
-            m.itemPoster.uri = itemData.thumbnailURL
-        else if isValidAndNotEmpty(itemData.posterURL)
-            m.itemPoster.uri = itemData.posterURL
-        end if
-    end if
+    showCardArt(itemData)
 end sub
 
 sub displayProgramInfo(itemData as object)
     m.itemText.Text = itemData.json.name
-    m.itemPoster.uri = itemData.usePoster ? itemData.thumbnailURL : ImageURL(itemData.json.ChannelId)
+    if itemData.usePoster then setCardArt(itemData.thumbnailURL) else setCardArt(ImageURL(itemData.json.ChannelId))
     m.itemPoster.loadDisplayMode = "scaleToFill"
 end sub
 
 sub displayEpisodeInfo(_localGlobal as object, itemData as object)
+    if m.modernEnabled
+        showModernEpisodeText(itemData)
+    else
+        showClassicEpisodeText(itemData)
+    end if
+
+    if isValid(itemData.LookupCI("PlayedPercentage"))
+        if itemData.LookupCI("PlayedPercentage") > 0
+            drawProgressBar(itemData)
+        end if
+    end if
+
+    showCardArt(itemData)
+end sub
+
+' The series, then "S2:E5 - Episode Name". A recording with no series leads with its own name.
+sub showClassicEpisodeText(itemData as object)
+    json = itemData.json
+    name = itemData.LookupCI("name") ?? ""
+    episode = name
+    if isValid(json) and isValid(json.ParentIndexNumber) and isValid(json.IndexNumber)
+        episode = `S${json.ParentIndexNumber}:E${json.IndexNumber} - ${name}`
+    end if
+
+    seriesName = chainLookupReturn(json, "SeriesName", "")
+    if seriesName = ""
+        m.itemText.text = name
+        if episode <> name then m.itemSubtext.text = episode
+        return
+    end if
+    m.itemText.text = seriesName
+    m.itemSubtext.text = episode
+end sub
+
+sub showModernEpisodeText(itemData as object)
     ' Format: "Show Name - S1E2 Episode Title"
     titleText = ""
 
@@ -459,7 +709,6 @@ sub displayEpisodeInfo(_localGlobal as object, itemData as object)
         titleText = itemData.json.SeriesName
     end if
 
-    ' Add Season and Episode Number
     episodeInfo = ""
     if isChainValid(itemData, "json.ParentIndexNumber")
         episodeInfo = "S" + StrI(itemData.json.ParentIndexNumber).trim()
@@ -473,46 +722,23 @@ sub displayEpisodeInfo(_localGlobal as object, itemData as object)
         titleText = titleText + " - " + episodeInfo
     end if
 
-    ' Add Episode Name
     if isValidAndNotEmpty(itemData.LookupCI("name"))
         titleText = titleText + " " + itemData.LookupCI("name")
     end if
 
     m.itemText.text = titleText
-
-    if isValid(itemData.LookupCI("PlayedPercentage"))
-        if itemData.LookupCI("PlayedPercentage") > 0
-            drawProgressBar(itemData)
-        end if
-    end if
-
-    ' If usePoster is set (e.g. Next Up), show series poster first
-    ' Otherwise (e.g. Continue Watching), show episode screenshot first
-    if itemData.usePoster = true
-        if isValidAndNotEmpty(itemData.LookupCI("posterURL"))
-            m.itemPoster.uri = itemData.LookupCI("posterURL")
-        else if isValidAndNotEmpty(itemData.LookupCI("widePosterURL"))
-            m.itemPoster.uri = itemData.LookupCI("widePosterURL")
-        else if isValidAndNotEmpty(itemData.LookupCI("thumbnailURL"))
-            m.itemPoster.uri = itemData.LookupCI("thumbnailURL")
-        end if
-    else
-        if isValidAndNotEmpty(itemData.LookupCI("thumbnailURL"))
-            m.itemPoster.uri = itemData.LookupCI("thumbnailURL")
-        else if isValidAndNotEmpty(itemData.LookupCI("widePosterURL"))
-            m.itemPoster.uri = itemData.LookupCI("widePosterURL")
-        else if isValidAndNotEmpty(itemData.LookupCI("posterURL"))
-            m.itemPoster.uri = itemData.LookupCI("posterURL")
-        end if
-    end if
 end sub
+
+function productionYear(itemData as object) as string
+    year = chainLookupReturn(itemData.json, "ProductionYear", 0)
+    if year > 0 then return year.toStr()
+    return ""
+end function
 
 '
 ' Draws and animates item progress bar
 sub drawProgressBar(itemData)
-    if not isValid(itemData.LookupCI("imageWidth")) then return
-
-    m.itemProgressBackground.width = itemData.LookupCI("imageWidth") - (PROGRESS_INSET * 2)
+    m.itemProgressBackground.width = m.cardWidth - (PROGRESS_INSET * 2)
     m.itemProgressBackground.visible = true
 
     ' Drawn at its length rather than grown into it, since a row rebinds its cells as it
@@ -526,6 +752,10 @@ sub showAnimeMarker(marker as dynamic)
     m.animeCardPill = drawAnimeCardPill(m.animeCardPill, m.itemPoster, marker, m.itemPoster.width, m.itemPoster.height, m.animeAboveProgress)
 end sub
 
+sub showIncompleteRecording(entry as dynamic)
+    m.incompleteBadge = drawIncompleteBadge(m.incompleteBadge, m.itemPoster, entry, incompleteBadgeSpot(m.playedIndicator))
+end sub
+
 '
 ' Enable title scrolling based on item Focus
 sub focusChanged()
@@ -537,6 +767,7 @@ sub focusChanged()
     timeSinceInit = currentTime - m.initTime
     if timeSinceInit < m.initCooldownPeriod
         m.itemText.repeatCount = m.top.itemHasFocus ? - 1 : 0
+        m.itemSubtext.repeatCount = m.itemText.repeatCount
         return
     end if
 
@@ -562,6 +793,7 @@ sub focusChanged()
 
     ' Always update text scrolling
     m.itemText.repeatCount = m.top.itemHasFocus ? - 1 : 0
+    m.itemSubtext.repeatCount = m.itemText.repeatCount
 
     ' Set scale animation center point
     if isValid(m.scaleGroup)
@@ -579,6 +811,20 @@ end sub
 
 ' The scene sets modernShift on the focused row's item content nodes so the
 ' cells after the focused one slide right, opening room for the landscape card.
+' A row can hand its cards their content before HomeRows lays it out, so a card would keep the
+' default poster size and art of a row that then turns out to be a thumbnail or banner row. The card
+' draws itself again whenever its row is laid out.
+sub followRowLayout(parentRow as dynamic)
+    if isValid(m.layoutRow)
+        if isValid(parentRow) and m.layoutRow.isSameNode(parentRow) then return
+        m.layoutRow.unobserveFieldScoped("laidOutFor")
+        m.layoutRow = invalid
+    end if
+    if not isValid(parentRow) or not parentRow.hasField("laidOutFor") then return
+    m.layoutRow = parentRow
+    parentRow.observeFieldScoped("laidOutFor", "itemContentChanged")
+end sub
+
 sub setupModernShiftObserver(itemData as object)
     if isValid(m.modernObservedNode)
         m.modernObservedNode.unobserveFieldScoped("modernShift")
@@ -630,9 +876,9 @@ sub onPosterLoadStatusChanged()
             artistPrimaryImageURL = ImageURL(m.top.itemContent.json.parentbackdropitemid, "Primary", params)
 
             ' Check if we've already tried to fall back to the artist image
-            if isStringEqual(m.itemPoster.uri, artistPrimaryImageURL) then return
+            if isStringEqual(m.artSource, artistPrimaryImageURL) then return
 
-            m.itemPoster.uri = artistPrimaryImageURL
+            setCardArt(artistPrimaryImageURL)
             return
         end if
 
@@ -646,32 +892,32 @@ sub onPosterLoadStatusChanged()
             seriesPrimaryImageURL = ImageURL(m.top.itemContent.json.parentbackdropitemid, "Primary", params)
 
             ' Check if we've already tried to fall back to the series image
-            if isStringEqual(m.itemPoster.uri, seriesPrimaryImageURL) then return
+            if isStringEqual(m.artSource, seriesPrimaryImageURL) then return
 
-            m.itemPoster.uri = seriesPrimaryImageURL
+            setCardArt(seriesPrimaryImageURL)
             return
         end if
 
-        failedUri = m.itemPoster.uri
+        failedUri = m.artSource
         posterUri = m.top.itemContent.posterURL
 
         ' The wide art failed, so a card from outside the library tries its plain backdrop
         ' next, and anything else goes to its poster
-        if isStringEqual(failedUri, m.top.itemContent.widePosterURL) or isStringEqual(failedUri, m.top.itemContent.thumbnailURL)
+        if isStringEqual(failedUri, m.top.itemContent.widePosterURL) or isStringEqual(failedUri, m.top.itemContent.thumbnailURL) or isStringEqual(failedUri, m.top.itemContent.LookupCI("bannerURL"))
             backdropUri = outsideCardBackdrop()
             if backdropUri <> "" and not isStringEqual(failedUri, backdropUri)
-                m.itemPoster.uri = backdropUri
+                setCardArt(backdropUri)
                 return
             end if
             if not isStringEqual(failedUri, posterUri)
-                m.itemPoster.uri = posterUri
+                setCardArt(posterUri)
                 return
             end if
         end if
 
         ' That backdrop failed as well, which leaves the poster
         if isStringEqual(failedUri, outsideCardBackdrop()) and not isStringEqual(failedUri, posterUri)
-            m.itemPoster.uri = posterUri
+            setCardArt(posterUri)
             return
         end if
 
@@ -685,21 +931,15 @@ sub onPosterLoadStatusChanged()
         m.itemIcon.visible = false
         showPosterText(false)
 
+        ' Each mask is stretched to the card, so the one nearest its shape keeps the corners round
         posterW = m.itemPoster.width
-
-        if posterW = 180
-            m.posterMask.maskUri = "pkg:/images/posterVertMask.png"
-            m.posterMask.maskSize = [180, 270]
-        else if posterW = 464
-            m.posterMask.maskUri = "pkg:/images/posterWideMask.png"
-            m.posterMask.maskSize = [464, 270]
-        else if posterW = 261
-            m.posterMask.maskUri = "pkg:/images/posterSquareMask.png"
-            m.posterMask.maskSize = [261, 270]
-        else
-            m.posterMask.maskUri = ""
-            m.posterMask.maskSize = [0, 0]
-        end if
+        posterH = m.itemPoster.height
+        mask = "pkg:/images/posterWideMask.webp"
+        if posterW < posterH then mask = "pkg:/images/posterVertMask.webp"
+        if posterW = posterH then mask = "pkg:/images/posterSquareMask.webp"
+        if posterW > posterH * 3 then mask = "pkg:/images/posterBannerMask.webp"
+        m.posterMask.maskUri = mask
+        m.posterMask.maskSize = [posterW, posterH]
     else
         ' Still loading, or out of fallbacks, so the name stands in for the artwork
         m.backdrop.visible = true

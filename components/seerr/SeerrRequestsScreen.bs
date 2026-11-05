@@ -9,12 +9,19 @@ const PAGE_SIZE = 20
 const HYDRATION_BATCH = 6
 ' How close to the end of the list a load of the next page starts
 const LOAD_MORE_MARGIN = 5
+' The tile's caption width and font, and its height before a split puts the requester's name on a
+' line of its own. The split is decided here for the whole grid so every caption matches.
+const REQUESTER_WIDTH = 160
+const REQUESTER_FONT = 22
+const TILE_HEIGHT = 386
+const REQUESTER_LINE = 26
 
 sub init()
     m.titleLabel = m.top.findNode("titleLabel")
     m.tabBar = m.top.findNode("tabBar")
     m.filterBar = m.top.findNode("filterBar")
     m.requestGrid = m.top.findNode("requestGrid")
+    m.gridFocus = m.top.findNode("gridFocus")
     m.issueList = m.top.findNode("issueList")
     m.stateLabel = m.top.findNode("stateLabel")
     m.retryButton = m.top.findNode("retryButton")
@@ -26,8 +33,6 @@ sub init()
     m.tabBar.observeField("escape", "onTabEscape")
     m.filterBar.observeField("selectedIndex", "onFilterSelected")
     m.filterBar.observeField("escape", "onFilterEscape")
-    m.requestGrid.observeField("itemSelected", "onRequestSelected")
-    m.requestGrid.observeField("itemFocused", "onListItemFocused")
     m.issueList.observeField("itemSelected", "onIssueSelected")
     m.issueList.observeField("itemFocused", "onListItemFocused")
     m.retryButton.observeField("buttonSelected", "onRetryPressed")
@@ -36,6 +41,8 @@ sub init()
     m.requestFilter = "all"
     m.issueFilter = "open"
     m.items = []
+    m.gridIndex = 0
+    m.gridStop = 0
     m.counts = { pending: 0, open: 0 }
     m.loading = false
     m.loadingMore = false
@@ -179,8 +186,15 @@ sub focusList()
     list = activeList()
     if list.content = invalid or list.content.getChildCount() = 0 then return
 
-    list.setFocus(true)
-    m.top.lastFocus = list
+    if m.tab = "issues"
+        list.setFocus(true)
+        m.top.lastFocus = list
+        return
+    end if
+    m.gridFocus.setFocus(true)
+    m.top.lastFocus = m.gridFocus
+    m.gridStop = 0
+    lightTile(true)
 end sub
 
 function activeList() as object
@@ -192,6 +206,8 @@ end function
 sub reload()
     m.loadGeneration++
     m.items = []
+    m.gridIndex = 0
+    m.gridStop = 0
     m.hasMore = true
     m.loadingMore = false
     activeList().content = invalid
@@ -337,10 +353,12 @@ end sub
 
 sub renderItems()
     if m.items.count() = 0
+        if m.gridFocus.hasFocus() then m.filterBar.setFocus(true)
         showState(m.tab = "issues" ? tr("No issues found") : tr("No requests found"), false)
         return
     end if
 
+    split = m.tab <> "issues" and requesterSplits()
     content = CreateObject("roSGNode", "ContentNode")
     for each entry in m.items
         if m.tab = "issues"
@@ -348,6 +366,8 @@ sub renderItems()
             row.issue = entry
         else
             row = content.CreateChild("SeerrRequestData")
+            row.actions = requestActions(entry)
+            row.splitRequester = split
             row.request = entry
         end if
     end for
@@ -356,11 +376,43 @@ sub renderItems()
     hideState()
     m.requestGrid.visible = m.tab <> "issues"
     m.issueList.visible = m.tab = "issues"
+    m.requestGrid.itemSize = [176, TILE_HEIGHT + (split ? REQUESTER_LINE : 0)]
+    ' Two taller rows run past the foot of the screen, so the focused row is held at the top
+    m.requestGrid.vertFocusAnimationStyle = split ? "fixedFocus" : "floatingFocus"
     list.content = content
+
+    if m.tab = "issues" then return
+    if m.gridIndex >= m.items.count() then m.gridIndex = m.items.count() - 1
+    m.requestGrid.jumpToItem = m.gridIndex
+    if m.gridFocus.hasFocus() then lightTile(true)
 end sub
 
+function requesterSplits() as boolean
+    measure = CreateObject("roSGNode", "Label")
+    measure.font = "font:SmallestSystemFont"
+    measure.font.size = REQUESTER_FONT
+    for each entry in m.items
+        measure.text = Substitute(tr("Requested by ^0"), SeerrRequesterName(entry))
+        if measure.boundingRect().width > REQUESTER_WIDTH then return true
+    end for
+    return false
+end function
+
+' A moderator answers a pending request or sends a failed one again, and anyone else can take
+' back their own pending one
+function requestActions(entry as object) as object
+    status = chainLookupReturn(entry, "status", 0)
+    if status = SEERR_REQUEST_PENDING and m.canManageRequests then return ["approve", "decline"]
+    if status = SEERR_REQUEST_PENDING and m.seerrUserId > 0 and chainLookupReturn(entry, "requestedBy.id", -1) = m.seerrUserId then return ["cancel"]
+    if status = SEERR_REQUEST_FAILED and m.canManageRequests then return ["retry"]
+    return []
+end function
+
 sub onListItemFocused(event as object)
-    index = event.getData()
+    loadMoreNear(event.getData())
+end sub
+
+sub loadMoreNear(index as integer)
     if index < 0 then return
     if not m.hasMore or m.loading or m.loadingMore then return
     if index < m.items.count() - LOAD_MORE_MARGIN then return
@@ -393,79 +445,78 @@ end sub
 
 ' ===== Acting on a row =====
 
-sub onRequestSelected(event as object)
-    index = event.getData()
-    if index < 0 or index >= m.items.count() then return
+' ===== The request grid =====
 
-    m.activeItem = m.items[index]
-    m.activeIndex = index
-
-    ' Nothing can be done to a title that has arrived, and a viewer who can't moderate has
-    ' nothing to do with any of them, so both go straight to the title itself
-    if not m.canManageRequests or SeerrRequestStatusInfo(m.activeItem).color = "available"
-        openActiveMedia()
-        return
-    end if
-
-    options = []
-    m.actions = []
-
-    status = chainLookupReturn(m.activeItem, "status", 0)
-    if status = SEERR_REQUEST_PENDING
-        options.push(tr("Approve"))
-        m.actions.push("approve")
-        options.push(tr("Decline"))
-        m.actions.push("decline")
-    else if status = SEERR_REQUEST_FAILED
-        options.push(tr("Retry"))
-        m.actions.push("retry")
-    end if
-
-    ' With nothing to offer beyond the title, the panel would only be in the way
-    if options.count() = 0
-        openActiveMedia()
-        return
-    end if
-
-    options.push(tr("Open"))
-    m.actions.push("open")
-
-    showOptions(SeerrMediaTitle(m.activeItem.media), options, "onRequestActionChosen")
+' The grid never takes focus, so the screen moves it and the tiles draw it
+sub lightTile(on as boolean)
+    content = m.requestGrid.content
+    if not isValid(content) then return
+    node = content.getChild(m.gridIndex)
+    if not isValid(node) then return
+    node.stop = m.gridStop
+    node.lit = on
 end sub
 
-sub showOptions(title as string, options as object, callback as string)
-    m.optionDialog = CreateObject("roSGNode", "ListPromptDialog")
-    m.optionDialog.dialogTitle = title
-    m.optionDialog.options = options
-    m.optionDialog.returnFocus = activeList()
-    m.optionDialog.observeField("optionSelected", callback)
-
-    m.top.getScene().appendChild(m.optionDialog)
-    m.optionDialog.callFunc("showDialog")
+sub moveTile(index as integer)
+    lightTile(false)
+    m.gridIndex = index
+    m.gridStop = 0
+    lightTile(true)
+    m.requestGrid.animateToItem = index
+    loadMoreNear(index)
 end sub
 
-sub closeOptions()
-    if not isValid(m.optionDialog) then return
-
-    m.optionDialog.unobserveField("optionSelected")
-    m.top.getScene().removeChild(m.optionDialog)
-    m.optionDialog = invalid
+sub setStop(position as integer)
+    m.gridStop = position
+    lightTile(true)
 end sub
 
-sub onRequestActionChosen(event as object)
-    index = event.getData()
-    closeOptions()
+' Left and Right walk the tile and its buttons, then on to the next request in the row. At the
+' start of a row Left stays put.
+function onGridKey(key as string) as boolean
+    count = m.requestGrid.content.getChildCount()
+    columns = m.requestGrid.numColumns
+    index = m.gridIndex
+    actions = m.requestGrid.content.getChild(index).actions ?? []
 
-    if index < 0 or index >= m.actions.count() then return
-
-    action = m.actions[index]
-    if action = "open"
-        openActiveMedia()
-        return
+    if key = KeyCode.RIGHT
+        if m.gridStop < actions.count()
+            setStop(m.gridStop + 1)
+        else if index mod columns < columns - 1 and index + 1 < count
+            moveTile(index + 1)
+        end if
+    else if key = KeyCode.LEFT
+        if m.gridStop > 0
+            setStop(m.gridStop - 1)
+        else if index mod columns > 0
+            moveTile(index - 1)
+        end if
+    else if key = KeyCode.UP
+        if index < columns
+            lightTile(false)
+            m.filterBar.setFocus(true)
+        else
+            moveTile(index - columns)
+        end if
+    else if key = KeyCode.DOWN
+        if index + columns < count
+            moveTile(index + columns)
+        else if Int(index / columns) < Int((count - 1) / columns)
+            moveTile(count - 1)
+        end if
+    else if key = KeyCode.OK
+        m.activeItem = m.items[index]
+        m.activeIndex = index
+        if m.gridStop = 0
+            openActiveMedia()
+        else
+            runRequestAction(actions[m.gridStop - 1])
+        end if
+    else
+        return false
     end if
-
-    runRequestAction(action)
-end sub
+    return true
+end function
 
 sub openActiveMedia()
     media = m.activeItem.media
@@ -478,17 +529,18 @@ sub openActiveMedia()
     })
 end sub
 
+' Answered straight from the button, with no confirm first
 sub runRequestAction(action as string)
     requestId = chainLookupReturn(m.activeItem, "id", invalid)
     if not isValid(requestId) then return
 
     m.pendingAction = action
     endpoint = `/api/v1/request/${requestId.toStr()}`
-
-    endpoint += `/${action}`
+    request = { method: "DELETE", endpoint: endpoint }
+    if action <> "cancel" then request = { method: "POST", endpoint: `${endpoint}/${action}` }
 
     startLoadingSpinner()
-    m.actionTask.request = { method: "POST", endpoint: endpoint }
+    m.actionTask.request = request
     m.actionTask.unobserveField("response")
     m.actionTask.observeField("response", "onRequestActionDone")
     m.actionTask.control = TaskControl.RUN
@@ -496,18 +548,50 @@ end sub
 
 sub onRequestActionDone(event as object)
     response = event.getData()
-    stopLoadingSpinner()
 
-    if not isValid(response) or not response.success then return
-
-    if m.pendingAction = "decline"
-        patchActiveStatus(SEERR_REQUEST_DECLINED)
-    else
-        patchActiveStatus(SEERR_REQUEST_APPROVED)
+    if not isValid(response) or not response.success
+        stopLoadingSpinner()
+        return
     end if
 
-    ' A retry was already off the pending pile, the other two have just left it
-    if m.pendingAction <> "retry" then adjustCount("pending", -1)
+    m.gridStop = 0
+    action = m.pendingAction
+    if action = "retry"
+        ' The request is read again for the state the retry left it in, on a task of its own since
+        ' this one is still finishing
+        m.retryTask = CreateObject("roSGNode", "SeerrAPITask")
+        m.retryTask.request = { method: "GET", endpoint: `/api/v1/request/${m.activeItem.id.toStr()}` }
+        m.retryTask.observeField("response", "onRetriedRequest")
+        m.retryTask.control = TaskControl.RUN
+        return
+    end if
+
+    stopLoadingSpinner()
+    if action = "cancel"
+        dropActiveItem()
+        return
+    end if
+    patchActiveStatus(action = "decline" ? SEERR_REQUEST_DECLINED : SEERR_REQUEST_APPROVED)
+    adjustCount("pending", -1)
+end sub
+
+' The fresh copy keeps the title and art already filled in for this one
+sub onRetriedRequest(event as object)
+    stopLoadingSpinner()
+    response = event.getData()
+    fresh = chainLookupReturn(response, "data", invalid)
+    if not isValid(response) or not response.success or type(fresh) <> "roAssociativeArray"
+        patchActiveStatus(SEERR_REQUEST_APPROVED)
+        return
+    end if
+    if m.activeIndex < 0 or m.activeIndex >= m.items.count() then return
+
+    entry = m.items[m.activeIndex]
+    for each key in fresh
+        if key <> "media" then entry[key] = fresh[key]
+    end for
+    m.items[m.activeIndex] = entry
+    renderItems()
 end sub
 
 sub patchActiveStatus(status as integer)
@@ -517,7 +601,6 @@ sub patchActiveStatus(status as integer)
     entry.status = status
     m.items[m.activeIndex] = entry
     renderItems()
-    activeList().jumpToItem = m.activeIndex
 end sub
 
 sub dropActiveItem()
@@ -629,6 +712,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
         m.global.sceneManager.callFunc("popScene")
         return true
     end if
+
+    if m.gridFocus.hasFocus() then return onGridKey(key)
 
     if key = KeyCode.UP and activeList().hasFocus()
         m.filterBar.setFocus(true)

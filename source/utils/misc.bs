@@ -497,15 +497,15 @@ function isModernHomeRows() as boolean
     return isStringEqual(chainLookupReturn(m.global.session, "user.settings.`ui.home.rowsStyle`", "v2"), "v2")
 end function
 
-' The space between home rows, from the padding setting of the rows style in use. Seerr
-' Discover reads it too, so its modern rows sit where Home's do.
+' The space the padding setting of the rows style in use adds between home rows, on top of the room
+' each row keeps under its cards, so its lowest step adds nothing
 function homeRowsVerticalSpacing(modernRows as boolean) as float
     ' The stored pixel value doesn't map 1:1 to row spacing, so it gets scaled below
     if modernRows
         paddingKey = "ui.home.modernRowsPadding"
         minPadding = 360
         maxPadding = 560
-        defaultPadding = 420
+        defaultPadding = 360
     else
         paddingKey = "ui.home.classicRowsPadding"
         minPadding = 10
@@ -514,24 +514,117 @@ function homeRowsVerticalSpacing(modernRows as boolean) as float
     end if
 
     ' A stored value isn't guaranteed to be a number in range, and the formula turns anything
-    ' below the minimum into zero or negative spacing, so fall back instead
+    ' below the minimum into negative spacing, so fall back instead
     storedPadding = m.global.session.user.settings[paddingKey]
     padding = Val(isValid(storedPadding) ? storedPadding.ToStr() : "")
     if padding < minPadding or padding > maxPadding then padding = defaultPadding
 
-    if modernRows then return (padding - 200) * (padding / 360)
-    return padding * 2
+    if modernRows then return (padding - 200) * (padding / 360) - 160
+    return (padding - 10) * 2
 end function
 
-' Only the My Media row answers to the modern cards setting.
+' Only the My Media row answers to the modern cards setting. Rows of logos and wide art keep their
+' Classic cards whichever style is picked, as they do in Core, and audio rows never widen there.
 function useModernCardsForRow(rowId as dynamic) as boolean
+    if isSeerrFilterRow(rowId) or inArray(["mdblist_watching_now", "studios", "audio", "resumeaudio"], rowId) then return false
     if not isStringEqual(rowId, "smalllibrarytiles") then return true
-    return get_user_setting_bool("ui.home.modernCardsOnMyMediaRow", true)
+    return get_user_setting_bool("ui.home.modernCardsOnMyMediaRow", false)
+end function
+
+' Prefer Thumbnails syncs as the other clients' series thumbnails switch turned around, so on means
+' a thumbnail row shows an episode's own image. Settings are stored flat, so the key is one path
+' segment, and a plugin sync writes it as a string.
+function prefersThumbnails() as boolean
+    preferThumbnails = chainLookupReturn(m.global.session, "user.settings.`ui.home.preferThumbnails`", false)
+    if type(preferThumbnails) = "String" or type(preferThumbnails) = "roString"
+        return LCase(preferThumbnails) = "true"
+    end if
+
+    return preferThumbnails = true
+end function
+
+' Seerr's browse rows, which Core always draws as thumbnails
+function isSeerrFilterRow(rowId as dynamic) as boolean
+    return inArray(["seerr_shortcuts", "seerr_movie_genres", "seerr_series_genres", "seerr_studios", "seerr_networks"], rowId)
+end function
+
+' The color Core draws focus rings and borders in, from the synced focus color name. Core's
+' values rather than the navbar palette, which shades some of the same names differently.
+function coreFocusColor() as string
+    name = LCase(toString(get_user_setting("ui.focusColor") ?? "white").Replace("_", ""))
+    colors = {
+        white: "#FFFFFF", black: "#000000", gray: "#808080", darkblue: "#003366",
+        purple: "#6A0DAD", teal: "#008080", navy: "#000080", charcoal: "#36454F",
+        brown: "#8B4513", darkred: "#8B0000", darkgreen: "#006400", slate: "#708090",
+        indigo: "#4B0082", moonfincyan: "#00A4DC", neonpulsemagenta: "#FF2E92", eightbitgold: "#FFCD75"
+    }
+    return colors[name] ?? "#FFFFFF"
+end function
+
+function fontOfSize(size as integer, bold as boolean) as object
+    font = CreateObject("roSGNode", "Font")
+    font.uri = bold ? "font:BoldSystemFontFile" : "font:SystemFontFile"
+    font.size = size
+    return font
+end function
+
+' The MOVIE or SERIES badge in a Seerr poster's top left corner, or invalid for anything else
+function seerrMediaBadge(mediaType as dynamic) as dynamic
+    if isStringEqual(mediaType, "movie") then return { text: "MOVIE", color: "#3B82F6" }
+    if isStringEqual(mediaType, "tv") then return { text: "SERIES", color: "#8B5CF6" }
+    return invalid
 end function
 
 ' Returns true when Seerr availability badges are enabled (defaults to true).
 function isSeerrAvailabilityBadgesEnabled() as boolean
     return get_user_setting_bool("seerr.showAvailabilityBadges", true)
+end function
+
+' How posters show a Seerr status: "" with the badges off, else "badge" or "banner"
+function seerrBadgeStyle() as string
+    if not isSeerrAvailabilityBadgesEnabled() then return ""
+    if isStringEqual(session.user.settings.Read("seerr.badgeStyle"), "banner") then return "banner"
+    return "badge"
+end function
+
+' The Seerr status a card for a Seerr title carries, or -1 when the card has none to show
+function seerrCardStatus(node as dynamic) as integer
+    if type(node) <> "roSGNode" then return -1
+    if node.hasField("mediaInfoStatus") and not isStringEqual(node.mediaType, "person") then return node.mediaInfoStatus ?? 0
+    return chainLookupReturn(node, "json.SeerrStatus", -1)
+end function
+
+' How far a Seerr banner reaches down a poster, which the marks along the top edge drop below
+const SEERR_BANNER_HEIGHT = 33
+' Seerr's dot in a poster's top right corner at Core's 20 dp, and as far in as it sits
+const SEERR_DOT_SIZE = 33
+const SEERR_DOT_EDGE = 10
+
+' The Seerr status a Seerr title's card draws over its artwork, made the first time there is one to
+' show. Only pending, requested and available titles get one, in either style.
+function drawSeerrStatus(mark as dynamic, parent as object, status as integer, width as float) as dynamic
+    style = ""
+    if status >= 2 and status <= 5 then style = seerrBadgeStyle()
+    shown = style <> ""
+    if not isValid(mark)
+        if not shown then return invalid
+        mark = parent.createChild("SeerrStatusMark")
+    end if
+
+    mark.visible = shown
+    if shown
+        mark.markStyle = style
+        mark.bannerWidth = width
+        mark.status = status
+    end if
+    return mark
+end function
+
+' How far the other marks along a poster's top edge drop to stay clear of its Seerr status
+function seerrStatusInset(mark as dynamic) as integer
+    if not isValid(mark) or not mark.visible then return 0
+    if mark.markStyle = "banner" then return SEERR_BANNER_HEIGHT
+    return SEERR_DOT_EDGE + SEERR_DOT_SIZE
 end function
 
 ' chainLookup: Returns value from property chain using case insensitive lookups
@@ -744,6 +837,17 @@ function getHomeBackdropBlurAmount() as integer
     return 10 ' Default blur amount
 end function
 
+' How Home draws the focused item's backdrop: "off", "fullScreen", "corner" or "top". The switch
+' alone says whether there is one, so an app that only knows the switch still turns it on and off,
+' and the style only picks where it goes.
+function getHomeBackdropStyle(userSettings as dynamic) as string
+    if type(userSettings) <> "roAssociativeArray" then return "fullScreen"
+    if LCase(toString(userSettings["ui.home.showBackdrop"]).Trim()) = "false" then return "off"
+    style = LCase(toString(userSettings["ui.home.backdropStyle"]))
+    if style = "corner" or style = "top" then return style
+    return "fullScreen"
+end function
+
 ' Autoplay needs the server switch and the switch here, so either one can turn it off
 function isAutoplayNextEpisodeEnabled() as boolean
     if not chainLookupReturn(m.global.session, "user.Configuration.EnableNextEpisodeAutoPlay", false) then return false
@@ -856,6 +960,8 @@ end function
 
 ' Search string array for search value. Return if it's found
 function inArray(haystack as object, needle as dynamic) as boolean
+    ' Nothing is never in the list, and str() can't take it
+    if not isValid(needle) then return false
     valueToFind = needle
 
     if LCase(type(valueToFind)) <> "rostring" and LCase(type(valueToFind)) <> "string"
@@ -867,6 +973,40 @@ function inArray(haystack as object, needle as dynamic) as boolean
     end for
 
     return false
+end function
+
+' Whether the server sent a date. Jellyfin and Emby write .NET's minimum date, year 1, for a date
+' they don't have, and that's read off the text since local time west of UTC puts it in year 0.
+function isServerDate(value as dynamic) as boolean
+    if not isString(value) or Len(value) < 4 then return false
+    return Left(value, 4).ToInt() > 1
+end function
+
+' The day a title came out, or the first day of its year when that's all it has. Takes json or the
+' card holding it.
+function releaseDay(entry as object) as string
+    json = entry
+    if type(entry) = "roSGNode" then json = entry.json
+    if isServerDate(json.PremiereDate) then return Left(json.PremiereDate, 10)
+    year = json.ProductionYear ?? 0
+    if year > 0 then return `${year}-01-01`
+    return ""
+end function
+
+' An insertion sort, so entries that tie keep the order they came in. comesFirst(a, b, context)
+' says whether a belongs ahead of b.
+function stableSorted(entries as object, comesFirst as function, context = invalid as dynamic) as object
+    sorted = []
+    for each entry in entries
+        sorted.push(entry)
+        at = sorted.count() - 1
+        while at > 0 and comesFirst(entry, sorted[at - 1], context)
+            sorted[at] = sorted[at - 1]
+            at--
+        end while
+        sorted[at] = entry
+    end for
+    return sorted
 end function
 
 function toString(input) as string
@@ -1428,7 +1568,7 @@ end function
 ' Smart-TV syncs a version token (v1/v2/v3/v4). This client stores the enum
 ' name, so every read path funnels through here.
 function normalizeDetailScreenStyleToken(value as dynamic) as string
-    if not isValid(value) then return "modern"
+    if not isValid(value) then return "frost"
 
     token = LCase(value.toStr())
 
@@ -1436,6 +1576,11 @@ function normalizeDetailScreenStyleToken(value as dynamic) as string
     if token = "spotlight" or token = "v3" then return "spotlight"
     if token = "nouveau" or token = "v4" then return "nouveau"
     if token = "minimalist" or token = "v5" then return "minimalist"
+    if token = "stage" or token = "v6" then return "stage"
+    if token = "premiere" or token = "v7" then return "premiere"
+    ' Moonfin Core and Smart-TV both sync this one as quickLook, so it keeps its camel case
+    if token = "quicklook" then return "quickLook"
+    if token = "frost" then return "frost"
     if token = "modern" or token = "v2" then return "modern"
 
     return "modern"
@@ -1470,10 +1615,52 @@ sub showAvatar(picture as object, initials as dynamic, uri as dynamic, name as d
         if isValid(initials) then initials.visible = false
         return
     end if
-    picture.uri = "pkg:/images/icons/circle.png"
+    picture.uri = "pkg:/images/icons/circle.webp"
     picture.blendColor = avatarInitialsColor(id)
     if isValid(initials)
         initials.text = avatarInitial(name)
         initials.visible = true
     end if
 end sub
+' Anything the order leaves out keeps the server's order after the rest. A card goes by the Id in
+' its json.
+function arrangeByStoredOrder(items as object, order as object) as object
+    if type(order) <> "roArray" or order.Count() = 0 then return items
+
+    position = {}
+    for i = 0 to order.Count() - 1
+        position[guidKey(order[i])] = i
+    end for
+
+    slots = {}
+    rest = []
+    for each item in items
+        key = guidKey(chainLookupReturn(item, "json.Id", chainLookupReturn(item, "Id", "")))
+        if key <> "" and position.DoesExist(key)
+            slots[position[key].ToStr()] = item
+        else
+            rest.push(item)
+        end if
+    end for
+
+    arranged = []
+    for i = 0 to order.Count() - 1
+        slotKey = i.ToStr()
+        if slots.DoesExist(slotKey) then arranged.push(slots[slotKey])
+    end for
+    arranged.Append(rest)
+    return arranged
+end function
+
+' What in a collection can be handed straight to the player, in the order it was given. A series in
+' there opens rather than plays, so it stays out instead of stopping a run when it comes round, and
+' a title the library is missing has nothing to play.
+function collectionPlaylist(members as object) as object
+    playable = []
+    for each item in members
+        itemType = chainLookupReturn(item, "json.Type", "")
+        playableType = itemType = "Movie" or itemType = "Video" or itemType = "Episode" or itemType = "MusicVideo"
+        if playableType and chainLookupReturn(item, "json.SeerrMissing", false) <> true then playable.push(item)
+    end for
+    return playable
+end function

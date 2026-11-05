@@ -1,0 +1,896 @@
+import "pkg:/source/utils/seerrFacts.bs"
+
+' Quick Look opens a title in a drawer down the right of the screen it was picked on, which stays
+' showing, dimmed, under it. Back closes the drawer, and Open full page at its foot swaps it for
+' Modern's page.
+'
+' It's Premiere's page in a narrow frame, so the loading, the buttons and the pickers come from
+' there. This file places the parts and walks the remote through them.
+
+' Moonfin Core lays a TV out at 1150 by 647 points, so every size here is its own at the 1.67 that
+' takes it to this screen. The drawer is half the screen wide.
+const QL_WIDTH = 960
+const QL_PAD = 43
+' The picture is fetched at the drawer's width and cropped to the top third of the screen, a little
+' above its middle, and the title runs up over its foot
+const QL_PICTURE_HEIGHT = 346
+const QL_PICTURE_SOURCE_HEIGHT = 540
+const QL_TITLE_OVERLAP = 57
+const QL_TITLE_TOP = 107
+const QL_TITLE_SIZE = 45
+const QL_SUBTITLE_SIZE = 27
+const QL_SUBTITLE_GAP = 7
+const QL_META_GAP = 10
+const QL_RUN_GAP = 7
+const QL_RATINGS_GAP = 17
+const QL_ACTIONS_GAP = 27
+const QL_TEXT_GAP = 20
+const QL_OVERVIEW_LINES = 3
+const QL_PROGRESS_WIDTH = 250
+const QL_PROGRESS_HEIGHT = 7
+const QL_PROGRESS_GAP = 17
+const QL_SECTION_GAP = 23
+const QL_PAGE_TAIL = 27
+const QL_MAX_BUTTONS = 6
+
+' Open full page is pinned under the page, which scrolls in the room over it
+const QL_VIEWPORT = 953
+const QL_OPEN_WIDTH = 874
+const QL_OPEN_HEIGHT = 77
+const QL_CHEVRON = 30
+const QL_CHEVRON_GAP = 10
+const QL_CLOSE_INSET = 23
+const QL_CLOSE_PAD = 20
+
+const QL_SEASON_HEIGHT = 73
+const QL_SEASON_GAP = 13
+const QL_SEASON_PAD = 20
+const QL_SEASON_TEXT_GAP = 8
+const QL_SEASON_BAR = 5
+const QL_SEASON_DOT = 23
+const QL_FACT_PAD = 17
+const QL_FACT_GAP = 5
+
+sub init()
+    m.top.overhangVisible = false
+    ' The screen under the drawer keeps its own theme music
+    m.themeMusicPlayer = invalid
+
+    parts = m.top.findNode("quickLookParts")
+    page = m.sectionsGroup.getParent()
+
+    ' The dim and the drawer go in under the dialogs Nouveau draws last, and the drawer takes the page's
+    ' backing and its scrolling page with it
+    m.dim = m.top.findNode("dim")
+    m.drawer = m.top.findNode("drawer")
+    m.surface = m.top.getChild(0)
+    m.top.removeChild(m.surface)
+    parts.removeChild(m.drawer)
+    parts.removeChild(m.dim)
+    m.top.insertChild(m.drawer, 0)
+    m.top.insertChild(m.dim, 0)
+    m.surface.width = QL_WIDTH
+    m.drawer.insertChild(m.surface, 0)
+    m.scrollableContent.reparent(m.top.findNode("drawerPage"), false)
+
+    ' The picture runs across the top a little above its middle, and fades into the drawer
+    picture = m.backdrop.getParent()
+    picture.clippingRect = [0, 0, QL_WIDTH, QL_PICTURE_HEIGHT]
+    m.backdrop.loadDisplayMode = "scaleToZoom"
+    m.backdrop.width = QL_WIDTH
+    m.backdrop.height = QL_PICTURE_SOURCE_HEIGHT
+    m.backdrop.translation = [0, (QL_PICTURE_HEIGHT - QL_PICTURE_SOURCE_HEIGHT) * 0.3]
+    m.heroVignette.visible = false
+    m.heroFadeDim.visible = false
+    m.heroFade.uri = "pkg:/images/details/quicklook/fade.webp"
+    m.heroFade.translation = [0, QL_PICTURE_HEIGHT * 0.4]
+    m.heroFade.width = QL_WIDTH
+    m.heroFade.height = QL_PICTURE_HEIGHT * 0.6
+
+    m.closeHint = m.top.findNode("closeHint")
+    m.closeHintFill = m.top.findNode("closeHintFill")
+    m.closeHintText = m.top.findNode("closeHintText")
+    m.progressRow = m.top.findNode("progressRow")
+    m.progressFill = m.top.findNode("progressFill")
+    m.progressText = m.top.findNode("progressText")
+    m.seasonCards = m.top.findNode("seasonCards")
+    m.seasonTrack = m.top.findNode("seasonTrack")
+    m.factColumns = m.top.findNode("factColumns")
+    m.streamingRow = m.top.findNode("streamingRow")
+    for each node in [m.closeHint, m.seasonCards, m.factColumns, m.streamingRow]
+        node.reparent(page, false)
+    end for
+    for each node in [m.progressRow, m.ratingsRow]
+        node.reparent(m.hero, false)
+    end for
+
+    m.openFullPage = m.top.findNode("openFullPage")
+    m.openFill = m.top.findNode("openFill")
+    m.openBorder = m.top.findNode("openBorder")
+    m.openLabel = m.top.findNode("openLabel")
+    m.openChevron = m.top.findNode("openChevron")
+
+    sizeLabel(m.titleNode, QL_TITLE_SIZE)
+    sizeLabel(m.stageSubtitle, QL_SUBTITLE_SIZE)
+    for each node in [m.titleNode, m.stageSubtitle, m.heroOverview]
+        node.horizAlign = "left"
+    end for
+    m.stageSubtitle.wrap = false
+    if not themeChrome.IsActive() then m.stageSubtitle.color = "#FFFFFFD9"
+    for each part in [["closeHintText", 20], ["progressText", 20], ["openLabel", 23], ["seasonNameFont", 20], ["seasonCountFont", 20], ["factLabelFont", 17], ["factValueFont", 22]]
+        sizeLabel(m.top.findNode(part[0]), part[1])
+    end for
+    m.closeHintText.text = tr("Back to close")
+    m.openLabel.text = tr("Open full page")
+    m.progressFill.color = themeChrome.Accent()
+    m.trackChips.shareRow = true
+
+    m.sectionParts = []
+    m.seasons = []
+    m.seasonParts = []
+    m.seasonIndex = -1
+    m.seasonWidth = 0
+    m.closing = false
+    ' Seerr's details land after the page is drawn, and the streaming services come with them
+    m.top.observeField("seerrButtonsStale", "rebuildSections")
+
+    m.slide = m.top.findNode("slide")
+    m.slideInterp = m.top.findNode("slideInterp")
+    m.dimInterp = m.top.findNode("dimInterp")
+    m.slide.control = "start"
+end sub
+
+' The drawer is half the screen, with the same room down both sides of everything in it
+sub placeColumns()
+    m.contentWidth = QL_WIDTH - QL_PAD * 2
+    m.hero.translation = [QL_PAD, 0]
+    m.titleNode.width = m.contentWidth
+    m.stageSubtitle.width = m.contentWidth
+    m.ratingsRow.maxWidth = m.contentWidth
+    m.trackChips.maxWidth = m.contentWidth
+    m.metaRowWrapWidth = m.contentWidth
+end sub
+
+' The drawer writes the title out rather than showing its logo
+sub onLogoImageURIChanged()
+end sub
+
+' The nav stays hidden while the drawer is open, wherever the page is scrolled to
+sub showNav(_shown as boolean)
+end sub
+
+' The picture stays sharp, and the switch for it in the settings takes it off the drawer
+sub applyBackdropTreatment()
+    m.backdrop.visible = get_user_setting_bool("ui.itemdetail.showBackdrop", true)
+    for each layer in [m.backdropScrim, m.backdropVignette, m.backdropTopScrim, m.backdropBottomScrim, m.backdropLeftScrim]
+        layer.visible = false
+    end for
+    m.heroFade.blendColor = m.surface.color
+end sub
+
+' The picture is only as wide as the drawer
+function backdropRequestParams(params as object) as object
+    params.maxWidth = QL_WIDTH
+    params.maxHeight = QL_PICTURE_SOURCE_HEIGHT
+    return params
+end function
+
+' Seerr's streaming services are the only part of its block drawn here, and they come off the
+' details the buttons already fetch, so the block itself isn't asked for anything
+sub loadSeerrBlock(itemData as object)
+    EnsureSeerrPublicSettings()
+    EnsureSeerrUserSettings()
+    if IsSeerrSeriesPart(itemData)
+        loadSeriesPartSeerr(itemData)
+    else
+        loadLibrarySeerrDetails(GetSeerrTargetFor(itemData))
+    end if
+end sub
+
+' The rating sources leave their names off in the drawer, whatever the setting says
+function showsRatingNames() as boolean
+    return false
+end function
+
+' ===== Content =====
+
+' Nouveau calls this once the facts are filled in. A show's seasons and the episode it would resume
+' are all the drawer asks the server for.
+sub loadSections()
+    itemData = m.top.itemContent.json
+    showHeader(itemData)
+
+    if isSeries() and not m.top.seerrOnly
+        task = CreateObject("roSGNode", "LoadExtrasTask")
+        task.itemId = m.top.id
+        task.itemType = m.top.itemType
+        task.isTVShow = true
+        task.seasonsOnly = true
+        task.showID = m.top.itemContent.id
+        useItemServer(task, itemData)
+        task.observeField("content", "onQuickLookExtras")
+        task.control = TaskControl.RUN
+    end if
+
+    rebuildSections()
+end sub
+
+sub onQuickLookExtras(event as object)
+    content = event.getData()
+    if not isValid(content) then return
+
+    for i = 0 to content.getChildCount() - 1
+        row = content.getChild(i)
+        if row.title = "seasons" then m.sectionData.seasons = row.getChildren(-1, 0)
+        if row.title = "nextup" and row.getChildCount() > 0 then m.nextUp = row.getChild(0).json
+    end for
+    layoutHero()
+    rebuildSections()
+end sub
+
+' ===== Hero =====
+
+' The picture across the top, then the title, the facts, the scores and the buttons, then how far in
+' the viewer is and the overview
+sub layoutHero()
+    m.layingOut = true
+    placeColumns()
+    layoutMetadataRow()
+    hideEpisodeHeader()
+    m.personMeta.visible = false
+    m.logoGroup.visible = false
+    m.titleNode.visible = true
+    m.tagline.visible = false
+    m.moreBelow.visible = false
+
+    showsPicture = m.backdrop.visible and m.backdrop.uri <> ""
+    m.backdrop.getParent().visible = showsPicture
+    y = QL_TITLE_TOP
+    if showsPicture then y = QL_PICTURE_HEIGHT - QL_TITLE_OVERLAP
+
+    fitWrappedLabel(m.titleNode)
+    m.titleNode.translation = [0, y]
+    y += m.titleNode.height
+
+    if m.stageSubtitle.visible
+        y += QL_SUBTITLE_GAP
+        m.stageSubtitle.translation = [0, y]
+        y += m.stageSubtitle.boundingRect().height
+    end if
+
+    if m.metaRowHeight > 0
+        y += QL_META_GAP
+        m.metadataRow.translation = [0, y]
+        y += m.metaRowHeight
+    end if
+
+    if isValid(m.incompleteLine) and m.incompleteLine.visible
+        m.incompleteLine.width = m.contentWidth
+        m.incompleteLine.wrap = true
+        y += INCOMPLETE_LINE_GAP
+        m.incompleteLine.translation = [0, y]
+        y += m.incompleteLine.boundingRect().height
+    end if
+
+    if m.techRow.visible
+        y += QL_META_GAP
+        m.techRow.translation = [0, y]
+        y += placeTechChips()
+    end if
+
+    if m.ratingsRow.visible
+        y += QL_RATINGS_GAP
+        m.ratingsRow.translation = [0, y]
+        y += m.ratingsRow.boundingRect().height
+    end if
+
+    y += QL_ACTIONS_GAP
+    m.buttonRowContainer.translation = [0, y]
+    y += PREMIERE_PLAY_HEIGHT + PREMIERE_LABEL_ROOM
+
+    ' Seerr's download sits under the buttons, the way the other clients' button row draws it
+    if showDownload()
+        y += QL_TEXT_GAP
+        m.downloadGroup.translation = [0, y]
+        y += STAGE_DOWNLOAD_HEIGHT
+    end if
+
+    y += placeProgress(y)
+
+    lines = fitOverview(QL_OVERVIEW_LINES * PREMIERE_OVERVIEW_PITCH)
+    if lines > 0
+        y += QL_TEXT_GAP
+        ' Each line sits in the middle of its pitch, the way the other clients space a paragraph
+        m.heroOverview.translation = [0, y + m.heroOverview.lineSpacing / 2]
+        y += lines * PREMIERE_OVERVIEW_PITCH
+    end if
+
+    m.heroHeight = y
+    m.layingOut = false
+end sub
+
+' The file's chips wrap onto another line rather than run out of the drawer
+function placeTechChips() as float
+    x = 0
+    y = 0
+    for i = 0 to m.techChips.getChildCount() - 1
+        chip = m.techChips.getChild(i)
+        width = chip.getChild(0).width
+        if x > 0 and x + width > m.contentWidth
+            x = 0
+            y += STAGE_TECH_CHIP_HEIGHT + QL_RUN_GAP
+        end if
+        chip.translation = [x, y]
+        x += width + STAGE_TECH_CHIP_GAP
+    end for
+    return y + STAGE_TECH_CHIP_HEIGHT
+end function
+
+' How far into the title the viewer is and how long is left, or for a show the same for the episode
+' it would resume. Returns the room it takes.
+function placeProgress(top as float) as float
+    target = chainLookupReturn(m.top.itemContent, "json", invalid)
+    number = ""
+    if isSeries()
+        target = m.nextUp
+        season = chainLookupReturn(target, "ParentIndexNumber", invalid)
+        episode = chainLookupReturn(target, "IndexNumber", invalid)
+        if isValid(season) and isValid(episode) then number = `S${season}:E${episode} ${fontApply.ThemeSeparator()} `
+    end if
+
+    runtime = chainLookupReturn(target, "RunTimeTicks", 0)
+    position = chainLookupReturn(target, "UserData.PlaybackPositionTicks", 0)
+    played = chainLookupReturn(target, "UserData.Played", false) = true
+    m.progressRow.visible = not played and runtime > 0 and position > 0 and position < runtime
+    if not m.progressRow.visible then return 0
+
+    m.progressText.text = number + tr("%1 remaining").Replace("%1", getFormattedRuntime(runtime - position))
+    m.progressText.width = 0
+    m.progressText.height = 0
+    textHeight = m.progressText.boundingRect().height
+    m.progressText.width = m.contentWidth - QL_PROGRESS_WIDTH - QL_PROGRESS_GAP
+    m.progressText.translation = [QL_PROGRESS_WIDTH + QL_PROGRESS_GAP, 0]
+    barTop = (textHeight - QL_PROGRESS_HEIGHT) / 2
+    m.top.findNode("progressTrack").translation = [0, barTop]
+    m.progressFill.translation = [0, barTop]
+    ' Ticks come as 32 or 64 bit integers, which mixed divide as integers and which Cdbl cuts to 32
+    ' bits, so the share is worked out as a double
+    m.progressFill.width = Int(QL_PROGRESS_WIDTH * (position * 1#) / runtime)
+    m.progressRow.translation = [0, top + QL_TEXT_GAP]
+    return QL_TEXT_GAP + textHeight
+end function
+
+' Marking the title watched takes its progress away, so the hero is laid out again
+sub updatePlayedIndicator()
+    layoutContainer()
+end sub
+
+' ===== Sections =====
+
+' Under the overview: the audio, subtitle and version chips, then a show's seasons or the people
+' behind a film, then where Seerr says it's streaming. Open full page stays pinned under them all.
+sub rebuildSections()
+    if not isChainValid(m.top.itemContent, "json") then return
+    itemData = m.top.itemContent.json
+    held = m.focusZone
+
+    m.sectionParts = []
+    m.chain = []
+    m.trackChoices = trackChoices(itemData)
+    showChips(m.trackChips, m.trackChoices)
+    if m.trackChoices.count() > 0 then addPart(m.trackChips, m.trackChips.rowHeight, "chips")
+
+    m.seasonCards.visible = isSeries() and buildSeasonCards()
+    if m.seasonCards.visible then addPart(m.seasonCards, QL_SEASON_HEIGHT, "seasons")
+
+    factsHeight = 0
+    if not isSeries() then factsHeight = buildFacts(itemData)
+    m.factColumns.visible = factsHeight > 0
+    if m.factColumns.visible then addPart(m.factColumns, factsHeight, "")
+
+    m.streamingRow.removeChildrenIndex(m.streamingRow.getChildCount(), 0)
+    providers = []
+    if detailSectionLayout.Shows("seerrStreaming") then providers = SeerrStreamingProviders(m.seerrDetails, SeerrStreamingRegion())
+    streamingHeight = seerrFacts.DrawStreaming(m.streamingRow, providers, m.contentWidth)
+    m.streamingRow.visible = streamingHeight > 0
+    if m.streamingRow.visible then addPart(m.streamingRow, streamingHeight, "")
+
+    m.chain.push({ zone: "open", rail: -1, node: m.openFullPage })
+    layoutPage()
+
+    ' Rows fill in behind the first paint, so whatever had the remote keeps it, and the buttons take
+    ' it back when its row has gone
+    if held = "buttons" then return
+    for i = 0 to m.chain.count() - 1
+        if m.chain[i].zone = held
+            showStopFocus()
+            revealPiece(i)
+            return
+        end if
+    end for
+    toActions()
+end sub
+
+' A part of the page under the overview, and a stop for the remote when it has a zone
+sub addPart(node as object, height as float, zone as string)
+    part = { node: node, height: height, zone: zone, rail: -1 }
+    m.sectionParts.push(part)
+    if zone <> "" then m.chain.push(part)
+end sub
+
+sub layoutPage()
+    y = m.heroHeight
+    for each part in m.sectionParts
+        y += QL_SECTION_GAP
+        part.node.translation = [QL_PAD, y]
+        part.top = y
+        y += part.height
+        part.bottom = y
+    end for
+    m.pageHeight = y + QL_PAGE_TAIL
+
+    ' The hint and the button are measured here, once the theme's fonts are in
+    m.closeHintText.width = 0
+    hintWidth = m.closeHintText.boundingRect().width + QL_CLOSE_PAD * 2
+    m.closeHintText.translation = [QL_CLOSE_PAD, 0]
+    m.closeHintFill.width = hintWidth
+    m.closeHint.translation = [QL_WIDTH - QL_CLOSE_INSET - hintWidth, QL_CLOSE_INSET]
+
+    m.openLabel.width = 0
+    labelWidth = m.openLabel.boundingRect().width
+    left = (QL_OPEN_WIDTH - labelWidth - QL_CHEVRON_GAP - QL_CHEVRON) / 2
+    m.openLabel.translation = [left, 0]
+    m.openChevron.translation = [left + labelWidth + QL_CHEVRON_GAP, (QL_OPEN_HEIGHT - QL_CHEVRON) / 2]
+end sub
+
+' A show's seasons as cards, each with how much of it was watched. A season that's only in Seerr
+' shows where Seerr has got to with it instead.
+function buildSeasonCards() as boolean
+    m.seasonTrack.removeChildrenIndex(m.seasonTrack.getChildCount(), 0)
+    m.seasonParts = []
+    m.seasons = seasonEntries()
+    count = m.seasons.count()
+    if count = 0 then return false
+
+    ' Three share the row, and past three the fourth peeks in from the edge to say there are more
+    m.seasonWidth = (m.contentWidth - QL_SEASON_GAP * (count - 1)) / count
+    if count > 3 then m.seasonWidth = (m.contentWidth - QL_SEASON_GAP * 2) / 3.3
+    nameFont = m.top.findNode("seasonNameFont").font
+    countFont = m.top.findNode("seasonCountFont").font
+
+    for i = 0 to count - 1
+        season = m.seasons[i]
+        card = m.seasonTrack.createChild("Group")
+        card.translation = [i * (m.seasonWidth + QL_SEASON_GAP), 0]
+        part = {
+            fill: cardShape(card, "pkg:/images/details/surface17.9.png"),
+            border: cardShape(card, "pkg:/images/details/cardborder12.9.png"),
+            count: invalid
+        }
+
+        part.name = card.createChild("Label")
+        part.name.font = nameFont
+        part.name.text = season.name
+        textHeight = part.name.boundingRect().height
+        hasCount = season.total > 0
+        top = (QL_SEASON_HEIGHT - textHeight) / 2
+        if hasCount then top = (QL_SEASON_HEIGHT - textHeight - QL_SEASON_TEXT_GAP - QL_SEASON_BAR) / 2
+        right = m.seasonWidth - QL_SEASON_PAD
+
+        if hasCount
+            part.count = card.createChild("Label")
+            part.count.font = countFont
+            part.count.text = Substitute(tr("^0 of ^1"), season.played.toStr(), season.total.toStr())
+            right -= part.count.boundingRect().width
+            part.count.translation = [right, top]
+
+            barTop = top + textHeight + QL_SEASON_TEXT_GAP
+            barWidth = m.seasonWidth - QL_SEASON_PAD * 2
+            track = card.createChild("Rectangle")
+            track.color = "#FFFFFF26"
+            track.width = barWidth
+            track.height = QL_SEASON_BAR
+            track.translation = [QL_SEASON_PAD, barTop]
+            fill = card.createChild("Rectangle")
+            fill.color = themeChrome.Accent()
+            fill.width = Int(barWidth * season.played / season.total)
+            fill.height = QL_SEASON_BAR
+            fill.translation = [QL_SEASON_PAD, barTop]
+        else if season.seerr and isSeerrAvailabilityBadgesEnabled()
+            right -= QL_SEASON_DOT
+            seerrDot(card, season.status, right, (QL_SEASON_HEIGHT - QL_SEASON_DOT) / 2)
+        end if
+
+        part.name.translation = [QL_SEASON_PAD, top]
+        part.name.width = right - QL_SEASON_PAD - QL_SEASON_TEXT_GAP
+        part.name.height = textHeight
+        m.seasonParts.push(part)
+    end for
+
+    if m.seasonIndex > count - 1 then m.seasonIndex = count - 1
+    focusSeason(m.seasonIndex)
+    return true
+end function
+
+' A library show's seasons, or the ones Seerr lists for a show it only knows about
+function seasonEntries() as object
+    entries = []
+    if m.top.seerrOnly
+        seasons = chainLookupReturn(m.seerrDetails, "seasons", invalid)
+        if type(seasons) <> "roArray" then return entries
+        markers = GetSeerrSeasonMarkers(m.seerrDetails)
+        for each season in seasons
+            number = season.seasonNumber ?? 0
+            name = season.name ?? ""
+            if name = "" then name = nouveauLayout.SeasonLabel(number)
+            entries.push({ name: name, number: number, total: 0, played: 0, seerr: true, status: markers[number.toStr()] ?? 0 })
+        end for
+        return entries
+    end if
+
+    for each season in m.sectionData.seasons
+        json = season.json
+        total = json.ChildCount ?? 0
+        unplayed = chainLookupReturn(json, "UserData.UnplayedItemCount", total)
+        entries.push({ name: json.Name ?? "", node: season, total: total, played: total - unplayed, seerr: false })
+    end for
+    return entries
+end function
+
+function cardShape(card as object, uri as string) as object
+    shape = card.createChild("Poster")
+    shape.uri = uri
+    shape.loadDisplayMode = "scaleToFit"
+    shape.width = m.seasonWidth
+    shape.height = QL_SEASON_HEIGHT
+    return shape
+end function
+
+' Seerr's marker for a season, colored the way the season posters mark one
+sub seerrDot(card as object, status as integer, x as float, y as float)
+    color = "#EAB308"
+    if status = 3 then color = "#8B8DFA"
+    if status = 4 or status = 5 then color = "#22C55E"
+    for each layer in [[0, 2, QL_SEASON_DOT, "#00000099"], [0, 0, QL_SEASON_DOT, "#FFFFFFFF"], [2, 2, QL_SEASON_DOT - 4, color]]
+        dot = card.createChild("Poster")
+        dot.uri = "pkg:/images/icons/circle.webp"
+        dot.translation = [x + layer[0], y + layer[1]]
+        dot.width = layer[2]
+        dot.height = layer[2]
+        dot.blendColor = layer[3]
+    end for
+end sub
+
+' Who directed and wrote it, the studio behind it and when it came out, a column each. Returns the
+' room the row takes.
+function buildFacts(itemData as object) as float
+    m.factColumns.removeChildrenIndex(m.factColumns.getChildCount(), 0)
+    facts = []
+    if detailSectionLayout.Shows("crew")
+        people = chainLookupReturn(itemData, "People", [])
+        for each role in [["Director", tr("Director")], ["Writer", tr("Writer")]]
+            for each person in people
+                name = person.LookupCI("Name") ?? ""
+                if name <> "" and isStringEqual(person.LookupCI("Type") ?? "", role[0])
+                    facts.push([role[1], name])
+                    exit for
+                end if
+            end for
+        end for
+    end if
+
+    studios = itemData.Studios
+    if detailSectionLayout.Shows("studios") and type(studios) = "roArray" and studios.count() > 0
+        name = studios[0].LookupCI("Name") ?? ""
+        if name <> "" then facts.push([tr("Studio"), name])
+    end if
+
+    released = itemData.PremiereDate ?? ""
+    if Len(released) >= 10
+        date = CreateObject("roDateTime")
+        date.FromISO8601String(Left(released, 10) + "T00:00:00Z")
+        facts.push([tr("Release Date"), date.AsDateString("short-month-no-weekday")])
+    end if
+    if facts.count() = 0 then return 0
+
+    columnWidth = m.contentWidth / facts.count()
+    labelFont = m.top.findNode("factLabelFont").font
+    valueFont = m.top.findNode("factValueFont").font
+    height = 0
+    for i = 0 to facts.count() - 1
+        x = i * columnWidth
+        label = m.factColumns.createChild("Label")
+        label.font = labelFont
+        label.color = "#FFFFFF99"
+        label.text = UCase(facts[i][0])
+        labelHeight = label.boundingRect().height
+        label.width = columnWidth - QL_FACT_PAD * 2
+        label.translation = [x + QL_FACT_PAD, 0]
+
+        value = m.factColumns.createChild("Label")
+        value.font = valueFont
+        value.color = "#FFFFFF"
+        value.text = facts[i][1]
+        height = labelHeight + QL_FACT_GAP + value.boundingRect().height
+        value.width = columnWidth - QL_FACT_PAD * 2
+        value.translation = [x + QL_FACT_PAD, labelHeight + QL_FACT_GAP]
+    end for
+
+    for i = 0 to facts.count() - 1
+        divider = m.factColumns.createChild("Rectangle")
+        divider.color = "#FFFFFF24"
+        divider.width = 2
+        divider.height = height
+        divider.translation = [i * columnWidth, 0]
+    end for
+    return height
+end function
+
+' ===== Focus =====
+
+' The page scrolls only as far as it takes to show the row the remote moved to, and all the way down
+' for Open full page, so what sits under the last row comes into view
+sub revealPiece(index as integer)
+    if index < 0 or index >= m.chain.count() then return
+    entry = m.chain[index]
+    if entry.zone = "open"
+        target = lowestScroll()
+        if target <> m.currentScrollY then scrollContentTo(target)
+    else
+        revealRange(entry.top, entry.bottom)
+    end if
+end sub
+
+sub revealRange(top as float, bottom as float)
+    target = m.currentScrollY
+    if top + target < 0
+        target = -top
+    else if bottom + target > QL_VIEWPORT
+        target = QL_VIEWPORT - bottom
+    end if
+    lowest = lowestScroll()
+    if target < lowest then target = lowest
+    if target > 0 then target = 0
+    if target <> m.currentScrollY then scrollContentTo(target)
+end sub
+
+function lowestScroll() as float
+    lowest = QL_VIEWPORT - m.pageHeight
+    if lowest > 0 then lowest = 0
+    return lowest
+end function
+
+' A row is entered at its first item
+function focusStop(index as integer) as boolean
+    if index < 0 or index >= m.chain.count() then return false
+    entry = m.chain[index]
+    clearZoneFocus()
+    holdFocus(entry.zone, -1, entry.node)
+    if entry.zone = "chips" then m.trackChips.focusIndex = 0
+    if entry.zone = "seasons" then focusSeason(0)
+    showStopFocus()
+    entry.node.setFocus(true)
+    revealPiece(index)
+    return true
+end function
+
+sub clearZoneFocus()
+    if m.focusZone = "buttons" then unhighlightAllButtons()
+    m.trackChips.focusIndex = -1
+    focusSeason(-1)
+    showOpenFocus(false)
+end sub
+
+' Lights whatever the remote is on in the row it's in
+sub showStopFocus()
+    count = m.trackChoices.count()
+    if m.focusZone = "chips" and m.trackChips.focusIndex > count - 1 then m.trackChips.focusIndex = count - 1
+    showOpenFocus(m.focusZone = "open")
+end sub
+
+' Back to whichever button had focus last
+sub toActions()
+    if m.buttonGroups.count() = 0 then return
+    clearZoneFocus()
+    m.focusZone = "buttons"
+    m.focusRail = -1
+    index = m.currentButtonIndex
+    if index < 0 or index >= m.buttonGroups.count() then index = 0
+    focusButton(index)
+    top = m.buttonRowContainer.translation[1]
+    revealRange(top, top + PREMIERE_PLAY_HEIGHT + PREMIERE_LABEL_ROOM)
+end sub
+
+' The row slides only as far as it takes to show the focused card
+sub focusSeason(index as integer)
+    m.seasonIndex = index
+    focusedInk = themeChrome.Token("onButtonFocused", "#000000FF")
+    for i = 0 to m.seasonParts.count() - 1
+        part = m.seasonParts[i]
+        focused = i = index
+        showSolidFocus(part.fill, part.border, focused, 0.2)
+        part.name.color = focused ? focusedInk : "#FFFFFF"
+        if isValid(part.count) then part.count.color = focused ? focusedInk : "#FFFFFFB3"
+    end for
+    if index < 0 then return
+
+    left = index * (m.seasonWidth + QL_SEASON_GAP)
+    offset = m.seasonTrack.translation[0]
+    if left + offset < 0 then offset = -left
+    if left + m.seasonWidth + offset > m.contentWidth then offset = m.contentWidth - left - m.seasonWidth
+    m.seasonTrack.translation = [offset, 0]
+end sub
+
+sub showOpenFocus(focused as boolean)
+    showSolidFocus(m.openFill, m.openBorder, focused, 0.25)
+    m.openFill.opacity = focused ? 0.95 : 0
+    ink = focused ? themeChrome.Token("onButtonFocused", "#000000FF") : "#FFFFFF"
+    m.openLabel.color = ink
+    m.openChevron.blendColor = ink
+end sub
+
+' Focus fills a part the way it fills the chips, and rest leaves a hairline round it
+sub showSolidFocus(fill as object, border as object, focused as boolean, restBorder as float)
+    if focused
+        fill.blendColor = themeChrome.Token("buttonFocused", "#FFFFFF")
+        fill.opacity = 0.95
+        border.blendColor = themeChrome.Token("inputBorderFocused", "#FFFFFF")
+        border.opacity = 1
+    else
+        fill.blendColor = "#FFFFFF"
+        fill.opacity = 0.06
+        border.blendColor = "#FFFFFF"
+        border.opacity = restBorder
+    end if
+end sub
+
+' A Seerr dialog hands focus back to whatever opened it
+function seerrFocusTarget() as object
+    if isValid(m.top.lastFocus) then return m.top.lastFocus
+    return m.top
+end function
+
+' ===== Buttons =====
+
+' Play, four circles and More are what fit across the drawer, or fewer when the viewer set a lower
+' limit. The row can't scroll here, so a limit of every button still stops at that.
+function buttonCap() as object
+    cap = { maxVisible: QL_MAX_BUTTONS, overflowAsMenu: true, countCapped: true }
+    limit = viewerButtonLimit()
+    if limit > 0 and limit + 1 < QL_MAX_BUTTONS then cap.maxVisible = limit + 1
+    return cap
+end function
+
+' Play leads the row from the left, with the circles after it
+sub layoutButtonRow(_focusIndex as integer)
+    x = 0
+    for each button in m.buttonGroups
+        width = STAGE_BUTTON_SIZE
+        height = STAGE_BUTTON_SIZE
+        if button.spanWidth > 0
+            width = button.spanWidth * STAGE_PLAY_SCALE
+            height = PREMIERE_PLAY_HEIGHT
+        end if
+        button.translation = [x, (PREMIERE_PLAY_HEIGHT - height) / 2]
+        x += width + PREMIERE_BUTTON_GAP
+    end for
+end sub
+
+' ===== Keys =====
+
+' Down from the buttons walks the chips, the seasons and Open full page, and Up walks back to the
+' button that had focus last. Left and Right stay in their row, and Back closes the drawer.
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if m.closing then return true
+
+    ' A picker left open across a screensaver can come back without focus, which would leave the
+    ' drawer answering the remote from behind it
+    picker = openTrackPicker()
+    if isValid(picker)
+        picker.setFocus(true)
+        return true
+    end if
+    if m.overflowMenu.visible then return false
+
+    if key = KeyCode.BACK
+        closeDrawer()
+        return true
+    end if
+
+    index = currentChainIndex()
+    if m.focusZone = "buttons"
+        if key = KeyCode.OK
+            handleButtonSelect()
+        else if key = KeyCode.LEFT
+            if m.currentButtonIndex > 0 then focusButton(m.currentButtonIndex - 1)
+        else if key = KeyCode.RIGHT
+            if m.currentButtonIndex < m.buttonGroups.count() - 1 then focusButton(m.currentButtonIndex + 1)
+        else if key = KeyCode.DOWN
+            focusStop(0)
+        else if key <> KeyCode.UP
+            return false
+        end if
+        return true
+    end if
+
+    if key = KeyCode.UP
+        if index > 0 then focusStop(index - 1) else toActions()
+    else if key = KeyCode.DOWN
+        focusStop(index + 1)
+    else if key = KeyCode.LEFT or key = KeyCode.RIGHT
+        stepAlongRow(key = KeyCode.RIGHT)
+    else if key = KeyCode.OK
+        pickStop()
+    else
+        return false
+    end if
+    return true
+end function
+
+sub stepAlongRow(forward as boolean)
+    delta = forward ? 1 : -1
+    if m.focusZone = "chips"
+        index = m.trackChips.focusIndex + delta
+        if index >= 0 and index < m.trackChoices.count() then m.trackChips.focusIndex = index
+    else if m.focusZone = "seasons"
+        index = m.seasonIndex + delta
+        if index >= 0 and index < m.seasonParts.count() then focusSeason(index)
+    end if
+end sub
+
+sub pickStop()
+    if m.focusZone = "chips"
+        chipChosen(m.trackChips.focusIndex)
+    else if m.focusZone = "seasons"
+        pickSeason()
+    else if m.focusZone = "open"
+        openFullPage()
+    end if
+end sub
+
+' A library season opens its full page over the drawer. One that's only in Seerr opens the request
+' dialog on that season.
+sub pickSeason()
+    if m.seasonIndex < 0 or m.seasonIndex >= m.seasons.count() then return
+    season = m.seasons[m.seasonIndex]
+    if season.seerr
+        startSeerrRequest("seerrRequest", season.number)
+    else
+        m.top.selectedItem = season.node
+    end if
+end sub
+
+' The full page takes the drawer's place, drawn as Modern. A library title goes through the same
+' route a picked card does, and one only in Seerr opens here.
+sub openFullPage()
+    if m.top.seerrOnly
+        page = CreateObject("roSGNode", "ModernItemDetails")
+        page.seerrTarget = m.top.seerrTarget
+        m.global.sceneManager.callFunc("pushScene", page)
+        m.global.sceneManager.callFunc("removeScene", m.top)
+        return
+    end if
+
+    node = CreateObject("roSGNode", "HomeData")
+    node.json = m.top.itemContent.json
+    m.top.selectedItem = node
+end sub
+
+' The drawer slides back out before it closes
+sub closeDrawer()
+    m.closing = true
+    m.slide.control = "stop"
+    m.slide.duration = 0.2
+    m.slide.easeFunction = "inCubic"
+    m.slideInterp.keyValue = [m.drawer.translation, [1920, 0]]
+    m.dimInterp.keyValue = [m.dim.opacity, 0.0]
+    m.slide.observeField("state", "onDrawerClosed")
+    m.slide.control = "start"
+end sub
+
+sub onDrawerClosed()
+    if m.slide.state <> "stopped" then return
+    m.slide.unobserveField("state")
+    m.global.sceneManager.callFunc("popScene")
+end sub

@@ -1,0 +1,191 @@
+import "pkg:/source/api/plexTv.bs"
+import "pkg:/source/utils/plexServers.bs"
+import "pkg:/source/utils/session.bs"
+
+' The Plex sign in, from Add Server's Plex choice, a Plex server found on the network or a typed Plex
+' address. request is { uri, machineId, discovered }, where uri and machineId name a server to try
+' first and discovered lists the Plex servers the network answered with.
+function CreatePlexSignInGroup(request as object) as boolean
+    group = CreateObject("roSGNode", "PlexSignInScene")
+    group.typedUri = plexUrls.Str(request.uri ?? "")
+    group.typedMachineId = plexUrls.Str(request.machineId ?? "")
+    group.discovered = request.discovered ?? []
+    m.global.sceneManager.callFunc("pushScene", group)
+    port = CreateObject("roMessagePort")
+    group.observeField("backPressed", port)
+    group.observeField("result", port)
+    succeeded = false
+    while true
+        msg = wait(0, port)
+        if isNodeEvent(msg, "backPressed") or (type(msg) = "roSGScreenEvent" and msg.isScreenClosed()) then exit while
+        if isNodeEvent(msg, "result")
+            InstallPlexSession(msg.getData())
+            succeeded = true
+            exit while
+        end if
+    end while
+    group.unobserveField("backPressed")
+    group.unobserveField("result")
+    m.global.sceneManager.callFunc("popScene")
+    return succeeded
+end function
+
+' The best address a saved Plex server answers at right now. An address that never answers would hold
+' startup for the whole probe, so the saved one is used past a short wait, while the probe carries on
+' and saves a better one for next time.
+function PlexStartupAddress(serverUrl as string) as string
+    machineId = plexServers.MachineIdAt(serverUrl)
+    entry = plexServers.Find(machineId)
+    if entry = invalid or type(entry.candidates) <> "roArray" or entry.candidates.Count() < 2 then return serverUrl
+    task = CreateObject("roSGNode", "PlexSignInTask")
+    task.mode = "bestAddress"
+    task.request = { candidates: entry.candidates, machineId: machineId, url: serverUrl }
+    port = CreateObject("roMessagePort")
+    task.observeField("result", port)
+    task.control = "RUN"
+    msg = wait(2000, port)
+    task.unobserveField("result")
+    if msg = invalid then return serverUrl
+    best = plexUrls.Str(msg.getData().uri ?? "")
+    if best = "" then return serverUrl
+    return best
+end function
+
+' The Home members of the account saved on this Plex server, which Who's watching lists beside the
+' saved accounts. Asked with a saved account's plex.tv token, so a server nobody has signed in to
+' through plex.tv yet has none. Kept in m for the sign in that follows.
+sub LoadPlexHomeUsers()
+    m.plexHome = { token: "", users: [] }
+    serverId = plexUrls.Str(m.global.session.server.id ?? "")
+    for each saved in getSavedUsers()
+        if isValid(saved.serverId) and saved.serverId = serverId
+            token = plexUrls.Str(registry_read("plexToken", saved.Id) ?? "")
+            if token <> ""
+                m.plexHome.token = token
+                exit for
+            end if
+        end if
+    end for
+    if m.plexHome.token <> "" then m.plexHome.users = plexTv.HomeUsers(m.plexHome.token)
+end sub
+
+sub AddPlexHomeUsers(users as object)
+    LoadPlexHomeUsers()
+    for each member in m.plexHome.users
+        listed = false
+        for each user in users
+            if user.id = member.id then listed = true
+        end for
+        if not listed
+            user = CreateObject("roSGNode", "PublicUserData")
+            user.isPublic = false
+            user.id = member.id
+            user.name = member.name
+            user.ImageURL = UserImageURL(member.id)
+            users.push(user)
+        end if
+    end for
+end sub
+
+function PlexHomeMember(name as string) as dynamic
+    if not isValid(m.plexHome) then return invalid
+    for each member in m.plexHome.users
+        if member.name = name then return member
+    end for
+    return invalid
+end function
+
+' Who's watching on a Plex server. A Home member signs in with its PIN, or straight away without one,
+' and anyone else signs in through plex.tv.
+function PlexSigninGroup(name as string) as string
+    member = PlexHomeMember(name)
+    if member = invalid
+        if CreatePlexSignInGroup({ uri: plexUrls.Str(m.global.session.server.url ?? ""), machineId: plexUrls.Str(m.global.session.server.id ?? ""), discovered: [] }) then return "true"
+        return "backPressed"
+    end if
+    failure = ""
+    if not member.hasPin
+        attempt = PlexHomeSignIn(member, "")
+        if attempt.ok then return "true"
+        failure = attempt.message
+    end if
+
+    group = CreateObject("roSGNode", "SigninScene")
+    group.user = name
+    group.alert = failure
+    m.global.sceneManager.callFunc("pushScene", group)
+    port = CreateObject("roMessagePort")
+    group.observeField("submitSelected", port)
+    group.observeField("backPressed", port)
+    while true
+        msg = wait(0, port)
+        if type(msg) = "roSGScreenEvent" and msg.isScreenClosed()
+            return "false"
+        else if isNodeEvent(msg, "backPressed")
+            group.unobserveField("backPressed")
+            group.backPressed = false
+            return "backPressed"
+        else if isNodeEvent(msg, "submitSelected")
+            ' plex.tv lets the account owner switch to any member without asking for the PIN, so the
+            ' PIN is checked by asking for one
+            if member.hasPin and group.password = "" then continue while
+            startLoadingSpinner()
+            attempt = PlexHomeSignIn(member, group.password)
+            stopLoadingSpinner()
+            if attempt.ok then return "true"
+            group.alert = attempt.message
+        end if
+    end while
+    return ""
+end function
+
+' Switches to a Home member on plex.tv, then signs in with the server's token for that member, as
+' { ok, message }. Without a saved plex.tv token there's nothing to switch from, and nothing to say.
+function PlexHomeSignIn(member as object, pin as string) as object
+    if m.plexHome.token = "" then return { ok: false, message: "" }
+    switched = plexTv.SwitchHomeUser(m.plexHome.token, member.id, pin)
+    if not switched.ok
+        if switched.wrongPin = true then return { ok: false, message: tr("Incorrect PIN") }
+        return { ok: false, message: plexLink.ErrorMessage(switched.status ?? 0) }
+    end if
+    servers = plexTv.Servers(switched.token)
+    target = plexUrls.Str(m.global.session.server.name ?? "")
+    for each server in servers.servers
+        if server.id = m.global.session.server.id
+            PlexLogin(m.global.session.server.url, member.id, member.name, server.accessToken)
+            registry_write("plexToken", switched.token, member.id)
+            return { ok: true, message: "" }
+        end if
+    end for
+    return { ok: false, message: substitute(tr("{0} isn't shared with this account."), target) }
+end function
+
+' Saves the server under its machine id at the address that answered, and signs the account in with
+' the server's own token. The plex.tv token is kept with the account for its Home users.
+sub InstallPlexSession(result as object)
+    server = result.server
+    uri = result.uri
+    ' A saved entry for this server at another address moves first, so its accounts come along
+    plexServers.MoveTo(server.id, uri)
+    plexServers.Save(server.id, uri, result.connections)
+    registry_write(serverIdentityKey(uri), "plex", "ServerTypes")
+    session.server.Update("url", uri)
+    session.server.ApplyInfo({ Id: server.id, Version: server.version, ProductName: "Plex Media Server", ServerName: server.name })
+    set_setting("server", uri)
+    unset_setting("active_user")
+    PlexLogin(uri, result.account.id, result.account.name, server.accessToken)
+    registry_write("plexToken", result.token, result.account.id)
+end sub
+
+' Signs an account in with the user the Plex bridge reads for it, so the rest of the app finds its
+' policy the way it does for Jellyfin
+sub PlexLogin(serverUrl as string, userId as string, name as string, accessToken as string)
+    account = getJson(APIRequestForServer(serverUrl, userId, accessToken, "Users/" + userId))
+    if type(account) <> "roAssociativeArray" then account = { Policy: {}, Configuration: {} }
+    account.Id = userId
+    account.Name = name
+    account.PrimaryImageTag = "plex"
+    user = CreateObject("roSGNode", "UserData")
+    user.json = { User: account, AccessToken: accessToken }
+    session.user.Login(user, should_save_credentials())
+end sub

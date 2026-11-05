@@ -1,345 +1,761 @@
-import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/libraryCard.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/seerrRequestRules.bs"
 import "pkg:/source/utils/SeerrUtils.bs"
+import "pkg:/source/utils/themeChrome.bs"
+
+' Picked on this screen and kept on this device. Until then the grid follows the library size.
+const SEERR_POSTER_SIZE_SETTING = "ui.seerr.posterSize"
+' Core lays its TV screens out on a 1150 wide canvas, which a 1080p screen draws this much larger
+const TV_SCALE = 1.6696
+const SIDE = 100
+const BUTTON_SIZE = 70
+const BUTTON_GAP = 7
+const ICON_SIZE = 47
+const CHIPS_GAP = 27
+const CHIP_GAP = 13
+const CHIP_HEIGHT = 38
+const CHIP_PAD_X = 17
+const CHIP_TEXT_SIZE = 20
+const ALPHA_HEIGHT = 57
+const ALPHA_MIN_WIDTH = 50
+const ALPHA_PAD_X = 7
+const ALPHA_GAP = 3
+const ALPHA_TEXT_SIZE = 25
+const HEADER_BOTTOM = 332
+const TOOLBAR_RIGHT = 1820
+' A letter or availability filter can reject whole pages, so a load reads ahead, as Core does
+const MIN_MATCHES = 10
+const MAX_PAGES_PER_SCAN = 6
+const SELECTED = "#6366F1"
+' Core's focused grid card grows this much from its bottom edge, with its ring this far outside
+const GROW_SCALE = 1.12
+const RING_OUTSET = 8
 
 sub init()
+    m.top.overhangVisible = false
     m.genreNameLabel = m.top.findNode("genreNameLabel")
     m.mediaGrid = m.top.findNode("mediaGrid")
-    m.backdrop = m.top.findNode("backdrop")
     m.loadingLabel = m.top.findNode("loadingLabel")
     m.errorLabel = m.top.findNode("errorLabel")
     m.noResultsLabel = m.top.findNode("noResultsLabel")
-
-    ' Info section elements
     m.itemTitle = m.top.findNode("itemTitle")
+    m.metaRow = m.top.findNode("metaRow")
     m.metaYear = m.top.findNode("metaYear")
-    m.metaType = m.top.findNode("metaType")
-    m.metaRating = m.top.findNode("metaRating")
     m.starIcon = m.top.findNode("starIcon")
-    m.metaOverview = m.top.findNode("metaOverview")
+    m.metaRating = m.top.findNode("metaRating")
+    m.statusBadge = m.top.findNode("statusBadge")
+    m.statusFill = m.top.findNode("statusFill")
+    m.statusLabel = m.top.findNode("statusLabel")
+    m.footerFilter = m.top.findNode("footerFilter")
+    m.footerCount = m.top.findNode("footerCount")
+    m.browseFocus = m.top.findNode("browseFocus")
+    m.accent = themeChrome.Accent()
+    m.focusColor = coreFocusColor()
 
-    ' Sort/Filter buttons
-    m.sortButton = m.top.findNode("sortButton")
-    m.filterButton = m.top.findNode("filterButton")
+    m.genreNameLabel.font = fontOfSize(43, false)
+    m.itemTitle.font = fontOfSize(33, true)
+    m.metaYear.font = fontOfSize(23, false)
+    m.metaRating.font = fontOfSize(23, false)
+    m.statusLabel.font = fontOfSize(18, true)
+    m.footerFilter.font = fontOfSize(18, false)
+    m.footerCount.font = fontOfSize(22, false)
 
-    ' Observe interface fields
-    m.top.observeField("genreId", "onGenreIdChanged")
-    m.top.observeField("genreName", "onGenreNameChanged")
-    m.top.observeField("mediaType", "onMediaTypeChanged")
+    m.collectionButton = m.top.findNode("collectionButton")
+    m.collectionButton.text = tr("Request Collection")
+    measure = CreateObject("roSGNode", "Label")
+    measure.font = "font:SmallBoldSystemFont"
+    measure.text = m.collectionButton.text
+    m.collectionButton.width = measure.boundingRect().width + 48
+    m.collectionButton.translation = [TOOLBAR_RIGHT - m.collectionButton.width, 195]
+    m.collectionButton.background = "#FFFFFF1A"
+    m.collectionButton.focusBackground = "#FFFFFF33"
+    m.collectionButton.color = "#FFFFFF"
+    m.collectionButton.focusColor = "#FFFFFF"
+    m.collectionButton.observeField("buttonSelected", "ShowCollectionRequest")
+    m.collectionParts = []
+    m.browseSheet = invalid
 
-    ' Observe grid selection
+    ' What the grid shows and how it's asked for
+    m.items = []
+    m.currentPage = 0
+    m.totalPages = 1
+    m.isLoading = false
+    m.statusFilter = "all"
+    m.letter = ""
+    m.sortKey = "popularity"
+    m.sortDirection = "desc"
+    m.genreIds = []
+    m.tvStatuses = []
+    m.released = 0
+    m.minRating = 0
+    m.minVotes = 0
+    m.runtime = 0
+    m.language = ""
+    m.genresOpen = false
+    m.languagesOpen = false
+    m.filterGenres = invalid
+    m.filterLanguages = invalid
+    m.browseMediaType = m.top.mediaType
+    m.expansion = get_user_setting_bool("ui.cardFocusExpansion", true)
+
+    buildToolbar()
+    buildAlphaBar()
+    m.zone = "grid"
+    m.toolbarIndex = 0
+    m.alphaIndex = 0
+
+    m.mediaGrid.content = CreateObject("roSGNode", "ContentNode")
     m.mediaGrid.observeField("itemSelected", "onItemSelected")
     m.mediaGrid.observeField("itemFocused", "onItemFocused")
+    applyPosterSize()
+    clearHud()
+    updateFooter()
 
-    ' Observe button selections and escape events
-    if m.sortButton <> invalid
-        m.sortButton.observeField("buttonSelected", "onSortButtonSelected")
-        m.sortButton.observeField("escape", "onSortButtonEscape")
-    end if
-    if m.filterButton <> invalid
-        m.filterButton.observeField("buttonSelected", "onFilterButtonSelected")
-        m.filterButton.observeField("escape", "onFilterButtonEscape")
-    end if
-
-    ' Configure grid focus
-    m.mediaGrid.focusBitmapUri = "pkg:/images/hd_focus.9.png"
-    m.mediaGrid.focusBitmapBlendColor = ColorPalette.WHITE
-    m.mediaGrid.focusFootprintBitmapUri = ""
-    m.mediaGrid.focusFootprintBlendColor = ColorPalette.TRANSPARENT
-    m.mediaGrid.drawFocusFeedback = true
-
-    ' State management
-    m.currentPage = 1
-    m.isLoading = false
-    m.hasMorePages = true
-    m.currentFocus = "grid" ' Track focus: "grid", "sortButton", "filterButton"
-
-    ' Sort/filter options
-    m.currentSortBy = "popularity.desc"
-    m.sortOptions = [
-        { label: "Popularity", value: "popularity.desc" },
-        { label: "Rating", value: "vote_average.desc" },
-        { label: "Release Date", value: "release_date.desc" },
-        { label: "Title", value: "original_title.asc" }
-    ]
-
-    ' Filter options: show items based on request/availability status
-    m.currentFilter = "not_requested" ' Default to not requested
-    m.filterOptions = [
-        { label: "All Items", value: "all" },
-        { label: "Not Requested", value: "not_requested" },
-        { label: "Available Only", value: "available" }
-    ]
-
-    ' Create content node for the grid
-    m.mediaGrid.content = CreateObject("roSGNode", "ContentNode")
-
-    ' API task for requests
-    m.apiTask = invalid
-
-    ' Cache frequently accessed data
     m.configCache = GetSeerrConfig()
     m.blockNsfwCache = true
     if m.configCache <> invalid and m.configCache.blockNsfw <> invalid
         m.blockNsfwCache = m.configCache.blockNsfw
     end if
-end sub
 
-sub onGenreIdChanged()
-    if m.top.genreId > 0 and m.top.mediaType <> ""
-        LoadContent()
-    end if
+    m.top.observeField("genreId", "onBrowseTargetChanged")
+    m.top.observeField("genreName", "onGenreNameChanged")
+    m.top.observeField("mediaType", "onBrowseTargetChanged")
+    m.top.observeField("browseType", "onBrowseTargetChanged")
+    m.top.observeField("focusedChild", "onScreenFocusChanged")
 end sub
 
 sub onGenreNameChanged()
-    if m.top.genreName <> ""
-        m.genreNameLabel.text = m.top.genreName
-    end if
+    m.genreNameLabel.text = m.top.genreName
 end sub
 
-sub onMediaTypeChanged()
-    if m.top.genreId > 0 and m.top.mediaType <> ""
-        LoadContent()
-    end if
+' The screen is filled in field by field, so it loads once it knows what it's browsing
+sub onBrowseTargetChanged()
+    m.browseMediaType = m.top.mediaType
+    if m.top.browseType = "all" or m.top.genreId > 0 then Reload()
 end sub
 
-sub LoadContent()
-    if m.isLoading then return
+' Media Type only means something where the same id works for films and series
+function canSwitchMediaType() as boolean
+    return m.top.browseType = "genre" or m.top.browseType = "keyword"
+end function
 
-    m.isLoading = true
-    ShowLoading()
+' ============================================
+' Toolbar and letter bar
+' ============================================
 
-    browseType = m.top.browseType
-    if browseType = invalid or browseType = "" then browseType = "genre"
+sub buildToolbar()
+    toolbar = m.top.findNode("toolbar")
+    m.toolbarItems = []
+    x = 0
+    for each button in [{ id: "home", icon: "home" }, { id: "sort", icon: "detail_sort" }, { id: "settings", icon: "settings" }]
+        group = toolbar.createChild("Group")
+        group.translation = [x, 0]
+        fill = group.createChild("Poster")
+        fill.uri = "pkg:/images/seerr/fill10.9.png"
+        fill.width = BUTTON_SIZE
+        fill.height = BUTTON_SIZE
+        icon = group.createChild("Poster")
+        icon.uri = `pkg:/images/icons/${button.icon}.webp`
+        icon.width = ICON_SIZE
+        icon.height = ICON_SIZE
+        icon.translation = [(BUTTON_SIZE - ICON_SIZE) / 2, (BUTTON_SIZE - ICON_SIZE) / 2]
+        m.toolbarItems.push({ id: button.id, kind: "button", group: group, fill: fill, icon: icon })
+        x += BUTTON_SIZE + BUTTON_GAP
+    end for
 
-    ' Build endpoint and query params based on browse type
-    ' Using discover endpoint with filter params (not /genre/{id} or /studio/{id})
-    sortBy = m.currentSortBy
-    if sortBy = invalid or sortBy = "" then sortBy = "popularity.desc"
+    x += CHIPS_GAP - BUTTON_GAP
+    chipFont = fontOfSize(CHIP_TEXT_SIZE, false)
+    chipBoldFont = fontOfSize(CHIP_TEXT_SIZE, true)
+    for each chip in [{ id: "all", label: tr("All") }, { id: "available", label: tr("Available") }, { id: "requested", label: tr("Requested") }]
+        group = toolbar.createChild("Group")
+        label = CreateObject("roSGNode", "Label")
+        label.font = chipBoldFont
+        label.text = chip.label
+        width = Int(label.boundingRect().width + 0.5) + CHIP_PAD_X * 2
+        group.translation = [x, (BUTTON_SIZE - CHIP_HEIGHT) / 2]
+        fill = group.createChild("Poster")
+        fill.uri = "pkg:/images/seerr/fill19.9.png"
+        fill.width = width
+        fill.height = CHIP_HEIGHT
+        border = group.createChild("Poster")
+        border.uri = "pkg:/images/seerr/stroke19w2.9.png"
+        border.blendColor = m.focusColor
+        border.width = width
+        border.height = CHIP_HEIGHT
+        group.appendChild(label)
+        label.width = width
+        label.height = CHIP_HEIGHT
+        label.horizAlign = "center"
+        label.vertAlign = "center"
+        m.toolbarItems.push({ id: chip.id, kind: "chip", group: group, fill: fill, border: border, label: label, font: chipFont, boldFont: chipBoldFont, title: chip.label })
+        x += width + CHIP_GAP
+    end for
+    drawToolbar()
+end sub
 
-    ' Seerr hands the language parameter to TMDB as the original language
-    ' filter, so naming one hides every production made in any other language.
-    queryParams = {
-        "page": m.currentPage.toStr(),
-        "sortBy": sortBy
-    }
+sub buildAlphaBar()
+    bar = m.top.findNode("alphaBar")
+    m.alphaItems = []
+    m.alphaFont = fontOfSize(ALPHA_TEXT_SIZE, false)
+    m.alphaBoldFont = fontOfSize(ALPHA_TEXT_SIZE, true)
+    letters = [{ id: "", label: tr("All") }, { id: "#", label: "#" }]
+    for each letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ".Split("")
+        letters.push({ id: letter, label: letter })
+    end for
+    x = 0
+    for each letter in letters
+        group = bar.createChild("Group")
+        label = CreateObject("roSGNode", "Label")
+        label.font = m.alphaBoldFont
+        label.text = letter.label
+        width = Int(label.boundingRect().width + 0.5) + ALPHA_PAD_X * 2
+        if width < ALPHA_MIN_WIDTH then width = ALPHA_MIN_WIDTH
+        group.translation = [x, 0]
+        fill = group.createChild("Poster")
+        fill.uri = "pkg:/images/seerr/fill10.9.png"
+        fill.width = width
+        fill.height = ALPHA_HEIGHT
+        group.appendChild(label)
+        label.width = width
+        label.height = ALPHA_HEIGHT
+        label.horizAlign = "center"
+        label.vertAlign = "center"
+        m.alphaItems.push({ id: letter.id, group: group, fill: fill, label: label })
+        x += width + ALPHA_GAP
+    end for
+    drawAlphaBar()
+end sub
 
-    if browseType = "genre"
-        if m.top.mediaType = "movie"
-            endpoint = "/api/v1/discover/movies"
-            queryParams["genre"] = m.top.genreId.toStr()
+' A focused button fills white with its icon in the accent, as Core's toolbar does. A picked
+' chip fills indigo, and focus gives it a border in the focus color, or a white fill when it
+' isn't picked.
+sub drawToolbar()
+    onBar = m.zone = "toolbar" and m.browseFocus.hasFocus()
+    for i = 0 to m.toolbarItems.count() - 1
+        item = m.toolbarItems[i]
+        focused = onBar and i = m.toolbarIndex
+        if item.kind = "button"
+            item.fill.visible = focused
+            item.icon.blendColor = focused ? m.accent : "#FFFFFF80"
         else
-            endpoint = "/api/v1/discover/tv"
-            queryParams["genre"] = m.top.genreId.toStr()
+            picked = item.id = m.statusFilter
+            item.fill.blendColor = "#FFFFFF14"
+            if picked then item.fill.blendColor = SELECTED
+            if focused and not picked then item.fill.blendColor = "#FFFFFF"
+            item.border.visible = focused and picked
+            item.label.font = picked ? item.boldFont : item.font
+            item.label.color = "#FFFFFFB3"
+            if picked then item.label.color = "#FFFFFF"
+            if focused and not picked then item.label.color = m.accent
         end if
-    else if browseType = "network"
-        endpoint = "/api/v1/discover/tv"
-        queryParams["network"] = m.top.genreId.toStr()
-    else if browseType = "studio"
-        endpoint = "/api/v1/discover/movies"
-        queryParams["studio"] = m.top.genreId.toStr()
-    else if browseType = "keyword"
-        if m.top.mediaType = "movie"
-            endpoint = "/api/v1/discover/movies"
-            queryParams["keywords"] = m.top.genreId.toStr()
-        else
-            endpoint = "/api/v1/discover/tv"
-            queryParams["keywords"] = m.top.genreId.toStr()
-        end if
-    else if browseType = "collection"
-        ' A collection comes back whole rather than a page at a time
-        endpoint = "/api/v1/collection/" + m.top.genreId.toStr()
-        queryParams = {}
+    end for
+end sub
+
+sub drawAlphaBar()
+    onBar = m.zone = "alpha" and m.browseFocus.hasFocus()
+    for i = 0 to m.alphaItems.count() - 1
+        item = m.alphaItems[i]
+        focused = onBar and i = m.alphaIndex
+        picked = item.id = m.letter
+        item.fill.visible = focused or picked
+        item.fill.blendColor = focused ? "#FFFFFF" : "#FFFFFF1A"
+        item.label.font = picked ? m.alphaBoldFont : m.alphaFont
+        item.label.color = "#FFFFFF8C"
+        if picked then item.label.color = SELECTED
+        if focused then item.label.color = m.accent
+    end for
+end sub
+
+sub focusZone(zone as string)
+    m.zone = zone
+    if zone = "grid"
+        m.mediaGrid.setFocus(true)
+        m.top.lastFocus = m.mediaGrid
+    else if zone = "collection"
+        m.collectionButton.setFocus(true)
+        m.top.lastFocus = m.collectionButton
     else
-        ' Default to genre
-        if m.top.mediaType = "movie"
-            endpoint = "/api/v1/discover/movies"
-            queryParams["genre"] = m.top.genreId.toStr()
-        else
-            endpoint = "/api/v1/discover/tv"
-            queryParams["genre"] = m.top.genreId.toStr()
+        m.browseFocus.setFocus(true)
+        m.top.lastFocus = m.browseFocus
+    end if
+    drawToolbar()
+    drawAlphaBar()
+end sub
+
+sub onScreenFocusChanged()
+    drawToolbar()
+    drawAlphaBar()
+end sub
+
+' The grid takes focus once it has something in it, and the bars hold it until then
+sub OnScreenShown(_isReturning = false as boolean)
+    if isValid(m.top.lastFocus) and not m.top.lastFocus.isSameNode(m.top)
+        m.top.lastFocus.setFocus(true)
+        setLastFocus(m.top.lastFocus)
+    else if m.mediaGrid.content.getChildCount() > 0
+        focusZone("grid")
+    else
+        m.browseFocus.setFocus(true)
+        m.top.lastFocus = m.browseFocus
+    end if
+end sub
+
+sub activateToolbarItem()
+    item = m.toolbarItems[m.toolbarIndex]
+    if item.id = "home"
+        m.global.sceneManager.callFunc("goHome")
+    else if item.id = "sort"
+        ShowSortDialog()
+    else if item.id = "settings"
+        ShowSettingsDialog()
+    else if item.id <> m.statusFilter
+        m.statusFilter = item.id
+        drawToolbar()
+        refilter()
+    end if
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if m.browseFocus.hasFocus() and m.zone = "toolbar"
+        if key = KeyCode.LEFT and m.toolbarIndex > 0
+            m.toolbarIndex = m.toolbarIndex - 1
+            drawToolbar()
+            return true
         end if
+        if key = KeyCode.RIGHT
+            if m.toolbarIndex < m.toolbarItems.count() - 1
+                m.toolbarIndex = m.toolbarIndex + 1
+                drawToolbar()
+            else if m.collectionButton.visible
+                focusZone("collection")
+            end if
+            return true
+        end if
+        if key = KeyCode.OK
+            activateToolbarItem()
+            return true
+        end if
+        if key = KeyCode.DOWN
+            focusZone("alpha")
+            return true
+        end if
+        if key = KeyCode.UP then return true
+    else if m.browseFocus.hasFocus() and m.zone = "alpha"
+        if key = KeyCode.LEFT and m.alphaIndex > 0
+            m.alphaIndex = m.alphaIndex - 1
+            drawAlphaBar()
+            return true
+        end if
+        if key = KeyCode.RIGHT
+            if m.alphaIndex < m.alphaItems.count() - 1
+                m.alphaIndex = m.alphaIndex + 1
+                drawAlphaBar()
+            end if
+            return true
+        end if
+        if key = KeyCode.OK
+            letter = m.alphaItems[m.alphaIndex].id
+            if letter <> m.letter
+                m.letter = letter
+                drawAlphaBar()
+                refilter()
+            end if
+            return true
+        end if
+        if key = KeyCode.UP
+            focusZone("toolbar")
+            return true
+        end if
+        if key = KeyCode.DOWN
+            if m.mediaGrid.content.getChildCount() > 0 then focusZone("grid")
+            return true
+        end if
+    else if m.collectionButton.hasFocus()
+        if key = KeyCode.LEFT
+            focusZone("toolbar")
+            return true
+        end if
+        if key = KeyCode.DOWN
+            focusZone("alpha")
+            return true
+        end if
+        if key = KeyCode.UP then return true
+    else if m.mediaGrid.hasFocus() and key = KeyCode.UP and m.mediaGrid.itemFocused < m.mediaGrid.numColumns
+        focusZone("alpha")
+        return true
     end if
 
+    if key = KeyCode.BACK
+        m.global.sceneManager.callFunc("popScene")
+        return true
+    end if
+
+    return false
+end function
+
+' ============================================
+' Grid
+' ============================================
+
+function PosterSize() as string
+    library = libraryCard.PosterSize(get_user_setting("ui.library.posterSize"), get_user_setting("ui.posterSize"))
+    return libraryCard.PosterSize(get_user_setting(SEERR_POSTER_SIZE_SETTING), library)
+end function
+
+' Core's grid: a card a third narrower than the poster size is tall, as many columns as fit with
+' room for a focused card to grow when focused cards grow, then the cells stretched to fill the
+' width
+sub applyPosterSize()
+    heights = { small: 120, medium: 150, large: 180, extraLarge: 210 }
+    cardWidth = heights[PosterSize()] * 2 / 3
+    spacing = 12
+    if m.expansion then spacing = 12 + cardWidth * (GROW_SCALE - 1) / 2
+    columns = Int((1150 - 120 + spacing) / (cardWidth + spacing))
+    if columns < 2 then columns = 2
+    if columns > 20 then columns = 20
+    cell = (1030 - (columns - 1) * spacing) / columns
+    imageHeight = cell * 1.5
+    growth = 0
+    if m.expansion then growth = imageHeight * (GROW_SCALE - 1)
+
+    cellPx = Int(cell * TV_SCALE + 0.5)
+    imagePx = Int(imageHeight * TV_SCALE + 0.5)
+    gapPx = Int(spacing * TV_SCALE + 0.5)
+    m.posterSize = [cellPx, imagePx]
+    ' The grid clips to its bounds, so each card carries room for its grown art and ring
+    growthPx = Int(growth * TV_SCALE + 0.5)
+    scaled = 1.0
+    if m.expansion then scaled = GROW_SCALE
+    insetX = Int(cellPx * (scaled - 1) / 2 + RING_OUTSET * scaled + 0.5)
+    insetY = growthPx + Int(RING_OUTSET * scaled + 0.5)
+    m.cardInset = [insetX, insetY]
+    m.mediaGrid.translation = [SIDE - insetX, HEADER_BOTTOM + Int((20 + growth) * TV_SCALE + 0.5) - insetY]
+    m.mediaGrid.itemSize = [cellPx + insetX * 2, insetY + imagePx + Int(42 * TV_SCALE + 0.5)]
+    m.mediaGrid.itemSpacing = [gapPx - insetX * 2, Int((16 + growth) * TV_SCALE + 0.5) - insetY]
+    m.mediaGrid.numColumns = columns
+end sub
+
+function cardSubtitle(item as object) as string
+    parts = []
+    date = item.releaseDate ?? item.firstAirDate ?? ""
+    if Len(date) >= 4 then parts.push(Left(date, 4))
+    score = item.voteAverage ?? 0
+    if SeerrIsNumber(score) and score > 0 then parts.push("★ " + SeerrFormatFloat(score, 1))
+    if IsItemAvailable(item)
+        parts.push(tr("Available"))
+    else if IsItemRequested(item)
+        parts.push(tr("Requested"))
+    end if
+    return parts.join("  ")
+end function
+
+function cardFor(item as object) as dynamic
+    node = CreateMediaContentNode(item)
+    if not isValid(node) then return invalid
+    node.addFields({
+        cardKind: "poster",
+        posterSize: m.posterSize,
+        maskUri: "pkg:/images/seerr/gridMask189.webp",
+        focusStyle: m.expansion ? "grow" : "ring",
+        cardInset: m.cardInset,
+        cardSubtitle: cardSubtitle(item)
+    })
+    return node
+end function
+
+function matchesFilters(item as object) as boolean
+    if m.statusFilter = "available" and not IsItemAvailable(item) then return false
+    if m.statusFilter = "requested" and not IsItemRequested(item) then return false
+    if m.letter = "" then return true
+
+    title = (item.title ?? item.name ?? "").Trim()
+    if title = "" then return false
+    first = UCase(Left(title, 1))
+    isLetter = first >= "A" and first <= "Z" and Len(first) = 1
+    if m.letter = "#" then return not isLetter
+    return first = m.letter
+end function
+
+' The chips and letters filter what has loaded, and read on when that leaves too little to show
+sub refilter()
+    content = CreateObject("roSGNode", "ContentNode")
+    for each item in m.items
+        if matchesFilters(item)
+            node = cardFor(item)
+            if isValid(node) then content.appendChild(node)
+        end if
+    end for
+    m.mediaGrid.content = content
+    showEmptyState()
+    updateFooter()
+    if content.getChildCount() < MIN_MATCHES then loadMore()
+end sub
+
+sub updateFooter()
+    labels = { all: tr("All"), available: tr("Available"), requested: tr("Requested") }
+    m.footerFilter.text = labels[m.statusFilter]
+    m.footerCount.text = `${m.mediaGrid.content.getChildCount()} ${tr("Items")}`
+end sub
+
+sub showEmptyState()
+    empty = m.mediaGrid.content.getChildCount() = 0
+    m.noResultsLabel.visible = empty and not m.isLoading
+    if empty
+        clearHud()
+        if m.mediaGrid.hasFocus() or (m.zone = "grid" and m.browseFocus.hasFocus()) then focusZone("alpha")
+    end if
+end sub
+
+sub clearHud()
+    m.itemTitle.text = ""
+    m.metaRow.visible = false
+end sub
+
+' ============================================
+' Loading
+' ============================================
+
+sub Reload()
+    m.items = []
+    m.currentPage = 0
+    m.totalPages = 1
+    m.isLoading = false
+    m.mediaGrid.content = CreateObject("roSGNode", "ContentNode")
+    clearHud()
+    updateFooter()
+    loadMore()
+end sub
+
+sub loadMore()
+    if m.isLoading or m.currentPage >= m.totalPages then return
+    m.scanMatches = 0
+    m.scanPages = 0
+    fetchPage(m.currentPage + 1)
+end sub
+
+function sortValue() as string
+    tv = m.browseMediaType = "tv"
+    base = "popularity"
+    if m.sortKey = "rating" then base = "vote_average"
+    if m.sortKey = "release" then base = tv ? "first_air_date" : "primary_release_date"
+    if m.sortKey = "title" then base = tv ? "name" : "original_title"
+    return `${base}.${m.sortDirection}`
+end function
+
+function releasedWindows() as object
+    return [
+        { label: tr("Any") },
+        { label: "2020s", fromYear: 2020 },
+        { label: "2010s", fromYear: 2010, toYear: 2019 },
+        { label: "2000s", fromYear: 2000, toYear: 2009 },
+        { label: "1990s", fromYear: 1990, toYear: 1999 },
+        { label: "1980s", fromYear: 1980, toYear: 1989 },
+        { label: tr("Before 1980"), toYear: 1979 }
+    ]
+end function
+
+function ratingOptions() as object
+    return [invalid, 5, 6, 7, 8, 9]
+end function
+
+function voteOptions() as object
+    return [invalid, 50, 100, 250, 500, 1000]
+end function
+
+function runtimeOptions() as object
+    return [
+        { label: tr("Any") },
+        { label: tr("Under 30m"), lte: 30 },
+        { label: tr("30m to 1h"), gte: 30, lte: 60 },
+        { label: tr("1h to 2h"), gte: 60, lte: 120 },
+        { label: tr("Over 2h"), gte: 120 }
+    ]
+end function
+
+function tvStatusOptions() as object
+    return [
+        { value: 0, label: tr("Returning") },
+        { value: 1, label: tr("Planned") },
+        { value: 2, label: tr("In Production") },
+        { value: 3, label: tr("Ended") },
+        { value: 4, label: tr("Canceled") },
+        { value: 5, label: tr("Pilot") }
+    ]
+end function
+
+' The discover request with every filter Core and Smart-TV send
+function browseRequest(page as integer) as object
+    browseType = m.top.browseType
+    id = m.top.genreId.ToStr()
+    if browseType = "collection" then return { endpoint: "/api/v1/collection/" + id, params: {} }
+
+    tv = m.browseMediaType = "tv"
+    ' Quoted, since Seerr matches these names exactly and a bare key goes out lowercased
+    params = { "page": page.ToStr(), "sortBy": sortValue() }
+    genres = []
+    if browseType = "genre" and m.top.genreId > 0 then genres.push(id)
+    for each genreId in m.genreIds
+        if not inArray(genres, genreId) then genres.push(genreId)
+    end for
+    if genres.count() > 0 then params["genre"] = genres.join(",")
+    if browseType = "network" then params["network"] = id
+    if browseType = "studio" then params["studio"] = id
+    if browseType = "keyword" then params["keywords"] = id
+    ' Seerr hands this to TMDB as the original language, so it only goes when one is picked
+    if m.language <> "" then params["language"] = m.language
+    rating = ratingOptions()[m.minRating]
+    if isValid(rating) then params["voteAverageGte"] = rating.ToStr()
+    votes = voteOptions()[m.minVotes]
+    if isValid(votes) then params["voteCountGte"] = votes.ToStr()
+    runtime = runtimeOptions()[m.runtime]
+    if isValid(runtime.gte) then params["withRuntimeGte"] = runtime.gte.ToStr()
+    if isValid(runtime.lte) then params["withRuntimeLte"] = runtime.lte.ToStr()
+    window = releasedWindows()[m.released]
+    datePrefix = tv ? "firstAirDate" : "primaryReleaseDate"
+    if isValid(window.fromYear) then params[datePrefix + "Gte"] = `${window.fromYear}-01-01`
+    if isValid(window.toYear) then params[datePrefix + "Lte"] = `${window.toYear}-12-31`
+    if tv and m.tvStatuses.count() > 0 then params["status"] = m.tvStatuses.join("|")
+
+    endpoint = "/api/v1/discover/movies"
+    if tv then endpoint = "/api/v1/discover/tv"
+    return { endpoint: endpoint, params: params }
+end function
+
+sub fetchPage(page as integer)
+    m.isLoading = true
+    if m.items.count() = 0 then ShowLoading()
+    request = browseRequest(page)
     m.apiTask = CreateObject("roSGNode", "SeerrAPITask")
-    m.apiTask.addFields({ page: m.currentPage })
-
-    m.apiTask.request = {
-        method: "GET",
-        endpoint: endpoint,
-        queryParams: queryParams
-    }
-
+    m.apiTask.addFields({ page: page })
+    m.apiTask.request = { method: "GET", endpoint: request.endpoint, queryParams: request.params }
     m.apiTask.observeField("response", "onContentResponse")
     m.apiTask.control = "RUN"
 end sub
 
 sub onContentResponse(event as object)
-    response = event.getData()
+    task = event.getRoSGNode()
+    task.unobserveField("response")
+    ' An answer for a request a filter change has since replaced is dropped
+    if not task.isSameNode(m.apiTask) then return
     m.isLoading = false
     HideLoading()
-
-    if response.success and response.data <> invalid
-        results = response.data.results
-        ' A collection lists its titles under parts rather than results
-        if results = invalid then results = response.data.parts
-
-        if results <> invalid and type(results) = "roArray"
-            ' Filter results based on current filter setting
-            blockNsfw = m.blockNsfwCache
-            filteredResults = []
-
-            for i = 0 to results.Count() - 1
-                item = results[i]
-                includeItem = true
-
-                ' Always filter NSFW if setting is enabled
-                if blockNsfw and IsItemNsfw(item)
-                    includeItem = false
-                end if
-
-                ' Apply filter based on current filter setting
-                if includeItem
-                    isAvailable = IsItemAvailable(item)
-                    isRequested = IsItemRequested(item)
-
-                    if m.currentFilter = "not_requested"
-                        ' Show only items that are NOT available and NOT requested
-                        if isAvailable or isRequested
-                            includeItem = false
-                        end if
-                    else if m.currentFilter = "available"
-                        ' Show only items that ARE available
-                        if not isAvailable
-                            includeItem = false
-                        end if
-                    end if
-                    ' "all" filter shows everything (minus NSFW if blocked)
-                end if
-
-                if includeItem
-                    filteredResults.push(item)
-                end if
-            end for
-
-            ' Check if there are more pages
-            totalPages = response.data.totalPages
-            if totalPages <> invalid
-                m.hasMorePages = m.currentPage < totalPages
-            else
-                m.hasMorePages = results.Count() >= 20
-            end if
-
-            ' Add items to grid
-            for i = 0 to filteredResults.Count() - 1
-                item = filteredResults[i]
-                mediaNode = CreateMediaContentNode(item)
-                if mediaNode <> invalid
-                    m.mediaGrid.content.appendChild(mediaNode)
-                end if
-            end for
-
-            ' Show no results message if empty
-            if m.mediaGrid.content.getChildCount() = 0
-                m.noResultsLabel.visible = true
-            else
-                m.noResultsLabel.visible = false
-                m.mediaGrid.setFocus(true)
-            end if
-        else
-            ShowError("No results found")
-        end if
-    else
-        errorMsg = "Failed to load content"
-        if response.error <> invalid
-            errorMsg = errorMsg + ": " + response.error
-        end if
-        ShowError(errorMsg)
+    response = event.getData()
+    if not isValid(response) or response.success <> true or not isValid(response.data)
+        message = tr("Failed to load content")
+        if isValid(response) and isValidAndNotEmpty(response.error) then message = message + ": " + response.error
+        ShowError(message)
+        return
     end if
+
+    data = response.data
+    results = data.results
+    ' A collection lists its titles under parts rather than results, and comes back whole
+    if results = invalid
+        results = data.parts
+        showCollectionParts(results)
+        m.totalPages = 1
+    else
+        m.totalPages = data.totalPages ?? 1
+    end if
+    m.currentPage = task.page
+    m.scanPages = m.scanPages + 1
+
+    content = m.mediaGrid.content
+    if type(results) = "roArray"
+        for each item in results
+            if not IsItemBlacklisted(item) and not (m.blockNsfwCache and IsItemNsfw(item))
+                m.items.push(item)
+                if matchesFilters(item)
+                    node = cardFor(item)
+                    if isValid(node)
+                        content.appendChild(node)
+                        m.scanMatches = m.scanMatches + 1
+                    end if
+                end if
+            end if
+        end for
+    end if
+
+    if content.getChildCount() > 0 and m.zone = "grid" and not m.mediaGrid.hasFocus() and m.top.isInFocusChain() and not isValid(m.browseSheet) then focusZone("grid")
+    if m.scanMatches < MIN_MATCHES and m.scanPages < MAX_PAGES_PER_SCAN and m.currentPage < m.totalPages
+        fetchPage(m.currentPage + 1)
+        return
+    end if
+    showEmptyState()
+    updateFooter()
 end sub
 
 sub onItemFocused(event as object)
     focusedIndex = event.getData()
+    content = m.mediaGrid.content
+    if focusedIndex < 0 or focusedIndex >= content.getChildCount() then return
+    UpdateInfoSection(content.getChild(focusedIndex))
 
-    if focusedIndex >= 0 and focusedIndex < m.mediaGrid.content.getChildCount()
-        focusedItem = m.mediaGrid.content.getChild(focusedIndex)
-
-        ' Update backdrop
-        if focusedItem <> invalid and focusedItem.hdBackgroundImageUrl <> invalid and focusedItem.hdBackgroundImageUrl <> ""
-            m.backdrop.uri = focusedItem.hdBackgroundImageUrl
-        end if
-
-        ' Update info section
-        UpdateInfoSection(focusedItem)
-
-        ' Load more when near end
-        itemsFromEnd = m.mediaGrid.content.getChildCount() - focusedIndex
-        if itemsFromEnd <= 8 and m.hasMorePages and not m.isLoading
-            m.currentPage = m.currentPage + 1
-            LoadContent()
-        end if
-    end if
+    if content.getChildCount() - focusedIndex <= m.mediaGrid.numColumns * 2 then loadMore()
 end sub
 
+' The focused title, its year and score, and a badge once Seerr has it or it's been asked for
 sub UpdateInfoSection(item as object)
     if item = invalid then return
+    m.itemTitle.text = item.title ?? ""
+    m.metaRow.visible = true
 
-    ' Update item title
-    if item.title <> invalid and item.title <> ""
-        m.itemTitle.text = item.title
-    else if item.name <> invalid and item.name <> ""
-        m.itemTitle.text = item.name
-    else
-        m.itemTitle.text = ""
+    x = 0
+    m.metaYear.text = item.releaseYear ?? ""
+    m.metaYear.visible = m.metaYear.text <> ""
+    if m.metaYear.visible
+        m.metaYear.translation = [x, 0]
+        x += textWidth(m.metaYear) + 13
     end if
 
-    ' Update year
-    if item.releaseYear <> invalid and item.releaseYear <> ""
-        m.metaYear.text = item.releaseYear
-    else
-        m.metaYear.text = ""
-    end if
-
-    ' Update type
-    if item.mediaType <> invalid and item.mediaType <> ""
-        if item.mediaType = "movie"
-            m.metaType.text = "Movie"
-        else if item.mediaType = "tv"
-            m.metaType.text = "TV Series"
-        else
-            m.metaType.text = item.mediaType
-        end if
-    else
-        m.metaType.text = ""
-    end if
-
-    ' Update rating
-    if item.rating <> invalid and item.rating <> ""
+    hasRating = isValidAndNotEmpty(item.rating) and SeerrIsNumber(item.voteAverage) and item.voteAverage > 0
+    m.starIcon.visible = hasRating
+    m.metaRating.visible = hasRating
+    if hasRating
+        m.starIcon.translation = [x, 3]
+        x += 23 + 3
         m.metaRating.text = item.rating
-        m.starIcon.visible = true
-    else
-        m.metaRating.text = ""
-        m.starIcon.visible = false
+        m.metaRating.translation = [x, 0]
+        x += textWidth(m.metaRating) + 13
     end if
 
-    ' Update overview
-    if item.overview <> invalid and item.overview <> ""
-        m.metaOverview.text = item.overview
-    else if item.description <> invalid and item.description <> ""
-        m.metaOverview.text = item.description
-    else
-        m.metaOverview.text = ""
+    badge = ""
+    color = ""
+    if IsItemAvailable(item)
+        badge = tr("Available")
+        color = "#22C55E"
+    else if IsItemRequested(item)
+        badge = tr("Requested")
+        color = SELECTED
+    end if
+    m.statusBadge.visible = badge <> ""
+    if m.statusBadge.visible
+        m.statusLabel.text = badge
+        width = textWidth(m.statusLabel) + 20
+        m.statusFill.width = width
+        m.statusFill.height = 26
+        m.statusFill.blendColor = color
+        m.statusLabel.translation = [10, 0]
+        m.statusLabel.height = 26
+        m.statusBadge.translation = [x, 1]
     end if
 end sub
+
+function textWidth(label as object) as integer
+    label.width = 0
+    label.height = 0
+    return Int(label.boundingRect().width + 0.5)
+end function
 
 sub onItemSelected(event as object)
     selectedIndex = event.getData()
-
-    if selectedIndex >= 0 and selectedIndex < m.mediaGrid.content.getChildCount()
-        selectedItem = m.mediaGrid.content.getChild(selectedIndex)
-        if selectedItem <> invalid
-            ShowSeerrDetails(selectedItem)
-        end if
-    end if
+    content = m.mediaGrid.content
+    if selectedIndex >= 0 and selectedIndex < content.getChildCount() then ShowSeerrDetails(content.getChild(selectedIndex))
 end sub
 
 sub ShowLoading()
@@ -358,186 +774,367 @@ sub ShowError(message as string)
     m.loadingLabel.visible = false
 end sub
 
-sub onSortButtonSelected()
-    ' Show sort dialog
-    ShowSortDialog()
-end sub
+' ============================================
+' Settings
+' ============================================
 
-sub onFilterButtonSelected()
-    ' Show filter dialog
-    ShowFilterDialog()
-end sub
-
-sub ShowFilterDialog()
-    ' Build filter data in RadioDialog format
-    filterData = { data: [] }
-    for i = 0 to m.filterOptions.count() - 1
-        item = {
-            Title: m.filterOptions[i].label,
-            Name: m.filterOptions[i].value,
-            Track: { description: m.filterOptions[i].label }
-        }
-        if m.filterOptions[i].value = m.currentFilter
-            item.selected = true
-        end if
-        filterData.data.push(item)
+sub ShowSettingsDialog()
+    size = PosterSize()
+    elements = [
+        { kind: "heading", text: tr("Seerr Settings").Replace("Seerr", GetSeerrDisplayName()) },
+        { kind: "subtitle", text: tr("Poster Size") },
+        { kind: "divider", color: "#FFFFFF14" }
+    ]
+    for each option in [{ id: "small", label: tr("Small") }, { id: "medium", label: tr("Medium") }, { id: "large", label: tr("Large") }, { id: "extraLarge", label: tr("Extra Large") }]
+        elements.push({ kind: "radioTile", id: option.id, label: option.label, selected: option.id = size })
     end for
-
-    m.global.sceneManager.callFunc("radioDialog", "Filter", filterData)
-    m.global.sceneManager.observeFieldScoped("returnData", "onFilterDialogResult")
+    OpenBrowseSheet(elements, "onPosterSizePicked")
 end sub
 
-sub onFilterDialogResult()
-    m.global.sceneManager.unobserveFieldScoped("returnData")
-    returnData = m.global.sceneManager.returnData
-    if returnData <> invalid and returnData.Name <> invalid
-        newFilter = returnData.Name
-        if newFilter <> m.currentFilter
-            m.currentFilter = newFilter
-            ' Reset state and create fresh content node
-            m.currentPage = 1
-            m.hasMorePages = true
-            ' Create fresh content node to force grid reset
-            m.mediaGrid.content = CreateObject("roSGNode", "ContentNode")
-            LoadContent()
-        end if
-    end if
+' The cards are bound again at the new size, keeping the one in focus
+sub onPosterSizePicked(event as object)
+    size = event.getData()
+    CloseBrowseSheet()
+    if size = PosterSize() then return
+    set_user_setting(SEERR_POSTER_SIZE_SETTING, size)
+    applyPosterSize()
 
-    ' Restore focus to filter button
-    if m.filterButton <> invalid
-        m.filterButton.setFocus(true)
-    end if
+    focused = m.mediaGrid.itemFocused
+    nodes = m.mediaGrid.content.getChildren(-1, 0)
+    for each node in nodes
+        node.posterSize = m.posterSize
+        node.cardInset = m.cardInset
+    end for
+    content = CreateObject("roSGNode", "ContentNode")
+    content.appendChildren(nodes)
+    m.mediaGrid.content = content
+    if focused >= 0 and focused < nodes.count() then m.mediaGrid.jumpToItem = focused
 end sub
 
-sub onSortButtonEscape()
-    escapeDir = m.sortButton.escape
-    if escapeDir = "right"
-        ' Move to filter button
-        if m.filterButton <> invalid
-            m.filterButton.setFocus(true)
-            m.currentFocus = "filterButton"
-        end if
-    else if escapeDir = "left"
-        ' Move back to grid
-        if m.mediaGrid <> invalid
-            m.mediaGrid.setFocus(true)
-            m.currentFocus = "grid"
-        end if
-    end if
-end sub
-
-sub onFilterButtonEscape()
-    escapeDir = m.filterButton.escape
-    if escapeDir = "left"
-        ' Move to sort button
-        if m.sortButton <> invalid
-            m.sortButton.setFocus(true)
-            m.currentFocus = "sortButton"
-        end if
-    end if
-end sub
+' ============================================
+' Sort and filter
+' ============================================
 
 sub ShowSortDialog()
-    ' Build sort data in RadioDialog format
-    sortData = { data: [] }
-    for i = 0 to m.sortOptions.count() - 1
-        item = {
-            Title: m.sortOptions[i].label,
-            Name: m.sortOptions[i].value,
-            Track: { description: m.sortOptions[i].label }
-        }
-        if m.sortOptions[i].value = m.currentSortBy
-            item.selected = true
-        end if
-        sortData.data.push(item)
+    loadFilterOptions()
+    OpenBrowseSheet(filterElements(), "onFilterPicked")
+end sub
+
+function hasFilters() as boolean
+    return m.genreIds.count() > 0 or m.tvStatuses.count() > 0 or m.released > 0 or m.minRating > 0 or m.minVotes > 0 or m.runtime > 0 or m.language <> ""
+end function
+
+function divider() as object
+    return { kind: "divider", color: "#FFFFFF14" }
+end function
+
+function radioRun(prefix as string, labels as object, picked as integer) as object
+    rows = []
+    for i = 0 to labels.count() - 1
+        rows.push({ kind: "radioTile", id: `${prefix}:${i}`, label: labels[i], selected: i = picked })
+    end for
+    return rows
+end function
+
+' Core's Sort & Filter dialog with Smart-TV's Media Type switch
+function filterElements() as object
+    elements = [{ kind: "heading", text: tr("Sort & Filter") }, divider()]
+    for each sort in [{ key: "popularity", label: tr("Popularity") }, { key: "rating", label: tr("Rating") }, { key: "release", label: tr("Release Date") }, { key: "title", label: tr("Title") }]
+        picked = sort.key = m.sortKey
+        arrow = ""
+        if picked then arrow = m.sortDirection = "asc" ? "pkg:/images/icons/sort_arrow_up.webp" : "pkg:/images/icons/sort_arrow_down.webp"
+        elements.push({ kind: "radioTile", id: "sort:" + sort.key, label: sort.label, selected: picked, trailingUri: arrow })
     end for
 
-    m.global.sceneManager.callFunc("radioDialog", "Sort By", sortData)
-    m.global.sceneManager.observeFieldScoped("returnData", "onSortDialogResult")
-end sub
+    if canSwitchMediaType()
+        elements.push(divider())
+        elements.push({ kind: "sectionHeader", text: tr("Media Type") })
+        elements.push({ kind: "radioTile", id: "type:movie", label: tr("Movies"), selected: m.browseMediaType = "movie" })
+        elements.push({ kind: "radioTile", id: "type:tv", label: tr("TV Shows"), selected: m.browseMediaType = "tv" })
+    end if
 
-sub onSortDialogResult()
-    m.global.sceneManager.unobserveFieldScoped("returnData")
-    returnData = m.global.sceneManager.returnData
-    if returnData <> invalid and returnData.Name <> invalid
-        newSortBy = returnData.Name
-        if newSortBy <> m.currentSortBy
-            m.currentSortBy = newSortBy
-            ' Reset state and create fresh content node
-            m.currentPage = 1
-            m.hasMorePages = true
-            ' Create fresh content node to force grid reset
-            m.mediaGrid.content = CreateObject("roSGNode", "ContentNode")
-            LoadContent()
+    if isValidAndNotEmpty(m.filterGenres)
+        elements.push(divider())
+        elements.push({ kind: "expanderTile", id: "genres", label: tr("Genres"), count: m.genreIds.count(), open: m.genresOpen })
+        if m.genresOpen
+            for each genre in m.filterGenres
+                elements.push({ kind: "checkTile", id: "genre:" + genre.id, label: genre.name, checked: inArray(m.genreIds, genre.id) })
+            end for
         end if
     end if
 
-    ' Restore focus to sort button
-    if m.sortButton <> invalid
-        m.sortButton.setFocus(true)
-    end if
-end sub
-
-function onKeyEvent(key as string, press as boolean) as boolean
-    if not press then return false
-
-    ' Handle navigation from grid to buttons (right from rightmost column)
-    if key = "right"
-        if m.currentFocus = "grid" and isValid(m.mediaGrid) and m.mediaGrid.hasFocus()
-            ' Check if at rightmost column
-            focusedIndex = m.mediaGrid.itemFocused
-            numColumns = m.mediaGrid.numColumns
-            columnIndex = focusedIndex mod numColumns
-            if columnIndex = numColumns - 1
-                ' Move focus to sort button
-                if m.sortButton <> invalid
-                    m.sortButton.setFocus(true)
-                    m.currentFocus = "sortButton"
-                    return true
-                end if
-            end if
-        end if
-        ' Note: button-to-button navigation handled by escape observers
+    if m.browseMediaType = "tv"
+        elements.push(divider())
+        elements.push({ kind: "sectionHeader", text: tr("Series Status") })
+        for each status in tvStatusOptions()
+            elements.push({ kind: "checkTile", id: `status:${status.value}`, label: status.label, checked: inArray(m.tvStatuses, status.value.ToStr()) })
+        end for
     end if
 
-    ' Handle down from buttons to grid
-    if key = "down"
-        if m.currentFocus = "sortButton" or m.currentFocus = "filterButton"
-            ' Move focus to grid
-            if m.mediaGrid <> invalid
-                m.mediaGrid.setFocus(true)
-                m.currentFocus = "grid"
-                return true
-            end if
-        end if
-    end if
+    labels = []
+    for each window in releasedWindows()
+        labels.push(window.label)
+    end for
+    elements.push(divider())
+    elements.push({ kind: "sectionHeader", text: tr("Released") })
+    elements.Append(radioRun("released", labels, m.released))
 
-    if key = "up"
-        if m.currentFocus = "sortButton" or m.currentFocus = "filterButton"
-            m.top.lastFocus = m.currentFocus = "sortButton" ? m.sortButton : m.filterButton
-            return FocusNav(m.top)
-        end if
+    labels = [tr("Any")]
+    for each rating in ratingOptions()
+        if isValid(rating) then labels.push(`${rating}+`)
+    end for
+    elements.push(divider())
+    elements.push({ kind: "sectionHeader", text: tr("Minimum Rating") })
+    elements.Append(radioRun("rating", labels, m.minRating))
 
-        if isValid(m.mediaGrid) and m.mediaGrid.hasFocus()
-            ' Check if we're on the top row
-            focusedIndex = m.mediaGrid.itemFocused
-            numColumns = m.mediaGrid.numColumns
-            if focusedIndex < numColumns
-                ' Move to sort/filter buttons instead of overhang
-                if m.sortButton <> invalid
-                    m.sortButton.setFocus(true)
-                    m.currentFocus = "sortButton"
-                    return true
-                end if
-            end if
+    labels = [tr("Any")]
+    for each votes in voteOptions()
+        if isValid(votes) then labels.push(`${votes}+`)
+    end for
+    elements.push(divider())
+    elements.push({ kind: "sectionHeader", text: tr("Minimum Votes") })
+    elements.Append(radioRun("votes", labels, m.minVotes))
+
+    labels = []
+    for each runtime in runtimeOptions()
+        labels.push(runtime.label)
+    end for
+    elements.push(divider())
+    elements.push({ kind: "sectionHeader", text: tr("Runtime") })
+    elements.Append(radioRun("runtime", labels, m.runtime))
+
+    if isValidAndNotEmpty(m.filterLanguages)
+        elements.push(divider())
+        count = 0
+        if m.language <> "" then count = 1
+        elements.push({ kind: "expanderTile", id: "languages", label: tr("Original Language"), count: count, open: m.languagesOpen })
+        if m.languagesOpen
+            elements.push({ kind: "radioTile", id: "lang:", label: tr("All"), selected: m.language = "" })
+            for each language in m.filterLanguages
+                elements.push({ kind: "radioTile", id: "lang:" + language.code, label: language.name, selected: m.language = language.code })
+            end for
         end if
     end if
 
-    ' Handle back button
-    if key = "back"
-        m.global.sceneManager.callFunc("popScene")
-        return true
+    if hasFilters()
+        elements.push(divider())
+        elements.push({ kind: "actionTile", id: "clear", label: tr("Clear Filters"), iconUri: "pkg:/images/icons/filter_off.webp", color: SELECTED })
     end if
-
-    return false
+    return elements
 end function
+
+' Sorting or clearing closes the dialog, as Core's does. The filters apply as they're picked and
+' leave it open.
+sub onFilterPicked(event as object)
+    picked = event.getData()
+    parts = picked.Split(":")
+    kind = parts[0]
+    value = ""
+    if parts.count() > 1 then value = parts[1]
+
+    if kind = "sort"
+        if value = m.sortKey
+            m.sortDirection = m.sortDirection = "asc" ? "desc" : "asc"
+        else
+            m.sortKey = value
+            m.sortDirection = value = "title" ? "asc" : "desc"
+        end if
+        CloseBrowseSheet()
+        Reload()
+        return
+    end if
+    if kind = "clear"
+        m.genreIds = []
+        m.tvStatuses = []
+        m.released = 0
+        m.minRating = 0
+        m.minVotes = 0
+        m.runtime = 0
+        m.language = ""
+        CloseBrowseSheet()
+        Reload()
+        return
+    end if
+
+    shouldReload = true
+    if kind = "type"
+        if value = m.browseMediaType then return
+        m.browseMediaType = value
+        m.tvStatuses = []
+        m.genreIds = []
+        m.filterGenres = invalid
+        loadFilterOptions()
+    else if kind = "genres"
+        m.genresOpen = not m.genresOpen
+        shouldReload = false
+    else if kind = "languages"
+        m.languagesOpen = not m.languagesOpen
+        shouldReload = false
+    else if kind = "genre"
+        m.genreIds = toggled(m.genreIds, value)
+    else if kind = "status"
+        m.tvStatuses = toggled(m.tvStatuses, value)
+    else if kind = "released"
+        m.released = value.ToInt()
+    else if kind = "rating"
+        m.minRating = value.ToInt()
+    else if kind = "votes"
+        m.minVotes = value.ToInt()
+    else if kind = "runtime"
+        m.runtime = value.ToInt()
+    else if kind = "lang"
+        m.language = value
+    end if
+
+    redrawSheet()
+    if shouldReload then Reload()
+end sub
+
+function toggled(list as object, value as string) as object
+    kept = []
+    found = false
+    for each entry in list
+        if entry = value
+            found = true
+        else
+            kept.push(entry)
+        end if
+    end for
+    if not found then kept.push(value)
+    return kept
+end function
+
+sub redrawSheet()
+    if not isValid(m.browseSheet) then return
+    m.browseSheet.elements = filterElements()
+    m.browseSheet.callFunc("render")
+end sub
+
+' The genres for this media type and Seerr's languages, read once when the dialog first opens
+sub loadFilterOptions()
+    if not isValid(m.filterGenres) and not isValid(m.genresTask)
+        m.genresTask = CreateObject("roSGNode", "SeerrAPITask")
+        m.genresTask.request = { method: "GET", endpoint: "/api/v1/discover/genreslider/" + m.browseMediaType }
+        m.genresTask.observeField("response", "onFilterGenres")
+        m.genresTask.control = "RUN"
+    end if
+    if not isValid(m.filterLanguages) and not isValid(m.languagesTask)
+        m.languagesTask = CreateObject("roSGNode", "SeerrAPITask")
+        m.languagesTask.request = { method: "GET", endpoint: "/api/v1/languages" }
+        m.languagesTask.observeField("response", "onFilterLanguages")
+        m.languagesTask.control = "RUN"
+    end if
+end sub
+
+sub onFilterGenres(event as object)
+    m.genresTask.unobserveField("response")
+    m.genresTask = invalid
+    response = event.getData()
+    genres = []
+    if isValid(response) and response.success = true and type(response.data) = "roArray"
+        for each genre in response.data
+            if isValid(genre.id) and isValidAndNotEmpty(genre.name) then genres.push({ id: genre.id.ToStr(), name: genre.name })
+        end for
+    end if
+    m.filterGenres = genres
+    redrawSheet()
+end sub
+
+sub onFilterLanguages(event as object)
+    m.languagesTask.unobserveField("response")
+    m.languagesTask = invalid
+    response = event.getData()
+    languages = []
+    if isValid(response) and response.success = true and type(response.data) = "roArray"
+        for each language in response.data
+            code = language.iso_639_1 ?? ""
+            name = language.english_name ?? language.name ?? ""
+            if code <> "" and name <> "" then languages.push({ code: code, name: name })
+        end for
+        languages.SortBy("name")
+    end if
+    m.filterLanguages = languages
+    redrawSheet()
+end sub
+
+sub OpenBrowseSheet(elements as object, callback as string)
+    CloseBrowseSheet()
+    m.browseSheet = CreateObject("roSGNode", "SeerrSheet")
+    m.browseSheet.variant = "browse"
+    m.browseSheet.elements = elements
+    m.browseSheet.observeField("activated", callback)
+    m.browseSheet.observeField("closed", "CloseBrowseSheet")
+    m.top.getScene().appendChild(m.browseSheet)
+    m.browseSheet.callFunc("render")
+    m.browseSheet.setFocus(true)
+end sub
+
+sub CloseBrowseSheet()
+    if not isValid(m.browseSheet) then return
+    m.browseSheet.unobserveField("activated")
+    m.browseSheet.unobserveField("closed")
+    m.browseSheet.setFocus(false)
+    focusZone("toolbar")
+    m.top.getScene().removeChild(m.browseSheet)
+    m.browseSheet = invalid
+end sub
+
+' ============================================
+' Requesting a collection
+' ============================================
+
+' Blocklisted films stay out of the sheet, and the button only shows when one of the rest can
+' still be asked for on a track this viewer may use
+sub showCollectionParts(parts as dynamic)
+    m.collectionParts = []
+    if type(parts) = "roArray"
+        for each part in parts
+            if chainLookupReturn(part, "mediaInfo.status", 0) <> SEERR_MEDIA_BLOCKLISTED then m.collectionParts.push(part)
+        end for
+    end if
+
+    permissions = GetCurrentUserSeerrPermissions()
+    can4k = CanRequest4K(permissions, "movie")
+    requestable = false
+    for each part in m.collectionParts
+        if seerrRequestRules.PartRequestable(part, false) or (can4k and seerrRequestRules.PartRequestable(part, true)) then requestable = true
+    end for
+    show = CanRequestMovies(permissions) and requestable
+    if not show and m.collectionButton.hasFocus() then focusZone("toolbar")
+    m.collectionButton.visible = show
+end sub
+
+sub ShowCollectionRequest()
+    permissions = GetCurrentUserSeerrPermissions()
+    m.collectionDialog = CreateObject("roSGNode", "SeerrRequestDialog")
+    m.collectionDialog.mediaType = "movie"
+    m.collectionDialog.parts = m.collectionParts
+    m.collectionDialog.canRequest4k = CanRequest4K(permissions, "movie")
+    m.collectionDialog.canRequestAdvanced = HasAdvancedRequestPermission(permissions)
+    m.collectionDialog.seerrUserId = CurrentSeerrUserId()
+    m.collectionDialog.returnFocus = m.collectionButton
+    m.collectionDialog.observeField("submitted", "onCollectionRequested")
+    m.collectionDialog.observeField("wasCancelled", "CloseCollectionRequest")
+    m.top.getScene().appendChild(m.collectionDialog)
+    m.collectionDialog.callFunc("showDialog")
+end sub
+
+sub CloseCollectionRequest()
+    if not isValid(m.collectionDialog) then return
+    m.collectionDialog.unobserveField("submitted")
+    m.collectionDialog.unobserveField("wasCancelled")
+    m.top.getScene().removeChild(m.collectionDialog)
+    m.collectionDialog = invalid
+end sub
+
+sub onCollectionRequested()
+    result = m.collectionDialog.result
+    CloseCollectionRequest()
+
+    title = tr("Request Collection")
+    if result.quotaStopped = true then title = tr("Request limit reached")
+    body = `${result.requested} ${tr("requested")}`
+    if result.failed > 0 then body += ` · ${result.failed} ${tr("failed")}`
+    m.top.getScene().findNode("notificationBanner").callFunc("enqueue", [{ title: title, body: body }])
+    Reload()
+end sub
