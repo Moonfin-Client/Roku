@@ -86,6 +86,7 @@ const selections = {
     'source/utils/libraryGroupBy.bs': null,
     'source/utils/libraryCard.bs': null,
     'source/utils/homeCards.bs': null,
+    'source/utils/calendarEntries.bs': null,
     'source/utils/incompleteRecordings.bs': null,
     'source/utils/favoriteTabs.bs': null,
     'source/utils/homePreview.bs': null,
@@ -252,6 +253,7 @@ for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin', 'ImageTypeN
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/settings-sync-values.bs', 'utf8');
 source += '\n' + await readFile('test/home-cards.bs', 'utf8');
+source += '\n' + await readFile('test/calendar-entries.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/keyboardLayouts.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/keyboard-layouts.bs', 'utf8');
 source += '\n' + await readFile('test/settings-sync-profile.bs', 'utf8');

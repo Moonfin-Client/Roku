@@ -9181,5 +9181,370 @@
         <extracomment>Header over the list of home rows on the Image Type per Row screen</extracomment>
         <translation>Images</translation>
     </message>
+    <message>
+        <source>Calendar</source>
+        <extracomment>Name of the screen of upcoming episodes and movies from Sonarr and Radarr, on the navigation bar and as the screen title</extracomment>
+        <translation>Calendar</translation>
+    </message>
+    <message>
+        <source>Full calendar</source>
+        <extracomment>Button on the calendar that opens the month grid</extracomment>
+        <translation>Full calendar</translation>
+    </message>
+    <message>
+        <source>Upcoming</source>
+        <extracomment>Calendar tab listing episodes and movies that haven&apos;t aired yet</extracomment>
+        <translation>Upcoming</translation>
+    </message>
+    <message>
+        <source>Recently aired</source>
+        <extracomment>Calendar tab listing episodes and movies from the last few days</extracomment>
+        <translation>Recently aired</translation>
+    </message>
+    <message>
+        <source>Ready to watch</source>
+        <extracomment>Calendar row of recent episodes and movies that are already in the library</extracomment>
+        <translation>Ready to watch</translation>
+    </message>
+    <message>
+        <source>Coming up this week</source>
+        <extracomment>Calendar row of episodes and movies airing in the next seven days</extracomment>
+        <translation>Coming up this week</translation>
+    </message>
+    <message>
+        <source>Nothing coming up</source>
+        <extracomment>Calendar message when no episodes or movies are scheduled</extracomment>
+        <translation>Nothing coming up</translation>
+    </message>
+    <message>
+        <source>Nothing aired recently</source>
+        <extracomment>Calendar message when nothing aired in the last few days</extracomment>
+        <translation>Nothing aired recently</translation>
+    </message>
+    <message>
+        <source>Nothing on this day</source>
+        <extracomment>Calendar message under a day with no episodes or movies</extracomment>
+        <translation>Nothing on this day</translation>
+    </message>
+    <message>
+        <source>Starts in</source>
+        <extracomment>Label over the countdown to the next episode or movie</extracomment>
+        <translation>Starts in</translation>
+    </message>
+    <message>
+        <source>days</source>
+        <extracomment>Unit under the days number of the calendar countdown</extracomment>
+        <translation>days</translation>
+    </message>
+    <message>
+        <source>hr</source>
+        <extracomment>Unit under the hours number of the calendar countdown</extracomment>
+        <translation>hr</translation>
+    </message>
+    <message>
+        <source>{day} at {time}</source>
+        <extracomment>When an episode airs, like Today at 9:00 PM. Keep {day} and {time}</extracomment>
+        <translation>{day} at {time}</translation>
+    </message>
+    <message>
+        <source>All day</source>
+        <extracomment>Time column of a calendar entry with no time of day, like a movie release</extracomment>
+        <translation>All day</translation>
+    </message>
+    <message>
+        <source>Series premiere</source>
+        <extracomment>Tag on the first episode of a series</extracomment>
+        <translation>Series premiere</translation>
+    </message>
+    <message>
+        <source>New season</source>
+        <extracomment>Tag on the first episode of a new season</extracomment>
+        <translation>New season</translation>
+    </message>
+    <message>
+        <source>Finale</source>
+        <extracomment>Tag on the last episode of a season</extracomment>
+        <translation>Finale</translation>
+    </message>
+    <message>
+        <source>Midseason finale</source>
+        <extracomment>Tag on the last episode before a season&apos;s mid-season break</extracomment>
+        <translation>Midseason finale</translation>
+    </message>
+    <message>
+        <source>Series finale</source>
+        <extracomment>Tag on the last episode of a series</extracomment>
+        <translation>Series finale</translation>
+    </message>
+    <message>
+        <source>NEW</source>
+        <extracomment>Short tag on a month grid day that has a premiere</extracomment>
+        <translation>NEW</translation>
+    </message>
+    <message>
+        <source>In library</source>
+        <extracomment>Tag on a calendar entry that is already on the server</extracomment>
+        <translation>In library</translation>
+    </message>
+    <message>
+        <source>Missing</source>
+        <extracomment>Tag on a calendar entry that aired but isn&apos;t on the server</extracomment>
+        <translation>Missing</translation>
+    </message>
+    <message>
+        <source>Not monitored</source>
+        <extracomment>Tag on a calendar entry that Sonarr or Radarr won&apos;t download</extracomment>
+        <translation>Not monitored</translation>
+    </message>
+    <message>
+        <source>+{count} more</source>
+        <extracomment>Month grid day cell when more titles air that day than fit. Keep {count}</extracomment>
+        <translation>+{count} more</translation>
+    </message>
+    <message>
+        <source>Movie details</source>
+        <extracomment>Button that opens a movie&apos;s details page from the calendar</extracomment>
+        <translation>Movie details</translation>
+    </message>
+    <message>
+        <source>Request</source>
+        <extracomment>Button that opens a title&apos;s Seerr page to request it</extracomment>
+        <translation>Request</translation>
+    </message>
+    <message>
+        <source>S{season} E{episode}</source>
+        <extracomment>Season and episode number on a calendar entry, like S1 E2. Keep {season} and {episode}</extracomment>
+        <translation>S{season} E{episode}</translation>
+    </message>
+    <message>
+        <source>In {days} days ({date})</source>
+        <extracomment>When the next episode airs, on the end of episode card, like In 6 days (Nov 11). Keep {days} and {date}</extracomment>
+        <translation>In {days} days ({date})</translation>
+    </message>
+    <message>
+        <source>Cinema</source>
+        <extracomment>Release format of a movie in the calendar</extracomment>
+        <translation>Cinema</translation>
+    </message>
+    <message>
+        <source>Digital</source>
+        <extracomment>Release format of a movie in the calendar</extracomment>
+        <translation>Digital</translation>
+    </message>
+    <message>
+        <source>Physical</source>
+        <extracomment>Release format of a movie in the calendar</extracomment>
+        <translation>Physical</translation>
+    </message>
+    <message>
+        <source>The calendar is limited to admins on this server.</source>
+        <extracomment>Calendar message when the server admin keeps the calendar to admins</extracomment>
+        <translation>The calendar is limited to admins on this server.</translation>
+    </message>
+    <message>
+        <source>An admin needs to sign in to Seerr in Moonfin before the calendar can load.</source>
+        <extracomment>Calendar message when the server can&apos;t reach Sonarr and Radarr yet</extracomment>
+        <translation>An admin needs to sign in to Seerr in Moonfin before the calendar can load.</translation>
+    </message>
+    <message>
+        <source>No Sonarr or Radarr server is linked yet.</source>
+        <extracomment>Calendar message when the server has no Sonarr or Radarr</extracomment>
+        <translation>No Sonarr or Radarr server is linked yet.</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t load the calendar.</source>
+        <extracomment>Calendar message when loading fails</extracomment>
+        <translation>Couldn&apos;t load the calendar.</translation>
+    </message>
+    <message>
+        <source>Show Calendar Button</source>
+        <extracomment>Settings toggle that adds the Calendar button to the navigation bar</extracomment>
+        <translation>Show Calendar Button</translation>
+    </message>
+    <message>
+        <source>Show the calendar of upcoming episodes and movies in the navigation bar</source>
+        <extracomment>Description of the Show Calendar Button setting</extracomment>
+        <translation>Show the calendar of upcoming episodes and movies in the navigation bar</translation>
+    </message>
+    <message>
+        <source>See All card</source>
+        <extracomment>Upcoming Calendars setting that ends the upcoming rows with a card opening the calendar</extracomment>
+        <translation>See All card</translation>
+    </message>
+    <message>
+        <source>End the upcoming rows with a card that opens the calendar</source>
+        <extracomment>Description of the See All card setting</extracomment>
+        <translation>End the upcoming rows with a card that opens the calendar</translation>
+    </message>
+    <message>
+        <source>Next air date at the end</source>
+        <extracomment>Playback setting that says when the next episode airs on the end of episode card</extracomment>
+        <translation>Next air date at the end</translation>
+    </message>
+    <message>
+        <source>When the next episode isn&apos;t in your library yet, the end of episode card says when it airs</source>
+        <extracomment>Description of the Next air date at the end setting</extracomment>
+        <translation>When the next episode isn&apos;t in your library yet, the end of episode card says when it airs</translation>
+    </message>
+    <message>
+        <source>Style, filters and actions for the calendar</source>
+        <extracomment>Description of the Calendar entry under Integrations in settings</extracomment>
+        <translation>Style, filters and actions for the calendar</translation>
+    </message>
+    <message>
+        <source>View</source>
+        <extracomment>Calendar settings section header for how the calendar opens and lays out weeks</extracomment>
+        <translation>View</translation>
+    </message>
+    <message>
+        <source>What shows</source>
+        <extracomment>Calendar settings section header for which episodes and movies the calendar lists</extracomment>
+        <translation>What shows</translation>
+    </message>
+    <message>
+        <source>Looks</source>
+        <extracomment>Calendar settings section header for how entries look</extracomment>
+        <translation>Looks</translation>
+    </message>
+    <message>
+        <source>Actions</source>
+        <extracomment>Calendar settings section header for what buttons and OK do</extracomment>
+        <translation>Actions</translation>
+    </message>
+    <message>
+        <source>Calendar style</source>
+        <extracomment>Calendar setting that picks what the Calendar button opens</extracomment>
+        <translation>Calendar style</translation>
+    </message>
+    <message>
+        <source>What the Calendar button opens. The full month is one button away in both.</source>
+        <extracomment>Description of the Calendar style setting</extracomment>
+        <translation>What the Calendar button opens. The full month is one button away in both.</translation>
+    </message>
+    <message>
+        <source>Agenda</source>
+        <extracomment>Calendar style that lists episodes and movies day by day</extracomment>
+        <translation>Agenda</translation>
+    </message>
+    <message>
+        <source>Countdown</source>
+        <extracomment>Calendar style that counts down to the next episode or movie</extracomment>
+        <translation>Countdown</translation>
+    </message>
+    <message>
+        <source>Week starts on</source>
+        <extracomment>Calendar setting for the first day of the week in the month grid</extracomment>
+        <translation>Week starts on</translation>
+    </message>
+    <message>
+        <source>Auto</source>
+        <extracomment>Week starts on choice that follows the device&apos;s language</extracomment>
+        <translation>Auto</translation>
+    </message>
+    <message>
+        <source>My shows keeps the series you favorited or started watching</source>
+        <extracomment>Description of the calendar Show setting</extracomment>
+        <translation>My shows keeps the series you favorited or started watching</translation>
+    </message>
+    <message>
+        <source>My shows</source>
+        <extracomment>Calendar Show choice that keeps the user&apos;s own series</extracomment>
+        <translation>My shows</translation>
+    </message>
+    <message>
+        <source>Include unmonitored</source>
+        <extracomment>Calendar setting that also lists titles Sonarr and Radarr won&apos;t download</extracomment>
+        <translation>Include unmonitored</translation>
+    </message>
+    <message>
+        <source>Also list episodes and movies Sonarr and Radarr aren&apos;t set to download</source>
+        <extracomment>Description of the Include unmonitored setting</extracomment>
+        <translation>Also list episodes and movies Sonarr and Radarr aren&apos;t set to download</translation>
+    </message>
+    <message>
+        <source>Season 0 episodes, like extras and holiday specials</source>
+        <extracomment>Description of the calendar Specials setting</extracomment>
+        <translation>Season 0 episodes, like extras and holiday specials</translation>
+    </message>
+    <message>
+        <source>Premiere and finale tags</source>
+        <extracomment>Calendar setting that tags premieres and finales</extracomment>
+        <translation>Premiere and finale tags</translation>
+    </message>
+    <message>
+        <source>Mark premieres, finales and new seasons</source>
+        <extracomment>Description of the Premiere and finale tags setting</extracomment>
+        <translation>Mark premieres, finales and new seasons</translation>
+    </message>
+    <message>
+        <source>Color by</source>
+        <extracomment>Calendar setting for what an entry&apos;s color means</extracomment>
+        <translation>Color by</translation>
+    </message>
+    <message>
+        <source>Type tells episodes from movies. Status shows what&apos;s in your library, coming up or missing.</source>
+        <extracomment>Description of the Color by setting</extracomment>
+        <translation>Type tells episodes from movies. Status shows what&apos;s in your library, coming up or missing.</translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <extracomment>Color by choice that colors entries by library status</extracomment>
+        <translation>Status</translation>
+    </message>
+    <message>
+        <source>Card image</source>
+        <extracomment>Calendar setting for the artwork on the Countdown rows</extracomment>
+        <translation>Card image</translation>
+    </message>
+    <message>
+        <source>The artwork on the Countdown rows</source>
+        <extracomment>Description of the Card image setting</extracomment>
+        <translation>The artwork on the Countdown rows</translation>
+    </message>
+    <message>
+        <source>Spoiler safe</source>
+        <extracomment>Calendar setting that hides episode titles and stills</extracomment>
+        <translation>Spoiler safe</translation>
+    </message>
+    <message>
+        <source>Hide episode titles and stills for shows you&apos;re behind on</source>
+        <extracomment>Description of the Spoiler safe setting</extracomment>
+        <translation>Hide episode titles and stills for shows you&apos;re behind on</translation>
+    </message>
+    <message>
+        <source>Selecting an item</source>
+        <extracomment>Calendar setting for what OK does on an entry</extracomment>
+        <translation>Selecting an item</translation>
+    </message>
+    <message>
+        <source>What OK or a tap does on something that&apos;s already in your library</source>
+        <extracomment>Description of the Selecting an item setting</extracomment>
+        <translation>What OK or a tap does on something that&apos;s already in your library</translation>
+    </message>
+    <message>
+        <source>Open details</source>
+        <extracomment>Selecting an item choice that opens the details page</extracomment>
+        <translation>Open details</translation>
+    </message>
+    <message>
+        <source>Play when in library</source>
+        <extracomment>Selecting an item choice that plays a title the server has</extracomment>
+        <translation>Play when in library</translation>
+    </message>
+    <message>
+        <source>Request button</source>
+        <extracomment>Calendar setting that shows the Seerr request button</extracomment>
+        <translation>Request button</translation>
+    </message>
+    <message>
+        <source>Show the Seerr request button on missing movies and seasons</source>
+        <extracomment>Description of the Request button setting</extracomment>
+        <translation>Show the Seerr request button on missing movies and seasons</translation>
+    </message>
+    <message>
+        <source>Seerr, Calendar, Achievement Badges, and friends.</source>
+        <extracomment>Description of the Integrations settings category</extracomment>
+        <translation>Seerr, Calendar, Achievement Badges, and friends.</translation>
+    </message>
 </context>
 </TS>

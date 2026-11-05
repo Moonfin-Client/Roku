@@ -1,0 +1,377 @@
+import "pkg:/source/api/MoonfinPlugin.bs"
+import "pkg:/source/utils/calendarEntries.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
+import "pkg:/source/utils/settingsGlyphs.bs"
+import "pkg:/source/utils/themeChrome.bs"
+
+' What the calendar styles and the month grid share: loading the whole window once, filtering it with
+' the user's calendar settings, the labels and colors each entry gets, and what OK on an entry does.
+' Each screen supplies onCalendarChanged, which runs whenever the entries change.
+
+sub calendarInit()
+    m.calAll = []
+    m.calEntries = []
+    m.calProgress = {}
+    m.calProblem = ""
+    m.calLoading = true
+    m.calTask = invalid
+    ' Kept as six digits so a tint or an alpha can be added to it. Without a theme this is the
+    ' Moonfin accent, since the cursor color is a Roku only setting.
+    m.calAccent = themeChrome.IsActive() ? themeChrome.WithAlpha(themeChrome.Accent(), "") : "#00A4DC"
+    m.calOnAccent = calendarInkOn(m.calAccent)
+    if themeChrome.IsActive() then m.calOnAccent = themeChrome.Token("onAccent", m.calOnAccent)
+    m.calBackground = themeChrome.Token("background", "0x101010FF")
+    m.calFocusColor = coreFocusColor()
+    window = moonfinPlugin.CalendarWindow()
+    m.calToday = calendarEntries.TodayNumber()
+    m.calNow = calendarEntries.NowEpoch()
+    m.calWindowStart = m.calToday - window.back
+    m.calWindowEnd = m.calToday + window.ahead + 1
+    calendarReadPrefs()
+end sub
+
+' The settings read once per pass, since every read of the session copies all of it
+sub calendarReadPrefs()
+    libraries = []
+    parsed = ParseJson(settingOr("calendar.libraryIds", "[]"))
+    if type(parsed) = "roArray"
+        for each id in parsed
+            if isValidAndNotEmpty(id) then libraries.push(toString(id))
+        end for
+    end if
+    m.calPrefs = {
+        showEpisodes: get_user_setting_bool("calendar.showEpisodes", true),
+        showMovies: get_user_setting_bool("calendar.showMovies", true),
+        showSpecials: get_user_setting_bool("calendar.showSpecials", false),
+        cinema: get_user_setting_bool("calendar.radarr.showCinema", true),
+        digital: get_user_setting_bool("calendar.radarr.showDigital", true),
+        physical: get_user_setting_bool("calendar.radarr.showPhysical", true),
+        libraryIds: libraries,
+        myShows: settingOr("calendar.scope", "everything") = "myShows",
+        unmonitored: get_user_setting_bool("calendar.includeUnmonitored", false),
+        spoilerSafe: get_user_setting_bool("calendar.spoilerSafe", false),
+        badges: get_user_setting_bool("calendar.showBadges", true),
+        colorBy: settingOr("calendar.colorBy", "type"),
+        imageType: settingOr("calendar.imageType", "poster"),
+        selectAction: settingOr("calendar.selectAction", "details"),
+        requestButton: get_user_setting_bool("calendar.requestButton", true),
+        weekStart: settingOr("calendar.weekStart", "locale"),
+        use24: get_user_setting_bool("playback.use24hourclock", false),
+        seerr: GetSeerrConfig().enabled
+    }
+    m.calPrefs.signature = FormatJson(m.calPrefs)
+end sub
+
+' Asks the server for the whole window. A screen opened from another can take what that one
+' already loaded instead.
+sub calendarLoad(shared = invalid as dynamic)
+    if type(shared) = "roAssociativeArray" and isValid(shared.entries)
+        m.calAll = shared.entries
+        m.calProblem = shared.problem ?? ""
+        m.calProgress = shared.progress ?? {}
+        m.calLoadedWith = shared.loadedWith ?? ""
+        m.calLoading = false
+        calendarApplyFilter()
+        onCalendarChanged()
+        return
+    end if
+
+    if isValid(m.calTask) then m.calTask.unobserveFieldScoped("result")
+    m.calLoading = true
+    m.calLoadedWith = calendarLoadKey()
+    m.calTask = CreateObject("roSGNode", "CalendarTask")
+    m.calTask.observeFieldScoped("result", "onCalendarResult")
+    m.calTask.request = {
+        windowStart: m.calWindowStart,
+        windowEnd: m.calWindowEnd,
+        unmonitored: m.calPrefs.unmonitored,
+        progress: calendarNeedsProgress(),
+        userId: m.global.session.user.id
+    }
+    m.calTask.control = "RUN"
+end sub
+
+' Unmonitored changes what the server sends, and My shows or spoiler safe need watch state
+function calendarLoadKey() as string
+    return `${m.calPrefs.unmonitored}|${calendarNeedsProgress()}`
+end function
+
+function calendarNeedsProgress() as boolean
+    return m.calPrefs.myShows or m.calPrefs.spoilerSafe
+end function
+
+sub onCalendarResult(event as object)
+    result = event.getData()
+    m.calTask.unobserveFieldScoped("result")
+    m.calTask = invalid
+    m.calAll = result.entries ?? []
+    m.calProblem = result.problem ?? ""
+    m.calProgress = result.progress ?? {}
+    m.calLoading = false
+    calendarApplyFilter()
+    onCalendarChanged()
+end sub
+
+sub calendarApplyFilter()
+    m.calNow = calendarEntries.NowEpoch()
+    m.calToday = calendarEntries.TodayNumber()
+    filter = {
+        showEpisodes: m.calPrefs.showEpisodes,
+        showMovies: m.calPrefs.showMovies,
+        showSpecials: m.calPrefs.showSpecials,
+        cinema: m.calPrefs.cinema,
+        digital: m.calPrefs.digital,
+        physical: m.calPrefs.physical,
+        libraryIds: m.calPrefs.libraryIds,
+        myShowsOnly: m.calPrefs.myShows,
+        followed: calendarEntries.FollowedIds(m.calProgress)
+    }
+    m.calEntries = calendarEntries.Filtered(m.calAll, filter)
+end sub
+
+' Back from Settings the screen follows whatever changed, and asks the server again only when
+' the change needs it. Returns whether anything changed.
+function calendarFollowSettings() as boolean
+    before = m.calPrefs.signature
+    calendarReadPrefs()
+    if m.calPrefs.signature = before then return false
+    if calendarLoadKey() <> m.calLoadedWith
+        calendarLoad()
+    else
+        calendarApplyFilter()
+        onCalendarChanged()
+    end if
+    return true
+end function
+
+' A theme's accent can be light, so the text on it turns dark when it is
+function calendarInkOn(color as string) as string
+    parts = themeChrome.RgbParts(color)
+    if 0.299 * parts.r + 0.587 * parts.g + 0.114 * parts.b > 153 then return "#000000DE"
+    return "#FFFFFF"
+end function
+
+function calendarProblemText(problem as string) as string
+    if problem = "adminsOnly" then return tr("The calendar is limited to admins on this server.")
+    if problem = "needsAdminSeerr" then return tr("An admin needs to sign in to Seerr in Moonfin before the calendar can load.")
+    if problem = "notConfigured" then return tr("No Sonarr or Radarr server is linked yet.")
+    return tr("Couldn't load the calendar.")
+end function
+
+function calendarColor(entry as object) as string
+    return calendarEntries.ColorOf(entry, m.calNow, m.calPrefs.colorBy, m.calAccent)
+end function
+
+function calendarTags(entry as object) as object
+    return calendarEntries.TagsOf(entry, m.calNow, m.calPrefs.badges, m.calAccent)
+end function
+
+function calendarHidesSpoilers(entry as object) as boolean
+    return calendarEntries.HidesSpoilers(entry, m.calPrefs.spoilerSafe, m.calProgress)
+end function
+
+function calendarSubtitle(entry as object) as string
+    return calendarEntries.Subtitle(entry, calendarHidesSpoilers(entry))
+end function
+
+function calendarWhen(entry as object) as string
+    return calendarEntries.WhenText(entry, m.calToday, m.calPrefs.use24)
+end function
+
+function calendarFallbackGlyph(entry as object) as string
+    if entry.kind = "movie" then return "movie_outlined"
+    return "tv_rounded"
+end function
+
+' What an agenda row draws, worked out once so a recycled row only places it
+function calendarRowFor(entry as object, header as string, headerDate as string, compact as boolean) as object
+    return {
+        compact: compact,
+        header: header,
+        headerDate: headerDate,
+        headerToday: entry.day = m.calToday,
+        accent: m.calAccent,
+        time: calendarEntries.TimeText(entry, m.calPrefs.use24),
+        color: calendarColor(entry),
+        thumb: calendarEntries.ThumbUrl(entry, calendarHidesSpoilers(entry)),
+        fallbackGlyph: calendarFallbackGlyph(entry),
+        title: entry.title,
+        subtitle: calendarSubtitle(entry),
+        tags: calendarTags(entry)
+    }
+end function
+
+' A ContentNode of agenda rows for a list. With headers, the first row of each day carries the
+' day's name and date over it. Returns the content and the rows' heights.
+function calendarRowsContent(entries as object, withHeaders as boolean, compact as boolean) as object
+    content = CreateObject("roSGNode", "ContentNode")
+    heights = []
+    lastDay = -1
+    for each entry in entries
+        header = ""
+        headerDate = ""
+        band = 0
+        if withHeaders and entry.day <> lastDay
+            header = calendarEntries.DayName(entry.day, m.calToday)
+            ' The date goes beside a name that isn't the date already
+            if header <> calendarEntries.ShortDate(entry.day) then headerDate = calendarEntries.LongDate(entry.day)
+            band = 85
+            if lastDay = -1 then band = 59
+            lastDay = entry.day
+        end if
+        row = calendarRowFor(entry, header, headerDate, compact)
+        ' A compact row's text column is taller than its thumbnail once it has tags, so it grows
+        cardHeight = 140
+        if compact
+            cardHeight = 103
+            if row.tags.Count() > 0 then cardHeight = 125
+        end if
+        node = content.createChild("CalendarRowData")
+        node.row = row
+        node.bandHeight = band
+        node.cardHeight = cardHeight
+        heights.push(band + cardHeight)
+    end for
+    return { content: content, heights: heights }
+end function
+
+' OK on an entry: Play when that's the setting and it's on the server, otherwise its details
+sub calendarSelect(entry as object)
+    if m.calPrefs.selectAction = "play" and calendarEntries.InLibrary(entry)
+        calendarPlay(entry)
+        return
+    end if
+    calendarOpenDetails(entry)
+end sub
+
+sub calendarPlay(entry as object)
+    id = calendarEntries.PlayableId(entry)
+    if id = "" then return
+    itemType = "Movie"
+    if entry.kind = "episode" then itemType = "Episode"
+    node = CreateObject("roSGNode", "ContentNode")
+    node.addFields({ type: itemType, json: { "Id": id, "Type": itemType }, selectedAudioStreamIndex: 0 })
+    node.addField("startingPoint", "longinteger", false)
+    node.id = id
+    m.global.sceneManager.quickPlayNode = node
+end sub
+
+' The episode or movie page when it's on the server, the series page for an episode that isn't
+' yet, and the Seerr page for a title the server lacks
+sub calendarOpenDetails(entry as object)
+    if entry.episodeId <> ""
+        m.global.sceneManager.itemMenuRequest = { action: "openItem", item: { "Id": entry.episodeId, "Type": "Episode" } }
+        return
+    end if
+    calendarOpenSeries(entry)
+end sub
+
+sub calendarOpenSeries(entry as object)
+    if entry.itemId <> ""
+        if entry.kind = "episode"
+            m.global.sceneManager.itemMenuRequest = { action: "goToSeries", seriesId: entry.itemId }
+        else
+            m.global.sceneManager.itemMenuRequest = { action: "openItem", item: { "Id": entry.itemId, "Type": "Movie" } }
+        end if
+        return
+    end if
+    calendarOpenSeerr(entry)
+end sub
+
+sub calendarOpenSeerr(entry as object)
+    if not m.calPrefs.seerr or entry.tmdbId = "" then return
+    mediaType = "movie"
+    if entry.kind = "episode" then mediaType = "tv"
+    ShowSeerrDetails({ tmdbId: entry.tmdbId.ToInt(), mediaType: mediaType })
+end sub
+
+function calendarCanOpen(entry as object) as boolean
+    return entry.itemId <> "" or entry.episodeId <> "" or (m.calPrefs.seerr and entry.tmdbId <> "")
+end function
+
+' The request button belongs on titles Sonarr or Radarr won't fetch
+function calendarShowsRequest(entry as object) as boolean
+    return not entry.monitored and not calendarEntries.InLibrary(entry) and entry.tmdbId <> "" and m.calPrefs.seerr and m.calPrefs.requestButton
+end function
+
+' The buttons an entry offers on the agenda preview and the countdown hero
+function calendarEntryButtons(entry as object, withPlay as boolean) as object
+    buttons = []
+    if withPlay and calendarEntries.InLibrary(entry) then buttons.push({ id: "play", text: tr("Play"), glyph: "play_arrow_rounded", primary: true })
+    if calendarShowsRequest(entry) then buttons.push({ id: "request", text: tr("Request"), glyph: "add_rounded", primary: true })
+    if calendarCanOpen(entry)
+        if entry.kind = "episode"
+            buttons.push({ id: "open", text: tr("Go to Series"), glyph: "tv_rounded", primary: false })
+        else
+            buttons.push({ id: "open", text: tr("Movie details"), glyph: "info_outline_rounded", primary: false })
+        end if
+    end if
+    return buttons
+end function
+
+sub calendarButtonAction(id as string, entry as object)
+    if id = "play"
+        calendarPlay(entry)
+    else if id = "request"
+        calendarOpenSeerr(entry)
+    else if id = "open"
+        calendarOpenSeries(entry)
+    end if
+end sub
+
+' Lays a row of CalendarButtons out in a group, wrapping onto another line past maxWidth. Returns
+' the nodes and the height they take.
+function calendarLayButtons(group as object, specs as object, maxWidth as float) as object
+    group.removeChildrenIndex(group.getChildCount(), 0)
+    nodes = []
+    x = 0
+    y = 0
+    rowHeight = 0
+    for each spec in specs
+        button = group.createChild("CalendarButton")
+        button.accent = m.calAccent
+        button.onAccent = m.calOnAccent
+        button.glyph = spec.glyph
+        button.text = spec.text
+        button.primary = spec.primary
+        if x > 0 and x + button.buttonWidth > maxWidth
+            x = 0
+            y += rowHeight + 20
+        end if
+        button.translation = [x, y]
+        x += button.buttonWidth + 20
+        rowHeight = button.buttonHeight
+        nodes.push(button)
+    end for
+    height = 0
+    if nodes.Count() > 0 then height = y + rowHeight
+    return { nodes: nodes, height: height }
+end function
+
+' A glyph from the icon font, kept out of the theme font
+function calendarGlyphLabel(size as integer) as object
+    label = CreateObject("roSGNode", "Label")
+    label.font = CreateObject("roSGNode", "Font")
+    label.font.uri = settingsGlyphs.FONT_URI
+    label.font.size = size
+    label.horizAlign = "center"
+    label.vertAlign = "center"
+    label.addField("themeBaseFont", "node", false)
+    return label
+end function
+
+' Pushes the month grid with what this screen loaded, or has it load its own while this one is
+' still waiting
+sub calendarOpenMonth()
+    screen = CreateObject("roSGNode", "CalendarMonthScreen")
+    if not m.calLoading then screen.shared = { entries: m.calAll, problem: m.calProblem, progress: m.calProgress, loadedWith: m.calLoadedWith }
+    m.global.sceneManager.callFunc("pushScene", screen)
+end sub
+
+' Where content starts under the top bar, or beside the left rail
+function calendarInsets() as object
+    if isStringEqual(get_user_setting("navbar.position"), "left") then return { top: 47, left: 174, right: 80, bottom: 40 }
+    return { top: 159, left: 80, right: 80, bottom: 40 }
+end function

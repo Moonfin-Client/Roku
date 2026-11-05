@@ -1,0 +1,114 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/calendarEntries.bs"
+import "pkg:/source/utils/misc.bs"
+
+const CALENDAR_TIMEOUT_MS = 20000
+const PROGRESS_BATCH = 50
+
+sub init()
+    m.top.functionName = "loadCalendar"
+end sub
+
+' The request names the window as local day numbers, from windowStart up to but not including
+' windowEnd. Sonarr's range is in UTC, so a day either side is asked for and trimmed here.
+sub loadCalendar()
+    request = m.top.request
+    windowStart = request.windowStart
+    windowEnd = request.windowEnd
+    query = { "start": calendarEntries.DateText(windowStart - 1), "end": calendarEntries.DateText(windowEnd + 1) }
+    if request.unmonitored = true then query["unmonitored"] = "true"
+
+    sonarr = fetchCalendar("Sonarr", query)
+    radarr = fetchCalendar("Radarr", query)
+
+    entries = []
+    for each raw in sonarr.data ?? []
+        entry = calendarEntries.ParseSonarr(raw)
+        if isValid(entry) and entry.day >= windowStart and entry.day < windowEnd then entries.push(entry)
+    end for
+    for each raw in radarr.data ?? []
+        entries.Append(calendarEntries.ParseRadarr(raw, windowStart, windowEnd))
+    end for
+    calendarEntries.SortEntries(entries)
+
+    problem = ""
+    if not isValid(sonarr.data) and not isValid(radarr.data) then problem = worstProblem(sonarr.problem, radarr.problem)
+
+    progress = {}
+    if request.progress = true then progress = seriesProgress(entries, request.userId)
+
+    m.top.result = { entries: entries, problem: problem, progress: progress }
+end sub
+
+' The arr's own array, or invalid with the reason that source isn't there
+function fetchCalendar(service as string, query as object) as object
+    req = APIRequest(`/Moonfin/Seerr/${service}/Calendar`, query)
+    if not isValid(req) then return { data: invalid, problem: "failed" }
+
+    plex = plexAnswer(req, "GET", "", CALENDAR_TIMEOUT_MS)
+    if plex <> invalid
+        status = plex.status
+        body = plexAnswerText(plex)
+        data = plex.data
+    else
+        req.RetainBodyOnError(true)
+        req.SetMessagePort(CreateObject("roMessagePort"))
+        if not req.AsyncGetToString() then return { data: invalid, problem: "failed" }
+        event = wait(CALENDAR_TIMEOUT_MS, req.GetMessagePort())
+        if type(event) <> "roUrlEvent"
+            req.AsyncCancel()
+            return { data: invalid, problem: "failed" }
+        end if
+        status = event.GetResponseCode()
+        body = event.GetString()
+        data = invalid
+        if status >= 200 and status < 300 and body <> "" then data = ParseJson(body)
+    end if
+
+    if status >= 200 and status < 300
+        if type(data) <> "roArray" then data = []
+        return { data: data, problem: "" }
+    end if
+
+    print `[Calendar] ${service} calendar failed: ${status}`
+    if status = 403 then return { data: invalid, problem: "adminsOnly" }
+    if status = 503 and Instr(1, body, "admin Seerr session") > 0 then return { data: invalid, problem: "needsAdminSeerr" }
+    if status = 404 or status = 503 then return { data: invalid, problem: "notConfigured" }
+    return { data: invalid, problem: "failed" }
+end function
+
+' The more telling of the two sources' problems, so a missing Radarr doesn't hide that Sonarr
+' needs an admin
+function worstProblem(first as string, second as string) as string
+    for each problem in ["adminsOnly", "needsAdminSeerr", "failed", "notConfigured"]
+        if first = problem or second = problem then return problem
+    end for
+    return "failed"
+end function
+
+' Favorite and watch state of the library series the calendar lists, a batch at a time
+function seriesProgress(entries as object, userId as dynamic) as object
+    ids = []
+    seen = {}
+    for each entry in entries
+        if entry.kind = "episode" and entry.itemId <> "" and not seen.DoesExist(entry.itemId)
+            seen[entry.itemId] = true
+            ids.push(entry.itemId)
+        end if
+    end for
+
+    progress = {}
+    for first = 0 to ids.Count() - 1 step PROGRESS_BATCH
+        batch = []
+        for i = first to first + PROGRESS_BATCH - 1
+            if i < ids.Count() then batch.push(ids[i])
+        end for
+        params = { "Ids": batch.Join(","), "Fields": "RecursiveItemCount", "EnableTotalRecordCount": "false" }
+        if isValidAndNotEmpty(userId) then params["UserId"] = userId
+        data = getJsonWithin(APIRequest("/Items", params), CALENDAR_TIMEOUT_MS)
+        for each item in chainLookupReturn(data, "Items", [])
+            if type(item) = "roAssociativeArray" then progress[toString(item.LookupCI("Id"))] = calendarEntries.ProgressOf(item)
+        end for
+    end for
+    return progress
+end function

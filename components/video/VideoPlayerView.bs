@@ -15,6 +15,7 @@ import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/enums/TimerControl.bs"
 import "pkg:/source/enums/VideoControl.bs"
 import "pkg:/source/utils/blockedContent.bs"
+import "pkg:/source/utils/calendarEntries.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/diagnostics.bs"
 import "pkg:/source/utils/embyFeatures.bs"
@@ -301,6 +302,9 @@ sub init()
     m.recordToast = m.top.findNode("recordToast")
     m.recordToastText = m.top.findNode("recordToastText")
     liveTvGuide.SetFont(m.recordToastText, 20, false)
+
+    m.nextAirDate = invalid
+    m.airDateShowing = false
 
     m.checkedForNextEpisode = false
     m.getNextEpisodeTask = createObject("roSGNode", "GetNextEpisodeTask")
@@ -1639,12 +1643,14 @@ sub onVideoContentLoaded(event as object)
     m.trickplay = videoContent[0].trickplay
     m.top.showID = videoContent[0].showID
     m.playingSeason = videoContent[0].seasonNumber
+    m.playingEpisode = videoContent[0].episodeNumber
     m.playingSeriesName = videoContent[0].seriesName
     m.mediaSegments = videoContent[0].mediaSegments
 
     ' A new item gets its own prompts, so an earlier dismissal doesn't carry over
     m.nextUpDismissed = false
     hideNextItem()
+    loadNextAirDate()
     ' A pre-roll gets the Skip button when Cinema Mode asks for it and the feature is queued behind it
     m.cinemaSkipOn = m.LoadMetaDataTask.isIntro = true and toBoolean(m.global.session.user.settings["playback.cinemamode.skip"] ?? false) and m.global.queueManager.callFunc("getPosition") < m.global.queueManager.callFunc("getCount") - 1
     resetSkipPrompts()
@@ -1974,7 +1980,79 @@ end sub
 sub hideNextItem()
     m.nextUp.visible = false
     m.nextUpTimer.control = TimerControl.STOP
+    m.airDateShowing = false
+    m.top.holdAtEnd = false
 end sub
+
+' Looks up when the series' next episode airs, for an episode the queue has nothing after
+sub loadNextAirDate()
+    m.nextAirDate = invalid
+    if isValid(m.airDateTask)
+        m.airDateTask.unobserveField("info")
+        m.airDateTask = invalid
+    end if
+    if not isValidAndNotEmpty(m.top.showID) or isValid(m.liveChannel) or m.LoadMetaDataTask.isIntro = true then return
+    if not get_user_setting_bool("playback.showNextAirDate", true) or isStringEqual(nextUpBehaviour(), "disabled") then return
+    if m.global.queueManager.callFunc("getPosition") < m.global.queueManager.callFunc("getCount") - 1 then return
+
+    m.airDateTask = CreateObject("roSGNode", "FetchUpcomingEpisodeTask")
+    m.airDateTask.observeField("info", "onNextAirDateLoaded")
+    item = { "Id": m.top.id, "Type": "Episode", "SeriesId": m.top.showID }
+    if isValid(m.itemServerData) then item.Append({ "_serverUrl": m.itemServerData.serverUrl, "_userId": m.itemServerData.userId, "_authToken": m.itemServerData.authToken })
+    m.airDateTask.itemData = item
+    m.airDateTask.control = TaskControl.RUN
+end sub
+
+' Kept only for the episode right after this one that hasn't aired yet. A next season already in
+' the library is queued once the finale ends, so anything further along means more to watch first.
+sub onNextAirDateLoaded()
+    info = m.airDateTask.info
+    m.airDateTask.unobserveField("info")
+    m.airDateTask = invalid
+    if not isValidAndNotEmpty(info) or not isValidAndNotEmpty(info.airDate) then return
+
+    season = m.playingSeason
+    episode = m.playingEpisode
+    if not isValid(season) or not isValid(episode) or not isValid(info.seasonNumber) or not isValid(info.episodeNumber) then return
+    follows = (info.seasonNumber = season and info.episodeNumber = episode + 1) or (info.seasonNumber = season + 1 and info.episodeNumber = 1)
+    if not follows then return
+
+    day = calendarEntries.LocalDayOf(info.airDate)
+    today = calendarEntries.TodayNumber()
+    if day < today then return
+
+    m.nextAirDate = {
+        label: `S${info.seasonNumber.ToStr()}:E${info.episodeNumber.ToStr()}`,
+        title: m.playingSeriesName ?? "",
+        airs: calendarEntries.ReleaseIn(day, today)
+    }
+end sub
+
+' The end of episode card for a series whose next episode isn't out yet: when it airs, and only a
+' close button
+function displayNextAirDate() as boolean
+    if m.nextUp.visible then return true
+    if not isValid(m.nextAirDate) or m.nextUpDismissed or isStringEqual(nextUpBehaviour(), "disabled") then return false
+    if m.global.queueManager.callFunc("getPosition") < m.global.queueManager.callFunc("getCount") - 1 then return false
+
+    m.nextUp.isMinimal = isStringEqual(nextUpBehaviour(), "minimal")
+    m.nextUp.thumbUri = string.EMPTY
+    m.nextUp.seriesTitle = m.nextAirDate.title
+    m.nextUp.episodeTitle = string.EMPTY
+    m.nextUp.episodeLabel = m.nextAirDate.label
+    m.nextUp.animeMarker = {}
+    m.nextUp.airsText = m.nextAirDate.airs
+    m.nextUp.focusedButton = NEXT_UP_DISMISS
+    m.nextUpElapsedMs = 0
+    m.nextUp.progress = 1.0
+    m.nextUp.secondsRemaining = Int(nextUpTimeoutMs() / 1000)
+    m.nextUp.visible = true
+    m.airDateShowing = true
+    ' Holds the player at the end so the card isn't closed with it
+    m.top.holdAtEnd = true
+    if nextUpTimeoutMs() > 0 then m.nextUpTimer.control = TimerControl.START
+    return true
+end function
 
 ' Returns whether the card is up, so the caller can fall back to a skip button
 function displayNextItem() as boolean
@@ -2007,6 +2085,7 @@ function displayNextItem() as boolean
     end if
     m.nextUp.thumbUri = thumbUri
 
+    m.nextUp.airsText = string.EMPTY
     m.nextUp.seriesTitle = nextItem.lookupCI("SeriesName") ?? string.EMPTY
     m.nextUp.episodeTitle = nextItem.lookupCI("name") ?? string.EMPTY
     m.nextUp.episodeLabel = episodeLabelFor(nextItem)
@@ -2068,6 +2147,10 @@ sub onNextUpTick()
 
     if remaining > 0 then return
 
+    if m.airDateShowing
+        cancelNextItem()
+        return
+    end if
     hideNextItem()
     if isAutoplayNextEpisodeEnabled()
         playNextUpItem()
@@ -2456,14 +2539,19 @@ sub checkNextUp()
     if m.osd.visible then return
     if m.top.trickPlayBar.visible then return
     ' Raising the card over a skip prompt would leave the prompt unpressable, so it waits for it
-    if isValid(m.skipPrompt) and not m.skipPromptLapsed then return
+    waitsForPrompt = isValid(m.skipPrompt) and not m.skipPromptLapsed
 
     remaining = m.top.duration - m.top.position
     threshold = isStringEqual(nextUpBehaviour(), "extended") ? 1 : 0.5
 
     if remaining > threshold then return
 
-    if displayNextItem() then clearSkipPrompt()
+    ' The air date card leaves nothing to skip to, so it takes over from a prompt in the last second
+    if waitsForPrompt
+        if displayNextAirDate() then clearSkipPrompt()
+        return
+    end if
+    if displayNextItem() or displayNextAirDate() then clearSkipPrompt()
 end sub
 
 '
@@ -4349,7 +4437,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if not press then return false
 
         if key = KeyCode.LEFT
-            m.nextUp.focusedButton = NEXT_UP_PLAY
+            ' The air date card has only its close button
+            if not m.airDateShowing then m.nextUp.focusedButton = NEXT_UP_PLAY
             return true
         end if
 

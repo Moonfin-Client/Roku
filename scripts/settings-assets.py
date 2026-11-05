@@ -43,6 +43,10 @@ EXTRA_GLYPHS = [
     'highlight_off', 'close',
     # The server, account and sign in screens
     'arrow_back', 'error', 'language', 'person',
+    # The calendar screens' buttons, messages and art fallbacks
+    'calendar_month_rounded', 'chevron_left_rounded', 'chevron_right_rounded', 'today_rounded',
+    'refresh_rounded', 'event_busy_rounded', 'event_available_rounded', 'add_rounded', 'tv_rounded',
+    'info_outline_rounded', 'movie_outlined',
 ]
 
 

@@ -1,0 +1,635 @@
+import "pkg:/source/utils/misc.bs"
+
+' The Sonarr and Radarr calendars read through Moonbase, one entry per episode airing or per
+' movie release date. Days are counted as whole local days since 1970, so the
+' screens can step through them with plain arithmetic.
+namespace calendarEntries
+
+    const MOVIE_COLOR = "#F2A93B"
+    const READY_COLOR = "#5BC46A"
+    const MISSING_COLOR = "#E0A15A"
+    const MUTED_COLOR = "#FFFFFF99"
+
+    ' One Sonarr calendar element, or invalid for one with no air date or no series
+    function ParseSonarr(json as dynamic) as dynamic
+        if type(json) <> "roAssociativeArray" then return invalid
+        series = json.LookupCI("series")
+        if type(series) <> "roAssociativeArray" then return invalid
+
+        airUtc = calendarEntries.textOf(json.LookupCI("airDateUtc"))
+        airDay = calendarEntries.textOf(json.LookupCI("airDate"))
+        hasTime = calendarEntries.isDateText(airUtc)
+        if not hasTime and not calendarEntries.isDateText(airDay) then return invalid
+
+        season = calendarEntries.intOf(json.LookupCI("seasonNumber"))
+        number = calendarEntries.intOf(json.LookupCI("episodeNumber"))
+        seriesImages = calendarEntries.imagesOf(series.LookupCI("images"))
+        episodeImages = calendarEntries.imagesOf(json.LookupCI("images"))
+        episodeTitle = calendarEntries.textOf(json.LookupCI("title"))
+        if episodeTitle = "TBA" then episodeTitle = ""
+
+        tvdbId = calendarEntries.positiveOf(series.LookupCI("tvdbId"))
+        sonarrId = calendarEntries.textOf(json.LookupCI("id"))
+        if sonarrId = "" then sonarrId = `${tvdbId}:${season}:${number}`
+
+        ' The series' runtime fills in only when the episode has none at all, so an unaired
+        ' episode's 0 stays 0 and shows no runtime
+        runtime = calendarEntries.intOf(json.LookupCI("runtime"))
+        if runtime < 0 then runtime = calendarEntries.intOf(series.LookupCI("runtime"))
+
+        entry = {
+            key: "sonarr:" + sonarrId,
+            kind: "episode",
+            release: "airing",
+            title: calendarEntries.textOf(series.LookupCI("title")),
+            episodeTitle: episodeTitle,
+            season: season,
+            episode: number,
+            overview: calendarEntries.textOf(json.LookupCI("overview")),
+            posterUrl: calendarEntries.sizedUrl(seriesImages.poster, "w500"),
+            backdropUrl: calendarEntries.sizedUrl(seriesImages.fanart, "w1280"),
+            stillUrl: calendarEntries.sizedUrl(episodeImages.screenshot, "w780"),
+            network: calendarEntries.textOf(series.LookupCI("network")),
+            runtime: runtime,
+            year: calendarEntries.intOf(series.LookupCI("year")),
+            tvdbId: tvdbId,
+            tmdbId: calendarEntries.positiveOf(series.LookupCI("tmdbId")),
+            imdbId: calendarEntries.textOf(series.LookupCI("imdbId")),
+            hasFile: calendarEntries.flagOf(json.LookupCI("hasFile"), false),
+            monitored: calendarEntries.flagOf(json.LookupCI("monitored"), true) and calendarEntries.flagOf(series.LookupCI("monitored"), true),
+            itemId: calendarEntries.textOf(json.LookupCI("moonfinItemId")),
+            episodeId: calendarEntries.textOf(json.LookupCI("moonfinEpisodeId")),
+            libraryIds: calendarEntries.idsOf(json.LookupCI("moonfinLibraryIds")),
+            badge: calendarEntries.episodeBadge(calendarEntries.textOf(json.LookupCI("finaleType")), season, number)
+        }
+        if hasTime
+            calendarEntries.placeAt(entry, airUtc)
+        else
+            calendarEntries.placeOnDay(entry, calendarEntries.DayOfText(airDay))
+        end if
+        return entry
+    end function
+
+    ' One Radarr calendar element as an entry per release date on a local day from startDay up to
+    ' but not including endDay
+    function ParseRadarr(json as dynamic, startDay as integer, endDay as integer) as object
+        found = []
+        if type(json) <> "roAssociativeArray" then return found
+        title = calendarEntries.textOf(json.LookupCI("title"))
+        if title = "" then return found
+
+        images = calendarEntries.imagesOf(json.LookupCI("images"))
+        tmdbId = calendarEntries.positiveOf(json.LookupCI("tmdbId"))
+        idPart = tmdbId
+        if idPart = "" then idPart = calendarEntries.textOf(json.LookupCI("id"))
+
+        for each kind in [["inCinemas", "cinema"], ["digitalRelease", "digital"], ["physicalRelease", "physical"]]
+            when = calendarEntries.textOf(json.LookupCI(kind[0]))
+            ' Release dates are whole days stored as UTC midnight, so the day is read before any
+            ' time zone shift
+            if calendarEntries.isDateText(when)
+                day = calendarEntries.DayOfText(when)
+                if day >= startDay and day < endDay
+                    entry = {
+                        key: `radarr:${idPart}:${kind[1]}`,
+                        kind: "movie",
+                        release: kind[1],
+                        title: title,
+                        episodeTitle: "",
+                        season: -1,
+                        episode: -1,
+                        overview: calendarEntries.textOf(json.LookupCI("overview")),
+                        posterUrl: calendarEntries.sizedUrl(images.poster, "w500"),
+                        backdropUrl: calendarEntries.sizedUrl(images.fanart, "w1280"),
+                        stillUrl: "",
+                        network: calendarEntries.textOf(json.LookupCI("studio")),
+                        runtime: calendarEntries.intOf(json.LookupCI("runtime")),
+                        year: calendarEntries.intOf(json.LookupCI("year")),
+                        tvdbId: "",
+                        tmdbId: tmdbId,
+                        imdbId: calendarEntries.textOf(json.LookupCI("imdbId")),
+                        hasFile: calendarEntries.flagOf(json.LookupCI("hasFile"), false),
+                        monitored: calendarEntries.flagOf(json.LookupCI("monitored"), true),
+                        itemId: calendarEntries.textOf(json.LookupCI("moonfinItemId")),
+                        episodeId: "",
+                        libraryIds: calendarEntries.idsOf(json.LookupCI("moonfinLibraryIds")),
+                        badge: ""
+                    }
+                    calendarEntries.placeOnDay(entry, day)
+                    found.push(entry)
+                end if
+            end if
+        end for
+        return found
+    end function
+
+    ' A timed airing keeps its moment and lands on the local day it falls on
+    sub placeAt(entry as object, airUtc as string)
+        date = CreateObject("roDateTime")
+        date.FromISO8601String(airUtc)
+        entry.seconds = date.AsSeconds()
+        entry.airedBy = entry.seconds
+        date.ToLocalTime()
+        entry.day = calendarEntries.DayNumber(date.GetYear(), date.GetMonth(), date.GetDayOfMonth())
+        entry.hasTime = true
+        entry.hour = date.GetHours()
+        entry.minute = date.GetMinutes()
+        calendarEntries.keySort(entry)
+    end sub
+
+    ' A day with no time counts from the start of that local day and has aired once it ends
+    sub placeOnDay(entry as object, day as integer)
+        entry.day = day
+        entry.hasTime = false
+        entry.hour = 0
+        entry.minute = 0
+        entry.seconds = calendarEntries.DayStartSeconds(day)
+        entry.airedBy = calendarEntries.DayStartSeconds(day + 1)
+        calendarEntries.keySort(entry)
+    end sub
+
+    ' By day, timed airings first and in time order, then by title and episode
+    sub keySort(entry as object)
+        timed = "1"
+        if entry.hasTime then timed = "0"
+        entry.sortKey = leftPad(entry.day.ToStr(), "0", 7) + timed + leftPad(entry.seconds.ToStr(), "0", 11) + LCase(entry.title) + "|" + leftPad(entry.episode.ToStr(), "0", 5)
+    end sub
+
+    ' What Play opens. A movie counts once its file is on the server.
+    function PlayableId(entry as object) as string
+        if entry.kind = "episode" then return entry.episodeId
+        if entry.hasFile then return entry.itemId
+        return ""
+    end function
+
+    function InLibrary(entry as object) as boolean
+        return calendarEntries.PlayableId(entry) <> ""
+    end function
+
+    function Status(entry as object, nowSeconds as integer) as string
+        if calendarEntries.InLibrary(entry) then return "ready"
+        if entry.airedBy > nowSeconds then return "upcoming"
+        return "missing"
+    end function
+
+    function episodeBadge(finale as string, season as integer, number as integer) as string
+        if finale = "series" then return "seriesFinale"
+        if finale = "season" then return "seasonFinale"
+        if finale = "midseason" then return "midseasonFinale"
+        if number <> 1 or season < 1 then return ""
+        if season = 1 then return "seriesPremiere"
+        return "seasonPremiere"
+    end function
+
+    ' The filter the user's calendar settings make. Followed holds the series the user favorited
+    ' or started, for My shows.
+    function Allows(entry as object, filter as object) as boolean
+        if entry.kind = "episode"
+            if not filter.showEpisodes then return false
+            if not filter.showSpecials and entry.season = 0 then return false
+            if filter.myShowsOnly and not filter.followed.DoesExist(entry.itemId) then return false
+        else
+            if not filter.showMovies then return false
+            if not calendarEntries.flagOf(filter[entry.release], true) then return false
+        end if
+
+        ' A picked library hides titles the server couldn't place in any library
+        if filter.libraryIds.Count() = 0 then return true
+        for each id in entry.libraryIds
+            if inArray(filter.libraryIds, id) then return true
+        end for
+        return false
+    end function
+
+    function Filtered(entries as object, filter as object) as object
+        kept = []
+        for each entry in entries
+            if calendarEntries.Allows(entry, filter) then kept.push(entry)
+        end for
+        return kept
+    end function
+
+    ' Sorts in place, oldest first or newest first
+    sub SortEntries(entries as object, newestFirst = false as boolean)
+        if newestFirst
+            entries.SortBy("sortKey", "r")
+        else
+            entries.SortBy("sortKey")
+        end if
+    end sub
+
+    ' Days from today on, for the Upcoming list
+    function Upcoming(entries as object, today as integer) as object
+        found = []
+        for each entry in entries
+            if entry.day >= today then found.push(entry)
+        end for
+        return found
+    end function
+
+    ' The days before today, newest first, for Recently aired
+    function Recent(entries as object, today as integer) as object
+        found = []
+        for each entry in entries
+            if entry.day < today then found.push(entry)
+        end for
+        calendarEntries.SortEntries(found, true)
+        return found
+    end function
+
+    ' What aired up to the end of today, newest first
+    function RecentAndToday(entries as object, today as integer) as object
+        return calendarEntries.Recent(entries, today + 1)
+    end function
+
+    ' Things that already aired and are on the server, newest first
+    function ReadyToWatch(entries as object, today as integer) as object
+        found = []
+        for each entry in calendarEntries.RecentAndToday(entries, today)
+            if calendarEntries.InLibrary(entry) then found.push(entry)
+        end for
+        return found
+    end function
+
+    ' The next thing to air from now that isn't on the server. A movie counts until its day ends.
+    function NextUp(entries as object, nowSeconds as integer) as dynamic
+        for each entry in entries
+            if not calendarEntries.InLibrary(entry) and entry.airedBy > nowSeconds then return entry
+        end for
+        return invalid
+    end function
+
+    function ThisWeek(entries as object, today as integer, nowSeconds as integer) as object
+        found = []
+        for each entry in entries
+            if entry.day >= today and entry.day < today + 7 and not calendarEntries.InLibrary(entry) and (not entry.hasTime or entry.seconds > nowSeconds) then found.push(entry)
+        end for
+        return found
+    end function
+
+    function OnDay(entries as object, day as integer) as object
+        found = []
+        for each entry in entries
+            if entry.day = day then found.push(entry)
+        end for
+        return found
+    end function
+
+    ' What a series' item says about the user's progress through it
+    function ProgressOf(item as object) as object
+        data = item.LookupCI("UserData")
+        if type(data) <> "roAssociativeArray" then data = {}
+        unplayed = calendarEntries.intOf(data.LookupCI("UnplayedItemCount"))
+        if unplayed < 0 then unplayed = 0
+        total = calendarEntries.intOf(item.LookupCI("RecursiveItemCount"))
+        started = calendarEntries.flagOf(data.LookupCI("Played"), false) or (total >= 0 and unplayed < total) or isValid(data.LookupCI("LastPlayedDate"))
+        return { favorite: calendarEntries.flagOf(data.LookupCI("IsFavorite"), false), started: started, unplayed: unplayed }
+    end function
+
+    ' The series a user follows, for My shows: favorited or started
+    function FollowedIds(progress as object) as object
+        followed = {}
+        for each id in progress
+            if progress[id].favorite or progress[id].started then followed[id] = true
+        end for
+        return followed
+    end function
+
+    ' Spoiler safe hides an episode's name and still for a series the user is part way through
+    function HidesSpoilers(entry as object, spoilerSafe as boolean, progress as object) as boolean
+        if not spoilerSafe or entry.kind <> "episode" then return false
+        seen = progress[entry.itemId]
+        return isValid(seen) and seen.started and seen.unplayed > 0
+    end function
+
+    ' The episode still when there is one and spoilers allow it, otherwise the series or movie art
+    function ThumbUrl(entry as object, hideSpoilers as boolean) as string
+        if not hideSpoilers and entry.stillUrl <> "" then return entry.stillUrl
+        if entry.backdropUrl <> "" then return entry.backdropUrl
+        return entry.posterUrl
+    end function
+
+    ' Colors: by type, episodes in the accent and movies amber. By status, in library green,
+    ' upcoming in the accent and aired but missing orange.
+    function ColorOf(entry as object, nowSeconds as integer, colorBy as string, accent as string) as string
+        if colorBy = "status"
+            current = calendarEntries.Status(entry, nowSeconds)
+            if current = "ready" then return calendarEntries.READY_COLOR
+            if current = "missing" then return calendarEntries.MISSING_COLOR
+            return accent
+        end if
+        if entry.kind = "movie" then return calendarEntries.MOVIE_COLOR
+        return accent
+    end function
+
+    function BadgeLabel(badge as string) as string
+        if badge = "seriesPremiere" then return tr("Series premiere")
+        if badge = "seasonPremiere" then return tr("New season")
+        if badge = "midseasonFinale" then return tr("Midseason finale")
+        if badge = "seasonFinale" then return tr("Finale")
+        if badge = "seriesFinale" then return tr("Series finale")
+        return ""
+    end function
+
+    function ReleaseLabel(release as string) as string
+        if release = "cinema" then return tr("Cinema")
+        if release = "digital" then return tr("Digital")
+        if release = "physical" then return tr("Physical")
+        return ""
+    end function
+
+    ' The status and badge tags an entry carries, as label and color pairs
+    function TagsOf(entry as object, nowSeconds as integer, showBadges as boolean, accent as string) as object
+        tags = []
+        if showBadges and entry.badge <> "" then tags.push({ label: calendarEntries.BadgeLabel(entry.badge), color: accent })
+        if calendarEntries.InLibrary(entry)
+            tags.push({ label: tr("In library"), color: calendarEntries.READY_COLOR })
+        else if calendarEntries.Status(entry, nowSeconds) = "missing"
+            tags.push({ label: tr("Missing"), color: calendarEntries.MISSING_COLOR })
+        end if
+        if not entry.monitored then tags.push({ label: tr("Not monitored"), color: calendarEntries.MUTED_COLOR })
+        return tags
+    end function
+
+    ' The line under the title: the episode code and name, or the movie's release type and year
+    function Subtitle(entry as object, hideSpoilers as boolean) as string
+        parts = []
+        if entry.kind = "movie"
+            parts.push(calendarEntries.ReleaseLabel(entry.release))
+            if entry.year > 0 then parts.push(entry.year.ToStr())
+        else
+            if entry.season >= 0 and entry.episode >= 0 then parts.push(tr("S{season} E{episode}").Replace("{season}", entry.season.ToStr()).Replace("{episode}", entry.episode.ToStr()))
+            if not hideSpoilers and entry.episodeTitle <> "" then parts.push(entry.episodeTitle)
+        end if
+        return parts.Join(" · ")
+    end function
+
+    function TimeText(entry as object, use24 as boolean) as string
+        if not entry.hasTime then return tr("All day")
+        return calendarEntries.ClockText(entry.hour, entry.minute, use24)
+    end function
+
+    function ClockText(hour as integer, minute as integer, use24 as boolean) as string
+        minutes = leftPad(minute.ToStr(), "0", 2)
+        if use24 then return leftPad(hour.ToStr(), "0", 2) + ":" + minutes
+        suffix = "AM"
+        if hour >= 12 then suffix = "PM"
+        shown = hour mod 12
+        if shown = 0 then shown = 12
+        return `${shown.ToStr()}:${minutes} ${suffix}`
+    end function
+
+    ' Today, Tomorrow, Yesterday or the date, like Wed, Nov 11
+    function DayName(day as integer, today as integer) as string
+        if day = today then return tr("Today")
+        if day = today + 1 then return tr("Tomorrow")
+        if day = today - 1 then return tr("Yesterday")
+        return calendarEntries.ShortDate(day)
+    end function
+
+    function ShortDate(day as integer) as string
+        civil = calendarEntries.CivilOf(day)
+        return `${calendarEntries.WeekdayShort(calendarEntries.Weekday(day))}, ${calendarEntries.MonthShort(civil.month)} ${civil.day.ToStr()}`
+    end function
+
+    function LongDate(day as integer) as string
+        civil = calendarEntries.CivilOf(day)
+        return `${calendarEntries.MonthLong(civil.month)} ${civil.day.ToStr()}`
+    end function
+
+    function FullDate(day as integer) as string
+        civil = calendarEntries.CivilOf(day)
+        return `${calendarEntries.MonthLong(civil.month)} ${civil.day.ToStr()}, ${civil.year.ToStr()}`
+    end function
+
+    function MonthTitle(year as integer, month as integer) as string
+        return `${calendarEntries.MonthLong(month)} ${year.ToStr()}`
+    end function
+
+    ' When it airs, like Today at 9:00 PM, or the day alone for a movie
+    function WhenText(entry as object, today as integer, use24 as boolean) as string
+        dayText = calendarEntries.DayName(entry.day, today)
+        if not entry.hasTime then return dayText
+        return tr("{day} at {time}").Replace("{day}", dayText).Replace("{time}", calendarEntries.ClockText(entry.hour, entry.minute, use24))
+    end function
+
+    ' Today (Nov 5), Tomorrow (Nov 6) or In 6 days (Nov 11), the way the Upcoming rows say it
+    function ReleaseIn(day as integer, today as integer) as string
+        civil = calendarEntries.CivilOf(day)
+        shortText = `${calendarEntries.MonthShort(civil.month)} ${civil.day.ToStr()}`
+        days = day - today
+        if days = 0 then return `${tr("Today")} (${shortText})`
+        if days = 1 then return `${tr("Tomorrow")} (${shortText})`
+        return tr("In {days} days ({date})").Replace("{days}", days.ToStr()).Replace("{date}", shortText)
+    end function
+
+    ' Days, hours and minutes left, the minutes rounded up so the last minute reads 1
+    function CountdownParts(targetSeconds as integer, nowSeconds as integer) as object
+        remaining = targetSeconds - nowSeconds
+        if remaining < 0 then remaining = 0
+        days = Int(remaining / 86400)
+        hours = Int((remaining mod 86400) / 3600)
+        minutes = Int(((remaining mod 3600) + 59) / 60) mod 60
+        return { days: days, hours: hours, minutes: minutes }
+    end function
+
+    ' The month grid's days, whole weeks from the week holding the 1st. weekStart is 0 for
+    ' Sunday and 1 for Monday.
+    function GridDays(year as integer, month as integer, weekStart as integer) as object
+        first = calendarEntries.DayNumber(year, month, 1)
+        lead = (calendarEntries.Weekday(first) - weekStart + 7) mod 7
+        length = calendarEntries.DaysInMonth(year, month)
+        rows = Int((lead + length + 6) / 7)
+        days = []
+        for i = 0 to rows * 7 - 1
+            days.push(first - lead + i)
+        end for
+        return days
+    end function
+
+    function DaysInMonth(year as integer, month as integer) as integer
+        nextYear = year
+        nextMonth = month + 1
+        if nextMonth > 12
+            nextMonth = 1
+            nextYear = year + 1
+        end if
+        return calendarEntries.DayNumber(nextYear, nextMonth, 1) - calendarEntries.DayNumber(year, month, 1)
+    end function
+
+    ' The first day of the week a locale uses. Most count from Monday.
+    ' Roku doesn't tell apps which day the locale's week starts on, so a list of Sunday countries stands in.
+    function LocaleWeekStart(locale as string) as integer
+        country = UCase(Right(locale, 2))
+        if inArray(["US", "CA", "MX", "BR", "JP", "KR", "TW", "HK", "PH", "IL", "IN", "SA", "ZA", "AU"], country) then return 0
+        return 1
+    end function
+
+    function WeekStartOf(setting as string, locale as string) as integer
+        if setting = "sunday" then return 0
+        if setting = "monday" then return 1
+        return calendarEntries.LocaleWeekStart(locale)
+    end function
+
+    function WeekdayShort(index as integer) as string
+        names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        return tr(names[index])
+    end function
+
+    function MonthShort(month as integer) as string
+        names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        return tr(names[month - 1])
+    end function
+
+    function MonthLong(month as integer) as string
+        names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+        return tr(names[month - 1])
+    end function
+
+    ' Days since 1970-01-01 for a date, after Howard Hinnant's days_from_civil
+    function DayNumber(year as integer, month as integer, day as integer) as integer
+        y = year
+        if month <= 2 then y = y - 1
+        era = Int(y / 400)
+        yearOfEra = y - era * 400
+        shifted = (month + 9) mod 12
+        dayOfYear = Int((153 * shifted + 2) / 5) + day - 1
+        dayOfEra = yearOfEra * 365 + Int(yearOfEra / 4) - Int(yearOfEra / 100) + dayOfYear
+        return era * 146097 + dayOfEra - 719468
+    end function
+
+    ' The year, month and day of a day number
+    function CivilOf(dayIndex as integer) as object
+        z = dayIndex + 719468
+        era = Int(z / 146097)
+        dayOfEra = z - era * 146097
+        yearOfEra = Int((dayOfEra - Int(dayOfEra / 1460) + Int(dayOfEra / 36524) - Int(dayOfEra / 146096)) / 365)
+        dayOfYear = dayOfEra - (365 * yearOfEra + Int(yearOfEra / 4) - Int(yearOfEra / 100))
+        shifted = Int((5 * dayOfYear + 2) / 153)
+        monthOf = shifted + 3
+        if shifted >= 10 then monthOf = shifted - 9
+        yearOf = yearOfEra + era * 400
+        if monthOf <= 2 then yearOf = yearOf + 1
+        return { year: yearOf, month: monthOf, day: dayOfYear - Int((153 * shifted + 2) / 5) + 1 }
+    end function
+
+    ' 0 for Sunday through 6 for Saturday
+    function Weekday(dayIndex as integer) as integer
+        return (dayIndex + 4) mod 7
+    end function
+
+    function DateText(dayIndex as integer) as string
+        civil = calendarEntries.CivilOf(dayIndex)
+        return `${civil.year.ToStr()}-${leftPad(civil.month.ToStr(), "0", 2)}-${leftPad(civil.day.ToStr(), "0", 2)}`
+    end function
+
+    function DayOfText(text as string) as integer
+        return calendarEntries.DayNumber(Left(text, 4).ToInt(), Mid(text, 6, 2).ToInt(), Mid(text, 9, 2).ToInt())
+    end function
+
+    ' The local day a date or a UTC timestamp falls on, or -1 for text that is neither
+    function LocalDayOf(text as dynamic) as integer
+        value = calendarEntries.textOf(text)
+        if not calendarEntries.isDateText(value) then return -1
+        if Len(value) = 10 then return calendarEntries.DayOfText(value)
+        date = CreateObject("roDateTime")
+        date.FromISO8601String(value)
+        date.ToLocalTime()
+        return calendarEntries.DayNumber(date.GetYear(), date.GetMonth(), date.GetDayOfMonth())
+    end function
+
+    ' The moment a local day starts, read off the offset at noon that day so a daylight saving
+    ' change elsewhere in the window doesn't move it
+    function DayStartSeconds(dayIndex as integer) as integer
+        noon = dayIndex * 86400 + 43200
+        date = CreateObject("roDateTime")
+        date.FromSeconds(noon)
+        date.ToLocalTime()
+        localNoon = calendarEntries.DayNumber(date.GetYear(), date.GetMonth(), date.GetDayOfMonth()) * 86400 + date.GetHours() * 3600 + date.GetMinutes() * 60 + date.GetSeconds()
+        return dayIndex * 86400 - (localNoon - noon)
+    end function
+
+    function TodayNumber() as integer
+        date = CreateObject("roDateTime")
+        date.ToLocalTime()
+        return calendarEntries.DayNumber(date.GetYear(), date.GetMonth(), date.GetDayOfMonth())
+    end function
+
+    function NowEpoch() as integer
+        return CreateObject("roDateTime").AsSeconds()
+    end function
+
+    ' A new roDateTime starts at the current time, so a string it can't read is caught first
+    function isDateText(value as string) as boolean
+        if Len(value) < 10 or Mid(value, 5, 1) <> "-" or Mid(value, 8, 1) <> "-" then return false
+        monthOf = Mid(value, 6, 2).ToInt()
+        dayOf = Mid(value, 9, 2).ToInt()
+        return monthOf >= 1 and monthOf <= 12 and dayOf >= 1 and dayOf <= 31
+    end function
+
+    ' The external artwork url per cover type. Local arr paths need the arr's API key and aren't
+    ' reachable from here, so they're skipped.
+    function imagesOf(raw as dynamic) as object
+        found = { poster: "", fanart: "", screenshot: "" }
+        if type(raw) <> "roArray" then return found
+        for each image in raw
+            if type(image) = "roAssociativeArray"
+                coverType = LCase(calendarEntries.textOf(image.LookupCI("coverType")))
+                url = calendarEntries.textOf(image.LookupCI("remoteUrl"))
+                if url = "" then url = calendarEntries.textOf(image.LookupCI("url"))
+                if found.DoesExist(coverType) and found[coverType] = "" and LCase(Left(url, 4)) = "http" then found[coverType] = url
+            end if
+        end for
+        return found
+    end function
+
+    ' TMDB serves the original file unless the path names a size
+    function sizedUrl(url as string, size as string) as string
+        return url.Replace("/t/p/original/", "/t/p/" + size + "/")
+    end function
+
+    function textOf(value as dynamic) as string
+        if not isValid(value) then return ""
+        valueType = type(value)
+        if valueType = "String" or valueType = "roString" then return value.Trim()
+        if valueType = "Boolean" or valueType = "roBoolean" then return ""
+        if valueType = "roArray" or valueType = "roAssociativeArray" then return ""
+        return value.ToStr().Trim()
+    end function
+
+    ' A whole number, or -1 when there is none
+    function intOf(value as dynamic) as integer
+        if not isValid(value) then return -1
+        valueType = type(value)
+        if valueType = "String" or valueType = "roString"
+            if value.Trim() = "" then return -1
+            return value.ToInt()
+        end if
+        if valueType = "Boolean" or valueType = "roBoolean" or valueType = "roArray" or valueType = "roAssociativeArray" then return -1
+        return Int(value)
+    end function
+
+    ' A provider id as text, empty when it is missing or zero
+    function positiveOf(value as dynamic) as string
+        number = calendarEntries.intOf(value)
+        if number <= 0 then return ""
+        return number.ToStr()
+    end function
+
+    function flagOf(value as dynamic, fallback as boolean) as boolean
+        valueType = type(value)
+        if valueType = "Boolean" or valueType = "roBoolean" then return value
+        return fallback
+    end function
+
+    function idsOf(value as dynamic) as object
+        ids = []
+        if type(value) <> "roArray" then return ids
+        for each id in value
+            text = calendarEntries.textOf(id)
+            if text <> "" then ids.push(text)
+        end for
+        return ids
+    end function
+
+end namespace

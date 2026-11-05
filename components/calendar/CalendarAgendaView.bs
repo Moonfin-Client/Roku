@@ -1,0 +1,454 @@
+import "pkg:/components/calendar/calendarHost.bs"
+import "pkg:/source/utils/misc.bs"
+
+const PANE_GAP = 53
+const PANE_PAD = 47
+const LIST_END_PAD = 13
+const TITLE_HEIGHT = 73
+
+sub init()
+    m.top.focusable = true
+    m.title = m.top.findNode("title")
+    m.fullButton = m.top.findNode("fullButton")
+    m.upcomingTab = m.top.findNode("upcomingTab")
+    m.recentTab = m.top.findNode("recentTab")
+    m.list = m.top.findNode("list")
+    m.state = m.top.findNode("state")
+    m.stateText = m.top.findNode("stateText")
+    m.retryButton = m.top.findNode("retryButton")
+    m.preview = m.top.findNode("preview")
+    m.previewMask = m.top.findNode("previewMask")
+    m.previewSurface = m.top.findNode("previewSurface")
+    m.previewArt = m.top.findNode("previewArt")
+    m.previewScrim = m.top.findNode("previewScrim")
+    m.previewInfo = m.top.findNode("previewInfo")
+    m.kicker = m.top.findNode("kicker")
+    m.previewTitle = m.top.findNode("previewTitle")
+    m.previewSubtitle = m.top.findNode("previewSubtitle")
+    m.previewTags = m.top.findNode("previewTags")
+    m.overview = m.top.findNode("overview")
+    m.previewButtons = m.top.findNode("previewButtons")
+    ' Holds the remote while a button or a tab is picked, since the view can't take focus back
+    ' from the list once the list has it
+    m.keys = m.top.createChild("Group")
+    m.keys.focusable = true
+
+    calendarInit()
+    m.recent = false
+    m.rows = []
+    m.zone = "full"
+    m.tabIndex = 0
+    m.buttonIndex = 0
+    m.buttonNodes = []
+    m.buttonSpecs = []
+    m.moved = false
+    m.previewEntry = invalid
+
+    m.stateIcon = calendarGlyphLabel(80)
+    m.stateIcon.color = "#FFFFFF66"
+    m.state.insertChild(m.stateIcon, 0)
+
+    layoutView()
+    m.list.observeField("itemFocused", "onRowFocused")
+    m.list.observeField("itemSelected", "onRowSelected")
+    m.top.observeField("focusedChild", "paintFocus")
+    calendarLoad()
+    showState()
+end sub
+
+sub layoutView()
+    insets = calendarInsets()
+    left = insets.left
+    top = insets.top
+    listWidth = Int((1920 - left - insets.right - PANE_GAP) / 2)
+    m.title.font = fontOfSize(50, true)
+    m.title.text = tr("Calendar")
+    m.title.color = "#FFFFFF"
+    m.title.translation = [left, top]
+    m.title.height = TITLE_HEIGHT
+    m.title.vertAlign = "center"
+
+    for each button in [m.fullButton, m.upcomingTab, m.recentTab, m.retryButton]
+        button.accent = m.calAccent
+        button.onAccent = m.calOnAccent
+    end for
+    tabsTop = top + TITLE_HEIGHT + 17
+    m.upcomingTab.tab = true
+    m.recentTab.tab = true
+    m.upcomingTab.text = tr("Upcoming")
+    m.recentTab.text = tr("Recently aired")
+    m.upcomingTab.translation = [left, tabsTop]
+    m.recentTab.translation = [left + m.upcomingTab.buttonWidth + 13, tabsTop]
+    m.fullButton.text = tr("Full calendar")
+    m.fullButton.translation = [left + listWidth - m.fullButton.buttonWidth, tabsTop + (m.upcomingTab.buttonHeight - m.fullButton.buttonHeight) / 2]
+    paintTabs()
+
+    listTop = tabsTop + m.upcomingTab.buttonHeight + 20
+    m.list.translation = [left, listTop]
+    m.list.itemWidth = listWidth - LIST_END_PAD
+    m.list.viewHeight = 1080 - insets.bottom - listTop
+    m.state.translation = [left, listTop]
+    m.stateArea = { width: listWidth, height: m.list.viewHeight }
+
+    paneLeft = left + listWidth + PANE_GAP
+    m.pane = { width: 1920 - insets.right - paneLeft, height: 1080 - insets.bottom - top }
+    m.preview.translation = [paneLeft, top]
+    m.previewMask.maskSize = [m.pane.width, m.pane.height]
+    for each layer in [m.previewSurface, m.previewArt, m.previewScrim]
+        layer.width = m.pane.width
+        layer.height = m.pane.height
+    end for
+    m.previewSurface.blendColor = themeChrome.Token("surface", "0x1A1A1AFF")
+    m.previewScrim.blendColor = m.calBackground
+    m.previewArt.loadWidth = m.pane.width
+    m.previewArt.loadHeight = m.pane.height
+
+    m.kicker.font = fontOfSize(22, true)
+    m.kicker.height = 31
+    m.kicker.vertAlign = "center"
+    m.previewTitle.font = fontOfSize(53, true)
+    ' Two title lines sit 75 apart
+    m.previewTitle.lineSpacing = 9
+    m.previewSubtitle.font = fontOfSize(27, false)
+    m.previewSubtitle.height = 37
+    m.previewSubtitle.vertAlign = "center"
+    m.overview.font = fontOfSize(25, false)
+    m.stateText.font = fontOfSize(27, false)
+    m.retryButton.text = tr("Retry")
+end sub
+
+sub paintTabs()
+    m.upcomingTab.primary = not m.recent
+    m.recentTab.primary = m.recent
+end sub
+
+sub onCalendarChanged()
+    focusedKey = ""
+    if isValid(m.previewEntry) then focusedKey = m.previewEntry.key
+    rebuildList(focusedKey)
+end sub
+
+sub rebuildList(focusedKey as string)
+    if m.recent
+        m.rows = calendarEntries.Recent(m.calEntries, m.calToday)
+    else
+        m.rows = calendarEntries.Upcoming(m.calEntries, m.calToday)
+    end if
+    built = calendarRowsContent(m.rows, true, false)
+    m.list.rowHeights = built.heights
+    m.list.content = built.content
+
+    index = 0
+    for i = 0 to m.rows.Count() - 1
+        if m.rows[i].key = focusedKey then index = i
+    end for
+    if m.rows.Count() > 0 and index > 0 then m.list.jumpToItem = index
+    showPreview(index)
+    showState()
+
+    ' Focus starts on the first row once there is one, unless the user already moved
+    if not m.moved and m.rows.Count() > 0 and m.zone <> "list"
+        m.zone = "list"
+        if m.top.isInFocusChain() then focusIn()
+    else if m.zone = "list" and m.rows.Count() = 0
+        m.zone = "tabs"
+        if m.top.isInFocusChain() then focusIn()
+    end if
+    if not m.moved and m.rows.Count() = 0 and m.calProblem <> "" and m.calProblem <> "adminsOnly" and m.zone <> "retry"
+        m.zone = "retry"
+        if m.top.isInFocusChain() then focusIn()
+    end if
+end sub
+
+' Loading, the server's problem, or an empty list, in place of the list
+sub showState()
+    message = ""
+    glyph = "event_available_rounded"
+    retry = false
+    if m.calLoading
+        message = tr("Loading...")
+        glyph = ""
+    else if m.calProblem <> ""
+        message = calendarProblemText(m.calProblem)
+        glyph = "event_busy_rounded"
+        retry = m.calProblem <> "adminsOnly"
+    else if m.rows.Count() = 0
+        if m.recent
+            message = tr("Nothing aired recently")
+        else
+            message = tr("Nothing coming up")
+        end if
+    end if
+
+    m.state.visible = message <> ""
+    m.list.visible = not m.state.visible
+    m.preview.visible = not m.state.visible and isValid(m.previewEntry)
+    if not m.state.visible then return
+
+    width = m.stateArea.width
+    y = m.stateArea.height / 2 - 120
+    m.stateIcon.text = settingsGlyphs.Char(glyph)
+    m.stateIcon.width = width
+    m.stateIcon.height = 80
+    m.stateIcon.translation = [0, y]
+    y += 107
+    m.stateText.width = width - 107
+    m.stateText.height = 0
+    m.stateText.text = message
+    textHeight = m.stateText.boundingRect().height
+    m.stateText.height = textHeight
+    m.stateText.translation = [53, y]
+    y += textHeight + 33
+    m.retryButton.visible = retry
+    m.retryButton.translation = [(width - m.retryButton.buttonWidth) / 2, y]
+end sub
+
+sub onRowFocused()
+    showPreview(m.list.itemFocused)
+end sub
+
+sub onRowSelected()
+    index = m.list.itemSelected
+    if index >= 0 and index < m.rows.Count() then calendarSelect(m.rows[index])
+end sub
+
+sub showPreview(index as integer)
+    m.previewEntry = invalid
+    if index >= 0 and index < m.rows.Count() then m.previewEntry = m.rows[index]
+    entry = m.previewEntry
+    m.preview.visible = isValid(entry) and not m.state.visible
+    if not isValid(entry) then return
+
+    hides = calendarHidesSpoilers(entry)
+    art = entry.backdropUrl
+    if not hides and entry.stillUrl <> "" then art = entry.stillUrl
+    m.previewArt.uri = art
+
+    kickerParts = []
+    if m.calPrefs.badges and entry.badge <> "" then kickerParts.push(calendarEntries.BadgeLabel(entry.badge))
+    kickerParts.push(calendarWhen(entry))
+    m.kicker.text = UCase(kickerParts.Join(" · "))
+    m.kicker.color = calendarColor(entry)
+
+    chips = []
+    if entry.network <> "" then chips.push({ label: entry.network, color: "#FFFFFFBF" })
+    if entry.runtime > 0 then chips.push({ label: Substitute(tr("{0} min"), entry.runtime.ToStr()), color: "#FFFFFFBF" })
+    chips.Append(calendarTags(entry))
+    width = m.pane.width - PANE_PAD * 2
+    m.previewTags.maxWidth = width
+    m.previewTags.tags = chips
+    ' The title takes a 75 tall line box per line, up to two
+    m.previewTitle.text = entry.title
+    m.previewTitle.width = width
+    m.previewTitle.height = 0
+    titleHeight = 75
+    if m.previewTitle.boundingRect().height > 90 then titleHeight = 150
+    m.previewTitle.height = titleHeight
+    m.previewTitle.vertAlign = "center"
+
+    subtitle = calendarSubtitle(entry)
+    m.previewSubtitle.text = subtitle
+    m.previewSubtitle.width = width
+    m.previewSubtitle.visible = subtitle <> ""
+
+    showOverview = not hides and entry.overview <> ""
+    m.overview.visible = showOverview
+    overviewHeight = 0
+    if showOverview
+        ' Lines sit 34 apart, with half the leading above the first line and below the last
+        m.overview.text = entry.overview
+        m.overview.width = width
+        m.overview.height = 0
+        m.overview.lineSpacing = 8
+        overviewHeight = m.overview.boundingRect().height + 8
+        m.overview.height = overviewHeight
+        m.overview.vertAlign = "center"
+    end if
+
+    m.buttonSpecs = calendarEntryButtons(entry, true)
+    laid = calendarLayButtons(m.previewButtons, m.buttonSpecs, width)
+    m.buttonNodes = laid.nodes
+    if m.buttonIndex >= m.buttonNodes.Count() then m.buttonIndex = 0
+
+    ' The column sits on the bottom of the pane and each gap holds whatever grows, so nothing can
+    ' overlap. The chips keep their gap even when there are none.
+    blocks = [{ node: m.kicker, height: 31, before: 0 }, { node: m.previewTitle, height: titleHeight, before: 10 }]
+    if m.previewSubtitle.visible then blocks.push({ node: m.previewSubtitle, height: 37, before: 7 })
+    blocks.push({ node: m.previewTags, height: m.previewTags.tagsHeight, before: 13 })
+    if showOverview then blocks.push({ node: m.overview, height: overviewHeight, before: 20 })
+    if laid.height > 0 then blocks.push({ node: m.previewButtons, height: laid.height, before: 33 })
+    total = 0
+    for each block in blocks
+        total += block.before + block.height
+    end for
+    y = m.pane.height - PANE_PAD - total
+    for each block in blocks
+        y += block.before
+        block.node.translation = [0, y]
+        y += block.height
+    end for
+    m.previewInfo.translation = [PANE_PAD, 0]
+    paintFocus()
+end sub
+
+sub paintFocus()
+    ' Focus handed to the view itself, by the nav coming back, goes on to where the remote was
+    if m.top.hasFocus()
+        focusIn()
+        return
+    end if
+    active = m.keys.hasFocus()
+    m.fullButton.focused = active and m.zone = "full"
+    m.upcomingTab.focused = active and m.zone = "tabs" and m.tabIndex = 0
+    m.recentTab.focused = active and m.zone = "tabs" and m.tabIndex = 1
+    m.retryButton.focused = active and m.zone = "retry"
+    for i = 0 to m.buttonNodes.Count() - 1
+        m.buttonNodes[i].focused = active and m.zone = "buttons" and m.buttonIndex = i
+    end for
+end sub
+
+sub focusIn()
+    if m.zone = "list" and m.rows.Count() > 0 and m.list.visible
+        m.list.setFocus(true)
+    else
+        if m.zone = "list" then m.zone = "full"
+        m.keys.setFocus(true)
+    end if
+    paintFocus()
+end sub
+
+sub followSettings()
+    calendarFollowSettings()
+end sub
+
+sub setZone(zone as string)
+    m.moved = true
+    m.zone = zone
+    focusIn()
+end sub
+
+' The nav comes back to wherever the remote was
+function goToNav(edge as string) as boolean
+    screen = m.top.getParent()
+    if m.zone = "list"
+        screen.lastFocus = m.list
+    else
+        screen.lastFocus = m.keys
+    end if
+    if edge = "up" then return FocusOverhang(m.top)
+    return FocusSidebar(m.top)
+end function
+
+function leaveHeader() as boolean
+    if m.rows.Count() > 0 and m.list.visible
+        setZone("list")
+    else if m.state.visible and m.retryButton.visible
+        setZone("retry")
+    end if
+    return true
+end function
+
+sub setTab(recent as boolean)
+    if recent = m.recent then return
+    m.recent = recent
+    paintTabs()
+    m.previewEntry = invalid
+    rebuildList("")
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if m.zone = "list"
+        if key = "up"
+            m.tabIndex = 0
+            if m.recent then m.tabIndex = 1
+            setZone("tabs")
+            return true
+        end if
+        if key = "right" and m.buttonNodes.Count() > 0
+            m.buttonIndex = 0
+            setZone("buttons")
+            return true
+        end if
+        if key = "left" then return goToNav("left")
+        return false
+    end if
+
+    if key = "OK"
+        if m.zone = "full"
+            calendarOpenMonth()
+        else if m.zone = "tabs"
+            setTab(m.tabIndex = 1)
+        else if m.zone = "retry"
+            calendarLoad()
+            showState()
+        else if m.zone = "buttons" and isValid(m.previewEntry) and m.buttonIndex < m.buttonSpecs.Count()
+            calendarButtonAction(m.buttonSpecs[m.buttonIndex].id, m.previewEntry)
+        end if
+        return true
+    end if
+
+    ' Full calendar ends the tabs' row, so Right stops on it and Left goes back to the tabs
+    if m.zone = "full"
+        if key = "left"
+            m.tabIndex = 1
+            setZone("tabs")
+            return true
+        end if
+        if key = "down" then return leaveHeader()
+        if key = "up" then return goToNav("up")
+        return key = "right"
+    end if
+
+    if m.zone = "tabs"
+        if key = "left"
+            if m.tabIndex = 0 then return goToNav("left")
+            m.tabIndex = 0
+            paintFocus()
+            return true
+        end if
+        if key = "right"
+            if m.tabIndex = 1
+                setZone("full")
+            else
+                m.tabIndex = 1
+                paintFocus()
+            end if
+            return true
+        end if
+        if key = "up" then return goToNav("up")
+        if key = "down" then return leaveHeader()
+        return false
+    end if
+
+    if m.zone = "retry"
+        if key = "up" then setZone("tabs")
+        if key = "left" then return goToNav("left")
+        return key = "up" or key = "down" or key = "right"
+    end if
+
+    if m.zone = "buttons"
+        if key = "left"
+            if m.buttonIndex = 0
+                setZone("list")
+            else
+                m.buttonIndex -= 1
+                paintFocus()
+            end if
+            return true
+        end if
+        if key = "right"
+            if m.buttonIndex < m.buttonNodes.Count() - 1 then m.buttonIndex += 1
+            paintFocus()
+            return true
+        end if
+        if key = "up"
+            setZone("full")
+            return true
+        end if
+        return key = "down"
+    end if
+
+    return false
+end function
