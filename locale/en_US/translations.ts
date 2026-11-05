@@ -6589,13 +6589,13 @@
     </message>
     <message>
         <source>Focus Follower</source>
-        <extracomment>Setting that shows the holiday piece, like Halloween's planchette, that follows the selected item on Home</extracomment>
+        <extracomment>Setting that shows the holiday piece, like Halloween&apos;s planchette, that follows the selected item on Home</extracomment>
         <translation>Focus Follower</translation>
     </message>
     <message>
-        <source>A holiday piece, like Halloween's planchette, follows what you select on Home</source>
+        <source>A holiday piece, like Halloween&apos;s planchette, follows what you select on Home</source>
         <extracomment>Description of the Focus Follower setting</extracomment>
-        <translation>A holiday piece, like Halloween's planchette, follows what you select on Home</translation>
+        <translation>A holiday piece, like Halloween&apos;s planchette, follows what you select on Home</translation>
     </message>
     <message>
         <source>Auto Hide Skip Button</source>
@@ -7501,12 +7501,12 @@
         <translation>Badge Style</translation>
     </message>
     <message>
-        <source>Badge puts Seerr's dot in a corner. Banner runs the status across the top of the poster.</source>
-        <translation>Badge puts Seerr's dot in a corner. Banner runs the status across the top of the poster.</translation>
+        <source>Badge puts Seerr&apos;s dot in a corner. Banner runs the status across the top of the poster.</source>
+        <translation>Badge puts Seerr&apos;s dot in a corner. Banner runs the status across the top of the poster.</translation>
     </message>
     <message>
         <source>Badge</source>
-        <extracomment>Badge Style option that marks a poster with Seerr's small status dot</extracomment>
+        <extracomment>Badge Style option that marks a poster with Seerr&apos;s small status dot</extracomment>
         <translation>Badge</translation>
     </message>
     <message>
@@ -7596,10 +7596,6 @@
     <message>
         <source>Use Series Thumbnails</source>
         <translation>Use Series Thumbnails</translation>
-    </message>
-    <message>
-        <source>Version {0}</source>
-        <translation>Version {0}</translation>
     </message>
     <message>
         <source>Video Player</source>
@@ -8101,37 +8097,37 @@
     <message>
         <source>Time&apos;s up</source>
         <translation>Time&apos;s up</translation>
-        <extracomment>Title of the screen shown when the signed in user's access schedule has closed</extracomment>
+        <extracomment>Title of the screen shown when the signed in user&apos;s access schedule has closed</extracomment>
     </message>
     <message>
         <source>This account isn&apos;t available right now.</source>
         <translation>This account isn&apos;t available right now.</translation>
-        <extracomment>Shown on the Time's up screen</extracomment>
+        <extracomment>Shown on the Time&apos;s up screen</extracomment>
     </message>
     <message>
         <source>You can use it again today at {0}.</source>
         <translation>You can use it again today at {0}.</translation>
-        <extracomment>Shown on the Time's up screen; {0} is a time of day</extracomment>
+        <extracomment>Shown on the Time&apos;s up screen; {0} is a time of day</extracomment>
     </message>
     <message>
         <source>You can use it again tomorrow at {0}.</source>
         <translation>You can use it again tomorrow at {0}.</translation>
-        <extracomment>Shown on the Time's up screen; {0} is a time of day</extracomment>
+        <extracomment>Shown on the Time&apos;s up screen; {0} is a time of day</extracomment>
     </message>
     <message>
         <source>You can use it again on {0} at {1}.</source>
         <translation>You can use it again on {0} at {1}.</translation>
-        <extracomment>Shown on the Time's up screen; {0} is a day of the week and {1} a time of day</extracomment>
+        <extracomment>Shown on the Time&apos;s up screen; {0} is a day of the week and {1} a time of day</extracomment>
     </message>
     <message>
         <source>Switch User</source>
         <translation>Switch User</translation>
-        <extracomment>Button on the Time's up screen that opens the list of users</extracomment>
+        <extracomment>Button on the Time&apos;s up screen that opens the list of users</extracomment>
     </message>
     <message>
         <source>You can use it again on {0}, {1} {2} at {3}.</source>
         <translation>You can use it again on {0}, {1} {2} at {3}.</translation>
-        <extracomment>Shown on the Time's up screen when the next opening is a week or more away; {0} is a day of the week, {1} a month, {2} the day of the month and {3} a time of day</extracomment>
+        <extracomment>Shown on the Time&apos;s up screen when the next opening is a week or more away; {0} is a day of the week, {1} a month, {2} the day of the month and {3} a time of day</extracomment>
     </message>
     <message>
         <source>Playlist order</source>
@@ -8285,12 +8281,12 @@
     </message>
     <message>
         <source>Overview</source>
-        <extracomment>The first pill on the music category strip, which goes back to the music library's own screen</extracomment>
+        <extracomment>The first pill on the music category strip, which goes back to the music library&apos;s own screen</extracomment>
         <translation>Overview</translation>
     </message>
     <message>
         <source>Music</source>
-        <extracomment>The music library's name when the server gives none</extracomment>
+        <extracomment>The music library&apos;s name when the server gives none</extracomment>
         <translation>Music</translation>
     </message>
     <message>
@@ -8399,9 +8395,9 @@
         <translation>Rediscover</translation>
     </message>
     <message>
-        <source>Favorites you haven't played lately</source>
+        <source>Favorites you haven&apos;t played lately</source>
         <extracomment>Line under the Rediscover mix on the music Songs screen</extracomment>
-        <translation>Favorites you haven't played lately</translation>
+        <translation>Favorites you haven&apos;t played lately</translation>
     </message>
     <message>
         <source>1 play</source>
@@ -8425,7 +8421,7 @@
     </message>
     <message>
         <source>Open Playlist</source>
-        <extracomment>Button on the music Playlists screen that opens the playlist's own screen</extracomment>
+        <extracomment>Button on the music Playlists screen that opens the playlist&apos;s own screen</extracomment>
         <translation>Open Playlist</translation>
     </message>
     <message>
@@ -8463,12 +8459,12 @@
     </message>
     <message>
         <source>Keep as Complete</source>
-        <extracomment>Detail and Recordings button, and its row in the button layout editor, that clears a recording's Incomplete mark</extracomment>
+        <extracomment>Detail and Recordings button, and its row in the button layout editor, that clears a recording&apos;s Incomplete mark</extracomment>
         <translation>Keep as Complete</translation>
     </message>
     <message>
         <source>Marked as complete</source>
-        <extracomment>Toast after Keep as Complete clears a recording's Incomplete mark</extracomment>
+        <extracomment>Toast after Keep as Complete clears a recording&apos;s Incomplete mark</extracomment>
         <translation>Marked as complete</translation>
     </message>
     <message>
@@ -8483,7 +8479,7 @@
     </message>
     <message>
         <source>{0} of {1} min</source>
-        <extracomment>Minutes an incomplete recording caught, out of the program's length</extracomment>
+        <extracomment>Minutes an incomplete recording caught, out of the program&apos;s length</extracomment>
         <translation>{0} of {1} min</translation>
     </message>
     <message>
@@ -8498,12 +8494,12 @@
     </message>
     <message>
         <source>No complete showing found</source>
-        <extracomment>No later showing of an incomplete recording's program to record</extracomment>
+        <extracomment>No later showing of an incomplete recording&apos;s program to record</extracomment>
         <translation>No complete showing found</translation>
     </message>
     <message>
         <source>The series recording will skip this showing</source>
-        <extracomment>Note on a program a series recording covers but won't record</extracomment>
+        <extracomment>Note on a program a series recording covers but won&apos;t record</extracomment>
         <translation>The series recording will skip this showing</translation>
     </message>
     <message>
@@ -8548,22 +8544,22 @@
     </message>
     <message>
         <source>Series recording updated</source>
-        <extracomment>Toast after a series recording's episode choice changes</extracomment>
+        <extracomment>Toast after a series recording&apos;s episode choice changes</extracomment>
         <translation>Series recording updated</translation>
     </message>
     <message>
         <source>Unable to update series recording</source>
-        <extracomment>Toast when a series recording can't be read or changed</extracomment>
+        <extracomment>Toast when a series recording can&apos;t be read or changed</extracomment>
         <translation>Unable to update series recording</translation>
     </message>
     <message>
         <source>Failed to load recordings</source>
-        <extracomment>Toast when the player's Record button can't read the program's recordings</extracomment>
+        <extracomment>Toast when the player&apos;s Record button can&apos;t read the program&apos;s recordings</extracomment>
         <translation>Failed to load recordings</translation>
     </message>
     <message>
         <source>Record This Program</source>
-        <extracomment>Player Record dialog row for a program that isn't a series</extracomment>
+        <extracomment>Player Record dialog row for a program that isn&apos;t a series</extracomment>
         <translation>Record This Program</translation>
     </message>
     <message>
@@ -8603,12 +8599,12 @@
     </message>
     <message>
         <source>1 min already aired</source>
-        <extracomment>Beside the Record prompt's progress bar</extracomment>
+        <extracomment>Beside the Record prompt&apos;s progress bar</extracomment>
         <translation>1 min already aired</translation>
     </message>
     <message>
         <source>{minutes} min already aired</source>
-        <extracomment>Beside the Record prompt's progress bar</extracomment>
+        <extracomment>Beside the Record prompt&apos;s progress bar</extracomment>
         <translation>{minutes} min already aired</translation>
     </message>
     <message>
@@ -8618,13 +8614,13 @@
     </message>
     <message>
         <source>Already set to record</source>
-        <extracomment>On the Record prompt's future showing when someone already set it to record</extracomment>
+        <extracomment>On the Record prompt&apos;s future showing when someone already set it to record</extracomment>
         <translation>Already set to record</translation>
     </message>
     <message>
-        <source>Matched by title and description only. Check it's the same program.</source>
+        <source>Matched by title and description only. Check it&apos;s the same program.</source>
         <extracomment>Record prompt caution when the plugin matched the future showing by its title and description</extracomment>
-        <translation>Matched by title and description only. Check it's the same program.</translation>
+        <translation>Matched by title and description only. Check it&apos;s the same program.</translation>
     </message>
     <message>
         <source>The descriptions differ, so this may be a different program.</source>
@@ -8648,7 +8644,7 @@
     </message>
     <message>
         <source>Record Now Only</source>
-        <extracomment>Record prompt button that records only what's airing</extracomment>
+        <extracomment>Record prompt button that records only what&apos;s airing</extracomment>
         <translation>Record Now Only</translation>
     </message>
     <message>
@@ -8677,9 +8673,9 @@
         <translation>Recording started. A future showing will be recorded too.</translation>
     </message>
     <message>
-        <source>Recording started, but couldn't request a future showing.</source>
-        <extracomment>Toast when the future showing couldn't be booked</extracomment>
-        <translation>Recording started, but couldn't request a future showing.</translation>
+        <source>Recording started, but couldn&apos;t request a future showing.</source>
+        <extracomment>Toast when the future showing couldn&apos;t be booked</extracomment>
+        <translation>Recording started, but couldn&apos;t request a future showing.</translation>
     </message>
     <message>
         <source>The future showing will be recorded.</source>
@@ -8687,9 +8683,9 @@
         <translation>The future showing will be recorded.</translation>
     </message>
     <message>
-        <source>Couldn't request the future showing, so nothing will be recorded.</source>
-        <extracomment>Toast when only the future showing was asked for and it couldn't be booked</extracomment>
-        <translation>Couldn't request the future showing, so nothing will be recorded.</translation>
+        <source>Couldn&apos;t request the future showing, so nothing will be recorded.</source>
+        <extracomment>Toast when only the future showing was asked for and it couldn&apos;t be booked</extracomment>
+        <translation>Couldn&apos;t request the future showing, so nothing will be recorded.</translation>
     </message>
     <message>
         <source>Sorting</source>
@@ -8773,7 +8769,7 @@
     </message>
     <message>
         <source>Seerr Discover Sliders</source>
-        <extracomment>Heading over the custom rows a Seerr admin added to Seerr's Discover page</extracomment>
+        <extracomment>Heading over the custom rows a Seerr admin added to Seerr&apos;s Discover page</extracomment>
         <translation>Seerr Discover Sliders</translation>
     </message>
     <message>
