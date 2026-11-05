@@ -436,24 +436,63 @@ end sub
 ' One page of the Seerr watchlist as request cards, which open the request screen. It needs a
 ' Seerr sign in, so without one the tab doesn't show.
 function watchlistPage(page as integer) as object
-    empty = { nodes: [], total: 0, fetched: 0 }
-    if not GetSeerrConfig().enabled then return empty
+    ' On Silo the tab leads with the library's titles on Silo's watchlist, which need no Seerr
+    ' sign in, as Moonfin Core shows them there
+    nodes = []
+    inLibrary = {}
+    if page = 1 and isSiloServer()
+        for each node in siloWatchlistNodes()
+            nodes.push(node)
+            tmdbId = toString(chainLookupReturn(node, "json.ProviderIds.Tmdb", ""))
+            if tmdbId <> "" then inLibrary[LCase(node.json.Type) + "/" + tmdbId] = true
+        end for
+    end if
+    libraryCount = nodes.count()
+    result = { nodes: nodes, total: libraryCount, fetched: libraryCount }
+    if not GetSeerrConfig().enabled then return result
     answer = seerrProxyJson("discover/watchlist", { page: page.ToStr() })
-    if not isValid(answer) or type(answer.results) <> "roArray" then return empty
+    if not isValid(answer) or type(answer.results) <> "roArray" then return result
 
     titles = []
+    shownAbove = 0
     for each item in answer.results
-        if type(item) = "roAssociativeArray" and isValid(item.LookupCI("tmdbId") ?? item.LookupCI("id")) then titles.push(item)
+        if type(item) = "roAssociativeArray" and isValid(item.LookupCI("tmdbId") ?? item.LookupCI("id"))
+            ' A title the library already shows above isn't offered again as a request, nor counted
+            kind = "movie"
+            if watchlistMediaType(item) = "tv" then kind = "series"
+            if inLibrary.DoesExist(kind + "/" + watchlistTmdbId(item))
+                shownAbove++
+            else
+                titles.push(item)
+            end if
+        end if
     end for
     withWatchlistDetails(titles)
 
-    nodes = []
     for each item in parentalControls.WithoutBlockedItems(titles)
         node = watchlistNode(item)
         if isValid(node) then nodes.push(node)
     end for
-    total = answer.totalResults ?? answer.results.count()
-    return { nodes: nodes, total: total, fetched: answer.results.count() }
+    result.total = libraryCount + (answer.totalResults ?? answer.results.count()) - shownAbove
+    result.fetched = libraryCount + answer.results.count()
+    return result
+end function
+
+' The library's movies and series on Silo's watchlist, as the cards the other tabs draw
+function siloWatchlistNodes() as object
+    userSession = getCurrentServerSession()
+    if not isValid(userSession) then return []
+    data = getJson(APIRequest("Items", {
+        UserId: userSession.userId,
+        IncludeItemTypes: "Movie,Series",
+        Recursive: true,
+        Filters: "IsInWatchlist",
+        Fields: favoriteTabs.FIELDS,
+        Limit: 200
+    }))
+    if not isChainValid(data, "Items") then return []
+    stampServer(data.Items, userSession)
+    return buildNodes(data.Items, [], favoriteTabs.WatchlistTab())
 end function
 
 ' The plugin hands Seerr's answer back as it is, or in a { FileContents: base64 } envelope
@@ -479,15 +518,16 @@ sub withWatchlistDetails(titles as object)
             req = APIRequest("/Moonfin/Seerr/Api/" + watchlistMediaType(item) + "/" + watchlistTmdbId(item), {})
             if isValid(req)
                 req.SetMessagePort(port)
-                if req.AsyncGetToString() then running[req.GetIdentity().ToStr()] = { req: req, item: item }
+                ' siloStartGet answers a Silo request itself and starts any other
+                if siloStartGet(req) then running[req.GetIdentity().ToStr()] = { req: req, item: item }
             end if
         end if
     end for
 
     startedAt = CreateObject("roDateTime").AsSeconds()
     while running.count() > 0 and CreateObject("roDateTime").AsSeconds() - startedAt < FAVORITES_TIMEOUT
-        msg = wait(1000, port)
-        if type(msg) <> "roUrlEvent" then continue while
+        msg = siloWait(1000, port)
+        if not isUrlEvent(msg) then continue while
         entry = running[msg.GetSourceIdentity().ToStr()]
         if not isValid(entry) then continue while
         running.Delete(msg.GetSourceIdentity().ToStr())
