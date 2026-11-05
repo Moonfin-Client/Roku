@@ -269,6 +269,7 @@ end function
 function probeServerCandidates(candidates as object, embyOnly = false as boolean, probeState = invalid as dynamic) as string
     port = CreateObject("roMessagePort")
     hosts = CreateObject("roAssociativeArray")
+    siloHosts = CreateObject("roAssociativeArray")
     reqs = []
     for each endpoint in candidates
         req = CreateObject("roUrlTransfer")
@@ -285,6 +286,19 @@ function probeServerCandidates(candidates as object, embyOnly = false as boolean
             reqs.push(req) ' keep in scope outside of loop, else -10001
             hosts.addreplace(req.getidentity().ToStr(), `${finalUrl}${endpoint.query = "" ? "" : `?${endpoint.query}`}`)
         end if
+        ' A Silo answers its own system info, and its web app answers the Jellyfin probe with a page
+        if not embyOnly and endpoint.query = ""
+            siloReq = CreateObject("roUrlTransfer")
+            siloReq.seturl(`${finalUrl}/api/v2/system/info`)
+            siloReq.AddHeader("Accept", "application/json")
+            siloReq.setMessagePort(port)
+            if isStringEqual(endpoint.proto, "https") then siloReq.setCertificatesFile("common:/certs/ca-bundle.crt")
+            if siloReq.AsyncGetToString()
+                reqs.push(siloReq)
+                hosts.addreplace(siloReq.getidentity().ToStr(), finalUrl)
+                siloHosts.addreplace(siloReq.getidentity().ToStr(), true)
+            end if
+        end if
     end for
     handled = 0
     if reqs.count() > 0
@@ -299,7 +313,15 @@ function probeServerCandidates(candidates as object, embyOnly = false as boolean
                 ' TODO
                 ' if response code is a 300 redirect then we should return the redirect url
                 ' Make sure this happens or make it happen
-                if resp.GetResponseCode() = 200 and isSupportedMediaServer(resp.GetString())
+                if resp.GetResponseCode() = 200 and siloHosts.DoesExist(resp.GetSourceIdentity().ToStr())
+                    if isSiloSystemInfo(ParseJson(resp.GetString()))
+                        selectedUrl = hosts.lookup(resp.GetSourceIdentity().ToStr())
+                        for each pending in reqs
+                            pending.AsyncCancel()
+                        end for
+                        return selectedUrl
+                    end if
+                else if resp.GetResponseCode() = 200 and isSupportedMediaServer(resp.GetString())
                     serverType = detectServerType(ParseJson(resp.GetString()))
                     if not embyOnly or serverType = "emby"
                         selectedUrl = hosts.lookup(resp.GetSourceIdentity().ToStr())
@@ -1028,6 +1050,13 @@ sub stopLoadingSpinner()
     end if
 end sub
 
+function isSiloSystemInfo(data as dynamic) as boolean
+    if type(data) <> "roAssociativeArray" then return false
+    if not isString(data.server_version) then return false
+    major = data.api_major
+    return type(major) = "roInt" or type(major) = "Integer" or type(major) = "roFloat" or type(major) = "Float" or type(major) = "Double" or type(major) = "roDouble" or type(major) = "LongInteger"
+end function
+
 function isSupportedMediaServer(systemInfo as string) as boolean
     return detectServerType(ParseJson(systemInfo)) <> ""
 end function
@@ -1557,6 +1586,42 @@ function normalizeDetailScreenStyleToken(value as dynamic) as string
     return "modern"
 end function
 
+' A profile without a picture shows its initial on a colour picked by the sum of its id's
+' characters, as Moonfin Core and Smart-TV (utils/profileCarousel.js) pick it, so it matches
+' on every client
+function avatarInitial(name as dynamic) as string
+    if not isValidAndNotEmpty(name) then return ""
+    return UCase(name.Trim().Left(1))
+end function
+
+function avatarInitialsColor(id as dynamic) as string
+    colors = ["0x2B6CB0FF", "0x9C4221FF", "0x2F855AFF", "0x6B46C1FF", "0xB83280FF", "0x2C7A7BFF"]
+    sum = 0
+    if isValidAndNotEmpty(id)
+        text = id.ToStr()
+        for i = 1 to Len(text)
+            sum += Asc(Mid(text, i, 1))
+        end for
+    end if
+    return colors[sum mod colors.Count()]
+end function
+
+' Shows a picture in an avatar Poster, or the initial on its colour (Label initials over the
+' Poster) when there's no picture to show
+sub showAvatar(picture as object, initials as dynamic, uri as dynamic, name as dynamic, id as dynamic)
+    if isValidAndNotEmpty(uri)
+        picture.blendColor = "0xFFFFFFFF"
+        picture.uri = uri
+        if isValid(initials) then initials.visible = false
+        return
+    end if
+    picture.uri = "pkg:/images/icons/circle.webp"
+    picture.blendColor = avatarInitialsColor(id)
+    if isValid(initials)
+        initials.text = avatarInitial(name)
+        initials.visible = true
+    end if
+end sub
 ' Anything the order leaves out keeps the server's order after the rest. A card goes by the Id in
 ' its json.
 function arrangeByStoredOrder(items as object, order as object) as object

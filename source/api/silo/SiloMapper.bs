@@ -1,0 +1,1163 @@
+import "pkg:/source/api/silo/SiloImages.bs"
+import "pkg:/source/api/silo/SiloMediaSources.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Silo answers in Jellyfin's shapes, for the screens built on them. Ported from Smart-TV's
+' siloMapper.js (itself a port of Moonfin-Core's server_silo mappers).
+namespace siloMap
+    const PRODUCT = "Silo"
+
+    function TextOf(value as dynamic) as string
+        if not isString(value) then return ""
+        return value.Trim()
+    end function
+
+    ' Silo's system info, identity, branding and setup as Jellyfin's PublicSystemInfo
+    function PublicInfo(systemInfo as object, identity as dynamic, branding as dynamic, setupInfo as dynamic) as object
+        name = ""
+        if type(branding) = "roAssociativeArray" then name = siloMap.TextOf(branding.server_name)
+        if name = "" then name = siloMap.PRODUCT
+        id = ""
+        if type(identity) = "roAssociativeArray" then id = siloMap.TextOf(identity.server_id)
+        wizardCompleted = true
+        if type(setupInfo) = "roAssociativeArray"
+            if type(setupInfo.wizard_completed) = "roBoolean" or type(setupInfo.wizard_completed) = "Boolean"
+                wizardCompleted = setupInfo.wizard_completed
+            else if type(setupInfo.needs_setup) = "roBoolean" or type(setupInfo.needs_setup) = "Boolean"
+                wizardCompleted = not setupInfo.needs_setup
+            end if
+        end if
+        info = {
+            Id: id,
+            ServerName: name,
+            Version: systemInfo.server_version,
+            ProductName: siloMap.PRODUCT,
+            StartupWizardCompleted: wizardCompleted,
+            SiloApiMajor: systemInfo.api_major
+        }
+        if type(branding) = "roAssociativeArray"
+            subtitle = siloMap.TextOf(branding.login_subtitle)
+            if subtitle <> "" then info["LoginDisclaimer"] = subtitle
+        end if
+        return info
+    end function
+
+    function Policy(account as dynamic, profile as dynamic) as object
+        isAdmin = false
+        downloads = false
+        if type(account) = "roAssociativeArray"
+            isAdmin = account.role = "admin"
+            downloads = account.download_allowed = true
+        end if
+        if type(profile) = "roAssociativeArray" and profile.is_primary <> true then isAdmin = false
+        return {
+            IsAdministrator: isAdmin,
+            IsHidden: false,
+            IsDisabled: false,
+            EnableMediaPlayback: true,
+            EnableContentDownloading: downloads,
+            ' Personal collections are open to every Silo account
+            EnableCollectionManagement: true,
+            EnableSubtitleDownloading: true,
+            EnableAllFolders: true,
+            EnableContentDeletion: false,
+            EnableLiveTvAccess: false,
+            EnableLiveTvManagement: false
+        }
+    end function
+
+    ' A household profile as a user. The profile is the app's user: its own progress, favorites and limits
+    function ProfileToUser(profile as object, account as dynamic, configuration = invalid as dynamic) as object
+        name = siloMap.TextOf(profile.name)
+        accountId = ""
+        if type(account) = "roAssociativeArray"
+            if name = "" then name = siloMap.TextOf(account.username)
+            if isValid(account.id) then accountId = account.id.ToStr()
+        end if
+        user = {
+            Id: profile.id.ToStr(),
+            Name: name,
+            HasPassword: true,
+            HasConfiguredPassword: true,
+            SiloAccountId: accountId,
+            SiloIsPrimary: profile.is_primary = true,
+            SiloHasPin: profile.has_pin = true,
+            SiloIsChild: profile.is_child = true,
+            Policy: siloMap.Policy(account, profile),
+            Configuration: {}
+        }
+        if type(configuration) = "roAssociativeArray" then user["Configuration"] = configuration
+        return user
+    end function
+
+    ' The settings the app reads from a UserConfiguration, all stored at profile scope
+    function SettingKeys() as object
+        return {
+            libraryOrder: "ui.library_order",
+            disabledLibraries: "ui.disabled_library_ids",
+            audioLanguage: "playback.audio_language",
+            subtitleLanguage: "playback.subtitle_language",
+            subtitleMode: "playback.subtitle_mode",
+            showForcedSubtitles: "playback.show_forced_subtitles",
+            autoPlayNext: "playback.auto_play_next"
+        }
+    end function
+
+    ' Silo library ids are positive integers; the app's are strings
+    function LibraryIds(value as dynamic) as object
+        ids = []
+        if type(value) <> "roArray" then return ids
+        for each id in value
+            if isValid(id) and not isString(id) and type(id) <> "roBoolean" and type(id) <> "Boolean"
+                if id >= 1 then ids.Push(Int(id).ToStr())
+            end if
+        end for
+        return ids
+    end function
+
+    function IntIds(ids as dynamic) as dynamic
+        out = []
+        if type(ids) <> "roArray" then return invalid
+        for each id in ids
+            n = id.ToStr().Trim().ToInt()
+            if n >= 1
+                seen = false
+                for each existing in out
+                    if existing = n then seen = true
+                end for
+                if not seen then out.Push(n)
+            end if
+        end for
+        if out.Count() = 0 then return invalid
+        return out
+    end function
+
+    ' Silo's subtitle mode plus its separate show-forced switch, as Jellyfin's SubtitleMode
+    function SubtitleModeToJellyfin(mode as dynamic, showForced = true as boolean) as string
+        if mode = "always" then return "Always"
+        if mode = "off"
+            if showForced then return "OnlyForced"
+            return "None"
+        end if
+        return "Default"
+    end function
+
+    ' Jellyfin's Default and Smart both mean Silo's auto, which has no show-forced choice of its own,
+    ' so the current switch is kept
+    function SubtitleModeToSilo(mode as dynamic, currentShowForced = true as boolean) as object
+        wanted = ""
+        if isString(mode) then wanted = LCase(mode.Trim())
+        if wanted = "always" then return { mode: "always", showForced: currentShowForced }
+        if wanted = "onlyforced" then return { mode: "off", showForced: true }
+        if wanted = "none" then return { mode: "off", showForced: false }
+        return { mode: "auto", showForced: currentShowForced }
+    end function
+
+    function BoolOr(value as dynamic, fallback as boolean) as boolean
+        if type(value) = "roBoolean" or type(value) = "Boolean" then return value
+        return fallback
+    end function
+
+    function SettingsToConfiguration(values as dynamic) as object
+        if type(values) <> "roAssociativeArray" then values = {}
+        k = siloMap.SettingKeys()
+        showForced = siloMap.BoolOr(values[k.showForcedSubtitles], true)
+        return {
+            OrderedViews: siloMap.LibraryIds(values[k.libraryOrder]),
+            MyMediaExcludes: siloMap.LibraryIds(values[k.disabledLibraries]),
+            LatestItemsExcludes: [],
+            GroupedFolders: [],
+            EnableNextEpisodeAutoPlay: siloMap.BoolOr(values[k.autoPlayNext], true),
+            AudioLanguagePreference: siloMap.TextOf(values[k.audioLanguage]),
+            SubtitleLanguagePreference: siloMap.TextOf(values[k.subtitleLanguage]),
+            SubtitleMode: siloMap.SubtitleModeToJellyfin(values[k.subtitleMode], showForced),
+            PlayDefaultAudioTrack: true,
+            RememberAudioSelections: true,
+            RememberSubtitleSelections: true
+        }
+    end function
+
+    ' Silo's values for a Jellyfin configuration, to compare with what was read and write back key by key
+    function ConfigurationToSettings(config as dynamic, current as dynamic) as object
+        if type(config) <> "roAssociativeArray" then config = {}
+        if type(current) <> "roAssociativeArray" then current = {}
+        k = siloMap.SettingKeys()
+        subtitles = siloMap.SubtitleModeToSilo(config.SubtitleMode, siloMap.BoolOr(current[k.showForcedSubtitles], true))
+        audio = siloMap.TextOf(config.AudioLanguagePreference)
+        subtitleLanguage = siloMap.TextOf(config.SubtitleLanguagePreference)
+        values = {}
+        values[k.libraryOrder] = siloMap.IntIds(config.OrderedViews)
+        values[k.disabledLibraries] = siloMap.IntIds(config.MyMediaExcludes)
+        values[k.audioLanguage] = invalid
+        if audio <> "" then values[k.audioLanguage] = audio
+        values[k.subtitleLanguage] = invalid
+        if subtitleLanguage <> "" then values[k.subtitleLanguage] = subtitleLanguage
+        values[k.subtitleMode] = subtitles.mode
+        values[k.showForcedSubtitles] = subtitles.showForced
+        values[k.autoPlayNext] = config.EnableNextEpisodeAutoPlay <> false
+        return values
+    end function
+    ' ---- Ids, types and time
+
+    const TICKS_PER_SECOND = 10000000
+
+    function TicksOf(seconds as dynamic) as longinteger
+        if not siloMap.IsNumber(seconds) then return 0&
+        milliseconds = Int(seconds * 1000)
+        return (0& + milliseconds) * 10000&
+    end function
+
+    function IsNumber(value as dynamic) as boolean
+        kind = type(value)
+        return kind = "roInt" or kind = "Integer" or kind = "roInteger" or kind = "roFloat" or kind = "Float" or kind = "roDouble" or kind = "Double" or kind = "LongInteger" or kind = "roLongInteger"
+    end function
+
+    function IdOf(raw as dynamic) as string
+        if raw = invalid then return ""
+        if siloMap.IsNumber(raw)
+            if raw = Int(raw) then return Int(raw).ToStr()
+        end if
+        if type(raw) = "roBoolean" or type(raw) = "Boolean" then return ""
+        return raw.ToStr().Trim()
+    end function
+
+    ' Genres and studios have no ids on Silo, so the app's ids for them carry their names
+    function GenreId(name as string) as string
+        return "silo-genre:" + name.EncodeUriComponent()
+    end function
+
+    function StudioId(name as string) as string
+        return "silo-studio:" + name.EncodeUriComponent()
+    end function
+
+    function NameAfter(prefix as string, id as dynamic) as string
+        if not isString(id) or id.Len() <= prefix.Len() or id.Left(prefix.Len()) <> prefix then return ""
+        return id.Mid(prefix.Len()).DecodeUriComponent()
+    end function
+
+    function GenreNameOf(id as dynamic) as string
+        return siloMap.NameAfter("silo-genre:", id)
+    end function
+
+    function StudioNameOf(id as dynamic) as string
+        return siloMap.NameAfter("silo-studio:", id)
+    end function
+
+    ' Silo's ids say what they are: movie-..., series-..., season-<series key>-<n>, episode-<series key>-<s>-<e>
+    function TypeOfId(id as dynamic) as string
+        if not isString(id) then return ""
+        for each kind in ["movie", "series", "season", "episode"]
+            if id.Left(kind.Len() + 1) = kind + "-" then return kind
+        end for
+        return ""
+    end function
+
+    function SeasonIdFor(seriesId as string, seasonNumber as integer) as string
+        if seriesId.Left(7) <> "series-" or seriesId.Len() = 7 then return ""
+        return "season-" + seriesId.Mid(7) + "-" + seasonNumber.ToStr()
+    end function
+
+    function ParseSeasonId(seasonId as dynamic) as dynamic
+        if not isString(seasonId) then return invalid
+        match = CreateObject("roRegex", "^season-(.+)-(\d+)$", "").Match(seasonId)
+        if match.Count() < 3 then return invalid
+        return { seriesId: "series-" + match[1], seasonNumber: match[2].ToInt() }
+    end function
+
+    function ParseEpisodeId(episodeId as dynamic) as dynamic
+        if not isString(episodeId) then return invalid
+        match = CreateObject("roRegex", "^episode-(.+)-(\d+)-(\d+)$", "").Match(episodeId)
+        if match.Count() < 4 then return invalid
+        return { seriesId: "series-" + match[1], seasonNumber: match[2].ToInt(), episodeNumber: match[3].ToInt() }
+    end function
+
+    ' A personal collection, or one of a library's collections
+    function CollectionId(id as string) as string
+        return "silo-collection:" + id
+    end function
+
+    function LibraryCollectionId(libraryId as string, id as string) as string
+        return "silo-libcollection:" + libraryId + ":" + id
+    end function
+
+    function ParseCollectionId(id as dynamic) as dynamic
+        if not isString(id) then return invalid
+        if id.Left(16) = "silo-collection:"
+            rest = id.Mid(16)
+            if rest = "" then return invalid
+            return { id: rest, libraryId: "" }
+        end if
+        if id.Left(19) = "silo-libcollection:"
+            rest = id.Mid(19)
+            colon = Instr(1, rest, ":")
+            if colon <= 1 or colon = rest.Len() then return invalid
+            return { id: rest.Mid(colon), libraryId: rest.Left(colon - 1) }
+        end if
+        return invalid
+    end function
+
+    ' A library id is a positive integer
+    function LibraryIdOf(parentId as dynamic) as string
+        if parentId = invalid then return ""
+        id = parentId.ToStr().Trim()
+        if CreateObject("roRegex", "^\d+$", "").IsMatch(id) then return id
+        return ""
+    end function
+
+    function ItemTypes() as object
+        return {
+            movie: { siloType: "movie", jellyfinType: "Movie", mediaType: "Video", isFolder: false },
+            series: { siloType: "series", jellyfinType: "Series", mediaType: "", isFolder: true },
+            season: { siloType: "season", jellyfinType: "Season", mediaType: "", isFolder: true },
+            episode: { siloType: "episode", jellyfinType: "Episode", mediaType: "Video", isFolder: false }
+        }
+    end function
+
+    function SplitList(value as dynamic) as object
+        out = []
+        if value = invalid then return out
+        parts = value
+        if type(value) <> "roArray" then parts = value.ToStr().Split(",")
+        for each part in parts
+            if part <> invalid
+                text = part.ToStr().Trim()
+                if text <> "" then out.Push(text)
+            end if
+        end for
+        return out
+    end function
+
+    ' The Silo types a query asks for, or invalid when it names none. Types Silo can't serve (BoxSet,
+    ' music...) drop out, so an empty answer means nothing Silo has was asked for
+    function TypesForQuery(includeTypes as dynamic, mediaTypes = invalid as dynamic) as dynamic
+        named = siloMap.SplitList(includeTypes)
+        media = siloMap.SplitList(mediaTypes)
+        if named.Count() = 0 and media.Count() = 0 then return invalid
+        byJellyfin = { movie: "movie", series: "series", season: "season", episode: "episode" }
+        result = []
+        if named.Count() > 0
+            for each kind in named
+                mapped = byJellyfin[LCase(kind)]
+                if mapped <> invalid and not siloContains(result, mapped) then result.Push(mapped)
+            end for
+        else
+            result = ["movie", "series", "season", "episode"]
+        end if
+        if media.Count() > 0
+            videoAsked = false
+            for each kind in media
+                if LCase(kind) = "video" then videoAsked = true
+            end for
+            kept = []
+            for each kind in result
+                if videoAsked and (kind = "movie" or kind = "episode") then kept.Push(kind)
+            end for
+            result = kept
+        end if
+        return result
+    end function
+
+    ' Silo's catalog type scope for the asked types, or "" for the whole catalog
+    function CatalogScopeFor(types as object) as string
+        if types.Count() = 1
+            if types[0] = "season" then return ""
+            return types[0]
+        end if
+        if types.Count() = 2 and siloContains(types, "movie") and siloContains(types, "series") then return "video"
+        return ""
+    end function
+
+    function SearchScopeFor(types as dynamic, withEpisodes as boolean) as string
+        wanted = types
+        if wanted = invalid then wanted = ["movie", "series", "episode"]
+        if withEpisodes and wanted.Count() > 1 and siloContains(wanted, "episode")
+            onlyVideo = true
+            for each kind in wanted
+                if kind <> "movie" and kind <> "series" and kind <> "episode" then onlyVideo = false
+            end for
+            if onlyVideo then return "video_with_episodes"
+        end if
+        if types = invalid then return ""
+        return siloMap.CatalogScopeFor(types)
+    end function
+
+    ' ---- Sorting and filters
+
+    function SortFor(sortBy as dynamic, sortOrder as dynamic) as string
+        fields = { sortname: "title", name: "title", seriessortname: "title", productionyear: "year", premieredate: "release_date", datecreated: "added_at", datelastcontentadded: "latest_episode_added", communityrating: "rating_tmdb", criticrating: "rating_rt_critic", officialrating: "content_rating", runtime: "runtime", dateplayed: "date_viewed", playcount: "plays" }
+        terms = siloMap.SplitList(sortBy)
+        if terms.Count() = 0 then return ""
+        field = fields[LCase(terms[0])]
+        if field = invalid then return ""
+        orders = siloMap.SplitList(sortOrder)
+        if orders.Count() > 0 and LCase(orders[0]) = "descending" then return "-" + field
+        return field
+    end function
+
+    function WantsRandom(sortBy as dynamic) as boolean
+        terms = siloMap.SplitList(sortBy)
+        return terms.Count() > 0 and LCase(terms[0]) = "random"
+    end function
+
+    function Rule(field as string, op as string, value as dynamic) as object
+        return { field: field, op: op, value: value }
+    end function
+
+    sub AddAny(groups as object, rules as object)
+        if rules.Count() > 0 then groups.Push({ match: "any", rules: rules })
+    end sub
+
+    ' The query's filters as Silo rule groups: every group has to match, and any rule within one.
+    ' f: { genres, studios, years, officialRatings, filters, isFavorite, is4K, isHd, audioLanguages, subtitleLanguages }
+    function RuleGroups(f as object) as object
+        flags = []
+        for each flag in f.filters ?? []
+            flags.Push(LCase(flag))
+        end for
+        groups = []
+        rules = []
+        seen = {}
+        for each genre in f.genres ?? []
+            if not seen.DoesExist(genre)
+                seen[genre] = true
+                rules.Push(siloMap.Rule("genre", "is", genre))
+            end if
+        end for
+        siloMap.AddAny(groups, rules)
+        rules = []
+        for each year in f.years ?? []
+            rules.Push(siloMap.Rule("year", "is", year.ToStr().ToInt()))
+        end for
+        siloMap.AddAny(groups, rules)
+        rules = []
+        for each rating in f.officialRatings ?? []
+            rules.Push(siloMap.Rule("content_rating", "is", rating))
+        end for
+        siloMap.AddAny(groups, rules)
+        rules = []
+        seen = {}
+        for each studio in f.studios ?? []
+            if not seen.DoesExist(studio)
+                seen[studio] = true
+                rules.Push(siloMap.Rule("studio", "is", studio))
+                rules.Push(siloMap.Rule("network", "is", studio))
+            end if
+        end for
+        siloMap.AddAny(groups, rules)
+        if siloContains(flags, "isplayed") then siloMap.AddAny(groups, [siloMap.Rule("watched", "is", true)])
+        if siloContains(flags, "isunplayed") then siloMap.AddAny(groups, [siloMap.Rule("watched", "is", false)])
+        if siloContains(flags, "isresumable") then siloMap.AddAny(groups, [siloMap.Rule("in_progress", "is", true)])
+        if f.isFavorite = true or siloContains(flags, "isfavorite") then siloMap.AddAny(groups, [siloMap.Rule("favorited", "is", true)])
+        if siloContains(flags, "isinwatchlist") then siloMap.AddAny(groups, [siloMap.Rule("in_watchlist", "is", true)])
+        if f.is4K = true then siloMap.AddAny(groups, [siloMap.Rule("resolution", "is", "2160p")])
+        if f.is4K = false then siloMap.AddAny(groups, [siloMap.Rule("resolution", "is_not", "2160p")])
+        if f.isHd = true then siloMap.AddAny(groups, [siloMap.Rule("resolution", "is", "1080p"), siloMap.Rule("resolution", "is", "720p")])
+        if f.isHd = false
+            for each resolution in ["2160p", "1080p", "720p"]
+                siloMap.AddAny(groups, [siloMap.Rule("resolution", "is_not", resolution)])
+            end for
+        end if
+        rules = []
+        for each language in f.audioLanguages ?? []
+            rules.Push(siloMap.Rule("audio_language", "is", language))
+        end for
+        siloMap.AddAny(groups, rules)
+        rules = []
+        for each language in f.subtitleLanguages ?? []
+            rules.Push(siloMap.Rule("subtitle_language", "is", language))
+        end for
+        siloMap.AddAny(groups, rules)
+        return groups
+    end function
+
+    ' A genre or studio, which Silo names but keeps no record of
+    function NamedItem(name as string, studio as boolean) as object
+        id = siloMap.GenreId(name)
+        kind = "Genre"
+        if studio
+            id = siloMap.StudioId(name)
+            kind = "Studio"
+        end if
+        return { Id: id, Name: name, SortName: name, Type: kind, IsFolder: true, ImageTags: {}, BackdropImageTags: [] }
+    end function
+
+    ' ---- Libraries
+
+    ' Audiobook and ebook libraries are left out: they're read through Silo's other APIs, not ported
+    function LibraryToView(library as dynamic, server as string) as dynamic
+        if type(library) <> "roAssociativeArray" then return invalid
+        id = siloMap.IdOf(library.id)
+        kind = LCase(siloMap.TextOf(library.type))
+        if id = "" then return invalid
+        collectionType = ""
+        if kind = "movies"
+            collectionType = "movies"
+        else if kind = "series"
+            collectionType = "tvshows"
+        else if kind <> "mixed"
+            return invalid
+        end if
+        name = siloMap.TextOf(library.name)
+        view = { Id: id, Name: name, SortName: name, Type: "CollectionFolder", IsFolder: true, ImageTags: {}, BackdropImageTags: [], UserData: { PlaybackPositionTicks: 0, IsFavorite: false, Played: false } }
+        if collectionType <> "" then view["CollectionType"] = collectionType
+        poster = silo.RegisterImage(server, id, "Primary", library.poster_url)
+        if poster <> "" then view.ImageTags.Primary = poster
+        return view
+    end function
+
+    ' Silo's own order (sort_order), then the order it listed them in
+    function LibrariesToViews(libraries as dynamic, server as string) as object
+        entries = []
+        if type(libraries) = "roArray"
+            index = 0
+            for each library in libraries
+                view = siloMap.LibraryToView(library, server)
+                if view <> invalid
+                    order = 1000000 + index
+                    if siloMap.IsNumber(library.sort_order) then order = library.sort_order
+                    entries.Push({ sortkey: order * 1000000# + index, view: view })
+                end if
+                index++
+            end for
+        end if
+        entries.SortBy("sortkey")
+        views = []
+        for each entry in entries
+            views.Push(entry.view)
+        end for
+        return views
+    end function
+
+    ' The libraries in the profile's own order, any it hasn't placed after, in Silo's order
+    function InViewOrder(views as object, order as dynamic) as object
+        if type(order) <> "roArray" or order.Count() = 0 then return views
+        ranked = []
+        index = 0
+        for each view in views
+            rank = 1000000 + index
+            position = 0
+            for each id in order
+                if id = view.Id then rank = position
+                position++
+            end for
+            ranked.Push({ sortkey: rank, view: view })
+            index++
+        end for
+        ranked.SortBy("sortkey")
+        out = []
+        for each entry in ranked
+            out.Push(entry.view)
+        end for
+        return out
+    end function
+
+    ' ---- Items
+
+    function Strings(value as dynamic) as object
+        out = []
+        if type(value) <> "roArray" then return out
+        for each one in value
+            text = siloMap.TextOf(one)
+            if text <> "" then out.Push(text)
+        end for
+        return out
+    end function
+
+    ' Networks first, then studios, without repeats: the studio rows expect a series' networks among its studios
+    function StudioNames(item as object) as object
+        seen = {}
+        out = []
+        names = siloMap.Strings(item.networks)
+        names.Append(siloMap.Strings(item.studios))
+        for each name in names
+            if not seen.DoesExist(LCase(name))
+                seen[LCase(name)] = true
+                out.Push(name)
+            end if
+        end for
+        return out
+    end function
+
+    ' A calendar date (YYYY-MM-DD, or a full timestamp) as midnight UTC that day
+    function CalendarDate(value as dynamic) as string
+        text = siloMap.TextOf(value)
+        if CreateObject("roRegex", "^\d{4}-\d{2}-\d{2}", "").IsMatch(text) then return text.Left(10) + "T00:00:00.0000000Z"
+        return ""
+    end function
+
+    ' A timestamp as Jellyfin writes one, or "" when it doesn't read as one
+    function Timestamp(value as dynamic) as string
+        text = siloMap.TextOf(value)
+        if text = "" then return ""
+        parsed = CreateObject("roDateTime")
+        parsed.FromISO8601String(text)
+        if parsed.AsSeconds() <= 0 then return ""
+        return parsed.ToISOString()
+    end function
+
+    ' The earliest added_at among the files: Silo dates each file, not the item
+    function DateAdded(versions as dynamic) as string
+        if type(versions) <> "roArray" then return ""
+        earliest = ""
+        earliestSeconds = 0
+        for each version in versions
+            if type(version) = "roAssociativeArray"
+                stamp = siloMap.Timestamp(version.added_at)
+                if stamp <> ""
+                    parsed = CreateObject("roDateTime")
+                    parsed.FromISO8601String(stamp)
+                    if earliest = "" or parsed.AsSeconds() < earliestSeconds
+                        earliest = stamp
+                        earliestSeconds = parsed.AsSeconds()
+                    end if
+                end if
+            end if
+        end for
+        return earliest
+    end function
+
+    ' Jellyfin's series Status only has Continuing and Ended; anything else is left out
+    function SeriesStatus(value as dynamic) as string
+        status = LCase(siloMap.TextOf(value))
+        if status = "" then return ""
+        if status = "ended" or status.Left(6) = "cancel" then return "Ended"
+        for each word in ["returning", "continuing", "production", "airing"]
+            if Instr(1, status, word) > 0 then return "Continuing"
+        end for
+        if status = "planned" or status = "pilot" then return "Continuing"
+        return ""
+    end function
+
+    ' The first file's exact duration when there is one, else the item's runtime in minutes
+    function RunTimeTicks(item as object) as dynamic
+        if type(item.versions) = "roArray" and item.versions.Count() > 0 and type(item.versions[0]) = "roAssociativeArray"
+            duration = item.versions[0].duration
+            if siloMap.IsNumber(duration) and duration > 0 then return siloMap.TicksOf(duration)
+        end if
+        if siloMap.IsNumber(item.runtime) and item.runtime > 0 then return siloMap.TicksOf(item.runtime * 60)
+        return invalid
+    end function
+
+    function SeasonName(number as integer) as string
+        if number = 0 then return "Specials"
+        return "Season " + number.ToStr()
+    end function
+
+    function ProviderIds(item as object) as object
+        ids = {}
+        if siloMap.TextOf(item.imdb_id) <> "" then ids["Imdb"] = siloMap.TextOf(item.imdb_id)
+        if siloMap.IdOf(item.tmdb_id) <> "" then ids["Tmdb"] = siloMap.IdOf(item.tmdb_id)
+        if siloMap.IdOf(item.tvdb_id) <> "" then ids["Tvdb"] = siloMap.IdOf(item.tvdb_id)
+        ' A list item has no provider ids of its own, but Silo's catalog id names the one the title
+        ' was matched by: movie-tmdb-<id>, series-tvdb-<id>
+        parts = siloMap.TextOf(item.id).Split("-")
+        if parts.Count() = 3 and (parts[0] = "movie" or parts[0] = "series") and parts[2] <> ""
+            for each provider in [["tmdb", "Tmdb"], ["tvdb", "Tvdb"], ["imdb", "Imdb"]]
+                if parts[1] = provider[0] and not ids.DoesExist(provider[1]) then ids[provider[1]] = parts[2]
+            end for
+        end if
+        return ids
+    end function
+
+    ' Silo's default sort title: a leading English article moves to the end, so "The Office" files under O
+    function DefaultSortTitle(title as string) as string
+        trimmed = title.Trim()
+        space = Instr(1, trimmed, " ")
+        if space <= 0 then return ""
+        rest = trimmed.Mid(space).Trim()
+        if rest = "" then return ""
+        article = LCase(trimmed.Left(space - 1))
+        if article = "the" then return rest + ", The"
+        if article = "a" then return rest + ", A"
+        if article = "an" then return rest + ", An"
+        return ""
+    end function
+
+    function IsTrailerKind(kind as dynamic) as boolean
+        return kind = "trailer" or kind = "teaser"
+    end function
+
+    ' Silo's videos as Jellyfin's RemoteTrailers, trailers and teasers first
+    function RemoteTrailers(videos as dynamic) as object
+        trailers = []
+        others = []
+        if type(videos) <> "roArray" then return trailers
+        for each video in videos
+            if type(video) = "roAssociativeArray" and isString(video.site) and isString(video.site_key) and video.site_key.Trim() <> ""
+                key = video.site_key.Trim().EncodeUriComponent()
+                url = ""
+                if LCase(video.site) = "youtube" then url = "https://www.youtube.com/watch?v=" + key
+                if LCase(video.site) = "vimeo" then url = "https://vimeo.com/" + key
+                if url <> ""
+                    entry = { Url: url }
+                    if siloMap.TextOf(video.name) <> "" then entry["Name"] = siloMap.TextOf(video.name)
+                    if siloMap.IsTrailerKind(video.kind)
+                        trailers.Push(entry)
+                    else
+                        others.Push(entry)
+                    end if
+                end if
+            end if
+        end for
+        trailers.Append(others)
+        return trailers
+    end function
+
+    ' A local trailer or special feature, which plays as its own item
+    function ExtraToItem(extra as dynamic, ownerId as string) as dynamic
+        if type(extra) <> "roAssociativeArray" then return invalid
+        id = siloMap.IdOf(extra.content_id)
+        if id = "" then return invalid
+        types = { trailer: "Trailer", teaser: "Trailer", featurette: "Featurette", clip: "Clip", behind_the_scenes: "BehindTheScenes", bloopers: "Short", deleted_scene: "DeletedScene", other: "Unknown" }
+        extraType = "Unknown"
+        if isString(extra.kind) and types.DoesExist(extra.kind) then extraType = types[extra.kind]
+        name = siloMap.TextOf(extra.title)
+        if name = "" then name = id
+        typeInfo = "Video"
+        if extraType = "Trailer" then typeInfo = "Trailer"
+        dto = { Id: id, Name: name, Type: typeInfo, ExtraType: extraType, MediaType: "Video", IsFolder: false, ImageTags: {}, BackdropImageTags: [] }
+        if siloMap.IsNumber(extra.duration_seconds) and extra.duration_seconds > 0 then dto["RunTimeTicks"] = siloMap.TicksOf(extra.duration_seconds)
+        if ownerId <> "" then dto["ParentId"] = ownerId
+        return dto
+    end function
+
+    function ExtrasOf(item as dynamic, trailers as boolean, ownerId as string) as object
+        out = []
+        if type(item) <> "roAssociativeArray" or type(item.extras) <> "roArray" then return out
+        for each extra in item.extras
+            if type(extra) = "roAssociativeArray" and siloMap.IsTrailerKind(extra.kind) = trailers
+                dto = siloMap.ExtraToItem(extra, ownerId)
+                if dto <> invalid then out.Push(dto)
+            end if
+        end for
+        return out
+    end function
+
+    sub RegisterIfMissing(server as string, itemId as string, imageType as string, url as string)
+        if url = "" or itemId = "" then return
+        if silo.ImageFor(server, itemId, imageType) = "" then silo.RegisterImage(server, itemId, imageType, url)
+    end sub
+
+    ' The item's own artwork as ImageTags and BackdropImageTags. An episode's poster or backdrop that is
+    ' really its series' goes to the series, and only when the series has none of its own yet
+    sub AddImageFields(dto as object, server as string, id as string, kind as string, item as object)
+        episodeKind = kind = "episode"
+        seriesId = siloMap.IdOf(item.series_id)
+        primaryUrl = ""
+        if episodeKind
+            primaryUrl = siloMap.TextOf(item.still_url)
+            poster = siloMap.TextOf(item.poster_url)
+            seriesPoster = siloMap.TextOf(item.series_poster_url)
+            if seriesId <> "" and seriesPoster <> "" then siloMap.RegisterIfMissing(server, seriesId, "Primary", seriesPoster)
+            if primaryUrl = "" and poster <> ""
+                if item.poster_is_episode_still <> false
+                    primaryUrl = poster
+                else if seriesId <> ""
+                    siloMap.RegisterIfMissing(server, seriesId, "Primary", poster)
+                end if
+            end if
+        else
+            primaryUrl = siloMap.TextOf(item.poster_url)
+        end if
+        backdrops = siloMap.Strings(item.backdrop_urls)
+        if backdrops.Count() = 0 and siloMap.TextOf(item.backdrop_url) <> "" then backdrops = [siloMap.TextOf(item.backdrop_url)]
+        if episodeKind and item.backdrop_is_episode_still <> true
+            if seriesId <> "" and backdrops.Count() > 0 then siloMap.RegisterIfMissing(server, seriesId, "Backdrop", backdrops[0])
+            backdrops = []
+        end if
+        if episodeKind and seriesId <> ""
+            siloMap.RegisterIfMissing(server, seriesId, "Backdrop", siloMap.TextOf(item.series_backdrop_url))
+            ' Episodes have no logo of their own, so an episode's logo_url is its series'
+            siloMap.RegisterIfMissing(server, seriesId, "Logo", siloMap.TextOf(item.logo_url))
+        end if
+        tags = {}
+        primary = silo.RegisterImage(server, id, "Primary", primaryUrl)
+        if primary <> "" then tags["Primary"] = primary
+        logo = silo.RegisterImage(server, id, "Logo", item.logo_url)
+        if logo <> "" then tags["Logo"] = logo
+        if kind = "movie" or kind = "series"
+            ' Without a thumb, the first backdrop stands in as the landscape card
+            thumbUrl = siloMap.TextOf(item.thumb_url)
+            if thumbUrl = "" and backdrops.Count() > 0 then thumbUrl = backdrops[0]
+            thumb = silo.RegisterImage(server, id, "Thumb", thumbUrl)
+            if thumb <> "" then tags["Thumb"] = thumb
+            banner = silo.RegisterImage(server, id, "Banner", item.banner_url)
+            if banner <> "" then tags["Banner"] = banner
+        end if
+        backdropTags = []
+        index = 0
+        for each url in backdrops
+            tag = silo.RegisterImage(server, id, "Backdrop", url, index)
+            if tag <> "" then backdropTags.Push(tag)
+            index++
+        end for
+        dto["ImageTags"] = tags
+        dto["BackdropImageTags"] = backdropTags
+        if tags.Primary <> invalid
+            ' Cards are sized from this before the image loads: posters are 2:3, episode stills 16:9
+            if episodeKind
+                dto["PrimaryImageAspectRatio"] = 16 / 9
+            else
+                dto["PrimaryImageAspectRatio"] = 2 / 3
+            end if
+        end if
+    end sub
+
+    ' The series artwork Jellyfin repeats on a season or episode, from what has been recorded for the series
+    sub AddParentArtwork(dto as object, server as string, seriesId as string)
+        primary = silo.ImageFor(server, seriesId, "Primary")
+        logo = silo.ImageFor(server, seriesId, "Logo")
+        backdrops = []
+        for index = 0 to 9
+            tag = silo.ImageFor(server, seriesId, "Backdrop", index)
+            if tag = "" then exit for
+            backdrops.Push(tag)
+        end for
+        thumb = ""
+        if backdrops.Count() > 0 then thumb = backdrops[0]
+        if thumb = "" then thumb = silo.ImageFor(server, seriesId, "Thumb")
+        if primary <> "" then dto["SeriesPrimaryImageTag"] = primary
+        if logo <> ""
+            dto["ParentLogoItemId"] = seriesId
+            dto["ParentLogoImageTag"] = logo
+        end if
+        if thumb <> ""
+            dto["ParentThumbItemId"] = seriesId
+            dto["ParentThumbImageTag"] = thumb
+            dto["SeriesThumbImageTag"] = thumb
+        end if
+        if backdrops.Count() > 0
+            dto["ParentBackdropItemId"] = seriesId
+            dto["ParentBackdropImageTags"] = backdrops
+        end if
+    end sub
+
+    sub AddSeriesFields(dto as object, server as string, kind as string, item as object, series as dynamic)
+        if kind = "series"
+            if siloMap.IsNumber(item.season_count) then dto["ChildCount"] = Int(item.season_count)
+            return
+        end if
+        if kind <> "season" and kind <> "episode" then return
+        seriesId = siloMap.IdOf(item.series_id)
+        seriesName = siloMap.TextOf(item.series_title)
+        if type(series) = "roAssociativeArray"
+            if seriesId = "" then seriesId = series.id ?? ""
+            if seriesName = "" then seriesName = series.name ?? ""
+        end if
+        if kind = "season"
+            if siloMap.IsNumber(item.season_number) then dto["IndexNumber"] = Int(item.season_number)
+            if siloMap.IsNumber(item.episode_count) then dto["ChildCount"] = Int(item.episode_count)
+            if seriesId <> ""
+                dto["SeriesId"] = seriesId
+                dto["ParentId"] = seriesId
+            end if
+        else
+            if siloMap.IsNumber(item.episode_number) then dto["IndexNumber"] = Int(item.episode_number)
+            if siloMap.IsNumber(item.season_number)
+                season = Int(item.season_number)
+                dto["ParentIndexNumber"] = season
+                dto["SeasonName"] = siloMap.SeasonName(season)
+                if seriesId <> ""
+                    seasonId = siloMap.SeasonIdFor(seriesId, season)
+                    if seasonId <> ""
+                        dto["SeasonId"] = seasonId
+                        dto["ParentId"] = seasonId
+                    end if
+                end if
+            end if
+            if seriesId <> "" then dto["SeriesId"] = seriesId
+        end if
+        if seriesId <> ""
+            if seriesName <> "" then dto["SeriesName"] = seriesName
+            siloMap.AddParentArtwork(dto, server, seriesId)
+        end if
+    end sub
+
+    function PlayedPercentage(position as dynamic, duration as dynamic) as dynamic
+        if not siloMap.IsNumber(position) or position <= 0 then return invalid
+        if not siloMap.IsNumber(duration) or duration <= 0 then return invalid
+        percent = position * 100.0 / duration
+        if percent > 100 then percent = 100
+        return percent
+    end function
+
+    ' Jellyfin's UserData from the places Silo keeps it: user_state on every item, user_data on series,
+    ' seasons and watch answers, user_rating (1 to 5 stars, so out of 10 here), and the position on a
+    ' Continue Watching card. Silo only knows whether something was watched, not how often
+    function UserData(isFolder as boolean, item as object) as object
+        state = item.user_state
+        if type(state) <> "roAssociativeArray" then state = {}
+        data = item.user_data
+        if type(data) <> "roAssociativeArray" then data = {}
+        played = state.played = true or data.played = true
+        position = data.position_seconds
+        if position = invalid then position = item.position_seconds
+        positionSeconds = 0
+        if siloMap.IsNumber(position) and position > 0 and not played then positionSeconds = position
+        duration = data.duration_seconds
+        if duration = invalid then duration = item.duration_seconds
+        out = { PlaybackPositionTicks: siloMap.TicksOf(positionSeconds), PlayCount: 0, IsFavorite: state.is_favorite = true, Played: played }
+        if played then out["PlayCount"] = 1
+        percent = siloMap.PlayedPercentage(positionSeconds, duration)
+        if percent <> invalid then out["PlayedPercentage"] = percent
+        if isFolder and siloMap.IsNumber(data.unplayed_count) then out["UnplayedItemCount"] = Int(data.unplayed_count)
+        lastPlayed = siloMap.Timestamp(item.progress_updated_at)
+        if lastPlayed = "" and type(item.sort_metrics) = "roAssociativeArray" then lastPlayed = siloMap.Timestamp(item.sort_metrics.viewed_at)
+        if lastPlayed <> "" then out["LastPlayedDate"] = lastPlayed
+        if siloMap.IsNumber(item.user_rating) and item.user_rating > 0 then out["Rating"] = item.user_rating * 2
+        return out
+    end function
+
+    ' One entry of Silo's progress list, as UserData
+    function ProgressToUserData(entry as dynamic) as object
+        if type(entry) <> "roAssociativeArray" then entry = {}
+        completed = entry.completed = true
+        positionSeconds = 0
+        if siloMap.IsNumber(entry.position_seconds) and entry.position_seconds > 0 and not completed then positionSeconds = entry.position_seconds
+        out = { PlaybackPositionTicks: siloMap.TicksOf(positionSeconds), PlayCount: 0, Played: completed }
+        if completed then out["PlayCount"] = 1
+        percent = siloMap.PlayedPercentage(positionSeconds, entry.duration_seconds)
+        if percent <> invalid then out["PlayedPercentage"] = percent
+        lastPlayed = siloMap.Timestamp(entry.updated_at)
+        if lastPlayed <> "" then out["LastPlayedDate"] = lastPlayed
+        return out
+    end function
+
+    ' The cast as Actors in billing order, then the crew by kind. Each photo is recorded under the person
+    function People(item as object, server as string) as object
+        out = []
+        seen = {}
+        cast = []
+        if type(item.cast) = "roArray"
+            index = 0
+            for each credit in item.cast
+                if type(credit) = "roAssociativeArray"
+                    order = 1000000 + index
+                    if siloMap.IsNumber(credit.order) then order = credit.order
+                    cast.Push({ sortkey: order * 1000000# + index, credit: credit })
+                end if
+                index++
+            end for
+        end if
+        cast.SortBy("sortkey")
+        for each entry in cast
+            siloMap.AddPerson(out, seen, entry.credit, "Actor", siloMap.TextOf(entry.credit.character), server)
+        end for
+        crewKinds = [
+            ["Creator", ["creator"]],
+            ["Director", ["director", "co-director"]],
+            ["Writer", ["writer", "screenplay", "story", "teleplay", "novel", "author", "characters"]],
+            ["Producer", ["producer", "executive producer", "co-producer", "co-executive producer", "associate producer"]],
+            ["Composer", ["composer", "original music composer", "music"]],
+            ["Editor", ["editor"]]
+        ]
+        if type(item.crew) = "roArray"
+            for each crewKind in crewKinds
+                for each credit in item.crew
+                    if type(credit) = "roAssociativeArray"
+                        job = siloMap.TextOf(credit.job)
+                        if job <> "" and siloContains(crewKind[1], LCase(job))
+                            role = job
+                            if LCase(job) = LCase(crewKind[0]) then role = ""
+                            siloMap.AddPerson(out, seen, credit, crewKind[0], role, server)
+                        end if
+                    end if
+                end for
+            end for
+        end if
+        return out
+    end function
+
+    sub AddPerson(out as object, seen as object, credit as object, kind as string, role as string, server as string)
+        name = siloMap.TextOf(credit.name)
+        if name = "" then return
+        id = siloMap.IdOf(credit.person_id)
+        key = id
+        if key = "" then key = name
+        key = key + "|" + kind
+        if seen.DoesExist(key) then return
+        seen[key] = true
+        person = { Name: name, Type: kind }
+        if id <> ""
+            person["Id"] = id
+            tag = silo.RegisterImage(server, id, "Primary", credit.photo_url)
+            if tag <> "" then person["PrimaryImageTag"] = tag
+        end if
+        if role <> "" then person["Role"] = role
+        out.Push(person)
+    end sub
+
+    ' A version's chapters as Jellyfin Chapters in start order, each thumbnail recorded as the item's
+    ' Chapter picture of that index. Silo keeps intro and credit markers apart, so only real chapters are listed
+    function ChaptersOf(version as dynamic, itemId as string, server as string) as object
+        out = []
+        if type(version) <> "roAssociativeArray" or type(version.chapters) <> "roArray" then return out
+        entries = []
+        order = 0
+        for each chapter in version.chapters
+            if type(chapter) = "roAssociativeArray" and siloMap.IsNumber(chapter.start_seconds)
+                entries.Push({ sortkey: chapter.start_seconds * 1000000# + order, start: chapter.start_seconds, chapter: chapter })
+            end if
+            order++
+        end for
+        entries.SortBy("sortkey")
+        position = 0
+        for each entry in entries
+            start = entry.start
+            if start < 0 then start = 0
+            dto = { StartPositionTicks: siloMap.TicksOf(start), MarkerType: "Chapter", ChapterIndex: position }
+            if siloMap.TextOf(entry.chapter.title) <> "" then dto["Name"] = siloMap.TextOf(entry.chapter.title)
+            tag = silo.RegisterImage(server, itemId, "Chapter", entry.chapter.thumbnail_url, position)
+            if tag <> "" then dto["ImageTag"] = tag
+            out.Push(dto)
+            position++
+        end for
+        return out
+    end function
+
+    ' A Silo catalog item (a movie, series, season or episode, from a list or a detail answer) as a
+    ' Jellyfin BaseItemDto. Season and episode list entries carry no type and no series, so those come
+    ' from options.type (or the id) and options.series ({ id, name }). Answers invalid for a type the
+    ' app can't show, or an item without an id
+    function ItemToBaseItem(item as dynamic, server as string, options = {} as object) as dynamic
+        if type(item) <> "roAssociativeArray" then return invalid
+        id = siloMap.IdOf(item.content_id)
+        if id = "" then id = siloMap.IdOf(item.id)
+        if id = "" then return invalid
+        kind = siloMap.TextOf(item.type)
+        if kind = "" then kind = options.type ?? ""
+        if kind = "" then kind = siloMap.TypeOfId(id)
+        typeInfo = siloMap.ItemTypes()[LCase(kind)]
+        if typeInfo = invalid then return invalid
+        kind = typeInfo.siloType
+        name = siloMap.TextOf(item.title)
+        premiere = siloMap.CalendarDate(item.release_date)
+        if premiere = "" then premiere = siloMap.CalendarDate(item.first_air_date)
+        if premiere = "" then premiere = siloMap.CalendarDate(item.air_date)
+        genres = siloMap.Strings(item.genres)
+        genreItems = []
+        for each genre in genres
+            genreItems.Push({ Name: genre, Id: siloMap.GenreId(genre) })
+        end for
+        studios = []
+        for each studio in siloMap.StudioNames(item)
+            studios.Push({ Name: studio, Id: siloMap.StudioId(studio) })
+        end for
+        sortName = siloMap.TextOf(item.sort_title)
+        if sortName = "" then sortName = siloMap.DefaultSortTitle(name)
+        if sortName = "" then sortName = name
+        tagline = siloMap.TextOf(item.tagline)
+        dto = {
+            Id: id,
+            Name: name,
+            SortName: sortName,
+            Type: typeInfo.jellyfinType,
+            IsFolder: typeInfo.isFolder,
+            Taglines: [],
+            RemoteTrailers: siloMap.RemoteTrailers(item.videos),
+            Genres: genres,
+            GenreItems: genreItems,
+            Studios: studios,
+            ProviderIds: siloMap.ProviderIds(item),
+            UserData: siloMap.UserData(typeInfo.isFolder, item),
+            People: siloMap.People(item, server),
+            ServerId: options.serverId ?? ""
+        }
+        if tagline <> "" then dto["Taglines"] = [tagline]
+        siloMap.AddImageFields(dto, server, id, kind, item)
+        siloMap.AddSeriesFields(dto, server, kind, item, options.series)
+        if siloMap.TextOf(item.original_title) <> "" then dto["OriginalTitle"] = siloMap.TextOf(item.original_title)
+        if typeInfo.mediaType <> "" then dto["MediaType"] = typeInfo.mediaType
+        if siloMap.TextOf(item.overview) <> "" then dto["Overview"] = siloMap.TextOf(item.overview)
+        if type(item.extras) = "roArray"
+            trailers = 0
+            others = 0
+            for each extra in item.extras
+                if type(extra) = "roAssociativeArray"
+                    if siloMap.IsTrailerKind(extra.kind)
+                        trailers++
+                    else
+                        others++
+                    end if
+                end if
+            end for
+            dto["LocalTrailerCount"] = trailers
+            dto["SpecialFeatureCount"] = others
+        end if
+        if siloMap.IsNumber(item.year)
+            dto["ProductionYear"] = Int(item.year)
+        else if premiere <> ""
+            dto["ProductionYear"] = premiere.Left(4).ToInt()
+        end if
+        if premiere <> "" then dto["PremiereDate"] = premiere
+        status = siloMap.SeriesStatus(item.show_status)
+        if status <> "" then dto["Status"] = status
+        if status = "Ended" and siloMap.CalendarDate(item.last_air_date) <> "" then dto["EndDate"] = siloMap.CalendarDate(item.last_air_date)
+        if siloMap.TextOf(item.content_rating) <> "" then dto["OfficialRating"] = siloMap.TextOf(item.content_rating)
+        if siloMap.IsNumber(item.rating_tmdb) and item.rating_tmdb > 0 then dto["CommunityRating"] = Cint(item.rating_tmdb * 10) / 10
+        if type(item.ratings) = "roArray"
+            for each rating in item.ratings
+                if type(rating) = "roAssociativeArray" and siloMap.IsNumber(rating.score) and dto.CriticRating = invalid
+                    source = LCase(siloMap.TextOf(rating.source))
+                    if source = "rt_critic" or source = "rottentomatoes" then dto["CriticRating"] = Cint(rating.score)
+                end if
+            end for
+        end if
+        ticks = siloMap.RunTimeTicks(item)
+        if ticks <> invalid then dto["RunTimeTicks"] = ticks
+        added = siloMap.DateAdded(item.versions)
+        if added <> "" then dto["DateCreated"] = added
+        if not typeInfo.isFolder and type(item.versions) = "roArray" and item.versions.Count() > 0
+            ' Each version carries its own chapters, so the player shows those of the version that plays
+            sources = siloMap.MediaSourcesOf(item, id, server)
+            if sources.Count() > 0
+                dto["MediaSources"] = sources
+                ' Copies: FormatJson refuses an object that shows up twice
+                dto["MediaStreams"] = ParseJson(FormatJson(sources[0].MediaStreams))
+                if sources[0].Chapters <> invalid then dto["Chapters"] = ParseJson(FormatJson(sources[0].Chapters))
+            end if
+        end if
+        return dto
+    end function
+
+    function PersonToItem(person as dynamic, server as string) as dynamic
+        if type(person) <> "roAssociativeArray" then return invalid
+        id = siloMap.IdOf(person.id)
+        if id = "" then return invalid
+        name = siloMap.TextOf(person.name)
+        dto = { Id: id, Name: name, SortName: name, Type: "Person", IsFolder: false, ProviderIds: siloMap.ProviderIds(person), ImageTags: {}, BackdropImageTags: [], ProductionLocations: [] }
+        photo = silo.RegisterImage(server, id, "Primary", person.photo_url)
+        if photo <> "" then dto.ImageTags.Primary = photo
+        if siloMap.TextOf(person.bio) <> "" then dto["Overview"] = siloMap.TextOf(person.bio)
+        if siloMap.CalendarDate(person.birth_date) <> "" then dto["PremiereDate"] = siloMap.CalendarDate(person.birth_date)
+        if siloMap.CalendarDate(person.death_date) <> "" then dto["EndDate"] = siloMap.CalendarDate(person.death_date)
+        if siloMap.TextOf(person.birthplace) <> "" then dto["ProductionLocations"] = [siloMap.TextOf(person.birthplace)]
+        if siloMap.TextOf(person.homepage) <> "" then dto["ExternalUrls"] = [{ Name: "Website", Url: siloMap.TextOf(person.homepage) }]
+        return dto
+    end function
+
+    ' A personal collection, or one of a library's
+    function CollectionToBoxSet(collection as dynamic, server as string, libraryId = "" as string) as dynamic
+        if type(collection) <> "roAssociativeArray" then return invalid
+        raw = siloMap.IdOf(collection.id)
+        if raw = "" then return invalid
+        id = siloMap.CollectionId(raw)
+        if libraryId <> "" then id = siloMap.LibraryCollectionId(libraryId, raw)
+        name = siloMap.TextOf(collection.title)
+        if name = "" then name = siloMap.TextOf(collection.name)
+        dto = { Id: id, Name: name, SortName: name, Type: "BoxSet", IsFolder: true, CollectionType: "boxsets", ImageTags: {}, BackdropImageTags: [] }
+        if siloMap.TextOf(collection.description) <> "" then dto["Overview"] = siloMap.TextOf(collection.description)
+        if siloMap.IsNumber(collection.item_count) then dto["ChildCount"] = Int(collection.item_count)
+        if libraryId <> "" then dto["ParentId"] = libraryId
+        poster = silo.RegisterImage(server, id, "Primary", collection.poster_url)
+        if poster <> ""
+            dto.ImageTags.Primary = poster
+            dto["PrimaryImageAspectRatio"] = 2 / 3
+        end if
+        backdrop = silo.RegisterImage(server, id, "Backdrop", collection.backdrop_url)
+        if backdrop <> "" then dto["BackdropImageTags"] = [backdrop]
+        dto["SiloCollectionType"] = siloMap.TextOf(collection.collection_type)
+        dto["SiloCreatorProfileId"] = siloMap.IdOf(collection.creator_profile_id)
+        return dto
+    end function
+end namespace

@@ -1,0 +1,345 @@
+sub testSilo()
+    ' Detection and public info
+    assertEqual(detectServerType({ ProductName: "Silo", Version: "1.0.0", Id: "abc" }), "silo", "Silo detection")
+    assertEqual(isSiloSystemInfo({ server_version: "527e4043", api_major: 2 }), true, "Silo's system info is recognised")
+    assertEqual(isSiloSystemInfo({ server_version: "527e4043", api_major: "2" }), false, "A text api_major isn't Silo's")
+    assertEqual(isSiloSystemInfo({ Version: "10.9.0" }), false, "Jellyfin's info isn't Silo's")
+    info = siloMap.PublicInfo({ server_version: "1.2.3", api_major: 2 }, { server_id: "srv-1" }, { server_name: "Home Silo", login_subtitle: " Welcome " }, { needs_setup: true })
+    assertEqual(info.Id, "srv-1", "Public info takes the server id from identity")
+    assertEqual(info.ServerName, "Home Silo", "Public info takes the branded name")
+    assertEqual(info.ProductName, "Silo", "Public info names the product")
+    assertEqual(info.StartupWizardCompleted, false, "needs_setup means the wizard isn't done")
+    assertEqual(info.LoginDisclaimer, "Welcome", "The login subtitle becomes the disclaimer")
+    assertEqual(siloMap.PublicInfo({ server_version: "1", api_major: 2 }, invalid, invalid, invalid).ServerName, "Silo", "An unbranded server is called Silo")
+
+    ' Profiles as users
+    account = { id: 7, username: "owner", role: "admin", download_allowed: true }
+    user = siloMap.ProfileToUser({ id: "p-1", name: "Kid", is_primary: false, has_pin: true, is_child: true }, account)
+    assertEqual(user.Id, "p-1", "A profile's id is the user id")
+    assertEqual(user.SiloAccountId, "7", "The account id is kept as text")
+    assertEqual(user.Policy.IsAdministrator, false, "Only the primary profile of an admin account administers")
+    assertEqual(user.SiloHasPin, true, "A PIN profile says so")
+    primary = siloMap.ProfileToUser({ id: "p-0", name: "", is_primary: true }, account)
+    assertEqual(primary.Policy.IsAdministrator, true, "The admin account's primary profile administers")
+    assertEqual(primary.Name, "owner", "A nameless profile takes the account's name")
+
+    ' Settings
+    config = siloMap.SettingsToConfiguration({ "ui.library_order": [3, 1, "x", 0], "playback.subtitle_mode": "off", "playback.show_forced_subtitles": false, "playback.auto_play_next": false, "playback.audio_language": " eng " })
+    assertEqual(config.OrderedViews.Join(","), "3,1", "Library order keeps positive ids as text")
+    assertEqual(config.SubtitleMode, "None", "Off without forced subtitles is None")
+    assertEqual(config.EnableNextEpisodeAutoPlay, false, "Autoplay follows the setting")
+    assertEqual(config.AudioLanguagePreference, "eng", "Audio language is trimmed")
+    assertEqual(siloMap.SubtitleModeToJellyfin("off", true), "OnlyForced", "Off with forced subtitles is OnlyForced")
+    assertEqual(siloMap.SubtitleModeToJellyfin("auto"), "Default", "Auto is Default")
+    back = siloMap.ConfigurationToSettings({ SubtitleMode: "OnlyForced", OrderedViews: ["2", "2", "5"], EnableNextEpisodeAutoPlay: true }, {})
+    assertEqual(back["playback.subtitle_mode"], "off", "OnlyForced is Silo's off")
+    assertEqual(back["playback.show_forced_subtitles"], true, "OnlyForced shows forced subtitles")
+    assertEqual(FormatJson(back["ui.library_order"]), "[2,5]", "Library order goes back as unique numbers")
+    assertEqual(back["playback.audio_language"], invalid, "An empty language is no setting")
+
+    ' Tokens
+    now = 1000000
+    tokens = { access: "a", refresh: "r", expiresAt: now + 3600, lifetime: 3600 }
+    assertEqual(silo.NeedsRefresh(tokens, now), false, "A fresh token isn't refreshed")
+    assertEqual(silo.NeedsRefresh(tokens, now + 2900), true, "A token past four fifths of its life is refreshed")
+    assertEqual(silo.NeedsRefresh({ access: "a", refresh: "", expiresAt: now, lifetime: 3600 }, now), false, "No refresh token, no refresh")
+    assertEqual(silo.NeedsStreamRefresh(tokens, now + 100), false, "A stream token under a tenth used is kept")
+    assertEqual(silo.NeedsStreamRefresh(tokens, now + 400), true, "A stream token past a tenth of its life is refreshed first")
+
+    ' Requests
+    assertEqual(silo.ServerKey(" HTTP://Silo.Test:8090/ "), "http://silo.test:8090", "Server keys are lowercase without a trailing slash")
+    assertEqual(silo.ServerKey("silo.test"), "http://silo.test", "A bare host is http")
+    assertEqual(silo.CleanDeviceId("Roku 4800/x#1"), "Roku4800x1", "Device ids keep only what Silo accepts")
+    assertEqual(silo.EncodeQuery({ keys: ["a b", "c"] }), "keys=a%20b&keys=c", "Lists repeat their key")
+    assertEqual(silo.EncodeQuery({ limit: 20, sorted: true, gone: invalid }), "limit=20&sorted=true", "Numbers and booleans are written, invalid is left out")
+    assertEqual(silo.PathOf("http://silo.test/api/v2/x?token=secret"), "/api/v2/x", "Logged paths drop the query")
+    problem = silo.ProblemOf({ type: "https://siloserver.org/docs/api/v2/problems/not_found", title: "Not found", status: 404 })
+    assertEqual(problem.code, "not_found", "A problem's code is the last segment of its type")
+    assertEqual(silo.ProblemOf({ items: [] }), invalid, "Other bodies aren't problems")
+    assertEqual(silo.IsClientUpgradeRequired({ status: 410, problem: { code: "client_upgrade_required" } }), true, "A retired API asks for an upgrade")
+
+    ' Routing
+    m.global.serverIdentity = { url: "http://silo.test:8090", serverType: "silo" }
+    assertEqual(silo.ServerOfUrl("http://silo.test:8090/Items?Ids=1"), "http://silo.test:8090", "Jellyfin paths on a Silo are routed")
+    assertEqual(silo.ServerOfUrl("http://silo.test:8090/api/v2/catalog"), "", "Native paths go out as they are")
+    assertEqual(silo.ServerOfUrl("http://silo.test:80901/Items"), "", "Another port isn't the same server")
+    parsed = silo.ParseRequest("get", "http://silo.test:8090/Users/p-9/Items/movie%2Dtmdb%2D1?Fields=Overview%2CGenres&Limit=5&Flag", invalid)
+    assertEqual(parsed.route.Join("/"), "users/p-9/items/movie-tmdb-1", "Paths are split and decoded")
+    assertEqual(parsed.segments[1], "p-9", "Segments keep their case")
+    assertEqual(parsed.query.Fields, "Overview,Genres", "Query values are decoded")
+    assertEqual(parsed.query.Flag, "", "A bare query key is kept")
+    assertEqual(parsed.method, "GET", "Methods are upper case")
+    m.global.serverIdentity = { url: "", serverType: "" }
+
+    ' Artwork
+    assertEqual(silo.ImageURL("http://silo.test", "Items/movie-1/Images/Primary", { tag: "/api/v2/artwork/a.webp?sig=x", maxHeight: 300 }), "http://silo.test/api/v2/artwork/a.webp?sig=x", "A Silo image tag is the picture's address")
+    silo.RegisterImage("http://silo.test", "movie-2", "Backdrop", "/api/v2/artwork/b.webp", 1)
+    assertEqual(silo.ImageURL("http://silo.test/", "/Items/movie-2/Images/Backdrop/1", {}), "http://silo.test/api/v2/artwork/b.webp", "Pictures mapped in this thread are found without a tag")
+    assertEqual(silo.ImageURL("http://silo.test", "Items/movie-3/Images/Primary", {}), "", "An unknown picture is none")
+    assertEqual(silo.ResolveUrl("https://silo.test", "//cdn.test/x.jpg"), "https://cdn.test/x.jpg", "Scheme-relative pictures take the server's scheme")
+    assertEqual(silo.DrawableAvatar("https://api.dicebear.com/9.x/thumbs/svg?seed=p1&size=128&radius=24"), "https://api.dicebear.com/9.x/thumbs/png?radius=50&seed=p1&size=128", "A DiceBear avatar is asked for as a round PNG")
+    assertEqual(silo.DrawableAvatar("/profile-avatars/avatar-3.svg"), "/profile-avatars/avatar-3.svg", "Other avatars are kept")
+    assertEqual(FormatJson(siloMap.ProviderIds({ id: "movie-tmdb-1325734" })), "{""Tmdb"":""1325734""}", "A list item's TMDB id comes from its catalog id")
+    assertEqual(FormatJson(siloMap.ProviderIds({ id: "series-tvdb-82459" })), "{""Tvdb"":""82459""}", "and a series matched on TVDB gets its TVDB id")
+    assertEqual(siloMap.ProviderIds({ id: "movie-tmdb-1", tmdb_id: 2 }).Tmdb, "2", "An id the item carries wins")
+    assertEqual(siloMap.ProviderIds({ id: "episode-tvdb-1-2-3" }).Count(), 0, "Other ids are left alone")
+    publicSettings = silo.SeerrAnswer({ query: {}, method: "GET", body: invalid }, ["settings", "public"]).data
+    assertEqual(FormatJson(publicSettings), "{""movie4kEnabled"":false,""series4kEnabled"":false}", "Silo has no 4K requests, so Seerr's public settings switch 4K off")
+    m.siloScreenWidth = 1280
+    sized = silo.ArtworkWidths({ image_size: "medium", type: "movie" })
+    assertEqual(sized.poster_width.ToStr() + "," + sized.backdrop_width.ToStr() + "," + sized.type, "178,1280,movie", "A 720p screen asks for artwork at two thirds of the layout's widths")
+    assertEqual(silo.ArtworkWidths({ image_size: "large" }).poster_width, 333, "A detail poster is asked for larger")
+    m.siloScreenWidth = 1920
+    assertEqual(silo.ArtworkWidths({ image_size: "medium" }).backdrop_width, 1920, "A 1080p screen asks for backdrops at full width")
+    assertEqual(silo.ArtworkWidths({ type: "movie" }).DoesExist("poster_width"), false, "A request that doesn't size its artwork is left alone")
+    m.siloScreenWidth = invalid
+    assertEqual(silo.ResolveUrl("https://silo.test", "https://cdn.test/x.jpg"), "https://cdn.test/x.jpg", "Absolute pictures are kept")
+end sub
+
+sub testSiloCatalog()
+    ' Ids
+    assertEqual(siloMap.TypeOfId("episode-imdb-tt1-2-3"), "episode", "Ids say their type")
+    assertEqual(siloMap.TypeOfId("42"), "", "A number has no type")
+    assertEqual(siloMap.SeasonIdFor("series-imdb-tt1", 2), "season-imdb-tt1-2", "A season id comes from its series")
+    season = siloMap.ParseSeasonId("season-imdb-tt1-12")
+    assertEqual(season.seriesId + "/" + season.seasonNumber.ToStr(), "series-imdb-tt1/12", "Season ids name their series and number")
+    episode = siloMap.ParseEpisodeId("episode-tmdb-9-0-4")
+    assertEqual(episode.seriesId + "/" + episode.seasonNumber.ToStr() + "/" + episode.episodeNumber.ToStr(), "series-tmdb-9/0/4", "Episode ids name series, season and episode")
+    assertEqual(siloMap.ParseEpisodeId("movie-1"), invalid, "Other ids aren't episodes")
+    libBox = siloMap.ParseCollectionId("silo-libcollection:3:abc")
+    assertEqual(libBox.libraryId + "/" + libBox.id, "3/abc", "Library collection ids carry the library")
+    assertEqual(siloMap.ParseCollectionId("silo-collection:7").libraryId, "", "Personal collections have no library")
+    assertEqual(siloMap.ParseCollectionId("silo-libcollection:3"), invalid, "A library collection id needs both parts")
+    assertEqual(siloMap.GenreNameOf(siloMap.GenreId("Sci-Fi & Fantasy")), "Sci-Fi & Fantasy", "Genre ids carry their names")
+    assertEqual(siloMap.LibraryIdOf("12"), "12", "Numbers are library ids")
+    assertEqual(siloMap.LibraryIdOf("movie-1"), "", "Titles aren't libraries")
+
+    ' Query mapping
+    assertEqual(FormatJson(siloMap.TypesForQuery("Movie,BoxSet,Series")), "[""movie"",""series""]", "Types Silo can't serve drop out")
+    assertEqual(siloMap.TypesForQuery("MusicAlbum").Count(), 0, "Nothing Silo has is an empty list")
+    assertEqual(siloMap.TypesForQuery(invalid), invalid, "No types named is no filter")
+    assertEqual(FormatJson(siloMap.TypesForQuery(invalid, "Video")), "[""movie"",""episode""]", "Video media is films and episodes")
+    assertEqual(siloMap.CatalogScopeFor(["movie", "series"]), "video", "Films and shows are the video scope")
+    assertEqual(siloMap.SearchScopeFor(["movie", "series", "episode"], true), "video_with_episodes", "Searches take episodes along when Silo can")
+    assertEqual(siloMap.SortFor("SortName,ProductionYear", "Descending"), "-title", "The first sort term is Silo's sort")
+    assertEqual(siloMap.SortFor("Random", "Ascending"), "", "Random isn't one of Silo's sorts")
+    assertEqual(siloMap.WantsRandom("Random"), true, "Random is noticed")
+    groups = siloMap.RuleGroups({ genres: ["Drama", "Drama"], filters: ["IsUnplayed", "IsFavorite"], isHd: false })
+    assertEqual(groups.Count(), 6, "Genres, unwatched, favorites and three not-HD groups")
+    assertEqual(groups[0].rules.Count(), 1, "A repeated genre is asked once")
+    assertEqual(groups[1].rules[0].field + " " + groups[1].rules[0].value.ToStr(), "watched false", "Unplayed is not watched")
+
+    ' Libraries
+    views = siloMap.LibrariesToViews([{ id: 2, type: "series", name: "TV", sort_order: 2 }, { id: 1, type: "movies", name: "Films", sort_order: 1 }, { id: 3, type: "audiobooks", name: "Books" }], "http://silo.test")
+    assertEqual(views.Count(), 2, "Audiobook libraries aren't shown")
+    assertEqual(views[0].Id + views[0].CollectionType, "1movies", "Libraries follow Silo's order and type")
+    ordered = siloMap.InViewOrder(views, ["2"])
+    assertEqual(ordered[0].Id, "2", "The profile's own order comes first")
+
+    ' Items
+    dto = siloMap.ItemToBaseItem({ content_id: "episode-tmdb-5-1-2", title: "Pilot", season_number: 1, episode_number: 2, series_id: "series-tmdb-5", series_title: "Show", still_url: "/a/still.webp", runtime: 30, user_state: { played: false, is_favorite: true }, position_seconds: 600, duration_seconds: 1800 }, "http://silo.test")
+    assertEqual(dto.Type, "Episode", "Episodes map to Episode")
+    assertEqual(dto.SeasonId, "season-tmdb-5-1", "Episodes name their season")
+    assertEqual(dto.ImageTags.Primary, "/a/still.webp", "An episode's still is its picture")
+    assertEqual(dto.UserData.IsFavorite, true, "Favorites carry over")
+    assertEqual(dto.UserData.PlaybackPositionTicks, 6000000000&, "Positions are ticks")
+    assertEqual(Int(dto.UserData.PlayedPercentage), 33, "Progress is a percentage")
+    assertEqual(dto.RunTimeTicks, 18000000000&, "Runtime minutes become ticks")
+    keys = []
+    for each key in dto.ImageTags
+        keys.Push(key)
+    end for
+    assertEqual(keys.Join(","), "Primary", "Image types keep Jellyfin's casing")
+    movie = siloMap.ItemToBaseItem({ content_id: "movie-1", type: "movie", title: "The Film", rating_tmdb: 7.26, extras: [{ kind: "trailer", content_id: "x-1" }, { kind: "featurette", content_id: "x-2" }], cast: [{ name: "B", order: 2 }, { name: "A", order: 1, person_id: 9 }], crew: [{ name: "C", job: "Director" }] }, "http://silo.test")
+    assertEqual(movie.SortName, "Film, The", "Leading articles move to the end of the sort name")
+    assertEqual(movie.CommunityRating, 7.3, "Ratings keep one decimal")
+    assertEqual(movie.LocalTrailerCount.ToStr() + "/" + movie.SpecialFeatureCount.ToStr(), "1/1", "Extras are counted by kind")
+    assertEqual(movie.People[0].Name + movie.People[0].Id + movie.People[1].Name + movie.People[2].Type, "A9BDirector", "Cast in billing order, then crew")
+    assertEqual(siloMap.ItemToBaseItem({ content_id: "book-1", type: "audiobook" }, "http://silo.test"), invalid, "Types the app can't show are left out")
+
+    ' Paging
+    state = silo.NewPageState()
+    silo.AddPage(state, 0, { items: [1, 2, 3], nextCursor: "c2", windowCursor: "w", hasMore: true, total: 7, totalExact: true })
+    assertEqual(FormatJson(silo.PageItemsAt(state, 1, 5)), "[2,3]", "Kept pages answer what they hold")
+    assertEqual(silo.PageTotalFor(state, 3), 7, "An exact total is the total")
+    silo.AddPage(state, 3, { items: [4], nextCursor: "", windowCursor: "", hasMore: false, total: -1, totalExact: false })
+    assertEqual(state.knownEnd, 4, "A last page ends the list")
+    assertEqual(silo.PageSignature("/c", { limit: 5, cursor: "x", type: "movie", a: 1 }), "/c?a=1&type=""movie""", "Signatures leave the paging out")
+    assertEqual(FormatJson(silo.Slice([1, 2, 3, 4], 1, 2).Items), "[2,3]", "Slices page a list")
+    assertEqual(silo.Slice([1, 2], 5, 2).Items.Count(), 0, "A slice past the end is empty")
+end sub
+
+sub testSiloPlayback()
+    version = { file_id: 94, container: "mp4", duration: 6328.5, bitrate: 26585, file_name: "The.Drama.2026.mp4", video_tracks: [{ codec: "hevc", width: 3836, height: 2072, dv_profile: 8, dv_bl_compat_id: 1, color_transfer: "smpte2084" }], audio_tracks: [{ codec: "eac3", channels: 6, language: "eng" }, { codec: "aac", channels: 2, language: "spa", default: true }], subtitle_tracks: [{ codec: "subrip", language: "en", index: 5 }, { codec: "hdmv_pgs_subtitle", language: "fr", forced: true }] }
+    source = siloMap.VersionToMediaSource(version, "movie-1")
+    assertEqual(source.Id + "/" + source.Container + "/" + source.Name, "movie-1~94/mp4/The.Drama.2026", "A version is a MediaSource named after its file, its id naming title and file")
+    assertEqual(siloMap.FileIdOf(source.Id), "94", "A version id names its file")
+    assertEqual(siloMap.ItemIdOfSource(source.Id), "movie-1", "A version id names its title")
+    assertEqual(siloMap.FileIdOf("episode-tvdb-1-2-3"), "", "A title's own id names no file: its default plays")
+    assertEqual(source.DefaultAudioStreamIndex, 2, "The flagged audio track is the default")
+    indexes = []
+    for each stream in source.MediaStreams
+        indexes.Push(stream.Type.Left(1) + stream.Index.ToStr())
+    end for
+    assertEqual(indexes.Join(","), "V0,A1,A2,S3,S5", "A subtitle keeps its file index, the rest take free numbers")
+    assertEqual(source.MediaStreams[0].VideoRangeType, "DOVIWithHDR10", "Dolby Vision with an HDR10 base layer")
+    assertEqual(source.MediaStreams[1].DisplayTitle, "English EAC3 5.1", "Audio titles name language, codec and layout")
+    assertEqual(source.MediaStreams[3].IsTextSubtitleStream, false, "PGS isn't text")
+    assertEqual(siloMap.TrackForStreamIndex(source, 3).Ordinal, 1, "Stream indexes lead back to Silo's track")
+    assertEqual(siloMap.StreamIndexForTrack(source, "audio", 0), 1, "Silo's tracks lead to stream indexes")
+    assertEqual(source.RunTimeTicks, 63285000000&, "The file's duration is its runtime")
+
+    profile = {
+        DirectPlayProfiles: [{ Type: "Video", Container: "mp4,mkv", VideoCodec: "h264,hevc,vp9", AudioCodec: "aac,ac3,eac3" }],
+        TranscodingProfiles: [{ Type: "Video", Protocol: "hls", VideoCodec: "h264,hevc", AudioCodec: "aac,ac3" }],
+        CodecProfiles: [
+            { Type: "Video", Codec: "vp9", Conditions: [{ Condition: "Equals", Property: "VideoProfile", Value: "none" }] },
+            { Type: "Video", Codec: "hevc", Conditions: [{ Condition: "EqualsAny", Property: "VideoRangeType", Value: "SDR|HDR10|DOVI|DOVIWithHDR10" }] },
+            { Type: "Video", Codec: "h264", Conditions: [{ Condition: "LessThanEqual", Property: "Width", Value: "3840" }] }
+        ]
+    }
+    caps = silo.CapabilitiesOf(profile)
+    assertEqual(caps.clientCapabilities.codecs_video.Join(","), "h264,hevc", "A codec the profile never plays is left out")
+    assertEqual(caps.clientCapabilities.containers.Join(","), "mp4,mkv,matroska", "Matroska goes by both names")
+    assertEqual(caps.clientCapabilities.max_resolution, "2160p", "Width limits give the resolution")
+    assertEqual(FormatJson(caps.clientCapabilities.hdr_details.dolby_vision_profiles), "[5,8]", "Dolby Vision profiles follow the allowed ranges")
+    assertEqual(caps.clientCapabilities.hdr_details.hlg, false, "A range the profile doesn't list isn't played")
+    assertEqual(caps.deliveries.progressive.supported_on_device, false, "Roku asks for HLS, not a progressive remux")
+    assertEqual(caps.deliveries.hls.max_channels_by_codec, invalid, "A Roku with multichannel AAC gets no AAC ceiling")
+    offHevc = {}
+    offHevc.Append(profile)
+    offHevc.SiloExcludedVideoCodecs = ["hevc"]
+    assertEqual(silo.CapabilitiesOf(offHevc).clientCapabilities.codecs_video.Join(","), "h264", "A retry moving off HEVC leaves it out by every name")
+    mixed = {}
+    mixed.Append(profile)
+    mixed.CodecProfiles = [
+        { Type: "VideoAudio", Codec: "aac", Conditions: [{ Condition: "LessThanEqual", Property: "AudioChannels", Value: 2 }] },
+        { Type: "VideoAudio", Codec: "eac3", Conditions: [{ Condition: "LessThanEqual", Property: "AudioChannels", Value: 6 }] }
+    ]
+    assertEqual(silo.CapabilitiesOf(mixed).deliveries.original_http.max_channels, invalid, "A stereo-only codec doesn't hold 5.1 E-AC-3 to stereo")
+    mixed.CodecProfiles = [mixed.CodecProfiles[0]]
+    assertEqual(silo.CapabilitiesOf(mixed).deliveries.original_http.max_channels, 2, "A Roku that plays only stereo is held to stereo")
+    stereo = silo.CapabilitiesOf(profile, ["codec_channel_ceilings_v1"], false)
+    assertEqual(stereo.deliveries.hls.max_channels_by_codec.aac, 2, "Without multichannel AAC, AAC is held to two channels")
+    assertEqual(silo.CapabilitiesOf(profile, [], false).deliveries.hls.max_channels, 2, "A server without codec ceilings gets a stereo HLS stream")
+    assertEqual(FormatJson(silo.CapabilitiesOf(profile, ["hls_copy_mpegts_v1"]).deliveries.hls.features), "[""native_hls_playback_v1"",""hls_copy_mpegts_v1""]", "HLS copies are asked for in MPEG-TS where Silo offers it")
+    assertEqual(FormatJson(silo.CapabilitiesOf(profile).deliveries.hls.features), "[""native_hls_playback_v1""]", "A server without MPEG-TS copies is not asked for them")
+    stepped = {}
+    stepped.Append(profile)
+    stepped.SiloDirectPlayProfiles = profile.DirectPlayProfiles
+    stepped.DirectPlayProfiles = []
+    assertEqual(silo.IsStepDown(stepped), true, "A retry without direct play is a step down")
+    assertEqual(FormatJson(silo.CapabilitiesOf(silo.RetryProfile(stepped)).clientCapabilities.codecs_video), FormatJson(silo.CapabilitiesOf(profile).clientCapabilities.codecs_video), "A retry still says what the Roku decodes")
+    assertEqual(silo.IsStepDown(profile), false, "A first start isn't a step down")
+    assertEqual(caps.deliveries.hls.supported_on_device, true, "HLS plays")
+    assertEqual(caps.deliveries.hls.audio_decode_codecs.Join(","), "aac,ac3,eac3", "HLS carries what the Roku decodes of AAC, AC-3 and E-AC-3")
+
+    assertEqual(FormatJson(silo.SubtitleOrder(source)), "[5,3]", "Subtitles in Silo's order: by their place among the file's subtitles")
+    assertEqual(silo.SubtitleCombinedIndex(source, 3), 1, "A stream index is a combined subtitle index")
+    assertEqual(silo.PlanUrl("http://silo.test", "/stream/abc/file"), "http://silo.test/api/v2/stream/abc/file", "Old plan routes move to v2")
+    assertEqual(silo.AuthorizeUrl("http://silo.test/api/v2/stream/abc?x=1", "http://silo.test", "tok en"), "http://silo.test/api/v2/stream/abc?x=1&token=tok%20en", "Media addresses carry the token")
+    assertEqual(silo.AuthorizeUrl("http://other.test/api/v2/stream/abc", "http://silo.test", "tok"), "http://other.test/api/v2/stream/abc", "Other hosts don't get the token")
+
+    plan = { delivery: "server_transcode_hls", effective_media_file_id: 94, stream: { url: "/api/v2/playback/transcode/s1/master.m3u8?st=x", protocol: "hls", container: "hls" }, timeline: { timeline_offset_seconds: 0, can_seek_anywhere: true }, selected_tracks: { audio: { index: 0 }, subtitle: { index: 0, id: "file:94:subtitle:0" } }, subtitle: { mode: "sidecar", track_id: "file:94:subtitle:0", inventory: [{ combined_index: 0, delivery: "sidecar", source: "embedded", url: "/api/v2/stream/s1/subtitles/0.vtt?file_id=94" }, { combined_index: 2, delivery: "sidecar", source: "downloaded", codec: "srt", language: "de", url: "/api/v2/stream/s1/subtitles/2.vtt" }] } }
+    out = silo.PlanToMediaSource(plan, source, "http://silo.test", "tok", invalid)
+    assertEqual(out.SupportsDirectPlay, false, "A transcode isn't direct play")
+    assertEqual(out.Id + " " + out.SiloFileId, "movie-1~94 94", "The plan's file keeps the version id")
+    assertEqual(out.TranscodingUrl, "http://silo.test/api/v2/playback/transcode/s1/master.m3u8?st=x&token=tok", "The transcode address is the plan's, with the token")
+    assertEqual(out.Container, "hls", "HLS plays as HLS")
+    assertEqual(out.DefaultAudioStreamIndex, 1, "The plan's audio is the default")
+    assertEqual(out.DefaultSubtitleStreamIndex, 5, "The plan's subtitle is the default")
+    sidecar = invalid
+    added = invalid
+    for each stream in out.MediaStreams
+        if stream.Index = 5 then sidecar = stream
+        if stream.Index = 6 then added = stream
+    end for
+    assertEqual(sidecar.DeliveryUrl, "http://silo.test/api/v2/stream/s1/subtitles/0.vtt?file_id=94&token=tok", "Sidecars carry their address and token")
+    assertEqual(sidecar.Codec, "webvtt", "A VTT sidecar reads as WebVTT")
+    assertEqual(added.Language, "de", "Downloaded subtitles are added after the file's")
+    waiting = invalid
+    for each stream in out.MediaStreams
+        if stream.Index = 3 then waiting = stream
+    end for
+    assertEqual(waiting.SiloReplan, true, "A remux's subtitle without an address waits for a new plan")
+    assertEqual(sidecar.SiloReplan, invalid, "A sidecar plays as is")
+    subtitleCount = 0
+    for each stream in out.MediaStreams
+        if stream.Type = "Subtitle" then subtitleCount++
+    end for
+    assertEqual(subtitleCount, 3, "The file's own subtitles aren't listed twice")
+    assertEqual(siloContains([3], 3), true, "Numbers are found by value")
+    assertEqual(siloContains(["3"], 3), false, "Text isn't a number")
+    assertEqual(siloContains(["movie"], "movie"), true, "Text is found by text")
+    assertEqual(FormatJson(caps.clientCapabilities.hdr_details.dolby_vision_profiles), "[5,8]", "Dolby Vision profiles are listed once each")
+    assertEqual(out.SiloTracks, invalid, "Silo's track list stays out of the player's source")
+    original = silo.PlanToMediaSource({ delivery: "original_http", stream: { url: "/api/v2/stream/s2/file" }, timeline: { timeline_offset_seconds: 30 }, subtitle: { mode: "off" } }, source, "http://silo.test", "tok", invalid)
+    assertEqual(original.SupportsDirectPlay and original.Path = "http://silo.test/api/v2/stream/s2/file?token=tok", true, "The original file is direct play of the plan's address")
+    assertEqual(original.DefaultSubtitleStreamIndex, -1, "Subtitles off is -1")
+    assertEqual(original.SiloTimelineOffsetTicks, 300000000&, "The stream's start in the title rides along")
+    assertEqual(silo.TimedSidecarUrl("/api/v2/stream/s1/subtitles/2.srt?file_id=94", "srt", 754.5), "/api/v2/stream/s1/subtitles/2.vtt?file_id=94&timestamp_offset=-754.5", "A resumed stream's sidecar comes as WebVTT moved onto the player's clock")
+    assertEqual(silo.TimedSidecarUrl("/api/v2/stream/s1/subtitles/0.vtt", "vtt", 30), "/api/v2/stream/s1/subtitles/0.vtt?timestamp_offset=-30", "A sidecar without a query gets one")
+    assertEqual(silo.TimedSidecarUrl("/api/v2/stream/s1/subtitles/0.ass?file_id=94", "ass", 30), "/api/v2/stream/s1/subtitles/0.vtt?file_id=94&timestamp_offset=-30", "ASS comes as WebVTT moved onto the player's clock")
+    assertEqual(silo.TimedSidecarUrl("/api/v2/stream/s1/subtitles/0.ass?file_id=94", "ass", 0), "/api/v2/stream/s1/subtitles/0.vtt?file_id=94", "ASS always comes as WebVTT, which the Roku reads")
+    assertEqual(silo.TimedSidecarUrl("/api/v2/stream/s1/subtitles/2.srt", "srt", 0), "/api/v2/stream/s1/subtitles/2.vtt", "SRT always comes as WebVTT, which the app's own renderer reads")
+    songs = silo.ThemeSongsOf({ themes: { owner_id: "series-1", items: [{ id: 7, title: "Main Title", container: "flac", duration_seconds: 60 }, { title: "no id" }] } }, "episode-1")
+    assertEqual(songs.Count(), 1, "Theme songs without an id are left out")
+    assertEqual(songs[0].Id + " " + songs[0].ParentId + " " + songs[0].Container, "7 series-1 flac", "A theme song keeps its id, owner and container")
+    assertEqual(songs[0].RunTimeTicks, 600000000&, "A theme song's length is in ticks")
+    assertEqual(silo.ThemeSongsOf({}, "movie-1").Count(), 0, "A title without themes has no theme songs")
+    assertEqual(silo.ThemeStreamFormat("audio/mpeg", "original"), "mp3", "MP3 themes play as mp3")
+    assertEqual(silo.ThemeStreamFormat("audio/flac", "converted"), "mp4", "A converted theme is AAC in MP4")
+    assertEqual(silo.ThemeStreamFormat("audio/aac; charset=x", "original"), "es.aac-adts", "Raw AAC plays as ADTS")
+    found = silo.SubtitleResults({ results: [{ id: "os-12", provider: "opensubtitles", language: "en", release_name: "Show.S01E01.720p", format: "srt", score: 9.5, downloads: 120, hearing_impaired: true }, { provider: "no id" }] }, "94")
+    assertEqual(found.Count(), 1, "Results without an id are left out")
+    assertEqual(found[0].Name + " " + found[0].ProviderName + " " + found[0].Language, "Show.S01E01.720p opensubtitles en", "A result reads as Jellyfin's")
+    kept = silo.SubtitleResultOf(found[0].Id)
+    assertEqual(kept.media_file_id + " " + kept.subtitle_id + " " + kept.release_name, "94 os-12 Show.S01E01.720p", "A result's id carries the whole result back for the download")
+    assertEqual(kept.hearing_impaired, true, "The download keeps hearing impaired")
+    assertEqual(Instr(1, found[0].Id, "/") + Instr(1, found[0].Id, "+") + Instr(1, found[0].Id, "="), 0, "A result id is safe in a path")
+    assertEqual(silo.SubtitleResultOf("not-a-result"), invalid, "Other ids aren't results")
+    assertEqual(silo.TextOfHex(silo.HexOf("Amélie ✓")), "Amélie ✓", "Hex carries any character")
+    assertEqual(siloMap.TwoLetterLanguage("eng"), "en", "Three-letter codes become two-letter")
+    assertEqual(siloMap.TwoLetterLanguage("ger"), "de", "Bibliographic codes become two-letter")
+    assertEqual(siloMap.TwoLetterLanguage("xyz"), "xyz", "Unknown codes stay")
+    assertEqual(silo.TimedSidecarUrl("/api/v2/stream/s1/subtitles/0.vtt", "vtt", 0), "/api/v2/stream/s1/subtitles/0.vtt", "A stream from the start keeps its sidecars")
+    assertEqual(silo.TitleSeconds({ offsetTicks: 300000000& }, 100000000&), 40, "Progress is the stream's position plus where it starts")
+    assertEqual(silo.KbpsOf("140000000"), 140000, "Bitrate caps are in kbps")
+end sub
+
+sub testSiloExtras()
+    segments = silo.MarkersToSegments({ marker_segments: [{ kind: "intro", start_seconds: 300, end_seconds: 330 }, { kind: "recap", start_seconds: 0, end_seconds: 60 }, { kind: "intro", start_seconds: 300, end_seconds: 330 }, { kind: "credits", start_seconds: 1500 }] }, "episode-1", 1600)
+    kinds = []
+    for each segment in segments
+        kinds.Push(segment.Type)
+    end for
+    assertEqual(kinds.Join(","), "Recap,Intro,Outro", "Markers in start order, repeats dropped, credits as Outro")
+    assertEqual(segments[2].EndTicks, 16000000000&, "Credits without an end run to the end")
+    assertEqual(segments[1].Id, "silo-intro-episode-1-0", "Segment ids name each occurrence")
+    assertEqual(silo.MarkersToSegments({ intro: { start: 10, end: 40 } }, "m", 0)[0].StartTicks, 100000000&, "Older answers carry one marker per kind")
+    manifest = silo.TrickplayToManifest({ thumbnail_width: 320, thumbnail_height: 180, tile_columns: 10, tile_rows: 10, interval_ms: 10000, sheets: [{ index: 1, url: "/t/1.jpg" }, { index: 0, url: "/t/0.jpg" }] }, "http://silo.test")
+    entry = manifest["320"]
+    assertEqual(entry.TileWidth.ToStr() + "x" + entry.TileHeight.ToStr() + " " + entry.ThumbnailCount.ToStr(), "10x10 200", "Trickplay sheets lay out like Jellyfin's")
+    assertEqual(entry.SiloSheets[0], "http://silo.test/t/0.jpg", "Sheets are kept by their index")
+    assertEqual(silo.TrickplayToManifest({ thumbnail_width: 320 }, "http://silo.test"), invalid, "An incomplete answer is no trickplay")
+end sub
+
+sub testSiloSeerr()
+    assertEqual(silo.StableId("tmdb_chart_top"), 2026997823, "Row ids match the other Moonfin clients'")
+    assertEqual(silo.StableId("Drama"), 1996958144, "Genre ids match the other Moonfin clients'")
+    assertEqual(silo.RequestNumber("9007199254740993"), "9007199254740993", "64-bit request ids keep every digit, as text")
+    assertEqual(silo.RequestNumber(42), 42, "Small request ids are numbers")
+    mapped = silo.MapSeerrRequest({ id: "77", media_type: "series", state: "partially_available", tmdb_id: 5, title: "Show", seasons: [1, 2], requested_by_user_id: "3" })
+    assertEqual(mapped.type + " " + mapped.media.name + " " + mapped.seasonCount.ToStr(), "tv Show 2", "Silo requests read as Seerr's")
+    assertEqual(mapped.status.ToStr() + "/" + mapped.media.status.ToStr(), "2/4", "Partly available is approved, partly there")
+    assertEqual(mapped.requestedBy.id, 3, "The requester is the account")
+    item = silo.DiscoverItem({ media_type: "movie", tmdb_id: 9, title: "Film", availability: "available", request: { request_id: 12, state: "approved" } })
+    assertEqual(item.title + " " + item.mediaInfo.status.ToStr() + " " + item.mediaInfo.requests[0].id.ToStr(), "Film 5 12", "Discover cards carry availability and their request")
+    page = silo.SeerrPage({ page: 2, next_page: 4, total_pages: 9, results: [{ media_type: "series", title: "A", library_content_id: "series-1" }, { media_type: "series", title: "B" }] }, 1, true)
+    assertEqual(page.page.ToStr() + "/" + page.totalPages.ToStr() + "/" + page.results.Count().ToStr(), "2/8/1", "Pages follow Silo's next page, the shift and the library filter")
+end sub
+
+function RegistryReadAll(section as string) as dynamic
+    if section = "ServerTypes" then return m.serverTypes
+    return {}
+end function

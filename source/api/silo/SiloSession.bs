@@ -1,0 +1,460 @@
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/diagnostics.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Requests to Silo's native /api/v2: its headers, its Problem Details errors and the account's
+' token pair, which Silo rotates on every refresh. Ported from Smart-TV's siloSession.js.
+'
+' A Silo sign-in belongs to an account, and the account's household profiles are the app's users.
+' They all share the account's one token pair, kept in the registry by server and account so every
+' Task thread sees the same pair. A request names its profile in X-Profile-Id, plus X-Profile-Token
+' while a PIN-locked profile is unlocked.
+'' Whether list holds value: numbers by value, text by exact text. The app's inArray compares only
+' text, and turns a number into " 3" first, so it never finds one
+function siloContains(list as dynamic, value as dynamic) as boolean
+    if type(list) <> "roArray" or value = invalid then return false
+    wantText = isString(value)
+    for each item in list
+        if item <> invalid
+            if wantText
+                if isString(item) and item = value then return true
+            else if not isString(item) and type(item) <> "roBoolean" and type(item) <> "Boolean" and type(item) <> "roAssociativeArray" and type(item) <> "roArray"
+                if item = value then return true
+            end if
+        end if
+    end for
+    return false
+end function
+
+namespace silo
+    const API_MAJOR = 2
+    const SESSIONS_SECTION = "SiloSessions"
+    const PROFILES_SECTION = "SiloProfiles"
+    const TIMEOUT_MS = 15000
+    ' How long another thread's refresh is waited on before this one tries itself
+    const LOCK_MS = 10000
+
+    ' A step of what the app does on a Silo server, printed to the debug console (port 8085)
+    sub Trace(message as string)
+        print "[Moonfin silo] " + message
+    end sub
+
+    function ServerKey(url as dynamic) as string
+        if not isValidAndNotEmpty(url) then return ""
+        url = LCase(url.Trim())
+        while url.Right(1) = "/"
+            url = url.Left(url.Len() - 1)
+        end while
+        if url.Left(7) <> "http://" and url.Left(8) <> "https://" then url = "http://" + url
+        return url
+    end function
+
+    ' Silo answers 422 to a device id with anything but letters, digits, '.', '_', ':' or '-'
+    function CleanDeviceId(raw as dynamic) as string
+        if not isValidAndNotEmpty(raw) then return ""
+        filtered = CreateObject("roRegex", "[^A-Za-z0-9._:-]", "").ReplaceAll(raw, "")
+        return filtered.Left(128)
+    end function
+
+    function HeaderText(value as dynamic, maxLength = 0 as integer) as string
+        cleaned = ""
+        if isValid(value) then cleaned = CreateObject("roRegex", "\s+", "").ReplaceAll(CreateObject("roRegex", "[^\x20-\x7E]", "").ReplaceAll(value.ToStr(), " "), " ").Trim()
+        if cleaned = "" then cleaned = "Unknown"
+        if maxLength > 0 then cleaned = cleaned.Left(maxLength)
+        return cleaned
+    end function
+
+    ' Silo records the X-Silo-Device-* headers in its device registry and reads device-scoped
+    ' playback preferences from the id, so they go on every request
+    function HeadersFor(accessToken = "" as string, profileId = "" as string, profileToken = "" as string) as object
+        context = getAuthHeaderContext()
+        headers = {}
+        if accessToken <> "" then headers["Authorization"] = "Bearer " + accessToken
+        if profileId <> "" then headers["X-Profile-Id"] = profileId
+        if profileToken <> "" then headers["X-Profile-Token"] = profileToken
+        deviceId = silo.CleanDeviceId(context.deviceId)
+        if deviceId <> "" then headers["X-Silo-Device-Id"] = deviceId
+        headers["X-Silo-Device-Name"] = silo.HeaderText(context.deviceName, 120)
+        headers["X-Silo-Device-Platform"] = "Roku"
+        headers["X-Silo-Client"] = silo.HeaderText(context.appName + " Roku")
+        headers["X-Silo-Client-Version"] = silo.HeaderText(context.appVersion)
+        return headers
+    end function
+
+    ' An RFC 9457 Problem Details body. Its code is the last segment of type, the part code reacts to
+    function ProblemOf(body as dynamic) as dynamic
+        if type(body) <> "roAssociativeArray" then return invalid
+        kind = body.type
+        title = body.title
+        if not isString(kind) and not isString(title) then return invalid
+        code = ""
+        if isString(kind)
+            parts = kind.Split("/")
+            for each part in parts
+                if part <> "" then code = part
+            end for
+        end if
+        problem = { type: kind ?? "", code: code, title: title ?? "", status: 0, detail: "" }
+        if isValid(body.status) then problem.status = body.status
+        if isString(body.detail) then problem.detail = body.detail
+        return problem
+    end function
+
+    function NowSeconds() as integer
+        return CreateObject("roDateTime").AsSeconds()
+    end function
+
+    ' A pair from a sign-in (TokenPair) or a refresh (RefreshedTokens)
+    function TokensFrom(json as dynamic) as object
+        tokens = { access: "", refresh: "", expiresAt: 0, lifetime: 0 }
+        if type(json) <> "roAssociativeArray" then return tokens
+        if isString(json.access_token) then tokens.access = json.access_token
+        if isString(json.refresh_token) then tokens.refresh = json.refresh_token
+        seconds = 0
+        if isValid(json.expires_in) and json.expires_in > 0 then seconds = Int(json.expires_in)
+        tokens.lifetime = seconds
+        tokens.expiresAt = silo.NowSeconds() + seconds
+        return tokens
+    end function
+
+    ' Refreshed once four fifths of its life has passed, or with under a minute left
+    function NeedsRefresh(tokens as dynamic, now = 0 as integer) as boolean
+        if type(tokens) <> "roAssociativeArray" or not isValidAndNotEmpty(tokens.refresh) then return false
+        if now = 0 then now = silo.NowSeconds()
+        remaining = tokens.expiresAt - now
+        return remaining <= 60 or remaining * 5 <= tokens.lifetime
+    end function
+
+    ' A stream carries the token it opened with for as long as it plays, so one about to open is
+    ' given a nearly fresh token: anything past a tenth of its life is refreshed first
+    function NeedsStreamRefresh(tokens as dynamic, now = 0 as integer) as boolean
+        if type(tokens) <> "roAssociativeArray" or not isValidAndNotEmpty(tokens.refresh) then return false
+        if tokens.lifetime <= 0 then return false
+        if now = 0 then now = silo.NowSeconds()
+        return (tokens.expiresAt - now) * 10 < tokens.lifetime * 9
+    end function
+
+    function SessionKey(server as string, accountId as string) as string
+        return silo.ServerKey(server) + "|" + accountId
+    end function
+
+    function LoadTokens(server as string, accountId as string) as dynamic
+        if accountId = "" then return invalid
+        raw = registry_read(silo.SessionKey(server, accountId), silo.SESSIONS_SECTION)
+        if not isValidAndNotEmpty(raw) then return invalid
+        tokens = ParseJson(raw)
+        if type(tokens) <> "roAssociativeArray" or not isValidAndNotEmpty(tokens.access) then return invalid
+        return tokens
+    end function
+
+    sub SaveTokens(server as string, accountId as string, tokens as object)
+        registry_write(silo.SessionKey(server, accountId), FormatJson(tokens), silo.SESSIONS_SECTION)
+    end sub
+
+    ' Forgets the login and every profile proof that went with it
+    sub CloseSession(server as string, accountId as string)
+        registry_delete(silo.SessionKey(server, accountId), silo.SESSIONS_SECTION)
+        registry_delete("lock|" + silo.SessionKey(server, accountId), silo.SESSIONS_SECTION)
+        reg = CreateObject("roRegistrySection", silo.PROFILES_SECTION)
+        for each key in reg.GetKeyList()
+            entry = ParseJson(reg.Read(key))
+            if type(entry) = "roAssociativeArray" and entry.server = silo.ServerKey(server) and entry.account = accountId
+                entry.Delete("proof")
+                entry.Delete("proofExpires")
+                reg.Write(key, FormatJson(entry))
+            end if
+        end for
+        reg.Flush()
+    end sub
+
+    ' Which login a profile acts under. Profile ids are UUIDs, so they don't clash between servers
+    sub RememberProfile(profileId as string, server as string, accountId as string, hasPin = false as boolean)
+        if profileId = "" then return
+        entry = silo.ProfileEntry(profileId)
+        if not isValid(entry) then entry = {}
+        entry.server = silo.ServerKey(server)
+        entry.account = accountId
+        entry.hasPin = hasPin
+        registry_write(profileId, FormatJson(entry), silo.PROFILES_SECTION)
+    end sub
+
+    function ProfileEntry(profileId as string) as dynamic
+        if profileId = "" then return invalid
+        raw = registry_read(profileId, silo.PROFILES_SECTION)
+        if not isValidAndNotEmpty(raw) then return invalid
+        entry = ParseJson(raw)
+        if type(entry) <> "roAssociativeArray" then return invalid
+        return entry
+    end function
+
+    sub ForgetProfile(profileId as string)
+        if profileId <> "" then registry_delete(profileId, silo.PROFILES_SECTION)
+    end sub
+
+    function ProfileAccount(profileId as string) as string
+        entry = silo.ProfileEntry(profileId)
+        if not isValid(entry) or not isString(entry.account) then return ""
+        return entry.account
+    end function
+
+    ' A PIN-locked profile's proof from verify-pin, until it runs out
+    sub SetProfileProof(profileId as string, token as string, expiresAt = 0 as integer)
+        entry = silo.ProfileEntry(profileId)
+        if not isValid(entry) then return
+        if token = ""
+            entry.Delete("proof")
+            entry.Delete("proofExpires")
+        else
+            entry.proof = token
+            entry.proofExpires = expiresAt
+        end if
+        registry_write(profileId, FormatJson(entry), silo.PROFILES_SECTION)
+    end sub
+
+    function ProfileProof(profileId as string) as string
+        entry = silo.ProfileEntry(profileId)
+        if not isValid(entry) or not isString(entry.proof) then return ""
+        if isValid(entry.proofExpires) and entry.proofExpires > 0 and entry.proofExpires <= silo.NowSeconds()
+            silo.SetProfileProof(profileId, "")
+            return ""
+        end if
+        return entry.proof
+    end function
+
+    function EncodeQuery(query as dynamic) as string
+        if type(query) <> "roAssociativeArray" then return ""
+        parts = []
+        for each key in query
+            value = query[key]
+            values = []
+            if type(value) = "roArray"
+                values = value
+            else
+                values = [value]
+            end if
+            for each one in values
+                text = silo.QueryText(one)
+                if text <> "" then parts.Push(key.EncodeUriComponent() + "=" + text.EncodeUriComponent())
+            end for
+        end for
+        return parts.Join("&")
+    end function
+
+    function QueryText(value as dynamic) as string
+        if value = invalid then return ""
+        kind = type(value)
+        if kind = "roBoolean" or kind = "Boolean"
+            if value then return "true"
+            return "false"
+        end if
+        if kind = "roFloat" or kind = "Float" or kind = "roDouble" or kind = "Double"
+            if value = Int(value) then return Int(value).ToStr()
+            return Str(value).Trim()
+        end if
+        return value.ToStr()
+    end function
+
+    ' One HTTP exchange. Answers { status, data, text, retryAfter }, status 0 when nothing came back
+    function Exchange(method as string, url as string, headers as object, body = invalid as dynamic, timeoutMs = 0 as integer) as object
+        if timeoutMs <= 0 then timeoutMs = silo.TIMEOUT_MS
+        req = CreateObject("roUrlTransfer")
+        req.SetUrl(url)
+        if LCase(url).Left(8) = "https://" then req.SetCertificatesFile("common:/certs/ca-bundle.crt")
+        req.RetainBodyOnError(true)
+        req.AddHeader("Accept", "application/json, application/problem+json")
+        for each name in headers
+            req.AddHeader(name, headers[name])
+        end for
+        port = CreateObject("roMessagePort")
+        req.SetMessagePort(port)
+        method = UCase(method)
+        started = false
+        payload = ""
+        if method = "GET"
+            started = req.AsyncGetToString()
+        else
+            if body <> invalid
+                req.AddHeader("Content-Type", "application/json")
+                if isString(body)
+                    payload = body
+                else
+                    payload = FormatJson(body)
+                end if
+            end if
+            ' A POST goes as the app's own do, without naming the method: the Roku sent named POSTs
+            ' to Silo without their body
+            if method <> "POST" then req.SetRequest(method)
+            started = req.AsyncPostFromString(payload)
+        end if
+        answer = { status: 0, data: invalid, text: "", retryAfter: "" }
+        if not started then return answer
+        event = wait(timeoutMs, port)
+        if type(event) <> "roUrlEvent"
+            req.AsyncCancel()
+            diagnostics.Network("Silo " + method + " " + silo.PathOf(url) + " timed out", diagnostics.LEVEL_WARN)
+            return answer
+        end if
+        answer.status = event.GetResponseCode()
+        if answer.status < 0 then answer.status = 0
+        answer.text = event.GetString() ?? ""
+        ' Silo answers unknown paths with its web app, and some routes with plain text
+        first = answer.text.Trim().Left(1)
+        if first = "{" or first = "[" then answer.data = ParseJson(answer.text)
+        responseHeaders = event.GetResponseHeaders()
+        if type(responseHeaders) = "roAssociativeArray" and isValid(responseHeaders["retry-after"]) then answer.retryAfter = responseHeaders["retry-after"]
+        if answer.status < 200 or answer.status >= 300
+            problem = silo.ProblemOf(answer.data)
+            reason = answer.status.ToStr()
+            if isValid(problem) then reason = reason + " " + problem.code + " (" + problem.detail + ")"
+            if method <> "GET" then reason = reason + ", sent " + payload.Len().ToStr() + " bytes"
+            diagnostics.Network("Silo " + method + " " + silo.PathOf(url) + " answered " + reason, diagnostics.LEVEL_WARN)
+        end if
+        return answer
+    end function
+
+    ' The path of a URL without its query, for logs: a query may carry a token
+    function PathOf(url as string) as string
+        path = url.Split("?")[0]
+        schemeEnd = Instr(1, path, "://")
+        if schemeEnd > 0
+            slash = Instr(schemeEnd + 3, path, "/")
+            if slash > 0 then return path.Mid(slash - 1)
+            return "/"
+        end if
+        return path
+    end function
+
+    ' Only a 401 from the refresh ends the login. Any other failure says nothing about it, so the
+    ' tokens stay. Several Task threads may find the token stale at once and Silo rotates the
+    ' refresh token, so one thread refreshes while the others wait for the pair it stores.
+    function Refresh(server as string, accountId as string, staleAccess = "" as string) as boolean
+        current = silo.LoadTokens(server, accountId)
+        if not isValid(current) then return false
+        if staleAccess <> "" and current.access <> staleAccess then return true
+
+        lockKey = "lock|" + silo.SessionKey(server, accountId)
+        waited = 0
+        while true
+            lock = registry_read(lockKey, silo.SESSIONS_SECTION)
+            if not isValidAndNotEmpty(lock) then exit while
+            if silo.NowSeconds() - lock.ToInt() > silo.LOCK_MS / 1000 then exit while
+            if waited >= silo.LOCK_MS then exit while
+            sleep(200)
+            waited += 200
+        end while
+        if waited > 0
+            latest = silo.LoadTokens(server, accountId)
+            if not isValid(latest) then return false
+            if latest.access <> current.access then return true
+        end if
+
+        registry_write(lockKey, silo.NowSeconds().ToStr(), silo.SESSIONS_SECTION)
+        answer = silo.Exchange("POST", silo.ServerKey(server) + "/api/v2/auth/refresh", silo.HeadersFor(), { refresh_token: current.refresh })
+        registry_delete(lockKey, silo.SESSIONS_SECTION)
+
+        if answer.status >= 200 and answer.status < 300
+            nextTokens = silo.TokensFrom(answer.data)
+            if nextTokens.access = "" or nextTokens.refresh = "" then return false
+            ' A refresh that lost a race with a sign-out or a new login must not bring the old one back
+            latest = silo.LoadTokens(server, accountId)
+            if not isValid(latest) or latest.refresh <> current.refresh then return isValid(latest)
+            silo.SaveTokens(server, accountId, nextTokens)
+            diagnostics.Auth("Silo session refreshed")
+            return true
+        end if
+
+        if answer.status = 401
+            ' Another device or thread may have rotated the pair while this one was out
+            latest = silo.LoadTokens(server, accountId)
+            if isValid(latest) and latest.refresh <> current.refresh then return true
+            diagnostics.Auth("Silo refused the session refresh; signing out")
+            silo.CloseSession(server, accountId)
+        end if
+        return false
+    end function
+
+    ' One request to Silo's /api/v2.
+    '
+    ' options:
+    '   method, query, body, timeoutMs
+    '   account: the login it acts for ("" for a public request)
+    '   profileId: the household profile, left off with profile: false (account-wide routes)
+    '   refresh: false never refreshes or replays (sign-in, device sign-in), since Silo counts those
+    '            against rate limits
+    '   replay: false refreshes a token close to expiry first but never replays after a 401 (PIN
+    '           checks, which Silo also counts, and logout)
+    '
+    ' An access token close to expiry is refreshed first, and a 401 refreshes once and replays once.
+    ' Answers { ok, status, data, problem, retryAfter }.
+    function Call(server as string, path as string, options = {} as object) as object
+        base = silo.ServerKey(server)
+        method = options.method ?? "GET"
+        accountId = options.account ?? ""
+        profileId = options.profileId ?? ""
+        useProfile = options.profile <> false
+        canRefresh = options.refresh <> false
+        canReplay = canRefresh and options.replay <> false
+        url = path
+        if LCase(path).Left(4) <> "http" then url = base + path
+        query = silo.EncodeQuery(options.query)
+        if query <> ""
+            if Instr(1, url, "?") > 0
+                url = url + "&" + query
+            else
+                url = url + "?" + query
+            end if
+        end if
+
+        tokens = invalid
+        if accountId <> ""
+            tokens = silo.LoadTokens(base, accountId)
+            if not isValid(tokens) then return silo.Failed(401)
+            if canRefresh and silo.NeedsRefresh(tokens)
+                silo.Refresh(base, accountId, tokens.access)
+                tokens = silo.LoadTokens(base, accountId)
+                if not isValid(tokens) then return silo.Failed(401)
+            end if
+        end if
+
+        answer = silo.Exchange(method, url, silo.RequestHeaders(tokens, profileId, useProfile, options.headers), options.body, options.timeoutMs ?? 0)
+        if answer.status = 401 and isValid(tokens) and canReplay
+            if silo.Refresh(base, accountId, tokens.access)
+                tokens = silo.LoadTokens(base, accountId)
+                if isValid(tokens) then answer = silo.Exchange(method, url, silo.RequestHeaders(tokens, profileId, useProfile, options.headers), options.body, options.timeoutMs ?? 0)
+            end if
+        end if
+        return silo.ResultOf(answer)
+    end function
+
+    function RequestHeaders(tokens as dynamic, profileId as string, useProfile as boolean, extra as dynamic) as object
+        access = ""
+        if isValid(tokens) then access = tokens.access
+        sentProfile = ""
+        proof = ""
+        if useProfile and profileId <> ""
+            sentProfile = profileId
+            proof = silo.ProfileProof(profileId)
+        end if
+        headers = silo.HeadersFor(access, sentProfile, proof)
+        if type(extra) = "roAssociativeArray" then headers.Append(extra)
+        return headers
+    end function
+
+    function ResultOf(answer as object) as object
+        result = { ok: answer.status >= 200 and answer.status < 300, status: answer.status, data: answer.data, problem: invalid, retryAfter: answer.retryAfter }
+        if not result.ok then result.problem = silo.ProblemOf(answer.data)
+        return result
+    end function
+
+    function Failed(status as integer, title = "" as string) as object
+        problem = invalid
+        if title <> "" then problem = { type: "", code: "", title: title, status: status, detail: "" }
+        return { ok: false, status: status, data: invalid, problem: problem, retryAfter: "" }
+    end function
+
+    ' Silo retires an API namespace with 410 client_upgrade_required, or 426
+    function IsClientUpgradeRequired(result as object) as boolean
+        if result.status = 426 then return true
+        return result.status = 410 and isValid(result.problem) and result.problem.code = "client_upgrade_required"
+    end function
+end namespace
