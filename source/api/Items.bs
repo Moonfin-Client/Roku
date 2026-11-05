@@ -299,7 +299,11 @@ sub refillSearchPage(query as string, items as object)
 
     port = CreateObject("roMessagePort")
     pending = {}
+    ' A Silo request finishes before siloStartGet returns, so the refills run one after another;
+    ' none starts once ten seconds have gone
+    started = CreateObject("roTimespan")
     for each groupTypes in searchGroups.Refills(types)
+        if started.TotalMilliseconds() >= 10000 then exit for
         req = APIRequest("/items/", searchItemsParams(query, groupTypes, searchGroups.RESULT_CAP))
         if isValid(req)
             req.SetMessagePort(port)
@@ -315,11 +319,22 @@ end sub
 ' they found. Whatever hasn't answered by then is canceled.
 function awaitSearchAnswers(port as object, pending as object) as object
     found = []
+    ' A Silo request is answered at once and its answer waits by its id, so each is taken by its
+    ' own request: other answers queued with them (the people search) stay for their owner
+    for each id in pending.Keys()
+        msg = siloTakeEvent(pending[id])
+        if isValid(msg)
+            pending.Delete(id)
+            if msg.GetResponseCode() = 200
+                data = ParseJson(msg.GetString())
+                if isChainValid(data, "Items") then found.Append(data.Items)
+            end if
+        end if
+    end for
     clock = CreateObject("roTimespan")
     while pending.Count() > 0 and clock.TotalMilliseconds() < 10000
-        ' A Silo request is answered at once, as a stand-in URL event
-        msg = siloWait(10000 - clock.TotalMilliseconds(), port)
-        if isUrlEvent(msg)
+        msg = wait(10000 - clock.TotalMilliseconds(), port)
+        if type(msg) = "roUrlEvent"
             id = msg.GetSourceIdentity().ToStr()
             if pending.DoesExist(id)
                 pending.Delete(id)
