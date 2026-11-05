@@ -160,7 +160,7 @@ source += '\n' + await readFile('test/episode-browser.bs', 'utf8');
 source += '\n' + await readFile('test/person-role.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n' + settingsSyncFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile']) {
+for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile', 'SiloSectionIn', 'SiloSectionOut']) {
     source += '\n' + settingsSyncFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
@@ -312,6 +312,7 @@ for (const locale of ['en_US', 'ca', 'de_DE', 'fr', 'fr_CA', 'pt_BR']) {
     assert.match(await readFile(`locale/${locale}/translations.ts`, 'utf8'), /<source>Since you watched %1<\/source>[^]*?<translation>[^<]*%1[^<]*<\/translation>/, `${locale} has the Since you watched title`);
 }
 
+assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /"pluginSource": entry\.source,\s+"pluginSection":/, 'A picked row goes to the server with its keys as the other clients spell them');
 assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /pluginKey: "hiddenDetailSectionsTv", rokuKey: "ui\.itemdetail\.hiddenSections", type: "jsonArray"/, 'The hidden detail sections travel with the other clients');
 
 const multiServerUtils = await readFile('source/utils/multiserver.bs', 'utf8');
