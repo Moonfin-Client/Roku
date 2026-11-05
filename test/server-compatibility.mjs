@@ -481,6 +481,7 @@ for (const locale of ['en_US', 'ca', 'de_DE', 'fr', 'fr_CA', 'pt_BR']) {
     assert.match(await readFile(`locale/${locale}/translations.ts`, 'utf8'), /<source>Since you watched %1<\/source>[^]*?<translation>[^<]*%1[^<]*<\/translation>/, `${locale} has the Since you watched title`);
 }
 
+assert.match(await readFile('components/settings/settings.bs', 'utf8'), /"homeSections": settingsSync\.HomeSectionsPayload\(\),\s+"homeRowOrder": settingsSync\.RowOrderPayload\(\)/, 'The home layout goes to the server under its keys as spelled, since BrightScript lowercases bare keys');
 assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /pluginKey: "hiddenDetailSectionsTv", rokuKey: "ui\.itemdetail\.hiddenSections", type: "jsonArray"/, 'The hidden detail sections travel with the other clients');
 
 const multiServerUtils = await readFile('source/utils/multiserver.bs', 'utf8');
