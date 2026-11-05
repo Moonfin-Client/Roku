@@ -9546,5 +9546,100 @@
         <extracomment>Description of the Integrations settings category</extracomment>
         <translation>Seerr, Calendar, Achievement Badges, and friends.</translation>
     </message>
+    <message>
+        <source>Add Moonbase to your server</source>
+        <extracomment>Row on the last setup wizard step that opens the Moonbase server plugin dialog</extracomment>
+        <translation>Add Moonbase to your server</translation>
+    </message>
+    <message>
+        <source>A free server plugin that unlocks more of Moonfin</source>
+        <extracomment>Line under the Moonbase row on the last setup wizard step</extracomment>
+        <translation>A free server plugin that unlocks more of Moonfin</translation>
+    </message>
+    <message>
+        <source>Moonbase is free and runs on your server. With it, Moonfin gets:</source>
+        <extracomment>First line of the Moonbase dialog, followed by a list of features</extracomment>
+        <translation>Moonbase is free and runs on your server. With it, Moonfin gets:</translation>
+    </message>
+    <message>
+        <source>Only a server admin can install it. Send them this link.</source>
+        <extracomment>Moonbase dialog line for users who aren&apos;t a server admin, beside a QR code of the install steps</extracomment>
+        <translation>Only a server admin can install it. Send them this link.</translation>
+    </message>
+    <message>
+        <source>It takes a few steps on your server to install. They&apos;re all at this link.</source>
+        <extracomment>Moonbase dialog line for admins of servers the app can&apos;t install it on, beside a QR code of the install steps</extracomment>
+        <translation>It takes a few steps on your server to install. They&apos;re all at this link.</translation>
+    </message>
+    <message>
+        <source>Installing Moonbase...</source>
+        <extracomment>Shown in the Moonbase dialog while the plugin installs</extracomment>
+        <translation>Installing Moonbase...</translation>
+    </message>
+    <message>
+        <source>Moonbase is installed. It turns on when the server restarts, which stops anything playing right now.</source>
+        <extracomment>Shown in the Moonbase dialog after the plugin installed, above a Restart Server button</extracomment>
+        <translation>Moonbase is installed. It turns on when the server restarts, which stops anything playing right now.</translation>
+    </message>
+    <message>
+        <source>The server is restarting. Moonbase turns on once it&apos;s back.</source>
+        <extracomment>Shown while the server restarts after Moonbase was installed</extracomment>
+        <translation>The server is restarting. Moonbase turns on once it&apos;s back.</translation>
+    </message>
+    <message>
+        <source>Moonbase couldn&apos;t be installed. {0}</source>
+        <extracomment>Shown in the Moonbase dialog when installing or restarting failed. Keep {0}, it is the error</extracomment>
+        <translation>Moonbase couldn&apos;t be installed. {0}</translation>
+    </message>
+    <message>
+        <source>Settings synced across your devices</source>
+        <extracomment>Moonbase dialog feature</extracomment>
+        <translation>Settings synced across your devices</translation>
+    </message>
+    <message>
+        <source>Extra ratings and TMDB reviews</source>
+        <extracomment>Moonbase dialog feature</extracomment>
+        <translation>Extra ratings and TMDB reviews</translation>
+    </message>
+    <message>
+        <source>Custom rows from your favorite lists</source>
+        <extracomment>Moonbase dialog feature, rows built from Letterboxd, IMDb, TMDB and MDBList lists</extracomment>
+        <translation>Custom rows from your favorite lists</translation>
+    </message>
+    <message>
+        <source>Retro games with synced saves</source>
+        <extracomment>Moonbase dialog feature</extracomment>
+        <translation>Retro games with synced saves</translation>
+    </message>
+    <message>
+        <source>A calendar of what&apos;s coming up</source>
+        <extracomment>Moonbase dialog feature, upcoming episodes and movies</extracomment>
+        <translation>A calendar of what&apos;s coming up</translation>
+    </message>
+    <message>
+        <source>Your own order for each collection</source>
+        <extracomment>Moonbase dialog feature</extracomment>
+        <translation>Your own order for each collection</translation>
+    </message>
+    <message>
+        <source>Messages from your server admin</source>
+        <extracomment>Moonbase dialog feature</extracomment>
+        <translation>Messages from your server admin</translation>
+    </message>
+    <message>
+        <source>Install</source>
+        <extracomment>Moonbase dialog button that installs the plugin on the server</extracomment>
+        <translation>Install</translation>
+    </message>
+    <message>
+        <source>Installed</source>
+        <extracomment>Shown on the setup wizard&apos;s Moonbase row once the plugin is installed</extracomment>
+        <translation>Installed</translation>
+    </message>
+    <message>
+        <source>Restart Server</source>
+        <extracomment>Moonbase dialog button that restarts the media server</extracomment>
+        <translation>Restart Server</translation>
+    </message>
 </context>
 </TS>

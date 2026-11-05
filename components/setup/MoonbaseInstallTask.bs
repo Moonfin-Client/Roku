@@ -1,0 +1,56 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/moonbaseInstall.bs"
+
+sub init()
+    m.top.functionName = "runMoonbaseCalls"
+end sub
+
+' Jellyfin answers the install once the plugin is on disk, and it turns on at the next restart
+sub runMoonbaseCalls()
+    if m.top.action = "restart"
+        answer = send("POST", "/System/Restart", "", {})
+    else
+        answer = installMoonbase()
+    end if
+    m.top.result = answer
+end sub
+
+function installMoonbase() as object
+    answer = send("GET", "/Repositories", "", {})
+    if not answer.ok then return answer
+    repos = ParseJson(answer.body)
+    if type(repos) <> "roArray" then return { ok: false, reason: tr("HTTP error") }
+
+    updated = moonbaseInstall.RepositoriesWith(repos)
+    if isValid(updated)
+        answer = send("POST", "/Repositories", FormatJson(updated), {})
+        if not answer.ok then return answer
+    end if
+    return send("POST", "/Packages/Installed/" + moonbaseInstall.NAME, "", { assemblyGuid: moonbaseInstall.GUID, repositoryUrl: moonbaseInstall.MANIFEST_URL })
+end function
+
+' Every 2xx counts, since these calls answer 204
+function send(method as string, path as string, body as string, params as object) as object
+    req = APIRequest(path, params)
+    if not isValid(req) then return { ok: false, reason: tr("HTTP error") }
+    port = CreateObject("roMessagePort")
+    req.setMessagePort(port)
+    if method = "GET"
+        req.AsyncGetToString()
+    else
+        req.AddHeader("Content-Type", "application/json")
+        req.AsyncPostFromString(body)
+    end if
+    resp = wait(60000, port)
+    if type(resp) <> "roUrlEvent"
+        req.AsyncCancel()
+        return { ok: false, reason: tr("Unable to connect to server") }
+    end if
+
+    code = resp.GetResponseCode()
+    if code >= 200 and code < 300 then return { ok: true, body: resp.GetString() }
+    ' A negative code is curl's own failure, so the server never answered
+    if code <= 0 then return { ok: false, reason: tr("Unable to connect to server") }
+    return { ok: false, reason: `${tr("HTTP error")} ${code}` }
+end function
