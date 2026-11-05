@@ -39,11 +39,11 @@ namespace silo
     function SignIn(server as string, username as string, password as string) as object
         answer = silo.Call(server, "/api/v2/auth/login", { method: "POST", refresh: false, profile: false, body: { username: username, password: password } })
         if not answer.ok then return silo.SignInFailure(answer)
-        return silo.OpenLogin(server, answer.data)
+        return silo.OpenLogin(server, answer.data, password)
     end function
 
-    ' Opens the login a token pair names
-    function OpenLogin(server as string, pair as dynamic) as object
+    ' Opens the login a token pair names. password is the one just typed, "" for device sign-in
+    function OpenLogin(server as string, pair as dynamic, password = "" as string) as object
         tokens = silo.TokensFrom(pair)
         account = invalid
         if type(pair) = "roAssociativeArray" then account = pair.user
@@ -54,14 +54,89 @@ namespace silo
         accountId = account.id.ToStr()
         silo.SaveTokens(server, accountId, tokens)
         if not isValid(silo.LoadTokens(server, accountId)) then diagnostics.Auth("Silo tokens didn't stay in the registry", diagnostics.LEVEL_WARN)
-        if account.password_change_required = true
-            ' Silo answers everything but a password change with 403 until it's done, and that is
-            ' only offered in Silo's own apps for now
-            silo.EndLogin(server, accountId)
-            return { ok: false, status: 403, message: tr("This account needs a new password. Set one in Silo's web app, then sign in here with it."), data: invalid }
-        end if
+        if account.password_change_required = true then return silo.HoldForNewPassword(server, accountId, account, password)
         return silo.Household(server, accountId, account, tokens.access)
     end function
+
+    ' Silo answers everything but a password change with 403 until a temporary password is replaced.
+    ' After a password sign-in the login waits here for a new one, the password just typed being the
+    ' current one Silo asks for with it. Ported from Smart-TV's siloApi.js (openLogin,
+    ' changeRequiredPassword); the wait lives in this thread, the sign-in screen's
+    function HoldForNewPassword(server as string, accountId as string, account as object, password as string) as object
+        capability = invalid
+        if password <> "" then capability = silo.Call(server, "/api/v2/account/password/capability", { account: accountId, profile: false })
+        allowed = isValid(capability) and capability.ok and type(capability.data) = "roAssociativeArray"
+        if allowed then allowed = capability.data.allowed = true and (not isString(capability.data.state) or capability.data.state = "available")
+        if not allowed
+            silo.EndLogin(server, accountId)
+            return { ok: false, status: 403, message: tr("This account's password has to be changed in Silo's web app before signing in here."), data: invalid }
+        end if
+        minimum = 0
+        maximum = 0
+        if isValid(capability.data.minimum_password_length) then minimum = capability.data.minimum_password_length
+        if isValid(capability.data.maximum_password_bytes) then maximum = capability.data.maximum_password_bytes
+        if minimum <= 0 then minimum = 8
+        if maximum <= 0 then maximum = 72
+        m.siloPasswordChange = { server: server, accountId: accountId, account: account, password: password, minimum: minimum, maximum: maximum }
+        message = tr("This account's password has to be changed before signing in. Choose a new one of at least %1 characters.").Replace("%1", minimum.ToStr())
+        return { ok: false, status: 403, message: message, data: invalid }
+    end function
+
+    function PasswordChangeWaiting() as boolean
+        return type(m.siloPasswordChange) = "roAssociativeArray"
+    end function
+
+    ' Why a new password can't be sent as typed, or "". Silo counts the minimum in characters and the
+    ' maximum in UTF-8 bytes, and refuses the temporary password itself
+    function NewPasswordIssue(newPassword as string) as string
+        pending = m.siloPasswordChange
+        if not silo.PasswordChangeWaiting() then return ""
+        if Len(newPassword) < pending.minimum then return tr("Use at least %1 characters").Replace("%1", pending.minimum.ToStr())
+        bytes = CreateObject("roByteArray")
+        bytes.FromAsciiString(newPassword)
+        if bytes.Count() > pending.maximum then return tr("That password is too long")
+        if newPassword = pending.password then return tr("Choose a password different from the temporary one")
+        return ""
+    end function
+
+    ' Replaces the temporary password of the waiting login, then opens it as a sign-in would. Silo
+    ' signs out the account's other sessions; this one is refreshed, since its token still carries
+    ' the restriction. A refused new password leaves the login waiting for another
+    function ChangeRequiredPassword(newPassword as string) as object
+        pending = m.siloPasswordChange
+        if not silo.PasswordChangeWaiting() then return { ok: false, status: 409, message: tr("Sign in again."), data: invalid }
+        answer = silo.Call(pending.server, "/api/v2/account/password", { method: "POST", account: pending.accountId, profile: false, replay: false, body: { current_password: pending.password, new_password: newPassword } })
+        changedMessage = tr("The password changed. Sign in with the new one.")
+        if not answer.ok
+            if answer.status = 401
+                m.siloPasswordChange = invalid
+                silo.CloseSession(pending.server, pending.accountId)
+                return { ok: false, status: 401, message: changedMessage, data: invalid }
+            end if
+            if (answer.status = 400 or answer.status = 422) and isValid(answer.problem) and isValidAndNotEmpty(answer.problem.detail)
+                return { ok: false, status: answer.status, message: answer.problem.detail, data: invalid }
+            end if
+            return silo.SignInFailure(answer)
+        end if
+        m.siloPasswordChange = invalid
+        tokens = silo.LoadTokens(pending.server, pending.accountId)
+        if isValid(tokens) and silo.Refresh(pending.server, pending.accountId, tokens.access) then tokens = silo.LoadTokens(pending.server, pending.accountId) else tokens = invalid
+        if not isValid(tokens)
+            silo.CloseSession(pending.server, pending.accountId)
+            return { ok: false, status: 401, message: changedMessage, data: invalid }
+        end if
+        account = pending.account
+        account.password_change_required = false
+        return silo.Household(pending.server, pending.accountId, account, tokens.access)
+    end function
+
+    ' Ends a login left waiting for a new password, when the change is given up
+    sub CancelPasswordChange()
+        if not silo.PasswordChangeWaiting() then return
+        pending = m.siloPasswordChange
+        m.siloPasswordChange = invalid
+        silo.EndLogin(pending.server, pending.accountId)
+    end sub
 
     ' The household of an open login, signed in as its primary profile
     function Household(server as string, accountId as string, account as object, accessToken as string) as object
