@@ -754,11 +754,16 @@ process.stdout.write(`PASS: calendar preview scenes (${calendarRows.length + 2} 
 // last, and the copy never takes focus, runs the loading spinner or writes anything global
 const libraryRows = ['ui.library.style', 'ui.library.groupItemsIntoCollections', 'ui.library.showMediaDetails', 'ui.library.cardTitles', 'ui.library.showBackdrops', 'libraryPosterOrientation'];
 for (const key of libraryRows) assert.ok(previewTable.includes(`"${key}": "library"`), `${key} shows on the Library preview`);
-assert.ok(!previewTable.includes('"ui.library.musicStyle"'), 'The music library style leaves the preview where it is');
+assert.ok(previewTable.includes('"ui.library.musicStyle": "library"'), 'The music library style draws the music library on the same scene');
+assert.match(settingsScreen, /if sceneId = "library" then shown = m\.hasVideoLibrary or m\.hasMusicLibrary/, 'The chip shows with a video or a music library');
 assert.match(settingsScreen, /const PREVIEW_SCENES = \[[^\]]*"calendar", "library"\]/, 'The Library chip comes last, after Calendar');
-const libraryCopy = await readFile('components/settings/SettingsLibraryPreview.bs', 'utf8');
-assert.doesNotMatch(libraryCopy, /setFocus|LoadingSpinner|m\.global\.\w+\s*=|addFields/, 'The library copy takes no focus and changes nothing global');
-process.stdout.write(`PASS: library preview scene (${libraryRows.length + 3} checks)\n`);
+const libraryCopy = await readFile('components/settings/SettingsLibraryPreview.bs', 'utf8') + await readFile('components/settings/settingsMusicPreview.bs', 'utf8');
+assert.doesNotMatch(libraryCopy, /setFocus|takeFocus|LoadingSpinner|m\.global\.\w+\s*=|addFields|callFunc\("(?:pushScene|popScene)/, 'The library copies take no focus and change nothing global');
+const musicRows = await readFile('components/settings/SettingsMusicTask.bs', 'utf8');
+assert.doesNotMatch(musicRows, /AlbumArtists|"MusicArtist"|IsFavorite/, 'The music copies only ask for the rows their first screen shows');
+// An assocarray field nobody set reads back as invalid on the device, so the copy falls back to an empty page while it loads
+assert.match(libraryCopy, /page = m\.top\.page \?\? \{\}/, 'The library copy draws its loading state without a page');
+process.stdout.write(`PASS: library preview scene (${libraryRows.length + 6} checks)\n`);
 
 const animeTask = await readFile('components/anime/AnimeMarkersTask.bs', 'utf8');
 assert.equal((animeTask.match(/labelStyle = body\.LookupCI\("labelStyle"\)|labelStyle: body\.LookupCI\("labelStyle"\)/g) || []).length, 2, 'Both marker answers carry the admin\'s label style');
