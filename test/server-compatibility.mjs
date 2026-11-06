@@ -196,6 +196,16 @@ source += '\n' + await readFile('test/library-sorts.bs', 'utf8');
 source += '\n' + await readFile('test/item-menu.bs', 'utf8');
 source += '\n' + await readFile('test/episode-browser.bs', 'utf8');
 source += '\n' + await readFile('test/anime-markers.bs', 'utf8');
+// The rest of the poster labels reach for the server and the session
+const posterLabelsFile = await readFile('source/utils/posterLabels.bs', 'utf8');
+source += '\nnamespace posterLabels\n' + posterLabelsFile.match(/^    const .+$/gm).join('\n') + '\n';
+for (const name of ['Context', 'WordSet', 'ItemIdOf', 'Shown', 'Entry', 'SizeFactor', 'Colors', 'ParseHex', 'Luminance', 'Tint']) {
+    const match = posterLabelsFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
+    assert.ok(match, `Missing posterLabels.${name}`);
+    source += '\n' + match[0];
+}
+source += '\nend namespace\n';
+source += '\n' + await readFile('test/poster-labels.bs', 'utf8');
 source += '\n' + await readFile('test/transcode-audio.bs', 'utf8');
 source += '\n' + await readFile('test/person-role.bs', 'utf8');
 // The rest of the Plex playback rules reach for the server
@@ -767,7 +777,7 @@ assert.match(rowLayoutSource, /\{ id: "nextup", label: "Next Up" \},\s*\{ id: "s
 assert.match(rowLayoutSource, /seasonal: "seasonal\.row\.enabled"/, 'The seasonal row answers to its own switch');
 assert.match(rowLayoutSource.match(/function IsEnabled\([^]*?end function/)[0], /if id = "seasonal" then return homeRowLayout\.RowToggleOn\(id\)/, 'A layout without the seasonal row leaves it to the switch');
 const loadItemsSource = await readFile('components/home/LoadItemsTask.bs', 'utf8');
-assert.match(loadItemsSource, /startsWith\("plugindynamic:"\)\s+m\.top\.content = parentalControls\.WithoutUnratedOrBlockedItems\(/, 'Chart rows drop unrated titles once a rating is blocked');
+assert.match(loadItemsSource, /startsWith\("plugindynamic:"\)\s+m\.top\.content = posterLabels\.Attach\(parentalControls\.WithoutUnratedOrBlockedItems\(/, 'Chart rows drop unrated titles once a rating is blocked');
 assert.match(loadItemsSource, /startsWith\("seerr_"\)\s+m\.top\.content = parentalControls\.WithoutBlockedItems\(/, 'Seerr rows keep the usual filter');
 assert.match(loadItemsSource.match(/function loadSeasonalRow\([^]*?end function/)[0], /WithoutBlockedItems\(owned\)[^]*?WithoutUnratedOrBlockedItems\(suggestions\)/, 'Owned titles keep the usual filter and suggestions the strict one');
 assert.match(await readFile('components/home/LoadItemsTask.xml', 'utf8'), /<field id="rowKey" type="string"/, 'The row task reports which holiday it loaded');

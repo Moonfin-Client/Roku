@@ -9637,5 +9637,15 @@
         <extracomment>Moonbase dialog button that restarts the media server</extracomment>
         <translation>Restart Server</translation>
     </message>
+    <message>
+        <source>Poster Labels</source>
+        <extracomment>Settings Menu - Title for the option that shows or hides the labels the server admin adds to posters</extracomment>
+        <translation>Poster Labels</translation>
+    </message>
+    <message>
+        <source>Show the labels on posters, such as 4K or HDR.</source>
+        <extracomment>Settings Menu - Description for the Poster Labels option</extracomment>
+        <translation>Show the labels on posters, such as 4K or HDR.</translation>
+    </message>
 </context>
 </TS>
