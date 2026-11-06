@@ -729,6 +729,26 @@ assert.match(episodeOverlay, /requestMarker[^]*?pillSize = "compact"/, 'The epis
 assert.match(playerView, /m\.episodeOverlay\.logoUri = osdLogo\.uri/, 'The episode browser header is the series logo');
 process.stdout.write('PASS: episode browser wiring (9 checks)\n');
 
+// Every row on the Calendar screen that the calendar draws moves the preview to it. The release types are
+// shared with the Upcoming Movies row, week start only changes the month grid and the select action only
+// acts on a press, so those leave it alone. Card image only shows for the style that draws it
+const findCalendarPage = (nodes) => {
+    for (const node of nodes) {
+        if (node.requires === 'calendar' && node.children) return node;
+        const found = node.children && findCalendarPage(node.children);
+        if (found) return found;
+    }
+    return null;
+};
+const calendarRows = findCalendarPage(JSON.parse(await readFile('settings/settings.json', 'utf8'))).children.filter(row => row.settingName);
+assert.ok(calendarRows.length >= 17, 'The Calendar settings are found');
+for (const { settingName } of calendarRows) {
+    const shared = settingName.startsWith('calendar.radarr.show') || settingName === 'calendar.weekStart' || settingName === 'calendar.selectAction';
+    assert.equal(previewTable.includes(`"${settingName}": "calendar"`), !shared, `${settingName} ${shared ? 'leaves the preview where it is' : 'shows on the Calendar preview'}`);
+}
+assert.equal(calendarRows.find(row => row.settingName === 'calendar.imageType').requires, 'setting:calendar.style=countdown', 'Card image only shows with the Countdown style');
+process.stdout.write(`PASS: calendar preview scenes (${calendarRows.length + 2} checks)\n`);
+
 const animeTask = await readFile('components/anime/AnimeMarkersTask.bs', 'utf8');
 assert.equal((animeTask.match(/labelStyle = body\.LookupCI\("labelStyle"\)|labelStyle: body\.LookupCI\("labelStyle"\)/g) || []).length, 2, 'Both marker answers carry the admin\'s label style');
 process.stdout.write('PASS: anime marker label style (1 check)\n');
