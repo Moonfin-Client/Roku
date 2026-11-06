@@ -132,7 +132,7 @@ const selections = {
     'components/itemMenu/ItemMenuTask.bs': ['playlistRenumbered'],
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
-    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds'],
+    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'getBoolSetting', 'appendRadarrCalendar', 'radarrRowRelease', 'appendSonarrCalendar', 'sonarrRowPicks', 'sonarrEpisodeCode', 'calendarSubtitle', 'sortByCalendarDate'],
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
@@ -265,6 +265,7 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/settings-sync-values.bs', 'utf8');
 source += '\n' + await readFile('test/home-cards.bs', 'utf8');
 source += '\n' + await readFile('test/calendar-entries.bs', 'utf8');
+source += '\n' + await readFile('test/arr-calendar-rows.bs', 'utf8');
 source += '\n' + await readFile('test/moonbase-install.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/keyboardLayouts.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/keyboard-layouts.bs', 'utf8');
@@ -1347,8 +1348,8 @@ process.stdout.write('PASS: details wiring\n');
 assert.match(await readFile('components/itemMenu/ItemMenuTask.bs', 'utf8'), /op = "hideFromResume"[^]*?UserItems\/\$\{itemId\}\/HideFromResume`, \{ UserId: taskUserId\(\), Hide: "true" \}\), "POST"\)/, 'Emby hides an item from resume through its own route');
 assert.match(await readFile('components/itemMenu/itemMenuHost.bs', 'utf8'), /if response\.success and response\.request\.op = "played" then itemMenuPatchUserData/, 'and keeps the progress it showed');
 const calendarTask = await readFile('components/home/LoadItemsTask.bs', 'utf8');
-assert.match(calendarTask, /yesterday\.FromSeconds\(yesterday\.AsSeconds\(\) - 24 \* 60 \* 60\)[^]*?if when = "" or when <= since then continue for/, 'A Radarr release stays on the row through its own day');
-assert.match(calendarTask, /start = Left\(now\.ToISOString\(\), 10\)/, 'and the calendar is read from the start of the day');
+assert.match(calendarTask, /day = calendarEntries\.DayOfText\(when\)\s+if day >= today/, 'A Radarr release stays on the row through its own day');
+assert.match(calendarTask, /start = calendarEntries\.DateText\(calendarEntries\.TodayNumber\(\) - 1\)/, 'and the calendar is read from a day early, so all of today comes back in any time zone');
 assert.match(await readFile('components/genres/GenresScreen.bs', 'utf8'), /allServers: genreData\.unified = true/, 'A merged genre opens on every server');
 assert.match(libraryScene, /if m\.top\.genreFilter\.allServers = true\s+m\.loadItemsTask\.allServers = true\s+m\.loadItemsTask\.genreNames/, 'asking each one by name');
 assert.match(libraryScene, /server = libraryServer\(\)\s+m\.loadItemsTask\.serverUrl = server\.serverUrl/, 'A library from another server is read from that server');

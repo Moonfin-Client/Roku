@@ -6,6 +6,7 @@ import "pkg:/source/api/sdk.bs"
 import "pkg:/source/enums/ImageType.bs"
 import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/enums/String.bs"
+import "pkg:/source/utils/calendarEntries.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/externalList.bs"
@@ -3499,8 +3500,9 @@ end function
 
 function arrCalendarItems(service as string) as object
     now = CreateObject("roDateTime")
-    ' From the start of the day, so a release earlier today still comes back
-    start = Left(now.ToISOString(), 10)
+    ' The server reads the date as UTC, so asking from a day early still covers all of today
+    ' anywhere, and the rows drop what came before today
+    start = calendarEntries.DateText(calendarEntries.TodayNumber() - 1)
     ' roDateTime has no way to step forward, so the end of the window is rebuilt from seconds
     now.FromSeconds(now.AsSeconds() + CALENDAR_WINDOW_DAYS * 24 * 60 * 60)
 
@@ -3511,79 +3513,101 @@ function arrCalendarItems(service as string) as object
 end function
 
 ' Radarr names three release dates and the viewer chooses which count, so the row shows the
-' soonest one still ahead and says which kind it is
+' soonest one still ahead
 sub appendRadarrCalendar(results as object, settings as object)
     showDate = getBoolSetting(settings, "calendar.radarr.showDate", true)
+    showCinema = getBoolSetting(settings, "calendar.radarr.showCinema", true)
+    showDigital = getBoolSetting(settings, "calendar.radarr.showDigital", true)
+    showPhysical = getBoolSetting(settings, "calendar.radarr.showPhysical", true)
+    hideDownloaded = getBoolSetting(settings, "calendar.radarr.hideDownloaded", true)
     kinds = []
-    if getBoolSetting(settings, "calendar.radarr.showCinema", true) then kinds.push({ field: "inCinemas", label: tr("Cinema") })
-    if getBoolSetting(settings, "calendar.radarr.showDigital", true) then kinds.push({ field: "digitalRelease", label: tr("Digital") })
-    if getBoolSetting(settings, "calendar.radarr.showPhysical", true) then kinds.push({ field: "physicalRelease", label: tr("Physical") })
+    if showCinema then kinds.push({ field: "inCinemas", label: tr("Cinema") })
+    if showDigital then kinds.push({ field: "digitalRelease", label: tr("Digital") })
+    if showPhysical then kinds.push({ field: "physicalRelease", label: tr("Physical") })
     if kinds.count() = 0 then return
 
-    ' Radarr gives a release as midnight UTC on its day, which is the day before anywhere west of
-    ' UTC, so a release stays on the row through its own day
-    yesterday = CreateObject("roDateTime")
-    yesterday.FromSeconds(yesterday.AsSeconds() - 24 * 60 * 60)
-    since = yesterday.ToISOString()
+    ' A cinema date keeps its label so a date alone never reads as a release on the server.
+    ' Digital and physical together keep theirs too, since a stream and a disc can come out
+    ' months apart.
+    showFormat = showDate and (showCinema or (showDigital and showPhysical))
+    today = calendarEntries.TodayNumber()
 
     for each movie in arrCalendarItems("Radarr")
-        soonest = ""
-        kindLabel = ""
-        for each kind in kinds
-            when = toNormalizedString(movie.LookupCI(kind.field))
-            if when = "" or when <= since then continue for
-            if soonest = "" or when < soonest
-                soonest = when
-                kindLabel = kind.label
-            end if
-        end for
-        if soonest = "" then continue for
-
-        results.push(calendarNode(movie, toNormalizedString(movie.LookupCI("title")), "Movie", soonest, calendarSubtitle(kindLabel, soonest, showDate)))
+        soonest = radarrRowRelease(movie, kinds, today, hideDownloaded)
+        if isValid(soonest)
+            label = showFormat ? soonest.label : ""
+            results.push(calendarNode(movie, toNormalizedString(movie.LookupCI("title")), "Movie", soonest.when, calendarSubtitle(label, soonest.day, today, showDate)))
+        end if
     end for
 end sub
 
-' Sonarr lists every episode, so only the next one per series earns a place in the row
+' The soonest picked release from today on, or invalid when none is left or Radarr already has
+' the file and those are hidden
+function radarrRowRelease(movie as object, kinds as object, today as integer, hideDownloaded as boolean) as dynamic
+    if hideDownloaded and calendarEntries.flagOf(movie.LookupCI("hasFile"), false) then return invalid
+
+    soonest = invalid
+    for each kind in kinds
+        when = toNormalizedString(movie.LookupCI(kind.field))
+        ' Release dates are whole days stored as UTC midnight, so the day is read before any
+        ' time zone shift. Two releases on one day go by the later kind, so physical wins.
+        if calendarEntries.isDateText(when)
+            day = calendarEntries.DayOfText(when)
+            if day >= today and (not isValid(soonest) or day <= soonest.day) then soonest = { when: when, day: day, label: kind.label }
+        end if
+    end for
+
+    return soonest
+end function
+
 sub appendSonarrCalendar(results as object, settings as object)
     showDate = getBoolSetting(settings, "calendar.sonarr.showDate", true)
     showEpisode = getBoolSetting(settings, "calendar.sonarr.showEpisodeInfo", true)
-    today = CreateObject("roDateTime").ToISOString()
+    hideDownloaded = getBoolSetting(settings, "calendar.sonarr.hideDownloaded", true)
+    today = calendarEntries.TodayNumber()
 
-    nextPerSeries = {}
-    for each episode in arrCalendarItems("Sonarr")
-        series = episode.LookupCI("series")
-        if not isValid(series) then continue for
-
-        airs = toNormalizedString(episode.LookupCI("airDateUtc"))
-        if airs = "" then airs = toNormalizedString(episode.LookupCI("airDate"))
-        if airs = "" or airs < today then continue for
-
-        key = toNormalizedString(series.LookupCI("id"))
-        held = nextPerSeries[key]
-        if isValid(held) and held.airs <= airs then continue for
-
-        nextPerSeries[key] = { episode: episode, series: series, airs: airs }
-    end for
-
+    nextPerSeries = sonarrRowPicks(arrCalendarItems("Sonarr"), today, hideDownloaded)
     for each key in nextPerSeries
         entry = nextPerSeries[key]
-        label = ""
-        if showEpisode
-            season = entry.episode.LookupCI("seasonNumber")
-            number = entry.episode.LookupCI("episodeNumber")
-            if isValid(season) and isValid(number) then label = `S${season.ToStr()}E${number.ToStr()}`
-        end if
-
-        results.push(calendarNode(entry.series, toNormalizedString(entry.series.LookupCI("title")), "Series", entry.airs, calendarSubtitle(label, entry.airs, showDate)))
+        label = showEpisode ? sonarrEpisodeCode(entry.episode) : ""
+        results.push(calendarNode(entry.series, toNormalizedString(entry.series.LookupCI("title")), "Series", entry.airs, calendarSubtitle(label, entry.day, today, showDate)))
     end for
 end sub
 
-function calendarSubtitle(label as string, airs as string, showDate as boolean) as string
+' Sonarr lists every episode, so each series gets the first one airing today or later, skipping
+' the ones Sonarr already has while those are hidden. A series with none left drops out.
+function sonarrRowPicks(episodes as object, today as integer, hideDownloaded as boolean) as object
+    nextPerSeries = {}
+    for each episode in episodes
+        series = episode.LookupCI("series")
+        airs = toNormalizedString(episode.LookupCI("airDateUtc"))
+        if airs = "" then airs = toNormalizedString(episode.LookupCI("airDate"))
+        day = calendarEntries.LocalDayOf(airs)
+        downloaded = hideDownloaded and calendarEntries.flagOf(episode.LookupCI("hasFile"), false)
+
+        if isValid(series) and day >= today and not downloaded
+            key = toNormalizedString(series.LookupCI("id"))
+            held = nextPerSeries[key]
+            if not isValid(held) or airs < held.airs then nextPerSeries[key] = { episode: episode, series: series, airs: airs, day: day }
+        end if
+    end for
+
+    return nextPerSeries
+end function
+
+function sonarrEpisodeCode(episode as object) as string
+    season = episode.LookupCI("seasonNumber") ?? 0
+    number = episode.LookupCI("episodeNumber") ?? 0
+    return `S${season.ToStr()}:E${number.ToStr()}`
+end function
+
+' Like Digital · In 3 days (Nov 3), or the part the viewer kept on its own
+function calendarSubtitle(label as string, day as integer, today as integer, showDate as boolean) as string
     parts = []
     if label <> "" then parts.push(label)
-    if showDate and Len(airs) >= 10 then parts.push(Mid(airs, 1, 10))
+    if showDate then parts.push(calendarEntries.ReleaseIn(day, today))
 
-    return parts.count() > 0 ? parts.join(" ") : ""
+    return parts.Join(" · ")
 end function
 
 ' Radarr and Sonarr both name their artwork the same way, so one reader covers both

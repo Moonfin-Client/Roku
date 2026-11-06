@@ -9314,7 +9314,7 @@
     </message>
     <message>
         <source>In {days} days ({date})</source>
-        <extracomment>When the next episode airs, on the end of episode card, like In 6 days (Nov 11). Keep {days} and {date}</extracomment>
+        <extracomment>When the next episode airs or a movie comes out, on the end of episode card and the upcoming home rows, like In 6 days (Nov 11). Keep {days} and {date}</extracomment>
         <translation>In {days} days ({date})</translation>
     </message>
     <message>
@@ -9371,6 +9371,41 @@
         <source>End the upcoming rows with a card that opens the calendar</source>
         <extracomment>Description of the See All card setting</extracomment>
         <translation>End the upcoming rows with a card that opens the calendar</translation>
+    </message>
+    <message>
+        <source>Radarr Calendar</source>
+        <extracomment>Subtitle under the Radarr upcoming home row</extracomment>
+        <translation>Radarr Calendar</translation>
+    </message>
+    <message>
+        <source>Sonarr Calendar</source>
+        <extracomment>Subtitle under the Sonarr upcoming home row</extracomment>
+        <translation>Sonarr Calendar</translation>
+    </message>
+    <message>
+        <source>Radarr and Sonarr Calendars</source>
+        <extracomment>Subtitle under the home row that merges the Radarr and Sonarr upcoming rows</extracomment>
+        <translation>Radarr and Sonarr Calendars</translation>
+    </message>
+    <message>
+        <source>Hide Movies Already on the Server</source>
+        <extracomment>Upcoming Calendars setting that leaves movies Radarr already downloaded out of the Radarr row</extracomment>
+        <translation>Hide Movies Already on the Server</translation>
+    </message>
+    <message>
+        <source>Leave out movies Radarr has already downloaded</source>
+        <extracomment>Description of the Hide Movies Already on the Server setting</extracomment>
+        <translation>Leave out movies Radarr has already downloaded</translation>
+    </message>
+    <message>
+        <source>Hide Episodes Already on the Server</source>
+        <extracomment>Upcoming Calendars setting that leaves episodes Sonarr already downloaded out of the Sonarr row</extracomment>
+        <translation>Hide Episodes Already on the Server</translation>
+    </message>
+    <message>
+        <source>Leave out episodes Sonarr has already downloaded</source>
+        <extracomment>Description of the Hide Episodes Already on the Server setting</extracomment>
+        <translation>Leave out episodes Sonarr has already downloaded</translation>
     </message>
     <message>
         <source>Next air date at the end</source>
