@@ -990,6 +990,25 @@ assert.ok(glyphNames.includes(findSetting(settingsTree, 'seasonal.surprise').gly
 assert.ok(glyphNames.includes(findSetting(settingsTree, 'seasonal.density').glyph), 'The density draws its glyph');
 process.stdout.write('PASS: seasonal effects wiring (12 checks)\n');
 
+// The effect previews over Home while its own two rows have focus and goes with them, the follower
+// switch stays unmapped, and only one effect runs at a time since Home's stops under Settings
+for (const key of ['seasonal.surprise', 'seasonal.density']) assert.ok(previewTable.includes(`"${key}": "home"`), `${key} shows on the Home preview`);
+assert.ok(!previewTable.includes('"seasonal.follower"'), 'The follower switch leaves the preview where it is');
+const effectPreview = await readFile('components/settings/SettingsLivePreview.bs', 'utf8');
+assert.match(effectPreview, /inArray\(\["seasonal\.surprise", "seasonal\.density"\], state\.focusedSetting\)/, 'The effect only runs while one of its rows has focus');
+assert.match(effectPreview, /m\.effect\.callFunc\("halt"\)\s+m\.effect = invalid\s+end if\s+m\.holder\.removeChildrenIndex/, 'The preview stops its effect before it takes it away');
+const effectRunner = await readFile('components/seasonal/SeasonalEffects.bs', 'utf8');
+assert.match(effectRunner.match(/sub preview\([^]*?end sub/)[0], /unobserveFieldScoped\("overlaySettingsChanged"\)[^]*?runEffect\(effect, density, false\)/, 'The preview effect stops listening for saves and builds no followers');
+assert.match(homeSource.match(/sub onSettingsOpen\([^]*?end sub/)[0], /settingsOpen = true\s+m\.seasonalEffects\.callFunc\("halt"\)[^]*?isSameNode\(m\.top\) then m\.seasonalEffects\.callFunc\("play"\)/, "Home's effect stops under Settings and comes back once it closes over Home");
+// The stage's frame shows only along its edges, so it's clipped to bands there rather than redrawn over the whole stage on every frame of an effect
+assert.doesNotMatch(await readFile('components/settings/SettingsLivePreview.xml', 'utf8'), /stage24/, 'No stage frame image spans the whole stage');
+assert.match(effectPreview, /clip\.clippingRect = band[^]*?stage24cover[^]*?stage24s2/, 'The stage corners and line are drawn in clipped bands');
+// The preview's particles hold still while the remote is in use, through the same hold home uses on a low end device
+assert.match(effectRunner.match(/sub preview\([^]*?end sub/)[0], /m\.holdsOnAnyTier = true/, 'The preview effect holds on any device');
+assert.match(effectRunner.match(/sub hold\([^]*?end sub/)[0], /m\.tier <> "low" and not m\.holdsOnAnyTier/, 'Through the one hold home uses');
+assert.match(effectPreview.match(/sub redraw\([^]*?end sub/)[0], /m\.effect\.callFunc\("hold"\)/, 'Every change on the remote holds the preview effect');
+process.stdout.write('PASS: seasonal effect preview (12 checks)\n');
+
 // Sync follows the profile picked on this device, which stays local, and the panel that picks it
 // loads, saves and resets on a task
 const syncSource = await readFile('source/utils/settingsSync.bs', 'utf8');
@@ -1133,7 +1152,7 @@ assert.match(previewHome.match(/sub hideModernFocusCard\([^]*?end sub/)[0], /^\s
 assert.match(previewHome.match(/sub onHomeRowsFocusChanged\([^]*?end sub/)[0], /if not m\.homeRows\.isInFocusChain\(\)\s+stopPreview\(\)\s+return/, 'Focus leaving the rows stops the preview');
 assert.match(previewHome.match(/sub onItemDetailsLoaded\([^]*?end sub/)[0], /m\.previewDetails = json/, 'The details a card already fetched feed its preview');
 const previewController = await readFile('components/home/modernPreview.bs', 'utf8');
-assert.match(previewController, /observeFieldScoped\("settingsOpen", "onPreviewSettingsOpen"\)/, 'Home watches the settings overlay');
+assert.match(await readFile('components/home/Home.bs', 'utf8'), /observeFieldScoped\("settingsOpen", "onSettingsOpen"\)[^]*?sub onSettingsOpen\(\)\s+onPreviewSettingsOpen\(\)/, 'Home watches the settings overlay');
 assert.match(previewController.match(/sub onPreviewSettingsOpen\([^]*?end sub/)[0], /settingsOpen = true[^]*?stopPreview\(\)/, 'Opening settings stops the preview');
 assert.match(previewController.match(/sub onHomeRowsQuickPlay\([^]*?end sub/)[0], /stopPreview\(\)/, 'The Play key stops the preview before the player comes');
 assert.doesNotMatch(previewController, /playstateTask|Sessions\/Playing/, 'A preview never reports playback');

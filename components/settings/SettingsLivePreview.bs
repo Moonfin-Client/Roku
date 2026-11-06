@@ -18,6 +18,7 @@ const STAGE_WIDTH = 1040
 const STAGE_HEIGHT = 585
 const STAGE_TOP = 56
 const SHADOW_MARGIN = 96
+const STAGE_RADIUS = 24
 const INSPECTOR_TOP = 657
 const INSPECTOR_HEIGHT = 271
 const INSPECTOR_PAD = 28
@@ -31,8 +32,6 @@ sub init()
     m.header = m.top.findNode("header")
     m.holder = m.top.findNode("holder")
     m.inspector = m.top.findNode("inspector")
-    m.cover = m.top.findNode("cover")
-    m.stroke = m.top.findNode("stroke")
     m.sceneKey = ""
     m.headerKey = ""
     m.inspectorKey = ""
@@ -40,18 +39,49 @@ sub init()
     m.calendarShared = invalid
     m.libraryPages = {}
     m.libraryTask = invalid
+    m.effect = invalid
 
     m.inspector.translation = [0, INSPECTOR_TOP]
     m.holder.translation = [0, STAGE_TOP]
     m.holder.clippingRect = [0, 0, STAGE_WIDTH, STAGE_HEIGHT]
+    drawStageFrame()
+end sub
+
+' The stage's shadow, its corners in the page color and its edge line only show along its edges,
+' so each one is clipped to bands there. Spread over the whole stage they cost the stick frames
+' whenever something on the stage moves, like a seasonal effect.
+sub drawStageFrame()
+    shadowTop = STAGE_TOP + 24 - SHADOW_MARGIN
+    shadowWidth = STAGE_WIDTH + 2 * SHADOW_MARGIN
+    shadowHeight = STAGE_HEIGHT + 2 * SHADOW_MARGIN
+    stageBottom = STAGE_TOP + STAGE_HEIGHT
+    outside = [
+        [-SHADOW_MARGIN, shadowTop, shadowWidth, STAGE_TOP - shadowTop],
+        [-SHADOW_MARGIN, stageBottom, shadowWidth, shadowTop + shadowHeight - stageBottom],
+        [-SHADOW_MARGIN, STAGE_TOP, SHADOW_MARGIN, STAGE_HEIGHT],
+        [STAGE_WIDTH, STAGE_TOP, SHADOW_MARGIN, STAGE_HEIGHT]
+    ]
     shadow = m.top.findNode("shadow")
-    shadow.translation = [-SHADOW_MARGIN, STAGE_TOP + 24 - SHADOW_MARGIN]
-    shadow.width = STAGE_WIDTH + 2 * SHADOW_MARGIN
-    shadow.height = STAGE_HEIGHT + 2 * SHADOW_MARGIN
-    for each frame in [m.cover, m.stroke]
-        frame.translation = [0, STAGE_TOP]
-        frame.width = STAGE_WIDTH
-        frame.height = STAGE_HEIGHT
+    for each band in outside
+        clip = shadow.createChild("Group")
+        clip.clippingRect = band
+        setupPreviewDraw.Shape(clip, "pkg:/images/setup/stage24shadow.9.png", -SHADOW_MARGIN, shadowTop, shadowWidth, shadowHeight, "0x00000080")
+    end for
+
+    inside = [
+        [0, STAGE_TOP, STAGE_WIDTH, STAGE_RADIUS],
+        [0, stageBottom - STAGE_RADIUS, STAGE_WIDTH, STAGE_RADIUS],
+        [0, STAGE_TOP + STAGE_RADIUS, STAGE_RADIUS, STAGE_HEIGHT - 2 * STAGE_RADIUS],
+        [STAGE_WIDTH - STAGE_RADIUS, STAGE_TOP + STAGE_RADIUS, STAGE_RADIUS, STAGE_HEIGHT - 2 * STAGE_RADIUS]
+    ]
+    frame = m.top.findNode("frame")
+    m.covers = []
+    m.strokes = []
+    for each band in inside
+        clip = frame.createChild("Group")
+        clip.clippingRect = band
+        m.covers.push(setupPreviewDraw.Shape(clip, "pkg:/images/setup/stage24cover.9.png", 0, STAGE_TOP, STAGE_WIDTH, STAGE_HEIGHT, "0xFFFFFFFF"))
+        m.strokes.push(setupPreviewDraw.Shape(clip, "pkg:/images/setup/stage24s2.9.png", 0, STAGE_TOP, STAGE_WIDTH, STAGE_HEIGHT, "0xFFFFFFFF"))
     end for
 end sub
 
@@ -65,11 +95,17 @@ sub redraw()
     if not isValid(state) or not isValid(state.values) then return
     pal = setupPreviewDraw.Palette()
     ' Rectangles ignore masks on Roku, so the stage's corners are painted in the page color
-    m.cover.blendColor = state.pageColor
-    m.stroke.blendColor = playbackOverlay.WithAlpha(pal.onSurface, 51)
+    strokeInk = playbackOverlay.WithAlpha(pal.onSurface, 51)
+    for i = 0 to m.covers.count() - 1
+        m.covers[i].blendColor = state.pageColor
+        m.strokes[i].blendColor = strokeInk
+    end for
     drawHeader(state, pal)
     drawScene(state)
     drawInspector(state, pal)
+    ' Something just moved on the remote, so the effect holds still until it goes quiet, which keeps
+    ' the list and the picker at full rate
+    if isValid(m.effect) then m.effect.callFunc("hold")
 end sub
 
 ' The remote reaches the chips from the list, and the chosen one is painted the way the category
@@ -155,6 +191,11 @@ sub drawScene(state as object)
         if isValid(shared) then m.calendarShared = shared
         m.calendar = invalid
     end if
+    ' Its animations stop before it goes, so nothing of it runs on behind the next scene
+    if isValid(m.effect)
+        m.effect.callFunc("halt")
+        m.effect = invalid
+    end if
     m.holder.removeChildrenIndex(m.holder.getChildCount(), 0)
     preview = m.holder.createChild(config.component)
     if isValid(config.page) then preview.page = config.page
@@ -167,6 +208,11 @@ sub drawScene(state as object)
         preview.screen = m.calendar
     end if
     preview.items = config.items
+    if isValid(config.effect)
+        m.effect = m.holder.createChild("SeasonalEffects")
+        m.effect.scale = preview.scale
+        m.effect.callFunc("preview", config.effect)
+    end if
 end sub
 
 function sceneConfig(state as object) as object
@@ -226,7 +272,13 @@ function sceneConfig(state as object) as object
         if modern then onItem = {}
         return { component: "SetupHomeRowsPreview", fields: { modern: modern, ratings: ratingsFields("home", onItem, episode) }, items: items, variant: variant }
     end if
-    return { component: "SetupNavbarPreview", fields: navbarFields(values, state.avatar ?? ""), items: items, variant: variant }
+    config = { component: "SetupNavbarPreview", fields: navbarFields(values, state.avatar ?? ""), items: items, variant: variant }
+    ' The seasonal effect runs over Home only while its own setting has focus, and None builds nothing
+    if inArray(["seasonal.surprise", "seasonal.density"], state.focusedSetting) and values["seasonal.surprise"] <> "none"
+        config.effect = { effect: values["seasonal.surprise"], density: values["seasonal.density"] }
+        config.variant = variant + config.effect.effect + config.effect.density
+    end if
+    return config
 end function
 
 ' The library screen's copy, drawn in whatever style and switches the values hold, tried or
