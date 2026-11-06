@@ -5,7 +5,9 @@ import "pkg:/source/utils/buttonLayout.bs"
 import "pkg:/source/utils/detailMetadataLayout.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/libraryOrder.bs"
+import "pkg:/source/utils/libraryPreview.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
 import "pkg:/source/utils/ratingsRow.bs"
 import "pkg:/source/utils/themeChrome.bs"
@@ -36,6 +38,8 @@ sub init()
     m.inspectorKey = ""
     m.calendar = invalid
     m.calendarShared = invalid
+    m.libraryPages = {}
+    m.libraryTask = invalid
 
     m.inspector.translation = [0, INSPECTOR_TOP]
     m.holder.translation = [0, STAGE_TOP]
@@ -72,7 +76,7 @@ end sub
 ' pill paints its own, white while the row has focus.
 sub drawHeader(state as object, pal as object)
     accent = state.accent ?? pal.accent
-    key = FormatJson([state.scene, state.chipsFocused = true, accent, pal.accent, pal.onSurface])
+    key = FormatJson([state.scene, state.chipsFocused = true, accent, pal.accent, pal.onSurface, state.chips])
     if key = m.headerKey then return
     m.headerKey = key
 
@@ -153,6 +157,7 @@ sub drawScene(state as object)
     end if
     m.holder.removeChildrenIndex(m.holder.getChildCount(), 0)
     preview = m.holder.createChild(config.component)
+    if isValid(config.page) then preview.page = config.page
     preview.setFields(config.fields)
     ' Every preview draws on a full screen canvas and shrinks to the stage
     preview.scale = [STAGE_WIDTH / 1920, STAGE_HEIGHT / 1080]
@@ -200,6 +205,7 @@ function sceneConfig(state as object) as object
         saves = state.saves ?? 0
         return { component: "SetupNavbarPreview", fields: navbarFields(values, state.avatar ?? ""), items: items, screen: view, variant: view + saves.ToStr() }
     end if
+    if state.scene = "library" then return libraryConfig(state)
     ' Hiding descriptions takes the overview off everything on Home, the way the real one does
     hideHome = values["ui.home.hideMediaDescription"] = "true"
     if hideHome then items = withoutOverview(items)
@@ -222,6 +228,76 @@ function sceneConfig(state as object) as object
     end if
     return { component: "SetupNavbarPreview", fields: navbarFields(values, state.avatar ?? ""), items: items, variant: variant }
 end function
+
+' The video library screen's copy, drawn in whatever style and switches the values hold, tried or
+' saved. It's built again when its page arrives, and on a save of a setting it reads but doesn't
+' show, like Card Size.
+function libraryConfig(state as object) as object
+    values = state.values
+    library = libraryOrder.FirstVideo(libraryOrder.Loaded())
+    grouped = values["ui.library.groupItemsIntoCollections"] = "true"
+    page = invalid
+    name = ""
+    if isValid(library)
+        page = libraryPage(library, grouped)
+        name = (library.name ?? "") + (library.serverSuffix ?? "")
+    end if
+    look = {
+        name: name,
+        style: values["ui.library.style"],
+        showDetails: values["ui.library.showMediaDetails"] <> "false",
+        cardTitles: values["ui.library.cardTitles"] <> "false",
+        showBackdrops: values["ui.library.showBackdrops"] <> "false",
+        orientation: values["libraryPosterOrientation"]
+    }
+    saves = state.saves ?? 0
+    return { component: "SettingsLibraryPreview", fields: { look: look }, items: [], page: page, variant: isValid(page).ToStr() + saves.ToStr() }
+end function
+
+' The library's first page, asked for once per grouping while settings is open, so trying another
+' style or switch draws straight away. Invalid until it arrives.
+function libraryPage(library as object, grouped as boolean) as dynamic
+    key = library.id + grouped.ToStr()
+    page = m.libraryPages[key]
+    if isValid(page) or isValid(m.libraryTask) then return page
+
+    request = libraryPreview.Request(library, chainLookupReturn(m.global.session, "user.settings", {}), grouped)
+    m.libraryTask = CreateObject("roSGNode", "LoadItemsTask2")
+    m.libraryTask.setFields(request.task)
+    ' A library from another signed in server is read from that server, the way its screen reads it
+    if isValidAndNotEmpty(library.serverUrl)
+        m.libraryTask.setFields({ serverUrl: library.serverUrl, serverUserId: library.userId ?? "", serverAuthToken: library.authToken ?? "", serverId: library.serverId ?? "", serverName: library.serverName ?? "" })
+    end if
+    request.Delete("task")
+    request.key = key
+    m.libraryRequest = request
+    m.libraryTask.observeField("content", "onLibraryPageLoaded")
+    m.libraryTask.control = "RUN"
+    return invalid
+end function
+
+' Kept the way the real screen keeps a page: blocked titles out, and collections out when the
+' library isn't grouping them, since a server can still send them
+sub onLibraryPageLoaded()
+    task = m.libraryTask
+    task.unobserveField("content")
+    m.libraryTask = invalid
+    loaded = task.content ?? []
+    if task.excludeItemTypes <> ""
+        kept = []
+        for each item in loaded
+            if not isStringEqual(item.type ?? "", "BoxSet") then kept.push(item)
+        end for
+        loaded = kept
+    end if
+    shown = parentalControls.WithoutBlockedItems(loaded)
+    page = m.libraryRequest
+    page.items = shown
+    page.total = task.totalRecordCount - (loaded.count() - shown.count())
+    if page.total < shown.count() then page.total = shown.count()
+    m.libraryPages[page.key] = page
+    redraw()
+end sub
 
 function navbarFields(values as object, avatar as string) as object
     buttons = navbarButtons(values, navbarContext())

@@ -85,6 +85,7 @@ const selections = {
     'source/utils/librarySorts.bs': null,
     'source/utils/libraryGroupBy.bs': null,
     'source/utils/libraryCard.bs': null,
+    'source/utils/libraryPreview.bs': null,
     'source/utils/homeCards.bs': null,
     'source/utils/calendarEntries.bs': null,
     'source/utils/incompleteRecordings.bs': null,
@@ -748,6 +749,16 @@ for (const { settingName } of calendarRows) {
 }
 assert.equal(calendarRows.find(row => row.settingName === 'calendar.imageType').requires, 'setting:calendar.style=countdown', 'Card image only shows with the Countdown style');
 process.stdout.write(`PASS: calendar preview scenes (${calendarRows.length + 2} checks)\n`);
+
+// The library rows move the preview to the library copy, the music style stays put, the chip comes
+// last, and the copy never takes focus, runs the loading spinner or writes anything global
+const libraryRows = ['ui.library.style', 'ui.library.groupItemsIntoCollections', 'ui.library.showMediaDetails', 'ui.library.cardTitles', 'ui.library.showBackdrops', 'libraryPosterOrientation'];
+for (const key of libraryRows) assert.ok(previewTable.includes(`"${key}": "library"`), `${key} shows on the Library preview`);
+assert.ok(!previewTable.includes('"ui.library.musicStyle"'), 'The music library style leaves the preview where it is');
+assert.match(settingsScreen, /const PREVIEW_SCENES = \[[^\]]*"calendar", "library"\]/, 'The Library chip comes last, after Calendar');
+const libraryCopy = await readFile('components/settings/SettingsLibraryPreview.bs', 'utf8');
+assert.doesNotMatch(libraryCopy, /setFocus|LoadingSpinner|m\.global\.\w+\s*=|addFields/, 'The library copy takes no focus and changes nothing global');
+process.stdout.write(`PASS: library preview scene (${libraryRows.length + 3} checks)\n`);
 
 const animeTask = await readFile('components/anime/AnimeMarkersTask.bs', 'utf8');
 assert.equal((animeTask.match(/labelStyle = body\.LookupCI\("labelStyle"\)|labelStyle: body\.LookupCI\("labelStyle"\)/g) || []).length, 2, 'Both marker answers carry the admin\'s label style');
