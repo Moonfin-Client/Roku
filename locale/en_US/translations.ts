@@ -9063,9 +9063,9 @@
         <translation>New Seasons &amp; Episodes</translation>
     </message>
     <message>
-        <source>Choose where Media Bar items come from: random library titles, collections/playlists, the newest titles, or series with new episodes.</source>
+        <source>Choose which titles the Media Bar picks from its source libraries and collections: random ones, the newest, or series with new episodes.</source>
         <extracomment>Description of the Media Bar Source setting</extracomment>
-        <translation>Choose where Media Bar items come from: random library titles, collections/playlists, the newest titles, or series with new episodes.</translation>
+        <translation>Choose which titles the Media Bar picks from its source libraries and collections: random ones, the newest, or series with new episodes.</translation>
     </message>
     <message>
         <source>New Release Banner</source>

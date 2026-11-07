@@ -259,7 +259,7 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/minimalist-extras.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n' + settingsSyncFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin', 'ImageTypeName', 'EncodeRowImageTypes', 'RowImageTypeKeys', 'DecodeRowImageTypes', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile']) {
+for (const name of ['SubtitleModes', 'MediaBarSource', 'PluginToRoku', 'RokuToPlugin', 'ImageTypeName', 'EncodeRowImageTypes', 'RowImageTypeKeys', 'DecodeRowImageTypes', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile']) {
     source += '\n' + settingsSyncFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
@@ -1304,6 +1304,7 @@ assert.match(await readFile('source/utils/misc.bs', 'utf8'), /return \(padding -
 const mediaBarTaskWiring = await readFile('components/home/MediaBarTask.bs', 'utf8');
 assert.match(mediaBarTaskWiring, /while running\.count\(\) < 6 and nextSource < parentIds\.count\(\) and items\.count\(\) < m\.top\.featuredCount \* 2/, 'The media bar reads six sources at a time and stops at twice what it shows');
 assert.match(mediaBarTaskWiring, /pool = readSources\(shuffleArray\(parentIds\), query, excludedGenreNames\)/, 'It reads its sources in a shuffled order');
+assert.match(mediaBarTaskWiring, /parentIds = filterIdsBySelection\(libraryIds, selectedLibraryIds\)\s+parentIds\.append\(selectedCollectionIds\)/, 'Every source reads the picked libraries and collections together');
 for (const file of ['components/JFOverhang.bs', 'components/Sidebar.bs']) {
     assert.match(await readFile(file, 'utf8'), /callFunc\("getActiveScene"\)\?\.subtype\(\), "Home"\)\s+m\.top\.itemSelected = "homeAgain"/, `${file} tells Home it was pressed on Home`);
 }
