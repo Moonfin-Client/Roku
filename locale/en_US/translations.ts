@@ -9682,5 +9682,30 @@
         <extracomment>Settings Menu - Description for the Poster Labels option</extracomment>
         <translation>Show the labels on posters, such as 4K or HDR.</translation>
     </message>
+    <message>
+        <source>Date Format</source>
+        <extracomment>Settings Menu - Title for the option that picks the order of the month and day in dates</extracomment>
+        <translation>Date Format</translation>
+    </message>
+    <message>
+        <source>Choose between month-day, day-month, or locale default for calendar and release dates</source>
+        <extracomment>Settings Menu - Description for the Date Format option</extracomment>
+        <translation>Choose between month-day, day-month, or locale default for calendar and release dates</translation>
+    </message>
+    <message>
+        <source>Locale Default</source>
+        <extracomment>Settings Menu - Date Format option that keeps the order the app always used</extracomment>
+        <translation>Locale Default</translation>
+    </message>
+    <message>
+        <source>Month / Day (Nov 10)</source>
+        <extracomment>Settings Menu - Date Format option that puts the month before the day</extracomment>
+        <translation>Month / Day (Nov 10)</translation>
+    </message>
+    <message>
+        <source>Day / Month (10 Nov)</source>
+        <extracomment>Settings Menu - Date Format option that puts the day before the month</extracomment>
+        <translation>Day / Month (10 Nov)</translation>
+    </message>
 </context>
 </TS>
