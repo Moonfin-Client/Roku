@@ -1237,7 +1237,14 @@ assert.doesNotMatch(previewHome, /"ui\.home\.showBackdrop"/, 'Home never reads t
 assert.match(previewHome, /maskUri = "pkg:\/images\/backdropCornerMask\.png"/, 'The corner backdrop fades out through its mask');
 assert.match(previewHome, /maskUri = "pkg:\/images\/backdropTopMask\.webp"/, 'The top backdrop fades out through its mask');
 for (const name of ['Full Screen', 'Corner', 'Top']) assert.match(previewStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
-process.stdout.write('PASS: home backdrop style wiring (11 checks)\n');
+// The settings preview draws the style behind its rows through Home's helper and masks, and draws a tried style with its switch
+assert.ok(previewTable.includes('"ui.home.backdropStyle": "home"') && previewTable.includes('"ui.home.showBackdrop": "home"'), 'The backdrop style and its switch show on the Home preview');
+assert.match(previewSettingsScreen, /if m\.tryKey = "ui\.home\.backdropStyle" then values\["ui\.home\.showBackdrop"\] = \(values\[m\.tryKey\] <> "off"\)\.ToStr\(\)/, 'A tried style is drawn with the switch it saves');
+const rowsPreview = await readFile('components/setup/SetupHomeRowsPreview.bs', 'utf8');
+assert.ok(rowsPreview.includes('"pkg:/images/backdropCornerMask.png"') && rowsPreview.includes('"pkg:/images/backdropTopMask.webp"'), 'The preview fades its backdrop through Home\'s masks');
+assert.match(await readFile('components/setup/SetupDetailPreview.bs', 'utf8'), /sub drawBackdrop\(pal as object\)\s+if m\.live and not m\.pageLayout\.showBackdrop then return/, 'Every detail style drops its picture when the switch is off');
+assert.match(await readFile('components/details/detailMetadataHost.bs', 'utf8'), /sub setBackdropImage\(itemData as object\)[^]*?backdropPoster\.visible = get_user_setting_bool\("ui\.itemdetail\.showBackdrop", true\)/, 'The detail screens that share the backdrop setter drop their picture when the switch is off');
+process.stdout.write('PASS: home backdrop style wiring (16 checks)\n');
 
 // Continue Watching and Next Up cards play on select through one check the press and the card menu share
 assert.match(homeRowsSource.match(/function playsOnSelect\([^]*?end function/)[0], /if rowId <> "resume" and rowId <> "nextup" then return false\s+return isStringEqual\(get_user_setting\("ui\.home\.continueWatchingDefaultAction"\), "play"\)/, 'Only Continue Watching and Next Up rows play on select, and only when the setting says play');
