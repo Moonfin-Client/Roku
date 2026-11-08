@@ -114,6 +114,7 @@ const selections = {
     'source/enums/PlaybackMethod.bs': null,
     'source/enums/SubtitleSelection.bs': null,
     'source/enums/ItemType.bs': null,
+    'source/enums/PosterLoadStatus.bs': null,
     'source/MainEventHandlers.bs': ['isLiveTvChannel'],
     'source/utils/embyFeatures.bs': null,
     'components/embyPreview/EmbyPreviewTask.bs': ['loadPreviewData'],
@@ -130,6 +131,7 @@ const selections = {
     'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'retryAction', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel', 'rokuAudioTrack'],
     'components/itemMenu/ItemMenuTask.bs': ['playlistRenumbered'],
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
+    'components/home/HomeItem.bs': ['onPosterLoadStatusChanged'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
     'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds'],
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
@@ -172,6 +174,7 @@ source += '\n' + await readFile('test/youtube-trailer.bs', 'utf8');
 source += '\n' + await readFile('test/playback-fallback.bs', 'utf8');
 source += '\n' + await readFile('test/home-backdrop-blur.bs', 'utf8');
 source += '\n' + await readFile('test/home-backdrop-style.bs', 'utf8');
+source += '\n' + await readFile('test/home-poster-retry.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-burn-in.bs', 'utf8');
 source += '\n' + await readFile('test/seasonal-row.bs', 'utf8');
 source += '\n' + await readFile('test/live-recovery.bs', 'utf8');
