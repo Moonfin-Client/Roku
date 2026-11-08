@@ -122,7 +122,7 @@ const selections = {
     'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL', 'addSourceCodecs', 'shouldBurnInSubtitle', 'transcodeCopiesVideo', 'audioPlaysDirect', 'containersOverlap', 'liveDirectStreamFormat'],
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
-    'source/utils/config.bs': ['current_user_id', 'get_user_setting'],
+    'source/utils/config.bs': ['current_user_id', 'get_user_setting', 'getSavedUsers', 'savedUserFirst'],
     'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'shuffleArray'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
@@ -166,6 +166,7 @@ source += '\n' + await readFile('test/review-regressions.bs', 'utf8');
 source += '\n' + await readFile('test/accent-folding.bs', 'utf8');
 source += '\n' + await readFile('test/quick-connect-url.bs', 'utf8');
 source += '\n' + await readFile('test/sign-in-refused.bs', 'utf8');
+source += '\n' + await readFile('test/saved-users.bs', 'utf8');
 source += '\n' + await readFile('test/access-schedule.bs', 'utf8');
 source += '\n' + await readFile('test/log-redaction.bs', 'utf8');
 source += '\n' + await readFile('test/youtube-trailer.bs', 'utf8');
