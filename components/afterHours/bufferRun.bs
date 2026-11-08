@@ -1,0 +1,409 @@
+' Buffer Run, the endless runner with a gravity flip. Things on the ceiling are built in floor
+' space and mirrored with H - y. The runner's middle sits 20 units off its feet, so a flip turns it
+' over in place.
+
+const BR_FLOOR = 232
+const BR_CEILING = 38
+
+sub brBuild(stage as object)
+    g = { stars: [], buildings: [], things: [] }
+    m.g = g
+    ahRect(stage, 0, 0, AH_W, AH_H, AH_NIGHT)
+    ahImage(stage, "sky", 0, BR_CEILING, AH_W, BR_FLOOR - BR_CEILING)
+
+    for i = 1 to 40
+        size = ahRandom(0.5, 1.6)
+        star = { x: ahRandom(0, AH_W), y: ahRandom(BR_CEILING + 4, 170), s: size }
+        star.node = ahRect(stage, star.x, star.y, size, size, AH_INK, 0.3 + 0.4 * size / 1.6)
+        g.stars.push(star)
+    end for
+
+    moon = ahSprite(stage, "moon")
+    ahMove(moon, 404, 84)
+
+    for i = 0 to 8
+        building = { w: ahRandom(40, 68), h: ahRandom(30, 84), off: i * 72 }
+        building.node = stage.createChild("Group")
+        ahRect(building.node, 0, 0, building.w, building.h, "#1B1538")
+        for j = 0 to 2
+            if (i + j) mod 3 <> 0 then ahRect(building.node, 8 + j * 14, 10, 4, 5, AH_GOLD, 0.45)
+        end for
+        g.buildings.push(building)
+    end for
+
+    ahRect(stage, 0, 0, AH_W, BR_CEILING, "#1D1840")
+    ahRect(stage, 0, BR_FLOOR, AH_W, AH_H - BR_FLOOR, "#1D1840")
+    g.tiles = stage.createChild("Group")
+    ' Each row is two copies of a strip eleven tiles long, enough to slide one tile and still fill the screen
+    for each y in [6, BR_CEILING - 13, BR_FLOOR + 6, AH_H - 13]
+        ahImage(g.tiles, "tiles", 0, y, 264, 7)
+        ahImage(g.tiles, "tiles", 264, y, 264, 7)
+    end for
+    ahRect(stage, 0, BR_CEILING - 2, AH_W, 2, AH_PURPLE)
+    ahRect(stage, 0, BR_FLOOR, AH_W, 2, AH_PURPLE)
+
+    g.layer = stage.createChild("Group")
+    g.player = stage.createChild("Group")
+    g.streaks = []
+    for i = 0 to 3
+        g.streaks.push(ahRect(g.player, 0, 0, 26, 2, AH_GOLD, 0.55))
+    end for
+    g.runner = ahRunner(g.player)
+    g.ring = ahSprite(g.player, "ring")
+    g.ring.node.opacity = 0.75
+    g.hud = ahHud(stage)
+    m.brBanners = []
+end sub
+
+sub brReset()
+    g = m.g
+    for each o in g.things
+        brDropThing(o)
+    end for
+    g.over = false
+    g.t = 0.0
+    g.dist = 0.0
+    g.bonus = 0
+    g.score = 0
+    g.speed = 210.0
+    g.spawnIn = 1.2
+    g.things = []
+    g.inv = 0.0
+    g.flipAt = 3.0
+    g.phase = 0.0
+    g.fr = 0
+    g.p = { x: 72, y: BR_FLOOR - 20.0, vy: 0.0, grav: 1, ground: true, jumps: 0, slide: 0.0, slideQ: false, shield: 0.0, dash: 0.0, wantFlip: false }
+end sub
+
+' The runner's hit box, from its feet, smaller while it slides
+function brBox(p as object) as object
+    feet = p.y + 20 * p.grav
+    sliding = p.slide > 0
+    w = 18
+    if sliding then w = 26
+    reach = 40
+    if sliding then reach = 20
+    lift = 2
+    if sliding then lift = 0
+    a = feet - reach * p.grav
+    b = feet - lift * p.grav
+    return { x: p.x - w / 2, y: ahMin(a, b), w: w, h: Abs(b - a) }
+end function
+
+function brWorld(o as object) as object
+    if o.side > 0 then return o
+    return { x: o.x, y: AH_H - o.y - o.h, w: o.w, h: o.h }
+end function
+
+sub brSpawn()
+    g = m.g
+    r = Rnd(0)
+    x = AH_W + 20
+    side = -g.p.grav
+    if Rnd(0) < 0.7 then side = g.p.grav
+    if g.t > 5 and Rnd(0) < 0.12
+        kind = "skipIntro"
+        if Rnd(0) < 0.55 then kind = "directPlay"
+        brAddThing({ k: kind, x: x, y: BR_FLOOR - ahRandom(58, 84), w: 22, h: 22, pick: true, side: side })
+        return
+    end if
+    if r < 0.3
+        brAddThing({ k: "cable", x: x, y: BR_FLOOR - 18, w: 26, h: 18, side: side })
+    else if r < 0.48 and g.t > 4
+        bannerSide = -1
+        if Rnd(0) < 0.5 then bannerSide = 1
+        brAddThing({ k: "banner", x: x, y: BR_CEILING, w: 34, h: BR_FLOOR - 30 - BR_CEILING, side: bannerSide })
+    else if r < 0.64 and g.t > 8
+        brAddThing({ k: "lagBat", x: x, y: 0, y0: ahRandom(150, 168), ph: ahRandom(0, AH_TWO_PI), w: 22, h: 14, side: side })
+    else if r < 0.8 and g.t > 12
+        brAddThing({ k: "gremlin", x: x, y: BR_FLOOR - 18, w: 18, h: 18, vy: 0.0, hop: ahRandom(0.3, 0.8), side: side })
+    else
+        for i = 0 to 4
+            brAddThing({ k: "popcorn", x: x + i * 20, y: BR_FLOOR - 46 - Sin(i / 4 * 3.1415927) * 38, w: 12, h: 12, pick: true, side: side })
+        end for
+    end if
+end sub
+
+sub brAddThing(o as object)
+    if o.pick = invalid then o.pick = false
+    o.dead = false
+    up = o.side < 0
+    if o.k = "banner"
+        o.banner = brTakeBanner(o, up)
+    else
+        name = o.k
+        if up and not o.pick and o.k <> "lagBat" then name = name + "Flip"
+        o.sprite = ahTake(name, m.g.layer)
+    end if
+    m.g.things.push(o)
+end sub
+
+' A banner hangs on a pole from one side with its sign at head height on the other. The pole is
+' a wall. Laid out once at x = 0 and moved as a whole.
+function brTakeBanner(o as object, up as boolean) as object
+    if m.brBanners.count() > 0
+        banner = m.brBanners.pop()
+        banner.group.visible = true
+    else
+        banner = { group: m.g.layer.createChild("Group") }
+        banner.pole = ahRect(banner.group, 0, 0, 3, 1, "#4B4380")
+        banner.sign = ahSprite(banner.group, "sign")
+        banner.arc = ahSprite(banner.group, "arc")
+    end if
+    poleTop = o.y
+    signY = o.y + o.h - 13
+    if up
+        poleTop = AH_H - (o.y + o.h - 24)
+        signY = AH_H - signY
+    end if
+    banner.pole.translation = [15.5 * AH_UNIT, poleTop * AH_UNIT]
+    banner.pole.height = (o.h - 24) * AH_UNIT
+    ahMove(banner.sign, 17, signY)
+    ahMove(banner.arc, 17, signY)
+    banner.up = up
+    return banner
+end function
+
+sub brDropThing(o as object)
+    if o.k = "banner"
+        o.banner.group.visible = false
+        m.brBanners.push(o.banner)
+    else
+        ahGive(o.sprite)
+    end if
+end sub
+
+sub brUpdate(dt as float)
+    g = m.g
+    p = g.p
+    g.t += dt
+    g.speed = ahMin(520, 210 + g.t * 6)
+    v = g.speed
+    if p.dash > 0 then v = v * 1.5
+    g.dist += v * dt
+    g.score = Int(g.dist / 8) + g.bonus
+    g.fr = ahStride(g, dt)
+
+    p.vy += 1500 * p.grav * dt
+    p.y += p.vy * dt
+    rest = BR_CEILING + 20
+    if p.grav > 0 then rest = BR_FLOOR - 20
+    if (p.y - rest) * p.grav >= 0
+        p.y = rest
+        p.vy = 0
+        p.jumps = 0
+        p.ground = true
+        if p.slideQ
+            p.slide = 0.6
+            p.slideQ = false
+        end if
+    end if
+    p.slide = ahMax(0, p.slide - dt)
+    p.dash -= dt
+    p.shield -= dt
+    g.inv -= dt
+
+    g.spawnIn -= dt
+    if g.spawnIn <= 0
+        brSpawn()
+        g.spawnIn = ahMax(0.45, ahRandom(0.8, 1.4) * 260 / g.speed)
+    end if
+
+    pb = brBox(p)
+    for each o in g.things
+        o.x -= v * dt
+        if o.k = "lagBat"
+            o.x -= 70 * dt
+            o.y = o.y0 + Sin(g.t * 5 + o.ph) * 14
+        else if o.k = "gremlin"
+            o.x -= 40 * dt
+            o.vy += 1200 * dt
+            o.y += o.vy * dt
+            if o.y >= BR_FLOOR - 18
+                o.y = BR_FLOOR - 18
+                o.vy = 0
+                o.hop -= dt
+                if o.hop <= 0
+                    o.vy = -ahRandom(260, 360)
+                    o.hop = ahRandom(0.5, 1.1)
+                end if
+            end if
+        end if
+        if not o.dead and ahHit(pb, brWorld(o))
+            if o.pick
+                o.dead = true
+                if o.k = "popcorn"
+                    g.bonus += 25
+                    ahSound("pickup")
+                else if o.k = "directPlay"
+                    p.shield = 10
+                    ahSound("powerup")
+                else
+                    p.dash = 3
+                    ahSound("powerup")
+                end if
+            else if p.dash > 0
+                o.dead = true
+                g.bonus += 50
+                ahSound("break")
+            else if p.shield > 0
+                o.dead = true
+                p.shield = 0
+                g.inv = 1
+                ahSound("break")
+            else if g.inv <= 0
+                g.over = true
+            end if
+        end if
+    end for
+
+    kept = []
+    for each o in g.things
+        if not o.dead and o.x > -60
+            kept.push(o)
+        else
+            brDropThing(o)
+        end if
+    end for
+    g.things = kept
+end sub
+
+' The first press jumps away from the surface, the second flips gravity toward the other side
+sub brJump()
+    p = m.g.p
+    if p.jumps = 0
+        p.vy = -540 * p.grav
+        p.jumps = 1
+        p.ground = false
+        p.slide = 0
+        ahSound("jump")
+    else if p.jumps = 1
+        p.grav = -p.grav
+        p.vy = 300 * p.grav
+        p.jumps = 2
+        ahSound("whoosh")
+    end if
+end sub
+
+sub brDuck()
+    p = m.g.p
+    if p.ground
+        p.slide = 0.6
+        ahSound("swish")
+    else
+        p.vy = p.grav * ahMax(p.vy * p.grav, 650)
+        p.slideQ = true
+    end if
+end sub
+
+sub brPress(key as string)
+    grav = m.g.p.grav
+    if key = "OK" or (key = "up" and grav > 0) or (key = "down" and grav < 0)
+        brJump()
+    else if key = "down" or key = "up"
+        brDuck()
+    end if
+end sub
+
+sub brAi()
+    g = m.g
+    p = g.p
+    if p.wantFlip and p.jumps = 1 and p.vy * p.grav > -400
+        p.wantFlip = false
+        brJump()
+        return
+    end if
+    if not p.ground then return
+
+    near = []
+    for each o in g.things
+        if not o.pick and not o.dead and o.x + o.w > p.x - 14 and o.x - (p.x + 10) < g.speed * 1.1 then near.push(o)
+    end for
+    if near.count() = 0 and g.t > g.flipAt
+        g.flipAt = g.t + ahRandom(3, 6)
+        p.wantFlip = true
+        brJump()
+        return
+    end if
+
+    ' A flip takes about a third of a second, so cross to a banner's sign side early
+    for each o in near
+        if o.k = "banner" and o.side <> p.grav and o.x - (p.x + 10) > g.speed * 0.5
+            blocked = false
+            for each b in near
+                if b.k = "banner" and b.side = p.grav and b.x < o.x then blocked = true
+            end for
+            if not blocked
+                p.wantFlip = true
+                brJump()
+                return
+            end if
+        end if
+    end for
+
+    for each o in near
+        d = o.x - (p.x + 10)
+        if d >= -4 and o.side = p.grav and d <= g.speed * 0.45 and not (o.k = "lagBat" and o.y0 <= 154)
+            if o.k = "banner" or o.k = "lagBat"
+                if d < g.speed * 0.22 and p.slide < 0.15 then brDuck()
+            else if d < g.speed * 0.2 + 8
+                brJump()
+            end if
+            return
+        end if
+    end for
+end sub
+
+sub brDraw()
+    g = m.g
+    p = g.p
+    t = m.ahClock
+    for each star in g.stars
+        x = star.x - g.dist * 0.02 * star.s
+        x = x - Int(x / AH_W) * AH_W
+        star.node.translation = [x * AH_UNIT, star.y * AH_UNIT]
+    end for
+    for each building in g.buildings
+        x = building.off - g.dist * 0.25
+        x = x - Int(x / 648) * 648 - 80
+        building.node.translation = [x * AH_UNIT, (BR_FLOOR - building.h) * AH_UNIT]
+    end for
+    tileShift = g.dist - Int(g.dist / 24) * 24
+    g.tiles.translation = [-tileShift * AH_UNIT, 0]
+
+    for each o in g.things
+        if o.k = "banner"
+            o.banner.group.translation = [o.x * AH_UNIT, 0]
+            spin = -t * 7
+            if o.banner.up then spin = t * 7
+            o.banner.arc.poster.rotation = spin
+        else
+            cy = o.y + o.h / 2
+            if o.side < 0 then cy = AH_H - o.y - o.h / 2
+            ahMove(o.sprite, o.x + o.w / 2, cy)
+            if o.k = "lagBat"
+                ahFrame(o.sprite, Int(t * 14 / AH_TWO_PI * 4) mod 4)
+            else if o.k = "gremlin"
+                ahFrame(o.sprite, Int(t * 12) mod 3)
+            end if
+        end if
+    end for
+
+    shown = not (g.inv > 0 and Int(t * 16) mod 2 = 1)
+    g.player.visible = shown
+    if shown
+        feet = p.y + 20 * p.grav
+        for i = 0 to 3
+            streak = g.streaks[i]
+            streak.visible = p.dash > 0
+            if p.dash > 0 then streak.translation = [(p.x - 44 - i * 10) * AH_UNIT, (feet - (38 - i * 9) * p.grav) * AH_UNIT]
+        end for
+        frame = 7
+        if p.ground then frame = g.fr
+        ahRunnerDraw(g.runner, p.x, feet, frame, p.slide > 0, p.grav < 0, 1)
+        g.ring.node.visible = p.shield > 0
+        if p.shield > 0 then ahMove(g.ring, p.x, p.y)
+    end if
+
+    ahHudDraw(g.hud, g.score, [["directPlay", p.shield > 0], ["skipIntro", p.dash > 0]], t)
+end sub

@@ -62,6 +62,8 @@ const selections = {
     'source/utils/parentalFilter.bs': null,
     'source/utils/externalList.bs': null,
     'source/utils/seasonalRow.bs': null,
+    'source/utils/galleryGlow.bs': null,
+    'source/utils/afterHours.bs': null,
     'source/utils/seasonalEffects.bs': null,
     'source/utils/liveRecovery.bs': null,
     'source/utils/deviceCapabilities.bs': ['getSubtitleProfiles', 'transcodableAudioCodecOf', 'transcodeAudioCodecPicks', 'canTranscodeAudioCodecAway', 'keptAudioCodecs', 'applyTranscodeAudioCodecs'],
@@ -176,6 +178,7 @@ source += '\n' + await readFile('test/home-backdrop-blur.bs', 'utf8');
 source += '\n' + await readFile('test/home-backdrop-style.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-burn-in.bs', 'utf8');
 source += '\n' + await readFile('test/seasonal-row.bs', 'utf8');
+source += '\n' + await readFile('test/after-hours.bs', 'utf8');
 source += '\n' + await readFile('test/live-recovery.bs', 'utf8');
 source += '\n' + await readFile('test/caption-download.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-profiles.bs', 'utf8');
@@ -822,6 +825,31 @@ assert.match(loadItemsSource.match(/function loadSeasonalRow\([^]*?end function/
 assert.match(await readFile('components/home/LoadItemsTask.xml', 'utf8'), /<field id="rowKey" type="string"/, 'The row task reports which holiday it loaded');
 assert.match(await readFile('components/settings/settings.bs', 'utf8'), /settingName = seasonalRow\.ALL_YEAR_SETTING then m\.homeRowsSwitched = true/, 'Switching Show All Year lays Home out again');
 process.stdout.write('PASS: seasonal row wiring (14 checks)\n');
+
+// After Hours opens after seven presses of Version, and every sprite, image and sound it names by
+// string ships in the package
+const aboutScreen = await readFile('components/settings/settings.bs', 'utf8');
+assert.match(aboutScreen, /title: "Version",[^}]*afterHours: true/, 'The Version row in About counts presses toward After Hours');
+assert.match(aboutScreen, /if isValid\(selectedItem\.afterHours\)\s+pressVersion\(\)/, 'and OK on it is a press');
+const arcadeKit = await readFile('components/afterHours/arcadeKit.bs', 'utf8');
+const arcadeArt = [...arcadeKit.match(/function ahArtTable\(\)[^]*?end function/)[0].matchAll(/^\s+(\w+): \[/gm)].map((match) => match[1]);
+const arcadeFiles = await Promise.all(['bufferRun.bs', 'fastForward.bs', 'cableCrawl.bs', 'caseStack.bs', 'pixelPurge.bs', 'AfterHours.bs'].map((name) => readFile(`components/afterHours/${name}`, 'utf8')));
+const arcadeImages = [arcadeKit, ...arcadeFiles].join('\n').matchAll(/ahImage\([^,]+, "(\w+)",|AH_ART \+ "(\w+)\.webp"/g);
+const afterHoursImages = [...arcadeArt, ...[...arcadeImages].map((match) => match[1] ?? match[2]),
+    ...['buffer-run', 'fast-forward', 'cable-crawl', 'case-stack', 'pixel-purge'].map((id) => `thumb_${id}`),
+    ...['blue', 'purple', 'coral'].map((color) => `marquee_${color}`),
+    ...[0, 1, 2].flatMap((tone) => [0, 1, 2, 3, 4, 5].map((seed) => `block${tone}${seed}`)), 'keyframe1', 'keyframe2', 'keyframe3'];
+const castSprites = [...(await readFile('source/utils/afterHours.bs', 'utf8')).match(/function Cast\(id as string\)[^]*?end function/)[0].matchAll(/\["(\w+)", "/g)].map((match) => match[1]);
+assert.equal(castSprites.length, 31, 'How to play lists every enemy, obstacle and powerup');
+for (const name of [...afterHoursImages, ...castSprites]) await access(`images/afterHours/${name}.webp`);
+for (const name of castSprites) assert.ok(arcadeArt.includes(name), `${name} is in the sprite table`);
+const arcade = await readFile('components/afterHours/AfterHours.bs', 'utf8');
+for (const [, name] of arcade.match(/function soundLengths\(\)[^]*?end function/)[0].matchAll(/(\w+): \d+/g)) await access(`sounds/afterHours/${name}.wav`);
+await access('sounds/afterHours/menu-loop.mp3');
+assert.match(arcade, /const AH_VOICES = 4/, 'After Hours plays four sounds at most, since the firmware refuses a sixth');
+assert.match(arcade.match(/sub showMenu\(\)[^]*?end sub/)[0], /warmDemo\(\)/, 'The menu demo starts a couple of seconds into a run');
+assert.match(await readFile('bsconfig.json', 'utf8'), /"sounds\/\*\*\/\*\.\*"/, 'The sounds folder ships');
+process.stdout.write(`PASS: After Hours wiring (${afterHoursImages.length} images)\n`);
 
 // Watching Now row wiring
 assert.match(settingsSyncSource, /\{ pluginKey: "mdblistWatchingNowEnabled", rokuKey: "mdblist\.watchingnow\.enabled", type: "bool" \}/, 'The watching now switch syncs as a bool');

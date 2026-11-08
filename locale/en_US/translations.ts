@@ -9707,5 +9707,565 @@
         <extracomment>Settings Menu - Date Format option that puts the day before the month</extracomment>
         <translation>Day / Month (10 Nov)</translation>
     </message>
+    <message>
+        <source>{0} more presses</source>
+        <extracomment>After Hours - Toast while pressing Version in About, the presses left before the arcade opens</extracomment>
+        <translation>{0} more presses</translation>
+    </message>
+    <message>
+        <source>1 more press</source>
+        <extracomment>After Hours - Toast while pressing Version in About, one press left</extracomment>
+        <translation>1 more press</translation>
+    </message>
+    <message>
+        <source>After Hours unlocked</source>
+        <extracomment>After Hours - Toast when the seventh press of Version opens the arcade</extracomment>
+        <translation>After Hours unlocked</translation>
+    </message>
+    <message>
+        <source>Endless runner with a gravity flip</source>
+        <extracomment>After Hours - What kind of game Buffer Run is</extracomment>
+        <translation>Endless runner with a gravity flip</translation>
+    </message>
+    <message>
+        <source>Three-lane runner</source>
+        <extracomment>After Hours - What kind of game Fast Forward is</extracomment>
+        <translation>Three-lane runner</translation>
+    </message>
+    <message>
+        <source>Grid crawler</source>
+        <extracomment>After Hours - What kind of game Cable Crawl is</extracomment>
+        <translation>Grid crawler</translation>
+    </message>
+    <message>
+        <source>One-button stacker</source>
+        <extracomment>After Hours - What kind of game Case Stack is</extracomment>
+        <translation>One-button stacker</translation>
+    </message>
+    <message>
+        <source>Paddle breaker</source>
+        <extracomment>After Hours - What kind of game Pixel Purge is</extracomment>
+        <translation>Paddle breaker</translation>
+    </message>
+    <message>
+        <source>The runner from the loading screen finally gets somewhere to go.</source>
+        <extracomment>After Hours - Buffer Run's pitch in the arcade</extracomment>
+        <translation>The runner from the loading screen finally gets somewhere to go.</translation>
+    </message>
+    <message>
+        <source>A sprint down three lobby aisles.</source>
+        <extracomment>After Hours - Fast Forward's pitch in the arcade</extracomment>
+        <translation>A sprint down three lobby aisles.</translation>
+    </message>
+    <message>
+        <source>Steer an HDMI cable around the back of the TV cabinet and plug into signal.</source>
+        <extracomment>After Hours - Cable Crawl's pitch in the arcade</extracomment>
+        <translation>Steer an HDMI cable around the back of the TV cabinet and plug into signal.</translation>
+    </message>
+    <message>
+        <source>Build a shelf-high tower of Blu-ray cases, each one a title from your own library.</source>
+        <extracomment>After Hours - Case Stack's pitch in the arcade</extracomment>
+        <translation>Build a shelf-high tower of Blu-ray cases, each one a title from your own library.</translation>
+    </message>
+    <message>
+        <source>A bad encode left the picture full of blocky artifacts, and they creep down a little every second.</source>
+        <extracomment>After Hours - Pixel Purge's pitch in the arcade</extracomment>
+        <translation>A bad encode left the picture full of blocky artifacts, and they creep down a little every second.</translation>
+    </message>
+    <message>
+        <source>Leaderboards</source>
+        <extracomment>After Hours - The last card in the arcade and the screen with every game's top 3</extracomment>
+        <translation>Leaderboards</translation>
+    </message>
+    <message>
+        <source>Every game's top 3 at once.</source>
+        <extracomment>After Hours - What the Leaderboards card opens</extracomment>
+        <translation>Every game's top 3 at once.</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <extracomment>After Hours - What OK does on the Leaderboards card</extracomment>
+        <translation>Open</translation>
+    </message>
+    <message>
+        <source>About</source>
+        <extracomment>After Hours - What Back returns to from the arcade, the About page of settings</extracomment>
+        <translation>About</translation>
+    </message>
+    <message>
+        <source>Top 3 · This server</source>
+        <extracomment>After Hours - Heading over the focused game's board when the scores come from the server</extracomment>
+        <translation>Top 3 · This server</translation>
+    </message>
+    <message>
+        <source>Top 3 · This device</source>
+        <extracomment>After Hours - Heading over the focused game's board when the scores are kept on the device</extracomment>
+        <translation>Top 3 · This device</translation>
+    </message>
+    <message>
+        <source>No scores yet</source>
+        <extracomment>After Hours - A board nobody has placed on yet</extracomment>
+        <translation>No scores yet</translation>
+    </message>
+    <message>
+        <source>YOU</source>
+        <extracomment>After Hours - Tag on the board rows that are the viewer's own</extracomment>
+        <translation>YOU</translation>
+    </message>
+    <message>
+        <source>Pause</source>
+        <extracomment>After Hours - Hint in the corner of a game, Back pauses it</extracomment>
+        <translation>Pause</translation>
+    </message>
+    <message>
+        <source>Paused</source>
+        <extracomment>After Hours - Title of the pause menu</extracomment>
+        <translation>Paused</translation>
+    </message>
+    <message>
+        <source>Quit</source>
+        <extracomment>After Hours - Pause menu button that leaves the game for the arcade</extracomment>
+        <translation>Quit</translation>
+    </message>
+    <message>
+        <source>Sound on</source>
+        <extracomment>After Hours - Pause menu switch while sound is on, pressing it turns sound off</extracomment>
+        <translation>Sound on</translation>
+    </message>
+    <message>
+        <source>Sound off</source>
+        <extracomment>After Hours - Pause menu switch while sound is off, pressing it turns sound on</extracomment>
+        <translation>Sound off</translation>
+    </message>
+    <message>
+        <source>Game over</source>
+        <extracomment>After Hours - Shown when a run ends</extracomment>
+        <translation>Game over</translation>
+    </message>
+    <message>
+        <source>Play again</source>
+        <extracomment>After Hours - Game over button that starts another run</extracomment>
+        <translation>Play again</translation>
+    </message>
+    <message>
+        <source>Back to the arcade</source>
+        <extracomment>After Hours - Game over button that returns to the arcade</extracomment>
+        <translation>Back to the arcade</translation>
+    </message>
+    <message>
+        <source>{0} · Top 3</source>
+        <extracomment>After Hours - Heading over a game's board on the game over screen, {0} is the game's name</extracomment>
+        <translation>{0} · Top 3</translation>
+    </message>
+    <message>
+        <source>New #{0} on the board</source>
+        <extracomment>After Hours - Game over line when the run placed, {0} is its place from 1 to 3</extracomment>
+        <translation>New #{0} on the board</translation>
+    </message>
+    <message>
+        <source>Scores from {0}</source>
+        <extracomment>After Hours - Where the boards came from, {0} is the server's name</extracomment>
+        <translation>Scores from {0}</translation>
+    </message>
+    <message>
+        <source>Scores on this device</source>
+        <extracomment>After Hours - Where the boards came from when the server plugin isn't there</extracomment>
+        <translation>Scores on this device</translation>
+    </message>
+    <message>
+        <source>PERFECT</source>
+        <extracomment>After Hours - Case Stack flash when a case lands dead on</extracomment>
+        <translation>PERFECT</translation>
+    </message>
+    <message>
+        <source>BOX SET</source>
+        <extracomment>After Hours - Case Stack flash on every third perfect drop in a row</extracomment>
+        <translation>BOX SET</translation>
+    </message>
+    <message>
+        <source>Director's Cut</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Director's Cut</translation>
+    </message>
+    <message>
+        <source>Special Edition</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Special Edition</translation>
+    </message>
+    <message>
+        <source>Widescreen</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Widescreen</translation>
+    </message>
+    <message>
+        <source>Bonus Features</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Bonus Features</translation>
+    </message>
+    <message>
+        <source>Theatrical Cut</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Theatrical Cut</translation>
+    </message>
+    <message>
+        <source>Remastered</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Remastered</translation>
+    </message>
+    <message>
+        <source>Collector's Edition</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Collector's Edition</translation>
+    </message>
+    <message>
+        <source>Extended Edition</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Extended Edition</translation>
+    </message>
+    <message>
+        <source>How to play</source>
+        <extracomment>After Hours - The card with a game's controls and everything in it, opened with Down in the arcade or from the pause menu</extracomment>
+        <translation>How to play</translation>
+    </message>
+    <message>
+        <source>Enemies</source>
+        <extracomment>After Hours - How to play heading over the things that come after you</extracomment>
+        <translation>Enemies</translation>
+    </message>
+    <message>
+        <source>Obstacles</source>
+        <extracomment>After Hours - How to play heading over the things in your way</extracomment>
+        <translation>Obstacles</translation>
+    </message>
+    <message>
+        <source>Powerups</source>
+        <extracomment>After Hours - How to play heading over the things that help you</extracomment>
+        <translation>Powerups</translation>
+    </message>
+    <message>
+        <source>Start</source>
+        <extracomment>After Hours - How to play button that starts the run</extracomment>
+        <translation>Start</translation>
+    </message>
+    <message>
+        <source>Back to the game</source>
+        <extracomment>After Hours - How to play button that returns to the paused run</extracomment>
+        <translation>Back to the game</translation>
+    </message>
+    <message>
+        <source>Down</source>
+        <extracomment>After Hours - The Down key on the remote, shown as a key in the arcade's hints</extracomment>
+        <translation>Down</translation>
+    </message>
+    <message>
+        <source>OK jumps, again mid-air to flip sides. Down slides. On the ceiling Up and Down swap.</source>
+        <extracomment>After Hours - How Buffer Run plays on a remote, on its How to play card. Keep under about 90 characters, it shows in two lines at most</extracomment>
+        <translation>OK jumps, again mid-air to flip sides. Down slides. On the ceiling Up and Down swap.</translation>
+    </message>
+    <message>
+        <source>Up and Down change lanes. OK jumps.</source>
+        <extracomment>After Hours - How Fast Forward plays on a remote, on its How to play card. Keep under about 90 characters, it shows in two lines at most</extracomment>
+        <translation>Up and Down change lanes. OK jumps.</translation>
+    </message>
+    <message>
+        <source>Arrows turn. The cable never stops.</source>
+        <extracomment>After Hours - How Cable Crawl plays on a remote, on its How to play card. Keep under about 90 characters, it shows in two lines at most</extracomment>
+        <translation>Arrows turn. The cable never stops.</translation>
+    </message>
+    <message>
+        <source>OK drops the case.</source>
+        <extracomment>After Hours - How Case Stack plays on a remote, on its How to play card. Keep under about 90 characters, it shows in two lines at most</extracomment>
+        <translation>OK drops the case.</translation>
+    </message>
+    <message>
+        <source>Left and Right slide the scrubber.</source>
+        <extracomment>After Hours - How Pixel Purge plays on a remote, on its How to play card. Keep under about 90 characters, it shows in two lines at most</extracomment>
+        <translation>Left and Right slide the scrubber.</translation>
+    </message>
+    <message>
+        <source>Lag Bat</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Lag Bat</translation>
+    </message>
+    <message>
+        <source>Swoops in at head height. Slide under it.</source>
+        <extracomment>After Hours - What Lag Bat does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Swoops in at head height. Slide under it.</translation>
+    </message>
+    <message>
+        <source>Static Gremlin</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Static Gremlin</translation>
+    </message>
+    <message>
+        <source>Hops along the floor or the ceiling toward you. Jump it.</source>
+        <extracomment>After Hours - What Static Gremlin does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Hops along the floor or the ceiling toward you. Jump it.</translation>
+    </message>
+    <message>
+        <source>Cable Coil</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Cable Coil</translation>
+    </message>
+    <message>
+        <source>Low on the floor or the ceiling. Jump it.</source>
+        <extracomment>After Hours - What Cable Coil does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Low on the floor or the ceiling. Jump it.</translation>
+    </message>
+    <message>
+        <source>Buffering Banner</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Buffering Banner</translation>
+    </message>
+    <message>
+        <source>Slide under the sign. Its pole is a wall on the other side.</source>
+        <extracomment>After Hours - What Buffering Banner does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Slide under the sign. Its pole is a wall on the other side.</translation>
+    </message>
+    <message>
+        <source>A shield that takes one hit.</source>
+        <extracomment>After Hours - What Direct Play does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>A shield that takes one hit.</translation>
+    </message>
+    <message>
+        <source>Three seconds of dash that smashes anything.</source>
+        <extracomment>After Hours - What Skip Intro does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Three seconds of dash that smashes anything.</translation>
+    </message>
+    <message>
+        <source>Popcorn</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Popcorn</translation>
+    </message>
+    <message>
+        <source>25 points a piece.</source>
+        <extracomment>After Hours - What Popcorn does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>25 points a piece.</translation>
+    </message>
+    <message>
+        <source>Loose Reel</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Loose Reel</translation>
+    </message>
+    <message>
+        <source>Rolls down your lane faster than you run. Jump it.</source>
+        <extracomment>After Hours - What Loose Reel does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Rolls down your lane faster than you run. Jump it.</translation>
+    </message>
+    <message>
+        <source>Usher</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Usher</translation>
+    </message>
+    <message>
+        <source>Walks toward you and changes lanes once.</source>
+        <extracomment>After Hours - What Usher does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Walks toward you and changes lanes once.</translation>
+    </message>
+    <message>
+        <source>Velvet Rope</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Velvet Rope</translation>
+    </message>
+    <message>
+        <source>Low. Jump it or change lanes.</source>
+        <extracomment>After Hours - What Velvet Rope does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Low. Jump it or change lanes.</translation>
+    </message>
+    <message>
+        <source>Popcorn Cart</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Popcorn Cart</translation>
+    </message>
+    <message>
+        <source>Too tall to jump. Change lanes.</source>
+        <extracomment>After Hours - What Popcorn Cart does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Too tall to jump. Change lanes.</translation>
+    </message>
+    <message>
+        <source>Front Row Pass</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Front Row Pass</translation>
+    </message>
+    <message>
+        <source>Magnet</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Magnet</translation>
+    </message>
+    <message>
+        <source>Pulls in tickets from every lane for eight seconds.</source>
+        <extracomment>After Hours - What Magnet does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Pulls in tickets from every lane for eight seconds.</translation>
+    </message>
+    <message>
+        <source>Ticket</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Ticket</translation>
+    </message>
+    <message>
+        <source>Interference Bug</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Interference Bug</translation>
+    </message>
+    <message>
+        <source>Wanders at random.</source>
+        <extracomment>After Hours - What Interference Bug does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Wanders at random.</translation>
+    </message>
+    <message>
+        <source>Tangle</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Tangle</translation>
+    </message>
+    <message>
+        <source>Slowly chases your plug.</source>
+        <extracomment>After Hours - What Tangle does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Slowly chases your plug.</translation>
+    </message>
+    <message>
+        <source>Static</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Static</translation>
+    </message>
+    <message>
+        <source>A dead cell. One appears every third signal.</source>
+        <extracomment>After Hours - What Static does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>A dead cell. One appears every third signal.</translation>
+    </message>
+    <message>
+        <source>Power Brick</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Power Brick</translation>
+    </message>
+    <message>
+        <source>A 2 by 2 block every fifth signal.</source>
+        <extracomment>After Hours - What Power Brick does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>A 2 by 2 block every fifth signal.</translation>
+    </message>
+    <message>
+        <source>Ghost</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Ghost</translation>
+    </message>
+    <message>
+        <source>Five seconds of passing through everything but the edge.</source>
+        <extracomment>After Hours - What Ghost does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Five seconds of passing through everything but the edge.</translation>
+    </message>
+    <message>
+        <source>Snip</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Snip</translation>
+    </message>
+    <message>
+        <source>Cuts the cable in half for bonus points.</source>
+        <extracomment>After Hours - What Snip does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Cuts the cable in half for bonus points.</translation>
+    </message>
+    <message>
+        <source>Signal</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Signal</translation>
+    </message>
+    <message>
+        <source>Points, and two more segments.</source>
+        <extracomment>After Hours - What Signal does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Points, and two more segments.</translation>
+    </message>
+    <message>
+        <source>Shelf Cat</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Shelf Cat</translation>
+    </message>
+    <message>
+        <source>Bats a case as it comes in, so that one slides faster.</source>
+        <extracomment>After Hours - What Shelf Cat does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Bats a case as it comes in, so that one slides faster.</translation>
+    </message>
+    <message>
+        <source>Blu-ray Case</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Blu-ray Case</translation>
+    </message>
+    <message>
+        <source>A title from your library. The overhang gets trimmed off.</source>
+        <extracomment>After Hours - What Blu-ray Case does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>A title from your library. The overhang gets trimmed off.</translation>
+    </message>
+    <message>
+        <source>Steelbook</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Steelbook</translation>
+    </message>
+    <message>
+        <source>Every tenth case. Slides much faster.</source>
+        <extracomment>After Hours - What Steelbook does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Every tenth case. Slides much faster.</translation>
+    </message>
+    <message>
+        <source>Perfect Drop</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Perfect Drop</translation>
+    </message>
+    <message>
+        <source>Land it dead on and the stack grows a little wider.</source>
+        <extracomment>After Hours - What Perfect Drop does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Land it dead on and the stack grows a little wider.</translation>
+    </message>
+    <message>
+        <source>Box Set</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Box Set</translation>
+    </message>
+    <message>
+        <source>Three perfect drops in a row grow it a lot wider.</source>
+        <extracomment>After Hours - What Box Set does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Three perfect drops in a row grow it a lot wider.</translation>
+    </message>
+    <message>
+        <source>Dead Pixel</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Dead Pixel</translation>
+    </message>
+    <message>
+        <source>Falls from cleared blocks. Catching it shrinks the scrubber.</source>
+        <extracomment>After Hours - What Dead Pixel does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Falls from cleared blocks. Catching it shrinks the scrubber.</translation>
+    </message>
+    <message>
+        <source>Macroblock</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Macroblock</translation>
+    </message>
+    <message>
+        <source>One hit clears it.</source>
+        <extracomment>After Hours - What Macroblock does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>One hit clears it.</translation>
+    </message>
+    <message>
+        <source>Keyframe</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Keyframe</translation>
+    </message>
+    <message>
+        <source>Takes three hits and drops a powerup.</source>
+        <extracomment>After Hours - What Keyframe does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Takes three hits and drops a powerup.</translation>
+    </message>
+    <message>
+        <source>A scrubber twice as wide for eight seconds.</source>
+        <extracomment>After Hours - What HDR does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>A scrubber twice as wide for eight seconds.</translation>
+    </message>
+    <message>
+        <source>Buffer</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Buffer</translation>
+    </message>
+    <message>
+        <source>A net under the scrubber that saves one miss.</source>
+        <extracomment>After Hours - What Buffer does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>A net under the scrubber that saves one miss.</translation>
+    </message>
 </context>
 </TS>

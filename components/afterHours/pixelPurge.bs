@@ -1,0 +1,330 @@
+' Pixel Purge, the paddle breaker. The blocks sit in one group that creeps down as a whole, so a
+' frame moves one node rather than every block.
+
+const PP_BLOCK_W = 36
+const PP_BLOCK_H = 12
+const PP_GAP = 3
+const PP_COLUMNS = 12
+const PP_TOP = 34
+const PP_BAR = 248
+const PP_LIMIT = 232
+
+function ppTones() as object
+    return [AH_BLUE, AH_PURPLE, AH_CORAL]
+end function
+
+sub ppBuild(stage as object)
+    g = { blocks: [], spareBlocks: [], drops: [], sparks: [], spareSparks: [], flashes: [] }
+    m.g = g
+    ahImage(stage, "purgeBg", 0, 0, AH_W, AH_H)
+    ahImage(stage, "limitLine", 0, PP_LIMIT, AH_W, 1)
+    g.field = stage.createChild("Group")
+    for i = 0 to 2
+        flash = ahRect(g.field, 0, 0, PP_BLOCK_W, PP_BLOCK_H, "#FFFFFF", 0.6)
+        flash.visible = false
+        g.flashes.push(flash)
+    end for
+    g.dropLayer = stage.createChild("Group")
+    g.sparkLayer = stage.createChild("Group")
+    ahRect(stage, 8, PP_BAR + 3, AH_W - 16, 3, "#2C2756")
+    g.progress = ahRect(stage, 8, PP_BAR + 3, 1, 3, AH_BLUE)
+    g.net = ahImage(stage, "netLine", 8, PP_BAR + 14.25, AH_W - 16, 2)
+    g.paddle = ahRounded(stage, "pkg:/images/playback/surface17.9.png", 0, (PP_BAR - 3) * AH_UNIT, 1, 9 * AH_UNIT, AH_INK)
+    g.ball = ahSprite(stage, "ball")
+    g.hud = ahHud(stage)
+end sub
+
+sub ppRow(y as float)
+    g = m.g
+    left = (AH_W - PP_COLUMNS * (PP_BLOCK_W + PP_GAP) + PP_GAP) / 2
+    for i = 0 to PP_COLUMNS - 1
+        if Rnd(0) < 0.72
+            hp = 1
+            if Rnd(0) < 0.1 then hp = 3
+            k = { x: left + i * (PP_BLOCK_W + PP_GAP), y: y, hp: hp, max: hp, c: ahRandomInt(0, 2), seed: ahRandomInt(0, 7), flash: 0.0, dead: false }
+            if g.spareBlocks.count() > 0
+                k.node = g.spareBlocks.pop()
+                k.node.visible = true
+            else
+                k.node = g.field.createChild("Poster")
+                k.node.loadSync = true
+                k.node.width = PP_BLOCK_W * AH_UNIT
+                k.node.height = PP_BLOCK_H * AH_UNIT
+            end if
+            ' The field group carries the creep, so a block keeps the place it had when it appeared
+            k.node.translation = [k.x * AH_UNIT, (y - g.creep) * AH_UNIT]
+            ppSkin(k)
+            g.blocks.push(k)
+        end if
+    end for
+end sub
+
+sub ppSkin(k as object)
+    if k.max > 1
+        k.node.uri = AH_ART + "keyframe" + k.hp.ToStr() + ".webp"
+    else
+        k.node.uri = AH_ART + "block" + k.c.ToStr() + (k.seed mod 6).ToStr() + ".webp"
+    end if
+end sub
+
+sub ppReset()
+    g = m.g
+    for each k in g.blocks
+        k.node.visible = false
+        g.spareBlocks.push(k.node)
+    end for
+    for each d in g.drops
+        ahGive(d.sprite)
+    end for
+    for each spark in g.sparks
+        spark.node.visible = false
+        g.spareSparks.push(spark.node)
+    end for
+    g.over = false
+    g.t = 0.0
+    g.score = 0
+    g.blocks = []
+    g.drops = []
+    g.sparks = []
+    g.rowY = PP_TOP
+    g.creep = 0.0
+    g.aimOff = 0.0
+    g.p = { x: AH_W / 2, tx: AH_W / 2, cw: 60.0, hdr: 0.0, shrink: 0.0, net: false }
+    g.b = { x: AH_W / 2, y: PP_BAR - 12.0, vx: 110.0, vy: -200.0 }
+    for r = 4 to 0 step -1
+        ppRow(PP_TOP + r * (PP_BLOCK_H + PP_GAP))
+    end for
+end sub
+
+sub ppSmash(k as object)
+    g = m.g
+    k.dead = true
+    if k.max > 1
+        g.score += 30
+    else
+        g.score += 10
+    end if
+    color = ppTones()[k.c]
+    if k.max > 1 then color = AH_GOLD
+    for i = 1 to 6
+        if g.spareSparks.count() > 0
+            node = g.spareSparks.pop()
+            node.visible = true
+        else
+            node = ahRect(g.sparkLayer, 0, 0, 3, 3, "#FFFFFF")
+        end if
+        node.color = color
+        g.sparks.push({ node: node, x: k.x + ahRandom(0, PP_BLOCK_W), y: k.y + ahRandom(0, PP_BLOCK_H), vx: ahRandom(-60, 60), vy: ahRandom(-40, 60), l: ahRandom(0.25, 0.5) })
+    end for
+    kind = ""
+    if k.max > 1
+        kind = "bufferNet"
+        if Rnd(0) < 0.5 then kind = "hdr"
+    else if Rnd(0) < 0.08
+        kind = "deadPixel"
+    end if
+    if kind <> ""
+        sprite = ahTake(kind, g.dropLayer)
+        ahScale(sprite, 0.75)
+        g.drops.push({ k: kind, x: k.x + PP_BLOCK_W / 2, y: k.y + PP_BLOCK_H / 2, got: false, sprite: sprite })
+    end if
+end sub
+
+sub ppUpdate(dt as float)
+    g = m.g
+    p = g.p
+    b = g.b
+    g.t += dt
+    p.hdr -= dt
+    p.shrink -= dt
+    drift = 4 + g.t * 0.06
+    for each k in g.blocks
+        k.y += drift * dt
+        k.flash -= dt
+    end for
+    g.creep += drift * dt
+    g.rowY += drift * dt
+    if g.rowY >= PP_TOP + PP_BLOCK_H + PP_GAP
+        g.rowY -= PP_BLOCK_H + PP_GAP
+        ppRow(g.rowY)
+    end if
+
+    p.cw = 60.0
+    if p.hdr > 0 then p.cw = p.cw * 2
+    if p.shrink > 0 then p.cw = p.cw * 0.65
+    p.x += ahClamp(p.tx - p.x, -330 * dt, 330 * dt)
+    p.x = ahClamp(p.x, p.cw / 2, AH_W - p.cw / 2)
+
+    speed = ahMin(360, 220 + g.t * 2)
+    length = Sqr(b.vx * b.vx + b.vy * b.vy)
+    b.vx = b.vx * speed / length
+    b.vy = b.vy * speed / length
+    ' Two sub-steps keep a fast ball from skipping through a block
+    for s = 1 to 2
+        b.x += b.vx * dt / 2
+        b.y += b.vy * dt / 2
+        if b.x < 4
+            b.x = 4
+            b.vx = Abs(b.vx)
+        else if b.x > AH_W - 4
+            b.x = AH_W - 4
+            b.vx = -Abs(b.vx)
+        end if
+        if b.y < PP_TOP
+            b.y = PP_TOP
+            b.vy = Abs(b.vy)
+        end if
+        if b.vy > 0 and b.y >= PP_BAR - 4 and b.y <= PP_BAR + 6 and Abs(b.x - p.x) <= p.cw / 2 + 4
+            angle = ahClamp((b.x - p.x) / (p.cw / 2), -1, 1) * 1.05
+            b.vx = Sin(angle) * speed
+            b.vy = -Cos(angle) * speed
+            b.y = PP_BAR - 4
+            g.aimOff = ahRandom(-0.4, 0.4) * p.cw
+            ahSound("tick")
+        end if
+        if p.net and b.vy > 0 and b.y >= PP_BAR + 14
+            b.vy = -Abs(b.vy)
+            b.y = PP_BAR + 14
+            p.net = false
+            ahSound("thud")
+        end if
+        for each k in g.blocks
+            if not k.dead and not (b.x + 4 < k.x or b.x - 4 > k.x + PP_BLOCK_W or b.y + 4 < k.y or b.y - 4 > k.y + PP_BLOCK_H)
+                overlapX = ahMin(b.x + 4 - k.x, k.x + PP_BLOCK_W - b.x + 4)
+                overlapY = ahMin(b.y + 4 - k.y, k.y + PP_BLOCK_H - b.y + 4)
+                if overlapX < overlapY
+                    if b.x < k.x + PP_BLOCK_W / 2 then b.vx = -Abs(b.vx) else b.vx = Abs(b.vx)
+                else
+                    if b.y < k.y + PP_BLOCK_H / 2 then b.vy = -Abs(b.vy) else b.vy = Abs(b.vy)
+                end if
+                k.hp -= 1
+                if k.hp <= 0
+                    ppSmash(k)
+                    ahSound("break")
+                else
+                    k.flash = 0.1
+                    ppSkin(k)
+                    ahSound("thud")
+                end if
+                exit for
+            end if
+        end for
+    end for
+
+    kept = []
+    for each k in g.blocks
+        if k.dead
+            k.node.visible = false
+            g.spareBlocks.push(k.node)
+        else
+            kept.push(k)
+        end if
+    end for
+    g.blocks = kept
+
+    kept = []
+    for each d in g.drops
+        d.y += 90 * dt
+        if not d.got and d.y >= PP_BAR - 6 and d.y <= PP_BAR + 6 and Abs(d.x - p.x) <= p.cw / 2 + 6
+            d.got = true
+            if d.k = "hdr"
+                p.hdr = 8
+                ahSound("powerup")
+            else if d.k = "bufferNet"
+                p.net = true
+                ahSound("powerup")
+            else
+                p.shrink = 6
+                ahSound("back")
+            end if
+        end if
+        if not d.got and d.y < AH_H + 10
+            kept.push(d)
+        else
+            ahGive(d.sprite)
+        end if
+    end for
+    g.drops = kept
+
+    kept = []
+    for each spark in g.sparks
+        spark.x += spark.vx * dt
+        spark.y += spark.vy * dt
+        spark.l -= dt
+        if spark.l > 0
+            kept.push(spark)
+        else
+            spark.node.visible = false
+            g.spareSparks.push(spark.node)
+        end if
+    end for
+    g.sparks = kept
+
+    if b.y > AH_H + 6 then g.over = true
+    for each k in g.blocks
+        if k.y + PP_BLOCK_H > PP_LIMIT then g.over = true
+    end for
+end sub
+
+' Left and Right slide the scrubber while they're held
+sub ppPress(key as string)
+    if key = "left" then m.g.p.tx = 0
+    if key = "right" then m.g.p.tx = AH_W
+end sub
+
+sub ppRelease(key as string)
+    if key = "left" or key = "right" then m.g.p.tx = m.g.p.x
+end sub
+
+' Unfold the wall bounces to find where the ball will cross the bar, then aim off-center for a new angle
+sub ppAi()
+    g = m.g
+    p = g.p
+    b = g.b
+    if b.vy <= 0
+        p.tx = b.x
+        return
+    end if
+    span = AH_W - 8
+    x = b.x + b.vx * (PP_BAR - 4 - b.y) / b.vy - 4
+    x = x - Int(x / (2 * span)) * 2 * span
+    if x > span then x = 2 * span - x
+    p.tx = x + 4 - g.aimOff
+end sub
+
+sub ppDraw()
+    g = m.g
+    p = g.p
+    b = g.b
+    t = m.ahClock
+    g.field.translation = [0, g.creep * AH_UNIT]
+    used = 0
+    for each k in g.blocks
+        if k.flash > 0 and used < 3
+            g.flashes[used].visible = true
+            g.flashes[used].translation = k.node.translation
+            used += 1
+        end if
+    end for
+    for i = used to 2
+        g.flashes[i].visible = false
+    end for
+    for each d in g.drops
+        ahMove(d.sprite, d.x, d.y)
+    end for
+    for each spark in g.sparks
+        spark.node.translation = [(spark.x - 1.5) * AH_UNIT, (spark.y - 1.5) * AH_UNIT]
+        spark.node.opacity = ahMin(1, spark.l * 3)
+    end for
+    g.progress.width = ahMax(1, p.x - 8) * AH_UNIT
+    g.net.visible = p.net
+    g.paddle.translation = [(p.x - p.cw / 2) * AH_UNIT, (PP_BAR - 3) * AH_UNIT]
+    g.paddle.width = p.cw * AH_UNIT
+    color = AH_INK
+    if p.shrink > 0 then color = AH_CORAL
+    if p.hdr > 0 then color = AH_GOLD
+    g.paddle.blendColor = color
+    ahMove(g.ball, b.x, b.y)
+
+    ahHudDraw(g.hud, g.score, [["hdr", p.hdr > 0], ["bufferNet", p.net]], t)
+end sub
