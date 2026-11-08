@@ -131,7 +131,7 @@ const selections = {
     'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'retryAction', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel', 'rokuAudioTrack'],
     'components/itemMenu/ItemMenuTask.bs': ['playlistRenumbered'],
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
-    'components/home/HomeItem.bs': ['onPosterLoadStatusChanged'],
+    'components/home/HomeItem.bs': ['onPosterLoadStatusChanged', 'retryPoster'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
     'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds'],
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
