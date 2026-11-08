@@ -62,6 +62,8 @@ const selections = {
     'source/utils/parentalFilter.bs': null,
     'source/utils/externalList.bs': null,
     'source/utils/seasonalRow.bs': null,
+    'source/utils/galleryGlow.bs': null,
+    'source/utils/afterHours.bs': null,
     'source/utils/seasonalEffects.bs': null,
     'source/utils/liveRecovery.bs': null,
     'source/utils/deviceCapabilities.bs': ['getSubtitleProfiles', 'transcodableAudioCodecOf', 'transcodeAudioCodecPicks', 'canTranscodeAudioCodecAway', 'keptAudioCodecs', 'applyTranscodeAudioCodecs'],
@@ -85,6 +87,7 @@ const selections = {
     'source/utils/librarySorts.bs': null,
     'source/utils/libraryGroupBy.bs': null,
     'source/utils/libraryCard.bs': null,
+    'source/utils/libraryPreview.bs': null,
     'source/utils/homeCards.bs': null,
     'source/utils/calendarEntries.bs': null,
     'source/utils/incompleteRecordings.bs': null,
@@ -97,6 +100,7 @@ const selections = {
     'source/utils/personCredits.bs': null,
     'source/utils/accessSchedule.bs': null,
     'source/utils/musicCategories.bs': null,
+    'source/utils/moonbaseInstall.bs': null,
     'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'optionRange', 'optionsFit'],
     'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt'],
     'components/settings/settingsEditors.bs': ['editorArrangement'],
@@ -114,6 +118,7 @@ const selections = {
     'source/enums/PlaybackMethod.bs': null,
     'source/enums/SubtitleSelection.bs': null,
     'source/enums/ItemType.bs': null,
+    'source/enums/PosterLoadStatus.bs': null,
     'source/MainEventHandlers.bs': ['isLiveTvChannel'],
     'source/utils/embyFeatures.bs': null,
     'components/embyPreview/EmbyPreviewTask.bs': ['loadPreviewData'],
@@ -122,7 +127,7 @@ const selections = {
     'components/ItemGrid/LoadVideoContentTask.bs': ['playbackResourceURL', 'resolvePlaybackURL', 'playbackPort', 'normalizedPlaybackPort', 'playbackUsesServerAuth', 'isHTTPStream', 'getTranscodeReasons', 'addVideoContentURL', 'addSourceCodecs', 'shouldBurnInSubtitle', 'transcodeCopiesVideo', 'audioPlaysDirect', 'containersOverlap', 'liveDirectStreamFormat'],
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
-    'source/utils/config.bs': ['current_user_id', 'get_user_setting'],
+    'source/utils/config.bs': ['current_user_id', 'get_user_setting', 'settingOr', 'getSavedUsers', 'savedUserFirst'],
     'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'isLocalhost', 'isSupportedMediaServer', 'isSiloSystemInfo', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'shuffleArray'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
@@ -130,8 +135,9 @@ const selections = {
     'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'retryAction', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel', 'rokuAudioTrack'],
     'components/itemMenu/ItemMenuTask.bs': ['playlistRenumbered'],
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
+    'components/home/HomeItem.bs': ['onPosterLoadStatusChanged', 'retryPoster'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
-    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds'],
+    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'getBoolSetting', 'getStringSetting', 'appendRadarrCalendar', 'radarrRowRelease', 'appendSonarrCalendar', 'sonarrRowPicks', 'sonarrEpisodeCode', 'calendarSubtitle', 'sortByCalendarDate'],
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
@@ -166,14 +172,17 @@ source += '\n' + await readFile('test/review-regressions.bs', 'utf8');
 source += '\n' + await readFile('test/accent-folding.bs', 'utf8');
 source += '\n' + await readFile('test/quick-connect-url.bs', 'utf8');
 source += '\n' + await readFile('test/sign-in-refused.bs', 'utf8');
+source += '\n' + await readFile('test/saved-users.bs', 'utf8');
 source += '\n' + await readFile('test/access-schedule.bs', 'utf8');
 source += '\n' + await readFile('test/log-redaction.bs', 'utf8');
 source += '\n' + await readFile('test/youtube-trailer.bs', 'utf8');
 source += '\n' + await readFile('test/playback-fallback.bs', 'utf8');
 source += '\n' + await readFile('test/home-backdrop-blur.bs', 'utf8');
 source += '\n' + await readFile('test/home-backdrop-style.bs', 'utf8');
+source += '\n' + await readFile('test/home-poster-retry.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-burn-in.bs', 'utf8');
 source += '\n' + await readFile('test/seasonal-row.bs', 'utf8');
+source += '\n' + await readFile('test/after-hours.bs', 'utf8');
 source += '\n' + await readFile('test/live-recovery.bs', 'utf8');
 source += '\n' + await readFile('test/caption-download.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-profiles.bs', 'utf8');
@@ -195,6 +204,16 @@ source += '\n' + await readFile('test/library-sorts.bs', 'utf8');
 source += '\n' + await readFile('test/item-menu.bs', 'utf8');
 source += '\n' + await readFile('test/episode-browser.bs', 'utf8');
 source += '\n' + await readFile('test/anime-markers.bs', 'utf8');
+// The rest of the poster labels reach for the server and the session
+const posterLabelsFile = await readFile('source/utils/posterLabels.bs', 'utf8');
+source += '\nnamespace posterLabels\n' + posterLabelsFile.match(/^    const .+$/gm).join('\n') + '\n';
+for (const name of ['Context', 'WordSet', 'ItemIdOf', 'Shown', 'Entry', 'SizeFactor', 'Colors', 'ParseHex', 'Luminance', 'Tint']) {
+    const match = posterLabelsFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
+    assert.ok(match, `Missing posterLabels.${name}`);
+    source += '\n' + match[0];
+}
+source += '\nend namespace\n';
+source += '\n' + await readFile('test/poster-labels.bs', 'utf8');
 source += '\n' + await readFile('test/transcode-audio.bs', 'utf8');
 source += '\n' + await readFile('test/person-role.bs', 'utf8');
 // The rest of the Plex playback rules reach for the server
@@ -247,13 +266,15 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/minimalist-extras.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n' + settingsSyncFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['SubtitleModes', 'PluginToRoku', 'RokuToPlugin', 'ImageTypeName', 'EncodeRowImageTypes', 'RowImageTypeKeys', 'DecodeRowImageTypes', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile', 'SiloSectionIn', 'SiloSectionOut']) {
+for (const name of ['SubtitleModes', 'MediaBarSource', 'PluginToRoku', 'RokuToPlugin', 'ImageTypeName', 'EncodeRowImageTypes', 'RowImageTypeKeys', 'DecodeRowImageTypes', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile', 'SiloSectionIn', 'SiloSectionOut']) {
     source += '\n' + settingsSyncFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/settings-sync-values.bs', 'utf8');
 source += '\n' + await readFile('test/home-cards.bs', 'utf8');
 source += '\n' + await readFile('test/calendar-entries.bs', 'utf8');
+source += '\n' + await readFile('test/arr-calendar-rows.bs', 'utf8');
+source += '\n' + await readFile('test/moonbase-install.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/keyboardLayouts.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/keyboard-layouts.bs', 'utf8');
 source += '\n' + await readFile('test/settings-sync-profile.bs', 'utf8');
@@ -469,6 +490,7 @@ for (const locale of ['en_US', 'ca', 'de_DE', 'fr', 'fr_CA', 'pt_BR']) {
 }
 
 assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /"pluginSource": entry\.source,\s+"pluginSection":/, 'A picked row goes to the server with its keys as the other clients spell them');
+assert.match(await readFile('components/settings/settings.bs', 'utf8'), /"homeSections": settingsSync\.HomeSectionsPayload\(\),\s+"homeRowOrder": settingsSync\.RowOrderPayload\(\)/, 'The home layout goes to the server under its keys as spelled, since BrightScript lowercases bare keys');
 assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /pluginKey: "hiddenDetailSectionsTv", rokuKey: "ui\.itemdetail\.hiddenSections", type: "jsonArray"/, 'The hidden detail sections travel with the other clients');
 
 const multiServerUtils = await readFile('source/utils/multiserver.bs', 'utf8');
@@ -721,6 +743,41 @@ assert.match(episodeOverlay, /requestMarker[^]*?pillSize = "compact"/, 'The epis
 assert.match(playerView, /m\.episodeOverlay\.logoUri = osdLogo\.uri/, 'The episode browser header is the series logo');
 process.stdout.write('PASS: episode browser wiring (9 checks)\n');
 
+// Every row on the Calendar screen that the calendar draws moves the preview to it. The release types are
+// shared with the Upcoming Movies row, week start only changes the month grid and the select action only
+// acts on a press, so those leave it alone. Card image only shows for the style that draws it
+const findCalendarPage = (nodes) => {
+    for (const node of nodes) {
+        if (node.requires === 'calendar' && node.children) return node;
+        const found = node.children && findCalendarPage(node.children);
+        if (found) return found;
+    }
+    return null;
+};
+const calendarRows = findCalendarPage(JSON.parse(await readFile('settings/settings.json', 'utf8'))).children.filter(row => row.settingName);
+assert.ok(calendarRows.length >= 17, 'The Calendar settings are found');
+for (const { settingName } of calendarRows) {
+    const shared = settingName.startsWith('calendar.radarr.show') || settingName === 'calendar.weekStart' || settingName === 'calendar.selectAction';
+    assert.equal(previewTable.includes(`"${settingName}": "calendar"`), !shared, `${settingName} ${shared ? 'leaves the preview where it is' : 'shows on the Calendar preview'}`);
+}
+assert.equal(calendarRows.find(row => row.settingName === 'calendar.imageType').requires, 'setting:calendar.style=countdown', 'Card image only shows with the Countdown style');
+process.stdout.write(`PASS: calendar preview scenes (${calendarRows.length + 2} checks)\n`);
+
+// The library rows move the preview to the library copy, the music style stays put, the chip comes
+// last, and the copy never takes focus, runs the loading spinner or writes anything global
+const libraryRows = ['ui.library.style', 'ui.library.groupItemsIntoCollections', 'ui.library.showMediaDetails', 'ui.library.cardTitles', 'ui.library.showBackdrops', 'libraryPosterOrientation'];
+for (const key of libraryRows) assert.ok(previewTable.includes(`"${key}": "library"`), `${key} shows on the Library preview`);
+assert.ok(previewTable.includes('"ui.library.musicStyle": "library"'), 'The music library style draws the music library on the same scene');
+assert.match(settingsScreen, /if sceneId = "library" then shown = m\.hasVideoLibrary or m\.hasMusicLibrary/, 'The chip shows with a video or a music library');
+assert.match(settingsScreen, /const PREVIEW_SCENES = \[[^\]]*"calendar", "library"\]/, 'The Library chip comes last, after Calendar');
+const libraryCopy = await readFile('components/settings/SettingsLibraryPreview.bs', 'utf8') + await readFile('components/settings/settingsMusicPreview.bs', 'utf8');
+assert.doesNotMatch(libraryCopy, /setFocus|takeFocus|LoadingSpinner|m\.global\.\w+\s*=|addFields|callFunc\("(?:pushScene|popScene)/, 'The library copies take no focus and change nothing global');
+const musicRows = await readFile('components/settings/SettingsMusicTask.bs', 'utf8');
+assert.doesNotMatch(musicRows, /AlbumArtists|"MusicArtist"|IsFavorite/, 'The music copies only ask for the rows their first screen shows');
+// An assocarray field nobody set reads back as invalid on the device, so the copy falls back to an empty page while it loads
+assert.match(libraryCopy, /page = m\.top\.page \?\? \{\}/, 'The library copy draws its loading state without a page');
+process.stdout.write(`PASS: library preview scene (${libraryRows.length + 6} checks)\n`);
+
 const animeTask = await readFile('components/anime/AnimeMarkersTask.bs', 'utf8');
 assert.equal((animeTask.match(/labelStyle = body\.LookupCI\("labelStyle"\)|labelStyle: body\.LookupCI\("labelStyle"\)/g) || []).length, 2, 'Both marker answers carry the admin\'s label style');
 process.stdout.write('PASS: anime marker label style (1 check)\n');
@@ -764,17 +821,45 @@ const settingsSyncSource = await readFile('source/utils/settingsSync.bs', 'utf8'
 assert.match(settingsSyncSource, /\{ pluginKey: "seasonalRowEnabled", rokuKey: "seasonal\.row\.enabled", type: "bool" \}/, 'The seasonal switch syncs as a bool');
 assert.match(settingsSyncSource, /\{ pluginKey: "seasonalRowCountry", rokuKey: "seasonal\.row\.country", type: "direct" \}/, 'The seasonal country syncs as text');
 assert.match(settingsSyncSource, /\{ pluginKey: "seasonalRowHiddenHolidays", rokuKey: "seasonal\.row\.hiddenHolidays", type: "jsonArray" \}/, 'The hidden holidays sync as a list');
+assert.match(settingsSyncSource, /\{ pluginKey: "seasonalRowAllYear", rokuKey: "seasonal\.row\.allYear", type: "bool" \}/, 'Show All Year syncs as a bool');
 assert.match(settingsSyncSource.match(/function GetRowToggleMappings\([^]*?end function/)[0], /"rewatch", "seasonal"/, 'The pulled layout drives the seasonal switch');
 const rowLayoutSource = await readFile('source/utils/homeRowLayout.bs', 'utf8');
 assert.match(rowLayoutSource, /\{ id: "nextup", label: "Next Up" \},\s*\{ id: "seasonal", label: "Seasonal Row" \}/, 'An unarranged seasonal row sits after Next Up');
 assert.match(rowLayoutSource, /seasonal: "seasonal\.row\.enabled"/, 'The seasonal row answers to its own switch');
 assert.match(rowLayoutSource.match(/function IsEnabled\([^]*?end function/)[0], /if id = "seasonal" then return homeRowLayout\.RowToggleOn\(id\)/, 'A layout without the seasonal row leaves it to the switch');
 const loadItemsSource = await readFile('components/home/LoadItemsTask.bs', 'utf8');
-assert.match(loadItemsSource, /startsWith\("plugindynamic:"\)\s+m\.top\.content = parentalControls\.WithoutUnratedOrBlockedItems\(/, 'Chart rows drop unrated titles once a rating is blocked');
+assert.match(loadItemsSource, /startsWith\("plugindynamic:"\)\s+m\.top\.content = posterLabels\.Attach\(parentalControls\.WithoutUnratedOrBlockedItems\(/, 'Chart rows drop unrated titles once a rating is blocked');
 assert.match(loadItemsSource, /startsWith\("seerr_"\)\s+m\.top\.content = parentalControls\.WithoutBlockedItems\(/, 'Seerr rows keep the usual filter');
 assert.match(loadItemsSource.match(/function loadSeasonalRow\([^]*?end function/)[0], /WithoutBlockedItems\(owned\)[^]*?WithoutUnratedOrBlockedItems\(suggestions\)/, 'Owned titles keep the usual filter and suggestions the strict one');
+assert.match(loadItemsSource.match(/function loadSeasonalRow\([^]*?end function/)[0], /seasonalRow\.ALL_YEAR_SETTING, false\) then params\.allYear = "true"/, 'Show All Year asks the plugin for a row outside the holiday dates');
 assert.match(await readFile('components/home/LoadItemsTask.xml', 'utf8'), /<field id="rowKey" type="string"/, 'The row task reports which holiday it loaded');
-process.stdout.write('PASS: seasonal row wiring (11 checks)\n');
+assert.match(await readFile('components/settings/settings.bs', 'utf8'), /settingName = seasonalRow\.ALL_YEAR_SETTING then m\.homeRowsSwitched = true/, 'Switching Show All Year lays Home out again');
+process.stdout.write('PASS: seasonal row wiring (14 checks)\n');
+
+// After Hours opens after seven presses of Version, and every sprite, image and sound it names by
+// string ships in the package
+const aboutScreen = await readFile('components/settings/settings.bs', 'utf8');
+assert.match(aboutScreen, /title: "Version",[^}]*afterHours: true/, 'The Version row in About counts presses toward After Hours');
+assert.match(aboutScreen, /if isValid\(selectedItem\.afterHours\)\s+pressVersion\(\)/, 'and OK on it is a press');
+const arcadeKit = await readFile('components/afterHours/arcadeKit.bs', 'utf8');
+const arcadeArt = [...arcadeKit.match(/function ahArtTable\(\)[^]*?end function/)[0].matchAll(/^\s+(\w+): \[/gm)].map((match) => match[1]);
+const arcadeFiles = await Promise.all(['bufferRun.bs', 'fastForward.bs', 'cableCrawl.bs', 'caseStack.bs', 'pixelPurge.bs', 'AfterHours.bs'].map((name) => readFile(`components/afterHours/${name}`, 'utf8')));
+const arcadeImages = [arcadeKit, ...arcadeFiles].join('\n').matchAll(/ahImage\([^,]+, "(\w+)",|AH_ART \+ "(\w+)\.webp"/g);
+const afterHoursImages = [...arcadeArt, ...[...arcadeImages].map((match) => match[1] ?? match[2]),
+    ...['buffer-run', 'fast-forward', 'cable-crawl', 'case-stack', 'pixel-purge'].map((id) => `thumb_${id}`),
+    ...['blue', 'purple', 'coral'].map((color) => `marquee_${color}`),
+    ...[0, 1, 2].flatMap((tone) => [0, 1, 2, 3, 4, 5].map((seed) => `block${tone}${seed}`)), 'keyframe1', 'keyframe2', 'keyframe3'];
+const castSprites = [...(await readFile('source/utils/afterHours.bs', 'utf8')).match(/function Cast\(id as string\)[^]*?end function/)[0].matchAll(/\["(\w+)", "/g)].map((match) => match[1]);
+assert.equal(castSprites.length, 31, 'How to play lists every enemy, obstacle and powerup');
+for (const name of [...afterHoursImages, ...castSprites]) await access(`images/afterHours/${name}.webp`);
+for (const name of castSprites) assert.ok(arcadeArt.includes(name), `${name} is in the sprite table`);
+const arcade = await readFile('components/afterHours/AfterHours.bs', 'utf8');
+for (const [, name] of arcade.match(/function soundLengths\(\)[^]*?end function/)[0].matchAll(/(\w+): \d+/g)) await access(`sounds/afterHours/${name}.wav`);
+await access('sounds/afterHours/menu-loop.mp3');
+assert.match(arcade, /const AH_VOICES = 4/, 'After Hours plays four sounds at most, since the firmware refuses a sixth');
+assert.match(arcade.match(/sub showMenu\(\)[^]*?end sub/)[0], /warmDemo\(\)/, 'The menu demo starts a couple of seconds into a run');
+assert.match(await readFile('bsconfig.json', 'utf8'), /"sounds\/\*\*\/\*\.\*"/, 'The sounds folder ships');
+process.stdout.write(`PASS: After Hours wiring (${afterHoursImages.length} images)\n`);
 
 // Watching Now row wiring
 assert.match(settingsSyncSource, /\{ pluginKey: "mdblistWatchingNowEnabled", rokuKey: "mdblist\.watchingnow\.enabled", type: "bool" \}/, 'The watching now switch syncs as a bool');
@@ -946,6 +1031,25 @@ assert.ok(glyphNames.includes(findSetting(settingsTree, 'seasonal.surprise').gly
 assert.ok(glyphNames.includes(findSetting(settingsTree, 'seasonal.density').glyph), 'The density draws its glyph');
 process.stdout.write('PASS: seasonal effects wiring (12 checks)\n');
 
+// The effect previews over Home while its own two rows have focus and goes with them, the follower
+// switch stays unmapped, and only one effect runs at a time since Home's stops under Settings
+for (const key of ['seasonal.surprise', 'seasonal.density']) assert.ok(previewTable.includes(`"${key}": "home"`), `${key} shows on the Home preview`);
+assert.ok(!previewTable.includes('"seasonal.follower"'), 'The follower switch leaves the preview where it is');
+const effectPreview = await readFile('components/settings/SettingsLivePreview.bs', 'utf8');
+assert.match(effectPreview, /inArray\(\["seasonal\.surprise", "seasonal\.density"\], state\.focusedSetting\)/, 'The effect only runs while one of its rows has focus');
+assert.match(effectPreview, /m\.effect\.callFunc\("halt"\)\s+m\.effect = invalid\s+end if\s+m\.holder\.removeChildrenIndex/, 'The preview stops its effect before it takes it away');
+const effectRunner = await readFile('components/seasonal/SeasonalEffects.bs', 'utf8');
+assert.match(effectRunner.match(/sub preview\([^]*?end sub/)[0], /unobserveFieldScoped\("overlaySettingsChanged"\)[^]*?runEffect\(effect, density, false\)/, 'The preview effect stops listening for saves and builds no followers');
+assert.match(homeSource.match(/sub onSettingsOpen\([^]*?end sub/)[0], /settingsOpen = true\s+m\.seasonalEffects\.callFunc\("halt"\)[^]*?isSameNode\(m\.top\) then m\.seasonalEffects\.callFunc\("play"\)/, "Home's effect stops under Settings and comes back once it closes over Home");
+// The stage's frame shows only along its edges, so it's clipped to bands there rather than redrawn over the whole stage on every frame of an effect
+assert.doesNotMatch(await readFile('components/settings/SettingsLivePreview.xml', 'utf8'), /stage24/, 'No stage frame image spans the whole stage');
+assert.match(effectPreview, /clip\.clippingRect = band[^]*?stage24cover[^]*?stage24s2/, 'The stage corners and line are drawn in clipped bands');
+// The preview's particles hold still while the remote is in use, through the same hold home uses on a low end device
+assert.match(effectRunner.match(/sub preview\([^]*?end sub/)[0], /m\.holdsOnAnyTier = true/, 'The preview effect holds on any device');
+assert.match(effectRunner.match(/sub hold\([^]*?end sub/)[0], /m\.tier <> "low" and not m\.holdsOnAnyTier/, 'Through the one hold home uses');
+assert.match(effectPreview.match(/sub redraw\([^]*?end sub/)[0], /m\.effect\.callFunc\("hold"\)/, 'Every change on the remote holds the preview effect');
+process.stdout.write('PASS: seasonal effect preview (12 checks)\n');
+
 // Sync follows the profile picked on this device, which stays local, and the panel that picks it
 // loads, saves and resets on a task
 const syncSource = await readFile('source/utils/settingsSync.bs', 'utf8');
@@ -981,9 +1085,15 @@ assert.match(keyboardSource, /if entry = "IME"\s+openStylePicker\(\)/, 'The keyb
 assert.match(keyboardSource, /if m\.pickingStyle\s+pickStyle\(value\)/, 'Picking a style saves it and switches the keyboard');
 assert.deepEqual(keyboardStyle.options.map(option => option.id), ['native', 'classic', 'glass', 'docked'], 'The keyboard styles keep the values the profile stores');
 assert.match(settingsSource, /input = takeSettings\(configTree, \["ui\.keyboard\.style"\]\)[^]*generalChildren\.push\(settingsSection\("Input"\)\)\s+generalChildren\.Append\(input\)/, 'Keyboard Style sits under General > Input');
+assert.match(syncFunction('GetMappings'), /\{ pluginKey: "dateFormat", rokuKey: "ui\.dateFormat", type: "dateFormat" \}/, 'The date format syncs under the profile\'s name');
+const dateFormat = findSetting(settingsTree, 'ui.dateFormat');
+assert.equal(dateFormat.default, 'system', 'Locale Default is the date format default');
+assert.deepEqual(dateFormat.options.map(option => option.id), ['system', 'monthDay', 'dayMonth'], 'The date formats keep the values the profile stores');
+assert.match(settingsSource, /clock = takeSettings\(configTree, \["ui\.showClock", "playback\.use24hourclock", "ui\.dateFormat"\]\)/, 'Date Format sits with the clock settings');
 const styleStrings = await readFile('locale/en_US/translations.ts', 'utf8');
 for (const name of ['Video Library Style', 'Docked', 'Show', 'Display', 'Music Library Style', 'Quick Access', 'Immersive', 'Keyboard Style', 'Native', 'Classic', 'Glass', 'Input']) assert.match(styleStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
-process.stdout.write('PASS: settings sync profiles (45 checks)\n');
+for (const name of ['Date Format', 'Locale Default', 'Month / Day (Nov 10)', 'Day / Month (10 Nov)']) assert.ok(styleStrings.includes(`<source>${name}</source>`), `${name} is translated`);
+process.stdout.write('PASS: settings sync profiles (53 checks)\n');
 
 // Every glyph a setting names is in the icon font, and the font and its table cover the same characters
 const settingsJsonText = await readFile('settings/settings.json', 'utf8');
@@ -1089,7 +1199,7 @@ assert.match(previewHome.match(/sub hideModernFocusCard\([^]*?end sub/)[0], /^\s
 assert.match(previewHome.match(/sub onHomeRowsFocusChanged\([^]*?end sub/)[0], /if not m\.homeRows\.isInFocusChain\(\)\s+stopPreview\(\)\s+return/, 'Focus leaving the rows stops the preview');
 assert.match(previewHome.match(/sub onItemDetailsLoaded\([^]*?end sub/)[0], /m\.previewDetails = json/, 'The details a card already fetched feed its preview');
 const previewController = await readFile('components/home/modernPreview.bs', 'utf8');
-assert.match(previewController, /observeFieldScoped\("settingsOpen", "onPreviewSettingsOpen"\)/, 'Home watches the settings overlay');
+assert.match(await readFile('components/home/Home.bs', 'utf8'), /observeFieldScoped\("settingsOpen", "onSettingsOpen"\)[^]*?sub onSettingsOpen\(\)\s+onPreviewSettingsOpen\(\)/, 'Home watches the settings overlay');
 assert.match(previewController.match(/sub onPreviewSettingsOpen\([^]*?end sub/)[0], /settingsOpen = true[^]*?stopPreview\(\)/, 'Opening settings stops the preview');
 assert.match(previewController.match(/sub onHomeRowsQuickPlay\([^]*?end sub/)[0], /stopPreview\(\)/, 'The Play key stops the preview before the player comes');
 assert.doesNotMatch(previewController, /playstateTask|Sessions\/Playing/, 'A preview never reports playback');
@@ -1241,6 +1351,7 @@ assert.match(await readFile('source/utils/misc.bs', 'utf8'), /return \(padding -
 const mediaBarTaskWiring = await readFile('components/home/MediaBarTask.bs', 'utf8');
 assert.match(mediaBarTaskWiring, /while running\.count\(\) < 6 and nextSource < parentIds\.count\(\) and items\.count\(\) < m\.top\.featuredCount \* 2/, 'The media bar reads six sources at a time and stops at twice what it shows');
 assert.match(mediaBarTaskWiring, /pool = readSources\(shuffleArray\(parentIds\), query, excludedGenreNames\)/, 'It reads its sources in a shuffled order');
+assert.match(mediaBarTaskWiring, /parentIds = filterIdsBySelection\(libraryIds, selectedLibraryIds\)\s+parentIds\.append\(selectedCollectionIds\)/, 'Every source reads the picked libraries and collections together');
 for (const file of ['components/JFOverhang.bs', 'components/Sidebar.bs']) {
     assert.match(await readFile(file, 'utf8'), /callFunc\("getActiveScene"\)\?\.subtype\(\), "Home"\)\s+m\.top\.itemSelected = "homeAgain"/, `${file} tells Home it was pressed on Home`);
 }
@@ -1340,8 +1451,8 @@ process.stdout.write('PASS: details wiring\n');
 assert.match(await readFile('components/itemMenu/ItemMenuTask.bs', 'utf8'), /op = "hideFromResume"[^]*?UserItems\/\$\{itemId\}\/HideFromResume`, \{ UserId: taskUserId\(\), Hide: "true" \}\), "POST"\)/, 'Emby hides an item from resume through its own route');
 assert.match(await readFile('components/itemMenu/itemMenuHost.bs', 'utf8'), /if response\.success and response\.request\.op = "played" then itemMenuPatchUserData/, 'and keeps the progress it showed');
 const calendarTask = await readFile('components/home/LoadItemsTask.bs', 'utf8');
-assert.match(calendarTask, /yesterday\.FromSeconds\(yesterday\.AsSeconds\(\) - 24 \* 60 \* 60\)[^]*?if when = "" or when <= since then continue for/, 'A Radarr release stays on the row through its own day');
-assert.match(calendarTask, /start = Left\(now\.ToISOString\(\), 10\)/, 'and the calendar is read from the start of the day');
+assert.match(calendarTask, /day = calendarEntries\.DayOfText\(when\)\s+if day >= today/, 'A Radarr release stays on the row through its own day');
+assert.match(calendarTask, /start = calendarEntries\.DateText\(calendarEntries\.TodayNumber\(\) - 1\)/, 'and the calendar is read from a day early, so all of today comes back in any time zone');
 assert.match(await readFile('components/genres/GenresScreen.bs', 'utf8'), /allServers: genreData\.unified = true/, 'A merged genre opens on every server');
 assert.match(libraryScene, /if m\.top\.genreFilter\.allServers = true\s+m\.loadItemsTask\.allServers = true\s+m\.loadItemsTask\.genreNames/, 'asking each one by name');
 assert.match(libraryScene, /server = libraryServer\(\)\s+m\.loadItemsTask\.serverUrl = server\.serverUrl/, 'A library from another server is read from that server');

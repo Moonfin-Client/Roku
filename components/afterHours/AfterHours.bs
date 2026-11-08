@@ -1,0 +1,981 @@
+import "pkg:/components/afterHours/arcadeKit.bs"
+import "pkg:/components/afterHours/bufferRun.bs"
+import "pkg:/components/afterHours/cableCrawl.bs"
+import "pkg:/components/afterHours/caseStack.bs"
+import "pkg:/components/afterHours/fastForward.bs"
+import "pkg:/components/afterHours/pixelPurge.bs"
+import "pkg:/source/utils/afterHours.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+
+' The arcade menu, the five games, pause, game over and the leaderboards. The menu is a row of cards
+' with the focused game's attract demo playing behind it, and a game takes the whole screen.
+
+const AH_SOUNDS = "pkg:/sounds/afterHours/"
+' The firmware frees a sound's voice only when told to stop, and refuses a sixth
+const AH_VOICES = 4
+const AH_CARD_STEP = 328
+const AH_ROW_X = 96
+const AH_ROW_Y = 796
+
+sub init()
+    m.ahArt = ahArtTable()
+    m.ahFonts = {}
+    m.ahClock = 0.0
+    m.games = afterHours.Games()
+    m.gameId = ""
+    m.ctlTime = 0.0
+    m.soundOn = get_setting(AFTER_HOURS_SOUND_SETTING, "true") <> "false"
+    m.viewerName = chainLookupReturn(m.global, "session.user.name", "")
+    m.serverName = chainLookupReturn(m.global, "session.server.name", "")
+    m.hasPlugin = chainLookupReturn(m.global, "session.pluginInfo.installed", false) = true
+
+    m.stage = m.top.findNode("stage")
+    m.menu = m.top.findNode("menu")
+    m.row = m.top.findNode("row")
+    m.info = m.top.findNode("info")
+    m.board = m.top.findNode("board")
+    m.hint = m.top.findNode("hint")
+    m.over = m.top.findNode("over")
+    m.pause = m.top.findNode("pause")
+    m.boardsScreen = m.top.findNode("boards")
+    m.howTo = m.top.findNode("howTo")
+    m.frameTimer = m.top.findNode("frameTimer")
+    m.frameTimer.observeField("fire", "onFrame")
+    m.demoTimer = m.top.findNode("demoTimer")
+    m.demoTimer.observeField("fire", "onDemoTimer")
+    m.frameClock = CreateObject("roTimespan")
+    m.soundClock = CreateObject("roTimespan")
+
+    ' The device keeps its own top 3 apart from the boards on screen, which can be the server's
+    m.deviceBoards = {}
+    m.boards = {}
+    for each game in m.games
+        m.deviceBoards[game.id] = afterHours.ParseBoard(ParseJson(get_setting(AFTER_HOURS_BOARD_SETTING + game.id, "[]")))
+        m.boards[game.id] = m.deviceBoards[game.id]
+    end for
+    m.boardsFromServer = false
+
+    setUpSounds()
+    buildMenu()
+    buildHint()
+    buildOver()
+    buildPause()
+end sub
+
+' Settings calls this once the arcade is on screen
+sub open()
+    m.top.setFocus(true)
+    ahUiSound("fanfare")
+    focusCard(0)
+    gameBuild(m.games[0].id)
+    showMenu()
+    fetchBoards()
+end sub
+
+' Each sound's length in milliseconds, so its voice can be let go once it has played
+function soundLengths() as object
+    return { tick: 39, select: 149, back: 103, fanfare: 757, crash: 787, jump: 111, whoosh: 237, swish: 146, pickup: 153, powerup: 417, break: 84, thud: 120 }
+end function
+
+sub setUpSounds()
+    m.sfx = {}
+    m.voices = []
+    for each name in soundLengths()
+        effect = m.top.createChild("SoundEffect")
+        effect.uri = AH_SOUNDS + name + ".wav"
+        m.sfx[name] = effect
+    end for
+    m.music = m.top.findNode("music")
+    track = CreateObject("roSGNode", "ContentNode")
+    track.url = AH_SOUNDS + "menu-loop.mp3"
+    track.streamFormat = "mp3"
+    m.music.content = track
+    m.music.loop = true
+end sub
+
+' A game's own sound. The attract demo plays silently.
+sub ahSound(name as string)
+    if m.demo then return
+    ahUiSound(name)
+end sub
+
+' Lets go of sounds that have finished, and of the oldest past four, then plays this one
+sub ahUiSound(name as string)
+    if not m.soundOn then return
+    lengths = soundLengths()
+    now = m.soundClock.TotalMilliseconds()
+    held = []
+    for each voice in m.voices
+        if voice.until > now and voice.name <> name
+            held.push(voice)
+        else
+            m.sfx[voice.name].control = "stop"
+        end if
+    end for
+    while held.count() >= AH_VOICES
+        m.sfx[held.Shift().name].control = "stop"
+    end while
+    m.sfx[name].control = "play"
+    held.push({ name: name, until: now + lengths[name] })
+    m.voices = held
+end sub
+
+sub stopSounds()
+    for each voice in m.voices
+        m.sfx[voice.name].control = "stop"
+    end for
+    m.voices = []
+end sub
+
+' Only the arcade menu has music, and not over something the app is already playing
+sub startMusic()
+    if not m.soundOn then return
+    if chainLookupReturn(m.global, "audioPlayer.state", "") = "playing" then return
+    if m.music.state <> "playing" then m.music.control = "play"
+end sub
+
+sub stopMusic()
+    m.music.control = "stop"
+end sub
+
+sub buildMenu()
+    brand = m.top.findNode("brand")
+    ahLabel(brand, 0, 0, ahFont("font:BoldSystemFontFile", 24), AH_MUTED, "MOONFIN")
+    ahLabel(brand, -4, 22, ahFont(AH_DISPLAY_FONT, 92), AH_GOLD, "After Hours")
+
+    m.genreLabel = ahLabel(m.info, 0, 0, ahFont("font:BoldSystemFontFile", 24), AH_BLUE)
+    m.nameLabel = ahLabel(m.info, -4, 20, ahFont(AH_DISPLAY_FONT, 132), AH_INK)
+    m.pitchLabel = ahLabel(m.info, 0, 150, ahFont("font:SystemFontFile", 34), "#D4CFF2")
+    m.pitchLabel.width = 880
+    m.pitchLabel.height = 130
+    m.pitchLabel.wrap = true
+    m.pitchLabel.maxLines = 3
+    m.pitchLabel.lineSpacing = 6
+    m.chips = m.info.createChild("Group")
+    m.chips.translation = [0, 300]
+
+    m.boardFill = ahRounded(m.board, "pkg:/images/playback/surface26.9.png", 0, 0, 540, 300, AH_PANEL, 0.88)
+    m.boardRing = ahRounded(m.board, "pkg:/images/login/stroke27w1.9.png", 0, 0, 540, 300, AH_LINE)
+    m.boardTitle = ahLabel(m.board, 32, 24, ahFont("font:BoldSystemFontFile", 22), AH_MUTED)
+    m.boardRows = m.board.createChild("Group")
+    m.boardRows.translation = [24, 66]
+
+    m.cards = []
+    for i = 0 to 5
+        card = { group: m.row.createChild("Group") }
+        card.group.translation = [i * AH_CARD_STEP, 0]
+        card.group.scaleRotateCenter = [150, 224]
+        if i < 5
+            thumb = card.group.createChild("Poster")
+            thumb.uri = AH_ART + "thumb_" + m.games[i].id + ".webp"
+            thumb.width = 300
+            thumb.height = 168
+            name = m.games[i].name
+        else
+            ahRounded(card.group, "pkg:/images/login/stroke20w4.9.png", 0, 0, 300, 168, AH_PANEL)
+            ahRounded(card.group, "pkg:/images/playback/surface17.9.png", 0, 0, 300, 168, AH_PANEL)
+            trophy = card.group.createChild("Poster")
+            trophy.uri = AH_ART + "trophy.webp"
+            trophy.translation = [106, 40]
+            trophy.width = 88
+            trophy.height = 88
+            name = tr("Leaderboards")
+        end if
+        ahRounded(card.group, "pkg:/images/login/stroke20w1.9.png", 0, 0, 300, 168, AH_LINE)
+        card.ring = ahRounded(card.group, "pkg:/images/login/stroke20w4.9.png", -4, -4, 308, 176, AH_GOLD)
+        card.label = ahLabel(card.group, 0, 184, ahFont("font:BoldSystemFontFile", 28), AH_MUTED, name)
+        m.cards.push(card)
+    end for
+end sub
+
+sub focusCard(index as integer)
+    m.cardIndex = index
+    for i = 0 to m.cards.count() - 1
+        card = m.cards[i]
+        focused = i = index
+        card.ring.visible = focused
+        if focused
+            card.group.scale = [1.1, 1.1]
+            card.label.color = AH_INK
+        else
+            card.group.scale = [1.0, 1.0]
+            card.label.color = AH_MUTED
+        end if
+    end for
+    shift = index - 3
+    if shift < 0 then shift = 0
+    m.row.translation = [AH_ROW_X - shift * AH_CARD_STEP, AH_ROW_Y]
+
+    if index < 5
+        game = m.games[index]
+        m.genreLabel.text = UCase(tr(game.genre))
+        m.nameLabel.font = ahDisplayFont(game.name, 132)
+        m.nameLabel.text = game.name
+        m.pitchLabel.text = tr(game.pitch)
+        m.board.visible = true
+        drawMenuBoard()
+        buildChips([[tr("OK"), tr("Play")], [tr("Back"), tr("About")], [tr("Down"), tr("How to play")]])
+    else
+        m.genreLabel.text = ""
+        name = tr("Leaderboards")
+        m.nameLabel.font = ahDisplayFont(name, 132)
+        m.nameLabel.text = name
+        m.pitchLabel.text = tr("Every game's top 3 at once.")
+        m.board.visible = false
+        buildChips([[tr("OK"), tr("Open")], [tr("Back"), tr("About")]])
+    end if
+end sub
+
+sub drawMenuBoard()
+    if m.cardIndex > 4 then return
+    title = tr("Top 3 · This device")
+    if m.boardsFromServer then title = tr("Top 3 · This server")
+    m.boardTitle.text = UCase(title)
+    rows = m.boards[m.games[m.cardIndex].id]
+    ahBoardRows(m.boardRows, rows, 492, { text: 32, rank: 48, score: 30, rowHeight: 68 }, -1)
+    fitPanel([m.boardFill, m.boardRing], rows)
+end sub
+
+' A board's panel is as tall as its rows, with room for one when it's empty
+sub fitPanel(layers as object, rows as object)
+    count = 1
+    if rows <> invalid and rows.count() > 1 then count = rows.count()
+    for each layer in layers
+        layer.height = 66 + count * 68 + 18
+    end for
+end sub
+
+sub buildChips(chips as object)
+    m.chips.removeChildrenIndex(m.chips.getChildCount(), 0)
+    x = 0
+    for each chip in chips
+        x += ahChip(m.chips, x, 0, 48, 24, AH_INK, AH_LINE, chip[0]) + 12
+        caption = ahLabel(m.chips, x, 0, ahFont("font:SystemFontFile", 30), AH_MUTED, chip[1])
+        caption.height = 48
+        caption.vertAlign = "center"
+        x += caption.boundingRect().width + 36
+    end for
+end sub
+
+' A rounded chip as wide as its text, for key caps and board tags. Answers its width.
+function ahChip(parent as object, x as float, y as float, height as float, fontSize as integer, textColor as string, fillColor as string, text as string) as float
+    fill = ahRounded(parent, "pkg:/images/details/surface8.9.png", x, y, 0, height, fillColor)
+    label = ahLabel(parent, x, y, ahFont("font:BoldSystemFontFile", fontSize), textColor, text)
+    width = label.boundingRect().width + height / 2
+    fill.width = width
+    label.width = width
+    label.height = height
+    label.horizAlign = "center"
+    label.vertAlign = "center"
+    return width
+end function
+
+' Rank, name and score for each row of a board, with the viewer's rows tagged YOU and a run that
+' just placed tagged NEW
+sub ahBoardRows(parent as object, rows as object, width as float, sizes as object, fresh as integer)
+    parent.removeChildrenIndex(parent.getChildCount(), 0)
+    if rows = invalid or rows.count() = 0
+        empty = ahLabel(parent, 8, 0, ahFont("font:SystemFontFile", sizes.text - 4), AH_MUTED, tr("No scores yet"))
+        empty.height = sizes.rowHeight
+        empty.vertAlign = "center"
+        return
+    end if
+    viewer = LCase(m.viewerName)
+    y = 0
+    for i = 0 to rows.count() - 1
+        row = rows[i]
+        if i > 0 then ahRounded(parent, "pkg:/images/details/surface8.9.png", 0, y, width, 2, AH_LINE)
+        mine = viewer <> "" and LCase(row.userName) = viewer
+        if mine
+            band = parent.createChild("Poster")
+            band.uri = AH_ART + "meRow.webp"
+            band.translation = [0, y + 2]
+            band.width = width
+            band.height = sizes.rowHeight - 2
+        end if
+        rank = ahLabel(parent, 8, y, ahFont(AH_DISPLAY_FONT, sizes.rank), AH_GOLD, (i + 1).ToStr())
+        rank.height = sizes.rowHeight
+        rank.vertAlign = "center"
+
+        score = ahLabel(parent, 0, y, ahFont("font:BoldSystemFontFile", sizes.score), AH_INK, afterHours.FormatScore(row.score))
+        scoreWidth = score.boundingRect().width
+        score.translation = [width - 8 - scoreWidth, y]
+        score.height = sizes.rowHeight
+        score.vertAlign = "center"
+
+        nameX = 8 + sizes.rank + 16
+        name = ahLabel(parent, nameX, y, ahFont("font:BoldSystemFontFile", sizes.text), AH_INK, row.userName)
+        nameWidth = name.boundingRect().width
+        tags = []
+        if mine then tags.push([tr("YOU"), AH_GOLD])
+        if i = fresh then tags.push([tr("NEW"), AH_MINT])
+        room = width - 8 - scoreWidth - 20 - nameX - tags.count() * 80
+        if nameWidth > room
+            nameWidth = room
+            name.width = room
+        end if
+        name.height = sizes.rowHeight
+        name.vertAlign = "center"
+        x = nameX + nameWidth + 12
+        for each tag in tags
+            x += ahChip(parent, x, y + (sizes.rowHeight - 28) / 2, 28, 18, AH_NIGHT, tag[1], tag[0]) + 8
+        end for
+        y += sizes.rowHeight
+    end for
+end sub
+
+sub showMenu()
+    m.mode = "menu"
+    m.demo = true
+    m.demoWait = 0
+    m.menu.visible = true
+    m.hint.visible = false
+    m.over.visible = false
+    m.pause.visible = false
+    m.boardsScreen.visible = false
+    warmDemo()
+    startFrames()
+    startMusic()
+end sub
+
+sub menuKey(key as string)
+    if key = "left" and m.cardIndex > 0
+        ahUiSound("tick")
+        focusCard(m.cardIndex - 1)
+        m.demoTimer.control = "start"
+    else if key = "right" and m.cardIndex < 5
+        ahUiSound("tick")
+        focusCard(m.cardIndex + 1)
+        m.demoTimer.control = "start"
+    else if key = "OK"
+        ahUiSound("select")
+        if m.cardIndex = 5
+            showBoards()
+        else if get_setting(AFTER_HOURS_SEEN_SETTING + m.games[m.cardIndex].id, "") <> "true"
+            showHowTo("first")
+        else
+            startGame()
+        end if
+    else if key = "down" and m.cardIndex < 5
+        ahUiSound("select")
+        showHowTo("menu")
+    else if key = "back"
+        ahUiSound("back")
+        closeArcade()
+    end if
+end sub
+
+' Focus has settled on a card, so its game takes over the demo
+sub onDemoTimer()
+    if m.mode = "menu" and m.cardIndex < 5 then buildDemo()
+end sub
+
+sub buildDemo()
+    id = m.games[m.cardIndex].id
+    if id = m.gameId then return
+    gameBuild(id)
+    warmDemo()
+end sub
+
+' A demo starts a couple of seconds into a run, so there's something on screen from its first frame
+sub warmDemo()
+    gameReset()
+    warmup = 60
+    if m.gameId = "cable-crawl" then warmup = 30
+    for i = 1 to warmup
+        if m.g.over then gameReset()
+        gameAi()
+        gameUpdate(1 / 30)
+    end for
+    if m.g.over then gameReset()
+    gameDraw()
+end sub
+
+sub closeArcade()
+    m.frameTimer.control = "stop"
+    m.demoTimer.control = "stop"
+    stopMusic()
+    stopSounds()
+    m.top.closed = true
+end sub
+
+sub startGame()
+    buildDemo()
+    stopMusic()
+    m.mode = "play"
+    m.demo = false
+    m.menu.visible = false
+    m.over.visible = false
+    m.pause.visible = false
+    m.hint.visible = true
+    showControls()
+    gameReset()
+    gameDraw()
+    startFrames()
+end sub
+
+sub startFrames()
+    m.frameClock.Mark()
+    m.frameTimer.control = "start"
+end sub
+
+sub onFrame()
+    elapsed = m.frameClock.TotalMilliseconds() / 1000
+    m.frameClock.Mark()
+    dt = ahMin(elapsed, 0.05)
+    m.ahClock += dt
+    if m.mode = "menu"
+        if m.g.over
+            m.demoWait += dt
+            if m.demoWait > 1.2
+                m.demoWait = 0
+                gameReset()
+            end if
+        else
+            gameAi()
+            gameUpdate(dt)
+        end if
+        gameDraw()
+    else if m.mode = "play"
+        if m.ctlTime > 0
+            m.ctlTime -= dt
+            m.ctlHint.opacity = ahMax(0, ahMin(1, m.ctlTime / 0.4))
+        end if
+        if not m.g.over then gameUpdate(dt)
+        gameDraw()
+        if m.g.over then finishRun()
+    end if
+end sub
+
+sub buildHint()
+    fill = ahRounded(m.hint, "pkg:/images/playback/surface17.9.png", 0, 0, 10, 72, "#080616", 0.78)
+    x = 16 + ahChip(m.hint, 16, 12, 48, 24, AH_INK, AH_LINE, tr("Back")) + 12
+    caption = ahLabel(m.hint, x, 12, ahFont("font:SystemFontFile", 30), AH_MUTED, tr("Pause"))
+    caption.height = 48
+    caption.vertAlign = "center"
+    width = x + caption.boundingRect().width + 24
+    fill.width = width
+    ' On the score's row, just right of the 368 by 84 score box at 32, 28.
+    m.hint.translation = [432, 34]
+    m.ctlStart = width + 24
+    m.ctlHint = m.hint.createChild("Group")
+    m.ctlFill = ahRounded(m.ctlHint, "pkg:/images/playback/surface17.9.png", 0, 0, 10, 72, "#080616", 0.8)
+    m.ctlLabel = ahLabel(m.ctlHint, 32, 0, ahFont("font:SystemFontFile", 28), AH_INK)
+    m.ctlLabel.height = 72
+    m.ctlLabel.vertAlign = "center"
+end sub
+
+' The game's controls line, centered in the rest of the row, for the first few seconds of a run
+sub showControls()
+    room = 1920 - 32 - m.hint.translation[0] - m.ctlStart
+    ' A zero width lets the label measure its whole line.
+    m.ctlLabel.width = 0
+    m.ctlLabel.text = tr(gameOf(m.gameId).remote)
+    textWidth = ahMin(m.ctlLabel.boundingRect().width, room - 64)
+    m.ctlLabel.width = textWidth
+    m.ctlFill.width = textWidth + 64
+    m.ctlHint.translation = [m.ctlStart + (room - textWidth - 64) / 2, 0]
+    m.ctlHint.opacity = 1
+    m.ctlTime = 4.0
+end sub
+
+sub buildPause()
+    panel = m.pause.createChild("Group")
+    panel.translation = [640, 200]
+    ahRounded(panel, "pkg:/images/playback/surface26.9.png", 0, 0, 640, 624, AH_PANEL, 0.96)
+    ahRounded(panel, "pkg:/images/login/stroke27w1.9.png", 0, 0, 640, 624, AH_LINE)
+    title = tr("Paused")
+    heading = ahLabel(panel, 0, 40, ahDisplayFont(title, 96), AH_GOLD, title)
+    heading.width = 640
+    heading.horizAlign = "center"
+    ' The third button is the sound switch, which drawPause names
+    labels = [tr("Resume"), tr("How to play"), "", tr("Quit")]
+    m.pauseButtons = []
+    for i = 0 to 3
+        m.pauseButtons.push(ahButton(panel, 60, 190 + i * 104, 520, labels[i]))
+    end for
+end sub
+
+' A width of 0 sizes the button to its text
+function ahButton(parent as object, x as float, y as float, width as float, text as string) as object
+    button = { group: parent.createChild("Group") }
+    button.group.translation = [x, y]
+    button.fill = ahRounded(button.group, "pkg:/images/playback/surface26.9.png", 0, 0, width, 88, AH_PANEL_2)
+    button.ring = ahRounded(button.group, "pkg:/images/login/stroke27w1.9.png", 0, 0, width, 88, AH_LINE)
+    button.label = ahLabel(button.group, 0, 0, ahFont("font:BoldSystemFontFile", 34), AH_INK, text)
+    if width <= 0
+        width = button.label.boundingRect().width + 80
+        button.fill.width = width
+        button.ring.width = width
+    end if
+    button.width = width
+    button.label.width = width
+    button.label.height = 88
+    button.label.horizAlign = "center"
+    button.label.vertAlign = "center"
+    return button
+end function
+
+sub focusButtons(buttons as object, index as integer)
+    for i = 0 to buttons.count() - 1
+        button = buttons[i]
+        focused = i = index
+        button.ring.visible = not focused
+        if focused
+            button.fill.blendColor = AH_GOLD
+            button.label.color = AH_NIGHT
+        else
+            button.fill.blendColor = AH_PANEL_2
+            button.label.color = AH_INK
+        end if
+    end for
+end sub
+
+sub pauseGame()
+    ahUiSound("back")
+    m.frameTimer.control = "stop"
+    m.mode = "pause"
+    m.pauseIndex = 0
+    m.hint.visible = false
+    m.pause.visible = true
+    drawPause()
+end sub
+
+sub drawPause()
+    if m.soundOn
+        m.pauseButtons[2].label.text = tr("Sound on")
+    else
+        m.pauseButtons[2].label.text = tr("Sound off")
+    end if
+    focusButtons(m.pauseButtons, m.pauseIndex)
+end sub
+
+sub resumeGame()
+    m.mode = "play"
+    m.pause.visible = false
+    m.hint.visible = true
+    startFrames()
+end sub
+
+sub pauseKey(key as string)
+    if key = "up" and m.pauseIndex > 0
+        m.pauseIndex -= 1
+        ahUiSound("tick")
+        drawPause()
+    else if key = "down" and m.pauseIndex < 3
+        m.pauseIndex += 1
+        ahUiSound("tick")
+        drawPause()
+    else if key = "back"
+        ahUiSound("select")
+        resumeGame()
+    else if key = "OK"
+        if m.pauseIndex = 0
+            ahUiSound("select")
+            resumeGame()
+        else if m.pauseIndex = 1
+            ahUiSound("select")
+            showHowTo("pause")
+        else if m.pauseIndex = 2
+            m.soundOn = not m.soundOn
+            set_setting(AFTER_HOURS_SOUND_SETTING, LCase(m.soundOn.ToStr()))
+            if m.soundOn then ahUiSound("select") else stopSounds()
+            drawPause()
+        else
+            ahUiSound("back")
+            showMenu()
+        end if
+    end if
+end sub
+
+sub buildOver()
+    title = tr("Game over")
+    ahLabel(m.over, 160, 250, ahDisplayFont(title, 156), AH_CORAL, title)
+    m.overScore = ahLabel(m.over, 160, 404, ahFont("font:BoldSystemFontFile", 80), AH_INK)
+    m.overRank = ahLabel(m.over, 160, 512, ahFont(AH_DISPLAY_FONT, 64), AH_GOLD)
+    m.overButtons = [ahButton(m.over, 160, 600, 280, tr("Play again")), ahButton(m.over, 464, 600, 420, tr("Back to the arcade"))]
+    m.overSource = ahLabel(m.over, 160, 712, ahFont("font:SystemFontFile", 26), AH_MUTED)
+    panel = m.over.createChild("Group")
+    panel.translation = [1100, 380]
+    m.overFill = ahRounded(panel, "pkg:/images/playback/surface26.9.png", 0, 0, 660, 300, AH_PANEL, 0.92)
+    m.overRing = ahRounded(panel, "pkg:/images/login/stroke27w1.9.png", 0, 0, 660, 300, AH_LINE)
+    m.overTitle = ahLabel(panel, 36, 28, ahFont("font:BoldSystemFontFile", 22), AH_MUTED)
+    m.overRows = panel.createChild("Group")
+    m.overRows.translation = [28, 70]
+end sub
+
+' The run ended. The device keeps its own top 3 whatever happens, and the server's board takes
+' over when the plugin answers.
+sub finishRun()
+    m.frameTimer.control = "stop"
+    m.mode = "over"
+    m.hint.visible = false
+    ahUiSound("crash")
+    score = afterHours.ClampScore(m.g.score)
+    m.overIndex = 0
+    focusButtons(m.overButtons, 0)
+    m.overScore.text = afterHours.FormatScore(score)
+    m.overRank.text = ""
+    m.overSource.text = ""
+    m.overTitle.text = UCase(Substitute(tr("{0} · Top 3"), gameOf(m.gameId).name))
+    m.overRows.removeChildrenIndex(m.overRows.getChildCount(), 0)
+    m.over.visible = true
+
+    name = m.viewerName
+    if name = "" then name = tr("You")
+    added = afterHours.AddRun(m.deviceBoards[m.gameId], name, score)
+    m.deviceRun = added
+    m.deviceBoards[m.gameId] = added.board
+    set_setting(AFTER_HOURS_BOARD_SETTING + m.gameId, FormatJson(added.board))
+
+    if m.hasPlugin
+        task = CreateObject("roSGNode", "AfterHoursScoresTask")
+        task.request = { action: "post", gameId: m.gameId, score: score }
+        task.observeField("answer", "onPosted")
+        task.control = "run"
+        m.postTask = task
+    else
+        showRunResult(added.rank, added.board, false)
+    end if
+end sub
+
+sub onPosted(event as object)
+    answer = event.getData()
+    m.postTask = invalid
+    if m.mode <> "over" then return
+    if answer <> invalid and answer.ok = true
+        showRunResult(answer.rank, answer.board, true)
+    else
+        showRunResult(m.deviceRun.rank, m.deviceRun.board, false)
+    end if
+end sub
+
+sub showRunResult(rank as integer, rows as object, fromServer as boolean)
+    m.boards[m.gameId] = rows
+    if fromServer then m.boardsFromServer = true
+    if rank > 0
+        text = Substitute(tr("New #{0} on the board"), rank.ToStr())
+        m.overRank.font = ahDisplayFont(text, 64)
+        m.overRank.text = text
+        ahUiSound("fanfare")
+    end if
+    ahBoardRows(m.overRows, rows, 604, { text: 32, rank: 48, score: 30, rowHeight: 68 }, rank - 1)
+    fitPanel([m.overFill, m.overRing], rows)
+    m.overSource.text = sourceLine(fromServer)
+end sub
+
+function sourceLine(fromServer as boolean) as string
+    if fromServer and m.serverName <> "" then return Substitute(tr("Scores from {0}"), m.serverName)
+    return tr("Scores on this device")
+end function
+
+function gameOf(id as string) as object
+    for each game in m.games
+        if game.id = id then return game
+    end for
+    return invalid
+end function
+
+sub overKey(key as string)
+    if key = "left" and m.overIndex = 1
+        m.overIndex = 0
+        ahUiSound("tick")
+        focusButtons(m.overButtons, 0)
+    else if key = "right" and m.overIndex = 0
+        m.overIndex = 1
+        ahUiSound("tick")
+        focusButtons(m.overButtons, 1)
+    else if key = "OK" and m.overIndex = 0
+        ahUiSound("select")
+        startGame()
+    else if key = "OK" or key = "back"
+        ahUiSound("back")
+        focusCard(m.cardIndex)
+        showMenu()
+    end if
+end sub
+
+' The controls and everything in the game. It opens by itself before the first run of each game
+' on this device, from Down on a game card, and from the pause menu, which it returns to.
+sub showHowTo(source as string)
+    m.howToSource = source
+    if source <> "pause" then buildDemo()
+    m.mode = "howto"
+    m.frameTimer.control = "stop"
+    m.menu.visible = false
+    m.pause.visible = false
+    m.hint.visible = false
+    drawHowTo()
+    m.howTo.visible = true
+end sub
+
+sub drawHowTo()
+    card = m.howTo
+    card.removeChildrenIndex(card.getChildCount(), 0)
+    shade = card.createChild("Rectangle")
+    shade.width = 1920
+    shade.height = 1080
+    shade.color = "#080616"
+    shade.opacity = 0.93
+
+    game = gameOf(m.gameId)
+    ahLabel(card, 96, 68, ahFont("font:BoldSystemFontFile", 24), AH_MUTED, UCase(tr("How to play")))
+    ahLabel(card, 92, 96, ahDisplayFont(game.name, 108), AH_INK, game.name)
+    remote = ahWrapped(card, 96, 214, 1600, ahFont("font:SystemFontFile", 30), "#D4CFF2", tr(game.remote), 2)
+
+    top = 214 + remote + 32
+    titles = [[tr("Enemies"), AH_CORAL], [tr("Obstacles"), AH_MUTED], [tr("Powerups"), AH_MINT]]
+    groups = afterHours.Cast(m.gameId)
+    for i = 0 to 2
+        x = 96 + i * 592
+        ahLabel(card, x, top, ahFont("font:BoldSystemFontFile", 23), titles[i][1], UCase(titles[i][0]))
+        ahRounded(card, "pkg:/images/details/surface8.9.png", x, top + 42, 544, 2, AH_LINE)
+        y = top + 52
+        for each item in groups[i]
+            ahRounded(card, "pkg:/images/playback/surface17.9.png", x, y + 12, 80, 80, AH_PANEL)
+            ' Each icon is laid out in a 44 unit box drawn 80 pixels wide
+            icon = ahSprite(card, item[0])
+            ahScale(icon, item[3] * 80 / 44 / AH_UNIT)
+            icon.node.translation = [x + (22 + item[5]) * 80 / 44 - icon.ox * icon.scale, y + 12 + (22 + item[4]) * 80 / 44 - icon.oy * icon.scale]
+            ahLabel(card, x + 100, y + 10, ahFont("font:BoldSystemFontFile", 30), AH_INK, tr(item[1]))
+            lines = ahWrapped(card, x + 100, y + 52, 444, ahFont("font:SystemFontFile", 25), AH_MUTED, tr(item[2]), 3)
+            tall = 42 + lines
+            if tall < 80 then tall = 80
+            y += tall + 24
+        end for
+    end for
+
+    if m.howToSource = "pause"
+        m.howToButtons = [ahButton(card, 96, 924, 0, tr("Back to the game"))]
+    else
+        start = ahButton(card, 96, 924, 0, tr("Start"))
+        m.howToButtons = [start, ahButton(card, 96 + start.width + 24, 924, 0, tr("Back to the arcade"))]
+    end if
+    m.howToIndex = 0
+    focusButtons(m.howToButtons, 0)
+end sub
+
+' Wrapped text up to a number of lines, then an ellipsis. The label lays itself out at its width
+' first, then keeps that height, since a wrapped label left without one can draw only its first line.
+' Answers the height.
+function ahWrapped(parent as object, x as float, y as float, width as float, font as object, color as string, text as string, maxLines as integer) as float
+    label = ahLabel(parent, x, y, font, color, text)
+    label.width = width
+    label.wrap = true
+    label.maxLines = maxLines
+    height = label.boundingRect().height
+    label.height = height
+    return height
+end function
+
+sub howToKey(key as string)
+    if key = "left" and m.howToIndex > 0
+        m.howToIndex -= 1
+        ahUiSound("tick")
+        focusButtons(m.howToButtons, m.howToIndex)
+    else if key = "right" and m.howToIndex < m.howToButtons.count() - 1
+        m.howToIndex += 1
+        ahUiSound("tick")
+        focusButtons(m.howToButtons, m.howToIndex)
+    else if key = "OK" and m.howToSource <> "pause" and m.howToIndex = 0
+        ahUiSound("select")
+        set_setting(AFTER_HOURS_SEEN_SETTING + m.gameId, "true")
+        closeHowTo()
+        startGame()
+    else if key = "OK" or key = "back"
+        ahUiSound("back")
+        closeHowTo()
+        if m.howToSource = "pause"
+            m.mode = "pause"
+            m.pause.visible = true
+            drawPause()
+        else
+            showMenu()
+        end if
+    end if
+end sub
+
+sub closeHowTo()
+    m.howTo.visible = false
+    m.howTo.removeChildrenIndex(m.howTo.getChildCount(), 0)
+end sub
+
+sub showBoards()
+    m.mode = "boards"
+    m.frameTimer.control = "stop"
+    m.boardsScreen.visible = true
+    drawBoards()
+end sub
+
+sub drawBoards()
+    screen = m.boardsScreen
+    ' The first child is the backdrop
+    screen.removeChildrenIndex(screen.getChildCount() - 1, 1)
+    title = tr("Leaderboards")
+    ahLabel(screen, 96, 50, ahDisplayFont(title, 100), AH_GOLD, title)
+    source = ahLabel(screen, 96, 84, ahFont("font:SystemFontFile", 30), AH_MUTED, sourceLine(m.boardsFromServer))
+    source.width = 1728
+    source.horizAlign = "right"
+    for i = 0 to m.games.count() - 1
+        panel = screen.createChild("Group")
+        panel.translation = [96 + (i mod 3) * 585, 200 + Int(i / 3) * 300]
+        ahRounded(panel, "pkg:/images/playback/surface26.9.png", 0, 0, 557, 272, AH_PANEL)
+        ahRounded(panel, "pkg:/images/login/stroke27w1.9.png", 0, 0, 557, 272, AH_LINE)
+        ahLabel(panel, 28, 14, ahFont(AH_DISPLAY_FONT, 52), AH_INK, m.games[i].name)
+        rows = panel.createChild("Group")
+        rows.translation = [20, 84]
+        ahBoardRows(rows, m.boards[m.games[i].id], 517, { text: 28, rank: 40, score: 26, rowHeight: 58 }, -1)
+    end for
+end sub
+
+' Every board from the server when the plugin is there, otherwise the ones kept on the device
+sub fetchBoards()
+    if not m.hasPlugin then return
+    task = CreateObject("roSGNode", "AfterHoursScoresTask")
+    task.request = { action: "boards" }
+    task.observeField("answer", "onBoardsFetched")
+    task.control = "run"
+    m.boardsTask = task
+end sub
+
+sub onBoardsFetched(event as object)
+    answer = event.getData()
+    m.boardsTask = invalid
+    if answer = invalid or answer.ok <> true then return
+    for each game in m.games
+        m.boards[game.id] = answer.boards[game.id]
+    end for
+    m.boardsFromServer = true
+    if m.mode = "menu" then drawMenuBoard()
+    if m.mode = "boards" then drawBoards()
+end sub
+
+sub gameBuild(id as string)
+    m.gameId = id
+    m.stage.removeChildrenIndex(m.stage.getChildCount(), 0)
+    m.ahPools = {}
+    if id = "buffer-run"
+        brBuild(m.stage)
+    else if id = "fast-forward"
+        ffBuild(m.stage)
+    else if id = "cable-crawl"
+        ccBuild(m.stage)
+    else if id = "case-stack"
+        if m.caseShelf = invalid then m.caseShelf = caseShelf()
+        csBuild(m.stage)
+    else
+        ppBuild(m.stage)
+    end if
+end sub
+
+' The media bar's titles when Home has them, or a few words that fit any shelf
+function caseShelf() as object
+    titles = invalid
+    scene = m.top.getScene()
+    if scene <> invalid
+        bar = scene.findNode("mediaBar")
+        if bar <> invalid then titles = bar.titles
+    end if
+    spare = [tr("Director's Cut"), tr("Special Edition"), tr("Widescreen"), tr("Bonus Features"), tr("Theatrical Cut"), tr("Remastered"), tr("Collector's Edition"), tr("Extended Edition")]
+    return afterHours.Shelf(titles, spare)
+end function
+
+sub gameReset()
+    id = m.gameId
+    if id = "buffer-run"
+        brReset()
+    else if id = "fast-forward"
+        ffReset()
+    else if id = "cable-crawl"
+        ccReset()
+    else if id = "case-stack"
+        csReset()
+    else
+        ppReset()
+    end if
+end sub
+
+sub gameUpdate(dt as float)
+    id = m.gameId
+    if id = "buffer-run"
+        brUpdate(dt)
+    else if id = "fast-forward"
+        ffUpdate(dt)
+    else if id = "cable-crawl"
+        ccUpdate(dt)
+    else if id = "case-stack"
+        csUpdate(dt)
+    else
+        ppUpdate(dt)
+    end if
+end sub
+
+sub gameAi()
+    id = m.gameId
+    if id = "buffer-run"
+        brAi()
+    else if id = "fast-forward"
+        ffAi()
+    else if id = "cable-crawl"
+        ccAi()
+    else if id = "case-stack"
+        csAi()
+    else
+        ppAi()
+    end if
+end sub
+
+sub gameDraw()
+    id = m.gameId
+    if id = "buffer-run"
+        brDraw()
+    else if id = "fast-forward"
+        ffDraw()
+    else if id = "cable-crawl"
+        ccDraw()
+    else if id = "case-stack"
+        csDraw()
+    else
+        ppDraw()
+    end if
+end sub
+
+sub gamePress(key as string)
+    id = m.gameId
+    if id = "buffer-run"
+        brPress(key)
+    else if id = "fast-forward"
+        ffPress(key)
+    else if id = "cable-crawl"
+        ccPress(key)
+    else if id = "case-stack"
+        csPress(key)
+    else
+        ppPress(key)
+    end if
+end sub
+
+' Every key stays in the arcade, so nothing reaches settings underneath
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        ' A key let go while paused still stops the scrubber
+        if m.gameId = "pixel-purge" then ppRelease(key)
+        return true
+    end if
+    if m.mode = "play"
+        if key = "back" then pauseGame() else gamePress(key)
+    else if m.mode = "menu"
+        menuKey(key)
+    else if m.mode = "pause"
+        pauseKey(key)
+    else if m.mode = "over"
+        overKey(key)
+    else if m.mode = "howto"
+        howToKey(key)
+    else if m.mode = "boards" and (key = "back" or key = "OK")
+        ahUiSound("back")
+        showMenu()
+    end if
+    return true
+end function

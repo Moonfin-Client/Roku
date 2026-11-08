@@ -295,6 +295,9 @@ def write_images():
     bubble = round(12 * dp)
     write_fill(os.path.join(IMAGES_OUT, 'bubble20.9.png'), bubble)
     write_stroke(os.path.join(IMAGES_OUT, 'bubble20s.9.png'), bubble, dp)
+    # A checklist dialog's buttons: Save is 8 units round and the text buttons focus as a 40 unit pill, as in Core
+    write_fill(os.path.join(IMAGES_OUT, 'round13.9.png'), round(8 * dp))
+    write_fill(os.path.join(IMAGES_OUT, 'pill33.9.png'), round(20 * dp))
     write_fill(os.path.join(IMAGES_OUT, 'pill26.9.png'), 26)
     write_stroke(os.path.join(IMAGES_OUT, 'pill26s3.9.png'), 26, 2 * dp)
     write_fill(os.path.join(IMAGES_OUT, 'round3.9.png'), 3)

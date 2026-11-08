@@ -1,0 +1,114 @@
+import "pkg:/source/utils/libraryCard.bs"
+import "pkg:/source/utils/libraryFilters.bs"
+import "pkg:/source/utils/libraryGroupBy.bs"
+import "pkg:/source/utils/librarySorts.bs"
+import "pkg:/source/utils/misc.bs"
+
+' What the settings preview needs for its copy of the video library screen: where each style puts
+' the grid, how many cards fill it, and what the library asks the server for and shows in its
+' controls. The measurements are the real screen's, so they follow it when it changes.
+namespace libraryPreview
+
+    ' The grid's left edge, top, width and the height it has above the screen's bottom margin
+    function Frame(style as string) as object
+        if style = "modern" then return { left: 87, top: 380, width: libraryCard.GRID_WIDTH, room: 1056 - 380 }
+        if style = "docked" then return { left: 498, top: 200, width: 1335, room: 1056 - 200 }
+        return { left: 87, top: 316, width: libraryCard.GRID_WIDTH, room: 1056 - 316 }
+    end function
+
+    ' A row that only peeks in above the bottom margin still counts
+    function RowsShown(room as integer, cellHeight as integer) as integer
+        rows = Int(room / cellHeight)
+        if rows * cellHeight < room then rows = rows + 1
+        return rows
+    end function
+
+    ' Enough cards to fill the fullest grid any style, shape or caption setting draws, so trying
+    ' one never asks the server again
+    function PageSize(posterSize as string) as integer
+        most = 0
+        for each styleName in ["classic", "modern", "docked"]
+            area = libraryPreview.Frame(styleName)
+            for each shape in ["poster", "thumbnail"]
+                metrics = libraryCard.Metrics(posterSize, shape, false, false, false, area.width)
+                cards = metrics.columns * libraryPreview.RowsShown(area.room, metrics.cellHeight)
+                if cards > most then most = cards
+            end for
+        end for
+        return most
+    end function
+
+    ' The artwork the cards use: the library's own pick from its Display menu, or what Library
+    ' Image Orientation says when there is none
+    function CardShape(orientation as dynamic, picked as dynamic) as string
+        if inArray(["poster", "thumbnail", "banner"], picked) then return picked
+        if isStringEqual(orientation, "landscape") then return "thumbnail"
+        return "poster"
+    end function
+
+    ' The first page the library's own screen asks for, from the sort and filters it saved, and
+    ' what its controls say about them. A music library lists the artists or the albums, whichever
+    ' its grid last showed.
+    function Request(library as object, settings as object, grouped as boolean) as object
+        id = toString(library.id)
+        series = isStringEqual(library.collectionType, "tvshows")
+        music = isStringEqual(library.collectionType, "music")
+        kind = { series: series, movieOrSeries: not music, music: music }
+
+        sortKey = librarySorts.KeyFor(settings[`display.${id}.sortField`], kind)
+        if sortKey = "" then sortKey = "SortName"
+        chosen = librarySorts.Chosen(sortKey, kind)
+        ascending = toString(settings[`display.${id}.sortAscending`]) <> "false"
+
+        filters = libraryFilters.EmptyState()
+        stored = toString(settings[`display.${id}.filterState`])
+        parsed = invalid
+        if stored <> "" then parsed = ParseJson(stored)
+        if type(parsed) = "roAssociativeArray"
+            for each key in parsed
+                if filters.DoesExist(key) then filters[key] = parsed[key]
+            end for
+        end if
+        played = tr("All")
+        for each option in libraryFilters.PlayedOptions()
+            if isStringEqual(option.value, filters.played) then played = option.label
+        end for
+
+        itemType = "Movie"
+        if series then itemType = "Series"
+        excluded = "BoxSet"
+        if grouped
+            itemType = itemType + ",BoxSet"
+            excluded = ""
+        end if
+        if music
+            excluded = ""
+            itemType = "MusicArtist"
+            landing = settings[`display.${id}.landing`] ?? settings["display.musicartistlibrary.defaultview"]
+            if isStringEqual(landing, "Albums") then itemType = "MusicAlbum"
+        end if
+
+        groupBy = libraryGroupBy.Normalize(settings[`library_groupBy_${id}`])
+        if music then groupBy = "none"
+        return {
+            task: {
+                itemId: id,
+                itemType: itemType,
+                excludeItemTypes: excluded,
+                collapseBoxSetItems: grouped,
+                recursive: true,
+                sortField: chosen.field,
+                sortAscending: ascending,
+                filterState: filters,
+                limit: libraryPreview.PageSize(libraryCard.PosterSize(settings["ui.library.posterSize"], settings["ui.posterSize"]))
+            },
+            sortLabel: chosen.label,
+            sortOrder: ascending ? "Ascending" : "Descending",
+            playedLabel: played,
+            groupLabel: libraryGroupBy.Label(groupBy),
+            imagePick: toString(settings[`library_imageType_${id}`]),
+            letters: toString(settings[`library_letterNav_${id}`]) <> "off" and groupBy = "none"
+        }
+    end function
+
+end namespace

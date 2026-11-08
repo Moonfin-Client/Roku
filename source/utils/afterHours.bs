@@ -1,0 +1,193 @@
+import "pkg:/source/utils/galleryGlow.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Moonfin After Hours, the arcade behind seven presses of Version in Settings > About. This is the
+' part that doesn't draw: the lineup, the press count, the boards and the Case Stack shelf.
+const AFTER_HOURS_PRESSES = 7
+' Presses further apart than this start the count over, so scrolling past can't open it
+const AFTER_HOURS_PRESS_WINDOW_MS = 3000
+' The plugin refuses anything bigger
+const AFTER_HOURS_MAX_SCORE = 9999999
+' Kept on the device as "true" or "false"
+const AFTER_HOURS_SOUND_SETTING = "afterHours.sound"
+const AFTER_HOURS_BOARD_SETTING = "afterHours.board."
+' Set once Start is pressed on a game's How to play card, which then stops opening by itself
+const AFTER_HOURS_SEEN_SETTING = "afterHours.seen."
+
+namespace afterHours
+
+    ' The five games in the order they sit in the arcade. Ids are what the server and the registry
+    ' use. Names stay as they are in every language, the rest goes through tr.
+    function Games() as object
+        return [
+            { id: "buffer-run", name: "Buffer Run", genre: "Endless runner with a gravity flip", pitch: "The runner from the loading screen finally gets somewhere to go.", remote: "OK jumps, again mid-air to flip sides. Down slides. On the ceiling Up and Down swap." },
+            { id: "fast-forward", name: "Fast Forward", genre: "Three-lane runner", pitch: "A sprint down three lobby aisles.", remote: "Up and Down change lanes. OK jumps." },
+            { id: "cable-crawl", name: "Cable Crawl", genre: "Grid crawler", pitch: "Steer an HDMI cable around the back of the TV cabinet and plug into signal.", remote: "Arrows turn. The cable never stops." },
+            { id: "case-stack", name: "Case Stack", genre: "One-button stacker", pitch: "Build a shelf-high tower of Blu-ray cases, each one a title from your own library.", remote: "OK drops the case." },
+            { id: "pixel-purge", name: "Pixel Purge", genre: "Paddle breaker", pitch: "A bad encode left the picture full of blocky artifacts, and they creep down a little every second.", remote: "Left and Right slide the scrubber." }
+        ]
+    end function
+
+    ' What a game's How to play card lists, as enemies, obstacles and powerups. Each entry is the
+    ' sprite, its name, its line, and the scale and the offset down and across that center it in
+    ' its 44 unit icon box. Names and lines go through tr.
+    function Cast(id as string) as object
+        casts = {
+            "buffer-run": [
+                [["lagBat", "Lag Bat", "Swoops in at head height. Slide under it.", 1.6, 0, 0], ["gremlin", "Static Gremlin", "Hops along the floor or the ceiling toward you. Jump it.", 1.6, 0, 0]],
+                [["cable", "Cable Coil", "Low on the floor or the ceiling. Jump it.", 1.25, 0, 0], ["cast_banner", "Buffering Banner", "Slide under the sign. Its pole is a wall on the other side.", 0.95, 9, 0]],
+                [["directPlay", "Direct Play", "A shield that takes one hit.", 1.5, 0, 0], ["skipIntro", "Skip Intro", "Three seconds of dash that smashes anything.", 1.3, 0, 0], ["popcorn", "Popcorn", "25 points a piece.", 1.8, 0, 0]]
+            ],
+            "fast-forward": [
+                [["rollingReel", "Loose Reel", "Rolls down your lane faster than you run. Jump it.", 1.5, 0, 0], ["usher", "Usher", "Walks toward you and changes lanes once.", 0.95, 1, 8]],
+                [["velvetRope", "Velvet Rope", "Low. Jump it or change lanes.", 1.2, 0, 0], ["popcornCart", "Popcorn Cart", "Too tall to jump. Change lanes.", 0.8, 2, 0]],
+                [["frontRowPass", "Front Row Pass", "A shield that takes one hit.", 1.3, 1, 0], ["magnet", "Magnet", "Pulls in tickets from every lane for eight seconds.", 1.5, -1, 0], ["ticket", "Ticket", "25 points a piece.", 1.8, 0, 0]]
+            ],
+            "cable-crawl": [
+                [["bug", "Interference Bug", "Wanders at random.", 1.8, 0, 0], ["tangle", "Tangle", "Slowly chases your plug.", 1.8, 0, 0]],
+                [["staticBlock", "Static", "A dead cell. One appears every third signal.", 1.8, 0, 0], ["brick", "Power Brick", "A 2 by 2 block every fifth signal.", 1.1, 0, 0]],
+                [["ghost", "Ghost", "Five seconds of passing through everything but the edge.", 1.8, 0, 0], ["snip", "Snip", "Cuts the cable in half for bonus points.", 1.8, 0, 0], ["signal", "Signal", "Points, and two more segments.", 2, 0, 0]]
+            ],
+            "case-stack": [
+                [["shelfCat", "Shelf Cat", "Bats a case as it comes in, so that one slides faster.", 1.2, 0, 0]],
+                [["cast_bluCase", "Blu-ray Case", "A title from your library. The overhang gets trimmed off.", 1.2, 0, 0], ["cast_steelbook", "Steelbook", "Every tenth case. Slides much faster.", 1.2, 0, 0]],
+                [["perfect", "Perfect Drop", "Land it dead on and the stack grows a little wider.", 1.3, 0, 0], ["cast_boxSet", "Box Set", "Three perfect drops in a row grow it a lot wider.", 1.3, 0, 0]]
+            ],
+            "pixel-purge": [
+                [["deadPixel", "Dead Pixel", "Falls from cleared blocks. Catching it shrinks the scrubber.", 1.3, 0, 0]],
+                [["cast_macroblock", "Macroblock", "One hit clears it.", 1.2, 0, 0], ["cast_keyframe", "Keyframe", "Takes three hits and drops a powerup.", 1.3, 0, 0]],
+                [["hdr", "HDR", "A scrubber twice as wide for eight seconds.", 1.3, 0, 0], ["bufferNet", "Buffer", "A net under the scrubber that saves one miss.", 1.4, 0, 0]]
+            ]
+        }
+        return casts[id]
+    end function
+
+    ' How many presses of Version count after this one. lastMs is when the one before landed, or
+    ' invalid when there wasn't one.
+    function Press(count as integer, lastMs as dynamic, nowMs as dynamic) as integer
+        if lastMs = invalid or nowMs - lastMs > AFTER_HOURS_PRESS_WINDOW_MS then count = 0
+        if count >= AFTER_HOURS_PRESSES then count = 0
+        return count + 1
+    end function
+
+    ' The toast for a press count, from the third press on. Empty before that.
+    function PressToast(count as integer) as string
+        if count < 3 then return ""
+        left = AFTER_HOURS_PRESSES - count
+        if left <= 0 then return tr("After Hours unlocked")
+        if left = 1 then return tr("1 more press")
+        return Substitute(tr("{0} more presses"), left.ToStr())
+    end function
+
+    function IsNumber(value as dynamic) as boolean
+        kind = LCase(type(value))
+        return kind = "integer" or kind = "roint" or kind = "rointeger" or kind = "longinteger" or kind = "rolonginteger" or kind = "float" or kind = "rofloat" or kind = "double" or kind = "rodouble"
+    end function
+
+    ' A board from the server or the registry, as rows of { userName, score }, best first and
+    ' three at most. Anything that isn't a row is skipped.
+    function ParseBoard(data as dynamic) as object
+        rows = []
+        if type(data) <> "roArray" then return rows
+        for each row in data
+            if type(row) = "roAssociativeArray"
+                name = row.LookupCI("userName")
+                score = row.LookupCI("score")
+                if isString(name) and afterHours.IsNumber(score) then rows.push({ userName: name, score: Int(score) })
+            end if
+            if rows.count() = 3 then exit for
+        end for
+        return rows
+    end function
+
+    ' Adds a finished run to a board kept on the device, the way the plugin keeps its own. Each name
+    ' holds only its best, a tie goes to the run that got there first, and three rows stay. Answers
+    ' { board, rank }, where rank is 0 when the run isn't a new best or misses the board.
+    function AddRun(board as object, userName as string, score as integer) as object
+        others = []
+        best = invalid
+        for each row in board
+            if row.userName = userName
+                best = row
+            else
+                others.push(row)
+            end if
+        end for
+
+        if isValid(best) and best.score >= score then return { board: board, rank: 0 }
+
+        added = { userName: userName, score: score }
+        rows = []
+        place = -1
+        for each row in others
+            if place < 0 and score > row.score
+                place = rows.count()
+                rows.push(added)
+            end if
+            rows.push(row)
+        end for
+        if place < 0
+            place = rows.count()
+            rows.push(added)
+        end if
+
+        while rows.count() > 3
+            rows.Pop()
+        end while
+        rank = 0
+        if place < 3 then rank = place + 1
+        return { board: rows, rank: rank }
+    end function
+
+    ' 18420 as "18,420"
+    function FormatScore(score as integer) as string
+        digits = Abs(score).ToStr()
+        out = ""
+        while digits.Len() > 3
+            out = "," + digits.Right(3) + out
+            digits = digits.Left(digits.Len() - 3)
+        end while
+        out = digits + out
+        if score < 0 then out = "-" + out
+        return out
+    end function
+
+    function ClampScore(score as dynamic) as integer
+        if not afterHours.IsNumber(score) then return 0
+        whole = Int(score)
+        if whole < 0 then return 0
+        if whole > AFTER_HOURS_MAX_SCORE then return AFTER_HOURS_MAX_SCORE
+        return whole
+    end function
+
+    ' Dark text on a light spine and white on a dark one, from the spine's "#RRGGBB"
+    function IsLightColor(hex as string) as boolean
+        if hex.Len() < 7 then return false
+        red = Val(hex.Mid(1, 2), 16)
+        green = Val(hex.Mid(3, 2), 16)
+        blue = Val(hex.Mid(5, 2), 16)
+        return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255 > 0.55
+    end function
+
+    ' Case Stack's shelf: the media bar's titles in capitals, each spine colored by its genres the
+    ' way the gallery glow is. Without media bar titles it falls back to a short list of words that
+    ' fit any shelf, already translated by the caller.
+    function Shelf(items as dynamic, fallback as object) as object
+        cases = []
+        if type(items) = "roArray"
+            for each item in items
+                if type(item) = "roAssociativeArray" and isString(item.title) and item.title <> ""
+                    cases.push({ title: UCase(item.title), color: galleryGlow.ForGenres(item.genres) })
+                end if
+            end for
+        end if
+        if cases.count() > 0 then return cases
+
+        tones = ["#00A4DC", "#FF6B85", "#FFC94A", "#AA5CC3", "#5EF2C0", "#7D8BD6"]
+        for i = 0 to fallback.count() - 1
+            cases.push({ title: UCase(fallback[i]), color: tones[i mod tones.count()] })
+        end for
+        return cases
+    end function
+
+end namespace

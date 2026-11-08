@@ -1,4 +1,5 @@
 import "pkg:/components/anime/animeMarkerWatch.bs"
+import "pkg:/components/posterLabels/posterLabelsDraw.bs"
 import "pkg:/components/recordings/incompleteRecordingWatch.bs"
 import "pkg:/source/api/baserequest.bs"
 import "pkg:/source/api/Image.bs"
@@ -29,11 +30,14 @@ const MODERN_TEXT_GAP = 5
 ' solid ground it sits on. ColorPalette only carries part opaque blacks.
 const BROWSE_TILE_INSET = 24
 const BROWSE_TILE_BACKGROUND = "0x000000FF"
+const STUDIO_LOGO_TILE_BACKGROUND = "0xFFFFFF1A"
 
 sub init()
     m.seeAllCard = false
     findNodes()
     m.itemPoster.observeField("loadStatus", "onPosterLoadStatusChanged")
+    m.posterRetryUri = ""
+    m.posterRetries = 0
     setColors()
 
     ' Modern rows slide neighbors aside to make room for the focused landscape
@@ -62,7 +66,8 @@ sub setColors()
     colors = chainLookupReturn(m.global.session, "user.settings", {})
     if isValid(m.itemProgress) then m.itemProgress.blendColor = colors.colorHomeRowItemProgress ?? ColorPalette.TRIADBLUE
     if isValid(m.itemProgressBackground) then m.itemProgressBackground.blendColor = colors.colorHomeRowItemProgressBackground ?? ColorPalette.BLACK90
-    if isValid(m.backdrop) then m.backdrop.color = colors.colorHomeRowItemBackground ?? ColorPalette.ELEMENTBACKGROUND
+    m.cardBackground = colors.colorHomeRowItemBackground ?? ColorPalette.ELEMENTBACKGROUND
+    if isValid(m.backdrop) then m.backdrop.color = m.cardBackground
     if isValid(m.itemText) then m.itemText.color = colors.colorHomeRowItemTitle ?? ColorPalette.WHITE
     if isValid(m.posterText) then m.posterText.color = colors.colorHomeRowItemTitle ?? ColorPalette.WHITE
     if isValid(m.itemIcon) then m.itemIcon.blendcolor = colors.colorHomeMyListIcon ?? ColorPalette.WHITE
@@ -259,6 +264,7 @@ sub itemContentChanged()
     m.animeAboveProgress = (itemData.LookupCI("PlayedPercentage") ?? 0) > 0
     watchAnimeMarker(itemData, json, true)
     watchIncompleteRecording(chainLookupReturn(json, "Id", ""))
+    showPosterLabels(itemData.LookupCI("posterLabels"))
 
     if isAllValid([m.itemIcon, itemData.iconUrl])
         m.itemIcon.uri = itemData.iconUrl
@@ -349,6 +355,11 @@ sub itemContentChanged()
 
     if itemDataType = "seerrbrowse" or itemDataType = "seerrshortcut"
         displayBrowseTileInfo(itemData)
+        return
+    end if
+
+    if itemDataType = ItemType.STUDIO
+        displayStudioInfo(itemData)
         return
     end if
 
@@ -494,7 +505,7 @@ end sub
 
 ' A studio or network tile carries a wide logo rather than a poster, so it sits whole and
 ' smaller inside the card on a dark ground instead of being cropped to fill it
-sub displayBrowseTileInfo(itemData as object)
+sub displayBrowseTileInfo(itemData as object, background = BROWSE_TILE_BACKGROUND as string)
     m.itemText.text = itemData.name
     ' The name already sits under the card, so the placeholder would only cover the logo
     showPosterText(false)
@@ -508,7 +519,7 @@ sub displayBrowseTileInfo(itemData as object)
     m.itemPoster.uri = itemData.posterURL
     m.posterMask.maskUri = ""
     m.posterMask.maskSize = [0, 0]
-    m.backdrop.color = BROWSE_TILE_BACKGROUND
+    m.backdrop.color = background
     m.backdrop.visible = true
 end sub
 
@@ -523,9 +534,34 @@ end function
 ' to fill its card has to leave it alone
 function isBrowseTile() as boolean
     itemType = LCase(chainLookupReturn(m.top.itemContent, "type", ""))
+    if itemType = "studio" then return chainLookupReturn(m.top.itemContent, "json.MoonfinStudioLogo", false) = true
 
     return itemType = "seerrbrowse" or itemType = "seerrshortcut"
 end function
+
+' A studio Moonbase has a TMDB logo for shows it whole on a faint card. Any other studio shows
+' its own art, or its name when it has none.
+sub displayStudioInfo(itemData as object)
+    if isBrowseTile()
+        displayBrowseTileInfo(itemData, STUDIO_LOGO_TILE_BACKGROUND)
+        return
+    end if
+
+    m.itemText.text = itemData.name
+    ' A recycled cell may still be set up for a logo tile
+    m.itemPoster.loadDisplayMode = "scaleToZoom"
+    m.itemPoster.translation = [0, 0]
+    if isValid(m.cardBackground) then m.backdrop.color = m.cardBackground
+    if isValidAndNotEmpty(itemData.posterURL) or isValidAndNotEmpty(itemData.thumbnailURL) or isValidAndNotEmpty(itemData.widePosterURL)
+        showCardArt(itemData)
+        return
+    end if
+
+    setCardArt("")
+    m.posterMask.visible = false
+    m.backdrop.visible = true
+    showPosterText(true)
+end sub
 
 sub displayCollectionInfo(itemData as object)
     m.itemText.text = itemData.name
@@ -593,7 +629,7 @@ end sub
 
 sub displaySeriesInfo(itemData as object)
     m.itemText.text = itemData.name
-    m.itemSubtext.text = productionYear(itemData)
+    m.itemSubtext.text = cardSubline(itemData)
     showCardArt(itemData)
 end sub
 
@@ -651,7 +687,7 @@ end sub
 
 sub displayMovieInfo(itemData as object)
     m.itemText.text = itemData.name
-    m.itemSubtext.text = productionYear(itemData)
+    m.itemSubtext.text = cardSubline(itemData)
 
     if itemData.PlayedPercentage > 0
         drawProgressBar(itemData)
@@ -729,6 +765,13 @@ sub showModernEpisodeText(itemData as object)
     m.itemText.text = titleText
 end sub
 
+' A calendar card says when it releases, and any other card shows its year
+function cardSubline(itemData as object) as string
+    releaseText = chainLookupReturn(itemData.json, "Subtitle", "")
+    if isValidAndNotEmpty(releaseText) then return releaseText
+    return productionYear(itemData)
+end function
+
 function productionYear(itemData as object) as string
     year = chainLookupReturn(itemData.json, "ProductionYear", 0)
     if year > 0 then return year.toStr()
@@ -750,11 +793,31 @@ end sub
 ' poster so it fades with it when a modern row hands the cell over to the focused card.
 sub showAnimeMarker(marker as dynamic)
     m.animeCardPill = drawAnimeCardPill(m.animeCardPill, m.itemPoster, marker, m.itemPoster.width, m.itemPoster.height, m.animeAboveProgress)
+    if isValid(m.posterLabels) and m.posterLabels.visible then m.posterLabels.frame = posterLabelSpots()
 end sub
 
 sub showIncompleteRecording(entry as dynamic)
     m.incompleteBadge = drawIncompleteBadge(m.incompleteBadge, m.itemPoster, entry, incompleteBadgeSpot(m.playedIndicator))
+    if isValid(m.posterLabels) and m.posterLabels.visible then m.posterLabels.frame = posterLabelSpots()
 end sub
+
+' The admin's labels ride on the poster with the anime pill, so they fade with it too
+sub showPosterLabels(entries as dynamic)
+    if not isValid(entries) and not isValid(m.posterLabels) then return
+    m.posterLabels = drawPosterLabels(m.posterLabels, m.itemPoster, entries, posterLabelSpots(), POSTER_LABEL_CARD_SCALE)
+end sub
+
+' Clear of the heart and the Incomplete badge, the tick or count, and the progress bar and anime pill
+function posterLabelSpots() as object
+    height = m.itemPoster.height
+    topLeft = incompleteBadgeSpot(m.playedIndicator)[1]
+    if isValid(m.incompleteBadge) then topLeft = posterLabelsBelow(m.incompleteBadge, m.incompleteBadge.badgeHeight, topLeft)
+
+    bottom = POSTER_LABEL_EDGE
+    if m.animeAboveProgress then bottom = ANIME_CARD_PILL_ABOVE_PROGRESS
+
+    return posterLabelFrame(m.itemPoster.width, height, topLeft, posterLabelsBelowCheckmark(m.playedIndicator), posterLabelsAbove(m.animeCardPill, height, bottom), bottom)
+end function
 
 '
 ' Enable title scrolling based on item Focus
@@ -861,10 +924,40 @@ sub onModernShiftChanged()
     end if
 end sub
 
+' The card may hold other content by the time the timer fires, so the address that failed is only put
+' back while the card still shows it for the same item
+sub retryPoster()
+    if not isValid(m.top.itemContent) or not m.top.itemContent.isSameNode(m.posterRetryContent) then m.posterRetryUri = ""
+    if not isValidAndNotEmpty(m.posterRetryUri) or m.itemPoster.uri <> m.posterRetryUri or m.itemPoster.loadStatus <> PosterLoadStatus.FAILED then return
+    m.itemPoster.uri = ""
+    m.itemPoster.uri = m.posterRetryUri
+end sub
+
 'Hide backdrop and icon when poster loaded
 sub onPosterLoadStatusChanged()
+    ' Home shows the same cards again on the way back, so a picture that loads gets its retries back
+    if m.itemPoster.loadStatus = PosterLoadStatus.READY then m.posterRetryUri = ""
+
     if m.itemPoster.loadStatus = PosterLoadStatus.FAILED
         thisItemType = chainLookupReturn(m.top.itemContent, "json.type", string.EMPTY)
+        ' A picture that loaded before can fail on the way back to Home, while the screen just left
+        ' still holds the device's memory and connections, so the same address is tried again
+        ' shortly, twice at most, before falling back
+        if m.posterRetryUri <> m.itemPoster.uri
+            m.posterRetryUri = m.itemPoster.uri
+            m.posterRetries = 0
+        end if
+        if m.posterRetryUri <> "" and m.posterRetries < 2
+            m.posterRetries = m.posterRetries + 1
+            m.posterRetryContent = m.top.itemContent
+            if not isValid(m.posterRetryTimer)
+                m.posterRetryTimer = CreateObject("roSGNode", "Timer")
+                m.posterRetryTimer.duration = 1.5
+                m.posterRetryTimer.observeField("fire", "retryPoster")
+            end if
+            m.posterRetryTimer.control = "start"
+            return
+        end if
 
         ' If loading the album poster image failed, try loading the artist image
         if isStringEqual(thisItemType, ItemType.MUSICALBUM)
