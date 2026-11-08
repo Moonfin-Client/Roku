@@ -1,0 +1,229 @@
+import "pkg:/components/posterLabels/posterLabelsDraw.bs"
+import "pkg:/source/utils/fontApply.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Roku pixels per label unit. The cards themselves run at about 1.34, and the labels go a
+' step larger since the system font draws small for its size, so a medium one on a card has the
+' anime pill's type.
+const LABEL_UNIT = 1.9
+
+' A drop shadow under every label, without the blur SceneGraph can't draw
+const LABEL_SHADOW = "#00000059"
+const LABEL_SHADOW_DROP = 2
+
+sub init()
+    m.top.visible = false
+    m.pills = []
+end sub
+
+sub onLabelsChanged()
+    entries = m.top.labels
+    ' A card that's shown again is bound again with the same labels, which stay as they are
+    signature = FormatJson(entries)
+    if signature = m.signature then return
+    m.signature = signature
+
+    m.top.removeChildrenIndex(m.top.getChildCount(), 0)
+    m.pills = []
+    if not isValidAndNotEmpty(entries)
+        m.top.visible = false
+        return
+    end if
+
+    for each entry in entries
+        m.pills.push(buildPill(entry))
+    end for
+
+    ' A theme font draws at its own width, so it goes on before anything is measured
+    fontApply.ApplyThemeFonts(m.top)
+    for each pill in m.pills
+        if isValid(pill.label) then pill.textWidth = pill.label.boundingRect().width
+    end for
+
+    m.top.visible = true
+    placeLabels()
+end sub
+
+' A label's shadow, fill, border, icon or flag, and text, laid out but for its width, which
+' placeLabels sets once it knows the room the card has
+function buildPill(entry as object) as object
+    unit = entry.size * m.top.labelScale * LABEL_UNIT
+    fontSize = fontApply.ThemeTextSize(Int(10 * unit + 0.5))
+    lineHeight = Int(fontSize * 1.26 + 0.5)
+    group = m.top.createChild("Group")
+    pill = { node: group, corner: entry.corner, layers: [], label: invalid, textWidth: 0 }
+
+    ' A flag alone gets no fill or padding, and is as tall as a text label so its edge lines up
+    ' with the labels around it
+    if entry.text = "" and entry.flag <> ""
+        pill.height = lineHeight + Int(4 * unit + 0.5)
+        pill.fixed = Int(pill.height * 4 / 3 + 0.5)
+        pill.layers.push(shapeLayer(group, 0, false, LABEL_SHADOW, pill.height, LABEL_SHADOW_DROP))
+        flagImage(group, entry.flag, pill.fixed, pill.height, 0, 0)
+        return pill
+    end if
+
+    hasText = entry.text <> ""
+    iconWidth = 0
+    iconHeight = 0
+    if entry.icon <> ""
+        iconWidth = Int(fontSize * 1.25 + 0.5)
+        iconHeight = iconWidth
+    else if entry.flag <> ""
+        iconWidth = Int(fontSize * 4 / 3 + 0.5)
+        iconHeight = fontSize
+    end if
+
+    contentHeight = iconHeight
+    if hasText and lineHeight > contentHeight then contentHeight = lineHeight
+    padV = Int(2 * unit + 0.5)
+    pill.height = contentHeight + padV * 2
+
+    ' An icon alone sits in a squarer pill
+    padH = Int(6 * unit + 0.5)
+    if not hasText then padH = Int(3 * unit + 0.5)
+    pill.fixed = padH * 2 + iconWidth
+
+    radius = cornerRadius(entry.shape, unit, pill.height)
+    pill.layers.push(shapeLayer(group, radius, false, LABEL_SHADOW, pill.height, LABEL_SHADOW_DROP))
+    pill.layers.push(shapeLayer(group, radius, false, entry.fill, pill.height, 0))
+    if entry.border <> "" then pill.layers.push(shapeLayer(group, radius, true, entry.border, pill.height, 0))
+
+    x = padH
+    iconTop = padV + Int((contentHeight - iconHeight) / 2)
+    if entry.icon <> ""
+        glyph = group.createChild("Poster")
+        glyph.uri = entry.icon
+        glyph.width = iconWidth
+        glyph.height = iconHeight
+        glyph.blendColor = entry.textColor
+        glyph.translation = [x, iconTop]
+    else if entry.flag <> ""
+        flagImage(group, entry.flag, iconWidth, iconHeight, x, iconTop)
+    end if
+
+    if not hasText then return pill
+
+    if iconWidth > 0
+        gap = Int(3 * unit + 0.5)
+        x += iconWidth + gap
+        pill.fixed += gap
+    end if
+
+    label = group.createChild("Label")
+    label.font = "font:SmallestBoldSystemFont"
+    label.font.size = fontSize
+    label.color = entry.textColor
+    label.text = entry.text
+    label.height = lineHeight
+    label.vertAlign = "center"
+    label.ellipsisText = "..."
+    label.translation = [x, padV + Int((contentHeight - lineHeight) / 2)]
+    pill.label = label
+    return pill
+end function
+
+sub flagImage(parent as object, uri as string, width as integer, height as integer, x as integer, y as integer)
+    flag = parent.createChild("Poster")
+    flag.loadDisplayMode = "scaleToZoom"
+    flag.loadWidth = width
+    flag.loadHeight = height
+    flag.width = width
+    flag.height = height
+    flag.translation = [x, y]
+    flag.uri = uri
+end sub
+
+' The 9-patches come in a few radii, so a label takes the one nearest the radius it asks for. A pill takes the
+' roundest one its height allows, since a 9-patch with corners taller than the label would warp.
+function cornerRadius(shape as string, unit as float, height as integer) as integer
+    if shape = "square" then return 0
+
+    most = height / 2
+    target = most
+    if shape = "rounded" then target = 4 * unit
+
+    best = 6
+    for each radius in [10, 12, 15, 17]
+        if radius <= most and Abs(radius - target) < Abs(best - target) then best = radius
+    end for
+    return best
+end function
+
+' A fill, border or shadow across the whole label, square or rounded off at the radius. White
+' 9-patches tinted to the color, and a plain rectangle where there are no corners to round.
+function shapeLayer(parent as object, radius as integer, isBorder as boolean, color as string, height as integer, drop as integer) as object
+    if radius = 0 and not isBorder
+        layer = parent.createChild("Rectangle")
+        layer.color = color
+    else
+        layer = parent.createChild("Poster")
+        if radius = 0
+            layer.uri = "pkg:/images/posterLabels/square_ring.9.png"
+        else if isBorder
+            layer.uri = `pkg:/images/livetv/stroke${radius}w1_5.9.png`
+        else
+            layer.uri = `pkg:/images/livetv/fill${radius}.9.png`
+        end if
+        layer.blendColor = color
+    end if
+
+    layer.height = height
+    layer.translation = [0, drop]
+    return layer
+end function
+
+' Each corner's stack runs away from its corner, a bottom one upwards so its first label sits in the
+' corner. A label too wide for the artwork cuts its text short.
+sub placeLabels()
+    frame = m.top.frame
+    if m.pills.count() = 0 or not isValid(frame) then return
+
+    width = frame.width
+    height = frame.height
+    room = width - POSTER_LABEL_EDGE * 2
+    gap = Int(4 * m.top.labelScale * LABEL_UNIT + 0.5)
+    reach = {
+        topleft: frame.topLeft,
+        topright: frame.topRight,
+        bottomleft: height - frame.bottomLeft,
+        bottomright: height - frame.bottomRight
+    }
+
+    for each pill in m.pills
+        pillWidth = sizePill(pill, room)
+        corner = pill.corner
+
+        x = POSTER_LABEL_EDGE
+        if corner = "topright" or corner = "bottomright" then x = width - POSTER_LABEL_EDGE - pillWidth
+
+        if corner = "bottomleft" or corner = "bottomright"
+            y = reach[corner] - pill.height
+            reach[corner] = y - gap
+        else
+            y = reach[corner]
+            reach[corner] = y + pill.height + gap
+        end if
+
+        pill.node.translation = [Int(x), Int(y)]
+    end for
+end sub
+
+function sizePill(pill as object, room as float) as integer
+    textWidth = pill.textWidth
+    if room > 0 and pill.fixed + textWidth > room then textWidth = room - pill.fixed
+    if textWidth < 0 then textWidth = 0
+
+    if isValid(pill.label)
+        pill.label.visible = textWidth > 0
+        ' Left to size itself unless it has to be cut, so a label that fits never gains an ellipsis
+        pill.label.width = 0
+        if textWidth < pill.textWidth then pill.label.width = textWidth
+    end if
+
+    width = Int(pill.fixed + textWidth + 0.5)
+    for each layer in pill.layers
+        layer.width = width
+    end for
+    return width
+end function

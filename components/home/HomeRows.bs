@@ -75,6 +75,11 @@ sub init()
     m.top.setfocus(true)
 
     m.top.observeField("rowItemSelected", "itemSelected")
+    ' Recently Added rows grow as the viewer nears their end: the request each row was made
+    ' from, the rows waiting on a bigger page, and the rows the server has no more for
+    m.latestRequests = {}
+    m.latestLoadingMore = {}
+    m.latestExhausted = {}
     m.top.observeField("rowItemFocused", "loadRowsNearFocus")
     m.top.observeField("translation", "fitRowCount")
     m.heldBackRows = {}
@@ -1014,6 +1019,7 @@ sub createLatestInRows()
 
                 metadata = { "title": firstLib.name, "contentType": colType, "sectionName": sectionName }
                 loadLatest.metadata = metadata
+                m.latestRequests[sectionName] = { itemIds: libIds, itemId: firstLib.id, metadata: metadata }
 
                 loadLatest.observeField("content", "updateLatestItems")
                 loadLatest.control = TaskControl.RUN
@@ -1042,6 +1048,7 @@ sub createLatestInRows()
                 metadata = { "title": lib.name }
                 metadata.Append({ "contentType": lib.json.CollectionType, "sectionName": sectionName })
                 loadLatest.metadata = metadata
+                m.latestRequests[sectionName] = { itemIds: [], itemId: lib.id, metadata: metadata }
 
                 loadLatest.observeField("content", "updateLatestItems")
                 loadLatest.control = TaskControl.RUN
@@ -2051,6 +2058,8 @@ sub updateLatestItems(msg)
     node.content = []
 
     sectionName = node.metadata.sectionName ?? (tr("Recently Added in") + " " + node.metadata.title)
+    ' A reload starts the row over from its first page
+    m.latestExhausted.Delete(sectionName)
 
     if not isValidAndNotEmpty(itemData)
         removeHomeSection(sectionName)
@@ -2066,6 +2075,81 @@ sub updateLatestItems(msg)
     end for
 
     addOrUpdateHomeRow(row, sectionName, "latestmedia")
+end sub
+
+' Within this many items of a Recently Added row's end, the row asks for more (as Moonfin Core)
+const LATEST_MORE_WITHIN = 5
+const LATEST_MORE_STEP = 15
+const LATEST_MORE_MAX = 100
+
+' loadMoreNearRowEnd: Asks for a bigger page of a Recently Added row once focus nears its end.
+' Home calls it from its own focus handler.
+' The latest endpoint takes no offset, so the row is asked again with a larger limit (as Core)
+sub loadMoreNearRowEnd()
+    focused = m.top.rowItemFocused
+    if not isValid(focused) or focused.count() < 2 or not isValid(m.top.content) then return
+    row = m.top.content.getChild(focused[0])
+    if not isValid(row) or row.id <> "latestmedia" then return
+    sectionName = row.title
+    count = row.getChildCount()
+    if focused[1] < count - LATEST_MORE_WITHIN or count >= LATEST_MORE_MAX then return
+    if m.latestLoadingMore.DoesExist(sectionName) or m.latestExhausted.DoesExist(sectionName) then return
+    request = m.latestRequests[sectionName]
+    if not isValid(request) then return
+
+    m.latestLoadingMore[sectionName] = true
+    task = createObject("roSGNode", "LoadItemsTask")
+    task.itemsToLoad = "latest"
+    task.itemIds = request.itemIds
+    task.itemId = request.itemId
+    task.metadata = request.metadata
+    limit = count + LATEST_MORE_STEP
+    if limit > LATEST_MORE_MAX then limit = LATEST_MORE_MAX
+    task.limit = limit
+    task.observeField("content", "appendMoreLatestItems")
+    task.control = TaskControl.RUN
+end sub
+
+' appendMoreLatestItems: Adds the items a bigger page brought that the row doesnt have yet. A
+' page with nothing new means the server has no more for the row
+sub appendMoreLatestItems(msg)
+    node = msg.getRoSGNode()
+    node.unobserveField("content")
+    itemData = msg.GetData()
+    node.content = []
+    sectionName = node.metadata.sectionName
+    m.latestLoadingMore.Delete(sectionName)
+
+    row = invalid
+    for i = 0 to m.top.content.getChildCount() - 1
+        child = m.top.content.getChild(i)
+        if child.id = "latestmedia" and child.title = sectionName
+            row = child
+            exit for
+        end if
+    end for
+    if not isValid(row) then return
+
+    have = {}
+    for each child in row.getChildren(-1, 0)
+        have[LCase(toNormalizedString(chainLookupReturn(child, "json.id", "")))] = true
+    end for
+    added = []
+    for each item in itemData ?? []
+        id = LCase(toNormalizedString(chainLookupReturn(item, "json.id", "")))
+        if id <> "" and not have.DoesExist(id)
+            have[id] = true
+            added.push(item)
+        end if
+    end for
+    if added.count() = 0
+        ' Only a page that came back says the server has no more; a failed one is asked again
+        if isValid(itemData) and itemData.count() > 0 then m.latestExhausted[sectionName] = true
+        return
+    end if
+    row.appendChildren(added)
+    ' Cards are laid out for the row's item count, so the new ones get their size too
+    if isValid(m.cardSizeName) then layOutRow(row, m.modernRows, m.cardSizeName)
 end sub
 
 ' updateRecentlyReleasedItems: Processes LoadItemsTask content for recently released items
@@ -2631,6 +2715,15 @@ function calendarsMerged() as boolean
     return get_user_setting_bool("calendar.merge", false) and get_user_setting_bool("calendar.radarr.enabled", false) and get_user_setting_bool("calendar.sonarr.enabled", false)
 end function
 
+' Which calendar a row comes from, under its title
+function arrCalendarSubtitle(sectionKey as string) as string
+    if sectionKey <> "radarr_calendar" and sectionKey <> "sonarr_calendar" then return ""
+    if calendarsMerged() then return tr("Radarr and Sonarr Calendars")
+    if sectionKey = "radarr_calendar" then return tr("Radarr Calendar")
+
+    return tr("Sonarr Calendar")
+end function
+
 function arrCalendarTitle(service as string) as string
     if calendarsMerged() then return tr("Upcoming Releases")
     if service = "radarr" then return tr("Upcoming Movies")
@@ -2724,6 +2817,7 @@ sub updateInternalRowItems(event as object)
 
     row = CreateObject("roSGNode", "HomeRow")
     row.title = config.title
+    row.subtitle = arrCalendarSubtitle(config.sectionKey)
 
     for each item in itemData
         row.appendChild(item)

@@ -2,6 +2,7 @@ import "pkg:/components/setup/setupPreviewDraw.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
 import "pkg:/source/utils/settingsGlyphs.bs"
 import "pkg:/source/utils/settingsSync.bs"
 import "pkg:/source/utils/setupWizardGate.bs"
@@ -63,6 +64,10 @@ sub init()
     m.playbackExpanded = false
     m.playbackIndex = 0
     m.playbackItems = []
+    ' Offered only when the server answered sign-in without Moonbase
+    m.offerMoonbase = chainLookupReturn(m.global.session, "pluginInfo.installed", false) <> true
+    m.moonbaseInstalled = false
+    m.moonbaseIndex = -1
 
     m.itemsTask = createObject("roSGNode", "SetupPreviewItemsTask")
     m.itemsTask.observeFieldScoped("items", "onPreviewItemsLoaded")
@@ -565,14 +570,78 @@ sub drawPlayback()
     end for
 
     m.playbackBottom = drawPath(group, [tr("Settings"), tr("Playback")], `${tr("Audio")}, ${tr("Subtitles")}`, top + 12, PLAYBACK_WIDTH, false, palette)
+
+    m.moonbaseIndex = -1
+    if m.offerMoonbase then drawMoonbaseRow(m.playbackBottom + 24, palette)
+end sub
+
+' Joins the playback panels so the remote reaches it with Down
+sub drawMoonbaseRow(top as integer, palette as object)
+    group = m.playbackGroup
+    panel = drawPlaybackPanel(top, PLAYBACK_HEADER_FOLDED, palette)
+    m.moonbaseIndex = m.playbackItems.count()
+    m.playbackItems.push(panel)
+
+    if m.moonbaseInstalled
+        trailing = setupPreviewDraw.TextLabel(group, tr("Installed"), 0, top, 24, palette.onSurface, true)
+        trailingWidth = trailing.boundingRect().width
+    else
+        trailing = playbackIcon("pkg:/images/icons/chevron-right.webp", 32, 0, top, playbackOverlay.WithAlpha(palette.onSurface, 140))
+        trailingWidth = 32
+    end if
+
+    setupPreviewDraw.TextLabel(group, tr("Add Moonbase to your server"), 68, top + 20, 28, palette.onSurface, true)
+    hint = setupPreviewDraw.TextLabel(group, tr("A free server plugin that unlocks more of Moonfin"), 68, top + 62, 24, playbackOverlay.WithAlpha(palette.onSurface, 166), false)
+    hint.width = PLAYBACK_WIDTH - 68 - 24 - trailingWidth - 24
+    hint.wrap = true
+    hint.maxLines = 2
+
+    ' The panel grows to the hint once it has wrapped
+    height = 62 + hint.boundingRect().height + 20
+    if height < PLAYBACK_HEADER_FOLDED then height = PLAYBACK_HEADER_FOLDED
+    panel.height = height
+    panel.border.height = height
+    panel.hole.height = height - 4
+    panel.fill.height = height - 4
+    glyphLabel(group, "dns", 22, top + (height - 30) / 2, 30, palette.onSurface)
+    if m.moonbaseInstalled
+        trailing.translation = [PLAYBACK_WIDTH - 24 - trailingWidth, top]
+        trailing.height = height
+        trailing.vertAlign = "center"
+    else
+        trailing.translation = [PLAYBACK_WIDTH - 56, top + (height - 32) / 2]
+    end if
+    m.playbackBottom = top + height
+end sub
+
+sub openMoonbase()
+    if m.moonbaseInstalled then return
+    m.moonbaseDialog = CreateObject("roSGNode", "MoonbaseDialog")
+    m.moonbaseDialog.serverType = serverTypeOf()
+    m.moonbaseDialog.isAdmin = chainLookupReturn(m.global.session, "user.Policy.IsAdministrator", false) = true
+    m.moonbaseDialog.observeField("wasClosed", "onMoonbaseClosed")
+    m.top.getScene().appendChild(m.moonbaseDialog)
+    m.moonbaseDialog.callFunc("open")
+end sub
+
+sub onMoonbaseClosed()
+    dialog = m.moonbaseDialog
+    m.moonbaseDialog = invalid
+    if not isValid(dialog) then return
+    dialog.unobserveField("wasClosed")
+    if dialog.installed then m.moonbaseInstalled = true
+    m.top.getScene().removeChild(dialog)
+    drawPlayback()
+    applyFocus()
+    m.top.setFocus(true)
 end sub
 
 ' The rounded box a header or a row sits in, lit up while focused
 function drawPlaybackPanel(top as integer, height as integer, palette as object) as object
     border = setupPreviewDraw.Shape(m.playbackGroup, ROUND16_URI, 0, top, PLAYBACK_WIDTH, height, playbackOverlay.WithAlpha(palette.onSurface, 36))
-    setupPreviewDraw.Shape(m.playbackGroup, ROUND14_URI, 2, top + 2, PLAYBACK_WIDTH - 4, height - 4, palette.background)
+    hole = setupPreviewDraw.Shape(m.playbackGroup, ROUND14_URI, 2, top + 2, PLAYBACK_WIDTH - 4, height - 4, palette.background)
     fill = setupPreviewDraw.Shape(m.playbackGroup, ROUND14_URI, 2, top + 2, PLAYBACK_WIDTH - 4, height - 4, playbackOverlay.WithAlpha(palette.onSurface, 10))
-    return { top: top, height: height, border: border, fill: fill }
+    return { top: top, height: height, border: border, hole: hole, fill: fill }
 end function
 
 ' The row takes the press and the focus, the switch only shows the state
@@ -596,6 +665,10 @@ end function
 
 ' The header folds and unfolds, the switch flips, and a list row opens its picker
 sub selectPlaybackRow()
+    if m.playbackIndex = m.moonbaseIndex
+        openMoonbase()
+        return
+    end if
     if m.playbackIndex = 0
         m.playbackExpanded = not m.playbackExpanded
         drawPlayback()
@@ -609,32 +682,35 @@ sub selectPlaybackRow()
         return
     end if
 
+    ' The same picker settings opens, over the whole wizard, as Core's wizard does
     current = playbackValue(row.key)
-    labels = []
-    details = []
+    choices = []
     selected = -1
     for each choice in row.choices
-        if isStringEqual(choice.id, current) then selected = labels.count()
-        labels.push(tr(choice.title))
-        if row.described = true then details.push(subtitleModeDescription(choice.id))
+        if isStringEqual(choice.id, current) then selected = choices.count()
+        entry = { title: tr(choice.title) }
+        if row.described = true then entry.subtitle = subtitleModeDescription(choice.id)
+        choices.push(entry)
     end for
 
     m.pickerRow = row
-    m.picker = CreateObject("roSGNode", "ListPromptDialog")
-    m.picker.dialogTitle = row.label
-    m.picker.options = labels
-    m.picker.optionDetails = details
-    m.picker.selectedOption = selected
-    m.picker.openOnSelected = true
-    m.picker.returnFocus = m.top
-    m.picker.observeField("optionSelected", "onPlaybackPicked")
+    m.picker = CreateObject("roSGNode", "SettingsPickerDialog")
+    m.picker.area = [0, 0, 1920, 1080]
+    m.picker.title = row.label
+    m.picker.options = choices
+    m.picker.selectedIndex = selected
+    m.picker.observeField("chosen", "onPlaybackPicked")
+    m.picker.observeField("closed", "onPlaybackPicked")
     m.top.getScene().appendChild(m.picker)
-    m.picker.callFunc("showDialog")
+    m.picker.callFunc("open")
 end sub
 
 sub onPlaybackPicked(event as object)
-    index = event.getData()
-    m.picker.unobserveField("optionSelected")
+    index = -1
+    if event.getField() = "chosen" then index = event.getData()
+    m.picker.unobserveField("chosen")
+    m.picker.unobserveField("closed")
+    m.top.setFocus(true)
     m.top.getScene().removeChild(m.picker)
     m.picker = invalid
 

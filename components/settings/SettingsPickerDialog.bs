@@ -1,4 +1,6 @@
+import "pkg:/components/settings/settingsNodes.bs"
 import "pkg:/components/settings/settingsRows.bs"
+import "pkg:/components/settings/settingsStyle.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/settingsMetrics.bs"
 
@@ -6,12 +8,18 @@ sub init()
     m.barrier = m.top.findNode("barrier")
     m.dialog = m.top.findNode("dialog")
     m.dialogFill = m.top.findNode("dialogFill")
+    m.dialogStroke = m.top.findNode("dialogStroke")
     m.dialogTitle = m.top.findNode("dialogTitle")
     m.listGroup = m.top.findNode("listGroup")
     m.optionList = m.top.findNode("optionList")
+    m.buttonFocus = m.top.findNode("buttonFocus")
     m.fadeIn = m.top.findNode("fadeIn")
     m.optionList.observeField("itemSelected", "onOptionSelected")
     m.optionList.observeField("itemFocused", "onOptionFocused")
+    m.rowButtons = []
+    m.cancel = invalid
+    m.focusArea = "list"
+    m.buttonIndex = 0
 end sub
 
 sub onOptionFocused()
@@ -19,10 +27,15 @@ sub onOptionFocused()
     m.top.focusedOption = m.optionList.itemFocused
 end sub
 
-' 280 wide, or a step wider when an option needs it, centered on the settings list
+' A pick from a list is Core's simple dialog, 280 wide or a step of 56 wider, and a list of checks is
+' Core's alert, as wide as the area allows. Both center on the area and keep 40 clear of its sides.
 sub open()
+    ' The setup wizard hands no style, so it gets the one settings screens use
     style = m.top.style
+    if not isValid(style) then style = BuildSettingsStyle(false)
     palette = style.palette
+    m.palette = palette
+    fonts = palette.fonts
     options = m.top.options
     multi = m.top.multi
     checked = m.top.checked ?? []
@@ -31,16 +44,28 @@ sub open()
     m.barrier.width = area[2]
     m.barrier.height = area[3]
 
-    width = settingsMetrics.Px(280)
-    widest = 0.0
-    for each option in options
-        optionWidth = measureTextWidth(option.title, palette.fonts.title)
-        if optionWidth > widest then widest = optionWidth
-    end for
-    if widest + (settingsMetrics.Px(16) + 1) * 2 + settingsMetrics.Px(14 + 24) > width then width = settingsMetrics.Px(336)
+    ' Text widths round up a pixel so a label sized to its text never cuts it short
+    widest = area[2] - settingsMetrics.Px(80)
+    width = widest
+    if not multi
+        natural = Int(measureTextWidth(m.top.title, fonts.dialogTitle)) + 1 + settingsMetrics.Px(48)
+        for each option in options
+            lead = 18 + 14
+            if isValid(option.swatch) then lead = lead + 24 + 14
+            textWidth = measureTextWidth(option.title, fonts.option)
+            if isValidAndNotEmpty(option.subtitle) and measureTextWidth(option.subtitle, fonts.caption) > textWidth then textWidth = measureTextWidth(option.subtitle, fonts.caption)
+            optionWidth = Int(textWidth) + 1 + settingsMetrics.Px(12 * 2 + 14 * 2 + lead)
+            if optionWidth > natural then natural = optionWidth
+        end for
+        width = settingsMetrics.Px(280)
+        while width < natural
+            width = width + settingsMetrics.Px(56)
+        end while
+        if width > widest then width = widest
+    end if
 
-    ' Save and the ticked options lead a list of checks so a long one never buries them. m.order maps
-    ' each row back to its option.
+    ' The ticked options lead a list of checks, in the order they had on open, so a tick never moves
+    ' the row under the cursor. m.order maps each row back to its option.
     m.order = []
     unticked = []
     for i = 0 to options.Count() - 1
@@ -48,15 +73,19 @@ sub open()
     end for
     m.order.Append(unticked)
 
+    rowKind = "option"
+    rowWidth = width
+    if multi
+        rowKind = "tick"
+        rowWidth = width - settingsMetrics.Px(24)
+    end if
     specs = []
-    if multi then specs.push({ kind: "option", title: tr("Save") })
     for each i in m.order
         selected = i = m.top.selectedIndex
         if multi then selected = i < checked.Count() and checked[i] = true
-        specs.push({ kind: "option", title: options[i].title, selected: selected })
+        specs.push({ kind: rowKind, title: options[i].title, subtitle: options[i].subtitle ?? "", swatch: options[i].swatch, selected: selected, glyph: pickerGlyph(multi, selected) })
     end for
-    if multi then specs.push({ kind: "option", title: tr("Cancel") })
-    built = BuildRows(specs, style, width)
+    built = BuildRows(specs, style, rowWidth)
 
     listHeight = 0.0
     for each height in built.heights
@@ -65,74 +94,279 @@ sub open()
 
     inset = settingsMetrics.Px(24)
     titleWidth = width - inset * 2
-    titleLines = measureTextLines(m.top.title, palette.fonts.dialogTitle, titleWidth, 2)
-    titleHeight = titleLines * settingsMetrics.Px(17.8)
-    listTop = inset + titleHeight + settingsMetrics.Px(12)
-    tallest = area[3] - settingsMetrics.Px(48) - listTop - settingsMetrics.Px(16)
+    titleLine = settingsMetrics.LineHeight(18, palette.scale)
+    titleTop = settingsMetrics.Px(22)
+    if multi
+        ' Core sets the checklist's title in NotoSans, whose line is taller
+        titleLine = settingsMetrics.Px(23) * palette.scale
+        titleTop = inset
+    end if
+    titleLines = measureTextLines(m.top.title, fonts.dialogTitle, titleWidth, 2)
+    titleHeight = titleLines * titleLine
+    listTop = titleTop + titleHeight + settingsMetrics.Px(12)
+    buttonTop = listTop
+    bottom = settingsMetrics.Px(12)
+    if multi
+        ' Core's buttons are 40 tall in rows 48 tall, the top row 16 under the title, and Cancel's
+        ' row 24 under the list and 24 over the edge
+        buttonTop = titleTop + titleHeight + settingsMetrics.Px(16 + 4)
+        listTop = buttonTop + settingsMetrics.Px(40 + 4)
+        bottom = settingsMetrics.Px(24 + 48 + 24)
+    end if
+    tallest = area[3] - settingsMetrics.Px(48) - listTop - bottom
     if listHeight > tallest then listHeight = tallest
-    dialogHeight = listTop + listHeight + settingsMetrics.Px(16)
+    dialogHeight = listTop + listHeight + bottom
 
+    ' Core makes the theme's dialog color opaque, and only the pixel theme rings the panel
     m.dialog.translation = [area[0] + (area[2] - width) / 2, area[1] + (area[3] - dialogHeight) / 2]
     m.dialogFill.uri = palette.images.card
     m.dialogFill.width = width
     m.dialogFill.height = dialogHeight
     m.dialogFill.blendColor = palette.dialog.color
-    m.dialogFill.opacity = palette.dialog.opacity
+    m.dialogFill.opacity = 1
+    m.dialogStroke.uri = palette.images.cardStroke
+    placeNode(m.dialogStroke, 0, 0, width, dialogHeight)
+    tint(m.dialogStroke, palette.dialogBorder)
 
-    m.dialogTitle.font = palette.fonts.dialogTitle
+    m.dialogTitle.font = fonts.dialogTitle
+    m.dialogTitle.lineSpacing = lineSpacingFor(fonts.dialogTitle, titleLine)
     m.dialogTitle.color = palette.title
-    m.dialogTitle.translation = [inset, inset]
+    m.dialogTitle.translation = [inset, titleTop]
     m.dialogTitle.width = titleWidth
     m.dialogTitle.height = titleHeight
     m.dialogTitle.text = m.top.title
 
     m.listGroup.translation = [0, listTop]
     m.optionList.itemWidth = width
+    if multi
+        m.listGroup.translation = [settingsMetrics.Px(12), listTop]
+        m.optionList.itemWidth = rowWidth
+        layoutButtons(width, buttonTop, dialogHeight)
+    end if
     m.optionList.viewHeight = listHeight
     m.optionList.animate = not palette.lowTier
     m.optionList.rowHeights = built.heights
     m.optionList.content = built.content
-    if m.top.selectedIndex > 0 and m.top.selectedIndex < options.Count() then m.optionList.jumpToItem = m.top.selectedIndex
+    if multi then startPicks(checked)
+    if not multi and m.top.selectedIndex > 0 and m.top.selectedIndex < options.Count() then m.optionList.jumpToItem = m.top.selectedIndex
     m.optionList.setFocus(true)
 
-    if not palette.lowTier then m.fadeIn.control = "start"
+    if palette.lowTier
+        m.barrier.opacity = 1
+        m.dialog.opacity = 1
+    else
+        m.fadeIn.control = "start"
+    end if
+end sub
+
+' Select All (only with no max), Clear and Save shrink-wrap centered under the title, as Core's row
+' of them does, and Cancel sits on the bottom right
+sub layoutButtons(width as float, buttonTop as float, dialogHeight as float)
+    if m.top.max = 0 then m.rowButtons.push(newButton(tr("Select All"), "selectAll", false))
+    m.rowButtons.push(newButton(tr("Clear"), "clear", false))
+    m.rowButtons.push(newButton(tr("Save"), "save", true))
+    m.cancel = newButton(tr("Cancel"), "cancel", false)
+
+    gap = settingsMetrics.Px(8)
+    groupWidth = -gap
+    for each button in m.rowButtons
+        groupWidth = groupWidth + button.width + gap
+    end for
+    x = (width - groupWidth) / 2
+    for each button in m.rowButtons
+        placeButton(button, x, buttonTop)
+        x = x + button.width + gap
+    end for
+    placeButton(m.cancel, width - settingsMetrics.Px(24) - m.cancel.width, dialogHeight - settingsMetrics.Px(24 + 4 + 40))
+    paintButtons()
+end sub
+
+function newButton(text as string, action as string, filled as boolean) as object
+    font = m.palette.fonts.lead
+    group = m.dialog.createChild("Group")
+    ' Loaded before the first frame, or a button still loading pops in partway through the fade
+    fill = group.createChild("Poster")
+    fill.loadSync = true
+    fill.uri = m.palette.images.button
+    layer = group.createChild("Poster")
+    layer.loadSync = true
+    layer.uri = m.palette.images.pill
+    if filled then layer.uri = m.palette.images.button
+    label = group.createChild("Label")
+    label.font = font
+    label.horizAlign = "center"
+    label.vertAlign = "center"
+    label.text = text
+    padding = settingsMetrics.Px(12)
+    if filled then padding = settingsMetrics.Px(24)
+    buttonWidth = Int(measureTextWidth(text, font)) + 1 + padding * 2
+    if buttonWidth < settingsMetrics.Px(64) then buttonWidth = settingsMetrics.Px(64)
+    return { group: group, fill: fill, layer: layer, label: label, action: action, filled: filled, width: buttonWidth }
+end function
+
+sub placeButton(button as object, x as float, y as float)
+    height = settingsMetrics.Px(40)
+    button.group.translation = [x, y]
+    placeNode(button.fill, 0, 0, button.width, height)
+    placeNode(button.layer, 0, 0, button.width, height)
+    placeNode(button.label, 0, 0, button.width, height)
+end sub
+
+' Save is the theme's button fill with its ink, the rest are accent text, and focus lays a tenth of
+' the ink over the button, as Material's focus does
+sub paintButtons()
+    p = m.palette
+    buttons = []
+    buttons.Append(m.rowButtons)
+    buttons.push(m.cancel)
+    for i = 0 to buttons.Count() - 1
+        button = buttons[i]
+        focused = (m.focusArea = "row" and i = m.buttonIndex) or (m.focusArea = "cancel" and i = buttons.Count() - 1)
+        button.fill.visible = false
+        button.label.color = p.header
+        focusLayer = p.bubble
+        if button.filled
+            tint(button.fill, p.button)
+            button.label.color = p.onButton
+            focusLayer = p.buttonLayer
+        end if
+        button.layer.visible = false
+        if focused then tint(button.layer, focusLayer)
+    end for
+end sub
+
+' Picks keep the order they were made in, starting from the order they were saved in
+sub startPicks(checked as object)
+    picks = []
+    seen = {}
+    for each option in m.top.picks ?? []
+        if option < checked.Count() and checked[option] = true and not seen.DoesExist(option.ToStr())
+            picks.push(option)
+            seen[option.ToStr()] = true
+        end if
+    end for
+    for i = 0 to checked.Count() - 1
+        if checked[i] = true and not seen.DoesExist(i.ToStr()) then picks.push(i)
+    end for
+    m.top.picks = picks
+    paintTicks()
+end sub
+
+' Redraws every row's checkbox, and once max is reached the unticked rows dim and ignore a tick
+sub paintTicks()
+    checked = m.top.checked ?? []
+    ticked = 0
+    for each value in checked
+        if value = true then ticked = ticked + 1
+    end for
+    full = m.top.max > 0 and ticked >= m.top.max
+    content = m.optionList.content
+    for index = 0 to m.order.Count() - 1
+        option = m.order[index]
+        isTicked = option < checked.Count() and checked[option] = true
+        row = content.getChild(index)
+        row.selected = isTicked
+        row.glyph = settingsGlyphs.Char(pickerGlyph(true, isTicked))
+        row.locked = full and not isTicked
+        m.optionList.callFunc("refreshItem", index)
+    end for
 end sub
 
 sub onOptionSelected()
     index = m.optionList.itemSelected
-    count = m.top.options.Count()
     if not m.top.multi
         m.top.chosen = index
         return
     end if
 
-    if index = 0
-        m.top.saved = true
-        return
-    end if
-    if index > count
+    ' A tick flips in place, and nothing is kept until Save
+    if m.optionList.content.getChild(index).locked then return
+    option = m.order[index]
+    checked = m.top.checked ?? []
+    while checked.Count() < m.top.options.Count()
+        checked.push(false)
+    end while
+    picks = []
+    for each pick in m.top.picks ?? []
+        if pick <> option then picks.push(pick)
+    end for
+    checked[option] = not (checked[option] = true)
+    if checked[option] then picks.push(option)
+    m.top.checked = checked
+    m.top.picks = picks
+    paintTicks()
+end sub
+
+sub pressButton()
+    if m.focusArea = "cancel"
         m.top.closed = true
         return
     end if
-
-    ' A tick flips in place, and nothing is kept until Save. Past max a new tick is ignored.
-    option = m.order[index - 1]
-    checked = m.top.checked ?? []
-    while checked.Count() < count
-        checked.push(false)
-    end while
-    if not (checked[option] = true) and m.top.max > 0
-        ticked = 0
-        for each isTicked in checked
-            if isTicked = true then ticked = ticked + 1
-        end for
-        if ticked >= m.top.max then return
+    action = m.rowButtons[m.buttonIndex].action
+    if action = "save"
+        m.top.saved = true
+        return
     end if
-    checked[option] = not (checked[option] = true)
-    m.top.checked = checked
-    m.optionList.content.getChild(index).selected = checked[option]
-    m.optionList.callFunc("refreshItem", index)
+
+    ' Select All adds what wasn't ticked after the picks already made, and Clear drops them all
+    checked = m.top.checked ?? []
+    picks = []
+    if action = "selectAll" then picks = m.top.picks ?? []
+    for i = 0 to m.top.options.Count() - 1
+        wasTicked = i < checked.Count() and checked[i] = true
+        if action = "selectAll" and not wasTicked then picks.push(i)
+    end for
+    ticks = []
+    for i = 1 to m.top.options.Count()
+        ticks.push(action = "selectAll")
+    end for
+    m.top.checked = ticks
+    m.top.picks = picks
+    paintTicks()
 end sub
+
+function pickerGlyph(multi as boolean, selected as boolean) as string
+    if multi and selected then return "check_box"
+    if multi then return "check_box_outline_blank"
+    if selected then return "radio_button_checked"
+    return "radio_button_unchecked"
+end function
+
+sub focusButtons(area as string, index as integer)
+    m.focusArea = area
+    m.buttonIndex = index
+    m.buttonFocus.setFocus(true)
+    paintButtons()
+end sub
+
+sub focusList()
+    m.focusArea = "list"
+    m.optionList.setFocus(true)
+    paintButtons()
+end sub
+
+' The list only hands a key on up from its first row and down from its last. Up lands on Clear and
+' down on Cancel, as in Core, and left and right step along the buttons over the list.
+function moveFocus(key as string) as boolean
+    if m.focusArea = "list"
+        if key = "up" then focusButtons("row", m.rowButtons.Count() - 2)
+        if key = "down" then focusButtons("cancel", 0)
+        return key = "up" or key = "down"
+    end if
+    if key = "OK"
+        pressButton()
+        return true
+    end if
+    if m.focusArea = "row"
+        if key = "left" and m.buttonIndex > 0 then m.buttonIndex = m.buttonIndex - 1
+        if key = "right" and m.buttonIndex < m.rowButtons.Count() - 1 then m.buttonIndex = m.buttonIndex + 1
+        if key = "down" then focusList()
+    else if key = "up"
+        focusList()
+    end if
+    paintButtons()
+    return true
+end function
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
@@ -140,6 +374,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         m.top.closed = true
         return true
     end if
+    if m.top.multi and moveFocus(key) then return true
     ' Nothing else gets past the dialog, since the panel behind reads right as a press and up from
     ' its first row as a move to the title bar
     return key = "left" or key = "right" or key = "up" or key = "down" or key = "options"

@@ -1,0 +1,427 @@
+' Cable Crawl, the grid crawler. The cable moves one cell a step, so the body is a queue of
+' segments and each step only touches its two ends.
+
+const CC_CELL = 15
+const CC_COLS = 32
+const CC_ROWS = 16
+const CC_TOP = 30
+
+function ccDirections() as object
+    return [[1, 0], [-1, 0], [0, 1], [0, -1]]
+end function
+
+sub ccBuild(stage as object)
+    g = { segments: [], spare: [], blocks: [], foes: [], items: [], body: [] }
+    m.g = g
+    ahRect(stage, 0, 0, AH_W, AH_H, AH_NIGHT)
+    ahImage(stage, "grid", 0, CC_TOP, AH_W, CC_ROWS * CC_CELL)
+    g.blockLayer = stage.createChild("Group")
+    g.food = ahSprite(stage, "signal")
+    g.itemLayer = stage.createChild("Group")
+    g.foeLayer = stage.createChild("Group")
+    ' All the blue goes under all the purple, so one segment's band never covers the next one's line
+    g.cable = stage.createChild("Group")
+    g.outer = g.cable.createChild("Group")
+    g.inner = g.cable.createChild("Group")
+    g.plug = ahSprite(g.cable, "plug")
+    g.hud = ahHud(stage)
+end sub
+
+function ccCenterX(x as integer) as float
+    return x * CC_CELL + CC_CELL / 2
+end function
+
+function ccCenterY(y as integer) as float
+    return CC_TOP + y * CC_CELL + CC_CELL / 2
+end function
+
+sub ccReset()
+    g = m.g
+    for each segment in g.segments
+        ccGiveSegment(segment)
+    end for
+    for each b in g.blocks
+        ahGive(b.sprite)
+    end for
+    for each f in g.foes
+        ahGive(f.sprite)
+    end for
+    for each it in g.items
+        ahGive(it.sprite)
+    end for
+    g.over = false
+    g.score = 0
+    g.eaten = 0
+    g.tick = 0.0
+    g.n = 0
+    g.stepTime = 0.13
+    g.lastDt = 1 / 30
+    g.dir = [1, 0]
+    g.queue = []
+    g.grow = 2
+    g.ghost = 0.0
+    g.signal = invalid
+    g.body = [{ x: 8, y: 8 }, { x: 7, y: 8 }, { x: 6, y: 8 }]
+    g.segments = []
+    g.blocks = []
+    g.foes = []
+    g.items = []
+    for i = 0 to g.body.count() - 2
+        g.segments.push(ccSegment(g.body[i], g.body[i + 1]))
+    end for
+    g.signal = ccFree(1)
+end sub
+
+' One stretch of cable between two neighboring cells, a rounded blue band with a purple line in it
+function ccSegment(a as object, b as object) as object
+    g = m.g
+    if g.spare.count() > 0
+        segment = g.spare.pop()
+        segment.outer.visible = true
+        segment.inner.visible = true
+    else
+        segment = {}
+        segment.outer = ahRounded(g.outer, "pkg:/images/playback/surface17.9.png", 0, 0, 1, 1, AH_BLUE)
+        segment.inner = g.inner.createChild("Rectangle")
+        segment.inner.color = AH_PURPLE
+    end if
+    left = ahMin(ccCenterX(a.x), ccCenterX(b.x))
+    top = ahMin(ccCenterY(a.y), ccCenterY(b.y))
+    spanX = Abs(a.x - b.x) * CC_CELL
+    spanY = Abs(a.y - b.y) * CC_CELL
+    segment.outer.translation = [(left - 5) * AH_UNIT, (top - 5) * AH_UNIT]
+    segment.outer.width = (spanX + 10) * AH_UNIT
+    segment.outer.height = (spanY + 10) * AH_UNIT
+    segment.inner.translation = [(left - 1.25) * AH_UNIT, (top - 1.25) * AH_UNIT]
+    segment.inner.width = (spanX + 2.5) * AH_UNIT
+    segment.inner.height = (spanY + 2.5) * AH_UNIT
+    return segment
+end function
+
+sub ccGiveSegment(segment as object)
+    segment.outer.visible = false
+    segment.inner.visible = false
+    m.g.spare.push(segment)
+end sub
+
+function ccBlockedAt(x as integer, y as integer) as boolean
+    for each b in m.g.blocks
+        if x >= b.x and x < b.x + b.s and y >= b.y and y < b.y + b.s then return true
+    end for
+    return false
+end function
+
+function ccBodyAt(x as integer, y as integer, from = 0 as integer, skipTail = false as boolean) as boolean
+    body = m.g.body
+    last = body.count() - 1
+    if skipTail then last -= 1
+    for i = from to last
+        if body[i].x = x and body[i].y = y then return true
+    end for
+    return false
+end function
+
+function ccFoeAt(x as integer, y as integer) as boolean
+    for each f in m.g.foes
+        if f.x = x and f.y = y then return true
+    end for
+    return false
+end function
+
+function ccItemAt(x as integer, y as integer) as dynamic
+    for each it in m.g.items
+        if it.x = x and it.y = y then return it
+    end for
+    return invalid
+end function
+
+' A random free spot for a size by size thing, away from the plug
+function ccFree(size as integer) as object
+    g = m.g
+    head = g.body[0]
+    for attempt = 1 to 300
+        x = ahRandomInt(0, CC_COLS - size)
+        y = ahRandomInt(0, CC_ROWS - size)
+        ok = Abs(x - head.x) + Abs(y - head.y) > 4
+        for dx = 0 to size - 1
+            for dy = 0 to size - 1
+                cellX = x + dx
+                cellY = y + dy
+                if ok
+                    if ccBodyAt(cellX, cellY) or ccBlockedAt(cellX, cellY) or ccFoeAt(cellX, cellY) or ccItemAt(cellX, cellY) <> invalid
+                        ok = false
+                    else if g.signal <> invalid
+                        if g.signal.x = cellX and g.signal.y = cellY then ok = false
+                    end if
+                end if
+            end for
+        end for
+        if ok then return { x: x, y: y }
+    end for
+    return { x: 0, y: 0 }
+end function
+
+sub ccUpdate(dt as float)
+    g = m.g
+    g.lastDt = dt
+    g.ghost -= dt
+    kept = []
+    for each it in g.items
+        it.life -= dt
+        if it.life > 0
+            kept.push(it)
+        else
+            ahGive(it.sprite)
+        end if
+    end for
+    g.items = kept
+
+    g.tick += dt
+    if g.tick < g.stepTime then return
+    g.tick = 0
+    g.n += 1
+    if g.queue.count() > 0 then g.dir = g.queue.Shift()
+
+    head = g.body[0]
+    nx = head.x + g.dir[0]
+    ny = head.y + g.dir[1]
+    ghost = g.ghost > 0
+    if nx < 0 or ny < 0 or nx >= CC_COLS or ny >= CC_ROWS
+        g.over = true
+        return
+    end if
+    if not ghost and (ccBodyAt(nx, ny, 0, g.grow = 0) or ccBlockedAt(nx, ny) or ccFoeAt(nx, ny))
+        g.over = true
+        return
+    end if
+
+    g.body.Unshift({ x: nx, y: ny })
+    g.segments.Unshift(ccSegment(g.body[0], g.body[1]))
+    if g.grow > 0
+        g.grow -= 1
+    else
+        g.body.Pop()
+        ccGiveSegment(g.segments.Pop())
+    end if
+
+    if nx = g.signal.x and ny = g.signal.y
+        g.eaten += 1
+        g.score += 10 + g.body.count()
+        g.grow += 2
+        g.stepTime = ahMax(0.065, 0.13 - g.eaten * 0.002)
+        if g.eaten mod 3 = 0 then ccAddBlock(1, "staticBlock")
+        if g.eaten mod 5 = 0 then ccAddBlock(2, "brick")
+        if g.eaten = 4 or (g.eaten mod 12 = 0 and g.foes.count() < 3) then ccAddFoe("bug")
+        if g.eaten = 8 then ccAddFoe("tangle")
+        if g.eaten mod 6 = 0
+            spot = ccFree(1)
+            kind = "snip"
+            if Rnd(0) < 0.5 then kind = "ghost"
+            item = { x: spot.x, y: spot.y, k: kind, life: 8.0, sprite: ahTake(kind, g.itemLayer) }
+            ahMove(item.sprite, ccCenterX(item.x), ccCenterY(item.y))
+            g.items.push(item)
+        end if
+        g.signal = ccFree(1)
+        ahSound("pickup")
+    end if
+
+    it = ccItemAt(nx, ny)
+    if it <> invalid
+        it.life = 0
+        if it.k = "ghost"
+            g.ghost = 5
+            ahSound("powerup")
+        else
+            keep = Int(ahMax(3, -Int(-g.body.count() / 2)))
+            g.score += 5 * (g.body.count() - keep)
+            while g.body.count() > keep
+                g.body.Pop()
+                ccGiveSegment(g.segments.Pop())
+            end while
+            g.grow = 0
+            ahSound("break")
+        end if
+    end if
+
+    head = g.body[0]
+    directions = ccDirections()
+    for each f in g.foes
+        moves = (f.k = "bug" and g.n mod 2 = 0) or (f.k = "tangle" and g.n mod 3 = 0)
+        if moves
+            options = []
+            for each d in directions
+                qx = f.x + d[0]
+                qy = f.y + d[1]
+                if qx >= 0 and qy >= 0 and qx < CC_COLS and qy < CC_ROWS and not ccBlockedAt(qx, qy) and not ccBodyAt(qx, qy, 1) and not ccFoeAt(qx, qy) and not (qx = g.signal.x and qy = g.signal.y)
+                    options.push({ x: qx, y: qy })
+                end if
+            end for
+            if options.count() > 0
+                target = options[ahRandomInt(0, options.count() - 1)]
+                if f.k = "tangle"
+                    target = options[0]
+                    for each q in options
+                        if Abs(q.x - head.x) + Abs(q.y - head.y) < Abs(target.x - head.x) + Abs(target.y - head.y) then target = q
+                    end for
+                end if
+                f.x = target.x
+                f.y = target.y
+                if not ghost and f.x = head.x and f.y = head.y then g.over = true
+            end if
+        end if
+    end for
+end sub
+
+sub ccAddBlock(size as integer, kind as string)
+    spot = ccFree(size)
+    block = { x: spot.x, y: spot.y, s: size, k: kind, sprite: ahTake(kind, m.g.blockLayer) }
+    ahMove(block.sprite, block.x * CC_CELL + size * CC_CELL / 2, CC_TOP + block.y * CC_CELL + size * CC_CELL / 2)
+    m.g.blocks.push(block)
+end sub
+
+sub ccAddFoe(kind as string)
+    spot = ccFree(1)
+    m.g.foes.push({ x: spot.x, y: spot.y, k: kind, sprite: ahTake(kind, m.g.foeLayer) })
+end sub
+
+sub ccPress(key as string)
+    turns = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }
+    d = turns[key]
+    if d = invalid then return
+    g = m.g
+    last = g.dir
+    if g.queue.count() > 0 then last = g.queue[g.queue.count() - 1]
+    if (d[0] = -last[0] and d[1] = -last[1]) or (d[0] = last[0] and d[1] = last[1]) then return
+    if g.queue.count() < 2 then g.queue.push(d)
+end sub
+
+' A breadth-first search to the nearest signal or powerup, on a grid of cells marked once per call.
+' It only decides on the frame before a step, so the board it reads is the one the step meets.
+sub ccAi()
+    g = m.g
+    if g.tick + g.lastDt < g.stepTime then return
+    head = g.body[0]
+    ' A cell left unset is free
+    blocked = CreateObject("roArray", CC_COLS * CC_ROWS, false)
+    for each cell in g.body
+        blocked[cell.y * CC_COLS + cell.x] = true
+    end for
+    for each b in g.blocks
+        for dx = 0 to b.s - 1
+            for dy = 0 to b.s - 1
+                blocked[(b.y + dy) * CC_COLS + b.x + dx] = true
+            end for
+        end for
+    end for
+    for each f in g.foes
+        for dx = -1 to 1
+            for dy = -1 to 1
+                if Abs(dx) + Abs(dy) <= 1
+                    fx = f.x + dx
+                    fy = f.y + dy
+                    if fx >= 0 and fy >= 0 and fx < CC_COLS and fy < CC_ROWS then blocked[fy * CC_COLS + fx] = true
+                end if
+            end for
+        end for
+    end for
+    goals = CreateObject("roArray", CC_COLS * CC_ROWS, false)
+    goals[g.signal.y * CC_COLS + g.signal.x] = true
+    for each it in g.items
+        goals[it.y * CC_COLS + it.x] = true
+    end for
+
+    directions = ccDirections()
+    start = head.y * CC_COLS + head.x
+    firstStep = CreateObject("roArray", CC_COLS * CC_ROWS, false)
+    firstStep[start] = -1
+    queue = [start]
+    readIndex = 0
+    found = -1
+    while readIndex < queue.count()
+        cell = queue[readIndex]
+        readIndex += 1
+        if goals[cell] <> invalid
+            found = firstStep[cell]
+            exit while
+        end if
+        cx = cell mod CC_COLS
+        cy = Int(cell / CC_COLS)
+        for i = 0 to 3
+            nx = cx + directions[i][0]
+            ny = cy + directions[i][1]
+            if nx >= 0 and ny >= 0 and nx < CC_COLS and ny < CC_ROWS
+                nextCell = ny * CC_COLS + nx
+                if firstStep[nextCell] = invalid and blocked[nextCell] = invalid
+                    if cell = start
+                        firstStep[nextCell] = i
+                    else
+                        firstStep[nextCell] = firstStep[cell]
+                    end if
+                    queue.push(nextCell)
+                end if
+            end if
+        end for
+    end while
+
+    choice = invalid
+    if found >= 0
+        choice = directions[found]
+    else
+        ' Nothing reachable, so head for the most room
+        most = -1
+        for each d in directions
+            nx = head.x + d[0]
+            ny = head.y + d[1]
+            if ccOpen(blocked, nx, ny)
+                room = 0
+                for each e in directions
+                    if ccOpen(blocked, nx + e[0], ny + e[1]) then room += 1
+                end for
+                if room > most
+                    most = room
+                    choice = d
+                end if
+            end if
+        end for
+    end if
+    if choice <> invalid then g.queue = [choice]
+end sub
+
+function ccOpen(blocked as object, x as integer, y as integer) as boolean
+    if x < 0 or y < 0 or x >= CC_COLS or y >= CC_ROWS then return false
+    return blocked[y * CC_COLS + x] = invalid
+end function
+
+sub ccDraw()
+    g = m.g
+    t = m.ahClock
+    staticFrame = Int(t * 20) mod 3
+    for each b in g.blocks
+        if b.k = "staticBlock" then ahFrame(b.sprite, staticFrame)
+    end for
+    ahMove(g.food, ccCenterX(g.signal.x), ccCenterY(g.signal.y))
+    g.food.node.opacity = 0.75 + 0.25 * Sin(t * 6)
+    blink = Int(t * 8) mod 2 = 1
+    for each it in g.items
+        it.sprite.node.visible = it.life > 2 or blink
+    end for
+    for each f in g.foes
+        ahMove(f.sprite, ccCenterX(f.x), ccCenterY(f.y))
+        if f.k = "bug"
+            ahFrame(f.sprite, Int(t * 12) mod 2)
+        else
+            ahFrame(f.sprite, Int(t * 6) mod 4)
+        end if
+    end for
+    if g.ghost > 0 then g.cable.opacity = 0.5 else g.cable.opacity = 1
+    head = g.body[0]
+    ahMove(g.plug, ccCenterX(head.x), ccCenterY(head.y))
+    ' Rotation turns counterclockwise, so facing down is a negative quarter turn
+    turn = 0.0
+    if g.dir[0] < 0 then turn = 3.1415927
+    if g.dir[1] > 0 then turn = -1.5707963
+    if g.dir[1] < 0 then turn = 1.5707963
+    g.plug.poster.rotation = turn
+
+    ahHudDraw(g.hud, g.score, [["ghost", g.ghost > 0]], t)
+end sub

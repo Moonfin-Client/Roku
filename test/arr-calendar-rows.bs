@@ -1,0 +1,108 @@
+sub testArrCalendarRows()
+    nov5 = calendarEntries.DayNumber(2026, 11, 5)
+    kinds = [{ field: "inCinemas", label: "Cinema" }, { field: "digitalRelease", label: "Digital" }, { field: "physicalRelease", label: "Physical" }]
+
+    ' Radarr counts a release from its own day on, read off the date before any time zone shift
+    movie = { inCinemas: "2026-11-04T00:00:00Z", digitalRelease: "2026-11-08T00:00:00Z", physicalRelease: "2026-12-01T00:00:00Z", hasFile: false }
+    soonest = radarrRowRelease(movie, kinds, nov5, true)
+    assertEqual(soonest.label, "Digital", "A release from yesterday isn't upcoming, so the next one is shown")
+    assertEqual(soonest.day, nov5 + 3, "on its own day")
+    assertEqual(soonest.when, "2026-11-08T00:00:00Z", "and the row sorts by it")
+    assertEqual(radarrRowRelease({ inCinemas: "2026-11-05T00:00:00Z" }, kinds, nov5, true).label, "Cinema", "A release today still counts")
+    assertEqual(isValid(radarrRowRelease(movie, [kinds[0]], nov5, false)), false, "A movie whose only picked release is past drops out")
+    downloaded = { digitalRelease: "2026-11-08T00:00:00Z", hasFile: true }
+    assertEqual(isValid(radarrRowRelease(downloaded, kinds, nov5, true)), false, "A movie Radarr already has is left out while those are hidden")
+    assertEqual(radarrRowRelease(downloaded, kinds, nov5, false).label, "Digital", "and shown when they aren't")
+    sameDay = { digitalRelease: "2026-11-08T00:00:00Z", physicalRelease: "2026-11-08T00:00:00Z" }
+    assertEqual(radarrRowRelease(sameDay, kinds, nov5, true).label, "Physical", "Two releases on one day read as the physical one")
+
+    ' Sonarr shows each series' first episode from today on. Noon UTC is the same day in nearly every time zone.
+    simpsons = { id: 1, title: "The Simpsons" }
+    bleach = { id: 2, title: "Bleach" }
+    episodes = [
+        { series: simpsons, seasonNumber: 38, episodeNumber: 5, airDateUtc: "2026-11-04T12:00:00Z", hasFile: false },
+        { series: simpsons, seasonNumber: 38, episodeNumber: 7, airDateUtc: "2026-11-12T12:00:00Z", hasFile: false },
+        { series: simpsons, seasonNumber: 38, episodeNumber: 6, airDateUtc: "2026-11-05T12:00:00Z", hasFile: true },
+        { series: bleach, seasonNumber: 3, episodeNumber: 1, airDateUtc: "2026-11-06T12:00:00Z", hasFile: true },
+        { seasonNumber: 1, episodeNumber: 1, airDateUtc: "2026-11-06T12:00:00Z" }
+    ]
+    picks = sonarrRowPicks(episodes, nov5, false)
+    assertEqual(picks["1"].episode.episodeNumber, 6, "An episode that aired yesterday gives way to the next, and one airing today still counts")
+    assertEqual(picks["1"].day, nov5, "on the viewer's day")
+    assertEqual(picks["2"].episode.episodeNumber, 1, "Downloaded episodes count while they aren't hidden")
+    assertEqual(picks.Count(), 2, "An episode with no series has no card")
+    picks = sonarrRowPicks(episodes, nov5, true)
+    assertEqual(picks["1"].episode.episodeNumber, 7, "A downloaded episode is skipped for the next one while those are hidden")
+    assertEqual(picks.DoesExist("2"), false, "and a series with nothing left drops out")
+
+    assertEqual(sonarrEpisodeCode({ seasonNumber: 2, episodeNumber: 4 }), "S2:E4", "The episode reads S2:E4")
+    assertEqual(sonarrEpisodeCode({ seasonNumber: 2 }), "S2:E0", "and a missing number reads as 0")
+
+    assertEqual(calendarSubtitle("Digital", nov5 + 3, nov5, true), "Digital · In 3 days (Nov 8)", "The release format goes before the date")
+    assertEqual(calendarSubtitle("", nov5, nov5, true), "Today (Nov 5)", "A date alone reads Today")
+    assertEqual(calendarSubtitle("", nov5 + 1, nov5, true), "Tomorrow (Nov 6)", "or Tomorrow")
+    assertEqual(calendarSubtitle("S2:E4", nov5 + 3, nov5, true), "S2:E4 · In 3 days (Nov 8)", "The episode goes before the date")
+    assertEqual(calendarSubtitle("S2:E4", nov5 + 3, nov5, true, "dayMonth"), "S2:E4 · In 3 days (8 Nov)", "The date follows the order the row read once")
+    assertEqual(calendarSubtitle("S2:E4", nov5 + 3, nov5, false), "S2:E4", "and stands alone without it")
+    assertEqual(calendarSubtitle("", nov5, nov5, false), "", "With both off there's nothing")
+
+    ' The rows themselves, read against the real clock
+    today = calendarEntries.TodayNumber()
+    inThree = calendarEntries.ReleaseIn(today + 3, today)
+    m.arrCalendarFixture = {
+        Radarr: [
+            { title: "Sintel", digitalRelease: calendarEntries.DateText(today + 3) + "T00:00:00Z", physicalRelease: calendarEntries.DateText(today + 9) + "T00:00:00Z", hasFile: false },
+            { title: "Spring", digitalRelease: calendarEntries.DateText(today + 1) + "T00:00:00Z", hasFile: true }
+        ],
+        Sonarr: [
+            { series: simpsons, seasonNumber: 2, episodeNumber: 4, airDateUtc: calendarEntries.DateText(today + 3) + "T12:00:00Z", hasFile: false },
+            { series: bleach, seasonNumber: 1, episodeNumber: 1, airDateUtc: calendarEntries.DateText(today + 1) + "T12:00:00Z", hasFile: true },
+            { series: bleach, seasonNumber: 1, episodeNumber: 2, airDateUtc: calendarEntries.DateText(today + 8) + "T12:00:00Z", hasFile: false }
+        ]
+    }
+
+    rows = []
+    appendRadarrCalendar(rows, {})
+    assertEqual(rows.Count(), 1, "Movies already on the server are hidden by default")
+    assertEqual(rows[0].json.Subtitle, "Digital · " + inThree, "With cinema releases shown, the format leads")
+    rows = []
+    appendRadarrCalendar(rows, { "calendar.radarr.hideDownloaded": false })
+    assertEqual(rows.Count(), 2, "and come back when the setting is off")
+    rows = []
+    appendRadarrCalendar(rows, { "calendar.radarr.showCinema": "false", "calendar.radarr.showPhysical": "false" })
+    assertEqual(rows[0].json.Subtitle, inThree, "With digital alone the date stands alone")
+    rows = []
+    appendRadarrCalendar(rows, { "calendar.radarr.showCinema": "false" })
+    assertEqual(rows[0].json.Subtitle, "Digital · " + inThree, "Digital and physical together keep the format")
+    rows = []
+    appendRadarrCalendar(rows, { "calendar.radarr.showDate": false })
+    assertEqual(rows[0].json.Subtitle, "", "and without the date there's no line")
+
+    rows = []
+    appendSonarrCalendar(rows, {})
+    sortByCalendarDate(rows)
+    assertEqual(rows.Count(), 2, "Each series keeps a card")
+    assertEqual(rows[0].title, "The Simpsons", "and the row sorts by the episode picked, not the first one listed")
+    assertEqual(rows[0].json.Subtitle, "S2:E4 · " + inThree, "The episode leads the date")
+    assertEqual(rows[1].json.Subtitle, "S1:E2 · " + calendarEntries.ReleaseIn(today + 8, today), "A downloaded episode gives way to the next")
+    rows = []
+    appendSonarrCalendar(rows, { "calendar.sonarr.hideDownloaded": false })
+    sortByCalendarDate(rows)
+    assertEqual(rows[0].title, "Bleach", "Shown again once the setting is off")
+    rows = []
+    appendSonarrCalendar(rows, { "calendar.sonarr.showDate": false })
+    sortByCalendarDate(rows)
+    assertEqual(rows[0].json.Subtitle, "S2:E4", "The episode stands alone without the date")
+    rows = []
+    appendSonarrCalendar(rows, { "calendar.sonarr.showEpisodeInfo": false })
+    sortByCalendarDate(rows)
+    assertEqual(rows[0].json.Subtitle, inThree, "and the date without the episode")
+end sub
+
+function arrCalendarItems(service as string) as object
+    return m.arrCalendarFixture[service]
+end function
+
+function calendarNode(item as object, title as string, itemType as string, airs as string, subtitle as string) as object
+    return { title: title, json: { CalendarDate: airs, Subtitle: subtitle } }
+end function

@@ -6589,13 +6589,13 @@
     </message>
     <message>
         <source>Focus Follower</source>
-        <extracomment>Setting that shows the holiday piece, like Halloween's planchette, that follows the selected item on Home</extracomment>
+        <extracomment>Setting that shows the holiday piece, like Halloween&apos;s planchette, that follows the selected item on Home</extracomment>
         <translation>Focus Follower</translation>
     </message>
     <message>
-        <source>A holiday piece, like Halloween's planchette, follows what you select on Home</source>
+        <source>A holiday piece, like Halloween&apos;s planchette, follows what you select on Home</source>
         <extracomment>Description of the Focus Follower setting</extracomment>
-        <translation>A holiday piece, like Halloween's planchette, follows what you select on Home</translation>
+        <translation>A holiday piece, like Halloween&apos;s planchette, follows what you select on Home</translation>
     </message>
     <message>
         <source>Auto Hide Skip Button</source>
@@ -6993,8 +6993,8 @@
         <translation>Choose which time labels appear around the playback progress bar.</translation>
     </message>
     <message>
-        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes. Stage leads with the poster, with play under it and the details beside it. Premiere centers the title over a backdrop that fills the screen, with every section down the page under it. Quick Look opens a drawer over the screen you were on, with the full page a press away. Frost floats the title in a glass window over a blurred copy of its art, with its parts in tabs under the buttons.</source>
-        <translation>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes. Stage leads with the poster, with play under it and the details beside it. Premiere centers the title over a backdrop that fills the screen, with every section down the page under it. Quick Look opens a drawer over the screen you were on, with the full page a press away. Frost floats the title in a glass window over a blurred copy of its art, with its parts in tabs under the buttons.</translation>
+        <source>How a movie or show looks when you open it.</source>
+        <translation>How a movie or show looks when you open it.</translation>
     </message>
     <message>
         <source>Classic keeps per-row image type and info overlay. Modern uses portrait-to-backdrop rows.</source>
@@ -7501,12 +7501,12 @@
         <translation>Badge Style</translation>
     </message>
     <message>
-        <source>Badge puts Seerr's dot in a corner. Banner runs the status across the top of the poster.</source>
-        <translation>Badge puts Seerr's dot in a corner. Banner runs the status across the top of the poster.</translation>
+        <source>Badge puts Seerr&apos;s dot in a corner. Banner runs the status across the top of the poster.</source>
+        <translation>Badge puts Seerr&apos;s dot in a corner. Banner runs the status across the top of the poster.</translation>
     </message>
     <message>
         <source>Badge</source>
-        <extracomment>Badge Style option that marks a poster with Seerr's small status dot</extracomment>
+        <extracomment>Badge Style option that marks a poster with Seerr&apos;s small status dot</extracomment>
         <translation>Badge</translation>
     </message>
     <message>
@@ -7596,10 +7596,6 @@
     <message>
         <source>Use Series Thumbnails</source>
         <translation>Use Series Thumbnails</translation>
-    </message>
-    <message>
-        <source>Version {0}</source>
-        <translation>Version {0}</translation>
     </message>
     <message>
         <source>Video Player</source>
@@ -8101,37 +8097,37 @@
     <message>
         <source>Time&apos;s up</source>
         <translation>Time&apos;s up</translation>
-        <extracomment>Title of the screen shown when the signed in user's access schedule has closed</extracomment>
+        <extracomment>Title of the screen shown when the signed in user&apos;s access schedule has closed</extracomment>
     </message>
     <message>
         <source>This account isn&apos;t available right now.</source>
         <translation>This account isn&apos;t available right now.</translation>
-        <extracomment>Shown on the Time's up screen</extracomment>
+        <extracomment>Shown on the Time&apos;s up screen</extracomment>
     </message>
     <message>
         <source>You can use it again today at {0}.</source>
         <translation>You can use it again today at {0}.</translation>
-        <extracomment>Shown on the Time's up screen; {0} is a time of day</extracomment>
+        <extracomment>Shown on the Time&apos;s up screen; {0} is a time of day</extracomment>
     </message>
     <message>
         <source>You can use it again tomorrow at {0}.</source>
         <translation>You can use it again tomorrow at {0}.</translation>
-        <extracomment>Shown on the Time's up screen; {0} is a time of day</extracomment>
+        <extracomment>Shown on the Time&apos;s up screen; {0} is a time of day</extracomment>
     </message>
     <message>
         <source>You can use it again on {0} at {1}.</source>
         <translation>You can use it again on {0} at {1}.</translation>
-        <extracomment>Shown on the Time's up screen; {0} is a day of the week and {1} a time of day</extracomment>
+        <extracomment>Shown on the Time&apos;s up screen; {0} is a day of the week and {1} a time of day</extracomment>
     </message>
     <message>
         <source>Switch User</source>
         <translation>Switch User</translation>
-        <extracomment>Button on the Time's up screen that opens the list of users</extracomment>
+        <extracomment>Button on the Time&apos;s up screen that opens the list of users</extracomment>
     </message>
     <message>
         <source>You can use it again on {0}, {1} {2} at {3}.</source>
         <translation>You can use it again on {0}, {1} {2} at {3}.</translation>
-        <extracomment>Shown on the Time's up screen when the next opening is a week or more away; {0} is a day of the week, {1} a month, {2} the day of the month and {3} a time of day</extracomment>
+        <extracomment>Shown on the Time&apos;s up screen when the next opening is a week or more away; {0} is a day of the week, {1} a month, {2} the day of the month and {3} a time of day</extracomment>
     </message>
     <message>
         <source>Playlist order</source>
@@ -8285,12 +8281,12 @@
     </message>
     <message>
         <source>Overview</source>
-        <extracomment>The first pill on the music category strip, which goes back to the music library's own screen</extracomment>
+        <extracomment>The first pill on the music category strip, which goes back to the music library&apos;s own screen</extracomment>
         <translation>Overview</translation>
     </message>
     <message>
         <source>Music</source>
-        <extracomment>The music library's name when the server gives none</extracomment>
+        <extracomment>The music library&apos;s name when the server gives none</extracomment>
         <translation>Music</translation>
     </message>
     <message>
@@ -8399,9 +8395,9 @@
         <translation>Rediscover</translation>
     </message>
     <message>
-        <source>Favorites you haven't played lately</source>
+        <source>Favorites you haven&apos;t played lately</source>
         <extracomment>Line under the Rediscover mix on the music Songs screen</extracomment>
-        <translation>Favorites you haven't played lately</translation>
+        <translation>Favorites you haven&apos;t played lately</translation>
     </message>
     <message>
         <source>1 play</source>
@@ -8425,7 +8421,7 @@
     </message>
     <message>
         <source>Open Playlist</source>
-        <extracomment>Button on the music Playlists screen that opens the playlist's own screen</extracomment>
+        <extracomment>Button on the music Playlists screen that opens the playlist&apos;s own screen</extracomment>
         <translation>Open Playlist</translation>
     </message>
     <message>
@@ -8463,12 +8459,12 @@
     </message>
     <message>
         <source>Keep as Complete</source>
-        <extracomment>Detail and Recordings button, and its row in the button layout editor, that clears a recording's Incomplete mark</extracomment>
+        <extracomment>Detail and Recordings button, and its row in the button layout editor, that clears a recording&apos;s Incomplete mark</extracomment>
         <translation>Keep as Complete</translation>
     </message>
     <message>
         <source>Marked as complete</source>
-        <extracomment>Toast after Keep as Complete clears a recording's Incomplete mark</extracomment>
+        <extracomment>Toast after Keep as Complete clears a recording&apos;s Incomplete mark</extracomment>
         <translation>Marked as complete</translation>
     </message>
     <message>
@@ -8483,7 +8479,7 @@
     </message>
     <message>
         <source>{0} of {1} min</source>
-        <extracomment>Minutes an incomplete recording caught, out of the program's length</extracomment>
+        <extracomment>Minutes an incomplete recording caught, out of the program&apos;s length</extracomment>
         <translation>{0} of {1} min</translation>
     </message>
     <message>
@@ -8498,12 +8494,12 @@
     </message>
     <message>
         <source>No complete showing found</source>
-        <extracomment>No later showing of an incomplete recording's program to record</extracomment>
+        <extracomment>No later showing of an incomplete recording&apos;s program to record</extracomment>
         <translation>No complete showing found</translation>
     </message>
     <message>
         <source>The series recording will skip this showing</source>
-        <extracomment>Note on a program a series recording covers but won't record</extracomment>
+        <extracomment>Note on a program a series recording covers but won&apos;t record</extracomment>
         <translation>The series recording will skip this showing</translation>
     </message>
     <message>
@@ -8548,22 +8544,22 @@
     </message>
     <message>
         <source>Series recording updated</source>
-        <extracomment>Toast after a series recording's episode choice changes</extracomment>
+        <extracomment>Toast after a series recording&apos;s episode choice changes</extracomment>
         <translation>Series recording updated</translation>
     </message>
     <message>
         <source>Unable to update series recording</source>
-        <extracomment>Toast when a series recording can't be read or changed</extracomment>
+        <extracomment>Toast when a series recording can&apos;t be read or changed</extracomment>
         <translation>Unable to update series recording</translation>
     </message>
     <message>
         <source>Failed to load recordings</source>
-        <extracomment>Toast when the player's Record button can't read the program's recordings</extracomment>
+        <extracomment>Toast when the player&apos;s Record button can&apos;t read the program&apos;s recordings</extracomment>
         <translation>Failed to load recordings</translation>
     </message>
     <message>
         <source>Record This Program</source>
-        <extracomment>Player Record dialog row for a program that isn't a series</extracomment>
+        <extracomment>Player Record dialog row for a program that isn&apos;t a series</extracomment>
         <translation>Record This Program</translation>
     </message>
     <message>
@@ -8603,12 +8599,12 @@
     </message>
     <message>
         <source>1 min already aired</source>
-        <extracomment>Beside the Record prompt's progress bar</extracomment>
+        <extracomment>Beside the Record prompt&apos;s progress bar</extracomment>
         <translation>1 min already aired</translation>
     </message>
     <message>
         <source>{minutes} min already aired</source>
-        <extracomment>Beside the Record prompt's progress bar</extracomment>
+        <extracomment>Beside the Record prompt&apos;s progress bar</extracomment>
         <translation>{minutes} min already aired</translation>
     </message>
     <message>
@@ -8618,13 +8614,13 @@
     </message>
     <message>
         <source>Already set to record</source>
-        <extracomment>On the Record prompt's future showing when someone already set it to record</extracomment>
+        <extracomment>On the Record prompt&apos;s future showing when someone already set it to record</extracomment>
         <translation>Already set to record</translation>
     </message>
     <message>
-        <source>Matched by title and description only. Check it's the same program.</source>
+        <source>Matched by title and description only. Check it&apos;s the same program.</source>
         <extracomment>Record prompt caution when the plugin matched the future showing by its title and description</extracomment>
-        <translation>Matched by title and description only. Check it's the same program.</translation>
+        <translation>Matched by title and description only. Check it&apos;s the same program.</translation>
     </message>
     <message>
         <source>The descriptions differ, so this may be a different program.</source>
@@ -8648,7 +8644,7 @@
     </message>
     <message>
         <source>Record Now Only</source>
-        <extracomment>Record prompt button that records only what's airing</extracomment>
+        <extracomment>Record prompt button that records only what&apos;s airing</extracomment>
         <translation>Record Now Only</translation>
     </message>
     <message>
@@ -8677,9 +8673,9 @@
         <translation>Recording started. A future showing will be recorded too.</translation>
     </message>
     <message>
-        <source>Recording started, but couldn't request a future showing.</source>
-        <extracomment>Toast when the future showing couldn't be booked</extracomment>
-        <translation>Recording started, but couldn't request a future showing.</translation>
+        <source>Recording started, but couldn&apos;t request a future showing.</source>
+        <extracomment>Toast when the future showing couldn&apos;t be booked</extracomment>
+        <translation>Recording started, but couldn&apos;t request a future showing.</translation>
     </message>
     <message>
         <source>The future showing will be recorded.</source>
@@ -8687,9 +8683,9 @@
         <translation>The future showing will be recorded.</translation>
     </message>
     <message>
-        <source>Couldn't request the future showing, so nothing will be recorded.</source>
-        <extracomment>Toast when only the future showing was asked for and it couldn't be booked</extracomment>
-        <translation>Couldn't request the future showing, so nothing will be recorded.</translation>
+        <source>Couldn&apos;t request the future showing, so nothing will be recorded.</source>
+        <extracomment>Toast when only the future showing was asked for and it couldn&apos;t be booked</extracomment>
+        <translation>Couldn&apos;t request the future showing, so nothing will be recorded.</translation>
     </message>
     <message>
         <source>Sorting</source>
@@ -8773,7 +8769,7 @@
     </message>
     <message>
         <source>Seerr Discover Sliders</source>
-        <extracomment>Heading over the custom rows a Seerr admin added to Seerr's Discover page</extracomment>
+        <extracomment>Heading over the custom rows a Seerr admin added to Seerr&apos;s Discover page</extracomment>
         <translation>Seerr Discover Sliders</translation>
     </message>
     <message>
@@ -9067,9 +9063,9 @@
         <translation>New Seasons &amp; Episodes</translation>
     </message>
     <message>
-        <source>Choose where Media Bar items come from: random library titles, collections/playlists, the newest titles, or series with new episodes.</source>
+        <source>Choose which titles the Media Bar picks from its source libraries and collections: random ones, the newest, or series with new episodes.</source>
         <extracomment>Description of the Media Bar Source setting</extracomment>
-        <translation>Choose where Media Bar items come from: random library titles, collections/playlists, the newest titles, or series with new episodes.</translation>
+        <translation>Choose which titles the Media Bar picks from its source libraries and collections: random ones, the newest, or series with new episodes.</translation>
     </message>
     <message>
         <source>New Release Banner</source>
@@ -9318,7 +9314,7 @@
     </message>
     <message>
         <source>In {days} days ({date})</source>
-        <extracomment>When the next episode airs, on the end of episode card, like In 6 days (Nov 11). Keep {days} and {date}</extracomment>
+        <extracomment>When the next episode airs or a movie comes out, on the end of episode card and the upcoming home rows, like In 6 days (Nov 11). Keep {days} and {date}</extracomment>
         <translation>In {days} days ({date})</translation>
     </message>
     <message>
@@ -9375,6 +9371,41 @@
         <source>End the upcoming rows with a card that opens the calendar</source>
         <extracomment>Description of the See All card setting</extracomment>
         <translation>End the upcoming rows with a card that opens the calendar</translation>
+    </message>
+    <message>
+        <source>Radarr Calendar</source>
+        <extracomment>Subtitle under the Radarr upcoming home row</extracomment>
+        <translation>Radarr Calendar</translation>
+    </message>
+    <message>
+        <source>Sonarr Calendar</source>
+        <extracomment>Subtitle under the Sonarr upcoming home row</extracomment>
+        <translation>Sonarr Calendar</translation>
+    </message>
+    <message>
+        <source>Radarr and Sonarr Calendars</source>
+        <extracomment>Subtitle under the home row that merges the Radarr and Sonarr upcoming rows</extracomment>
+        <translation>Radarr and Sonarr Calendars</translation>
+    </message>
+    <message>
+        <source>Hide Movies Already on the Server</source>
+        <extracomment>Upcoming Calendars setting that leaves movies Radarr already downloaded out of the Radarr row</extracomment>
+        <translation>Hide Movies Already on the Server</translation>
+    </message>
+    <message>
+        <source>Leave out movies Radarr has already downloaded</source>
+        <extracomment>Description of the Hide Movies Already on the Server setting</extracomment>
+        <translation>Leave out movies Radarr has already downloaded</translation>
+    </message>
+    <message>
+        <source>Hide Episodes Already on the Server</source>
+        <extracomment>Upcoming Calendars setting that leaves episodes Sonarr already downloaded out of the Sonarr row</extracomment>
+        <translation>Hide Episodes Already on the Server</translation>
+    </message>
+    <message>
+        <source>Leave out episodes Sonarr has already downloaded</source>
+        <extracomment>Description of the Hide Episodes Already on the Server setting</extracomment>
+        <translation>Leave out episodes Sonarr has already downloaded</translation>
     </message>
     <message>
         <source>Next air date at the end</source>
@@ -9545,6 +9576,696 @@
         <source>Seerr, Calendar, Achievement Badges, and friends.</source>
         <extracomment>Description of the Integrations settings category</extracomment>
         <translation>Seerr, Calendar, Achievement Badges, and friends.</translation>
+    </message>
+    <message>
+        <source>Add Moonbase to your server</source>
+        <extracomment>Row on the last setup wizard step that opens the Moonbase server plugin dialog</extracomment>
+        <translation>Add Moonbase to your server</translation>
+    </message>
+    <message>
+        <source>A free server plugin that unlocks more of Moonfin</source>
+        <extracomment>Line under the Moonbase row on the last setup wizard step</extracomment>
+        <translation>A free server plugin that unlocks more of Moonfin</translation>
+    </message>
+    <message>
+        <source>Moonbase is free and runs on your server. With it, Moonfin gets:</source>
+        <extracomment>First line of the Moonbase dialog, followed by a list of features</extracomment>
+        <translation>Moonbase is free and runs on your server. With it, Moonfin gets:</translation>
+    </message>
+    <message>
+        <source>Only a server admin can install it. Send them this link.</source>
+        <extracomment>Moonbase dialog line for users who aren&apos;t a server admin, beside a QR code of the install steps</extracomment>
+        <translation>Only a server admin can install it. Send them this link.</translation>
+    </message>
+    <message>
+        <source>It takes a few steps on your server to install. They&apos;re all at this link.</source>
+        <extracomment>Moonbase dialog line for admins of servers the app can&apos;t install it on, beside a QR code of the install steps</extracomment>
+        <translation>It takes a few steps on your server to install. They&apos;re all at this link.</translation>
+    </message>
+    <message>
+        <source>Installing Moonbase...</source>
+        <extracomment>Shown in the Moonbase dialog while the plugin installs</extracomment>
+        <translation>Installing Moonbase...</translation>
+    </message>
+    <message>
+        <source>Moonbase is installed. It turns on when the server restarts, which stops anything playing right now.</source>
+        <extracomment>Shown in the Moonbase dialog after the plugin installed, above a Restart Server button</extracomment>
+        <translation>Moonbase is installed. It turns on when the server restarts, which stops anything playing right now.</translation>
+    </message>
+    <message>
+        <source>The server is restarting. Moonbase turns on once it&apos;s back.</source>
+        <extracomment>Shown while the server restarts after Moonbase was installed</extracomment>
+        <translation>The server is restarting. Moonbase turns on once it&apos;s back.</translation>
+    </message>
+    <message>
+        <source>Moonbase couldn&apos;t be installed. {0}</source>
+        <extracomment>Shown in the Moonbase dialog when installing or restarting failed. Keep {0}, it is the error</extracomment>
+        <translation>Moonbase couldn&apos;t be installed. {0}</translation>
+    </message>
+    <message>
+        <source>Settings synced across your devices</source>
+        <extracomment>Moonbase dialog feature</extracomment>
+        <translation>Settings synced across your devices</translation>
+    </message>
+    <message>
+        <source>Extra ratings and TMDB reviews</source>
+        <extracomment>Moonbase dialog feature</extracomment>
+        <translation>Extra ratings and TMDB reviews</translation>
+    </message>
+    <message>
+        <source>Custom rows from your favorite lists</source>
+        <extracomment>Moonbase dialog feature, rows built from Letterboxd, IMDb, TMDB and MDBList lists</extracomment>
+        <translation>Custom rows from your favorite lists</translation>
+    </message>
+    <message>
+        <source>Retro games with synced saves</source>
+        <extracomment>Moonbase dialog feature</extracomment>
+        <translation>Retro games with synced saves</translation>
+    </message>
+    <message>
+        <source>A calendar of what&apos;s coming up</source>
+        <extracomment>Moonbase dialog feature, upcoming episodes and movies</extracomment>
+        <translation>A calendar of what&apos;s coming up</translation>
+    </message>
+    <message>
+        <source>Your own order for each collection</source>
+        <extracomment>Moonbase dialog feature</extracomment>
+        <translation>Your own order for each collection</translation>
+    </message>
+    <message>
+        <source>Messages from your server admin</source>
+        <extracomment>Moonbase dialog feature</extracomment>
+        <translation>Messages from your server admin</translation>
+    </message>
+    <message>
+        <source>Install</source>
+        <extracomment>Moonbase dialog button that installs the plugin on the server</extracomment>
+        <translation>Install</translation>
+    </message>
+    <message>
+        <source>Installed</source>
+        <extracomment>Shown on the setup wizard&apos;s Moonbase row once the plugin is installed</extracomment>
+        <translation>Installed</translation>
+    </message>
+    <message>
+        <source>Restart Server</source>
+        <extracomment>Moonbase dialog button that restarts the media server</extracomment>
+        <translation>Restart Server</translation>
+    </message>
+    <message>
+        <source>Poster Labels</source>
+        <extracomment>Settings Menu - Title for the option that shows or hides the labels the server admin adds to posters</extracomment>
+        <translation>Poster Labels</translation>
+    </message>
+    <message>
+        <source>Show the labels on posters, such as 4K or HDR.</source>
+        <extracomment>Settings Menu - Description for the Poster Labels option</extracomment>
+        <translation>Show the labels on posters, such as 4K or HDR.</translation>
+    </message>
+    <message>
+        <source>Date Format</source>
+        <extracomment>Settings Menu - Title for the option that picks the order of the month and day in dates</extracomment>
+        <translation>Date Format</translation>
+    </message>
+    <message>
+        <source>Choose between month-day, day-month, or locale default for calendar and release dates</source>
+        <extracomment>Settings Menu - Description for the Date Format option</extracomment>
+        <translation>Choose between month-day, day-month, or locale default for calendar and release dates</translation>
+    </message>
+    <message>
+        <source>Locale Default</source>
+        <extracomment>Settings Menu - Date Format option that keeps the order the app always used</extracomment>
+        <translation>Locale Default</translation>
+    </message>
+    <message>
+        <source>Month / Day (Nov 10)</source>
+        <extracomment>Settings Menu - Date Format option that puts the month before the day</extracomment>
+        <translation>Month / Day (Nov 10)</translation>
+    </message>
+    <message>
+        <source>Day / Month (10 Nov)</source>
+        <extracomment>Settings Menu - Date Format option that puts the day before the month</extracomment>
+        <translation>Day / Month (10 Nov)</translation>
+    </message>
+    <message>
+        <source>{0} more presses</source>
+        <extracomment>After Hours - Toast while pressing Version in About, the presses left before the arcade opens</extracomment>
+        <translation>{0} more presses</translation>
+    </message>
+    <message>
+        <source>1 more press</source>
+        <extracomment>After Hours - Toast while pressing Version in About, one press left</extracomment>
+        <translation>1 more press</translation>
+    </message>
+    <message>
+        <source>After Hours unlocked</source>
+        <extracomment>After Hours - Toast when the seventh press of Version opens the arcade</extracomment>
+        <translation>After Hours unlocked</translation>
+    </message>
+    <message>
+        <source>Endless runner with a gravity flip</source>
+        <extracomment>After Hours - What kind of game Buffer Run is</extracomment>
+        <translation>Endless runner with a gravity flip</translation>
+    </message>
+    <message>
+        <source>Three-lane runner</source>
+        <extracomment>After Hours - What kind of game Fast Forward is</extracomment>
+        <translation>Three-lane runner</translation>
+    </message>
+    <message>
+        <source>Grid crawler</source>
+        <extracomment>After Hours - What kind of game Cable Crawl is</extracomment>
+        <translation>Grid crawler</translation>
+    </message>
+    <message>
+        <source>One-button stacker</source>
+        <extracomment>After Hours - What kind of game Case Stack is</extracomment>
+        <translation>One-button stacker</translation>
+    </message>
+    <message>
+        <source>Paddle breaker</source>
+        <extracomment>After Hours - What kind of game Pixel Purge is</extracomment>
+        <translation>Paddle breaker</translation>
+    </message>
+    <message>
+        <source>The runner from the loading screen finally gets somewhere to go.</source>
+        <extracomment>After Hours - Buffer Run's pitch in the arcade</extracomment>
+        <translation>The runner from the loading screen finally gets somewhere to go.</translation>
+    </message>
+    <message>
+        <source>A sprint down three lobby aisles.</source>
+        <extracomment>After Hours - Fast Forward's pitch in the arcade</extracomment>
+        <translation>A sprint down three lobby aisles.</translation>
+    </message>
+    <message>
+        <source>Steer an HDMI cable around the back of the TV cabinet and plug into signal.</source>
+        <extracomment>After Hours - Cable Crawl's pitch in the arcade</extracomment>
+        <translation>Steer an HDMI cable around the back of the TV cabinet and plug into signal.</translation>
+    </message>
+    <message>
+        <source>Build a shelf-high tower of Blu-ray cases, each one a title from your own library.</source>
+        <extracomment>After Hours - Case Stack's pitch in the arcade</extracomment>
+        <translation>Build a shelf-high tower of Blu-ray cases, each one a title from your own library.</translation>
+    </message>
+    <message>
+        <source>A bad encode left the picture full of blocky artifacts, and they creep down a little every second.</source>
+        <extracomment>After Hours - Pixel Purge's pitch in the arcade</extracomment>
+        <translation>A bad encode left the picture full of blocky artifacts, and they creep down a little every second.</translation>
+    </message>
+    <message>
+        <source>Leaderboards</source>
+        <extracomment>After Hours - The last card in the arcade and the screen with every game's top 3</extracomment>
+        <translation>Leaderboards</translation>
+    </message>
+    <message>
+        <source>Every game's top 3 at once.</source>
+        <extracomment>After Hours - What the Leaderboards card opens</extracomment>
+        <translation>Every game's top 3 at once.</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <extracomment>After Hours - What OK does on the Leaderboards card</extracomment>
+        <translation>Open</translation>
+    </message>
+    <message>
+        <source>About</source>
+        <extracomment>After Hours - What Back returns to from the arcade, the About page of settings</extracomment>
+        <translation>About</translation>
+    </message>
+    <message>
+        <source>Top 3 · This server</source>
+        <extracomment>After Hours - Heading over the focused game's board when the scores come from the server</extracomment>
+        <translation>Top 3 · This server</translation>
+    </message>
+    <message>
+        <source>Top 3 · This device</source>
+        <extracomment>After Hours - Heading over the focused game's board when the scores are kept on the device</extracomment>
+        <translation>Top 3 · This device</translation>
+    </message>
+    <message>
+        <source>No scores yet</source>
+        <extracomment>After Hours - A board nobody has placed on yet</extracomment>
+        <translation>No scores yet</translation>
+    </message>
+    <message>
+        <source>YOU</source>
+        <extracomment>After Hours - Tag on the board rows that are the viewer's own</extracomment>
+        <translation>YOU</translation>
+    </message>
+    <message>
+        <source>Pause</source>
+        <extracomment>After Hours - Hint in the corner of a game, Back pauses it</extracomment>
+        <translation>Pause</translation>
+    </message>
+    <message>
+        <source>Paused</source>
+        <extracomment>After Hours - Title of the pause menu</extracomment>
+        <translation>Paused</translation>
+    </message>
+    <message>
+        <source>Quit</source>
+        <extracomment>After Hours - Pause menu button that leaves the game for the arcade</extracomment>
+        <translation>Quit</translation>
+    </message>
+    <message>
+        <source>Sound on</source>
+        <extracomment>After Hours - Pause menu switch while sound is on, pressing it turns sound off</extracomment>
+        <translation>Sound on</translation>
+    </message>
+    <message>
+        <source>Sound off</source>
+        <extracomment>After Hours - Pause menu switch while sound is off, pressing it turns sound on</extracomment>
+        <translation>Sound off</translation>
+    </message>
+    <message>
+        <source>Game over</source>
+        <extracomment>After Hours - Shown when a run ends</extracomment>
+        <translation>Game over</translation>
+    </message>
+    <message>
+        <source>Play again</source>
+        <extracomment>After Hours - Game over button that starts another run</extracomment>
+        <translation>Play again</translation>
+    </message>
+    <message>
+        <source>Back to the arcade</source>
+        <extracomment>After Hours - Game over button that returns to the arcade</extracomment>
+        <translation>Back to the arcade</translation>
+    </message>
+    <message>
+        <source>{0} · Top 3</source>
+        <extracomment>After Hours - Heading over a game's board on the game over screen, {0} is the game's name</extracomment>
+        <translation>{0} · Top 3</translation>
+    </message>
+    <message>
+        <source>New #{0} on the board</source>
+        <extracomment>After Hours - Game over line when the run placed, {0} is its place from 1 to 3</extracomment>
+        <translation>New #{0} on the board</translation>
+    </message>
+    <message>
+        <source>Scores from {0}</source>
+        <extracomment>After Hours - Where the boards came from, {0} is the server's name</extracomment>
+        <translation>Scores from {0}</translation>
+    </message>
+    <message>
+        <source>Scores on this device</source>
+        <extracomment>After Hours - Where the boards came from when the server plugin isn't there</extracomment>
+        <translation>Scores on this device</translation>
+    </message>
+    <message>
+        <source>PERFECT</source>
+        <extracomment>After Hours - Case Stack flash when a case lands dead on</extracomment>
+        <translation>PERFECT</translation>
+    </message>
+    <message>
+        <source>BOX SET</source>
+        <extracomment>After Hours - Case Stack flash on every third perfect drop in a row</extracomment>
+        <translation>BOX SET</translation>
+    </message>
+    <message>
+        <source>Director's Cut</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Director's Cut</translation>
+    </message>
+    <message>
+        <source>Special Edition</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Special Edition</translation>
+    </message>
+    <message>
+        <source>Widescreen</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Widescreen</translation>
+    </message>
+    <message>
+        <source>Bonus Features</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Bonus Features</translation>
+    </message>
+    <message>
+        <source>Theatrical Cut</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Theatrical Cut</translation>
+    </message>
+    <message>
+        <source>Remastered</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Remastered</translation>
+    </message>
+    <message>
+        <source>Collector's Edition</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Collector's Edition</translation>
+    </message>
+    <message>
+        <source>Extended Edition</source>
+        <extracomment>After Hours - A Case Stack case title used when the media bar has no titles</extracomment>
+        <translation>Extended Edition</translation>
+    </message>
+    <message>
+        <source>How to play</source>
+        <extracomment>After Hours - The card with a game's controls and everything in it, opened with Down in the arcade or from the pause menu</extracomment>
+        <translation>How to play</translation>
+    </message>
+    <message>
+        <source>Enemies</source>
+        <extracomment>After Hours - How to play heading over the things that come after you</extracomment>
+        <translation>Enemies</translation>
+    </message>
+    <message>
+        <source>Obstacles</source>
+        <extracomment>After Hours - How to play heading over the things in your way</extracomment>
+        <translation>Obstacles</translation>
+    </message>
+    <message>
+        <source>Powerups</source>
+        <extracomment>After Hours - How to play heading over the things that help you</extracomment>
+        <translation>Powerups</translation>
+    </message>
+    <message>
+        <source>Start</source>
+        <extracomment>After Hours - How to play button that starts the run</extracomment>
+        <translation>Start</translation>
+    </message>
+    <message>
+        <source>Back to the game</source>
+        <extracomment>After Hours - How to play button that returns to the paused run</extracomment>
+        <translation>Back to the game</translation>
+    </message>
+    <message>
+        <source>Down</source>
+        <extracomment>After Hours - The Down key on the remote, shown as a key in the arcade's hints</extracomment>
+        <translation>Down</translation>
+    </message>
+    <message>
+        <source>OK jumps, again mid-air to flip sides. Down slides. On the ceiling Up and Down swap.</source>
+        <extracomment>After Hours - How Buffer Run plays on a remote, on its How to play card. Keep under about 90 characters, it shows in two lines at most</extracomment>
+        <translation>OK jumps, again mid-air to flip sides. Down slides. On the ceiling Up and Down swap.</translation>
+    </message>
+    <message>
+        <source>Up and Down change lanes. OK jumps.</source>
+        <extracomment>After Hours - How Fast Forward plays on a remote, on its How to play card. Keep under about 90 characters, it shows in two lines at most</extracomment>
+        <translation>Up and Down change lanes. OK jumps.</translation>
+    </message>
+    <message>
+        <source>Arrows turn. The cable never stops.</source>
+        <extracomment>After Hours - How Cable Crawl plays on a remote, on its How to play card. Keep under about 90 characters, it shows in two lines at most</extracomment>
+        <translation>Arrows turn. The cable never stops.</translation>
+    </message>
+    <message>
+        <source>OK drops the case.</source>
+        <extracomment>After Hours - How Case Stack plays on a remote, on its How to play card. Keep under about 90 characters, it shows in two lines at most</extracomment>
+        <translation>OK drops the case.</translation>
+    </message>
+    <message>
+        <source>Left and Right slide the scrubber.</source>
+        <extracomment>After Hours - How Pixel Purge plays on a remote, on its How to play card. Keep under about 90 characters, it shows in two lines at most</extracomment>
+        <translation>Left and Right slide the scrubber.</translation>
+    </message>
+    <message>
+        <source>Lag Bat</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Lag Bat</translation>
+    </message>
+    <message>
+        <source>Swoops in at head height. Slide under it.</source>
+        <extracomment>After Hours - What Lag Bat does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Swoops in at head height. Slide under it.</translation>
+    </message>
+    <message>
+        <source>Static Gremlin</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Static Gremlin</translation>
+    </message>
+    <message>
+        <source>Hops along the floor or the ceiling toward you. Jump it.</source>
+        <extracomment>After Hours - What Static Gremlin does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Hops along the floor or the ceiling toward you. Jump it.</translation>
+    </message>
+    <message>
+        <source>Cable Coil</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Cable Coil</translation>
+    </message>
+    <message>
+        <source>Low on the floor or the ceiling. Jump it.</source>
+        <extracomment>After Hours - What Cable Coil does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Low on the floor or the ceiling. Jump it.</translation>
+    </message>
+    <message>
+        <source>Buffering Banner</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Buffering Banner</translation>
+    </message>
+    <message>
+        <source>Slide under the sign. Its pole is a wall on the other side.</source>
+        <extracomment>After Hours - What Buffering Banner does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Slide under the sign. Its pole is a wall on the other side.</translation>
+    </message>
+    <message>
+        <source>A shield that takes one hit.</source>
+        <extracomment>After Hours - What Direct Play does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>A shield that takes one hit.</translation>
+    </message>
+    <message>
+        <source>Three seconds of dash that smashes anything.</source>
+        <extracomment>After Hours - What Skip Intro does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Three seconds of dash that smashes anything.</translation>
+    </message>
+    <message>
+        <source>Popcorn</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Popcorn</translation>
+    </message>
+    <message>
+        <source>25 points a piece.</source>
+        <extracomment>After Hours - What Popcorn does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>25 points a piece.</translation>
+    </message>
+    <message>
+        <source>Loose Reel</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Loose Reel</translation>
+    </message>
+    <message>
+        <source>Rolls down your lane faster than you run. Jump it.</source>
+        <extracomment>After Hours - What Loose Reel does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Rolls down your lane faster than you run. Jump it.</translation>
+    </message>
+    <message>
+        <source>Usher</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Usher</translation>
+    </message>
+    <message>
+        <source>Walks toward you and changes lanes once.</source>
+        <extracomment>After Hours - What Usher does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Walks toward you and changes lanes once.</translation>
+    </message>
+    <message>
+        <source>Velvet Rope</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Velvet Rope</translation>
+    </message>
+    <message>
+        <source>Low. Jump it or change lanes.</source>
+        <extracomment>After Hours - What Velvet Rope does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Low. Jump it or change lanes.</translation>
+    </message>
+    <message>
+        <source>Popcorn Cart</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Popcorn Cart</translation>
+    </message>
+    <message>
+        <source>Too tall to jump. Change lanes.</source>
+        <extracomment>After Hours - What Popcorn Cart does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Too tall to jump. Change lanes.</translation>
+    </message>
+    <message>
+        <source>Front Row Pass</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Front Row Pass</translation>
+    </message>
+    <message>
+        <source>Magnet</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Magnet</translation>
+    </message>
+    <message>
+        <source>Pulls in tickets from every lane for eight seconds.</source>
+        <extracomment>After Hours - What Magnet does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Pulls in tickets from every lane for eight seconds.</translation>
+    </message>
+    <message>
+        <source>Ticket</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Ticket</translation>
+    </message>
+    <message>
+        <source>Interference Bug</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Interference Bug</translation>
+    </message>
+    <message>
+        <source>Wanders at random.</source>
+        <extracomment>After Hours - What Interference Bug does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Wanders at random.</translation>
+    </message>
+    <message>
+        <source>Tangle</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Tangle</translation>
+    </message>
+    <message>
+        <source>Slowly chases your plug.</source>
+        <extracomment>After Hours - What Tangle does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Slowly chases your plug.</translation>
+    </message>
+    <message>
+        <source>Static</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Static</translation>
+    </message>
+    <message>
+        <source>A dead cell. One appears every third signal.</source>
+        <extracomment>After Hours - What Static does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>A dead cell. One appears every third signal.</translation>
+    </message>
+    <message>
+        <source>Power Brick</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Power Brick</translation>
+    </message>
+    <message>
+        <source>A 2 by 2 block every fifth signal.</source>
+        <extracomment>After Hours - What Power Brick does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>A 2 by 2 block every fifth signal.</translation>
+    </message>
+    <message>
+        <source>Ghost</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Ghost</translation>
+    </message>
+    <message>
+        <source>Five seconds of passing through everything but the edge.</source>
+        <extracomment>After Hours - What Ghost does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Five seconds of passing through everything but the edge.</translation>
+    </message>
+    <message>
+        <source>Snip</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Snip</translation>
+    </message>
+    <message>
+        <source>Cuts the cable in half for bonus points.</source>
+        <extracomment>After Hours - What Snip does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Cuts the cable in half for bonus points.</translation>
+    </message>
+    <message>
+        <source>Signal</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Signal</translation>
+    </message>
+    <message>
+        <source>Points, and two more segments.</source>
+        <extracomment>After Hours - What Signal does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Points, and two more segments.</translation>
+    </message>
+    <message>
+        <source>Shelf Cat</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Shelf Cat</translation>
+    </message>
+    <message>
+        <source>Bats a case as it comes in, so that one slides faster.</source>
+        <extracomment>After Hours - What Shelf Cat does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Bats a case as it comes in, so that one slides faster.</translation>
+    </message>
+    <message>
+        <source>Blu-ray Case</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Blu-ray Case</translation>
+    </message>
+    <message>
+        <source>A title from your library. The overhang gets trimmed off.</source>
+        <extracomment>After Hours - What Blu-ray Case does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>A title from your library. The overhang gets trimmed off.</translation>
+    </message>
+    <message>
+        <source>Steelbook</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Steelbook</translation>
+    </message>
+    <message>
+        <source>Every tenth case. Slides much faster.</source>
+        <extracomment>After Hours - What Steelbook does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Every tenth case. Slides much faster.</translation>
+    </message>
+    <message>
+        <source>Perfect Drop</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Perfect Drop</translation>
+    </message>
+    <message>
+        <source>Land it dead on and the stack grows a little wider.</source>
+        <extracomment>After Hours - What Perfect Drop does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Land it dead on and the stack grows a little wider.</translation>
+    </message>
+    <message>
+        <source>Box Set</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Box Set</translation>
+    </message>
+    <message>
+        <source>Three perfect drops in a row grow it a lot wider.</source>
+        <extracomment>After Hours - What Box Set does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Three perfect drops in a row grow it a lot wider.</translation>
+    </message>
+    <message>
+        <source>Dead Pixel</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Dead Pixel</translation>
+    </message>
+    <message>
+        <source>Falls from cleared blocks. Catching it shrinks the scrubber.</source>
+        <extracomment>After Hours - What Dead Pixel does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Falls from cleared blocks. Catching it shrinks the scrubber.</translation>
+    </message>
+    <message>
+        <source>Macroblock</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Macroblock</translation>
+    </message>
+    <message>
+        <source>One hit clears it.</source>
+        <extracomment>After Hours - What Macroblock does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>One hit clears it.</translation>
+    </message>
+    <message>
+        <source>Keyframe</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Keyframe</translation>
+    </message>
+    <message>
+        <source>Takes three hits and drops a powerup.</source>
+        <extracomment>After Hours - What Keyframe does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>Takes three hits and drops a powerup.</translation>
+    </message>
+    <message>
+        <source>A scrubber twice as wide for eight seconds.</source>
+        <extracomment>After Hours - What HDR does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>A scrubber twice as wide for eight seconds.</translation>
+    </message>
+    <message>
+        <source>Buffer</source>
+        <extracomment>After Hours - The name of a thing in one of the games, on its How to play card. Keep it short, it shows on one line in a small column</extracomment>
+        <translation>Buffer</translation>
+    </message>
+    <message>
+        <source>A net under the scrubber that saves one miss.</source>
+        <extracomment>After Hours - What Buffer does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
+        <translation>A net under the scrubber that saves one miss.</translation>
     </message>
 </context>
 </TS>

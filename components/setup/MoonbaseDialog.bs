@@ -1,0 +1,203 @@
+import "pkg:/components/setup/setupPreviewDraw.bs"
+import "pkg:/source/enums/ColorPalette.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/moonbaseInstall.bs"
+import "pkg:/source/utils/settingsGlyphs.bs"
+
+const DIALOG_TEXT_WIDTH = 820
+const DIALOG_QR_SIZE = 300
+const DIALOG_ACTION_HEIGHT = 64
+const DIALOG_BODY_COLOR = "0xFFFFFFB3"
+
+sub init()
+    m.stage = "info"
+    m.failure = ""
+end sub
+
+sub open()
+    m.canInstall = m.top.isAdmin and m.top.serverType = "jellyfin"
+    draw()
+end sub
+
+' Drawn again on every stage, so the actions and the status always match
+sub draw()
+    while m.top.getChildCount() > 0
+        m.top.removeChildIndex(0)
+    end while
+
+    showLink = not m.canInstall
+    width = DIALOG_TEXT_WIDTH + 80
+    if showLink then width += DIALOG_QR_SIZE + 40
+
+    panel = m.top.createChild("Group")
+    background = panel.createChild("Poster")
+    background.uri = "pkg:/images/dialog.9.png"
+
+    setupPreviewDraw.TextLabel(panel, moonbaseInstall.NAME, 40, 36, 40, "0xFFFFFFFF", true)
+    y = 108
+    y += paragraph(panel, tr("Moonbase is free and runs on your server. With it, Moonfin gets:"), y, DIALOG_BODY_COLOR) + 14
+    for each feature in moonbaseInstall.Features(m.top.serverType)
+        glyph(panel, "check_circle", 40, y + 4, 26, DIALOG_BODY_COLOR)
+        line = setupPreviewDraw.TextLabel(panel, feature, 82, y, 28, DIALOG_BODY_COLOR, false)
+        line.width = DIALOG_TEXT_WIDTH - 42
+        y += 44
+    end for
+
+    if showLink
+        note = tr("It takes a few steps on your server to install. They're all at this link.")
+        if not m.top.isAdmin then note = tr("Only a server admin can install it. Send them this link.")
+        y += 10 + paragraph(panel, note, y + 10, "0xFFFFFFFF")
+
+        qrX = DIALOG_TEXT_WIDTH + 80
+        qr = panel.createChild("QRCode")
+        qr.pixel = 6
+        qr.text = moonbaseInstall.GuideUrl(m.top.serverType)
+        qr.width = DIALOG_QR_SIZE
+        qr.height = DIALOG_QR_SIZE
+        qr.translation = [qrX, 108]
+        caption = setupPreviewDraw.TextLabel(panel, tr("Scan with your phone to open this link"), qrX, 108 + DIALOG_QR_SIZE + 12, 22, DIALOG_BODY_COLOR, false)
+        caption.width = DIALOG_QR_SIZE
+        caption.wrap = true
+        caption.horizAlign = "center"
+        if y < 108 + DIALOG_QR_SIZE + 76 then y = 108 + DIALOG_QR_SIZE + 76
+    end if
+
+    status = statusText()
+    if status <> ""
+        statusColor = "0xFFFFFFFF"
+        if m.stage = "failed" then statusColor = "0xFF6B6BFF"
+        y += 18 + paragraph(panel, status, y + 18, statusColor)
+    end if
+
+    m.actions = actionsFor()
+    y += 24
+    if m.actions.count() > 0
+        setupPreviewDraw.Rect(panel, 40, y, width - 80, 2, "0xFFFFFF14")
+        m.actionList = panel.createChild("LabelList")
+        m.actionList.translation = [40, y + 12]
+        m.actionList.itemSize = [width - 80, DIALOG_ACTION_HEIGHT]
+        m.actionList.numRows = m.actions.count()
+        m.actionList.vertFocusAnimationStyle = "floatingFocus"
+        m.actionList.color = "0xFFFFFFFF"
+        m.actionList.focusedColor = "0xFFFFFFFF"
+        m.actionList.focusBitmapBlendColor = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+        content = CreateObject("roSGNode", "ContentNode")
+        for each action in m.actions
+            content.createChild("ContentNode").title = action.label
+        end for
+        m.actionList.content = content
+        m.actionList.observeField("itemSelected", "onActionSelected")
+        y += 12 + m.actions.count() * DIALOG_ACTION_HEIGHT
+    else
+        m.actionList = invalid
+    end if
+
+    height = y + 32
+    background.width = width
+    background.height = height
+    panel.translation = [(1920 - width) / 2, (1080 - height) / 2]
+
+    if isValid(m.actionList)
+        m.actionList.setFocus(true)
+    else
+        ' Nothing to press while the server works, but Back still closes
+        m.top.setFocus(true)
+    end if
+end sub
+
+function statusText() as string
+    if m.stage = "installing" then return tr("Installing Moonbase...")
+    if m.stage = "installed" then return tr("Moonbase is installed. It turns on when the server restarts, which stops anything playing right now.")
+    if m.stage = "restarting" then return tr("The server is restarting. Moonbase turns on once it's back.")
+    if m.stage = "failed" and m.top.installed then return m.failure
+    if m.stage = "failed" then return substitute(tr("Moonbase couldn't be installed. {0}"), m.failure)
+    return ""
+end function
+
+function actionsFor() as object
+    actions = []
+    if m.stage = "info" and m.canInstall then actions.push({ id: "install", label: tr("Install") })
+    if m.stage = "failed" then actions.push({ id: m.top.installed ? "restart" : "install", label: tr("Retry") })
+    if m.stage = "installed" then actions.push({ id: "restart", label: tr("Restart Server") })
+    if m.stage = "installing" or m.stage = "restarting" then return actions
+    actions.push({ id: "close", label: tr("Close") })
+    return actions
+end function
+
+' A wrapped block of body text. Returns how tall it came out.
+function paragraph(parent as object, value as string, y as float, color as string) as float
+    label = setupPreviewDraw.TextLabel(parent, value, 40, y, 28, color, false)
+    label.width = DIALOG_TEXT_WIDTH
+    label.wrap = true
+    return label.boundingRect().height
+end function
+
+function glyph(parent as object, glyphName as string, x as float, y as float, size as integer, color as string) as object
+    font = CreateObject("roSGNode", "Font")
+    font.uri = settingsGlyphs.FONT_URI
+    font.size = size
+    label = parent.createChild("Label")
+    label.font = font
+    label.text = settingsGlyphs.Char(glyphName)
+    label.color = color
+    label.width = size
+    label.height = size
+    label.translation = [x, y]
+    return label
+end function
+
+sub onActionSelected(event as object)
+    action = m.actions[event.getData()]
+    if not isValid(action) then return
+    if action.id = "close"
+        m.top.wasClosed = true
+    else
+        runTask(action.id)
+    end if
+end sub
+
+sub runTask(taskAction as string)
+    m.stage = "installing"
+    if taskAction = "restart" then m.stage = "restarting"
+    draw()
+    m.task = CreateObject("roSGNode", "MoonbaseInstallTask")
+    m.task.action = taskAction
+    m.task.observeField("result", "onTaskDone")
+    m.task.control = "RUN"
+end sub
+
+sub onTaskDone(event as object)
+    result = event.getData()
+    restarting = m.stage = "restarting"
+    if result.ok = true and restarting
+        draw()
+        ' Leaves the restarting line up for a moment before closing
+        m.closeTimer = CreateObject("roSGNode", "Timer")
+        m.closeTimer.duration = 3
+        m.closeTimer.observeField("fire", "onCloseTimer")
+        m.closeTimer.control = "start"
+        return
+    end if
+    if result.ok = true
+        m.top.installed = true
+        m.stage = "installed"
+    else
+        m.failure = result.reason
+        m.stage = "failed"
+    end if
+    draw()
+end sub
+
+sub onCloseTimer()
+    m.top.wasClosed = true
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if key = "back"
+        m.top.wasClosed = true
+        return true
+    end if
+    ' The dialog owns the remote while it's up
+    return true
+end function
