@@ -139,7 +139,7 @@ const selections = {
     'components/home/HomeRows.bs': ['toNormalizedString'],
     'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'getBoolSetting', 'getStringSetting', 'appendRadarrCalendar', 'radarrRowRelease', 'appendSonarrCalendar', 'sonarrRowPicks', 'sonarrEpisodeCode', 'calendarSubtitle', 'sortByCalendarDate'],
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
-    'source/api/Image.bs': ['ImageURL', 'metadataPosterURL'],
+    'source/api/Image.bs': ['ImageURL', 'metadataPosterURL', 'chapterImageURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
     'components/config/SigninScene.bs': ['showsQuickConnect'],
     'source/utils/parsedUrl.bs': ['ParsedUrl', '__ParsedUrl_ToString'],
@@ -737,6 +737,15 @@ assert.doesNotMatch(episodeOverlay, /Press BACK to close/, 'The episode browser 
 assert.match(episodeOverlay, /requestMarker[^]*?pillSize = "compact"/, 'The episode browser rows carry their anime markers');
 assert.match(playerView, /m\.episodeOverlay\.logoUri = osdLogo\.uri/, 'The episode browser header is the series logo');
 process.stdout.write('PASS: episode browser wiring (9 checks)\n');
+const chapterOverlay = await readFile('components/video/ChapterListOverlay.bs', 'utf8');
+assert.match(chapterOverlay, /key = KeyCode\.LEFT[^]*?m\.focusIndex--[^]*?key = KeyCode\.RIGHT[^]*?m\.focusIndex\+\+/, 'The chapter row moves with Left and Right');
+assert.doesNotMatch(chapterOverlay, /KeyCode\.(UP|DOWN)/, 'Up and Down stay in the chapter row');
+assert.match(chapterOverlay, /return key <> KeyCode\.PLAY/, 'Play and pause still reach the player under the chapter row');
+assert.match(chapterOverlay, /visual\.thumb\.uri = "" and visual\.thumbUrl <> "" and i >= m\.scrollCol - THUMB_MARGIN/, 'Chapter images load only near the visible cards');
+assert.match(playerView, /thumbUrl: chapterImageURL\(m\.top\.id, i, m\.chapters\[i\]\.LookupCI\("ImageTag"\), serverBase, authToken\)/, 'Each chapter card gets its image from the item it plays');
+assert.match(await readFile('components/details/ModernItemDetails.bs', 'utf8'), /chapterImageURL\(itemId, i, ch\.LookupCI\("ImageTag"\), serverBase, authToken\)/, 'Modern builds chapter images with the same helper as the player');
+assert.match(chapterOverlay, /createChild\("ScrollingLabel"\)[^]*?if focused then repeatCount = -1/, 'A long chapter name scrolls on the focused card only');
+process.stdout.write('PASS: chapter row wiring (7 checks)\n');
 
 // Every row on the Calendar screen that the calendar draws moves the preview to it. The release types are
 // shared with the Upcoming Movies row, week start only changes the month grid and the select action only
