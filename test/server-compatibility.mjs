@@ -58,6 +58,7 @@ const selections = {
     'source/utils/logRedaction.bs': null,
     'source/utils/youtubeTrailer.bs': null,
     'source/utils/tmdbReviews.bs': null,
+    'source/utils/episodeCast.bs': null,
     'source/utils/detailCompatibility.bs': null,
     'source/utils/parentalFilter.bs': null,
     'source/utils/externalList.bs': null,
@@ -216,6 +217,7 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/poster-labels.bs', 'utf8');
 source += '\n' + await readFile('test/transcode-audio.bs', 'utf8');
 source += '\n' + await readFile('test/person-role.bs', 'utf8');
+source += '\n' + await readFile('test/episode-cast.bs', 'utf8');
 // The rest of the Plex playback rules reach for the server
 const plexPlaybackFile = await readFile('source/api/plex/PlexPlayback.bs', 'utf8');
 source += '\n' + plexPlaybackFile.match(/^const PLEX_HLS_AUDIO_CODECS = .+$/m)[0] + '\nnamespace plexPlayback\n';
