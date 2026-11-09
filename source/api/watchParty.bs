@@ -1,0 +1,68 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/plexUrls.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
+
+const WATCH_PARTY_BASE = "/Moonfin/WatchParty"
+
+namespace watchPartyApi
+
+    function Transfer(path as string, roomToken as string) as dynamic
+        serverUrl = toString(get_url() ?? "")
+        if serverUrl = "" then return invalid
+
+        ' Plex goes to the Moonbase companion rather than the Plex bridge, since the bridge drops the
+        ' room token header and the body of a refusal
+        if isPlexServer(serverUrl)
+            req = CreateObject("roUrlTransfer")
+            if not isValid(req) then return invalid
+            req.SetUrl(plexUrls.MoonbaseOrigin(serverUrl) + WATCH_PARTY_BASE + path)
+            req.AddHeader("Accept", "application/json")
+            req.AddHeader("X-Plex-Token", toString(getAuthTokenFromRegistry() ?? ""))
+            if LCase(req.GetUrl().Left(8)) = "https://" then setCertificateAuthority(req)
+        else
+            req = APIRequest(WATCH_PARTY_BASE + path)
+            if not isValid(req) then return invalid
+        end if
+
+        if roomToken <> "" then req.AddHeader("X-Moonfin-Room-Token", roomToken)
+        req.RetainBodyOnError(true)
+        return req
+    end function
+
+    ' A status of 0 means no answer came within timeoutMs, or the owner's active field went off first.
+    function Request(method as string, path as string, body as dynamic, roomToken as string, timeoutMs as integer, owner = invalid as dynamic) as object
+        req = watchPartyApi.Transfer(path, roomToken)
+        if not isValid(req) then return { status: 0, data: invalid }
+
+        port = CreateObject("roMessagePort")
+        req.SetMessagePort(port)
+        if method = "POST"
+            req.AddHeader("Content-Type", "application/json")
+            payload = "{}"
+            if isValid(body) then payload = FormatJson(body)
+            started = req.AsyncPostFromString(payload)
+        else
+            if method <> "GET" then req.SetRequest(method)
+            started = req.AsyncGetToString()
+        end if
+        if not started then return { status: 0, data: invalid }
+
+        clock = CreateObject("roTimespan")
+        while clock.TotalMilliseconds() < timeoutMs
+            if isValid(owner) and owner.active <> true then exit while
+            event = wait(250, port)
+            if type(event) = "roUrlEvent"
+                code = event.GetResponseCode()
+                ' A 403 here is a room refusing something, not the access schedule, so it isn't noted
+                text = event.GetString().Trim()
+                data = invalid
+                if text.Left(1) = "{" or text.Left(1) = "[" then data = ParseJson(text)
+                return { status: code, data: data }
+            end if
+        end while
+        req.AsyncCancel()
+        return { status: 0, data: invalid }
+    end function
+
+end namespace

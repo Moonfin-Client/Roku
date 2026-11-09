@@ -10257,5 +10257,550 @@
         <extracomment>After Hours - What Buffer does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
         <translation>A net under the scrubber that saves one miss.</translation>
     </message>
+    <message>
+        <source>In sync</source>
+        <extracomment>Watch Parties - a person&apos;s status in a watch party, next to a colored dot</extracomment>
+        <translation>In sync</translation>
+    </message>
+    <message>
+        <source>Catching up</source>
+        <extracomment>Watch Parties - a person&apos;s status in a watch party, next to a colored dot</extracomment>
+        <translation>Catching up</translation>
+    </message>
+    <message>
+        <source>Buffering</source>
+        <extracomment>Watch Parties - a person&apos;s status in a watch party, next to a colored dot</extracomment>
+        <translation>Buffering</translation>
+    </message>
+    <message>
+        <source>Not watching</source>
+        <extracomment>Watch Parties - a person&apos;s status in a watch party, next to a colored dot</extracomment>
+        <translation>Not watching</translation>
+    </message>
+    <message>
+        <source>Ready</source>
+        <extracomment>Watch Parties - a person&apos;s status in a watch party lobby</extracomment>
+        <translation>Ready</translation>
+    </message>
+    <message>
+        <source>Joining</source>
+        <extracomment>Watch Parties - a person&apos;s status in a watch party lobby</extracomment>
+        <translation>Joining</translation>
+    </message>
+    <message>
+        <source>In the lobby</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>In the lobby</translation>
+    </message>
+    <message>
+        <source>Starting</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Starting</translation>
+    </message>
+    <message>
+        <source>Playing</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Playing</translation>
+    </message>
+    <message>
+        <source>{0} watching</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>{0} watching</translation>
+    </message>
+    <message>
+        <source>Everyone controls</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Everyone controls</translation>
+    </message>
+    <message>
+        <source>That PIN didn&apos;t work. Try again.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>That PIN didn&apos;t work. Try again.</translation>
+    </message>
+    <message>
+        <source>Too many tries. Wait a minute.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Too many tries. Wait a minute.</translation>
+    </message>
+    <message>
+        <source>This party is full.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>This party is full.</translation>
+    </message>
+    <message>
+        <source>No room has that code.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>No room has that code.</translation>
+    </message>
+    <message>
+        <source>You don&apos;t have access to what they&apos;re watching.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>You don&apos;t have access to what they&apos;re watching.</translation>
+    </message>
+    <message>
+        <source>Watch Parties are turned off on this server.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Watch Parties are turned off on this server.</translation>
+    </message>
+    <message>
+        <source>Only the host can do that.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Only the host can do that.</translation>
+    </message>
+    <message>
+        <source>That isn&apos;t allowed in this party.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>That isn&apos;t allowed in this party.</translation>
+    </message>
+    <message>
+        <source>Slow down a little.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Slow down a little.</translation>
+    </message>
+    <message>
+        <source>{0} paused</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>{0} paused</translation>
+    </message>
+    <message>
+        <source>{0} resumed</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>{0} resumed</translation>
+    </message>
+    <message>
+        <source>{0} skipped to {1}</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>{0} skipped to {1}</translation>
+    </message>
+    <message>
+        <source>{0} joined</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>{0} joined</translation>
+    </message>
+    <message>
+        <source>{0} left</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>{0} left</translation>
+    </message>
+    <message>
+        <source>You&apos;re the host now</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>You&apos;re the host now</translation>
+    </message>
+    <message>
+        <source>{0} is the host now</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>{0} is the host now</translation>
+    </message>
+    <message>
+        <source>{0} switched to {1}</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>{0} switched to {1}</translation>
+    </message>
+    <message>
+        <source>Everyone can control playback now</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Everyone can control playback now</translation>
+    </message>
+    <message>
+        <source>Only the host can control playback now</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Only the host can control playback now</translation>
+    </message>
+    <message>
+        <source>{0} in the lobby</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>{0} in the lobby</translation>
+    </message>
+    <message>
+        <source>{0} started a watch party</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>{0} started a watch party</translation>
+    </message>
+    <message>
+        <source>It&apos;s first in Watch Parties on Home</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>It&apos;s first in Watch Parties on Home</translation>
+    </message>
+    <message>
+        <source>The watch party has ended.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>The watch party has ended.</translation>
+    </message>
+    <message>
+        <source>{0} ended the party</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>{0} ended the party</translation>
+    </message>
+    <message>
+        <source>You were removed from the watch party.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>You were removed from the watch party.</translation>
+    </message>
+    <message>
+        <source>Reconnecting to the party...</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Reconnecting to the party...</translation>
+    </message>
+    <message>
+        <source>Back in the party</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Back in the party</translation>
+    </message>
+    <message>
+        <source>Room PIN</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Room PIN</translation>
+    </message>
+    <message>
+        <source>This party has a PIN</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>This party has a PIN</translation>
+    </message>
+    <message>
+        <source>Watch Parties need Moonbase on this server</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Watch Parties need Moonbase on this server</translation>
+    </message>
+    <message>
+        <source>Watch Parties</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Watch Parties</translation>
+    </message>
+    <message>
+        <source>{0} on this server</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>{0} on this server</translation>
+    </message>
+    <message>
+        <source>Start a watch party</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Start a watch party</translation>
+    </message>
+    <message>
+        <source>Join with a code</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Join with a code</translation>
+    </message>
+    <message>
+        <source>Parties you can watch show up here. Got a code from someone? Pick Join with a code.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Parties you can watch show up here. Got a code from someone? Pick Join with a code.</translation>
+    </message>
+    <message>
+        <source>Ask whoever runs the server to install the Moonbase plugin.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Ask whoever runs the server to install the Moonbase plugin.</translation>
+    </message>
+    <message>
+        <source>Picking something to watch</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Picking something to watch</translation>
+    </message>
+    <message>
+        <source>Your watch party</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Your watch party</translation>
+    </message>
+    <message>
+        <source>Send the invite</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Send the invite</translation>
+    </message>
+    <message>
+        <source>Share this code with friends on this server. They pick Join with a code on their Watch Parties screen.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Share this code with friends on this server. They pick Join with a code on their Watch Parties screen.</translation>
+    </message>
+    <message>
+        <source>Or send this link: {0}</source>
+        <extracomment>Watch Parties - under the room code in the lobby. {0} is the invite link, keep it</extracomment>
+        <translation>Or send this link: {0}</translation>
+    </message>
+    <message>
+        <source>They&apos;ll need the room PIN too.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>They&apos;ll need the room PIN too.</translation>
+    </message>
+    <message>
+        <source>In the lobby · {0}</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>In the lobby · {0}</translation>
+    </message>
+    <message>
+        <source>Play waits for everyone&apos;s player, 10 seconds at most, then counts down 3, 2, 1.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Play waits for everyone&apos;s player, 10 seconds at most, then counts down 3, 2, 1.</translation>
+    </message>
+    <message>
+        <source>Search movies</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Search movies</translation>
+    </message>
+    <message>
+        <source>Nothing found yet.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Nothing found yet.</translation>
+    </message>
+    <message>
+        <source>Press OK to pick it for everyone</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Press OK to pick it for everyone</translation>
+    </message>
+    <message>
+        <source>Press OK to add it to the vote</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Press OK to add it to the vote</translation>
+    </message>
+    <message>
+        <source>Back to the lobby</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Back to the lobby</translation>
+    </message>
+    <message>
+        <source>Watch with the party</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Watch with the party</translation>
+    </message>
+    <message>
+        <source>Up next</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Up next</translation>
+    </message>
+    <message>
+        <source>Start for everyone</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Start for everyone</translation>
+    </message>
+    <message>
+        <source>Waiting for the host to start.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Waiting for the host to start.</translation>
+    </message>
+    <message>
+        <source>Waiting for the host to pick something.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Waiting for the host to pick something.</translation>
+    </message>
+    <message>
+        <source>Vote on what to watch</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Vote on what to watch</translation>
+    </message>
+    <message>
+        <source>Let everyone vote on movies</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Let everyone vote on movies</translation>
+    </message>
+    <message>
+        <source>No movies to vote on yet.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>No movies to vote on yet.</translation>
+    </message>
+    <message>
+        <source>Press OK to vote</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Press OK to vote</translation>
+    </message>
+    <message>
+        <source>Press OK to play it for everyone</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Press OK to play it for everyone</translation>
+    </message>
+    <message>
+        <source>{0} votes</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>{0} votes</translation>
+    </message>
+    <message>
+        <source>1 vote</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>1 vote</translation>
+    </message>
+    <message>
+        <source>You voted</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>You voted</translation>
+    </message>
+    <message>
+        <source>Search for a movie or an episode to pick what everyone watches.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Search for a movie or an episode to pick what everyone watches.</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Leave</translation>
+    </message>
+    <message>
+        <source>End for everyone</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>End for everyone</translation>
+    </message>
+    <message>
+        <source>Room code or invite link</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Room code or invite link</translation>
+    </message>
+    <message>
+        <source>Starting together</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Starting together</translation>
+    </message>
+    <message>
+        <source>Waiting for {0}&apos;s player</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>Waiting for {0}&apos;s player</translation>
+    </message>
+    <message>
+        <source>Waiting for everyone&apos;s player</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Waiting for everyone&apos;s player</translation>
+    </message>
+    <message>
+        <source>Starting anyway in {0} s</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>Starting anyway in {0} s</translation>
+    </message>
+    <message>
+        <source>Haha</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Haha</translation>
+    </message>
+    <message>
+        <source>No way</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>No way</translation>
+    </message>
+    <message>
+        <source>Pause please</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Pause please</translation>
+    </message>
+    <message>
+        <source>Brb</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Brb</translation>
+    </message>
+    <message>
+        <source>Again!</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Again!</translation>
+    </message>
+    <message>
+        <source>Send to the party</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Send to the party</translation>
+    </message>
+    <message>
+        <source>Room code {0}</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>Room code {0}</translation>
+    </message>
+    <message>
+        <source>People · {0}</source>
+        <extracomment>Watch Parties - {0} and {1} are filled in by the app, keep them</extracomment>
+        <translation>People · {0}</translation>
+    </message>
+    <message>
+        <source>Room settings</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Room settings</translation>
+    </message>
+    <message>
+        <source>Everyone can control playback</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Everyone can control playback</translation>
+    </message>
+    <message>
+        <source>On</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>On</translation>
+    </message>
+    <message>
+        <source>4 to 8 digits</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>4 to 8 digits</translation>
+    </message>
+    <message>
+        <source>A room PIN is 4 to 8 digits.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>A room PIN is 4 to 8 digits.</translation>
+    </message>
+    <message>
+        <source>Host</source>
+        <extracomment>Watch Parties - a tag next to the person who runs the watch party</extracomment>
+        <translation>Host</translation>
+    </message>
+    <message>
+        <source>Make host</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Make host</translation>
+    </message>
+    <message>
+        <source>Chat and reactions are in the controls</source>
+        <extracomment>Watch Parties - shown over the video when a watch party starts</extracomment>
+        <translation>Chat and reactions are in the controls</translation>
+    </message>
+    <message>
+        <source>Chat and reactions</source>
+        <extracomment>Watch Parties - a button in the player controls during a watch party</extracomment>
+        <translation>Chat and reactions</translation>
+    </message>
+    <message>
+        <source>Only the host can control playback.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Only the host can control playback.</translation>
+    </message>
+    <message>
+        <source>Watch party</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Watch party</translation>
+    </message>
+    <message>
+        <source>Watch with friends on this server, everyone in step</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Watch with friends on this server, everyone in step</translation>
+    </message>
+    <message>
+        <source>Anyone on this server can invite you, and you can start your own. Chat, reactions and a vote on what to watch come with it.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Anyone on this server can invite you, and you can start your own. Chat, reactions and a vote on what to watch come with it.</translation>
+    </message>
+    <message>
+        <source>Nothing runs in the background until you&apos;re in a party.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Nothing runs in the background until you&apos;re in a party.</translation>
+    </message>
+    <message>
+        <source>Open Watch Parties</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Open Watch Parties</translation>
+    </message>
+    <message>
+        <source>Start one or join one in progress</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Start one or join one in progress</translation>
+    </message>
+    <message>
+        <source>Show chat over the video</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Show chat over the video</translation>
+    </message>
+    <message>
+        <source>New messages show for a few seconds</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>New messages show for a few seconds</translation>
+    </message>
+    <message>
+        <source>Party alerts</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Party alerts</translation>
+    </message>
+    <message>
+        <source>Show a banner when someone on this server starts one</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
+        <translation>Show a banner when someone on this server starts one</translation>
+    </message>
 </context>
 </TS>

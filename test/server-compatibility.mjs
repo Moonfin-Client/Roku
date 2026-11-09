@@ -101,6 +101,7 @@ const selections = {
     'source/utils/accessSchedule.bs': null,
     'source/utils/musicCategories.bs': null,
     'source/utils/moonbaseInstall.bs': null,
+    'source/utils/watchPartyModel.bs': null,
     'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'optionRange', 'optionsFit'],
     'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt', 'subtitleBottom', 'seekBarY', 'timeRowShows'],
     'components/settings/settingsEditors.bs': ['editorArrangement'],
@@ -276,6 +277,7 @@ source += '\n' + await readFile('test/home-cards.bs', 'utf8');
 source += '\n' + await readFile('test/calendar-entries.bs', 'utf8');
 source += '\n' + await readFile('test/arr-calendar-rows.bs', 'utf8');
 source += '\n' + await readFile('test/moonbase-install.bs', 'utf8');
+source += '\n' + await readFile('test/watch-party.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/keyboardLayouts.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/keyboard-layouts.bs', 'utf8');
 source += '\n' + await readFile('test/settings-sync-profile.bs', 'utf8');
@@ -888,7 +890,7 @@ assert.match(watchingNowRows.match(/sub onWatchingNowRefreshFired\([^]*?end sub/
 assert.match(watchingNowRows.match(/sub updateCustomDynamicRowItems\([^]*?end sub/)[0], /if homeRowIndexById\(rowId\) >= 0 then return/, 'A failed or empty refresh keeps the watching now cards up, as in Core');
 assert.match(loadItemsSource.match(/function loadWatchingNowRow\([^]*?end function/)[0], /customRowCard\(item, \{\}\)/, 'Watching now cards are outside titles, as in Core');
 assert.match(await readFile('components/home/Home.xml', 'utf8'), /rowTitleComponentName="HomeRowTitle"/, 'Home rows draw their titles with the row title component');
-assert.match(await readFile('source/utils/misc.bs', 'utf8'), /if isSeerrFilterRow\(rowId\) or inArray\(\["mdblist_watching_now", "studios", "audio", "resumeaudio"\], rowId\) then return false/, 'Watching now keeps its wide cards in modern rows, as do Seerr\'s browse rows, Studios and audio rows');
+assert.match(await readFile('source/utils/misc.bs', 'utf8'), /if isSeerrFilterRow\(rowId\) or inArray\(\["mdblist_watching_now", "watch_parties", "studios", "audio", "resumeaudio"\], rowId\) then return false/, 'Watching now keeps its wide cards in modern rows, as do Watch Parties, Seerr\'s browse rows, Studios and audio rows');
 assert.match((await readFile('components/settings/settings.bs', 'utf8')).match(/sub dismissPanel\([^]*?end sub/)[0], /if m\.homeRowsSwitched = true[^]*?behind\.callFunc\("reload"\)/, 'Closing settings reloads Home after a row is switched on or off');
 process.stdout.write('PASS: watching now row wiring (15 checks)\n');
 
@@ -1514,3 +1516,24 @@ assert.match(subtitleSettings, /"playback\.subs\.language", "playback\.subs\.sec
 assert.match(heldPlayer, /m\.liveWindow = liveWindow\.WindowFor\(m\.top\.duration\)/, 'A live stream works out its rewind window from the duration');
 assert.match(heldPlayer, /sub jumpToLive\(\)[^]*?m\.top\.seek = 999999/, 'Jump to Live seeks past the end, which Roku holds at its live point');
 process.stdout.write('PASS: held seek, secondary subtitle and live rewind wiring (8 checks)\n');
+
+// Back from Watch Parties goes one step: settings stays open under the screen, and the screen leaves
+// the stack before it says it closed, so settings takes focus after the screen under it has
+const partySettings = await readFile('components/settings/settings.bs', 'utf8');
+const partyScreen = await readFile('components/watchParty/WatchPartiesScreen.bs', 'utf8');
+assert.match(partySettings, /selectedItem\.settingName = "watchParty\.open"\s+openWatchParties\(\)/, 'Open Watch Parties keeps settings open');
+assert.doesNotMatch(partySettings.match(/sub openWatchParties\(\)[^]*?end sub/)[0], /dismissPanel/, 'and doesn\'t dismiss it');
+assert.match(partySettings, /sub onWatchPartiesClosed\(event as object\)[^]*?m\.top\.visible = true[^]*?m\.settingsMenu\.setFocus\(true\)/, 'Closing the screen brings settings back on its row');
+assert.match(partyScreen, /sub closeScreen\(\)\s+m\.global\.sceneManager\.callFunc\("popScene"\)\s+m\.top\.closed = true/, 'The screen pops itself before it says it closed');
+assert.match(partyScreen, /if key = KeyCode\.BACK\s+closeScreen\(\)\s+return true/, 'BACK on the room list closes it');
+assert.match(partyScreen, /if key = KeyCode\.BACK then closeScreen\(\)/, 'and so does BACK in the lobby');
+process.stdout.write('PASS: Watch Parties back navigation (6 checks)\n');
+
+// A party's item plays alone, focus after Remove and Back, and the screen's keyboard handing focus back
+const partyPlayer = await readFile('components/video/VideoPlayerView.bs', 'utf8');
+assert.match(partyPlayer, /if queuePos = 0 and queueCount <= 1 and not wpActive\(\)/, 'A party player doesn\'t queue the season around its episode');
+assert.match(await readFile('components/ItemGrid/LoadVideoContentTask.bs', 'utf8'), /if isValid\(video\.showID\) and not partyItem/, 'and the load doesn\'t queue the next episodes for it');
+assert.match((await readFile('components/watchParty/WatchPartyPanel.bs', 'utf8')).match(/sub runAction\([^]*?end sub/)[0], /act\("remove", "Remove", \{ "member_id": arg \}\)\s+'[^\n]*\s+wpRowsPark\("people"\)/, 'Remove parks focus on the people heading');
+assert.match(partyScreen, /if isReturning then m\.wpRows\.focus = -1/, 'Back from the player starts the lobby on its first button');
+assert.match(partyScreen.match(/sub releaseKeyboard\(\)[^]*?end sub/)[0], /m\.top\.setFocus\(true\)/, 'The screen takes focus back when its keyboard closes');
+process.stdout.write('PASS: Watch Parties player and focus wiring (5 checks)\n');

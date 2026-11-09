@@ -1,0 +1,117 @@
+import "pkg:/components/watchParty/watchPartyRows.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/tvKeyboard.bs"
+import "pkg:/source/utils/watchPartyModel.bs"
+
+sub init()
+    m.session = m.global.watchParty
+    m.keyboard = invalid
+    m.top.focusable = true
+    wpRowsInit(m.top.findNode("list"), 615, 972)
+    m.session.observeFieldScoped("room", "render")
+    m.session.observeFieldScoped("inRoom", "onInRoom")
+    render()
+end sub
+
+sub close()
+    release()
+    m.top.closed = true
+end sub
+
+sub release()
+    m.session.unobserveFieldScoped("room")
+    m.session.unobserveFieldScoped("inRoom")
+    if isValid(m.keyboard) then onKeyboardCancelled()
+end sub
+
+sub onInRoom()
+    if not m.session.inRoom then close()
+end sub
+
+sub render()
+    room = m.session.room
+    if type(room) <> "roAssociativeArray" or not isValid(room.room_id) then return
+    isHost = room.self_role = "host"
+    members = room.members
+    if type(members) <> "roArray" then members = []
+
+    rows = [
+        { key: "title", kind: "text", text: tr("Your watch party"), color: "#FFFFFFFF", size: 36, lines: 1 },
+        { key: "code", kind: "text", text: substitute(tr("Room code {0}"), watchPartyModel.FormatCode(room.code)) },
+        { key: "people", kind: "heading", text: substitute(tr("People · {0}"), members.Count().ToStr()) }
+    ]
+    for each member in members
+        rows.push(wpMemberRow(member, isHost))
+    end for
+
+    if isHost
+        rows.push({ key: "settings", kind: "heading", text: tr("Room settings") })
+        rows.push({ key: "policy", kind: "toggle", label: tr("Everyone can control playback"), on: room.guest_control_policy = "everyone", action: "policy" })
+        pinState = tr("Off")
+        if room.has_pin = true then pinState = tr("On")
+        rows.push({ key: "pin", kind: "value", label: tr("Room PIN"), value: pinState, action: "pin" })
+    end if
+
+    rows.push(wpLeaveRow(isHost))
+    wpRowsShow(rows)
+end sub
+
+sub runAction(action as string, arg as dynamic)
+    room = m.session.room
+    if action = "promote"
+        act("promote", "Promote", { "member_id": arg })
+    else if action = "remove"
+        act("remove", "Remove", { "member_id": arg })
+        ' The next person's Remove would slide under the cursor, so it waits on the heading
+        wpRowsPark("people")
+    else if action = "policy"
+        policy = "everyone"
+        if room.guest_control_policy = "everyone" then policy = "host_only"
+        act("policy", "Policy", { "guest_control_policy": policy })
+    else if action = "pin"
+        if room.has_pin = true
+            act("pin", "Pin", { "pin": invalid })
+        else
+            m.keyboard = tvKeyboard.Open(m.top.getScene(), { title: tr("Room PIN"), hint: tr("4 to 8 digits"), secure: true })
+            if not isValid(m.keyboard) then return
+            m.keyboard.observeField("submitted", "onKeyboardSubmitted")
+            m.keyboard.observeField("cancelled", "onKeyboardCancelled")
+        end if
+    else if action = "leave"
+        m.session.callFunc("leave", false)
+    else if action = "end"
+        m.session.callFunc("leave", true)
+    end if
+end sub
+
+sub act(kind as string, path as string, body as object)
+    m.session.callFunc("act", { kind: kind, method: "POST", path: path, body: body })
+end sub
+
+sub onKeyboardSubmitted()
+    text = m.keyboard.text.Trim()
+    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled"])
+    m.keyboard = invalid
+    if CreateObject("roRegex", "^[0-9]{4,8}$", "").IsMatch(text)
+        act("pin", "Pin", { "pin": text })
+    else if text <> ""
+        m.session.toast = { text: tr("A room PIN is 4 to 8 digits.") }
+    end if
+end sub
+
+sub onKeyboardCancelled()
+    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled"])
+    m.keyboard = invalid
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return true
+    if key = KeyCode.BACK
+        close()
+        return true
+    end if
+    picked = wpRowsKey(key)
+    if isValid(picked) and picked.action <> "" then runAction(picked.action, picked.arg)
+    return key <> KeyCode.PLAY
+end function

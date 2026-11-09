@@ -1,0 +1,540 @@
+import "pkg:/components/watchParty/watchPartyRows.bs"
+import "pkg:/source/api/Image.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/tvKeyboard.bs"
+import "pkg:/source/utils/watchPartyCard.bs"
+import "pkg:/source/utils/watchPartyModel.bs"
+
+' Leaving the screen doesn't leave the party.
+
+const WP_GRID_WIDTH = 1146
+const WP_TILE_WIDTH = 553
+const WP_TILE_ART = 300
+const WP_TILE_GAP = 40
+const WP_TILE_HEIGHT = 410
+const WP_GRID_VIEW = 860
+const WP_ACTION_WIDTH = 540
+const WP_ACTION_HEIGHT = 108
+
+sub init()
+    m.drawn = ""
+    m.title = m.top.findNode("title")
+    m.subtitle = m.top.findNode("subtitle")
+    m.roomsView = m.top.findNode("roomsView")
+    m.lobbyView = m.top.findNode("lobbyView")
+    m.actions = m.top.findNode("actions")
+    m.help = m.top.findNode("help")
+    m.problem = m.top.findNode("problem")
+    m.grid = m.top.findNode("grid")
+    m.memberList = m.top.findNode("memberList")
+
+    m.title.font.size = 54
+    m.subtitle.font.size = 25
+    m.help.font.size = 24
+    m.problem.font.size = 24
+    m.top.findNode("inviteTitle").font.size = 27
+    m.top.findNode("inviteText").font.size = 22
+    m.top.findNode("inviteCode").font.size = 48
+    m.top.findNode("inviteNote").font.size = 19
+    m.top.findNode("membersTitle").font.size = 30
+    m.top.findNode("membersNote").font.size = 22
+
+    m.session = m.global.watchParty
+    m.zone = "actions"
+    m.actionIndex = 0
+    m.tileIndex = 0
+    m.tiles = []
+    m.results = invalid
+    m.joining = invalid
+    m.keyboard = invalid
+    m.keyboardFor = ""
+    m.top.optionsAvailable = false
+    m.top.overhangVisible = false
+    wpRowsInit(m.top.findNode("lobbyList"), 828, 860)
+end sub
+
+sub OnScreenShown(isReturning = false as boolean)
+    for each name in ["inRoom", "room", "suggestions", "rooms", "roomsState"]
+        m.session.observeFieldScoped(name, "onSessionChange")
+    end for
+    ' Back from the player, the cursor starts on the first button, not where it was before the video
+    if isReturning then m.wpRows.focus = -1
+    m.session.observeFieldScoped("answer", "onAnswer")
+    m.session.callFunc("watchRooms", true)
+    if m.session.inRoom then askSuggestions()
+    m.top.setFocus(true)
+    render()
+end sub
+
+sub OnScreenHidden()
+    for each name in ["inRoom", "room", "suggestions", "rooms", "roomsState", "answer"]
+        m.session.unobserveFieldScoped(name)
+    end for
+    m.session.callFunc("watchRooms", false)
+    m.top.lastFocus = invalid
+end sub
+
+sub onRequest()
+    request = m.top.request
+    if not isValid(request) or m.session.inRoom then return
+    if request.start = true
+        m.actionIndex = 0
+        runRoomsAction()
+    else if isValidAndNotEmpty(request.roomId)
+        join({ "room_id": request.roomId }, request.hasPin = true)
+    end if
+end sub
+
+' ===== Asking the room =====
+
+sub join(body as object, needsPin as boolean)
+    m.joining = body
+    if needsPin
+        openKeyboard("pin", tr("Room PIN"), tr("This party has a PIN"), true)
+        return
+    end if
+    m.problem.text = ""
+    act("join", "POST", "/Join", body)
+end sub
+
+sub askSuggestions()
+    act("suggestions", "GET", "Suggestions")
+end sub
+
+sub act(kind as string, method as string, path as string, body = invalid as dynamic)
+    m.session.callFunc("act", { kind: kind, method: method, path: path, body: body })
+end sub
+
+sub onAnswer(event as object)
+    answer = event.getData()
+    kind = answer.request.kind
+    code = watchPartyModel.ErrorCode(answer)
+    ok = answer.status >= 200 and answer.status < 300
+
+    if kind = "search"
+        m.results = []
+        if ok then m.results = answer.data.items
+        ' The cursor starts on the first title found
+        m.wpRows.focus = -1
+        render()
+        return
+    end if
+    if (kind = "join" or kind = "create") and not ok
+        if code = "pin_required"
+            openKeyboard("pin", tr("Room PIN"), tr("This party has a PIN"), true)
+            return
+        end if
+        m.problem.text = watchPartyModel.ErrorText(code)
+        if answer.status = 404 and code = "" then m.problem.text = tr("Watch Parties need Moonbase on this server")
+        return
+    end if
+    if kind = "join" or kind = "create"
+        m.joining = invalid
+        m.results = invalid
+        askSuggestions()
+        return
+    end if
+    if ok and kind = "stage" and answer.request.thenStart = true then act("start", "POST", "Start", { "position_seconds": 0 })
+    ' A vote or a suggestion changes the list, which the server only sends without our own votes
+    if ok and (kind = "vote" or kind = "suggest" or kind = "unsuggest") then askSuggestions()
+    if ok or kind = "rooms" then return
+    ' The lobby has no line of its own for a refusal, so it goes in the banner
+    banner = m.top.getScene().findNode("notificationBanner")
+    if isValid(banner) then banner.callFunc("enqueue", [{ title: watchPartyModel.ErrorText(code) }])
+end sub
+
+' ===== Keyboard =====
+
+sub openKeyboard(purpose as string, title as string, hint as string, secure as boolean)
+    m.keyboardFor = purpose
+    m.keyboard = tvKeyboard.Open(m.top.getScene(), { title: title, hint: hint, secure: secure })
+    if not isValid(m.keyboard) then return
+    m.keyboard.observeField("submitted", "onKeyboardSubmitted")
+    m.keyboard.observeField("cancelled", "onKeyboardCancelled")
+end sub
+
+sub onKeyboardSubmitted()
+    text = m.keyboard.text.Trim()
+    releaseKeyboard()
+    if text = "" then return
+
+    if m.keyboardFor = "code"
+        join({ "code": watchPartyModel.CodeFrom(text) }, false)
+    else if m.keyboardFor = "pin" and isValid(m.joining)
+        body = m.joining
+        body["pin"] = text
+        join(body, false)
+    else if m.keyboardFor = "search"
+        m.results = []
+        m.session.callFunc("act", { kind: "search", query: text, path: "/search" })
+        render()
+    end if
+end sub
+
+sub onKeyboardCancelled()
+    releaseKeyboard()
+end sub
+
+' A PIN asked for by a Home card opens before this screen has focus, so focus comes back here
+' rather than to wherever it was when the keyboard opened
+sub releaseKeyboard()
+    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled"])
+    m.keyboard = invalid
+    m.top.setFocus(true)
+end sub
+
+' ===== Drawing =====
+
+' The room list keeps polling under the lobby, so a change redraws only when what shows changed
+sub onSessionChange()
+    if drawnFrom() <> m.drawn then render()
+end sub
+
+function drawnFrom() as string
+    if m.session.inRoom then return FormatJson({ room: m.session.room, suggestions: m.session.suggestions })
+    return FormatJson({ rooms: m.session.rooms, state: m.session.roomsState })
+end function
+
+sub render()
+    m.drawn = drawnFrom()
+    inRoom = m.session.inRoom
+    m.roomsView.visible = not inRoom
+    m.lobbyView.visible = inRoom
+    if inRoom
+        renderLobby()
+    else
+        m.results = invalid
+        renderRooms()
+    end if
+end sub
+
+sub renderRooms()
+    rooms = m.session.rooms
+    if type(rooms) <> "roArray" then rooms = []
+    state = m.session.roomsState
+    m.title.text = tr("Watch Parties")
+    m.subtitle.text = ""
+    if state = "ok" and rooms.Count() > 0 then m.subtitle.text = substitute(tr("{0} on this server"), rooms.Count().ToStr())
+    m.subtitle.translation = [84 + m.title.boundingRect().width + 30, 80]
+
+    m.actions.removeChildrenIndex(m.actions.getChildCount(), 0)
+    m.actionNodes = []
+    usable = state <> "missing" and state <> "disabled"
+    if usable
+        for each entry in [{ label: tr("Start a watch party"), icon: "add" }, { label: tr("Join with a code"), icon: "key" }]
+            group = CreateObject("roSGNode", "Group")
+            group.translation = [0, m.actionNodes.Count() * (WP_ACTION_HEIGHT + 21)]
+            fill = wpFill(group, WP_ACTION_WIDTH, WP_ACTION_HEIGHT, "#1E1E1EFF")
+            label = wpLabel(group, entry.label, 30, true, "#FFFFFFFF")
+            label.translation = [36, 0]
+            label.height = WP_ACTION_HEIGHT
+            label.vertAlign = "center"
+            m.actions.appendChild(group)
+            m.actionNodes.push({ fill: fill, label: label })
+        end for
+    end if
+
+    m.help.text = tr("Parties you can watch show up here. Got a code from someone? Pick Join with a code.")
+    m.help.visible = usable
+    m.grid.removeChildrenIndex(m.grid.getChildCount(), 0)
+    m.tiles = []
+
+    if state = "missing"
+        drawNotice(tr("Watch Parties need Moonbase on this server"), tr("Ask whoever runs the server to install the Moonbase plugin."))
+    else if state = "disabled"
+        drawNotice(tr("Watch Parties are turned off on this server."), "")
+    else
+        for i = 0 to rooms.Count() - 1
+            m.tiles.push(drawTile(rooms[i], i))
+        end for
+    end if
+
+    if m.tileIndex >= m.tiles.Count() then m.tileIndex = m.tiles.Count() - 1
+    if m.tileIndex < 0 then m.tileIndex = 0
+    if m.zone = "grid" and m.tiles.Count() = 0 then m.zone = "actions"
+    if m.zone = "lobby" then m.zone = "actions"
+    if not usable and m.tiles.Count() = 0 then m.zone = "none"
+    if usable and m.zone = "none" then m.zone = "actions"
+    paintRooms()
+end sub
+
+sub drawNotice(heading as string, body as string)
+    card = CreateObject("roSGNode", "Group")
+    wpFill(card, WP_GRID_WIDTH, 200, "#1E1E1EFF")
+    title = wpLabel(card, heading, 27, true, "#FFFFFFFF")
+    title.translation = [30, 34]
+    title.width = WP_GRID_WIDTH - 60
+    text = wpLabel(card, body, 22, false, "#A8A8A8FF")
+    text.translation = [30, 90]
+    text.width = WP_GRID_WIDTH - 60
+    text.wrap = true
+    text.maxLines = 3
+    m.grid.appendChild(card)
+end sub
+
+function drawTile(summary as object, index as integer) as object
+    tile = CreateObject("roSGNode", "Group")
+    tile.translation = [(index mod 2) * (WP_TILE_WIDTH + WP_TILE_GAP), (index \ 2) * WP_TILE_HEIGHT]
+
+    ring = wpFill(tile, WP_TILE_WIDTH + 12, WP_TILE_ART + 12, "#FFFFFF00")
+    ring.uri = "pkg:/images/livetv/fill17.9.png"
+    ring.translation = [-6, -6]
+    wpFill(tile, WP_TILE_WIDTH, WP_TILE_ART, "#2A2A2AFF")
+    card = wpRoomCard(summary)
+    art = CreateObject("roSGNode", "Poster")
+    art.width = WP_TILE_WIDTH
+    art.height = WP_TILE_ART
+    art.loadDisplayMode = "zoomToFill"
+    art.uri = card.art
+    tile.appendChild(art)
+
+    if summary.has_pin = true
+        chip = CreateObject("roSGNode", "Group")
+        chip.translation = [18, 18]
+        wpFill(chip, 84, 39, "#2E2E2EFF").uri = "pkg:/images/makd/dotspill14.9.png"
+        pin = wpLabel(chip, tr("PIN"), 19, true, "#E6E6E6FF")
+        pin.width = 84
+        pin.height = 39
+        pin.horizAlign = "center"
+        pin.vertAlign = "center"
+        tile.appendChild(chip)
+    end if
+
+    title = wpLabel(tile, card.title, 30, true, "#FFFFFFFF")
+    title.translation = [0, WP_TILE_ART + 14]
+    title.width = WP_TILE_WIDTH
+    wpDot(tile, 14, watchPartyModel.RoomDotColor(summary)).translation = [0, WP_TILE_ART + 66]
+    meta = wpLabel(tile, watchPartyModel.RoomMeta(summary), 22, false, "#BDBDBDFF")
+    meta.translation = [24, WP_TILE_ART + 58]
+    meta.width = WP_TILE_WIDTH - 24
+
+    m.grid.appendChild(tile)
+    return { ring: ring, summary: summary, top: (index \ 2) * WP_TILE_HEIGHT }
+end function
+
+sub paintRooms()
+    for i = 0 to m.actionNodes.Count() - 1
+        lit = m.zone = "actions" and i = m.actionIndex
+        m.actionNodes[i].fill.blendColor = lit ? "#FFFFFFFF" : "#1E1E1EFF"
+        m.actionNodes[i].label.color = lit ? "#101010FF" : "#FFFFFFFF"
+    end for
+    for i = 0 to m.tiles.Count() - 1
+        m.tiles[i].ring.blendColor = (m.zone = "grid" and i = m.tileIndex) ? "#FFFFFFFF" : "#FFFFFF00"
+    end for
+    scroll = 0
+    if m.zone = "grid" and m.tiles.Count() > 0
+        top = m.tiles[m.tileIndex].top
+        if top + WP_TILE_HEIGHT > WP_GRID_VIEW then scroll = top + WP_TILE_HEIGHT - WP_GRID_VIEW
+    end if
+    m.grid.translation = [0, -scroll]
+end sub
+
+sub renderLobby()
+    room = m.session.room
+    if type(room) <> "roAssociativeArray" then return
+    isHost = room.self_role = "host"
+    playing = room.phase = "playing"
+
+    m.title.text = tr("Your watch party")
+    m.subtitle.text = tr("In the lobby")
+    if playing then m.subtitle.text = tr("Playing")
+    m.subtitle.translation = [84 + m.title.boundingRect().width + 30, 80]
+
+    m.top.findNode("inviteTitle").text = tr("Send the invite")
+    m.top.findNode("inviteText").text = tr("Share this code with friends on this server. They pick Join with a code on their Watch Parties screen.")
+    m.top.findNode("inviteCode").text = watchPartyModel.FormatCode(room.code)
+    ' Roku has no QR code to hand the link to a phone, so the link is spelled out under the code
+    notes = []
+    if isValidAndNotEmpty(room.invite_url) then notes.push(substitute(tr("Or send this link: {0}"), room.invite_url))
+    if room.has_pin = true then notes.push(tr("They'll need the room PIN too."))
+    m.top.findNode("inviteNote").text = notes.Join(Chr(10))
+
+    drawMembers(room, playing)
+    m.zone = "lobby"
+    wpRowsShow(lobbyRows(room, isHost, playing))
+end sub
+
+sub drawMembers(room as object, playing as boolean)
+    members = room.members
+    if type(members) <> "roArray" then members = []
+    heading = tr("In the lobby · {0}")
+    if playing then heading = tr("People · {0}")
+    m.top.findNode("membersTitle").text = substitute(heading, members.Count().ToStr())
+    m.top.findNode("membersNote").text = tr("Play waits for everyone's player, 10 seconds at most, then counts down 3, 2, 1.")
+    m.memberList.removeChildrenIndex(m.memberList.getChildCount(), 0)
+    y = 0
+    for each member in members
+        row = wpMemberRow(member, false)
+        node = wpDrawRow(row, 390)
+        node.translation = [0, y]
+        m.memberList.appendChild(node)
+        y += row.height + 4
+        if y > 600 then exit for
+    end for
+end sub
+
+function lobbyRows(room as object, isHost as boolean, playing as boolean) as object
+    rows = []
+    title = watchPartyModel.ContentTitle(room)
+
+    if isValid(m.results)
+        rows.push({ key: "results", kind: "heading", text: tr("Search movies") })
+        if m.results.Count() = 0 then rows.push({ key: "searching", kind: "text", text: tr("Nothing found yet.") })
+        voting = room.selection_mode = "vote"
+        for each item in m.results
+            caption = toString(item.ProductionYear ?? "")
+            if item.Type = "Episode" then caption = toString(item.SeriesName ?? "")
+            hintText = tr("Press OK to pick it for everyone")
+            if voting and item.Type = "Movie" then hintText = tr("Press OK to add it to the vote")
+            rows.push({ key: "result-" + toString(item.Id ?? ""), kind: "vote", title: toString(item.Name ?? ""), caption: caption, hintText: hintText, action: "searchPick", arg: { id: item.Id, isMovie: item.Type = "Movie" } })
+        end for
+        rows.push({ key: "closeResults", kind: "buttons", buttons: [{ label: tr("Back to the lobby"), action: "closeResults" }] })
+        return rows
+    end if
+
+    if playing
+        rows.push({ key: "playing", kind: "heading", text: tr("Playing") })
+        rows.push({ key: "playingTitle", kind: "text", text: title, color: "#FFFFFFFF", size: 30 })
+        rows.push({ key: "watch", kind: "buttons", buttons: [{ label: tr("Watch with the party"), action: "watch" }] })
+        if isHost then rows.push({ key: "stop", kind: "buttons", buttons: [{ label: tr("Back to the lobby"), action: "stop" }] })
+    else if isValidAndNotEmpty(room.selected_content_id)
+        rows.push({ key: "upNext", kind: "heading", text: tr("Up next") })
+        rows.push({ key: "upNextTitle", kind: "text", text: title, color: "#FFFFFFFF", size: 30 })
+        if isHost
+            rows.push({ key: "start", kind: "buttons", buttons: [{ label: tr("Start for everyone"), action: "start" }] })
+        else
+            rows.push({ key: "waitStart", kind: "text", text: tr("Waiting for the host to start.") })
+        end if
+    else if not isHost
+        rows.push({ key: "waitPick", kind: "text", text: tr("Waiting for the host to pick something.") })
+    end if
+
+    if not playing
+        voting = room.selection_mode = "vote"
+        if isHost or voting then rows.push({ key: "voteHeading", kind: "heading", text: tr("Vote on what to watch") })
+        if isHost then rows.push({ key: "voting", kind: "toggle", label: tr("Let everyone vote on movies"), on: voting, action: "voting" })
+        if voting
+            suggestions = m.session.suggestions
+            if type(suggestions) <> "roArray" then suggestions = []
+            if suggestions.Count() = 0 then rows.push({ key: "noSuggestions", kind: "text", text: tr("No movies to vote on yet.") })
+            hintText = tr("Press OK to vote")
+            if isHost then hintText = tr("Press OK to play it for everyone")
+            for each suggestion in suggestions
+                votes = Int(watchPartyModel.Seconds(suggestion.vote_count))
+                count = substitute(tr("{0} votes"), votes.ToStr())
+                if votes = 1 then count = tr("1 vote")
+                caption = toString(suggestion.subtitle ?? "")
+                if suggestion.voted_by_me = true then caption = (caption + "  " + tr("You voted")).Trim()
+                rows.push({ key: "suggestion-" + toString(suggestion.id ?? ""), kind: "vote", title: toString(suggestion.title ?? ""), votes: count, caption: caption, hintText: hintText, action: "suggestion", arg: suggestion })
+            end for
+        else if isHost and not isValidAndNotEmpty(room.selected_content_id)
+            rows.push({ key: "pickHelp", kind: "text", text: tr("Search for a movie or an episode to pick what everyone watches."), lines: 2 })
+        end if
+        if isHost then rows.push({ key: "search", kind: "buttons", buttons: [{ label: tr("Search movies"), action: "search" }] })
+    end if
+
+    rows.push(wpLeaveRow(isHost))
+    return rows
+end function
+
+' ===== Actions =====
+
+sub runLobbyAction(action as string, arg as dynamic)
+    room = m.session.room
+    if action = "watch"
+        m.session.callFunc("watch")
+    else if action = "start"
+        act("start", "POST", "Start", { "position_seconds": 0 })
+    else if action = "stop"
+        act("stop", "POST", "Stop")
+    else if action = "voting"
+        act("voting", "POST", "Voting", { "voting": room.selection_mode <> "vote" })
+    else if action = "search"
+        openKeyboard("search", tr("Search movies"), "", false)
+    else if action = "closeResults"
+        m.results = invalid
+        render()
+    else if action = "searchPick"
+        m.results = invalid
+        if arg.isMovie and room.selection_mode = "vote"
+            act("suggest", "POST", "Suggestions", { "content_id": arg.id })
+        else
+            act("stage", "POST", "Stage", { "content_id": arg.id })
+        end if
+        render()
+    else if action = "suggestion"
+        if room.self_role = "host"
+            m.session.callFunc("act", { kind: "stage", method: "POST", path: "Stage", body: { "content_id": arg.content_id }, thenStart: true })
+        else
+            act("vote", "POST", "Suggestions/" + toString(arg.id ?? "") + "/Vote", { "voted": arg.voted_by_me <> true })
+        end if
+    else if action = "leave"
+        m.session.callFunc("leave", false)
+    else if action = "end"
+        m.session.callFunc("leave", true)
+    end if
+end sub
+
+sub runRoomsAction()
+    if m.actionIndex = 0
+        m.problem.text = ""
+        act("create", "POST", "/Rooms", {})
+    else
+        openKeyboard("code", tr("Join with a code"), tr("Room code or invite link"), false)
+    end if
+end sub
+
+' The screen leaves the stack before it says it closed, so an opener that takes focus back does it
+' after the screen under it has.
+sub closeScreen()
+    m.global.sceneManager.callFunc("popScene")
+    m.top.closed = true
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+
+    if m.zone = "lobby"
+        if key = KeyCode.BACK and isValid(m.results)
+            m.results = invalid
+            render()
+            return true
+        end if
+        picked = wpRowsKey(key)
+        if isValid(picked)
+            if picked.action <> "" then runLobbyAction(picked.action, picked.arg)
+            return true
+        end if
+        if key = KeyCode.BACK then closeScreen()
+        return true
+    end if
+
+    if key = KeyCode.BACK
+        closeScreen()
+        return true
+    end if
+    if m.zone = "actions"
+        if key = KeyCode.UP and m.actionIndex > 0 then m.actionIndex--
+        if key = KeyCode.DOWN and m.actionIndex < m.actionNodes.Count() - 1 then m.actionIndex++
+        if key = KeyCode.RIGHT and m.tiles.Count() > 0 then m.zone = "grid"
+        if key = KeyCode.OK then runRoomsAction()
+    else if m.zone = "grid"
+        if key = KeyCode.LEFT
+            if m.tileIndex mod 2 = 0 and m.actionNodes.Count() > 0
+                m.zone = "actions"
+            else if m.tileIndex mod 2 = 1
+                m.tileIndex--
+            end if
+        end if
+        if key = KeyCode.RIGHT and m.tileIndex mod 2 = 0 and m.tileIndex + 1 < m.tiles.Count() then m.tileIndex++
+        if key = KeyCode.UP and m.tileIndex >= 2 then m.tileIndex -= 2
+        if key = KeyCode.DOWN and m.tileIndex + 2 < m.tiles.Count() then m.tileIndex += 2
+        if key = KeyCode.OK
+            summary = m.tiles[m.tileIndex].summary
+            join({ "room_id": summary.room_id }, summary.has_pin = true)
+        end if
+    end if
+    paintRooms()
+    return true
+end function
