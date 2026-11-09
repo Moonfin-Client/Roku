@@ -102,7 +102,7 @@ const selections = {
     'source/utils/musicCategories.bs': null,
     'source/utils/moonbaseInstall.bs': null,
     'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'optionRange', 'optionsFit'],
-    'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt'],
+    'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt', 'subtitleBottom', 'seekBarY', 'timeRowShows'],
     'components/settings/settingsEditors.bs': ['editorArrangement'],
     'components/settings/settings.bs': ['settingPath'],
     'components/details/stage/StageChipRow.bs': ['columnShares'],
@@ -162,6 +162,7 @@ for (const [file, names] of Object.entries(selections)) {
 }
 source += '\n' + (await readFile('source/ShowScenes.bs', 'utf8')).match(/^const minimumServerVersion = .+$/m)[0];
 source += '\n' + (await readFile('components/details/QuickLookItemDetails.bs', 'utf8')).match(/^const QL_MAX_BUTTONS = .+$/m)[0];
+source += '\n' + (await readFile('components/settings/SettingsPlayerPreview.bs', 'utf8')).match(/^const \w+ = .+$/gm).join('\n');
 source += '\n' + (await readFile('source/api/EmbyConnect.bs', 'utf8')).replace(/^import .*$/gm, '').replace(/    function Request\([^]*?    end function/, await readFile('test/emby-connect-transport.bs', 'utf8'));
 source += '\n' + await readFile('test/emby-connect.bs', 'utf8');
 source += '\n' + await readFile('test/emby-features.bs', 'utf8');
