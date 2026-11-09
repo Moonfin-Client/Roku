@@ -1,13 +1,26 @@
-import "pkg:/source/enums/ColorPalette.bs"
 import "pkg:/source/utils/buttonLayout.bs"
 import "pkg:/source/utils/liveTvGuide.bs"
 import "pkg:/source/utils/liveWindow.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/osdControls.bs"
+import "pkg:/source/utils/playbackOverlay.bs"
 import "pkg:/source/utils/themeChrome.bs"
 
 const LOGO_HEIGHT = 108
-const LOGO_MAX_WIDTH = 1310
-const LOGO_GAP = 8
+' A wide logo can take a third of the screen, then it shrinks to fit
+const LOGO_MAX_WIDTH = 652
+const HEADER_X = 24
+const HEADER_Y = 12
+' Where the episode line starts under a logo, lifted for the room a Roku label leaves over its text
+const TITLE_UNDER_LOGO_Y = 112
+const BAR_X = 24
+const BAR_Y = 931
+const THUMB_SIZE = 21
+' A time row is a 33 tall line 6 off the bar
+const TIME_ROW_HEIGHT = 33
+const TIME_ROW_GAP = 6
+const FOCUS_LABEL_HEIGHT = 53
+const FOCUS_LABEL_GAP = 12
 
 sub init()
     m.transportControls = m.top.findNode("transportControls")
@@ -19,15 +32,20 @@ sub init()
     m.itemSecondary = m.top.findNode("itemSecondary")
     m.logo = m.top.findNode("logo")
     m.logo.observeField("loadStatus", "onLogoLoadStatusChanged")
-    liveTvGuide.SetFont(m.itemTitle, 27, true)
-    liveTvGuide.SetFont(m.itemSecondary, 21, false)
+    playbackOverlay.SetFont(m.itemTitle, 27, true)
+    playbackOverlay.SetFont(m.itemSecondary, 21, false)
     m.videoPlayPause = m.top.findNode("videoPlayPause")
-    m.belowLeft = m.top.findNode("belowLeft")
-    m.aboveRight = m.top.findNode("aboveRight")
-    m.belowRight = m.top.findNode("belowRight")
-    m.aboveLeft = m.top.findNode("aboveLeft")
-    m.aboveCenter = m.top.findNode("aboveCenter")
-    m.belowCenter = m.top.findNode("belowCenter")
+    settings = m.global.session.user.settings
+    ' Each label's id names its setting, playback.timeAboveLeft and so on. The modes are read once
+    ' here since the labels redraw on every position tick.
+    m.timeSlots = []
+    columns = [48, 656, 1264]
+    for each slot in ["AboveLeft", "AboveCenter", "AboveRight", "BelowLeft", "BelowCenter", "BelowRight"]
+        label = m.top.findNode(LCase(slot.Left(1)) + slot.Mid(1))
+        above = slot.Left(5) = "Above"
+        playbackOverlay.SetFont(label, 18, above)
+        m.timeSlots.push({ label: label, mode: settings["playback.time" + slot] ?? "none", above: above, x: columns[m.timeSlots.count() mod 3] })
+    end for
     m.clock = m.top.findNode("clock")
     ' A slot showing the clock turns over with it, paused or not
     m.clock.findNode("clockTime").observeField("text", "updateOSDTime")
@@ -37,14 +55,19 @@ sub init()
     m.chapterMarks = m.top.findNode("chapterMarks")
     m.markedDuration = 0
     m.seekbarGroup = m.top.findNode("seekbarGroup")
-    m.nextItem = m.top.FindNode("nextItem")
-    m.previousItem = m.top.FindNode("previousItem")
+    ' Kept here since live TV takes these out of the row, and a removed node can't be found again
     m.itemBackButton = m.top.findNode("itemBack")
     m.itemNextButton = m.top.findNode("itemNext")
-    ' Kept here since live TV takes these out of the row, and a removed node can't be found again
     m.rewindButton = m.top.findNode("rewind")
     m.fastForwardButton = m.top.findNode("fastForward")
     m.jumpToLiveButton = m.top.findNode("jumpToLive")
+    m.focusLabel = m.top.findNode("focusLabel")
+    m.focusLabelText = m.top.findNode("focusLabelText")
+    playbackOverlay.SetFont(m.focusLabelText, 18, true)
+    m.focusLabelLayers = [m.top.findNode("focusLabelFill"), m.top.findNode("focusLabelRing")]
+    for each layer in m.focusLabelLayers
+        layer.height = FOCUS_LABEL_HEIGHT
+    end for
     m.liveHeader = m.top.findNode("liveHeader")
     m.liveBadgeFill = m.top.findNode("liveBadgeFill")
     m.liveBadgeLabel = m.top.findNode("liveBadgeLabel")
@@ -74,67 +97,78 @@ sub init()
     m.top.observeField("itemSecondaryText", "layoutHeader")
     m.top.observeField("logoImage", "onLogoImageChanged")
 
-    m.top.observeField("previousItemIcon", "onPreviousItemIconChanged")
-    m.top.observeField("previousItemTitleText", "onPreviousItemTitleTextChanged")
-    m.top.observeField("nextItemIcon", "onNextItemIconChanged")
-    m.top.observeField("nextItemTitleText", "onNextItemTitleTextChanged")
-
     m.focusedButtonIndex = 0
     m.currentButtonGroup = "seekbar"
 
     m.seekbarGroup.setFocus(true)
-    m.progressIndicator.blendColor = themeChrome.Token("rangeThumb", "0xFFFFFFFF")
+    m.accent = themeChrome.Token("rangeProgress", "#00a4dc")
+    m.progressBar.color = m.accent
+    m.progressIndicator.blendColor = m.accent
     m.deviceInfo = CreateObject("roDeviceInfo")
-
-    m.progressBarBackground.color = ColorPalette.BLACK77
-    m.progressBar.color = themeChrome.Token("rangeProgress", "#00a4dc")
+    layoutBar()
 
     m.transportControls.translation = [buttonLayout.OSD_ROW_X, buttonLayout.OSD_ROW_Y]
     m.transportControls.itemSpacings = [buttonLayout.OSD_SPACING]
     m.secondaryControls.itemSpacings = [buttonLayout.OSD_SPACING]
-    transportButtons = m.transportControls.getChildren(-1, 0)
-    for each button in transportButtons
-        button.padding = buttonLayout.OSD_TRANSPORT_PADDING
-        button.height = buttonLayout.OSD_TRANSPORT_HEIGHT
-        button.width = buttonLayout.OSD_TRANSPORT_WIDTH
-        button.background = ColorPalette.DARKGREY
-        button.focusBackground = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
+    for each button in m.transportControls.getChildren(-1, 0)
+        button.label = tr(button.label)
     end for
+    m.skipBack = osdControls.SkipSeconds(settings, -1)
+    m.skipForward = osdControls.SkipSeconds(settings, 1)
+    applySeekGlyphs()
     ' Jump to Live only joins the row while a live stream has a window to rewind
     setButtonInGroup(m.transportControls, m.jumpToLiveButton, false, 0)
-
-    if isValid(m.itemBackButton)
-        setButtonInGroup(m.transportControls, m.itemBackButton, true, 0)
-    end if
-
-    if isValid(m.itemNextButton)
-        setButtonInGroup(m.transportControls, m.itemNextButton, isValidAndNotEmpty(m.nextItem.text), m.transportControls.getChildCount())
-    end if
 
     buildSecondaryControls()
 end sub
 
+' Live TV seeks inside its window with plain arrows
+sub applySeekGlyphs()
+    if m.top.liveMode
+        m.rewindButton.glyph = "fast_rewind_rounded"
+        m.fastForwardButton.glyph = "fast_forward_rounded"
+        return
+    end if
+    m.rewindButton.glyph = osdControls.SeekGlyph(-1, m.skipBack)
+    m.fastForwardButton.glyph = osdControls.SeekGlyph(1, m.skipForward)
+end sub
+
+' The bar drops into the space of a time row below it that has nothing to show
+sub layoutBar()
+    belowEmpty = true
+    for each slot in m.timeSlots
+        if not slot.above and slot.mode <> "none" and slot.mode <> "" then belowEmpty = false
+    end for
+    barY = BAR_Y
+    if belowEmpty then barY += TIME_ROW_HEIGHT + TIME_ROW_GAP
+    m.seekbarGroup.translation = [BAR_X, barY]
+    for each slot in m.timeSlots
+        if slot.above then slot.label.translation = [slot.x, barY - TIME_ROW_HEIGHT - TIME_ROW_GAP] else slot.label.translation = [slot.x, barY + 6 + 8]
+    end for
+    drawBarAt(m.top.progressPercentage)
+end sub
+
 function secondaryCandidates() as object
     if m.top.liveMode then return liveCandidates()
-    return buttonLayout.OsdCandidates(m.top.hasChapters, m.top.hasEpisodes, m.top.hasSubtitles)
+    return buttonLayout.OsdCandidates(m.top.hasChapters, m.top.hasEpisodes, m.top.hasSubtitles, m.top.hasPeople, m.top.canFavorite)
 end function
 
 ' The live row: the channel carousel and the guide lead, with nothing to seek or step through
 function liveCandidates() as object
     candidates = [
-        { id: "channels", nodeId: "showChannels", icon: "pkg:/images/icons/osd/channels.webp" },
-        { id: "guide", nodeId: "showGuide", icon: "pkg:/images/icons/osd/guide.webp" }
+        { id: "channels", nodeId: "showChannels", glyph: "grid_view_rounded", label: "Channels" },
+        { id: "guide", nodeId: "showGuide", glyph: "list_rounded", label: "Guide" }
     ]
     if m.top.hasAudioChoice
-        candidates.push({ id: "audio", nodeId: "showAudioMenu", icon: "pkg:/images/icons/osd/audio.webp" })
+        candidates.push({ id: "audio", nodeId: "showAudioMenu", glyph: "audiotrack_rounded", label: "Audio" })
     end if
     if m.top.hasSubtitles
-        candidates.push({ id: "subtitles", nodeId: "showSubtitleMenu", icon: "pkg:/images/icons/osd/subtitles.webp" })
+        candidates.push({ id: "subtitles", nodeId: "showSubtitleMenu", glyph: "subtitles_rounded", label: "Subtitles" })
     end if
     if m.top.recordable
-        candidates.push({ id: "record", nodeId: "showRecord", icon: "pkg:/images/livetv/record.webp" })
+        candidates.push({ id: "record", nodeId: "showRecord", glyph: "fiber_manual_record", label: "Record" })
     end if
-    candidates.push({ id: "info", nodeId: "showVideoInfoPopup", icon: "pkg:/images/icons/osd/info.webp" })
+    candidates.push({ id: "info", nodeId: "showVideoInfoPopup", glyph: "info_outline_rounded", label: "Playback Information" })
     return candidates
 end function
 
@@ -142,11 +176,26 @@ sub applyRecordMark()
     button = m.secondaryControls.findNode("showRecord")
     if not isValid(button) then return
     mark = m.top.recordMark
-    button.icon = "pkg:/images/livetv/record.webp"
-    if mark = "series" or mark = "skipped" then button.icon = "pkg:/images/livetv/smart_record.webp"
+    button.glyph = "fiber_manual_record"
+    if mark = "series" or mark = "skipped" then button.glyph = "fiber_smart_record"
     button.iconColor = "#FFFFFF"
     if mark = "series" or mark = "record" then button.iconColor = "#F44336"
     if mark = "skipped" then button.iconColor = "#9E9E9E"
+end sub
+
+' The heart and its label follow the favorite, speed reads as text, and a bitrate cap tints its button
+sub applyButtonStates()
+    favorite = m.secondaryControls.findNode("toggleFavorite")
+    if isValid(favorite)
+        favorite.glyph = m.top.isFavorite ? "favorite" : "favorite_border"
+        favorite.iconColor = m.top.isFavorite ? "#CF6679" : "#FFFFFF"
+        favorite.label = m.top.isFavorite ? tr("Remove from Favorites") : tr("Add to Favorites")
+    end if
+    speed = m.secondaryControls.findNode("showSpeedMenu")
+    if isValid(speed) then speed.text = osdControls.SpeedLabel(m.top.playbackSpeed)
+    quality = m.secondaryControls.findNode("showQualityMenu")
+    if isValid(quality) then quality.iconColor = m.top.bitrateCapped ? m.accent : "#FFFFFF"
+    showFocusLabel()
 end sub
 
 ' A live stream with a window to rewind seeks on the bar from its start to the live point, with
@@ -157,11 +206,11 @@ sub applyLiveMode()
     m.videoInfo.visible = not live
     m.liveHeader.visible = live
     m.liveTimeline.visible = live
-    for each node in [m.chapterMarks, m.aboveLeft, m.aboveCenter, m.aboveRight, m.belowLeft, m.belowCenter, m.belowRight]
-        node.visible = not live
+    m.chapterMarks.visible = not live
+    for each slot in m.timeSlots
+        slot.label.visible = not live
     end for
     m.seekbarGroup.visible = not live or rewind
-    m.progressIndicator.visible = not live or rewind
     m.liveTrack.visible = live and not rewind
     if live
         focused = invalid
@@ -180,8 +229,7 @@ sub applyLiveMode()
             focusOnTransportControls(index)
         end if
     end if
-    m.rewindButton.icon = live ? "pkg:/images/icons/osd/live_rewind.webp" : "pkg:/images/icons/osd/rewind.webp"
-    m.fastForwardButton.icon = live ? "pkg:/images/icons/osd/live_forward.webp" : "pkg:/images/icons/osd/forward.webp"
+    applySeekGlyphs()
     onPlaybackStateChanged()
     buildSecondaryControls()
     renderLive()
@@ -272,33 +320,29 @@ sub buildSecondaryControls()
 
     order = chainLookupReturn(m.global.session, `user.settings.\`${OSD_ORDER_SETTING}\``, invalid)
     hidden = chainLookupReturn(m.global.session, `user.settings.\`${OSD_HIDDEN_SETTING}\``, invalid)
-    accent = chainLookupReturn(m.global.session, "user.settings.colorCursor", ColorPalette.HIGHLIGHT)
 
     for each candidate in buttonLayout.Arrange(secondaryCandidates(), order, hidden)
-        button = buttonLayout.OsdSecondaryButton(candidate)
-        button.background = ColorPalette.DARKGREY
-        button.focusBackground = accent
-        m.secondaryControls.appendChild(button)
+        m.secondaryControls.appendChild(buttonLayout.OsdButton(candidate.nodeId, candidate.glyph, candidate.label))
     end for
 
     applyRecordMark()
+    applyButtonStates()
     positionSecondaryControls()
 end sub
 
 ' A previewPosition below zero means use the live playback position
-function formatOSDTimeSlot(slotKey as string, previewPosition as float) as string
-    slotMode = m.global.session.user.settings[slotKey] ?? "none"
+function formatOSDTimeSlot(slotMode as string, previewPosition as float) as string
     if slotMode = "none" or slotMode = "" then return ""
 
     totalTime = m.top.positionTime + m.top.remainingPositionTime
     position = previewPosition >= 0 ? previewPosition : m.top.positionTime
 
-    if slotMode = "elapsed" then return secondsToHuman(position, true)
+    if slotMode = "elapsed" then return secondsToHuman(position, false)
     if slotMode = "endsAt" then return tr("Ends at") + " " + endingTimeAt(previewPosition, totalTime - position)
     if slotMode = "time" then return m.clock.callFunc("getFormattedTime", m.clock.callFunc("getCurrentTime"), true)
-    if slotMode = "timeRemaining" then return "-" + secondsToHuman(totalTime - position, true)
+    if slotMode = "timeRemaining" then return "-" + secondsToHuman(totalTime - position, false)
     ' Both spellings are accepted because either can be the stored value
-    if slotMode = "totalDuration" or slotMode = "totalTime" then return secondsToHuman(totalTime, true)
+    if slotMode = "totalDuration" or slotMode = "totalTime" then return secondsToHuman(totalTime, false)
     return ""
 end function
 
@@ -310,12 +354,9 @@ end function
 
 ' Every slot is assigned so that switching one to None clears whatever it was holding
 sub renderOSDTimeSlots(previewPosition as float)
-    m.aboveLeft.text = formatOSDTimeSlot("playback.timeAboveLeft", previewPosition)
-    m.aboveRight.text = formatOSDTimeSlot("playback.timeAboveRight", previewPosition)
-    m.belowLeft.text = formatOSDTimeSlot("playback.timeBelowLeft", previewPosition)
-    m.belowRight.text = formatOSDTimeSlot("playback.timeBelowRight", previewPosition)
-    m.aboveCenter.text = formatOSDTimeSlot("playback.timeAboveCenter", previewPosition)
-    m.belowCenter.text = formatOSDTimeSlot("playback.timeBelowCenter", previewPosition)
+    for each slot in m.timeSlots
+        slot.label.text = formatOSDTimeSlot(slot.mode, previewPosition)
+    end for
 end sub
 
 ' Observer callbacks receive an event argument when they declare a parameter, so this stays bare
@@ -323,8 +364,6 @@ sub updateOSDTime()
     renderOSDTimeSlots(-1)
 end sub
 
-' onProgressPercentageChanged: Handler for changes to m.top.progressPercentage param
-'
 sub onProgressPercentageChanged()
     ' The duration is only known once the stream has started, and a live one keeps growing
     if abs(osdDurationSeconds() - m.markedDuration) > 1 then drawChapterMarks()
@@ -352,7 +391,7 @@ end sub
 ' The fill and the thumb, the thumb centered on the end of the fill
 sub drawBarAt(fraction as float)
     m.progressBar.width = m.progressBarBackground.width * fraction
-    m.progressIndicator.translation = [103 + m.progressBarBackground.width * fraction - 10, 812]
+    m.progressIndicator.translation = [m.progressBarBackground.width * fraction - THUMB_SIZE / 2, 3 - THUMB_SIZE / 2]
 end sub
 
 function osdDurationSeconds() as float
@@ -381,14 +420,11 @@ sub drawChapterMarks()
     end for
 end sub
 
-
-' onPlaybackStateChanged: Handler for changes to m.top.playbackState param
-'
 sub onPlaybackStateChanged()
-    name = "play"
-    if LCase(m.top.playbackState) = "playing" then name = "pause"
-    if m.top.liveMode then name = "live_" + name
-    m.videoPlayPause.icon = "pkg:/images/icons/osd/" + name + ".webp"
+    playing = LCase(m.top.playbackState) = "playing"
+    m.videoPlayPause.glyph = playing ? "pause_rounded" : "play_arrow_rounded"
+    m.videoPlayPause.label = playing ? tr("Pause") : tr("Play")
+    showFocusLabel()
 end sub
 
 ' The logo takes the top line when there is one, and the series name steps aside for it
@@ -398,19 +434,24 @@ sub layoutHeader()
     m.itemTitle.visible = m.top.itemTitleText <> ""
     m.itemSecondary.text = m.top.itemSecondaryText
     m.itemSecondary.visible = not hasLogo and m.top.itemSecondaryText <> ""
-    top = 61
-    if hasLogo then top += LOGO_HEIGHT + LOGO_GAP
-    m.videoInfo.translation = [103, top]
+    top = HEADER_Y
+    if hasLogo then top = TITLE_UNDER_LOGO_Y
+    m.videoInfo.translation = [HEADER_X, top]
 end sub
 
 ' The logo keeps the box's height and only takes the width it needs, so it sits flush left with
-' the line under it
+' the line under it. One too wide for its share of the screen comes down to fit it.
 sub onLogoLoadStatusChanged()
     status = LCase(m.logo.loadStatus)
     if status = "ready" and m.logo.bitmapHeight > 0
-        width = m.logo.bitmapWidth * LOGO_HEIGHT / m.logo.bitmapHeight
-        if width > LOGO_MAX_WIDTH then width = LOGO_MAX_WIDTH
+        height = LOGO_HEIGHT
+        width = m.logo.bitmapWidth * height / m.logo.bitmapHeight
+        if width > LOGO_MAX_WIDTH
+            width = LOGO_MAX_WIDTH
+            height = width * m.logo.bitmapHeight / m.logo.bitmapWidth
+        end if
         m.logo.width = width
+        m.logo.height = height
         m.logo.visible = true
         layoutHeader()
     else if status = "failed"
@@ -421,42 +462,9 @@ end sub
 
 sub onLogoImageChanged()
     m.logo.visible = false
+    m.logo.height = LOGO_HEIGHT
     m.logo.uri = m.top.logoImage
     layoutHeader()
-end sub
-
-' onPreviousItemIconChanged: Handler for changes to m.top.previousItemIcon param.
-'
-sub onPreviousItemIconChanged()
-    m.previousItem.icon = m.top.previousItemIcon
-end sub
-
-' onPreviousItemTitleTextChanged: Handler for changes to m.top.previousItemTitleText param.
-'
-sub onPreviousItemTitleTextChanged()
-    m.previousItem.text = m.top.previousItemTitleText
-
-    if isValid(m.itemBackButton) and not m.top.liveMode
-        setButtonInGroup(m.transportControls, m.itemBackButton, true, 0)
-        positionSecondaryControls()
-    end if
-end sub
-
-' onNextItemIconChanged: Handler for changes to m.top.nextItemIcon param.
-'
-sub onNextItemIconChanged()
-    m.nextItem.icon = m.top.nextItemIcon
-end sub
-
-' onNextItemTitleTextChanged: Handler for changes to m.top.nextItemTitleText param.
-'
-sub onNextItemTitleTextChanged()
-    m.nextItem.text = m.top.nextItemTitleText
-
-    if isValid(m.itemNextButton) and not m.top.liveMode
-        setButtonInGroup(m.transportControls, m.itemNextButton, isValidAndNotEmpty(m.nextItem.text), m.transportControls.getChildCount())
-        positionSecondaryControls()
-    end if
 end sub
 
 sub setButtonInGroup(group as object, button as object, show as boolean, insertIndex as integer)
@@ -472,6 +480,7 @@ sub setButtonInGroup(group as object, button as object, show as boolean, insertI
             group.removeChild(button)
         end if
     end if
+    positionSecondaryControls()
 end sub
 
 sub positionSecondaryControls()
@@ -479,40 +488,6 @@ sub positionSecondaryControls()
 
     m.secondaryControls.translation = [buttonLayout.OsdSecondaryX(m.transportControls.getChildCount()), buttonLayout.OSD_ROW_Y]
 end sub
-
-function isButtonNavigable(button) as boolean
-    if not isValid(button) then return false
-    if not isValid(button.focus) then return false
-    if isValid(button.visible) and button.visible = false then return false
-    return true
-end function
-
-function getNavigableIndexFrom(buttonGroup as object, startIndex as integer, direction as integer) as integer
-    if direction = 0 or not isValid(buttonGroup) then return -1
-
-    childCount = buttonGroup.getChildCount()
-    i = startIndex
-
-    while i >= 0 and i < childCount
-        button = buttonGroup.getChild(i)
-        if isButtonNavigable(button)
-            return i
-        end if
-
-        i = i + direction
-    end while
-
-    return -1
-end function
-
-function getFirstNavigableIndex(buttonGroup as object) as integer
-    return getNavigableIndexFrom(buttonGroup, 0, 1)
-end function
-
-function getLastNavigableIndex(buttonGroup as object) as integer
-    if not isValid(buttonGroup) then return -1
-    return getNavigableIndexFrom(buttonGroup, buttonGroup.getChildCount() - 1, -1)
-end function
 
 function getControlGroup(groupName as string)
     if groupName = "secondary"
@@ -524,54 +499,64 @@ end function
 
 sub clearAllButtonFocus()
     for each child in m.transportControls.getChildren(-1, 0)
-        if isValid(child.focus)
-            child.focus = false
-        end if
+        child.focus = false
     end for
 
     for each child in m.secondaryControls.getChildren(-1, 0)
-        if isValid(child.focus)
-            child.focus = false
-        end if
+        child.focus = false
     end for
 
     m.transportControls.setFocus(false)
     m.secondaryControls.setFocus(false)
     m.seekbarGroup.setFocus(false)
+    m.focusLabel.visible = false
+    m.progressIndicator.blendColor = m.accent
 end sub
 
-sub focusControlGroup(groupName as string, targetIndex as integer, fallbackDirection as integer)
+sub focusControlGroup(groupName as string, targetIndex as integer)
     buttonGroup = getControlGroup(groupName)
-    if not isValid(buttonGroup) then return
+    if not isValid(buttonGroup) or buttonGroup.getChildCount() = 0 then return
 
     target = targetIndex
-    if target < 0 or target >= buttonGroup.getChildCount()
-        target = -1
-    end if
-
-    if target = -1 or not isButtonNavigable(buttonGroup.getChild(target))
-        if fallbackDirection < 0
-            target = getLastNavigableIndex(buttonGroup)
-        else
-            target = getFirstNavigableIndex(buttonGroup)
-        end if
-    end if
-
-    if target = -1 then return
+    if target < 0 or target >= buttonGroup.getChildCount() then target = 0
 
     clearAllButtonFocus()
     m.currentButtonGroup = groupName
     m.focusedButtonIndex = target
 
-    focusedButton = buttonGroup.getChild(target)
-    focusedButton.focus = true
+    buttonGroup.getChild(target).focus = true
     buttonGroup.setFocus(true)
+    showFocusLabel()
+end sub
 
-    if groupName = "transport"
-        checkDisplaySiblingItem(focusedButton.id)
-    else
-        checkDisplaySiblingItem("")
+sub showFocusLabel()
+    if not isValid(m.focusLabel) then return
+    if m.currentButtonGroup = "seekbar"
+        m.focusLabel.visible = false
+        return
     end if
+    buttonGroup = getControlGroup(m.currentButtonGroup)
+    button = buttonGroup.getChild(m.focusedButtonIndex)
+    if not isValid(button) or button.label = ""
+        m.focusLabel.visible = false
+        return
+    end if
+
+    m.focusLabelText.width = 0
+    m.focusLabelText.text = button.label
+    textWidth = m.focusLabelText.boundingRect().width
+    m.focusLabelText.width = textWidth
+    width = textWidth + 34
+    for each layer in m.focusLabelLayers
+        layer.width = width
+    end for
+
+    center = buttonGroup.translation[0] + m.focusedButtonIndex * (buttonLayout.OSD_BUTTON_SIZE + buttonLayout.OSD_SPACING) + buttonLayout.OSD_BUTTON_SIZE / 2
+    x = center - width / 2
+    if x < 0 then x = 0
+    if x > 1920 - width then x = 1920 - width
+    m.focusLabel.translation = [x, buttonLayout.OSD_ROW_Y - FOCUS_LABEL_GAP - FOCUS_LABEL_HEIGHT]
+    m.focusLabel.visible = true
 end sub
 
 ' The remote leaves the controls for the skip button, and comes back to the seek bar
@@ -587,6 +572,7 @@ sub focusOnSeekbar()
     m.currentButtonGroup = "seekbar"
     m.focusedButtonIndex = 0
     m.seekbarGroup.setFocus(true)
+    m.progressIndicator.blendColor = "#FFFFFF"
 end sub
 
 sub focusOnTransportControls(index = invalid)
@@ -595,7 +581,7 @@ sub focusOnTransportControls(index = invalid)
         targetIndex = index
     end if
 
-    focusControlGroup("transport", targetIndex, 1)
+    focusControlGroup("transport", targetIndex)
 end sub
 
 ' Found rather than counted, since which transport buttons are in the row varies
@@ -608,41 +594,29 @@ function playPauseIndex() as integer
     return 0
 end function
 
-sub focusOnSecondaryControls(index = invalid)
-    targetIndex = getFirstNavigableIndex(m.secondaryControls)
-    if isValid(index)
-        targetIndex = index
-    end if
-
-    focusControlGroup("secondary", targetIndex, 1)
-end sub
-
+' A button can be named, so the one that opened a menu gets focus back when it closes. Otherwise
+' the controls open on the seek bar, or on play when live TV has no bar.
 sub resetFocusToDefaultButton()
-    ' A button can be named, so the one that opened a popup gets focus back when it closes
     for i = 0 to m.secondaryControls.getChildCount() - 1
         if isStringEqual(m.secondaryControls.getChild(i).id, m.top.focusTarget)
-            focusOnSecondaryControls(i)
+            focusControlGroup("secondary", i)
+            return
+        end if
+    end for
+    for i = 0 to m.transportControls.getChildCount() - 1
+        if isStringEqual(m.transportControls.getChild(i).id, m.top.focusTarget)
+            focusControlGroup("transport", i)
             return
         end if
     end for
 
-    ' Live TV has no seek bar to start on unless it has a window to rewind
-    if m.top.liveMode and not (m.top.liveRewind and m.top.focusTarget = "seekbar")
-        if m.top.focusTarget = "secondary" then focusOnSecondaryControls() else focusOnTransportControls()
-        return
-    end if
-
-    if m.top.focusTarget = "video" or m.top.focusTarget = "transport"
+    if m.top.liveMode and not m.top.liveRewind
         focusOnTransportControls()
-    else if m.top.focusTarget = "secondary"
-        focusOnSecondaryControls()
     else
         focusOnSeekbar()
     end if
 end sub
 
-' onVisibleChanged: Handler for changes to the visibility of this menu.
-'
 sub onVisibleChanged()
     if m.top.visible
         resetFocusToDefaultButton()
@@ -651,12 +625,11 @@ sub onVisibleChanged()
         return
     end if
 
+    m.focusLabel.visible = false
     m.inactivityTimer.unobserveField("fire")
     m.inactivityTimer.control = "stop"
 end sub
 
-' onFocusChanged: Handler for changes to the focus of this menu.
-'
 sub onFocusChanged()
     if m.top.hasfocus
         if m.currentButtonGroup = "secondary"
@@ -669,29 +642,18 @@ sub onFocusChanged()
     end if
 end sub
 
-' inactiveCheck: Checks if the time since last keypress is greater than or equal to the allowed inactive time of the menu.
-'
+' Hides the controls once the remote has been still for the timeout, unless a dialog is up or the
+' timeout is zero, which the player sets while paused
 sub inactiveCheck()
     if m.top.liveMode then updateLiveTimeline()
-
-    ' If user is currently seeing a dialog box, ignore inactive check
-    if m.global.sceneManager.callFunc("isDialogOpen")
-        return
-    end if
-
-    ' If inactiveTimeout is 0, keep OSD visible (don't auto-hide)
-    if m.top.inactiveTimeout = 0
-        return
-    end if
+    if m.global.sceneManager.callFunc("isDialogOpen") then return
+    if m.top.inactiveTimeout = 0 then return
 
     if m.deviceInfo.timeSinceLastKeypress() >= m.top.inactiveTimeout
-        checkDisplaySiblingItem("")
         m.top.action = "hide"
     end if
 end sub
 
-' onButtonSelected: Handler for selection of buttons from the menu.
-'
 sub onButtonSelected()
     ' OK on the bar lands a paused scrub and plays, or toggles playback when theres none
     if m.currentButtonGroup = "seekbar"
@@ -699,54 +661,23 @@ sub onButtonSelected()
         return
     end if
 
-    if m.currentButtonGroup = "secondary"
-        selectedButton = m.secondaryControls.getChild(m.focusedButtonIndex)
-    else if m.currentButtonGroup = "transport"
-        selectedButton = m.transportControls.getChild(m.focusedButtonIndex)
-    else
-        return
-    end if
-
-    if not isValid(selectedButton) or not isValid(selectedButton.id)
-        return
-    end if
-
-    checkDisplaySiblingItem("")
-
+    selectedButton = getControlGroup(m.currentButtonGroup).getChild(m.focusedButtonIndex)
+    if not isValid(selectedButton) then return
     m.top.action = selectedButton.id
 end sub
 
-' checkDisplaySiblingItem: Determine visible state for both previous and next item popups
-'
-sub checkDisplaySiblingItem(selectedButtonID as string)
-    if not isValidAndNotEmpty(selectedButtonID) then selectedButtonID = ""
-
-    selectedButtonID = LCase(selectedButtonID)
-
-    showNextItem = false
-
-    if selectedButtonID = "itemnext"
-        showNextItem = true
+' Transport and the buttons after it make one row: Right runs off the end of the first group onto
+' the second and stops at the last button, and Left stops at the first
+sub moveAlongRow(direction as integer)
+    buttonGroup = getControlGroup(m.currentButtonGroup)
+    target = m.focusedButtonIndex + direction
+    if target >= 0 and target < buttonGroup.getChildCount()
+        focusControlGroup(m.currentButtonGroup, target)
+    else if direction > 0 and m.currentButtonGroup = "transport" and m.secondaryControls.getChildCount() > 0
+        focusControlGroup("secondary", 0)
+    else if direction < 0 and m.currentButtonGroup = "secondary" and m.transportControls.getChildCount() > 0
+        focusControlGroup("transport", m.transportControls.getChildCount() - 1)
     end if
-
-    if not isValidAndNotEmpty(m.nextItem.text)
-        showNextItem = false
-    end if
-
-    m.nextItem.visible = showNextItem
-
-    showPreviousItem = false
-
-    if selectedButtonID = "itemback"
-        showPreviousItem = true
-    end if
-
-    if not isValidAndNotEmpty(m.previousItem.text)
-        showPreviousItem = false
-    end if
-
-    m.previousItem.visible = showPreviousItem
-
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
@@ -758,62 +689,29 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if key = "play"
-        checkDisplaySiblingItem("")
         m.top.action = "videoplaypause"
         return true
     end if
 
-    ' With a window to rewind, the remote's Rewind and Fast Forward seek a live stream as the
-    ' buttons do
-    if m.top.liveRewind and (key = "rewind" or key = "fastforward")
-        m.top.action = key
+    ' The remote's seek keys skip by the set lengths, and Fast Forward also skips a pre-roll or a
+    ' segment when one is offered
+    if key = "rewind" or key = "replay"
+        m.top.action = "rewindkey"
+        return true
+    end if
+    if key = "fastforward"
+        m.top.action = "fastforwardkey"
         return true
     end if
 
-    if key = "right"
+    if key = "right" or key = "left"
+        direction = 1
+        if key = "left" then direction = -1
         if m.currentButtonGroup = "seekbar"
-            m.top.action = "scrub,1"
-            return true
+            m.top.action = `scrub,${direction}`
+        else
+            moveAlongRow(direction)
         end if
-
-        if m.currentButtonGroup = "transport" or m.currentButtonGroup = "secondary"
-            buttonGroup = getControlGroup(m.currentButtonGroup)
-            nextIndex = getNavigableIndexFrom(buttonGroup, m.focusedButtonIndex + 1, 1)
-
-            if nextIndex <> -1
-                focusControlGroup(m.currentButtonGroup, nextIndex, 1)
-            else if m.top.skipButton = "segment" and (m.currentButtonGroup = "secondary" or getFirstNavigableIndex(m.secondaryControls) = -1)
-                ' Right off the last button reaches the skip prompt
-                focusSkipButton()
-            else if m.currentButtonGroup = "transport"
-                focusOnSecondaryControls()
-            else
-                firstTransportIndex = getFirstNavigableIndex(m.transportControls)
-                focusOnTransportControls(firstTransportIndex)
-            end if
-        end if
-
-        return true
-    end if
-
-    if key = "left"
-        if m.currentButtonGroup = "seekbar"
-            m.top.action = "scrub,-1"
-            return true
-        end if
-
-        if m.currentButtonGroup = "transport" or m.currentButtonGroup = "secondary"
-            buttonGroup = getControlGroup(m.currentButtonGroup)
-            previousIndex = getNavigableIndexFrom(buttonGroup, m.focusedButtonIndex - 1, -1)
-
-            if previousIndex <> -1
-                focusControlGroup(m.currentButtonGroup, previousIndex, -1)
-            else if m.currentButtonGroup = "secondary"
-                lastTransportIndex = getLastNavigableIndex(m.transportControls)
-                focusOnTransportControls(lastTransportIndex)
-            end if
-        end if
-
         return true
     end if
 
@@ -822,49 +720,33 @@ function onKeyEvent(key as string, press as boolean) as boolean
             ' Leaving the bar lands a paused scrub where it was aiming, still paused
             m.top.action = "scrubsettle"
             focusOnTransportControls()
-        else if m.currentButtonGroup = "transport"
-            checkDisplaySiblingItem("")
-            m.top.action = "hide"
-        else if m.currentButtonGroup = "secondary"
-            checkDisplaySiblingItem("")
-            m.top.action = "hide"
         end if
-
         return true
     end if
 
     if key = "up"
         ' Up during live playback opens the channel carousel, over the controls or not
         if m.top.liveMode
-            checkDisplaySiblingItem("")
             m.top.action = "showchannels"
             return true
         end if
 
-        if m.currentButtonGroup = "secondary"
+        if m.currentButtonGroup <> "seekbar"
             focusOnSeekbar()
-
-        else if m.currentButtonGroup = "transport"
-            focusOnSeekbar()
-
-        else if m.currentButtonGroup = "seekbar" and m.top.skipButton <> ""
+        else if m.top.skipButton <> ""
             ' The skip button sits just above the seek bar
             focusSkipButton()
         end if
-
         return true
     end if
 
-    ' Back and Fast Forward go to the player first, which takes a skip prompt down or skips a
-    ' pre-roll before it hides the controls
-    if key = "back" or key = "fastforward"
-        checkDisplaySiblingItem("")
-        if key = "back" then m.top.action = "backkey" else m.top.action = "fastforwardkey"
+    ' Back goes to the player first, which takes a skip prompt down before it hides the controls
+    if key = "back"
+        m.top.action = "backkey"
         return true
     end if
 
     ' All other keys hide the menu
-    checkDisplaySiblingItem("")
     m.top.action = "hide"
     return true
 end function

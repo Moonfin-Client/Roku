@@ -26,6 +26,8 @@ import "pkg:/source/utils/liveTvGuide.bs"
 import "pkg:/source/utils/liveTvLastChannel.bs"
 import "pkg:/source/utils/liveWindow.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/multiserver.bs"
+import "pkg:/source/utils/osdControls.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
 import "pkg:/source/utils/recordAiring.bs"
 import "pkg:/source/utils/seasonalEffects.bs"
@@ -37,13 +39,17 @@ const REPLAY_RETRIES = 3
 ' The other clients pin these overlays 24 in from the right and 120 up from the
 ' bottom, scaled by 1.45 onto our 1920x1080
 const OVERLAY_EDGE = 35
+' The controls' seek bar, which the scrub preview stays over
+const SEEK_BAR_LEFT = 24
+const SEEK_BAR_WIDTH = 1872
+const SEEK_PREVIEW_HEIGHT = 335
 const OVERLAY_BOTTOM = 174
 const NEXT_UP_TICK_MS = 100
 const NEXT_UP_PLAY = 0
 const NEXT_UP_DISMISS = 1
-' The skip prompt sits just clear of the controls' bottom block, which keeps its place while the
-' controls are away, so the prompt never moves
-const SKIP_PROMPT_TOP = 668
+' The skip prompt's 82 tall capsule sits 6 above the controls' bottom block, which keeps its place
+' while the controls are away, so the prompt never moves
+const SKIP_PROMPT_TOP = 780
 ' A segment shorter than this isn't offered, and one shorter than the second isn't skipped by itself
 const SKIP_MIN_PROMPT_TICKS = 30000000
 const SKIP_MIN_AUTO_TICKS = 10000000
@@ -151,8 +157,8 @@ sub init()
     m.previewSheet = -1
     m.seekPreview = m.top.findNode("seekPreview")
     m.seekPreviewFrame = m.top.findNode("seekPreviewFrame")
-    m.seekPreviewTime = m.top.findNode("seekPreviewTime")
-    playbackOverlay.SetFont(m.seekPreviewTime, 20, true)
+    m.seekPreviewLayers = [m.top.findNode("seekPreviewFill"), m.top.findNode("seekPreviewBorder")]
+    m.seekPreviewLayers[1].blendColor = playbackOverlay.Palette().accent
     m.seekSettleTimer = m.top.findNode("seekSettleTimer")
     m.seekSettleTimer.observeField("fire", "onSeekSettled")
     m.secondaryTask = invalid
@@ -183,15 +189,14 @@ sub init()
     stopLoadingSpinner()
     updateLoadingLayer()
 
-    m.canUseFastReplace = false
-    m.positionTranslation = m.top.trickPlayBar.getChild(3)
     m.positionText = m.top.trickPlayBar.getChild(8)
-    m.top.trickplaybar.observeField("visible", "onTrickPlayBarVisibleChange")
-    m.positionText.observeField("text", "onTrickPlayBarTextChange")
 
     m.chapterOverlay = invalid
+    m.castOverlay = invalid
+    m.controlMenu = invalid
     m.playbackInfoDialog = invalid
     m.osd = m.top.findNode("osd")
+    m.osdSeekbar = m.osd.findNode("seekbarGroup")
     m.pauseOverlay = m.top.findNode("pauseOverlay")
     m.osd.observeField("action", "onOSDAction")
     m.clock = m.osd.findNode("clock")
@@ -207,9 +212,6 @@ sub init()
     m.top.observeField("selectedSubtitle", "onSubtitleChange")
     m.top.observeField("audioIndex", "onAudioIndexChange")
 
-    ' Get sibling data and pass to OSD
-    setSiblingData()
-
     ' Custom Caption Function
     m.top.observeField("allowCaptions", "onAllowCaptionsChange")
 
@@ -223,24 +225,8 @@ sub init()
     m.playbackRetries = 0 ' Track retry attempts for buffering failures
     m.lastBufferError = 0 ' Timestamp of last buffering error
     m.playbackSpeed = 1.0
-    m.speedDialogActive = false
-
-    m.videoEndingTime = m.top.findNode("videoEndingTime")
-
-    ' Scrubbing
-    m.scrubActive = false
-    m.scrubDirection = 0
-    m.scrubSpeedIndex = 3
-    m.scrubSpeeds = [-168, -50, -10, 10, 50, 168]
-    m.scrubPosition = 0
-    m.scrubPositionStart = 0
-
-    m.scrubTimer = m.top.findNode("scrubTimer")
-    m.scrubTimer.observeField("fire", "onScrubTimer")
-
-    m.scrubTime = m.top.findNode("scrubTimeDisplay")
-    m.progressBar = m.top.findNode("scrubProgressBar")
-    m.scrubSpeed = m.top.findNode("scrubSpeedDisplay")
+    ' The bitrate cap picked from the controls, kept for the rest of this player, zero for none
+    m.maxBitrate = 0
 
     m.subtitleOffsetOverlay = m.top.findNode("subtitleOffsetOverlay")
     m.subtitleOffsetOverlay.observeField("offset", "onSubtitleOffsetChanged")
@@ -373,218 +359,58 @@ function rokuAudioTrack(stream as object, tracks as dynamic, streams as dynamic)
     return ""
 end function
 
-' setSiblingData: Set the icon and title text for the previous and next items
-'
-sub setSiblingData()
-    previousItemTitleText = m.global.queueManager.callFunc("getPreviousItemTitleAndIcon")
-    if isValidAndNotEmpty(previousItemTitleText)
-        m.osd.previousItemIcon = previousItemTitleText[0]
-        m.osd.previousItemTitleText = previousItemTitleText[1]
-    else
-        m.osd.previousItemIcon = string.EMPTY
-        m.osd.previousItemTitleText = string.EMPTY
-    end if
-
-    nextItemTitleText = m.global.queueManager.callFunc("getNextItemTitleAndIcon")
-    if isValidAndNotEmpty(nextItemTitleText)
-        m.osd.nextItemIcon = nextItemTitleText[0]
-        m.osd.nextItemTitleText = nextItemTitleText[1]
-    else
-        m.osd.nextItemIcon = string.EMPTY
-        m.osd.nextItemTitleText = string.EMPTY
-    end if
-end sub
-
-' handleChapterSkipAction: Handles user command to skip chapters in playing video
-'
-sub handleChapterSkipAction(action as string)
-    if not isValidAndNotEmpty(m.chapters) then return
-
-    currentChapter = getCurrentChapterIndex()
-
-    if action = "chapternext"
-        gotoChapter = currentChapter + 1
-        ' If there is no next chapter, exit
-        if gotoChapter > m.chapters.count() - 1 then return
-
-        newPosition = m.chapters[gotoChapter].StartPositionTicks / 10000000#
-        holdSkipPrompts(newPosition)
-        m.top.seek = newPosition
-        setVideoEndingTime(newPosition)
-        m.positionText.text = secondsToHuman(newPosition, true)
-        return
-    end if
-
-    if action = "chapterback"
-        gotoChapter = currentChapter - 1
-        ' If there is no previous chapter, restart current chapter
-        if gotoChapter < 0 then gotoChapter = 0
-
-        newPosition = m.chapters[gotoChapter].StartPositionTicks / 10000000#
-        holdSkipPrompts(newPosition)
-        m.top.seek = newPosition
-        setVideoEndingTime(newPosition)
-        m.positionText.text = secondsToHuman(newPosition, true)
-        return
-    end if
-end sub
-
-' handleItemSkipAction: Handles user command to skip items
-'
-' @param {string} action - skip action to take
+' Previous and Next step through chapters first, then through the queue.
+' Previous restarts the item when it is more than three seconds in or nothing comes before it, and
+' Next with nothing after it runs to the end.
 sub handleItemSkipAction(action as string)
+    position = m.top.position
+    if isValid(m.pendingSeek) then position = m.pendingSeek
+    starts = m.osd.chapterStarts ?? []
+    queuePos = m.global.queueManager.callFunc("getPosition") ?? 0
+
     if action = "itemnext"
-        ' If there is something next in the queue, play it
-        if m.global.queueManager.callFunc("getPosition") < m.global.queueManager.callFunc("getCount") - 1
-            m.top.unobserveField("state")
-            m.top.control = VideoControl.STOP
-            m.global.sceneManager.callFunc("clearPreviousScene")
-            m.global.queueManager.callFunc("moveForward")
-            m.global.queueManager.callFunc("playQueue")
+        chapterMs = osdControls.NextChapterStart(starts, position * 1000)
+        if chapterMs >= 0
+            seekFromControls(chapterMs / 1000)
+        else if queuePos < m.global.queueManager.callFunc("getCount") - 1
+            playQueueItem("moveForward")
+        else if m.top.duration > 0
+            seekFromControls(m.top.duration - 1)
         end if
-
         return
     end if
 
-    if action = "itemback"
-        currentPos = isValid(m.top.position) ? m.top.position : 0
-        queuePos = isChainValid(m.global, "queueManager") ? m.global.queueManager.callFunc("getPosition") : 0
-        if not isValid(queuePos) then queuePos = 0
-
-        if currentPos > 3 or queuePos <= 0
-            holdSkipPrompts(0)
-            m.top.seek = 0
-            setVideoEndingTime(0)
-            m.positionText.text = secondsToHuman(0, true)
-        else
-            m.top.unobserveField("state")
-            m.top.control = VideoControl.STOP
-            m.global.sceneManager.callFunc("clearPreviousScene")
-            m.global.queueManager.callFunc("moveBack")
-            m.global.queueManager.callFunc("playQueue")
-        end if
-
-        return
+    chapterMs = osdControls.PreviousChapterStart(starts, position * 1000)
+    if chapterMs >= 0
+        seekFromControls(chapterMs / 1000)
+    else if position > 3 or queuePos <= 0
+        seekFromControls(0)
+    else
+        playQueueItem("moveBack")
     end if
 end sub
 
-' handleRewindAction: Handles user command to start rewinding scrub
-'
-sub handleRewindAction()
-    if m.scrubActive
-        if m.scrubDirection = -1
-            if m.scrubSpeedIndex > 0
-                m.scrubSpeedIndex = m.scrubSpeedIndex - 1
-            end if
-        else
-            m.scrubDirection = -1
-            m.scrubSpeedIndex = 2
-        end if
-        return
-    end if
-
-    startScrubbing(-1)
+' Next Up, a skipped pre-roll and an outro skip that runs off the end all mean the next item, not
+' the next chapter
+sub playNextInQueue()
+    if m.global.queueManager.callFunc("getPosition") < m.global.queueManager.callFunc("getCount") - 1 then playQueueItem("moveForward")
 end sub
 
-' handleFastForwardAction: Handles user command to start fast forward scrub
-'
-sub handleFastForwardAction()
-    if m.scrubActive
-        if m.scrubDirection = 1
-            if m.scrubSpeedIndex < m.scrubSpeeds.count() - 1
-                m.scrubSpeedIndex = m.scrubSpeedIndex + 1
-            end if
-        else
-            m.scrubDirection = 1
-            m.scrubSpeedIndex = 3
-        end if
-        return
-    end if
-
-    startScrubbing(1)
+sub playQueueItem(move as string)
+    m.top.unobserveField("state")
+    m.top.control = VideoControl.STOP
+    m.global.sceneManager.callFunc("clearPreviousScene")
+    m.global.queueManager.callFunc(move)
+    m.global.queueManager.callFunc("playQueue")
 end sub
 
-' startScrubbing: starts scrub mode, setting direction, speed, and UI state while pausing playback
-' and initializing scrub tracking
-'
-sub startScrubbing(direction as integer)
-    if m.scrubActive then return
+' A seek a button or a chapter asks for, with the prompts, the ends at time and the bar following it
+sub seekFromControls(target as float)
     dropScrub()
-
-    m.scrubActive = true
-    m.scrubDirection = direction
-    m.scrubSpeedIndex = direction = 1 ? 3 : 2
-    m.scrubPositionStart = m.top.position
-    m.scrubPosition = m.top.position
-
-    m.top.control = VideoControl.PAUSE
-    holdSkipPrompts()
-
-    m.pauseOverlay.visible = true
-    m.scrubInfo = m.top.findNode("scrubInfo")
-    m.scrubInfo.visible = true
-
-    m.scrubTimer.control = "start"
-end sub
-
-' stopScrubbing: stops scrub mode, applies the final seek position, restores playback state,
-' and hides scrub UI elements
-'
-sub stopScrubbing()
-    m.scrubTimer.control = "stop"
-    m.scrubActive = false
-    m.scrubDirection = 0
-
-    m.top.seek = m.scrubPosition
-
-    m.scrubInfo = m.top.findNode("scrubInfo")
-    if isValid(m.scrubInfo)
-        m.scrubInfo.visible = false
-    end if
-
-    trickplayImage = m.top.findNode("trickplayImage")
-    if isValid(trickplayImage) then trickplayImage.visible = false
-
-    m.top.control = VideoControl.RESUME
-    m.pauseOverlay.visible = false
-    holdSkipPrompts(m.scrubPosition)
-end sub
-
-' onScrubTimer: updates scrub position, UI, and speed indicator on each timer tick while scrubbing playback
-'
-sub onScrubTimer()
-    if not m.scrubActive then return
-
-    speed = m.scrubSpeeds[m.scrubSpeedIndex]
-    m.scrubPosition = m.scrubPosition + speed * m.scrubTimer.duration
-
-    if m.scrubPosition < 0 then m.scrubPosition = 0
-    if m.scrubPosition > m.top.duration then m.scrubPosition = m.top.duration
-
-
-    if isValid(m.scrubTime)
-        m.scrubTime.text = secondsToHuman(m.scrubPosition, true) + " / " + secondsToHuman(m.top.duration, true)
-    end if
-
-    if isValid(m.progressBar) and m.top.duration > 0
-        scrubPct = m.scrubPosition / m.top.duration
-        m.progressBar.width = 1714 * scrubPct
-    end if
-
-    if m.scrubSpeedIndex = 3 or m.scrubSpeedIndex = 2
-        m.scrubSpeed.text = tr("3x")
-    else if m.scrubSpeedIndex = 4 or m.scrubSpeedIndex = 1
-        m.scrubSpeed.text = tr("15x")
-    else if m.scrubSpeedIndex = 5 or m.scrubSpeedIndex = 0
-        m.scrubSpeed.text = tr("50x")
-    end if
-
-    m.positionText.text = secondsToHuman(m.scrubPosition, true)
-    setVideoEndingTime(m.scrubPosition)
-
-    ' Show the trickplay frame at the scrub position
-    prefetchSheets(m.scrubPosition * 1000, speed > 0)
-    displayTrickplayImage(m.scrubPosition)
+    holdSkipPrompts(target)
+    m.top.seek = target
+    setVideoEndingTime(target)
+    m.positionText.text = secondsToHuman(target, true)
 end sub
 
 ' handleHideAction: Handles action to hide OSD menu
@@ -597,10 +423,7 @@ sub handleHideAction(resume as boolean)
     m.osd.hasFocus = false
     m.osd.setFocus(false)
     m.top.setFocus(true)
-    ' Hide dark overlay when OSD is hidden (only if playing)
-    if isStringEqual(m.top.state, MediaPlaybackState.PLAYING)
-        m.pauseOverlay.visible = false
-    end if
+    m.pauseOverlay.visible = false
     if resume
         m.top.control = VideoControl.RESUME
     end if
@@ -669,7 +492,6 @@ sub closeChapterList()
     m.top.setFocus(true)
     m.top.removeChild(m.chapterOverlay)
     m.chapterOverlay = invalid
-    prepareOSD()
     showOSD("chapterList")
 end sub
 
@@ -734,7 +556,6 @@ end sub
 sub closeEpisodeBrowser()
     if not isValid(m.episodeOverlay) then return
     dropEpisodeBrowser()
-    prepareOSD()
     showOSD("showEpisodes")
 end sub
 
@@ -753,40 +574,15 @@ sub dropEpisodeBrowser()
     m.episodeOverlay = invalid
 end sub
 
-' getCurrentChapterIndex: Finds current chapter index
-'
-' @return {integer} indicating index of current chapter within chapter data or 0 if chapter lookup fails
-'
-function getCurrentChapterIndex() as integer
-    if not isValidAndNotEmpty(m.chapters) then return 0
-
-    ' Give a 15 second buffer to compensate for user expectation and roku video position inaccuracy
-    ' Web client uses 10 seconds, but this wasn't enough for Roku in testing
-    currentPosition = m.top.position + 15
-    currentChapter = 0
-
-    for i = m.chapters.count() - 1 to 0 step -1
-        if currentPosition >= (m.chapters[i].StartPositionTicks / 10000000#)
-            currentChapter = i
-            exit for
-        end if
-    end for
-
-    return currentChapter
-end function
-
-' handleVideoPlayPauseAction: Handles action to either play or pause the video content
-'
+' Play and pause from the controls leave them up, and they hide on their own once playback runs
 sub handleVideoPlayPauseAction()
     if resumeHeldScrub() then return
 
-    ' If video is paused, resume it
     if m.top.state = "paused"
-        handleHideAction(true)
+        m.top.control = VideoControl.RESUME
         return
     end if
 
-    ' Pause video
     m.top.control = VideoControl.PAUSE
 end sub
 
@@ -804,36 +600,46 @@ sub handleShowAudioMenuAction()
     m.top.selectAudioPressed = true
 end sub
 
-sub handleShowSpeedMenuAction()
-    if m.speedDialogActive then return
-
-    speedOptions = [
-        { value: "0.5", label: "0.5x" },
-        { value: "0.75", label: "0.75x" },
-        { value: "1.0", label: "1.0x" },
-        { value: "1.25", label: "1.25x" },
-        { value: "1.5", label: "1.5x" },
-        { value: "2.0", label: "2.0x" }
-    ]
-
-    speedData = { data: [] }
-    for each speedOption in speedOptions
-        optionData = {
-            Name: speedOption.value,
-            description: speedOption.label
-        }
-
-        if Val(speedOption.value) = m.playbackSpeed
-            optionData.selected = true
-        end if
-
-        speedData.data.push(optionData)
-    end for
-
+' Speed and Bitrate open in the same panel as the track pickers, and the controls come back on the
+' button that opened them
+sub openControlMenu(buttonId as string, title as string, labels as object, selected as integer, handler as string)
     handleHideAction(false)
-    m.global.sceneManager.callFunc("radioDialog", tr("Playback Speed"), speedData)
-    m.global.sceneManager.observeFieldScoped("returnData", "onSpeedDialogResult")
-    m.speedDialogActive = true
+    m.controlMenu = CreateObject("roSGNode", "ListPromptDialog")
+    m.controlMenu.observeField("optionSelected", handler)
+    m.top.appendChild(m.controlMenu)
+    m.controlMenu.dialogTitle = title
+    m.controlMenu.options = labels
+    m.controlMenu.selectedOption = selected
+    m.controlMenu.openOnSelected = true
+    m.controlMenu.returnFocus = m.top
+    m.controlMenu.callFunc("showDialog")
+    m.controlMenuButton = buttonId
+end sub
+
+' The row picked, or -1 for Back, once the panel is gone and the controls are back on its button
+function closeControlMenu(event as object) as integer
+    index = event.getData()
+    m.controlMenu.unobserveField("optionSelected")
+    m.top.setFocus(true)
+    m.top.removeChild(m.controlMenu)
+    m.controlMenu = invalid
+    showOSD(m.controlMenuButton)
+    return index
+end function
+
+sub handleShowSpeedMenuAction()
+    labels = []
+    selected = -1
+    for each speed in osdControls.Speeds()
+        if speed = m.playbackSpeed then selected = labels.count()
+        labels.push(osdControls.SpeedLabel(speed))
+    end for
+    openControlMenu("showSpeedMenu", tr("Playback speed"), labels, selected, "onSpeedPicked")
+end sub
+
+sub onSpeedPicked(event as object)
+    index = closeControlMenu(event)
+    if index >= 0 then applyPlaybackSpeed(osdControls.Speeds()[index])
 end sub
 
 sub applyPlaybackSpeed(speed as float)
@@ -844,6 +650,7 @@ sub applyPlaybackSpeed(speed as float)
 
     m.top.playbackSpeed = speed
     m.playbackSpeed = speed
+    m.osd.playbackSpeed = speed
     ' The firmware only picks up a new speed when playback resumes
     if isStringEqual(m.top.state, MediaPlaybackState.PLAYING)
         m.top.control = VideoControl.PAUSE
@@ -851,20 +658,98 @@ sub applyPlaybackSpeed(speed as float)
     end if
 end sub
 
-sub onSpeedDialogResult()
-    if not m.speedDialogActive then return
+sub handleShowQualityMenuAction()
+    labels = []
+    selected = -1
+    for each bps in osdControls.Bitrates()
+        if bps = m.maxBitrate then selected = labels.count()
+        labels.push(osdControls.BitrateLabel(bps))
+    end for
+    openControlMenu("showQualityMenu", tr("Bitrate"), labels, selected, "onBitratePicked")
+end sub
 
-    m.global.sceneManager.unobserveFieldScoped("returnData")
-    m.speedDialogActive = false
+' A new cap asks the server for the stream again from where it is, the way a track change that
+' needs the server does
+sub onBitratePicked(event as object)
+    index = closeControlMenu(event)
+    if index < 0 then return
+    bps = osdControls.Bitrates()[index]
+    if bps = m.maxBitrate then return
+    m.maxBitrate = bps
+    m.osd.bitrateCapped = bps > 0
+    m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
+    stopForReload()
+    m.LoadMetaDataTask.maxBitrate = bps
+    m.LoadMetaDataTask.selectedAudioStreamIndex = m.top.audioIndex
+    m.LoadMetaDataTask.itemId = m.top.id
+    runLoad()
+end sub
 
-    returnData = m.global.sceneManager.returnData
-    if returnData = invalid then return
-    if returnData.Name = invalid then return
+sub handleToggleFavoriteAction()
+    favorite = not m.osd.isFavorite
+    m.favoriteTask = CreateObject("roSGNode", "FavoriteItemsTask")
+    m.favoriteTask.itemId = m.top.id
+    m.favoriteTask.favTask = favorite ? "favorite" : "unfavorite"
+    if isValid(m.itemServerData) then m.favoriteTask.serverData = m.itemServerData
+    m.favoriteTask.control = "RUN"
+    m.osd.isFavorite = favorite
+end sub
 
-    selectedSpeed = returnData.Name.ToFloat()
-    if selectedSpeed <= 0 then return
+' The people in the same row of cards the chapters use, with round photos and each one's role
+sub handleCastAndCrewAction()
+    if not isValidAndNotEmpty(m.people) then return
+    entries = []
+    for each person in m.people
+        role = person.Role ?? ""
+        if role = "" then role = person.Type ?? ""
+        entries.push({ name: person.Name ?? "", caption: role, thumbUrl: personPhotoURL(person) })
+    end for
 
-    applyPlaybackSpeed(selectedSpeed)
+    handleHideAction(false)
+    m.castOverlay = CreateObject("roSGNode", "ChapterListOverlay")
+    m.castOverlay.observeField("selectedIndex", "onCastPicked")
+    m.castOverlay.observeField("dismissed", "closeCastAndCrew")
+    m.top.appendChild(m.castOverlay)
+    m.castOverlay.heading = tr("Cast & Crew")
+    m.castOverlay.round = true
+    m.castOverlay.currentIndex = -1
+    m.castOverlay.chapters = entries
+    m.castOverlay.callFunc("open")
+    m.castOverlay.setFocus(true)
+end sub
+
+function personPhotoURL(person as object) as string
+    tag = person.PrimaryImageTag
+    if not isValidAndNotEmpty(tag) or not isValidAndNotEmpty(person.Id) then return ""
+    params = { "maxHeight": 280, "maxWidth": 280, "tag": tag }
+    if isValid(m.itemServerData) and isEmbyServer(m.itemServerData.serverUrl) then params.api_key = m.itemServerData.authToken
+    return getImageURL(person.Id, "Primary", params, m.itemServerData)
+end function
+
+' Picking someone pauses here and opens their page over the player, which Back returns from
+sub onCastPicked(event as object)
+    person = m.people[event.getData()]
+    dropCastAndCrew()
+    if not isValid(person) then return
+    m.top.control = VideoControl.PAUSE
+    json = { Id: person.Id, Name: person.Name, Type: "Person" }
+    if isValid(m.itemServerData) then json.Append({ _serverUrl: m.itemServerData.serverUrl, _userId: m.itemServerData.userId, _authToken: m.itemServerData.authToken })
+    m.global.jumpTo = { selectionType: "person", id: person.Id, json: json }
+end sub
+
+sub closeCastAndCrew()
+    dropCastAndCrew()
+    showOSD("showCastAndCrew")
+end sub
+
+sub dropCastAndCrew()
+    if not isValid(m.castOverlay) then return
+    m.castOverlay.unobserveField("selectedIndex")
+    m.castOverlay.unobserveField("dismissed")
+    m.castOverlay.setFocus(false)
+    m.top.setFocus(true)
+    m.top.removeChild(m.castOverlay)
+    m.castOverlay = invalid
 end sub
 
 ' handleShowVideoInfoPopupAction: Handles action to show video info popup
@@ -894,7 +779,6 @@ sub closePlaybackInfo()
     m.top.setFocus(true)
     m.top.removeChild(m.playbackInfoDialog)
     m.playbackInfoDialog = invalid
-    prepareOSD()
     showOSD("showVideoInfoPopup")
 end sub
 
@@ -913,11 +797,18 @@ sub onOSDAction()
         return
     end if
 
-    if action = "backkey" or action = "fastforwardkey"
-        key = KeyCode.BACK
-        if action = "fastforwardkey" then key = KeyCode.FASTFORWRD
-        if handleCinemaSkipKey(key) or handleSkipPromptKey(key) then return
+    if action = "backkey"
+        if handleCinemaSkipKey(KeyCode.BACK) or handleSkipPromptKey(KeyCode.BACK) then return
         handleHideAction(false)
+        return
+    end if
+
+    ' The remote's seek keys skip by the set lengths and put the controls on the bar,
+    ' after Fast Forward has had the chance to skip a pre-roll or a segment
+    if action = "rewindkey" or action = "fastforwardkey"
+        if action = "fastforwardkey" and (handleCinemaSkipKey(KeyCode.FASTFORWRD) or handleSkipPromptKey(KeyCode.FASTFORWRD)) then return
+        skipFromControls(action = "fastforwardkey")
+        m.osd.callFunc("focusOnSeekbar")
         return
     end if
 
@@ -941,31 +832,28 @@ sub onOSDAction()
         return
     end if
 
-    ' A live stream seeks back and forward by the skip lengths inside its window
-    if (action = "rewind" or action = "fastforward") and isValid(m.liveChannel)
-        direction = 1
-        if action = "rewind" then direction = -1
-        if isValid(m.liveWindow) then skipBy(direction * skipSeconds(direction))
-        return
-    end if
-
     if action = "jumptolive"
         jumpToLive()
         return
     end if
 
-    if action = "rewind"
-        handleRewindAction()
+    if action = "rewind" or action = "fastforward"
+        skipFromControls(action = "fastforward")
         return
     end if
 
-    if action = "fastforward"
-        handleFastForwardAction()
+    if action = "togglefavorite"
+        handleToggleFavoriteAction()
         return
     end if
 
-    if action = "chapterback" or action = "chapternext"
-        handleChapterSkipAction(action)
+    if action = "showqualitymenu"
+        handleShowQualityMenuAction()
+        return
+    end if
+
+    if action = "showcastandcrew"
+        handleCastAndCrewAction()
         return
     end if
 
@@ -1038,6 +926,13 @@ sub onOSDAction()
         refreshRecordState(true)
         return
     end if
+end sub
+
+' A seek button skips by its length, and a live stream only inside its window
+sub skipFromControls(forward as boolean)
+    direction = -1
+    if forward then direction = 1
+    skipBy(direction * osdControls.SkipSeconds(m.global.session.user.settings, direction))
 end sub
 
 sub handleShowsyncmenuAction(secondary = false as boolean)
@@ -1674,6 +1569,11 @@ sub onVideoContentLoaded(event as object)
     m.top.isLiveChannel = isValid(m.liveChannel)
     ' Only an episode of a series has a season to browse
     m.osd.hasEpisodes = isValidAndNotEmpty(m.top.showID) and not isValid(m.liveChannel) and m.LoadMetaDataTask.isIntro <> true
+    m.people = videoContent[0].people ?? []
+    m.osd.hasPeople = m.people.count() > 0 and not isValid(m.liveChannel)
+    ' A pre-roll isn't something to keep, so it has no heart
+    m.osd.canFavorite = m.LoadMetaDataTask.isIntro <> true and not isValid(m.liveChannel)
+    m.osd.isFavorite = videoContent[0].isFavorite = true
     if isValid(m.liveChannel)
         ' A details screen under the guide reloads as whatever played last, and a channel isnt
         ' something it can show
@@ -1705,13 +1605,6 @@ sub onVideoContentLoaded(event as object)
         trickplayData = m.trickplay.LookupCI(m.top.mediaSourceId) ?? m.trickplay.LookupCI(m.top.id)
         if isValidAndNotEmpty(trickplayData)
             m.trickplayDataFinal = trickplayData.lookupCI(trickplayWidthFor(trickplayData))
-
-            if isValidAndNotEmpty(m.trickplayDataFinal)
-                ' Convert interval to seconds
-                m.iconInterval = m.trickplayDataFinal.Interval / 1000
-
-                m.canUseFastReplace = (m.trickplayDataFinal.TileHeight * m.trickplayDataFinal.Height) * (m.trickplayDataFinal.TileWidth * m.trickplayDataFinal.Width) < 2000000
-            end if
         end if
     end if
 
@@ -1732,8 +1625,6 @@ sub onVideoContentLoaded(event as object)
             m.osd.itemTitleText = string.EMPTY
         end if
     end if
-
-    setSiblingData()
 
     ' Allow custom captions for non intro videos unless the subtitles are burned into the picture
     if not m.LoadMetaDataTask.isIntro
@@ -1818,81 +1709,6 @@ sub onStartDelayElapsed()
     m.top.control = VideoControl.PLAY
 end sub
 
-sub displayTrickplayImage(trickPosition as integer)
-    if m.global.session.user.settings["playback.trickplay.enabled"] = false then return
-    if displayEmbyPreview(trickPosition) then return
-    if not isValid(m.trickplayDataFinal) then return
-
-    ' Index of trickplay image that matches seek timestamp - out of all trickplay images
-    iconIndex = fix(trickPosition / m.iconInterval)
-
-    ' Index of tileset that trickplay image is located in
-    tileIndex = Fix(iconIndex / (m.trickplayDataFinal.TileHeight * m.trickplayDataFinal.TileWidth))
-
-    ' Index of trickplay image within tileset
-    tileIconIndex = iconIndex - (tileIndex * (m.trickplayDataFinal.TileHeight * m.trickplayDataFinal.TileWidth))
-
-    ' Index of row trickplay image is on within tileset
-    iconRow = fix(tileIconIndex / m.trickplayDataFinal.TileHeight)
-
-    ' Index of column trickplay image is on within tileset
-    iconColumn = tileIconIndex mod m.trickplayDataFinal.TileWidth
-
-    ' Translation values for trickplay images
-    offsetHoriz = 100
-    offsetVert = 900 - m.trickplayDataFinal.Height
-
-    if m.scrubActive
-        if m.top.duration > 0
-            scrubPct = m.scrubPosition / m.top.duration
-            offsetHoriz = 103 + 1714 * scrubPct - m.trickplayDataFinal.Width / 2
-        else
-            offsetHoriz = 103
-        end if
-    else if isValid(m.positionTranslation)
-        ' If we can get translation data for the trickplaybar's thumb icon, use it so the trickplay images can move left/right with seeking
-        if m.positionTranslation.translation[0] = 0 then return
-        offsetHoriz = m.positionTranslation.translation[0] - 50
-    end if
-
-    maxOffsetHoriz = 1920 - m.trickplayDataFinal.Width
-    if offsetHoriz > maxOffsetHoriz then offsetHoriz = maxOffsetHoriz
-
-    if offsetHoriz < 0 then offsetHoriz = 0
-
-    trickplayImage = m.top.findNode("trickplayImage")
-
-    ' Trickplayimage node doesn't exist, create it
-    if not isValid(trickplayImage)
-        newTrickplayImage = createObject("roSGNode", "Poster")
-        newTrickplayImage.uri = `tmp:/${m.top.id}-${tileIndex}.jpg`
-        newTrickplayImage.id = `trickplayImage`
-        newTrickplayImage.loadDisplayMode = "noScale"
-        newTrickplayImage.height = m.trickplayDataFinal.Height * m.trickplayDataFinal.TileHeight
-        newTrickplayImage.width = m.trickplayDataFinal.Width * m.trickplayDataFinal.TileWidth
-        newTrickplayImage.translation = `[${offsetHoriz - (iconColumn * m.trickplayDataFinal.Width)},  ${offsetVert - (iconRow * m.trickplayDataFinal.Height)}]`
-        newTrickplayImage.clippingRect = `[${iconColumn * m.trickplayDataFinal.Width}, ${iconRow * m.trickplayDataFinal.Height}, ${m.trickplayDataFinal.Width}, ${m.trickplayDataFinal.Height}]`
-        m.top.appendChild(newTrickplayImage)
-        return
-    end if
-
-    ' If we've changed tiles, remove existing trickplayImage node
-    ' Otherwise loading the next image will fail. 'cause Roku.
-    if trickplayImage.uri <> `tmp:/${m.top.id}-${tileIndex}.jpg`
-        if not m.canUseFastReplace
-            m.top.removeChild(trickplayImage)
-            return
-        end if
-
-        trickplayImage.uri = `tmp:/${m.top.id}-${tileIndex}.jpg`
-    end if
-
-    ' Move clippingRect to next trickplay image within tileset - offsetting translation by an equal amount so it doesn't move
-    trickplayImage.translation = `[${offsetHoriz - (iconColumn * m.trickplayDataFinal.Width)},  ${offsetVert - (iconRow * m.trickplayDataFinal.Height)}]`
-    trickplayImage.clippingRect = `[${iconColumn * m.trickplayDataFinal.Width}, ${iconRow * m.trickplayDataFinal.Height}, ${m.trickplayDataFinal.Width}, ${m.trickplayDataFinal.Height}]`
-    trickplayImage.visible = true
-end sub
-
 ' Event handler for when video content field changes
 sub onContentChange()
     if not isValid(m.top.content) then return
@@ -1963,7 +1779,6 @@ sub onNextEpisodeDataLoaded()
         m.global.queueManager.callFunc("markSeasonWindow")
         if isValidAndNotEmpty(showAtFinish) then m.global.queueManager.callFunc("setEpisodeToShowAtFinish", showAtFinish)
         m.global.queueManager.callFunc("setPosition", targetIndex - startIndex)
-        setSiblingData()
     end if
 end sub
 
@@ -2173,7 +1988,7 @@ end sub
 sub playNextUpItem()
     hideNextItem()
     clearSkipPrompt()
-    handleItemSkipAction("itemnext")
+    playNextInQueue()
 end sub
 
 ' Dismissing keeps the card down for the rest of the episode
@@ -2365,7 +2180,7 @@ sub applySkipPrompt()
 end sub
 
 function playerModalOpen() as boolean
-    if isValid(m.chapterOverlay) or isValid(m.episodeOverlay) or isValid(m.playbackInfoDialog) or isValid(m.carousel) or isValid(m.recordDialog) or isValid(m.recordAiring) then return true
+    if isValid(m.chapterOverlay) or isValid(m.episodeOverlay) or isValid(m.playbackInfoDialog) or isValid(m.carousel) or isValid(m.recordDialog) or isValid(m.recordAiring) or isValid(m.controlMenu) or isValid(m.castOverlay) then return true
     for each modal in m.playerModals
         if isValid(modal) and modal.visible then return true
     end for
@@ -2376,7 +2191,6 @@ sub pressSkipPrompt()
     endTicks = m.skipPrompt.end
     clearSkipPrompt()
     if skipSegmentTo(endTicks) then return
-    prepareOSD()
     showOSD("seekbar")
 end sub
 
@@ -2423,7 +2237,6 @@ end function
 
 sub showControlsOnSkip()
     if not stateAllowsOSD() then return
-    prepareOSD()
     showOSD()
     if m.skipSegmentButton.visible then m.skipSegmentButton.setFocus(true)
 end sub
@@ -2466,7 +2279,7 @@ end sub
 sub skipPreroll()
     m.cinemaWanted = false
     applySkipPrompt()
-    handleItemSkipAction("itemnext")
+    playNextInQueue()
 end sub
 
 function handleCinemaSkipKey(key as string) as boolean
@@ -2589,15 +2402,13 @@ sub onState()
     if isStringEqual(m.top.state, MediaPlaybackState.PAUSED)
         m.wasPaused = true
         ' Keep OSD visible when paused
-        if not m.scrubActive and not isValid(m.chapterOverlay) and not isValid(m.episodeOverlay)
+        if not isValid(m.chapterOverlay) and not isValid(m.episodeOverlay) and not isValid(m.castOverlay)
             if not m.osd.visible
                 showOSD()
             end if
         end if
         ' Disable auto-hide timer when paused
         m.osd.inactiveTimeout = 0
-        ' Show dark overlay when paused
-        m.pauseOverlay.visible = true
     else if isStringEqual(m.top.state, MediaPlaybackState.PLAYING)
         ' The Roku can still be settling on its own default when the track list arrives, so the
         ' chosen track is checked again once playback starts
@@ -2605,8 +2416,6 @@ sub onState()
 
         ' Enable auto-hide timer when playing (5 seconds)
         m.osd.inactiveTimeout = 5
-        ' Hide dark overlay when playing
-        m.pauseOverlay.visible = false
 
         if m.wasPaused ?? false
             m.wasPaused = false
@@ -2761,19 +2570,6 @@ sub onState()
     feedLiveRecovery(state)
 end sub
 
-sub onTrickPlayBarVisibleChange()
-    trickplayImage = m.top.findNode("trickplayImage")
-    if isValid(trickplayImage)
-        trickplayImage.visible = m.top.trickPlayBar.visible
-    end if
-
-    if not m.top.content.live
-        if isValid(m.videoEndingTime)
-            m.videoEndingTime.visible = m.top.trickPlayBar.visible
-        end if
-    end if
-end sub
-
 sub setVideoEndingTime(videoSeekPosition = 0 as integer)
     m.clock = m.osd.findNode("clock")
     if not isValid(m.clock) then return
@@ -2786,7 +2582,6 @@ sub setVideoEndingTime(videoSeekPosition = 0 as integer)
 
     videoEndingTime = m.clock.callFunc("getFormattedTime", (currentTime + remainingTime), false)
 
-    m.videoEndingTime.text = videoEndingTime
     m.osd.videoEndingTime = videoEndingTime
 end sub
 
@@ -2821,49 +2616,6 @@ function getRemainingTime(videoSeekPosition = 0 as integer)
 
     return m.top.duration - seekTime
 end function
-
-sub onTrickPlayBarTextChange()
-    if not m.top.trickPlayBar.visible then return
-
-    m.nextupbuttonseconds = (m.global.session.user.settings["playback.nextupbuttonseconds"] ?? "30").ToInt()
-    m.nextUpDismissed = false
-
-    setVideoEndingTime(0)
-
-    ' If Roku has pulled thumbnailtiles from the video stream, use them instead
-    if not m.global.session.user.settings["playback.trickplay.forcecustom"]
-        if isValidAndNotEmpty(m.top.thumbnailTiles)
-            return
-        end if
-    end if
-
-    if not isValid(m.positionText)
-        displayTrickplayImage(m.top.position)
-        return
-    end if
-
-    seekTime = 0
-    seekPosition = m.positionText.text.split(":")
-
-    if seekPosition.count() = 3
-        ' hours -> seconds
-        seekTime += seekPosition[0].toint() * 3600
-        ' minutes -> seconds
-        seekTime += seekPosition[1].toint() * 60
-    end if
-
-    ' minutes -> seconds
-    if seekPosition.count() = 2
-        seekTime += seekPosition[0].toint() * 60
-    end if
-
-    ' add seconds
-    seekTime += seekPosition[seekPosition.count() - 1].toint()
-
-    seekTime = seekTime = 0 ? m.top.position : seekTime
-
-    displayTrickplayImage(seekTime)
-end sub
 
 '
 ' Report playback to server
@@ -3087,7 +2839,7 @@ function skipSegmentTo(endTicks as dynamic) as boolean
 
     if seekPosition > (m.top.duration - 2)
         if m.global.queueManager.callFunc("getPosition") < m.global.queueManager.callFunc("getCount") - 1
-            handleItemSkipAction("itemnext")
+            playNextInQueue()
             return true
         else
             seekPosition = m.top.duration - 1
@@ -3098,8 +2850,8 @@ function skipSegmentTo(endTicks as dynamic) as boolean
     return false
 end function
 
-sub prepareOSD()
-    setSiblingData()
+sub showControlsOn(buttonId as string)
+    showOSD(buttonId)
 end sub
 
 sub showOSD(focusTarget = "seekbar" as string)
@@ -3164,19 +2916,11 @@ function seekStepSeconds() as integer
     return seconds
 end function
 
-function skipSeconds(direction as integer) as integer
-    key = "playback.skipBackLength"
-    if direction > 0 then key = "playback.skipForwardLength"
-    seconds = (m.global.session.user.settings[key] ?? "10").toStr().toInt()
-    if seconds <= 0 then seconds = 10
-    return seconds
-end function
-
 ' A hold moves the way its first press did, on the seek bar or with the controls hidden, growing
 ' from that press's own step. Every press starts over, so separate presses move the set step.
 sub beginHeldSeek(direction as integer, onSeekBar as boolean)
     baseSeconds = seekStepSeconds()
-    if not onSeekBar then baseSeconds = skipSeconds(direction)
+    if not onSeekBar then baseSeconds = osdControls.SkipSeconds(m.global.session.user.settings, direction)
     m.heldSeek = { direction: direction, onSeekBar: onSeekBar, base: baseSeconds, count: 0, since: CreateObject("roTimespan") }
     m.heldSeekRepeat.control = "stop"
     m.heldSeekStart.control = "start"
@@ -3228,7 +2972,9 @@ sub skipBy(delta as integer)
 end sub
 
 function trickplayPreviewOn() as boolean
-    return m.global.session.user.settings["playback.trickplay.enabled"] <> false and isValid(m.trickplayDataFinal)
+    if m.global.session.user.settings["playback.trickplay.enabled"] = false then return false
+    if isValid(m.trickplayDataFinal) then return true
+    return isValid(m.embyPreview) and isValidAndNotEmpty(m.embyPreview.frames)
 end function
 
 ' The widest sheet that is no wider than 320, or the narrowest there is
@@ -3354,60 +3100,98 @@ sub dropScrub()
     if wasPlaying then m.top.control = VideoControl.RESUME
 end sub
 
-' The frame nearest the target in a box centered over the bar. Until a sheet arrives the frame
-' already showing stays.
+' The frame nearest the target. Until a sheet arrives the frame already showing stays.
 sub showSeekPreview(target as float)
     if not trickplayPreviewOn() then return
     info = m.trickplayDataFinal
-    thumb = Int(target * 1000 / info.Interval)
-    if thumb < 0 or thumb >= info.ThumbnailCount
-        m.seekPreview.visible = false
-        return
-    end if
-    perSheet = info.TileWidth * info.TileHeight
-    sheet = Int(thumb / perSheet)
-    inSheet = thumb mod perSheet
-
-    m.seekPreviewTime.text = secondsToHuman(Int(target), false)
-    if m.sheetState[sheet.toStr()] = "loaded"
-        m.pendingPreview = invalid
-        if m.previewSheet <> sheet
-            ' A new sheet goes in a new poster, since changing a large poster's uri can fail to load
-            m.seekPreviewFrame.removeChildrenIndex(m.seekPreviewFrame.getChildCount(), 0)
-            poster = m.seekPreviewFrame.createChild("Poster")
-            poster.loadDisplayMode = "noScale"
-            poster.width = info.Width * info.TileWidth
-            poster.height = info.Height * info.TileHeight
-            poster.uri = `tmp:/${m.top.id}-${sheet}.jpg`
-            m.previewSheet = sheet
-        end if
-        m.seekPreviewFrame.getChild(0).translation = [- (inSheet mod info.TileWidth) * info.Width, -Int(inSheet / info.TileWidth) * info.Height]
+    if not isValid(info)
+        if not showEmbyFrame(target) then return
     else
-        m.pendingPreview = target
+        thumb = Int(target * 1000 / info.Interval)
+        if thumb < 0 or thumb >= info.ThumbnailCount
+            m.seekPreview.visible = false
+            return
+        end if
+        perSheet = info.TileWidth * info.TileHeight
+        sheet = Int(thumb / perSheet)
+        inSheet = thumb mod perSheet
+
+        if m.sheetState[sheet.toStr()] = "loaded"
+            m.pendingPreview = invalid
+            if m.previewSheet <> sheet
+                ' A new sheet goes in a new poster, since changing a large poster's uri can fail to load
+                m.seekPreviewFrame.removeChildrenIndex(m.seekPreviewFrame.getChildCount(), 0)
+                poster = m.seekPreviewFrame.createChild("Poster")
+                poster.loadDisplayMode = "noScale"
+                poster.width = info.Width * info.TileWidth
+                poster.height = info.Height * info.TileHeight
+                poster.uri = `tmp:/${m.top.id}-${sheet}.jpg`
+                m.previewSheet = sheet
+            end if
+            m.seekPreviewFrame.getChild(0).translation = [- (inSheet mod info.TileWidth) * info.Width, -Int(inSheet / info.TileWidth) * info.Height]
+        else
+            m.pendingPreview = target
+        end if
     end if
 
+    layoutSeekPreview(target)
     if m.seekPreview.visible then return
-    layoutSeekPreview()
     m.seekPreview.visible = true
     m.top.findNode("seekPreviewEntrance").control = "start"
 end sub
 
-' 160 above the bar, with 8 of padding inside a 2 border, and the time under the frame
-sub layoutSeekPreview()
-    info = m.trickplayDataFinal
-    m.seekPreviewFrame.clippingRect = [0, 0, info.Width, info.Height]
-    timeHeight = m.seekPreviewTime.boundingRect().height
-    m.seekPreviewTime.width = info.Width
-    m.seekPreviewTime.translation = [10, 10 + info.Height + 8]
-    width = info.Width + 20
-    height = 10 + info.Height + 8 + timeHeight + 10
-    for each id in ["seekPreviewFill", "seekPreviewBorder"]
-        m.top.findNode(id).width = width
-        m.top.findNode(id).height = height
+' Emby sends single frames rather than sheets, each one its own image. False when there are none.
+function showEmbyFrame(target as float) as boolean
+    frames = m.embyPreview.frames
+    frame = embyFeatures.FrameIndex(frames, target * 10000000&)
+    if frame < 0
+        m.seekPreview.visible = false
+        return false
+    end if
+    if m.previewSheet <> -2
+        m.seekPreviewFrame.removeChildrenIndex(m.seekPreviewFrame.getChildCount(), 0)
+        poster = m.seekPreviewFrame.createChild("Poster")
+        poster.loadDisplayMode = "scaleToFit"
+        poster.width = 320
+        poster.height = m.embyPreview.height
+        m.previewSheet = -2
+    end if
+    poster = m.seekPreviewFrame.getChild(0)
+    if poster.uri <> frames[frame].url then poster.uri = frames[frame].url
+    return true
+end function
+
+' One tile, as tall as a share of the room over the bar, centered on
+' the thumb and kept over the track, with no time on it since the labels by the bar follow the scrub
+sub layoutSeekPreview(target as float)
+    frameWidth = 320
+    frameHeight = 180
+    if isValid(m.embyPreview) then frameHeight = m.embyPreview.height
+    if isValid(m.trickplayDataFinal)
+        frameWidth = m.trickplayDataFinal.Width
+        frameHeight = m.trickplayDataFinal.Height
+    end if
+    if frameHeight <= 0 then return
+    m.seekPreviewFrame.clippingRect = [0, 0, frameWidth, frameHeight]
+    height = SEEK_PREVIEW_HEIGHT
+    width = height * frameWidth / frameHeight
+    m.seekPreviewFrame.scale = [width / frameWidth, height / frameHeight]
+    for each layer in m.seekPreviewLayers
+        layer.width = width
+        layer.height = height
     end for
-    left = 960 - width / 2
-    top = 828 - 160 - height
-    m.top.findNode("seekPreviewSlide").keyValue = [[left, top + 10], [left, top]]
+
+    fraction = 0
+    if isValid(m.liveWindow)
+        fraction = liveWindow.Progress(m.liveWindow, target)
+    else if m.top.duration > 0
+        fraction = target / m.top.duration
+    end if
+    barTop = m.osdSeekbar.translation[1]
+    left = SEEK_BAR_LEFT + SEEK_BAR_WIDTH * fraction - width / 2
+    if left > SEEK_BAR_LEFT + SEEK_BAR_WIDTH - width then left = SEEK_BAR_LEFT + SEEK_BAR_WIDTH - width
+    if left < SEEK_BAR_LEFT then left = SEEK_BAR_LEFT
+    m.seekPreview.translation = [left, barTop - 2 - height]
 end sub
 
 sub hideSeekPreview()
@@ -3418,7 +3202,7 @@ end sub
 
 ' The sheet at the position, the next six steps the way things are moving, and two steps back
 sub prefetchSheets(positionMs as float, forward as boolean)
-    if not trickplayPreviewOn() then return
+    if not isValid(m.trickplayDataFinal) or not trickplayPreviewOn() then return
     info = m.trickplayDataFinal
     perSheet = info.TileWidth * info.TileHeight
     stepMs = nextSeekStepSeconds() * 1000
@@ -3790,7 +3574,6 @@ end sub
 
 ' The controls come back on the Record button, the way they do after any of the player's panels
 sub restoreRecordControls()
-    prepareOSD()
     showOSD("showRecord")
 end sub
 
@@ -3951,8 +3734,7 @@ sub closeCarousel(revealControls = false as boolean)
         return
     end if
     if revealControls or m.carouselPriorOsd
-        prepareOSD()
-        showOSD("transport")
+        showOSD("videoPlayPause")
     end if
 end sub
 
@@ -4429,14 +4211,19 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return true
     end if
 
-    ' Play and pause work under the chapter list without bringing the controls up behind it
-    if isValid(m.chapterOverlay)
-        if press and key = KeyCode.PLAY
-            if m.top.state = "paused" then m.top.control = VideoControl.RESUME else m.top.control = VideoControl.PAUSE
+    ' A menu from the controls keeps the remote, so the keys it leaves don't seek under it
+    if isValid(m.controlMenu) or isValid(m.recordDialog) then return true
+
+    ' Play and pause work under the chapter list and the cast without bringing the controls up behind them
+    for each overlay in [m.chapterOverlay, m.castOverlay]
+        if isValid(overlay)
+            if press and key = KeyCode.PLAY
+                if m.top.state = "paused" then m.top.control = VideoControl.RESUME else m.top.control = VideoControl.PAUSE
+            end if
+            overlay.setFocus(true)
+            return true
         end if
-        m.chapterOverlay.setFocus(true)
-        return true
-    end if
+    end for
     if isValid(m.episodeOverlay)
         if press and key = KeyCode.PLAY
             if m.top.state = "paused" then m.top.control = VideoControl.RESUME else m.top.control = VideoControl.PAUSE
@@ -4474,111 +4261,54 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
     if handleCinemaSkipKey(key) or handleSkipPromptKey(key) then return true
 
-    if m.scrubActive
-        if key = KeyCode.OK or key = KeyCode.PLAY
-            stopScrubbing()
-            return true
-        end if
-
-        if key = KeyCode.LEFT or key = KeyCode.RIGHT
-            stopScrubbing()
-            return true
-        end if
-
-        if key = KeyCode.REWIND
-            if m.scrubDirection = 1
-                stopScrubbing()
-            else
-                handleRewindAction()
-            end if
-            return true
-        end if
-
-        if key = KeyCode.FASTFORWRD
-            if m.scrubDirection = -1
-                stopScrubbing()
-            else
-                handleFastForwardAction()
-            end if
-            return true
-        end if
-    end if
-
-    ' Handle rewind/fast forward/replay remote buttons
+    ' The remote's seek keys skip by the set lengths and bring the controls up on the bar. A live
+    ' stream only skips inside its window.
     if key = KeyCode.REWIND or key = KeyCode.FASTFORWRD or key = KeyCode.REPLAY
-        if not m.top.trickPlayBar.visible
-            if not stateAllowsOSD() then return true
-
-            ' A live stream skips inside its window and brings up the controls, which is all it does
-            ' without one
-            if isValid(m.liveChannel)
-                direction = -1
-                if key = KeyCode.FASTFORWRD then direction = 1
-                if isValid(m.liveWindow) then skipBy(direction * skipSeconds(direction))
-                prepareOSD()
-                showOSD()
-                return true
-            end if
-
-            if key = KeyCode.FASTFORWRD
-                handleFastForwardAction()
-            else
-                handleRewindAction()
-            end if
-
-            return true
-        end if
-    end if
-
-    if key = KeyCode.LEFT or key = KeyCode.RIGHT
-        if not m.osd.visible and not m.top.trickPlayBar.visible
-            if not stateAllowsOSD() then return true
-
-            direction = -1
-            if key = KeyCode.RIGHT then direction = 1
-            ' A live stream scrubs on its bar from the window's start to the live point
-            if isValid(m.liveChannel)
-                prepareOSD()
-                showOSD()
-                if isValid(m.liveWindow) then beginHeldSeek(direction, true)
-                return true
-            end if
-
-            beginHeldSeek(direction, false)
-            return true
-        end if
-    end if
-
-    ' A pre-roll gets the controls too, so the remote can reach its Skip button from the seek bar
-    if key = KeyCode.DOWN and not m.top.trickPlayBar.visible
         if not stateAllowsOSD() then return true
-
-        prepareOSD()
-        showOSD("seekbar")
-        return true
-
-    else if key = KeyCode.UP and not m.top.trickPlayBar.visible
-        ' Up during live playback opens the channel carousel, even while the stream buffers
-        if isValid(m.liveChannel)
-            openCarousel()
-            return true
-        end if
-
-        if not stateAllowsOSD() then return true
-
-        prepareOSD()
-        showOSD("transport")
-        return true
-
-    else if key = KeyCode.OK and not m.top.trickPlayBar.visible
-        if not stateAllowsOSD() then return true
-
-        prepareOSD()
+        skipFromControls(key = KeyCode.FASTFORWRD)
         showOSD()
         return true
     end if
 
-    if key = KeyCode.PLAY and not m.top.trickPlayBar.visible
+    ' Left and Right skip at once and bring the controls up on the bar, holding on as long as the
+    ' key does. A live stream scrubs on its bar from the window's start to the live point.
+    if key = KeyCode.LEFT or key = KeyCode.RIGHT
+        if not stateAllowsOSD() then return true
+
+        direction = -1
+        if key = KeyCode.RIGHT then direction = 1
+        if isValid(m.liveChannel)
+            showOSD()
+            if isValid(m.liveWindow) then beginHeldSeek(direction, true)
+            return true
+        end if
+
+        beginHeldSeek(direction, false)
+        showOSD()
+        return true
+    end if
+
+    ' Up during live playback opens the channel carousel, even while the stream buffers
+    if key = KeyCode.UP and isValid(m.liveChannel)
+        openCarousel()
+        return true
+    end if
+
+    ' A pre-roll gets the controls too, so the remote can reach its Skip button from the seek bar
+    if key = KeyCode.UP or key = KeyCode.DOWN
+        if not stateAllowsOSD() then return true
+        showOSD()
+        return true
+    end if
+
+    if key = KeyCode.OK
+        if not stateAllowsOSD() then return true
+        handleVideoPlayPauseAction()
+        showOSD()
+        return true
+    end if
+
+    if key = KeyCode.PLAY
         if resumeHeldScrub() then return true
         if not stateAllowsOSD() then return true
 
@@ -4588,17 +4318,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
 
         m.top.control = VideoControl.PAUSE
-        prepareOSD()
         showOSD()
         return true
     end if
 
     if key = KeyCode.BACK
-        if m.scrubActive
-            stopScrubbing()
-            return true
-        end if
-
         if m.nextUp.visible
             cancelNextItem()
             return true
@@ -4638,8 +4362,6 @@ sub resetEmbyPreview()
         m.embyPreviewTask = invalid
     end if
     m.embyPreview = invalid
-    poster = m.top.findNode("trickplayImage")
-    if isValid(poster) then m.top.removeChild(poster)
 end sub
 
 sub startEmbyPreview(isLive as boolean)
@@ -4661,31 +4383,3 @@ end sub
 sub onEmbyPreviewReady(event as object)
     m.embyPreview = event.getData()
 end sub
-
-function displayEmbyPreview(position as integer) as boolean
-    if not isValid(m.embyPreview) then return false
-    frames = m.embyPreview.frames
-    if not isValidAndNotEmpty(frames) then return false
-    frame = embyFeatures.FrameIndex(frames, position * 10000000&)
-    poster = m.top.findNode("trickplayImage")
-    if frame < 0
-        if isValid(poster) then poster.visible = false
-        return true
-    end if
-    if not isValid(poster)
-        poster = CreateObject("roSGNode", "Poster")
-        poster.id = "trickplayImage"
-        poster.width = 320
-        poster.height = m.embyPreview.height
-        poster.loadDisplayMode = "scaleToFit"
-        m.top.appendChild(poster)
-    end if
-    x = 100
-    if m.top.duration > 0 then x = 103 + 1714 * position / m.top.duration - 160
-    if x < 0 then x = 0
-    if x > 1600 then x = 1600
-    poster.translation = [x, 900 - m.embyPreview.height]
-    if poster.uri <> frames[frame].url then poster.uri = frames[frame].url
-    poster.visible = true
-    return true
-end function

@@ -248,7 +248,7 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/live-tv-guide.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/recordAiring.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/record-airing.bs', 'utf8');
-for (const [file, test] of [['source/utils/heldSeek.bs', 'test/held-seek.bs'], ['source/utils/secondarySubtitle.bs', 'test/secondary-subtitle.bs'], ['source/utils/liveWindow.bs', 'test/live-window.bs'], ['source/utils/subtitleText.bs', 'test/subtitle-text.bs']]) {
+for (const [file, test] of [['source/utils/heldSeek.bs', 'test/held-seek.bs'], ['source/utils/secondarySubtitle.bs', 'test/secondary-subtitle.bs'], ['source/utils/liveWindow.bs', 'test/live-window.bs'], ['source/utils/subtitleText.bs', 'test/subtitle-text.bs'], ['source/utils/osdControls.bs', 'test/osd-controls.bs']]) {
     source += '\n' + (await readFile(file, 'utf8')).replace(/^import .*$/gm, '') + '\n' + await readFile(test, 'utf8');
 }
 source += '\n' + await readFile('test/server-date.bs', 'utf8');
@@ -719,7 +719,7 @@ const episodePick = playerView.match(/sub onEpisodePicked\([^]*?end sub/)[0];
 assert.match(episodePick, /ReportPlayback\("stop"\)\s+m\.top\.unobserveField\("state"\)/, 'Switching episodes reports the old one stopped before the state observer comes off');
 assert.match(episodePick, /startingPoint = episodeBrowser\.ResumeTicks\(episode\)[^]*?callFunc\("push", episode\)/, 'The picked episode carries its resume point into the queue');
 assert.match(await readFile('source/utils/buttonLayout.bs', 'utf8'), /id: "episodes", nodeId: "showEpisodes"/, 'The player offers the Episodes button');
-assert.match(await readFile('components/video/OSD.bs', 'utf8'), /buttonLayout\.OsdCandidates\(m\.top\.hasChapters, m\.top\.hasEpisodes, m\.top\.hasSubtitles\)/, 'from the same list the settings preview draws');
+assert.match(await readFile('components/video/OSD.bs', 'utf8'), /buttonLayout\.OsdCandidates\(m\.top\.hasChapters, m\.top\.hasEpisodes, m\.top\.hasSubtitles, m\.top\.hasPeople, m\.top\.canFavorite\)/, 'from the same list the settings preview draws');
 assert.match(await readFile('source/utils/buttonLayout.bs', 'utf8'), /id: "chapters"[^]*?id: "episodes"[^]*?id: "subtitles"/, 'Episodes sits between Chapters and Subtitles in Player Buttons');
 // Every setting that changes how subtitles look shows on the Player preview, and the style rows reach their own screen
 const settingsScreen = await readFile('components/settings/settings.bs', 'utf8');
@@ -746,6 +746,13 @@ assert.match(playerView, /thumbUrl: chapterImageURL\(m\.top\.id, i, m\.chapters\
 assert.match(await readFile('components/details/ModernItemDetails.bs', 'utf8'), /chapterImageURL\(itemId, i, ch\.LookupCI\("ImageTag"\), serverBase, authToken\)/, 'Modern builds chapter images with the same helper as the player');
 assert.match(chapterOverlay, /createChild\("ScrollingLabel"\)[^]*?if focused then repeatCount = -1/, 'A long chapter name scrolls on the focused card only');
 process.stdout.write('PASS: chapter row wiring (7 checks)\n');
+const osdFile = await readFile('components/video/OSD.bs', 'utf8');
+assert.match(osdFile, /sub resetFocusToDefaultButton\(\)[^]*?else\s+focusOnSeekbar\(\)/, 'The controls open on the seek bar, as Core\'s do');
+assert.match(osdFile, /sub moveAlongRow\([^]*?focusControlGroup\("secondary", 0\)/, 'Right runs from the transport buttons onto the rest of the row');
+assert.match(playerView, /if key = KeyCode\.OK\s+if not stateAllowsOSD\(\) then return true\s+handleVideoPlayPauseAction\(\)\s+showOSD\(\)/, 'OK with the controls hidden plays or pauses and brings them up');
+assert.match(playerView, /openControlMenu\("showSpeedMenu"[^]*?openControlMenu\("showQualityMenu"/, 'Speed and Bitrate open in the track pickers\' panel');
+assert.match(await readFile('components/manager/ViewCreator.bs', 'utf8'), /callFunc\("showControlsOn", "showAudioMenu"\)[^]*?callFunc\("showControlsOn", "showSubtitleMenu"\)/, 'The audio and subtitle pickers hand back to their buttons');
+process.stdout.write('PASS: player controls wiring (5 checks)\n');
 
 // Every row on the Calendar screen that the calendar draws moves the preview to it. The release types are
 // shared with the Upcoming Movies row, week start only changes the month grid and the select action only
