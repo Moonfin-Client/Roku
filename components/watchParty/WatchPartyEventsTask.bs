@@ -1,0 +1,43 @@
+import "pkg:/source/api/watchParty.bs"
+import "pkg:/source/utils/watchPartyModel.bs"
+
+' The server holds each call up to 25 seconds, so 35 leaves room for a slow network
+const WATCH_PARTY_POLL_MS = 35000
+const WATCH_PARTY_RETRY_MAX_MS = 10000
+
+sub init()
+    m.top.functionName = "runEvents"
+end sub
+
+sub runEvents()
+    cursor = 0
+    misses = 0
+    while m.top.active
+        ' After a miss the next answer comes straight back, so the room hears it's back at once
+        holdSeconds = "25"
+        if misses > 0 then holdSeconds = "1"
+        answer = watchPartyApi.Request("GET", "/Rooms/" + m.top.roomId + "/Events?cursor=" + FormatJson(cursor) + "&wait=" + holdSeconds, invalid, m.top.token, WATCH_PARTY_POLL_MS, m.top)
+        if not m.top.active then exit while
+
+        if answer.status = 200 and type(answer.data) = "roAssociativeArray"
+            if isValid(answer.data.cursor) then cursor = answer.data.cursor
+            if misses > 0 then m.top.recovered = true
+            misses = 0
+            messages = answer.data.messages
+            if type(messages) = "roArray" and messages.Count() > 0 then m.top.batch = { messages: messages }
+        else if answer.status = 401 or answer.status = 403 or answer.status = 404
+            m.top.failure = { status: answer.status, code: watchPartyModel.ErrorCode(answer), final: true }
+            exit while
+        else
+            misses++
+            m.top.failure = { status: answer.status, code: watchPartyModel.ErrorCode(answer), final: false }
+            waitMs = misses * 2000
+            if waitMs > WATCH_PARTY_RETRY_MAX_MS then waitMs = WATCH_PARTY_RETRY_MAX_MS
+            waited = 0
+            while waited < waitMs and m.top.active
+                sleep(250)
+                waited += 250
+            end while
+        end if
+    end while
+end sub

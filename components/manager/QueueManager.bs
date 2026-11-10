@@ -9,6 +9,7 @@ import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/parentalControls.bs"
+import "pkg:/source/utils/syncPlayHelpers.bs"
 import "ViewCreator.bs"
 
 sub init()
@@ -136,74 +137,6 @@ sub moveForward()
     m.position++
 end sub
 
-' getPreviousItemTitleAndIcon: Return the title and icon of the previous item in the queue
-'
-' @return {object} - an array with an icon url and title text
-function getPreviousItemTitleAndIcon() as object
-    if getPosition() = 0 then return []
-
-    previousItem = getItemByIndex(getPosition() - 1)
-    return getItemTitleAndIcon(previousItem)
-end function
-
-' getNextItemTitleAndIcon: Return the title and icon of the next item in the queue
-'
-' @return {object} - an array with an icon url and title text
-function getNextItemTitleAndIcon() as object
-    if getPosition() + 1 >= getCount() then return []
-
-    nextItem = getItemByIndex(getPosition() + 1)
-    return getItemTitleAndIcon(nextItem)
-end function
-
-' getItemTitle: Determine title text and icon for passed item
-'
-' @param {dynamic} item - the item to get the title of
-' @return {object} - an array with an icon url and title text
-function getItemTitleAndIcon(item as dynamic) as object
-    if not isValid(item) then return []
-    itemMediaType = getItemType(item)
-
-    itemData = item.json ?? item
-
-    if inArray(["audio", "audiobook"], itemMediaType)
-        return [`pkg:/images/icons/musicNote.webp`, `${itemData.artists[0]} - ${itemData.name ?? itemData.title}`]
-    end if
-
-    if inArray(["movie", "video", "recording", "musicvideo"], itemMediaType)
-        ' Some tv episodes are identified as video, so we must check itemdata
-        if isAllValid([itemData.seriesname, itemData.SeasonName])
-            seasonName = ""
-            if isValidAndNotEmpty(itemData.SeasonName) and LCase(itemData.SeasonName) <> "season unknown"
-                seasonName = ` - ${itemData.SeasonName}`
-
-                if isValid(itemData.IndexNumber)
-                    seasonName += ` Episode ${itemData.IndexNumber}`
-                end if
-
-                return [`pkg:/images/media_type_icons/tv.webp`, `${itemData.seriesname}${seasonName} - ${itemData.name ?? itemData.title}`]
-            end if
-        end if
-
-        return [`pkg:/images/media_type_icons/movie.webp`, `${itemData.name ?? itemData.title}`]
-    end if
-
-    if itemMediaType = "episode"
-        seasonName = ""
-        if isValidAndNotEmpty(itemData.SeasonName) and LCase(itemData.SeasonName) <> "season unknown"
-            seasonName = ` - ${itemData.SeasonName}`
-        end if
-
-        if isValid(itemData.IndexNumber)
-            seasonName += ` Episode ${itemData.IndexNumber}`
-        end if
-
-        return [`pkg:/images/media_type_icons/tv.webp`, `${itemData.seriesname}${seasonName} - ${itemData.name ?? itemData.title}`]
-    end if
-
-    return []
-end function
-
 ' Return the current play queue
 function getQueue()
     return m.queue
@@ -234,8 +167,10 @@ end function
 
 ' Play items in queue
 sub playQueue()
-    m.isPlaying = true
     strainBlocked()
+    if syncPlayHandledQueue() then return
+
+    m.isPlaying = true
     nextItem = getCurrentItem()
     ' A queue emptied by blocked ratings still has the spinner from whatever asked to play
     if not isValid(nextItem)
@@ -313,6 +248,34 @@ sub strainBlocked()
         end if
     end for
 end sub
+
+' In a SyncPlay group the queue goes to the server, and the group's queue update comes back to start playback
+' here with interception off
+function syncPlayHandledQueue() as boolean
+    syncPlayManager = m.global.syncPlayManager
+    if not isValid(syncPlayManager) or not syncPlayManager.syncPlayActive then return false
+    if not syncPlayManager.callFunc("shouldIntercept") then return false
+
+    nextItem = getCurrentItem()
+    if not isValid(nextItem) then return false
+
+    itemType = getItemType(nextItem)
+    if not syncPlayIsVideoType(itemType) then return false
+
+    ' Items from another server can't be part of a group on this one
+    if isValid(getServerInfoFromItem(nextItem)) then return false
+
+    itemIds = []
+    for each queueItem in m.queue
+        itemIds.Push(queueItem.id)
+    end for
+
+    startTicks& = 0
+    if isValid(nextItem.startingPoint) then startTicks& = nextItem.startingPoint
+
+    syncPlayManager.callFunc("requestSetNewQueue", itemIds, m.position, startTicks&)
+    return true
+end function
 
 ' Remove item at end of play queue
 sub pop()
@@ -440,6 +403,13 @@ end sub
 
 ' Toggle shuffleEnabled state
 sub toggleShuffle()
+    syncPlayManager = m.global.syncPlayManager
+    if isValid(syncPlayManager) and syncPlayManager.syncPlayActive and syncPlayManager.callFunc("shouldIntercept")
+        ' The server owns the group's queue order, it echoes the reshuffled queue back
+        syncPlayManager.callFunc("requestSetShuffleMode", syncPlayManager.shuffleMode = "Shuffle" ? "Sorted" : "Shuffle")
+        return
+    end if
+
     m.shuffleEnabled = not m.shuffleEnabled
 
     if m.shuffleEnabled

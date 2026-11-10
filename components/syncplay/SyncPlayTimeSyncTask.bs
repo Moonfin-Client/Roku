@@ -1,0 +1,71 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/syncPlayHelpers.bs"
+import "pkg:/source/api/baserequest.bs"
+
+sub init()
+    m.top.functionName = "execute"
+end sub
+
+' The offset comes from the lowest round trip of the last eight samples, since those are the least distorted by
+' network jitter
+sub execute()
+    m.samples = []
+    greedyRemaining = 3
+    while not m.top.shutdown
+        if measureOnce() then publishBest()
+
+        if greedyRemaining > 0
+            greedyRemaining--
+            waitMs = 1000
+        else
+            waitMs = 60000
+        end if
+
+        waited = 0
+        while waited < waitMs
+            if m.top.shutdown then return
+            sleep(250)
+            waited += 250
+            if m.top.syncNow
+                m.top.syncNow = false
+                greedyRemaining = 2
+                exit while
+            end if
+        end while
+    end while
+end sub
+
+function measureOnce() as boolean
+    t0 = syncPlayNowUtcMs()
+    req = APIRequest("/getutctime")
+    if not isValid(req) then return false
+    resp = getJson(req)
+    t3 = syncPlayNowUtcMs()
+    if not isValid(resp) then return false
+
+    t1 = syncPlayParseIsoToMs(resp.RequestReceptionTime)
+    t2 = syncPlayParseIsoToMs(resp.ResponseTransmissionTime)
+    if t1 = 0 or t2 = 0 then return false
+
+    rtt = (t3 - t0) - (t2 - t1)
+    if rtt < 0 or rtt > 5000 then return false
+
+    m.samples.Push({ offset: ((t1 - t0) + (t2 - t3)) / 2, rtt: rtt })
+    if m.samples.Count() > 8 then m.samples.Shift()
+    return true
+end function
+
+sub publishBest()
+    best = invalid
+    for each sample in m.samples
+        if best = invalid or sample.rtt < best.rtt then best = sample
+    end for
+    if best = invalid then return
+
+    ' A clock this far off means the device time is broken, publishing it would
+    ' schedule commands nonsensically far away
+    if Abs(best.offset) > 2000000000# then return
+
+    m.top.timeOffsetMs = Cint(best.offset)
+    m.top.roundTripTimeMs = Cint(best.rtt)
+end sub

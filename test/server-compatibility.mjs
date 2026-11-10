@@ -101,8 +101,9 @@ const selections = {
     'source/utils/accessSchedule.bs': null,
     'source/utils/musicCategories.bs': null,
     'source/utils/moonbaseInstall.bs': null,
+    'source/utils/watchPartyModel.bs': null,
     'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'optionRange', 'optionsFit'],
-    'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt'],
+    'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt', 'subtitleBottom', 'seekBarY', 'timeRowShows'],
     'components/settings/settingsEditors.bs': ['editorArrangement'],
     'components/settings/settings.bs': ['settingPath'],
     'components/details/stage/StageChipRow.bs': ['columnShares'],
@@ -139,7 +140,7 @@ const selections = {
     'components/home/HomeRows.bs': ['toNormalizedString'],
     'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'getBoolSetting', 'getStringSetting', 'appendRadarrCalendar', 'radarrRowRelease', 'appendSonarrCalendar', 'sonarrRowPicks', 'sonarrEpisodeCode', 'calendarSubtitle', 'sortByCalendarDate'],
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
-    'source/api/Image.bs': ['ImageURL', 'metadataPosterURL'],
+    'source/api/Image.bs': ['ImageURL', 'metadataPosterURL', 'chapterImageURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
     'components/config/SigninScene.bs': ['showsQuickConnect'],
     'source/utils/parsedUrl.bs': ['ParsedUrl', '__ParsedUrl_ToString'],
@@ -162,6 +163,7 @@ for (const [file, names] of Object.entries(selections)) {
 }
 source += '\n' + (await readFile('source/ShowScenes.bs', 'utf8')).match(/^const minimumServerVersion = .+$/m)[0];
 source += '\n' + (await readFile('components/details/QuickLookItemDetails.bs', 'utf8')).match(/^const QL_MAX_BUTTONS = .+$/m)[0];
+source += '\n' + (await readFile('components/settings/SettingsPlayerPreview.bs', 'utf8')).match(/^const \w+ = .+$/gm).join('\n');
 source += '\n' + (await readFile('source/api/EmbyConnect.bs', 'utf8')).replace(/^import .*$/gm, '').replace(/    function Request\([^]*?    end function/, await readFile('test/emby-connect-transport.bs', 'utf8'));
 source += '\n' + await readFile('test/emby-connect.bs', 'utf8');
 source += '\n' + await readFile('test/emby-features.bs', 'utf8');
@@ -248,7 +250,7 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/live-tv-guide.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/recordAiring.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/record-airing.bs', 'utf8');
-for (const [file, test] of [['source/utils/heldSeek.bs', 'test/held-seek.bs'], ['source/utils/secondarySubtitle.bs', 'test/secondary-subtitle.bs'], ['source/utils/liveWindow.bs', 'test/live-window.bs'], ['source/utils/subtitleText.bs', 'test/subtitle-text.bs']]) {
+for (const [file, test] of [['source/utils/heldSeek.bs', 'test/held-seek.bs'], ['source/utils/secondarySubtitle.bs', 'test/secondary-subtitle.bs'], ['source/utils/liveWindow.bs', 'test/live-window.bs'], ['source/utils/subtitleText.bs', 'test/subtitle-text.bs'], ['source/utils/osdControls.bs', 'test/osd-controls.bs']]) {
     source += '\n' + (await readFile(file, 'utf8')).replace(/^import .*$/gm, '') + '\n' + await readFile(test, 'utf8');
 }
 source += '\n' + await readFile('test/server-date.bs', 'utf8');
@@ -275,8 +277,11 @@ source += '\n' + await readFile('test/home-cards.bs', 'utf8');
 source += '\n' + await readFile('test/calendar-entries.bs', 'utf8');
 source += '\n' + await readFile('test/arr-calendar-rows.bs', 'utf8');
 source += '\n' + await readFile('test/moonbase-install.bs', 'utf8');
+source += '\n' + await readFile('test/watch-party.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/keyboardLayouts.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/keyboard-layouts.bs', 'utf8');
+source += '\n' + await readFile('source/utils/profileCarousel.bs', 'utf8');
+source += '\n' + await readFile('test/profile-carousel.bs', 'utf8');
 source += '\n' + await readFile('test/settings-sync-profile.bs', 'utf8');
 source += '\n' + await readFile('test/seasonal-effects.bs', 'utf8');
 source += '\n' + await readFile('test/audio-track.bs', 'utf8');
@@ -724,7 +729,7 @@ const episodePick = playerView.match(/sub onEpisodePicked\([^]*?end sub/)[0];
 assert.match(episodePick, /ReportPlayback\("stop"\)\s+m\.top\.unobserveField\("state"\)/, 'Switching episodes reports the old one stopped before the state observer comes off');
 assert.match(episodePick, /startingPoint = episodeBrowser\.ResumeTicks\(episode\)[^]*?callFunc\("push", episode\)/, 'The picked episode carries its resume point into the queue');
 assert.match(await readFile('source/utils/buttonLayout.bs', 'utf8'), /id: "episodes", nodeId: "showEpisodes"/, 'The player offers the Episodes button');
-assert.match(await readFile('components/video/OSD.bs', 'utf8'), /buttonLayout\.OsdCandidates\(m\.top\.hasChapters, m\.top\.hasEpisodes, m\.top\.hasSubtitles\)/, 'from the same list the settings preview draws');
+assert.match(await readFile('components/video/OSD.bs', 'utf8'), /buttonLayout\.OsdCandidates\(m\.top\.hasChapters, m\.top\.hasEpisodes, m\.top\.hasSubtitles, m\.top\.hasPeople, m\.top\.canFavorite\)/, 'from the same list the settings preview draws');
 assert.match(await readFile('source/utils/buttonLayout.bs', 'utf8'), /id: "chapters"[^]*?id: "episodes"[^]*?id: "subtitles"/, 'Episodes sits between Chapters and Subtitles in Player Buttons');
 // Every setting that changes how subtitles look shows on the Player preview, and the style rows reach their own screen
 const settingsScreen = await readFile('components/settings/settings.bs', 'utf8');
@@ -742,6 +747,22 @@ assert.doesNotMatch(episodeOverlay, /Press BACK to close/, 'The episode browser 
 assert.match(episodeOverlay, /requestMarker[^]*?pillSize = "compact"/, 'The episode browser rows carry their anime markers');
 assert.match(playerView, /m\.episodeOverlay\.logoUri = osdLogo\.uri/, 'The episode browser header is the series logo');
 process.stdout.write('PASS: episode browser wiring (9 checks)\n');
+const chapterOverlay = await readFile('components/video/ChapterListOverlay.bs', 'utf8');
+assert.match(chapterOverlay, /key = KeyCode\.LEFT[^]*?m\.focusIndex--[^]*?key = KeyCode\.RIGHT[^]*?m\.focusIndex\+\+/, 'The chapter row moves with Left and Right');
+assert.doesNotMatch(chapterOverlay, /KeyCode\.(UP|DOWN)/, 'Up and Down stay in the chapter row');
+assert.match(chapterOverlay, /return key <> KeyCode\.PLAY/, 'Play and pause still reach the player under the chapter row');
+assert.match(chapterOverlay, /visual\.thumb\.uri = "" and visual\.thumbUrl <> "" and i >= m\.scrollCol - THUMB_MARGIN/, 'Chapter images load only near the visible cards');
+assert.match(playerView, /thumbUrl: chapterImageURL\(m\.top\.id, i, m\.chapters\[i\]\.LookupCI\("ImageTag"\), serverBase, authToken\)/, 'Each chapter card gets its image from the item it plays');
+assert.match(await readFile('components/details/ModernItemDetails.bs', 'utf8'), /chapterImageURL\(itemId, i, ch\.LookupCI\("ImageTag"\), serverBase, authToken\)/, 'Modern builds chapter images with the same helper as the player');
+assert.match(chapterOverlay, /createChild\("ScrollingLabel"\)[^]*?if focused then repeatCount = -1/, 'A long chapter name scrolls on the focused card only');
+process.stdout.write('PASS: chapter row wiring (7 checks)\n');
+const osdFile = await readFile('components/video/OSD.bs', 'utf8');
+assert.match(osdFile, /sub resetFocusToDefaultButton\(\)[^]*?else\s+focusOnSeekbar\(\)/, 'The controls open on the seek bar, as Core\'s do');
+assert.match(osdFile, /sub moveAlongRow\([^]*?focusControlGroup\("secondary", 0\)/, 'Right runs from the transport buttons onto the rest of the row');
+assert.match(playerView, /if key = KeyCode\.OK\s+if not stateAllowsOSD\(\) then return true\s+handleVideoPlayPauseAction\(\)\s+showOSD\(\)/, 'OK with the controls hidden plays or pauses and brings them up');
+assert.match(playerView, /openControlMenu\("showSpeedMenu"[^]*?openControlMenu\("showQualityMenu"/, 'Speed and Bitrate open in the track pickers\' panel');
+assert.match(await readFile('components/manager/ViewCreator.bs', 'utf8'), /callFunc\("showControlsOn", "showAudioMenu"\)[^]*?callFunc\("showControlsOn", "showSubtitleMenu"\)/, 'The audio and subtitle pickers hand back to their buttons');
+process.stdout.write('PASS: player controls wiring (5 checks)\n');
 
 // Every row on the Calendar screen that the calendar draws moves the preview to it. The release types are
 // shared with the Upcoming Movies row, week start only changes the month grid and the select action only
@@ -876,7 +897,7 @@ assert.match(watchingNowRows.match(/sub onWatchingNowRefreshFired\([^]*?end sub/
 assert.match(watchingNowRows.match(/sub updateCustomDynamicRowItems\([^]*?end sub/)[0], /if homeRowIndexById\(rowId\) >= 0 then return/, 'A failed or empty refresh keeps the watching now cards up, as in Core');
 assert.match(loadItemsSource.match(/function loadWatchingNowRow\([^]*?end function/)[0], /customRowCard\(item, \{\}\)/, 'Watching now cards are outside titles, as in Core');
 assert.match(await readFile('components/home/Home.xml', 'utf8'), /rowTitleComponentName="HomeRowTitle"/, 'Home rows draw their titles with the row title component');
-assert.match(await readFile('source/utils/misc.bs', 'utf8'), /if isSeerrFilterRow\(rowId\) or inArray\(\["mdblist_watching_now", "studios", "audio", "resumeaudio"\], rowId\) then return false/, 'Watching now keeps its wide cards in modern rows, as do Seerr\'s browse rows, Studios and audio rows');
+assert.match(await readFile('source/utils/misc.bs', 'utf8'), /if isSeerrFilterRow\(rowId\) or inArray\(\["mdblist_watching_now", "watch_parties", "studios", "audio", "resumeaudio"\], rowId\) then return false/, 'Watching now keeps its wide cards in modern rows, as do Watch Parties, Seerr\'s browse rows, Studios and audio rows');
 assert.match((await readFile('components/settings/settings.bs', 'utf8')).match(/sub dismissPanel\([^]*?end sub/)[0], /if m\.homeRowsSwitched = true[^]*?behind\.callFunc\("reload"\)/, 'Closing settings reloads Home after a row is switched on or off');
 process.stdout.write('PASS: watching now row wiring (15 checks)\n');
 
@@ -1242,7 +1263,14 @@ assert.doesNotMatch(previewHome, /"ui\.home\.showBackdrop"/, 'Home never reads t
 assert.match(previewHome, /maskUri = "pkg:\/images\/backdropCornerMask\.png"/, 'The corner backdrop fades out through its mask');
 assert.match(previewHome, /maskUri = "pkg:\/images\/backdropTopMask\.webp"/, 'The top backdrop fades out through its mask');
 for (const name of ['Full Screen', 'Corner', 'Top']) assert.match(previewStrings, new RegExp(`<source>${name}</source>`), `${name} is translated`);
-process.stdout.write('PASS: home backdrop style wiring (11 checks)\n');
+// The settings preview draws the style behind its rows through Home's helper and masks, and draws a tried style with its switch
+assert.ok(previewTable.includes('"ui.home.backdropStyle": "home"') && previewTable.includes('"ui.home.showBackdrop": "home"'), 'The backdrop style and its switch show on the Home preview');
+assert.match(previewSettingsScreen, /if m\.tryKey = "ui\.home\.backdropStyle" then values\["ui\.home\.showBackdrop"\] = \(values\[m\.tryKey\] <> "off"\)\.ToStr\(\)/, 'A tried style is drawn with the switch it saves');
+const rowsPreview = await readFile('components/setup/SetupHomeRowsPreview.bs', 'utf8');
+assert.ok(rowsPreview.includes('"pkg:/images/backdropCornerMask.png"') && rowsPreview.includes('"pkg:/images/backdropTopMask.webp"'), 'The preview fades its backdrop through Home\'s masks');
+assert.match(await readFile('components/setup/SetupDetailPreview.bs', 'utf8'), /sub drawBackdrop\(pal as object\)\s+if m\.live and not m\.pageLayout\.showBackdrop then return/, 'Every detail style drops its picture when the switch is off');
+assert.match(await readFile('components/details/detailMetadataHost.bs', 'utf8'), /sub setBackdropImage\(itemData as object\)[^]*?backdropPoster\.visible = get_user_setting_bool\("ui\.itemdetail\.showBackdrop", true\)/, 'The detail screens that share the backdrop setter drop their picture when the switch is off');
+process.stdout.write('PASS: home backdrop style wiring (16 checks)\n');
 
 // Continue Watching and Next Up cards play on select through one check the press and the card menu share
 assert.match(homeRowsSource.match(/function playsOnSelect\([^]*?end function/)[0], /if rowId <> "resume" and rowId <> "nextup" then return false\s+return isStringEqual\(get_user_setting\("ui\.home\.continueWatchingDefaultAction"\), "play"\)/, 'Only Continue Watching and Next Up rows play on select, and only when the setting says play');
@@ -1495,3 +1523,24 @@ assert.match(subtitleSettings, /"playback\.subs\.language", "playback\.subs\.sec
 assert.match(heldPlayer, /m\.liveWindow = liveWindow\.WindowFor\(m\.top\.duration\)/, 'A live stream works out its rewind window from the duration');
 assert.match(heldPlayer, /sub jumpToLive\(\)[^]*?m\.top\.seek = 999999/, 'Jump to Live seeks past the end, which Roku holds at its live point');
 process.stdout.write('PASS: held seek, secondary subtitle and live rewind wiring (8 checks)\n');
+
+// Back from Watch Parties goes one step: settings stays open under the screen, and the screen leaves
+// the stack before it says it closed, so settings takes focus after the screen under it has
+const partySettings = await readFile('components/settings/settings.bs', 'utf8');
+const partyScreen = await readFile('components/watchParty/WatchPartiesScreen.bs', 'utf8');
+assert.match(partySettings, /selectedItem\.settingName = "watchParty\.open"\s+openWatchParties\(\)/, 'Open Watch Parties keeps settings open');
+assert.doesNotMatch(partySettings.match(/sub openWatchParties\(\)[^]*?end sub/)[0], /dismissPanel/, 'and doesn\'t dismiss it');
+assert.match(partySettings, /sub onWatchPartiesClosed\(event as object\)[^]*?m\.top\.visible = true[^]*?m\.settingsMenu\.setFocus\(true\)/, 'Closing the screen brings settings back on its row');
+assert.match(partyScreen, /sub closeScreen\(\)\s+m\.global\.sceneManager\.callFunc\("popScene"\)\s+m\.top\.closed = true/, 'The screen pops itself before it says it closed');
+assert.match(partyScreen, /if key = KeyCode\.BACK\s+closeScreen\(\)\s+return true/, 'BACK on the room list closes it');
+assert.match(partyScreen, /if key = KeyCode\.BACK then closeScreen\(\)/, 'and so does BACK in the lobby');
+process.stdout.write('PASS: Watch Parties back navigation (6 checks)\n');
+
+// A party's item plays alone, focus after Remove and Back, and the screen's keyboard handing focus back
+const partyPlayer = await readFile('components/video/VideoPlayerView.bs', 'utf8');
+assert.match(partyPlayer, /if queuePos = 0 and queueCount <= 1 and not wpActive\(\)/, 'A party player doesn\'t queue the season around its episode');
+assert.match(await readFile('components/ItemGrid/LoadVideoContentTask.bs', 'utf8'), /if isValid\(video\.showID\) and not partyItem/, 'and the load doesn\'t queue the next episodes for it');
+assert.match((await readFile('components/watchParty/WatchPartyPanel.bs', 'utf8')).match(/sub runAction\([^]*?end sub/)[0], /act\("remove", "Remove", \{ "member_id": arg \}\)\s+'[^\n]*\s+wpRowsPark\("people"\)/, 'Remove parks focus on the people heading');
+assert.match(partyScreen, /if isReturning then m\.wpRows\.focus = -1/, 'Back from the player starts the lobby on its first button');
+assert.match(partyScreen.match(/sub releaseKeyboard\(\)[^]*?end sub/)[0], /m\.top\.setFocus\(true\)/, 'The screen takes focus back when its keyboard closes');
+process.stdout.write('PASS: Watch Parties player and focus wiring (5 checks)\n');

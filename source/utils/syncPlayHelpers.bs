@@ -1,0 +1,169 @@
+import "pkg:/source/utils/misc.bs"
+
+' Epoch milliseconds overflow 32 bit integers, so these are doubles
+function syncPlayNowUtcMs() as double
+    dt = CreateObject("roDateTime")
+    return dt.AsSeconds() * 1000# + dt.GetMilliseconds()
+end function
+
+' roDateTime drops fractional seconds, so the fraction is parsed by hand and added back
+function syncPlayParseIsoToMs(iso as dynamic) as double
+    if not isValidAndNotEmpty(iso) then return 0
+    parts = iso.toStr().split(".")
+    wholePart = parts[0]
+    fractionMs = 0
+    if parts.count() > 1
+        digits = ""
+        fraction = parts[1]
+        for i = 0 to fraction.len() - 1
+            c = fraction.mid(i, 1)
+            if c < "0" or c > "9" then exit for
+            digits += c
+        end for
+        while digits.len() < 3
+            digits += "0"
+        end while
+        fractionMs = digits.left(3).toInt()
+    end if
+    if not wholePart.endsWith("Z") then wholePart += "Z"
+    dt = CreateObject("roDateTime")
+    dt.FromISO8601String(wholePart)
+    seconds = dt.AsSeconds()
+    if seconds = 0 then return 0
+    return seconds * 1000# + fractionMs
+end function
+
+' The SyncPlay endpoints expect When fields with milliseconds
+function syncPlayEpochMsToIso(ms as double) as string
+    ' Fix and Int go through single precision, which can put epoch seconds a minute off
+    total& = ms
+    seconds% = total& \ 1000
+    millis% = total& mod 1000
+    dt = CreateObject("roDateTime")
+    dt.FromSeconds(seconds%)
+    iso = dt.ToISOString()
+    millisStr = millis%.toStr()
+    while millisStr.len() < 3
+        millisStr = "0" + millisStr
+    end while
+    if iso.endsWith("Z")
+        iso = iso.left(iso.len() - 1)
+    end if
+    return iso + "." + millisStr + "Z"
+end function
+
+function syncPlaySecondsToTicks(seconds as double) as longinteger
+    ticks& = seconds * 10000000#
+    return ticks&
+end function
+
+function syncPlayTicksToSeconds(ticks as dynamic) as double
+    if not isValid(ticks) then return 0
+    return ticks / 10000000#
+end function
+
+' Identity for a received command so a duplicate delivery is applied only once
+function syncPlayCommandKey(cmd as object) as string
+    return `${cmd.EmittedAt}|${cmd.Command}|${cmd.When}|${cmd.PositionTicks}`
+end function
+
+' BrightScript has no xor operator, but for the or and and of two values
+' the difference is exactly their xor
+function syncPlayXorByte(a as integer, b as integer) as integer
+    return (a or b) - (a and b)
+end function
+
+function syncPlayHexToBase64(hexStr as string) as string
+    ba = CreateObject("roByteArray")
+    ba.FromHexString(hexStr)
+    return ba.ToBase64String()
+end function
+
+function syncPlayGenerateWebSocketKey() as string
+    ba = CreateObject("roByteArray")
+    for i = 0 to 15
+        ba.Push(Rnd(256) - 1)
+    end for
+    return ba.ToBase64String()
+end function
+
+' RFC 6455 has the server answer with base64(sha1(key + this fixed GUID))
+function syncPlayWebSocketAcceptKey(clientKey as string) as string
+    digest = CreateObject("roEVPDigest")
+    digest.Setup("sha1")
+    data = CreateObject("roByteArray")
+    data.FromAsciiString(clientKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+    return syncPlayHexToBase64(digest.Process(data))
+end function
+
+' RFC 6455 requires client frames to be masked, and nothing this client sends needs more than a 16 bit length
+function syncPlayEncodeFrame(opcode as integer, payload as object) as dynamic
+    length = 0
+    if isValid(payload) then length = payload.Count()
+    frame = CreateObject("roByteArray")
+    frame.Push(128 + opcode)
+    if length < 126
+        frame.Push(128 + length)
+    else if length < 65536
+        frame.Push(128 + 126)
+        frame.Push(Fix(length / 256))
+        frame.Push(length mod 256)
+    else
+        return invalid
+    end if
+    maskKey = []
+    for i = 0 to 3
+        b = Rnd(256) - 1
+        maskKey.Push(b)
+        frame.Push(b)
+    end for
+    for i = 0 to length - 1
+        frame.Push(syncPlayXorByte(payload[i], maskKey[i mod 4]))
+    end for
+    return frame
+end function
+
+' complete stays false until the whole frame is buffered, and oversize flags a frame past 1 MB, which no
+' Jellyfin message reaches, so the connection gets dropped
+function syncPlayDecodeFrameHeader(buf as object, offset as integer) as object
+    available = buf.Count() - offset
+    if available < 2 then return { complete: false }
+    b0 = buf[offset]
+    b1 = buf[offset + 1]
+    fin = (b0 and 128) <> 0
+    opcode = b0 and 15
+    masked = (b1 and 128) <> 0
+    length = b1 and 127
+    headerLen = 2
+    if length = 126
+        if available < 4 then return { complete: false }
+        length = buf[offset + 2] * 256 + buf[offset + 3]
+        headerLen = 4
+    else if length = 127
+        if available < 10 then return { complete: false }
+        if buf[offset + 2] <> 0 or buf[offset + 3] <> 0 or buf[offset + 4] <> 0 or buf[offset + 5] <> 0
+            return { complete: false, oversize: true }
+        end if
+        length = ((buf[offset + 6] * 256 + buf[offset + 7]) * 256 + buf[offset + 8]) * 256 + buf[offset + 9]
+        headerLen = 10
+    end if
+    if length > 1048576 or length < 0 then return { complete: false, oversize: true }
+    if masked then headerLen += 4
+    if available < headerLen + length then return { complete: false }
+    return { complete: true, fin: fin, opcode: opcode, masked: masked, length: length, headerLen: headerLen }
+end function
+
+function syncPlayIsVideoType(itemType as string) as boolean
+    return inArray(["movie", "episode", "video", "recording", "trailer", "musicvideo"], itemType)
+end function
+
+' Sleeps in short slices so a task's shutdown stays responsive
+function syncPlaySleepChecked(totalMs as integer) as boolean
+    waited = 0
+    while waited < totalMs
+        if m.top.shutdown then return false
+        sleep(100)
+        waited += 100
+    end while
+    return not m.top.shutdown
+end function

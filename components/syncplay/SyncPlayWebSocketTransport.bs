@@ -1,0 +1,273 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/syncPlayHelpers.bs"
+import "pkg:/source/api/baserequest.bs"
+
+sub init()
+    m.top.functionName = "execute"
+end sub
+
+sub execute()
+    m.refused = false
+    backoffSeconds = 1
+    while not m.top.shutdown
+        m.top.connectionState = "connecting"
+        if connectAndHandshake()
+            backoffSeconds = 1
+            m.top.connectionState = "connected"
+            receiveLoop()
+            closeSocket()
+            if m.top.shutdown then exit while
+        else
+            closeSocket()
+            if m.top.shutdown then exit while
+            if m.refused
+                m.top.connectionState = "gone"
+                exit while
+            end if
+        end if
+        m.top.connectionState = "reconnecting"
+        if not syncPlaySleepChecked(backoffSeconds * 1000) then exit while
+        if backoffSeconds < 16 then backoffSeconds = backoffSeconds * 2
+    end while
+    m.top.connectionState = "disconnected"
+end sub
+
+function connectAndHandshake() as boolean
+    parsed = ParsedUrl(m.top.serverUrl)
+    if not isValid(parsed) or parsed.proto <> "http" then return false
+
+    socketPort = 80
+    if isValidAndNotEmpty(parsed.port) then socketPort = parsed.port.toInt()
+
+    m.port = CreateObject("roMessagePort")
+    m.socket = CreateObject("roStreamSocket")
+    m.socket.SetMessagePort(m.port)
+    address = CreateObject("roSocketAddress")
+    address.SetHostName(parsed.host)
+    address.SetPort(socketPort)
+    m.socket.SetSendToAddress(address)
+    m.socket.NotifyReadable(true)
+    m.socket.NotifyWritable(true)
+    m.socket.Connect()
+
+    ' Connect is non blocking, wait for the socket to become writable
+    connectTimer = CreateObject("roTimespan")
+    while not m.socket.IsWritable()
+        if m.top.shutdown or not m.socket.eOK() then return false
+        if connectTimer.TotalMilliseconds() > 10000 then return false
+        Wait(100, m.port)
+    end while
+    ' Left on, a socket that stays writable wakes every wait at once
+    m.socket.NotifyWritable(false)
+
+    key = syncPlayGenerateWebSocketKey()
+    crlf = Chr(13) + Chr(10)
+    ' The app's own auth header, so the socket joins the session the group knows rather than whichever device
+    ' the token was issued to
+    request = "GET " + parsed.path + "/socket HTTP/1.1" + crlf
+    request += "Host: " + parsed.host + ":" + socketPort.toStr() + crlf
+    request += "Authorization: " + buildAuthHeader() + crlf
+    request += "Upgrade: websocket" + crlf
+    request += "Connection: Upgrade" + crlf
+    request += "Sec-WebSocket-Key: " + key + crlf
+    request += "Sec-WebSocket-Version: 13" + crlf
+    request += crlf
+    if m.socket.SendStr(request) < 0 then return false
+
+    m.rxBuf = CreateObject("roByteArray")
+    m.rxOff = 0
+    handshakeTimer = CreateObject("roTimespan")
+    headerEnd = -1
+    while headerEnd < 0
+        if m.top.shutdown then return false
+        if handshakeTimer.TotalMilliseconds() > 10000 then return false
+        Wait(250, m.port)
+        if m.socket.IsReadable()
+            if not receiveIntoBuffer() then return false
+        end if
+        if not m.socket.eOK() then return false
+        headerEnd = findHeaderEnd()
+    end while
+
+    headers = byteRangeToAscii(m.rxBuf, 0, headerEnd)
+    ' Bytes after the blank line that ends the headers are the first frame data, so they stay in the buffer
+    m.rxOff = headerEnd + 4
+
+    if headers.InStr(" 101 ") < 0
+        ' A refused token won't work on a retry either
+        m.refused = headers.InStr(" 401 ") >= 0 or headers.InStr(" 403 ") >= 0
+        return false
+    end if
+    expected = syncPlayWebSocketAcceptKey(key)
+    acceptMatch = CreateObject("roRegex", "Sec-WebSocket-Accept:\s*(\S+)", "i").Match(headers)
+    if acceptMatch.Count() < 2 or acceptMatch[1] <> expected then return false
+
+    m.frag = CreateObject("roByteArray")
+    m.fragOpcode = 0
+    m.keepAliveTimer = CreateObject("roTimespan")
+    m.keepAliveIntervalMs = 0
+    return true
+end function
+
+sub receiveLoop()
+    while true
+        if m.top.shutdown
+            sendFrame(8, invalid)
+            return
+        end if
+        Wait(250, m.port)
+        if m.socket.IsReadable()
+            if not receiveIntoBuffer() then return
+            if not drainFrames() then return
+        end if
+        if not m.socket.eOK() then return
+        if m.keepAliveIntervalMs > 0 and m.keepAliveTimer.TotalMilliseconds() > m.keepAliveIntervalMs
+            sendKeepAlive()
+        end if
+    end while
+end sub
+
+function receiveIntoBuffer() as boolean
+    chunk = CreateObject("roByteArray")
+    chunk[4095] = 0
+    received = m.socket.Receive(chunk, 0, 4096)
+    ' The socket can say it's readable with nothing there yet, which isn't a drop
+    if received < 0 and (m.socket.eAgain() or m.socket.eWouldBlock()) then return true
+    if received <= 0 then return false
+    for i = 0 to received - 1
+        m.rxBuf.Push(chunk[i])
+    end for
+    return true
+end function
+
+' Parses every complete frame in the buffer, tracking the read position with an
+' offset instead of rebuilding the byte array per frame
+function drainFrames() as boolean
+    while true
+        header = syncPlayDecodeFrameHeader(m.rxBuf, m.rxOff)
+        if isValid(header.oversize) and header.oversize then return false
+        if not header.complete then exit while
+
+        payloadStart = m.rxOff + header.headerLen
+        payload = CreateObject("roByteArray")
+        if header.masked
+            ' Servers shouldn't mask frames, but a masked one is unmasked anyway
+            maskStart = payloadStart - 4
+            for i = 0 to header.length - 1
+                payload.Push(syncPlayXorByte(m.rxBuf[payloadStart + i], m.rxBuf[maskStart + (i mod 4)]))
+            end for
+        else
+            for i = 0 to header.length - 1
+                payload.Push(m.rxBuf[payloadStart + i])
+            end for
+        end if
+        m.rxOff = payloadStart + header.length
+
+        if not handleFrame(header.fin, header.opcode, payload) then return false
+    end while
+
+    if m.rxOff >= m.rxBuf.Count()
+        m.rxBuf = CreateObject("roByteArray")
+        m.rxOff = 0
+    else if m.rxOff > 32768
+        rest = CreateObject("roByteArray")
+        for i = m.rxOff to m.rxBuf.Count() - 1
+            rest.Push(m.rxBuf[i])
+        end for
+        m.rxBuf = rest
+        m.rxOff = 0
+    end if
+    return true
+end function
+
+function handleFrame(fin as boolean, opcode as integer, payload as object) as boolean
+    ' Continuation frames and unfinished first frames accumulate until fin
+    if opcode = 0 or ((opcode = 1 or opcode = 2) and not fin)
+        if opcode <> 0 then m.fragOpcode = opcode
+        for each b in payload
+            m.frag.Push(b)
+        end for
+        if not fin then return true
+        payload = m.frag
+        opcode = m.fragOpcode
+        m.frag = CreateObject("roByteArray")
+        m.fragOpcode = 0
+    end if
+
+    if opcode = 1
+        dispatchText(payload.ToAsciiString())
+    else if opcode = 8
+        sendFrame(8, payload)
+        return false
+    else if opcode = 9
+        sendFrame(10, payload)
+    end if
+    return true
+end function
+
+sub dispatchText(text as string)
+    if text.InStr("ForceKeepAlive") >= 0
+        parsed = ParseJson(text)
+        if isValid(parsed) and isValid(parsed.MessageType) and parsed.MessageType = "ForceKeepAlive"
+            intervalSeconds = 60
+            if isValid(parsed.Data) then intervalSeconds = Cint(parsed.Data)
+            ' Answer at half the announced timeout so the session never lapses
+            m.keepAliveIntervalMs = intervalSeconds * 500
+            sendKeepAlive()
+        end if
+    end if
+    m.top.message = text
+end sub
+
+sub sendKeepAlive()
+    body = CreateObject("roByteArray")
+    ' Written out by hand, since FormatJson lowercases the key and the server reads socket messages case sensitively
+    body.FromAsciiString("{""MessageType"":""KeepAlive""}")
+    sendFrame(1, body)
+    m.keepAliveTimer.Mark()
+end sub
+
+sub sendFrame(opcode as integer, payload as dynamic)
+    frame = syncPlayEncodeFrame(opcode, payload)
+    if not isValid(frame) then return
+    total = frame.Count()
+    index = 0
+    stalls = 0
+    while index < total
+        sent = m.socket.Send(frame, index, total - index)
+        if sent > 0
+            index += sent
+            stalls = 0
+        else
+            if not m.socket.eOK() then return
+            stalls++
+            if stalls > 200 then return
+            sleep(10)
+        end if
+    end while
+end sub
+
+function findHeaderEnd() as integer
+    if m.rxBuf.Count() < 4 then return -1
+    for i = 0 to m.rxBuf.Count() - 4
+        if m.rxBuf[i] = 13 and m.rxBuf[i + 1] = 10 and m.rxBuf[i + 2] = 13 and m.rxBuf[i + 3] = 10
+            return i
+        end if
+    end for
+    return -1
+end function
+
+function byteRangeToAscii(buf as object, startIndex as integer, endIndex as integer) as string
+    section = CreateObject("roByteArray")
+    for i = startIndex to endIndex - 1
+        section.Push(buf[i])
+    end for
+    return section.ToAsciiString()
+end function
+
+sub closeSocket()
+    if isValid(m.socket)
+        m.socket.Close()
+        m.socket = invalid
+    end if
+end sub
