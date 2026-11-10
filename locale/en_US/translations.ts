@@ -9093,6 +9093,31 @@
         <translation>Turn on {0}, then turn the row on in Rows</translation>
     </message>
     <message>
+        <source>Turn on {0}</source>
+        <extracomment>Under the settings live preview, for an audio or Collections Row Options setting while its Display switch is off but the row is already on in Rows. {0} is that switch, like Display Audio Rows</extracomment>
+        <translation>Turn on {0}</translation>
+    </message>
+    <message>
+        <source>The Audio row is off. To show it, turn this on.</source>
+        <extracomment>Note over the settings live preview of Home, for Display Audio Rows while it&apos;s off and the row is already on in the Rows screen</extracomment>
+        <translation>The Audio row is off. To show it, turn this on.</translation>
+    </message>
+    <message>
+        <source>The Audio row is off. To show it, turn on {0}.</source>
+        <extracomment>Note over the settings live preview of Home, for an Audio sort setting while Display Audio Rows is off and the row is already on in the Rows screen. {0} is the name of that switch</extracomment>
+        <translation>The Audio row is off. To show it, turn on {0}.</translation>
+    </message>
+    <message>
+        <source>The Collections rows are off. To show them, turn this on.</source>
+        <extracomment>Note over the settings live preview of Home, for Display Collections Rows while it&apos;s off and a Collections row is already on in the Rows screen</extracomment>
+        <translation>The Collections rows are off. To show them, turn this on.</translation>
+    </message>
+    <message>
+        <source>The Collections rows are off. To show them, turn on {0}.</source>
+        <extracomment>Note over the settings live preview of Home, for a Collections setting while Display Collections Rows is off and a Collections row is already on in the Rows screen. {0} is the name of that switch</extracomment>
+        <translation>The Collections rows are off. To show them, turn on {0}.</translation>
+    </message>
+    <message>
         <source>Turn the row on in Rows, under Disabled</source>
         <extracomment>Under the settings live preview, for an audio or Collections Row Options setting while its rows are off in the Rows screen</extracomment>
         <translation>Turn the row on in Rows, under Disabled</translation>
