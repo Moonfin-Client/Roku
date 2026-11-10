@@ -919,7 +919,13 @@ for (const name of ['onKeyGridSubmit', 'boolSettingChanged', 'applyRadioChoice']
 }
 assert.match(reloadSettings.match(/sub saveHomeRowLayout\([^]*?end sub/)[0], /m\.homeRowsSwitched = true/, 'Saving the Rows layout has Home build its rows again');
 assert.match(reloadSettings.match(/sub dismissPanel\([^]*?end sub/)[0], /commitOpenEditor\(\)[^]*?if m\.homeRowsSwitched = true/, 'The Rows editor is saved before Settings decides whether Home builds its rows again');
-process.stdout.write(`PASS: Home reload settings wiring (${rowToggleNames.length + reloadList.length + 6} checks)\n`);
+// A refresh skips a row that was switched off without taking it away, so Settings over another screen asks for a reload
+assert.match(reloadSettings.match(/sub dismissPanel\([^]*?end sub/)[0], /if m\.homeRowsSwitched = true[^]*?behind\.callFunc\("reload"\)\s+else[^]*?m\.global\.homeNeedsReload = true\s+end if/, 'Closing Settings over another screen has Home build its rows again once it shows');
+assert.match(await readFile('source/Main.bs', 'utf8'), /homeNeedsReload: false,/, 'The pending Home reload starts off');
+const homeShown = (await readFile('components/home/Home.bs', 'utf8')).match(/sub OnScreenShown\([^]*?^end sub/m)[0];
+assert.match(homeShown, /needsRowReload = chainLookupReturn\(m\.global, "homeNeedsReload", false\)\s+if needsRowReload then m\.global\.homeNeedsReload = false\s+if not m\.isFirstRun/, 'Home clears the pending reload when it shows, first run included');
+assert.match(homeShown, /if needsRowReload[^]*?reload\(\)\s+else if not _isReturning or needsPlaybackRefresh\s+refresh\(\)/, 'Home builds its rows from scratch for the pending reload instead of refreshing them');
+process.stdout.write(`PASS: Home reload settings wiring (${rowToggleNames.length + reloadList.length + 10} checks)\n`);
 
 // A picked collection row asks for its members alone, follows a stored Playlist Order and opens
 // a series into its episodes in order when asked
