@@ -290,6 +290,21 @@ for (const name of ['SubtitleModes', 'MediaBarSource', 'PluginToRoku', 'RokuToPl
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/settings-sync-values.bs', 'utf8');
 source += '\n' + await readFile('test/home-cards.bs', 'utf8');
+// Home's rows in the settings preview, without Look, which reads the saved settings
+const homeRowsPreviewFile = await readFile('source/utils/homeRowsPreview.bs', 'utf8');
+source += '\nnamespace homeRowsPreview\n' + homeRowsPreviewFile.match(/^    const .+$/gm).join('\n') + '\n';
+for (const name of ['Arrange', 'Merged', 'WithGenresSort', 'FocusIndex', 'Shows', 'ItemShows', 'Laid', 'CardArt', 'FirstOf', 'CardText']) {
+    const match = homeRowsPreviewFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
+    assert.ok(match, `Missing homeRowsPreview.${name}`);
+    source += '\n' + match[0];
+}
+source += '\nend namespace\n';
+source += '\n' + await readFile('test/home-rows-preview.bs', 'utf8');
+// The preview stacks Home's rows with the room HomeRows keeps under them
+const homeRowsRoom = await readFile('components/home/HomeRows.bs', 'utf8');
+for (const [rowsName, previewName] of [['ROW_TITLE_BAND', 'TITLE_BAND'], ['CLASSIC_CAPTION_ROOM', 'CLASSIC_ROOM'], ['MODERN_CAPTION_ROOM', 'MODERN_ROOM'], ['MODERN_INFO_ROOM', 'MODERN_INFO_ROOM'], ['MODERN_RATINGS_ROOM', 'MODERN_RATINGS_ROOM']]) {
+    assert.equal(homeRowsPreviewFile.match(new RegExp(`const ${previewName} = (\\d+)`))[1], homeRowsRoom.match(new RegExp(`^const ${rowsName} = (\\d+)`, 'm'))[1], `The preview's ${previewName} is HomeRows' ${rowsName}`);
+}
 source += '\n' + await readFile('test/calendar-entries.bs', 'utf8');
 source += '\n' + await readFile('test/arr-calendar-rows.bs', 'utf8');
 source += '\n' + await readFile('test/moonbase-install.bs', 'utf8');

@@ -6,12 +6,14 @@ import "pkg:/source/utils/buttonLayout.bs"
 import "pkg:/source/utils/detailMetadataLayout.bs"
 import "pkg:/source/utils/homeCards.bs"
 import "pkg:/source/utils/homeRowLayout.bs"
+import "pkg:/source/utils/homeRowsPreview.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/libraryOrder.bs"
 import "pkg:/source/utils/libraryPreview.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
+import "pkg:/source/utils/playedState.bs"
 import "pkg:/source/utils/ratingsRow.bs"
 import "pkg:/source/utils/rowOptionsPreview.bs"
 import "pkg:/source/utils/themeChrome.bs"
@@ -55,6 +57,7 @@ sub init()
     m.homeSnapshot = invalid
     m.rowLayout = invalid
     m.rowOptionsStatus = ""
+    m.homeRowCache = {}
 
     m.inspector.translation = [0, INSPECTOR_TOP]
     m.holder.translation = [0, STAGE_TOP]
@@ -276,21 +279,32 @@ function sceneConfig(state as object) as object
     if hideHome then items = withoutOverview(items)
     variant = hideHome.ToStr()
     if rowOptionsPreview.Group(focusKey) <> "" then return rowOptionsConfig(state, items, variant)
-    if focusKey = "ui.home.mediaBarMode" or focusKey = "ui.overlayColor" or focusKey = "ui.overlayOpacity" or Left(focusKey, 20) = "ui.mediaBar.ratings." or focusKey = "ui.home.mediaBarNewReleaseBanner" or focusKey = "ui.home.mediaBarNewReleaseDays"
+    if focusKey = "ui.home.mediaBarMode" or focusKey = "ui.overlayColor" or focusKey = "ui.overlayOpacity" or Left(focusKey, 20) = "ui.mediaBar.ratings." or focusKey = "ui.home.mediaBarNewReleaseBanner" or focusKey = "ui.home.mediaBarNewReleaseDays" or focusKey = "ui.home.mediaBarRowPeek"
         opacity = -1.0
         if values["ui.overlayOpacity"] <> "" then opacity = Val(values["ui.overlayOpacity"])
-        fields = { mode: values["ui.home.mediaBarMode"] ?? "moonfin", overlayColor: values["ui.overlayColor"] ?? "", overlayOpacity: opacity, ratings: ratingsFields("mediaBar", sampleItem(false), false) }
+        mode = values["ui.home.mediaBarMode"] ?? "moonfin"
+        fields = { mode: mode, overlayColor: values["ui.overlayColor"] ?? "", overlayOpacity: opacity, ratings: ratingsFields("mediaBar", sampleItem(false), false) }
+        ' Peek Home Rows leaves the banner and no bar alone, as on Home
+        fields.rowPeek = values["ui.home.mediaBarRowPeek"] = "true" and not inArray(["banner", "off"], mode)
+        peek = invalid
+        if fields.rowPeek then peek = homePeekFields(values)
+        if isValid(peek) then fields.peek = peek
         banner = values["ui.home.mediaBarNewReleaseBanner"] <> "false"
         if banner then items = withNewReleaseSample(items)
         return { component: "SetupMediaBarPreview", fields: fields, items: items, variant: variant + banner.ToStr() }
     end if
-    if focusKey = "ui.home.rowsStyle" or focusKey = "ui.home.hideMediaDescription" or focusKey = "ui.home.backdropStyle" or Left(focusKey, 16) = "ui.home.ratings." or focusKey = "colorCursor"
+    ownRows = drawsHomeRows(focusKey)
+    if focusKey = "ui.home.rowsStyle" or focusKey = "ui.home.hideMediaDescription" or focusKey = "ui.home.backdropStyle" or Left(focusKey, 16) = "ui.home.ratings." or focusKey = "colorCursor" or ownRows
         modern = values["ui.home.rowsStyle"] <> "v1"
         episode = focusKey = "ui.home.ratings.episodeRatings"
         ' The modern card shows only the plugin's scores
         onItem = sampleItem(not episode)
         if modern then onItem = {}
-        fields = { modern: modern, ratings: ratingsFields("home", onItem, episode), backdrop: getHomeBackdropStyle(values), cursor: values["colorCursor"] ?? "", focusCard: focusKey = "colorCursor" }
+        fields = { modern: modern, ratings: ratingsFields("home", onItem, episode), backdrop: getHomeBackdropStyle(values), cursor: values["colorCursor"] ?? "", focusCard: focusKey = "colorCursor" or ownRows }
+        ' Opened from anywhere but Home there are no rows to draw, so the sample rows stand in
+        home = invalid
+        if ownRows then home = homeRowsFields(values, focusKey, modern)
+        if isValid(home) then fields.home = home
         return { component: "SetupHomeRowsPreview", fields: fields, items: items, variant: variant }
     end if
     config = { component: "SetupNavbarPreview", fields: navbarFields(values, state.avatar ?? ""), items: items, variant: variant }
@@ -531,6 +545,190 @@ sub drawCaption(text as string)
     label.vertAlign = "center"
     band.translation = [0, STAGE_HEIGHT - 64]
 end sub
+' The settings Home draws on its own rows, which the sample rows can't show
+function drawsHomeRows(focusKey as string) as boolean
+    if Left(focusKey, Len(settingsSync.ROW_IMAGE_TYPE_KEY)) = settingsSync.ROW_IMAGE_TYPE_KEY then return true
+    return inArray([
+        "ui.home.rowLayout", "ui.home.rowImageTypes", "ui.home.displayRewatchRow", "ui.home.displayFavoritesRows",
+        "ui.home.displayCollectionsRows", "ui.home.displayGenresRows", "ui.home.displayStudiosRows",
+        "ui.home.displayPlaylistsRows", "ui.home.displayAudioRows", "seasonal.row.enabled",
+        "ui.home.mergeContinueWatchingNextUp", "ui.home.mergeRecentRowsByType", "ui.home.genresRowSortBy",
+        "ui.home.collectionsRowSortBy", "ui.home.rewatchSortBy", "ui.tvshows.disableUnwatchedEpisodeCount",
+        "ui.watchedIndicator", "ui.posterLabels", "ui.home.preferThumbnails", "ui.home.classicRowsPadding",
+        "ui.home.modernRowsPadding"
+    ], focusKey)
+end function
+
+' Home's rows from the one the focused setting changes down to the foot of the screen, with what
+' the values hold put on them, tried or saved, and the Classic info area for the focused card.
+' Invalid when there's no Home behind Settings.
+function homeRowsFields(values as object, focusKey as string, modern as boolean) as dynamic
+    rows = arrangedHomeRows(values)
+    if not isValid(rows) then return invalid
+    if rows.Count() = 0 then return { rows: [], ink: homeCardInk() }
+    genresSort = values["ui.home.genresRowSortBy"] ?? "name"
+    if focusKey = "ui.home.genresRowSortBy" and genresSort <> (get_user_setting("ui.home.genresRowSortBy") ?? "name")
+        rows = homeRowsPreview.WithGenresSort(rows, genresSort)
+    end if
+
+    paddingKey = "ui.home.classicRowsPadding"
+    if modern then paddingKey = "ui.home.modernRowsPadding"
+    spacing = homeRowsVerticalSpacing(modern, values[paddingKey])
+    marks = homeCardMarks(values)
+    sizeName = homeCards.CardSizeName()
+    infoRoom = homeRowsPreview.MODERN_INFO_ROOM
+    if moonfinPlugin.IsRatingsEnabled("home") then infoRoom += homeRowsPreview.MODERN_RATINGS_ROOM
+
+    ' Home's rows sit under the info area in Classic, and near the top in Modern
+    y = 450
+    if modern then y = 170
+    focusAt = homeRowsPreview.FocusIndex(rows, focusKey)
+    shown = []
+    for i = focusAt to rows.Count() - 1
+        if y >= 1080 then exit for
+        look = homeRowsPreview.Look(rows[i], modern, values[settingsSync.ROW_IMAGE_TYPE_KEY + rows[i].id], sizeName, infoRoom)
+        laid = homeRowsPreview.Laid(rows[i], look, i = focusAt, marks, y)
+        shown.push(laid)
+        y += laid.height + spacing
+    end for
+
+    focused = rows[focusAt].items[0]
+    text = homeRowsPreview.CardText(focused, false)
+    info = { title: text[0], year: focused.year, officialRating: focused.officialRating, genres: focused.genres, overview: focused.overview }
+    return { rows: shown, ink: homeCardInk(), info: info, backdropUrl: focused.backdrop }
+end function
+
+' Home's first row where Peek Home Rows puts it under the bar, or invalid when there's no Home
+' behind Settings
+function homePeekFields(values as object) as dynamic
+    rows = arrangedHomeRows(values)
+    if not isValid(rows) or rows.Count() = 0 then return invalid
+    look = homeRowsPreview.Look(rows[0], values["ui.home.rowsStyle"] <> "v1", invalid, homeCards.CardSizeName(), homeRowsPreview.MODERN_INFO_ROOM)
+    ' The bar keeps focus, so no card in the row is focused
+    return { rows: [homeRowsPreview.Laid(rows[0], look, false, homeCardMarks(values), 890)], ink: homeCardInk() }
+end function
+
+' Home's rows in the order the Rows screen and the Display switches give now, merged the way
+' Continue Watching is now. Invalid when there's no Home behind Settings.
+function arrangedHomeRows(values as object) as dynamic
+    rows = homeRowsBehind()
+    if not isValid(rows) then return invalid
+    toggles = homeRowLayout.RowToggles()
+    shownIds = []
+    for each id in homeRowLayout.Arranged(values[homeRowLayout.ORDER_SETTING], values[homeRowLayout.HIDDEN_SETTING])
+        if homeRowOn(id, toggles) then shownIds.push(id)
+    end for
+    titles = { merged: tr("Continue Watching & Next Up"), resume: tr("Continue Watching"), nextUp: tr("Next Up") }
+    return homeRowsPreview.Arrange(rows, shownIds, values["ui.home.mergeContinueWatchingNextUp"] = "true", titles)
+end function
+
+' The switch a row answers to, the way HomeRows asks before it builds the row. A picked collection,
+' genre or playlist goes with the switch of the list it came from.
+function homeRowOn(id as string, toggles as object) as boolean
+    picked = homeRowLayout.SourceFromId(id)
+    if isValid(picked)
+        entry = homeRowLayout.SourceFor(picked.source)
+        return not isValid(entry) or entry.gate = "" or get_user_setting_bool(entry.gate, false)
+    end if
+    return homeRowLayout.RowToggleOn(id, toggles)
+end function
+
+' The rows Home has behind Settings, read into plain facts, or invalid when Settings was opened
+' somewhere else. A row is read again only when its cards change, since reading a card's json
+' copies it.
+function homeRowsBehind() as dynamic
+    behind = m.global.sceneManager.callFunc("getActiveScene")
+    if not isValid(behind) or not behind.isSubtype("Home") then return invalid
+    list = behind.findNode("homeRows")
+    if not isValid(list) or not isValid(list.content) then return invalid
+    rows = []
+    kept = {}
+    for each node in list.content.getChildren(-1, 0)
+        count = node.getChildCount()
+        ' A row still loading is only its title
+        if count > 0
+            key = `${node.id}|${node.title}|${count}`
+            row = m.homeRowCache[key]
+            if not isValid(row)
+                row = { id: node.id, title: node.title, items: [] }
+                ' The Genres row is read whole, so a sort being tried can reorder all of it
+                limit = homeRowsPreview.MAX_CARDS
+                if node.id = "genres" then limit = count
+                for each child in node.getChildren(limit, 0)
+                    row.items.push(homeCardFacts(child))
+                end for
+            end if
+            kept[key] = row
+            rows.push(row)
+        end if
+    end for
+    m.homeRowCache = kept
+    return rows
+end function
+
+' What the preview needs of one of Home's cards, read the way HomeItem reads it
+function homeCardFacts(node as object) as object
+    json = node.json
+    if not isValid(json) then json = {}
+    userData = json.UserData
+    if type(userData) <> "roAssociativeArray" then userData = {}
+    yearText = toString(json.ProductionYear).Trim()
+    if yearText = "0" then yearText = ""
+    subline = toString(json.Subtitle)
+    if subline = "" then subline = yearText
+    genres = []
+    if type(json.Genres) = "roArray"
+        for each genre in json.Genres
+            if genres.Count() < 3 then genres.push(toString(genre))
+        end for
+    end if
+    return {
+        id: node.id,
+        type: node.type ?? "",
+        name: node.name ?? "",
+        poster: node.posterURL,
+        thumb: node.thumbnailURL,
+        wide: node.widePosterURL,
+        banner: node.bannerURL,
+        backdrop: node.backdropURL,
+        outside: isValid(json.SeerrTmdbId) or isValid(json.CalendarDate),
+        percent: node.PlayedPercentage ?? 0,
+        played: playedState.ShowsWatchedCheck(json),
+        unplayed: userData.UnplayedItemCount ?? 0,
+        favorite: (userData.IsFavorite ?? false) = true,
+        series: toString(json.SeriesName),
+        season: json.ParentIndexNumber,
+        episode: json.IndexNumber,
+        subline: subline,
+        year: yearText,
+        officialRating: toString(json.OfficialRating),
+        genres: genres,
+        overview: toString(json.Overview),
+        labels: node.LookupCI("posterLabels")
+    }
+end function
+
+' The marks over the cards as the values show them: the watched mark's mode, whether the unwatched
+' count is hidden, Prefer Thumbnails and the poster labels, which only show where Home asked for them
+function homeCardMarks(values as object) as object
+    return {
+        indicatorMode: values["ui.watchedIndicator"] ?? "always",
+        hideUnplayedCount: values["ui.tvshows.disableUnwatchedEpisodeCount"] = "true",
+        preferThumbs: values["ui.home.preferThumbnails"] = "true",
+        labels: values["ui.posterLabels"] = "true"
+    }
+end function
+
+' HomeItem's colors for the art's ground, the names and the progress bar
+function homeCardInk() as object
+    colors = chainLookupReturn(m.global.session, "user.settings", {})
+    return {
+        card: colors.colorHomeRowItemBackground ?? ColorPalette.ELEMENTBACKGROUND,
+        title: colors.colorHomeRowItemTitle ?? ColorPalette.WHITE,
+        progress: colors.colorHomeRowItemProgress ?? ColorPalette.TRIADBLUE,
+        track: colors.colorHomeRowItemProgressBackground ?? ColorPalette.BLACK90
+    }
+end function
 
 ' The library screen's copy, drawn in whatever style and switches the values hold, tried or
 ' saved. The music library shows while its style has focus, or when there is no video library.
