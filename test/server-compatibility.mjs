@@ -138,7 +138,7 @@ const selections = {
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
     'components/home/HomeItem.bs': ['onPosterLoadStatusChanged', 'retryPoster'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
-    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'getBoolSetting', 'getStringSetting', 'appendRadarrCalendar', 'radarrRowRelease', 'appendSonarrCalendar', 'sonarrRowPicks', 'sonarrEpisodeCode', 'calendarSubtitle', 'sortByCalendarDate'],
+    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'getBoolSetting', 'getStringSetting', 'appendRadarrCalendar', 'radarrRowRelease', 'appendSonarrCalendar', 'sonarrRowPicks', 'sonarrEpisodeCode', 'calendarSubtitle', 'sortByCalendarDate', 'rowSortByParam', 'rowSortOrderParam'],
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL', 'chapterImageURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
@@ -199,6 +199,7 @@ source += '\n' + await readFile('test/detail-sections.bs', 'utf8');
 source += '\n' + await readFile('test/rating-sources.bs', 'utf8');
 source += '\n' + await readFile('test/home-row-groups.bs', 'utf8');
 source += '\n' + await readFile('test/home-reload-settings.bs', 'utf8');
+source += '\n' + await readFile('test/row-sort-settings.bs', 'utf8');
 source += '\n' + await readFile('test/search-groups.bs', 'utf8');
 source += '\n' + await readFile('test/settings-metrics.bs', 'utf8');
 source += '\n' + await readFile('test/library-filters.bs', 'utf8');
@@ -934,6 +935,39 @@ assert.match(loadItemsSource.match(/function collectionRowItems\([^]*?end functi
 assert.match(loadItemsSource.match(/function expandSeriesToEpisodes\([^]*?end function/)[0], /SortBy: "ParentIndexNumber,IndexNumber",\s+SortOrder: "Ascending"/, 'A series opens into its episodes in order');
 assert.match(await readFile('settings/settings.json', 'utf8'), /"settingName": "ui\.home\.collectionsRowSortBy"[^]*?"id": "playlistOrder"/, 'Playlist Order is offered for the collection rows');
 process.stdout.write('PASS: collection row wiring (4 checks)\n');
+
+// The Collections and Audio rows take their sort and sort order from Row Options, or from another client
+const rowSortSettings = JSON.parse(await readFile('settings/settings.json', 'utf8'));
+const rowSortSetting = (name) => {
+    let found;
+    (function walk(node) {
+        if (found || !node || typeof node !== 'object') return;
+        if (node.settingName === name) found = node;
+        else Object.values(node).forEach(walk);
+    })(rowSortSettings);
+    return found;
+};
+const optionIds = (name) => rowSortSetting(name).options.map((option) => option.id).join(',');
+assert.equal(rowSortSetting('ui.home.collectionsRowSortOrder').default, 'ascending', 'Collections stay ascending until another order is picked');
+assert.equal(optionIds('ui.home.collectionsRowSortOrder'), 'ascending,descending', 'Collections offer both orders under the names the plugin syncs');
+assert.equal(rowSortSetting('ui.home.audioRowsSortBy').default, 'dateAdded', 'Audio keeps the newest albums first until another sort is picked');
+assert.equal(optionIds('ui.home.audioRowsSortBy'), 'name,dateAdded,premiereDate,runtime,random', 'Audio offers the sorts Core offers, under the names the plugin syncs');
+assert.equal(rowSortSetting('ui.home.audioRowsSortOrder').default, 'descending', 'Audio stays newest first until another order is picked');
+assert.equal(optionIds('ui.home.audioRowsSortOrder'), 'ascending,descending', 'Audio offers both orders');
+const rowOptionGroups = (await readFile('components/settings/settings.bs', 'utf8'));
+assert.match(rowOptionGroups, /title: "AUDIO", settings: takeSettings\(configTree, \["ui\.home\.displayAudioRows", "ui\.home\.audioRowsSortBy", "ui\.home\.audioRowsSortOrder"\]\)/, 'The audio sort settings sit under the Audio row in Row Options');
+assert.match(rowOptionGroups, /title: "COLLECTIONS", settings: takeSettings\(configTree, \["ui\.home\.displayCollectionsRows", "ui\.home\.collectionsRowSortBy", "ui\.home\.collectionsRowSortOrder",/, 'The Collections sort order sits under its sort in Row Options');
+for (const [pluginKey, rokuKey] of [['collectionsRowSortOrder', 'ui.home.collectionsRowSortOrder'], ['audioRowsSortBy', 'ui.home.audioRowsSortBy'], ['audioRowsSortOrder', 'ui.home.audioRowsSortOrder']]) {
+    assert.ok(settingsSyncSource.includes(`{ pluginKey: "${pluginKey}", rokuKey: "${rokuKey}", type: "direct" }`), `${rokuKey} syncs with the plugin as ${pluginKey}`);
+}
+assert.match(loadItemsSource.match(/function collectionRowItems\([^]*?end function/)[0], /params\.SortBy = rowSortByParam\(sortBy\)\s+params\.SortOrder = rowSortOrderParam\(getStringSetting\(settings, "ui\.home\.collectionsRowSortOrder", "ascending"\)\)/, 'A collection row is asked for in its sort order, and a stored Playlist Order is left as stored');
+assert.match(loadItemsSource.match(/function loadCollections\([^]*?end function/)[0], /SortOrder: rowSortOrderParam\(getStringSetting\(settings, "ui\.home\.collectionsRowSortOrder", "ascending"\)\)/, 'The Collections row is asked for in its sort order');
+const audioRow = loadItemsSource.match(/function loadAudio\(\)[^]*?end function/)[0];
+assert.match(audioRow, /SortBy: rowSortByParam\(getStringSetting\(settings, "ui\.home\.audioRowsSortBy", "dateAdded"\)\)/, 'The Audio row is asked for in its sort');
+assert.match(audioRow, /DateCreated,SortName",/, 'The Audio row asks for what a list joined from several libraries is sorted on');
+assert.match(loadItemsSource.match(/function loadCollections\([^]*?end function/)[0], /DateCreated,SortName",/, 'So does the Collections row');
+assert.match(audioRow, /SortOrder: rowSortOrderParam\(getStringSetting\(settings, "ui\.home\.audioRowsSortOrder", "descending"\)\)/, 'The Audio row is asked for in its sort order');
+process.stdout.write('PASS: Collections and Audio row sort settings wiring (17 checks)\n');
 
 // Chart rows match their titles against the library, by provider id on Emby and through a paged
 // index of the library's ids on Jellyfin, and a TMDB chart types its titles from its path
