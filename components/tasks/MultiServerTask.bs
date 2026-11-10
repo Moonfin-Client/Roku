@@ -13,6 +13,7 @@
 '   2. Route playback requests to the correct server
 '   3. Show server-specific images using the correct base URL
 
+import "pkg:/source/utils/libraryScope.bs"
 import "pkg:/source/utils/mediaDedup.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/multiserver.bs"
@@ -31,7 +32,7 @@ sub executeMultiServerRequests()
     requestBody = m.top.requestBody
     timeoutMs = m.top.timeoutSeconds * 1000
 
-    params = withProviderIds(params)
+    params = withSortFields(withProviderIds(params))
 
     allResults = []
     allErrors = []
@@ -173,8 +174,13 @@ sub executeMultiServerRequests()
         end if
     end while
 
+    ' Each server ordered only its own share, so the joined list needs the sort redone. The
+    ' other routes ignore SortBy and answer in an order of their own, which the rows keep.
+    results = deduplicateMediaItems(allResults)
+    if sessions.count() > 1 and LCase(endpoint) = "/items" then results = libraryScope.Sorted(results, params)
+
     ' Set outputs
-    m.top.results = parentalControls.WithoutBlockedItems(deduplicateMediaItems(allResults))
+    m.top.results = parentalControls.WithoutBlockedItems(results)
     m.top.errors = allErrors
     m.top.isComplete = true
 end sub
@@ -291,14 +297,31 @@ end sub
 ' withProviderIds: Adds ProviderIds to a request's field list
 ' Deduplication matches on provider ids and the server leaves them out unless asked
 function withProviderIds(params as object) as object
+    return withField(params, "ProviderIds")
+end function
+
+' withSortFields: Adds the values the joined list is sorted by to a request's field list
+' The server leaves these out unless asked, and an item without one would sort as the lowest
+function withSortFields(params as object) as object
+    sortBy = LCase(params.LookupCI("SortBy") ?? "")
+    for each field in ["DateCreated", "SortName"]
+        if Instr(1, sortBy, LCase(field)) > 0 then params = withField(params, field)
+    end for
+    ' Date Episode Added sorts by one name and comes back on the item under another
+    if Instr(1, sortBy, "datelastcontentadded") > 0 then params = withField(params, "DateLastMediaAdded")
+
+    return params
+end function
+
+function withField(params as object, field as string) as object
     fields = params.LookupCI("Fields")
     if not isValidAndNotEmpty(fields)
-        params.Fields = "ProviderIds"
+        params.Fields = field
         return params
     end if
 
-    if Instr(1, LCase(fields), "providerids") = 0
-        params.Fields = fields + ",ProviderIds"
+    if Instr(1, LCase(fields), LCase(field)) = 0
+        params.Fields = fields + "," + field
     end if
 
     return params

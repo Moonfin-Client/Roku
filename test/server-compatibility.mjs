@@ -138,6 +138,7 @@ const selections = {
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
     'components/home/HomeItem.bs': ['onPosterLoadStatusChanged', 'retryPoster'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
+    'components/tasks/MultiServerTask.bs': ['withSortFields', 'withField'],
     'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'getBoolSetting', 'getStringSetting', 'appendRadarrCalendar', 'radarrRowRelease', 'appendSonarrCalendar', 'sonarrRowPicks', 'sonarrEpisodeCode', 'calendarSubtitle', 'sortByCalendarDate'],
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL', 'chapterImageURL'],
@@ -354,6 +355,16 @@ for (const name of ['Catalogue', 'Passthrough', 'AsText', 'Sources', 'SourceFor'
     source += '\n' + homeRowLayoutFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
+// The merge sort alone, since the rest of the library scope asks the server
+const libraryScopeFile = await readFile('source/utils/libraryScope.bs', 'utf8');
+source += '\nnamespace libraryScope\n';
+for (const name of ['Sorted', 'Before', 'SortSource', 'SortKey', 'AsText']) {
+    const match = libraryScopeFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
+    assert.ok(match, `Missing libraryScope.${name}`);
+    source += '\n' + match[0];
+}
+source += '\nend namespace\n';
+source += '\n' + await readFile('test/multi-server-sort.bs', 'utf8');
 source += '\n' + await readFile('test/media-bar-external.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/mediaBarNewRelease.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/media-bar-new-release.bs', 'utf8');
@@ -924,6 +935,9 @@ process.stdout.write('PASS: external rows wiring (6 checks)\n');
 
 // Library lists keep each server's order and leave out what an Emby user hid from My Media
 assert.match(await readFile('components/tasks/MultiServerTask.bs', 'utf8'), /itemsArray = withoutHiddenViews\(itemsArray, embyHiddenViews\(userSession\)\)/, 'Multi-server views drop the libraries an Emby user hid');
+const multiServerTaskSource = await readFile('components/tasks/MultiServerTask.bs', 'utf8');
+assert.match(multiServerTaskSource, /params = withSortFields\(withProviderIds\(params\)\)/, 'Multi-server requests ask for the values the joined list is sorted by');
+assert.match(multiServerTaskSource, /if sessions\.count\(\) > 1 and LCase\(endpoint\) = "\/items" then results = libraryScope\.Sorted\(results, params\)/, 'A list joined from several servers is sorted again, and only for the route that sorts by SortBy');
 for (const nav of ['components/Sidebar.bs', 'components/JFOverhang.bs']) {
     const navSource = await readFile(nav, 'utf8');
     assert.match(navSource, /for each lib in librariesByServer\(allLibs\)/, `${nav} keeps each server's library order`);
