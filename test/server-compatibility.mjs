@@ -928,16 +928,21 @@ const reloadList = quotedNames('ReloadsHome');
 const reloadCovered = [...reloadList, ...quotedNames('RowToggles')];
 const reloadSettingsTree = JSON.parse(await readFile('settings/settings.json', 'utf8'));
 const settingNames = new Set();
-let rowToggleNames = [];
+const homeRowSections = ['Home Row Toggles', 'IMDb Lists', 'TMDB Lists', 'Seerr Lists', 'Upcoming Calendars'];
+const homeRowSettingNames = [];
+const sectionsFound = new Set();
 (function walk(node) {
     if (Array.isArray(node)) return node.forEach(walk);
     if (!node || typeof node !== 'object') return;
     if (node.settingName) settingNames.add(node.settingName);
-    if (node.title === 'Home Row Toggles') rowToggleNames = node.children.map((child) => child.settingName);
+    if (homeRowSections.includes(node.title) && Array.isArray(node.children)) {
+        sectionsFound.add(node.title);
+        for (const child of node.children) if (child.settingName) homeRowSettingNames.push(child.settingName);
+    }
     Object.values(node).forEach(walk);
 })(reloadSettingsTree);
-assert.ok(rowToggleNames.length > 0, 'The Home row options are found in settings.json');
-for (const name of rowToggleNames) assert.ok(reloadCovered.includes(name), `${name} has Home build its rows again`);
+assert.equal(sectionsFound.size, homeRowSections.length, 'Every Home row section is found in settings.json');
+for (const name of homeRowSettingNames) assert.ok(reloadCovered.includes(name), `${name} has Home build its rows again`);
 for (const name of reloadList) assert.ok(settingNames.has(name), `${name} is a setting in settings.json`);
 for (const name of ['onKeyGridSubmit', 'boolSettingChanged', 'applyRadioChoice']) {
     assert.match(reloadSettings.match(new RegExp(`sub ${name}\\([^]*?^end sub`, 'm'))[0], /if homeRowLayout\.ReloadsHome\(selectedSetting\.settingName\) then m\.homeRowsSwitched = true/, `${name} has Home build its rows again for a Home row setting`);
@@ -950,7 +955,7 @@ assert.match(await readFile('source/Main.bs', 'utf8'), /homeNeedsReload: false,/
 const homeShown = (await readFile('components/home/Home.bs', 'utf8')).match(/sub OnScreenShown\([^]*?^end sub/m)[0];
 assert.match(homeShown, /needsRowReload = chainLookupReturn\(m\.global, "homeNeedsReload", false\)\s+if needsRowReload then m\.global\.homeNeedsReload = false\s+if not m\.isFirstRun/, 'Home clears the pending reload when it shows, first run included');
 assert.match(homeShown, /if needsRowReload[^]*?reload\(\)\s+else if not _isReturning or needsPlaybackRefresh\s+refresh\(\)/, 'Home builds its rows from scratch for the pending reload instead of refreshing them');
-process.stdout.write(`PASS: Home reload settings wiring (${rowToggleNames.length + reloadList.length + 10} checks)\n`);
+process.stdout.write(`PASS: Home reload settings wiring (${homeRowSettingNames.length + reloadList.length + 10} checks)\n`);
 
 // A picked collection row asks for its members alone, follows a stored Playlist Order and opens
 // a series into its episodes in order when asked
