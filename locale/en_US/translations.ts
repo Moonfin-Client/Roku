@@ -4664,8 +4664,28 @@
     </message>
     <message>
         <source>Active</source>
-        <extracomment>Badge under the account in use on the user switcher, drawn in capitals</extracomment>
+        <extracomment>Line under the account in use on the user switcher</extracomment>
         <translation>Active</translation>
+    </message>
+    <message>
+        <source>Signed in as {0} on {1}</source>
+        <extracomment>Top of the user switcher, naming the account in use ({0}) and its server ({1})</extracomment>
+        <translation>Signed in as {0} on {1}</translation>
+    </message>
+    <message>
+        <source>Signed in on this device</source>
+        <extracomment>Line under an account on Who&apos;s watching when the Roku already holds its sign in</extracomment>
+        <translation>Signed in on this device</translation>
+    </message>
+    <message>
+        <source>Password required</source>
+        <extracomment>Line under an account on Who&apos;s watching that needs a password to sign in</extracomment>
+        <translation>Password required</translation>
+    </message>
+    <message>
+        <source>PIN required</source>
+        <extracomment>Line under a Plex Home member on Who&apos;s watching who signs in with a PIN</extracomment>
+        <translation>PIN required</translation>
     </message>
     <message>
         <source>PIN synced</source>
