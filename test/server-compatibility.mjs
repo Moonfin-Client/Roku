@@ -1547,3 +1547,13 @@ assert.match((await readFile('components/watchParty/WatchPartyPanel.bs', 'utf8')
 assert.match(partyScreen, /if isReturning then m\.wpRows\.focus = -1/, 'Back from the player starts the lobby on its first button');
 assert.match(partyScreen.match(/sub releaseKeyboard\(\)[^]*?end sub/)[0], /m\.top\.setFocus\(true\)/, 'The screen takes focus back when its keyboard closes');
 process.stdout.write('PASS: Watch Parties player and focus wiring (5 checks)\n');
+
+// The watchlist pages by Seerr's titles alone, however many library titles lead it on Silo, and names its shows
+const favoritesTask = await readFile('components/favorites/LoadFavoritesTask.bs', 'utf8');
+const watchlistPage = favoritesTask.match(/function watchlistPage\([^]*?end function/)[0];
+assert.match(watchlistPage, /fetched: 0 \}/, 'Library titles don\'t count toward the next watchlist page');
+assert.match(watchlistPage, /result\.fetched = answer\.results\.count\(\)/, 'Only Seerr\'s titles do');
+assert.match(watchlistPage, /if isSiloServer\(\)\s+for each node in siloWatchlistNodes\(\)\s+if page = 1 then nodes\.push\(node\)/, 'Every page leaves out what the library already shows, though only the first shows it');
+assert.match(await readFile('components/favorites/FavoritesScreen.bs', 'utf8'), /if pageFetched = 0 then m\.counts\[tabKey\] = m\.fetchedByTab\[tabKey\]/, 'An empty tab page ends paging');
+assert.match(favoritesTask.match(/function watchlistNode\([^]*?end function/)[0], /if title = "" then title = toString\(item\.LookupCI\("name"\) \?\? ""\)/, 'A show on the watchlist takes its name when its title comes back empty');
+process.stdout.write('PASS: Favorites watchlist paging and names (5 checks)\n');
