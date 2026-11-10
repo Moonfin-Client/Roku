@@ -1308,6 +1308,7 @@ assert.match(libraryXml, /<LibrarySortDialog id="displayDialog" visible="false" 
 assert.doesNotMatch(libraryXml, /LibrarySettingsDialog/, 'The cycling settings dialog is gone');
 assert.match(libraryScene, /title: tr\("Group By"\),\s+closeOnPick: true,/, 'A Group By pick closes its dialog');
 assert.match(await readFile('components/ItemGrid/LoadItemsTask2.bs', 'utf8'), /Fields: "[^"]*Genres, Studios"/, 'Items carry the genres and studios Group By reads');
+assert.match(await readFile('components/ItemGrid/LoadItemsTask2.bs', 'utf8'), /Fields: "[^"]*ProductionYear, OfficialRating, CommunityRating, CriticRating, Status[^"]*"/, 'Items carry the year, ratings and status Emby leaves off unless asked');
 assert.match(settingsSyncSource, /\{ pluginKey: "libraryCardTitles", rokuKey: "ui\.library\.cardTitles", type: "bool" \}/, 'Titles Under Posters syncs under Core\'s name');
 assert.match(settingsSyncSource, /\{ pluginKey: "libraryPosterSize", rokuKey: "ui\.library\.posterSize", type: "direct" \}/, 'The library poster size syncs under Core\'s name');
 assert.match(settingsSyncSource, /\{ pluginKey: "playlistPosterSize", rokuKey: "ui\.library\.playlistPosterSize", type: "direct" \}/, 'The playlist poster size syncs under Core\'s name');
