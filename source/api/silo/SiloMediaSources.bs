@@ -1,0 +1,453 @@
+import "pkg:/source/api/silo/SiloMapper.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Silo's files and their tracks as Jellyfin MediaSources and MediaStreams. Ported from Smart-TV's
+' siloMediaSources.js.
+'
+' Each file version is one MediaSource, the default first. Its tracks get stream indexes the way
+' Jellyfin numbers them: a subtitle keeps its index in the file where Silo gives one, and everything
+' else takes the free numbers in order. What each index stands for on Silo (the track's kind and
+' position among its kind) rides along under SiloTracks, since Silo names tracks that way when playing.
+namespace siloMap
+    function LanguageNames() as object
+        if type(m.siloLanguageNames) = "roAssociativeArray" then return m.siloLanguageNames
+        pairs = "ar ara Arabic|bg bul Bulgarian|bn ben Bengali|ca cat Catalan|cs ces cze Czech|cy cym wel Welsh|da dan Danish|de deu ger German|el ell gre Greek|en eng English|es spa Spanish|et est Estonian|eu eus baq Basque|fa fas per Persian|fi fin Finnish|fil Filipino|fr fra fre French|ga gle Irish|gl glg Galician|he heb Hebrew|hi hin Hindi|hr hrv Croatian|hu hun Hungarian|id ind Indonesian|is isl ice Icelandic|it ita Italian|ja jpn Japanese|ko kor Korean|lt lit Lithuanian|lv lav Latvian|ms msa may Malay|nb nob Norwegian Bokmål|nl nld dut Dutch|nn nno Norwegian Nynorsk|no nor Norwegian|pl pol Polish|pt por Portuguese|ro ron rum Romanian|ru rus Russian|sk slk slo Slovak|sl slv Slovenian|sr srp Serbian|sv swe Swedish|ta tam Tamil|te tel Telugu|th tha Thai|tr tur Turkish|uk ukr Ukrainian|ur urd Urdu|vi vie Vietnamese|zh zho chi Chinese"
+        names = {}
+        for each entry in pairs.Split("|")
+            words = entry.Split(" ")
+            codes = []
+            nameParts = []
+            for each word in words
+                if nameParts.Count() = 0 and word = LCase(word) and word.Len() <= 3
+                    codes.Push(word)
+                else
+                    nameParts.Push(word)
+                end if
+            end for
+            for each code in codes
+                names[code] = nameParts.Join(" ")
+            end for
+        end for
+        m.siloLanguageNames = names
+        return names
+    end function
+
+    ' The two-letter code Silo searches subtitles by, for a code the app may give in three letters
+    function TwoLetterLanguage(code as dynamic) as string
+        lower = LCase(siloMap.TextOf(code).Trim())
+        names = siloMap.LanguageNames()
+        name = names[lower]
+        if lower.Len() = 2 or name = invalid then return lower
+        for each key in names
+            if key.Len() = 2 and names[key] = name then return key
+        end for
+        return lower
+    end function
+
+    ' The English name of a language code, or the code itself when the table doesn't know it
+    function LanguageName(code as dynamic) as string
+        trimmed = siloMap.TextOf(code)
+        if trimmed = "" then return ""
+        base = LCase(trimmed).Split("-")[0].Split("_")[0]
+        if base = "und" or base = "zxx" or base = "mis" then return ""
+        name = siloMap.LanguageNames()[base]
+        if name <> invalid then return name
+        return UCase(trimmed)
+    end function
+
+    function Kbps(value as dynamic) as dynamic
+        if not siloMap.IsNumber(value) or value <= 0 then return invalid
+        return Int(value * 1000)
+    end function
+
+    function FrameRate(value as dynamic) as dynamic
+        if siloMap.IsNumber(value)
+            if value > 0 then return value
+            return invalid
+        end if
+        text = siloMap.TextOf(value)
+        if text = "" then return invalid
+        parts = text.Split("/")
+        rate = Val(parts[0])
+        if parts.Count() > 1
+            divisor = Val(parts[1])
+            if divisor <= 0 then return invalid
+            rate = rate / divisor
+        end if
+        if rate <= 0 then return invalid
+        return rate
+    end function
+
+    function RangeTypeOf(t as object) as string
+        said = siloMap.TextOf(t.video_range_type)
+        if said <> ""
+            key = CreateObject("roRegex", "[^a-z0-9]", "").ReplaceAll(LCase(said).Replace("+", "plus"), "")
+            types = { sdr: "SDR", hdr10: "HDR10", hdr10plus: "HDR10Plus", hlg: "HLG", dovi: "DOVI", dolbyvision: "DOVI", doviwithhdr10: "DOVIWithHDR10", doviwithhdr10plus: "DOVIWithHDR10Plus", doviwithhlg: "DOVIWithHLG", doviwithsdr: "DOVIWithSDR", doviwithel: "DOVIWithEL", doviwithelhdr10plus: "DOVIWithELHDR10Plus", doviinvalid: "DOVIInvalid" }
+            if types.DoesExist(key) then return types[key]
+            return said
+        end if
+        dolbyVision = siloMap.IsNumber(t.dv_profile) or (siloMap.TextOf(t.dolby_vision) <> "" and LCase(siloMap.TextOf(t.dolby_vision)) <> "none")
+        hdr10Plus = t.hdr10_plus = true
+        if dolbyVision
+            compat = t.dv_bl_compat_id
+            if compat = 1 or compat = 6
+                if hdr10Plus then return "DOVIWithHDR10Plus"
+                return "DOVIWithHDR10"
+            end if
+            if compat = 2 then return "DOVIWithSDR"
+            if compat = 4 then return "DOVIWithHLG"
+            return "DOVI"
+        end if
+        if hdr10Plus then return "HDR10Plus"
+        transfer = LCase(siloMap.TextOf(t.color_transfer))
+        if transfer = "smpte2084" then return "HDR10"
+        if transfer = "arib-std-b67" then return "HLG"
+        return "SDR"
+    end function
+
+    function ResolutionLabel(width as dynamic, height as dynamic, interlaced as boolean) as string
+        if width = invalid or height = invalid or width <= 0 or height <= 0 then return ""
+        scan = "p"
+        if interlaced then scan = "i"
+        if width >= 7600 or height >= 4300 then return "8K"
+        if width >= 3800 or height >= 2000 then return "4K"
+        if width >= 2500 or height >= 1400 then return "1440" + scan
+        if width >= 1800 or height >= 1000 then return "1080" + scan
+        if width >= 1200 or height >= 700 then return "720" + scan
+        if width >= 600 or height >= 400 then return "480" + scan
+        return "SD"
+    end function
+
+    function JoinWords(words as object, separator = " " as string) as string
+        kept = []
+        for each word in words
+            if word <> invalid and word <> "" then kept.Push(word)
+        end for
+        return kept.Join(separator)
+    end function
+
+    function VideoStream(t as object, index as integer, first as boolean, fileBitrate as dynamic) as object
+        rangeType = siloMap.RangeTypeOf(t)
+        range = UCase(siloMap.TextOf(t.video_range))
+        if range = ""
+            range = "HDR"
+            if rangeType = "SDR" then range = "SDR"
+        end if
+        stream = { Type: "Video", Index: index, IsInterlaced: t.interlaced = true, VideoRange: range, VideoRangeType: rangeType, IsDefault: first, IsExternal: false }
+        if siloMap.TextOf(t.codec) <> "" then stream["Codec"] = siloMap.TextOf(t.codec)
+        if siloMap.TextOf(t.profile) <> "" then stream["Profile"] = siloMap.TextOf(t.profile)
+        if siloMap.IsNumber(t.level) then stream["Level"] = t.level
+        if siloMap.IsNumber(t.width) then stream["Width"] = Int(t.width)
+        if siloMap.IsNumber(t.height) then stream["Height"] = Int(t.height)
+        if siloMap.TextOf(t.aspect_ratio) <> "" then stream["AspectRatio"] = siloMap.TextOf(t.aspect_ratio)
+        rate = siloMap.FrameRate(t.frame_rate)
+        if rate <> invalid
+            stream["RealFrameRate"] = rate
+            stream["AverageFrameRate"] = rate
+        end if
+        if siloMap.IsNumber(t.bit_depth) then stream["BitDepth"] = Int(t.bit_depth)
+        if siloMap.TextOf(t.pixel_format) <> "" then stream["PixelFormat"] = siloMap.TextOf(t.pixel_format)
+        if siloMap.TextOf(t.color_transfer) <> "" then stream["ColorTransfer"] = siloMap.TextOf(t.color_transfer)
+        if siloMap.TextOf(t.color_primaries) <> "" then stream["ColorPrimaries"] = siloMap.TextOf(t.color_primaries)
+        if siloMap.TextOf(t.color_space) <> "" then stream["ColorSpace"] = siloMap.TextOf(t.color_space)
+        if siloMap.IsNumber(t.dv_profile) then stream["DvProfile"] = Int(t.dv_profile)
+        if siloMap.IsNumber(t.dv_level) then stream["DvLevel"] = Int(t.dv_level)
+        if siloMap.IsNumber(t.dv_bl_compat_id) then stream["DvBlSignalCompatibilityId"] = Int(t.dv_bl_compat_id)
+        bitrate = siloMap.Kbps(t.bitrate)
+        if bitrate = invalid then bitrate = fileBitrate
+        if bitrate <> invalid then stream["BitRate"] = bitrate
+        if siloMap.TextOf(t.embedded_title) <> "" then stream["Title"] = siloMap.TextOf(t.embedded_title)
+        shownRange = ""
+        if range = "HDR"
+            shownRange = rangeType
+            if shownRange = "" then shownRange = "HDR"
+        end if
+        stream["DisplayTitle"] = siloMap.JoinWords([siloMap.ResolutionLabel(stream.Width, stream.Height, stream.IsInterlaced), shownRange, UCase(stream.Codec ?? "")])
+        return stream
+    end function
+
+    function ChannelLayout(layoutText as string, channels as dynamic) as string
+        if layoutText <> ""
+            bare = CreateObject("roRegex", "\(.*\)", "").ReplaceAll(layoutText, "").Trim()
+            if bare = "" then return ""
+            return UCase(bare.Left(1)) + bare.Mid(1)
+        end if
+        if channels = 1 then return "Mono"
+        if channels = 2 then return "Stereo"
+        if channels = 6 then return "5.1"
+        if channels = 8 then return "7.1"
+        return ""
+    end function
+
+    function AudioStream(t as object, index as integer, isDefault as boolean) as object
+        channels = invalid
+        if siloMap.IsNumber(t.channels) then channels = Int(t.channels)
+        channelText = siloMap.ChannelLayout(siloMap.TextOf(t.layout), channels)
+        language = siloMap.TextOf(t.language)
+        codec = siloMap.TextOf(t.codec)
+        defaultWord = ""
+        if isDefault then defaultWord = "(Default)"
+        stream = { Type: "Audio", Index: index, IsDefault: isDefault, IsExternal: false }
+        stream["DisplayTitle"] = siloMap.JoinWords([siloMap.LanguageName(language), UCase(codec), channelText, defaultWord])
+        if codec <> "" then stream["Codec"] = codec
+        if siloMap.TextOf(t.profile) <> "" then stream["Profile"] = siloMap.TextOf(t.profile)
+        if language <> "" then stream["Language"] = language
+        if siloMap.TextOf(t.embedded_title) <> "" then stream["Title"] = siloMap.TextOf(t.embedded_title)
+        if channelText <> "" then stream["ChannelLayout"] = channelText
+        if channels <> invalid then stream["Channels"] = channels
+        if siloMap.Kbps(t.bitrate) <> invalid then stream["BitRate"] = siloMap.Kbps(t.bitrate)
+        if siloMap.IsNumber(t.sample_rate) then stream["SampleRate"] = Int(t.sample_rate)
+        if siloMap.IsNumber(t.bit_depth) then stream["BitDepth"] = Int(t.bit_depth)
+        return stream
+    end function
+
+    function IsImageSubtitle(codec as string) as boolean
+        return siloContains(["hdmv_pgs_subtitle", "pgssub", "pgs", "dvd_subtitle", "dvdsub", "vobsub", "dvb_subtitle", "dvbsub", "xsub"], LCase(codec))
+    end function
+
+    function SubtitleStream(t as object, index as integer) as object
+        language = siloMap.TextOf(t.language)
+        codec = siloMap.TextOf(t.codec)
+        title = siloMap.TextOf(t.embedded_title)
+        forced = t.forced = true
+        hearingImpaired = t.hearing_impaired = true
+        isDefault = t.default = true
+        isText = codec = "" or not siloMap.IsImageSubtitle(codec)
+        spokenName = siloMap.LanguageName(language)
+        titleSays = LCase(title)
+        codecLabel = UCase(codec)
+        if codec = "hdmv_pgs_subtitle" then codecLabel = "PGSSUB"
+        if codec = "dvd_subtitle" then codecLabel = "DVDSUB"
+        if codec = "dvb_subtitle" then codecLabel = "DVBSUB"
+        words = []
+        if title <> "" and (spokenName = "" or Instr(1, titleSays, LCase(spokenName)) = 0) then words.Push(title)
+        if forced and Instr(1, titleSays, "forced") = 0 then words.Push("Forced")
+        if hearingImpaired and Instr(1, titleSays, "sdh") = 0 and Instr(1, titleSays, "cc") = 0 then words.Push("SDH")
+        if isDefault then words.Push("Default")
+        words.Push(codecLabel)
+        details = siloMap.JoinWords(words)
+        display = details
+        if spokenName <> ""
+            display = spokenName
+            if details <> "" then display = spokenName + " (" + details + ")"
+        end if
+        stream = { Type: "Subtitle", Index: index, DisplayTitle: display, IsForced: forced, IsHearingImpaired: hearingImpaired, IsDefault: isDefault, IsExternal: t.external = true, IsTextSubtitleStream: isText, SupportsExternalStream: isText }
+        if codec <> "" then stream["Codec"] = codec
+        if language <> "" then stream["Language"] = language
+        if title <> "" then stream["Title"] = title
+        return stream
+    end function
+
+    ' A subtitle Silo found or downloaded since the file was read, added after the file's own tracks
+    function AddedSubtitleStream(index as integer, entry as object) as object
+        language = siloMap.TextOf(entry.language)
+        label = siloMap.TextOf(entry.label)
+        shownLabel = ""
+        if label <> language then shownLabel = label
+        stream = { Type: "Subtitle", Index: index, DisplayTitle: siloMap.JoinWords([siloMap.LanguageName(language), shownLabel], " - "), IsForced: entry.forced = true, IsHearingImpaired: entry.hearing_impaired = true, IsDefault: false, IsExternal: true, IsTextSubtitleStream: true, SupportsExternalStream: true }
+        if siloMap.TextOf(entry.codec) <> "" then stream["Codec"] = siloMap.TextOf(entry.codec)
+        if language <> "" then stream["Language"] = language
+        if label <> "" then stream["Title"] = label
+        return stream
+    end function
+
+    function Maps(value as dynamic) as object
+        out = []
+        if type(value) <> "roArray" then return out
+        for each one in value
+            if type(one) = "roAssociativeArray" then out.Push(one)
+        end for
+        return out
+    end function
+
+    function SourceName(version as object, video as dynamic) as string
+        fileName = siloMap.TextOf(version.file_name)
+        if fileName <> ""
+            dot = 0
+            for i = fileName.Len() to 1 step -1
+                if fileName.Mid(i - 1, 1) = "."
+                    dot = i
+                    exit for
+                end if
+            end for
+            if dot > 1 then return fileName.Left(dot - 1)
+            return fileName
+        end if
+        edition = siloMap.TextOf(version.edition_raw)
+        if edition = "" then edition = siloMap.TextOf(version.edition_key)
+        range = ""
+        if version.hdr = true
+            range = "HDR"
+            if video <> invalid then range = siloMap.RangeTypeOf(video)
+        end if
+        return siloMap.JoinWords([edition, siloMap.TextOf(version.resolution), UCase(siloMap.TextOf(version.codec_video)), range])
+    end function
+
+    ' One file version (with its tracks) as a MediaSource
+    function VersionToMediaSource(version as dynamic, itemId as string) as dynamic
+        if type(version) <> "roAssociativeArray" then return invalid
+        fileId = siloMap.IdOf(version.file_id)
+        if fileId = "" then return invalid
+        videos = siloMap.Maps(version.video_tracks)
+        audios = siloMap.Maps(version.audio_tracks)
+        subtitles = siloMap.Maps(version.subtitle_tracks)
+        used = {}
+        subtitleIndex = []
+        for each subtitle in subtitles
+            kept = -1
+            if siloMap.IsNumber(subtitle.index) and subtitle.index >= 0 and not used.DoesExist(Int(subtitle.index).ToStr())
+                kept = Int(subtitle.index)
+                used[kept.ToStr()] = true
+            end if
+            subtitleIndex.Push(kept)
+        end for
+        state = { used: used, nextFree: 0 }
+        fileBitrate = siloMap.Kbps(version.bitrate)
+        defaultAudio = -1
+        if audios.Count() > 0
+            defaultAudio = 0
+            effective = version.effective_audio_track_index
+            if siloMap.IsNumber(effective) and effective >= 0 and effective < audios.Count()
+                defaultAudio = Int(effective)
+            else
+                for i = 0 to audios.Count() - 1
+                    if audios[i].default = true
+                        defaultAudio = i
+                        exit for
+                    end if
+                end for
+            end if
+        end if
+        streams = []
+        tracks = []
+        for i = 0 to videos.Count() - 1
+            stream = siloMap.VideoStream(videos[i], siloMap.NextFreeIndex(state), i = 0, fileBitrate)
+            streams.Push(stream)
+            tracks.Push({ Index: stream.Index, Kind: "video", Ordinal: i })
+        end for
+        defaultAudioIndex = invalid
+        for i = 0 to audios.Count() - 1
+            stream = siloMap.AudioStream(audios[i], siloMap.NextFreeIndex(state), i = defaultAudio)
+            if i = defaultAudio then defaultAudioIndex = stream.Index
+            streams.Push(stream)
+            tracks.Push({ Index: stream.Index, Kind: "audio", Ordinal: i })
+        end for
+        defaultSubtitleIndex = invalid
+        for i = 0 to subtitles.Count() - 1
+            index = subtitleIndex[i]
+            if index < 0 then index = siloMap.NextFreeIndex(state)
+            stream = siloMap.SubtitleStream(subtitles[i], index)
+            if subtitles[i].default = true and defaultSubtitleIndex = invalid then defaultSubtitleIndex = index
+            streams.Push(stream)
+            track = { Index: index, Kind: "subtitle", Ordinal: i }
+            if subtitleIndex[i] >= 0 then track["ContainerIndex"] = subtitleIndex[i]
+            tracks.Push(track)
+        end for
+        ordered = []
+        for each stream in streams
+            ordered.Push({ sortkey: stream.Index, stream: stream })
+        end for
+        ordered.SortBy("sortkey")
+        streams = []
+        for each entry in ordered
+            streams.Push(entry.stream)
+        end for
+        source = {
+            Id: siloMap.VersionId(itemId, fileId),
+            SiloFileId: fileId,
+            ItemId: itemId,
+            Name: siloMap.SourceName(version, videos[0]),
+            Protocol: "File",
+            Type: "Default",
+            IsRemote: false,
+            SupportsDirectPlay: true,
+            SupportsDirectStream: true,
+            SupportsTranscoding: true,
+            ' Silo keeps markers for every file, so the player always asks
+            HasSegments: true,
+            MediaStreams: streams,
+            SiloTracks: tracks
+        }
+        if siloMap.TextOf(version.container) <> "" then source["Container"] = siloMap.TextOf(version.container)
+        if siloMap.IsNumber(version.file_size) then source["Size"] = version.file_size
+        if fileBitrate <> invalid then source["Bitrate"] = fileBitrate
+        duration = version.duration
+        if not siloMap.IsNumber(duration) then duration = version.duration_seconds
+        if siloMap.IsNumber(duration) and duration > 0 then source["RunTimeTicks"] = siloMap.TicksOf(duration)
+        if defaultAudioIndex <> invalid then source["DefaultAudioStreamIndex"] = defaultAudioIndex
+        if defaultSubtitleIndex <> invalid then source["DefaultSubtitleStreamIndex"] = defaultSubtitleIndex
+        return source
+    end function
+
+    function NextFreeIndex(state as object) as integer
+        while state.used.DoesExist(state.nextFree.ToStr())
+            state.nextFree++
+        end while
+        state.used[state.nextFree.ToStr()] = true
+        return state.nextFree
+    end function
+
+    ' The title's versions as MediaSources, each with the chapters of its own file
+    function MediaSourcesOf(item as object, itemId as string, server as string) as object
+        sources = []
+        versions = siloMap.Maps(item.versions)
+        ' The default's chapters are recorded last, so its thumbnails are the ones a lookup by index finds
+        for i = versions.Count() - 1 to 0 step -1
+            source = siloMap.VersionToMediaSource(versions[i], itemId)
+            if source <> invalid
+                chapters = siloMap.ChaptersOf(versions[i], itemId, server)
+                if chapters.Count() > 0 then source["Chapters"] = chapters
+                sources.Unshift(source)
+            end if
+        end for
+        return sources
+    end function
+
+    ' The tracks behind each stream index
+    function TrackForStreamIndex(source as dynamic, index as dynamic) as dynamic
+        if type(source) <> "roAssociativeArray" or type(source.SiloTracks) <> "roArray" or index = invalid then return invalid
+        for each track in source.SiloTracks
+            if track.Index = index then return track
+        end for
+        return invalid
+    end function
+
+    function StreamIndexForTrack(source as dynamic, kind as string, ordinal as integer) as dynamic
+        if type(source) <> "roAssociativeArray" or type(source.SiloTracks) <> "roArray" then return invalid
+        for each track in source.SiloTracks
+            if track.Kind = kind and track.Ordinal = ordinal then return track.Index
+        end for
+        return invalid
+    end function
+
+    function NextStreamIndex(source as dynamic) as integer
+        highest = -1
+        if type(source) = "roAssociativeArray" and type(source.MediaStreams) = "roArray"
+            for each stream in source.MediaStreams
+                if stream.Index <> invalid and stream.Index > highest then highest = stream.Index
+            end for
+        end if
+        return highest + 1
+    end function
+    ' A version's id names its title and its file: screens ask for a version by its id as if it were
+    ' an item, as Jellyfin's are, from threads that never read the title
+    function VersionId(itemId as string, fileId as string) as string
+        if itemId = "" then return fileId
+        return itemId + "~" + fileId
+    end function
+
+    ' The Silo file a version id names, or "" when it names none (the app names a title's default
+    ' version by the title's own id)
+    function FileIdOf(sourceId as dynamic) as string
+        if not isString(sourceId) or sourceId = "" then return ""
+        parts = sourceId.Split("~")
+        candidate = parts[parts.Count() - 1]
+        if siloMap.LibraryIdOf(candidate) <> "" then return candidate
+        return ""
+    end function
+
+    function ItemIdOfSource(sourceId as dynamic) as string
+        if not isString(sourceId) or Instr(1, sourceId, "~") = 0 then return ""
+        return sourceId.Left(Instr(1, sourceId, "~") - 1)
+    end function
+end namespace

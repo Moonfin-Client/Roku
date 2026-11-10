@@ -32,7 +32,14 @@ function playbackDeviceProfile(options as object) as object
     if not isStringEqual(method, PlaybackMethod.FORCETRANSCODEDISABLEREMUX) then transcodeCodec = string.EMPTY
 
     profile = getDeviceProfile(transcodeCodec)
-    if not isStringEqual(method, PlaybackMethod.PLAYNORMALLY) then profile.DirectPlayProfiles = []
+    if not isStringEqual(method, PlaybackMethod.PLAYNORMALLY)
+        ' Silo reads what the Roku decodes from these and picks the route itself. A forced transcode
+        ' already left DirectPlayProfiles empty, so the Roku's own list is built for Silo
+        profile.SiloDirectPlayProfiles = GetDirectPlayProfiles(true)
+        profile.DirectPlayProfiles = []
+        ' The direct play list still names the codec a full transcode moves off, so Silo is told
+        if transcodeCodec <> string.EMPTY then profile.SiloExcludedVideoCodecs = [transcodeCodec]
+    end if
     ' Transcode Audio Codecs has the server convert the picked audio while the video plays untouched
     return applyTranscodeAudioCodecs(profile, transcodeAudioCodecPicks(chainLookup(m.global, "session.user.settings")), chainLookupReturn(options, "isLiveTV", false) = true)
 end function
@@ -82,7 +89,7 @@ function ItemPostPlaybackInfo(id as string, mediaSourceId = "" as string, audioT
 
     if mediaSourceId <> ""
         params.MediaSourceId = mediaSourceId
-    else if not isEmbyServer() and not isPlexServer()
+    else if not isEmbyServer() and not isPlexServer() and not isSiloServer()
         ' Note: Jellyfin v10.9 remuxs LiveTV and does not allow DirectPlay.
         ' Because of this, we need to tell the server "EnableDirectPlay = false" so that we receive the
         ' transcoding URL (which is just a remux and not a transcode; unless it is)
@@ -159,7 +166,7 @@ const SEARCH_PAGE_SIZE = 100
 ' Plugins can only contribute search results through /Search/Hints, and that is new
 ' in Jellyfin 12, so older servers stay on the plain /Items search.
 function serverSupportsSearchHints() as boolean
-    if isEmbyServer() then return false
+    if isEmbyServer() or isSiloServer() then return false
     if not isChainValid(m.global, "session.server.version") then return false
 
     version = m.global.session.server.version
@@ -306,11 +313,16 @@ sub refillSearchPage(query as string, items as object)
 
     port = CreateObject("roMessagePort")
     pending = {}
+    ' A Silo request finishes before siloStartGet returns, so the refills run one after another;
+    ' none starts once ten seconds have gone
+    started = CreateObject("roTimespan")
     for each groupTypes in searchGroups.Refills(types)
+        if started.TotalMilliseconds() >= 10000 then exit for
         req = APIRequest("/items/", searchItemsParams(query, groupTypes, searchGroups.RESULT_CAP))
         if isValid(req)
             req.SetMessagePort(port)
-            if req.AsyncGetToString() then pending[req.GetIdentity().ToStr()] = req
+            ' siloStartGet answers a Silo request itself and starts any other
+            if siloStartGet(req) then pending[req.GetIdentity().ToStr()] = req
         end if
     end for
 
@@ -321,6 +333,18 @@ end sub
 ' they found. Whatever hasn't answered by then is canceled.
 function awaitSearchAnswers(port as object, pending as object) as object
     found = []
+    ' A Silo request is answered at once and its answer waits by its id, so each is taken by its
+    ' own request: other answers queued with them (the people search) stay for their owner
+    for each id in pending.Keys()
+        msg = siloTakeEvent(pending[id])
+        if isValid(msg)
+            pending.Delete(id)
+            if msg.GetResponseCode() = 200
+                data = ParseJson(msg.GetString())
+                if isChainValid(data, "Items") then found.Append(data.Items)
+            end if
+        end if
+    end for
     clock = CreateObject("roTimespan")
     while pending.Count() > 0 and clock.TotalMilliseconds() < 10000
         msg = wait(10000 - clock.TotalMilliseconds(), port)
@@ -435,7 +459,8 @@ function startPeopleSearch(query as string) as dynamic
     ' A Plex server only answers through its bridge, so its people are in hand right away
     if plexUrls.Owns(req.GetUrl()) then return { answered: getJson(req) }
     req.SetMessagePort(CreateObject("roMessagePort"))
-    if not req.AsyncGetToString() then return invalid
+    ' A Silo server answers through its router, which queues the answer for siloTakeEvent
+    if not siloStartGet(req) then return invalid
     return req
 end function
 
@@ -446,12 +471,13 @@ function peopleSearchResults(req as object, timeoutMs as integer) as dynamic
         if not isChainValid(req.answered, "Items") then return []
         return searchCards(req.answered.Items)
     end if
-    if timeoutMs > 0
+    msg = siloTakeEvent(req)
+    if msg = invalid and timeoutMs > 0
         msg = wait(timeoutMs, req.GetMessagePort())
-    else
+    else if msg = invalid
         msg = req.GetMessagePort().GetMessage()
     end if
-    if type(msg) <> "roUrlEvent" then return invalid
+    if not isUrlEvent(msg) then return invalid
     if msg.GetResponseCode() <> 200 then return []
     data = ParseJson(msg.GetString())
     if not isChainValid(data, "Items") then return []

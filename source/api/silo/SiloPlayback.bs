@@ -1,0 +1,984 @@
+import "pkg:/source/api/silo/SiloCatalog.bs"
+import "pkg:/source/api/silo/SiloImages.bs"
+import "pkg:/source/api/silo/SiloMediaSources.bs"
+import "pkg:/source/api/silo/SiloSession.bs"
+import "pkg:/source/utils/diagnostics.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Playback on Silo, ported from Smart-TV's siloPlayback.js (itself Moonfin-Core's playback_silo).
+'
+' Silo decides how a title plays: the app says what this Roku can decode (read from the same device
+' profile Jellyfin gets) and Silo answers with a plan: the delivery (the original file, a remux, or a
+' transcode), the stream address, the tracks and the subtitles. The plan comes back in the
+' PlaybackInfo shape the player reads. While a plan plays, a new request for the same title (another
+' track, a seek, a retry after the original failed) is a replan of the same playing. Progress goes to
+' the session as numbered samples, and the stop carries an id it keeps for every retry.
+'
+' The PlaybackInfo request and the progress reports run on different task threads, so the sessions
+' are kept on the global node.
+namespace silo
+    const START_RETRY_MS = 60000
+    const REPLAN_RETRY_MS = 30000
+    const STOP_RETRY_MS = 30000
+    const START_TIMEOUT_MS = 45000
+
+    function NewUuid() as string
+        return LCase(CreateObject("roDeviceInfo").GetRandomUUID())
+    end function
+
+    ' ---- What this Roku can play, from its Jellyfin device profile
+
+    function Csv(value as dynamic) as object
+        out = []
+        if not isString(value) then return out
+        for each part in value.Split(",")
+            part = LCase(part.Trim())
+            if part <> "" then out.Push(part)
+        end for
+        return out
+    end function
+
+    sub AddUnique(list as object, values as object)
+        for each value in values
+            if not siloContains(list, value) then list.Push(value)
+        end for
+    end sub
+
+    function WithAliases(containers as object) as object
+        out = []
+        out.Append(containers)
+        if siloContains(out, "mkv") and not siloContains(out, "matroska") then out.Push("matroska")
+        if siloContains(out, "matroska") and not siloContains(out, "mkv") then out.Push("mkv")
+        return out
+    end function
+
+    function ProfilesOf(list as dynamic) as object
+        out = []
+        if type(list) <> "roArray" then return out
+        for each one in list
+            if type(one) = "roAssociativeArray" then out.Push(one)
+        end for
+        return out
+    end function
+
+    function RangeKey(value as string) as string
+        return UCase(value.Trim()).Replace("_", "")
+    end function
+
+    ' The dynamic ranges this profile's codec rules allow, as Silo's hdr_details
+    function HdrDetails(codecProfiles as object, videoCodecs as object) as object
+        hdr10 = false
+        hlg = false
+        hdr10Plus = false
+        dolbyVision = []
+        for each codec in ["hevc", "av1"]
+            if siloContains(videoCodecs, codec)
+                ruledOut = []
+                only = invalid
+                for each p in codecProfiles
+                    if p.Type = "Video" and siloContains(silo.Csv(p.Codec), codec)
+                        for each c in silo.ProfilesOf(p.Conditions)
+                            if c.Property = "VideoRangeType"
+                                values = []
+                                for each v in (c.Value ?? "").ToStr().Split("|")
+                                    values.Push(silo.RangeKey(v))
+                                end for
+                                if c.Condition = "NotEquals" then ruledOut.Append(values)
+                                if c.Condition = "EqualsAny"
+                                    if only = invalid then only = []
+                                    only.Append(values)
+                                end if
+                            end if
+                        end for
+                    end if
+                end for
+                allows = {}
+                for each range in ["HDR10", "HLG", "HDR10PLUS", "DOVI", "DOVIWITHEL", "DOVIWITHHDR10"]
+                    allows[range] = not siloContains(ruledOut, range) and (only = invalid or siloContains(only, range))
+                end for
+                hdr10 = hdr10 or allows["HDR10"]
+                hlg = hlg or allows["HLG"]
+                hdr10Plus = hdr10Plus or allows["HDR10PLUS"]
+                ' A display without Dolby Vision still lists the profile 7 and 8 ranges, since their HDR10
+                ' base layer plays, so those count only where plain Dolby Vision does
+                if codec = "hevc"
+                    if allows["DOVI"]
+                        silo.AddUnique(dolbyVision, [5])
+                        if allows["DOVIWITHEL"] then silo.AddUnique(dolbyVision, [7])
+                        if allows["DOVIWITHHDR10"] then silo.AddUnique(dolbyVision, [8])
+                    end if
+                else if allows["DOVI"]
+                    silo.AddUnique(dolbyVision, [10])
+                end if
+            end if
+        end for
+        dolbyVision.Sort()
+        return { hdr10: hdr10, hdr10_plus: hdr10Plus, hlg: hlg, dolby_vision_profiles: dolbyVision }
+    end function
+
+    function ProfileLimits(codecProfiles as object, kind as string, property as string) as object
+        out = []
+        for each p in codecProfiles
+            if p.Type = kind and silo.ProfilesOf(p.ApplyConditions).Count() = 0
+                for each c in silo.ProfilesOf(p.Conditions)
+                    if c.Property = property and c.Condition = "LessThanEqual"
+                        limit = (c.Value ?? "").ToStr().ToInt()
+                        if limit > 0 then out.Push(limit)
+                    end if
+                end for
+            end if
+        end for
+        return out
+    end function
+
+    ' Roku's player plays the original file and HLS; Silo's progressive remux is a piped fragmented
+    ' MP4 with no index, so HLS is asked for instead, which also keeps a copied Dolby Vision track.
+    ' Sidecars and streams are fetched without the app's headers, so every address carries its token.
+    ' Whether this Roku decodes multichannel AAC; many don't, and play a 5.1 AAC stream silent
+    function DecodesMultichannelAac() as boolean
+        info = CreateObject("roDeviceInfo")
+        if info = invalid then return false
+        answer = info.CanDecodeAudio({ Codec: "aac", ChCnt: 6 })
+        return type(answer) = "roAssociativeArray" and answer.result = true
+    end function
+
+    function CapabilitiesOf(deviceProfile as dynamic, serverFeatures = [] as object, multichannelAac = true as boolean) as object
+        if type(deviceProfile) <> "roAssociativeArray" then deviceProfile = {}
+        directPlay = silo.ProfilesOf(deviceProfile.DirectPlayProfiles)
+        codecProfiles = silo.ProfilesOf(deviceProfile.CodecProfiles)
+        excluded = []
+        ' A retry that moves off the file's video codec (playbackDeviceProfile), by all its names
+        movedOff = deviceProfile.SiloExcludedVideoCodecs
+        if type(movedOff) <> "roArray" then movedOff = []
+        movedOffNames = []
+        for each codec in movedOff
+            for each names in [["hevc", "h265"], ["h264", "mpeg4 avc", "avc"]]
+                if siloContains(names, LCase(codec)) then movedOffNames.Append(names)
+            end for
+            movedOffNames.Push(LCase(codec))
+        end for
+        for each p in codecProfiles
+            if p.Type = "Video" and silo.ProfilesOf(p.ApplyConditions).Count() = 0
+                for each c in silo.ProfilesOf(p.Conditions)
+                    if c.Condition = "Equals" and c.Property = "VideoProfile" and LCase((c.Value ?? "").ToStr()) = "none" then excluded.Append(silo.Csv(p.Codec))
+                end for
+            end if
+        end for
+        videoCodecs = []
+        ' What the Roku decodes, the moved-off codec too: a stream Silo encodes anew can be in it
+        decodedVideo = []
+        audioCodecs = []
+        containers = []
+        for each p in directPlay
+            if (p.Type ?? "Video") = "Video"
+                for each codec in silo.Csv(p.VideoCodec)
+                    if not siloContains(excluded, codec)
+                        silo.AddUnique(decodedVideo, [codec])
+                        if not siloContains(movedOffNames, codec) then silo.AddUnique(videoCodecs, [codec])
+                    end if
+                end for
+                silo.AddUnique(audioCodecs, silo.Csv(p.AudioCodec))
+                silo.AddUnique(containers, silo.Csv(p.Container))
+            end if
+        end for
+        containers = silo.WithAliases(containers)
+        ' As Silo's own Roku app: Silo's HLS copies or encodes H.264 or HEVC with AAC, AC-3 or E-AC-3,
+        ' and the Roku plays what it decodes of those. The Jellyfin transcoding profile names only what
+        ' Jellyfin encodes to, which left Silo no recipe the stream could carry
+        ' A retry's moved-off codec stays in: Silo copies only what codecs_video names, and encodes to
+        ' H.264 unless HEVC encoding is on, so an H.264 file moving off H.264 gets a new H.264 stream
+        hlsVideo = []
+        for each codec in ["h264", "hevc"]
+            if siloContains(decodedVideo, codec) then hlsVideo.Push(codec)
+        end for
+        hlsAudio = []
+        for each codec in ["aac", "ac3", "eac3"]
+            if siloContains(audioCodecs, codec) then hlsAudio.Push(codec)
+        end for
+        if hlsAudio.Count() = 0 then hlsAudio = ["aac"]
+        hdr = silo.HdrDetails(codecProfiles, videoCodecs)
+        anyHdr = hdr.hdr10 or hdr.hlg or hdr.hdr10_plus or hdr.dolby_vision_profiles.Count() > 0
+        clientCapabilities = { video_evidence: "declared", audio_evidence: "declared", codecs_video: videoCodecs, codecs_video_hardware: videoCodecs, codecs_audio: audioCodecs, containers: containers, hdr: anyHdr, hdr_details: hdr }
+        widths = silo.ProfileLimits(codecProfiles, "Video", "Width")
+        if widths.Count() > 0
+            widest = 0
+            for each width in widths
+                if width > widest then widest = width
+            end for
+            resolution = "4320p"
+            if widest <= 4096 then resolution = "2160p"
+            if widest <= 2560 then resolution = "1080p"
+            if widest <= 1280 then resolution = "720p"
+            if widest <= 854 then resolution = "480p"
+            clientCapabilities.max_resolution = resolution
+        end if
+        ' The whole stream is held to the most channels any codec plays: a stereo-only codec (AAC
+        ' without multichannel, MP2) mustn't hold a 5.1 E-AC-3 track to stereo. AAC has its own ceiling
+        channels = invalid
+        for each limit in silo.ProfileLimits(codecProfiles, "VideoAudio", "AudioChannels")
+            if channels = invalid or limit > channels then channels = limit
+        end for
+        if channels <> invalid and channels >= 6 then channels = invalid
+        sidecarSubtitles = { embedded_text: false, sidecar_text: true, ass_styling: false, embedded_bitmap: false, sidecar_bitmap: false, font_attachments: false }
+        ' The player sets the Roku to the picked audio track once the file's tracks are known, so the
+        ' original file can play with a track other than its default
+        claims = ["client_selected_audio_track_v1"]
+        out = {
+            clientCapabilities: clientCapabilities,
+            deliveries: {
+                original_http: silo.DeliveryOf(true, "", containers, videoCodecs, audioCodecs, sidecarSubtitles, channels, claims, []),
+                progressive: silo.DeliveryOf(false, "player_has_no_progressive_remux", silo.WithAliases(["mp4", "mkv"]), videoCodecs, audioCodecs, sidecarSubtitles, channels, [], []),
+                hls: silo.DeliveryOf(hlsVideo.Count() > 0, "player_has_no_hls", ["hls"], hlsVideo, hlsAudio, sidecarSubtitles, channels, [], ["native_hls_playback_v1"])
+            },
+            ' As Silo's own Roku app: a seek or resume a remux can't serve is a replan of the session
+            clientFeatures: ["playback_plan_v3", "seek_reanchor_v1", "direct_stream_resume_v1"]
+        }
+        ' A Dolby Vision copy remux can play with a green picture on a Roku (Silo's own Roku app found),
+        ' so HLS is offered the display's other HDR modes only and the original keeps Dolby Vision
+        out.deliveries.original_http.hdr_details = hdr
+        hlsHdr = {}
+        hlsHdr.Append(hdr)
+        hlsHdr.dolby_vision_profiles = []
+        out.deliveries.hls.hdr_details = hlsHdr
+        ' A Roku plays the audio of Silo's muxed fMP4 HLS silently, and the same remux in MPEG-TS
+        ' with sound (Silo's own Roku app asks for it the same way)
+        if siloContains(serverFeatures, "hls_copy_mpegts_v1") then out.deliveries.hls.features.push("hls_copy_mpegts_v1")
+        ' As Silo's own Roku app: without multichannel AAC, AAC is held to two channels, by codec where
+        ' Silo takes that, else the whole HLS stream (a converted track is AAC there)
+        if not multichannelAac
+            if siloContains(serverFeatures, "codec_channel_ceilings_v1")
+                out.deliveries.original_http.max_channels_by_codec = { aac: 2 }
+                out.deliveries.hls.max_channels_by_codec = { aac: 2 }
+            else
+                out.deliveries.hls.max_channels = 2
+            end if
+        end if
+        return out
+    end function
+
+    ' The app's retry after a failed stream sends Jellyfin's device profile without direct play,
+    ' which to Silo would read as a Roku that decodes nothing
+    function IsStepDown(deviceProfile as dynamic) as boolean
+        return type(deviceProfile) = "roAssociativeArray" and silo.ProfilesOf(deviceProfile.DirectPlayProfiles).Count() = 0
+    end function
+
+    ' The device profile to read what the Roku decodes from: a retry's gets the Roku's own list back
+    ' (kept aside by playbackDeviceProfile), and keeps the codec the retry rules out
+    function RetryProfile(deviceProfile as dynamic) as dynamic
+        if not silo.IsStepDown(deviceProfile) or type(deviceProfile.SiloDirectPlayProfiles) <> "roArray" then return deviceProfile
+        profile = {}
+        profile.Append(deviceProfile)
+        profile.DirectPlayProfiles = deviceProfile.SiloDirectPlayProfiles
+        return profile
+    end function
+
+    function DeliveryOf(supported as boolean, failureReason as string, containers as object, video as object, audio as object, subtitles as object, channels as dynamic, claims as object, features as object) as object
+        delivery = { enabled: true, supported_on_device: supported, containers: containers, video_codecs: video, audio_decode_codecs: audio, audio_passthrough_codecs: [], subtitles: subtitles, features: features, auth_header_refresh: false, validated_claims: claims, transformations: [] }
+        if not supported then delivery.failure_reason = failureReason
+        if channels <> invalid then delivery.max_channels = channels
+        return delivery
+    end function
+
+    ' A Roku reads its display's HDR modes over HDMI, and the device profile already follows them
+    function PlaybackContext(capabilities as object, appVersion as string) as object
+        hdr = capabilities.clientCapabilities.hdr_details
+        return {
+            protocol_version: 3,
+            form_factor: "tv",
+            app_version: appVersion.Left(64),
+            device: { platform: "roku" },
+            output: { hdr_details: hdr, display: { hdr_evidence: "exact", hdr_types: hdr } },
+            deliveries: capabilities.deliveries
+        }
+    end function
+
+    ' ---- Tracks: Silo numbers subtitles across the file's own and the added ones
+
+    ' The subtitle stream indexes in Silo's combined order: the external ones first, then the file's,
+    ' each by position
+    function SubtitleOrder(source as dynamic) as object
+        if type(source) <> "roAssociativeArray" or type(source.MediaStreams) <> "roArray" then return []
+        entries = []
+        position = 0
+        for each stream in source.MediaStreams
+            if stream.Type = "Subtitle" and stream.Index <> invalid
+                track = siloMap.TrackForStreamIndex(source, stream.Index)
+                ordinal = 1000000
+                if track <> invalid then ordinal = track.Ordinal
+                group = 1
+                if stream.IsExternal = true then group = 0
+                entries.Push({ key: group * 10000000 + ordinal * 1000 + position, index: stream.Index })
+            end if
+            position++
+        end for
+        entries.SortBy("key")
+        out = []
+        for each entry in entries
+            out.Push(entry.index)
+        end for
+        return out
+    end function
+
+    function SubtitleCombinedIndex(source as dynamic, index as dynamic) as dynamic
+        if index = invalid or index < 0 then return invalid
+        order = silo.SubtitleOrder(source)
+        for i = 0 to order.Count() - 1
+            if order[i] = index then return i
+        end for
+        return invalid
+    end function
+
+    ' Silo's combined subtitle index to the app's stream index, including downloaded subtitles the
+    ' plan adds. Keys are the combined index as text
+    function SubtitleIndexByCombined(plan as object, source as dynamic) as object
+        byCombined = {}
+        order = silo.SubtitleOrder(source)
+        for i = 0 to order.Count() - 1
+            byCombined[i.ToStr()] = order[i]
+        end for
+        nextIndex = siloMap.NextStreamIndex(source)
+        for each entry in silo.InventoryOf(plan)
+            if entry.source = "downloaded" and siloMap.IsNumber(entry.combined_index) and not byCombined.DoesExist(Int(entry.combined_index).ToStr())
+                byCombined[Int(entry.combined_index).ToStr()] = nextIndex
+                nextIndex++
+            end if
+        end for
+        return byCombined
+    end function
+
+    function InventoryOf(plan as object) as object
+        if type(plan.subtitle) <> "roAssociativeArray" then return []
+        return siloMap.Maps(plan.subtitle.inventory)
+    end function
+
+    ' The plan's stream address on this server, with the access token added to Silo's media routes
+    ' for a player that can't send headers. Older plans named the v1 stream routes
+    function PlanUrl(server as string, url as dynamic) as string
+        path = siloMap.TextOf(url)
+        if path.Left(14) = "/api/v1/stream" or path.Left(18) = "/api/v1/playback/t" then path = "/api/v2" + path.Mid(7)
+        if path.Left(8) = "/stream/" or path.Left(20) = "/playback/transcode/" then path = "/api/v2" + path
+        return silo.ResolveUrl(server, path)
+    end function
+
+    function AuthorizeUrl(url as string, server as string, accessToken as string) as string
+        if accessToken = "" or url = "" then return url
+        if LCase(url).Left(silo.ServerKey(server).Len()) <> silo.ServerKey(server) then return url
+        path = url.Split("?")[0]
+        if Instr(1, path, "/api/v2/stream/") = 0 and Instr(1, path, "/api/v2/playback/") = 0 then return url
+        if CreateObject("roRegex", "[?&]token=", "").IsMatch(url) then return url
+        joiner = "?"
+        if Instr(1, url, "?") > 0 then joiner = "&"
+        return url + joiner + "token=" + accessToken.EncodeUriComponent()
+    end function
+
+    function SidecarFormat(url as string) as string
+        path = LCase(url.Split("?")[0])
+        for each format in ["vtt", "ass", "ssa", "srt"]
+            if path.Right(format.Len() + 1) = "." + format then return format
+        end for
+        return ""
+    end function
+
+    ' A sidecar the Roku can read, on the player's clock. The Roku has no ASS, so Silo converts it to
+    ' WebVTT. A stream that starts partway into the title counts from there, so Silo moves the cues
+    ' back by that much (timestamp_offset, WebVTT only, so SRT comes converted too)
+    function TimedSidecarUrl(url as string, format as string, offsetSeconds as dynamic) as string
+        shift = siloMap.IsNumber(offsetSeconds) and offsetSeconds > 0
+        ' The app's own renderer and the second track only read WebVTT, so SRT is always converted
+        convert = format = "ass" or format = "ssa" or format = "srt"
+        if not convert and not (shift and format = "vtt") then return url
+        mark = Instr(1, url, "?")
+        path = url
+        query = ""
+        if mark > 0
+            path = url.Left(mark - 1)
+            query = url.Mid(mark - 1)
+        end if
+        if convert then path = path.Left(path.Len() - format.Len()) + "vtt"
+        if not shift then return path + query
+        joiner = "?"
+        if query <> "" then joiner = query + "&"
+        return path + joiner + "timestamp_offset=-" + (Int(offsetSeconds * 1000 + 0.5) / 1000#).ToStr()
+    end function
+
+    ' The file's streams with the plan's subtitles: downloaded ones added, the ones Silo serves as
+    ' sidecars given their address, and a burned-in one marked so. Answers { streams, selected }
+    function PlanStreams(plan as object, source as dynamic, server as string, accessToken as string, requestedIndex as dynamic) as object
+        subtitle = plan.subtitle
+        if type(subtitle) <> "roAssociativeArray" then subtitle = {}
+        inventory = silo.InventoryOf(plan)
+        streams = []
+        if type(source) = "roAssociativeArray" and type(source.MediaStreams) = "roArray" then streams = ParseJson(FormatJson(source.MediaStreams))
+        byCombined = silo.SubtitleIndexByCombined(plan, source)
+        own = silo.SubtitleOrder(source)
+        for each entry in inventory
+            if siloMap.IsNumber(entry.combined_index)
+                index = byCombined[Int(entry.combined_index).ToStr()]
+                if index <> invalid and not siloContains(own, index) then streams.Push(siloMap.AddedSubtitleStream(index, entry))
+            end if
+        end for
+        selected = invalid
+        if subtitle.mode = "off"
+            selected = -1
+        else
+            match = CreateObject("roRegex", ":subtitle:(\d+)$", "").Match(siloMap.TextOf(subtitle.track_id))
+            if match.Count() > 1 then selected = byCombined[match[1]]
+            if subtitle.mode = "burn_in" and selected <> invalid
+                for each stream in streams
+                    if stream.Type = "Subtitle" and stream.Index = selected then stream["DeliveryMethod"] = "Encode"
+                end for
+            end if
+        end if
+        original = plan.delivery = "original_http"
+        offset = invalid
+        if type(plan.timeline) = "roAssociativeArray" then offset = plan.timeline.timeline_offset_seconds
+        for each entry in inventory
+            if isValidAndNotEmpty(entry.url) and entry.delivery = "sidecar" and siloMap.IsNumber(entry.combined_index)
+                index = byCombined[Int(entry.combined_index).ToStr()]
+                ' A remux carries only the subtitle it was made with, so the file's other tracks wait for a replan
+                if index <> invalid and (original or entry.source <> "embedded" or index = selected or index = requestedIndex)
+                    format = silo.SidecarFormat(entry.url)
+                    url = silo.TimedSidecarUrl(entry.url, format, offset)
+                    if url <> entry.url then format = "vtt"
+                    if format <> ""
+                        for each stream in streams
+                            if stream.Type = "Subtitle" and stream.Index = index
+                                stream["DeliveryMethod"] = "External"
+                                stream["DeliveryUrl"] = silo.AuthorizeUrl(silo.PlanUrl(server, url), server, accessToken)
+                                stream["IsExternalUrl"] = true
+                                stream["SiloSidecarCodec"] = format
+                                if format = "vtt" then stream["Codec"] = "webvtt"
+                                if format = "srt" then stream["Codec"] = "subrip"
+                            end if
+                        end for
+                    end if
+                end if
+            end if
+        end for
+        ' Those waiting tracks have nothing the device can open, so picking one asks for a new plan
+        if not original
+            for each stream in streams
+                if stream.Type = "Subtitle" and not inArray(["External", "Encode"], stream.LookupCI("DeliveryMethod") ?? "") then stream["SiloReplan"] = true
+            end for
+        end if
+        return { streams: streams, selected: selected }
+    end function
+
+    ' ---- The plan as PlaybackInfo
+
+    ' The plan's file as a MediaSource the player reads. The original file plays as Roku's direct play
+    ' of the plan's address; a remux or transcode is handed over as the transcoding address
+    function PlanToMediaSource(plan as object, source as dynamic, server as string, accessToken as string, requestedSubtitle as dynamic) as object
+        stream = plan.stream
+        if type(stream) <> "roAssociativeArray" then stream = {}
+        timeline = plan.timeline
+        if type(timeline) <> "roAssociativeArray" then timeline = {}
+        url = silo.AuthorizeUrl(silo.PlanUrl(server, stream.url), server, accessToken)
+        tracks = silo.PlanStreams(plan, source, server, accessToken, requestedSubtitle)
+        out = {}
+        if type(source) = "roAssociativeArray" then out.Append(source)
+        fileId = siloMap.IdOf(plan.effective_media_file_id)
+        if fileId = "" and type(source) = "roAssociativeArray" then fileId = source.SiloFileId ?? ""
+        ownerId = ""
+        if type(source) = "roAssociativeArray" then ownerId = source.ItemId ?? ""
+        out["Id"] = siloMap.VersionId(ownerId, fileId)
+        out["SiloFileId"] = fileId
+        container = siloMap.TextOf(stream.container)
+        if container = "" and type(plan.source) = "roAssociativeArray" then container = siloMap.TextOf(plan.source.container)
+        if container = "" and type(source) = "roAssociativeArray" then container = source.Container ?? ""
+        hls = stream.protocol = "hls" or Instr(1, LCase(url.Split("?")[0]), ".m3u8") > 0
+        if hls then container = "hls"
+        if container <> "" then out["Container"] = container
+        out["MediaStreams"] = tracks.streams
+        original = plan.delivery = "original_http"
+        out["SupportsDirectPlay"] = original
+        out["SupportsDirectStream"] = not original
+        out["SupportsTranscoding"] = not original
+        out["Protocol"] = "Http"
+        out["Path"] = url
+        out["IsRemote"] = false
+        out.Delete("TranscodingUrl")
+        if not original
+            out["TranscodingUrl"] = url
+            out["TranscodingSubProtocol"] = "http"
+            if hls then out["TranscodingSubProtocol"] = "hls"
+        end if
+        audio = invalid
+        if type(plan.selected_tracks) = "roAssociativeArray" then audio = plan.selected_tracks.audio
+        if type(audio) = "roAssociativeArray" and siloMap.IsNumber(audio.index)
+            audioIndex = siloMap.StreamIndexForTrack(source, "audio", Int(audio.index))
+            if audioIndex <> invalid then out["DefaultAudioStreamIndex"] = audioIndex
+        end if
+        if tracks.selected <> invalid
+            out["DefaultSubtitleStreamIndex"] = tracks.selected
+        else if out.DefaultSubtitleStreamIndex = invalid
+            out["DefaultSubtitleStreamIndex"] = -1
+        end if
+        if type(plan.source) = "roAssociativeArray" and siloMap.IsNumber(plan.source.bitrate_kbps) and plan.source.bitrate_kbps > 0 then out["Bitrate"] = Int(plan.source.bitrate_kbps * 1000)
+        offset = 0
+        if siloMap.IsNumber(timeline.timeline_offset_seconds) and timeline.timeline_offset_seconds > 0 then offset = timeline.timeline_offset_seconds
+        out["SiloDelivery"] = plan.delivery ?? ""
+        out["SiloTimelineOffsetTicks"] = siloMap.TicksOf(offset)
+        out["SiloSeeksThroughServer"] = timeline.can_seek_anywhere = false
+        out.Delete("SiloTracks")
+        return out
+    end function
+
+    ' ---- Sessions, kept on the global node
+
+    function PlaybackSessions() as object
+        if not m.global.hasField("siloPlayback") then m.global.addFields({ siloPlayback: {} })
+        sessions = m.global.siloPlayback
+        if type(sessions) <> "roAssociativeArray" then sessions = {}
+        return sessions
+    end function
+
+    sub SavePlaybackSession(playing as dynamic, sessionId as string)
+        sessions = silo.PlaybackSessions()
+        if playing = invalid
+            sessions.Delete(sessionId)
+        else
+            ' A replan holds its copy through a slow request while progress reports number on, so
+            ' saving it never takes the count back
+            stored = sessions[sessionId]
+            if type(stored) = "roAssociativeArray" and siloMap.IsNumber(stored.sequence) and stored.sequence > playing.sequence then playing.sequence = stored.sequence
+            sessions[sessionId] = playing
+        end if
+        m.global.siloPlayback = sessions
+    end sub
+
+    function LiveSessionOf(itemId as string) as dynamic
+        sessions = silo.PlaybackSessions()
+        for each sessionId in sessions
+            playing = sessions[sessionId]
+            if playing.itemId = itemId and playing.ended <> true then return playing
+        end for
+        return invalid
+    end function
+
+    ' Network trouble, a timeout, a busy or failing server are worth asking again, waiting longer each time
+    function RetryableStart(answer as object) as boolean
+        return answer.status = 0 or answer.status = 408 or answer.status = 429 or answer.status >= 500
+    end function
+
+    function SendWithRetries(r as object, method as string, path as string, body as dynamic, budgetMs as integer, retryReplanBusy = false as boolean) as object
+        timer = CreateObject("roTimespan")
+        delay = 1000
+        while true
+            answer = silo.Call(r.server, path, { method: method, body: body, account: r.account, profileId: r.profileId, timeoutMs: silo.START_TIMEOUT_MS })
+            if answer.ok then return answer
+            retry = silo.RetryableStart(answer)
+            if retryReplanBusy and answer.status = 409 and isValid(answer.problem) and answer.problem.code = "replan_in_progress" then retry = true
+            if not retry or budgetMs - timer.TotalMilliseconds() <= delay then return answer
+            sleep(delay)
+            if delay < 8000 then delay = delay * 2
+        end while
+        return silo.Failed(0)
+    end function
+
+    function PlaybackCapabilities(r as object, forceRead = false as boolean) as object
+        if not forceRead
+            kept = silo.RecallAnswer("siloPlaybackCaps", r.server, 60)
+            if kept <> invalid then return kept
+        end if
+        answer = silo.ApiGet(r, "/api/v2/playback/capabilities")
+        caps = { ok: false, installationId: "", features: [], reason: "unavailable" }
+        if answer.ok and type(answer.data) = "roAssociativeArray"
+            data = answer.data
+            versions = data.protocol_versions
+            speaks3 = type(versions) = "roArray" and siloContains(versions, 3)
+            caps.reason = data.state ?? "unavailable"
+            if data.state = "available" and data.allowed = true and speaks3 and isValidAndNotEmpty(data.installation_id)
+                caps.ok = true
+                caps.installationId = data.installation_id.Trim()
+                if type(data.features) = "roArray" then caps.features = data.features
+                silo.KeepAnswer("siloPlaybackCaps", r.server, caps, 4)
+            end if
+        end if
+        return caps
+    end function
+
+    function Refusal(decision as dynamic) as object
+        terminal = {}
+        if type(decision) = "roAssociativeArray" and type(decision.terminal) = "roAssociativeArray" then terminal = decision.terminal
+        message = siloMap.TextOf(terminal.message)
+        if message = "" then message = tr("This server can't play this item.")
+        diagnostics.Playback("Silo refused playback: " + (terminal.reason ?? "").ToStr() + " " + message, diagnostics.LEVEL_WARN)
+        return { status: 409, data: { ErrorCode: "SiloRefused", Message: message } }
+    end function
+
+    function StartSeconds(ticks as dynamic) as dynamic
+        if ticks = invalid or ticks = "" then return 0
+        value = Val(ticks.ToStr()) / 10000000
+        if value <= 0 then return 0
+        if value > 31536000 then return 31536000
+        return value
+    end function
+
+    function KbpsOf(bitsPerSecond as dynamic) as dynamic
+        if bitsPerSecond = invalid or bitsPerSecond = "" then return invalid
+        value = Val(bitsPerSecond.ToStr())
+        if value <= 0 then return invalid
+        kbps = Int(value / 1000)
+        if kbps < 100 then kbps = 100
+        if kbps > 1000000 then kbps = 1000000
+        return kbps
+    end function
+
+    function QueryIndex(q as object, key as string) as dynamic
+        value = q.LookupCI(key)
+        if value = invalid or value = "" then return invalid
+        return value.ToStr().ToInt()
+    end function
+
+    function AccessTokenOf(r as object) as string
+        tokens = silo.LoadTokens(r.server, r.account)
+        if tokens = invalid then return ""
+        ' A stream carries the token it opened with for as long as it plays
+        if silo.NeedsStreamRefresh(tokens)
+            silo.Refresh(r.server, r.account, tokens.access)
+            tokens = silo.LoadTokens(r.server, r.account)
+            if tokens = invalid then return ""
+        end if
+        return tokens.access
+    end function
+
+    ' The file to play: the one asked for, else the title's default, read with its tracks
+    ' The app names a title's default version by the title's own id, as Jellyfin does, so a source id
+    ' that isn't one of Silo's files means the default file
+    function PlaybackFileOf(r as object, itemId as string, mediaSourceId as string) as object
+        wanted = siloMap.FileIdOf(mediaSourceId)
+        owner = siloMap.ItemIdOfSource(itemId)
+        if owner <> ""
+            if wanted = "" then wanted = siloMap.FileIdOf(itemId)
+            itemId = owner
+        end if
+        sources = []
+        item = silo.GetItem(r, itemId, wanted)
+        if item <> invalid and type(item.MediaSources) = "roArray" then sources = item.MediaSources
+        source = invalid
+        for each candidate in sources
+            if wanted = "" or candidate.SiloFileId = wanted
+                source = candidate
+                exit for
+            end if
+        end for
+        if source = invalid and sources.Count() > 0 then source = sources[0]
+        fileId = wanted
+        if source <> invalid then fileId = source.SiloFileId
+        explicit = sources.Count() > 1 and source <> invalid and sources[0].SiloFileId <> fileId
+        return { fileId: fileId, itemId: itemId, source: source, sources: sources, explicit: explicit }
+    end function
+
+    ' The file a plan plays when Silo picked another version than the one asked for
+    function SourceOfPlan(r as object, plan as object, itemId as string, known as dynamic) as dynamic
+        effective = siloMap.IdOf(plan.effective_media_file_id)
+        if effective = "" then return known
+        if type(known) = "roAssociativeArray" and known.SiloFileId = effective then return known
+        file = silo.PlaybackFileOf(r, itemId, effective)
+        if file.source <> invalid then return file.source
+        return known
+    end function
+
+    ' Silo's plan for the title, or a new plan for the one already playing
+    function PlaybackInfo(r as object, itemId as string) as object
+        body = r.body
+        if type(body) <> "roAssociativeArray" then body = {}
+        owner = siloMap.ItemIdOfSource(itemId)
+        live = invalid
+        if owner <> ""
+            live = silo.LiveSessionOf(owner)
+        else
+            live = silo.LiveSessionOf(itemId)
+        end if
+        ' The Playback Information panel asks with IsPlayback false: it reads the plan, it doesn't change it
+        if LCase((r.query.LookupCI("IsPlayback") ?? "").ToStr()) = "false"
+            if live = invalid then return silo.StatusOnly(404)
+            return silo.PlayingAnswer(r, live, live.subtitleStreamIndex)
+        end if
+        if live <> invalid then return silo.Replan(r, live)
+        return silo.StartPlayback(r, itemId, body)
+    end function
+
+    function StartPlayback(r as object, itemId as string, body as object) as object
+        q = r.query
+        if r.profileId = "" then return silo.StatusOnly(401)
+        file = silo.PlaybackFileOf(r, itemId, q.LookupCI("MediaSourceId") ?? "")
+        silo.Trace("play " + itemId + ": source " + (q.LookupCI("MediaSourceId") ?? "none") + " -> title " + file.itemId + ", file " + file.fileId + ", versions " + file.sources.Count().ToStr())
+        if file.fileId = "" then return silo.StatusOnly(404)
+        server = silo.PlaybackCapabilities(r)
+        silo.Trace("play: server playback " + server.reason + ", ok " + server.ok.ToStr())
+        multichannelAac = silo.DecodesMultichannelAac()
+        caps = silo.CapabilitiesOf(silo.RetryProfile(body.DeviceProfile), server.features, multichannelAac)
+        ' A retry after a failed stream steps away from the original file, and Silo picks the route
+        if silo.IsStepDown(body.DeviceProfile) then caps.deliveries.original_http = silo.DeliveryOf(false, "client_playback_failed", [], [], [], caps.deliveries.original_http.subtitles, invalid, [], [])
+        silo.Trace("play: decodes video " + caps.clientCapabilities.codecs_video.Join(",") + ", audio " + caps.clientCapabilities.codecs_audio.Join(",") + ", multichannel AAC " + multichannelAac.ToStr())
+        context = silo.PlaybackContext(caps, getAuthHeaderContext().appVersion ?? "")
+        if not server.ok then return { status: 503, data: { ErrorCode: "SiloUnavailable", Message: tr("Playback isn't available on this server.") } }
+        startBody = {
+            protocol_version: 3,
+            client_features: caps.clientFeatures,
+            file_id: file.fileId,
+            profile_id: r.profileId,
+            playback_attempt_id: silo.NewUuid(),
+            installation_id: server.installationId,
+            quality_preference: "auto",
+            subtitle_fidelity_preference: "compatible",
+            metered: false,
+            client_capabilities: caps.clientCapabilities,
+            client_playback_context: context,
+            start_position: silo.StartSeconds(q.LookupCI("StartTimeTicks"))
+        }
+        audioIndex = silo.QueryIndex(q, "AudioStreamIndex")
+        ' The file's default is left to Silo, which then plays a same-language track the Roku takes
+        ' as is in place of one it would convert
+        if file.source <> invalid and audioIndex <> invalid and audioIndex >= 0 and audioIndex <> file.source.DefaultAudioStreamIndex
+            track = siloMap.TrackForStreamIndex(file.source, audioIndex)
+            if track <> invalid and track.Kind = "audio" then startBody.audio_track_index = track.Ordinal
+        end if
+        subtitle = silo.SubtitleCombinedIndex(file.source, silo.QueryIndex(q, "SubtitleStreamIndex"))
+        if subtitle <> invalid then startBody.subtitle_track_index = subtitle
+        cap = silo.KbpsOf(q.LookupCI("MaxStreamingBitrate"))
+        if cap <> invalid then startBody.bandwidth_cap_kbps = cap
+        ' A version the viewer picked plays as that version
+        if file.explicit and siloContains(server.features, "fixed_media_file_v1") then startBody.allow_alternate_versions = false
+
+        answer = silo.SendWithRetries(r, "POST", "/api/v2/playback/start", startBody, silo.START_RETRY_MS)
+        if not answer.ok and answer.status = 409 and isValid(answer.problem) and answer.problem.code = "installation_changed"
+            ' The server was reset or replaced since its capabilities were read: start again under the new one
+            server = silo.PlaybackCapabilities(r, true)
+            if not server.ok then return silo.StatusOnly(503)
+            startBody.installation_id = server.installationId
+            answer = silo.SendWithRetries(r, "POST", "/api/v2/playback/start", startBody, silo.START_RETRY_MS)
+        end if
+        problemText = ""
+        if isValid(answer.problem) then problemText = " " + answer.problem.code + " " + answer.problem.detail
+        silo.Trace("play: start answered " + answer.status.ToStr() + problemText)
+        if not answer.ok
+            if silo.IsClientUpgradeRequired(answer) then return { status: 426, data: { ErrorCode: "SiloUpgrade", Message: tr("This server needs a newer version of Moonfin to play.") } }
+            return silo.StatusOnly(answer.status)
+        end if
+        decision = answer.data
+        plan = invalid
+        if type(decision) = "roAssociativeArray" then plan = decision.playback_plan
+        sessionId = ""
+        if type(decision) = "roAssociativeArray" and isString(decision.session_id) then sessionId = decision.session_id
+        if sessionId = "" and type(plan) = "roAssociativeArray" and isString(plan.session_id) then sessionId = plan.session_id
+        if type(decision) = "roAssociativeArray" then silo.Trace("play: outcome " + (decision.outcome ?? "").ToStr() + ", session " + sessionId)
+        if type(decision) <> "roAssociativeArray" or decision.outcome <> "playable" or type(plan) <> "roAssociativeArray" or sessionId = "" then return silo.Refusal(decision)
+        source = silo.SourceOfPlan(r, plan, file.itemId, file.source)
+        playing = {
+            sessionId: sessionId,
+            server: r.server,
+            account: r.account,
+            profileId: r.profileId,
+            itemId: file.itemId,
+            attemptId: startBody.playback_attempt_id,
+            installationId: server.installationId,
+            plan: plan,
+            startBody: startBody,
+            source: source,
+            sequence: 0,
+            stopId: silo.NewUuid(),
+            ended: false,
+            planAttemptId: silo.NewUuid(),
+            attemptedPlanKeys: [],
+            recoveries: 0,
+            bandwidthCapKbps: cap
+        }
+        return silo.PlayingAnswer(r, playing, silo.QueryIndex(q, "SubtitleStreamIndex"))
+    end function
+
+    function PlayingAnswer(r as object, playing as object, requestedSubtitle as dynamic) as object
+        source = silo.PlanToMediaSource(playing.plan, playing.source, r.server, silo.AccessTokenOf(r), requestedSubtitle)
+        playing.audioStreamIndex = source.DefaultAudioStreamIndex
+        playing.subtitleStreamIndex = source.DefaultSubtitleStreamIndex
+        playing.offsetTicks = source.SiloTimelineOffsetTicks
+        silo.SavePlaybackSession(playing, playing.sessionId)
+        audioTrack = invalid
+        if type(playing.plan.selected_tracks) = "roAssociativeArray" then audioTrack = playing.plan.selected_tracks.audio
+        if type(audioTrack) = "roAssociativeArray" then silo.Trace("play: audio " + FormatJson(audioTrack))
+        if type(playing.plan.decision_reason) = "roString" or type(playing.plan.decision_reason) = "String" then silo.Trace("play: reason " + playing.plan.decision_reason)
+        silo.Trace("play: plan " + (playing.plan.delivery ?? "").ToStr() + ", container " + (source.Container ?? "").ToStr() + ", direct " + source.SupportsDirectPlay.ToStr() + ", stream " + silo.PathOf(source.Path ?? ""))
+        return silo.Ok({ PlaySessionId: silo.PlayerSessionId(playing), MediaSources: [source] })
+    end function
+
+    ' A new request for the title already playing changes the session's plan: another track, a
+    ' quality, a retry after the original file failed, or the place to start from
+    function Replan(r as object, playing as object) as object
+        q = r.query
+        plan = playing.plan
+        ' The app's retry after a failed stream turns direct play off, and after a failed server stream
+        ' sends the profile without direct play too (IsStepDown)
+        failure = LCase(q.LookupCI("EnableDirectPlay") ?? "") = "false" and (plan.delivery = "original_http" or silo.IsStepDown(chainLookup(r.body, "DeviceProfile")))
+        audioAsked = silo.QueryIndex(q, "AudioStreamIndex")
+        subtitleAsked = silo.QueryIndex(q, "SubtitleStreamIndex")
+        trackChange = not failure and ((audioAsked <> invalid and audioAsked <> playing.audioStreamIndex) or (subtitleAsked <> invalid and subtitleAsked <> playing.subtitleStreamIndex))
+        cap = silo.KbpsOf(q.LookupCI("MaxStreamingBitrate"))
+        qualityChange = not failure and not trackChange and cap <> playing.bandwidthCapKbps
+        operation = "seek_reanchor"
+        if failure
+            operation = "failure_recovery"
+        else if trackChange
+            operation = "track_change"
+        else if qualityChange
+            operation = "quality_change"
+        end if
+        if qualityChange then playing.bandwidthCapKbps = cap
+        if failure
+            if isString(plan.plan_attempt_key) and not siloContains(playing.attemptedPlanKeys, plan.plan_attempt_key)
+                playing.attemptedPlanKeys.Push(plan.plan_attempt_key)
+                if playing.attemptedPlanKeys.Count() > 16 then playing.attemptedPlanKeys.Shift()
+            end if
+            playing.recoveries++
+        end if
+        fileId = siloMap.IdOf(plan.effective_media_file_id)
+        tracks = {}
+        if type(plan.selected_tracks) = "roAssociativeArray"
+            if type(plan.selected_tracks.audio) = "roAssociativeArray" then tracks.audio = plan.selected_tracks.audio
+            if type(plan.selected_tracks.subtitle) = "roAssociativeArray" then tracks.subtitle = plan.selected_tracks.subtitle
+        end if
+        if trackChange
+            if audioAsked <> invalid
+                track = siloMap.TrackForStreamIndex(playing.source, audioAsked)
+                if track <> invalid and track.Kind = "audio" then tracks.audio = { id: "file:" + fileId + ":audio:" + track.Ordinal.ToStr(), index: track.Ordinal }
+            end if
+            if subtitleAsked = -1
+                tracks.Delete("subtitle")
+            else if subtitleAsked <> invalid
+                byCombined = silo.SubtitleIndexByCombined(plan, playing.source)
+                for each combined in byCombined
+                    if byCombined[combined] = subtitleAsked then tracks.subtitle = { id: "file:" + fileId + ":subtitle:" + combined, index: combined.ToInt() }
+                end for
+            end if
+        end if
+        first = playing.startBody
+        attemptCount = 1
+        if failure
+            attemptCount = playing.recoveries
+            if attemptCount < 1 then attemptCount = 1
+            if attemptCount > 8 then attemptCount = 8
+        end if
+        sent = {
+            protocol_version: 3,
+            client_features: first.client_features,
+            operation: operation,
+            playback_attempt_id: playing.attemptId,
+            replan_request_id: silo.NewUuid(),
+            failed_plan_id: plan.plan_id,
+            plan_attempt_id: playing.planAttemptId,
+            plan_attempt_key: plan.plan_attempt_key,
+            attempted_plan_keys: playing.attemptedPlanKeys,
+            attempt_count: attemptCount,
+            quality_preference: first.quality_preference ?? "auto",
+            position_seconds: silo.StartSeconds(q.LookupCI("StartTimeTicks")),
+            metered: false,
+            selected_tracks: tracks,
+            client_capabilities: first.client_capabilities,
+            client_playback_context: first.client_playback_context,
+            installation_id: playing.installationId
+        }
+        if failure then sent.failure = { classification: "playback_error" }
+        if playing.bandwidthCapKbps <> invalid then sent.bandwidth_cap_kbps = playing.bandwidthCapKbps
+        silo.Trace("play: replan " + operation + " of " + playing.sessionId)
+        answer = silo.SendWithRetries(r, "POST", "/api/v2/playback/" + playing.sessionId.EncodeUriComponent() + "/replan", sent, silo.REPLAN_RETRY_MS, true)
+        silo.Trace("play: replan answered " + answer.status.ToStr())
+        if not answer.ok
+            if answer.status = 404 or answer.status = 410 or (answer.status = 409 and isValid(answer.problem) and answer.problem.code = "installation_changed")
+                ' The playing is gone on Silo: this request starts a new one
+                silo.SavePlaybackSession(invalid, playing.sessionId)
+                body = r.body
+                if type(body) <> "roAssociativeArray" then body = {}
+                return silo.StartPlayback(r, playing.itemId, body)
+            end if
+            return silo.StatusOnly(answer.status)
+        end if
+        decision = answer.data
+        nextPlan = invalid
+        if type(decision) = "roAssociativeArray" then nextPlan = decision.playback_plan
+        if type(decision) <> "roAssociativeArray" or decision.outcome <> "playable" or type(nextPlan) <> "roAssociativeArray" then return silo.Refusal(decision)
+        playing.source = silo.SourceOfPlan(r, nextPlan, playing.itemId, playing.source)
+        playing.plan = nextPlan
+        playing.planAttemptId = silo.NewUuid()
+        playing.planNumber = (playing.planNumber ?? 0) + 1
+        return silo.PlayingAnswer(r, playing, subtitleAsked)
+    end function
+
+    function SessionGone(answer as object) as boolean
+        if answer.status = 404 or answer.status = 410 then return true
+        return answer.status = 409 and isValid(answer.problem) and answer.problem.code = "installation_changed"
+    end function
+
+    ' The session's position on the title: the stream's position plus where the stream starts
+    function TitleSeconds(playing as object, positionTicks as dynamic) as dynamic
+        ticks = 0
+        if positionTicks <> invalid and not isString(positionTicks) then ticks = positionTicks
+        offset = playing.offsetTicks ?? 0
+        seconds = (ticks + offset) / 10000000#
+        if seconds < 0 then seconds = 0
+        return seconds
+    end function
+
+    ' The id the player reports under: the Silo session, and after a replan the plan's number too, so a
+    ' report from the stream a replan replaced can be told from one from the stream now playing
+    function PlayerSessionId(playing as object) as string
+        if (playing.planNumber ?? 0) = 0 then return playing.sessionId
+        return playing.sessionId + "~" + playing.planNumber.ToStr()
+    end function
+
+    function SessionOfReport(r as object) as dynamic
+        if type(r.body) <> "roAssociativeArray" then return invalid
+        reported = r.body.LookupCI("PlaySessionId") ?? ""
+        if reported = "" then return invalid
+        return silo.PlaybackSessions()[reported.Split("~")[0]]
+    end function
+
+    ' Whether a report comes from a stream a later replan of its session replaced
+    function IsReplacedStream(r as object, playing as object) as boolean
+        return (r.body.LookupCI("PlaySessionId") ?? "") <> silo.PlayerSessionId(playing)
+    end function
+
+    ' One sample: where the title is, paused or not, numbered. A sample Silo already has under its
+    ' number goes once more under the next one; a playing Silo ended takes no more
+    function ReportProgress(r as object) as object
+        playing = silo.SessionOfReport(r)
+        if playing = invalid or playing.ended = true then return silo.NoContent()
+        path = "/api/v2/playback/" + playing.sessionId.EncodeUriComponent() + "/progress"
+        answer = silo.Failed(0)
+        for attempt = 1 to 2
+            playing.sequence = playing.sequence + 1
+            silo.SavePlaybackSession(playing, playing.sessionId)
+            sample = { installation_id: playing.installationId, sequence: playing.sequence, position: silo.TitleSeconds(playing, r.body.LookupCI("PositionTicks")), is_paused: r.body.LookupCI("IsPaused") = true }
+            answer = silo.Call(r.server, path, { method: "POST", body: sample, account: r.account, profileId: r.profileId })
+            if answer.ok then return silo.NoContent()
+            if not (answer.status = 409 and isValid(answer.problem) and answer.problem.code = "progress_conflict") then exit for
+        end for
+        if silo.SessionGone(answer)
+            playing.ended = true
+            silo.SavePlaybackSession(playing, playing.sessionId)
+        end if
+        return silo.NoContent()
+    end function
+
+    ' The stop keeps one id for every retry, so Silo counts it once
+    function ReportStopped(r as object) as object
+        playing = silo.SessionOfReport(r)
+        if playing = invalid then return silo.NoContent()
+        ' A track change or seek reload stops the player while its new PlaybackInfo replans this same
+        ' session, so a stop that arrives after the replan, from the stream it replaced, ends nothing
+        if silo.IsReplacedStream(r, playing) then return silo.NoContent()
+        silo.SavePlaybackSession(invalid, playing.sessionId)
+        if playing.ended = true then return silo.NoContent()
+        positionTicks = r.body.LookupCI("PositionTicks")
+        sent = { installation_id: playing.installationId, stop_id: playing.stopId }
+        if (positionTicks <> invalid and positionTicks > 0) or playing.sequence > 0
+            sent.sequence = playing.sequence + 1
+            sent.position = silo.TitleSeconds(playing, positionTicks)
+            sent.is_paused = false
+        end if
+        silo.SendWithRetries(r, "DELETE", "/api/v2/playback/" + playing.sessionId.EncodeUriComponent(), sent, silo.STOP_RETRY_MS)
+        ' What was watched moves Continue Watching and Next Up along
+        silo.ForgetCatalog()
+        return silo.NoContent()
+    end function
+end namespace

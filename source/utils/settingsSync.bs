@@ -694,7 +694,7 @@ namespace settingsSync
             entry = picked[LCase(id)]
             if isValid(entry)
                 listEntry = homeRowLayout.SourceFor(entry.source)
-                if enabled and isValid(listEntry) and not get_user_setting_bool(listEntry.gate, false) then enabled = false
+                if enabled and isValid(listEntry) and listEntry.gate <> "" and not get_user_setting_bool(listEntry.gate, false) then enabled = false
                 owner = homeRowLayout.ServerId()
                 fromId = homeRowLayout.SourceFromId(entry.id)
                 if isValid(fromId) then owner = fromId.server
@@ -705,17 +705,25 @@ namespace settingsSync
                     owner = homeRowLayout.ServerKey()
                 end if
 
-                sections.push({
-                    kind: "pluginDynamic",
-                    type: "none",
-                    enabled: enabled,
-                    order: order,
-                    serverId: owner,
-                    pluginSource: entry.source,
-                    pluginSection: section,
-                    pluginAdditionalData: entry.itemId,
-                    pluginDisplayText: entry.title
-                })
+                ' Quoted, since BrightScript lowercases a bare key and the other clients read these
+                ' by their case
+                record = {
+                    "kind": "pluginDynamic",
+                    "type": "none",
+                    "enabled": enabled,
+                    "order": order,
+                    "serverId": owner,
+                    "pluginSource": entry.source,
+                    "pluginSection": section,
+                    "pluginAdditionalData": entry.itemId,
+                    "pluginDisplayText": entry.title
+                }
+                ' Core names a Silo row by its section in pluginSection, with nothing in the extra data
+                if entry.source = "server"
+                    record["pluginSection"] = settingsSync.SiloSectionOut(entry.itemId)
+                    record.Delete("pluginAdditionalData")
+                end if
+                sections.push(record)
             else
                 sections.push({ kind: "builtin", type: id, enabled: enabled, order: order })
             end if
@@ -1333,25 +1341,42 @@ namespace settingsSync
         if not isValid(listEntry) then return invalid
 
         itemId = homeRowLayout.AsText(chainLookupReturn(section, "pluginAdditionalData", ""))
+        if source = "server" then itemId = settingsSync.SiloSectionIn(homeRowLayout.AsText(chainLookupReturn(section, "pluginSection", "")))
         if itemId = "" then return invalid
 
         ' A collection can come from another signed in server. Anything else from another server is
         ' kept as it arrived.
         sectionServer = homeRowLayout.AsText(chainLookupReturn(section, "serverId", ""))
         owner = serverKey
+        ' Moonbase's admin defaults name a Silo row by its kind for whatever server reads them
+        if source = "server" and sectionServer = "" and Left(itemId, 5) = "type." then sectionServer = serverKey
         if not settingsSync.IsSameServer(sectionServer, serverKey)
             if sectionServer = "" or source <> "collections" then return invalid
             owner = sectionServer
         end if
 
+        ' A row with no setting to switch on (a Silo row) has no gate, or one would be written under ""
+        gate = invalid
+        if listEntry.gate <> "" then gate = listEntry.gate
         return {
             id: homeRowLayout.DynamicId(source, owner, itemId),
             source: source,
             itemId: itemId,
             title: homeRowLayout.AsText(chainLookupReturn(section, "pluginDisplayText", "")),
             enabled: settingsSync.ToBooleanValue(chainLookupReturn(section, "enabled", true), true),
-            gate: listEntry.gate
+            gate: gate
         }
+    end function
+
+    ' A Silo row named by its kind is "type:<kind>" on the wire and "type.<kind>" in a row id
+    function SiloSectionIn(sectionId as string) as string
+        if Left(sectionId, 5) = "type:" then return "type." + Mid(sectionId, 6)
+        return sectionId
+    end function
+
+    function SiloSectionOut(itemId as string) as string
+        if Left(itemId, 5) = "type." then return "type:" + Mid(itemId, 6)
+        return itemId
     end function
 
     ' A Seerr slider row for this server. One from another server is kept as it arrived, since

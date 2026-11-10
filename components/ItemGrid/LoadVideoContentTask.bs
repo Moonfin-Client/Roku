@@ -200,8 +200,10 @@ sub loadItems()
     ' Reset intro tracker in case task gets reused
     m.top.isIntro = false
 
+    siloTrace("load task started")
     ' Refused before an intro is lined up for it
     if blockedContent.IsBlocked(m.global.queueManager.callFunc("getCurrentItem"))
+        siloTrace("load: refused as blocked content")
         m.top.content = [{ blocked: true }]
         return
     end if
@@ -274,7 +276,14 @@ function LoadItems_VideoPlayer(id as string, mediaSourceId = invalid as dynamic,
     return video
 end function
 
+' What playback does on a Silo server, in the debug console
+sub siloTrace(message as string)
+    serverUrl = m.top.serverUrl ?? ""
+    if isSiloServer(serverUrl) then silo.Trace(message)
+end sub
+
 sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_stream_idx = 1 as integer)
+    siloTrace("load " + toString(video.id) + ", source " + toString(mediaSourceId))
 
     serverData = playbackServerData()
     if isValid(serverData)
@@ -285,6 +294,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
 
     if not isValid(meta)
         video.errorMsg = "Error loading metadata"
+        siloTrace("load: the item's metadata didn't read")
         video.content = invalid
         return
     end if
@@ -484,6 +494,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     onEmby = isEmbyServer(m.top.serverUrl)
     if onEmby and isStreamlessStaticSource(meta.json, mediaSourceId) then mediaSourceId = ""
 
+    siloTrace("load: metadata " + toString(meta.type) + ", asking PlaybackInfo with source " + toString(mediaSourceId))
     m.playbackInfo = getPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, m.top.selectedSubtitleIndex, playbackPosition)
     if not isValid(m.playbackInfo) and canRetryWithoutMediaSourceId(meta.json, mediaSourceId)
         mediaSourceId = ""
@@ -504,6 +515,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
         end if
     end if
     if not isValid(m.playbackInfo)
+        siloTrace("load: PlaybackInfo gave nothing usable")
         video.errorMsg = "Error loading playback info"
         video.content = invalid
         return
@@ -591,6 +603,8 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     end if
 
     video.container = getContainerType(meta)
+    applySiloPlan(video, m.playbackInfo.MediaSources[0])
+    siloTrace("load: stream format " + toString(video.content.StreamFormat) + ", play start " + toString(video.content.PlayStart))
 
     if not isValid(m.playbackInfo.MediaSources[0])
         m.playbackInfo = meta.json
@@ -634,6 +648,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
         video.isTranscoded = false
         if meta.live then video.content.StreamFormat = liveDirectStreamFormat(m.playbackInfo.MediaSources[0])
         addVideoContentURL(video, mediaSourceId, audio_stream_idx)
+        siloTrace("load: direct play " + silo.PathOf(toString(video.content.url)))
         setCertificateAuthority(video.content)
         if not playbackUsesServerAuth(video.content.url) then return
         if isValid(serverData)
@@ -663,7 +678,9 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
 
     ' Asking again with no subtitle profiles leaves the server nothing to do but draw the subtitle in
     video.subtitlesBurnedIn = false
-    if chainLookupReturn(m.global, "session.user.settings.`playback.subs.burnin`", true) and meta.live = false and shouldBurnInSubtitle(video.SelectedSubtitle)
+    ' Silo burns a subtitle in itself when its plan needs to
+    siloPlan = isValidAndNotEmpty(m.playbackInfo.MediaSources[0].LookupCI("SiloDelivery"))
+    if chainLookupReturn(m.global, "session.user.settings.`playback.subs.burnin`", true) and meta.live = false and not siloPlan and shouldBurnInSubtitle(video.SelectedSubtitle)
         m.playbackInfo = getPlaybackInfo(video.id, mediaSourceId, audio_stream_idx, requestedSubtitleIndex, playbackPosition, {
             emptySubtitleProfiles: true
         })
@@ -685,6 +702,7 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
     ' Get transcoding reason
     video.transcodeReasons = getTranscodeReasons(m.playbackInfo.MediaSources[0].TranscodingUrl)
     video.content.url = playbackResourceURL(m.playbackInfo.MediaSources[0].TranscodingUrl)
+    siloTrace("load: server stream " + silo.PathOf(toString(video.content.url)))
     video.isTranscoded = true
 
     setCertificateAuthority(video.content)
@@ -694,6 +712,29 @@ sub LoadItems_AddVideoContent(video as object, mediaSourceId as dynamic, audio_s
         video.content = authRequestForServer(video.content, serverData)
     else
         video.content = authRequest(video.content)
+    end if
+end sub
+
+' Silo's stream addresses name no file type, so the plan says what the player gets. A stream that
+' starts partway into the title counts its time from there
+sub applySiloPlan(video as object, source as dynamic)
+    if not isValidAndNotEmpty(chainLookupReturn(source, "SiloDelivery", "")) then return
+    container = LCase(source.LookupCI("Container") ?? "")
+    if container = "hls"
+        video.content.StreamFormat = "hls"
+    else if container = "mp4" or container = "m4v" or container = "mov"
+        video.content.StreamFormat = "mp4"
+    else if container = "mkv" or container = "matroska" or container = "webm"
+        video.content.StreamFormat = "mkv"
+    end if
+    ' The player shows and seeks the title's own timeline from these
+    video.timelineOffset = (source.LookupCI("SiloTimelineOffsetTicks") ?? 0) / 10000000#
+    video.mediaRuntime = (source.LookupCI("RunTimeTicks") ?? 0) / 10000000#
+    offsetSeconds = Int(video.timelineOffset)
+    if offsetSeconds > 0
+        startAt = video.content.PlayStart - offsetSeconds
+        if startAt < 0 then startAt = 0
+        video.content.PlayStart = startAt
     end if
 end sub
 
@@ -951,7 +992,7 @@ sub addSubtitlesToVideo(video, meta)
 
     ' A track the device reads from the stream itself is already in it
     for each subtitle in safesubs
-        if not subtitle.IsEmbeddedNative then subtitleTracks.push(subtitle.track)
+        if not subtitle.IsEmbeddedNative and not subtitle.NeedsReload then subtitleTracks.push(subtitle.track)
     end for
 
     video.content.SubtitleTracks = subtitleTracks
@@ -1154,8 +1195,9 @@ function sortSubtitles(MediaStreams, source = invalid as dynamic, videoId = "" a
             url = ""
             deliveryUrl = stream.DeliveryUrl
             embeddedNative = false
+            needsReload = stream.LookupCI("SiloReplan") = true
             codec = LCase(stream.LookupCI("Codec") ?? "")
-            if not isValid(deliveryUrl) and isStringEqual(stream.LookupCI("DeliveryMethod"), "Embed") and stream.IsExternal <> true
+            if not isValid(deliveryUrl) and not needsReload and isStringEqual(stream.LookupCI("DeliveryMethod"), "Embed") and stream.IsExternal <> true
                 ' Plex can't take a track out of a file, so one it didn't burn in is read from the file
                 if (codec = "srt" or codec = "subrip") and chainLookupReturn(source, "SupportsTranscoding", true) <> false and not isPlexServer(m.top.serverUrl)
                     ' Left in the file, but the server can still pull the text out as its own file
@@ -1192,6 +1234,7 @@ function sortSubtitles(MediaStreams, source = invalid as dynamic, videoId = "" a
                 "IsEncoded": stream.DeliveryMethod = "Encode",
                 "IsHearingImpaired": hearingImpaired,
                 "IsEmbeddedNative": embeddedNative,
+                "NeedsReload": needsReload,
                 "Codec": codec,
                 "DeliveryMethod": stream.LookupCI("DeliveryMethod") ?? ""
             }

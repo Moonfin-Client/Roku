@@ -1,0 +1,197 @@
+import "pkg:/source/api/silo/SiloSession.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Offset paging over Silo's cursors. The app asks for a start index and a count; Silo pages by cursor
+' (the next page) and, where a list offers one, a window_cursor that can seek straight to an offset.
+' Pages are kept per query in this thread, so scrolling a grid walks forward without asking again.
+' A cursor is bound to the page size, so every request asks for the same limit. Ported from
+' Smart-TV's siloPager.js.
+namespace silo
+    const PAGE_SIZE = 100
+    const KEPT_PAGES = 6
+    const KEPT_QUERIES = 12
+
+    function PageOfJson(json as dynamic) as object
+        result = { items: [], nextCursor: "", windowCursor: "", hasMore: false, total: -1, totalExact: false }
+        if type(json) <> "roAssociativeArray" then return result
+        result.items = siloMap.Maps(json.items)
+        if type(json.page) = "roAssociativeArray"
+            if isValidAndNotEmpty(json.page.next_cursor) then result.nextCursor = json.page.next_cursor
+            result.hasMore = json.page.has_more = true
+        end if
+        if isValidAndNotEmpty(json.window_cursor) then result.windowCursor = json.window_cursor
+        if json.total <> invalid and not isString(json.total) then result.total = Int(json.total)
+        result.totalExact = json.total_exact = true
+        return result
+    end function
+
+    ' The query a page belongs to, without the paging itself
+    function PageSignature(path as string, params as object) as string
+        keys = []
+        for each key in params
+            if key <> "cursor" and key <> "seek" and key <> "limit" then keys.Push(key)
+        end for
+        keys.Sort()
+        parts = []
+        for each key in keys
+            parts.Push(key + "=" + FormatJson(params[key]))
+        end for
+        return path + "?" + parts.Join("&")
+    end function
+
+    ' Silo refuses a cursor that expired or no longer fits the query with a 400 or 422 naming the cursor
+    function IsInvalidCursor(result as object) as boolean
+        if result.status <> 400 and result.status <> 422 then return false
+        return isValid(result.problem) and Instr(1, LCase(result.problem.code), "cursor") > 0
+    end function
+
+    function NewPageState() as object
+        return { started: false, windowCursor: "", nextCursor: "", nextStart: 0, total: -1, totalExact: false, knownEnd: -1, pages: [] }
+    end function
+
+    sub AddPage(state as object, at as integer, page as object)
+        state.started = true
+        if page.windowCursor <> "" then state.windowCursor = page.windowCursor
+        if page.total >= 0
+            state.total = page.total
+            state.totalExact = page.totalExact
+            if page.totalExact then state.knownEnd = page.total
+        end if
+        stopAt = at + page.items.Count()
+        if not page.hasMore then state.knownEnd = stopAt
+        if stopAt >= state.nextStart or state.nextCursor = ""
+            state.nextCursor = ""
+            if page.hasMore then state.nextCursor = page.nextCursor
+            state.nextStart = stopAt
+        end if
+        kept = []
+        for each one in state.pages
+            if one.start <> at then kept.Push(one)
+        end for
+        kept.Push({ start: at, items: page.items })
+        while kept.Count() > silo.KEPT_PAGES
+            kept.Shift()
+        end while
+        state.pages = kept
+    end sub
+
+    function PageFetchedAt(state as object, position as integer) as boolean
+        for each one in state.pages
+            if one.start = position then return true
+        end for
+        return false
+    end function
+
+    function PageItemsAt(state as object, position as integer, count as integer) as object
+        for i = state.pages.Count() - 1 to 0 step -1
+            one = state.pages[i]
+            offset = position - one.start
+            if offset >= 0 and offset < one.items.Count()
+                out = []
+                last = offset + count - 1
+                if last > one.items.Count() - 1 then last = one.items.Count() - 1
+                for j = offset to last
+                    out.Push(one.items[j])
+                end for
+                return out
+            end if
+        end for
+        return []
+    end function
+
+    function PageTotalFor(state as object, seenEnd as integer) as integer
+        if state.total >= 0 and state.totalExact then return state.total
+        if state.knownEnd >= 0 then return state.knownEnd
+        if state.total >= 0
+            if state.total < seenEnd then return seenEnd + 1
+            return state.total
+        end if
+        if state.nextCursor <> "" then return seenEnd + 1
+        return seenEnd
+    end function
+
+    ' One page of path with params, from start, at most limit entries. Answers
+    ' { ok, status, items (raw Silo items), total }
+    function ReadPage(r as object, path as string, params as object, start as integer, limit as integer) as object
+        if start < 0 then start = 0
+        if limit <= 0 then limit = 50
+        silo.CatchUpCatalog()
+        signature = silo.ServerKey(r.server) + "|" + r.profileId + "|" + silo.PageSignature(path, params)
+        if type(m.siloPages) <> "roAssociativeArray" or m.siloPages.Count() > silo.KEPT_QUERIES then m.siloPages = {}
+        result = silo.WalkPages(r, path, params, signature, start, limit)
+        if not result.ok and silo.IsInvalidCursor(result.failure)
+            m.siloPages.Delete(signature)
+            result = silo.WalkPages(r, path, params, signature, start, limit)
+        end if
+        return result
+    end function
+
+    function FetchPage(r as object, path as string, params as object, cursor as string, seekTo as integer) as object
+        query = {}
+        query.Append(params)
+        query.limit = silo.PAGE_SIZE
+        if cursor <> "" then query.cursor = cursor
+        if seekTo >= 0 then query.seek = seekTo
+        answer = silo.Call(r.server, path, { account: r.account, profileId: r.profileId, query: silo.ArtworkWidths(query) })
+        return { ok: answer.ok, result: answer, page: silo.PageOfJson(answer.data) }
+    end function
+
+    function WalkPages(r as object, path as string, params as object, signature as string, start as integer, wanted as integer) as object
+        state = m.siloPages[signature]
+        if state = invalid
+            state = silo.NewPageState()
+            m.siloPages[signature] = state
+        end if
+        stopAt = start + wanted
+        items = []
+        position = start
+        guard = 0
+        while position < stopAt and guard < 50
+            guard++
+            if state.knownEnd >= 0 and position >= state.knownEnd then exit while
+            kept = silo.PageItemsAt(state, position, stopAt - position)
+            if kept.Count() > 0
+                items.Append(kept)
+                position += kept.Count()
+            else if position < state.nextStart and state.started and position > 0 and state.windowCursor = "" and not (state.nextCursor <> "" and state.nextStart < position)
+                ' Behind what's kept, with no way back: start the query over
+                state = silo.NewPageState()
+                m.siloPages[signature] = state
+            else
+                move = silo.NextPageStep(state, position, stopAt)
+                if move = invalid
+                    if state.knownEnd < 0 then state.knownEnd = position
+                    exit while
+                end if
+                fetched = silo.FetchPage(r, path, params, move.cursor, move.seekTo)
+                if not fetched.ok then return { ok: false, status: fetched.result.status, failure: fetched.result, items: [], total: 0 }
+                if move.walking and fetched.page.items.Count() = 0
+                    if state.knownEnd < 0 then state.knownEnd = move.at
+                    exit while
+                end if
+                silo.AddPage(state, move.at, fetched.page)
+                if silo.PageFetchedAt(state, position) and silo.PageItemsAt(state, position, 1).Count() = 0
+                    if state.knownEnd < 0 then state.knownEnd = position
+                    exit while
+                end if
+            end if
+        end while
+        return { ok: true, status: 200, failure: invalid, items: items, total: silo.PageTotalFor(state, start + items.Count()) }
+    end function
+
+    ' How to reach position: { at, cursor, seekTo, walking }, or invalid when the list ends before it
+    function NextPageStep(state as object, position as integer, stopAt as integer) as dynamic
+        if position = 0 or not state.started then return { at: 0, cursor: "", seekTo: -1, walking: false }
+        if state.nextStart = position and state.nextCursor <> "" and (stopAt - position <= silo.PAGE_SIZE or state.windowCursor = "")
+            return { at: position, cursor: state.nextCursor, seekTo: -1, walking: false }
+        end if
+        if state.windowCursor <> "" then return { at: position, cursor: state.windowCursor, seekTo: position, walking: false }
+        ' No window to seek with: walk forward a page at a time
+        if state.nextCursor <> "" and state.nextStart < position then return { at: state.nextStart, cursor: state.nextCursor, seekTo: -1, walking: true }
+        return invalid
+    end function
+
+    sub ForgetPages()
+        m.siloPages = {}
+    end sub
+end namespace

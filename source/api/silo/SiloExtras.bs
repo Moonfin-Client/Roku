@@ -1,0 +1,283 @@
+import "pkg:/source/api/silo/SiloCatalog.bs"
+import "pkg:/source/api/silo/SiloImages.bs"
+import "pkg:/source/api/silo/SiloMapper.bs"
+import "pkg:/source/utils/misc.bs"
+
+' What the player shows around a Silo title: skip markers and seek previews, in the shapes the app
+' reads from Jellyfin. Ported from Smart-TV's siloPlayerExtras.js.
+namespace silo
+    ' A file's markers (GET /markers/files/{id}, /markers/items/{id}) as Jellyfin MediaSegmentDtos in
+    ' start order. marker_segments lists every occurrence (a recap, an intro and a second intro after a
+    ' cold open), so it is used when Silo sends it; older answers carry one segment per kind. A segment
+    ' without an end runs to runTimeSeconds when known and is dropped otherwise. Credits are Outro
+    function MarkersToSegments(markers as dynamic, itemId as string, runTimeSeconds = 0 as dynamic) as object
+        types = { intro: "Intro", credits: "Outro", recap: "Recap", preview: "Preview" }
+        found = []
+        if type(markers) = "roAssociativeArray"
+            occurrences = siloMap.Maps(markers.marker_segments)
+            if occurrences.Count() > 0
+                for each one in occurrences
+                    if isString(one.kind) and siloMap.IsNumber(one.start_seconds) then found.Push({ kind: one.kind, start: one.start_seconds, stopAt: one.end_seconds })
+                end for
+            else
+                for each kind in ["intro", "credits", "recap", "preview"]
+                    segment = markers[kind]
+                    if type(segment) = "roAssociativeArray"
+                        start = segment.start_seconds ?? segment.start
+                        stopAt = segment.end_seconds ?? segment.end
+                        if siloMap.IsNumber(start) then found.Push({ kind: kind, start: start, stopAt: stopAt })
+                    end if
+                end for
+            end if
+        end if
+        seen = {}
+        entries = []
+        for each one in found
+            kind = types[LCase(one.kind.Trim())]
+            start = one.start
+            if start < 0 then start = 0
+            stopAt = one.stopAt
+            if not siloMap.IsNumber(stopAt) and siloMap.IsNumber(runTimeSeconds) and runTimeSeconds > 0 then stopAt = runTimeSeconds
+            if kind <> invalid and siloMap.IsNumber(stopAt) and stopAt > start
+                startTicks = siloMap.TicksOf(start)
+                endTicks = siloMap.TicksOf(stopAt)
+                key = kind + "|" + startTicks.ToStr() + "|" + endTicks.ToStr()
+                if not seen.DoesExist(key)
+                    seen[key] = true
+                    entries.Push({ sortkey: start, kind: kind, startTicks: startTicks, endTicks: endTicks })
+                end if
+            end if
+        end for
+        entries.SortBy("sortkey")
+        perType = {}
+        segments = []
+        for each entry in entries
+            count = perType[entry.kind] ?? -1
+            count++
+            perType[entry.kind] = count
+            ' Unique per occurrence: the player tells segments apart by id
+            segments.Push({ Id: "silo-" + LCase(entry.kind) + "-" + itemId + "-" + count.ToStr(), ItemId: itemId, Type: entry.kind, StartTicks: entry.startTicks, EndTicks: entry.endTicks })
+        end for
+        return segments
+    end function
+
+    ' Silo's markers of the file that plays, or of the title's first file before one plays
+    function MediaSegments(r as object, itemId as string) as object
+        owner = siloMap.ItemIdOfSource(itemId)
+        if owner <> "" then itemId = owner
+        playing = silo.LiveSessionOf(itemId)
+        answer = invalid
+        runTime = 0
+        if playing <> invalid
+            fileId = siloMap.IdOf(playing.plan.effective_media_file_id)
+            if type(playing.source) = "roAssociativeArray" and playing.source.RunTimeTicks <> invalid then runTime = playing.source.RunTimeTicks / 10000000#
+            if fileId <> "" then answer = silo.ApiGet(r, "/api/v2/markers/files/" + fileId.EncodeUriComponent())
+        end if
+        if answer = invalid then answer = silo.ApiGet(r, "/api/v2/markers/items/" + itemId.EncodeUriComponent())
+        items = []
+        if answer.ok then items = silo.MarkersToSegments(answer.data, itemId, runTime)
+        return { Items: items, TotalRecordCount: items.Count(), StartIndex: 0 }
+    end function
+
+    ' One file's seek previews (GET /watch/{id}/trickplay) as Jellyfin's Trickplay entry for the file:
+    ' { <width>: { Width, Height, TileWidth, TileHeight, ThumbnailCount, Interval } }. Silo lays
+    ' thumbnails out on its sheets the way Jellyfin does, so the tile arithmetic is the same; the
+    ' sheets' signed addresses ride along as SiloSheets, by sheet index. Invalid without a size, an
+    ' interval or sheets
+    function TrickplayToManifest(trickplay as dynamic, server as string) as dynamic
+        if type(trickplay) <> "roAssociativeArray" then return invalid
+        width = trickplay.thumbnail_width
+        height = trickplay.thumbnail_height
+        columns = trickplay.tile_columns
+        rows = trickplay.tile_rows
+        interval = trickplay.interval_ms
+        for each value in [width, height, columns, rows, interval]
+            if not siloMap.IsNumber(value) or value <= 0 then return invalid
+        end for
+        sheets = siloMap.Maps(trickplay.sheets)
+        if sheets.Count() = 0 then return invalid
+        urls = []
+        position = 0
+        for each sheet in sheets
+            url = silo.ResolveUrl(server, siloMap.TextOf(sheet.url))
+            if url <> ""
+                index = position
+                if siloMap.IsNumber(sheet.index) and sheet.index >= 0 then index = Int(sheet.index)
+                while urls.Count() <= index
+                    urls.Push("")
+                end while
+                urls[index] = url
+            end if
+            position++
+        end for
+        count = trickplay.thumbnail_count
+        if not siloMap.IsNumber(count) or count <= 0 then count = sheets.Count() * columns * rows
+        entry = { Width: Int(width), Height: Int(height), TileWidth: Int(columns), TileHeight: Int(rows), ThumbnailCount: Int(count), Interval: Int(interval), SiloSheets: urls }
+        manifest = {}
+        manifest[Int(width).ToStr()] = entry
+        return manifest
+    end function
+
+    ' A title's theme songs (its detail's themes: owner_id, items of id, title, container,
+    ' duration_seconds) as Jellyfin's audio items
+    function ThemeSongsOf(detail as dynamic, itemId as string) as object
+        songs = []
+        if type(detail) <> "roAssociativeArray" or type(detail.themes) <> "roAssociativeArray" then return songs
+        themes = detail.themes
+        owner = siloMap.TextOf(themes.owner_id)
+        if owner = "" then owner = itemId
+        for each song in siloMap.Maps(themes.items)
+            id = siloMap.IdOf(song.id)
+            if id <> ""
+                name = siloMap.TextOf(song.title)
+                if name = "" then name = "Theme"
+                item = { Id: id, Name: name, Type: "Audio", MediaType: "Audio", ParentId: owner, SiloThemeOwnerId: owner }
+                if siloMap.TextOf(song.container) <> "" then item["Container"] = song.container
+                if siloMap.IsNumber(song.duration_seconds) and song.duration_seconds > 0 then item["RunTimeTicks"] = siloMap.TicksOf(song.duration_seconds)
+                songs.Push(item)
+            end if
+        end for
+        return songs
+    end function
+
+    ' A Roku Audio node's streamformat for a theme grant's media type. A converted theme is AAC in MP4
+    function ThemeStreamFormat(contentType as dynamic, delivery as dynamic) as string
+        if siloMap.TextOf(delivery) = "converted" then return "mp4"
+        kind = LCase(siloMap.TextOf(contentType).Split(";")[0].Trim())
+        if kind = "audio/mpeg" or kind = "audio/mp3" then return "mp3"
+        if kind = "audio/mp4" or kind = "audio/m4a" or kind = "audio/x-m4a" then return "mp4"
+        if kind = "audio/aac" or kind = "audio/aacp" then return "es.aac-adts"
+        if kind = "audio/flac" or kind = "audio/x-flac" then return "flac"
+        return ""
+    end function
+
+    ' The title's theme songs when Silo serves them, the first with the address it plays from: a
+    ' short-lived grant, asked for now since the song plays as soon as the list arrives. Silo
+    ' converts a theme the Roku can't play to AAC in MP4
+    function ThemeSongs(r as object, itemId as string) as object
+        owner = siloMap.ItemIdOfSource(itemId)
+        if owner <> "" then itemId = owner
+        caps = silo.ApiGet(r, "/api/v2/catalog/themes/capabilities")
+        if not caps.ok or type(caps.data) <> "roAssociativeArray" or caps.data.state <> "available" or caps.data.allowed = false then return silo.Empty()
+        songs = silo.ThemeSongsOf(silo.DetailJson(r, itemId), itemId)
+        if songs.Count() > 0
+            first = songs[0]
+            formats = [{ container: "mp3", audio_codec: "mp3" }, { container: "mp4", audio_codec: "aac" }, { container: "m4a", audio_codec: "aac" }, { container: "aac", audio_codec: "aac" }, { container: "flac", audio_codec: "flac" }]
+            grant = silo.Call(r.server, "/api/v2/catalog/items/" + first.SiloThemeOwnerId.EncodeUriComponent() + "/themes/" + first.Id.EncodeUriComponent() + "/playback", { method: "POST", account: r.account, profileId: r.profileId, body: { accepted_formats: formats } })
+            if grant.ok and type(grant.data) = "roAssociativeArray" and siloMap.TextOf(grant.data.url) <> ""
+                first["SiloStreamUrl"] = silo.ResolveUrl(r.server, grant.data.url)
+                first["SiloStreamFormat"] = silo.ThemeStreamFormat(grant.data.content_type, grant.data.delivery)
+            end if
+        end if
+        return { Items: songs, TotalRecordCount: songs.Count(), StartIndex: 0 }
+    end function
+
+    ' Silo's subtitle search results (POST /subtitles/search) for file fileId as Jellyfin's
+    ' RemoteSubtitleInfo. The app hands a download back only the result's id, and Silo wants the
+    ' whole result, so the id carries it (its JSON in hex). Ported from Smart-TV's
+    ' siloRemoteSubtitles.js
+    function SubtitleResults(answer as dynamic, fileId as string) as object
+        out = []
+        if type(answer) <> "roAssociativeArray" then return out
+        for each result in siloMap.Maps(answer.results)
+            if isString(result.id)
+                kept = { media_file_id: fileId, subtitle_id: result.id, hearing_impaired: result.hearing_impaired = true }
+                for each key in ["provider", "language", "release_name", "score"]
+                    if result[key] <> invalid then kept[key] = result[key]
+                end for
+                info = { Id: silo.HexOf(FormatJson(kept)), HearingImpaired: result.hearing_impaired = true }
+                if result.release_name <> invalid then info["Name"] = result.release_name
+                if result.provider <> invalid then info["ProviderName"] = result.provider
+                if result.format <> invalid then info["Format"] = result.format
+                if result.language <> invalid then info["Language"] = result.language
+                if result.downloads <> invalid then info["DownloadCount"] = result.downloads
+                out.Push(info)
+            end if
+        end for
+        return out
+    end function
+
+    ' Text as six hex digits per character, which any path carries
+    function HexOf(text as string) as string
+        digits = "0123456789abcdef"
+        out = ""
+        for i = 0 to text.Len() - 1
+            code = Asc(text.Mid(i, 1))
+            for each place in [1048576, 65536, 4096, 256, 16, 1]
+                out = out + digits.Mid((code \ place) mod 16, 1)
+            end for
+        end for
+        return out
+    end function
+
+    ' The text HexOf made, or "" for anything else
+    function TextOfHex(hex as string) as string
+        digits = "0123456789abcdef"
+        if hex.Len() mod 6 <> 0 then return ""
+        out = ""
+        for i = 0 to hex.Len() - 1 step 6
+            code = 0
+            for j = 0 to 5
+                digit = Instr(1, digits, LCase(hex.Mid(i + j, 1))) - 1
+                if digit < 0 then return ""
+                code = code * 16 + digit
+            end for
+            out = out + Chr(code)
+        end for
+        return out
+    end function
+
+    ' The search result a subtitle id carries, or invalid for an id that isn't one of these
+    function SubtitleResultOf(id as string) as dynamic
+        text = silo.TextOfHex(id)
+        if text.Left(1) <> "{" then return invalid
+        result = ParseJson(text)
+        if type(result) <> "roAssociativeArray" or not isString(result.subtitle_id) then return invalid
+        return result
+    end function
+
+    ' The file subtitles are found for: the one playing for the title, else its default
+    function SubtitleFileOf(r as object, itemId as string) as string
+        owner = siloMap.ItemIdOfSource(itemId)
+        if owner = "" then owner = itemId
+        playing = silo.LiveSessionOf(owner)
+        if playing <> invalid
+            fileId = siloMap.IdOf(playing.plan.effective_media_file_id)
+            if fileId <> "" then return fileId
+        end if
+        return silo.PlaybackFileOf(r, itemId, "").fileId
+    end function
+
+    ' Subtitles the server's providers find for the title's file in one language. With no provider
+    ' set up Silo finds nothing
+    function SearchSubtitles(r as object, itemId as string, language as string) as object
+        fileId = silo.SubtitleFileOf(r, itemId)
+        if fileId = "" then return silo.StatusOnly(404)
+        answer = silo.Call(r.server, "/api/v2/subtitles/search", { method: "POST", account: r.account, profileId: r.profileId, body: { media_file_id: fileId, languages: [siloMap.TwoLetterLanguage(language)] } })
+        if not answer.ok then return silo.StatusOnly(answer.status)
+        return silo.Ok(silo.SubtitleResults(answer.data, fileId))
+    end function
+
+    ' Saves a found subtitle to the file on the server, which then lists it among the title's
+    ' subtitles. Silo marks this not retryable, so it is sent once
+    function DownloadSubtitle(r as object, subtitleId as string) as object
+        result = silo.SubtitleResultOf(subtitleId)
+        if result = invalid then return silo.StatusOnly(400)
+        answer = silo.Call(r.server, "/api/v2/subtitles/download", { method: "POST", account: r.account, profileId: r.profileId, body: result })
+        if answer.ok then silo.ForgetCatalog()
+        return silo.StatusOnly(answer.status)
+    end function
+
+    ' The item's Trickplay, for the first file it has, as Jellyfin's item field: by file, then width
+    sub AddTrickplay(r as object, item as object)
+        if type(item.MediaSources) <> "roArray" or item.MediaSources.Count() = 0 then return
+        sourceId = item.MediaSources[0].Id
+        answer = silo.ApiGet(r, "/api/v2/watch/" + item.Id.EncodeUriComponent() + "/trickplay", { file_id: item.MediaSources[0].SiloFileId })
+        if not answer.ok then return
+        manifest = silo.TrickplayToManifest(answer.data, r.server)
+        if manifest = invalid then return
+        trickplay = {}
+        trickplay[sourceId] = manifest
+        item["Trickplay"] = trickplay
+    end sub
+end namespace

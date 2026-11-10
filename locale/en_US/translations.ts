@@ -4538,9 +4538,9 @@
         <translation>Server Address</translation>
     </message>
     <message>
-        <source>Jellyfin or Emby on your network or online</source>
+        <source>Jellyfin, Emby or Silo on your network or online</source>
         <extracomment>Line under the Server Address choice on the Add Server dialog</extracomment>
-        <translation>Jellyfin or Emby on your network or online</translation>
+        <translation>Jellyfin, Emby or Silo on your network or online</translation>
     </message>
     <message>
         <source>Emby Connect</source>
@@ -4591,6 +4591,11 @@
         <source>Emby</source>
         <extracomment>Chip naming the kind of server Add Server found</extracomment>
         <translation>Emby</translation>
+    </message>
+    <message>
+        <source>Silo</source>
+        <extracomment>Chip naming the kind of server Add Server found</extracomment>
+        <translation>Silo</translation>
     </message>
     <message>
         <source>Version {0}</source>
@@ -4664,8 +4669,28 @@
     </message>
     <message>
         <source>Active</source>
-        <extracomment>Badge under the account in use on the user switcher, drawn in capitals</extracomment>
+        <extracomment>Line under the account in use on the user switcher</extracomment>
         <translation>Active</translation>
+    </message>
+    <message>
+        <source>Signed in as {0} on {1}</source>
+        <extracomment>Top of the user switcher, naming the account in use ({0}) and its server ({1})</extracomment>
+        <translation>Signed in as {0} on {1}</translation>
+    </message>
+    <message>
+        <source>Signed in on this device</source>
+        <extracomment>Line under an account on Who&apos;s watching when the Roku already holds its sign in</extracomment>
+        <translation>Signed in on this device</translation>
+    </message>
+    <message>
+        <source>Password required</source>
+        <extracomment>Line under an account on Who&apos;s watching that needs a password to sign in</extracomment>
+        <translation>Password required</translation>
+    </message>
+    <message>
+        <source>PIN required</source>
+        <extracomment>Line under a Plex Home member on Who&apos;s watching who signs in with a PIN</extracomment>
+        <translation>PIN required</translation>
     </message>
     <message>
         <source>PIN synced</source>
@@ -9043,9 +9068,9 @@
         <translation>Waiting for you to approve the code...</translation>
     </message>
     <message>
-        <source>Works with Jellyfin and Emby. A Plex address opens the Plex sign-in.</source>
+        <source>Works with Jellyfin, Emby and Silo. A Plex address opens the Plex sign-in.</source>
         <extracomment>Hint under the address field in the Add Server dialog</extracomment>
-        <translation>Works with Jellyfin and Emby. A Plex address opens the Plex sign-in.</translation>
+        <translation>Works with Jellyfin, Emby and Silo. A Plex address opens the Plex sign-in.</translation>
     </message>
     <message>
         <source>Live preview</source>
@@ -10346,6 +10371,56 @@
         <source>A net under the scrubber that saves one miss.</source>
         <extracomment>After Hours - What Buffer does, on its game's How to play card. Keep under about 60 characters, it shows in a small column</extracomment>
         <translation>A net under the scrubber that saves one miss.</translation>
+    </message>
+    <message>
+        <source>Episode Director</source>
+        <extracomment>Crew member credited as an episode director</extracomment>
+        <translation>Episode Director</translation>
+    </message>
+    <message>
+        <source>{0} (Episode Director)</source>
+        <extracomment>Episode director with specific title or role</extracomment>
+        <translation>{0} (Episode Director)</translation>
+    </message>
+    <message>
+        <source>Episode Writer</source>
+        <extracomment>Crew member credited as an episode writer</extracomment>
+        <translation>Episode Writer</translation>
+    </message>
+    <message>
+        <source>{0} (Episode Writer)</source>
+        <extracomment>Episode writer with specific title or role</extracomment>
+        <translation>{0} (Episode Writer)</translation>
+    </message>
+    <message>
+        <source>Guest Star</source>
+        <extracomment>Actor credited as a guest star</extracomment>
+        <translation>Guest Star</translation>
+    </message>
+    <message>
+        <source>{0} (Guest Star)</source>
+        <extracomment>Actor character role with guest star tag</extracomment>
+        <translation>{0} (Guest Star)</translation>
+    </message>
+    <message>
+        <source>EPISODE DIRECTOR</source>
+        <extracomment>Heading for single episode director on Classic details screen</extracomment>
+        <translation>EPISODE DIRECTOR</translation>
+    </message>
+    <message>
+        <source>EPISODE DIRECTORS</source>
+        <extracomment>Heading for multiple episode directors on Classic details screen</extracomment>
+        <translation>EPISODE DIRECTORS</translation>
+    </message>
+    <message>
+        <source>EPISODE WRITER</source>
+        <extracomment>Heading for single episode writer on Classic details screen</extracomment>
+        <translation>EPISODE WRITER</translation>
+    </message>
+    <message>
+        <source>EPISODE WRITERS</source>
+        <extracomment>Heading for multiple episode writers on Classic details screen</extracomment>
+        <translation>EPISODE WRITERS</translation>
     </message>
     <message>
         <source>In sync</source>

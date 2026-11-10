@@ -69,8 +69,10 @@ function LoginFlow()
         numSavedUsers = savedUsers.count()
         ' How many accounts Who's watching listed, which Back from sign in returns to
         shownUsers = 0
+        ' Silo ended the login (the password changed): its sign in opens straight away
+        signInAgain = TakeSiloSignInAgain()
 
-        if numPubUsers > 0 or numSavedUsers > 0
+        if signInAgain = "" and (numPubUsers > 0 or numSavedUsers > 0)
             publicUsersNodes = []
             publicUserIds = []
             ' load public users
@@ -80,6 +82,7 @@ function LoginFlow()
                     user.isPublic = true
                     user.id = item.Id
                     user.name = item.Name
+                    user.hasPassword = item.HasPassword = true
                     if isValid(item.PrimaryImageTag)
                         user.ImageURL = UserImageURL(user.id, { "tag": item.PrimaryImageTag })
                     end if
@@ -102,6 +105,7 @@ function LoginFlow()
                             end if
 
                             user.ImageURL = UserImageURL(user.id)
+                            user.needsPin = silo.ProfileNeedsPin(user.id)
 
                             publicUsersNodes.push(user)
                         end if
@@ -139,6 +143,10 @@ function LoginFlow()
                 end for
                 ' try to login with token from registry
                 myToken = get_user_setting("token")
+                if myToken <> invalid and not siloPinCleared(m.global.session.user.id)
+                    stopLoadingSpinner()
+                    goto user_select
+                end if
                 if myToken <> invalid
                     ' check if token is valid
                     session.user.Update("authToken", myToken)
@@ -160,7 +168,7 @@ function LoginFlow()
                 end if
             end if
         else
-            userSelected = ""
+            userSelected = signInAgain
         end if
 
         stopLoadingSpinner()
@@ -175,11 +183,21 @@ function LoginFlow()
                 goto start_login
             end if
         end if
+        ' A Silo household with several profiles picks who's watching first, as Silo's own apps do
+        if passwordEntry = "true" and siloHouseholdToPick()
+            unset_setting("active_user")
+            session.user.Logout()
+            goto user_select
+        end if
     else
         session.user.Update("id", activeUser)
 
         myUsername = get_user_setting("username")
         myAuthToken = get_user_setting("token")
+        if isValid(myAuthToken) and isValid(myUsername) and not siloPinCleared(activeUser)
+            unset_setting("active_user")
+            goto start_login
+        end if
         if isValid(myAuthToken) and isValid(myUsername)
             session.user.Update("authToken", myAuthToken)
             session.user.Update("name", myUsername)
@@ -216,8 +234,9 @@ function LoginFlow()
 end function
 
 sub ServerVersionCheck(systemVersion as string)
-    ' Emby and Plex versions are independent of Jellyfin's minimum supported version.
-    if isEmbyServer() or isPlexServer() then return
+    ' Emby, Plex and Silo versions are independent of Jellyfin's minimum supported version. Silo's
+    ' API major is checked when the server is found.
+    if isEmbyServer() or isPlexServer() or isSiloServer() then return
     meetsRequirements = serverVersionMeetsMinimumRequirements(systemVersion, minimumServerVersion)
     if not meetsRequirements
         m.scene.isLoading = false
@@ -375,6 +394,7 @@ function CreateServerGroup() as string
                 foundName = result.name
                 serverType = "jellyfin"
                 if isEmbyServer() then serverType = "emby"
+                if isSiloServer() then serverType = "silo"
                 screen.foundServer = { name: result.name, serverType: serverType, version: m.global.session.server.version ?? "", url: m.global.session.server.url }
             else
                 screen.visible = false
@@ -439,7 +459,7 @@ function CreateUserSelectGroup(users = [])
     port = CreateObject("roMessagePort")
 
     group.itemContent = users
-    group.findNode("userRow").observeField("userSelected", port)
+    group.observeField("userSelected", port)
     group.observeField("changeServer", port)
 
     group.observeField("addUserSelected", port)
@@ -480,6 +500,8 @@ function CreateSigninGroup(user = "")
     group.observeField("quickConnectAuthenticated", port)
     group.observeField("submitSelected", port)
     group.observeField("backPressed", port)
+    ' The account a Silo login waiting on a new password belongs to
+    pendingUser = ""
 
     while true
         msg = wait(0, port)
@@ -489,12 +511,24 @@ function CreateSigninGroup(user = "")
         else if isNodeEvent(msg, "backPressed")
             group.unobserveField("backPressed")
             group.backPressed = false
+            ' A Silo login waiting on a new password is let go
+            silo.CancelPasswordChange()
             return "backPressed"
         else if isNodeEvent(msg, "submitSelected")
             startLoadingSpinner()
             username = group.username
             password = group.password
-            activeUser = get_token(username, password)
+            ' A Silo sign-in that stopped on a temporary password takes the new one here, for the
+            ' account it stopped on. Another username lets that login go and signs in afresh
+            if silo.PasswordChangeWaiting() and username <> pendingUser
+                silo.CancelPasswordChange()
+                group.newPassword = false
+            end if
+            if silo.PasswordChangeWaiting()
+                activeUser = siloChangePassword(password)
+            else
+                activeUser = get_token(username, password)
+            end if
             if isValid(activeUser)
                 if should_save_credentials()
                     session.user.Login(activeUser, true)
@@ -508,7 +542,11 @@ function CreateSigninGroup(user = "")
             end if
             stopLoadingSpinner()
             group.alert = m.loginError
+            group.newPassword = silo.PasswordChangeWaiting()
+            if group.newPassword then pendingUser = username
         else if isNodeEvent(msg, "quickConnectAuthenticated") and msg.getData() = true
+            ' Signed in another way, so a login waiting on a new password is let go
+            silo.CancelPasswordChange()
             signInPin.NoteProvedSignIn(m.global.session.server.url, m.global.session.user.id)
             return "true"
         end if
@@ -546,6 +584,49 @@ function ShowBlockedTitle() as object
     group = CreateObject("roSGNode", "BlockedTitle")
     m.global.sceneManager.callFunc("pushScene", group)
     return group
+end function
+
+' A PIN-locked Silo profile is unlocked with its PIN before it's used, checked by Silo. False when
+' Back left
+function siloPinCleared(userId as string) as boolean
+    if not silo.ProfileNeedsPin(userId) then return true
+    stopLoadingSpinner()
+    group = CreateObject("roSGNode", "PinGate")
+    group.siloProfileName = registry_read("username", userId) ?? tr("Enter PIN")
+    group.rememberPin = silo.RemembersPin(userId)
+    m.global.sceneManager.callFunc("pushScene", group)
+    port = CreateObject("roMessagePort")
+    group.observeField("submitted", port)
+    group.observeField("cancelled", port)
+    cleared = false
+    while true
+        msg = wait(0, port)
+        if type(msg) = "roSGScreenEvent" and msg.isScreenClosed()
+            exit while
+        else if isNodeEvent(msg, "cancelled")
+            exit while
+        else if isNodeEvent(msg, "submitted")
+            group.verifying = true
+            problem = silo.VerifyProfilePin(userId, msg.getData())
+            group.verifying = false
+            if problem = ""
+                ' Only the right PIN confirms the choice
+                silo.SetRememberPin(userId, group.rememberPin)
+                cleared = true
+                exit while
+            end if
+            group.errorText = problem
+        end if
+    end while
+    ' Switching user clears every screen first, so the gate can be the only one, and popping the
+    ' last screen closes the app
+    if m.global.sceneManager.callFunc("getSceneCount") > 1
+        m.global.sceneManager.callFunc("popScene")
+    else
+        m.global.sceneManager.callFunc("clearScenes")
+    end if
+    startLoadingSpinner()
+    return cleared
 end function
 
 ' Holds the app shut after signing in until the right PIN is in. Each sign in and switch of account
@@ -861,21 +942,28 @@ function hasSeasonEpisodeToResume(seriesID as string, seasonID as string) as boo
 
     if hasResummableEpisode(seasonID) then return true
 
-    ' Fallback to episode query because some API paths don't return season-level unplayed state reliably.
+    ' Resume plays the episode in progress or else the first unwatched one, so it's only offered once
+    ' the season is started and not finished. The episodes route has no played filter, so the
+    ' episodes are checked here
     data = api.shows.GetEpisodes(seriesID, {
         seasonId: seasonID,
         userid: m.global.session.user.id,
-        SortBy: "SortName",
-        SortOrder: "Ascending",
-        Filters: "IsUnplayed",
-        limit: 1,
         EnableTotalRecordCount: false,
         isMissing: false
     })
+    if not isValid(data) or not isValidAndNotEmpty(data.Items) then return false
 
-    if isValid(data) and isValidAndNotEmpty(data.Items) then return true
-
-    return false
+    anyPlayed = false
+    anyUnplayed = false
+    for each episode in data.Items
+        if chainLookupReturn(episode, "UserData.PlaybackPositionTicks", 0) > 0 then return true
+        if chainLookupReturn(episode, "UserData.Played", false)
+            anyPlayed = true
+        else
+            anyUnplayed = true
+        end if
+    end for
+    return anyPlayed and anyUnplayed
 end function
 
 function hasNextUpEpisode(parentID as string) as boolean
@@ -890,7 +978,8 @@ function hasNextUpEpisode(parentID as string) as boolean
         ImageTypeLimit: 1,
         UserId: m.global.session.user.id,
         enableResumable: true,
-        DisableFirstEpisode: false,
+        ' A series nobody has started would otherwise answer its first episode, which is Play, not Resume
+        DisableFirstEpisode: true,
         limit: 1,
         EnableTotalRecordCount: false
     })
