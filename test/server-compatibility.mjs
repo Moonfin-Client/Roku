@@ -103,8 +103,8 @@ const selections = {
     'source/utils/musicCategories.bs': null,
     'source/utils/moonbaseInstall.bs': null,
     'source/utils/watchPartyModel.bs': null,
-    'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'optionRange', 'optionsFit'],
-    'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt', 'subtitleBottom', 'seekBarY', 'timeRowShows'],
+    'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'optionRange', 'optionsFit', 'playerMoment'],
+    'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt', 'subtitleBottom', 'seekBarY', 'timeRowShows', 'promptAt', 'scrubPauses'],
     'components/settings/settingsEditors.bs': ['editorArrangement'],
     'components/settings/settings.bs': ['settingPath'],
     'components/details/stage/StageChipRow.bs': ['columnShares'],
@@ -757,6 +757,15 @@ const previewTable = settingsScreen.match(/function previewSceneTable\(\)[^]*?en
 const subtitleLooks = [...(await readFile('settings/settings.json', 'utf8')).matchAll(/"settingName": "(playback\.subs\.(?:custom|style\.\w+))"/g)].map(match => match[1]);
 assert.ok(subtitleLooks.length >= 22, 'The subtitle style settings are found');
 for (const key of subtitleLooks) assert.ok(previewTable.includes(`"${key}": "player"`), `${key} shows on the Player preview`);
+// The skip button and the end of episode settings show on the Player preview, which pins its prompts
+// where the player does
+for (const key of ['playback.mediasegments.intro', 'playback.mediasegments.outro', 'playback.mediasegments.countdown', 'playback.nextupbehavior', 'playback.nextuptimeout', 'playback.showNextAirDate', 'playback.replaceskipoutrowithnextup', 'playback.trickplay.pauseWhileScrubbing']) {
+    assert.ok(previewTable.includes(`"${key}": "player"`), `${key} shows on the Player preview`);
+}
+const playerPreviewSource = await readFile('components/settings/SettingsPlayerPreview.bs', 'utf8');
+for (const name of ['OVERLAY_EDGE', 'OVERLAY_BOTTOM', 'SKIP_PROMPT_TOP']) {
+    assert.equal(playerPreviewSource.match(new RegExp(`^const ${name} = (\\d+)`, 'm'))[1], playerView.match(new RegExp(`^const ${name} = (\\d+)`, 'm'))[1], `The preview's ${name} is the player's`);
+}
 const styleRows = settingsScreen.match(/Left\(item\.settingName \?\? "", (\d+)\) = "(playback\.subs\.style\.)"/);
 assert.equal(Number(styleRows[1]), styleRows[2].length, 'The style rows are matched on their whole prefix');
 const episodeOverlay = await readFile('components/video/EpisodeBrowserOverlay.bs', 'utf8');
