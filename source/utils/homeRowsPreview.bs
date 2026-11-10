@@ -1,0 +1,303 @@
+import "pkg:/source/utils/homeCards.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Home's own rows as the settings preview draws them, made from what Home loaded before Settings
+' opened over it. Home keeps those rows until Settings closes, so the order, the switches and the
+' Continue Watching merge the settings give now are put on them here, and the cards are laid out
+' the way HomeRows sizes them and HomeItem fills them.
+namespace homeRowsPreview
+
+    ' HomeRows' title band and the room it keeps under the cards, in Classic, in Modern and in a
+    ' Modern row of widening cards, which grows for ratings
+    const TITLE_BAND = 56
+    const CLASSIC_ROOM = 118
+    const MODERN_ROOM = 123
+    const MODERN_INFO_ROOM = 292
+    const MODERN_RATINGS_ROOM = 14
+
+    ' Home's gap between cards, and the width its rows run to before the safe zone cuts them
+    const CARD_GAP = 20
+    const ROW_AREA = 1703
+
+    ' The cards read from each of Home's rows, more than the widest row of the smallest cards shows
+    const MAX_CARDS = 16
+
+    ' Home's rows in the order shownIds gives, without the ones it leaves out. A row whose id isn't
+    ' shown was switched off after Home loaded it. Watch Parties leads while it's there, and rows
+    ' that share a place, like each library's Recently Added, keep Home's order.
+    function Arrange(rows as object, shownIds as object, mergeCw as boolean, titles as object) as object
+        places = {}
+        for i = 0 to shownIds.Count() - 1
+            places[shownIds[i]] = i
+        end for
+        places["watch_parties"] = -1
+        ' The merged row takes Continue Watching's place, or Next Up's while that one is off
+        mergedPlace = places["resume"]
+        if not isValid(mergedPlace) then mergedPlace = places["nextup"]
+
+        placed = []
+        for each row in homeRowsPreview.Merged(rows, mergeCw, titles)
+            place = places[row.id]
+            if row.id = "resume" and row.title = titles.merged then place = mergedPlace
+            if isValid(place) then placed.push({ place: place, row: row })
+        end for
+
+        for i = 1 to placed.Count() - 1
+            held = placed[i]
+            j = i - 1
+            while j >= 0
+                if placed[j].place <= held.place then exit while
+                placed[j + 1] = placed[j]
+                j--
+            end while
+            placed[j + 1] = held
+        end for
+
+        arranged = []
+        for each entry in placed
+            arranged.push(entry.row)
+        end for
+        return arranged
+    end function
+
+    ' With the merge on, Continue Watching and Next Up become the one row Home builds, Continue
+    ' Watching's titles first and nothing twice. With it off, a merged row goes back to the two,
+    ' the titles with progress in Continue Watching and the rest in Next Up.
+    function Merged(rows as object, mergeCw as boolean, titles as object) as object
+        resumeAt = -1
+        nextUpAt = -1
+        for i = 0 to rows.Count() - 1
+            if rows[i].id = "resume" and resumeAt < 0 then resumeAt = i
+            if rows[i].id = "nextup" and nextUpAt < 0 then nextUpAt = i
+        end for
+        isMerged = false
+        if resumeAt >= 0 then isMerged = rows[resumeAt].title = titles.merged
+
+        out = []
+        if mergeCw and not isMerged and (resumeAt >= 0 or nextUpAt >= 0)
+            items = []
+            seen = {}
+            for each at in [resumeAt, nextUpAt]
+                if at >= 0
+                    for each item in rows[at].items
+                        if not seen.DoesExist(item.id)
+                            seen[item.id] = true
+                            items.push(item)
+                        end if
+                    end for
+                end if
+            end for
+            first = resumeAt
+            if first < 0 then first = nextUpAt
+            for i = 0 to rows.Count() - 1
+                if i = first
+                    out.push({ id: "resume", title: titles.merged, items: items })
+                else if i <> resumeAt and i <> nextUpAt
+                    out.push(rows[i])
+                end if
+            end for
+            return out
+        end if
+
+        if mergeCw or not isMerged then return rows
+
+        resume = []
+        nextUp = []
+        for each item in rows[resumeAt].items
+            if item.percent > 0
+                resume.push(item)
+            else
+                nextUp.push(item)
+            end if
+        end for
+        for i = 0 to rows.Count() - 1
+            if i = resumeAt
+                if resume.Count() > 0 then out.push({ id: "resume", title: titles.resume, items: resume })
+                if nextUp.Count() > 0 then out.push({ id: "nextup", title: titles.nextUp, items: nextUp })
+            else
+                out.push(rows[i])
+            end if
+        end for
+        return out
+    end function
+
+    ' The Genres row in [sortBy]. Home loads every genre into it, so its cards are the ones either
+    ' sort shows, by name or shuffled.
+    function WithGenresSort(rows as object, sortBy as string) as object
+        out = []
+        for each row in rows
+            if row.id = "genres"
+                items = []
+                items.Append(row.items)
+                if sortBy = "random"
+                    for i = items.Count() - 1 to 1 step -1
+                        j = Rnd(i + 1) - 1
+                        held = items[i]
+                        items[i] = items[j]
+                        items[j] = held
+                    end for
+                else
+                    items.SortBy("name", "i")
+                end if
+                row = { id: row.id, title: row.title, items: items }
+            end if
+            out.push(row)
+        end for
+        return out
+    end function
+
+    ' The row the preview brings into focus: the first that shows what the setting changes, or the
+    ' first row for a setting every row shows
+    function FocusIndex(rows as object, focusKey as string) as integer
+        for i = 0 to rows.Count() - 1
+            if homeRowsPreview.Shows(rows[i], focusKey) then return i
+        end for
+        return 0
+    end function
+
+    function Shows(row as object, focusKey as string) as boolean
+        key = LCase(focusKey)
+        rowId = LCase(row.id)
+        prefix = LCase(settingsSync.ROW_IMAGE_TYPE_KEY)
+        if Left(key, Len(prefix)) = prefix then return rowId = Mid(key, Len(prefix) + 1)
+        if key = "ui.home.mergecontinuewatchingnextup" then return rowId = "resume" or rowId = "nextup"
+        if key = "ui.home.mergerecentrowsbytype" then return rowId = "latestmedia"
+        ' A sort reaches the list's own row and the rows picked from that list
+        lists = { "ui.home.genresrowsortby": "genres", "ui.home.collectionsrowsortby": "collections", "ui.home.rewatchsortby": "rewatch" }
+        list = lists[key]
+        if isValid(list) then return rowId = list or Left(rowId, Len(list) + 15) = "plugindynamic:" + list + ":"
+
+        for each item in row.items
+            if homeRowsPreview.ItemShows(item, key) then return true
+        end for
+        return false
+    end function
+
+    function ItemShows(item as object, key as string) as boolean
+        if key = "ui.watchedindicator" then return item.played or item.unplayed > 0
+        if key = "ui.tvshows.disableunwatchedepisodecount" then return item.unplayed > 0
+        if key = "ui.home.preferthumbnails" then return isStringEqual(item.type, "Episode")
+        if key = "ui.posterlabels" then return isValidAndNotEmpty(item.labels)
+        return false
+    end function
+
+    ' How HomeRows lays a row out: its image type, whether its cards widen in Modern, the box every
+    ' card takes when they're all one size, and the room under them. The image type a picker is
+    ' trying for the row stands in for the saved one.
+    function Look(row as object, modern as boolean, tried as dynamic, sizeName as string, infoRoom as integer) as object
+        rowId = row.id
+        audioRow = rowId = "audio" or rowId = "resumeaudio"
+        musicRow = audioRow or homeRowsPreview.MusicOnly(row)
+        layout = { modern: modern, sizeName: sizeName, audioRow: audioRow, modernCards: modern and not musicRow and useModernCardsForRow(rowId), fixedBox: invalid, room: homeRowsPreview.CLASSIC_ROOM }
+        if modern then layout.room = homeRowsPreview.MODERN_ROOM
+        if layout.modernCards
+            layout.imageType = "poster"
+            layout.fixedBox = homeCards.CardBox(sizeName, 2 / 3)
+            layout.room = infoRoom
+        else if modern and rowId = "smalllibrarytiles"
+            layout.imageType = "thumb"
+            layout.fixedBox = homeCards.CardBox(sizeName, 16 / 9, true)
+        else
+            layout.imageType = homeCards.RowImageType(rowId, musicRow, tried)
+        end if
+        return layout
+    end function
+
+    ' Home draws a Recently Added row of nothing but music as square posters
+    function MusicOnly(row as object) as boolean
+        if row.id <> "latestmedia" or row.items.Count() = 0 then return false
+        for each item in row.items
+            if not inArray(["audio", "musicalbum", "musicartist"], item.type) then return false
+        end for
+        return true
+    end function
+
+    ' A row laid out from y: its title, its cards and how tall it stands before the gap to the next.
+    ' A focused row of widening Modern cards draws its first card at 16:9 with its details under it
+    ' and moves the rest along, as Home's focus card does. Cards stop where the row's area ends.
+    function Laid(row as object, layout as object, focused as boolean, marks as object, y as float) as object
+        cards = []
+        x = 0
+        cell = 0
+        for each item in row.items
+            if x >= homeRowsPreview.ROW_AREA then exit for
+            cardBox = layout.fixedBox
+            if not isValid(cardBox) then cardBox = homeCards.CardBox(layout.sizeName, homeCards.AspectFor(item.type, row.id, layout.audioRow, layout.imageType))
+            uri = homeRowsPreview.CardArt(item, layout.imageType, marks.preferThumbs)
+            text = homeRowsPreview.CardText(item, layout.modern)
+            card = { x: x, w: cardBox[0], h: cardBox[1], line1: text[0], line2: text[1], percent: 0 }
+            if focused and layout.modernCards and cards.Count() = 0
+                cardBox = homeCards.CardBox(layout.sizeName, 16 / 9, true)
+                card.w = cardBox[0]
+                uri = homeRowsPreview.FirstOf([item.thumb, item.wide, item.backdrop, item.poster])
+                card.details = homeRowsPreview.FirstOf([item.year, item.officialRating])
+                if item.year <> "" and item.officialRating <> "" then card.details = item.year + " • " + item.officialRating
+                card.overview = item.overview
+            end if
+            card.uri = homeCards.SizedImageUrl(uri, cardBox[0], cardBox[1])
+            if item.percent > 0 and inArray(["movie", "musicvideo", "video", "episode", "recording", "audiobook"], item.type) then card.percent = item.percent
+            if item.played or item.unplayed > 0 or item.favorite
+                card.check = { played: item.played, favorite: item.favorite, unplayedCount: item.unplayed, itemType: item.type, indicatorMode: marks.indicatorMode, hideUnplayedCount: marks.hideUnplayedCount }
+            end if
+            if marks.labels and isValidAndNotEmpty(item.labels) then card.labels = item.labels
+            cards.push(card)
+            if cardBox[1] > cell then cell = cardBox[1]
+            x += cardBox[0] + homeRowsPreview.CARD_GAP
+        end for
+        return { title: row.title, modern: layout.modern, y: y, top: homeRowsPreview.TITLE_BAND, height: homeRowsPreview.TITLE_BAND + layout.room + cell, cards: cards }
+    end function
+
+    ' A poster row leads with the primary image, a thumbnail row with the wide art and a banner row
+    ' with the banner, or a title from outside the library with its plain backdrop, each falling back
+    ' to the others. An episode's wide art is its own image, or its series' art unless Prefer
+    ' Thumbnails is on. HomeItem's showCardArt picks the same way.
+    function CardArt(item as object, imageType as string, preferThumbs as boolean) as string
+        wide = [item.thumb, item.wide]
+        if isStringEqual(item.type, "Episode") and not preferThumbs then wide.Reverse()
+        art = [item.poster]
+        art.Append(wide)
+        if imageType = "thumb" or imageType = "banner"
+            art = wide
+            art.push(item.poster)
+            if imageType = "banner"
+                if item.outside then art.Unshift(item.backdrop)
+                art.Unshift(item.banner)
+            end if
+        end if
+        return homeRowsPreview.FirstOf(art)
+    end function
+
+    function FirstOf(choices as object) as string
+        for each choice in choices
+            if isValidAndNotEmpty(choice) then return choice
+        end for
+        return ""
+    end function
+
+    ' The lines under a card, the way HomeItem writes them. Classic puts an episode's series first
+    ' and "S2:E5 - Name" under it, and a film or show its year. Modern writes one line, an episode as
+    ' "Series - S2E5 Name".
+    function CardText(item as object, modern as boolean) as object
+        name = item.name
+        episodic = isStringEqual(item.type, "Episode") or isStringEqual(item.type, "Recording")
+        if episodic and modern
+            text = item.series
+            code = ""
+            if isValid(item.season) then code = "S" + item.season.ToStr()
+            if isValid(item.episode) then code = code + "E" + item.episode.ToStr()
+            if code <> "" then text = text + " - " + code
+            if name <> "" then text = text + " " + name
+            return [text, ""]
+        end if
+        if episodic
+            episode = name
+            if isValid(item.season) and isValid(item.episode) then episode = "S" + item.season.ToStr() + ":E" + item.episode.ToStr() + " - " + name
+            if item.series <> "" then return [item.series, episode]
+            if episode = name then return [name, ""]
+            return [name, episode]
+        end if
+        if not modern and inArray(["movie", "musicvideo", "series"], item.type) then return [name, item.subline]
+        return [name, ""]
+    end function
+
+end namespace
