@@ -301,6 +301,8 @@ sub init()
     m.top.enableTrickPlay = false
 
     wpAttach()
+    ' The group only takes the player when it's playing the group's item
+    m.global.syncPlayManager.callFunc("registerVideoView", m.top)
 end sub
 
 ' Direct play hands the Roku the whole file, and it can start on a different track than the one
@@ -400,6 +402,11 @@ sub playNextInQueue()
 end sub
 
 sub playQueueItem(move as string)
+    ' The group switches items together, and the change comes back as a queue update
+    if syncPlayIntercepts()
+        if move = "moveForward" then m.global.syncPlayManager.callFunc("requestNext") else m.global.syncPlayManager.callFunc("requestPrevious")
+        return
+    end if
     m.top.unobserveField("state")
     m.top.control = VideoControl.STOP
     m.global.sceneManager.callFunc("clearPreviousScene")
@@ -407,9 +414,17 @@ sub playQueueItem(move as string)
     m.global.queueManager.callFunc("playQueue")
 end sub
 
+' The SyncPlay group moved on to another item, so this player makes way the way Next does
+sub leaveForGroupItem()
+    m.top.unobserveField("state")
+    m.top.control = VideoControl.STOP
+    m.global.sceneManager.callFunc("clearPreviousScene")
+end sub
+
 ' A seek a button or a chapter asks for, with the prompts, the ends at time and the bar following it
 sub seekFromControls(target as float)
     dropScrub()
+    if syncPlaySeek(target) then return
     holdSkipPrompts(target)
     m.top.seek = target
     setVideoEndingTime(target)
@@ -427,7 +442,7 @@ sub handleHideAction(resume as boolean)
     m.osd.setFocus(false)
     m.top.setFocus(true)
     m.pauseOverlay.visible = false
-    if resume
+    if resume and not (m.top.state = "paused" and syncPlayTogglePause())
         m.top.control = VideoControl.RESUME
     end if
     applySkipPrompt()
@@ -481,6 +496,7 @@ sub onChapterPicked()
     closeChapterList()
     duration = m.top.duration
     if duration > 1 and seekTime > duration - 1 then seekTime = duration - 1
+    if syncPlaySeek(seekTime) then return
     holdSkipPrompts(seekTime)
     m.top.seek = seekTime
     m.positionText.text = secondsToHuman(seekTime, true)
@@ -580,6 +596,7 @@ end sub
 ' Play and pause from the controls leave them up, and they hide on their own once playback runs
 sub handleVideoPlayPauseAction()
     if resumeHeldScrub() then return
+    if syncPlayTogglePause() then return
 
     if m.top.state = "paused"
         m.top.control = VideoControl.RESUME
@@ -588,6 +605,24 @@ sub handleVideoPlayPauseAction()
 
     m.top.control = VideoControl.PAUSE
 end sub
+
+' In a SyncPlay group transport goes to the server, unless the manager is applying a group command
+function syncPlayIntercepts() as boolean
+    return m.global.syncPlayManager.callFunc("shouldIntercept", m.top)
+end function
+
+function syncPlaySeek(target as float) as boolean
+    if not syncPlayIntercepts() then return false
+    m.global.syncPlayManager.callFunc("requestSeek", target)
+    return true
+end function
+
+' The pause or play comes back as a group command
+function syncPlayTogglePause() as boolean
+    if not syncPlayIntercepts() then return false
+    if m.top.state = "paused" then m.global.syncPlayManager.callFunc("requestUnpause") else m.global.syncPlayManager.callFunc("requestPause")
+    return true
+end function
 
 sub handleShowSubtitleMenuAction()
     if not isValidAndNotEmpty(m.top.fullSubtitleData) then return
@@ -734,7 +769,7 @@ sub onCastPicked(event as object)
     person = m.people[event.getData()]
     dropCastAndCrew()
     if not isValid(person) then return
-    m.top.control = VideoControl.PAUSE
+    if m.top.state = "paused" or not syncPlayTogglePause() then m.top.control = VideoControl.PAUSE
     json = { Id: person.Id, Name: person.Name, Type: "Person" }
     if isValid(m.itemServerData) then json.Append({ _serverUrl: m.itemServerData.serverUrl, _userId: m.itemServerData.userId, _authToken: m.itemServerData.authToken })
     m.global.jumpTo = { selectionType: "person", id: person.Id, json: json }
@@ -922,6 +957,12 @@ sub onOSDAction()
 
     if action = "showwatchparty"
         wpOpenPanel()
+        return
+    end if
+
+    if action = "showsyncplaymenu"
+        handleHideAction(false)
+        m.global.syncPlayManager.callFunc("showGroupsDialog")
         return
     end if
 
@@ -2412,6 +2453,8 @@ sub onState()
     end if
     updateLoadingLayer()
 
+    m.global.syncPlayManager.callFunc("onVideoState", m.top, m.top.state)
+
     ' Pass video state into OSD
     m.osd.playbackState = m.top.state
 
@@ -2438,7 +2481,7 @@ sub onState()
             m.wasPaused = false
             unpauseRewindSec = val(m.global.session.user.settings["playback.unpauseRewind"] ?? "0")
             ' A party's resume lands where the room is, so it isn't rewound
-            if unpauseRewindSec > 0 and m.top.position > unpauseRewindSec and not wpActive()
+            if unpauseRewindSec > 0 and m.top.position > unpauseRewindSec and not wpActive() and not m.global.syncPlayManager.syncPlayActive
                 newPos = m.top.position - unpauseRewindSec
                 if newPos < 0 then newPos = 0
                 m.top.seek = newPos
@@ -2864,6 +2907,7 @@ function skipSegmentTo(endTicks as dynamic) as boolean
         end if
     end if
 
+    if syncPlaySeek(seekPosition) then return false
     m.top.seek = seekPosition
     return false
 end function
@@ -2983,7 +3027,7 @@ sub skipBy(delta as integer)
     target = clampSeconds((m.pendingSeek ?? m.top.position) + delta, bounds)
     m.pendingSeek = target
     holdSkipPrompts(target)
-    m.top.seek = target
+    if not syncPlayIntercepts() then m.top.seek = target
     m.seekSettleTimer.control = "start"
     setVideoEndingTime(target)
     m.positionText.text = secondsToHuman(target, true)
@@ -3015,7 +3059,8 @@ sub scrubBy(delta as integer)
     if not isValid(bounds) then return
 
     pauseSetting = m.global.session.user.settings["playback.trickplay.pauseWhileScrubbing"]
-    if not m.scrubHold.active and pauseSetting <> false and trickplayPreviewOn()
+    ' The pause it makes would be this set's alone, so a SyncPlay group scrubs without it
+    if not m.scrubHold.active and pauseSetting <> false and trickplayPreviewOn() and not syncPlayIntercepts()
         wasPlaying = isStringEqual(m.top.state, MediaPlaybackState.PLAYING)
         m.scrubHold = { active: true, wasPlaying: wasPlaying, target: invalid }
         if wasPlaying then m.top.control = VideoControl.PAUSE
@@ -3031,7 +3076,7 @@ sub scrubBy(delta as integer)
         target = clampSeconds((m.pendingSeek ?? m.top.position) + delta, bounds)
         m.pendingSeek = target
         holdSkipPrompts(target)
-        m.top.seek = target
+        if not syncPlayIntercepts() then m.top.seek = target
         m.seekSettleTimer.control = "start"
     end if
 
@@ -3079,6 +3124,7 @@ sub jumpToLive()
 end sub
 
 sub onSeekSettled()
+    if isValid(m.pendingSeek) then syncPlaySeek(m.pendingSeek)
     m.pendingSeek = invalid
     hideSeekPreview()
 end sub
@@ -4235,7 +4281,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
     ' Play and pause work under the chapter list and the cast without bringing the controls up behind them
     for each overlay in [m.chapterOverlay, m.castOverlay]
         if isValid(overlay)
-            if press and key = KeyCode.PLAY
+            if press and key = KeyCode.PLAY and not syncPlayTogglePause()
                 if m.top.state = "paused" then m.top.control = VideoControl.RESUME else m.top.control = VideoControl.PAUSE
             end if
             overlay.setFocus(true)
@@ -4243,7 +4289,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
     end for
     if isValid(m.episodeOverlay)
-        if press and key = KeyCode.PLAY
+        if press and key = KeyCode.PLAY and not syncPlayTogglePause()
             if m.top.state = "paused" then m.top.control = VideoControl.RESUME else m.top.control = VideoControl.PAUSE
         end if
         m.episodeOverlay.setFocus(true)
@@ -4329,6 +4375,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if key = KeyCode.PLAY
         if resumeHeldScrub() then return true
         if not stateAllowsOSD() then return true
+        if syncPlayTogglePause() then return true
 
         if m.top.state = "paused"
             m.top.control = VideoControl.RESUME
@@ -4366,6 +4413,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if isValid(m.liveRecovery) then abandonLoad()
 
         wpDetach(true)
+        m.global.syncPlayManager.callFunc("unregisterVideoView", m.top, "closed")
         m.global.queueManager.callFunc("bypassNextPreferredAudioTrackIndexReset")
         m.global.queueManager.callFunc("clear")
         m.top.control = VideoControl.STOP
