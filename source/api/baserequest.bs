@@ -1,3 +1,5 @@
+import "pkg:/source/api/silo/SiloImages.bs"
+import "pkg:/source/api/silo/SiloRouter.bs"
 import "pkg:/source/utils/diagnostics.bs"
 import "pkg:/source/utils/plexUrls.bs"
 import "pkg:/source/utils/serverCompatibility.bs"
@@ -101,6 +103,7 @@ function buildURL(path as string, params = {} as object) as dynamic
     serverURL = get_url()
     if serverURL = invalid then return invalid
 
+    if isSiloServer(serverURL) and Instr(1, LCase(path), "/images/") > 0 then return silo.ImageURL(serverURL, path, params)
     if isPlexServer(serverURL) then return plexServerURL(serverURL, path, params, toString(getAuthTokenFromRegistry() ?? ""))
 
     emby = isEmbyServer(serverURL)
@@ -179,6 +182,7 @@ end function
 ' APIRequest hands back invalid when there is no server to build a URL against,
 ' so callers can reach here before a server has been picked
 function getJson(req)
+    if silo.Owns(req) then return siloResponse(req, "GET").data
     if req = invalid then return invalid
     plex = plexAnswer(req, "GET")
     if plex <> invalid then return plex.data
@@ -205,6 +209,7 @@ end function
 
 ' getJson for a lookup that is only worth a short wait
 function getJsonWithin(req, timeoutMs as integer) as dynamic
+    if silo.Owns(req) then return siloResponse(req, "GET").data
     if req = invalid then return invalid
     plex = plexAnswer(req, "GET", "", timeoutMs)
     if plex <> invalid then return plex.data
@@ -235,6 +240,7 @@ function getJsonWithin(req, timeoutMs as integer) as dynamic
 end function
 
 function postVoid(req, data = "" as string) as boolean
+    if silo.Owns(req) then return siloResponse(req, "POST", data).ok
     plex = plexAnswer(req, "POST", data)
     if plex <> invalid then return plexAnswered(plex)
     started = diagnostics.StartTrace("POST", req)
@@ -258,6 +264,7 @@ function postVoid(req, data = "" as string) as boolean
 end function
 
 function headVoid(req) as boolean
+    if silo.Owns(req) then return siloResponse(req, "GET").ok
     started = diagnostics.StartTrace("HEAD", req)
     req.setMessagePort(CreateObject("roMessagePort"))
     req.AddHeader("Content-Type", "application/json")
@@ -279,6 +286,7 @@ function headVoid(req) as boolean
 end function
 
 function getVoid(req) as boolean
+    if silo.Owns(req) then return siloResponse(req, "GET").ok
     started = diagnostics.StartTrace("GET", req)
     req.setMessagePort(CreateObject("roMessagePort"))
     req.AddHeader("Content-Type", "application/json")
@@ -301,6 +309,7 @@ function getVoid(req) as boolean
 end function
 
 function postJson(req, data = "" as string)
+    if silo.Owns(req) then return siloResponse(req, "POST", data).data
     plex = plexAnswer(req, "POST", data)
     if plex <> invalid then return plex.data
     started = diagnostics.StartTrace("POST", req)
@@ -328,6 +337,7 @@ function postJson(req, data = "" as string)
 end function
 
 function deleteVoid(req)
+    if silo.Owns(req) then return siloResponse(req, "DELETE").ok
     plex = plexAnswer(req, "DELETE")
     if plex <> invalid then return plexAnswered(plex)
     started = diagnostics.StartTrace("DELETE", req)
@@ -472,6 +482,7 @@ function get_url()
 end function
 
 function getString(req)
+    if silo.Owns(req) then return siloResponse(req, "GET").text
     if req = invalid then return ""
     plex = plexAnswer(req, "GET")
     if plex <> invalid then return plexAnswerText(plex)
@@ -481,6 +492,7 @@ function getString(req)
 end function
 
 function postString(req, data = "" as string)
+    if silo.Owns(req) then return siloResponse(req, "POST", data).text
     plex = plexAnswer(req, "POST", data)
     if plex <> invalid then return plexAnswerText(plex)
     req.setMessagePort(CreateObject("roMessagePort"))
@@ -628,6 +640,7 @@ end function
 
 function buildURLForServer(serverUrl as string, path as string, params = {} as object, userId = "" as string, authToken = "" as string) as string
     if serverUrl = "" then return ""
+    if isSiloServer(serverUrl) and Instr(1, LCase(path), "/images/") > 0 then return silo.ImageURL(serverUrl, path, params)
 
     if isPlexServer(serverUrl)
         if authToken = "" then authToken = savedServerToken(serverUrl, userId)
@@ -729,6 +742,10 @@ end sub
 ' GETs retain their transport-managed timeout through getJson.
 function requestResponse(req as object, method = "GET" as string, body = "" as string, timeoutMs = 30000 as integer, cancelNode = invalid as dynamic) as object
     if req = invalid then return { status: 0, data: invalid }
+    if silo.Owns(req)
+        answer = siloResponse(req, method, body)
+        return { status: answer.status, data: answer.data }
+    end if
     if requestCanceled(cancelNode) then return { status: 0, data: invalid }
     plex = plexAnswer(req, method, body, timeoutMs)
     if plex <> invalid then return plex
@@ -757,6 +774,76 @@ function requestResponse(req as object, method = "GET" as string, body = "" as s
     end while
     req.AsyncCancel()
     return { status: 0, data: invalid }
+end function
+
+' A request for a Silo server is answered by the Silo router instead of being sent. A method the
+' caller set on the request wins over the helper's own
+function siloResponse(req as object, method as string, body = invalid as dynamic) as object
+    requested = UCase(req.GetRequest() ?? "")
+    if requested <> "" and requested <> "GET" then method = requested
+    answer = silo.Respond(method, req.GetUrl(), body)
+    ok = answer.status >= 200 and answer.status < 300
+    text = ""
+    if ok and answer.data <> invalid then text = FormatJson(answer.data)
+    data = invalid
+    if ok then data = answer.data
+    return { ok: ok, status: answer.status, data: data, text: text }
+end function
+
+' Starts a GET the caller waits for on its port. A Silo server's answer comes from the Silo router
+' at once, as an event the next siloWait hands back ahead of the port
+function siloStartGet(req as object) as boolean
+    if not silo.Owns(req) then return req.AsyncGetToString()
+    answer = siloResponse(req, "GET")
+    if type(m.siloEvents) <> "roArray" then m.siloEvents = []
+    m.siloEvents.Push({
+        siloEvent: true,
+        identity: req.GetIdentity(),
+        code: answer.status,
+        text: answer.text,
+        GetSourceIdentity: function() as integer
+            return m.identity
+        end function,
+        GetResponseCode: function() as integer
+            return m.code
+        end function,
+        GetString: function() as string
+            return m.text
+        end function,
+        GetInt: function() as integer
+            return 1
+        end function,
+        GetFailureReason: function() as string
+            return ""
+        end function,
+        GetResponseHeaders: function() as object
+            return {}
+        end function
+    })
+    return true
+end function
+
+function siloWait(timeoutMs as integer, port as object) as dynamic
+    if type(m.siloEvents) = "roArray" and m.siloEvents.Count() > 0 then return m.siloEvents.Shift()
+    return wait(timeoutMs, port)
+end function
+
+' The answer siloStartGet queued for req, taken off the queue, or invalid when it holds none
+function siloTakeEvent(req as object) as dynamic
+    if type(m.siloEvents) <> "roArray" then return invalid
+    for i = 0 to m.siloEvents.Count() - 1
+        if m.siloEvents[i].identity = req.GetIdentity()
+            event = m.siloEvents[i]
+            m.siloEvents.Delete(i)
+            return event
+        end if
+    end for
+    return invalid
+end function
+
+function isUrlEvent(msg as dynamic) as boolean
+    if type(msg) = "roUrlEvent" then return true
+    return type(msg) = "roAssociativeArray" and msg.siloEvent = true
 end function
 
 function requestCanceled(node as dynamic) as boolean

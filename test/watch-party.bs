@@ -1,0 +1,101 @@
+sub testWatchParty()
+    assertEqual(watchPartyModel.FormatCode("K7Q29M"), "K7Q 29M", "A room code shows as two groups of three")
+    assertEqual(watchPartyModel.CodeFrom(" k7q-29m "), "K7Q29M", "A typed code loses its case, spaces and dashes")
+    assertEqual(watchPartyModel.CodeFrom("https://media.example/Moonfin/Party/K7Q29M?x=1"), "K7Q29M", "An invite link gives up its code")
+
+    stamp = watchPartyModel.ParseTime("2026-11-09T21:04:05.123Z")
+    ' Int takes a single precision Float, so the checks only hand it the small difference
+    assertEqual(Int((stamp - 1794258245#) * 1000 + 0.5), 123, "An ISO time reads as seconds since 1970 and keeps its milliseconds")
+    assertEqual(watchPartyModel.FormatTime(stamp), "2026-11-09T21:04:05.123Z", "and goes back out the same")
+    assertEqual(watchPartyModel.FormatTime(watchPartyModel.ParseTime("2024-02-29T00:00:00Z")), "2024-02-29T00:00:00.000Z", "A leap day survives the trip")
+    assertEqual(Int((watchPartyModel.ParseTime("2026-11-09T21:04:05.1234567Z") - 1794258245#) * 1000 + 0.5), 123, "Extra digits of a fraction are dropped")
+    assertEqual(watchPartyModel.FormatTime(watchPartyModel.ParseTime("2026-11-09T23:59:59.9996Z")), "2026-11-09T23:59:59.999Z", "A time just before midnight stays on its day")
+    assertEqual(watchPartyModel.ParseTime("soon"), 0#, "Anything else reads as no time")
+
+    sample = watchPartyModel.ClockSample(100#, 110.05#, 110.06#, 100.2#)
+    assertEqual(Int(sample.offset * 1000 + 0.5), 9955, "A pong gives the server's lead on this clock")
+    assertEqual(Int(sample.rtt * 1000 + 0.5), 190, "and the round trip without the server's own time")
+    samples = []
+    for i = 1 to 10
+        samples = watchPartyModel.WithSample(samples, { offset: i, rtt: 0.5 })
+    end for
+    assertEqual(samples.Count(), 8, "Only the last eight samples are kept")
+    samples = watchPartyModel.WithSample(samples, { offset: 42, rtt: 0.02 })
+    assertEqual(watchPartyModel.BestOffset(samples), 42#, "The fastest round trip decides the offset")
+    assertEqual(watchPartyModel.BestOffset([]), 0#, "No samples means no offset")
+
+    playing = { position: 100#, at: 1000#, playing: true }
+    assertEqual(watchPartyModel.ExpectedPosition(playing, 1004.5#), 104.5#, "A playing room moves on with the clock")
+    assertEqual(watchPartyModel.ExpectedPosition(playing, 999#), 100#, "but not before its anchor")
+    assertEqual(watchPartyModel.ExpectedPosition({ position: 100#, at: 1000#, playing: false }, 2000#), 100#, "A paused room stays put")
+    assertEqual(watchPartyModel.NeedsSeek(100#, 100.4#), false, "Drift inside half a second is left alone")
+    assertEqual(watchPartyModel.NeedsSeek(100#, 99.4#), true, "Past it the player seeks")
+    assertEqual(watchPartyModel.NeedsSeek(100#, 100.25#, true), false, "A paused player within 0.3 seconds stays")
+    assertEqual(watchPartyModel.NeedsSeek(100#, 100.4#, true), true, "and lines up past that")
+    assertEqual(watchPartyModel.DelayUntil(10#, 12#), 0#, "A command whose time has passed runs at once")
+    assertEqual(watchPartyModel.ServerConfig(200, { enabled: true, alerts: false }).alerts, false, "The admin can turn party alerts off")
+    assertEqual(watchPartyModel.ServerConfig(200, { enabled: true }).alerts, true, "and they're on unless said otherwise")
+    assertEqual(watchPartyModel.ServerConfig(200, { enabled: false, alerts: true }).enabled, false, "The admin can turn Watch Parties off")
+    assertEqual(watchPartyModel.ServerConfig(404, invalid).enabled, false, "A server without them counts as off")
+
+    command = { action: "play", position_seconds: 30, execute_at: "2026-11-09T21:04:05.000Z", playback_state: "playing", by_member_id: "m2", by_display_name: "Maya" }
+    reference = watchPartyModel.ReferenceFromCommand(command)
+    assertEqual(reference.playing, true, "A play command sets the room playing")
+    assertEqual(reference.position, 30#, "from its position")
+    assertEqual(watchPartyModel.ReferenceFromRoom({ anchor_position_seconds: 12.5, anchor_at: invalid, playback_state: "paused" }).position, 12.5#, "A snapshot's anchor is the room's place")
+
+    assertEqual(watchPartyModel.CommandText(command, "m1"), "Maya resumed", "Toasts name who did it")
+    command.action = "pause"
+    assertEqual(watchPartyModel.CommandText(command, "m1"), "Maya paused", "A pause says so")
+    command.action = "seek"
+    command.position_seconds = 4442
+    assertEqual(watchPartyModel.CommandText(command, "m1"), "Maya skipped to 1:14:02", "A seek says where to")
+    assertEqual(watchPartyModel.CommandText(command, "m2"), "", "The viewer's own command needs no toast")
+    command.countdown = true
+    assertEqual(watchPartyModel.CommandText(command, "m1"), "", "The start after the wait has its countdown instead")
+
+    assertEqual(watchPartyModel.NoticeText({ kind: "joined", member_id: "m3", display_name: "Jordan" }, "m1"), "Jordan joined", "A join is named")
+    assertEqual(watchPartyModel.NoticeText({ kind: "host_changed", member_id: "m1", display_name: "Me" }, "m1"), "You're the host now", "Becoming host speaks to the viewer")
+    assertEqual(watchPartyModel.NoticeText({ kind: "host_changed", member_id: "m3", display_name: "Jordan" }, "m1"), "Jordan is the host now", "or names the new host")
+    assertEqual(watchPartyModel.NoticeText({ kind: "switched", member_id: "m2", display_name: "Maya", content_title: "Arcane" }, "m1"), "Maya switched to Arcane", "A switch names the title")
+
+    episode = { content_title: "The Line", content_type: "Episode", series_name: "Arcane", season: 2, episode: 1 }
+    assertEqual(watchPartyModel.ContentTitle(episode), "Arcane · S2:E1", "An episode reads as its series and number")
+    assertEqual(watchPartyModel.ContentTitle({ content_title: "Inception", content_type: "Movie" }), "Inception", "A movie is its title")
+
+    summary = { phase: "playing", playback_state: "playing", position_seconds: 4360, host_name: "Maya", member_count: 4, guest_control_policy: "host_only" }
+    assertEqual(watchPartyModel.RoomMeta(summary), "Playing 1:12:40 · Maya · 4 watching", "A playing room says where it is")
+    summary.guest_control_policy = "everyone"
+    summary.position_seconds = 0
+    assertEqual(watchPartyModel.RoomMeta(summary), "Playing · Maya · 4 watching · Everyone controls", "and when everyone controls it")
+    assertEqual(watchPartyModel.RoomMeta({ phase: "lobby", host_name: "Leo", member_count: 1 }), "In the lobby · Leo · 1 watching", "A lobby says so")
+
+    assertEqual(watchPartyModel.ClosedText("ended_by_host", "Maya", false), "Maya ended the party", "The host ending it is named")
+    assertEqual(watchPartyModel.ClosedText("ended_by_host", "Maya", true), "", "and the host isn't told what they did")
+    assertEqual(watchPartyModel.ClosedText("closed_by_admin", "Maya", false), "The watch party has ended.", "An admin closing it is plain")
+    assertEqual(watchPartyModel.ClosedText("disabled", "Maya", false), "Watch Parties are turned off on this server.", "Turning parties off says so")
+    assertEqual(watchPartyModel.ErrorText("wrong_pin"), "That PIN didn't work. Try again.", "A wrong PIN has its words")
+    assertEqual(watchPartyModel.ErrorText("whatever"), "That didn't work. Try again in a moment.", "An unknown refusal gets the general words")
+
+    rooms = [{ room_id: "a", selected_content_id: "x", is_member: false }, { room_id: "b", selected_content_id: invalid }, { room_id: "c", selected_content_id: "y", is_member: true }]
+    assertEqual(watchPartyModel.NewRooms(invalid, rooms).Count(), 0, "The first poll alerts on nothing")
+    fresh = watchPartyModel.NewRooms({ b: true }, rooms)
+    assertEqual(fresh.Count(), 1, "A room the last poll missed is new, unless it has nothing picked or the viewer is in it")
+    assertEqual(fresh[0].room_id, "a", "and that is the one")
+    picked = [{ room_id: "b", selected_content_id: "z", is_member: false }]
+    assertEqual(watchPartyModel.NewRooms(watchPartyModel.RoomIds(rooms), picked).Count(), 1, "A room seen with nothing picked alerts once it gets an item")
+    assertEqual(watchPartyModel.NewRooms(watchPartyModel.RoomIds(picked), picked).Count(), 0, "and only once")
+    ordered = watchPartyModel.AlertsFirst(rooms, ["c", "a"])
+    assertEqual(ordered[0].room_id + ordered[1].room_id + ordered[2].room_id, "cab", "Alerted rooms lead the row, newest first")
+
+    assertEqual(watchPartyModel.WorthRetrying(0), true, "A send with no answer goes again")
+    assertEqual(watchPartyModel.WorthRetrying(503), true, "and so does one a gateway turned away")
+    assertEqual(watchPartyModel.WorthRetrying(403), false, "but not one the room refused")
+    batch = [{ type: "state_report" }, { type: "chat", text: "hi" }, { type: "ping" }, { type: "transport_request", action: "pause" }, { type: "reaction", reaction: "fire" }, { type: "buffering" }]
+    again = watchPartyModel.UserMessages(batch)
+    assertEqual(again.Count(), 3, "Only what the viewer asked for is sent again")
+    assertEqual(again[0].type + " " + again[1].type + " " + again[2].type, "chat transport_request reaction", "in the order it was asked")
+    assertEqual(watchPartyModel.ReactionImage("fire"), "pkg:/images/watchParty/fire.webp", "A reaction draws its own glyph")
+    assertEqual(watchPartyModel.ReactionImage("thumbs"), "", "and an unknown one draws nothing")
+    assertEqual(watchPartyModel.AvatarColor("Maya"), watchPartyModel.AvatarColor("Maya"), "A person keeps one color")
+end sub

@@ -1,0 +1,1027 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/syncPlayHelpers.bs"
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/enums/TaskControl.bs"
+
+' A seek on a Roku costs a second or more, so smaller gaps are left alone or waited out
+const SYNCPLAY_RESUME_SEEK_MS = 1000
+const SYNCPLAY_PAUSE_SEEK_MS = 500
+const SYNCPLAY_HOLD_MS = 400
+const SYNCPLAY_WAIT_PAUSE_MAX_MS = 10000
+const SYNCPLAY_MAX_LATE_MS = 15000
+const SYNCPLAY_SKIP_COOLDOWN_MS = 3000
+const SYNCPLAY_MAX_SKIPS_PER_ITEM = 10
+const SYNCPLAY_SEEK_LEAD_START_MS = 1500
+const SYNCPLAY_SEEK_LEAD_MAX_MS = 8000
+const SYNCPLAY_BUFFER_QUIET_MS = 2500
+const SYNCPLAY_LOAD_LEAD_START_MS = 250
+const SYNCPLAY_LOAD_LEAD_MAX_MS = 1500
+const SYNCPLAY_NO_ITEM_ID = "00000000-0000-0000-0000-000000000000"
+
+sub init()
+    m.commandTimer = m.top.findNode("commandTimer")
+    m.pingTimer = m.top.findNode("pingTimer")
+    m.driftTimer = m.top.findNode("driftTimer")
+    m.readyCheckTimer = m.top.findNode("readyCheckTimer")
+    m.bufferDebounceTimer = m.top.findNode("bufferDebounceTimer")
+    m.readyWatchdogTimer = m.top.findNode("readyWatchdogTimer")
+    m.waitPauseTimer = m.top.findNode("waitPauseTimer")
+    m.seekDebounceTimer = m.top.findNode("seekDebounceTimer")
+
+    m.commandTimer.observeField("fire", "executePendingCommand")
+    m.pingTimer.observeField("fire", "onPingTimer")
+    m.driftTimer.observeField("fire", "onDriftTimer")
+    m.readyCheckTimer.observeField("fire", "onReadyCheckTimer")
+    m.bufferDebounceTimer.observeField("fire", "onBufferDebounceTimer")
+    m.readyWatchdogTimer.observeField("fire", "onReadyWatchdog")
+    m.waitPauseTimer.observeField("fire", "onWaitPauseDone")
+    m.seekDebounceTimer.observeField("fire", "sendPendingSeek")
+
+    m.transport = invalid
+    m.timeSyncTask = invalid
+    m.pendingRequests = []
+    m.everConnected = false
+    m.timeOffsetMs = 0
+    m.pingMs = 500
+    m.prompt = invalid
+    m.promptGroups = []
+    m.seekLeadMs = SYNCPLAY_SEEK_LEAD_START_MS
+    m.loadLeadMs = SYNCPLAY_LOAD_LEAD_START_MS
+    resetGroupState()
+end sub
+
+sub resetGroupState()
+    releaseVideoView()
+    m.top.syncPlayActive = false
+    m.top.groupId = ""
+    m.top.groupName = ""
+    m.top.participants = []
+    m.top.groupState = "Idle"
+    m.top.currentPlaylistItemId = ""
+    m.top.shuffleMode = "Sorted"
+
+    m.groupItemId = ""
+    m.queueSeq = 0
+    m.lastCommandKey = ""
+    m.pendingCommand = invalid
+    m.applyingRemoteCommand = false
+    m.readyOwedForLoad = false
+    m.bufferingReported = false
+    m.ignoreWaitSet = false
+    m.syncPosMs = -1
+    m.syncWhenMs = 0
+    m.pendingSeekMs = -1
+    m.lastGroupSeek = invalid
+    m.holdAtMs = -1
+
+    if isValid(m.pingTimer) then m.pingTimer.control = "stop"
+    if isValid(m.commandTimer) then m.commandTimer.control = "stop"
+    if isValid(m.seekDebounceTimer) then m.seekDebounceTimer.control = "stop"
+end sub
+
+' Everything that follows one item: drift state, the ready check and the buffering report
+sub resetItemState()
+    m.skipsThisItem = 0
+    m.lastSkipMs = 0
+    m.ownSeek = invalid
+    m.loadStartCheck = invalid
+    m.waitPausing = false
+    m.suppressBufferingUntilMs = 0
+    if isValid(m.driftTimer) then m.driftTimer.control = "stop"
+    if isValid(m.readyCheckTimer) then m.readyCheckTimer.control = "stop"
+    if isValid(m.bufferDebounceTimer) then m.bufferDebounceTimer.control = "stop"
+    if isValid(m.waitPauseTimer) then m.waitPauseTimer.control = "stop"
+end sub
+
+' ============================================
+' Lifecycle
+' ============================================
+
+function isEnabled() as boolean
+    ' Only Jellyfin has SyncPlay
+    if isEmbyServer() or isPlexServer() then return false
+
+    ' The Watch Parties switch turns SyncPlay on and off too, since both share the server's key
+    settings = chainLookupReturn(m.global, "session.user.settings", invalid)
+    if isValid(settings)
+        value = settings["watchParty.enabled"]
+        if isValidAndNotEmpty(value) then return LCase(value.toStr()) = "true"
+    end if
+    return true
+end function
+
+function enable() as boolean
+    if not isEnabled() then return false
+    if isValid(m.transport) then return true
+
+    serverUrl = get_url()
+    if not isValidAndNotEmpty(serverUrl) or not isValidAndNotEmpty(getAuthTokenFromRegistry()) then return false
+
+    if LCase(serverUrl).StartsWith("http://")
+        subtype = "SyncPlayWebSocketTransport"
+    else if chainLookupReturn(m.global, "session.pluginInfo.socketRelay", false) = true
+        subtype = "SyncPlayRelayTransport"
+    else
+        notify(tr("SyncPlay needs an http server address, or the Moonfin server plugin on an https server."))
+        return false
+    end if
+
+    m.everConnected = false
+    m.transport = CreateObject("roSGNode", subtype)
+    m.transport.serverUrl = serverUrl
+    m.transport.observeField("message", "onTransportMessage")
+    m.transport.observeField("connectionState", "onTransportState")
+    m.transport.control = TaskControl.RUN
+
+    m.timeSyncTask = CreateObject("roSGNode", "SyncPlayTimeSyncTask")
+    m.timeSyncTask.observeField("timeOffsetMs", "onTimeOffsetChanged")
+    m.timeSyncTask.observeField("roundTripTimeMs", "onRoundTripChanged")
+    m.timeSyncTask.control = TaskControl.RUN
+    return true
+end function
+
+' Signing out, switching user or server, or a socket the server refused
+sub disable()
+    if m.top.syncPlayActive then spawnRequest("leave", {})
+    if isValid(m.transport)
+        m.transport.unobserveField("message")
+        m.transport.unobserveField("connectionState")
+        m.transport.shutdown = true
+        m.transport = invalid
+    end if
+    if isValid(m.timeSyncTask)
+        m.timeSyncTask.shutdown = true
+        m.timeSyncTask = invalid
+    end if
+    resetGroupState()
+end sub
+
+sub onTimeOffsetChanged(event as object)
+    m.timeOffsetMs = event.getData()
+end sub
+
+sub onRoundTripChanged(event as object)
+    rtt = event.getData()
+    m.pingMs = Fix(rtt / 2)
+    if m.pingMs < 1 then m.pingMs = 1
+end sub
+
+sub onTransportState(event as object)
+    state = event.getData()
+    if state = "reconnecting"
+        ' No commands arrive while disconnected, so correcting against an old sync point would fight the group
+        m.driftTimer.control = "stop"
+    else if state = "connected"
+        if isValid(m.timeSyncTask) then m.timeSyncTask.syncNow = true
+        ' A dropped socket ends the session on the server, which takes it out of the group, and joining the
+        ' same group again restores it
+        if m.everConnected and m.top.syncPlayActive then spawnRequest("join", { GroupId: m.top.groupId })
+        m.everConnected = true
+    else if state = "gone"
+        ' The server refused the token, so this device has to sign in again
+        disable()
+    end if
+end sub
+
+function serverNowMs() as double
+    return syncPlayNowUtcMs() + m.timeOffsetMs
+end function
+
+function serverNowIso() as string
+    return syncPlayEpochMsToIso(serverNowMs())
+end function
+
+' Transport keys and remote buttons go to the group while SyncPlay's own changes go straight to the player, and
+' with a view only the player showing the group's item counts
+function shouldIntercept(view = invalid as dynamic) as boolean
+    if not m.top.syncPlayActive or m.applyingRemoteCommand then return false
+    if view = invalid then return true
+    return isValid(m.videoView) and m.videoView.isSameNode(view)
+end function
+
+' ============================================
+' Outbound requests
+' ============================================
+
+sub spawnRequest(method as string, payload as object)
+    task = CreateObject("roSGNode", "SyncPlayRequestTask")
+    task.method = method
+    task.payload = payload
+    task.observeField("response", "onRequestResponse")
+    m.pendingRequests.Push(task)
+    task.control = TaskControl.RUN
+end sub
+
+sub onRequestResponse(event as object)
+    data = event.getData()
+    task = event.getRoSGNode()
+    remaining = []
+    for each pending in m.pendingRequests
+        if not pending.isSameNode(task) then remaining.Push(pending)
+    end for
+    m.pendingRequests = remaining
+
+    if not isValid(data) then return
+
+    if data.method = "list"
+        onGroupListResponse(data)
+    else if data.method = "join" or data.method = "newGroup"
+        if data.code = 403
+            notify(tr("Your account doesn't have SyncPlay access. Ask your server admin to turn it on."))
+        else if data.code >= 400 or data.code = 0
+            notify(tr("The group couldn't be joined."))
+        end if
+    else if data.method = "buffering" and data.code >= 200 and data.code < 300
+        m.bufferingReported = true
+    end if
+end sub
+
+function positionMs() as double
+    if not isValid(m.videoView) then return 0
+    return m.videoView.position * 1000
+end function
+
+function playlistItemIdOrZero() as string
+    if isValidAndNotEmpty(m.top.currentPlaylistItemId) then return m.top.currentPlaylistItemId
+    return SYNCPLAY_NO_ITEM_ID
+end function
+
+' A seek made while paused only moves the player once it plays, so while one is in flight the report gives
+' where it lands rather than where it was
+function playerReport() as object
+    position# = positionMs()
+    if isValid(m.ownSeek) and not m.ownSeek.landed then position# = m.ownSeek.targetMs
+    return {
+        When: serverNowIso(),
+        PositionTicks: syncPlaySecondsToTicks(position# / 1000),
+        IsPlaying: isValid(m.videoView) and m.videoView.state = "playing",
+        PlaylistItemId: playlistItemIdOrZero()
+    }
+end function
+
+sub reportBuffering()
+    if not isValidAndNotEmpty(m.top.currentPlaylistItemId) then return
+    spawnRequest("buffering", playerReport())
+end sub
+
+sub sendReady()
+    ' Without an item the server can't match the report, so the group is left to its watchdog
+    if not isValidAndNotEmpty(m.top.currentPlaylistItemId) then return
+    if m.ignoreWaitSet
+        m.ignoreWaitSet = false
+        spawnRequest("setIgnoreWait", { IgnoreWait: false })
+    end if
+    m.bufferingReported = false
+    m.readyOwedForLoad = false
+    spawnRequest("ready", playerReport())
+end sub
+
+sub requestPause()
+    spawnRequest("pause", {})
+    ' A waiting group sends no pause, so this device pauses on its own
+    if m.top.groupState = "Waiting" and isValid(m.videoView) then applyToPlayer("pause")
+end sub
+
+sub requestUnpause()
+    spawnRequest("unpause", {})
+end sub
+
+' Presses that come quickly land as one seek, and a seek to where the group just went isn't sent again
+sub requestSeek(positionSeconds as float)
+    m.pendingSeekMs = positionSeconds * 1000
+    m.seekDebounceTimer.control = "stop"
+    m.seekDebounceTimer.control = "start"
+end sub
+
+sub sendPendingSeek()
+    target = m.pendingSeekMs
+    m.pendingSeekMs = -1
+    if target < 0 then return
+    last = m.lastGroupSeek
+    if isValid(last) and Abs(last.targetMs - target) <= 250 and syncPlayNowUtcMs() - last.atMs < SYNCPLAY_SEEK_LEAD_MAX_MS and positionMs() < target then return
+    spawnRequest("seek", { PositionTicks: syncPlaySecondsToTicks(target / 1000) })
+end sub
+
+sub requestNext()
+    if not isValidAndNotEmpty(m.top.currentPlaylistItemId) then return
+    spawnRequest("nextItem", { PlaylistItemId: m.top.currentPlaylistItemId })
+end sub
+
+sub requestPrevious()
+    if not isValidAndNotEmpty(m.top.currentPlaylistItemId) then return
+    spawnRequest("previousItem", { PlaylistItemId: m.top.currentPlaylistItemId })
+end sub
+
+sub requestSetNewQueue(itemIds as object, startIndex as integer, startTicks as longinteger)
+    spawnRequest("setNewQueue", {
+        PlayingQueue: itemIds,
+        PlayingItemPosition: startIndex,
+        StartPositionTicks: startTicks
+    })
+end sub
+
+sub requestSetShuffleMode(mode as string)
+    spawnRequest("setShuffleMode", { Mode: mode })
+end sub
+
+sub onPingTimer()
+    spawnRequest("ping", { Ping: m.pingMs })
+end sub
+
+' ============================================
+' Group membership
+' ============================================
+
+sub showGroupsDialog()
+    if not enable() then return
+
+    if m.top.syncPlayActive
+        lines = []
+        for each participant in m.top.participants
+            lines.Push({ text: participant })
+        end for
+        showPrompt("group", m.top.groupName, "", [tr("Leave group")], [], lines)
+        return
+    end if
+
+    spawnRequest("list", {})
+end sub
+
+sub onGroupListResponse(data as object)
+    if m.top.syncPlayActive then return
+    m.promptGroups = []
+    options = []
+    details = []
+    if type(data.body) = "roArray"
+        for each group in data.body
+            count = 0
+            if type(group.Participants) = "roArray" then count = group.Participants.Count()
+            m.promptGroups.Push(group)
+            options.Push(group.GroupName ?? "")
+            details.Push(count = 1 ? tr("1 watching") : tr("{count} watching").Replace("{count}", count.toStr()))
+        end for
+    end if
+    options.Push(tr("New group"))
+    details.Push(tr("Start one others can join"))
+
+    message = ""
+    if m.promptGroups.Count() = 0 then message = tr("No groups on this server yet.")
+    divider = -1
+    if m.promptGroups.Count() > 0 then divider = m.promptGroups.Count()
+    showPrompt("groups", tr("SyncPlay"), message, options, details, [], divider)
+end sub
+
+sub createGroup()
+    groupName = chainLookupReturn(m.global, "session.user.name", "")
+    if groupName = "" then groupName = "Roku"
+    spawnRequest("newGroup", { GroupName: groupName })
+end sub
+
+sub joinGroup(groupId as string)
+    if not isValidAndNotEmpty(groupId) then return
+    spawnRequest("join", { GroupId: groupId })
+end sub
+
+sub leaveGroup()
+    spawnRequest("leave", {})
+end sub
+
+' ============================================
+' Dialogs
+' ============================================
+
+' The app's own list panel, opened over whatever screen is up, handing focus back where it was
+sub showPrompt(kind as string, title as string, message as string, options as object, optionDetails = [] as object, lines = [] as object, dividerBefore = -1 as integer)
+    closePrompt()
+    active = m.global.sceneManager.callFunc("getActiveScene")
+    if not isValid(active) then return
+    scene = active.getScene()
+    if not isValid(scene) then return
+
+    focused = scene
+    while isValid(focused.focusedChild) and not focused.focusedChild.isSameNode(focused)
+        focused = focused.focusedChild
+    end while
+
+    prompt = CreateObject("roSGNode", "ListPromptDialog")
+    prompt.dialogTitle = title
+    prompt.message = message
+    prompt.options = options
+    prompt.optionDetails = optionDetails
+    prompt.details = lines
+    prompt.dividerBefore = dividerBefore
+    prompt.returnFocus = focused
+    prompt.observeField("optionSelected", "onPromptChosen")
+    scene.appendChild(prompt)
+    prompt.callFunc("showDialog")
+    m.prompt = { node: prompt, kind: kind, scene: scene }
+end sub
+
+sub closePrompt()
+    if not isValid(m.prompt) then return
+    m.prompt.node.unobserveField("optionSelected")
+    m.prompt.scene.removeChild(m.prompt.node)
+    m.prompt = invalid
+end sub
+
+sub onPromptChosen(event as object)
+    index = event.getData()
+    if not isValid(m.prompt) then return
+    kind = m.prompt.kind
+    closePrompt()
+    if index < 0 then return
+
+    if kind = "groups"
+        if index < m.promptGroups.Count() then joinGroup(m.promptGroups[index].GroupId) else createGroup()
+    else if kind = "group"
+        leaveGroup()
+    end if
+end sub
+
+sub notify(message as string)
+    showPrompt("notice", tr("SyncPlay"), message, [tr("OK")])
+end sub
+
+' ============================================
+' Inbound messages
+' ============================================
+
+sub onTransportMessage(event as object)
+    text = event.getData()
+    if text.InStr("SyncPlay") < 0 then return
+
+    parsed = ParseJson(text)
+    if not isValid(parsed) or not isValid(parsed.MessageType) then return
+
+    if parsed.MessageType = "SyncPlayCommand"
+        scheduleCommand(parsed.Data)
+    else if parsed.MessageType = "SyncPlayGroupUpdate"
+        handleGroupUpdate(parsed.Data, text)
+    end if
+end sub
+
+sub handleGroupUpdate(update as object, rawText as string)
+    if not isValid(update) or not isValid(update.Type) then return
+
+    updateType = update.Type
+    if updateType = "GroupJoined"
+        info = update.Data
+        m.top.groupId = info.GroupId ?? ""
+        m.top.groupName = info.GroupName ?? ""
+        if type(info.Participants) = "roArray" then m.top.participants = info.Participants
+        ' The joiner hears the state from before it joined, and no update follows when the group starts
+        ' waiting on it
+        state = info.State ?? "Idle"
+        if state = "Playing" or state = "Paused" then state = "Waiting"
+        m.top.groupState = state
+        m.top.syncPlayActive = true
+        m.pingTimer.control = "start"
+        if isValid(m.timeSyncTask) then m.timeSyncTask.syncNow = true
+    else if updateType = "GroupLeft" or updateType = "NotInGroup" or updateType = "GroupDoesNotExist" or updateType = "LibraryAccessDenied"
+        wasActive = m.top.syncPlayActive
+        resetGroupState()
+        if updateType = "LibraryAccessDenied"
+            notify(tr("You don't have access to what this group is playing."))
+        else if updateType = "GroupDoesNotExist" and not wasActive
+            notify(tr("That group no longer exists."))
+        end if
+    else if updateType = "UserJoined"
+        addParticipant(update.Data)
+    else if updateType = "UserLeft"
+        removeParticipant(update.Data)
+    else if updateType = "StateUpdate"
+        if isValid(update.Data) and isValid(update.Data.State) then onGroupState(update.Data.State)
+    else if updateType = "PlayQueue"
+        handlePlayQueue(rawText)
+    end if
+end sub
+
+sub onGroupState(state as string)
+    m.top.groupState = state
+    if state = "Waiting"
+        startReadyWatchdog()
+        return
+    end if
+    stopReadyWatchdog()
+    ' The server can give up waiting and play on without an unpause, so a device held for the handshake follows
+    if state = "Playing" and m.holdForGroup and not isValid(m.pendingCommand) and isValid(m.videoView) and m.videoView.state = "paused"
+        m.holdForGroup = false
+        applyToPlayer("resume")
+    end if
+end sub
+
+sub addParticipant(userName as dynamic)
+    if not isValidAndNotEmpty(userName) then return
+    participants = m.top.participants
+    for each participant in participants
+        if participant = userName then return
+    end for
+    participants.Push(userName)
+    m.top.participants = participants
+end sub
+
+sub removeParticipant(userName as dynamic)
+    if not isValidAndNotEmpty(userName) then return
+    participants = []
+    for each participant in m.top.participants
+        if participant <> userName then participants.Push(participant)
+    end for
+    m.top.participants = participants
+end sub
+
+' ============================================
+' Commands from the group
+' ============================================
+
+sub scheduleCommand(cmd as object)
+    if not m.top.syncPlayActive or not isValid(cmd) or not isValid(cmd.Command) then return
+    if isValidAndNotEmpty(cmd.GroupId) and LCase(cmd.GroupId) <> LCase(m.top.groupId) then return
+    if isValidAndNotEmpty(cmd.PlaylistItemId) and isValidAndNotEmpty(m.top.currentPlaylistItemId) and cmd.PlaylistItemId <> m.top.currentPlaylistItemId then return
+
+    key = syncPlayCommandKey(cmd)
+    if key = m.lastCommandKey then return
+    m.lastCommandKey = key
+
+    posMs# = syncPlayTicksToSeconds(cmd.PositionTicks) * 1000
+    whenMs# = syncPlayParseIsoToMs(cmd.When)
+    stopReadyWatchdog()
+    m.commandTimer.control = "stop"
+    m.pendingCommand = invalid
+
+    if cmd.Command = "Unpause"
+        ' The server answers a report it didn't ask for by repeating the sync point it already sent
+        if m.top.groupState = "Playing" and whenMs# = m.syncWhenMs and posMs# = m.syncPosMs
+            m.holdForGroup = false
+            if isValid(m.videoView) and m.videoView.state = "paused" then applyToPlayer("resume")
+            return
+        end if
+        m.syncPosMs = posMs#
+        m.syncWhenMs = whenMs#
+        m.top.groupState = "Playing"
+        delayMs# = whenMs# - serverNowMs()
+        ' A player paused just after it opened takes a moment to get going again, so it starts that much early
+        if m.holdForGroup then delayMs# -= m.loadLeadMs
+        if delayMs# > 120
+            m.pendingCommand = { posMs: posMs# }
+            m.commandTimer.duration = delayMs# / 1000
+            m.commandTimer.control = "start"
+        else
+            late# = -delayMs#
+            if late# > SYNCPLAY_MAX_LATE_MS then late# = SYNCPLAY_MAX_LATE_MS
+            if late# < 0 then late# = 0
+            resumeAt(posMs# + late#)
+        end if
+    else if cmd.Command = "Pause"
+        m.driftTimer.control = "stop"
+        m.top.groupState = "Paused"
+        applyToPlayer("pause")
+        if Abs(positionMs() - posMs#) > SYNCPLAY_PAUSE_SEEK_MS then seekPlayer(posMs#)
+    else if cmd.Command = "Seek"
+        ' Everyone waits paused at the target and the group plays on once all are ready
+        m.driftTimer.control = "stop"
+        m.syncPosMs = posMs#
+        m.syncWhenMs = serverNowMs()
+        m.lastGroupSeek = { targetMs: posMs#, atMs: syncPlayNowUtcMs() }
+        m.skipsThisItem = 0
+        m.top.groupState = "Waiting"
+        m.readyOwedForLoad = true
+        if Abs(positionMs() - posMs#) > SYNCPLAY_PAUSE_SEEK_MS
+            ' A Roku only lands a seek while it plays, so it seeks playing and holds once it gets there, the way
+            ' a load does, and only then reports ready
+            m.holdForGroup = true
+            m.holdAtMs = posMs#
+            seekPlayer(posMs#)
+            applyToPlayer("resume")
+        else
+            applyToPlayer("pause")
+        end if
+        startReadyWatchdog()
+    else if cmd.Command = "Stop"
+        m.driftTimer.control = "stop"
+        m.top.groupState = "Idle"
+        m.syncPosMs = -1
+        applyToPlayer("stop")
+        releaseVideoView()
+    end if
+end sub
+
+sub executePendingCommand()
+    pending = m.pendingCommand
+    m.pendingCommand = invalid
+    if isValid(pending) then resumeAt(pending.posMs)
+end sub
+
+' The hold lasts until here, since a held player can start by itself while the unpause waits for its time
+sub resumeAt(targetMs as double)
+    wasHeld = m.holdForGroup
+    m.holdForGroup = false
+    if not isValid(m.videoView) then return
+    m.waitPausing = false
+    m.waitPauseTimer.control = "stop"
+    if Abs(positionMs() - targetMs) > SYNCPLAY_RESUME_SEEK_MS
+        seekPlayer(targetMs + m.seekLeadMs)
+    else if wasHeld
+        m.loadStartCheck = { atMs: syncPlayNowUtcMs() }
+    end if
+    applyToPlayer("resume")
+    quietBuffering(SYNCPLAY_BUFFER_QUIET_MS)
+    m.driftTimer.control = "start"
+end sub
+
+' The player change is SyncPlay's own, so the intercepts let it through
+sub applyToPlayer(control as string)
+    if not isValid(m.videoView) then return
+    m.applyingRemoteCommand = true
+    ' The player can resume by itself, after a seek or an audio track change, without the field changing, and
+    ' writing the value it already holds does nothing
+    if m.videoView.control = control
+        if control = "pause" then m.videoView.control = "resume"
+        if control = "resume" then m.videoView.control = "pause"
+    end if
+    m.videoView.control = control
+    m.applyingRemoteCommand = false
+end sub
+
+' A seek SyncPlay makes itself sends no buffering report, and its landing teaches the seek lead
+sub seekPlayer(targetMs as double, drift = false as boolean)
+    if not isValid(m.videoView) then return
+    m.ownSeek = { targetMs: targetMs, landed: false, drift: drift }
+    quietBuffering(SYNCPLAY_BUFFER_QUIET_MS + m.seekLeadMs)
+    m.applyingRemoteCommand = true
+    m.videoView.seek = targetMs / 1000
+    m.applyingRemoteCommand = false
+end sub
+
+sub quietBuffering(durationMs as double)
+    m.suppressBufferingUntilMs = syncPlayNowUtcMs() + durationMs
+    m.bufferDebounceTimer.control = "stop"
+end sub
+
+' ============================================
+' Queue handling
+' ============================================
+
+sub handlePlayQueue(rawText as string)
+    m.queueSeq++
+    task = CreateObject("roSGNode", "SyncPlayQueueLoadTask")
+    task.playQueueJson = rawText
+    task.addFields({ seq: m.queueSeq })
+    task.observeField("result", "onQueueLoaded")
+    m.pendingRequests.Push(task)
+    task.control = TaskControl.RUN
+end sub
+
+sub onQueueLoaded(event as object)
+    result = event.getData()
+    task = event.getRoSGNode()
+    remaining = []
+    for each pending in m.pendingRequests
+        if not pending.isSameNode(task) then remaining.Push(pending)
+    end for
+    m.pendingRequests = remaining
+
+    ' Updates load in parallel, so only the newest one counts
+    if task.seq <> m.queueSeq then return
+    if not isValid(result) or not m.top.syncPlayActive then return
+
+    playingItemIndex = result.playingItemIndex
+    if isValidAndNotEmpty(result.shuffleMode) then m.top.shuffleMode = result.shuffleMode
+
+    if playingItemIndex < 0 or playingItemIndex >= result.items.Count()
+        m.top.currentPlaylistItemId = ""
+        m.groupItemId = ""
+        return
+    end if
+
+    entry = result.items[playingItemIndex]
+    switching = inArray(["NewPlaylist", "SetCurrentItem", "NextItem", "PreviousItem"], result.reason) or entry.syncPlayPlaylistItemId <> m.top.currentPlaylistItemId
+    m.top.currentPlaylistItemId = entry.syncPlayPlaylistItemId
+    m.groupItemId = entry.id
+    if not switching then return
+
+    resetItemState()
+    m.syncPosMs = -1
+    autoPlay = result.isPlaying = true and m.top.groupState = "Playing"
+    m.readyOwedForLoad = true
+
+    if entry.syncPlayUnavailable = true or not syncPlayIsVideoType(entry.type)
+        m.ignoreWaitSet = true
+        spawnRequest("setIgnoreWait", { IgnoreWait: true })
+        notify(tr("The group is playing something this device can't play, so it will go on without you until the next item."))
+        return
+    end if
+
+    startMs# = syncPlayTicksToSeconds(result.startPositionTicks) * 1000
+    m.holdAtMs = startMs#
+
+    ' The item is already open here, so it lines up where the group starts instead of opening again
+    if isValid(m.videoView) and m.videoView.id = entry.id and m.videoView.state <> "finished"
+        m.holdForGroup = not autoPlay
+        if not autoPlay then applyToPlayer("pause")
+        if startMs# > 0 and Abs(positionMs() - startMs#) > SYNCPLAY_PAUSE_SEEK_MS then seekPlayer(startMs#)
+        startReadyWatchdog()
+        return
+    end if
+
+    ' The open player makes way the way Next does, so Back doesn't land on it later
+    if isValid(m.videoView)
+        old = m.videoView
+        releaseVideoView()
+        old.callFunc("leaveForGroupItem")
+    end if
+    startQueueFromResult(result, autoPlay)
+    ' The server waits on a new item without saying so, so the retries run whatever state it reported
+    startReadyWatchdog()
+end sub
+
+sub startQueueFromResult(result as object, autoPlay as boolean)
+    m.applyingRemoteCommand = true
+
+    queueManager = m.global.queueManager
+    queueManager.callFunc("clear")
+    queueManager.callFunc("resetShuffle")
+    ' Pre-rolls would leave this device behind everyone
+    queueManager.callFunc("setPrerollStatus", false)
+
+    playableIndex = -1
+    pushed = 0
+    for i = 0 to result.items.Count() - 1
+        entry = result.items[i]
+        if entry.syncPlayUnavailable <> true and syncPlayIsVideoType(entry.type)
+            queueManager.callFunc("push", {
+                id: entry.id,
+                type: entry.type,
+                json: entry.json,
+                startingPoint: i = result.playingItemIndex ? result.startPositionTicks : 0
+            })
+            if i = result.playingItemIndex then playableIndex = pushed
+            pushed++
+        end if
+    end for
+
+    if playableIndex >= 0
+        ' The player opens playing, then holds paused until the group releases it
+        m.holdForGroup = not autoPlay
+        quietBuffering(SYNCPLAY_BUFFER_QUIET_MS)
+        queueManager.callFunc("setPosition", playableIndex)
+        queueManager.callFunc("playQueue")
+    end if
+    m.applyingRemoteCommand = false
+end sub
+
+' ============================================
+' Player linkage
+' ============================================
+
+' Every player offers itself, and the group takes the one showing its item
+sub registerVideoView(view as object)
+    if not m.top.syncPlayActive or not isValid(view) then return
+    if not isValidAndNotEmpty(m.groupItemId) or view.id <> m.groupItemId then return
+    if isValid(m.videoView) and m.videoView.isSameNode(view) then return
+    ' The hold and the quiet window were set up for this player, so only the old one's interval goes back
+    if isValid(m.videoView) and isValid(m.savedNotificationInterval) then m.videoView.notificationInterval = m.savedNotificationInterval
+    m.videoView = view
+    m.savedNotificationInterval = view.notificationInterval
+    view.notificationInterval = 0.1
+end sub
+
+sub unregisterVideoView(view as object, reason = "" as string)
+    if not isValid(m.videoView) or not m.videoView.isSameNode(view) then return
+    releaseVideoView()
+    ' The viewer backed out, so the group stops waiting on this device until it plays again
+    if reason = "closed" and m.top.syncPlayActive and not m.ignoreWaitSet
+        m.ignoreWaitSet = true
+        spawnRequest("setIgnoreWait", { IgnoreWait: true })
+    end if
+end sub
+
+sub releaseVideoView()
+    if isValid(m.videoView) and isValid(m.savedNotificationInterval) then m.videoView.notificationInterval = m.savedNotificationInterval
+    m.videoView = invalid
+    m.savedNotificationInterval = invalid
+    m.holdForGroup = false
+    resetItemState()
+    stopReadyWatchdog()
+end sub
+
+sub onVideoState(view as object, state as string)
+    if not isValid(m.videoView) or not m.videoView.isSameNode(view) then return
+
+    ' A failed stream also lands here on its way to a retry, which isn't the end of the item
+    if state = "finished"
+        if view.errorCode = 0 then m.driftTimer.control = "stop"
+        return
+    end if
+    ' An error usually means the player is reloading the stream in place, so it stays the group's
+    if state = "error" then return
+
+    if state = "buffering"
+        m.readyCheckTimer.control = "stop"
+        if m.waitPausing or isValid(m.ownSeek) or syncPlayNowUtcMs() < m.suppressBufferingUntilMs then return
+        m.bufferDebounceTimer.control = "stop"
+        m.bufferDebounceTimer.control = "start"
+        return
+    end if
+
+    if state = "playing"
+        m.bufferDebounceTimer.control = "stop"
+        if isValid(m.ownSeek) and not m.ownSeek.landed
+            m.ownSeek.landed = true
+            m.ownSeek.landedAtMs = syncPlayNowUtcMs()
+            ' Only a drift seek teaches the lead, the others were aimed without one
+            if not m.ownSeek.drift then m.ownSeek = invalid
+        end if
+        if m.holdForGroup
+            applyToPlayer("pause")
+            ' A stream that had to be reopened starts over at 0, away from where the group holds
+            if m.holdAtMs >= 0 and Abs(positionMs() - m.holdAtMs) > SYNCPLAY_RESUME_SEEK_MS then seekPlayer(m.holdAtMs)
+            return
+        end if
+        if m.top.groupState = "Playing" and m.syncPosMs >= 0 then m.driftTimer.control = "start"
+        if readyOwed() then queueReady()
+        return
+    end if
+
+    if state = "paused"
+        m.bufferDebounceTimer.control = "stop"
+        ' Held for the group, it reports at once, before the player can wander off again
+        if m.holdForGroup and readyOwed()
+            sendReady()
+        else if readyOwed()
+            queueReady()
+        end if
+    end if
+end sub
+
+' A report the server didn't ask for gets an unpause back that drags this device to an old spot
+function readyOwed() as boolean
+    if m.waitPausing then return false
+    return m.bufferingReported or m.readyOwedForLoad or m.top.groupState = "Waiting"
+end function
+
+sub onBufferDebounceTimer()
+    if not m.top.syncPlayActive or not isValid(m.videoView) then return
+    if m.videoView.state = "buffering" then reportBuffering()
+end sub
+
+' Ready waits for the position to hold steady, so a report doesn't go out mid-seek
+sub queueReady()
+    m.readyRetries = 0
+    m.readySamplePosition = invalid
+    m.readyCheckTimer.duration = 0.9
+    m.readyCheckTimer.control = "stop"
+    m.readyCheckTimer.control = "start"
+end sub
+
+sub onReadyCheckTimer()
+    if not m.top.syncPlayActive or not isValid(m.videoView) then return
+    state = m.videoView.state
+    if state <> "playing" and state <> "paused" then return
+
+    if not isValid(m.readySamplePosition)
+        m.readySamplePosition = m.videoView.position
+        m.readyCheckTimer.duration = 0.4
+        m.readyCheckTimer.control = "start"
+        return
+    end if
+
+    deltaMs = (m.videoView.position - m.readySamplePosition) * 1000
+    if state = "playing"
+        stable = deltaMs > 80 and deltaMs < 1200
+    else
+        stable = Abs(deltaMs) <= 120
+    end if
+
+    m.readyRetries++
+    if stable or m.readyRetries > 4
+        if readyOwed() then sendReady()
+        return
+    end if
+    m.readySamplePosition = m.videoView.position
+    m.readyCheckTimer.control = "start"
+end sub
+
+' While a ready is owed it goes out again every few seconds in case a report was lost, the last time even
+' mid-buffer
+sub startReadyWatchdog()
+    m.watchdogLeft = 6
+    m.readyWatchdogTimer.control = "stop"
+    m.readyWatchdogTimer.control = "start"
+    onReadyWatchdog()
+end sub
+
+sub stopReadyWatchdog()
+    m.watchdogLeft = 0
+    if isValid(m.readyWatchdogTimer) then m.readyWatchdogTimer.control = "stop"
+end sub
+
+sub onReadyWatchdog()
+    if not readyOwed() or m.watchdogLeft <= 0
+        stopReadyWatchdog()
+        return
+    end if
+    ' The player for a new item may not be up yet
+    if not isValid(m.videoView) then return
+    m.watchdogLeft--
+    state = m.videoView.state
+    ' A seek still on its way would report a spot the player hasn't reached
+    if m.watchdogLeft > 0 and isValid(m.ownSeek) and not m.ownSeek.landed then return
+    if m.holdForGroup and state = "playing" then return
+    if state = "playing" or state = "paused" or m.watchdogLeft = 0 then sendReady()
+    if m.watchdogLeft = 0 then stopReadyWatchdog()
+end sub
+
+' ============================================
+' Drift correction
+' ============================================
+
+sub onDriftTimer()
+    if not m.top.syncPlayActive or not isValid(m.videoView) then return
+    if m.videoView.state <> "playing" or m.top.groupState <> "Playing" or m.syncPosMs < 0 then return
+    if m.waitPausing or not correctionEnabled() then return
+
+    expectedMs# = m.syncPosMs + (serverNowMs() - m.syncWhenMs) + correctionExtraOffsetMs()
+    gapMs# = positionMs() - expectedMs#
+
+    ' After a seek lands the gap left over is what the seek cost, so the next one aims that much further
+    if isValid(m.ownSeek)
+        if not m.ownSeek.landed or syncPlayNowUtcMs() - m.ownSeek.landedAtMs < 1500 then return
+        m.seekLeadMs = m.seekLeadMs - gapMs#
+        if m.seekLeadMs < 0 then m.seekLeadMs = 0
+        if m.seekLeadMs > SYNCPLAY_SEEK_LEAD_MAX_MS then m.seekLeadMs = SYNCPLAY_SEEK_LEAD_MAX_MS
+        m.ownSeek = invalid
+        return
+    end if
+
+    ' How far off the start after a load landed sets how early the next one starts
+    if isValid(m.loadStartCheck)
+        if syncPlayNowUtcMs() - m.loadStartCheck.atMs < 1500 then return
+        m.loadLeadMs = m.loadLeadMs - gapMs#
+        if m.loadLeadMs < 0 then m.loadLeadMs = 0
+        if m.loadLeadMs > SYNCPLAY_LOAD_LEAD_MAX_MS then m.loadLeadMs = SYNCPLAY_LOAD_LEAD_MAX_MS
+        m.loadStartCheck = invalid
+    end if
+
+    if Abs(gapMs#) <= SYNCPLAY_HOLD_MS then return
+
+    ' Ahead, this device pauses for exactly the gap, which lands closer than a seek and is the only fix for a
+    ' small gap on a Roku with no rate control
+    if gapMs# > 0 and gapMs# <= SYNCPLAY_WAIT_PAUSE_MAX_MS
+        m.waitPausing = true
+        applyToPlayer("pause")
+        m.waitPauseTimer.duration = gapMs# / 1000
+        m.waitPauseTimer.control = "start"
+        return
+    end if
+
+    if Abs(gapMs#) < correctionThresholdMs() then return
+    if m.skipsThisItem >= SYNCPLAY_MAX_SKIPS_PER_ITEM then return
+    if syncPlayNowUtcMs() - m.lastSkipMs < SYNCPLAY_SKIP_COOLDOWN_MS then return
+
+    m.skipsThisItem++
+    m.lastSkipMs = syncPlayNowUtcMs()
+    lead# = m.seekLeadMs
+    if gapMs# > 0 then lead# = 0
+    seekPlayer(expectedMs# + lead#, true)
+end sub
+
+sub onWaitPauseDone()
+    if not m.waitPausing then return
+    m.waitPausing = false
+    if m.top.groupState = "Playing" then applyToPlayer("resume")
+end sub
+
+sub onAppWake()
+    if isValid(m.timeSyncTask) then m.timeSyncTask.syncNow = true
+end sub
+
+function correctionEnabled() as boolean
+    settings = chainLookupReturn(m.global, "session.user.settings", invalid)
+    if isValid(settings)
+        value = settings["syncplay.correction.enabled"]
+        if isValidAndNotEmpty(value) then return LCase(value.toStr()) = "true"
+    end if
+    return true
+end function
+
+function correctionThresholdMs() as integer
+    settings = chainLookupReturn(m.global, "session.user.settings", invalid)
+    if isValid(settings)
+        value = settings["syncplay.correction.mindelayskip"]
+        if isValidAndNotEmpty(value)
+            parsed = value.toStr().toInt()
+            if parsed >= 500 then return parsed
+        end if
+    end if
+    return 2000
+end function
+
+function correctionExtraOffsetMs() as integer
+    settings = chainLookupReturn(m.global, "session.user.settings", invalid)
+    if isValid(settings)
+        value = settings["syncplay.correction.extraoffset"]
+        if isValidAndNotEmpty(value) then return value.toStr().toInt()
+    end if
+    return 0
+end function

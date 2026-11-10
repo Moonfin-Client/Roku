@@ -1,0 +1,87 @@
+import "pkg:/source/api/watchParty.bs"
+import "pkg:/source/utils/watchPartyModel.bs"
+
+' A few quick pings to learn the clock, then one now and then to keep it
+const WATCH_PARTY_QUICK_PINGS = 4
+const WATCH_PARTY_QUICK_PING_MS = 1000
+const WATCH_PARTY_PING_MS = 15000
+
+sub init()
+    m.top.functionName = "runSend"
+end sub
+
+sub runSend()
+    port = CreateObject("roMessagePort")
+    m.top.observeField("outbox", port)
+    m.top.observeField("active", port)
+    path = "/Rooms/" + m.top.roomId + "/Messages"
+    samples = []
+    pings = 0
+    clock = CreateObject("roTimespan")
+    nextPing = 0
+
+    while m.top.active
+        waitMs = nextPing - clock.TotalMilliseconds()
+        if waitMs < 1 then waitMs = 1
+        msg = wait(waitMs, port)
+        if not m.top.active then exit while
+
+        batch = []
+        while msg <> invalid
+            if type(msg) = "roSGNodeEvent" and msg.getField() = "outbox"
+                queued = msg.getData()
+                if type(queued) = "roArray" then batch.Append(queued)
+            end if
+            msg = port.GetMessage()
+        end while
+
+        pinging = clock.TotalMilliseconds() >= nextPing
+        sentAt = watchPartyModel.LocalNow()
+        if pinging
+            batch.push({ "type": "ping", "client_sent_at": watchPartyModel.FormatTime(sentAt) })
+            pings++
+            nextPing = clock.TotalMilliseconds() + WATCH_PARTY_PING_MS
+            if pings < WATCH_PARTY_QUICK_PINGS then nextPing = clock.TotalMilliseconds() + WATCH_PARTY_QUICK_PING_MS
+        end if
+
+        if batch.Count() > 0
+            answer = watchPartyApi.Request("POST", path, { "messages": batch }, m.top.token, 15000, m.top)
+            ' A press lost on the way goes again, in its place in the queue
+            attempt = 0
+            while watchPartyModel.WorthRetrying(answer.status) and attempt < WATCH_PARTY_RETRIES and m.top.active
+                batch = watchPartyModel.UserMessages(batch)
+                if batch.Count() = 0 then exit while
+                attempt++
+                waited = 0
+                while waited < attempt * 1000 and m.top.active
+                    sleep(250)
+                    waited += 250
+                end while
+                answer = watchPartyApi.Request("POST", path, { "messages": batch }, m.top.token, 15000, m.top)
+            end while
+            receivedAt = watchPartyModel.LocalNow()
+            if answer.status >= 200 and answer.status < 300
+                others = []
+                replies = []
+                if type(answer.data) = "roAssociativeArray" and type(answer.data.messages) = "roArray" then replies = answer.data.messages
+                for each reply in replies
+                    if reply.type = "pong"
+                        sample = watchPartyModel.ClockSample(sentAt, watchPartyModel.ParseTime(reply.server_received_at), watchPartyModel.ParseTime(reply.server_sent_at), receivedAt)
+                        if sample.rtt >= 0
+                            samples = watchPartyModel.WithSample(samples, sample)
+                            m.top.clock = { offset: watchPartyModel.BestOffset(samples) }
+                        end if
+                    else
+                        others.push(reply)
+                    end if
+                end for
+                if others.Count() > 0 then m.top.replies = others
+            else if answer.status <> 0
+                m.top.replies = [{ "type": "error", "code": watchPartyModel.ErrorCode(answer), "status": answer.status }]
+            else if m.top.active and watchPartyModel.UserMessages(batch).Count() > 0
+                ' Still no answer after the retries, so the viewer hears it didn't go
+                m.top.replies = [{ "type": "error", "code": "unsent", "status": 0 }]
+            end if
+        end if
+    end while
+end sub

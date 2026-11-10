@@ -1,0 +1,392 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/watchPartyModel.bs"
+
+' The lobby and the party panel draw their rows by hand like the friends panel, each row an AA with
+' a key and a kind: heading, text, buttons, toggle, value, member or vote.
+
+const WP_ROW_GAP = 10
+const WP_ROW_HEIGHT = 66
+const WP_VOTE_HEIGHT = 104
+const WP_FILL = "pkg:/images/livetv/fill12.9.png"
+const WP_DOT = "pkg:/images/playback/dot84.webp"
+const WP_REST = "#1E1E1EFF"
+const WP_BUTTON_REST = "#2A2A2AFF"
+const WP_FOCUS = "#FFFFFFFF"
+const WP_INK = "#FFFFFFFF"
+const WP_FOCUS_INK = "#101010FF"
+const WP_MUTED = "#A8A8A8FF"
+const WP_ACCENT = "#33B7E4FF"
+const WP_DANGER = "#FF8A8AFF"
+
+sub wpRowsInit(group as object, width as integer, viewHeight as integer)
+    m.wpRows = { group: group, width: width, viewHeight: viewHeight, rows: [], focus: -1, button: 0, scroll: 0 }
+end sub
+
+' Draws the rows, keeping focus on the row with the same key when there still is one
+sub wpRowsShow(rows as object)
+    state = m.wpRows
+    keepKey = ""
+    if state.focus >= 0 and state.focus < state.rows.Count() then keepKey = state.rows[state.focus].key
+    state.group.removeChildrenIndex(state.group.getChildCount(), 0)
+    state.rows = rows
+
+    y = 0
+    for each row in rows
+        row.top = y
+        node = wpDrawRow(row, state.width)
+        node.translation = [0, y]
+        state.group.appendChild(node)
+        y += row.height + WP_ROW_GAP
+    end for
+
+    state.focus = -1
+    for i = 0 to rows.Count() - 1
+        if rows[i].key = keepKey or (rows[i].focusable = true and state.focus = -1) then state.focus = i
+    end for
+    if state.focus >= 0 and state.button >= wpButtonCount(rows[state.focus]) then state.button = 0
+    wpRowsPaint()
+end sub
+
+' Focus waits on a row that takes no press, such as a heading, until Up or Down moves it on
+sub wpRowsPark(key as string)
+    state = m.wpRows
+    for i = 0 to state.rows.Count() - 1
+        if state.rows[i].key = key
+            state.focus = i
+            state.button = 0
+            wpRowsPaint()
+            return
+        end if
+    end for
+end sub
+
+function wpButtonCount(row as object) as integer
+    if type(row.buttons) = "roArray" then return row.buttons.Count()
+    return 0
+end function
+
+' Answers the action a press asks for as { action, arg }, or invalid when the key only moved focus
+' or wasn't one for the list
+function wpRowsKey(key as string) as dynamic
+    state = m.wpRows
+    if state.focus < 0 then return invalid
+    row = state.rows[state.focus]
+
+    if key = "up" or key = "down"
+        delta = 1
+        if key = "up" then delta = -1
+        target = state.focus + delta
+        while target >= 0 and target < state.rows.Count() and state.rows[target].focusable <> true
+            target += delta
+        end while
+        if target < 0 or target >= state.rows.Count() then return invalid
+        state.focus = target
+        state.button = 0
+        wpRowsPaint()
+        return { action: "" }
+    end if
+
+    if key = "left" or key = "right"
+        count = wpButtonCount(row)
+        if count < 2 then return invalid
+        moved = state.button + 1
+        if key = "left" then moved = state.button - 1
+        if moved < 0 or moved >= count then return invalid
+        state.button = moved
+        wpRowsPaint()
+        return { action: "" }
+    end if
+
+    if key = "OK"
+        if wpButtonCount(row) > 0
+            picked = row.buttons[state.button]
+            return { action: picked.action, arg: picked.arg }
+        end if
+        return { action: row.action ?? "", arg: row.arg }
+    end if
+    return invalid
+end function
+
+sub wpRowsPaint()
+    state = m.wpRows
+    for i = 0 to state.rows.Count() - 1
+        row = state.rows[i]
+        focused = i = state.focus
+        hasButtons = wpButtonCount(row) > 0
+        lit = focused and not hasButtons
+        if isValid(row.fill)
+            row.fill.blendColor = row.rest
+            if lit then row.fill.blendColor = WP_FOCUS
+            if focused and hasButtons then row.fill.blendColor = "#262626FF"
+        end if
+        for each ink in row.inks
+            ink.label.color = ink.color
+            if lit then ink.label.color = WP_FOCUS_INK
+        end for
+        if hasButtons
+            for b = 0 to row.buttons.Count() - 1
+                button = row.buttons[b]
+                button.fill.blendColor = WP_BUTTON_REST
+                button.label.color = button.ink
+                if focused and b = state.button
+                    button.fill.blendColor = WP_FOCUS
+                    button.label.color = WP_FOCUS_INK
+                end if
+            end for
+        end if
+        if isValid(row.hint) then row.hint.visible = focused
+    end for
+
+    if state.focus < 0 then return
+    row = state.rows[state.focus]
+    if row.top < state.scroll then state.scroll = row.top
+    if row.top + row.height > state.scroll + state.viewHeight then state.scroll = row.top + row.height - state.viewHeight
+    state.group.translation = [0, -state.scroll]
+end sub
+
+function wpLeaveRow(isHost as boolean) as object
+    buttons = [{ label: tr("Leave"), action: "leave" }]
+    if isHost then buttons.push({ label: tr("End for everyone"), action: "end", danger: true })
+    return { key: "leave", kind: "buttons", buttons: buttons }
+end function
+
+function wpMemberRow(member as object, withButtons as boolean) as object
+    isSelf = member.is_self = true
+    name = toString(member.display_name ?? "")
+    row = { key: "member-" + toString(member.profile_id ?? ""), kind: "member", name: name, title: name, caption: watchPartyModel.StatusLabel(member.status), captionColor: watchPartyModel.StatusColor(member.status), buttons: [] }
+    if isSelf then row.title = tr("You")
+    if member.is_host = true
+        row.tag = tr("Host")
+        row.tagColor = "#F5B942FF"
+        row.ring = "#F5B942FF"
+    end if
+    if member.connected = false then row.nameColor = "#A8A8A8FF"
+    if withButtons and not isSelf
+        row.buttons = [
+            { label: tr("Make host"), action: "promote", arg: member.profile_id },
+            { label: tr("Remove"), action: "remove", arg: member.profile_id, danger: true }
+        ]
+    end if
+    return row
+end function
+
+' ===== Drawing =====
+
+function wpLabel(parent as object, text as string, size as integer, bold as boolean, color as string) as object
+    label = CreateObject("roSGNode", "Label")
+    if bold
+        label.font = "font:SmallBoldSystemFont"
+    else
+        label.font = "font:SmallSystemFont"
+    end if
+    label.font.size = size
+    label.color = color
+    label.text = text
+    parent.appendChild(label)
+    return label
+end function
+
+function wpFill(parent as object, width as float, height as float, color as string) as object
+    fill = CreateObject("roSGNode", "Poster")
+    fill.uri = WP_FILL
+    fill.width = width
+    fill.height = height
+    fill.blendColor = color
+    parent.appendChild(fill)
+    return fill
+end function
+
+function wpAvatar(parent as object, name as string, size as integer, ring as string) as object
+    holder = CreateObject("roSGNode", "Group")
+    if ring <> ""
+        outline = CreateObject("roSGNode", "Poster")
+        outline.uri = WP_DOT
+        outline.width = size + 6
+        outline.height = size + 6
+        outline.translation = [-3, -3]
+        outline.blendColor = ring
+        holder.appendChild(outline)
+    end if
+    disc = CreateObject("roSGNode", "Poster")
+    disc.uri = WP_DOT
+    disc.width = size
+    disc.height = size
+    disc.blendColor = watchPartyModel.AvatarColor(name)
+    holder.appendChild(disc)
+    letter = wpLabel(holder, watchPartyModel.Initial(name), Int(size * 0.42), true, WP_INK)
+    letter.width = size
+    letter.height = size
+    letter.horizAlign = "center"
+    letter.vertAlign = "center"
+    parent.appendChild(holder)
+    return holder
+end function
+
+function wpDot(parent as object, size as integer, color as string) as object
+    dot = CreateObject("roSGNode", "Poster")
+    dot.uri = WP_DOT
+    dot.width = size
+    dot.height = size
+    dot.blendColor = color
+    parent.appendChild(dot)
+    return dot
+end function
+
+function wpDrawRow(row as object, width as integer) as object
+    node = CreateObject("roSGNode", "Group")
+    row.inks = []
+    row.rest = row.rest ?? WP_REST
+    kind = row.kind
+
+    if kind = "heading"
+        row.height = 40
+        ' Lit only when focus is parked on it
+        row.fill = wpFill(node, width, row.height, "#00000000")
+        row.rest = "#00000000"
+        color = row.color ?? WP_ACCENT
+        heading = wpLabel(node, row.text, 22, true, color)
+        heading.translation = [4, 6]
+        row.inks.push({ label: heading, color: color })
+        return node
+    end if
+
+    if kind = "text"
+        lines = row.lines ?? 1
+        size = row.size ?? 22
+        row.height = lines * (size + 10) + 4
+        label = wpLabel(node, row.text, size, false, row.color ?? WP_MUTED)
+        label.width = width - 8
+        label.height = row.height
+        label.wrap = true
+        label.maxLines = lines
+        label.translation = [4, 0]
+        return node
+    end if
+
+    if kind = "buttons"
+        row.height = WP_ROW_HEIGHT
+        row.focusable = true
+        gap = 12
+        count = row.buttons.Count()
+        buttonWidth = (width - gap * (count - 1)) / count
+        for b = 0 to count - 1
+            button = row.buttons[b]
+            group = CreateObject("roSGNode", "Group")
+            group.translation = [b * (buttonWidth + gap), 0]
+            button.fill = wpFill(group, buttonWidth, row.height, WP_BUTTON_REST)
+            button.ink = WP_INK
+            if button.danger = true then button.ink = WP_DANGER
+            button.label = wpLabel(group, button.label, 24, true, button.ink)
+            button.label.width = buttonWidth
+            button.label.height = row.height
+            button.label.horizAlign = "center"
+            button.label.vertAlign = "center"
+            node.appendChild(group)
+        end for
+        return node
+    end if
+
+    if kind = "toggle" or kind = "value"
+        row.height = WP_ROW_HEIGHT
+        row.focusable = row.action <> invalid
+        row.fill = wpFill(node, width, row.height, "#222222FF")
+        row.rest = "#222222FF"
+        title = wpLabel(node, row.label, 24, true, WP_INK)
+        title.translation = [20, 0]
+        title.height = row.height
+        title.width = width - 160
+        title.vertAlign = "center"
+        row.inks.push({ label: title, color: WP_INK })
+        if kind = "value"
+            shown = wpLabel(node, row.value ?? "", 22, false, WP_MUTED)
+            shown.width = 200
+            shown.height = row.height
+            shown.horizAlign = "right"
+            shown.vertAlign = "center"
+            shown.translation = [width - 220, 0]
+            row.inks.push({ label: shown, color: WP_MUTED })
+        else
+            track = wpFill(node, 78, 44, "#3D3D3DFF")
+            track.uri = "pkg:/images/livetv/fill22.9.png"
+            track.translation = [width - 98, (row.height - 44) / 2]
+            knob = wpDot(node, 34, "#B8B8B8FF")
+            knob.translation = [width - 93, (row.height - 34) / 2]
+            if row.on = true
+                track.blendColor = "#00A4DCFF"
+                knob.blendColor = WP_INK
+                knob.translation = [width - 59, (row.height - 34) / 2]
+            end if
+        end if
+        return node
+    end if
+
+    if kind = "member"
+        row.height = WP_ROW_HEIGHT + 6
+        row.focusable = wpButtonCount(row) > 0
+        row.fill = wpFill(node, width, row.height, "#00000000")
+        row.rest = "#00000000"
+        wpAvatar(node, row.name, 48, row.ring ?? "").translation = [12, (row.height - 48) / 2]
+        name = wpLabel(node, row.title ?? row.name, 23, true, row.nameColor ?? WP_INK)
+        name.translation = [76, 8]
+        if isValid(row.caption)
+            wpDot(node, 12, row.captionColor ?? WP_MUTED).translation = [77, 48]
+            caption = wpLabel(node, row.caption, 19, false, WP_MUTED)
+            caption.translation = [96, 39]
+        end if
+        if isValid(row.tag)
+            tag = wpLabel(node, row.tag, 20, true, row.tagColor ?? WP_MUTED)
+            tag.width = 160
+            tag.horizAlign = "right"
+            tag.translation = [width - 176, 22]
+        end if
+        if wpButtonCount(row) > 0
+            edge = width - 8
+            for b = row.buttons.Count() - 1 to 0 step -1
+                button = row.buttons[b]
+                group = CreateObject("roSGNode", "Group")
+                buttonWidth = 150
+                edge -= buttonWidth
+                group.translation = [edge, (row.height - 48) / 2]
+                edge -= 10
+                button.fill = wpFill(group, buttonWidth, 48, WP_BUTTON_REST)
+                button.ink = WP_INK
+                if button.danger = true then button.ink = WP_DANGER
+                button.label = wpLabel(group, button.label, 20, true, button.ink)
+                button.label.width = buttonWidth
+                button.label.height = 48
+                button.label.horizAlign = "center"
+                button.label.vertAlign = "center"
+                node.appendChild(group)
+            end for
+        end if
+        return node
+    end if
+
+    if kind = "vote"
+        row.height = WP_VOTE_HEIGHT
+        row.focusable = true
+        row.fill = wpFill(node, width, row.height, WP_REST)
+        title = wpLabel(node, row.title, 25, true, WP_INK)
+        title.translation = [22, 12]
+        title.width = width - 220
+        row.inks.push({ label: title, color: WP_INK })
+        count = wpLabel(node, row.votes ?? "", 20, true, WP_MUTED)
+        count.width = 180
+        count.horizAlign = "right"
+        count.translation = [width - 202, 16]
+        row.inks.push({ label: count, color: WP_MUTED })
+        caption = wpLabel(node, row.caption ?? "", 20, false, WP_MUTED)
+        caption.translation = [22, 50]
+        caption.width = width - 44
+        row.inks.push({ label: caption, color: WP_MUTED })
+        if isValid(row.hintText)
+            row.hint = wpLabel(node, row.hintText, 18, false, "#3D3D3DFF")
+            row.hint.translation = [22, 76]
+            row.hint.visible = false
+        end if
+        return node
+    end if
+
+    row.height = 0
+    return node
+end function

@@ -1,0 +1,422 @@
+import "pkg:/source/enums/PlaybackMethod.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/watchPartyModel.bs"
+
+const WATCH_PARTY_ROOMS_POLL_SECONDS = 60
+const WATCH_PARTY_ALERT_SECONDS = 8
+
+sub init()
+    m.token = ""
+    m.roomId = ""
+    m.memberId = ""
+    m.offset = 0#
+    m.generation = -1
+    m.events = invalid
+    m.sender = invalid
+    m.tasks = []
+    m.roomsBusy = false
+    m.seenRooms = invalid
+    m.alertOrder = []
+    m.lobbyStatus = ""
+    m.configFor = ""
+    m.reconnecting = false
+    m.pollTimer = CreateObject("roSGNode", "Timer")
+    m.pollTimer.duration = WATCH_PARTY_ROOMS_POLL_SECONDS
+    m.pollTimer.repeat = true
+    m.pollTimer.observeField("fire", "refreshRooms")
+end sub
+
+' ===== Joining and leaving =====
+
+' Takes the answer to a create or a join, { room, token }
+function enter(answer as object) as boolean
+    room = answer.room
+    if type(room) <> "roAssociativeArray" or not isValidAndNotEmpty(answer.token) then return false
+
+    stopTasks()
+    m.token = answer.token
+    m.roomId = toString(room.room_id ?? "")
+    m.memberId = toString(room.self_member_id ?? "")
+    m.offset = 0#
+    m.generation = -1
+    m.lobbyStatus = ""
+    m.reconnecting = false
+    m.top.suggestions = []
+    m.top.room = room
+    m.top.inRoom = true
+
+    m.events = CreateObject("roSGNode", "WatchPartyEventsTask")
+    m.events.roomId = m.roomId
+    m.events.token = m.token
+    m.events.active = true
+    m.events.observeField("batch", "onBatch")
+    m.events.observeField("failure", "onFailure")
+    m.events.observeField("recovered", "onRecovered")
+    m.events.control = "RUN"
+
+    m.sender = CreateObject("roSGNode", "WatchPartySendTask")
+    m.sender.roomId = m.roomId
+    m.sender.token = m.token
+    m.sender.active = true
+    m.sender.observeField("replies", "onReplies")
+    m.sender.observeField("clock", "onClock")
+    m.sender.control = "RUN"
+
+    if room.phase = "playing"
+        watch()
+    else
+        reportLobbyReady()
+    end if
+    return true
+end function
+
+' A report with no session only sets the lobby status, and never moves the room or counts toward a
+' start.
+sub reportLobbyReady()
+    send([{ "type": "state_report", "session_id": invalid, "position_seconds": 0, "is_paused": true, "status": "ready" }])
+end sub
+
+sub leave(close = false as boolean)
+    if m.roomId = "" then return
+    path = "/Rooms/" + m.roomId + "/Leave"
+    if close then path = "/Rooms/" + m.roomId + "/Close"
+    runTask({ kind: "leave", method: "POST", path: path, token: m.token })
+    finish("")
+end sub
+
+sub finish(text as string)
+    stopTasks()
+    m.roomId = ""
+    m.token = ""
+    m.memberId = ""
+    m.generation = -1
+    m.top.room = {}
+    m.top.inRoom = false
+    if text <> "" then banner([{ title: text, icon: "pkg:/images/watchParty/party.webp" }])
+end sub
+
+sub stopTasks()
+    if isValid(m.events)
+        m.events.active = false
+        for each name in ["batch", "failure", "recovered"]
+            m.events.unobserveField(name)
+        end for
+        m.events = invalid
+    end if
+    if isValid(m.sender)
+        m.sender.active = false
+        m.sender.unobserveField("replies")
+        m.sender.unobserveField("clock")
+        m.sender = invalid
+    end if
+end sub
+
+' ===== What the room says =====
+
+sub onBatch(event as object)
+    if not isValid(m.events) or not m.events.isSameNode(event.getRoSGNode()) then return
+    for each message in event.getData().messages
+        if m.roomId <> "" and type(message) = "roAssociativeArray" then handleMessage(message)
+    end for
+end sub
+
+sub handleMessage(message as object)
+    kind = message.type
+    if kind = "snapshot"
+        applyRoom(message.room)
+    else if kind = "chat"
+        if type(message.message) = "roAssociativeArray" then m.top.chatMessage = message.message
+    else if kind = "reaction"
+        m.top.reaction = message
+    else if kind = "suggestions_update"
+        if type(message.suggestions) = "roArray" then m.top.suggestions = message.suggestions
+        ' The update leaves out this member's own votes, so the list is read again for them
+        act({ kind: "suggestions", method: "GET", path: "Suggestions" })
+    else if kind = "transport_command"
+        if type(message.command) = "roAssociativeArray" then onCommand(message.command)
+    else if kind = "notice"
+        text = watchPartyModel.NoticeText(message, m.memberId)
+        if text <> "" then m.top.toast = { text: text, name: toString(message.display_name ?? "") }
+    else if kind = "room_closed"
+        finish(watchPartyModel.ClosedText(message.reason, watchPartyModel.HostName(m.top.room), m.top.room.self_role = "host"))
+    else if kind = "removed"
+        finish(tr("You were removed from the watch party."))
+    else if kind = "error"
+        m.top.toast = { text: watchPartyModel.ErrorText(message.code) }
+    end if
+end sub
+
+sub applyRoom(room as dynamic)
+    if type(room) <> "roAssociativeArray" then return
+    previous = m.top.room
+    if isValidAndNotEmpty(room.self_member_id) then m.memberId = room.self_member_id
+    m.top.room = room
+
+    if type(previous) = "roAssociativeArray" and previous.room_id = room.room_id and isValid(previous.guest_control_policy) and previous.guest_control_policy <> room.guest_control_policy
+        m.top.toast = { text: watchPartyModel.PolicyText(room.guest_control_policy) }
+    end if
+    ' A lobby member says it's ready again each time a snapshot shows its status change to anything
+    ' else, never on a timer
+    member = watchPartyModel.MemberById(room, m.memberId)
+    status = ""
+    if isValid(member) then status = toString(member.status ?? "")
+    if room.phase = "lobby" and status <> "" and status <> "ready" and status <> m.lobbyStatus then reportLobbyReady()
+    m.lobbyStatus = status
+end sub
+
+' A command moves the room's anchor, and a start or a switch sends everyone to the video
+sub onCommand(command as object)
+    room = m.top.room
+    room.phase = "playing"
+    room.playback_state = command.playback_state
+    room.is_paused = command.playback_state <> "playing"
+    room.anchor_position_seconds = command.position_seconds
+    room.anchor_at = command.execute_at
+    if isValid(command.generation) then room.generation = command.generation
+    m.top.room = room
+    m.top.command = command
+
+    text = watchPartyModel.CommandText(command, m.memberId)
+    if text <> "" then m.top.toast = { text: text, name: toString(command.by_display_name ?? "") }
+
+    if command.playback_state = "waiting" and command.generation <> m.generation then watch()
+end sub
+
+sub onFailure(event as object)
+    if not isValid(m.events) or not m.events.isSameNode(event.getRoSGNode()) then return
+    failure = event.getData()
+    if failure.final = true
+        text = tr("The watch party has ended.")
+        if failure.code = "disabled" then text = watchPartyModel.ErrorText("disabled")
+        finish(text)
+        return
+    end if
+    if m.reconnecting then return
+    m.reconnecting = true
+    m.top.toast = { text: tr("Reconnecting to the party...") }
+end sub
+
+sub onRecovered()
+    if not m.reconnecting then return
+    m.reconnecting = false
+    m.top.toast = { text: tr("Back in the party") }
+end sub
+
+sub onReplies(event as object)
+    for each reply in event.getData()
+        if reply.type = "error" and isValidAndNotEmpty(reply.code) then m.top.toast = { text: watchPartyModel.ErrorText(reply.code) }
+    end for
+end sub
+
+sub onClock(event as object)
+    m.offset = event.getData().offset
+end sub
+
+function serverNow() as double
+    return watchPartyModel.LocalNow() + m.offset
+end function
+
+function selfId() as string
+    return m.memberId
+end function
+
+sub send(messages as object)
+    if isValid(m.sender) then m.sender.outbox = messages
+end sub
+
+' ===== The video =====
+
+' Plays the room's item from where the room is, replacing whatever video is up
+sub watch()
+    room = m.top.room
+    contentId = toString(room.selected_content_id ?? "")
+    if contentId = "" or room.phase <> "playing" then return
+    m.generation = -1
+    if isValid(room.generation) then m.generation = room.generation
+
+    sceneManager = m.global.sceneManager
+    active = sceneManager.callFunc("getActiveScene")
+    if isValid(active) and active.isSubType("VideoPlayerView")
+        if active.id = contentId then return
+        active.callFunc("wpDetach", false)
+        active.control = "stop"
+        sceneManager.callFunc("clearPreviousScene")
+    end if
+
+    itemType = "movie"
+    if room.content_type = "Episode" then itemType = "episode"
+    position = watchPartyModel.ExpectedPosition(watchPartyModel.ReferenceFromRoom(room), serverNow())
+
+    node = CreateObject("roSGNode", "ContentNode")
+    node.id = contentId
+    node.addFields({ type: itemType, json: { "Id": contentId, "Type": toString(room.content_type ?? "Movie") }, selectedAudioStreamIndex: 0 })
+    node.addField("startingPoint", "longinteger", false)
+    node.startingPoint = Int(position * 1000) * 10000&
+
+    queue = m.global.queueManager
+    queue.callFunc("setForceTranscode", PlaybackMethod.PLAYNORMALLY)
+    queue.callFunc("clear")
+    queue.callFunc("resetShuffle")
+    queue.callFunc("push", node)
+    ' Cinema Mode's pre-rolls would leave this device behind everyone
+    queue.callFunc("setPrerollStatus", false)
+    queue.callFunc("playQueue")
+end sub
+
+' ===== Calls =====
+
+' request is { kind, method, path, body }, and a path without a leading slash is in the room
+sub act(request as object)
+    if request.path.Left(1) <> "/" then request.path = "/Rooms/" + m.roomId + "/" + request.path
+    request.token = m.token
+    runTask(request)
+end sub
+
+sub runTask(request as object)
+    task = CreateObject("roSGNode", "WatchPartyTask")
+    task.request = request
+    task.observeField("result", "onTaskResult")
+    task.control = "RUN"
+    m.tasks.push(task)
+end sub
+
+sub onTaskResult(event as object)
+    task = event.getRoSGNode()
+    for i = 0 to m.tasks.Count() - 1
+        if m.tasks[i].isSameNode(task)
+            m.tasks.Delete(i)
+            exit for
+        end if
+    end for
+
+    result = event.getData()
+    kind = result.request.kind
+    if kind = "rooms"
+        onRooms(result)
+        return
+    end if
+    if kind = "config"
+        ' A server that didn't answer is asked again on the next poll
+        m.configFor = result.request.key
+        if watchPartyModel.WorthRetrying(result.status) then m.configFor = ""
+        m.top.serverConfig = watchPartyModel.ServerConfig(result.status, result.data)
+        refreshRooms()
+        return
+    end if
+    if kind = "leave" then return
+
+    ok = result.status >= 200 and result.status < 300
+    if kind = "suggestions"
+        if ok and type(result.data) = "roAssociativeArray" and type(result.data.suggestions) = "roArray" and result.request.token = m.token then m.top.suggestions = result.data.suggestions
+        return
+    end if
+    if ok and (kind = "create" or kind = "join") then enter(result.data)
+    ' The party panel has no line of its own, so a refusal there shows as a toast over the video
+    if not ok and inArray(["promote", "remove", "policy", "pin"], kind) then m.top.toast = { text: watchPartyModel.ErrorText(watchPartyModel.ErrorCode(result)) }
+    ' A call answered with the room shows its effect at once, before the long poll brings it
+    if ok and kind <> "create" and kind <> "join" and type(result.data) = "roAssociativeArray" and result.request.token = m.token then applyRoom(result.data.room)
+    m.top.answer = result
+end sub
+
+' ===== The room list =====
+
+function partiesOn() as boolean
+    return get_user_setting_bool("watchParty.enabled", true) and chainLookupReturn(m.global.session, "pluginInfo.installed", false) = true
+end function
+
+sub watchRooms(on as boolean)
+    if not on
+        m.pollTimer.control = "stop"
+        return
+    end if
+    refreshRooms()
+    m.pollTimer.control = "start"
+end sub
+
+sub refreshRooms()
+    if not partiesOn()
+        m.top.rooms = []
+        m.top.roomsState = "missing"
+        return
+    end if
+    ' The admin's switches come first, once for each server and account
+    key = chainLookupReturn(m.global.session, "server.url", "") + "|" + chainLookupReturn(m.global.session, "user.id", "")
+    if key <> m.configFor
+        if m.configFor <> "loading" then runTask({ kind: "config", method: "GET", path: "/Config", key: key })
+        m.configFor = "loading"
+        return
+    end if
+    if m.top.serverConfig.enabled <> true
+        m.top.rooms = []
+        m.top.roomsState = "disabled"
+        return
+    end if
+    if m.roomsBusy then return
+    m.roomsBusy = true
+    runTask({ kind: "rooms", method: "GET", path: "/Rooms" })
+end sub
+
+sub onRooms(result as object)
+    m.roomsBusy = false
+    if result.status = 200 and type(result.data) = "roAssociativeArray" and type(result.data.rooms) = "roArray"
+        rooms = result.data.rooms
+        fresh = watchPartyModel.NewRooms(m.seenRooms, rooms)
+        m.seenRooms = watchPartyModel.RoomIds(rooms)
+        if fresh.Count() > 0 and get_user_setting_bool("watchParty.alerts", false) and m.top.serverConfig.alerts = true and not m.top.inRoom and not partiesScreenUp() then showAlerts(fresh)
+        m.top.rooms = watchPartyModel.AlertsFirst(rooms, m.alertOrder)
+        m.top.roomsState = "ok"
+        return
+    end if
+
+    if watchPartyModel.ErrorCode(result) = "disabled"
+        m.top.rooms = []
+        m.top.roomsState = "disabled"
+    else if result.status = 404
+        m.top.rooms = []
+        m.top.roomsState = "missing"
+    else
+        m.top.roomsState = "failed"
+    end if
+end sub
+
+' The Watch Parties screen lists a new room itself, so it needs no banner
+function partiesScreenUp() as boolean
+    active = m.global.sceneManager.callFunc("getActiveScene")
+    return isValid(active) and active.isSubType("WatchPartiesScreen")
+end function
+
+sub showAlerts(fresh as object)
+    notices = []
+    for each summary in fresh
+        m.alertOrder.Unshift(toString(summary.room_id ?? ""))
+        notice = watchPartyModel.AlertFor(summary)
+        notice.icon = "pkg:/images/watchParty/party.webp"
+        notice.seconds = WATCH_PARTY_ALERT_SECONDS
+        notices.push(notice)
+    end for
+    banner(notices)
+end sub
+
+' The app's passive banner, which never takes focus
+sub banner(notices as object)
+    active = m.global.sceneManager.callFunc("getActiveScene")
+    if not isValid(active) then return
+    scene = active.getScene()
+    if not isValid(scene) then return
+    node = scene.findNode("notificationBanner")
+    if isValid(node) then node.callFunc("enqueue", notices)
+end sub
+
+' A Watch Parties screen already up takes the request rather than a second one opening
+sub open(request = {} as object)
+    sceneManager = m.global.sceneManager
+    active = sceneManager.callFunc("getActiveScene")
+    if isValid(active) and active.isSubType("WatchPartiesScreen")
+        active.request = request
+        return
+    end if
+    screen = CreateObject("roSGNode", "WatchPartiesScreen")
+    screen.request = request
+    sceneManager.callFunc("pushScene", screen)
+end sub

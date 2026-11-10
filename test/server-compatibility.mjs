@@ -102,8 +102,9 @@ const selections = {
     'source/utils/accessSchedule.bs': null,
     'source/utils/musicCategories.bs': null,
     'source/utils/moonbaseInstall.bs': null,
+    'source/utils/watchPartyModel.bs': null,
     'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'optionRange', 'optionsFit'],
-    'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt'],
+    'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt', 'subtitleBottom', 'seekBarY', 'timeRowShows'],
     'components/settings/settingsEditors.bs': ['editorArrangement'],
     'components/settings/settings.bs': ['settingPath'],
     'components/details/stage/StageChipRow.bs': ['columnShares'],
@@ -129,7 +130,7 @@ const selections = {
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting', 'settingOr', 'getSavedUsers', 'savedUserFirst'],
-    'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'shuffleArray'],
+    'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'isLocalhost', 'isSupportedMediaServer', 'isSiloSystemInfo', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'shuffleArray'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
@@ -163,6 +164,7 @@ for (const [file, names] of Object.entries(selections)) {
 }
 source += '\n' + (await readFile('source/ShowScenes.bs', 'utf8')).match(/^const minimumServerVersion = .+$/m)[0];
 source += '\n' + (await readFile('components/details/QuickLookItemDetails.bs', 'utf8')).match(/^const QL_MAX_BUTTONS = .+$/m)[0];
+source += '\n' + (await readFile('components/settings/SettingsPlayerPreview.bs', 'utf8')).match(/^const \w+ = .+$/gm).join('\n');
 source += '\n' + (await readFile('source/api/EmbyConnect.bs', 'utf8')).replace(/^import .*$/gm, '').replace(/    function Request\([^]*?    end function/, await readFile('test/emby-connect-transport.bs', 'utf8'));
 source += '\n' + await readFile('test/emby-connect.bs', 'utf8');
 source += '\n' + await readFile('test/emby-features.bs', 'utf8');
@@ -250,7 +252,7 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/live-tv-guide.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/recordAiring.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/record-airing.bs', 'utf8');
-for (const [file, test] of [['source/utils/heldSeek.bs', 'test/held-seek.bs'], ['source/utils/secondarySubtitle.bs', 'test/secondary-subtitle.bs'], ['source/utils/liveWindow.bs', 'test/live-window.bs'], ['source/utils/subtitleText.bs', 'test/subtitle-text.bs']]) {
+for (const [file, test] of [['source/utils/heldSeek.bs', 'test/held-seek.bs'], ['source/utils/secondarySubtitle.bs', 'test/secondary-subtitle.bs'], ['source/utils/liveWindow.bs', 'test/live-window.bs'], ['source/utils/subtitleText.bs', 'test/subtitle-text.bs'], ['source/utils/osdControls.bs', 'test/osd-controls.bs']]) {
     source += '\n' + (await readFile(file, 'utf8')).replace(/^import .*$/gm, '') + '\n' + await readFile(test, 'utf8');
 }
 source += '\n' + await readFile('test/server-date.bs', 'utf8');
@@ -268,7 +270,7 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/minimalist-extras.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n' + settingsSyncFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['SubtitleModes', 'MediaBarSource', 'PluginToRoku', 'RokuToPlugin', 'ImageTypeName', 'EncodeRowImageTypes', 'RowImageTypeKeys', 'DecodeRowImageTypes', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile']) {
+for (const name of ['SubtitleModes', 'MediaBarSource', 'PluginToRoku', 'RokuToPlugin', 'ImageTypeName', 'EncodeRowImageTypes', 'RowImageTypeKeys', 'DecodeRowImageTypes', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile', 'SiloSectionIn', 'SiloSectionOut']) {
     source += '\n' + settingsSyncFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
@@ -277,8 +279,11 @@ source += '\n' + await readFile('test/home-cards.bs', 'utf8');
 source += '\n' + await readFile('test/calendar-entries.bs', 'utf8');
 source += '\n' + await readFile('test/arr-calendar-rows.bs', 'utf8');
 source += '\n' + await readFile('test/moonbase-install.bs', 'utf8');
+source += '\n' + await readFile('test/watch-party.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/keyboardLayouts.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/keyboard-layouts.bs', 'utf8');
+source += '\n' + await readFile('source/utils/profileCarousel.bs', 'utf8');
+source += '\n' + await readFile('test/profile-carousel.bs', 'utf8');
 source += '\n' + await readFile('test/settings-sync-profile.bs', 'utf8');
 source += '\n' + await readFile('test/seasonal-effects.bs', 'utf8');
 source += '\n' + await readFile('test/audio-track.bs', 'utf8');
@@ -373,6 +378,10 @@ for (const name of [
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/achievement-unlocks.bs', 'utf8');
+for (const file of ['source/api/silo/SiloSession.bs', 'source/api/silo/SiloMapper.bs', 'source/api/silo/SiloMediaSources.bs', 'source/api/silo/SiloImages.bs', 'source/api/silo/SiloAccount.bs', 'source/api/silo/SiloPager.bs', 'source/api/silo/SiloCatalog.bs', 'source/api/silo/SiloHome.bs', 'source/api/silo/SiloActions.bs', 'source/api/silo/SiloPlayback.bs', 'source/api/silo/SiloExtras.bs', 'source/api/silo/SiloSeerr.bs', 'source/api/silo/SiloRouter.bs']) {
+    source += '\n' + (await readFile(file, 'utf8')).replace(/^import .*$/gm, '');
+}
+source += '\n' + await readFile('test/silo.bs', 'utf8');
 source += '\n' + await readFile('test/friends-chat.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
@@ -458,9 +467,12 @@ const showScenes = await readFile('source/ShowScenes.bs', 'utf8');
 assert.match(showScenes, /if not group\.hasField\("detailExtrasTask"\) then group\.addField/, 'Detail extras task can be restarted on one screen');
 
 const buttonHost = await readFile('components/details/detailButtonHost.bs', 'utf8');
-const extrasChanged = buttonHost.match(/sub onDetailExtrasChanged\(\)[^]*?end sub/)[0];
-assert.match(extrasChanged, /selectedId = m\.buttonGroups\[previousIndex\]\.id/, 'Async button rebuild remembers logical selection');
-assert.match(extrasChanged, /m\.currentButtonIndex = i[^]*?if focusedId <> "" then focusButton\(i\)/, 'Async button rebuild restores index without stealing focus');
+assert.match(buttonHost.match(/sub onDetailExtrasChanged\(\)[^]*?end sub/)[0], /rebuildButtonRow\(\)/, 'A late extras answer rebuilds the button row');
+const toggleWatched = buttonHost.match(/sub toggleWatched\(\)[^]*?end sub/)[0];
+assert.match(toggleWatched, /itemData\.UserData\.PlaybackPositionTicks = 0[^]*?if hadProgress then rebuildButtonRow\(\)/, 'Marking watched or unwatched drops the Resume button');
+const rebuildRow = buttonHost.match(/sub rebuildButtonRow\(\)[^]*?end sub/)[0];
+assert.match(rebuildRow, /selectedId = m\.buttonGroups\[previousIndex\]\.id/, 'Async button rebuild remembers logical selection');
+assert.match(rebuildRow, /m\.currentButtonIndex = i[^]*?if focusedId <> "" then focusButton\(i\)/, 'Async button rebuild restores index without stealing focus');
 
 const remoteItems = await readFile('source/api/Items.bs', 'utf8');
 const remoteMetadata = remoteItems.match(/function ItemMetaDataForServer\([^]*?end function/)[0];
@@ -487,6 +499,7 @@ for (const locale of ['en_US', 'ca', 'de_DE', 'fr', 'fr_CA', 'pt_BR']) {
     assert.match(await readFile(`locale/${locale}/translations.ts`, 'utf8'), /<source>Since you watched %1<\/source>[^]*?<translation>[^<]*%1[^<]*<\/translation>/, `${locale} has the Since you watched title`);
 }
 
+assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /"kind": "pluginDynamic",\s+"type": "none",\s+"enabled": enabled,\s+"order": order,\s+"serverId": owner,\s+"pluginSource": entry\.source,\s+"pluginSection": section,\s+"pluginAdditionalData": entry\.itemId,\s+"pluginDisplayText": entry\.title\s+\}/, 'A picked row goes to the server with its keys as the other clients spell them');
 assert.match(await readFile('components/settings/settings.bs', 'utf8'), /"homeSections": settingsSync\.HomeSectionsPayload\(\),\s+"homeRowOrder": settingsSync\.RowOrderPayload\(\)/, 'The home layout goes to the server under its keys as spelled, since BrightScript lowercases bare keys');
 assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /pluginKey: "hiddenDetailSectionsTv", rokuKey: "ui\.itemdetail\.hiddenSections", type: "jsonArray"/, 'The hidden detail sections travel with the other clients');
 
@@ -721,7 +734,7 @@ const episodePick = playerView.match(/sub onEpisodePicked\([^]*?end sub/)[0];
 assert.match(episodePick, /ReportPlayback\("stop"\)\s+m\.top\.unobserveField\("state"\)/, 'Switching episodes reports the old one stopped before the state observer comes off');
 assert.match(episodePick, /startingPoint = episodeBrowser\.ResumeTicks\(episode\)[^]*?callFunc\("push", episode\)/, 'The picked episode carries its resume point into the queue');
 assert.match(await readFile('source/utils/buttonLayout.bs', 'utf8'), /id: "episodes", nodeId: "showEpisodes"/, 'The player offers the Episodes button');
-assert.match(await readFile('components/video/OSD.bs', 'utf8'), /buttonLayout\.OsdCandidates\(m\.top\.hasChapters, m\.top\.hasEpisodes, m\.top\.hasSubtitles\)/, 'from the same list the settings preview draws');
+assert.match(await readFile('components/video/OSD.bs', 'utf8'), /buttonLayout\.OsdCandidates\(m\.top\.hasChapters, m\.top\.hasEpisodes, m\.top\.hasSubtitles, m\.top\.hasPeople, m\.top\.canFavorite\)/, 'from the same list the settings preview draws');
 assert.match(await readFile('source/utils/buttonLayout.bs', 'utf8'), /id: "chapters"[^]*?id: "episodes"[^]*?id: "subtitles"/, 'Episodes sits between Chapters and Subtitles in Player Buttons');
 // Every setting that changes how subtitles look shows on the Player preview, and the style rows reach their own screen
 const settingsScreen = await readFile('components/settings/settings.bs', 'utf8');
@@ -748,6 +761,13 @@ assert.match(playerView, /thumbUrl: chapterImageURL\(m\.top\.id, i, m\.chapters\
 assert.match(await readFile('components/details/ModernItemDetails.bs', 'utf8'), /chapterImageURL\(itemId, i, ch\.LookupCI\("ImageTag"\), serverBase, authToken\)/, 'Modern builds chapter images with the same helper as the player');
 assert.match(chapterOverlay, /createChild\("ScrollingLabel"\)[^]*?if focused then repeatCount = -1/, 'A long chapter name scrolls on the focused card only');
 process.stdout.write('PASS: chapter row wiring (7 checks)\n');
+const osdFile = await readFile('components/video/OSD.bs', 'utf8');
+assert.match(osdFile, /sub resetFocusToDefaultButton\(\)[^]*?else\s+focusOnSeekbar\(\)/, 'The controls open on the seek bar, as Core\'s do');
+assert.match(osdFile, /sub moveAlongRow\([^]*?focusControlGroup\("secondary", 0\)/, 'Right runs from the transport buttons onto the rest of the row');
+assert.match(playerView, /if key = KeyCode\.OK\s+if not stateAllowsOSD\(\) then return true\s+handleVideoPlayPauseAction\(\)\s+showOSD\(\)/, 'OK with the controls hidden plays or pauses and brings them up');
+assert.match(playerView, /openControlMenu\("showSpeedMenu"[^]*?openControlMenu\("showQualityMenu"/, 'Speed and Bitrate open in the track pickers\' panel');
+assert.match(await readFile('components/manager/ViewCreator.bs', 'utf8'), /callFunc\("showControlsOn", "showAudioMenu"\)[^]*?callFunc\("showControlsOn", "showSubtitleMenu"\)/, 'The audio and subtitle pickers hand back to their buttons');
+process.stdout.write('PASS: player controls wiring (5 checks)\n');
 
 // Every row on the Calendar screen that the calendar draws moves the preview to it. The release types are
 // shared with the Upcoming Movies row, week start only changes the month grid and the select action only
@@ -882,7 +902,7 @@ assert.match(watchingNowRows.match(/sub onWatchingNowRefreshFired\([^]*?end sub/
 assert.match(watchingNowRows.match(/sub updateCustomDynamicRowItems\([^]*?end sub/)[0], /if homeRowIndexById\(rowId\) >= 0 then return/, 'A failed or empty refresh keeps the watching now cards up, as in Core');
 assert.match(loadItemsSource.match(/function loadWatchingNowRow\([^]*?end function/)[0], /customRowCard\(item, \{\}\)/, 'Watching now cards are outside titles, as in Core');
 assert.match(await readFile('components/home/Home.xml', 'utf8'), /rowTitleComponentName="HomeRowTitle"/, 'Home rows draw their titles with the row title component');
-assert.match(await readFile('source/utils/misc.bs', 'utf8'), /if isSeerrFilterRow\(rowId\) or inArray\(\["mdblist_watching_now", "studios", "audio", "resumeaudio"\], rowId\) then return false/, 'Watching now keeps its wide cards in modern rows, as do Seerr\'s browse rows, Studios and audio rows');
+assert.match(await readFile('source/utils/misc.bs', 'utf8'), /if isSeerrFilterRow\(rowId\) or inArray\(\["mdblist_watching_now", "watch_parties", "studios", "audio", "resumeaudio"\], rowId\) then return false/, 'Watching now keeps its wide cards in modern rows, as do Watch Parties, Seerr\'s browse rows, Studios and audio rows');
 assert.match((await readFile('components/settings/settings.bs', 'utf8')).match(/sub dismissPanel\([^]*?end sub/)[0], /if m\.homeRowsSwitched = true[^]*?behind\.callFunc\("reload"\)/, 'Closing settings reloads Home after a row is switched on or off');
 process.stdout.write('PASS: watching now row wiring (15 checks)\n');
 
@@ -1290,6 +1310,7 @@ assert.match(libraryXml, /<LibrarySortDialog id="displayDialog" visible="false" 
 assert.doesNotMatch(libraryXml, /LibrarySettingsDialog/, 'The cycling settings dialog is gone');
 assert.match(libraryScene, /title: tr\("Group By"\),\s+closeOnPick: true,/, 'A Group By pick closes its dialog');
 assert.match(await readFile('components/ItemGrid/LoadItemsTask2.bs', 'utf8'), /Fields: "[^"]*Genres, Studios"/, 'Items carry the genres and studios Group By reads');
+assert.match(await readFile('components/ItemGrid/LoadItemsTask2.bs', 'utf8'), /Fields: "[^"]*ProductionYear, OfficialRating, CommunityRating, CriticRating, Status[^"]*"/, 'Items carry the year, ratings and status Emby leaves off unless asked');
 assert.match(settingsSyncSource, /\{ pluginKey: "libraryCardTitles", rokuKey: "ui\.library\.cardTitles", type: "bool" \}/, 'Titles Under Posters syncs under Core\'s name');
 assert.match(settingsSyncSource, /\{ pluginKey: "libraryPosterSize", rokuKey: "ui\.library\.posterSize", type: "direct" \}/, 'The library poster size syncs under Core\'s name');
 assert.match(settingsSyncSource, /\{ pluginKey: "playlistPosterSize", rokuKey: "ui\.library\.playlistPosterSize", type: "direct" \}/, 'The playlist poster size syncs under Core\'s name');
@@ -1508,3 +1529,34 @@ assert.match(subtitleSettings, /"playback\.subs\.language", "playback\.subs\.sec
 assert.match(heldPlayer, /m\.liveWindow = liveWindow\.WindowFor\(m\.top\.duration\)/, 'A live stream works out its rewind window from the duration');
 assert.match(heldPlayer, /sub jumpToLive\(\)[^]*?m\.top\.seek = 999999/, 'Jump to Live seeks past the end, which Roku holds at its live point');
 process.stdout.write('PASS: held seek, secondary subtitle and live rewind wiring (8 checks)\n');
+
+// Back from Watch Parties goes one step: settings stays open under the screen, and the screen leaves
+// the stack before it says it closed, so settings takes focus after the screen under it has
+const partySettings = await readFile('components/settings/settings.bs', 'utf8');
+const partyScreen = await readFile('components/watchParty/WatchPartiesScreen.bs', 'utf8');
+assert.match(partySettings, /selectedItem\.settingName = "watchParty\.open"\s+openWatchParties\(\)/, 'Open Watch Parties keeps settings open');
+assert.doesNotMatch(partySettings.match(/sub openWatchParties\(\)[^]*?end sub/)[0], /dismissPanel/, 'and doesn\'t dismiss it');
+assert.match(partySettings, /sub onWatchPartiesClosed\(event as object\)[^]*?m\.top\.visible = true[^]*?m\.settingsMenu\.setFocus\(true\)/, 'Closing the screen brings settings back on its row');
+assert.match(partyScreen, /sub closeScreen\(\)\s+m\.global\.sceneManager\.callFunc\("popScene"\)\s+m\.top\.closed = true/, 'The screen pops itself before it says it closed');
+assert.match(partyScreen, /if key = KeyCode\.BACK\s+closeScreen\(\)\s+return true/, 'BACK on the room list closes it');
+assert.match(partyScreen, /if key = KeyCode\.BACK then closeScreen\(\)/, 'and so does BACK in the lobby');
+process.stdout.write('PASS: Watch Parties back navigation (6 checks)\n');
+
+// A party's item plays alone, focus after Remove and Back, and the screen's keyboard handing focus back
+const partyPlayer = await readFile('components/video/VideoPlayerView.bs', 'utf8');
+assert.match(partyPlayer, /if queuePos = 0 and queueCount <= 1 and not wpActive\(\)/, 'A party player doesn\'t queue the season around its episode');
+assert.match(await readFile('components/ItemGrid/LoadVideoContentTask.bs', 'utf8'), /if isValid\(video\.showID\) and not partyItem/, 'and the load doesn\'t queue the next episodes for it');
+assert.match((await readFile('components/watchParty/WatchPartyPanel.bs', 'utf8')).match(/sub runAction\([^]*?end sub/)[0], /act\("remove", "Remove", \{ "member_id": arg \}\)\s+'[^\n]*\s+wpRowsPark\("people"\)/, 'Remove parks focus on the people heading');
+assert.match(partyScreen, /if isReturning then m\.wpRows\.focus = -1/, 'Back from the player starts the lobby on its first button');
+assert.match(partyScreen.match(/sub releaseKeyboard\(\)[^]*?end sub/)[0], /m\.top\.setFocus\(true\)/, 'The screen takes focus back when its keyboard closes');
+process.stdout.write('PASS: Watch Parties player and focus wiring (5 checks)\n');
+
+// The watchlist pages by Seerr's titles alone, however many library titles lead it on Silo, and names its shows
+const favoritesTask = await readFile('components/favorites/LoadFavoritesTask.bs', 'utf8');
+const watchlistPage = favoritesTask.match(/function watchlistPage\([^]*?end function/)[0];
+assert.match(watchlistPage, /fetched: 0 \}/, 'Library titles don\'t count toward the next watchlist page');
+assert.match(watchlistPage, /result\.fetched = answer\.results\.count\(\)/, 'Only Seerr\'s titles do');
+assert.match(watchlistPage, /if isSiloServer\(\)\s+for each node in siloWatchlistNodes\(\)\s+if page = 1 then nodes\.push\(node\)/, 'Every page leaves out what the library already shows, though only the first shows it');
+assert.match(await readFile('components/favorites/FavoritesScreen.bs', 'utf8'), /if pageFetched = 0 then m\.counts\[tabKey\] = m\.fetchedByTab\[tabKey\]/, 'An empty tab page ends paging');
+assert.match(favoritesTask.match(/function watchlistNode\([^]*?end function/)[0], /if title = "" then title = toString\(item\.LookupCI\("name"\) \?\? ""\)/, 'A show on the watchlist takes its name when its title comes back empty');
+process.stdout.write('PASS: Favorites watchlist paging and names (5 checks)\n');

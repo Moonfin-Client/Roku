@@ -47,6 +47,11 @@ EXTRA_GLYPHS = [
     'calendar_month_rounded', 'chevron_left_rounded', 'chevron_right_rounded', 'today_rounded',
     'refresh_rounded', 'event_busy_rounded', 'event_available_rounded', 'add_rounded', 'tv_rounded',
     'info_outline_rounded', 'movie_outlined',
+    # The player's controls, which pick a glyph by state or by the skip lengths
+    'skip_previous_rounded', 'skip_next_rounded', 'pause_rounded',
+    'replay_5_rounded', 'replay_10_rounded', 'replay_30_rounded', 'fast_rewind_rounded',
+    'forward_5_rounded', 'forward_10_rounded', 'forward_30_rounded', 'fast_forward_rounded',
+    'favorite', 'favorite_border', 'fiber_manual_record', 'fiber_smart_record',
 ]
 
 

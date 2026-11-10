@@ -1,0 +1,115 @@
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/syncPlayHelpers.bs"
+import "pkg:/source/api/baserequest.bs"
+
+sub init()
+    m.top.functionName = "execute"
+end sub
+
+sub execute()
+    m.cursor = 0&
+    m.refused = false
+    backoffSeconds = 1
+    while not m.top.shutdown
+        m.top.connectionState = "connecting"
+        if openRelay()
+            backoffSeconds = 1
+            m.top.connectionState = "connected"
+            pollLoop()
+            if m.top.shutdown then exit while
+        end if
+        if m.top.shutdown then exit while
+        if m.refused
+            m.top.connectionState = "gone"
+            exit while
+        end if
+        m.top.connectionState = "reconnecting"
+        if not syncPlaySleepChecked(backoffSeconds * 1000) then exit while
+        if backoffSeconds < 16 then backoffSeconds = backoffSeconds * 2
+    end while
+    closeRelay()
+    m.top.connectionState = "disconnected"
+end sub
+
+function openRelay() as boolean
+    resp = relayRequest("POST", "/Moonfin/SocketRelay/Open", {})
+    if resp.code = 401
+        m.refused = true
+        return false
+    end if
+    if resp.code <> 200 or not isValid(resp.body) then return false
+    ' Open hands back the newest message, so a reopened relay starts from now instead of replaying
+    m.cursor = resp.body.cursor ?? 0&
+    m.upstreamState = resp.body.state ?? ""
+    return true
+end function
+
+sub pollLoop()
+    while not m.top.shutdown
+        resp = relayRequest("GET", "/Moonfin/SocketRelay/Poll", { cursor: m.cursor, waitMs: 25000 })
+
+        if m.top.shutdown then return
+
+        if resp.code = 200 and isValid(resp.body)
+            if isValid(resp.body.cursor) then m.cursor = resp.body.cursor
+            messages = resp.body.messages
+            if type(messages) = "roArray"
+                for each message in messages
+                    m.top.message = message
+                end for
+            end if
+            ' Messages went missing upstream or in the buffer, so the group is joined again once it's back
+            state = resp.body.state ?? ""
+            if resp.body.reset = true or (state = "connected" and m.upstreamState = "reconnecting")
+                m.top.connectionState = "reconnecting"
+                m.top.connectionState = "connected"
+            end if
+            m.upstreamState = state
+        else if resp.code = 401
+            m.refused = true
+            return
+        else if resp.code = 404 or resp.code = 410
+            ' The relay is gone, reopen it from the outer loop
+            return
+        else
+            if not syncPlaySleepChecked(2000) then return
+        end if
+    end while
+end sub
+
+sub closeRelay()
+    relayRequest("POST", "/Moonfin/SocketRelay/Close", {}, false)
+end sub
+
+function relayRequest(verb as string, path as string, params as object, stopOnShutdown = true as boolean) as object
+    req = APIRequest(path, verb = "GET" ? params : {})
+    if not isValid(req) then return { code: 0, body: invalid }
+
+    port = CreateObject("roMessagePort")
+    req.setMessagePort(port)
+    req.AddHeader("Content-Type", "application/json")
+
+    if verb = "GET"
+        req.AsyncGetToString()
+    else
+        req.AsyncPostFromString("")
+    end if
+
+    ' Short waits keep shutdown quick, so a close from this task can't land after a new one has opened
+    resp = invalid
+    waited = 0
+    while waited < 30000 and not (stopOnShutdown and m.top.shutdown)
+        resp = wait(250, port)
+        if type(resp) = "roUrlEvent" then exit while
+        waited += 250
+    end while
+    if type(resp) <> "roUrlEvent"
+        req.AsyncCancel()
+        return { code: 0, body: invalid }
+    end if
+
+    body = invalid
+    respString = resp.GetString()
+    if isValidAndNotEmpty(respString) then body = ParseJson(respString)
+    return { code: resp.GetResponseCode(), body: body }
+end function

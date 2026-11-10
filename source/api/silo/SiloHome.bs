@@ -1,0 +1,272 @@
+import "pkg:/source/api/silo/SiloCatalog.bs"
+import "pkg:/source/api/silo/SiloMapper.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Silo's home page: its layout of sections and the cards in each. Continue Watching and Next Up come
+' from there, as on Silo's own home, so what's hidden there is hidden here too. Ported from the home
+' part of Smart-TV's siloItems.js.
+namespace silo
+    function PageKey(libraryId as string) as string
+        if libraryId <> "" then return "library:" + libraryId
+        return "home"
+    end function
+
+    function HomeLayout(r as object, libraryId = "" as string) as object
+        key = r.profileId + "|" + silo.PageKey(libraryId)
+        kept = silo.RecallAnswer("siloLayouts", key, 60)
+        if kept <> invalid then return kept
+        path = "/api/v2/home/layout"
+        if libraryId <> "" then path = "/api/v2/library/" + libraryId.EncodeUriComponent() + "/layout"
+        answer = silo.ApiGet(r, path)
+        sections = []
+        if answer.ok and type(answer.data) = "roAssociativeArray" and type(answer.data.sections) = "roArray"
+            for each section in answer.data.sections
+                if type(section) = "roAssociativeArray" and isValidAndNotEmpty(section.id) and isValidAndNotEmpty(section.section_type)
+                    title = ""
+                    if isString(section.title) then title = section.title
+                    sections.Push({ id: section.id, sectionType: section.section_type, title: title })
+                end if
+            end for
+        end if
+        if answer.ok then silo.KeepAnswer("siloLayouts", key, sections, 8)
+        return sections
+    end function
+
+    function SectionItems(r as object, section as object, libraryId = "" as string) as object
+        key = r.profileId + "|" + silo.PageKey(libraryId) + "#" + section.id
+        kept = silo.RecallAnswer("siloSectionCards", key, 5)
+        if kept <> invalid then return kept
+        path = "/api/v2/home/sections/" + section.id.EncodeUriComponent() + "/items"
+        if libraryId <> "" then path = "/api/v2/library/" + libraryId.EncodeUriComponent() + "/sections/" + section.id.EncodeUriComponent() + "/items"
+        answer = silo.ApiGet(r, path, { image_size: silo.LIST_IMAGE_SIZE })
+        cards = silo.ItemsOf(answer.data)
+        if answer.ok then silo.KeepAnswer("siloSectionCards", key, cards, 16)
+        return cards
+    end function
+
+    ' Every card of a section type, once each, or invalid when the page has no such section
+    function CardsOf(r as object, sectionType as string, libraryId = "" as string) as dynamic
+        found = false
+        seen = {}
+        cards = []
+        for each section in silo.HomeLayout(r, libraryId)
+            if section.sectionType = sectionType
+                found = true
+                for each card in silo.SectionItems(r, section, libraryId)
+                    if isString(card.content_id) and not seen.DoesExist(card.content_id)
+                        seen[card.content_id] = true
+                        cards.Push(card)
+                    end if
+                end for
+            end if
+        end for
+        if not found then return invalid
+        return cards
+    end function
+
+    sub RememberHomeRow(items as object, libraryId as string)
+        for each item in items
+            silo.RememberSeries(item)
+            if libraryId <> ""
+                silo.RememberLibrary(item.Id, libraryId)
+                if item.ParentId = invalid then item["ParentId"] = libraryId
+            end if
+        end for
+    end sub
+
+    ' The profile's "hide watched items on Home" setting, which the newest rows follow
+    function HidesWatchedOnHome(r as object) as boolean
+        kept = silo.RecallAnswer("siloHideWatchedSetting", r.profileId, 60)
+        if kept <> invalid then return kept
+        answer = silo.ApiGet(r, "/api/v2/settings/values/effective", { keys: "home.hide_watched_items" })
+        hides = false
+        for each setting in silo.ItemsOf(answer.data)
+            if setting.key = "home.hide_watched_items" and setting.value = true then hides = true
+        end for
+        silo.KeepAnswer("siloHideWatchedSetting", r.profileId, hides, 8)
+        return hides
+    end function
+
+    ' The scope of a newest row: what's asked for, or what the library holds. Latest lists a show once
+    ' for its new episodes; Recently Released lists episodes as they are
+    function NewestRowScope(r as object, libraryId as string, includeTypes as dynamic, episodesAsSeries as boolean) as string
+        asked = siloMap.TypesForQuery(includeTypes)
+        if asked <> invalid
+            listed = []
+            for each kind in asked
+                if kind = "season" or (episodesAsSeries and kind = "episode") then kind = "series"
+                if not siloContains(listed, kind) then listed.Push(kind)
+            end for
+            if listed.Count() = 0 then return ""
+            scope = siloMap.CatalogScopeFor(listed)
+            if scope = "" then scope = "video"
+            return scope
+        end if
+        if libraryId = "" then return "video"
+        view = silo.LibraryView(r, libraryId)
+        if view <> invalid
+            if view.CollectionType = "movies" then return "movie"
+            if view.CollectionType = "tvshows" then return "series"
+        end if
+        return "video"
+    end function
+
+    ' Continue Watching without a Continue Watching section on the page: the profile's progress list,
+    ' read item by item
+    function ResumeFromProgress(r as object, libraryId as string, wanted as integer) as object
+        if wanted < 1 then wanted = 1
+        if wanted > 200 then wanted = 200
+        query = { status: "in_progress", limit: wanted }
+        if libraryId <> "" then query.library_id = libraryId
+        answer = silo.ApiGet(r, "/api/v2/progress", query)
+        entries = {}
+        ids = []
+        for each entry in silo.ItemsOf(answer.data)
+            if isString(entry.media_item_id)
+                entries[entry.media_item_id] = entry
+                ids.Push(entry.media_item_id)
+            end if
+        end for
+        out = []
+        for each item in silo.ByIds(r, ids, 0, 0).Items
+            kind = LCase(item.Type)
+            if entries.DoesExist(item.Id) and (kind = "movie" or kind = "episode")
+                item.UserData.Append(siloMap.ProgressToUserData(entries[item.Id]))
+                out.Push(item)
+            end if
+        end for
+        return out
+    end function
+
+    function ResumeItems(r as object) as object
+        limit = silo.QueryInt(r.query, "Limit", 12)
+        parentId = r.query.LookupCI("ParentId") ?? ""
+        libraryId = siloMap.LibraryIdOf(parentId)
+        if parentId <> "" and libraryId = "" then return silo.Empty()
+        cards = silo.CardsOf(r, "continue_watching", libraryId)
+        items = []
+        if cards <> invalid
+            for each card in cards
+                if card.item_source <> "next_up" and (card.type = "movie" or card.type = "episode")
+                    item = silo.MapRaw(r, card)
+                    if item <> invalid then items.Push(item)
+                end if
+            end for
+        else
+            wanted = limit
+            if wanted <= 0 then wanted = 50
+            items = silo.ResumeFromProgress(r, libraryId, wanted)
+        end if
+        silo.RememberHomeRow(items, libraryId)
+        return silo.Slice(items, 0, limit)
+    end function
+
+    ' Next Up is the episodes Silo's Continue Watching lists as next up, then its Next Up section,
+    ' unwatched. Silo decides how old a show can be to stay in it, so the app's day limit isn't sent
+    function NextUp(r as object) as object
+        limit = silo.QueryInt(r.query, "Limit", 24)
+        seriesId = r.query.LookupCI("SeriesId") ?? ""
+        if seriesId <> ""
+            ' As Jellyfin: a series nobody has started has no next episode when the first is turned down
+            if toBoolean(r.query.LookupCI("DisableFirstEpisode")) = true and not silo.SeriesStarted(r, seriesId) then return silo.Empty()
+            episode = silo.SeriesNextEpisode(r, seriesId)
+            if episode <> invalid and episode.UserData.Played <> true then return silo.Slice([episode], 0, limit)
+            return silo.Empty()
+        end if
+        parentId = r.query.LookupCI("ParentId") ?? ""
+        libraryId = siloMap.LibraryIdOf(parentId)
+        if parentId <> "" and libraryId = "" then return silo.Empty()
+        cards = []
+        resume = silo.CardsOf(r, "continue_watching", libraryId)
+        if resume <> invalid
+            for each card in resume
+                if card.item_source = "next_up" then cards.Push(card)
+            end for
+        end if
+        nextCards = silo.CardsOf(r, "next_up", libraryId)
+        if nextCards <> invalid then cards.Append(nextCards)
+        seen = {}
+        items = []
+        for each card in cards
+            if card.type = "episode" and not seen.DoesExist(card.content_id)
+                seen[card.content_id] = true
+                item = silo.MapRaw(r, card)
+                if item <> invalid and item.UserData.Played <> true then items.Push(item)
+            end if
+        end for
+        silo.RememberHomeRow(items, libraryId)
+        return silo.Slice(items, 0, limit)
+    end function
+
+    ' Silo's own home rows, offered as rows to add to Moonfin's Home (as Core's server rows).
+    ' Continue Watching and Next Up are left out: Moonfin builds those rows from them itself
+    function ServerSections(r as object) as object
+        found = []
+        for each section in silo.HomeLayout(r)
+            if section.sectionType <> "continue_watching" and section.sectionType <> "next_up"
+                title = section.title
+                if title = "" then title = section.sectionType
+                found.Push({ Id: section.id, Name: title, Kind: section.sectionType })
+            end if
+        end for
+        return found
+    end function
+
+    ' One of those rows, whole, in Silo's order. Moonbase's admin defaults can't know a server's
+    ' section ids, so they name a row by its kind ("type:hidden_gems"): the first one of that kind.
+    ' A section no longer on the page answers empty
+    function ServerSectionItems(r as object, sectionId as string) as object
+        for each section in silo.HomeLayout(r)
+            if section.id = sectionId or "type:" + section.sectionType = sectionId or "type." + section.sectionType = sectionId
+                items = []
+                for each card in silo.SectionItems(r, section)
+                    item = silo.MapRaw(r, card)
+                    if item <> invalid then items.Push(item)
+                end for
+                silo.RememberHomeRow(items, "")
+                return { Items: items, TotalRecordCount: items.Count(), StartIndex: 0 }
+            end if
+        end for
+        return silo.Empty()
+    end function
+
+    function SeriesNextEpisode(r as object, seriesId as string) as dynamic
+        if siloMap.TypeOfId(seriesId) <> "series" then return invalid
+        json = silo.DetailJson(r, seriesId)
+        if json = invalid or not isString(json.play_content_id) then return invalid
+        if siloMap.TypeOfId(json.play_content_id) <> "episode" then return invalid
+        return silo.GetItem(r, json.play_content_id)
+    end function
+
+    ' Whether the profile has watched or started any episode of a series. Silo's series detail counts
+    ' them, and a detail without the counts is taken as started, as before
+    function SeriesStarted(r as object, seriesId as string) as boolean
+        json = silo.DetailJson(r, seriesId)
+        if json = invalid or type(json.user_data) <> "roAssociativeArray" then return true
+        data = json.user_data
+        if not siloMap.IsNumber(data.watched_count) or not siloMap.IsNumber(data.in_progress_count) then return true
+        return data.played = true or data.watched_count > 0 or data.in_progress_count > 0
+    end function
+
+    function UnplayedGroups() as object
+        return siloMap.RuleGroups({ filters: ["IsUnplayed"] })
+    end function
+
+    ' Jellyfin's latest route answers a bare list
+    function LatestItems(r as object) as object
+        parentId = r.query.LookupCI("ParentId") ?? ""
+        libraryId = siloMap.LibraryIdOf(parentId)
+        if parentId <> "" and libraryId = "" then return []
+        scope = silo.NewestRowScope(r, libraryId, r.query.LookupCI("IncludeItemTypes"), true)
+        if scope = "" then return []
+        params = { type: scope, sort: "-added_at", image_size: silo.LIST_IMAGE_SIZE }
+        if scope = "series" then params.sort = "-latest_episode_added"
+        if libraryId <> "" then params.library_id = libraryId
+        if silo.HidesWatchedOnHome(r) then params.groups = FormatJson(silo.UnplayedGroups())
+        limit = silo.QueryInt(r.query, "Limit", 20)
+        if limit <= 0 then limit = 20
+        result = silo.CatalogPage(r, params, 0, limit, invalid, libraryId)
+        if result = invalid then return []
+        return result.Items
+    end function
+end namespace

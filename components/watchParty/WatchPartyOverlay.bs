@@ -1,0 +1,476 @@
+import "pkg:/components/watchParty/watchPartyRows.bs"
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/settingsGlyphs.bs"
+import "pkg:/source/utils/tvKeyboard.bs"
+import "pkg:/source/utils/watchPartyModel.bs"
+
+const WPO_CHAT_SHOWN = 3
+const WPO_CHAT_SECONDS = 6.5
+const WPO_PANEL = "#101010EB"
+
+sub init()
+    m.session = m.global.watchParty
+    m.toast = m.top.findNode("toast")
+    m.toastFade = m.top.findNode("toastFade")
+    m.people = m.top.findNode("people")
+    m.chat = m.top.findNode("chat")
+    m.reactions = m.top.findNode("reactions")
+    m.quickBar = m.top.findNode("quickBar")
+    m.centerLayer = m.top.findNode("centerLayer")
+    m.countdownNode = m.top.findNode("countdown")
+    m.waitingNode = m.top.findNode("waiting")
+    m.top.findNode("countdownNumber").font.size = 84
+    m.top.findNode("countdownText").font.size = 24
+    m.top.findNode("waitingTitle").font.size = 26
+    m.top.findNode("waitingNote").font.size = 21
+    m.tick = m.top.findNode("tick")
+    m.tick.observeField("fire", "onTick")
+
+    m.bubbles = []
+    m.bubbleInfo = {}
+    m.serial = 0
+    m.clock = CreateObject("roTimespan")
+    m.keys = []
+    m.keyIndex = 0
+    m.keyboard = invalid
+    m.top.focusable = true
+
+    m.session.observeFieldScoped("toast", "onToast")
+    m.session.observeFieldScoped("chatMessage", "onChatMessage")
+    m.session.observeFieldScoped("reaction", "onReaction")
+    m.session.observeFieldScoped("room", "drawPeople")
+    drawPeople()
+end sub
+
+sub release()
+    for each name in ["toast", "chatMessage", "reaction", "room"]
+        m.session.unobserveFieldScoped(name)
+    end for
+    m.tick.control = "stop"
+    if isValid(m.keyboard) then onKeyboardCancelled()
+end sub
+
+' ===== Toasts =====
+
+sub onToast(event as object)
+    notice = event.getData()
+    if not isValidAndNotEmpty(notice.text) then return
+    m.toast.removeChildrenIndex(m.toast.getChildCount(), 0)
+
+    text = CreateObject("roSGNode", "Label")
+    text.font = "font:SmallSystemFont"
+    text.font.size = 27
+    text.text = notice.text
+    hasFace = isValidAndNotEmpty(notice.name)
+    textLeft = 30
+    if hasFace then textLeft = 78
+    width = textLeft + text.boundingRect().width + 30
+
+    fill = wpFill(m.toast, width, 75, WPO_PANEL)
+    fill.uri = "pkg:/images/livetv/fill28.9.png"
+    if hasFace then wpAvatar(m.toast, notice.name, 51, "").translation = [12, 12]
+    text.translation = [textLeft, 0]
+    text.height = 75
+    text.vertAlign = "center"
+    text.color = "#FFFFFFFF"
+    m.toast.appendChild(text)
+
+    m.toast.translation = [(1920 - width) / 2, 48]
+    m.toast.visible = true
+    m.toastFade.control = "stop"
+    m.toastFade.control = "start"
+end sub
+
+' ===== People =====
+
+' Drawn when the controls come up, and kept current only while they show
+sub onPeopleVisible()
+    m.people.visible = m.top.peopleVisible
+    drawPeople()
+end sub
+
+sub drawPeople()
+    if not m.people.visible then return
+    m.people.removeChildrenIndex(m.people.getChildCount(), 0)
+    room = m.session.room
+    if type(room) <> "roAssociativeArray" or type(room.members) <> "roArray" or room.members.Count() = 0 then return
+
+    members = room.members
+    shown = members.Count()
+    if shown > 4 then shown = 4
+    width = 12 + shown * 63 + 54
+    fill = wpFill(m.people, width, 69, "#101010CC")
+    fill.uri = "pkg:/images/livetv/fill28.9.png"
+    for i = 0 to shown - 1
+        member = members[i]
+        face = wpAvatar(m.people, toString(member.display_name ?? ""), 51, "")
+        face.translation = [12 + i * 63, 9]
+        wpDot(m.people, 24, "#101010FF").translation = [12 + i * 63 + 33, 39]
+        wpDot(m.people, 15, watchPartyModel.StatusColor(member.status)).translation = [12 + i * 63 + 37.5, 43.5]
+    end for
+    count = wpLabel(m.people, members.Count().ToStr(), 24, false, "#FFFFFFFF")
+    count.translation = [12 + shown * 63 + 6, 0]
+    count.height = 69
+    count.vertAlign = "center"
+    m.people.translation = [1920 - 60 - width, 45]
+end sub
+
+' ===== Chat =====
+
+sub onChatMessage(event as object)
+    if not get_user_setting_bool("watchParty.chatOverlay", true) then return
+    message = event.getData()
+
+    bubble = CreateObject("roSGNode", "Group")
+    m.serial++
+    bubble.id = "bubble" + m.serial.ToStr()
+    name = toString(message.display_name ?? "")
+    sender = wpLabel(bubble, name, 21, true, "#9FD0FFFF")
+    sender.translation = [78, 12]
+    body = wpLabel(bubble, toString(message.text ?? ""), 27, false, "#FFFFFFFF")
+    body.translation = [78, 40]
+    natural = body.boundingRect().width
+    lines = 1
+    if natural > 680
+        natural = 680
+        lines = 2
+    end if
+    body.wrap = true
+    body.maxLines = 2
+    body.width = natural
+    body.height = lines * 36
+    nameWidth = sender.boundingRect().width
+    if nameWidth > natural then natural = nameWidth
+    height = 58 + lines * 36
+    fill = wpFill(bubble, 78 + natural + 24, height, "#101010D6")
+    fill.uri = "pkg:/images/livetv/fill20.9.png"
+    bubble.insertChild(fill, 0)
+    wpAvatar(bubble, name, 51, "").translation = [15, 15]
+    m.bubbleInfo[bubble.id] = { height: height, shownAt: m.clock.TotalMilliseconds() / 1000 }
+
+    m.chat.appendChild(bubble)
+    m.bubbles.push(bubble)
+    while m.bubbles.Count() > WPO_CHAT_SHOWN
+        dropped = m.bubbles.Shift()
+        m.bubbleInfo.Delete(dropped.id)
+        m.chat.removeChild(dropped)
+    end while
+    placeBubbles()
+    m.tick.control = "start"
+end sub
+
+' The newest bubble sits lowest
+sub placeBubbles()
+    y = 1080 - 321
+    for i = m.bubbles.Count() - 1 to 0 step -1
+        bubble = m.bubbles[i]
+        y -= m.bubbleInfo[bubble.id].height
+        bubble.translation = [60, y]
+        y -= 15
+    end for
+end sub
+
+sub onTick()
+    now = m.clock.TotalMilliseconds() / 1000
+    kept = []
+    for each bubble in m.bubbles
+        age = now - m.bubbleInfo[bubble.id].shownAt
+        if age >= WPO_CHAT_SECONDS
+            m.chat.removeChild(bubble)
+            m.bubbleInfo.Delete(bubble.id)
+        else
+            bubble.opacity = 1
+            if age > WPO_CHAT_SECONDS - 1 then bubble.opacity = WPO_CHAT_SECONDS - age
+            kept.push(bubble)
+        end if
+    end for
+    if kept.Count() <> m.bubbles.Count()
+        m.bubbles = kept
+        placeBubbles()
+    end if
+    updateCenter(now)
+    if m.bubbles.Count() = 0 and not m.centerLayer.visible then m.tick.control = "stop"
+end sub
+
+' ===== Reactions =====
+
+' Each one floats up the right side and fades, with who sent it under it for a moment
+sub onReaction(event as object)
+    reaction = event.getData()
+    image = watchPartyModel.ReactionImage(reaction.reaction)
+    if image = "" then return
+
+    floater = CreateObject("roSGNode", "Group")
+    glyph = CreateObject("roSGNode", "Poster")
+    glyph.uri = image
+    glyph.width = 90
+    glyph.height = 90
+    floater.appendChild(glyph)
+    name = wpLabel(floater, toString(reaction.display_name ?? ""), 21, true, "#FFFFFFFF")
+    name.translation = [0, 96]
+    name.width = 90
+    name.horizAlign = "center"
+    x = 1650 + Rnd(120) - 60
+    m.serial++
+    floater.id = "reaction" + m.serial.ToStr()
+    floater.translation = [x, 660]
+    m.reactions.appendChild(floater)
+
+    rise = CreateObject("roSGNode", "Animation")
+    rise.duration = 3.2
+    rise.easeFunction = "outQuad"
+    rise.id = floater.id + "Rise"
+    path = CreateObject("roSGNode", "Vector2DFieldInterpolator")
+    path.key = [0.0, 1.0]
+    path.keyValue = [[x, 660], [x, 210]]
+    path.fieldToInterp = floater.id + ".translation"
+    fade = CreateObject("roSGNode", "FloatFieldInterpolator")
+    fade.key = [0.0, 0.6, 1.0]
+    fade.keyValue = [1.0, 1.0, 0.0]
+    fade.fieldToInterp = floater.id + ".opacity"
+    rise.appendChild(path)
+    rise.appendChild(fade)
+    m.reactions.appendChild(rise)
+    rise.observeField("state", "onReactionDone")
+    rise.control = "start"
+end sub
+
+sub onReactionDone(event as object)
+    if event.getData() <> "stopped" then return
+    rise = event.getRoSGNode()
+    floater = m.reactions.findNode(rise.id.Left(rise.id.Len() - 4))
+    if isValid(floater) then m.reactions.removeChild(floater)
+    m.reactions.removeChild(rise)
+end sub
+
+' ===== Countdown and the wait for players =====
+
+sub onCenter()
+    center = m.top.center
+    mode = ""
+    if type(center) = "roAssociativeArray" then mode = toString(center.mode ?? "")
+    m.centerLayer.visible = mode <> ""
+    m.countdownNode.visible = mode = "countdown"
+    m.waitingNode.visible = mode = "waiting"
+    if mode = "waiting" then drawWaitingFaces(center.names)
+    if mode = "countdown" then m.top.findNode("countdownText").text = tr("Starting together")
+    if mode <> ""
+        m.centerAt = m.clock.TotalMilliseconds() / 1000 + (center.seconds ?? 0)
+        updateCenter(m.clock.TotalMilliseconds() / 1000)
+        m.tick.control = "start"
+    end if
+end sub
+
+sub drawWaitingFaces(names as dynamic)
+    faces = m.top.findNode("waitingFaces")
+    faces.removeChildrenIndex(faces.getChildCount(), 0)
+    if type(names) <> "roArray" then names = []
+    room = m.session.room
+    members = []
+    if type(room) = "roAssociativeArray" and type(room.members) = "roArray" then members = room.members
+    width = members.Count() * 45 + 12
+    x = (1920 - width) / 2
+    for each member in members
+        name = toString(member.display_name ?? "")
+        ring = "#3ECF8EFF"
+        if inArray(names, name) then ring = "#F5B942FF"
+        wpAvatar(faces, name, 57, ring).translation = [x, 0]
+        x += 45
+    end for
+
+    title = m.top.findNode("waitingTitle")
+    if names.Count() = 1
+        title.text = substitute(tr("Waiting for {0}'s player"), names[0])
+    else
+        title.text = tr("Waiting for everyone's player")
+    end if
+end sub
+
+sub updateCenter(now as float)
+    center = m.top.center
+    if not m.centerLayer.visible or type(center) <> "roAssociativeArray" then return
+    if center.mode = "countdown"
+        secondsLeft = Int(m.centerAt - now + 0.999)
+        if secondsLeft < 1 then secondsLeft = 1
+        if secondsLeft > 3 then secondsLeft = 3
+        m.top.findNode("countdownNumber").text = secondsLeft.ToStr()
+    else if center.mode = "waiting"
+        remaining = Int(m.centerAt - now + 0.999)
+        if remaining < 0 then remaining = 0
+        m.top.findNode("waitingNote").text = substitute(tr("Starting anyway in {0} s"), remaining.ToStr())
+        share = 1 - remaining / 10
+        if share < 0 then share = 0
+        if share > 1 then share = 1
+        m.top.findNode("waitingFill").width = 576 * share
+    end if
+end sub
+
+' ===== Quick bar =====
+
+function quickKeys() as object
+    room = m.session.room
+    keys = []
+    if room.reactions_enabled <> false
+        for each reaction in WATCH_PARTY_REACTIONS.Split(",")
+            keys.push({ kind: "reaction", value: reaction })
+        end for
+    end if
+    if room.chat_enabled <> false
+        for each reply in [tr("Haha"), tr("No way"), tr("Pause please"), tr("Brb"), tr("Again!")]
+            keys.push({ kind: "reply", value: reply })
+        end for
+        keys.push({ kind: "type", value: tr("Type") })
+    end if
+    return keys
+end function
+
+sub onQuickBar()
+    m.quickBar.removeChildrenIndex(m.quickBar.getChildCount(), 0)
+    if not m.top.quickBarOpen
+        m.quickBar.visible = false
+        return
+    end if
+
+    m.keys = quickKeys()
+    if m.keys.Count() = 0
+        m.top.quickBarOpen = false
+        m.top.quickBarClosed = true
+        return
+    end if
+    if m.keyIndex >= m.keys.Count() then m.keyIndex = 0
+
+    width = 1800
+    fill = wpFill(m.quickBar, width, 186, WPO_PANEL)
+    fill.uri = "pkg:/images/livetv/fill28.9.png"
+    send = wpLabel(m.quickBar, tr("Send to the party"), 22, false, "#A8A8A8FF")
+    send.translation = [33, 22]
+    hint = wpLabel(m.quickBar, tr("Back to close"), 22, false, "#A8A8A8FF")
+    hint.width = 400
+    hint.horizAlign = "right"
+    hint.translation = [width - 433, 22]
+
+    x = 33
+    wasReaction = false
+    for each entry in m.keys
+        if entry.kind <> "reaction" and wasReaction
+            divider = CreateObject("roSGNode", "Rectangle")
+            divider.width = 3
+            divider.height = 60
+            divider.color = "#333333FF"
+            divider.translation = [x + 6, 84]
+            m.quickBar.appendChild(divider)
+            x += 27
+        end if
+        wasReaction = entry.kind = "reaction"
+
+        node = CreateObject("roSGNode", "Group")
+        node.translation = [x, 69]
+        if entry.kind = "reaction"
+            entry.fill = wpFill(node, 90, 90, "#2A2A2AFF")
+            entry.fill.uri = "pkg:/images/livetv/fill20.9.png"
+            glyph = CreateObject("roSGNode", "Poster")
+            glyph.uri = watchPartyModel.ReactionImage(entry.value)
+            glyph.width = 54
+            glyph.height = 54
+            glyph.translation = [18, 18]
+            node.appendChild(glyph)
+            x += 90 + 18
+        else
+            label = CreateObject("roSGNode", "Label")
+            label.font = "font:SmallBoldSystemFont"
+            label.font.size = 25
+            label.text = entry.value
+            textLeft = 27
+            if entry.kind = "type" then textLeft = 66
+            pillWidth = textLeft + label.boundingRect().width + 27
+            entry.fill = wpFill(node, pillWidth, 72, "#2A2A2AFF")
+            entry.fill.uri = "pkg:/images/livetv/fill28.9.png"
+            entry.fill.translation = [0, 9]
+            if entry.kind = "type"
+                icon = CreateObject("roSGNode", "Label")
+                icon.font = CreateObject("roSGNode", "Font")
+                icon.font.uri = settingsGlyphs.FONT_URI
+                icon.font.size = 30
+                icon.text = settingsGlyphs.Char("keyboard_alt_outlined")
+                icon.translation = [24, 9]
+                icon.height = 72
+                icon.vertAlign = "center"
+                node.appendChild(icon)
+                entry.icon = icon
+            end if
+            label.translation = [textLeft, 9]
+            label.height = 72
+            label.vertAlign = "center"
+            node.appendChild(label)
+            entry.label = label
+            x += pillWidth + 18
+        end if
+        m.quickBar.appendChild(node)
+    end for
+
+    m.quickBar.translation = [60, 1080 - 54 - 186]
+    m.quickBar.visible = true
+    paintKeys()
+    m.top.setFocus(true)
+end sub
+
+sub paintKeys()
+    for i = 0 to m.keys.Count() - 1
+        entry = m.keys[i]
+        lit = i = m.keyIndex
+        entry.fill.blendColor = lit ? "#FFFFFFFF" : "#2A2A2AFF"
+        if isValid(entry.label) then entry.label.color = lit ? "#101010FF" : "#FFFFFFFF"
+        if isValid(entry.icon) then entry.icon.color = lit ? "#101010FF" : "#FFFFFFFF"
+    end for
+end sub
+
+sub closeQuickBar()
+    m.top.quickBarOpen = false
+    m.top.quickBarClosed = true
+end sub
+
+sub sendKey(entry as object)
+    if entry.kind = "reaction"
+        m.session.callFunc("send", [{ "type": "reaction", "reaction": entry.value }])
+    else if entry.kind = "reply"
+        m.session.callFunc("send", [{ "type": "chat", "text": entry.value }])
+    else if entry.kind = "type"
+        m.keyboard = tvKeyboard.Open(m.top.getScene(), { title: tr("Send to the party") })
+        if not isValid(m.keyboard) then return
+        m.keyboard.observeField("submitted", "onKeyboardSubmitted")
+        m.keyboard.observeField("cancelled", "onKeyboardCancelled")
+    end if
+end sub
+
+sub onKeyboardSubmitted()
+    text = m.keyboard.text.Trim()
+    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled"])
+    m.keyboard = invalid
+    if text <> "" then m.session.callFunc("send", [{ "type": "chat", "text": text }])
+end sub
+
+sub onKeyboardCancelled()
+    tvKeyboard.Release(m.keyboard, ["submitted", "cancelled"])
+    m.keyboard = invalid
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not m.top.quickBarOpen then return false
+    if not press then return true
+    if key = KeyCode.BACK or key = KeyCode.OPTIONS
+        closeQuickBar()
+    else if key = KeyCode.LEFT and m.keyIndex > 0
+        m.keyIndex--
+        paintKeys()
+    else if key = KeyCode.RIGHT and m.keyIndex < m.keys.Count() - 1
+        m.keyIndex++
+        paintKeys()
+    else if key = KeyCode.OK
+        sendKey(m.keys[m.keyIndex])
+    else if key = KeyCode.PLAY
+        return false
+    end if
+    return true
+end function

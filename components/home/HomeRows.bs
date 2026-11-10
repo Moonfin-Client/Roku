@@ -1,3 +1,4 @@
+import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/TaskControl.bs"
@@ -8,6 +9,8 @@ import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/multiserver.bs"
 import "pkg:/source/utils/seasonalRow.bs"
 import "pkg:/source/utils/settingsSync.bs"
+import "pkg:/source/utils/watchPartyCard.bs"
+import "pkg:/source/utils/watchPartyModel.bs"
 
 const LOADING_WAIT_TIME = 2
 
@@ -607,6 +610,8 @@ function getOriginalSettingIndexForNode(node as object, matchers as object) as i
     if node = invalid then return 99
 
     nodeId = LCase(node.id).Replace(" ", "")
+    ' Watch Parties shows only while there are rooms, and always first, like the other clients
+    if nodeId = "watch_parties" then return -1
     nodeTitle = LCase(node.title).Replace(" ", "")
     titlePrefixes = matchers.titlePrefixes
     localizedTitles = matchers.localizedTitles
@@ -2225,6 +2230,12 @@ end sub
 sub itemSelected()
     m.selectedRowItem = m.top.rowItemSelected
     item = getRowListItemAt(m.top, m.top.rowItemSelected)
+    if isValid(item) and (item.type = "WatchPartyRoom" or item.type = "WatchPartyStart")
+        request = { start: item.type = "WatchPartyStart" }
+        if item.type = "WatchPartyRoom" then request = { roomId: item.id, hasPin: item.json.HasPin = true }
+        m.global.watchParty.callFunc("open", request)
+        return
+    end if
     if isValid(item) and playsOnSelect(m.top.rowItemSelected[0])
         ' A card an earlier pick left in selectedItem opens again when it changes, so it's let go first
         m.top.selectedItem = invalid
@@ -2778,7 +2789,7 @@ function internalRowEnabled(sectionKey as string) as boolean
         if not homeRowLayout.PickShown(sectionKey) then return false
         if not homeRowLayout.IsOwnServer(sectionKey) and not isValid(pickedRowSession(sectionKey)) then return false
         listEntry = homeRowLayout.SourceFor(picked.source)
-        if isValid(listEntry) then return get_user_setting_bool(listEntry.gate, false)
+        if isValid(listEntry) then return listEntry.gate = "" or get_user_setting_bool(listEntry.gate, false)
     end if
 
     return homeRowLayout.RowToggleOn(sectionKey)
@@ -2832,6 +2843,58 @@ function calendarSeeAllShown(sectionKey as string) as boolean
     if sectionKey <> "radarr_calendar" and sectionKey <> "sonarr_calendar" then return false
     return get_user_setting_bool("calendar.rowSeeAll", true) and moonfinPlugin.IsCalendarAvailable()
 end function
+
+sub showWatchParties(rooms as object)
+    if not isValid(m.top.content) then return
+    hadRow = homeRowIndexById("watch_parties") >= 0
+    if rooms.Count() = 0
+        if hadRow
+            removeHomeRowById("watch_parties")
+            keepRowFocus(-1)
+        end if
+        return
+    end if
+
+    cards = []
+    for each summary in rooms
+        shown = wpRoomCard(summary)
+        cards.push({ "Id": toString(summary.room_id ?? ""), "Type": "WatchPartyRoom", "Name": shown.title, "Overview": watchPartyModel.RoomMeta(summary), "ImageUrl": shown.art, "HasPin": summary.has_pin = true })
+    end for
+    ' The list is polled every minute, and the row is only built again when a card changed
+    drawn = FormatJson(cards)
+    if hadRow and drawn = (m.watchPartiesDrawn ?? "") then return
+    m.watchPartiesDrawn = drawn
+
+    row = CreateObject("roSGNode", "HomeRow")
+    row.title = tr("Watch Parties")
+    for each json in cards
+        card = CreateObject("roSGNode", "HomeData")
+        card.json = json
+        card.title = json.Name
+        row.appendChild(card)
+    end for
+    start = CreateObject("roSGNode", "HomeData")
+    start.json = { "Id": "watch_party_start", "Type": "WatchPartyStart", "Name": tr("Start a watch party"), "Overview": "" }
+    start.title = tr("Start a watch party")
+    row.appendChild(start)
+    ' Cards draw at the size their row has when they first bind, so the row is sized before it goes in
+    row.id = "watch_parties"
+    if isValid(m.cardSizeName) then layOutRow(row, m.modernRows, m.cardSizeName)
+    addOrUpdateHomeRow(row, row.title, "watch_parties")
+    if not hadRow then keepRowFocus(1)
+end sub
+
+' The list keeps focus by index, so when the row comes or goes above the others the viewer is moved
+' with the row they were on.
+sub keepRowFocus(shift as integer)
+    if not m.top.hasFocus() then return
+    focused = m.top.rowItemFocused
+    if type(focused) <> "roArray" or focused.Count() < 2 then return
+    target = [focused[0] + shift, focused[1]]
+    if target[0] < 0 then target = [0, 0]
+    if target[0] >= m.top.content.getChildCount() then return
+    m.top.jumpToRowItem = target
+end sub
 
 function calendarSeeAllCard() as object
     card = CreateObject("roSGNode", "HomeData")

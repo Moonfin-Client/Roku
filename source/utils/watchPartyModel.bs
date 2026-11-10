@@ -1,0 +1,438 @@
+import "pkg:/source/utils/misc.bs"
+
+' What a room, its messages and the clock mean, kept apart from the screens and the network so it
+' can be tested.
+
+const WATCH_PARTY_DRIFT_SECONDS = 0.5
+' A paused player lines up closer, since its seek costs nothing to watch
+const WATCH_PARTY_PAUSED_DRIFT_SECONDS = 0.3
+const WATCH_PARTY_CLOCK_SAMPLES = 8
+const WATCH_PARTY_REACTIONS = "love,haha,wow,sad,fire,popcorn"
+' A press that got no answer is sent this many more times, a second further apart each time
+const WATCH_PARTY_RETRIES = 2
+
+namespace watchPartyModel
+
+    function FormatCode(code as dynamic) as string
+        if not isString(code) then return ""
+        if code.Len() <> 6 then return code
+        return code.Left(3) + " " + code.Mid(3)
+    end function
+
+    ' A typed code or an invite link, as the bare code
+    function CodeFrom(text as dynamic) as string
+        if not isString(text) then return ""
+        typed = text.Trim()
+        marker = Instr(1, LCase(typed), "/party/")
+        if marker > 0
+            typed = typed.Mid(marker + 6)
+            cut = Instr(1, typed, "?")
+            if cut > 0 then typed = typed.Left(cut - 1)
+            cut = Instr(1, typed, "/")
+            if cut > 0 then typed = typed.Left(cut - 1)
+        end if
+        return UCase(typed.Replace(" ", "").Replace("-", ""))
+    end function
+
+    ' ===== Time =====
+
+    ' Days since 1970-01-01 for a calendar date, so times keep their milliseconds
+    function DaysFromCivil(year as integer, month as integer, day as integer) as integer
+        if month <= 2 then year = year - 1
+        era = year \ 400
+        yearOfEra = year - era * 400
+        shifted = month - 3
+        if month <= 2 then shifted = month + 9
+        dayOfYear = (153 * shifted + 2) \ 5 + day - 1
+        dayOfEra = yearOfEra * 365 + yearOfEra \ 4 - yearOfEra \ 100 + dayOfYear
+        return era * 146097 + dayOfEra - 719468
+    end function
+
+    ' An ISO 8601 UTC time as seconds since 1970, or 0 when it can't be read
+    function ParseTime(text as dynamic) as double
+        if not isString(text) then return 0#
+        if text.Len() < 19 then return 0#
+        if text.Mid(4, 1) <> "-" or text.Mid(10, 1) <> "T" then return 0#
+
+        days = watchPartyModel.DaysFromCivil(text.Mid(0, 4).ToInt(), text.Mid(5, 2).ToInt(), text.Mid(8, 2).ToInt())
+        total = days * 86400# + text.Mid(11, 2).ToInt() * 3600 + text.Mid(14, 2).ToInt() * 60 + text.Mid(17, 2).ToInt()
+
+        if text.Mid(19, 1) = "."
+            digits = ""
+            index = 20
+            while index < text.Len() and digits.Len() < 3 and Instr(1, "0123456789", text.Mid(index, 1)) > 0
+                digits = digits + text.Mid(index, 1)
+                index++
+            end while
+            while digits.Len() < 3
+                digits = digits + "0"
+            end while
+            total = total + digits.ToInt() / 1000#
+        end if
+        return total
+    end function
+
+    ' Seconds since 1970 as an ISO 8601 UTC time with milliseconds
+    function FormatTime(epochSeconds as double) as string
+        ' Int takes a single precision Float, so it only ever sees numbers small enough to keep
+        days = Int(epochSeconds / 86400#)
+        rest = epochSeconds - days * 86400#
+        if rest < 0
+            days = days - 1
+            rest = rest + 86400#
+        end if
+        whole = Int(rest)
+        millis = Int((rest - whole) * 1000# + 0.5)
+        if millis < 0
+            whole = whole - 1
+            millis = millis + 1000
+        end if
+        if millis >= 1000
+            whole = whole + 1
+            millis = millis - 1000
+        end if
+        if whole >= 86400
+            days = days + 1
+            whole = whole - 86400
+        end if
+        shifted = days + 719468
+        era = shifted \ 146097
+        dayOfEra = shifted - era * 146097
+        yearOfEra = (dayOfEra - dayOfEra \ 1460 + dayOfEra \ 36524 - dayOfEra \ 146096) \ 365
+        year = yearOfEra + era * 400
+        dayOfYear = dayOfEra - (365 * yearOfEra + yearOfEra \ 4 - yearOfEra \ 100)
+        monthPart = (5 * dayOfYear + 2) \ 153
+        day = dayOfYear - (153 * monthPart + 2) \ 5 + 1
+        month = monthPart + 3
+        if monthPart >= 10 then month = monthPart - 9
+        if month <= 2 then year = year + 1
+
+        hours = whole \ 3600
+        minutes = (whole mod 3600) \ 60
+        secs = whole mod 60
+        clock = leftPad(hours.ToStr(), "0", 2) + ":" + leftPad(minutes.ToStr(), "0", 2) + ":" + leftPad(secs.ToStr(), "0", 2)
+        return year.ToStr() + "-" + leftPad(month.ToStr(), "0", 2) + "-" + leftPad(day.ToStr(), "0", 2) + "T" + clock + "." + leftPad(millis.ToStr(), "0", 3) + "Z"
+    end function
+
+    function LocalNow() as double
+        moment = CreateObject("roDateTime")
+        return moment.AsSeconds() + moment.GetMilliseconds() / 1000#
+    end function
+
+    ' One ping and its pong: how far the server's clock is ahead of ours, and the round trip
+    ' without the time the server held it
+    function ClockSample(sentAt as double, serverReceived as double, serverSent as double, receivedAt as double) as object
+        return {
+            offset: ((serverReceived - sentAt) + (serverSent - receivedAt)) / 2#,
+            rtt: (receivedAt - sentAt) - (serverSent - serverReceived)
+        }
+    end function
+
+    function WithSample(samples as object, sample as object) as object
+        kept = []
+        for each held in samples
+            kept.push(held)
+        end for
+        kept.push(sample)
+        while kept.Count() > WATCH_PARTY_CLOCK_SAMPLES
+            kept.Shift()
+        end while
+        return kept
+    end function
+
+    ' The fastest round trip of the last few is the one the network delayed least
+    function BestOffset(samples as object) as double
+        best = invalid
+        for each sample in samples
+            if best = invalid or sample.rtt < best.rtt then best = sample
+        end for
+        if best = invalid then return 0#
+        return best.offset + 0#
+    end function
+
+    ' No answer, or only a gateway's, is worth another go, but a refusal isn't.
+    function WorthRetrying(status as integer) as boolean
+        return status = 0 or status = 502 or status = 503 or status = 504
+    end function
+
+    ' Reports and pings go out again soon on their own, so a failed send only retries what the
+    ' viewer asked for.
+    function UserMessages(batch as object) as object
+        kept = []
+        for each message in batch
+            if message.type = "transport_request" or message.type = "chat" or message.type = "reaction" then kept.push(message)
+        end for
+        return kept
+    end function
+
+    ' ===== Playback =====
+
+    ' Where the room is at a server time: { position, at, playing }, from a snapshot's anchor or
+    ' from the last command
+    function ReferenceFromRoom(room as dynamic) as dynamic
+        if type(room) <> "roAssociativeArray" then return invalid
+        playing = room.playback_state = "playing"
+        return { position: watchPartyModel.Seconds(room.anchor_position_seconds), at: watchPartyModel.ParseTime(room.anchor_at), playing: playing }
+    end function
+
+    function ReferenceFromCommand(command as dynamic) as dynamic
+        if type(command) <> "roAssociativeArray" then return invalid
+        playing = command.playback_state = "playing"
+        if not isString(command.playback_state) then playing = command.action = "play"
+        return { position: watchPartyModel.Seconds(command.position_seconds), at: watchPartyModel.ParseTime(command.execute_at), playing: playing }
+    end function
+
+    function ExpectedPosition(reference as dynamic, nowAt as double) as double
+        if reference = invalid then return 0#
+        if not reference.playing or reference.at <= 0 or nowAt <= reference.at then return reference.position
+        return reference.position + (nowAt - reference.at)
+    end function
+
+    ' No answer from GET /Config, as from a plugin without Watch Parties, counts as off.
+    function ServerConfig(status as integer, data as dynamic) as object
+        if status <> 200 or type(data) <> "roAssociativeArray" or data.enabled <> true then return { enabled: false, alerts: false }
+        return { enabled: true, alerts: data.alerts <> false }
+    end function
+
+    ' Roku can't change the playback rate, so drift past the limit is fixed with a seek
+    function NeedsSeek(expected as double, actual as double, paused = false as boolean) as boolean
+        drift = actual - expected
+        if drift < 0 then drift = -drift
+        if paused then return drift > WATCH_PARTY_PAUSED_DRIFT_SECONDS
+        return drift > WATCH_PARTY_DRIFT_SECONDS
+    end function
+
+    function DelayUntil(executeAt as double, nowAt as double) as double
+        if executeAt <= nowAt then return 0#
+        return executeAt - nowAt
+    end function
+
+    function Seconds(value as dynamic) as double
+        valueType = LCase(type(value))
+        if valueType = "integer" or valueType = "roint" or valueType = "rointeger" or valueType = "longinteger" or valueType = "rolonginteger" or valueType = "float" or valueType = "rofloat" or valueType = "double" or valueType = "rodouble"
+            return value + 0#
+        end if
+        return 0#
+    end function
+
+    ' ===== Words =====
+
+    function Initial(name as dynamic) as string
+        if not isString(name) or name.Trim() = "" then return "?"
+        return UCase(name.Trim().Left(1))
+    end function
+
+    ' Each person keeps the same color everywhere, picked from their name
+    function AvatarColor(name as dynamic) as string
+        colors = ["#8E44AD", "#2E6FB7", "#16794F", "#C0392B", "#9A5B00", "#00838F", "#AD1457", "#5D4037"]
+        if not isString(name) then return colors[0]
+        total = 0
+        for index = 0 to name.Len() - 1
+            total = total + Asc(name.Mid(index, 1))
+        end for
+        return colors[total mod colors.Count()]
+    end function
+
+    function StatusLabel(status as dynamic) as string
+        if status = "in_sync" then return tr("In sync")
+        if status = "catching_up" then return tr("Catching up")
+        if status = "buffering" then return tr("Buffering")
+        if status = "not_watching" then return tr("Not watching")
+        if status = "ready" then return tr("Ready")
+        return tr("Joining")
+    end function
+
+    function StatusColor(status as dynamic) as string
+        if status = "in_sync" or status = "ready" then return "#3ECF8EFF"
+        if status = "catching_up" then return "#F5B942FF"
+        if status = "buffering" then return "#4FB0FFFF"
+        if status = "not_watching" then return "#6F6F6FFF"
+        return "#A8A8A8FF"
+    end function
+
+    ' "Arcane · S2:E1" for an episode, the title alone for anything else
+    function ContentTitle(info as dynamic) as string
+        if type(info) <> "roAssociativeArray" then return ""
+        title = toString(info.content_title ?? "")
+        if info.content_type <> "Episode" then return title
+
+        series = toString(info.series_name ?? "")
+        if series = "" then series = title
+        season = watchPartyModel.Seconds(info.season)
+        episode = watchPartyModel.Seconds(info.episode)
+        if season <= 0 and episode <= 0 then return series
+        return series + " · S" + Int(season).ToStr() + ":E" + Int(episode).ToStr()
+    end function
+
+    function RoomMeta(summary as object) as string
+        parts = []
+        position = watchPartyModel.Seconds(summary.position_seconds)
+        clock = ""
+        if position >= 1 then clock = " " + secondsToHuman(Int(position), false)
+
+        if summary.phase <> "playing"
+            parts.push(tr("In the lobby"))
+        else if summary.playback_state = "paused"
+            parts.push(tr("Paused") + clock)
+        else if summary.playback_state = "waiting"
+            parts.push(tr("Starting"))
+        else
+            parts.push(tr("Playing") + clock)
+        end if
+
+        host = toString(summary.host_name ?? "")
+        if host <> "" then parts.push(host)
+        parts.push(substitute(tr("{0} watching"), Int(watchPartyModel.Seconds(summary.member_count)).ToStr()))
+        if summary.guest_control_policy = "everyone" then parts.push(tr("Everyone controls"))
+        return parts.Join(" · ")
+    end function
+
+    function RoomDotColor(summary as object) as string
+        if summary.phase <> "playing" then return "#F5B942FF"
+        if summary.playback_state = "paused" then return "#C8C8C8FF"
+        return "#3ECF8EFF"
+    end function
+
+    function ErrorText(code as dynamic) as string
+        if code = "wrong_pin" then return tr("That PIN didn't work. Try again.")
+        if code = "too_many_attempts" then return tr("Too many tries. Wait a minute.")
+        if code = "full" then return tr("This party is full.")
+        if code = "not_found" then return tr("No room has that code.")
+        if code = "no_access" then return tr("You don't have access to what they're watching.")
+        if code = "disabled" then return tr("Watch Parties are turned off on this server.")
+        if code = "not_host" then return tr("Only the host can do that.")
+        if code = "not_allowed" then return tr("That isn't allowed in this party.")
+        if code = "rate_limited" then return tr("Slow down a little.")
+        return tr("That didn't work. Try again in a moment.")
+    end function
+
+    ' The code a refusal gave, or "" when it didn't say
+    function ErrorCode(answer as object) as string
+        if type(answer.data) <> "roAssociativeArray" then return ""
+        return toString(answer.data.code ?? "")
+    end function
+
+    ' Nothing for the viewer's own command, or for the start after the ready wait, which has its
+    ' countdown instead.
+    function CommandText(command as object, selfMemberId as string) as string
+        if command.countdown = true or command.playback_state = "waiting" then return ""
+        if toString(command.by_member_id ?? "") = selfMemberId then return ""
+        name = toString(command.by_display_name ?? "")
+        if name = "" then return ""
+
+        if command.action = "pause" then return substitute(tr("{0} paused"), name)
+        if command.action = "play" then return substitute(tr("{0} resumed"), name)
+        if command.action = "seek" then return substitute(tr("{0} skipped to {1}"), name, secondsToHuman(Int(watchPartyModel.Seconds(command.position_seconds)), false))
+        return ""
+    end function
+
+    function NoticeText(notice as object, selfMemberId as string) as string
+        kind = notice.kind
+        name = toString(notice.display_name ?? "")
+        isSelf = toString(notice.member_id ?? "") = selfMemberId
+
+        if kind = "joined" and not isSelf then return substitute(tr("{0} joined"), name)
+        if kind = "left" and not isSelf then return substitute(tr("{0} left"), name)
+        if kind = "host_changed"
+            if isSelf then return tr("You're the host now")
+            return substitute(tr("{0} is the host now"), name)
+        end if
+        if kind = "switched"
+            title = toString(notice.content_title ?? "")
+            if name = "" or title = "" then return ""
+            return substitute(tr("{0} switched to {1}"), name, title)
+        end if
+        if kind = "no_access" and (isSelf or toString(notice.member_id ?? "") = "") then return tr("You don't have access to what they're watching.")
+        return ""
+    end function
+
+    ' The host who ended the party already knows, so only the others are told.
+    function ClosedText(reason as dynamic, host as string, isHost as boolean) as string
+        if reason = "ended_by_host"
+            if isHost or host = "" then return ""
+            return substitute(tr("{0} ended the party"), host)
+        end if
+        if reason = "disabled" then return watchPartyModel.ErrorText("disabled")
+        if reason = "replaced" and isHost then return ""
+        return tr("The watch party has ended.")
+    end function
+
+    function PolicyText(policy as dynamic) as string
+        if policy = "everyone" then return tr("Everyone can control playback now")
+        return tr("Only the host can control playback now")
+    end function
+
+    ' ===== Lists =====
+
+    ' A room the last poll didn't see is worth an alert, unless the viewer is in it or nothing's
+    ' picked yet.
+    function NewRooms(previousIds as dynamic, rooms as object) as object
+        found = []
+        if type(previousIds) <> "roAssociativeArray" then return found
+        for each summary in rooms
+            if not previousIds.DoesExist(toString(summary.room_id ?? "")) and summary.is_member <> true and isValidAndNotEmpty(summary.selected_content_id)
+                found.push(summary)
+            end if
+        end for
+        return found
+    end function
+
+    ' Only rooms with something picked are noted, so a room started empty alerts once it gets an item.
+    function RoomIds(rooms as object) as object
+        ids = {}
+        for each summary in rooms
+            if isValidAndNotEmpty(summary.selected_content_id) then ids[toString(summary.room_id ?? "")] = true
+        end for
+        return ids
+    end function
+
+    function AlertFor(summary as object) as object
+        count = Int(watchPartyModel.Seconds(summary.member_count)).ToStr()
+        where = substitute(tr("{0} in the lobby"), count)
+        if summary.phase = "playing" then where = substitute(tr("{0} watching"), count)
+        return {
+            title: substitute(tr("{0} started a watch party"), toString(summary.host_name ?? "")),
+            body: watchPartyModel.ContentTitle(summary) + " · " + where + Chr(10) + tr("It's first in Watch Parties on Home")
+        }
+    end function
+
+    ' Rooms alerted on come first, newest alert first, and the rest keep the server's order
+    function AlertsFirst(rooms as object, alertOrder as object) as object
+        first = []
+        taken = {}
+        for each roomId in alertOrder
+            for each summary in rooms
+                if toString(summary.room_id ?? "") = roomId and not taken.DoesExist(roomId)
+                    first.push(summary)
+                    taken[roomId] = true
+                end if
+            end for
+        end for
+        for each summary in rooms
+            if not taken.DoesExist(toString(summary.room_id ?? "")) then first.push(summary)
+        end for
+        return first
+    end function
+
+    function MemberById(room as dynamic, memberId as dynamic) as dynamic
+        if type(room) <> "roAssociativeArray" or type(room.members) <> "roArray" then return invalid
+        for each member in room.members
+            if member.profile_id = memberId then return member
+        end for
+        return invalid
+    end function
+
+    function HostName(room as dynamic) as string
+        if type(room) <> "roAssociativeArray" or type(room.members) <> "roArray" then return ""
+        for each member in room.members
+            if member.is_host = true then return toString(member.display_name ?? "")
+        end for
+        return ""
+    end function
+
+    function ReactionImage(reaction as dynamic) as string
+        if not isString(reaction) or Instr(1, WATCH_PARTY_REACTIONS, reaction) = 0 then return ""
+        return "pkg:/images/watchParty/" + reaction + ".webp"
+    end function
+
+end namespace
