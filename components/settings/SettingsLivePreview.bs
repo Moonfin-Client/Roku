@@ -10,6 +10,7 @@ import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/libraryOrder.bs"
 import "pkg:/source/utils/libraryPreview.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/multiserver.bs"
 import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
 import "pkg:/source/utils/ratingsRow.bs"
@@ -301,10 +302,10 @@ function sceneConfig(state as object) as object
     return config
 end function
 
-' The audio and Collections Row Options draw Home with the remote on the first row they change,
-' loaded in the sort being tried, and Home's own rows under it. When none of those rows can be on
-' Home, Home stays as it is and a note says what keeps them off. The note and caption go into the
-' variant, so moving between settings that draw the same rows still puts up the right one.
+' The audio, Collections and Favorites Row Options draw Home with the remote on the first row they
+' change, loaded in the sort being tried, and Home's own rows under it. When none of those rows can
+' be on Home, Home stays as it is and a note says what keeps them off. The note and caption go into
+' the variant, so moving between settings that draw the same rows still puts up the right one.
 function rowOptionsConfig(state as object, items as object, variant as string) as object
     values = state.values
     focusKey = state.focusKey
@@ -320,7 +321,19 @@ function rowOptionsConfig(state as object, items as object, variant as string) a
         return config
     end if
 
-    sample = rowSample(edited, values)
+    sample = invalid
+    ' Settings has no sort to try for the Favorites row, so the row Home has is the row, joined
+    ' from every server when Home joins them. Only a row Home doesn't have yet is asked for, and
+    ' the loader reads this server alone, so a joined row waits for Home to load it.
+    if edited = "favorites"
+        sample = homeRowSample(edited)
+        if not isValid(sample) and isMultiServerEnabled() and hasMultipleLoggedInServers()
+            config.notice = rowOptionsPreview.Notice(focusKey, "joined")
+            config.variant = config.variant + config.notice
+            return config
+        end if
+    end if
+    if not isValid(sample) then sample = rowSample(edited, values)
     if not isValid(sample) then return config
     ' A sort doesn't change what's in a row, so nothing back for a row Home shows means the request
     ' failed, and Home's own copy stands in. Show Episodes can empty a row, so it keeps its answer.
@@ -386,9 +399,12 @@ end function
 ' keeps the last one drawn, or Home's own, or else Home stays as it is.
 function rowSample(rowId as string, values as object) as dynamic
     tried = {}
-    for each key in ["ui.home.audioRowsSortBy", "ui.home.audioRowsSortOrder", "ui.home.collectionsRowSortBy", "ui.home.collectionsRowSortOrder", "ui.home.collectionsRowShowEpisodes"]
-        tried[key] = values[key]
-    end for
+    ' The Favorites row reads none of these, so one answer does whatever they hold
+    if rowId <> "favorites"
+        for each key in ["ui.home.audioRowsSortBy", "ui.home.audioRowsSortOrder", "ui.home.collectionsRowSortBy", "ui.home.collectionsRowSortOrder", "ui.home.collectionsRowShowEpisodes"]
+            tried[key] = values[key]
+        end for
+    end if
     key = rowId + FormatJson(tried)
     sample = m.rowSamples[key]
     if isValid(sample)
@@ -409,6 +425,11 @@ function rowSample(rowId as string, values as object) as dynamic
 
     shown = m.shownSamples[rowId]
     if isValid(shown) then return shown
+    return homeRowSample(rowId)
+end function
+
+' Home's own copy of a row, or invalid when Home doesn't show it
+function homeRowSample(rowId as string) as dynamic
     for each row in homeSnapshot().rows
         if row.id = rowId then return { key: "home", items: snapshotItems(row) }
     end for
@@ -483,6 +504,7 @@ end function
 function rowTitle(rowId as string, picked as object) as string
     if rowId = "audio" then return tr("Audio")
     if rowId = "collections" then return tr("Collections")
+    if rowId = "favorites" then return tr("Favorites")
     return picked[rowId] ?? ""
 end function
 
@@ -499,6 +521,8 @@ function previewCards(nodes as object) as object
         if isValid(json.RunTimeTicks) and json.RunTimeTicks >= 600000000 then card.runtime = getFormattedRuntime(json.RunTimeTicks)
         tags = json.BackdropImageTags
         if type(tags) = "roArray" and tags.count() > 0 then card.backdropUrl = ImageURL(node.id, "Backdrop", { maxWidth: 1280, maxHeight: 720, quality: 90 })
+        ' A card joined in from another server keeps the backdrop Home built against that server
+        if isValidAndNotEmpty(json._serverUrl) then card.backdropUrl = toString(node.backdropURL)
         ' A wide card takes the thumbnail the way Home's does, then the wide art, the backdrop and the poster
         for each art in [node.widePosterURL, card.backdropUrl, card.posterUrl]
             if not isValidAndNotEmpty(card.wideUrl) then card.wideUrl = art

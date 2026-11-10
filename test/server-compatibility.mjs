@@ -981,9 +981,9 @@ assert.match(loadItemsSource.match(/function loadCollections\([^]*?end function/
 assert.match(audioRow, /SortOrder: rowSortOrderParam\(getStringSetting\(settings, "ui\.home\.audioRowsSortOrder", "descending"\)\)/, 'The Audio row is asked for in its sort order');
 process.stdout.write('PASS: Collections and Audio row sort settings wiring (17 checks)\n');
 
-// The audio and Collections Row Options draw Home on the live preview, with the row loaded through
-// Home's own loader in the value being tried
-const rowOptionKeys = ['ui.home.displayAudioRows', 'ui.home.audioRowsSortBy', 'ui.home.audioRowsSortOrder', 'ui.home.displayCollectionsRows', 'ui.home.collectionsRowSortBy', 'ui.home.collectionsRowSortOrder', 'ui.home.collectionsRowShowEpisodes'];
+// The audio, Collections and Favorites Row Options draw Home on the live preview, with the row
+// loaded through Home's own loader in the value being tried
+const rowOptionKeys = ['ui.home.displayAudioRows', 'ui.home.audioRowsSortBy', 'ui.home.audioRowsSortOrder', 'ui.home.displayCollectionsRows', 'ui.home.collectionsRowSortBy', 'ui.home.collectionsRowSortOrder', 'ui.home.collectionsRowShowEpisodes', 'ui.home.displayFavoritesRows'];
 const previewSceneTable = (await readFile('components/settings/settings.bs', 'utf8')).match(/function previewSceneTable\(\)[^]*?end function/)[0];
 for (const key of rowOptionKeys) {
     assert.match(previewSceneTable, new RegExp(`"${key.replace(/\./g, '\\.')}": "home"`), `${key} shows on the Home preview`);
@@ -995,6 +995,11 @@ assert.match(rowOptionsConfigSource, /config\.variant = config\.variant \+ confi
 assert.match(rowOptionsConfigSource, /\+ config\.caption\n/, 'and another caption');
 const rowSampleSource = livePreviewSource.match(/function rowSample\([^]*?end function/)[0];
 assert.match(rowOptionsConfigSource, /if sample\.items\.count\(\) = 0 and focusKey <> "ui\.home\.collectionsRowShowEpisodes"\s+for each row in homeSnapshot\(\)\.rows/, 'A failed request for a row Home shows draws Home\'s own copy, not the empty note');
+assert.match(rowOptionsConfigSource, /if edited = "favorites"\s+sample = homeRowSample\(edited\)[^]*?end if\s+end if\s+if not isValid\(sample\) then sample = rowSample\(edited, values\)/, 'The Favorites row has no sort to try, so Home\'s own copy is drawn and only a row Home lacks is loaded');
+assert.match(rowOptionsConfigSource, /if not isValid\(sample\) and isMultiServerEnabled\(\) and hasMultipleLoggedInServers\(\)\s+config\.notice = rowOptionsPreview\.Notice\(focusKey, "joined"\)\s+config\.variant = config\.variant \+ config\.notice\s+return config/, 'A row joined from several servers that Home hasn\'t loaded isn\'t loaded from this server alone');
+assert.match(rowSampleSource, /if rowId <> "favorites"\s+for each key in \[/, 'A tried audio or Collections value doesn\'t load the Favorites row again');
+assert.match(livePreviewSource.match(/function rowTitle\([^]*?end function/)[0], /if rowId = "favorites" then return tr\("Favorites"\)/, 'A Favorites row Home doesn\'t have yet gets Home\'s title');
+assert.match(livePreviewSource.match(/function previewCards\([^]*?end function/)[0], /if isValidAndNotEmpty\(json\._serverUrl\) then card\.backdropUrl = toString\(node\.backdropURL\)/, 'A card from another server keeps that server\'s backdrop');
 assert.match(rowSampleSource, /CreateObject\("roSGNode", "LoadItemsTask"\)/, 'The row loads through Home\'s own loader');
 assert.match(rowSampleSource, /setFields\(\{ itemsToLoad: rowId, settings: settings \}\)/, 'with the values being tried');
 assert.match(livePreviewSource.match(/sub drawInspector\([^]*?end sub/)[0], /status = m\.rowOptionsStatus\s+dotInk = BLOCKED_INK/, 'A setting that can\'t change Home says what to turn on, in amber');
@@ -1002,7 +1007,7 @@ for (const loader of ['loadAudio', 'loadCollections', 'loadPickedRow']) {
     assert.match(loadItemsSource.match(new RegExp(`function ${loader}\\([^]*?end function`))[0], /settings = rowSettings\(\)/, `${loader} loads with the settings it's given`);
 }
 assert.match(await readFile('components/home/LoadItemsTask.xml', 'utf8'), /<field id="settings" type="assocarray" \/>/, 'The loader takes settings to load with');
-process.stdout.write(`PASS: Row Options live preview wiring (${rowOptionKeys.length + 11} checks)\n`);
+process.stdout.write(`PASS: Row Options live preview wiring (${rowOptionKeys.length + 16} checks)\n`);
 
 // Chart rows match their titles against the library, by provider id on Emby and through a paged
 // index of the library's ids on Jellyfin, and a TMDB chart types its titles from its path

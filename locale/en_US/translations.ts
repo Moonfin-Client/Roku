@@ -9103,6 +9103,26 @@
         <translation>The Audio row is off. To show it, go to Rows and turn on Music under Disabled.</translation>
     </message>
     <message>
+        <source>The Favorites row is off. To show it, turn this on, then go to Rows and turn on Favorites under Disabled.</source>
+        <extracomment>Note over the settings live preview of Home, on the Display Favorites Rows switch while it is off. Rows only lists the Favorites row once the switch is on</extracomment>
+        <translation>The Favorites row is off. To show it, turn this on, then go to Rows and turn on Favorites under Disabled.</translation>
+    </message>
+    <message>
+        <source>The Favorites row is off. To show it, go to Rows and turn on Favorites under Disabled.</source>
+        <extracomment>Note over the settings live preview of Home, on the Display Favorites Rows switch while the row is off in the Rows screen</extracomment>
+        <translation>The Favorites row is off. To show it, go to Rows and turn on Favorites under Disabled.</translation>
+    </message>
+    <message>
+        <source>There are no favorites to show, so Home leaves the Favorites row out.</source>
+        <extracomment>Note over the settings live preview of Home, on the Display Favorites Rows switch when nothing is marked as a favorite</extracomment>
+        <translation>There are no favorites to show, so Home leaves the Favorites row out.</translation>
+    </message>
+    <message>
+        <source>Home joins the Favorites row from all your servers, so it can&apos;t be shown here until Home has loaded it.</source>
+        <extracomment>Note over the settings live preview of Home, on the Display Favorites Rows switch with Multi-Server Libraries on and more than one server signed in, while Home hasn&apos;t loaded the Favorites row yet</extracomment>
+        <translation>Home joins the Favorites row from all your servers, so it can&apos;t be shown here until Home has loaded it.</translation>
+    </message>
+    <message>
         <source>The Collections row is off, and no collection is added as a row of its own. To show one, go to Rows and turn on Collections under Disabled.</source>
         <extracomment>Note over the settings live preview of Home, for a Collections Row Options setting while none of those rows is on Home</extracomment>
         <translation>The Collections row is off, and no collection is added as a row of its own. To show one, go to Rows and turn on Collections under Disabled.</translation>
