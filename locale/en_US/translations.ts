@@ -4538,9 +4538,9 @@
         <translation>Server Address</translation>
     </message>
     <message>
-        <source>Jellyfin or Emby on your network or online</source>
+        <source>Jellyfin, Emby or Silo on your network or online</source>
         <extracomment>Line under the Server Address choice on the Add Server dialog</extracomment>
-        <translation>Jellyfin or Emby on your network or online</translation>
+        <translation>Jellyfin, Emby or Silo on your network or online</translation>
     </message>
     <message>
         <source>Emby Connect</source>
@@ -4591,6 +4591,11 @@
         <source>Emby</source>
         <extracomment>Chip naming the kind of server Add Server found</extracomment>
         <translation>Emby</translation>
+    </message>
+    <message>
+        <source>Silo</source>
+        <extracomment>Chip naming the kind of server Add Server found</extracomment>
+        <translation>Silo</translation>
     </message>
     <message>
         <source>Version {0}</source>
@@ -9043,9 +9048,9 @@
         <translation>Waiting for you to approve the code...</translation>
     </message>
     <message>
-        <source>Works with Jellyfin and Emby. A Plex address opens the Plex sign-in.</source>
+        <source>Works with Jellyfin, Emby and Silo. A Plex address opens the Plex sign-in.</source>
         <extracomment>Hint under the address field in the Add Server dialog</extracomment>
-        <translation>Works with Jellyfin and Emby. A Plex address opens the Plex sign-in.</translation>
+        <translation>Works with Jellyfin, Emby and Silo. A Plex address opens the Plex sign-in.</translation>
     </message>
     <message>
         <source>Live preview</source>

@@ -465,9 +465,12 @@ const showScenes = await readFile('source/ShowScenes.bs', 'utf8');
 assert.match(showScenes, /if not group\.hasField\("detailExtrasTask"\) then group\.addField/, 'Detail extras task can be restarted on one screen');
 
 const buttonHost = await readFile('components/details/detailButtonHost.bs', 'utf8');
-const extrasChanged = buttonHost.match(/sub onDetailExtrasChanged\(\)[^]*?end sub/)[0];
-assert.match(extrasChanged, /selectedId = m\.buttonGroups\[previousIndex\]\.id/, 'Async button rebuild remembers logical selection');
-assert.match(extrasChanged, /m\.currentButtonIndex = i[^]*?if focusedId <> "" then focusButton\(i\)/, 'Async button rebuild restores index without stealing focus');
+assert.match(buttonHost.match(/sub onDetailExtrasChanged\(\)[^]*?end sub/)[0], /rebuildButtonRow\(\)/, 'A late extras answer rebuilds the button row');
+const toggleWatched = buttonHost.match(/sub toggleWatched\(\)[^]*?end sub/)[0];
+assert.match(toggleWatched, /itemData\.UserData\.PlaybackPositionTicks = 0[^]*?if hadProgress then rebuildButtonRow\(\)/, 'Marking watched or unwatched drops the Resume button');
+const rebuildRow = buttonHost.match(/sub rebuildButtonRow\(\)[^]*?end sub/)[0];
+assert.match(rebuildRow, /selectedId = m\.buttonGroups\[previousIndex\]\.id/, 'Async button rebuild remembers logical selection');
+assert.match(rebuildRow, /m\.currentButtonIndex = i[^]*?if focusedId <> "" then focusButton\(i\)/, 'Async button rebuild restores index without stealing focus');
 
 const remoteItems = await readFile('source/api/Items.bs', 'utf8');
 const remoteMetadata = remoteItems.match(/function ItemMetaDataForServer\([^]*?end function/)[0];
