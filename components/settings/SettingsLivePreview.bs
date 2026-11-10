@@ -1,8 +1,11 @@
 import "pkg:/components/setup/setupPreviewDraw.bs"
+import "pkg:/source/api/Image.bs"
 import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/utils/achievementsModel.bs"
 import "pkg:/source/utils/buttonLayout.bs"
 import "pkg:/source/utils/detailMetadataLayout.bs"
+import "pkg:/source/utils/homeCards.bs"
+import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/libraryOrder.bs"
 import "pkg:/source/utils/libraryPreview.bs"
@@ -10,6 +13,7 @@ import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
 import "pkg:/source/utils/ratingsRow.bs"
+import "pkg:/source/utils/rowOptionsPreview.bs"
 import "pkg:/source/utils/themeChrome.bs"
 
 ' The stage is the setup wizard's, so the previews' rounded art comes out at the radius it was
@@ -27,6 +31,11 @@ const CHIP_GAP = 10
 const LABEL_LEFT = 24
 const OPTION_GAP = 10
 const OPTION_MARKER = 28
+' The status line of a setting that needs something else turned on first
+const BLOCKED_INK = "0xFFC107FF"
+const NOTICE_WIDTH = 760
+' The rows under the edited one that the stage has room for at the smallest card size
+const ROWS_BELOW = 4
 
 sub init()
     m.header = m.top.findNode("header")
@@ -40,6 +49,12 @@ sub init()
     m.libraryPages = {}
     m.libraryTask = invalid
     m.effect = invalid
+    m.rowSamples = {}
+    m.shownSamples = {}
+    m.rowTask = invalid
+    m.homeSnapshot = invalid
+    m.rowLayout = invalid
+    m.rowOptionsStatus = ""
 
     m.inspector.translation = [0, INSPECTOR_TOP]
     m.holder.translation = [0, STAGE_TOP]
@@ -207,7 +222,10 @@ sub drawScene(state as object)
         m.calendar.callFunc("calendarLoad", m.calendarShared)
         preview.screen = m.calendar
     end if
+    if isValid(config.homeRows) then preview.screen = homeRowsScreen(config.homeRows)
     preview.items = config.items
+    if isValidAndNotEmpty(config.notice) then drawNotice(config.notice)
+    if isValidAndNotEmpty(config.caption) then drawCaption(config.caption)
     if isValid(config.effect)
         m.effect = m.holder.createChild("SeasonalEffects")
         m.effect.scale = preview.scale
@@ -219,6 +237,7 @@ function sceneConfig(state as object) as object
     values = state.values
     focusKey = state.focusKey ?? ""
     items = m.top.items ?? []
+    m.rowOptionsStatus = ""
 
     if state.scene = "details"
         hide = values["ui.itemdetail.hideMediaDescription"] = "true"
@@ -256,6 +275,7 @@ function sceneConfig(state as object) as object
     hideHome = values["ui.home.hideMediaDescription"] = "true"
     if hideHome then items = withoutOverview(items)
     variant = hideHome.ToStr()
+    if rowOptionsPreview.Group(focusKey) <> "" then return rowOptionsConfig(state, items, variant)
     if focusKey = "ui.home.mediaBarMode" or focusKey = "ui.overlayColor" or focusKey = "ui.overlayOpacity" or Left(focusKey, 20) = "ui.mediaBar.ratings." or focusKey = "ui.home.mediaBarNewReleaseBanner" or focusKey = "ui.home.mediaBarNewReleaseDays"
         opacity = -1.0
         if values["ui.overlayOpacity"] <> "" then opacity = Val(values["ui.overlayOpacity"])
@@ -280,6 +300,236 @@ function sceneConfig(state as object) as object
     end if
     return config
 end function
+
+' The audio and Collections Row Options draw Home with the remote on the first row they change,
+' loaded in the sort being tried, and Home's own rows under it. When none of those rows can be on
+' Home, Home stays as it is and a note says what keeps them off. The note and caption go into the
+' variant, so moving between settings that draw the same rows still puts up the right one.
+function rowOptionsConfig(state as object, items as object, variant as string) as object
+    values = state.values
+    focusKey = state.focusKey
+    layout = rowLayout(state.focusedSetting ?? "")
+    arranged = layout.arranged
+    edited = rowOptionsPreview.EditedRow(focusKey, arranged, layout.picked)
+    reason = rowOptionsPreview.Blocked(focusKey, values, edited)
+    m.rowOptionsStatus = rowOptionsPreview.Status(focusKey, reason)
+    config = { component: "SetupNavbarPreview", fields: navbarFields(values, state.avatar ?? ""), items: items, variant: variant + reason }
+    if reason <> ""
+        config.notice = rowOptionsPreview.Notice(focusKey, reason)
+        config.variant = config.variant + config.notice
+        return config
+    end if
+
+    sample = rowSample(edited, values)
+    if not isValid(sample) then return config
+    ' A sort doesn't change what's in a row, so nothing back for a row Home shows means the request
+    ' failed, and Home's own copy stands in. Show Episodes can empty a row, so it keeps its answer.
+    if sample.items.count() = 0 and focusKey <> "ui.home.collectionsRowShowEpisodes"
+        for each row in homeSnapshot().rows
+            if row.id = edited then sample = { key: "home", items: snapshotItems(row) }
+        end for
+    end if
+    if sample.items.count() = 0
+        config.notice = rowOptionsPreview.Notice(focusKey, "empty")
+        config.variant = config.variant + config.notice
+        return config
+    end if
+
+    modern = values["ui.home.rowsStyle"] <> "v1"
+    hide = values["ui.home.hideMediaDescription"] = "true"
+    rows = [editedRowLook(edited, sample.items, modern, hide, layout.picked)]
+    snapshot = homeSnapshot()
+    first = rowOptionsPreview.RowsAfter(edited, arranged, snapshot.ids)
+    if first >= 0
+        last = first + ROWS_BELOW - 1
+        if last > snapshot.rows.count() - 1 then last = snapshot.rows.count() - 1
+        for i = first to last
+            rows.push(snapshotRowLook(snapshot.rows[i], hide))
+        end for
+    end if
+    config.homeRows = { modern: modern, backdrop: getHomeBackdropStyle(values), rows: rows }
+    config.caption = rowOptionsPreview.Caption(focusKey, edited, arranged)
+    config.variant = config.variant + sample.key + modern.ToStr() + config.homeRows.backdrop + config.caption
+    return config
+end function
+
+' Home's row order and its collection rows, read again whenever focus moves to another row of the
+' list, since a picker trying one value after another redraws on every press and Rows can't change
+' while one row keeps focus. Going to Rows and back moves focus, so that reads them again.
+function rowLayout(focusedSetting as string) as object
+    if isValid(m.rowLayout) and m.rowLayout.focusedSetting = focusedSetting then return m.rowLayout
+    m.rowLayout = { focusedSetting: focusedSetting, arranged: homeRowLayout.Arranged(), picked: pickedCollections() }
+    return m.rowLayout
+end function
+
+' The rows the preview draws, on the page Home draws them on
+function homeRowsScreen(look as object) as object
+    screen = CreateObject("roSGNode", "SetupHomeRowsPreview")
+    screen.setFields({ modern: look.modern, backdrop: look.backdrop, rows: look.rows })
+    screen.items = []
+    return screen
+end function
+
+' The collections added to Home as rows of their own that Home shows, by id. One picked on another
+' server is left out, since the preview reads from this one.
+function pickedCollections() as object
+    picked = {}
+    for each entry in homeRowLayout.DynamicRows()
+        if entry.source = "collections" and homeRowLayout.PickShown(entry.id) and homeRowLayout.IsOwnServer(entry.id) then picked[entry.id] = entry.title
+    end for
+    return picked
+end function
+
+' The edited row in the sort being tried, read through Home's own loader with the Row Options
+' values in place of the saved ones. Each sort is asked for once while settings is open, and one at
+' a time, so scrubbing through a picker only loads where it stops. Until a new sort arrives the row
+' keeps the last one drawn, or Home's own, or else Home stays as it is.
+function rowSample(rowId as string, values as object) as dynamic
+    tried = {}
+    for each key in ["ui.home.audioRowsSortBy", "ui.home.audioRowsSortOrder", "ui.home.collectionsRowSortBy", "ui.home.collectionsRowSortOrder", "ui.home.collectionsRowShowEpisodes"]
+        tried[key] = values[key]
+    end for
+    key = rowId + FormatJson(tried)
+    sample = m.rowSamples[key]
+    if isValid(sample)
+        m.shownSamples[rowId] = sample
+        return sample
+    end if
+
+    if not isValid(m.rowTask)
+        settings = {}
+        settings.Append(chainLookupReturn(m.global.session, "user.settings", {}))
+        settings.Append(tried)
+        m.rowTask = CreateObject("roSGNode", "LoadItemsTask")
+        m.rowTask.setFields({ itemsToLoad: rowId, settings: settings })
+        m.rowTaskKey = key
+        m.rowTask.observeField("content", "onRowSampleLoaded")
+        m.rowTask.control = "RUN"
+    end if
+
+    shown = m.shownSamples[rowId]
+    if isValid(shown) then return shown
+    for each row in homeSnapshot().rows
+        if row.id = rowId then return { key: "home", items: snapshotItems(row) }
+    end for
+    return invalid
+end function
+
+' The sort that arrived, kept for the rest of the time settings is open
+sub onRowSampleLoaded()
+    task = m.rowTask
+    task.unobserveField("content")
+    m.rowTask = invalid
+    m.rowSamples[m.rowTaskKey] = { key: m.rowTaskKey, items: previewCards(task.content ?? []) }
+    redraw()
+end sub
+
+' Home's rows as Settings found them. Home stays loaded behind Settings and only builds its rows
+' again once Settings closes, so they're read once. Settings opened over another screen has none.
+' A row's cards are only read once the preview draws it.
+function homeSnapshot() as object
+    if isValid(m.homeSnapshot) then return m.homeSnapshot
+    m.homeSnapshot = { ids: [], rows: [] }
+    screen = m.global.sceneManager.callFunc("getActiveScene")
+    if not isValid(screen) or screen.subtype() <> "Home" then return m.homeSnapshot
+    list = screen.findNode("homeRows")
+    if not isValid(list) or not isValid(list.content) then return m.homeSnapshot
+    for each row in list.content.getChildren(-1, 0)
+        if row.getChildCount() = 0 then continue for
+        m.homeSnapshot.ids.push(row.id)
+        m.homeSnapshot.rows.push({ id: row.id, title: row.title, cell: row.cursorSize, imageType: row.imageType, modernCards: row.modernCards, node: row, items: invalid })
+    end for
+    return m.homeSnapshot
+end function
+
+' The edited row's cards, shaped the way Home shapes that row. A row Home already has keeps the
+' shape it has there, and one it doesn't yet is shaped by the same rules.
+function editedRowLook(rowId as string, items as object, modern as boolean, hide as boolean, picked as object) as object
+    sizeName = homeCards.CardSizeName()
+    look = invalid
+    for each row in homeSnapshot().rows
+        if row.id = rowId then look = snapshotRowLook(row, hide)
+    end for
+    if not isValid(look)
+        audio = rowId = "audio"
+        look = { title: rowTitle(rowId, picked), modernCards: modern and not audio and useModernCardsForRow(rowId) }
+        if look.modernCards
+            look.imageType = "poster"
+            look.cell = homeCards.CardBox(sizeName, 2 / 3)
+        else
+            look.imageType = homeCards.RowImageType(rowId, audio)
+            look.cell = homeCards.CardBox(sizeName, homeCards.AspectFor(items[0].type, rowId, audio, look.imageType))
+        end if
+    end if
+    look.items = items
+    if hide then look.items = withoutOverview(items)
+    look.wideWidth = homeCards.CardBox(sizeName, 16 / 9, true)[0]
+    return look
+end function
+
+' A row Home has, drawn the way Home draws it
+function snapshotRowLook(row as object, hide as boolean) as object
+    look = { title: row.title, cell: row.cell, imageType: row.imageType, modernCards: row.modernCards, items: snapshotItems(row) }
+    if hide then look.items = withoutOverview(look.items)
+    return look
+end function
+
+function snapshotItems(row as object) as object
+    if not isValid(row.items) then row.items = previewCards(row.node.getChildren(12, 0))
+    return row.items
+end function
+
+' The title Home gives a row it doesn't have yet
+function rowTitle(rowId as string, picked as object) as string
+    if rowId = "audio" then return tr("Audio")
+    if rowId = "collections" then return tr("Collections")
+    return picked[rowId] ?? ""
+end function
+
+' Home's cards in the shape the preview draws: the art for each image type, the backdrop behind
+' the focused one and the facts its details show
+function previewCards(nodes as object) as object
+    cards = []
+    for each node in nodes
+        json = node.json ?? {}
+        card = { title: node.title, type: toString(node.type), posterUrl: node.posterURL, wideUrl: node.thumbnailURL, backdropUrl: "", year: "", officialRating: toString(json.OfficialRating), runtime: "", overview: toString(json.Overview), genres: [] }
+        if not isValidAndNotEmpty(card.title) then card.title = toString(node.name)
+        if isValid(json.ProductionYear) then card.year = json.ProductionYear.toStr()
+        ' A clip under a minute would read as 0m
+        if isValid(json.RunTimeTicks) and json.RunTimeTicks >= 600000000 then card.runtime = getFormattedRuntime(json.RunTimeTicks)
+        tags = json.BackdropImageTags
+        if type(tags) = "roArray" and tags.count() > 0 then card.backdropUrl = ImageURL(node.id, "Backdrop", { maxWidth: 1280, maxHeight: 720, quality: 90 })
+        ' A wide card takes the thumbnail the way Home's does, then the wide art, the backdrop and the poster
+        for each art in [node.widePosterURL, card.backdropUrl, card.posterUrl]
+            if not isValidAndNotEmpty(card.wideUrl) then card.wideUrl = art
+        end for
+        cards.push(card)
+    end for
+    return cards
+end function
+
+' What keeps the rows off Home, over the middle of the stage
+sub drawNotice(text as string)
+    panel = m.holder.createChild("Group")
+    label = setupPreviewDraw.Paragraph(panel, text, 32, 28, NOTICE_WIDTH - 64, 26, 5, "0xFFFFFFFF")
+    height = label.boundingRect().height + 56
+    setupPreviewDraw.Round(panel, 0, 0, NOTICE_WIDTH, height, 20, "0x000000D9")
+    ' Back on top of the panel
+    panel.removeChild(label)
+    panel.appendChild(label)
+    panel.translation = [(STAGE_WIDTH - NOTICE_WIDTH) / 2, (STAGE_HEIGHT - height) / 2]
+end sub
+
+' A note along the foot of the stage
+sub drawCaption(text as string)
+    band = m.holder.createChild("Group")
+    setupPreviewDraw.Rect(band, 0, 0, STAGE_WIDTH, 64, "0x000000B3")
+    label = setupPreviewDraw.TextLabel(band, text, 24, 0, 22, "0xFFFFFFFF", false)
+    label.width = STAGE_WIDTH - 48
+    label.height = 64
+    label.vertAlign = "center"
+    band.translation = [0, STAGE_HEIGHT - 64]
+end sub
 
 ' The library screen's copy, drawn in whatever style and switches the values hold, tried or
 ' saved. The music library shows while its style has focus, or when there is no video library.
@@ -585,7 +835,7 @@ function withoutOverview(items as object) as object
 end function
 
 sub drawInspector(state as object, pal as object)
-    key = FormatJson([state.entry, state.cardColor, state.cardOpacity, pal.accent, pal.onSurface])
+    key = FormatJson([state.entry, m.rowOptionsStatus, state.cardColor, state.cardOpacity, pal.accent, pal.onSurface])
     if key = m.inspectorKey then return
     m.inspectorKey = key
 
@@ -599,15 +849,22 @@ sub drawInspector(state as object, pal as object)
     muted = playbackOverlay.WithAlpha(pal.onSurface, 153)
 
     y = 24
-    if entry.status <> ""
+    status = entry.status
+    if status <> ""
         dotInk = muted
         statusInk = muted
         if entry.shows
             dotInk = pal.accent
             statusInk = pal.onSurface
         end if
+        ' A Row Options setting that can't change Home as the rows are set up says what to turn on instead
+        if m.rowOptionsStatus <> ""
+            status = m.rowOptionsStatus
+            dotInk = BLOCKED_INK
+            statusInk = BLOCKED_INK
+        end if
         setupPreviewDraw.Shape(m.inspector, "pkg:/images/icons/circle.webp", INSPECTOR_PAD, y + 9, 12, 12, dotInk)
-        setupPreviewDraw.TextLabel(m.inspector, entry.status, INSPECTOR_PAD + 22, y, 22, statusInk, true)
+        setupPreviewDraw.TextLabel(m.inspector, status, INSPECTOR_PAD + 22, y, 22, statusInk, true)
         y = y + 38
     end if
 

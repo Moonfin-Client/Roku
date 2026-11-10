@@ -9063,6 +9063,76 @@
         <translation>Not shown in the preview</translation>
     </message>
     <message>
+        <source>Turn on {0}, then turn the row on in Rows</source>
+        <extracomment>Under the settings live preview, for an audio or Collections Row Options setting while its Display switch is off. {0} is that switch, like Display Audio Rows</extracomment>
+        <translation>Turn on {0}, then turn the row on in Rows</translation>
+    </message>
+    <message>
+        <source>Turn the row on in Rows, under Disabled</source>
+        <extracomment>Under the settings live preview, for an audio or Collections Row Options setting while its rows are off in the Rows screen</extracomment>
+        <translation>Turn the row on in Rows, under Disabled</translation>
+    </message>
+    <message>
+        <source>Add a collection to Home as a row of its own</source>
+        <extracomment>Under the settings live preview, for the Collections Show Episodes setting while no single collection is a Home row</extracomment>
+        <translation>Add a collection to Home as a row of its own</translation>
+    </message>
+    <message>
+        <source>The Audio row is off. To show it, turn this on, then go to Rows and turn on Music under Disabled.</source>
+        <extracomment>Note over the settings live preview of Home, for Display Audio Rows while it&apos;s off. Music is the audio row&apos;s name in the Rows screen</extracomment>
+        <translation>The Audio row is off. To show it, turn this on, then go to Rows and turn on Music under Disabled.</translation>
+    </message>
+    <message>
+        <source>The Collections row is off. To show it, turn this on, then go to Rows and turn on Collections under Disabled.</source>
+        <extracomment>Note over the settings live preview of Home, for Display Collections Rows while it&apos;s off</extracomment>
+        <translation>The Collections row is off. To show it, turn this on, then go to Rows and turn on Collections under Disabled.</translation>
+    </message>
+    <message>
+        <source>The Audio row is off. To show it, turn on {0}, then go to Rows and turn on Music under Disabled.</source>
+        <extracomment>Note over the settings live preview of Home, for an Audio sort setting while Display Audio Rows is off. {0} is the name of that switch. Music is the audio row&apos;s name in the Rows screen</extracomment>
+        <translation>The Audio row is off. To show it, turn on {0}, then go to Rows and turn on Music under Disabled.</translation>
+    </message>
+    <message>
+        <source>The Collections row is off. To show it, turn on {0}, then go to Rows and turn on Collections under Disabled.</source>
+        <extracomment>Note over the settings live preview of Home, for a Collections setting while Display Collections Rows is off. {0} is the name of that switch</extracomment>
+        <translation>The Collections row is off. To show it, turn on {0}, then go to Rows and turn on Collections under Disabled.</translation>
+    </message>
+    <message>
+        <source>The Audio row is off. To show it, go to Rows and turn on Music under Disabled.</source>
+        <extracomment>Note over the settings live preview of Home, for an Audio Row Options setting while the row is off in the Rows screen. Music is the audio row&apos;s name there</extracomment>
+        <translation>The Audio row is off. To show it, go to Rows and turn on Music under Disabled.</translation>
+    </message>
+    <message>
+        <source>The Collections row is off, and no collection is added as a row of its own. To show one, go to Rows and turn on Collections under Disabled.</source>
+        <extracomment>Note over the settings live preview of Home, for a Collections Row Options setting while none of those rows is on Home</extracomment>
+        <translation>The Collections row is off, and no collection is added as a row of its own. To show one, go to Rows and turn on Collections under Disabled.</translation>
+    </message>
+    <message>
+        <source>This only changes a collection added to Home as a row of its own, and there isn&apos;t one.</source>
+        <extracomment>Note over the settings live preview of Home, for Show Episodes while no single collection is a Home row</extracomment>
+        <translation>This only changes a collection added to Home as a row of its own, and there isn&apos;t one.</translation>
+    </message>
+    <message>
+        <source>There&apos;s no music to show, so Home leaves the Audio row out.</source>
+        <extracomment>Note over the settings live preview of Home, for an Audio Row Options setting when the server has no albums</extracomment>
+        <translation>There&apos;s no music to show, so Home leaves the Audio row out.</translation>
+    </message>
+    <message>
+        <source>There&apos;s nothing to show in this row, so Home leaves it out.</source>
+        <extracomment>Note over the settings live preview of Home, for a Collections Row Options setting when the row has nothing in it</extracomment>
+        <translation>There&apos;s nothing to show in this row, so Home leaves it out.</translation>
+    </message>
+    <message>
+        <source>This only changes a collection added as a row of its own. The Collections row looks the same.</source>
+        <extracomment>Line along the foot of the settings live preview of Home, for Show Episodes while the Collections row is also on Home</extracomment>
+        <translation>This only changes a collection added as a row of its own. The Collections row looks the same.</translation>
+    </message>
+    <message>
+        <source>The Collections row is off, so this only changes the collections added as rows of their own.</source>
+        <extracomment>Line along the foot of the settings live preview of Home, for a Collections sort while only single collections are Home rows</extracomment>
+        <translation>The Collections row is off, so this only changes the collections added as rows of their own.</translation>
+    </message>
+    <message>
         <source>Saved</source>
         <extracomment>Tag on the saved choice while a settings picker tries another one in the live preview</extracomment>
         <translation>Saved</translation>
