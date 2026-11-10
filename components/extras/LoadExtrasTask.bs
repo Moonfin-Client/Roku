@@ -601,9 +601,8 @@ function loadNextUp() as object
     return episodes
 end function
 
-' Fetches item metadata with People, SeriesId, and SeasonId fields
 function fetchItemPeople(itemId as string) as dynamic
-    if not isValidAndNotEmpty(itemId) then return invalid
+    if itemId = "" then return invalid
     if isMultiServer()
         serverData = getServerData()
         url = Substitute("Items/{0}", itemId)
@@ -615,93 +614,55 @@ function fetchItemPeople(itemId as string) as dynamic
     end if
 end function
 
+' The actors billed on a season or series, which its episodes and seasons borrow
+function actorsOf(itemId as string) as object
+    actors = []
+    details = fetchItemPeople(itemId)
+    if not isChainValid(details, "People") then return actors
+    for each person in details.People
+        personType = LCase(chainLookupReturn(person, "Type", ""))
+        if personType = "actor" or personType = "gueststar" then actors.push(person)
+    end for
+    return actors
+end function
+
 ' Directors and writers are the crew, and everyone else billed is the cast
 function loadPeople(withCast as boolean, withCrew as boolean) as object
     people = []
+    if not withCast and not withCrew then return people
 
     itemDetails = fetchItemPeople(m.top.itemId)
     if not isChainValid(itemDetails, "People") then return people
 
     itemType = LCase(m.top.itemType)
-    if not isValidAndNotEmpty(itemType) and isValid(itemDetails)
-        itemType = LCase(chainLookupReturn(itemDetails, "Type", ""))
-    end if
+    if itemType = "" then itemType = LCase(chainLookupReturn(itemDetails, "Type", ""))
+    seriesId = isValidAndNotEmpty(m.top.showID) ? m.top.showID : chainLookupReturn(itemDetails, "SeriesId", "")
 
-    isEpisode = m.top.isEpisode or itemType = "episode"
-    isSeason = itemType = "season"
-
-    mergedPeople = []
-
-    if isEpisode
+    if m.top.isEpisode or itemType = "episode"
+        ' An episode adds the season's regulars, or the series' when the season lists none
         seasonId = isValidAndNotEmpty(m.top.seasonID) ? m.top.seasonID : chainLookupReturn(itemDetails, "SeasonId", "")
-        seriesId = isValidAndNotEmpty(m.top.showID) ? m.top.showID : chainLookupReturn(itemDetails, "SeriesId", "")
-
-        parentActors = []
-        if isValidAndNotEmpty(seasonId)
-            seasonDetails = fetchItemPeople(seasonId)
-            if isChainValid(seasonDetails, "People")
-                for each p in seasonDetails.People
-                    pType = LCase(chainLookupReturn(p, "Type", ""))
-                    if pType = "actor" or pType = "gueststar"
-                        parentActors.push(p)
-                    end if
-                end for
-            end if
-        end if
-
-        if parentActors.count() = 0 and isValidAndNotEmpty(seriesId)
-            seriesDetails = fetchItemPeople(seriesId)
-            if isChainValid(seriesDetails, "People")
-                for each p in seriesDetails.People
-                    pType = LCase(chainLookupReturn(p, "Type", ""))
-                    if pType = "actor" or pType = "gueststar"
-                        parentActors.push(p)
-                    end if
-                end for
-            end if
-        end if
-
+        parentActors = actorsOf(seasonId)
+        if parentActors.count() = 0 then parentActors = actorsOf(seriesId)
         mergedPeople = episodeCast.mergeEpisodePeople(itemDetails.People, parentActors)
-
-    else if isSeason
-        seasonActors = []
+    else if itemType = "season"
+        mergedPeople = []
         seasonCrew = []
-        for each p in itemDetails.People
-            pType = LCase(chainLookupReturn(p, "Type", ""))
-            if pType = "director" or pType = "writer"
-                seasonCrew.push(p)
+        for each person in itemDetails.People
+            personType = LCase(chainLookupReturn(person, "Type", ""))
+            if personType = "director" or personType = "writer"
+                seasonCrew.push(person)
             else
-                seasonActors.push(p)
+                mergedPeople.push(person)
             end if
         end for
-
-        if seasonActors.count() = 0
-            seriesId = isValidAndNotEmpty(m.top.showID) ? m.top.showID : chainLookupReturn(itemDetails, "SeriesId", "")
-            if isValidAndNotEmpty(seriesId)
-                seriesDetails = fetchItemPeople(seriesId)
-                if isChainValid(seriesDetails, "People")
-                    for each p in seriesDetails.People
-                        pType = LCase(chainLookupReturn(p, "Type", ""))
-                        if pType = "actor" or pType = "gueststar"
-                            seasonActors.push(p)
-                        end if
-                    end for
-                end if
-            end if
-        end if
-
-        mergedPeople = []
-        mergedPeople.append(seasonActors)
+        if mergedPeople.count() = 0 then mergedPeople = actorsOf(seriesId)
         mergedPeople.append(seasonCrew)
-
     else
         mergedPeople = itemDetails.People
     end if
 
-    ' Expose complete, unfiltered people list on the task interface before UI row filtering
+    ' The details screen keeps every credit, even the ones a hidden section leaves out of the rows
     m.top.allPeople = mergedPeople
-
-    if not withCast and not withCrew then return people
 
     orderedPeople = []
     trailingPeople = []
@@ -748,24 +709,7 @@ function loadPeople(withCast as boolean, withCrew as boolean) as object
         tmp.labelText = person.Name
         tmp.type = "Person"
 
-        ' Format subtitle: "as [Role]" for actors with roles, otherwise just the person type
-        personType = person.Type
-        personRole = person.Role
-        isActor = LCase(personType) = "actor" or LCase(personType) = "gueststar"
-        isCrew = LCase(personType) = "director" or LCase(personType) = "writer"
-
-        if isActor and isValid(personRole) and personRole.ToStr().Trim() <> ""
-            roleKey = LCase(personRole.ToStr().Trim())
-            if roleKey = "guest star" or roleKey = LCase(tr("Guest Star"))
-                tmp.subTitle = tr("Guest Star")
-            else
-                tmp.subTitle = "as " + personRole
-            end if
-        else if isValid(personRole) and personRole.ToStr().Trim() <> "" and isCrew
-            tmp.subTitle = personRole
-        else
-            tmp.subTitle = personType
-        end if
+        tmp.subTitle = episodeCast.personSubtitle(person.Type, person.Role)
 
         people.push(tmp)
     end for
