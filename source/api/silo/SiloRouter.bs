@@ -1,0 +1,408 @@
+import "pkg:/source/api/silo/SiloAccount.bs"
+import "pkg:/source/api/silo/SiloActions.bs"
+import "pkg:/source/api/silo/SiloCatalog.bs"
+import "pkg:/source/api/silo/SiloExtras.bs"
+import "pkg:/source/api/silo/SiloHome.bs"
+import "pkg:/source/api/silo/SiloMapper.bs"
+import "pkg:/source/api/silo/SiloPlayback.bs"
+import "pkg:/source/api/silo/SiloSeerr.bs"
+import "pkg:/source/api/silo/SiloSession.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/diagnostics.bs"
+import "pkg:/source/utils/misc.bs"
+
+' The Jellyfin requests the app sends, answered from Silo's native API. Every request helper in
+' baserequest.bs hands a request for a Silo server here instead of sending it, so the screens keep
+' speaking Jellyfin while Silo is spoken on the wire. Smart-TV does the same by swapping its api
+' methods (siloApi.js), Moonfin-Core with its Silo server package.
+namespace silo
+    ' The Silo server a URL belongs to, or "" when it isn't one. Native /api/v2 addresses are left
+    ' alone: they're already Silo's.
+    function ServerOfUrl(url as dynamic) as string
+        found = silo.SiloServerOf(url)
+        if found = "" then return ""
+        if LCase(url).Mid(found.Len()).Left(8) = "/api/v2/" then return ""
+        return found
+    end function
+
+    ' The Silo server an address is on, native addresses included, or ""
+    function SiloServerOf(url as dynamic) as string
+        if not isString(url) or url = "" then return ""
+        lower = LCase(url)
+        found = ""
+        if isValid(m.global)
+            identity = m.global.serverIdentity
+            if type(identity) = "roAssociativeArray"
+                key = silo.ServerKey(identity.url)
+                if key <> "" and lower.Left(key.Len()) = key
+                    ' The signed-in server's requests are most of them: its type settles it
+                    if identity.serverType = "silo" then found = key
+                    if identity.serverType = "jellyfin" or identity.serverType = "emby" then return ""
+                end if
+            end if
+        end if
+        if found = ""
+            known = RegistryReadAll("ServerTypes") ?? {}
+            for each key in known
+                if known[key] = "silo"
+                    base = silo.ServerKey(key)
+                    if base <> "" and lower.Left(base.Len()) = base and base.Len() > found.Len() then found = base
+                end if
+            end for
+        end if
+        if found = "" then return ""
+        rest = lower.Mid(found.Len())
+        if rest <> "" and rest.Left(1) <> "/" and rest.Left(1) <> "?" then return ""
+        return found
+    end function
+
+    function Owns(req as dynamic) as boolean
+        if req = invalid then return false
+        return silo.ServerOfUrl(req.GetUrl()) <> ""
+    end function
+
+    ' A request as the router reads it: method, server, path segments and query
+    function ParseRequest(method as string, url as string, body as dynamic) as dynamic
+        server = silo.ServerOfUrl(url)
+        if server = "" then return invalid
+        rest = url.Mid(server.Len())
+        pathPart = rest
+        queryPart = ""
+        mark = Instr(1, rest, "?")
+        if mark > 0
+            pathPart = rest.Left(mark - 1)
+            queryPart = rest.Mid(mark)
+        end if
+        segments = []
+        for each segment in pathPart.Split("/")
+            if segment <> "" then segments.Push(segment.DecodeUriComponent())
+        end for
+        lowered = []
+        for each segment in segments
+            lowered.Push(LCase(segment))
+        end for
+        query = {}
+        if queryPart <> ""
+            for each pair in queryPart.Split("&")
+                if pair <> ""
+                    eq = Instr(1, pair, "=")
+                    if eq > 0
+                        query[pair.Left(eq - 1).DecodeUriComponent()] = pair.Mid(eq).Replace("+", " ").DecodeUriComponent()
+                    else
+                        query[pair.DecodeUriComponent()] = ""
+                    end if
+                end if
+            end for
+        end if
+        parsed = { method: UCase(method), server: server, segments: segments, route: lowered, query: query, body: invalid, rawPath: rest, rawBody: body }
+        if isString(body) and body <> ""
+            parsed.body = ParseJson(body)
+        else if type(body) = "roAssociativeArray" or type(body) = "roArray"
+            parsed.body = body
+        end if
+        parsed.serverId = ""
+        if isChainValid(m.global, "session.server.url") and silo.ServerKey(m.global.session.server.url) = server then parsed.serverId = m.global.session.server.id ?? ""
+        parsed.profileId = silo.ProfileOfRequest(parsed)
+        parsed.account = silo.ProfileAccount(parsed.profileId)
+        return parsed
+    end function
+
+    ' The profile a request acts as: the one it names, else the signed-in one on that server, else a
+    ' saved one of that server
+    function ProfileOfRequest(parsed as object) as string
+        named = parsed.query.LookupCI("UserId") ?? ""
+        if named = "" and parsed.route.Count() > 1 and parsed.route[0] = "users" and parsed.route[1] <> "public" and parsed.route[1] <> "authenticatebyname" and parsed.route[1] <> "me"
+            named = parsed.segments[1]
+        end if
+        if named <> "" and silo.ProfileAccount(named) <> "" then return named
+        if isChainValid(m.global, "session.server.url") and isChainValid(m.global, "session.user.id")
+            if silo.ServerKey(m.global.session.server.url) = parsed.server
+                if isValidAndNotEmpty(m.global.session.user.id) then return m.global.session.user.id
+            end if
+        end if
+        users = ParseJson(get_setting("available_users", "[]"))
+        if type(users) = "roArray"
+            for each user in users
+                entry = silo.ProfileEntry(user.id ?? "")
+                if isValid(entry) and entry.server = parsed.server then return user.id
+            end for
+        end if
+        return ""
+    end function
+
+    ' Answers { status, data } for a Jellyfin request to a Silo server
+    function Respond(method as string, url as string, body = invalid as dynamic) as object
+        request = silo.ParseRequest(method, url, body)
+        if request = invalid then return { status: 404, data: invalid }
+        answer = silo.Dispatch(request)
+        silo.FlushImages()
+        if answer = invalid
+            diagnostics.Network("Silo: " + request.method + " /" + request.route.Join("/") + " isn't supported yet", diagnostics.LEVEL_WARN)
+            return { status: 501, data: invalid }
+        end if
+        silo.Trace(request.method + " /" + request.segments.Join("/") + " -> " + answer.status.ToStr())
+        return answer
+    end function
+
+    function Ok(data as dynamic) as object
+        return { status: 200, data: data }
+    end function
+
+    function NoContent() as object
+        return { status: 204, data: invalid }
+    end function
+
+    function StatusOnly(status as integer) as object
+        return { status: status, data: invalid }
+    end function
+
+    function Dispatch(r as object) as dynamic
+        route = r.route
+        count = route.Count()
+        if count = 0 then return invalid
+        first = route[0]
+
+        if first = "system" and count >= 2 and route[1] = "info"
+            info = silo.Probe(r.server)
+            if info = invalid then return silo.StatusOnly(404)
+            return silo.Ok(info)
+        end if
+
+        if first = "users"
+            if count = 2 and route[1] = "public" then return silo.Ok([])
+            if r.method = "GET" and (count = 2 or (count = 1 and r.query.LookupCI("UserId") <> invalid))
+                return silo.UserAnswer(r)
+            end if
+            if count = 2 and route[1] = "me" then return silo.UserAnswer(r)
+        end if
+
+        ' Silo takes no Jellyfin client capabilities report and keeps no Jellyfin sessions list
+        if first = "sessions" and count >= 2 and route[1] = "capabilities" then return silo.NoContent()
+
+        if r.account = "" then return silo.StatusOnly(401)
+        if first = "moonfin"
+            ' Silo's own home rows, for the Home rows editor
+            if count >= 3 and route[1] = "silohome" and route[2] = "sections"
+                if count = 3 then return silo.Ok({ Items: silo.ServerSections(r) })
+                if count = 5 and route[4] = "items" then return silo.Ok(silo.ServerSectionItems(r, r.segments[3]))
+                return silo.StatusOnly(404)
+            end if
+            ' Requests on Silo are Silo's own, not Moonbase's Seerr proxy
+            if count > 1 and route[1] = "seerr"
+                parts = []
+                for i = 2 to count - 1
+                    parts.Push(r.segments[i])
+                end for
+                return silo.SeerrRoute(r, parts)
+            end if
+            answer = silo.MoonbaseForward(r)
+            if count = 2 and route[1] = "ping" and answer.status = 200 and type(answer.data) = "roAssociativeArray"
+                answer.data["seerrEnabled"] = silo.SeerrStatus(r).enabled
+            end if
+            return answer
+        end if
+        if r.method = "GET"
+            answer = silo.ReadRoute(r, first, count)
+            if answer <> invalid then return answer
+        end if
+        if r.method <> "GET"
+            answer = silo.PlaybackRoute(r, first, count)
+            if answer <> invalid then return answer
+            answer = silo.WriteRoute(r, first, count)
+            if answer <> invalid then return answer
+        end if
+        if first = "displaypreferences" then return silo.NoContent()
+        return invalid
+    end function
+
+    ' The reads: libraries, items, details, seasons, episodes, home rows, people, genres, studios
+    function ReadRoute(r as object, first as string, count as integer) as dynamic
+        route = r.route
+        segments = r.segments
+        q = r.query
+        if first = "userviews" and count = 1
+            views = silo.ViewsOf(r)
+            if views = invalid then return silo.StatusOnly(502)
+            return silo.Ok({ Items: views, TotalRecordCount: views.Count(), StartIndex: 0 })
+        end if
+        if first = "useritems" and count = 2 and route[1] = "resume" then return silo.Ok(silo.ResumeItems(r))
+        if first = "items"
+            if count = 1 then return silo.Listing(silo.GetItems(r))
+            if count = 2
+                if route[1] = "latest" then return silo.Ok(silo.LatestItems(r))
+                if route[1] = "filters" then return silo.FilterAnswer(r, false)
+                if route[1] = "filters2" then return silo.FilterAnswer(r, true)
+                item = silo.GetItem(r, segments[1])
+                ' Seek previews take a request of their own, so only a read that asks for them gets them
+                if item <> invalid and Instr(1, LCase(q.LookupCI("Fields") ?? ""), "trickplay") > 0 then silo.AddTrickplay(r, item)
+                return silo.FoundOr(item)
+            end if
+            if count = 3
+                itemId = segments[1]
+                action = route[2]
+                if action = "similar" then return silo.Listing(silo.SimilarTo(r, itemId, silo.QueryInt(q, "Limit", 15)))
+                if action = "localtrailers" then return silo.Ok(silo.ExtrasFor(r, itemId, true))
+                if action = "specialfeatures" then return silo.Ok(silo.ExtrasFor(r, itemId, false))
+                if action = "themesongs" then return silo.Ok(silo.ThemeSongs(r, itemId))
+                if action = "ancestors" then return silo.Ok(silo.AncestorsOf(r, itemId))
+                ' Silo has no intros or additional parts
+                if action = "intros" or action = "additionalparts" then return silo.Ok(silo.Empty())
+                if action = "images" then return silo.ImageList(r, itemId)
+            end if
+            if count = 5 and route[2] = "remotesearch" and route[3] = "subtitles" then return silo.SearchSubtitles(r, segments[1], segments[4])
+            ' Whether a picture exists (the player asks before showing a logo). Reading the item
+            ' also leaves its pictures for the address built next in this thread
+            if count >= 4 and route[2] = "images"
+                item = silo.GetItem(r, segments[1])
+                if item = invalid then return silo.StatusOnly(404)
+                index = 0
+                if count > 4 then index = segments[4].ToInt()
+                if silo.ImageFor(r.server, segments[1], segments[3], index) = "" then return silo.StatusOnly(404)
+                return silo.NoContent()
+            end if
+        end if
+        if (first = "movies" or first = "shows" or first = "trailers") and count = 3 and route[2] = "similar"
+            return silo.Listing(silo.SimilarTo(r, segments[1], silo.QueryInt(q, "Limit", 15)))
+        end if
+        if first = "shows"
+            if count = 2 and route[1] = "nextup" then return silo.Ok(silo.NextUp(r))
+            if count = 3 and route[2] = "seasons" then return silo.Listing(silo.SeasonsOf(r, segments[1]))
+            if count = 3 and route[2] = "episodes"
+                seasonId = q.LookupCI("SeasonId") ?? ""
+                episodes = silo.EpisodesOf(r, segments[1], seasonId)
+                if episodes = invalid then return silo.StatusOnly(502)
+                season = q.LookupCI("Season")
+                if seasonId = "" and season <> invalid and season <> ""
+                    kept = []
+                    for each episode in episodes.Items
+                        if episode.ParentIndexNumber = season.ToInt() then kept.Push(episode)
+                    end for
+                    episodes["Items"] = kept
+                end if
+                ' A series shuffle asks for its episodes in random order
+                if siloMap.WantsRandom(q.LookupCI("SortBy")) then episodes["Items"] = silo.Shuffled(episodes.Items)
+                return silo.Ok(silo.Slice(episodes.Items, silo.QueryInt(q, "StartIndex", 0), silo.QueryInt(q, "Limit", 0)))
+            end if
+        end if
+        if first = "genres"
+            if count = 1
+                values = silo.FilterValues(r, q.LookupCI("ParentId"), q.LookupCI("IncludeItemTypes"))
+                if values = invalid then return silo.StatusOnly(502)
+                return silo.Ok(silo.NamedList(values.genres ?? [], false, LCase(q.LookupCI("SortOrder") ?? "") = "descending", silo.QueryInt(q, "StartIndex", 0), silo.QueryInt(q, "Limit", 0)))
+            end if
+            if count = 2 then return silo.Ok(siloMap.NamedItem(segments[1], false))
+        end if
+        if first = "studios"
+            if count = 1
+                values = silo.FilterValues(r, q.LookupCI("ParentId"), q.LookupCI("IncludeItemTypes"), { skip_technical: true })
+                if values = invalid then return silo.StatusOnly(502)
+                names = []
+                if type(values.networks) = "roArray" then names.Append(values.networks)
+                if type(values.studios) = "roArray" then names.Append(values.studios)
+                return silo.Ok(silo.NamedList(names, true, LCase(q.LookupCI("SortOrder") ?? "") = "descending", silo.QueryInt(q, "StartIndex", 0), silo.QueryInt(q, "Limit", 0)))
+            end if
+            if count = 2 then return silo.Ok(siloMap.NamedItem(segments[1], true))
+        end if
+        ' Silo has no additional parts
+        if first = "videos" and count = 3 and route[2] = "additionalparts" then return silo.Ok(silo.Empty())
+        if first = "mediasegments" and count = 2 then return silo.Ok(silo.MediaSegments(r, segments[1]))
+        if first = "persons" and count = 1 then return silo.Ok(silo.SearchPeople(r, q.LookupCI("SearchTerm") ?? "", silo.QueryInt(q, "Limit", 24)))
+        if first = "displaypreferences" then return silo.Ok({ Id: segments.Peek(), SortBy: "SortName", SortOrder: "Ascending", RememberIndexing: false, RememberSorting: false, CustomPrefs: {} })
+        return invalid
+    end function
+
+    ' Playback: the plan, progress and stop. Silo opens the session with the plan, ends a transcode
+    ' with the stop and has no live streams to close
+    function PlaybackRoute(r as object, first as string, count as integer) as dynamic
+        route = r.route
+        if first = "items" and count = 3 and route[2] = "playbackinfo" then return silo.PlaybackInfo(r, r.segments[1])
+        if first = "sessions" and count >= 2 and route[1] = "playing"
+            if count = 2 then return silo.NoContent()
+            if route[2] = "progress" then return silo.ReportProgress(r)
+            if route[2] = "stopped" then return silo.ReportStopped(r)
+            return silo.NoContent()
+        end if
+        if first = "videos" and count = 2 and route[1] = "activeencodings" then return silo.NoContent()
+        if first = "livestreams" then return silo.NoContent()
+        return invalid
+    end function
+
+    ' Moonbase for Silo is a plugin under its installation id, found by plugin id in
+    ' /api/v2/settings/plugins and served at /api/v2/plugin-content/plugins/<id>. Ported from
+    ' Smart-TV's siloMoonbase.js. Answers "" when the server has none
+    function MoonbaseBase(r as object) as string
+        kept = silo.RecallAnswer("siloMoonbase", r.server, 300)
+        if kept <> invalid then return kept
+        answer = silo.Call(r.server, "/api/v2/settings/plugins", { account: r.account, profileId: r.profileId })
+        ' Unreachable isn't the same as not installed: asked again next time
+        if not answer.ok then return ""
+        base = ""
+        for each plugin in silo.ItemsOf(answer.data)
+            if plugin.plugin_id = "moonfin.moonbase" and plugin.id <> invalid
+                base = silo.ServerKey(r.server) + "/api/v2/plugin-content/plugins/" + plugin.id.ToStr().EncodeUriComponent()
+            end if
+        end for
+        silo.KeepAnswer("siloMoonbase", r.server, base, 8)
+        return base
+    end function
+
+    ' A Moonbase route, sent to the plugin with Silo's headers: the bearer token and the profile
+    function MoonbaseForward(r as object) as object
+        base = silo.MoonbaseBase(r)
+        if base = "" then return silo.StatusOnly(404)
+        answer = silo.Call(r.server, base + r.rawPath, { method: r.method, body: r.rawBody, account: r.account, profileId: r.profileId })
+        ' A Moonbase removed or reinstalled under a new id is looked up again
+        if answer.status = 404 then silo.KeepAnswer("siloMoonbase", r.server, invalid, 8)
+        return { status: answer.status, data: answer.data }
+    end function
+
+    function Listing(result as dynamic) as object
+        if result = invalid then return silo.StatusOnly(502)
+        return silo.Ok(result)
+    end function
+
+    function FoundOr(item as dynamic) as object
+        if item = invalid then return silo.StatusOnly(404)
+        return silo.Ok(item)
+    end function
+
+    ' Jellyfin's filter values: names on Items/Filters, named items on Items/Filters2
+    function FilterAnswer(r as object, named as boolean) as object
+        values = silo.FilterValues(r, r.query.LookupCI("ParentId"), r.query.LookupCI("IncludeItemTypes"))
+        genres = []
+        ratings = []
+        if values <> invalid
+            if type(values.genres) = "roArray" then genres = values.genres
+            if type(values.content_ratings) = "roArray" then ratings = values.content_ratings
+        end if
+        if not named then return silo.Ok({ Genres: genres, OfficialRatings: ratings, Tags: [], Years: [] })
+        genreItems = []
+        for each genre in genres
+            if isString(genre) and genre <> "" then genreItems.Push({ Name: genre, Id: siloMap.GenreId(genre) })
+        end for
+        return silo.Ok({ Genres: genreItems, Tags: [] })
+    end function
+
+    ' The pictures an item has, as Jellyfin's image list
+    function ImageList(r as object, itemId as string) as object
+        item = silo.GetItem(r, itemId)
+        if item = invalid then return silo.StatusOnly(404)
+        images = []
+        for each kind in item.ImageTags
+            images.Push({ ImageType: kind, ImageTag: item.ImageTags[kind] })
+        end for
+        index = 0
+        for each tag in item.BackdropImageTags
+            images.Push({ ImageType: "Backdrop", ImageIndex: index, ImageTag: tag })
+            index++
+        end for
+        return silo.Ok(images)
+    end function
+
+    function UserAnswer(r as object) as object
+        if r.account = "" then return silo.StatusOnly(401)
+        result = silo.CurrentUser(r.server, r.account, r.profileId)
+        if result.status <> 200 then return silo.StatusOnly(result.status)
+        return silo.Ok(result.user)
+    end function
+end namespace

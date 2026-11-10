@@ -129,7 +129,7 @@ const selections = {
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting', 'settingOr', 'getSavedUsers', 'savedUserFirst'],
-    'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'isLocalhost', 'isSupportedMediaServer', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'shuffleArray'],
+    'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'isLocalhost', 'isSupportedMediaServer', 'isSiloSystemInfo', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'shuffleArray'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
@@ -268,7 +268,7 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/minimalist-extras.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n' + settingsSyncFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['SubtitleModes', 'MediaBarSource', 'PluginToRoku', 'RokuToPlugin', 'ImageTypeName', 'EncodeRowImageTypes', 'RowImageTypeKeys', 'DecodeRowImageTypes', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile']) {
+for (const name of ['SubtitleModes', 'MediaBarSource', 'PluginToRoku', 'RokuToPlugin', 'ImageTypeName', 'EncodeRowImageTypes', 'RowImageTypeKeys', 'DecodeRowImageTypes', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile', 'SiloSectionIn', 'SiloSectionOut']) {
     source += '\n' + settingsSyncFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
@@ -376,6 +376,10 @@ for (const name of [
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/achievement-unlocks.bs', 'utf8');
+for (const file of ['source/api/silo/SiloSession.bs', 'source/api/silo/SiloMapper.bs', 'source/api/silo/SiloMediaSources.bs', 'source/api/silo/SiloImages.bs', 'source/api/silo/SiloAccount.bs', 'source/api/silo/SiloPager.bs', 'source/api/silo/SiloCatalog.bs', 'source/api/silo/SiloHome.bs', 'source/api/silo/SiloActions.bs', 'source/api/silo/SiloPlayback.bs', 'source/api/silo/SiloExtras.bs', 'source/api/silo/SiloSeerr.bs', 'source/api/silo/SiloRouter.bs']) {
+    source += '\n' + (await readFile(file, 'utf8')).replace(/^import .*$/gm, '');
+}
+source += '\n' + await readFile('test/silo.bs', 'utf8');
 source += '\n' + await readFile('test/friends-chat.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');
@@ -461,9 +465,12 @@ const showScenes = await readFile('source/ShowScenes.bs', 'utf8');
 assert.match(showScenes, /if not group\.hasField\("detailExtrasTask"\) then group\.addField/, 'Detail extras task can be restarted on one screen');
 
 const buttonHost = await readFile('components/details/detailButtonHost.bs', 'utf8');
-const extrasChanged = buttonHost.match(/sub onDetailExtrasChanged\(\)[^]*?end sub/)[0];
-assert.match(extrasChanged, /selectedId = m\.buttonGroups\[previousIndex\]\.id/, 'Async button rebuild remembers logical selection');
-assert.match(extrasChanged, /m\.currentButtonIndex = i[^]*?if focusedId <> "" then focusButton\(i\)/, 'Async button rebuild restores index without stealing focus');
+assert.match(buttonHost.match(/sub onDetailExtrasChanged\(\)[^]*?end sub/)[0], /rebuildButtonRow\(\)/, 'A late extras answer rebuilds the button row');
+const toggleWatched = buttonHost.match(/sub toggleWatched\(\)[^]*?end sub/)[0];
+assert.match(toggleWatched, /itemData\.UserData\.PlaybackPositionTicks = 0[^]*?if hadProgress then rebuildButtonRow\(\)/, 'Marking watched or unwatched drops the Resume button');
+const rebuildRow = buttonHost.match(/sub rebuildButtonRow\(\)[^]*?end sub/)[0];
+assert.match(rebuildRow, /selectedId = m\.buttonGroups\[previousIndex\]\.id/, 'Async button rebuild remembers logical selection');
+assert.match(rebuildRow, /m\.currentButtonIndex = i[^]*?if focusedId <> "" then focusButton\(i\)/, 'Async button rebuild restores index without stealing focus');
 
 const remoteItems = await readFile('source/api/Items.bs', 'utf8');
 const remoteMetadata = remoteItems.match(/function ItemMetaDataForServer\([^]*?end function/)[0];
@@ -490,6 +497,7 @@ for (const locale of ['en_US', 'ca', 'de_DE', 'fr', 'fr_CA', 'pt_BR']) {
     assert.match(await readFile(`locale/${locale}/translations.ts`, 'utf8'), /<source>Since you watched %1<\/source>[^]*?<translation>[^<]*%1[^<]*<\/translation>/, `${locale} has the Since you watched title`);
 }
 
+assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /"kind": "pluginDynamic",\s+"type": "none",\s+"enabled": enabled,\s+"order": order,\s+"serverId": owner,\s+"pluginSource": entry\.source,\s+"pluginSection": section,\s+"pluginAdditionalData": entry\.itemId,\s+"pluginDisplayText": entry\.title\s+\}/, 'A picked row goes to the server with its keys as the other clients spell them');
 assert.match(await readFile('components/settings/settings.bs', 'utf8'), /"homeSections": settingsSync\.HomeSectionsPayload\(\),\s+"homeRowOrder": settingsSync\.RowOrderPayload\(\)/, 'The home layout goes to the server under its keys as spelled, since BrightScript lowercases bare keys');
 assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /pluginKey: "hiddenDetailSectionsTv", rokuKey: "ui\.itemdetail\.hiddenSections", type: "jsonArray"/, 'The hidden detail sections travel with the other clients');
 

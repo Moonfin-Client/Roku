@@ -1,0 +1,938 @@
+import "pkg:/source/api/silo/SiloAccount.bs"
+import "pkg:/source/api/silo/SiloImages.bs"
+import "pkg:/source/api/silo/SiloMapper.bs"
+import "pkg:/source/api/silo/SiloPager.bs"
+import "pkg:/source/api/silo/SiloSession.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Silo's catalog behind the app's item reads: libraries, grids, details, seasons and episodes, people,
+' genres, studios and collections, answered in Jellyfin's shapes. Ported from Smart-TV's siloItems.js.
+' r is the parsed request (SiloRouter.bs): { server, account, profileId, query, ... }.
+namespace silo
+    const CATALOG = "/api/v2/catalog"
+    ' Silo sizes artwork when the item is read: lists take medium, detail pages large
+    const LIST_IMAGE_SIZE = "medium"
+    const DETAIL_IMAGE_SIZE = "large"
+    const RANDOM_POOL = 100
+    ' A list read whole to filter or shuffle here stops at this many, to spare the boxSet's memory
+    const READ_ALL_MAX = 600
+
+    function ApiGet(r as object, path as string, query = invalid as dynamic) as object
+        return silo.Call(r.server, path, { account: r.account, profileId: r.profileId, query: silo.ArtworkWidths(query) })
+    end function
+
+    ' A request that sizes its artwork asks Silo for each kind at the width this Roku's screen draws
+    ' it, and Silo sends the narrowest size it keeps at least that wide. The widths are the largest a
+    ' layout 1920 wide draws (a Grandparents poster card is 267), scaled to the screen: two thirds
+    ' on a 720p Roku, which decodes slowly and has little memory, and as drawn on a 1080p one.
+    function ArtworkWidths(query as dynamic) as dynamic
+        if type(query) <> "roAssociativeArray" or not isString(query.image_size) then return query
+        if not isValid(m.siloScreenWidth) then m.siloScreenWidth = CreateObject("roDeviceInfo").GetUIResolution().width
+        scale = m.siloScreenWidth / 1920
+        detail = query.image_size = silo.DETAIL_IMAGE_SIZE
+        sized = {}
+        sized.Append(query)
+        sized.poster_width = silo.ScaledWidth(detail ? 500 : 267, scale)
+        sized.backdrop_width = silo.ScaledWidth(1920, scale)
+        sized.still_width = silo.ScaledWidth(detail ? 1920 : 522, scale)
+        sized.logo_width = silo.ScaledWidth(500, scale)
+        sized.photo_width = silo.ScaledWidth(267, scale)
+        return sized
+    end function
+
+    function ScaledWidth(width as integer, scale as float) as integer
+        return Int(width * scale + 0.5)
+    end function
+
+    function ItemsOf(json as dynamic) as object
+        if type(json) <> "roAssociativeArray" then return []
+        return siloMap.Maps(json.items)
+    end function
+
+    function Slice(items as object, start as integer, limit as integer) as object
+        if start < 0 then start = 0
+        if start > items.Count() then start = items.Count()
+        last = items.Count() - 1
+        if limit > 0 and start + limit - 1 < last then last = start + limit - 1
+        out = []
+        for i = start to last
+            out.Push(items[i])
+        end for
+        return { Items: out, TotalRecordCount: items.Count(), StartIndex: start }
+    end function
+
+    ' Picks come from random UUIDs: Rnd in a task thread can repeat the same order every time
+    function Shuffled(list as object) as object
+        device = CreateObject("roDeviceInfo")
+        for i = list.Count() - 1 to 1 step -1
+            j = silo.RandomBelow(device, i + 1)
+            held = list[i]
+            list[i] = list[j]
+            list[j] = held
+        end for
+        return list
+    end function
+
+    ' A number from 0 to below, taken from the first six hex digits of a random UUID
+    function RandomBelow(device as object, below as integer) as integer
+        hex = LCase(device.GetRandomUUID())
+        value = 0
+        for k = 0 to 5
+            value = value * 16 + Instr(1, "0123456789abcdef", hex.Mid(k, 1)) - 1
+        end for
+        return value mod below
+    end function
+
+    function Empty(start = 0 as integer) as object
+        return { Items: [], TotalRecordCount: 0, StartIndex: start }
+    end function
+
+    function QueryInt(q as object, key as string, fallback as integer) as integer
+        value = q.LookupCI(key)
+        if value = invalid or value = "" then return fallback
+        return value.ToStr().ToInt()
+    end function
+
+    function QueryBool(q as object, key as string) as dynamic
+        value = q.LookupCI(key)
+        if value = invalid then return invalid
+        if LCase(value.ToStr()) = "true" then return true
+        if LCase(value.ToStr()) = "false" then return false
+        return invalid
+    end function
+
+    ' ---- Memory of this thread: the series names seen and where items were listed
+
+    sub RememberSeries(item as object)
+        if item.Type <> "Series" or item.Id = "" then return
+        if type(m.siloSeriesNames) <> "roAssociativeArray" or m.siloSeriesNames.Count() > 2000 then m.siloSeriesNames = {}
+        m.siloSeriesNames[item.Id] = item.Name ?? ""
+    end sub
+
+    function SeriesRef(seriesId as string) as object
+        name = ""
+        if type(m.siloSeriesNames) = "roAssociativeArray" then name = m.siloSeriesNames[seriesId] ?? ""
+        return { id: seriesId, name: name }
+    end function
+
+    sub RememberLibrary(itemId as string, libraryId as string)
+        if libraryId = "" then return
+        if type(m.siloLibraryOf) <> "roAssociativeArray" or m.siloLibraryOf.Count() > 5000 then m.siloLibraryOf = {}
+        m.siloLibraryOf[itemId] = libraryId
+    end sub
+
+    function LibraryOfItem(itemId as string) as string
+        if type(m.siloLibraryOf) <> "roAssociativeArray" then return ""
+        return m.siloLibraryOf[itemId] ?? ""
+    end function
+
+    ' Anything the profile changes can show in a kept list, so those are read again. The change is
+    ' made on one thread and the lists are kept on each, so it's counted on the global node, and the
+    ' other threads drop theirs when they next look (CatchUpCatalog)
+    sub ForgetCatalog()
+        silo.ForgetThreadCatalog()
+        if type(m.global) <> "roSGNode" then return
+        if not m.global.hasField("siloCatalogGen") then m.global.addFields({ siloCatalogGen: 0 })
+        m.global.siloCatalogGen = m.global.siloCatalogGen + 1
+        m.siloSeenCatalogGen = m.global.siloCatalogGen
+    end sub
+
+    sub ForgetThreadCatalog()
+        silo.ForgetPages()
+        m.siloDetails = {}
+        m.siloSeasonLists = {}
+        m.siloEpisodeLists = {}
+        m.siloLayouts = {}
+        m.siloSectionCards = {}
+        m.siloHideWatchedSetting = {}
+        m.siloFiltered = {}
+        m.siloViews = {}
+        m.siloSeerrKept = {}
+    end sub
+
+    sub CatchUpCatalog()
+        if type(m.global) <> "roSGNode" or not m.global.hasField("siloCatalogGen") then return
+        current = m.global.siloCatalogGen
+        if isValid(m.siloSeenCatalogGen) and m.siloSeenCatalogGen = current then return
+        silo.ForgetThreadCatalog()
+        m.siloSeenCatalogGen = current
+    end sub
+
+    ' A short-lived memory of answers, so a screen opening asks once
+    function RecallAnswer(bucket as string, key as string, lifetime as integer) as dynamic
+        silo.CatchUpCatalog()
+        store = m[bucket]
+        if type(store) <> "roAssociativeArray" then return invalid
+        hit = store[key]
+        if hit = invalid then return invalid
+        if silo.NowSeconds() - hit.at >= lifetime then return invalid
+        return hit.value
+    end function
+
+    sub KeepAnswer(bucket as string, key as string, value as dynamic, maxKeys = 32 as integer)
+        if type(m[bucket]) <> "roAssociativeArray" or m[bucket].Count() >= maxKeys then m[bucket] = {}
+        m[bucket][key] = { at: silo.NowSeconds(), value: value }
+    end sub
+
+    function MapRaw(r as object, raw as object, options = {} as object) as dynamic
+        options.serverId = r.serverId ?? ""
+        return siloMap.ItemToBaseItem(raw, r.server, options)
+    end function
+
+    ' ---- Libraries
+
+    function ViewsOf(r as object, includeHidden = false as boolean) as dynamic
+        key = r.profileId + "|" + includeHidden.ToStr()
+        kept = silo.RecallAnswer("siloViews", key, 300)
+        if kept <> invalid then return kept
+        query = invalid
+        if includeHidden then query = { include_hidden: true }
+        answer = silo.ApiGet(r, "/api/v2/user/libraries", query)
+        if not answer.ok then return invalid
+        views = siloMap.LibrariesToViews(silo.ItemsOf(answer.data), r.server)
+        config = siloMap.SettingsToConfiguration(silo.ReadSettings(r.server, r.account, r.profileId))
+        if not includeHidden and config.MyMediaExcludes.Count() > 0
+            shown = []
+            for each view in views
+                if not siloContains(config.MyMediaExcludes, view.Id) then shown.Push(view)
+            end for
+            views = shown
+        end if
+        views = siloMap.InViewOrder(views, config.OrderedViews)
+        silo.KeepAnswer("siloViews", key, views, 8)
+        return views
+    end function
+
+    function LibraryView(r as object, libraryId as string) as dynamic
+        views = silo.ViewsOf(r, true)
+        if views = invalid then return invalid
+        for each view in views
+            if view.Id = libraryId then return view
+        end for
+        return invalid
+    end function
+
+    ' ---- Catalog pages
+
+    ' What a query keeps of what Silo lists: k = { types (invalid for all), excluded, seriesStatus }
+    function KeepItem(k as object, item as object) as boolean
+        if siloContains(k.excluded, LCase(item.Type)) then return false
+        if k.seriesStatus.Count() > 0 and item.Type = "Series"
+            if item.Status = invalid or not siloContains(k.seriesStatus, item.Status) then return false
+        end if
+        kind = LCase(item.Type)
+        if k.types = invalid then return kind = "movie" or kind = "series" or kind = "season" or kind = "episode"
+        return siloContains(k.types, kind)
+    end function
+
+    function MapPage(r as object, raw as object, k as dynamic, libraryId as string) as object
+        items = []
+        for each entry in raw
+            item = silo.MapRaw(r, entry)
+            if item <> invalid
+                if k = invalid or silo.KeepItem(k, item)
+                    silo.RememberSeries(item)
+                    if libraryId <> ""
+                        silo.RememberLibrary(item.Id, libraryId)
+                        if item.ParentId = invalid then item["ParentId"] = libraryId
+                    end if
+                    items.Push(item)
+                end if
+            end if
+        end for
+        return items
+    end function
+
+    function CatalogPage(r as object, params as object, start as integer, limit as integer, k as dynamic, libraryId as string) as dynamic
+        result = silo.ReadPage(r, silo.CATALOG, params, start, limit)
+        if not result.ok then return invalid
+        return { Items: silo.MapPage(r, result.items, k, libraryId), TotalRecordCount: result.total, StartIndex: start }
+    end function
+
+    function ReadAll(r as object, path as string, params as object, k as dynamic, libraryId as string) as dynamic
+        all = []
+        offset = 0
+        while offset < silo.READ_ALL_MAX
+            result = silo.ReadPage(r, path, params, offset, silo.PAGE_SIZE)
+            if not result.ok then return invalid
+            all.Append(silo.MapPage(r, result.items, k, libraryId))
+            offset += result.items.Count()
+            if result.items.Count() = 0 or offset >= result.total then exit while
+        end while
+        return all
+    end function
+
+    ' A list Silo can't filter or order the way it's asked is read whole once, kept for a short
+    ' while, and paged here
+    function ClientFiltered(r as object, params as object, filter as string, k as object, start as integer, limit as integer, libraryId as string, reorder as boolean, lastPlayed = "" as string) as dynamic
+        key = r.profileId + "|" + silo.PageSignature(silo.CATALOG, params) + "#" + filter
+        items = silo.RecallAnswer("siloFiltered", key, 120)
+        if items = invalid
+            if lastPlayed <> ""
+                items = silo.ShowsByLastPlayed(r, params, k, libraryId, lastPlayed = "desc")
+            else
+                items = silo.ReadAll(r, silo.CATALOG, params, k, libraryId)
+            end if
+            if items = invalid then return invalid
+            if reorder then items = silo.Shuffled(items)
+            silo.KeepAnswer("siloFiltered", key, items, 4)
+        else if reorder and start <= 0
+            ' A random grid opened again gets a new order
+            items = silo.Shuffled(items)
+        end if
+        return silo.Slice(items, start, limit)
+    end function
+
+    ' A few random titles: whole pages picked at random from the first hundred's count, then shuffled
+    function ShuffledPage(r as object, params as object, limit as integer, k as object, libraryId as string) as dynamic
+        first = silo.CatalogPage(r, params, 0, silo.RANDOM_POOL, k, libraryId)
+        if first = invalid then return invalid
+        pageCount = Int((first.TotalRecordCount + silo.RANDOM_POOL - 1) / silo.RANDOM_POOL)
+        wanted = limit
+        if wanted <= 0 then wanted = silo.RANDOM_POOL
+        picks = Int((wanted + 4) / 5)
+        if picks < 1 then picks = 1
+        if picks > 4 then picks = 4
+        order = []
+        for p = 0 to pageCount - 1
+            order.Push(p)
+        end for
+        order = silo.Shuffled(order)
+        items = []
+        taken = 0
+        for each p in order
+            if taken >= picks then exit for
+            if p = 0
+                items.Append(first.Items)
+            else
+                more = silo.CatalogPage(r, params, p * silo.RANDOM_POOL, silo.RANDOM_POOL, k, libraryId)
+                if more <> invalid then items.Append(more.Items)
+            end if
+            taken++
+        end for
+        if taken = 0 then items.Append(first.Items)
+        items = silo.Shuffled(items)
+        result = silo.Slice(items, 0, wanted)
+        result["TotalRecordCount"] = first.TotalRecordCount
+        return result
+    end function
+
+    ' Shows by last played: Silo has no watch date for a show, so its watch history gives the order
+    function ShowsByLastPlayed(r as object, params as object, k as object, libraryId as string, descending as boolean) as dynamic
+        shows = silo.ReadAll(r, silo.CATALOG, params, k, libraryId)
+        if shows = invalid then return invalid
+        historyParams = { source: "history", image_size: silo.LIST_IMAGE_SIZE }
+        if libraryId <> "" then historyParams.library_id = libraryId
+        history = silo.ReadAll(r, silo.CATALOG, historyParams, invalid, "")
+        if history = invalid then history = []
+        rank = {}
+        count = 0
+        for each item in history
+            if not rank.DoesExist(item.Id)
+                rank[item.Id] = count
+                count++
+            end if
+        end for
+        ranked = []
+        unwatched = []
+        for each item in shows
+            if rank.DoesExist(item.Id)
+                ranked.Push({ sortkey: rank[item.Id], item: item })
+            else
+                unwatched.Push(item)
+            end if
+        end for
+        ranked.SortBy("sortkey")
+        watched = []
+        for each entry in ranked
+            watched.Push(entry.item)
+        end for
+        if descending
+            watched.Append(unwatched)
+            return watched
+        end if
+        watched.Reverse()
+        unwatched.Append(watched)
+        return unwatched
+    end function
+
+    ' Shortest first, with the titles that have no runtime last: Silo's ascending runtime lists those first
+    function RuntimeAscending(r as object, params as object, groups as object, start as integer, limit as integer, k as object, libraryId as string) as dynamic
+        countParams = {}
+        countParams.Append(params)
+        countParams.Delete("sort")
+        withGroups = []
+        withGroups.Append(groups)
+        withGroups.Push({ match: "all", rules: [siloMap.Rule("runtime", "gt", 0)] })
+        countParams.groups = FormatJson(withGroups)
+        allCount = silo.ReadPage(r, silo.CATALOG, params, 0, 1)
+        withRuntime = silo.ReadPage(r, silo.CATALOG, countParams, 0, 1)
+        if not allCount.ok or not withRuntime.ok then return silo.CatalogPage(r, params, start, limit, k, libraryId)
+        total = allCount.total
+        timed = withRuntime.total
+        nulls = total - timed
+        if nulls <= 0 or timed <= 0 then return silo.CatalogPage(r, params, start, limit, k, libraryId)
+        stopAt = total
+        if limit > 0 and start + limit < total then stopAt = start + limit
+        raw = []
+        if start < timed
+            last = stopAt
+            if last > timed then last = timed
+            part = silo.ReadPage(r, silo.CATALOG, params, nulls + start, last - start)
+            if part.ok then raw.Append(part.items)
+        end if
+        if stopAt > timed
+            from = start
+            if from < timed then from = timed
+            part = silo.ReadPage(r, silo.CATALOG, params, from - timed, stopAt - from)
+            if part.ok then raw.Append(part.items)
+        end if
+        return { Items: silo.MapPage(r, raw, k, libraryId), TotalRecordCount: total, StartIndex: start }
+    end function
+
+    ' ---- Search
+
+    function SearchCapabilities(r as object) as object
+        kept = silo.RecallAnswer("siloSearchCaps", r.server, 600)
+        if kept <> invalid then return kept
+        caps = { state: "available", allowed: true, videoWithEpisodes: false, peopleMediaScope: false }
+        answer = silo.ApiGet(r, silo.CATALOG + "/search/capabilities")
+        if answer.ok and type(answer.data) = "roAssociativeArray"
+            caps.state = answer.data.state ?? ""
+            caps.allowed = answer.data.allowed = true
+            caps.videoWithEpisodes = answer.data.video_with_episodes_scope = true
+            caps.peopleMediaScope = answer.data.people_media_scope = true
+        end if
+        silo.KeepAnswer("siloSearchCaps", r.server, caps, 4)
+        return caps
+    end function
+
+    ' ---- Seasons and episodes
+
+    function SeasonsOf(r as object, seriesId as string) as dynamic
+        raw = silo.RecallAnswer("siloSeasonLists", seriesId, 10)
+        if raw = invalid
+            answer = silo.ApiGet(r, silo.CATALOG + "/series/" + seriesId.EncodeUriComponent() + "/seasons", { image_size: silo.LIST_IMAGE_SIZE, include_artwork: true })
+            if not answer.ok then return invalid
+            raw = silo.ItemsOf(answer.data)
+            silo.KeepAnswer("siloSeasonLists", seriesId, raw, 16)
+        end if
+        series = silo.SeriesRef(seriesId)
+        seasons = []
+        for each season in raw
+            item = silo.MapRaw(r, season, { type: "season", series: series })
+            if item <> invalid then seasons.Push(item)
+        end for
+        return { Items: seasons, TotalRecordCount: seasons.Count(), StartIndex: 0 }
+    end function
+
+    function SeasonById(r as object, seasonId as string) as dynamic
+        parsed = siloMap.ParseSeasonId(seasonId)
+        if parsed = invalid then return invalid
+        seasons = silo.SeasonsOf(r, parsed.seriesId)
+        if seasons = invalid then return invalid
+        for each season in seasons.Items
+            if season.Id = seasonId then return season
+        end for
+        return invalid
+    end function
+
+    function SeasonEpisodes(r as object, seasonId as string, series as object) as dynamic
+        raw = silo.RecallAnswer("siloEpisodeLists", seasonId, 10)
+        if raw = invalid
+            answer = silo.ApiGet(r, silo.CATALOG + "/items/" + seasonId.EncodeUriComponent() + "/episodes", { image_size: silo.LIST_IMAGE_SIZE })
+            if not answer.ok then return invalid
+            raw = silo.ItemsOf(answer.data)
+            silo.KeepAnswer("siloEpisodeLists", seasonId, raw, 32)
+        end if
+        episodes = []
+        for each episode in raw
+            item = silo.MapRaw(r, episode, { type: "episode", series: series })
+            if item <> invalid then episodes.Push(item)
+        end for
+        return episodes
+    end function
+
+    ' A season's episodes, or every episode of a show
+    function EpisodesOf(r as object, seriesId as string, seasonId = "" as string) as dynamic
+        owner = seriesId
+        if siloMap.TypeOfId(seriesId) <> "series"
+            from = seasonId
+            if from = "" then from = seriesId
+            parsed = siloMap.ParseSeasonId(from)
+            if parsed <> invalid then owner = parsed.seriesId
+        end if
+        series = silo.SeriesRef(owner)
+        episodes = []
+        if seasonId <> "" or siloMap.TypeOfId(seriesId) = "season"
+            if seasonId = "" then seasonId = seriesId
+            found = silo.SeasonEpisodes(r, seasonId, series)
+            if found = invalid then return invalid
+            episodes = found
+        else
+            seasons = silo.SeasonsOf(r, owner)
+            if seasons = invalid then return invalid
+            for each season in seasons.Items
+                found = silo.SeasonEpisodes(r, season.Id, series)
+                if found <> invalid then episodes.Append(found)
+            end for
+        end if
+        return { Items: episodes, TotalRecordCount: episodes.Count(), StartIndex: 0 }
+    end function
+
+    function SeriesEpisodes(r as object, seriesId as string, filters as object, start as integer, limit as integer) as dynamic
+        all = silo.EpisodesOf(r, seriesId)
+        if all = invalid then return invalid
+        flags = []
+        for each flag in filters
+            flags.Push(LCase(flag))
+        end for
+        kept = []
+        for each episode in all.Items
+            played = episode.UserData.Played = true
+            if not (siloContains(flags, "isplayed") and not played) and not (siloContains(flags, "isunplayed") and played) then kept.Push(episode)
+        end for
+        return silo.Slice(kept, start, limit)
+    end function
+
+    ' ---- Collections
+
+    function PersonalCollections(r as object, containing = "" as string) as dynamic
+        query = invalid
+        if containing <> "" then query = { contains_item: containing }
+        answer = silo.ApiGet(r, "/api/v2/collections", query)
+        if not answer.ok then return invalid
+        out = []
+        for each collection in silo.ItemsOf(answer.data)
+            if containing = "" or collection.contains = true
+                boxSet = siloMap.CollectionToBoxSet(collection, r.server)
+                if boxSet <> invalid then out.Push(boxSet)
+            end if
+        end for
+        return out
+    end function
+
+    function LibraryCollections(r as object, libraryId as string) as dynamic
+        answer = silo.ApiGet(r, "/api/v2/library/" + libraryId.EncodeUriComponent() + "/collections")
+        if not answer.ok then return invalid
+        out = []
+        if type(answer.data) = "roAssociativeArray" and type(answer.data.collections) = "roArray"
+            for each collection in answer.data.collections
+                boxSet = siloMap.CollectionToBoxSet(collection, r.server, libraryId)
+                if boxSet <> invalid then out.Push(boxSet)
+            end for
+        end if
+        return out
+    end function
+
+    function CollectionsOf(r as object, libraryId as string, sortBy as dynamic, sortOrder as dynamic, start as integer, limit as integer) as dynamic
+        all = []
+        if libraryId <> ""
+            all = silo.LibraryCollections(r, libraryId)
+            if all = invalid then return invalid
+        else
+            personal = silo.PersonalCollections(r)
+            if personal <> invalid then all.Append(personal)
+            views = silo.ViewsOf(r)
+            if views <> invalid
+                for each view in views
+                    listed = silo.LibraryCollections(r, view.Id)
+                    if listed <> invalid then all.Append(listed)
+                end for
+            end if
+        end if
+        terms = siloMap.SplitList(sortBy)
+        if terms.Count() > 0 and (LCase(terms[0]) = "sortname" or LCase(terms[0]) = "name")
+            entries = []
+            for each boxSet in all
+                entries.Push({ sortkey: LCase(boxSet.Name), boxSet: boxSet })
+            end for
+            entries.SortBy("sortkey")
+            all = []
+            for each entry in entries
+                all.Push(entry.boxSet)
+            end for
+            orders = siloMap.SplitList(sortOrder)
+            if orders.Count() > 0 and LCase(orders[0]) = "descending" then all.Reverse()
+        end if
+        return silo.Slice(all, start, limit)
+    end function
+
+    function CollectionById(r as object, collectionId as string) as dynamic
+        parsed = siloMap.ParseCollectionId(collectionId)
+        if parsed = invalid then return invalid
+        list = invalid
+        if parsed.libraryId <> ""
+            list = silo.LibraryCollections(r, parsed.libraryId)
+        else
+            list = silo.PersonalCollections(r)
+        end if
+        if list = invalid then return invalid
+        for each boxSet in list
+            if boxSet.Id = collectionId then return boxSet
+        end for
+        return invalid
+    end function
+
+    ' Collections are asked for as BoxSets, and only alone
+    function AsksForCollections(includeTypes as dynamic) as boolean
+        named = siloMap.SplitList(includeTypes)
+        asked = false
+        for each kind in named
+            if LCase(kind) = "boxset" then asked = true
+        end for
+        if not asked then return false
+        others = siloMap.TypesForQuery(includeTypes)
+        return others = invalid or others.Count() = 0
+    end function
+
+    ' ---- Detail
+
+    function DetailJson(r as object, itemId as string, fileId = "" as string) as dynamic
+        key = itemId + "#" + fileId
+        kept = silo.RecallAnswer("siloDetails", key, 10)
+        if kept <> invalid then return kept
+        path = silo.CATALOG + "/items/" + itemId.EncodeUriComponent()
+        query = { image_size: silo.DETAIL_IMAGE_SIZE }
+        if fileId <> "" then query.file_id = fileId
+        answer = silo.ApiGet(r, path, query)
+        if not answer.ok or type(answer.data) <> "roAssociativeArray" then return invalid
+        json = answer.data
+        kind = json.type ?? siloMap.TypeOfId(itemId)
+        ' A playable title's files come separately when the detail leaves them out
+        if (kind = "movie" or kind = "episode") and type(json.versions) <> "roArray"
+            versions = silo.ApiGet(r, path + "/versions", query)
+            if versions.ok then json.versions = silo.ItemsOf(versions.data)
+        end if
+        silo.KeepAnswer("siloDetails", key, json, 24)
+        return json
+    end function
+
+    function PersonById(r as object, personId as string) as dynamic
+        answer = silo.ApiGet(r, silo.CATALOG + "/people/" + personId.EncodeUriComponent())
+        if not answer.ok then return invalid
+        return siloMap.PersonToItem(answer.data, r.server)
+    end function
+
+    ' Any item the app has an id for: a library, person, season, genre, studio, collection or title
+    function GetItem(r as object, itemId as string, fileId = "" as string) as dynamic
+        ' A version's id: its title, read with that file
+        owner = siloMap.ItemIdOfSource(itemId)
+        if owner <> "" then return silo.GetItem(r, owner, siloMap.FileIdOf(itemId))
+        libraryId = siloMap.LibraryIdOf(itemId)
+        if libraryId <> ""
+            ' A number is a library, or else a person: Silo's person ids are numbers too
+            view = silo.LibraryView(r, libraryId)
+            if view <> invalid then return view
+            return silo.PersonById(r, libraryId)
+        end if
+        if siloMap.TypeOfId(itemId) = "season" then return silo.SeasonById(r, itemId)
+        genre = siloMap.GenreNameOf(itemId)
+        if genre <> "" then return siloMap.NamedItem(genre, false)
+        studio = siloMap.StudioNameOf(itemId)
+        if studio <> "" then return siloMap.NamedItem(studio, true)
+        if siloMap.ParseCollectionId(itemId) <> invalid then return silo.CollectionById(r, itemId)
+        json = silo.DetailJson(r, itemId, fileId)
+        if json = invalid then return invalid
+        item = silo.MapRaw(r, json)
+        if item = invalid then return invalid
+        silo.RememberSeries(item)
+        library = silo.LibraryOfItem(item.Id)
+        if library <> "" and item.ParentId = invalid then item["ParentId"] = library
+        return item
+    end function
+
+    ' A few items by id. Episodes of one season are read from their list, everything else one at a
+    ' time; an id that fails is left out
+    function ByIds(r as object, ids as object, start as integer, limit as integer) as object
+        wanted = silo.Slice(ids, start, limit).Items
+        found = {}
+        bySeason = {}
+        for each id in wanted
+            episode = siloMap.ParseEpisodeId(id)
+            if episode <> invalid
+                seasonId = siloMap.SeasonIdFor(episode.seriesId, episode.seasonNumber)
+                if seasonId <> "" then bySeason[seasonId] = (bySeason[seasonId] ?? 0) + 1
+            end if
+        end for
+        for each seasonId in bySeason
+            if bySeason[seasonId] > 1
+                list = silo.EpisodesOf(r, seasonId, seasonId)
+                if list <> invalid
+                    for each item in list.Items
+                        if siloContains(wanted, item.Id) then found[item.Id] = item
+                    end for
+                end if
+            end if
+        end for
+        items = []
+        for each id in wanted
+            item = found[id]
+            if item = invalid then item = silo.GetItem(r, id)
+            if item <> invalid then items.Push(item)
+        end for
+        return { Items: items, TotalRecordCount: ids.Count(), StartIndex: start }
+    end function
+
+    ' ---- Items query
+
+    ' A library grid, the whole catalog, or the children of a series, season, genre, studio or
+    ' collection, from the app's Jellyfin query. Filters go to Silo as rule groups; the series status
+    ' (which Silo can't filter), a random order and shows by last played are read whole and paged here
+    function GetItems(r as object) as dynamic
+        q = r.query
+        start = silo.QueryInt(q, "StartIndex", 0)
+        hasStart = q.LookupCI("StartIndex") <> invalid
+        limit = silo.QueryInt(q, "Limit", 0)
+        filters = siloMap.SplitList(q.LookupCI("Filters"))
+        isFavorite = silo.QueryBool(q, "IsFavorite") = true
+        ids = siloMap.SplitList(q.LookupCI("Ids"))
+        if ids.Count() > 0 then return silo.ByIds(r, ids, start, limit)
+
+        parentId = q.LookupCI("ParentId") ?? ""
+        libraryId = siloMap.LibraryIdOf(parentId)
+        genreParent = siloMap.GenreNameOf(parentId)
+        studioParent = siloMap.StudioNameOf(parentId)
+        parentCollection = siloMap.ParseCollectionId(parentId)
+        includeTypes = q.LookupCI("IncludeItemTypes")
+
+        if silo.AsksForCollections(includeTypes)
+            ' Silo's favorites are titles only
+            if isFavorite or siloContains(filters, "IsFavorite") then return silo.Empty(start)
+            return silo.CollectionsOf(r, libraryId, q.LookupCI("SortBy"), q.LookupCI("SortOrder"), start, limit)
+        end if
+        ' A series' children are its seasons, or its episodes when those are asked for; a season's are its episodes
+        if parentId <> "" and siloMap.TypeOfId(parentId) = "series"
+            childTypes = siloMap.TypesForQuery(includeTypes)
+            if childTypes <> invalid and siloContains(childTypes, "episode") and not siloContains(childTypes, "season") then return silo.SeriesEpisodes(r, parentId, filters, start, limit)
+            return silo.SeasonsOf(r, parentId)
+        end if
+        if parentId <> "" and siloMap.TypeOfId(parentId) = "season"
+            parsed = siloMap.ParseSeasonId(parentId)
+            owner = parentId
+            if parsed <> invalid then owner = parsed.seriesId
+            return silo.EpisodesOf(r, owner, parentId)
+        end if
+        if parentId <> "" and libraryId = "" and genreParent = "" and studioParent = "" and parentCollection = invalid then return invalid
+
+        types = siloMap.TypesForQuery(includeTypes, q.LookupCI("MediaTypes"))
+        if types <> invalid and types.Count() = 0 then return silo.Empty(start)
+
+        searchText = (q.LookupCI("SearchTerm") ?? "").Trim()
+        scope = ""
+        if searchText <> ""
+            caps = silo.SearchCapabilities(r)
+            if not caps.allowed or caps.state <> "available" then return silo.Empty(start)
+            scope = siloMap.SearchScopeFor(types, caps.videoWithEpisodes)
+        else if types <> invalid
+            scope = siloMap.CatalogScopeFor(types)
+        end if
+
+        genres = []
+        if isValidAndNotEmpty(q.LookupCI("Genres")) then genres = siloMap.SplitList(q.LookupCI("Genres").Replace("|", ","))
+        for each id in siloMap.SplitList(q.LookupCI("GenreIds"))
+            name = siloMap.GenreNameOf(id)
+            if name = "" then name = id
+            genres.Push(name)
+        end for
+        if genreParent <> "" then genres.Push(genreParent)
+        studios = []
+        if isValidAndNotEmpty(q.LookupCI("Studios")) then studios = siloMap.SplitList(q.LookupCI("Studios").Replace("|", ","))
+        for each id in siloMap.SplitList(q.LookupCI("StudioIds"))
+            name = siloMap.StudioNameOf(id)
+            if name = "" then name = id
+            studios.Push(name)
+        end for
+        if studioParent <> "" then studios.Push(studioParent)
+        ratings = []
+        if isValidAndNotEmpty(q.LookupCI("OfficialRatings"))
+            for each rating in q.LookupCI("OfficialRatings").Split("|")
+                if rating <> "" then ratings.Push(rating)
+            end for
+        end if
+        is4K = invalid
+        if silo.QueryBool(q, "Is4K") = true then is4K = true
+        groups = siloMap.RuleGroups({
+            genres: genres,
+            studios: studios,
+            years: siloMap.SplitList(q.LookupCI("Years")),
+            officialRatings: ratings,
+            filters: filters,
+            isFavorite: isFavorite,
+            is4K: is4K,
+            isHd: silo.QueryBool(q, "IsHD"),
+            audioLanguages: siloMap.SplitList(q.LookupCI("AudioLanguages")),
+            subtitleLanguages: siloMap.SplitList(q.LookupCI("SubtitleLanguages"))
+        })
+
+        params = { image_size: silo.LIST_IMAGE_SIZE }
+        ' A person's titles: Silo pages one person at a time
+        personIds = siloMap.SplitList(q.LookupCI("PersonIds"))
+        if personIds.Count() > 0
+            params.source = "person"
+            params.person_id = personIds[0]
+        end if
+        if parentCollection <> invalid
+            params.collection_id = parentCollection.id
+            if parentCollection.libraryId <> ""
+                params.source = "library_collection"
+                params.library_id = parentCollection.libraryId
+            else
+                params.source = "user_collection"
+            end if
+        end if
+        if libraryId <> "" then params.library_id = libraryId
+        if searchText <> "" then params.q = searchText
+        if scope <> "" then params.type = scope
+        sort = siloMap.SortFor(q.LookupCI("SortBy"), q.LookupCI("SortOrder"))
+        if sort <> "" then params.sort = sort
+        if groups.Count() > 0 then params.groups = FormatJson(groups)
+        prefix = (q.LookupCI("NameStartsWith") ?? "").Trim()
+        ' '#' (titles before A) has no Silo prefix, so it narrows nothing
+        if prefix <> "" and prefix <> "#" then params.name_prefix = prefix
+
+        excluded = []
+        for each kind in siloMap.SplitList(q.LookupCI("ExcludeItemTypes"))
+            excluded.Push(LCase(kind))
+        end for
+        k = { types: types, excluded: excluded, seriesStatus: siloMap.SplitList(q.LookupCI("SeriesStatus")) }
+
+        random = siloMap.WantsRandom(q.LookupCI("SortBy"))
+        filtered = k.seriesStatus.Count() > 0
+        plainList = personIds.Count() = 0 and parentCollection = invalid and searchText = "" and params.name_prefix = invalid
+
+        if scope = "series" and (sort = "date_viewed" or sort = "-date_viewed") and plainList
+            plainParams = {}
+            plainParams.Append(params)
+            plainParams.Delete("sort")
+            direction = "asc"
+            if sort = "-date_viewed" then direction = "desc"
+            return silo.ClientFiltered(r, plainParams, "series_status=" + k.seriesStatus.Join(",") + "&last_played_" + direction, k, start, limit, libraryId, false, direction)
+        end if
+        ' A random grid is shuffled whole. A grid always sends StartIndex; rows want only a few and don't
+        smallRandom = random and not hasStart and limit > 0 and limit < silo.RANDOM_POOL
+        if filtered or (random and not smallRandom)
+            filter = "series_status=" + k.seriesStatus.Join(",")
+            if random then filter = filter + "&random"
+            return silo.ClientFiltered(r, params, filter, k, start, limit, libraryId, random)
+        end if
+        if random then return silo.ShuffledPage(r, params, limit, k, libraryId)
+        if sort = "runtime" then return silo.RuntimeAscending(r, params, groups, start, limit, k, libraryId)
+        return silo.CatalogPage(r, params, start, limit, k, libraryId)
+    end function
+
+    ' ---- Everything else that reads
+
+    function ScopeOf(includeTypes as dynamic) as string
+        asked = siloMap.TypesForQuery(includeTypes)
+        if asked = invalid or asked.Count() = 0 then return ""
+        return siloMap.CatalogScopeFor(asked)
+    end function
+
+    function FilterValues(r as object, parentId as dynamic, includeTypes as dynamic, extra = invalid as dynamic) as dynamic
+        query = {}
+        libraryId = siloMap.LibraryIdOf(parentId)
+        if libraryId <> "" then query.library_id = libraryId
+        scope = silo.ScopeOf(includeTypes)
+        if scope <> "" then query.type = scope
+        if type(extra) = "roAssociativeArray" then query.Append(extra)
+        answer = silo.ApiGet(r, silo.CATALOG + "/filters", query)
+        if not answer.ok or type(answer.data) <> "roAssociativeArray" then return invalid
+        return answer.data
+    end function
+
+    function NamedList(names as object, studio as boolean, descending as boolean, start as integer, limit as integer) as object
+        seen = {}
+        entries = []
+        for each name in names
+            if isString(name) and name.Trim() <> "" and not seen.DoesExist(LCase(name.Trim()))
+                seen[LCase(name.Trim())] = true
+                entries.Push({ key: LCase(name.Trim()), name: name.Trim() })
+            end if
+        end for
+        entries.SortBy("key")
+        if descending then entries.Reverse()
+        items = []
+        for each entry in entries
+            items.Push(siloMap.NamedItem(entry.name, studio))
+        end for
+        return silo.Slice(items, start, limit)
+    end function
+
+    function AncestorsOf(r as object, itemId as string) as object
+        out = []
+        seriesId = ""
+        episode = siloMap.ParseEpisodeId(itemId)
+        season = siloMap.ParseSeasonId(itemId)
+        if episode <> invalid
+            seriesId = episode.seriesId
+            seasonId = siloMap.SeasonIdFor(seriesId, episode.seasonNumber)
+            if seasonId <> ""
+                out.Push({ Id: seasonId, Name: siloMap.SeasonName(episode.seasonNumber), Type: "Season", IsFolder: true, IndexNumber: episode.seasonNumber, SeriesId: seriesId, SeriesName: silo.SeriesRef(seriesId).name })
+            end if
+        else if season <> invalid
+            seriesId = season.seriesId
+        end if
+        if seriesId <> "" then out.Push({ Id: seriesId, Name: silo.SeriesRef(seriesId).name, Type: "Series", IsFolder: true })
+        library = silo.LibraryOfItem(itemId)
+        if library = "" and seriesId <> "" then library = silo.LibraryOfItem(seriesId)
+        if library <> ""
+            view = silo.LibraryView(r, library)
+            name = ""
+            if view <> invalid then name = view.Name
+            out.Push({ Id: library, Name: name, Type: "CollectionFolder", IsFolder: true })
+        end if
+        ' Collections are extra; the ancestors stand without them
+        collections = silo.PersonalCollections(r, itemId)
+        if collections <> invalid then out.Append(collections)
+        return out
+    end function
+
+    function ExtrasFor(r as object, itemId as string, trailers as boolean) as object
+        json = silo.DetailJson(r, itemId)
+        if json = invalid then return []
+        return siloMap.ExtrasOf(json, trailers, itemId)
+    end function
+
+    function SimilarTo(r as object, itemId as string, limit as integer) as dynamic
+        if limit <= 0 then limit = 15
+        answer = silo.ApiGet(r, "/api/v2/recommendations/similar/" + itemId.EncodeUriComponent(), { limit: limit })
+        if not answer.ok then return invalid
+        items = []
+        for each raw in silo.ItemsOf(answer.data)
+            kind = raw.type ?? ""
+            if kind = "movie" or kind = "series" or kind = "season" or kind = "episode"
+                item = silo.MapRaw(r, raw)
+                if item <> invalid
+                    silo.RememberSeries(item)
+                    items.Push(item)
+                end if
+            end if
+        end for
+        return { Items: items, TotalRecordCount: items.Count(), StartIndex: 0 }
+    end function
+
+    function SearchPeople(r as object, term as string, limit as integer) as object
+        caps = silo.SearchCapabilities(r)
+        if not caps.allowed or caps.state <> "available" then return silo.Empty()
+        query = {}
+        if term.Trim() <> "" then query.q = term.Trim()
+        if limit > 0
+            if limit > 100 then limit = 100
+            query.limit = limit
+        end if
+        if caps.peopleMediaScope
+            query.media_scope = "video"
+            if caps.videoWithEpisodes then query.media_scope = "video_with_episodes"
+        end if
+        answer = silo.ApiGet(r, silo.CATALOG + "/people", query)
+        items = []
+        if answer.ok
+            for each person in silo.ItemsOf(answer.data)
+                item = siloMap.PersonToItem(person, r.server)
+                if item <> invalid then items.Push(item)
+            end for
+        end if
+        return { Items: items, TotalRecordCount: items.Count(), StartIndex: 0 }
+    end function
+end namespace

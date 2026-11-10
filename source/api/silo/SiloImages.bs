@@ -1,0 +1,158 @@
+import "pkg:/source/api/silo/SiloSession.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Artwork on a Silo server. Silo has no image address that can be built from an item id: each
+' picture comes signed, inside the item that shows it. The mapper hands the picture's own address
+' over as the item's image tag, and an image URL asked with that tag is the picture. Callers that
+' ask without a tag find the picture in this thread's record of what it mapped (Smart-TV's
+' utils/siloUrls.js keeps the same record, for every caller).
+namespace silo
+    const MAX_IMAGES = 4000
+
+    ' Records a picture of itemId and answers its tag, or "" when there's no picture
+    function RegisterImage(server as string, itemId as string, imageType as string, url as dynamic, index = 0 as integer) as string
+        if not isString(url) then return ""
+        url = url.Trim()
+        if url = "" or itemId = "" then return ""
+        if type(m.siloImages) <> "roAssociativeArray" or m.siloImages.Count() > silo.MAX_IMAGES then m.siloImages = {}
+        key = silo.ImageKey(server, itemId, imageType, index)
+        if m.siloImages[key] <> url
+            m.siloImages[key] = url
+            ' Published for the other threads with the next flush
+            if type(m.siloImagesByItem) <> "roAssociativeArray" or m.siloImagesByItem.Count() > silo.MAX_IMAGES then m.siloImagesByItem = {}
+            if type(m.siloImagesPending) <> "roAssociativeArray" then m.siloImagesPending = {}
+            field = silo.ImageField(itemId)
+            pictures = m.siloImagesByItem[field]
+            if type(pictures) <> "roAssociativeArray"
+                pictures = {}
+                m.siloImagesByItem[field] = pictures
+            end if
+            pictures[key] = url
+            m.siloImagesPending[field] = true
+        end if
+        return url
+    end function
+
+    ' Screens build many picture addresses from an item id alone, on the render thread, which
+    ' mapped none of them. So what a task maps is also kept on one node of the global node, a field
+    ' per item, written in one go after each answer
+    function ImageStore() as dynamic
+        if type(m.global) <> "roSGNode" then return invalid
+        if not m.global.hasField("siloImageStore") then m.global.addFields({ siloImageStore: CreateObject("roSGNode", "Node") })
+        return m.global.siloImageStore
+    end function
+
+    function ImageField(itemId as string) as string
+        return "i_" + CreateObject("roRegex", "[^A-Za-z0-9_]", "").ReplaceAll(itemId, "_")
+    end function
+
+    sub FlushImages()
+        if type(m.siloImagesPending) <> "roAssociativeArray" or m.siloImagesPending.Count() = 0 then return
+        store = silo.ImageStore()
+        if store = invalid then return
+        fields = {}
+        for each field in m.siloImagesPending
+            ' A field queued before this thread's record started over has nothing left to publish
+            pictures = m.siloImagesByItem[field]
+            if type(pictures) = "roAssociativeArray" then fields[field] = pictures
+        end for
+        m.siloImagesPending = {}
+        if fields.Count() > 0 then store.update(fields, true)
+    end sub
+
+    ' The picture recorded for itemId in this thread, or ""
+    function ImageFor(server as string, itemId as string, imageType as string, index = 0 as integer) as string
+        key = silo.ImageKey(server, itemId, imageType, index)
+        if type(m.siloImages) = "roAssociativeArray"
+            url = m.siloImages[key]
+            if isString(url) then return url
+        end if
+        return ""
+    end function
+
+    ' A picture another thread mapped
+    function SharedImageFor(server as string, itemId as string, imageType as string, index = 0 as integer) as string
+        store = silo.ImageStore()
+        if store = invalid then return ""
+        pictures = store.getField(silo.ImageField(itemId))
+        if type(pictures) <> "roAssociativeArray" then return ""
+        url = pictures[silo.ImageKey(server, itemId, imageType, index)]
+        if isString(url) then return url
+        return ""
+    end function
+
+    function ImageKey(server as string, itemId as string, imageType as string, index as integer) as string
+        return silo.ServerKey(server) + "|" + itemId + "|" + LCase(imageType) + "|" + index.ToStr()
+    end function
+
+    ' A picture address as a full URL on server
+    function ResolveUrl(server as string, url as string) as string
+        if url = "" then return ""
+        lower = LCase(url)
+        if lower.Left(7) = "http://" or lower.Left(8) = "https://" then return url
+        if url.Left(2) = "//"
+            if LCase(server).Left(8) = "https://" then return "https:" + url
+            return "http:" + url
+        end if
+        base = server
+        while base.Right(1) = "/"
+            base = base.Left(base.Len() - 1)
+        end while
+        if url.Left(1) = "/" then return base + url
+        return base + "/" + url
+    end function
+
+    ' A Roku can't draw SVG, so a DiceBear avatar is asked for as a PNG. It's asked for round too, as
+    ' a MaskGroup doesn't clip on Rokus without OpenGL
+    function DrawableAvatar(url as string) as string
+        prefix = "https://api.dicebear.com/"
+        if LCase(url).Left(prefix.Len()) <> prefix then return url
+        parts = url.Split("?")
+        path = parts[0]
+        if LCase(path).Right(4) <> "/svg" then return url
+        query = ["radius=50"]
+        if parts.Count() > 1
+            for each pair in parts[1].Split("&")
+                if pair <> "" and LCase(pair.Split("=")[0]) <> "radius" then query.Push(pair)
+            end for
+        end if
+        return path.Left(path.Len() - 4) + "/png?" + query.Join("&")
+    end function
+
+    ' The Silo picture a Jellyfin image path names, or "" for none. Size options are ignored: Silo sizes
+    ' a picture when the item is read, and a signed address can't be resized
+    function ImageURL(server as string, path as string, params as dynamic) as string
+        segments = []
+        for each segment in path.Split("?")[0].Split("/")
+            if segment <> "" then segments.Push(segment)
+        end for
+        if segments.Count() < 4 then return ""
+        kind = LCase(segments[0])
+        if LCase(segments[2]) <> "images" then return ""
+        tag = ""
+        if type(params) = "roAssociativeArray" then tag = params.LookupCI("tag") ?? ""
+        if isString(tag) and tag <> "" and (tag.Left(1) = "/" or LCase(tag).Left(4) = "http") then return silo.ResolveUrl(server, tag)
+
+        if kind = "users"
+            entry = silo.ProfileEntry(segments[1])
+            if isValid(entry) and isValidAndNotEmpty(entry.avatar) then return silo.ResolveUrl(server, silo.DrawableAvatar(entry.avatar))
+            return ""
+        end if
+        if kind <> "items" then return ""
+        index = 0
+        if segments.Count() > 4 then index = segments[4].ToInt()
+        found = silo.ImageFor(server, segments[1], segments[3], index)
+        if found = "" then found = silo.SharedImageFor(server, segments[1], segments[3], index)
+        url = silo.ResolveUrl(server, found)
+        ' A picture asked for without its tag, on a thread that didn't map the item, can't be found.
+        ' Said once per image type, so the caller that needs a tag shows up in the console
+        if url = ""
+            if type(m.siloImageMisses) <> "roAssociativeArray" then m.siloImageMisses = {}
+            if not m.siloImageMisses.DoesExist(segments[3])
+                m.siloImageMisses[segments[3]] = true
+                print "[Moonfin network] WARN: Silo image without a tag: " + segments[3] + " of " + segments[1]
+            end if
+        end if
+        return url
+    end function
+end namespace

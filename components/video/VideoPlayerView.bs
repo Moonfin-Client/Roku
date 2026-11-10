@@ -64,6 +64,8 @@ const SKIP_BACK_HOLD_MS = 500
 const CINEMA_SKIP_SECONDS = 10
 
 sub init()
+    m.timelineOffset = 0
+    m.mediaRuntime = 0
     m.top.observeField("availableAudioTracks", "applyChosenAudioTrack")
 
     ' Carries on through the rest of the queue, the way it does in the other clients
@@ -369,7 +371,7 @@ end function
 ' Previous restarts the item when it is more than three seconds in or nothing comes before it, and
 ' Next with nothing after it runs to the end.
 sub handleItemSkipAction(action as string)
-    position = m.top.position
+    position = mediaPosition()
     if isValid(m.pendingSeek) then position = m.pendingSeek
     starts = m.osd.chapterStarts ?? []
     queuePos = m.global.queueManager.callFunc("getPosition") ?? 0
@@ -380,8 +382,8 @@ sub handleItemSkipAction(action as string)
             seekFromControls(chapterMs / 1000)
         else if queuePos < m.global.queueManager.callFunc("getCount") - 1
             playQueueItem("moveForward")
-        else if m.top.duration > 0
-            seekFromControls(m.top.duration - 1)
+        else if mediaDuration() > 0
+            seekFromControls(mediaDuration() - 1)
         end if
         return
     end if
@@ -426,8 +428,7 @@ end sub
 sub seekFromControls(target as float)
     dropScrub()
     if syncPlaySeek(target) then return
-    holdSkipPrompts(target)
-    m.top.seek = target
+    seekMedia(target)
     setVideoEndingTime(target)
     m.positionText.text = secondsToHuman(target, true)
 end sub
@@ -476,7 +477,7 @@ sub handleChapterListAction()
     m.chapterOverlay.observeField("dismissed", "closeChapterList")
     m.top.appendChild(m.chapterOverlay)
     m.chapterOverlay.chapters = chapters
-    m.chapterOverlay.currentIndex = currentChapterIndexAt(m.top.position)
+    m.chapterOverlay.currentIndex = currentChapterIndexAt(mediaPosition())
     m.chapterOverlay.callFunc("open")
     m.chapterOverlay.setFocus(true)
 end sub
@@ -495,11 +496,10 @@ sub onChapterPicked()
     dropScrub()
     seekTime = m.chapterOverlay.selected
     closeChapterList()
-    duration = m.top.duration
+    duration = mediaDuration()
     if duration > 1 and seekTime > duration - 1 then seekTime = duration - 1
     if syncPlaySeek(seekTime) then return
-    holdSkipPrompts(seekTime)
-    m.top.seek = seekTime
+    seekMedia(seekTime)
     m.positionText.text = secondsToHuman(seekTime, true)
 end sub
 
@@ -716,7 +716,7 @@ sub onBitratePicked(event as object)
     if bps = m.maxBitrate then return
     m.maxBitrate = bps
     m.osd.bitrateCapped = bps > 0
-    m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
+    m.global.queueManager.callFunc("setTopStartingPoint", int(mediaPosition()) * 10000000&)
     stopForReload()
     m.LoadMetaDataTask.maxBitrate = bps
     m.LoadMetaDataTask.selectedAudioStreamIndex = m.top.audioIndex
@@ -1309,7 +1309,7 @@ end sub
 ' Loads the item again from where it is, with this subtitle picked. A subtitle downloaded during
 ' playback isnt in the stream the player opened, so this is also how one gets shown.
 sub reloadWithSubtitle(index as integer)
-    m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
+    m.global.queueManager.callFunc("setTopStartingPoint", int(mediaPosition()) * 10000000&)
 
     stopForReload()
 
@@ -1332,7 +1332,7 @@ sub onAudioIndexChange()
     end if
 
     ' Save the current video position
-    m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
+    m.global.queueManager.callFunc("setTopStartingPoint", int(mediaPosition()) * 10000000&)
 
     stopForReload()
 
@@ -1378,7 +1378,7 @@ end sub
 ' brought back by restarting the same URL, which is why replaying by hand works
 ' when the in place retry does not.
 sub retryPlaybackFromServer(startSeconds = -1 as float)
-    if startSeconds < 0 then startSeconds = m.top.position
+    if startSeconds < 0 then startSeconds = mediaPosition()
     if startSeconds > 0
         m.global.queueManager.callFunc("setTopStartingPoint", Int(startSeconds * 1000) * 10000&)
     end if
@@ -1484,6 +1484,13 @@ function retryAction(played as boolean, retries as integer, nextStep as string, 
     return "server"
 end function
 
+' Whether this item streams from a Silo server, which may be another signed in server than the
+' current one
+function playsFromSilo() as boolean
+    if isValid(m.itemServerData) then return isSiloServer(m.itemServerData.serverUrl)
+    return isSiloServer()
+end function
+
 ' Asks the server for playback again, a step further from the file when one is given
 '
 ' @param {string} nextStep - the playback method to ask for, empty for the same stream again
@@ -1570,6 +1577,8 @@ sub onVideoContentLoaded(event as object)
 
     m.isTranscoded = videoContent[0].isTranscoded
     m.top.isTranscoded = m.isTranscoded = true
+    m.timelineOffset = videoContent[0].timelineOffset ?? 0
+    m.mediaRuntime = videoContent[0].mediaRuntime ?? 0
     m.videoCodec = videoContent[0].videoCodec ?? ""
     m.streamSummary = streamSummary(videoContent[0])
     diagnostics.Playback(`Playing ${m.streamSummary}`)
@@ -2084,7 +2093,7 @@ end function
 sub checkSegmentSkipButton()
     if not isValidAndNotEmpty(m.mediaSegments) then return
 
-    ticks = m.top.position * 10000000#
+    ticks = mediaPosition() * 10000000#
     ' Back at or before a segment's start is a rewind into it on purpose, so it can skip itself again
     kept = []
     for each start in m.autoSkipped
@@ -2379,18 +2388,21 @@ end function
 ' When Video Player state changes
 sub onPositionChanged()
     ' Pass video position data into OSD
-    if m.top.duration = 0
+    position = mediaPosition()
+    duration = mediaDuration()
+    if duration = 0
         m.osd.progressPercentage = 0
     else
-        m.osd.progressPercentage = m.top.position / m.top.duration
+        m.osd.progressPercentage = position / duration
     end if
     if isValid(m.liveChannel) then updateLiveWindow()
 
     ' Ensure position text is accurate
-    m.positionText.text = secondsToHuman(m.top.position, true)
+    m.positionText.text = secondsToHuman(position, true)
 
-    m.osd.positionTime = m.top.position
-    m.osd.remainingPositionTime = m.top.duration - m.top.position
+    m.osd.positionTime = position
+    m.osd.remainingPositionTime = duration - position
+    ' Subtitles run on the player's clock: Silo moves a sidecar's cues to where its stream starts
     if m.subtitleOffsetOverlay.visible then m.subtitleOffsetOverlay.currentTime = m.top.position
 
     ' A positive offset holds the subtitles back, so the task is asked for an earlier moment
@@ -2418,13 +2430,13 @@ end sub
 ' The card comes up as the item runs out
 sub checkNextUp()
     if m.nextUp.visible or isValid(m.episodeOverlay) then return
-    if m.top.duration <= 0 then return
+    if mediaDuration() <= 0 then return
     if m.osd.visible then return
     if m.top.trickPlayBar.visible then return
     ' Raising the card over a skip prompt would leave the prompt unpressable, so it waits for it
     waitsForPrompt = isValid(m.skipPrompt) and not m.skipPromptLapsed
 
-    remaining = m.top.duration - m.top.position
+    remaining = mediaDuration() - mediaPosition()
     threshold = isStringEqual(nextUpBehaviour(), "extended") ? 1 : 0.5
 
     if remaining > threshold then return
@@ -2551,6 +2563,8 @@ sub onState()
             nextStep = string.EMPTY
             if not played or outgrown then nextStep = nextTranscodeStep()
             action = retryAction(played and not outgrown, m.playbackRetries, nextStep, REPLAY_RETRIES)
+            ' Stopping a Silo stream ends its session, so the same address can't be started again
+            if action = "restart" and playsFromSilo() then action = "server"
             if action <> "fail"
                 m.playbackRetries = m.playbackRetries + 1
                 m.lastBufferError = currentTime
@@ -2647,9 +2661,44 @@ sub setVideoEndingTime(videoSeekPosition = 0 as integer)
     m.osd.videoEndingTime = videoEndingTime
 end sub
 
+' Where the title is, in its own seconds. A Silo stream can start partway into the title, and the
+' player counts from where it starts
+function mediaPosition() as float
+    return (m.top.position ?? 0) + m.timelineOffset
+end function
+
+' How long the title is. A Silo remux only reaches as far as the server has made it, so its
+' runtime comes from the file rather than the player
+function mediaDuration() as float
+    if m.mediaRuntime > 0 then return m.mediaRuntime
+    return m.top.duration
+end function
+
+' Whether the stream that plays holds this point of the title, so the player can seek to it
+function streamHolds(target as float) as boolean
+    if m.timelineOffset = 0 and m.mediaRuntime <= 0 then return true
+    local = target - m.timelineOffset
+    return local >= 0 and local <= m.top.duration - 1
+end function
+
+' Seeks to a point of the title. One outside the stream that plays loads the item again from
+' there, as Silo makes a stream from any point
+sub seekMedia(target as float)
+    if streamHolds(target)
+        holdSkipPrompts(target - m.timelineOffset)
+        m.top.seek = target - m.timelineOffset
+        return
+    end if
+    holdSkipPrompts()
+    m.global.queueManager.callFunc("setTopStartingPoint", int(target) * 10000000&)
+    stopForReload()
+    m.LoadMetaDataTask.itemId = m.top.id
+    runLoad()
+end sub
+
 function getRemainingTime(videoSeekPosition = 0 as integer)
     if not isChainValid(m.positionText, "text")
-        return m.top.duration - m.top.position
+        return mediaDuration() - mediaPosition()
     end if
 
     seekTime = 0#
@@ -2674,9 +2723,9 @@ function getRemainingTime(videoSeekPosition = 0 as integer)
         seekTime = videoSeekPosition
     end if
 
-    seekTime = seekTime = 0 ? m.top.position : seekTime
+    seekTime = seekTime = 0 ? mediaPosition() : seekTime
 
-    return m.top.duration - seekTime
+    return mediaDuration() - seekTime
 end function
 
 '
@@ -2795,6 +2844,8 @@ sub bufferCheck()
             nextStep = string.EMPTY
             if not played then nextStep = nextTranscodeStep()
             action = retryAction(played, m.playbackRetries, nextStep, REPLAY_RETRIES)
+            ' Stopping a Silo stream ends its session, so the same address can't be started again
+            if action = "restart" and playsFromSilo() then action = "server"
             if action <> "fail"
                 m.playbackRetries = m.playbackRetries + 1
                 m.lastBufferError = currentTime
@@ -2899,17 +2950,17 @@ end function
 function skipSegmentTo(endTicks as dynamic) as boolean
     seekPosition = endTicks / 10000000#
 
-    if seekPosition > (m.top.duration - 2)
+    if seekPosition > (mediaDuration() - 2)
         if m.global.queueManager.callFunc("getPosition") < m.global.queueManager.callFunc("getCount") - 1
             playNextInQueue()
             return true
         else
-            seekPosition = m.top.duration - 1
+            seekPosition = mediaDuration() - 1
         end if
     end if
 
     if syncPlaySeek(seekPosition) then return false
-    m.top.seek = seekPosition
+    seekMedia(seekPosition)
     return false
 end function
 
@@ -2924,7 +2975,7 @@ sub showOSD(focusTarget = "seekbar" as string)
     m.osd.setFocus(true)
     m.pauseOverlay.visible = true
     ' The controls coming up is the cue that a scrub may follow, so the sheets ahead start loading
-    if not m.scrubHold.active then prefetchSheets(m.top.position * 1000, true)
+    if not m.scrubHold.active then prefetchSheets(mediaPosition() * 1000, true)
     applySkipPrompt()
 end sub
 
@@ -3025,10 +3076,14 @@ end function
 sub skipBy(delta as integer)
     bounds = seekBounds()
     if not isValid(bounds) then return
-    target = clampSeconds((m.pendingSeek ?? m.top.position) + delta, bounds)
+    target = clampSeconds((m.pendingSeek ?? mediaPosition()) + delta, bounds)
     m.pendingSeek = target
-    holdSkipPrompts(target)
-    if not syncPlayIntercepts() then m.top.seek = target
+    if syncPlayIntercepts()
+        holdSkipPrompts(target)
+    else if streamHolds(target)
+        ' A point the stream lacks reloads the item, so it waits for the presses to settle
+        seekMedia(target)
+    end if
     m.seekSettleTimer.control = "start"
     setVideoEndingTime(target)
     m.positionText.text = secondsToHuman(target, true)
@@ -3069,15 +3124,19 @@ sub scrubBy(delta as integer)
     m.seekSettleTimer.control = "stop"
 
     if m.scrubHold.active
-        target = clampSeconds((m.scrubHold.target ?? m.top.position) + delta, bounds)
+        target = clampSeconds((m.scrubHold.target ?? mediaPosition()) + delta, bounds)
         m.scrubHold.target = target
         holdSkipPrompts()
     else
         ' A seek is still landing while the presses come, so each builds on where the last one aimed
-        target = clampSeconds((m.pendingSeek ?? m.top.position) + delta, bounds)
+        target = clampSeconds((m.pendingSeek ?? mediaPosition()) + delta, bounds)
         m.pendingSeek = target
-        holdSkipPrompts(target)
-        if not syncPlayIntercepts() then m.top.seek = target
+        if syncPlayIntercepts()
+            holdSkipPrompts(target)
+        else if streamHolds(target)
+            ' A point the stream lacks reloads the item, so it waits for the presses to settle
+            seekMedia(target)
+        end if
         m.seekSettleTimer.control = "start"
     end if
 
@@ -3099,8 +3158,10 @@ function seekBounds() as dynamic
         if isValid(m.liveWindow) then return [m.liveWindow.start, m.liveWindow.edge]
         return invalid
     end if
-    if m.top.duration <= 0 then return invalid
-    return [0, m.top.duration - 1]
+    ' A Silo remux reaches only as far as the server has made it, so the title's runtime bounds it
+    duration = mediaDuration()
+    if duration <= 0 then return invalid
+    return [0, duration - 1]
 end function
 
 ' The window grows as the stream does, and the controls show it once there's a minute to rewind
@@ -3125,7 +3186,9 @@ sub jumpToLive()
 end sub
 
 sub onSeekSettled()
-    if isValid(m.pendingSeek) then syncPlaySeek(m.pendingSeek)
+    if isValid(m.pendingSeek)
+        if not syncPlaySeek(m.pendingSeek) and not streamHolds(m.pendingSeek) then seekMedia(m.pendingSeek)
+    end if
     m.pendingSeek = invalid
     hideSeekPreview()
 end sub
@@ -3135,10 +3198,7 @@ function resumeHeldScrub() as boolean
     if not m.scrubHold.active then return false
     target = m.scrubHold.target
     m.scrubHold = { active: false, wasPlaying: false, target: invalid }
-    if isValid(target)
-        holdSkipPrompts(target)
-        m.top.seek = target
-    end if
+    if isValid(target) then seekMedia(target)
     hideSeekPreview()
     ' The scrub made this pause, so the unpause rewind has nothing to undo
     m.wasPaused = false
@@ -3149,8 +3209,7 @@ end function
 ' Seeks to where the scrub was aiming but stays paused, so play picks up from there
 sub settleHeldScrub()
     if not m.scrubHold.active or not isValid(m.scrubHold.target) then return
-    holdSkipPrompts(m.scrubHold.target)
-    m.top.seek = m.scrubHold.target
+    seekMedia(m.scrubHold.target)
     m.scrubHold.target = invalid
     hideSeekPreview()
 end sub
@@ -3275,8 +3334,8 @@ sub layoutSeekPreview(target as float)
     fraction = 0
     if isValid(m.liveWindow)
         fraction = liveWindow.Progress(m.liveWindow, target)
-    else if m.top.duration > 0
-        fraction = target / m.top.duration
+    else if mediaDuration() > 0
+        fraction = target / mediaDuration()
     end if
     barTop = m.osdSeekbar.translation[1]
     left = SEEK_BAR_LEFT + SEEK_BAR_WIDTH * fraction - width / 2
@@ -3299,7 +3358,7 @@ sub prefetchSheets(positionMs as float, forward as boolean)
     stepMs = nextSeekStepSeconds() * 1000
     direction = forward ? 1 : -1
     lastMs = (info.ThumbnailCount - 1) * info.Interval
-    endMs = (m.top.duration - 1) * 1000
+    endMs = (mediaDuration() - 1) * 1000
     if endMs < lastMs then lastMs = endMs
 
     targets = [positionMs]
@@ -3327,6 +3386,7 @@ sub runSheetTask()
     if m.sheetQueue.count() = 0 or task.state = "run" then return
     task.videoID = m.top.id
     task.trickplayWidth = m.trickplayDataFinal.Width
+    task.sheetUrls = m.trickplayDataFinal.LookupCI("SiloSheets") ?? []
     task.plexPartId = m.trickplayDataFinal.LookupCI("PlexPartId") ?? ""
     task.interval = m.trickplayDataFinal.Interval
     task.method = "ADD"

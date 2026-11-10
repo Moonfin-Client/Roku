@@ -1,0 +1,350 @@
+import "pkg:/source/api/silo/SiloMapper.bs"
+import "pkg:/source/api/silo/SiloSession.bs"
+import "pkg:/source/utils/config.bs"
+import "pkg:/source/utils/diagnostics.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Finding a Silo server, signing in and the household behind the login. Ported from Smart-TV's
+' siloApi.js (probeSilo, authenticateByName, openLogin, householdOf, logout, currentUser).
+namespace silo
+    ' Whether a native Silo answers at server, as Jellyfin's PublicSystemInfo, or invalid when it
+    ' isn't one. An API this build can't speak answers { SiloUnsupported: true, ServerIsNewer }.
+    ' Kept a minute, since session start, the login flow and System/Info each ask in turn
+    function Probe(server as string) as dynamic
+        base = silo.ServerKey(server)
+        if base = "" then return invalid
+        kept = silo.RecallAnswer("siloProbes", base, 60)
+        if kept <> invalid then return kept
+        info = silo.ProbeNow(base)
+        if info <> invalid then silo.KeepAnswer("siloProbes", base, info, 4)
+        return info
+    end function
+
+    function ProbeNow(base as string) as dynamic
+        answer = silo.Call(base, "/api/v2/system/info", { timeoutMs: 10000 })
+        if silo.IsClientUpgradeRequired(answer) then return { SiloUnsupported: true, ServerIsNewer: true }
+        if not answer.ok or not isSiloSystemInfo(answer.data) then return invalid
+        if answer.data.api_major <> silo.API_MAJOR then return { SiloUnsupported: true, ServerIsNewer: answer.data.api_major > silo.API_MAJOR }
+        identity = silo.Call(base, "/api/v2/system/identity", { timeoutMs: 10000 })
+        branding = silo.Call(base, "/api/v2/theme/branding", { timeoutMs: 10000 })
+        setupInfo = silo.Call(base, "/api/v2/system/setup", { timeoutMs: 10000 })
+        info = siloMap.PublicInfo(answer.data, identity.data, branding.data, setupInfo.data)
+        if info.Id = "" then return invalid
+        return info
+    end function
+
+    ' Signs the account in and acts as its primary profile. The token pair belongs to the account and
+    ' is kept in the Silo session store. Answers { ok, status, message, data } where data is Jellyfin's
+    ' AuthenticationResult plus SiloUsers, the whole household.
+    function SignIn(server as string, username as string, password as string) as object
+        answer = silo.Call(server, "/api/v2/auth/login", { method: "POST", refresh: false, profile: false, body: { username: username, password: password } })
+        if not answer.ok then return silo.SignInFailure(answer)
+        return silo.OpenLogin(server, answer.data, password)
+    end function
+
+    ' Opens the login a token pair names. password is the one just typed, "" for device sign-in
+    function OpenLogin(server as string, pair as dynamic, password = "" as string) as object
+        tokens = silo.TokensFrom(pair)
+        account = invalid
+        if type(pair) = "roAssociativeArray" then account = pair.user
+        if tokens.access = "" or tokens.refresh = "" or type(account) <> "roAssociativeArray" or not isValid(account.id)
+            diagnostics.Auth("Silo token pair incomplete: access " + (tokens.access <> "").ToStr() + ", refresh " + (tokens.refresh <> "").ToStr() + ", account " + type(account), diagnostics.LEVEL_WARN)
+            return { ok: false, status: 502, message: tr("The server's sign-in answer was incomplete. Try again."), data: invalid }
+        end if
+        accountId = account.id.ToStr()
+        silo.SaveTokens(server, accountId, tokens)
+        if not isValid(silo.LoadTokens(server, accountId)) then diagnostics.Auth("Silo tokens didn't stay in the registry", diagnostics.LEVEL_WARN)
+        if account.password_change_required = true then return silo.HoldForNewPassword(server, accountId, account, password)
+        return silo.Household(server, accountId, account, tokens.access)
+    end function
+
+    ' Silo answers everything but a password change with 403 until a temporary password is replaced.
+    ' After a password sign-in the login waits here for a new one, the password just typed being the
+    ' current one Silo asks for with it. Ported from Smart-TV's siloApi.js (openLogin,
+    ' changeRequiredPassword); the wait lives in this thread, the sign-in screen's
+    function HoldForNewPassword(server as string, accountId as string, account as object, password as string) as object
+        capability = invalid
+        if password <> "" then capability = silo.Call(server, "/api/v2/account/password/capability", { account: accountId, profile: false })
+        allowed = isValid(capability) and capability.ok and type(capability.data) = "roAssociativeArray"
+        if allowed then allowed = capability.data.allowed = true and (not isString(capability.data.state) or capability.data.state = "available")
+        if not allowed
+            silo.EndLogin(server, accountId)
+            return { ok: false, status: 403, message: tr("This account's password has to be changed in Silo's web app before signing in here."), data: invalid }
+        end if
+        minimum = 0
+        maximum = 0
+        if isValid(capability.data.minimum_password_length) then minimum = capability.data.minimum_password_length
+        if isValid(capability.data.maximum_password_bytes) then maximum = capability.data.maximum_password_bytes
+        if minimum <= 0 then minimum = 8
+        if maximum <= 0 then maximum = 72
+        tokens = silo.LoadTokens(server, accountId)
+        refreshToken = ""
+        if isValid(tokens) then refreshToken = tokens.refresh
+        m.siloPasswordChange = { server: server, accountId: accountId, account: account, password: password, minimum: minimum, maximum: maximum, refreshToken: refreshToken }
+        message = tr("This account's password has to be changed before signing in. Choose a new one of at least %1 characters.").Replace("%1", minimum.ToStr())
+        return { ok: false, status: 403, message: message, data: invalid }
+    end function
+
+    function PasswordChangeWaiting() as boolean
+        return type(m.siloPasswordChange) = "roAssociativeArray"
+    end function
+
+    ' Why a new password can't be sent as typed, or "". Silo counts the minimum in characters and the
+    ' maximum in UTF-8 bytes, and refuses the temporary password itself
+    function NewPasswordIssue(newPassword as string) as string
+        pending = m.siloPasswordChange
+        if not silo.PasswordChangeWaiting() then return ""
+        if Len(newPassword) < pending.minimum then return tr("Use at least %1 characters").Replace("%1", pending.minimum.ToStr())
+        bytes = CreateObject("roByteArray")
+        bytes.FromAsciiString(newPassword)
+        if bytes.Count() > pending.maximum then return tr("That password is too long")
+        if newPassword = pending.password then return tr("Choose a password different from the temporary one")
+        return ""
+    end function
+
+    ' Replaces the temporary password of the waiting login, then opens it as a sign-in would. Silo
+    ' signs out the account's other sessions; this one is refreshed, since its token still carries
+    ' the restriction. A refused new password leaves the login waiting for another
+    function ChangeRequiredPassword(newPassword as string) as object
+        pending = m.siloPasswordChange
+        if not silo.PasswordChangeWaiting() then return { ok: false, status: 409, message: tr("Sign in again."), data: invalid }
+        answer = silo.Call(pending.server, "/api/v2/account/password", { method: "POST", account: pending.accountId, profile: false, replay: false, body: { current_password: pending.password, new_password: newPassword } })
+        changedMessage = tr("The password changed. Sign in with the new one.")
+        if not answer.ok
+            if answer.status = 401
+                m.siloPasswordChange = invalid
+                silo.CloseSession(pending.server, pending.accountId)
+                return { ok: false, status: 401, message: changedMessage, data: invalid }
+            end if
+            if (answer.status = 400 or answer.status = 422) and isValid(answer.problem) and isValidAndNotEmpty(answer.problem.detail)
+                return { ok: false, status: answer.status, message: answer.problem.detail, data: invalid }
+            end if
+            return silo.SignInFailure(answer)
+        end if
+        m.siloPasswordChange = invalid
+        tokens = silo.LoadTokens(pending.server, pending.accountId)
+        if isValid(tokens) and silo.Refresh(pending.server, pending.accountId, tokens.access) then tokens = silo.LoadTokens(pending.server, pending.accountId) else tokens = invalid
+        if not isValid(tokens)
+            silo.CloseSession(pending.server, pending.accountId)
+            return { ok: false, status: 401, message: changedMessage, data: invalid }
+        end if
+        account = pending.account
+        account.password_change_required = false
+        return silo.Household(pending.server, pending.accountId, account, tokens.access)
+    end function
+
+    ' Ends a login left waiting for a new password, when the change is given up
+    sub CancelPasswordChange()
+        if not silo.PasswordChangeWaiting() then return
+        pending = m.siloPasswordChange
+        m.siloPasswordChange = invalid
+        ' A sign-in since (Quick Connect, for the same account) replaced the stored pair, and that
+        ' login is the one to keep
+        current = silo.LoadTokens(pending.server, pending.accountId)
+        if isValid(current) and current.refresh <> pending.refreshToken then return
+        silo.EndLogin(pending.server, pending.accountId)
+    end sub
+
+    ' The household of an open login, signed in as its primary profile
+    function Household(server as string, accountId as string, account as object, accessToken as string) as object
+        answer = silo.Call(server, "/api/v2/profiles", { account: accountId, profile: false })
+        profiles = []
+        if answer.ok and type(answer.data) = "roAssociativeArray" and type(answer.data.items) = "roArray" then profiles = answer.data.items
+        if profiles.Count() = 0
+            diagnostics.Auth("Silo listed no profiles: " + answer.status.ToStr(), diagnostics.LEVEL_WARN)
+            silo.EndLogin(server, accountId)
+            return { ok: false, status: 502, message: tr("The server listed no profile for this account."), data: invalid }
+        end if
+        primary = profiles[0]
+        for each profile in profiles
+            if profile.is_primary = true then primary = profile
+        end for
+        users = []
+        for each profile in profiles
+            silo.RememberProfile(profile.id.ToStr(), server, accountId, profile.has_pin = true)
+            silo.RememberAvatar(profile)
+            users.Push(siloMap.ProfileToUser(profile, account))
+        end for
+        return {
+            ok: true,
+            status: 200,
+            message: "",
+            data: {
+                AccessToken: accessToken,
+                User: siloMap.ProfileToUser(primary, account),
+                SiloAccountId: accountId,
+                SiloUsers: users
+            }
+        }
+    end function
+
+    ' A profile's avatar is its user picture
+    sub RememberAvatar(profile as object)
+        entry = silo.ProfileEntry(profile.id.ToStr())
+        if not isValid(entry) then return
+        avatar = ""
+        if isString(profile.avatar_url) then avatar = profile.avatar_url
+        if entry.avatar = avatar then return
+        entry.avatar = avatar
+        registry_write(profile.id.ToStr(), FormatJson(entry), silo.PROFILES_SECTION)
+    end sub
+
+    function SignInFailure(answer as object) as object
+        code = ""
+        if isValid(answer.problem) then code = answer.problem.code
+        message = ""
+        if answer.status = 0
+            message = tr("The server did not respond. Check the connection and try again.")
+        else if answer.status = 401 or code = "invalid_credentials"
+            message = tr("Username or password is incorrect, or access is denied.")
+        else if answer.status = 429
+            message = tr("Too many attempts. Try again later.")
+            if answer.retryAfter <> "" then message = tr("Too many attempts. Try again in %1 seconds.").Replace("%1", answer.retryAfter)
+        else if answer.status = 503
+            message = tr("The server is busy. Try again in a moment.")
+        else if silo.IsClientUpgradeRequired(answer)
+            message = tr("This server needs a newer version of Moonfin.")
+        else if answer.status = 403
+            message = signInRefusedMessage()
+            if isValid(answer.problem) and answer.problem.detail <> "" then message = answer.problem.detail
+        else
+            message = tr("Login failed. Server response:") + " " + answer.status.ToStr()
+        end if
+        return { ok: false, status: answer.status, message: message, data: invalid }
+    end function
+
+    ' Ends the login on Silo too, so its refresh token dies with it. Signed out here whatever Silo answers.
+    sub EndLogin(server as string, accountId as string)
+        if accountId = "" then return
+        silo.Call(server, "/api/v2/auth/logout", { method: "POST", account: accountId, profile: false, replay: false, timeoutMs: 5000 })
+        silo.CloseSession(server, accountId)
+    end sub
+
+    ' The account and its profiles change rarely, and a screen asks for the user several times as it
+    ' opens, so they're kept for a few seconds per thread
+    function AccountAndProfiles(server as string, accountId as string) as dynamic
+        key = silo.ServerKey(server) + "|" + accountId
+        now = silo.NowSeconds()
+        if type(m.siloAccountRead) = "roAssociativeArray" and m.siloAccountRead.key = key and now - m.siloAccountRead.at < 5
+            return m.siloAccountRead.value
+        end if
+        account = silo.Call(server, "/api/v2/account/me", { account: accountId, profile: false })
+        if not account.ok then return { status: account.status }
+        profiles = silo.Call(server, "/api/v2/profiles", { account: accountId, profile: false })
+        if not profiles.ok then return { status: profiles.status }
+        items = []
+        if type(profiles.data) = "roAssociativeArray" and type(profiles.data.items) = "roArray" then items = profiles.data.items
+        value = { status: 200, account: account.data, profiles: items }
+        m.siloAccountRead = { key: key, at: now, value: value }
+        return value
+    end function
+
+    function ReadSettings(server as string, accountId as string, profileId as string) as object
+        keys = []
+        for each entry in siloMap.SettingKeys().Items()
+            keys.Push(entry.value)
+        end for
+        answer = silo.Call(server, "/api/v2/settings/values/effective", { account: accountId, profileId: profileId, query: { keys: keys } })
+        values = {}
+        if answer.ok and type(answer.data) = "roAssociativeArray" and type(answer.data.items) = "roArray"
+            for each setting in answer.data.items
+                if type(setting) = "roAssociativeArray" and isString(setting.key) then values[setting.key] = setting.value
+            end for
+        end if
+        return values
+    end function
+
+    ' The acting profile as Jellyfin's UserDto, or { status } when it can't be read
+    function CurrentUser(server as string, accountId as string, profileId as string) as object
+        read = silo.AccountAndProfiles(server, accountId)
+        if read.status <> 200 then return read
+        wanted = invalid
+        for each profile in read.profiles
+            if profile.id.ToStr() = profileId then wanted = profile
+        end for
+        if wanted = invalid then return { status: 404 }
+        silo.RememberProfile(profileId, server, accountId, wanted.has_pin = true)
+        silo.RememberAvatar(wanted)
+        configuration = siloMap.SettingsToConfiguration(silo.ReadSettings(server, accountId, profileId))
+        return { status: 200, user: siloMap.ProfileToUser(wanted, read.account, configuration) }
+    end function
+    ' Sign-in on another device (Silo's device sign-in, as the app's Quick Connect): an eight-digit
+    ' code shown here, or the verification page with it filled in as a QR code, approved by a
+    ' signed-in Silo login
+
+    function DeviceSignInAvailable(server as string) as boolean
+        answer = silo.Call(server, "/api/v2/auth/device/capability", { refresh: false, profile: false })
+        return answer.ok and type(answer.data) = "roAssociativeArray" and answer.data.state = "available" and answer.data.allowed <> false
+    end function
+
+    function DeviceStart(server as string) as dynamic
+        if not silo.DeviceSignInAvailable(server) then return invalid
+        context = getAuthHeaderContext()
+        body = { device_platform: "roku" }
+        if isValidAndNotEmpty(context.deviceName) then body.device_name = context.deviceName.Left(128)
+        answer = silo.Call(server, "/api/v2/auth/device/start", { method: "POST", refresh: false, profile: false, body: body })
+        if not answer.ok or type(answer.data) <> "roAssociativeArray" then return invalid
+        code = CreateObject("roRegex", "[\s-]", "").ReplaceAll((answer.data.user_code ?? "").ToStr(), "")
+        if code = "" or not isValidAndNotEmpty(answer.data.device_code) then return invalid
+        link = silo.ResolveUrl(server, siloMap.TextOf(answer.data.verification_uri_complete))
+        return { Code: code, Secret: answer.data.device_code, Authenticated: false, VerificationUriComplete: link }
+    end function
+
+    ' An approval carries the token pair once; it's kept in this thread for DeviceSignIn
+    function DevicePoll(server as string, secret as string) as boolean
+        answer = silo.Call(server, "/api/v2/auth/device/poll", { method: "POST", refresh: false, profile: false, body: { device_code: secret } })
+        if not answer.ok or type(answer.data) <> "roAssociativeArray"
+            diagnostics.Auth("Silo device sign-in poll failed: " + answer.status.ToStr(), diagnostics.LEVEL_WARN)
+            return false
+        end if
+        if answer.data.status <> "pending" then diagnostics.Auth("Silo device sign-in poll: " + (answer.data.status ?? "").ToStr() + ", tokens " + type(answer.data.tokens), diagnostics.LEVEL_WARN)
+        if answer.data.status = "approved" and type(answer.data.tokens) = "roAssociativeArray"
+            if type(m.siloApprovedDevices) <> "roAssociativeArray" then m.siloApprovedDevices = {}
+            m.siloApprovedDevices[secret] = answer.data.tokens
+            return true
+        end if
+        return false
+    end function
+
+    function DeviceSignIn(server as string, secret as string) as object
+        pair = invalid
+        if type(m.siloApprovedDevices) = "roAssociativeArray"
+            pair = m.siloApprovedDevices[secret]
+            m.siloApprovedDevices.Delete(secret)
+        end if
+        if pair = invalid
+            diagnostics.Auth("Silo device sign-in: no approved token pair in this task", diagnostics.LEVEL_WARN)
+            return { ok: false, status: 409, message: "", data: invalid }
+        end if
+        result = silo.OpenLogin(server, pair)
+        if not result.ok then diagnostics.Auth("Silo device sign-in failed: " + result.status.ToStr() + " " + result.message, diagnostics.LEVEL_WARN)
+        return result
+    end function
+    ' Whether a profile is PIN-locked and hasn't been unlocked on this login yet
+    function ProfileNeedsPin(profileId as string) as boolean
+        entry = silo.ProfileEntry(profileId)
+        if not isValid(entry) or entry.hasPin <> true then return false
+        return silo.ProfileProof(profileId) = ""
+    end function
+
+    ' Checks a profile's PIN and keeps the proof that unlocks the profile for this login. PIN checks
+    ' are never replayed after a refresh, since Silo counts them against its rate limit. Answers
+    ' "" when it unlocked, else what to show
+    function VerifyProfilePin(profileId as string, pin as string) as string
+        entry = silo.ProfileEntry(profileId)
+        if not isValid(entry) then return tr("This profile is no longer signed in.")
+        answer = silo.Call(entry.server, "/api/v2/profiles/" + profileId.EncodeUriComponent() + "/verify-pin", { method: "POST", account: entry.account, profile: false, replay: false, body: { pin: pin } })
+        if answer.status = 429 then return tr("Too many attempts. Try again later.")
+        if answer.status = 401 then return tr("This profile is no longer signed in.")
+        if not answer.ok then return tr("Incorrect PIN")
+        if type(answer.data) <> "roAssociativeArray" or answer.data.valid <> true or not isValidAndNotEmpty(answer.data.profile_token) then return tr("Incorrect PIN")
+        expires = 0
+        if isValidAndNotEmpty(answer.data.expires_at)
+            stamp = CreateObject("roDateTime")
+            stamp.FromISO8601String(answer.data.expires_at)
+            expires = stamp.AsSeconds()
+        end if
+        silo.SetProfileProof(profileId, answer.data.profile_token, expires)
+        return ""
+    end function
+end namespace

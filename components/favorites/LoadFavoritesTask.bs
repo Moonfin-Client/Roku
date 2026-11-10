@@ -6,6 +6,7 @@ import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/multiserver.bs"
 import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/posterLabels.bs"
+import "pkg:/source/utils/SeerrUtils.bs"
 
 ' How long a batch has before whatever has not arrived is given up on
 const FAVORITES_TIMEOUT = 15
@@ -116,6 +117,7 @@ sub loadTabs(userSession as object, request as object, tabs as object)
         end for
     end for
 
+    addWatchlist(nodes, counts, fetched)
     answerWith("tabs", nodes, counts, nodes.count(), 0, "", fetched)
 end sub
 
@@ -128,12 +130,23 @@ sub loadPooledTabs(sessions as object, request as object, tabs as object)
         counts[node.favoritesTab] = counts[node.favoritesTab] + 1
     end for
 
-    answerWith("tabs", nodes, counts, nodes.count(), 0, "")
+    fetched = {}
+    addWatchlist(nodes, counts, fetched)
+    answerWith("tabs", nodes, counts, nodes.count(), 0, "", fetched)
 end sub
 
 ' The next page of one tab. Several servers hand back everything at once, so there is
 ' never a page to ask them for.
 sub loadPage(sessions as object, request as object, tabs as object)
+    if request.tabKey = "watchlist"
+        startIndex = request.startIndex ?? 0
+        page = watchlistPage(Int(startIndex / WATCHLIST_PAGE_SIZE) + 1)
+        counts = emptyCounts(tabs)
+        counts.watchlist = page.total
+        answerWith("page", page.nodes, counts, page.total, startIndex, "watchlist", { watchlist: page.fetched })
+        return
+    end if
+
     pageTab = favoriteTabs.TabWithKey(tabs, request.tabKey ?? "")
     if not isValid(pageTab)
         m.top.error = "Unknown tab"
@@ -234,6 +247,13 @@ function startRequest(userSession as object, params as object, port as object) a
     request.SetMessagePort(port)
     request.EnableEncodings(true)
 
+    ' A Silo server's answer comes from the Silo router at once; awaitAll picks it up
+    if silo.Owns(request)
+        if type(m.siloAnswers) <> "roAssociativeArray" then m.siloAnswers = {}
+        m.siloAnswers[request.GetIdentity().ToStr()] = siloResponse(request, "GET")
+        return { id: request.GetIdentity().ToStr(), request: request }
+    end if
+
     requestId = request.GetIdentity().ToStr()
     ' A Plex server only answers through its bridge, which answers right away
     if plexUrls.Owns(request.GetUrl())
@@ -251,6 +271,20 @@ function awaitAll(port as object, pending as object, keepAlive as object) as obj
     answers = []
     startedAt = CreateObject("roDateTime").AsSeconds()
 
+    if type(m.siloAnswers) = "roAssociativeArray"
+        for each requestId in pending.Keys()
+            answered = m.siloAnswers[requestId]
+            if isValid(answered)
+                m.siloAnswers.Delete(requestId)
+                tag = pending[requestId]
+                pending.Delete(requestId)
+                keepAlive.Delete(requestId)
+                if answered.ok and type(answered.data) = "roAssociativeArray"
+                    answers.push({ tag: tag, items: answered.data.Items ?? [], total: answered.data.TotalRecordCount ?? 0 })
+                end if
+            end if
+        end for
+    end if
     plexAnswers = m.plexAnswers ?? {}
     for each requestId in pending.Keys()
         if plexAnswers.DoesExist(requestId)
@@ -383,4 +417,194 @@ function cardArtwork(item as object, shape as string) as string
     if isValidAndNotEmpty(picked.tag) then params.Tag = picked.tag
 
     return buildImageURLForServer(item._serverUrl, picked.id, picked.imageType, params)
+end function
+
+' =====================================================================
+' THE WATCHLIST
+' =====================================================================
+
+' Seerr pages its watchlist 20 titles at a time
+const WATCHLIST_PAGE_SIZE = 20
+
+sub addWatchlist(nodes as object, counts as object, fetched as object)
+    page = watchlistPage(1)
+    for each node in page.nodes
+        nodes.push(node)
+    end for
+    counts.watchlist = page.total
+    fetched.watchlist = page.fetched
+end sub
+
+' One page of the Seerr watchlist as request cards, which open the request screen. It needs a
+' Seerr sign in, so without one the tab doesn't show.
+function watchlistPage(page as integer) as object
+    ' On Silo the tab leads with the library's titles on Silo's watchlist, which need no Seerr
+    ' sign in, as Moonfin Core shows them there
+    nodes = []
+    inLibrary = {}
+    if page = 1 and isSiloServer()
+        for each node in siloWatchlistNodes()
+            nodes.push(node)
+            tmdbId = toString(chainLookupReturn(node, "json.ProviderIds.Tmdb", ""))
+            if tmdbId <> "" then inLibrary[LCase(node.json.Type) + "/" + tmdbId] = true
+        end for
+    end if
+    libraryCount = nodes.count()
+    result = { nodes: nodes, total: libraryCount, fetched: libraryCount }
+    if not GetSeerrConfig().enabled then return result
+    answer = seerrProxyJson("discover/watchlist", { page: page.ToStr() })
+    if not isValid(answer) or type(answer.results) <> "roArray" then return result
+
+    titles = []
+    shownAbove = 0
+    for each item in answer.results
+        if type(item) = "roAssociativeArray" and isValid(item.LookupCI("tmdbId") ?? item.LookupCI("id"))
+            ' A title the library already shows above isn't offered again as a request, nor counted
+            kind = "movie"
+            if watchlistMediaType(item) = "tv" then kind = "series"
+            if inLibrary.DoesExist(kind + "/" + watchlistTmdbId(item))
+                shownAbove++
+            else
+                titles.push(item)
+            end if
+        end if
+    end for
+    withWatchlistDetails(titles)
+
+    for each item in parentalControls.WithoutBlockedItems(titles)
+        node = watchlistNode(item)
+        if isValid(node) then nodes.push(node)
+    end for
+    result.total = libraryCount + (answer.totalResults ?? answer.results.count()) - shownAbove
+    result.fetched = libraryCount + answer.results.count()
+    return result
+end function
+
+' The library's movies and series on Silo's watchlist, as the cards the other tabs draw
+function siloWatchlistNodes() as object
+    userSession = getCurrentServerSession()
+    if not isValid(userSession) then return []
+    data = getJson(APIRequest("Items", {
+        UserId: userSession.userId,
+        IncludeItemTypes: "Movie,Series",
+        Recursive: true,
+        Filters: "IsInWatchlist",
+        Fields: favoriteTabs.FIELDS,
+        Limit: 200
+    }))
+    if not isChainValid(data, "Items") then return []
+    stampServer(data.Items, userSession)
+    return buildNodes(data.Items, [], favoriteTabs.WatchlistTab())
+end function
+
+' The plugin hands Seerr's answer back as it is, or in a { FileContents: base64 } envelope
+function seerrProxyJson(path as string, params as object) as dynamic
+    data = getJson(APIRequest("/Moonfin/Seerr/Api/" + path, params))
+    if type(data) <> "roAssociativeArray" then return invalid
+    if isValidAndNotEmpty(data.FileContents)
+        bytes = CreateObject("roByteArray")
+        bytes.FromBase64String(data.FileContents)
+        data = ParseJson(bytes.ToAsciiString())
+        if type(data) <> "roAssociativeArray" then return invalid
+    end if
+    return data
+end function
+
+' Seerr's watchlist names each title by its TMDB id and type and no more, so the poster, year and
+' rating come from each title's details, asked for together
+sub withWatchlistDetails(titles as object)
+    port = CreateObject("roMessagePort")
+    running = {}
+    for each item in titles
+        if not isValidAndNotEmpty(item.LookupCI("posterPath"))
+            req = APIRequest("/Moonfin/Seerr/Api/" + watchlistMediaType(item) + "/" + watchlistTmdbId(item), {})
+            if isValid(req)
+                req.SetMessagePort(port)
+                ' siloStartGet answers a Silo request itself and starts any other
+                if siloStartGet(req) then running[req.GetIdentity().ToStr()] = { req: req, item: item }
+            end if
+        end if
+    end for
+
+    startedAt = CreateObject("roDateTime").AsSeconds()
+    while running.count() > 0 and CreateObject("roDateTime").AsSeconds() - startedAt < FAVORITES_TIMEOUT
+        msg = siloWait(1000, port)
+        if not isUrlEvent(msg) then continue while
+        entry = running[msg.GetSourceIdentity().ToStr()]
+        if not isValid(entry) then continue while
+        running.Delete(msg.GetSourceIdentity().ToStr())
+        if msg.GetResponseCode() <> 200 then continue while
+        details = ParseJson(msg.GetString())
+        if type(details) <> "roAssociativeArray" then continue while
+        if isValidAndNotEmpty(details.FileContents)
+            bytes = CreateObject("roByteArray")
+            bytes.FromBase64String(details.FileContents)
+            details = ParseJson(bytes.ToAsciiString())
+        end if
+        if type(details) <> "roAssociativeArray" then continue while
+        for each key in ["title", "name", "posterPath", "backdropPath", "overview", "releaseDate", "firstAirDate", "voteAverage", "mediaInfo"]
+            if isValid(details.LookupCI(key)) then entry.item[key] = details.LookupCI(key)
+        end for
+    end while
+end sub
+
+function watchlistMediaType(item as object) as string
+    mediaType = LCase(toString(item.LookupCI("mediaType") ?? item.LookupCI("media_type") ?? ""))
+    if mediaType = "tv" or mediaType = "show" or mediaType = "series" then return "tv"
+    return "movie"
+end function
+
+' Seerr sends the id as a number, which toString() doesn't take and str() would give a leading space
+function watchlistTmdbId(item as object) as string
+    value = item.LookupCI("tmdbId") ?? item.LookupCI("id")
+    if not isValid(value) then return ""
+    return value.ToStr().Trim()
+end function
+
+' A card the library grid can draw, carrying the Seerr title that opens the request screen
+function watchlistNode(item as object) as object
+    tmdbId = watchlistTmdbId(item)
+    if tmdbId = "" then return invalid
+    mediaType = watchlistMediaType(item)
+    itemType = mediaType = "tv" ? "Series" : "Movie"
+    title = toString(item.LookupCI("title") ?? item.LookupCI("name") ?? "")
+
+    ' The request screen reads the TMDB id as the item's id, which a watchlist entry keeps apart
+    seerrItem = {}
+    seerrItem.Append(item)
+    seerrItem.id = tmdbId
+    seerrItem.mediaType = mediaType
+
+    urls = GetTmdbImageBaseUrls()
+    posterUrl = ""
+    if isValidAndNotEmpty(item.LookupCI("posterPath")) then posterUrl = urls.posterW342 + item.LookupCI("posterPath")
+    backdropUrl = ""
+    if isValidAndNotEmpty(item.LookupCI("backdropPath")) then backdropUrl = urls.backdropW780 + item.LookupCI("backdropPath")
+
+    year = Left(toString(item.LookupCI("releaseDate") ?? item.LookupCI("firstAirDate") ?? ""), 4)
+    json = {
+        Id: tmdbId,
+        Name: title,
+        Type: itemType,
+        SeerrTmdbId: tmdbId,
+        SeerrMediaType: mediaType,
+        SeerrItem: seerrItem,
+        ProviderIds: { Tmdb: tmdbId },
+        Overview: toString(item.LookupCI("overview") ?? ""),
+        ImageTags: {},
+        BackdropImageTags: [],
+        UserData: {}
+    }
+    if year <> "" then json.ProductionYear = year.ToInt()
+    if isValid(item.LookupCI("voteAverage")) then json.CommunityRating = item.LookupCI("voteAverage")
+
+    node = contentNodes.ForType(itemType)
+    if not isValid(node) then return invalid
+    node.addField("favoritesTab", "string", false)
+    node.favoritesTab = "watchlist"
+    node.json = json
+    node.title = title
+    if posterUrl <> "" then node.posterUrl = posterUrl
+    node.landscapePosterURL = backdropUrl
+    return node
 end function
