@@ -218,6 +218,16 @@ for (const name of ['Context', 'WordSet', 'ItemIdOf', 'Shown', 'Entry', 'SizeFac
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/poster-labels.bs', 'utf8');
+// The rest of the library scope asks the server
+const libraryScopeFile = await readFile('source/utils/libraryScope.bs', 'utf8');
+source += '\nnamespace libraryScope\n';
+for (const name of ['Merge', 'Sorted', 'SortedBy', 'SortKey', 'AsText']) {
+    const match = libraryScopeFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
+    assert.ok(match, `Missing libraryScope.${name}`);
+    source += '\n' + match[0];
+}
+source += '\nend namespace\n';
+source += '\n' + await readFile('test/library-scope.bs', 'utf8');
 source += '\n' + await readFile('test/transcode-audio.bs', 'utf8');
 source += '\n' + await readFile('test/person-role.bs', 'utf8');
 // The rest of the Plex playback rules reach for the server
