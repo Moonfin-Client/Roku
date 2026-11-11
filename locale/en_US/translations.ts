@@ -11087,5 +11087,17 @@
         <source>No episodes loaded</source>
         <translation>No episodes loaded</translation>
     </message>
+    <message>
+        <source>Select</source>
+        <translation>Select</translation>
+    </message>
+    <message>
+        <source>Vote for what you want to watch. The host plays one.</source>
+        <translation>Vote for what you want to watch. The host plays one.</translation>
+    </message>
+    <message>
+        <source>Add movies for everyone to vote on, then play the one you want. TV episodes are still your pick.</source>
+        <translation>Add movies for everyone to vote on, then play the one you want. TV episodes are still your pick.</translation>
+    </message>
 </context>
 </TS>
