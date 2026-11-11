@@ -1490,7 +1490,13 @@ assert.match(classicHomeXml, /<Group id="detailsSection" translation="\[111, 120
 const overviewTop = Number(classicHomeSource.match(/const OVERVIEW_TOP = (\d+)/)[1]);
 const overviewLine = Number(classicHomeSource.match(/const OVERVIEW_LINE_HEIGHT = (\d+)/)[1]);
 assert.equal(120 + overviewTop + 3 * overviewLine, 440, 'Three overview lines end above the rows');
-assert.match(classicHomeSource, /m\.homeRows\.translation = m\.modernHomeRows \? \[111, 170\] : \[111, 450\]/, 'The rows stay at 450');
+assert.match(classicHomeSource, /m\.homeRows\.translation = m\.homeRowInfoOverlay \? \[111, 450\] : \[111, 170\]/, 'The rows stay at 450 under the info area, and sit higher without it');
+assert.match(classicHomeSource, /m\.detailsSection\.visible = m\.homeRowInfoOverlay/, 'The info area shows only while Home Row Info Overlay is on');
+assert.match(await readFile('source/utils/misc.bs', 'utf8'), /function showsHomeRowInfoOverlay\(\) as boolean\s+if isModernHomeRows\(\) then return false\s+return get_user_setting_bool\("ui\.home\.rowInfoOverlay", true\)/, 'Only Classic rows show the info area, and it is on until turned off');
+assert.match(await readFile('settings/settings.json', 'utf8'), /"title": "Home Row Info Overlay",\s+"description": "Show title and metadata when browsing home rows",\s+"settingName": "ui\.home\.rowInfoOverlay",\s+"glyph": "info_outline",\s+"requires": "setting:ui\.home\.rowsStyle=v1",\s+"type": "bool",\s+"default": "true"/, 'Home Row Info Overlay is offered with Classic rows and starts on, as in Core');
+assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /pluginKey: "homeRowInfoOverlay", rokuKey: "ui\.home\.rowInfoOverlay", type: "bool"/, 'Home Row Info Overlay syncs with the plugin under the key Core and Smart-TV use');
+for (const text of ['Home Row Info Overlay', 'Show title and metadata when browsing home rows']) assert.ok(previewStrings.includes(`<source>${text}</source>`), `${text} is translated`);
+assert.match(classicHomeSource.match(/sub reload\(\)[^]*?end sub/)[0], /if not m\.modernHomeRows and m\.homeRowInfoOverlay <> get_user_setting_bool\("ui\.home\.rowInfoOverlay", true\)\s+m\.homeRowInfoOverlay = not m\.homeRowInfoOverlay\s+if isValid\(m\.mediaBar\) and not m\.mediaBar\.visible then applyMediaBarLayout\(false\)/, 'Turning Home Row Info Overlay on or off in Settings lays the Classic rows out again when Settings closes');
 assert.match(await readFile('components/home/HomeRows.bs', 'utf8'), /const CLASSIC_CAPTION_ROOM = 118\s+const MODERN_CAPTION_ROOM = 123\s+const MODERN_INFO_ROOM = 292/, 'Rows keep room under the cards for three caption lines, and Modern rows for the focused card\'s details');
 assert.match(classicHomeXml, /<RatingsRow id="homeRatings"[^>]*singleLine="true"/, 'Home shows its ratings as single line chips');
 process.stdout.write('PASS: classic home info area wiring\n');

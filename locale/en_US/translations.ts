@@ -10977,5 +10977,13 @@
         <extracomment>Seerr - error when Get a different release could not remove the stuck download</extracomment>
         <translation>Couldn't remove the download</translation>
     </message>
+    <message>
+        <source>Home Row Info Overlay</source>
+        <translation>Home Row Info Overlay</translation>
+    </message>
+    <message>
+        <source>Show title and metadata when browsing home rows</source>
+        <translation>Show title and metadata when browsing home rows</translation>
+    </message>
 </context>
 </TS>
