@@ -7339,8 +7339,8 @@
         <translation>Prioritize SDH/CC subtitle tracks when auto-selecting.</translation>
     </message>
     <message>
-        <source>RECENTLY ADDED</source>
-        <translation>RECENTLY ADDED</translation>
+        <source>RECENTLY ADDED AND RELEASED</source>
+        <translation>RECENTLY ADDED AND RELEASED</translation>
     </message>
     <message>
         <source>REWATCH</source>
@@ -10975,6 +10975,14 @@
     <message>
         <source>Show title and metadata when browsing home rows</source>
         <translation>Show title and metadata when browsing home rows</translation>
+    </message>
+    <message>
+        <source>Hide Watched</source>
+        <translation>Hide Watched</translation>
+    </message>
+    <message>
+        <source>Hide watched content from Recently Added and Recently Released home rows.</source>
+        <translation>Hide watched content from Recently Added and Recently Released home rows.</translation>
     </message>
 </context>
 </TS>

@@ -18,6 +18,7 @@ import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/parentalFilter.bs"
 import "pkg:/source/utils/posterLabels.bs"
+import "pkg:/source/utils/recentRows.bs"
 import "pkg:/source/utils/seasonalRow.bs"
 import "pkg:/source/utils/seerrBrowseRows.bs"
 import "pkg:/source/utils/seerrSliders.bs"
@@ -27,6 +28,10 @@ import "pkg:/source/utils/SeerrUtils.bs"
 const LATEST_MEDIA_LIMIT = 16
 ' A TV library asks for twice as many, since its episodes fold into fewer series cards
 const LATEST_TV_FETCH_LIMIT = 32
+' The most a Recently Added row holds, as load more stops there
+const LATEST_MEDIA_MAX = 100
+' One wider page for a row Hide Watched left short
+const LATEST_FULL_PAGE = 500
 
 ' How far ahead a calendar row looks for upcoming releases
 const CALENDAR_WINDOW_DAYS = 90
@@ -196,9 +201,16 @@ function loadLatestMedia() as object
         isTv = collectionType = "tvshows" or collectionType = "shows"
         rowLimit = LATEST_MEDIA_LIMIT
         if m.top.limit > 0 then rowLimit = m.top.limit
-        ' Episodes fold into one card per series, so a TV row asks for twice what it shows
+        ' Episodes fold into one card per series, so a TV row asks for twice what it shows. Hide
+        ' Watched drops some of what comes back, so it asks for four times as many.
+        hideWatched = get_user_setting_bool(recentRows.HIDE_WATCHED_SETTING, false)
         fetchLimit = rowLimit
         if isTv then fetchLimit = rowLimit * (LATEST_TV_FETCH_LIMIT \ LATEST_MEDIA_LIMIT)
+        if hideWatched
+            widened = rowLimit * 4
+            if widened > LATEST_MEDIA_MAX then widened = LATEST_MEDIA_MAX
+            if widened > fetchLimit then fetchLimit = widened
+        end if
         seenIds = {}
         for each pId in targetParentIds
             params = {
@@ -211,7 +223,12 @@ function loadLatestMedia() as object
                 enableTotalRecordCount: false,
                 fields: "Genres,DateCreated"
             }
-            libData = normalizeLatestItems(api.items.GetLatest(params), isTv, collectionType = "", rowLimit)
+            latest = api.items.GetLatest(params)
+            libData = normalizeLatestItems(latest, isTv, collectionType = "", rowLimit, hideWatched)
+            if hideWatched and libData.Count() < rowLimit and type(latest) = "roArray" and latest.Count() >= fetchLimit and fetchLimit < LATEST_FULL_PAGE
+                params.limit = LATEST_FULL_PAGE
+                libData = normalizeLatestItems(api.items.GetLatest(params), isTv, collectionType = "", rowLimit, hideWatched)
+            end if
             if isValidAndNotEmpty(libData)
                 for each rawItem in libData
                     itemIdStr = LCase(toNormalizedString(rawItem.LookupCI("Id")))
@@ -276,8 +293,10 @@ end function
 
 ' A TV library's new episodes and seasons show as one card per series, and a library of no
 ' particular type does the same once anything in it is an episode or a season
-function normalizeLatestItems(items as dynamic, isTv as boolean, untyped as boolean, limit = LATEST_MEDIA_LIMIT as integer) as object
+function normalizeLatestItems(items as dynamic, isTv as boolean, untyped as boolean, limit = LATEST_MEDIA_LIMIT as integer, hideWatched = false as boolean) as object
     if not isValidAndNotEmpty(items) then return []
+    ' A series card doesn't carry its episodes' watched state, so they're dropped before folding
+    if hideWatched then items = recentRows.WithoutWatched(items)
     collapse = isTv
     if not collapse and untyped
         for each item in items
@@ -376,12 +395,16 @@ function loadRecentlyReleased() as object
         sortOrder: "Descending",
         enableTotalRecordCount: false
     }
+    hideWatched = get_user_setting_bool(recentRows.HIDE_WATCHED_SETTING, false)
+    if hideWatched then params.filters = "IsUnplayed"
 
     data = api.items.Get(params)
 
     if not isValidAndNotEmpty(data) or not isValidAndNotEmpty(data.items) then return results
 
-    for each item in data.items
+    items = data.items
+    if hideWatched then items = recentRows.WithoutWatched(items)
+    for each item in items
         tmp = createSGNode("HomeData")
 
         albumArtistID = invalid
