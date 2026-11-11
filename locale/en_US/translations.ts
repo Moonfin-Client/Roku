@@ -10948,6 +10948,11 @@
         <translation>Removed. ^0 is searching for another release.</translation>
     </message>
     <message>
+        <source>That download had already left the ^0 queue.</source>
+        <extracomment>Seerr - shown after Get a different release when the stuck download was already gone, so nothing was removed. ^0 is Radarr or Sonarr, keep it</extracomment>
+        <translation>That download had already left the ^0 queue.</translation>
+    </message>
+    <message>
         <source>Couldn't remove the download</source>
         <extracomment>Seerr - error when Get a different release could not remove the stuck download</extracomment>
         <translation>Couldn't remove the download</translation>
