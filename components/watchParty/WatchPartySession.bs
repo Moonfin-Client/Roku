@@ -27,6 +27,8 @@ sub init()
     m.watchedRevision = -1
     ' What Silo's titles are called, by content id, looked up once each
     m.contentInfo = {}
+    ' A title a page picked while this device was in no party, for the party it opens
+    m.pendingPick = invalid
     m.top.features = {}
     m.pollTimer = CreateObject("roSGNode", "Timer")
     m.pollTimer.duration = WATCH_PARTY_ROOMS_POLL_SECONDS
@@ -443,6 +445,15 @@ sub onTaskResult(event as object)
         onContentInfo(result)
         return
     end if
+    if kind = "pickEpisode"
+        if result.status = 200 and type(result.data) = "roAssociativeArray" and type(result.data.item) = "roAssociativeArray"
+            episode = result.data.item
+            pickResolved({ id: toString(episode.Id ?? ""), type: "Episode", name: toString(episode.Name ?? "") })
+        else
+            banner([{ title: tr("No episodes loaded"), icon: "pkg:/images/watchParty/party.webp" }])
+        end if
+        return
+    end if
     if kind = "rooms"
         onRooms(result)
         return
@@ -466,6 +477,16 @@ sub onTaskResult(event as object)
         return
     end if
     if ok and (kind = "create" or kind = "join") then enter(result.data)
+    if kind = "create" and isValid(m.pendingPick)
+        picked = m.pendingPick
+        m.pendingPick = invalid
+        if ok and m.top.inRoom
+            runPick(picked)
+        else
+            banner([{ title: watchPartyModel.ErrorText(watchPartyModel.ErrorCode(result)), icon: "pkg:/images/watchParty/party.webp" }])
+        end if
+    end if
+    onPickResult(result, ok)
     ' The party panel has no line of its own, so a refusal there shows as a toast over the video
     if not ok and inArray(["promote", "remove", "policy", "pin"], kind) then m.top.toast = { text: watchPartyModel.ErrorText(watchPartyModel.ErrorCode(result)) }
     ' A call answered with the room shows its effect at once, before the long poll brings it
@@ -606,4 +627,63 @@ sub open(request = {} as object)
     screen = CreateObject("roSGNode", "WatchPartiesScreen")
     screen.request = request
     sceneManager.callFunc("pushScene", screen)
+end sub
+
+' ===== Picking from a title's page =====
+
+' Core's Watch with group: the host's pick for the party. A series or season stands for the episode to
+' watch next, and a party is opened first when this device is in none.
+sub pickForParty(item as object)
+    if item.type = "Series" or item.type = "Season"
+        runTask({ kind: "pickEpisode", itemId: item.id, itemType: item.type, seriesId: item.seriesId ?? "" })
+        return
+    end if
+    pickResolved(item)
+end sub
+
+sub pickResolved(item as object)
+    if item.id = "" then return
+    if not m.top.inRoom
+        m.pendingPick = item
+        act({ kind: "create", method: "POST", path: "/Rooms", body: {} })
+        return
+    end if
+    runPick(item)
+end sub
+
+' A movie goes up for the vote in a voting room. Anything else is the host's pick, so voting goes off
+' for it, and comes back if the pick fails, so the room isn't left with neither.
+sub runPick(item as object)
+    if m.top.room.selection_mode = "vote"
+        if item.type = "Movie"
+            act({ kind: "suggest", method: "POST", path: "Suggestions", body: { "content_id": item.id, "title": item.name }, fromPick: true })
+        else
+            act({ kind: "voting", method: "POST", path: "Voting", body: { "voting": false }, thenStage: item.id })
+        end if
+        return
+    end if
+    act({ kind: "stage", method: "POST", path: "Stage", body: { "content_id": item.id }, fromPick: true })
+end sub
+
+' Says how a pick from a title's page went, and opens the party on it
+sub onPickResult(result as object, ok as boolean)
+    request = result.request
+    if request.kind = "voting" and isValid(request.thenStage)
+        if ok
+            act({ kind: "stage", method: "POST", path: "Stage", body: { "content_id": request.thenStage }, fromPick: true, restoreVoting: true })
+        else
+            banner([{ title: watchPartyModel.ErrorText(watchPartyModel.ErrorCode(result)), icon: "pkg:/images/watchParty/party.webp" }])
+        end if
+        return
+    end if
+    if request.fromPick <> true then return
+    if not ok
+        if request.restoreVoting = true then act({ kind: "voting", method: "POST", path: "Voting", body: { "voting": true } })
+        banner([{ title: watchPartyModel.ErrorText(watchPartyModel.ErrorCode(result)), icon: "pkg:/images/watchParty/party.webp" }])
+        return
+    end if
+    text = tr("Picked for the Watch Party")
+    if request.kind = "suggest" then text = tr("Added to the Watch Party vote")
+    banner([{ title: text, icon: "pkg:/images/watchParty/party.webp" }])
+    open()
 end sub

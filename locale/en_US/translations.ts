@@ -11071,5 +11071,21 @@
         <source>Guests can play and pause</source>
         <translation>Guests can play and pause</translation>
     </message>
+    <message>
+        <source>Watch with group</source>
+        <translation>Watch with group</translation>
+    </message>
+    <message>
+        <source>Picked for the Watch Party</source>
+        <translation>Picked for the Watch Party</translation>
+    </message>
+    <message>
+        <source>Added to the Watch Party vote</source>
+        <translation>Added to the Watch Party vote</translation>
+    </message>
+    <message>
+        <source>No episodes loaded</source>
+        <translation>No episodes loaded</translation>
+    </message>
 </context>
 </TS>
