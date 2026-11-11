@@ -11099,5 +11099,13 @@
         <source>Add movies for everyone to vote on, then play the one you want. TV episodes are still your pick.</source>
         <translation>Add movies for everyone to vote on, then play the one you want. TV episodes are still your pick.</translation>
     </message>
+    <message>
+        <source>Watch Parties Button</source>
+        <translation>Watch Parties Button</translation>
+    </message>
+    <message>
+        <source>Show the Watch Parties button on the navigation bar</source>
+        <translation>Show the Watch Parties button on the navigation bar</translation>
+    </message>
 </context>
 </TS>
