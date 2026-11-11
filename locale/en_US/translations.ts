@@ -10977,5 +10977,99 @@
         <extracomment>Seerr - error when Get a different release could not remove the stuck download</extracomment>
         <translation>Couldn't remove the download</translation>
     </message>
+    <message>
+        <source>Party code</source>
+        <extracomment>Watch Parties - the hint in the keyboard for joining a party on Silo</extracomment>
+        <translation>Party code</translation>
+    </message>
+    <message>
+        <source>Start a party, or join one with the code someone sent you.</source>
+        <extracomment>Watch Parties - the help line on the Watch Parties screen on Silo</extracomment>
+        <translation>Start a party, or join one with the code someone sent you.</translation>
+    </message>
+    <message>
+        <source>Watch Parties aren&apos;t available on this server.</source>
+        <extracomment>Watch Parties - the heading when Silo has no Watch Parties</extracomment>
+        <translation>Watch Parties aren&apos;t available on this server.</translation>
+    </message>
+    <message>
+        <source>Watch Parties need Roku OS 16 or later.</source>
+        <extracomment>Watch Parties - the heading when this Roku is too old for Watch Parties</extracomment>
+        <translation>Watch Parties need Roku OS 16 or later.</translation>
+    </message>
+    <message>
+        <source>Update this Roku in Settings &gt; System &gt; System update.</source>
+        <extracomment>Watch Parties - the line under the heading when this Roku is too old for Watch Parties</extracomment>
+        <translation>Update this Roku in Settings &gt; System &gt; System update.</translation>
+    </message>
+    <message>
+        <source>Play waits for everyone&apos;s player, then everyone starts together.</source>
+        <extracomment>Watch Parties - the note under the people in the lobby on Silo, which has no countdown</extracomment>
+        <translation>Play waits for everyone&apos;s player, then everyone starts together.</translation>
+    </message>
+    <message>
+        <source>Start from the beginning</source>
+        <extracomment>Watch Parties - the host&apos;s button to start the party from the first second</extracomment>
+        <translation>Start from the beginning</translation>
+    </message>
+    <message>
+        <source>Resume at {0}</source>
+        <extracomment>Watch Parties - the host&apos;s button to start from where the party last stopped. {0} is the time, keep it</extracomment>
+        <translation>Resume at {0}</translation>
+    </message>
+    <message>
+        <source>Picks up where {0} stopped, the earliest anyone got to.</source>
+        <extracomment>Watch Parties - under the resume button, naming who stopped furthest. {0} is their name, keep it</extracomment>
+        <translation>Picks up where {0} stopped, the earliest anyone got to.</translation>
+    </message>
+    <message>
+        <source>Picks up where you stopped.</source>
+        <extracomment>Watch Parties - under the resume button when the viewer is the one who stopped furthest</extracomment>
+        <translation>Picks up where you stopped.</translation>
+    </message>
+    <message>
+        <source>Picks up where the earliest viewer stopped.</source>
+        <extracomment>Watch Parties - under the resume button when the one who stopped furthest has left the party</extracomment>
+        <translation>Picks up where the earliest viewer stopped.</translation>
+    </message>
+    <message>
+        <source>1 hasn&apos;t started it yet.</source>
+        <extracomment>Watch Parties - added to the resume note when one person hasn&apos;t started the item</extracomment>
+        <translation>1 hasn&apos;t started it yet.</translation>
+    </message>
+    <message>
+        <source>{0} haven&apos;t started it yet.</source>
+        <extracomment>Watch Parties - added to the resume note when several people haven&apos;t started the item. {0} is the number, keep it</extracomment>
+        <translation>{0} haven&apos;t started it yet.</translation>
+    </message>
+    <message>
+        <source>That party code didn&apos;t match a party.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one, when Silo doesn&apos;t know the code</extracomment>
+        <translation>That party code didn&apos;t match a party.</translation>
+    </message>
+    <message>
+        <source>That watch party has ended.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one, when Silo&apos;s party has closed</extracomment>
+        <translation>That watch party has ended.</translation>
+    </message>
+    <message>
+        <source>That watch party is full.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens when Silo&apos;s party has no room for another person</extracomment>
+        <translation>That watch party is full.</translation>
+    </message>
+    <message>
+        <source>This server&apos;s watch parties can&apos;t do that.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video when Silo can&apos;t do what was asked</extracomment>
+        <translation>This server&apos;s watch parties can&apos;t do that.</translation>
+    </message>
+    <message>
+        <source>You joined this party on another device.</source>
+        <extracomment>Watch Parties - shown over the video when this party was joined from another device</extracomment>
+        <translation>You joined this party on another device.</translation>
+    </message>
+    <message>
+        <source>Guests can play and pause</source>
+        <translation>Guests can play and pause</translation>
+    </message>
 </context>
 </TS>

@@ -1,0 +1,380 @@
+import "pkg:/source/api/silo/SiloWatchParty.bs"
+import "pkg:/source/utils/watchPartyModel.bs"
+import "pkg:/source/utils/siloRoomSocket.bs"
+
+' The room's WebSocket on a Silo server (docs/watch-party.md sections 2, 6 and 7.1). It takes the
+' place of the long poll and the send task: one socket carries the room's messages both ways, and
+' the clock's pings. Nothing here logs the ticket, the token or a frame.
+const ROOM_OPEN_MS = 15000
+' The server pings every 20 seconds, so a socket silent this long is dead
+const ROOM_QUIET_MS = 50000
+' A socket this Task released still owes its closed event for this long
+const ROOM_OWED_MS = 10000
+const ROOM_QUEUE_MAX = 50
+const ROOM_PING_QUICK_MS = 2000
+const ROOM_PING_MS = 15000
+const ROOM_QUICK_PINGS = 4
+const ROOM_MAX_RTT = 5#
+const ROOM_OVERSIZE_CLOSE = 1009
+const ROOM_EVENT_OPENED = 1
+const ROOM_EVENT_CLOSED = 2
+const ROOM_EVENT_ERROR = 3
+const ROOM_EVENT_TEXT = 5
+const ROOM_EVENT_PING = 7
+const ROOM_EVENT_PONG = 8
+
+sub init()
+    m.top.functionName = "runRoom"
+end sub
+
+sub runRoom()
+    m.port = CreateObject("roMessagePort")
+    m.top.observeField("outbox", m.port)
+    m.top.observeField("active", m.port)
+    m.clock = CreateObject("roTimespan")
+    m.ws = invalid
+    m.wsId = -1
+    m.socketOpen = false
+    m.openedAt = 0#
+    m.openDeadline = 0#
+    m.lastActivity = 0#
+    m.armed = false
+    m.nextPing = 0#
+    m.pongs = 0
+    m.connection = 0
+    m.queue = []
+    m.samples = []
+    m.owed = {}
+    m.oversize = []
+    m.failures = 0
+    m.healthyAt = nowMs()
+    m.reported = false
+    m.attemptAt = nowMs()
+    m.done = false
+
+    while m.top.active and not m.done
+        now = nowMs()
+        if m.ws = invalid
+            if m.attemptAt >= 0 and now >= m.attemptAt then startAttempt()
+        else if not m.socketOpen
+            if now >= m.openDeadline
+                releaseSocket(true)
+                attemptFailed(0, "open_timeout")
+            end if
+        else if m.armed and now - m.lastActivity >= ROOM_QUIET_MS
+            releaseSocket(true)
+            socketDown(true, m.openedAt, 0)
+        else if now >= m.nextPing
+            sendPing()
+        end if
+
+        msg = wait(250, m.port)
+        if not m.top.active then exit while
+        if type(msg) = "roSGNodeEvent"
+            if msg.getField() = "outbox" then onOutbox(msg.getData())
+        else if type(msg) = "roWebSocketEvent"
+            onSocketEvent(msg)
+        end if
+    end while
+    releaseSocket(true)
+end sub
+
+' ===== Connecting =====
+
+sub startAttempt()
+    m.attemptAt = -1
+    ctx = siloParty.Context()
+    ticket = siloParty.Ticket(ctx, m.top.roomId, m.top.token)
+    if not m.top.active then return
+
+    status = 0
+    code = ""
+    ready = false
+    if type(ticket) = "roAssociativeArray"
+        status = ticket.status ?? 0
+        code = toString(ticket.code ?? "")
+        ready = isValidAndNotEmpty(ticket.ticket)
+    end if
+    if not ready
+        attemptFailed(status, code)
+        return
+    end if
+
+    url = siloParty.SocketUrl(ctx.server, m.top.roomId)
+    ' bs:disable-next-line: 1129
+    ws = CreateObject("roWebSocket")
+    if type(ws) <> "roWebSocket"
+        finishWith(0, "unsupported")
+        return
+    end if
+    ws.SetMessagePort(m.port)
+    ws.SetProtocols(siloParty.Protocols(ticket.ticket))
+    ' roWebSocket checks TLS against the system's own roots, and the bundle only made the open slower
+    if not ws.SetUrl(url)
+        finishWith(0, "bad_url")
+        return
+    end if
+    ' Asynchronous: the answer comes as an opened or closed event
+    ws.Open(0)
+    m.ws = ws
+    m.wsId = ws.GetSocketId()
+    m.socketOpen = false
+    m.openDeadline = nowMs() + ROOM_OPEN_MS
+end sub
+
+sub onOpened()
+    ' The server answers with the protocol it accepted; any other ends the attempt
+    if toString(m.ws.GetSelectedProtocol()) <> siloParty.PROTOCOL
+        releaseSocket(true)
+        finishWith(0, "protocol")
+        return
+    end if
+
+    now = nowMs()
+    m.socketOpen = true
+    m.openedAt = now
+    m.lastActivity = now
+    m.armed = false
+    m.pongs = 0
+    m.connection = m.connection + 1
+    m.top.connection = m.connection
+    if m.reported
+        m.reported = false
+        m.top.recovered = true
+    end if
+    sendPing()
+    flushQueue()
+end sub
+
+' Ticket and open failures: 409 ends the party, 401/403/404/410 stop reconnecting, anything else
+' waits and tries again
+sub attemptFailed(status as integer, code as string)
+    if siloRoomSocket.FinalStatus(status)
+        if status = 409 then code = "room_closed"
+        finishWith(status, code)
+        return
+    end if
+
+    m.failures = m.failures + 1
+    reportFailure(status, code)
+    now = nowMs()
+    if siloRoomSocket.GivesUp(m.failures, (now - m.healthyAt) / 1000#)
+        finishWith(status, code)
+        return
+    end if
+    m.attemptAt = now + Int(siloRoomSocket.BackoffSeconds(m.failures, Rnd(0)) * 1000#)
+end sub
+
+' Once per outage: the session shows "Reconnecting" and recovered clears it
+sub reportFailure(status as integer, code as string)
+    if m.reported then return
+    m.reported = true
+    m.top.failure = { status: status, code: code, final: false }
+end sub
+
+sub finishWith(status as integer, code as string)
+    m.done = true
+    m.top.failure = { status: status, code: code, final: true }
+end sub
+
+' A socket went down. A 1009 reconnects at once and reads the suggestions over HTTP, unless
+' it keeps happening. A socket open for the rotation time reconnects at once without a failure.
+sub socketDown(wasOpen as boolean, openedAt as double, code as integer)
+    now = nowMs()
+    if code = ROOM_OVERSIZE_CLOSE
+        m.oversize = recentOversize(now / 1000#)
+        if not siloRoomSocket.TooManyOversize(m.oversize, now / 1000#)
+            fetchSuggestions()
+            m.attemptAt = nowMs()
+            return
+        end if
+    end if
+
+    if wasOpen and siloRoomSocket.IsRotation((now - openedAt) / 1000#)
+        m.failures = 0
+        m.healthyAt = now
+        m.attemptAt = now
+        return
+    end if
+    attemptFailed(0, "socket_closed")
+end sub
+
+' The times, in seconds, of the oversized closes within a minute, with this one added
+function recentOversize(nowSeconds as double) as object
+    kept = []
+    for each at in m.oversize
+        if nowSeconds - at < 60# then kept.Push(at)
+    end for
+    kept.Push(nowSeconds)
+    return kept
+end function
+
+sub fetchSuggestions()
+    answer = siloParty.Execute({ kind: "suggestions", method: "GET", path: "Suggestions", token: m.top.token }, m.top.roomId)
+    if type(answer) <> "roAssociativeArray" then return
+    if (answer.status ?? 0) <> 200 then return
+    if type(answer.data) = "roAssociativeArray"
+        if type(answer.data.suggestions) = "roArray" then emit({ type: "suggestions_update", suggestions: answer.data.suggestions })
+    end if
+end sub
+
+' ===== The socket's events =====
+
+' Events from a socket this Task released come by ID after its release, and are not this socket's
+sub onSocketEvent(msg as object)
+    id = msg.GetSocketId()
+    eventType = msg.GetType()
+    if eventType = ROOM_EVENT_CLOSED and consumeOwed(id) then return
+    if m.ws = invalid or id <> m.wsId then return
+
+    if eventType = ROOM_EVENT_OPENED
+        onOpened()
+    else if eventType = ROOM_EVENT_CLOSED
+        ' The server closed it, and its closed event has come, so nothing more is owed
+        wasOpen = m.socketOpen
+        openedAt = m.openedAt
+        releaseSocket(false)
+        socketDown(wasOpen, openedAt, closeCode(msg.GetInfo()))
+    else if eventType = ROOM_EVENT_ERROR
+        wasOpen = m.socketOpen
+        openedAt = m.openedAt
+        releaseSocket(true)
+        socketDown(wasOpen, openedAt, 0)
+    else if eventType = ROOM_EVENT_TEXT
+        noteActivity()
+        info = msg.GetInfo()
+        text = ""
+        if type(info) = "roAssociativeArray" then text = toString(info.Text)
+        onText(text)
+    else if eventType = ROOM_EVENT_PING or eventType = ROOM_EVENT_PONG
+        noteActivity()
+    end if
+end sub
+
+function closeCode(info as dynamic) as integer
+    if type(info) = "roAssociativeArray" and info.Code <> invalid then return info.Code
+    return 0
+end function
+
+' Only the socket's own activity counts, and a socket is judged quiet only once it has shown some,
+' so a Roku that reports no such events keeps its socket
+sub noteActivity()
+    m.armed = true
+    m.lastActivity = nowMs()
+end sub
+
+' Releases the socket. One this Task closes owes a closed event, which comes when the object goes;
+' one the server closed owes none.
+sub releaseSocket(closedByUs as boolean)
+    if m.ws = invalid then return
+    if closedByUs
+        m.ws.Close(1000, "")
+        owe(m.wsId)
+    end if
+    m.ws = invalid
+    m.socketOpen = false
+    m.armed = false
+end sub
+
+sub owe(id as integer)
+    m.owed[id.ToStr()] = nowMs()
+end sub
+
+' Whether an event is the closed of a socket this Task released, and so not the current one's.
+' A closed owed for longer than ROOM_OWED_MS is not awaited.
+function consumeOwed(id as integer) as boolean
+    key = id.ToStr()
+    if not m.owed.DoesExist(key) then return false
+    at = m.owed[key]
+    m.owed.Delete(key)
+    return nowMs() - at < ROOM_OWED_MS
+end function
+
+' ===== Messages =====
+
+sub onText(text as string)
+    message = ParseJson(text)
+    if type(message) <> "roAssociativeArray" then return
+    if not isString(message.type) then return
+
+    kind = message.type
+    if kind = "pong"
+        onPong(message)
+    else if kind = "connection_replaced"
+        emit(message)
+        releaseSocket(true)
+        finishWith(0, "connection_replaced")
+    else if kind = "room_closed"
+        emit(message)
+        releaseSocket(true)
+        m.done = true
+    else
+        emit(message)
+    end if
+end sub
+
+' One message per set, in order, so the session reads each one as it came
+sub emit(message as object)
+    m.top.batch = { messages: [message] }
+end sub
+
+sub onOutbox(data as dynamic)
+    if type(data) <> "roArray" then return
+    for each message in data
+        if m.socketOpen
+            sendFrame(message)
+        else
+            queueMessage(message)
+        end if
+    end for
+end sub
+
+' Pings are for the clock and never wait, and only the newest messages are kept
+sub queueMessage(message as dynamic)
+    if type(message) <> "roAssociativeArray" then return
+    if message.type = "ping" then return
+    m.queue.Push(message)
+    while m.queue.Count() > ROOM_QUEUE_MAX
+        m.queue.Shift()
+    end while
+end sub
+
+sub flushQueue()
+    queued = m.queue
+    m.queue = []
+    for each message in queued
+        sendFrame(message)
+    end for
+end sub
+
+function sendFrame(message as dynamic) as boolean
+    if m.ws = invalid or not m.socketOpen then return false
+    return m.ws.Send(FormatJson(message)) <> invalid
+end function
+
+' ===== Clock =====
+
+sub sendPing()
+    now = nowMs()
+    m.nextPing = now + ROOM_PING_MS
+    if m.pongs < ROOM_QUICK_PINGS then m.nextPing = now + ROOM_PING_QUICK_MS
+    sendFrame({ type: "ping", client_sent_at: watchPartyModel.FormatTime(watchPartyModel.LocalNow()) })
+end sub
+
+sub onPong(pong as object)
+    receivedAt = watchPartyModel.LocalNow()
+    m.pongs = m.pongs + 1
+    sentAt = watchPartyModel.ParseTime(pong.client_sent_at)
+    sample = watchPartyModel.ClockSample(sentAt, watchPartyModel.ParseTime(pong.server_received_at), watchPartyModel.ParseTime(pong.server_sent_at), receivedAt)
+    if sentAt <= 0 or sample.rtt < 0 or sample.rtt >= ROOM_MAX_RTT then return
+
+    if siloRoomSocket.ClockStepped(siloRoomSocket.BestSample(m.samples), sample) then m.samples = []
+    m.samples = watchPartyModel.WithSample(m.samples, sample)
+    m.top.clock = { offset: watchPartyModel.BestOffset(m.samples) }
+end sub
+
+' ===== Time =====
+
+function nowMs() as double
+    return m.clock.TotalMilliseconds()
+end function

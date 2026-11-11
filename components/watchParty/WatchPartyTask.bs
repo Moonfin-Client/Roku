@@ -1,6 +1,8 @@
 import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/silo/SiloWatchParty.bs"
 import "pkg:/source/api/watchParty.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
 import "pkg:/source/utils/watchPartyModel.bs"
 
 sub init()
@@ -17,6 +19,10 @@ sub runRequest()
         m.top.result = { request: request, status: 200, data: { items: items } }
         return
     end if
+    if isSiloServer()
+        m.top.result = runSilo(request)
+        return
+    end if
 
     answer = watchPartyApi.Request(request.method ?? "GET", request.path, request.body, request.token ?? "", 20000)
     ' A lost press is tried again, but not the room list, which polls again soon anyway.
@@ -28,3 +34,36 @@ sub runRequest()
     end while
     m.top.result = { request: request, status: answer.status, data: answer.data }
 end sub
+
+' Silo's own Watch Party, answered in the shapes Moonbase's calls get. Silo's client already
+' refreshes a lost login, and its start and promote must never be sent twice, so nothing is retried.
+function runSilo(request as object) as object
+    kind = request.kind
+    if kind = "config"
+        caps = siloParty.Capabilities(siloParty.Context())
+        if not caps.ok
+            status = caps.status
+            if status = 200 then status = 404
+            return { request: request, status: status, data: invalid }
+        end if
+        features = {
+            memberState: caps.memberState = true,
+            lobbyReady: caps.features.lobby_ready = true,
+            stagedSelection: caps.features.staged_selection = true,
+            selectionModeSwitch: caps.features.selection_mode_switch = true,
+            stopPlayback: caps.features.stop_playback = true,
+            voteHostOverride: caps.features.vote_host_override = true
+        }
+        return { request: request, status: 200, data: { enabled: true, alerts: false, features: features } }
+    end if
+    if kind = "rooms" then return { request: request, status: 200, data: { rooms: [] } }
+    if kind = "resume"
+        contentId = ""
+        if type(request.body) = "roAssociativeArray" then contentId = toString(request.body.content_id ?? "")
+        resume = invalid
+        if contentId <> "" then resume = siloParty.MemberState(siloParty.Context(), request.roomId ?? "", request.token ?? "", contentId)
+        return { request: request, status: 200, data: { resume: resume } }
+    end if
+    answer = siloParty.Execute(request, request.roomId ?? "")
+    return { request: request, status: answer.status, data: answer.data }
+end function

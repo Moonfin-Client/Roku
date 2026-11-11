@@ -6,6 +6,8 @@ const WPP_TICK_SECONDS = 0.5
 const WPP_REPORT_SECONDS = 2
 ' The ready wait hears from each player more often, so the start isn't held up
 const WPP_WAITING_REPORT_SECONDS = 0.5
+' How often a Silo player asks again to have its session attached
+const WPP_ATTACH_SECONDS = 1.5
 ' After a correcting seek the stream needs a moment before drift means anything again
 const WPP_SETTLE_SECONDS = 5
 const WPP_MAX_LEAD = 5
@@ -46,7 +48,12 @@ sub wpAttach()
         reportedAt: -100,
         buffering: false,
         clock: CreateObject("roTimespan"),
-        panel: invalid
+        panel: invalid,
+        ' Silo counts nothing from a player until the server has attached its playback session
+        silo: party.isSilo = true,
+        attached: false,
+        attachSentAt: -100,
+        attachSnapshots: 0
     }
 
     ' A player opening on a paused room starts out playing, so it pauses where the room is
@@ -66,6 +73,7 @@ sub wpAttach()
     party.observeFieldScoped("command", "wpOnCommand")
     party.observeFieldScoped("room", "wpOnRoom")
     party.observeFieldScoped("inRoom", "wpOnInRoom")
+    party.observeFieldScoped("connection", "wpOnConnection")
     ' Scoped, so the party lets go of them without taking the player's own observers along
     m.top.observeFieldScoped("state", "wpOnState")
     m.top.observeFieldScoped("seek", "wpOnSeek")
@@ -105,8 +113,9 @@ end function
 sub wpDetach(closedByViewer = false as boolean)
     if not isValid(m.wp) then return
     party = m.wp.session
-    if closedByViewer and party.inRoom then party.callFunc("send", [{ "type": "state_report", "session_id": invalid, "position_seconds": 0, "is_paused": true, "status": "not_watching" }])
-    for each name in ["command", "room", "inRoom"]
+    ' Silo hears a player has gone from its session going quiet
+    if closedByViewer and party.inRoom and not m.wp.silo then party.callFunc("send", [{ "type": "state_report", "session_id": invalid, "position_seconds": 0, "is_paused": true, "status": "not_watching" }])
+    for each name in ["command", "room", "inRoom", "connection"]
         party.unobserveFieldScoped(name)
     end for
     for each name in ["state", "seek", "position"]
@@ -133,6 +142,13 @@ sub wpOnInRoom()
     if isValid(m.wp) and not m.wp.session.inRoom then wpDetach()
 end sub
 
+' A new room socket attaches the session again, and the server answers with a command to line it up
+sub wpOnConnection()
+    if not isValid(m.wp) or not m.wp.silo then return
+    m.wp.attached = false
+    m.wp.attachSentAt = -100
+end sub
+
 ' Back in the lobby the video closes, the way it does for everyone
 sub wpOnRoom()
     if not isValid(m.wp) then return
@@ -149,8 +165,9 @@ sub wpOnRoom()
     end if
     ' The anchor follows the host's reports, except one a command set for later, which waits for the
     ' command.
+    ' Silo's snapshot anchor is only good to the second, so its players follow the commands alone
     anchorAt = watchPartyModel.ParseTime(room.anchor_at)
-    if not m.wp.holding and not isValid(m.wp.pending) and anchorAt > 0 and anchorAt <= m.wp.session.callFunc("serverNow")
+    if not m.wp.silo and not m.wp.holding and not isValid(m.wp.pending) and anchorAt > 0 and anchorAt <= m.wp.session.callFunc("serverNow")
         m.wp.reference = watchPartyModel.ReferenceFromRoom(room)
     end if
     if m.wp.holding and not isValid(m.wp.pending) then wpShowWaiting()
@@ -159,7 +176,12 @@ end sub
 ' ===== Commands =====
 
 sub wpOnCommand(event as object)
-    if isValid(m.wp) then wpSchedule(event.getData())
+    if not isValid(m.wp) then return
+    command = event.getData()
+    ' A Silo command can be meant for one member's session only
+    target = toString(command.session_id ?? "")
+    if m.wp.silo and target <> "" and target <> wpSessionId() then return
+    wpSchedule(command)
 end sub
 
 sub wpSchedule(command as object)
@@ -305,6 +327,8 @@ end sub
 function wpRoomAllows(action as string) as boolean
     room = m.wp.session.room
     if room.self_role = "host" then return true
+    ' Silo lets guests play and pause at most, and says so for this member
+    if m.wp.silo then return action <> "seek" and room.self_can_control_transport = true
     policy = room.guest_control_policy
     if policy = "everyone" then return true
     return policy = "guests_can_pause" and action <> "seek"
@@ -315,6 +339,9 @@ sub wpRefuse()
 end sub
 
 sub wpRequest(action as string, position as double, paused as boolean)
+    ' A Silo player that isn't attached yet has no position worth moving the room to
+    if m.wp.silo and not m.wp.attached then return
+    if position < 0 then position = 0
     m.wp.session.callFunc("send", [{ "type": "transport_request", "action": action, "position_seconds": position, "is_paused": paused }])
 end sub
 
@@ -400,8 +427,11 @@ end sub
 sub wpNoteStall()
     if m.wp.buffering or not m.wp.loaded or m.wp.holding or not m.wp.reference.playing then return
     if m.wp.clock.TotalMilliseconds() / 1000 < m.wp.landingUntil then return
+    if m.wp.silo and not m.wp.attached then return
     m.wp.buffering = true
-    m.wp.session.callFunc("send", [{ "type": "buffering", "position_seconds": m.top.position, "is_paused": false }])
+    stall = { "type": "buffering", "position_seconds": m.top.position, "is_paused": false }
+    if m.wp.silo then stall["session_id"] = wpSessionId()
+    m.wp.session.callFunc("send", [stall])
 end sub
 
 sub wpOnSeek(event as object)
@@ -441,6 +471,7 @@ sub wpTick()
         return
     end if
     elapsed = m.wp.clock.TotalMilliseconds() / 1000
+    if m.wp.silo and not wpSiloAttached(elapsed) then return
     ' A seek that is still loading once its landing time is up has stalled
     if m.top.state = "buffering" then wpNoteStall()
 
@@ -468,12 +499,50 @@ sub wpTick()
         end if
     end if
 
-    if playing and elapsed - m.wp.reportedAt >= WPP_REPORT_SECONDS then wpReport()
+    ' Silo hears from a paused player too, which is how it catches one that paused on its own
+    reports = playing or (m.wp.silo and m.top.state = "paused")
+    if reports and elapsed - m.wp.reportedAt >= WPP_REPORT_SECONDS then wpReport()
 end sub
+
+' Silo takes nothing from a player until a snapshot sent after its attach names its session. The
+' attach goes again every 1.5 seconds until then, and after every new socket. Once attached, a host
+' who picked a spot to pick up from moves the room there, ahead of its first report.
+function wpSiloAttached(elapsed as double) as boolean
+    party = m.wp.session
+    room = party.room
+    sessionId = wpSessionId()
+    if m.wp.attached and room.attached_session_id <> sessionId then m.wp.attached = false
+    if not m.wp.attached
+        if sessionId = "" then return false
+        if room.attached_session_id = sessionId and m.wp.attachSentAt >= 0 and party.snapshots > m.wp.attachSnapshots
+            m.wp.attached = true
+        else
+            if elapsed - m.wp.attachSentAt >= WPP_ATTACH_SECONDS
+                m.wp.attachSentAt = elapsed
+                m.wp.attachSnapshots = party.snapshots
+                party.callFunc("send", [{ "type": "attach_session", "session_id": sessionId }])
+            end if
+            return false
+        end if
+    end if
+
+    resume = party.pendingResume
+    if room.self_role = "host" and type(resume) = "roAssociativeArray" and isValid(resume.seconds)
+        party.pendingResume = {}
+        if resume.contentId = toString(room.selected_content_id ?? "")
+            party.callFunc("send", [{ "type": "transport_request", "action": "seek", "position_seconds": resume.seconds, "is_paused": false }])
+        end if
+    end if
+    return true
+end function
 
 ' The server judges in step or catching up from the position, so a report only names its status
 ' while waiting to start, or while a seek of this player's own is still landing.
 sub wpReport()
+    if m.wp.silo
+        wpSiloReport()
+        return
+    end if
     elapsed = m.wp.clock.TotalMilliseconds() / 1000
     m.wp.reportedAt = elapsed
     report = {
@@ -498,10 +567,35 @@ sub wpReport()
     m.wp.session.callFunc("send", [report])
 end sub
 
+' Silo's reports carry no status. One says ready only while the room waits on this player, since
+' a ready in a playing room sets off another sync seek, and none goes out while a seek of its own is
+' landing, which the room would take for where it is.
+sub wpSiloReport()
+    elapsed = m.wp.clock.TotalMilliseconds() / 1000
+    m.wp.reportedAt = elapsed
+    if not m.wp.attached then return
+    if not m.wp.holding and m.wp.landingUntil > 0 and elapsed < m.wp.landingUntil then return
+    report = {
+        "type": "state_report",
+        "session_id": wpSessionId(),
+        "position_seconds": wpPosition(),
+        "is_paused": m.top.state <> "playing"
+    }
+    if m.wp.commandId <> "" then report["command_id"] = m.wp.commandId
+    if m.wp.holding and m.wp.loaded and m.top.state = "paused" then report["is_ready"] = true
+    m.wp.session.callFunc("send", [report])
+end sub
+
 ' A report needs a session to count, and the item stands in until the stream brings its play
-' session id.
+' session id. Silo's is the playback session itself, without the plan number the app adds to it
+' after a replan.
 function wpSessionId() as string
-    if isValidAndNotEmpty(m.top.PlaySessionId) then return m.top.PlaySessionId
+    if isValidAndNotEmpty(m.top.PlaySessionId)
+        id = m.top.PlaySessionId
+        if m.wp.silo and Instr(1, id, "~") > 0 then id = id.Left(Instr(1, id, "~") - 1)
+        return id
+    end if
+    if m.wp.silo then return ""
     return m.top.id
 end function
 

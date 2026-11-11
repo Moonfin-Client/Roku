@@ -49,6 +49,9 @@ sub init()
     m.joining = invalid
     m.keyboard = invalid
     m.keyboardFor = ""
+    ' The item the host's resume was asked for, and the answer, both cleared on leaving a room
+    m.resumeFor = ""
+    m.resume = invalid
     m.top.optionsAvailable = false
     m.top.overhangVisible = false
     wpRowsInit(m.top.findNode("lobbyList"), 828, 860)
@@ -81,6 +84,8 @@ sub onRequest()
     if request.start = true
         m.actionIndex = 0
         runRoomsAction()
+    else if request.join = true
+        openCodeKeyboard()
     else if isValidAndNotEmpty(request.roomId)
         join({ "room_id": request.roomId }, request.hasPin = true)
     end if
@@ -118,6 +123,15 @@ sub onAnswer(event as object)
         ' The cursor starts on the first title found
         m.wpRows.focus = -1
         render()
+        return
+    end if
+    if kind = "resume"
+        ' An answer for an item the host has since changed from is dropped
+        if toString(answer.request.body.content_id ?? "") = m.resumeFor
+            m.resume = invalid
+            if ok and type(answer.data) = "roAssociativeArray" and type(answer.data.resume) = "roAssociativeArray" then m.resume = answer.data.resume
+            render()
+        end if
         return
     end if
     if (kind = "join" or kind = "create") and not ok
@@ -205,13 +219,16 @@ sub render()
         renderLobby()
     else
         m.results = invalid
+        m.resumeFor = ""
+        m.resume = invalid
         renderRooms()
     end if
 end sub
 
 sub renderRooms()
     rooms = m.session.rooms
-    if type(rooms) <> "roArray" then rooms = []
+    ' Silo has no room list, only the codes people send
+    if type(rooms) <> "roArray" or m.session.isSilo then rooms = []
     state = m.session.roomsState
     m.title.text = tr("Watch Parties")
     m.subtitle.text = ""
@@ -220,7 +237,7 @@ sub renderRooms()
 
     m.actions.removeChildrenIndex(m.actions.getChildCount(), 0)
     m.actionNodes = []
-    usable = state <> "missing" and state <> "disabled"
+    usable = state <> "missing" and state <> "disabled" and state <> "device"
     if usable
         for each entry in [{ label: tr("Start a watch party"), icon: "add" }, { label: tr("Join with a code"), icon: "key" }]
             group = CreateObject("roSGNode", "Group")
@@ -236,12 +253,17 @@ sub renderRooms()
     end if
 
     m.help.text = tr("Parties you can watch show up here. Got a code from someone? Pick Join with a code.")
+    if m.session.isSilo then m.help.text = tr("Start a party, or join one with the code someone sent you.")
     m.help.visible = usable
     m.grid.removeChildrenIndex(m.grid.getChildCount(), 0)
     m.tiles = []
 
-    if state = "missing"
+    if state = "missing" and m.session.isSilo
+        drawNotice(tr("Watch Parties aren't available on this server."), "")
+    else if state = "missing"
         drawNotice(tr("Watch Parties need Moonbase on this server"), tr("Ask whoever runs the server to install the Moonbase plugin."))
+    else if state = "device"
+        drawNotice(tr("Watch Parties need Roku OS 16 or later."), tr("Update this Roku in Settings > System > System update."))
     else if state = "disabled"
         drawNotice(tr("Watch Parties are turned off on this server."), "")
     else
@@ -347,10 +369,11 @@ sub renderLobby()
     ' Roku has no QR code to hand the link to a phone, so the link is spelled out under the code
     notes = []
     if isValidAndNotEmpty(room.invite_url) then notes.push(substitute(tr("Or send this link: {0}"), room.invite_url))
-    if room.has_pin = true then notes.push(tr("They'll need the room PIN too."))
+    if room.has_pin = true and not m.session.isSilo then notes.push(tr("They'll need the room PIN too."))
     m.top.findNode("inviteNote").text = notes.Join(Chr(10))
 
     drawMembers(room, playing)
+    askResume(room, isHost, playing)
     m.zone = "lobby"
     wpRowsShow(lobbyRows(room, isHost, playing))
 end sub
@@ -361,7 +384,10 @@ sub drawMembers(room as object, playing as boolean)
     heading = tr("In the lobby · {0}")
     if playing then heading = tr("People · {0}")
     m.top.findNode("membersTitle").text = substitute(heading, members.Count().ToStr())
-    m.top.findNode("membersNote").text = tr("Play waits for everyone's player, 10 seconds at most, then counts down 3, 2, 1.")
+    ' Silo has no countdown, so everyone starts together once each player is ready
+    note = tr("Play waits for everyone's player, 10 seconds at most, then counts down 3, 2, 1.")
+    if m.session.isSilo then note = tr("Play waits for everyone's player, then everyone starts together.")
+    m.top.findNode("membersNote").text = note
     m.memberList.removeChildrenIndex(m.memberList.getChildCount(), 0)
     y = 0
     for each member in members
@@ -387,7 +413,7 @@ function lobbyRows(room as object, isHost as boolean, playing as boolean) as obj
             if item.Type = "Episode" then caption = toString(item.SeriesName ?? "")
             hintText = tr("Press OK to pick it for everyone")
             if voting and item.Type = "Movie" then hintText = tr("Press OK to add it to the vote")
-            rows.push({ key: "result-" + toString(item.Id ?? ""), kind: "vote", title: toString(item.Name ?? ""), caption: caption, hintText: hintText, action: "searchPick", arg: { id: item.Id, isMovie: item.Type = "Movie" } })
+            rows.push({ key: "result-" + toString(item.Id ?? ""), kind: "vote", title: toString(item.Name ?? ""), caption: caption, hintText: hintText, action: "searchPick", arg: { id: item.Id, isMovie: item.Type = "Movie", name: toString(item.Name ?? "") } })
         end for
         rows.push({ key: "closeResults", kind: "buttons", buttons: [{ label: tr("Back to the lobby"), action: "closeResults" }] })
         return rows
@@ -397,12 +423,14 @@ function lobbyRows(room as object, isHost as boolean, playing as boolean) as obj
         rows.push({ key: "playing", kind: "heading", text: tr("Playing") })
         rows.push({ key: "playingTitle", kind: "text", text: title, color: "#FFFFFFFF", size: 30 })
         rows.push({ key: "watch", kind: "buttons", buttons: [{ label: tr("Watch with the party"), action: "watch" }] })
-        if isHost then rows.push({ key: "stop", kind: "buttons", buttons: [{ label: tr("Back to the lobby"), action: "stop" }] })
+        if isHost and lobbyOffers("stopPlayback") then rows.push({ key: "stop", kind: "buttons", buttons: [{ label: tr("Back to the lobby"), action: "stop" }] })
     else if isValidAndNotEmpty(room.selected_content_id)
         rows.push({ key: "upNext", kind: "heading", text: tr("Up next") })
         rows.push({ key: "upNextTitle", kind: "text", text: title, color: "#FFFFFFFF", size: 30 })
         if isHost
-            rows.push({ key: "start", kind: "buttons", buttons: [{ label: tr("Start for everyone"), action: "start" }] })
+            for each row in hostStartRows(room)
+                rows.push(row)
+            end for
         else
             rows.push({ key: "waitStart", kind: "text", text: tr("Waiting for the host to start.") })
         end if
@@ -412,8 +440,9 @@ function lobbyRows(room as object, isHost as boolean, playing as boolean) as obj
 
     if not playing
         voting = room.selection_mode = "vote"
-        if isHost or voting then rows.push({ key: "voteHeading", kind: "heading", text: tr("Vote on what to watch") })
-        if isHost then rows.push({ key: "voting", kind: "toggle", label: tr("Let everyone vote on movies"), on: voting, action: "voting" })
+        canVote = isHost and lobbyOffers("selectionModeSwitch")
+        if canVote or voting then rows.push({ key: "voteHeading", kind: "heading", text: tr("Vote on what to watch") })
+        if canVote then rows.push({ key: "voting", kind: "toggle", label: tr("Let everyone vote on movies"), on: voting, action: "voting" })
         if voting
             suggestions = m.session.suggestions
             if type(suggestions) <> "roArray" then suggestions = []
@@ -438,6 +467,56 @@ function lobbyRows(room as object, isHost as boolean, playing as boolean) as obj
     return rows
 end function
 
+' Silo's features say what its room can do. Moonbase sends none, so its lobby keeps every control.
+function hasFeature(name as string) as boolean
+    features = m.session.features
+    if type(features) <> "roAssociativeArray" then return false
+    return features[name] = true
+end function
+
+function lobbyOffers(name as string) as boolean
+    if not m.session.isSilo then return true
+    return hasFeature(name)
+end function
+
+' Silo says where a staged item was last watched, asked once for each item the host stages
+sub askResume(room as object, isHost as boolean, playing as boolean)
+    wanted = ""
+    if isHost and not playing and room.selection_mode <> "vote" and hasFeature("memberState")
+        wanted = toString(room.selected_content_id ?? "")
+    end if
+    if wanted = m.resumeFor then return
+    m.resumeFor = wanted
+    m.resume = invalid
+    if wanted <> "" then act("resume", "POST", "MemberState", { "content_id": wanted })
+end sub
+
+' Without Silo's resume answer the host gets the one start button, as before
+function hostStartRows(room as object) as object
+    if not hasFeature("memberState")
+        return [{ key: "start", kind: "buttons", buttons: [{ label: tr("Start for everyone"), action: "start" }] }]
+    end if
+
+    buttons = [{ label: tr("Start from the beginning"), action: "start" }]
+    rows = []
+    if type(m.resume) = "roAssociativeArray"
+        clock = secondsToHuman(Int(watchPartyModel.Seconds(m.resume.seconds)), false)
+        buttons.push({ label: substitute(tr("Resume at {0}"), clock), action: "resumeStart" })
+    end if
+    rows.push({ key: "start", kind: "buttons", buttons: buttons })
+    if type(m.resume) = "roAssociativeArray"
+        rows.push({ key: "resumeNote", kind: "text", text: watchPartyModel.ResumeNote(m.resume, room), lines: 2 })
+    end if
+    return rows
+end function
+
+' Silo's suggestion has a title for the room to show, which Moonbase looks up itself
+function suggestBody(arg as object) as object
+    body = { "content_id": arg.id }
+    if m.session.isSilo then body["title"] = arg.name
+    return body
+end function
+
 ' ===== Actions =====
 
 sub runLobbyAction(action as string, arg as dynamic)
@@ -458,13 +537,17 @@ sub runLobbyAction(action as string, arg as dynamic)
     else if action = "searchPick"
         m.results = invalid
         if arg.isMovie and room.selection_mode = "vote"
-            act("suggest", "POST", "Suggestions", { "content_id": arg.id })
+            act("suggest", "POST", "Suggestions", suggestBody(arg))
         else
             act("stage", "POST", "Stage", { "content_id": arg.id })
         end if
         render()
+    else if action = "resumeStart"
+        if type(m.resume) = "roAssociativeArray" then act("start", "POST", "Start", { "position_seconds": m.resume.seconds })
     else if action = "suggestion"
-        if room.self_role = "host"
+        if room.self_role = "host" and m.session.isSilo
+            act("pickSuggestion", "POST", "Suggestions/Promote", { "suggestion_id": toString(arg.id ?? "") })
+        else if room.self_role = "host"
             m.session.callFunc("act", { kind: "stage", method: "POST", path: "Stage", body: { "content_id": arg.content_id }, thenStart: true })
         else
             act("vote", "POST", "Suggestions/" + toString(arg.id ?? "") + "/Vote", { "voted": arg.voted_by_me <> true })
@@ -481,8 +564,15 @@ sub runRoomsAction()
         m.problem.text = ""
         act("create", "POST", "/Rooms", {})
     else
-        openKeyboard("code", tr("Join with a code"), tr("Room code or invite link"), false)
+        openCodeKeyboard()
     end if
+end sub
+
+' The join keyboard, shared by the Join button and Home's Join with a code card
+sub openCodeKeyboard()
+    hint = tr("Room code or invite link")
+    if m.session.isSilo then hint = tr("Party code")
+    openKeyboard("code", tr("Join with a code"), hint, false)
 end sub
 
 ' The screen leaves the stack before it says it closed, so an opener that takes focus back does it
