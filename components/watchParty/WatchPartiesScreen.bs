@@ -58,7 +58,7 @@ sub init()
 end sub
 
 sub OnScreenShown(isReturning = false as boolean)
-    for each name in ["inRoom", "room", "suggestions", "rooms", "roomsState"]
+    for each name in ["inRoom", "room", "suggestions", "rooms", "roomsState", "groupSubtitle", "groupSubtitlesSupported", "subtitleTracks"]
         m.session.observeFieldScoped(name, "onSessionChange")
     end for
     ' Back from the player, the cursor starts on the first button, not where it was before the video
@@ -71,7 +71,7 @@ sub OnScreenShown(isReturning = false as boolean)
 end sub
 
 sub OnScreenHidden()
-    for each name in ["inRoom", "room", "suggestions", "rooms", "roomsState", "answer"]
+    for each name in ["inRoom", "room", "suggestions", "rooms", "roomsState", "answer", "groupSubtitle", "groupSubtitlesSupported", "subtitleTracks"]
         m.session.unobserveFieldScoped(name)
     end for
     m.session.callFunc("watchRooms", false)
@@ -425,6 +425,7 @@ function lobbyRows(room as object, isHost as boolean, playing as boolean) as obj
         rows.push({ key: "playingTitle", kind: "text", text: title, color: "#FFFFFFFF", size: 30 })
         rows.push({ key: "watch", kind: "buttons", buttons: [{ label: tr("Watch with the party"), action: "watch" }] })
         if isHost and lobbyOffers("stopPlayback") then rows.push({ key: "stop", kind: "buttons", buttons: [{ label: tr("Back to the lobby"), action: "stop" }] })
+        pushGroupSubtitle(rows, isHost)
     else if isValidAndNotEmpty(room.selected_content_id)
         rows.push({ key: "upNext", kind: "heading", text: tr("Up next") })
         pushArt(rows, room)
@@ -436,6 +437,7 @@ function lobbyRows(room as object, isHost as boolean, playing as boolean) as obj
         else
             rows.push({ key: "waitStart", kind: "text", text: tr("Waiting for the host to start.") })
         end if
+        pushGroupSubtitle(rows, isHost)
     else if not isHost
         rows.push({ key: "waitPick", kind: "text", text: tr("Waiting for the host to pick something.") })
     end if
@@ -563,6 +565,75 @@ function suggestBody(arg as object) as object
     return body
 end function
 
+' ===== Subtitles for everyone =====
+
+' The host's subtitles for everyone, as a row showing the choice that opens the picker. A member sees
+' the choice. Members can still change their own in the player. Absent without Moonbase to keep the
+' choice. Audio isn't offered: everyone hears the file's default track. As Core's _SubtitleButton.
+sub pushGroupSubtitle(rows as object, isHost as boolean)
+    if not m.session.isSilo or not m.session.groupSubtitlesSupported then return
+    choice = m.session.groupSubtitle
+    tracks = m.session.subtitleTracks
+    if type(tracks) <> "roArray" then tracks = []
+    shown = groupSubtitleLabel(choice, tracks)
+    if isHost
+        if tracks.Count() = 0 then return
+        rows.push({ key: "groupSubtitle", kind: "value", label: tr("Subtitles for everyone"), value: shown, action: "groupSubtitle" })
+    else if type(choice) = "roAssociativeArray" and not choice.IsEmpty()
+        rows.push({ key: "groupSubtitle", kind: "text", text: tr("Subtitles for everyone") + ": " + shown })
+    end if
+end sub
+
+function groupSubtitleLabel(choice as dynamic, tracks as object) as string
+    if type(choice) = "roAssociativeArray" and choice.off = true then return tr("Off")
+    index = watchPartyModel.SubtitleIndexFor(choice, { MediaStreams: tracks })
+    if index <> invalid
+        for each track in tracks
+            if Int(track.Index) = index then return subtitleTrackLabel(track)
+        end for
+    end if
+    return tr("Each person's choice")
+end function
+
+function subtitleTrackLabel(track as object) as string
+    if isString(track.DisplayTitle) and track.DisplayTitle <> "" then return track.DisplayTitle
+    if isString(track.Language) and track.Language <> "" then return track.Language
+    return "#" + Int(track.Index).ToStr()
+end function
+
+sub openGroupSubtitles()
+    tracks = m.session.subtitleTracks
+    if type(tracks) <> "roArray" then tracks = []
+    choice = m.session.groupSubtitle
+    ' -2 stands for each person's own, as the player's SubtitleSelection.NOTSET
+    current = watchPartyModel.SubtitleIndexFor(choice, { MediaStreams: tracks }) ?? -2
+    choices = [
+        { Name: "own", description: tr("Each person's choice"), selected: current = -2 },
+        { Name: "off", description: tr("Off"), selected: current = -1 }
+    ]
+    for each track in tracks
+        choices.push({ Name: "track-" + Int(track.Index).ToStr(), description: subtitleTrackLabel(track), selected: current = Int(track.Index) })
+    end for
+    m.global.sceneManager.callFunc("radioDialog", tr("Subtitles for everyone"), { data: choices })
+    m.global.sceneManager.observeFieldScoped("returnData", "onGroupSubtitlePicked")
+end sub
+
+sub onGroupSubtitlePicked()
+    m.global.sceneManager.unobserveFieldScoped("returnData")
+    m.top.setFocus(true)
+    picked = m.global.sceneManager.returnData
+    if not isValid(picked) or not isString(picked.Name) then return
+    if picked.Name = "own"
+        m.session.callFunc("setGroupSubtitle", {})
+    else if picked.Name = "off"
+        m.session.callFunc("setGroupSubtitle", { off: true })
+    else
+        for each track in m.session.subtitleTracks
+            if "track-" + Int(track.Index).ToStr() = picked.Name then m.session.callFunc("setGroupSubtitle", watchPartyModel.SubtitleChoice(track))
+        end for
+    end if
+end sub
+
 ' ===== Actions =====
 
 sub runLobbyAction(action as string, arg as dynamic)
@@ -579,6 +650,8 @@ sub runLobbyAction(action as string, arg as dynamic)
         act("policy", "POST", "Policy", { "guest_control_policy": policy })
     else if action = "voting"
         act("voting", "POST", "Voting", { "voting": room.selection_mode <> "vote" })
+    else if action = "groupSubtitle"
+        openGroupSubtitles()
     else if action = "search"
         openKeyboard("search", tr("Search movies"), "", false)
     else if action = "closeResults"

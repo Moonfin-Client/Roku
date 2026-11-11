@@ -29,6 +29,10 @@ sub init()
     m.watchedRevision = -1
     ' What Silo's titles are called, by content id, looked up once each
     m.contentInfo = {}
+    ' Their media sources, for the host's subtitles for everyone
+    m.contentSources = {}
+    ' The subtitle choice last put on the playing item, so a member's own pick after it stays
+    m.subtitleApplied = ""
     ' A title a page picked while this device was in no party, for the party it opens
     m.pendingPick = invalid
     m.top.features = {}
@@ -58,6 +62,11 @@ function enter(answer as object) as boolean
     m.generation = -1
     m.watchedRevision = -1
     m.contentInfo = {}
+    m.contentSources = {}
+    m.subtitleApplied = ""
+    m.top.groupSubtitle = {}
+    m.top.groupSubtitlesSupported = false
+    m.top.subtitleTracks = []
     m.lobbyStatus = ""
     m.reconnecting = false
     m.top.pendingResume = {}
@@ -154,6 +163,9 @@ sub finish(text as string)
     stopTasks()
     avatarTimers(false)
     m.avatars = {}
+    m.top.groupSubtitle = {}
+    m.top.groupSubtitlesSupported = false
+    m.top.subtitleTracks = []
     m.roomId = ""
     m.token = ""
     m.memberId = ""
@@ -287,11 +299,63 @@ end function
 
 sub onAvatars(result as object)
     if result.request.roomId <> m.roomId or result.status <> 200 or type(result.data) <> "roAssociativeArray" then return
+    if not m.top.groupSubtitlesSupported then m.top.groupSubtitlesSupported = true
+    subtitle = result.data.subtitle ?? {}
+    if FormatJson(subtitle) <> FormatJson(m.top.groupSubtitle) then m.top.groupSubtitle = subtitle
+    ' Also catches a video that was still opening when the choice came
+    applyGroupSubtitle()
     avatars = result.data.avatars
     if type(avatars) <> "roAssociativeArray" or FormatJson(avatars) = FormatJson(m.avatars) then return
     m.avatars = avatars
     room = m.top.room
     if type(room) = "roAssociativeArray" and room.room_id = m.roomId then m.top.room = withAvatars(room)
+end sub
+
+' ===== Subtitles for everyone =====
+
+' Host: subtitles for everyone, kept by Moonbase. choice is { index, language }, { off: true }, or
+' empty for each member's own. As Core's setGroupSubtitle.
+sub setGroupSubtitle(choice as object)
+    room = m.top.room
+    if not m.silo or m.roomId = "" or type(room) <> "roAssociativeArray" or room.self_role <> "host" then return
+    subtitle = invalid
+    if not choice.IsEmpty() then subtitle = choice
+    runTask({ kind: "groupSubtitle", roomId: m.roomId, subtitle: subtitle, choice: choice })
+end sub
+
+sub onGroupSubtitleSaved(result as object)
+    if result.request.roomId <> m.roomId then return
+    if result.status < 200 or result.status >= 300
+        m.top.toast = { text: watchPartyModel.ErrorText(watchPartyModel.ErrorCode(result)) }
+        return
+    end if
+    m.top.groupSubtitle = result.request.choice
+    applyGroupSubtitle()
+end sub
+
+' The source the room plays, from the title's lookup
+function partySource() as dynamic
+    room = m.top.room
+    if type(room) <> "roAssociativeArray" then return invalid
+    return siloParty.PartySource(m.contentSources[toString(room.selected_content_id ?? "")], toString(room.selected_file_id ?? ""))
+end function
+
+sub showSubtitleTracks()
+    m.top.subtitleTracks = watchPartyModel.SubtitleStreams(partySource())
+end sub
+
+' Puts the host's choice on the playing item, once per change of it: a member who then picks their
+' own in the player keeps it
+sub applyGroupSubtitle()
+    room = m.top.room
+    if not m.silo or type(room) <> "roAssociativeArray" or room.phase <> "playing" then return
+    key = FormatJson(m.top.groupSubtitle)
+    if key = m.subtitleApplied then return
+    active = m.global.sceneManager.callFunc("getActiveScene")
+    if not isValid(active) or not active.isSubType("VideoPlayerView") or active.id <> toString(room.selected_content_id ?? "") then return
+    m.subtitleApplied = key
+    index = watchPartyModel.SubtitleIndexFor(m.top.groupSubtitle, partySource())
+    if index <> invalid then active.callFunc("wpApplySubtitle", index)
 end sub
 
 ' The selected title's name, type, and an episode's series and numbers, which Moonbase's room carries
@@ -326,10 +390,12 @@ sub onContentInfo(result as object)
         info.episode = item.IndexNumber ?? 0
     end if
     m.contentInfo[contentId] = info
+    m.contentSources[contentId] = { MediaSources: item.MediaSources }
     room = m.top.room
     if type(room) = "roAssociativeArray" and toString(room.selected_content_id ?? "") = contentId
         room.Append(info)
         m.top.room = room
+        showSubtitleTracks()
     end if
 end sub
 
@@ -338,6 +404,11 @@ sub applyRoom(room as dynamic)
     previous = m.top.room
     if isValidAndNotEmpty(room.self_member_id) then m.memberId = room.self_member_id
     m.top.room = room
+    ' A new title takes the host's subtitles afresh, and offers its own tracks
+    if m.silo and (type(previous) <> "roAssociativeArray" or toString(previous.selected_content_id ?? "") <> toString(room.selected_content_id ?? "") or toString(previous.selected_file_id ?? "") <> toString(room.selected_file_id ?? ""))
+        m.subtitleApplied = ""
+        showSubtitleTracks()
+    end if
 
     if type(previous) = "roAssociativeArray" and previous.room_id = room.room_id and isValid(previous.guest_control_policy) and previous.guest_control_policy <> room.guest_control_policy
         m.top.toast = { text: watchPartyModel.PolicyText(room.guest_control_policy) }
@@ -457,6 +528,12 @@ sub watch()
     queue.callFunc("setForceTranscode", PlaybackMethod.PLAYNORMALLY)
     queue.callFunc("clear")
     queue.callFunc("resetShuffle")
+    ' The host's subtitles for everyone as the item starts. A member can change theirs after.
+    if m.silo
+        m.subtitleApplied = FormatJson(m.top.groupSubtitle)
+        subtitle = watchPartyModel.SubtitleIndexFor(m.top.groupSubtitle, partySource())
+        if subtitle <> invalid then queue.callFunc("setPreferredSubtitleTrack", { StreamIndex: subtitle })
+    end if
     queue.callFunc("push", node)
     ' Cinema Mode's pre-rolls would leave this device behind everyone
     queue.callFunc("setPrerollStatus", false)
@@ -509,6 +586,10 @@ sub onTaskResult(event as object)
         return
     end if
     if kind = "publishAvatar" then return
+    if kind = "groupSubtitle"
+        onGroupSubtitleSaved(result)
+        return
+    end if
     if kind = "pickEpisode"
         if result.status = 200 and type(result.data) = "roAssociativeArray" and type(result.data.item) = "roAssociativeArray"
             episode = result.data.item

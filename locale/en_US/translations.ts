@@ -11115,5 +11115,15 @@
         <source>Show title and metadata when browsing home rows</source>
         <translation>Show title and metadata when browsing home rows</translation>
     </message>
+    <message>
+        <source>Subtitles for everyone</source>
+        <extracomment>Watch Parties - the Silo host's subtitle choice for the whole party, in the lobby</extracomment>
+        <translation>Subtitles for everyone</translation>
+    </message>
+    <message>
+        <source>Each person&apos;s choice</source>
+        <extracomment>Watch Parties - the subtitle option that leaves subtitles to each member</extracomment>
+        <translation>Each person&apos;s choice</translation>
+    </message>
 </context>
 </TS>
