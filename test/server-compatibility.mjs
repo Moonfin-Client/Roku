@@ -103,10 +103,11 @@ const selections = {
     'source/utils/musicCategories.bs': null,
     'source/utils/moonbaseInstall.bs': null,
     'source/utils/watchPartyModel.bs': null,
-    'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'optionRange', 'optionsFit', 'playerMoment'],
-    'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt', 'subtitleBottom', 'seekBarY', 'timeRowShows', 'promptAt', 'scrubPauses'],
+    'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'inLibraryOrder', 'optionRange', 'optionsFit', 'playerMoment', 'drawsHomeRows', 'sampleReleaseShows', 'seerrStyleOf', 'homeBlur', 'followerTarget'],
+    'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt', 'subtitleBottom', 'seekBarY', 'timeRowShows', 'promptAt', 'segmentSpan', 'scrubPauses'],
+    'components/calendar/calendarHost.bs': ['calendarUsePrefs'],
     'components/settings/settingsEditors.bs': ['editorArrangement'],
-    'components/settings/settings.bs': ['settingPath'],
+    'components/settings/settings.bs': ['settingPath', 'previewSceneTable'],
     'components/details/stage/StageChipRow.bs': ['columnShares'],
     'components/details/QuickLookItemDetails.bs': ['buttonCap'],
     'source/utils/playbackOverlay.bs': null,
@@ -279,7 +280,7 @@ source += '\n' + await readFile('test/home-cards.bs', 'utf8');
 // Home's rows in the settings preview, without Look, which reads the saved settings
 const homeRowsPreviewFile = await readFile('source/utils/homeRowsPreview.bs', 'utf8');
 source += '\nnamespace homeRowsPreview\n' + homeRowsPreviewFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['Arrange', 'Merged', 'WithGenresSort', 'FocusIndex', 'Shows', 'ItemShows', 'Laid', 'CardArt', 'FirstOf', 'CardText']) {
+for (const name of ['Arrange', 'Merged', 'WithGenresSort', 'FocusIndex', 'Shows', 'ItemShows', 'SeerrMark', 'Laid', 'CardArt', 'FirstOf', 'CardText']) {
     const match = homeRowsPreviewFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
     assert.ok(match, `Missing homeRowsPreview.${name}`);
     source += '\n' + match[0];
@@ -793,9 +794,9 @@ assert.match(playerView, /openControlMenu\("showSpeedMenu"[^]*?openControlMenu\(
 assert.match(await readFile('components/manager/ViewCreator.bs', 'utf8'), /callFunc\("showControlsOn", "showAudioMenu"\)[^]*?callFunc\("showControlsOn", "showSubtitleMenu"\)/, 'The audio and subtitle pickers hand back to their buttons');
 process.stdout.write('PASS: player controls wiring (5 checks)\n');
 
-// Every row on the Calendar screen that the calendar draws moves the preview to it. The release types are
-// shared with the Upcoming Movies row, week start only changes the month grid and the select action only
-// acts on a press, so those leave it alone. Card image only shows for the style that draws it
+// Every row on the Calendar screen that the calendar draws moves the preview to it, week start on the month
+// grid. The release types are shared with the Upcoming Movies row and the select action only acts on a
+// press, so those leave it alone. Card image only shows for the style that draws it
 const findCalendarPage = (nodes) => {
     for (const node of nodes) {
         if (node.requires === 'calendar' && node.children) return node;
@@ -807,7 +808,7 @@ const findCalendarPage = (nodes) => {
 const calendarRows = findCalendarPage(JSON.parse(await readFile('settings/settings.json', 'utf8'))).children.filter(row => row.settingName);
 assert.ok(calendarRows.length >= 17, 'The Calendar settings are found');
 for (const { settingName } of calendarRows) {
-    const shared = settingName.startsWith('calendar.radarr.show') || settingName === 'calendar.weekStart' || settingName === 'calendar.selectAction';
+    const shared = settingName.startsWith('calendar.radarr.show') || settingName === 'calendar.selectAction';
     assert.equal(previewTable.includes(`"${settingName}": "calendar"`), !shared, `${settingName} ${shared ? 'leaves the preview where it is' : 'shows on the Calendar preview'}`);
 }
 assert.equal(calendarRows.find(row => row.settingName === 'calendar.imageType').requires, 'setting:calendar.style=countdown', 'Card image only shows with the Countdown style');
@@ -1081,15 +1082,15 @@ assert.ok(glyphNames.includes(findSetting(settingsTree, 'seasonal.surprise').gly
 assert.ok(glyphNames.includes(findSetting(settingsTree, 'seasonal.density').glyph), 'The density draws its glyph');
 process.stdout.write('PASS: seasonal effects wiring (12 checks)\n');
 
-// The effect previews over Home while its own two rows have focus and goes with them, the follower
-// switch stays unmapped, and only one effect runs at a time since Home's stops under Settings
-for (const key of ['seasonal.surprise', 'seasonal.density']) assert.ok(previewTable.includes(`"${key}": "home"`), `${key} shows on the Home preview`);
-assert.ok(!previewTable.includes('"seasonal.follower"'), 'The follower switch leaves the preview where it is');
+// The effect previews over Home while its own rows have focus and goes with them, the follower lands on
+// Home's focused card while its switch has focus, and only one effect runs at a time since Home's stops
+// under Settings
+for (const key of ['seasonal.surprise', 'seasonal.density', 'seasonal.follower']) assert.ok(previewTable.includes(`"${key}": "home"`), `${key} shows on the Home preview`);
 const effectPreview = await readFile('components/settings/SettingsLivePreview.bs', 'utf8');
 assert.match(effectPreview, /inArray\(\["seasonal\.surprise", "seasonal\.density"\], state\.focusedSetting\)/, 'The effect only runs while one of its rows has focus');
 assert.match(effectPreview, /m\.effect\.callFunc\("halt"\)\s+m\.effect = invalid\s+end if\s+m\.holder\.removeChildrenIndex/, 'The preview stops its effect before it takes it away');
 const effectRunner = await readFile('components/seasonal/SeasonalEffects.bs', 'utf8');
-assert.match(effectRunner.match(/sub preview\([^]*?end sub/)[0], /unobserveFieldScoped\("overlaySettingsChanged"\)[^]*?runEffect\(effect, density, false\)/, 'The preview effect stops listening for saves and builds no followers');
+assert.match(effectRunner.match(/sub preview\([^]*?end sub/)[0], /unobserveFieldScoped\("overlaySettingsChanged"\)[^]*?runEffect\(effect, density, tried\.follow = true and isValid\(tried\.target\)\)/, 'The preview effect stops listening for saves and builds followers only where it\'s told they land');
 assert.match(homeSource.match(/sub onSettingsOpen\([^]*?end sub/)[0], /settingsOpen = true\s+m\.seasonalEffects\.callFunc\("halt"\)[^]*?isSameNode\(m\.top\) then m\.seasonalEffects\.callFunc\("play"\)/, "Home's effect stops under Settings and comes back once it closes over Home");
 // The stage's frame shows only along its edges, so it's clipped to bands there rather than redrawn over the whole stage on every frame of an effect
 assert.doesNotMatch(await readFile('components/settings/SettingsLivePreview.xml', 'utf8'), /stage24/, 'No stage frame image spans the whole stage');

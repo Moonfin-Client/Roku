@@ -29,6 +29,19 @@ const INTRO_AT = 42
 const OUTRO_START = 560
 const OUTRO_END = 598
 const OUTRO_AT = 572
+' The sample's recap, ad break and preview of the next episode, and where each prompt is shown
+const RECAP_START = 2
+const RECAP_END = 28
+const RECAP_AT = 8
+const COMMERCIAL_START = 320
+const COMMERCIAL_END = 380
+const COMMERCIAL_AT = 332
+const PREVIEW_START = 536
+const PREVIEW_END = 558
+const PREVIEW_AT = 542
+' A Cinema Mode trailer before the episode, a few seconds in, while its Skip button is up
+const PREROLL_DURATION = 150
+const PREROLL_AT = 4
 ' Where the player pins its skip button and its Up Next card
 const OVERLAY_EDGE = 35
 const OVERLAY_BOTTOM = 174
@@ -63,9 +76,16 @@ sub redraw()
         loading.active = true
         return
     end if
+    ' A trailer plays with nothing over it but the Skip button, when that's on
+    if moment = "preroll"
+        setupPreviewDraw.Art(m.top, 0, 0, 1920, 1080, setupPreviewDraw.ItemField(items, 1, "backdropUrl"), pal.surfaceVariant)
+        if values["playback.cinemamode.skip"] = "true" then drawSkipButton(values, "", PREROLL_DURATION - PREROLL_AT, PREROLL_DURATION, tr("Skip"))
+        return
+    end if
     setupPreviewDraw.Art(m.top, 0, 0, 1920, 1080, setupPreviewDraw.ItemField(items, 0, "backdropUrl"), pal.surfaceVariant)
 
     position = 252
+    span = segmentSpan(moment)
     if moment = "intro" or moment = "countdown"
         position = INTRO_AT
         if moment = "intro" and values["playback.mediasegments.intro"] = "skip" then position = INTRO_END
@@ -74,6 +94,9 @@ sub redraw()
         if values["playback.mediasegments.outro"] = "skip" then position = OUTRO_END
     else if moment = "end" or moment = "airDate"
         position = OUTRO_END
+    else if isValid(span)
+        position = span[2]
+        if values["playback.mediasegments." + moment] = "skip" then position = span[1]
     end if
 
     ' The player raises its end cards only while the controls are away
@@ -92,6 +115,7 @@ sub redraw()
     if moment = "seek" and values["playback.trickplay.enabled"] <> "false" then drawSeekPreview(items)
     if prompt = "intro" then drawSkipButton(values, "intro", INTRO_END - position, INTRO_END - INTRO_START)
     if prompt = "outro" then drawSkipButton(values, "outro", OUTRO_END - position, OUTRO_END - OUTRO_START)
+    if prompt = moment and isValid(span) then drawSkipButton(values, moment, span[1] - position, span[1] - span[0])
     if prompt = "nextUp" or prompt = "airDate" then drawNextUpCard(values, items, prompt = "airDate")
 end sub
 
@@ -102,6 +126,7 @@ function promptAt(moment as string, values as object) as string
     nextUp = values["playback.nextupbehavior"] ?? "extended"
     if moment = "countdown" then return "intro"
     if moment = "intro" and (values["playback.mediasegments.intro"] ?? "") = "asktoskip" then return "intro"
+    if isValid(segmentSpan(moment)) and (values["playback.mediasegments." + moment] ?? "") = "asktoskip" then return moment
     if moment = "outro" and (values["playback.mediasegments.outro"] ?? "") = "asktoskip"
         if (values["playback.replaceskipoutrowithnextup"] ?? "") = "true" and nextUp <> "disabled" then return "nextUp"
         return "outro"
@@ -112,12 +137,22 @@ function promptAt(moment as string, values as object) as string
     return ""
 end function
 
+' The recap, ad break and preview as [start, end, where the prompt shows], or invalid for any other
+' moment
+function segmentSpan(moment as string) as dynamic
+    if moment = "recap" then return [RECAP_START, RECAP_END, RECAP_AT]
+    if moment = "commercial" then return [COMMERCIAL_START, COMMERCIAL_END, COMMERCIAL_AT]
+    if moment = "preview" then return [PREVIEW_START, PREVIEW_END, PREVIEW_AT]
+    return invalid
+end function
+
 ' Drawn the way the player draws it: by the app with the style settings while Custom Subtitles is
-' on, and by the Roku itself otherwise, in its own caption style
+' on or a second track shows, and by the Roku itself otherwise, in its own caption style
 sub drawSubtitle(values as object, hdr as boolean, controls as boolean)
     if values["playback.subs.mode"] = "None" then return
     text = subtitleLine(values["playback.subs.language"] ?? "")
-    if values["playback.subs.custom"] <> "true"
+    secondary = values["playback.subs.secondary.enabled"] = "true"
+    if values["playback.subs.custom"] <> "true" and not secondary
         drawRokuCaption(text, subtitleBottom(values, 1080 * 0.9, controls))
         return
     end if
@@ -130,6 +165,25 @@ sub drawSubtitle(values as object, hdr as boolean, controls as boolean)
     bounds = cue.boundingRect()
     placed = subtitleStyle.Placement(bounds, look.bottomPercent)
     cue.translation = [placed[0], subtitleBottom(values, placed[1] + bounds.height, controls) - bounds.height]
+    if secondary then drawSecondaryLine(text, look, cue.translation[1])
+end sub
+
+' The second track, which the player stacks right above the first in the first one's style, with
+' the size and color its subtitle menu set
+sub drawSecondaryLine(text as string, look as object, primaryTop as float)
+    settings = chainLookupReturn(m.global.session, "user.settings", {})
+    second = {}
+    second.Append(look)
+    size = Int(Val(toString(settings["playback.subs.secondary.size"] ?? "0")))
+    if size > 0 then second.fontSize = size
+    color = toString(settings["playback.subs.secondary.color"] ?? "")
+    if color <> "" then second.textColor = subtitleStyle.Rgba(color, 100)
+    line = subtitleLine("spa")
+    if line = text then line = subtitleLine("")
+    cue = subtitleStyle.Cue([line], second, "")
+    m.top.appendChild(cue)
+    bounds = cue.boundingRect()
+    cue.translation = [(1920 - bounds.width) / 2, primaryTop - 8 - bounds.height]
 end sub
 
 ' The sample subtitle stays clear of the controls while they're up, over the bar's thumb or over the
@@ -325,12 +379,12 @@ function arrangedOsdButtons(values as object) as object
     return buttonLayout.Arrange(buttonLayout.OsdCandidates(true, true, true, true, true), values[OSD_ORDER_SETTING], values[OSD_HIDDEN_SETTING])
 end function
 
-' The player's own skip button, counting down what's left of its segment
-sub drawSkipButton(values as object, segmentType as string, secondsLeft as integer, length as integer)
+' The player's own skip button, counting down what's left of its segment. A pre-roll's says Skip.
+sub drawSkipButton(values as object, segmentType as string, secondsLeft as integer, length as integer, label = "" as string)
     countdownMode = values["playback.mediasegments.countdown"] ?? "both"
     button = m.top.createChild("SkipSegmentOverlay")
     button.setFields(playbackOverlay.CountdownLook(countdownMode))
-    button.setFields({ segmentType: segmentType, secondsRemaining: secondsLeft, progress: secondsLeft / length })
+    button.setFields({ segmentType: segmentType, label: label, secondsRemaining: secondsLeft, progress: secondsLeft / length })
     button.translation = [1920 - OVERLAY_EDGE - button.overlayWidth, SKIP_PROMPT_TOP]
 end sub
 
@@ -361,7 +415,7 @@ sub drawNextUpCard(values as object, items as object, airDate as boolean)
     }
     if airDate
         today = calendarEntries.TodayNumber()
-        fields.airsText = calendarEntries.ReleaseIn(today + 3, today)
+        fields.airsText = calendarEntries.ReleaseIn(today + 3, today, values["ui.dateFormat"] ?? "")
         fields.focusedButton = 1
     else
         fields.episodeTitle = `${tr("Episode")} 5`
