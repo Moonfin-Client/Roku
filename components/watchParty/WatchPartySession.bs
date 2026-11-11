@@ -33,6 +33,9 @@ sub init()
     m.contentSources = {}
     ' The subtitle choice last put on the playing item, so a member's own pick after it stays
     m.subtitleApplied = ""
+    ' Counts the host's saves of it, begun and done, so a read sent before or during one is not
+    ' taken over the choice just made
+    m.subtitleSaves = 0
     ' A title a page picked while this device was in no party, for the party it opens
     m.pendingPick = invalid
     m.top.features = {}
@@ -64,6 +67,7 @@ function enter(answer as object) as boolean
     m.contentInfo = {}
     m.contentSources = {}
     m.subtitleApplied = ""
+    m.subtitleSaves = 0
     m.top.groupSubtitle = {}
     m.top.groupSubtitlesSupported = false
     m.top.subtitleTracks = []
@@ -224,12 +228,13 @@ sub handleMessage(message as object)
         m.top.reaction = message
     else if kind = "suggestions_update"
         if type(message.suggestions) = "roArray" and m.silo
-            m.top.suggestions = siloParty.SortSuggestions(message.suggestions)
-        else if type(message.suggestions) = "roArray"
-            m.top.suggestions = message.suggestions
+            ' Silo's broadcast says nobody voted, so this member's own votes carry over, as in Core
+            m.top.suggestions = withOwnVotes(siloParty.SortSuggestions(message.suggestions), message.withVotes = true)
+        else
+            if type(message.suggestions) = "roArray" then m.top.suggestions = message.suggestions
+            ' Moonbase's update leaves out this member's own votes, so the list is read again for them
+            act({ kind: "suggestions", method: "GET", path: "Suggestions" })
         end if
-        ' The update leaves out this member's own votes, so the list is read again for them
-        act({ kind: "suggestions", method: "GET", path: "Suggestions" })
     else if kind = "transport_command"
         if type(message.command) = "roAssociativeArray" then onCommand(message.command)
     else if kind = "notice"
@@ -284,7 +289,7 @@ sub sendAvatar()
 end sub
 
 sub askAvatars()
-    if m.roomId <> "" then runTask({ kind: "avatars", roomId: m.roomId })
+    if m.roomId <> "" then runTask({ kind: "avatars", roomId: m.roomId, subtitleSaves: m.subtitleSaves })
 end sub
 
 ' Each member's picture, where Moonbase has one, for the faces the party draws
@@ -301,7 +306,7 @@ sub onAvatars(result as object)
     if result.request.roomId <> m.roomId or result.status <> 200 or type(result.data) <> "roAssociativeArray" then return
     if not m.top.groupSubtitlesSupported then m.top.groupSubtitlesSupported = true
     subtitle = result.data.subtitle ?? {}
-    if FormatJson(subtitle) <> FormatJson(m.top.groupSubtitle) then m.top.groupSubtitle = subtitle
+    if result.request.subtitleSaves = m.subtitleSaves and FormatJson(subtitle) <> FormatJson(m.top.groupSubtitle) then m.top.groupSubtitle = subtitle
     ' Also catches a video that was still opening when the choice came
     applyGroupSubtitle()
     avatars = result.data.avatars
@@ -310,6 +315,20 @@ sub onAvatars(result as object)
     room = m.top.room
     if type(room) = "roAssociativeArray" and room.room_id = m.roomId then m.top.room = withAvatars(room)
 end sub
+
+function withOwnVotes(suggestions as object, withVotes as boolean) as object
+    if withVotes then return suggestions
+    mine = {}
+    if type(m.top.suggestions) = "roArray"
+        for each suggestion in m.top.suggestions
+            if suggestion.voted_by_me = true then mine[toString(suggestion.id ?? "")] = true
+        end for
+    end if
+    for each suggestion in suggestions
+        suggestion.voted_by_me = mine.DoesExist(suggestion.id)
+    end for
+    return suggestions
+end function
 
 ' ===== Subtitles for everyone =====
 
@@ -320,11 +339,13 @@ sub setGroupSubtitle(choice as object)
     if not m.silo or m.roomId = "" or type(room) <> "roAssociativeArray" or room.self_role <> "host" then return
     subtitle = invalid
     if not choice.IsEmpty() then subtitle = choice
+    m.subtitleSaves = m.subtitleSaves + 1
     runTask({ kind: "groupSubtitle", roomId: m.roomId, subtitle: subtitle, choice: choice })
 end sub
 
 sub onGroupSubtitleSaved(result as object)
     if result.request.roomId <> m.roomId then return
+    m.subtitleSaves = m.subtitleSaves + 1
     if result.status < 200 or result.status >= 300
         message = ""
         if type(result.data) = "roAssociativeArray" then message = toString(result.data.message ?? "")
@@ -354,11 +375,15 @@ sub applyGroupSubtitle()
     if not m.silo or type(room) <> "roAssociativeArray" or room.phase <> "playing" then return
     key = FormatJson(m.top.groupSubtitle)
     if key = m.subtitleApplied then return
+    ' Until the title's tracks and the party's player are both there, the choice waits for the next
+    ' try, from the title's lookup or the next read
+    source = partySource()
+    if not isValid(source) then return
     active = m.global.sceneManager.callFunc("getActiveScene")
     if not isValid(active) or not active.isSubType("VideoPlayerView") or active.id <> toString(room.selected_content_id ?? "") then return
+    index = watchPartyModel.SubtitleIndexFor(m.top.groupSubtitle, source)
+    if index <> invalid and active.callFunc("wpApplySubtitle", index) <> true then return
     m.subtitleApplied = key
-    index = watchPartyModel.SubtitleIndexFor(m.top.groupSubtitle, partySource())
-    if index <> invalid then active.callFunc("wpApplySubtitle", index)
 end sub
 
 ' The selected title's name, type, and an episode's series and numbers, which Moonbase's room carries
@@ -399,6 +424,7 @@ sub onContentInfo(result as object)
         room.Append(info)
         m.top.room = room
         showSubtitleTracks()
+        applyGroupSubtitle()
     end if
 end sub
 
@@ -532,9 +558,11 @@ sub watch()
     queue.callFunc("clear")
     queue.callFunc("resetShuffle")
     ' The host's subtitles for everyone as the item starts. A member can change theirs after.
-    if m.silo
+    ' Without the title's tracks yet, the choice goes on once they come
+    source = partySource()
+    if m.silo and isValid(source)
         m.subtitleApplied = FormatJson(m.top.groupSubtitle)
-        subtitle = watchPartyModel.SubtitleIndexFor(m.top.groupSubtitle, partySource())
+        subtitle = watchPartyModel.SubtitleIndexFor(m.top.groupSubtitle, source)
         if subtitle <> invalid then queue.callFunc("setPreferredSubtitleTrack", { StreamIndex: subtitle })
     end if
     queue.callFunc("push", node)
@@ -792,8 +820,10 @@ end sub
 sub pickResolved(item as object)
     if item.id = "" then return
     if not m.top.inRoom
+        ' A second press while the party opens picks again, and opens no second party
+        creating = isValid(m.pendingPick)
         m.pendingPick = item
-        act({ kind: "create", method: "POST", path: "/Rooms", body: {} })
+        if not creating then act({ kind: "create", method: "POST", path: "/Rooms", body: {} })
         return
     end if
     runPick(item)
