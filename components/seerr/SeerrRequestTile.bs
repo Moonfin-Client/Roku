@@ -47,9 +47,15 @@ sub init()
     m.glyphFont.size = ACTION_ICON
     m.buttons = []
     m.shown = invalid
+    m.shownStamp = -1
     for each label in [m.requestedBy, m.requester, m.requestedOn]
         label.font.size = CAPTION_FONT
     end for
+    ' The bar's own font, which a Not found yet line swaps for the caption's so the words fit
+    m.progressFont = m.progressLabel.font
+    ' Measures a reason's words off screen, since a label with a width reports the clipped one
+    m.measure = CreateObject("roSGNode", "Label")
+    m.measure.font = m.requestedBy.font
 
     layout()
 end sub
@@ -109,8 +115,10 @@ sub onContentChanged()
     request = content.request
     if not isValid(request) then return
 
-    ' The grid binds the same node again when its focus fields change, which only needs a redraw
+    ' The grid binds the same node again when its focus fields change, which only needs a redraw,
+    ' and when the title's arr queue lands, which redraws the status
     if isValid(m.shown) and m.shown.isSameNode(content)
+        if content.arrStamp <> m.shownStamp then applyStatusAndCaption(content)
         showFocus()
         return
     end if
@@ -121,17 +129,7 @@ sub onContentChanged()
 
     m.title.text = SeerrMediaTitle(media)
     applyTypeBadge(request, media)
-    applyStatus(request)
-
-    ' The name goes under its own label only when the screen found one too long for the line
-    who = SeerrRequesterName(request)
-    layout(content.splitRequester)
-    if content.splitRequester
-        m.requestedBy.text = tr("Requested by")
-        m.requester.text = who
-    else
-        m.requestedBy.text = Substitute(tr("Requested by ^0"), who)
-    end if
+    applyStatusAndCaption(content)
     m.requestedOn.text = SeerrFormatDate(request.createdAt)
 
     buildActions(content.actions ?? [])
@@ -193,12 +191,71 @@ sub applyTypeBadge(request as object, media as object)
     m.typeFill.blendColor = isSeries ? "#8B5CF6D9" : "#3B82F6D9"
 end sub
 
-' A download in flight takes the slot the state pill would have used
-sub applyStatus(request as object)
+' The status slot, and under it who asked. The arr's reason a download is stuck takes the requester's
+' place, since the grid keeps every caption one height and why it isn't moving matters more.
+sub applyStatusAndCaption(content as object)
+    request = content.request
+    m.shownStamp = content.arrStamp
+    reason = applyStatus(request, content.arrQueue)
+
+    split = content.splitRequester
+    layout(split)
+    if reason <> ""
+        ' As many lines as the requester would have taken, on the same two labels so the lines sit
+        ' where the requester's do
+        if split
+            lines = fillLine(reason)
+            m.requestedBy.text = lines.first
+            m.requester.text = lines.rest
+        else
+            m.requestedBy.text = reason
+        end if
+        return
+    end if
+
+    ' The name goes under its own label only when the screen found one too long for the line
+    who = SeerrRequesterName(request)
+    if split
+        m.requestedBy.text = tr("Requested by")
+        m.requester.text = who
+    else
+        m.requestedBy.text = Substitute(tr("Requested by ^0"), who)
+    end if
+end sub
+
+' The words of text that fit on one caption line, and the rest for the next, which the label cuts
+' short if it must. A first word too long for the line goes on it anyway.
+function fillLine(text as string) as object
+    words = text.Split(" ")
+    first = ""
+    used = 0
+    for each word in words
+        candidate = word
+        if first <> "" then candidate = `${first} ${word}`
+        m.measure.text = candidate
+        if first <> "" and m.measure.boundingRect().width > POSTER_WIDTH then exit for
+        first = candidate
+        used++
+    end for
+
+    rest = []
+    for i = used to words.Count() - 1
+        rest.push(words[i])
+    end for
+    return { first: first, rest: rest.Join(" ") }
+end function
+
+' A download in flight takes the slot the state pill would have used, and so does a Not found yet.
+' Returns the arr's reason the download is stuck, or empty.
+function applyStatus(request as object, arrQueue as dynamic) as string
     info = SeerrRequestStatusInfo(request)
     m.stripe.color = stripeColor(info.color)
+    m.progressTrack.visible = true
+    m.progressFill.visible = true
+    m.progressLabel.color = "#FFFFFFB3"
+    m.progressLabel.font = m.progressFont
 
-    summary = SeerrRequestDownloadSummary(request)
+    summary = SeerrRequestDownloadSummary(request, arrQueue)
     if isValid(summary)
         m.statusChip.visible = false
         m.progress.visible = true
@@ -215,14 +272,30 @@ sub applyStatus(request as object)
         m.progressLabel.text = parts.lead
         m.progressFill.width = Int(POSTER_WIDTH * summary.fraction)
         m.progressFill.color = SeerrDownloadBarColor(summary.state, "#FFFFFF")
-        return
+        if isValidStringValue(summary.reason) then return summary.reason
+        return ""
+    end if
+
+    ' Nothing is downloading yet, so one muted line takes the bar's place
+    if SeerrRequestNotFoundYet(request, arrQueue)
+        m.statusChip.visible = false
+        m.progress.visible = true
+        m.progressTrack.visible = false
+        m.progressFill.visible = false
+        m.progressPercent.text = ""
+        m.progressLabel.width = POSTER_WIDTH
+        m.progressLabel.color = "#FFFFFF80"
+        m.progressLabel.font = m.requestedBy.font
+        m.progressLabel.text = tr("Not found yet")
+        return ""
     end if
 
     m.progress.visible = false
     m.statusChip.chipColor = info.color
     m.statusChip.label = info.label
     m.statusChip.visible = true
-end sub
+    return ""
+end function
 
 function stripeColor(name as string) as string
     if name = "pending" then return "#EAB308"

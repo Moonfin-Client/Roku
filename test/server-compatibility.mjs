@@ -76,7 +76,7 @@ const selections = {
     'source/utils/ratingSourceList.bs': null,
     'source/utils/homeRowGroups.bs': null,
     'source/utils/searchGroups.bs': null,
-    'source/utils/SeerrUtils.bs': ['SeerrEscapeJsonString', 'SeerrJsonFromPairs', 'SeerrFormatJson', 'SeerrFormatJsonValue', 'SeerrStreamingRegion', 'SeerrStreamingProviders', 'SeerrRequestDownloadSummary', 'SeerrDownloadEntryState', 'SeerrDownloadStateRank', 'SeerrParseTimeLeft', 'SeerrTimeLeftText', 'SeerrDownloadLabel', 'SeerrDownloadLabelParts', 'SeerrDownloadStateWord', 'SeerrDownloadBarColor', 'SeerrDownloadSizeText', 'SeerrByteUnit', 'SeerrScaleBytes', 'SeerrQueueHasWork', 'SeerrDownloadKey', 'SeerrIsNumber', 'isValidStringValue', 'IsSeerrSeriesPart'],
+    'source/utils/SeerrUtils.bs': ['SeerrEscapeJsonString', 'SeerrJsonFromPairs', 'SeerrFormatJson', 'SeerrFormatJsonValue', 'SeerrStreamingRegion', 'SeerrStreamingProviders', 'SeerrRequestDownloadSummary', 'SeerrDownloadEntryState', 'SeerrDownloadStateRank', 'SeerrParseTimeLeft', 'SeerrTimeLeftText', 'SeerrDownloadLabel', 'SeerrDownloadLabelParts', 'SeerrDownloadStateWord', 'SeerrDownloadBarColor', 'SeerrDownloadSizeText', 'SeerrByteUnit', 'SeerrScaleBytes', 'SeerrQueueHasWork', 'SeerrDownloadKey', 'SeerrIsNumber', 'isValidStringValue', 'IsSeerrSeriesPart', 'SeerrDownloadIsStuck', 'SeerrArrEntryKey', 'SeerrArrGoneFromQueue', 'SeerrArrQueueHasTitle', 'SeerrArrFlagIs', 'SeerrArrQueueForSeasons', 'SeerrArrNotFoundYet', 'SeerrRequestNotFoundYet', 'SeerrArrReason', 'SeerrArrHealthy', 'SeerrArrServiceName', 'SeerrArrQueuePath', 'SeerrArrRemovePath', 'SeerrIdText', 'SeerrLower', 'SeerrArrQueuePathForDetails', 'SeerrDetailDownload', 'SeerrMediaNotFoundYet', 'SeerrReplaceableDownload'],
     'source/utils/libraryOrder.bs': null,
     'source/utils/detailSectionLayout.bs': null,
     'source/utils/trackLabels.bs': null,
@@ -1429,6 +1429,12 @@ assert.match(seasonDetailsWiring, /loadSeerrBlock\(json\)/, 'A season page looks
 assert.match(seasonDetailsWiring, /if Left\(action, 5\) = "seerr"/, 'and hands its Seerr buttons to the request flow');
 assert.match(await readFile('source/utils/seerrDetailHost.bs', 'utf8'), /initialSeason/, 'Report Issue starts on the season or episode it was opened from');
 assert.match(await readFile('source/utils/seerrButtons.bs', 'utf8'), /seerrRequestRules\.Cancelable\(requests, true, CanManageRequests\(permissions\), CurrentSeerrUserId\(\)\)/, 'Cancel only shows for a request the viewer can take back');
+assert.match(await readFile('source/utils/seerrButtons.bs', 'utf8'), /seerrButtons\.Entry\("seerrManage", "[^"]+", tr\("Get a different release"\), "seerrDifferentRelease"\)/, 'Get a different release rides in the Manage Requests slot, so the synced arrangement needs no new id');
+assert.match(await readFile('components/details/detailButtonHost.bs', 'utf8'), /seerrButtons\.Candidates\(m\.seerrDetails, seerrMediaType\(\), seerrSwapQueue\(\)\)/, 'The detail row hands the arr queue to its Seerr buttons');
+assert.match(await readFile('source/utils/seerrDetailHost.bs', 'utf8'), /function seerrSwapQueue\(\) as dynamic\n    if isValid\(m\.seerrSeries\) then return invalid\n    if IsSeerrSeriesPart\(seerrItemJson\(\)\) then return invalid/, 'Only the title\'s own page offers a release swap, never a season or episode page');
+assert.match(await readFile('components/seerr/SeerrAPITask.bs', 'utf8'), /if usePluginRoot then urlTransfer\.RetainBodyOnError\(true\)/, 'A plugin endpoint keeps its error body, so a swap can tell a download already gone from a failure');
+assert.match(await readFile('components/seerr/SeerrRequestsScreen.bs', 'utf8'), /sub loadArrQueues\(entries as object\)\n    ' [^\n]+\n    if m\.tab = "issues" then return/, 'The Issues tab reads no arr queues');
+assert.match(await readFile('source/api/MoonfinPlugin.bs', 'utf8'), /arrQueueAvailable: result\.arrQueueAvailable \?\? false/, 'Ping keeps whether Moonbase reads the arr queue, false on older plugins');
 const browseWiring = await readFile('components/seerr/SeerrGenreBrowseScreen.bs', 'utf8');
 assert.match(browseWiring, /const SEERR_POSTER_SIZE_SETTING = "ui\.seerr\.posterSize"/, 'The browse screen keeps a poster size of its own');
 assert.doesNotMatch(syncWiring, /ui\.seerr\.posterSize/, 'and it stays on the device');

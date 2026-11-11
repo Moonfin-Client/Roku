@@ -10922,5 +10922,35 @@
         <extracomment>Seerr download bar - time left on a download, %1 is hours and %2 minutes, keep them</extracomment>
         <translation>%1h %2m left</translation>
     </message>
+    <message>
+        <source>Import blocked</source>
+        <extracomment>Seerr download bar - the download finished but Radarr or Sonarr refuses to import it, for example because the release contains an executable</extracomment>
+        <translation>Import blocked</translation>
+    </message>
+    <message>
+        <source>Not found yet</source>
+        <extracomment>Seerr - shown where the download bar would be, when a request was approved and Radarr has the released movie but hasn't found a release to download yet</extracomment>
+        <translation>Not found yet</translation>
+    </message>
+    <message>
+        <source>Get a different release</source>
+        <extracomment>Seerr - admin-only button on a title's detail screen, and the title and confirm button of its dialog. It removes a stuck download, blocks that release, and has Radarr or Sonarr search for another one</extracomment>
+        <translation>Get a different release</translation>
+    </message>
+    <message>
+        <source>^0 will remove ^1 from the download client, block it so it isn't grabbed again, and search for another release.</source>
+        <extracomment>Seerr - body of the Get a different release dialog. ^0 is Radarr or Sonarr and ^1 is the release name, keep them</extracomment>
+        <translation>^0 will remove ^1 from the download client, block it so it isn't grabbed again, and search for another release.</translation>
+    </message>
+    <message>
+        <source>Removed. ^0 is searching for another release.</source>
+        <extracomment>Seerr - confirmation after Get a different release removed the stuck download. ^0 is Radarr or Sonarr, keep it</extracomment>
+        <translation>Removed. ^0 is searching for another release.</translation>
+    </message>
+    <message>
+        <source>Couldn't remove the download</source>
+        <extracomment>Seerr - error when Get a different release could not remove the stuck download</extracomment>
+        <translation>Couldn't remove the download</translation>
+    </message>
 </context>
 </TS>

@@ -38,6 +38,7 @@ sub onSeerrDetailsLoaded(event as object)
     end if
     m.top.itemContent = node
     updateSeerrSeasonMarkers()
+    loadSeerrArrQueue()
 end sub
 
 sub startSeerrRequest(action as string, season = 0 as integer)
@@ -51,6 +52,8 @@ sub startSeerrRequest(action as string, season = 0 as integer)
     m.seerrRequests.tmdbId = seerrTmdbId()
     m.seerrRequests.mediaType = seerrMediaType()
     m.seerrRequests.details = m.seerrDetails
+    ' An assocarray field won't take invalid, so no queue goes over as an empty one
+    m.seerrRequests.arrQueue = seerrSwapQueue() ?? {}
     m.seerrRequests.returnFocus = seerrFocusTarget()
 
     ' A season or episode page acts for its series, and Report Issue starts on that one
@@ -107,6 +110,12 @@ sub onSeerrWatchlistToggled(event as object)
 end sub
 
 sub onSeerrRequestCompleted()
+    ' A swap may have just removed what the queue lists, so the last answer and any read still on its
+    ' way are dropped, and the reload reads it again
+    if not isValid(m.seerrArrGeneration) then m.seerrArrGeneration = 0
+    m.seerrArrGeneration++
+    m.seerrArrQueue = invalid
+
     if isValid(m.top.seerrTarget)
         m.top.seerrTarget = m.top.seerrTarget
         return
@@ -170,7 +179,58 @@ sub onLibrarySeerrDetails(event as object)
     m.seerrDetails = response.data
     m.top.seerrButtonsStale = true
     if not isValid(m.seerrSeries) then updateSeerrSeasonMarkers()
+    loadSeerrArrQueue()
 end sub
+
+' Moonbase's read of the arr's queue for the HD track, while the title is on its way. It says why a
+' download is stuck, and lets an admin swap it. The last answer stays up until the next one lands,
+' and anything but a 200 drops it, which puts the screen back on what Seerr reports.
+sub loadSeerrArrQueue()
+    if not isValid(m.seerrArrGeneration) then m.seerrArrGeneration = 0
+    m.seerrArrGeneration++
+
+    ' The Classic season screen draws no download and offers no swap, so it has nothing to ask for
+    path = ""
+    if m.top.subtype() <> "SeasonDetails" and SeerrArrQueueAvailable() then path = SeerrArrQueuePathForDetails(m.seerrDetails, seerrMediaType())
+    if path = ""
+        if isValid(m.seerrArrQueue)
+            m.seerrArrQueue = invalid
+            m.top.seerrButtonsStale = true
+        end if
+        return
+    end if
+
+    m.seerrArrTask = CreateObject("roSGNode", "SeerrAPITask")
+    m.seerrArrTask.addField("generation", "integer", false)
+    m.seerrArrTask.generation = m.seerrArrGeneration
+    ' The query rides on the endpoint, since an assocarray crossing a node field loses its key case
+    m.seerrArrTask.request = { method: "GET", endpoint: path, usePluginRoot: true }
+    m.seerrArrTask.observeField("response", "onSeerrArrQueue")
+    m.seerrArrTask.control = "RUN"
+end sub
+
+sub onSeerrArrQueue(event as object)
+    ' An answer that set off before a newer fetch, such as the one after a release swap, may still
+    ' list the removed download
+    if event.getRoSGNode().generation <> m.seerrArrGeneration then return
+
+    response = event.getData()
+    queue = invalid
+    if isValid(response) and response.success = true and response.statusCode = 200 and type(response.data) = "roAssociativeArray" then queue = response.data
+    if not isValid(queue) and not isValid(m.seerrArrQueue) then return
+
+    m.seerrArrQueue = queue
+    m.top.seerrButtonsStale = true
+end sub
+
+' The arr queue the action row offers a release swap from. Only the title's own page offers it: a
+' season or episode page shows the series-wide download, and a swap there would act on whichever
+' season's download is worst.
+function seerrSwapQueue() as dynamic
+    if isValid(m.seerrSeries) then return invalid
+    if IsSeerrSeriesPart(seerrItemJson()) then return invalid
+    return m.seerrArrQueue
+end function
 
 ' A season or an episode offers its series' Seerr actions and nothing else of Seerr's, so the
 ' series is looked up for its TMDB id first

@@ -701,6 +701,13 @@ function GetSeerrConfig() as object
     }
 end function
 
+' Whether Moonbase can read the Radarr/Sonarr queue. An older plugin, or one without Seerr set up,
+' leaves it out, and everything then shows what Seerr reports.
+function SeerrArrQueueAvailable() as boolean
+    if not GetSeerrConfig().enabled then return false
+    return SeerrParseBool(chainLookupReturn(m.global.session, "pluginInfo.arrQueueAvailable", false), false)
+end function
+
 ' What to call Seerr on screen. A server running a fork names it in the plugin config,
 ' and anything else falls back on the name the navigation bar already uses.
 function GetSeerrDisplayName() as string
@@ -1260,7 +1267,9 @@ end function
 
 ' How far along a download is, by bytes across the queue, and what it's doing. Nothing to show
 ' unless the title is being worked on, so a finished or turned down request returns invalid.
-function SeerrRequestDownloadSummary(request as object) as object
+' arrQueue is what Moonbase read from Radarr or Sonarr for the title, when it could. It only covers
+' the default HD arr, so a 4K request leaves it out.
+function SeerrRequestDownloadSummary(request as object, arrQueue = invalid as dynamic) as object
     if request = invalid then return invalid
     if request.status = SEERR_REQUEST_DECLINED or request.status = SEERR_REQUEST_FAILED then return invalid
 
@@ -1276,6 +1285,10 @@ function SeerrRequestDownloadSummary(request as object) as object
     end if
 
     if mediaStatus <> SEERR_MEDIA_PROCESSING and mediaStatus <> SEERR_MEDIA_PARTIAL then return invalid
+    ' The arr's own queue has its reasons, and it's there whether or not Seerr scans the arr. A title
+    ' Moonbase didn't find in the default arr went to another one, so Seerr's copy stays.
+    fromArr = request.is4k <> true and SeerrArrQueueHasTitle(arrQueue)
+    if fromArr then queue = arrQueue.items
     if not SeerrQueueHasWork(queue) then return invalid
 
     ' Sonarr lists a season pack once per episode, each with the whole pack's size and the same
@@ -1284,11 +1297,14 @@ function SeerrRequestDownloadSummary(request as object) as object
     total = 0#
     left = 0#
     state = ""
+    decider = invalid
+    reason = invalid
     slowest = invalid
     timeLeftKnown = true
     seen = {}
     for each entry in queue
         key = SeerrDownloadKey(entry)
+        if fromArr then key = SeerrArrEntryKey(entry, key)
         if key <> "" and not seen.DoesExist(key)
             seen[key] = true
             ' A magnet with no peers never learns its size, so it counts for its state but adds no
@@ -1303,8 +1319,17 @@ function SeerrRequestDownloadSummary(request as object) as object
             left += itemLeft
 
             itemState = SeerrDownloadEntryState(entry, size > 0 and SeerrIsNumber(entry.sizeLeft) and itemLeft <= 0)
-            if state = "" or SeerrDownloadStateRank(itemState) > SeerrDownloadStateRank(state) then state = itemState
-            if itemState <> "waitingForImport"
+            ' The arr's words, unless the download is simply moving along. A paused one gets them too,
+            ' since they still say why the bar isn't moving.
+            itemReason = invalid
+            if fromArr and (itemState <> "downloading" or not SeerrArrHealthy(entry)) then itemReason = SeerrArrReason(entry)
+            ' Of two downloads in the same state, the one that says why speaks for the request
+            if state = "" or SeerrDownloadStateRank(itemState) > SeerrDownloadStateRank(state) or (itemState = state and reason = invalid and itemReason <> invalid)
+                state = itemState
+                decider = entry
+                reason = itemReason
+            end if
+            if itemState <> "waitingForImport" and itemState <> "importBlocked"
                 ' A paused or queued sibling has no end in sight, so the request has none either
                 eta = invalid
                 if itemState = "downloading" then eta = SeerrParseTimeLeft(entry.timeLeft)
@@ -1321,7 +1346,7 @@ function SeerrRequestDownloadSummary(request as object) as object
 
     fraction = 0#
     if total > 0 then fraction = (total - left) / total
-    if state = "waitingForImport"
+    if state = "waitingForImport" or state = "importBlocked"
         ' The client can call a download completed before its byte count settles
         fraction = 1#
     else if fraction > 0.99
@@ -1330,12 +1355,233 @@ function SeerrRequestDownloadSummary(request as object) as object
     end if
     if state <> "downloading" or not timeLeftKnown then slowest = invalid
 
-    return { fraction: fraction, done: total - left, total: total, hasSize: total > 0, state: state, timeLeft: slowest, isWaitingForImport: state = "waitingForImport" }
+    ' The arr's queue id and release name of a stuck download, so an admin can swap it for another
+    stuck = SeerrDownloadIsStuck(state)
+    stuckItemId = invalid
+    stuckRelease = ""
+    if stuck and fromArr and SeerrIsNumber(decider.id)
+        stuckItemId = decider.id
+        if isValidStringValue(decider.title) then stuckRelease = decider.title
+    end if
+
+    return { fraction: fraction, done: total - left, total: total, hasSize: total > 0, state: state, timeLeft: slowest, isWaitingForImport: state = "waitingForImport", isStuck: stuck, reason: reason, stuckItemId: stuckItemId, stuckRelease: stuckRelease }
+end function
+
+' What tells one of the arr's queue entries apart: its download, else its own queue id, since an
+' entry with no download id can be stuck too. Empty for an entry the arr has stopped tracking, or
+' a delay or fallback release it's holding back on purpose, which may never be the one grabbed.
+function SeerrArrEntryKey(entry as dynamic, downloadKey as string) as string
+    if type(entry) <> "roAssociativeArray" then return ""
+    if SeerrLower(entry.trackedDownloadState) = "ignored" then return ""
+    status = SeerrLower(entry.status)
+    if status = "delay" or status = "fallback" then return ""
+    if downloadKey <> "" then return downloadKey
+    if SeerrIsNumber(entry.id) then return `queue:${SeerrIdText(entry.id)}`
+    return ""
+end function
+
+' Moonbase answers 404 both for a download already gone from the queue, which is what a swap asked
+' for, and for an arr it can't find, which is a failure. Only its words tell them apart.
+function SeerrArrGoneFromQueue(response as dynamic) as boolean
+    if chainLookupReturn(response, "statusCode", 0) <> 404 then return false
+    return Instr(1, SeerrLower(chainLookupReturn(response, "error", "")), "no longer in the") > 0
+end function
+
+' Not going to finish by itself: stalled, refused at import, or failed
+function SeerrDownloadIsStuck(state as string) as boolean
+    return state = "stalled" or state = "importBlocked" or state = "failed"
+end function
+
+' Whether Moonbase found the title in the default arr, so its queue speaks for the HD track
+function SeerrArrQueueHasTitle(queue as dynamic) as boolean
+    if type(queue) <> "roAssociativeArray" then return false
+    return SeerrArrFlagIs(queue.inArr, true)
+end function
+
+' A JSON true or false. A flag the arr left out or sent as null is neither.
+function SeerrArrFlagIs(value as dynamic, wanted as boolean) as boolean
+    valueType = type(value)
+    if valueType <> "Boolean" and valueType <> "roBoolean" then return false
+    return value = wanted
+end function
+
+' Only the items for a season request's seasons. A movie, or no seasons, keeps everything, and an
+' item with no season number stays since it can't be ruled out.
+function SeerrArrQueueForSeasons(queue as dynamic, seasons as dynamic) as dynamic
+    if type(queue) <> "roAssociativeArray" then return queue
+    if SeerrLower(queue.service) = "radarr" then return queue
+    if type(seasons) <> "roArray" or seasons.Count() = 0 then return queue
+    if type(queue.items) <> "roArray" then return queue
+
+    wanted = {}
+    for each season in seasons
+        number = season
+        if type(season) = "roAssociativeArray" then number = season.seasonNumber
+        if SeerrIsNumber(number) then wanted[Int(number).toStr()] = true
+    end for
+    if wanted.Count() = 0 then return queue
+
+    items = []
+    for each item in queue.items
+        number = invalid
+        if type(item) = "roAssociativeArray" then number = item.seasonNumber
+        if not SeerrIsNumber(number) or wanted.DoesExist(Int(number).toStr()) then items.Push(item)
+    end for
+
+    narrowed = {}
+    narrowed.Append(queue)
+    narrowed.items = items
+    return narrowed
+end function
+
+' Radarr has the released movie, is watching for it and hasn't got it, yet nothing is downloading.
+' Sonarr can't say whether a season has aired, so it never answers yes.
+function SeerrArrNotFoundYet(queue as dynamic) as boolean
+    if type(queue) <> "roAssociativeArray" then return false
+    if SeerrLower(queue.service) <> "radarr" then return false
+    if not SeerrArrFlagIs(queue.inArr, true) or not SeerrArrFlagIs(queue.monitored, true) then return false
+    if not SeerrArrFlagIs(queue.hasFile, false) or not SeerrArrFlagIs(queue.isAvailable, true) then return false
+    return type(queue.items) <> "roArray" or queue.items.Count() = 0
+end function
+
+' An approved HD request for a released movie the arr hasn't found a release for yet. Seerr calls
+' that processing too, so without the arr's queue it looks the same as a download on its way.
+function SeerrRequestNotFoundYet(request as dynamic, arrQueue as dynamic) as boolean
+    if type(request) <> "roAssociativeArray" or request.is4k = true then return false
+    if not SeerrIsNumber(request.status) or request.status <> SEERR_REQUEST_APPROVED then return false
+    mediaStatus = chainLookupReturn(request, "media.status", 0)
+    if not SeerrIsNumber(mediaStatus) or mediaStatus <> SEERR_MEDIA_PROCESSING then return false
+    return SeerrArrNotFoundYet(arrQueue)
+end function
+
+' The arr's own words for what's wrong, or invalid. The error first, since the arr shows it in its own
+' Activity view, then the first import message, then the title of a message group with no lines.
+function SeerrArrReason(item as dynamic) as dynamic
+    if type(item) <> "roAssociativeArray" then return invalid
+    if isValidStringValue(item.errorMessage) and item.errorMessage.Trim() <> "" then return item.errorMessage.Trim()
+
+    groups = item.statusMessages
+    if type(groups) <> "roArray" then return invalid
+    for each group in groups
+        if type(group) = "roAssociativeArray" and type(group.messages) = "roArray"
+            for each line in group.messages
+                if isValidStringValue(line) and line.Trim() <> "" then return line.Trim()
+            end for
+        end if
+    end for
+    for each group in groups
+        if type(group) = "roAssociativeArray" and isValidStringValue(group.title) and group.title.Trim() <> "" then return group.title.Trim()
+    end for
+    return invalid
+end function
+
+' The arr flags a download it has doubts about with a warning or an error
+function SeerrArrHealthy(item as object) as boolean
+    status = SeerrLower(item.trackedDownloadStatus)
+    return status = "" or status = "ok"
+end function
+
+' The arr's name as people know it, for messages
+function SeerrArrServiceName(queue as dynamic) as string
+    if SeerrLower(chainLookupReturn(queue, "service", "")) = "radarr" then return "Radarr"
+    return "Sonarr"
+end function
+
+' Where Moonbase reads a title's queue: Radarr by TMDB id for a movie, Sonarr by TVDB id for a
+' series. Empty when the series has no TVDB id to ask by.
+function SeerrArrQueuePath(mediaType as string, tmdbId as dynamic, tvdbId as dynamic) as string
+    if isStringEqual(mediaType, "movie")
+        if not SeerrIsNumber(tmdbId) and not isValidStringValue(tmdbId) then return ""
+        return `/Moonfin/Seerr/Radarr/Queue?tmdbId=${SeerrIdText(tmdbId)}`
+    end if
+    if not SeerrIsNumber(tvdbId) and not isValidStringValue(tvdbId) then return ""
+    return `/Moonfin/Seerr/Sonarr/Queue?tvdbId=${SeerrIdText(tvdbId)}`
+end function
+
+' Where to read a Seerr title's queue from, while its HD track is on its way: processing, or
+' partly there with more coming. Empty for anything else.
+function SeerrArrQueuePathForDetails(details as dynamic, mediaType as string) as string
+    status = chainLookupReturn(details, "mediaInfo.status", 0)
+    if not SeerrIsNumber(status) or (status <> SEERR_MEDIA_PROCESSING and status <> SEERR_MEDIA_PARTIAL) then return ""
+    if isStringEqual(mediaType, "movie") then return SeerrArrQueuePath("movie", chainLookupReturn(details, "id", invalid), invalid)
+
+    tvdbId = chainLookupReturn(details, "mediaInfo.tvdbId", invalid)
+    if not isValid(tvdbId) then tvdbId = chainLookupReturn(details, "externalIds.tvdbId", invalid)
+    return SeerrArrQueuePath("tv", invalid, tvdbId)
+end function
+
+' What the detail screen's download line shows: the HD track's download, else that it hasn't been
+' found yet, else the 4K track's download. invalid when there's nothing on its way.
+function SeerrDetailDownload(mediaInfo as dynamic, arrQueue as dynamic) as dynamic
+    if type(mediaInfo) <> "roAssociativeArray" then return invalid
+
+    summary = SeerrRequestDownloadSummary({ status: SEERR_REQUEST_APPROVED, is4k: false, media: mediaInfo }, arrQueue)
+    if isValid(summary) then return { summary: summary, is4k: false, notFoundYet: false }
+
+    if SeerrMediaNotFoundYet(mediaInfo, arrQueue) then return { summary: invalid, is4k: false, notFoundYet: true }
+
+    summary = SeerrRequestDownloadSummary({ status: SEERR_REQUEST_APPROVED, is4k: true, media: mediaInfo })
+    if isValid(summary) then return { summary: summary, is4k: true, notFoundYet: false }
+    return invalid
+end function
+
+' A title page's Not found yet: processing on the HD track, with an approved HD request
+function SeerrMediaNotFoundYet(mediaInfo as dynamic, arrQueue as dynamic) as boolean
+    requests = chainLookupReturn(mediaInfo, "requests", invalid)
+    if type(requests) <> "roArray" then return false
+    for each request in requests
+        if type(request) = "roAssociativeArray"
+            if SeerrRequestNotFoundYet({ status: request.status, is4k: request.is4k, media: mediaInfo }, arrQueue) then return true
+        end if
+    end for
+    return false
+end function
+
+' The HD track's stuck download an admin may swap for another release, or invalid. Moonbase decides
+' who may, from the Jellyfin admin flag, and says so in canRemove.
+function SeerrReplaceableDownload(mediaInfo as dynamic, arrQueue as dynamic) as dynamic
+    if type(arrQueue) <> "roAssociativeArray" or not SeerrArrFlagIs(arrQueue.canRemove, true) then return invalid
+    if type(mediaInfo) <> "roAssociativeArray" then return invalid
+
+    summary = SeerrRequestDownloadSummary({ status: SEERR_REQUEST_APPROVED, is4k: false, media: mediaInfo }, arrQueue)
+    if not isValid(summary) or not summary.isStuck or not isValid(summary.stuckItemId) then return invalid
+    return summary
+end function
+
+' The removal that blocks a stuck release and has the arr search again
+function SeerrArrRemovePath(queue as dynamic, queueId as dynamic) as string
+    return `/Moonfin/Seerr/${SeerrArrServiceName(queue)}/Queue/${SeerrIdText(queueId)}`
+end function
+
+' An id as it goes in a path, without the leading space str() gives a number
+function SeerrIdText(value as dynamic) as string
+    if isValidStringValue(value) then return value.Trim()
+    if SeerrIsNumber(value) then return value.toStr()
+    return ""
+end function
+
+' A string in lower case, or empty for anything that isn't one
+function SeerrLower(value as dynamic) as string
+    if not isValidStringValue(value) then return ""
+    return LCase(value)
 end function
 
 ' What one queue entry is doing, from the status Radarr or Sonarr report. done is a download with
 ' every byte in, which waits on the import whatever the client calls it.
 function SeerrDownloadEntryState(entry as object, done as boolean) as string
+    ' The arr's own verdict, which only its queue carries, outranks the client's status: a client
+    ' calls a blocked import completed
+    tracked = SeerrLower(entry.trackedDownloadState)
+    if tracked = "importblocked" then return "importBlocked"
+    if tracked = "importpending" or tracked = "importing"
+        ' Radarr and Sonarr hold a release with an executable here, with a warning, until someone
+        ' steps in, so it is as stuck as a blocked one
+        if not SeerrArrHealthy(entry) then return "importBlocked"
+        return "waitingForImport"
+    end if
+    if tracked = "imported" then return "waitingForImport"
+    if tracked = "failedpending" or tracked = "failed" then return "failed"
+
     status = ""
     if isValidStringValue(entry.status) then status = LCase(entry.status)
     if status = "failed" then return "failed"
@@ -1348,9 +1594,9 @@ function SeerrDownloadEntryState(entry as object, done as boolean) as string
 end function
 
 ' Where several downloads make up a request, the one ranked highest speaks for it. One download on
-' the move outranks a paused or queued one, and a stuck or failed one outranks everything.
+' the move outranks a paused or queued one, and a stuck, blocked or failed one outranks everything.
 function SeerrDownloadStateRank(state as string) as integer
-    ranks = ["waitingForImport", "paused", "queued", "downloading", "stalled", "failed"]
+    ranks = ["waitingForImport", "paused", "queued", "downloading", "stalled", "importBlocked", "failed"]
     for i = 0 to ranks.Count() - 1
         if ranks[i] = state then return i
     end for
@@ -1396,6 +1642,8 @@ function SeerrDownloadLabelParts(summary as object, wide as boolean, separator a
         if wide then return { lead: tr("Downloaded, waiting for import"), trail: "" }
         return { lead: tr("Downloaded"), trail: "" }
     end if
+    ' Always fully downloaded, so the words alone, which a percentage would only cut short
+    if summary.state = "importBlocked" then return { lead: tr("Import blocked"), trail: "" }
 
     trail = `${Int(summary.fraction * 100 + 0.5).toStr()}%`
     word = SeerrDownloadStateWord(summary.state)
@@ -1422,7 +1670,7 @@ end function
 ' Amber for a stalled download and red for a failed one, so a stuck bar stands out from a slow one,
 ' and dimmed while it's paused or waiting its turn
 function SeerrDownloadBarColor(state as string, normal as string) as string
-    if state = "stalled" then return "#EAB308"
+    if state = "stalled" or state = "importBlocked" then return "#EAB308"
     if state = "failed" then return "#EF4444"
     if state = "paused" or state = "queued" then return "#FFFFFF61"
     return normal

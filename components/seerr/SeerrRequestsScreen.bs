@@ -15,6 +15,8 @@ const REQUESTER_WIDTH = 160
 const REQUESTER_FONT = 22
 const TILE_HEIGHT = 386
 const REQUESTER_LINE = 26
+' How many titles' Radarr/Sonarr queues are read at once
+const ARR_QUEUE_BATCH = 4
 
 sub init()
     m.titleLabel = m.top.findNode("titleLabel")
@@ -60,6 +62,12 @@ sub init()
     m.hydrationExpected = 0
     m.loadGeneration = 0
     m.listTask.addField("generation", "integer", false)
+    ' Each title's queue, kept across reloads, as "movie:603" or "tv:1399"
+    m.arrQueues = {}
+    m.arrPending = []
+    m.arrTasks = {}
+    m.arrPaths = {}
+    m.arrStamp = 0
 end sub
 
 sub OnScreenShown(_isReturning = false as boolean)
@@ -349,7 +357,106 @@ sub finishPage()
     m.loading = false
     m.loadingMore = false
     renderItems()
+    loadArrQueues(m.hydrated)
 end sub
+
+' ===== The Radarr/Sonarr queues =====
+
+' Which title's queue a request reads, or empty when it has none to read: only an approved HD
+' request whose title is on its way, since Moonbase reads only the default HD arr
+function arrQueueKey(entry as object) as string
+    if entry.is4k = true or entry.status <> SEERR_REQUEST_APPROVED then return ""
+    media = entry.media
+    mediaStatus = chainLookupReturn(media, "status", 0)
+    if mediaStatus <> SEERR_MEDIA_PROCESSING and mediaStatus <> SEERR_MEDIA_PARTIAL then return ""
+    tmdbId = chainLookupReturn(media, "tmdbId", invalid)
+    if not isValid(tmdbId) then return ""
+    mediaType = chainLookupReturn(media, "mediaType", "")
+    if not isStringEqual(mediaType, "movie") and not isStringEqual(mediaType, "tv") then return ""
+    return `${LCase(mediaType)}:${SeerrIdText(tmdbId)}`
+end function
+
+' Reads the queue once per title, however many requests share it, a few at a time. A title Moonbase
+' can't read drops out, which puts its tiles back on what Seerr reports.
+sub loadArrQueues(entries as object)
+    ' An issue carries a title too, but no download of its own
+    if m.tab = "issues" then return
+    if not SeerrArrQueueAvailable()
+        ' Moonbase stopped offering them, so the tiles go back on what Seerr reports
+        if m.arrQueues.Count() > 0
+            m.arrQueues = {}
+            renderItems()
+        end if
+        return
+    end if
+
+    for each entry in entries
+        key = arrQueueKey(entry)
+        if key <> "" and not m.arrTasks.DoesExist(key) and not inArray(m.arrPending, key)
+            path = SeerrArrQueuePath(entry.media.mediaType, entry.media.tmdbId, chainLookupReturn(entry, "media.tvdbId", invalid))
+            if path <> ""
+                m.arrPending.push(key)
+                m.arrPaths[key] = path
+            end if
+        end if
+    end for
+
+    while m.arrTasks.Count() < ARR_QUEUE_BATCH and m.arrPending.count() > 0
+        startArrQueue(m.arrPending.Shift())
+    end while
+end sub
+
+sub startArrQueue(key as string)
+    task = CreateObject("roSGNode", "SeerrAPITask")
+    task.addField("key", "string", false)
+    task.key = key
+    ' The query rides on the endpoint, since an assocarray crossing a node field loses its key case
+    task.request = { method: "GET", endpoint: m.arrPaths[key], usePluginRoot: true }
+    task.observeField("response", "onArrQueue")
+    ' Held onto, otherwise the node goes out of scope while the call is still in flight
+    m.arrTasks[key] = task
+    task.control = TaskControl.RUN
+end sub
+
+sub onArrQueue(event as object)
+    task = event.getRoSGNode()
+    key = task.key
+    m.arrTasks.Delete(key)
+
+    response = event.getData()
+    if isValid(response) and response.success = true and response.statusCode = 200 and type(response.data) = "roAssociativeArray"
+        m.arrQueues[key] = response.data
+    else
+        m.arrQueues.Delete(key)
+    end if
+    applyArrQueue(key)
+
+    if m.arrPending.count() > 0 then startArrQueue(m.arrPending.Shift())
+end sub
+
+' The tiles of that title take the new answer in place, so focus and scroll stay where they are
+sub applyArrQueue(key as string)
+    if m.tab = "issues" then return
+    content = m.requestGrid.content
+    if not isValid(content) then return
+
+    m.arrStamp++
+    for i = 0 to content.getChildCount() - 1
+        row = content.getChild(i)
+        if isValid(row) and arrQueueKey(row.request) = key
+            row.arrQueue = arrQueueFor(row.request)
+            row.arrStamp = m.arrStamp
+        end if
+    end for
+end sub
+
+' The title's queue narrowed to what the request asked for, or an empty one, since an assocarray
+' field won't take invalid
+function arrQueueFor(entry as object) as object
+    key = arrQueueKey(entry)
+    if key = "" or not m.arrQueues.DoesExist(key) then return {}
+    return SeerrArrQueueForSeasons(m.arrQueues[key], entry.seasons)
+end function
 
 sub renderItems()
     if m.items.count() = 0
@@ -368,6 +475,7 @@ sub renderItems()
             row = content.CreateChild("SeerrRequestData")
             row.actions = requestActions(entry)
             row.splitRequester = split
+            row.arrQueue = arrQueueFor(entry)
             row.request = entry
         end if
     end for
