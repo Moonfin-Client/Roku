@@ -1,7 +1,6 @@
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/misc.bs"
-import "pkg:/source/utils/playbackFacts.bs"
 
 ' The technical badges beside a title: what it is encoded as, what it is wrapped in and what
 ' it sounds like. All of them read off the media source, so a title with nothing selected yet
@@ -113,7 +112,8 @@ namespace mediaBadges
     ' Dolby Vision falls back to. An SDR fallback gets no badge of its own, and Dolby Vision the
     ' server calls invalid reads as whatever VideoRange says the picture is.
     sub AddRange(badges as object, video as object)
-        if mediaBadges.RangeTypeOf(video) = "DOVIInvalid"
+        rangeType = mediaBadges.RangeTypeOf(video)
+        if rangeType = "DOVIInvalid"
             range = isStringEqual(video.LookupCI("VideoRange") ?? "", "HDR") ? "HDR" : "SDR"
         else
             range = mediaBadges.RangeLabel(video)
@@ -121,8 +121,8 @@ namespace mediaBadges
 
         hdrLabel = range
         if range = "Dolby Vision"
-            hdrLabel = mediaBadges.BaseLayerLabel(video)
-            profile = playbackFacts.DolbyVisionProfile(video)
+            hdrLabel = mediaBadges.BaseLayerLabel(rangeType)
+            profile = mediaBadges.DolbyVisionProfile(video)
             if profile > 0
                 badges.push(tr("DV P{profile}").Replace("{profile}", profile.ToStr()))
             else
@@ -142,14 +142,21 @@ namespace mediaBadges
         return CreateObject("roRegex", "[^A-Z0-9]+", "").ReplaceAll(UCase(value.Replace("+", "PLUS")), "")
     end function
 
+    ' The first range field the server filled in with a range. Emby puts None in ExtendedVideoType for
+    ' anything that isn't Dolby Vision or HLG, and Jellyfin sometimes Unknown in VideoRangeType, so
+    ' those say nothing and the next field is read.
+    function RangeField(video as object, fields as object) as string
+        for each field in fields
+            value = mediaBadges.Squash(video.LookupCI(field))
+            if value <> "" and value <> "NONE" and value <> "UNKNOWN" then return value
+        end for
+        return ""
+    end function
+
     ' The HDR format a stream carries, from whichever range field the server filled in. Emby types it
     ' in ExtendedVideoType and writes VideoRange as prose, HDR 10 rather than HDR10.
     function RangeLabel(video as object) as string
-        range = ""
-        for each field in ["VideoRangeType", "ExtendedVideoType", "VideoRange"]
-            range = mediaBadges.Squash(video.LookupCI(field))
-            if range <> "" then exit for
-        end for
+        range = mediaBadges.RangeField(video, ["VideoRangeType", "ExtendedVideoType", "VideoRange"])
 
         if range.Instr("DOVI") >= 0 or range.Instr("DOLBYVISION") >= 0 then return "Dolby Vision"
         ' Ahead of HDR10, which its own name would match first
@@ -165,25 +172,45 @@ namespace mediaBadges
     ' ExtendedVideoSubType, which reads here as the range type Jellyfin gives the same file.
     function RangeTypeOf(video as object) as string
         rangeType = video.LookupCI("VideoRangeType")
-        if isValidAndNotEmpty(rangeType) then return rangeType
+        if isValidAndNotEmpty(rangeType) and mediaBadges.Squash(rangeType) <> "UNKNOWN" then return rangeType
 
-        kind = mediaBadges.Squash(video.LookupCI("ExtendedVideoType"))
-        if kind = "" then kind = mediaBadges.Squash(video.LookupCI("VideoRange"))
-        if kind <> "DOLBYVISION" then return ""
+        if mediaBadges.RangeField(video, ["ExtendedVideoType", "VideoRange"]) <> "DOLBYVISION" then return ""
 
+        ' The layer under each profile, as Jellyfin names it for the same file
         subType = mediaBadges.Squash(video.LookupCI("ExtendedVideoSubType"))
-        ' Profiles 8.1 and 6.1 sit on plain HDR10
-        if subType = "DOVIPROFILE61" or subType = "DOVIPROFILE81" then return "DOVIWithHDR10"
+        layers = {
+            DOVIPROFILE61: "DOVIWithHDR10",
+            DOVIPROFILE81: "DOVIWithHDR10",
+            DOVIPROFILE101: "DOVIWithHDR10",
+            DOVIPROFILE84: "DOVIWithHLG",
+            DOVIPROFILE104: "DOVIWithHLG",
+            DOVIPROFILE102: "DOVIWithSDR"
+        }
+        if layers.DoesExist(subType) then return layers[subType]
         if Left(subType, 12) = "DOVIPROFILE5" then return "DOVI"
         if Left(subType, 12) = "DOVIPROFILE7" then return "DOVIWithEL"
         return "DolbyVision"
     end function
 
+    ' The Dolby Vision profile, from DvProfile (Jellyfin, Silo, Plex) or Emby's ExtendedVideoSubType,
+    ' which writes the profile and its compatibility level together: DoviProfile81 is profile 8 and
+    ' DoviProfile101 profile 10. 0 when there's none.
+    function DolbyVisionProfile(video as dynamic) as integer
+        if type(video) <> "roAssociativeArray" then return 0
+        profile = video.LookupCI("DvProfile")
+        if isValid(profile) and (type(profile) = "roInt" or type(profile) = "Integer" or type(profile) = "roFloat" or type(profile) = "Float" or type(profile) = "LongInteger") and profile > 0 then return Int(profile)
+        match = CreateObject("roRegex", "doviprofile(\d+)", "i").Match(toString(video.LookupCI("ExtendedVideoSubType") ?? ""))
+        if match.count() < 2 then return 0
+        digits = match[1]
+        if Len(digits) >= 3 then return Left(digits, 2).ToInt()
+        return Left(digits, 1).ToInt()
+    end function
+
     ' The format under the Dolby Vision, named after DOVIWith in the range type. A profile 7
     ' enhancement layer sits on HDR10 unless HDR10+ is named with it, and bare Dolby Vision has
     ' nothing under it.
-    function BaseLayerLabel(video as object) as string
-        match = CreateObject("roRegex", "^DOVIWITH(?:EL)?(.*)$", "").Match(mediaBadges.Squash(mediaBadges.RangeTypeOf(video)))
+    function BaseLayerLabel(rangeType as string) as string
+        match = CreateObject("roRegex", "^DOVIWITH(?:EL)?(.*)$", "").Match(mediaBadges.Squash(rangeType))
         if match.count() < 2 then return ""
         layer = match[1]
         if layer = "" then layer = "HDR10"
