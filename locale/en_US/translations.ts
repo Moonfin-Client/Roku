@@ -11125,5 +11125,10 @@
         <extracomment>Watch Parties - the subtitle option that leaves subtitles to each member</extracomment>
         <translation>Each person&apos;s choice</translation>
     </message>
+    <message>
+        <source>Moonbase couldn&apos;t keep the subtitles for everyone.</source>
+        <extracomment>Watch Parties - shown when saving the Silo host's subtitle choice for the party failed</extracomment>
+        <translation>Moonbase couldn&apos;t keep the subtitles for everyone.</translation>
+    </message>
 </context>
 </TS>
