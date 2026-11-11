@@ -122,11 +122,11 @@
     </message>
     <message>
         <source>Sort Field</source>
-        <translation>Sort Field</translation>
+        <translation>Campo de ordenación</translation>
     </message>
     <message>
         <source>Date Added</source>
-        <translation>Date Added</translation>
+        <translation>Fecha Añadida</translation>
     </message>
     <message>
         <source>Release Date</source>
@@ -138,15 +138,15 @@
     </message>
     <message>
         <source>Sort Order</source>
-        <translation>Sort Order</translation>
+        <translation>Orden de clasificación</translation>
     </message>
     <message>
         <source>Descending</source>
-        <translation>Descending</translation>
+        <translation>Descendente</translation>
     </message>
     <message>
         <source>Ascending</source>
-        <translation>Ascending</translation>
+        <translation>Ascendente</translation>
     </message>
     <message>
         <source>Password</source>
@@ -154,11 +154,11 @@
     </message>
     <message>
         <source>Username</source>
-        <translation>Username</translation>
+        <translation>Nombre de Usuario</translation>
     </message>
     <message>
         <source>Genres</source>
-        <translation>Genres</translation>
+        <translation>Generos</translation>
     </message>
     <message>
         <source>Director</source>
@@ -761,7 +761,7 @@
     </message>
     <message>
         <source>Ratings for how good a movie is</source>
-        <translation>Valoraciones y crítica de Rotten Tomatoes.</translation>
+        <translation>Calificaciones sobre qué tan buena es una película</translation>
         <extracomment>User Setting - Setting description</extracomment>
     </message>
     <message>
@@ -1898,12 +1898,12 @@
     </message>
     <message>
         <source>Support direct play of MPEG 2 content (e.g. Live TV). This will prevent transcoding of MPEG 2 content, but uses significantly more bandwidth</source>
-        <translation type="unfinished">Soportar reproducción directa de contenido MPEG 2 (p. ej. televisión en directo). Esto prevendrá la transcodificación de contenido MPEG 2, pero consumirá más ancho de banda</translation>
+        <translation>Soporta reproducción directa de contenido MPEG 2 (p. ej. Live TV). Esto evitará la transcodificación del contenido MPEG 2, pero consumirá mucho más ancho de banda</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
         <source>MPEG 2 Support</source>
-        <translation type="unfinished">Soporte de MPEG 2</translation>
+        <translation>Soporte de MPEG 2</translation>
         <extracomment>Settings Menu - Title for option</extracomment>
     </message>
     <message>
@@ -1913,12 +1913,12 @@
     </message>
     <message>
         <source>An error was encountered while playing this item. Server did not provide required transcoding data.</source>
-        <translation type="unfinished">Hubo un error al reproducir este contenido. El servidor no proporcionó información de transcodificación</translation>
+        <translation>Se produjo un error al reproducir este elemento. El servidor no proporcionó los datos de transcodificación necesarios.</translation>
         <extracomment>Content of message box when trying to play an item which requires transcoding, and the server did not provide transcode url</extracomment>
     </message>
     <message>
         <source>Error Getting Playback Information</source>
-        <translation type="unfinished">Error obteniendo la información de reproducción</translation>
+        <translation>Error obteniendo la información de reproducción</translation>
         <extracomment>Dialog Title: Received error from server when trying to get information about the selected item for playback</extracomment>
     </message>
     <message>
@@ -1933,12 +1933,12 @@
     </message>
     <message>
         <source>Enter the server name or ip address</source>
-        <translation>Introduce la dirección IP o nombre del servidor</translation>
+        <translation>Introduce la dirección IP o Nombre del Servidor</translation>
         <extracomment>Title of KeyboardDialog when manually entering a server URL</extracomment>
     </message>
     <message>
         <source>Record Series</source>
-        <translation type="unfinished">Grabar episodios</translation>
+        <translation>Grabar Series</translation>
     </message>
     <message>
         <source>Cast &amp; Crew</source>
@@ -1950,7 +1950,7 @@
     </message>
     <message>
         <source>Delete Saved</source>
-        <translation type="unfinished">Borrar guardado</translation>
+        <translation>Borrar guardado</translation>
     </message>
     <message>
         <source>Save Credentials?</source>
@@ -2003,7 +2003,6 @@
     <message>
         <source>Special Features</source>
         <translation>Contenido Adicional</translation>
-        
     </message>
     <message>
         <source>More Like This</source>
@@ -2519,7 +2518,7 @@
     </message>
     <message>
         <source>Hide Backdrops While Browsing</source>
-        <translation>¿Ocultar las imágenes de fondo al explorar?</translation>
+        <translation>Ocultar fondos mientras navega</translation>
     </message>
     <message>
         <source>Hide Collection associated library items when browsing libraries</source>
@@ -2687,7 +2686,7 @@
     </message>
     <message>
         <source>Show Technical Details</source>
-        <translation>¿Mostrar detalles técnicos?</translation>
+        <translation>Mostrar detalles técnicos</translation>
     </message>
     <message>
         <source>Show codec, resolution, and stream information in banner summary</source>
@@ -2739,7 +2738,7 @@
     </message>
     <message>
         <source>Still Watching Prompt</source>
-        <translation>Mensaje de ¿Sigues viendo?</translation>
+        <translation>Mensaje de Sigues viendo</translation>
     </message>
     <message>
         <source>Subtitle Rendering</source>

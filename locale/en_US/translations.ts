@@ -11107,5 +11107,13 @@
         <source>Show the Watch Parties button on the navigation bar</source>
         <translation>Show the Watch Parties button on the navigation bar</translation>
     </message>
+    <message>
+        <source>Home Row Info Overlay</source>
+        <translation>Home Row Info Overlay</translation>
+    </message>
+    <message>
+        <source>Show title and metadata when browsing home rows</source>
+        <translation>Show title and metadata when browsing home rows</translation>
+    </message>
 </context>
 </TS>

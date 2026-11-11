@@ -21,6 +21,10 @@ sub loadFavorites()
         m.top.error = "No request"
         return
     end if
+    if request.mode = "backdrops"
+        fillWatchlistBackdrops(request.nodes ?? [])
+        return
+    end if
 
     sessions = favoriteSessions()
     if sessions.count() = 0
@@ -143,7 +147,7 @@ sub loadPage(sessions as object, request as object, tabs as object)
         page = watchlistPage(Int(startIndex / WATCHLIST_PAGE_SIZE) + 1)
         counts = emptyCounts(tabs)
         counts.watchlist = page.total
-        answerWith("page", page.nodes, counts, page.total, startIndex, "watchlist", { watchlist: page.fetched })
+        answerWith("page", page.nodes, counts, page.total, startIndex, "watchlist", { watchlist: loadedThrough(page, startIndex) })
         return
     end if
 
@@ -432,8 +436,16 @@ sub addWatchlist(nodes as object, counts as object, fetched as object)
         nodes.push(node)
     end for
     counts.watchlist = page.total
-    fetched.watchlist = page.fetched
+    fetched.watchlist = loadedThrough(page, 0)
 end sub
+
+' How many titles the screen has once it adds this page. Seerr's titles alone fall short of a
+' total that includes the library's, so with no page after this one it's the rest of the tab,
+' or the screen would ask on for a page it already has.
+function loadedThrough(page as object, startIndex as integer) as integer
+    if page.lastPage and startIndex + page.fetched < page.total then return page.total - startIndex
+    return page.fetched
+end function
 
 ' One page of the Seerr watchlist as request cards, which open the request screen. It needs a
 ' Seerr sign in, so without one the tab doesn't show.
@@ -442,16 +454,18 @@ function watchlistPage(page as integer) as object
     ' sign in, as Moonfin Core shows them there
     nodes = []
     inLibrary = {}
+    ' Counted on every page, so each page's total is the same whole tab
+    libraryCount = 0
     if isSiloServer()
         for each node in siloWatchlistNodes()
             if page = 1 then nodes.push(node)
+            libraryCount++
             tmdbId = toString(chainLookupReturn(node, "json.ProviderIds.Tmdb", ""))
             if tmdbId <> "" then inLibrary[LCase(node.json.Type) + "/" + tmdbId] = true
         end for
     end if
-    libraryCount = nodes.count()
     ' fetched counts only Seerr's titles, since the next page is worked out from it
-    result = { nodes: nodes, total: libraryCount, fetched: 0 }
+    result = { nodes: nodes, total: libraryCount, fetched: 0, lastPage: true }
     if not GetSeerrConfig().enabled then return result
     answer = seerrProxyJson("discover/watchlist", { page: page.ToStr() })
     if not isValid(answer) or type(answer.results) <> "roArray" then return result
@@ -478,6 +492,8 @@ function watchlistPage(page as integer) as object
     end for
     result.total = libraryCount + (answer.totalResults ?? answer.results.count()) - shownAbove
     result.fetched = answer.results.count()
+    result.lastPage = answer.results.count() < WATCHLIST_PAGE_SIZE
+    if isValid(answer.totalPages) then result.lastPage = page >= answer.totalPages
     return result
 end function
 
@@ -513,11 +529,12 @@ end function
 
 ' Seerr's watchlist names each title by its TMDB id and type and no more, so the poster, year and
 ' rating come from each title's details, asked for together
-sub withWatchlistDetails(titles as object)
+' missing names the field whose absence sends a title for its details
+sub withWatchlistDetails(titles as object, missing = "posterPath" as string)
     port = CreateObject("roMessagePort")
     running = {}
     for each item in titles
-        if not isValidAndNotEmpty(item.LookupCI("posterPath"))
+        if not isValidAndNotEmpty(item.LookupCI(missing))
             req = APIRequest("/Moonfin/Seerr/Api/" + watchlistMediaType(item) + "/" + watchlistTmdbId(item), {})
             if isValid(req)
                 req.SetMessagePort(port)
@@ -547,6 +564,34 @@ sub withWatchlistDetails(titles as object)
             if isValid(details.LookupCI(key)) then entry.item[key] = details.LookupCI(key)
         end for
     end while
+end sub
+
+' Silo's watchlist sends a poster and no backdrop, so the request cards read theirs from each
+' title's details. That's a request a title, so it runs once the tab is up, on a task of its own
+' so the tab's own loads aren't held behind it, and only for the cards the tab shows. Seerr's own
+' watchlist already reads every title's details, so it has nothing to add there.
+sub fillWatchlistBackdrops(nodes as object)
+    if not isSiloServer() then return
+    cards = []
+    titles = []
+    for each node in nodes
+        seerrItem = chainLookupReturn(node, "json.SeerrItem", invalid)
+        if type(seerrItem) = "roAssociativeArray" and isValidAndNotEmpty(seerrItem.LookupCI("posterPath")) and not isValidAndNotEmpty(seerrItem.LookupCI("backdropPath"))
+            cards.push(node)
+            titles.push(seerrItem)
+        end if
+    end for
+    if titles.count() = 0 then return
+
+    withWatchlistDetails(titles, "backdropPath")
+
+    ' Only the backdrop is written, so nothing else the screen has done to a card is undone
+    backdropBase = GetTmdbImageBaseUrls().backdropW1280
+    for i = 0 to cards.count() - 1
+        path = titles[i].LookupCI("backdropPath")
+        if isValidAndNotEmpty(path) then cards[i].landscapePosterURL = backdropBase + path
+    end for
+    m.top.backdropsFilled = true
 end sub
 
 function watchlistMediaType(item as object) as string
@@ -605,6 +650,9 @@ function watchlistNode(item as object) as object
     if not isValid(node) then return invalid
     node.addField("favoritesTab", "string", false)
     node.favoritesTab = "watchlist"
+    ' Marks a request card, which has no server artwork of its own
+    node.addField("seerrRequest", "boolean", false)
+    node.seerrRequest = true
     node.json = json
     node.title = title
     if posterUrl <> "" then node.posterUrl = posterUrl
