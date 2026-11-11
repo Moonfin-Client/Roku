@@ -1675,8 +1675,12 @@ process.stdout.write('PASS: Watch Parties player and focus wiring (5 checks)\n')
 // The watchlist pages by Seerr's titles alone, however many library titles lead it on Silo, and names its shows
 const favoritesTask = await readFile('components/favorites/LoadFavoritesTask.bs', 'utf8');
 const watchlistPage = favoritesTask.match(/function watchlistPage\([^]*?end function/)[0];
-assert.match(watchlistPage, /fetched: 0 \}/, 'Library titles don\'t count toward the next watchlist page');
+assert.match(watchlistPage, /fetched: 0, lastPage: true \}/, 'Library titles don\'t count toward the next watchlist page');
 assert.match(watchlistPage, /result\.fetched = answer\.results\.count\(\)/, 'Only Seerr\'s titles do');
+assert.match(watchlistPage, /if isValid\(answer\.totalPages\) then result\.lastPage = page >= answer\.totalPages/, 'A page knows whether another follows');
+assert.match(favoritesTask, /function loadedThrough\([^]*?if page\.lastPage and startIndex \+ page\.fetched < page\.total then return page\.total - startIndex/, 'and the last one makes the tab whole, so page 1 and the library\'s titles aren\'t asked for again');
+assert.match(favoritesTask, /fetched\.watchlist = loadedThrough\(page, 0\)/);
+assert.match(favoritesTask, /\{ watchlist: loadedThrough\(page, startIndex\) \}/);
 assert.match(watchlistPage, /if isSiloServer\(\)\s+for each node in siloWatchlistNodes\(\)\s+if page = 1 then nodes\.push\(node\)/, 'Every page leaves out what the library already shows, though only the first shows it');
 assert.match(await readFile('components/favorites/FavoritesScreen.bs', 'utf8'), /if pageFetched = 0 then m\.counts\[tabKey\] = m\.fetchedByTab\[tabKey\]/, 'An empty tab page ends paging');
 assert.match(favoritesTask.match(/function watchlistNode\([^]*?end function/)[0], /if title = "" then title = toString\(item\.LookupCI\("name"\) \?\? ""\)/, 'A show on the watchlist takes its name when its title comes back empty');
