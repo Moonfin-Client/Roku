@@ -10877,5 +10877,50 @@
         <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
         <translation>Show a banner when someone on this server starts one</translation>
     </message>
+    <message>
+        <source>Stalled</source>
+        <extracomment>Seerr download bar - a download that isn't making progress, such as a torrent with no seeders</extracomment>
+        <translation>Stalled</translation>
+    </message>
+    <message>
+        <source>Download failed</source>
+        <extracomment>Seerr download bar - the download client reports the download as failed</extracomment>
+        <translation>Download failed</translation>
+    </message>
+    <message>
+        <source>Downloaded, waiting for import</source>
+        <extracomment>Seerr download bar - the download finished and Radarr or Sonarr hasn't imported it yet</extracomment>
+        <translation>Downloaded, waiting for import</translation>
+    </message>
+    <message>
+        <source>Downloaded</source>
+        <extracomment>Seerr download bar - short form of Downloaded, waiting for import, where the bar is narrow</extracomment>
+        <translation>Downloaded</translation>
+    </message>
+    <message>
+        <source>Queued</source>
+        <extracomment>Seerr download bar - the download is waiting its turn in the download client</extracomment>
+        <translation>Queued</translation>
+    </message>
+    <message>
+        <source>Downloading</source>
+        <extracomment>Seerr download bar - a download with no known size yet</extracomment>
+        <translation>Downloading</translation>
+    </message>
+    <message>
+        <source>%1m left</source>
+        <extracomment>Seerr download bar - time left on a download under an hour, %1 is minutes, keep it</extracomment>
+        <translation>%1m left</translation>
+    </message>
+    <message>
+        <source>%1h left</source>
+        <extracomment>Seerr download bar - time left on a download in whole hours, %1 is hours, keep it</extracomment>
+        <translation>%1h left</translation>
+    </message>
+    <message>
+        <source>%1h %2m left</source>
+        <extracomment>Seerr download bar - time left on a download, %1 is hours and %2 minutes, keep them</extracomment>
+        <translation>%1h %2m left</translation>
+    </message>
 </context>
 </TS>

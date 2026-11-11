@@ -1258,8 +1258,8 @@ function SeerrIssueTypeLabel(issueType as integer) as string
     return tr("Other")
 end function
 
-' How far along a download is, by bytes across the queue. Nothing to show unless the title is
-' being worked on, so a finished or turned down request returns invalid.
+' How far along a download is, by bytes across the queue, and what it's doing. Nothing to show
+' unless the title is being worked on, so a finished or turned down request returns invalid.
 function SeerrRequestDownloadSummary(request as object) as object
     if request = invalid then return invalid
     if request.status = SEERR_REQUEST_DECLINED or request.status = SEERR_REQUEST_FAILED then return invalid
@@ -1281,26 +1281,151 @@ function SeerrRequestDownloadSummary(request as object) as object
     ' Sonarr lists a season pack once per episode, each with the whole pack's size and the same
     ' download id, so each download counts once. An entry with no download id is a release Sonarr
     ' or Radarr is holding back rather than downloading.
-    total = 0.0
-    left = 0.0
+    total = 0#
+    left = 0#
+    state = ""
+    slowest = invalid
+    timeLeftKnown = true
     seen = {}
     for each entry in queue
         key = SeerrDownloadKey(entry)
         if key <> "" and not seen.DoesExist(key)
             seen[key] = true
-            size = entry.size
+            ' A magnet with no peers never learns its size, so it counts for its state but adds no
+            ' bytes. No sizeLeft says nothing about how far along it is, so it counts as not started.
+            size = 0#
+            if SeerrIsNumber(entry.size) and entry.size > 0 then size = entry.size * 1#
+            itemLeft = size
+            if SeerrIsNumber(entry.sizeLeft) then itemLeft = entry.sizeLeft * 1#
+            if itemLeft < 0 then itemLeft = 0#
+            if itemLeft > size then itemLeft = size
             total += size
-            sizeLeft = 0.0
-            if SeerrIsNumber(entry.sizeLeft) then sizeLeft = entry.sizeLeft
-            if sizeLeft < 0 then sizeLeft = 0
-            if sizeLeft > size then sizeLeft = size
-            left += sizeLeft
+            left += itemLeft
+
+            itemState = SeerrDownloadEntryState(entry, size > 0 and SeerrIsNumber(entry.sizeLeft) and itemLeft <= 0)
+            if state = "" or SeerrDownloadStateRank(itemState) > SeerrDownloadStateRank(state) then state = itemState
+            if itemState <> "waitingForImport"
+                ' A paused or queued sibling has no end in sight, so the request has none either
+                eta = invalid
+                if itemState = "downloading" then eta = SeerrParseTimeLeft(entry.timeLeft)
+                if eta = invalid
+                    timeLeftKnown = false
+                else if slowest = invalid or eta > slowest
+                    slowest = eta
+                end if
+            end if
         end if
     end for
 
-    if total <= 0 then return invalid
+    if state = "" then return invalid
 
-    return { fraction: (total - left) / total, done: total - left, total: total, isImporting: left <= 0 }
+    fraction = 0#
+    if total > 0 then fraction = (total - left) / total
+    if state = "waitingForImport"
+        ' The client can call a download completed before its byte count settles
+        fraction = 1#
+    else if fraction > 0.99
+        ' A sizeless download adds no bytes, so the sized ones alone can reach 100% while it's going
+        fraction = 0.99
+    end if
+    if state <> "downloading" or not timeLeftKnown then slowest = invalid
+
+    return { fraction: fraction, done: total - left, total: total, hasSize: total > 0, state: state, timeLeft: slowest, isWaitingForImport: state = "waitingForImport" }
+end function
+
+' What one queue entry is doing, from the status Radarr or Sonarr report. done is a download with
+' every byte in, which waits on the import whatever the client calls it.
+function SeerrDownloadEntryState(entry as object, done as boolean) as string
+    status = ""
+    if isValidStringValue(entry.status) then status = LCase(entry.status)
+    if status = "failed" then return "failed"
+    if done or status = "completed" then return "waitingForImport"
+    ' A torrent with no seeders shows as a warning, and an unreachable client isn't moving either
+    if status = "warning" or status = "downloadclientunavailable" then return "stalled"
+    if status = "paused" then return "paused"
+    if status = "queued" then return "queued"
+    return "downloading"
+end function
+
+' Where several downloads make up a request, the one ranked highest speaks for it. One download on
+' the move outranks a paused or queued one, and a stuck or failed one outranks everything.
+function SeerrDownloadStateRank(state as string) as integer
+    ranks = ["waitingForImport", "paused", "queued", "downloading", "stalled", "failed"]
+    for i = 0 to ranks.Count() - 1
+        if ranks[i] = state then return i
+    end for
+    return 3
+end function
+
+' Seconds left from a .NET TimeSpan as Radarr and Sonarr send it: "hh:mm:ss", with a "d." day prefix
+' past a day and an optional fraction of a second. invalid when there's no estimate.
+function SeerrParseTimeLeft(value as dynamic) as dynamic
+    if not isValidStringValue(value) then return invalid
+    match = CreateObject("roRegex", "^(?:(\d+)\.)?(\d+):(\d{2}):(\d{2})(?:\.\d+)?$", "").Match(value.Trim())
+    if match.Count() < 5 then return invalid
+    days = 0
+    if isValidStringValue(match[1]) then days = match[1].ToInt()
+    ' TimeSpan's maximum means no estimate, and a count that size would overflow the seconds
+    if days > 9999 then return invalid
+    return days * 86400 + match[2].ToInt() * 3600 + match[3].ToInt() * 60 + match[4].ToInt()
+end function
+
+' "12m left", "2h left" or "1h 5m left", rounded up so the last minute doesn't read 0m. A download
+' days out reads in hours.
+function SeerrTimeLeftText(seconds as integer) as string
+    minutes = Int((seconds + 59) / 60)
+    if minutes < 60 then return tr("%1m left").Replace("%1", minutes.toStr())
+    hours = Int(minutes / 60)
+    minutes = minutes mod 60
+    if minutes = 0 then return tr("%1h left").Replace("%1", hours.toStr())
+    return tr("%1h %2m left").Replace("%1", hours.toStr()).Replace("%2", minutes.toStr())
+end function
+
+' The download bar's label. A wide bar says the sizes beside a stuck download's word, and the time
+' left after an active one's percentage, which a narrow one hasn't room for.
+function SeerrDownloadLabel(summary as object, wide as boolean, separator as string) as string
+    parts = SeerrDownloadLabelParts(summary, wide, separator)
+    if parts.trail = "" then return parts.lead
+    return `${parts.lead} ${separator} ${parts.trail}`
+end function
+
+' The label in two halves: what's happening, and how far along. A tile sets the second apart, so the
+' first is what gets cut short and the percentage always shows.
+function SeerrDownloadLabelParts(summary as object, wide as boolean, separator as string) as object
+    if summary.isWaitingForImport
+        if wide then return { lead: tr("Downloaded, waiting for import"), trail: "" }
+        return { lead: tr("Downloaded"), trail: "" }
+    end if
+
+    trail = `${Int(summary.fraction * 100 + 0.5).toStr()}%`
+    word = SeerrDownloadStateWord(summary.state)
+    if word <> ""
+        if wide and summary.hasSize then return { lead: `${word} ${separator} ${SeerrDownloadSizeText(summary)}`, trail: trail }
+        return { lead: word, trail: trail }
+    end if
+
+    lead = tr("Downloading")
+    if summary.hasSize then lead = SeerrDownloadSizeText(summary)
+    if wide and summary.timeLeft <> invalid and summary.timeLeft > 0 then trail += ` ${separator} ${SeerrTimeLeftText(summary.timeLeft)}`
+    return { lead: lead, trail: trail }
+end function
+
+' The word for a download that isn't simply moving, or nothing for one that is
+function SeerrDownloadStateWord(state as string) as string
+    if state = "stalled" then return tr("Stalled")
+    if state = "failed" then return tr("Download failed")
+    if state = "paused" then return tr("Paused")
+    if state = "queued" then return tr("Queued")
+    return ""
+end function
+
+' Amber for a stalled download and red for a failed one, so a stuck bar stands out from a slow one,
+' and dimmed while it's paused or waiting its turn
+function SeerrDownloadBarColor(state as string, normal as string) as string
+    if state = "stalled" then return "#EAB308"
+    if state = "failed" then return "#EF4444"
+    if state = "paused" or state = "queued" then return "#FFFFFF61"
+    return normal
 end function
 
 ' The done half is read in the total's unit, so a part finished download says 1.6 GB / 4.4 GB
@@ -1352,10 +1477,9 @@ function isValidStringValue(value as dynamic) as boolean
     return value <> ""
 end function
 
-' The download a queue entry belongs to, or nothing for one without a size or a download id
+' The download a queue entry belongs to, or nothing for one without a download id
 function SeerrDownloadKey(entry as dynamic) as string
     if type(entry) <> "roAssociativeArray" then return ""
-    if not SeerrIsNumber(entry.size) or entry.size <= 0 then return ""
     downloadId = entry.downloadId
     if not isValid(downloadId) or (SeerrIsNumber(downloadId) and downloadId = 0) then return ""
     return toString(downloadId)
