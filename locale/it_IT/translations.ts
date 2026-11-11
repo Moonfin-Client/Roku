@@ -526,7 +526,7 @@
     </message>
     <message>
         <source>Remember the currently logged in user and try to log them in again next time you start the Jellyfin app.</source>
-        <translation type="unfinished">Ricorda l&apos;utente attualmente connesso e prova a loggarlo nuovamente la prossima volta che l&apos;app Jellyfin viene aperta.</translation>
+        <translation>Ricorda l&apos;utente connesso e prova ad accedere di nuovo con lui la prossima volta che apri l&apos;app Jellyfin.</translation>
         <extracomment>User Setting - Setting description</extracomment>
     </message>
     <message>
@@ -653,7 +653,7 @@
     </message>
     <message>
         <source>Set how many seconds before the end of an episode the Next Episode button should appear. Set to 0 to disable.</source>
-        <translation type="unfinished">Imposta quanti secondi prima della fine di un episodio appare il tasto Prossimo episodio. Impostare a 0 per disabilitare.</translation>
+        <translation>Imposta quanti secondi prima della fine di un episodio deve comparire il pulsante Prossimo episodio. Imposta 0 per disattivarlo.</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
@@ -1102,7 +1102,7 @@
     </message>
     <message>
         <source>Ratings for how good a movie is</source>
-        <translation type="unfinished">Valutazioni sulla qualità di un film</translation>
+        <translation>Valutazioni sulla qualità di un film</translation>
         <extracomment>User Setting - Setting description</extracomment>
     </message>
     <message>
@@ -1426,7 +1426,7 @@
     </message>
     <message>
         <source>APP INFO</source>
-        <translation>INFORMAZIONI SULL'APP</translation>
+        <translation>INFORMAZIONI SULL&apos;APP</translation>
     </message>
     <message>
         <source>ASS/SSA Direct Play</source>
@@ -1454,7 +1454,7 @@
     </message>
     <message>
         <source>App Theme</source>
-        <translation>Tema dell'app</translation>
+        <translation>Tema dell&apos;app</translation>
     </message>
     <message>
         <source>Auto Advance</source>
@@ -1478,7 +1478,7 @@
     </message>
     <message>
         <source>Automatically play the next episode when available.</source>
-        <translation>Riproduci automaticamente l'episodio successivo quando disponibile.</translation>
+        <translation>Riproduci automaticamente l&apos;episodio successivo quando disponibile.</translation>
     </message>
     <message>
         <source>Automatically show tab content while browsing tabs. Turn off to open and close each tab manually.</source>
@@ -1510,7 +1510,7 @@
     </message>
     <message>
         <source>Change subtitle modes, default languages, appearance, and rendering options.</source>
-        <translation>Modifica le modalità dei sottotitoli, le lingue predefinite, l'aspetto e le opzioni di rendering.</translation>
+        <translation>Modifica le modalità dei sottotitoli, le lingue predefinite, l&apos;aspetto e le opzioni di rendering.</translation>
     </message>
     <message>
         <source>Choose between various media bar styles, or turn the media bar off</source>
@@ -1542,7 +1542,7 @@
     </message>
     <message>
         <source>Classic keeps per-row image type and info overlay. Modern uses portrait-to-backdrop rows.</source>
-        <translation>Classico mantiene il tipo di immagine per riga e l'overlay informativo. Moderno usa righe da verticale a sfondo.</translation>
+        <translation>Classico mantiene il tipo di immagine per riga e l&apos;overlay informativo. Moderno usa righe da verticale a sfondo.</translation>
     </message>
     <message>
         <source>Clock Display</source>
@@ -1562,7 +1562,7 @@
     </message>
     <message>
         <source>Customize subtitle appearance</source>
-        <translation>Personalizza l'aspetto dei sottotitoli</translation>
+        <translation>Personalizza l&apos;aspetto dei sottotitoli</translation>
     </message>
     <message>
         <source>Details Screen Style</source>
@@ -1606,7 +1606,7 @@
     </message>
     <message>
         <source>Enable and reorder the rating sources shown throughout the app</source>
-        <translation>Abilita e riordina le fonti di valutazione mostrate nell'app</translation>
+        <translation>Abilita e riordina le fonti di valutazione mostrate nell&apos;app</translation>
     </message>
     <message>
         <source>Expand TV shows to display each episode separately.</source>
@@ -1618,7 +1618,7 @@
     </message>
     <message>
         <source>Extended shows a full card with episode artwork and description. Minimal shows a compact countdown overlay. Disabled hides the prompt entirely.</source>
-        <translation>Esteso mostra una scheda completa con grafica e descrizione dell'episodio. Minimal mostra una sovrapposizione compatta del conto alla rovescia. Disabilitato nasconde completamente il prompt.</translation>
+        <translation>Esteso mostra una scheda completa con grafica e descrizione dell&apos;episodio. Minimal mostra una sovrapposizione compatta del conto alla rovescia. Disabilitato nasconde completamente il prompt.</translation>
     </message>
     <message>
         <source>Featured content, appearance</source>
@@ -1638,11 +1638,11 @@
     </message>
     <message>
         <source>Hide the movie or episode descriptive text.</source>
-        <translation>Nasconde il testo descrittivo del film o dell'episodio.</translation>
+        <translation>Nasconde il testo descrittivo del film o dell&apos;episodio.</translation>
     </message>
     <message>
         <source>How long a show stays in Next Up after you last watched it</source>
-        <translation>Per quanto tempo una serie resta in Prossimo dopo l'ultima visione</translation>
+        <translation>Per quanto tempo una serie resta in Prossimo dopo l&apos;ultima visione</translation>
     </message>
     <message>
         <source>Limit the maximum resolution the player will request. Higher-resolution content will be transcoded down.</source>
@@ -1842,7 +1842,7 @@
     </message>
     <message>
         <source>Show the Next Up overlay instead of the Skip Outro button.</source>
-        <translation>Mostra l'overlay Prossimo invece del pulsante Salta Finale.</translation>
+        <translation>Mostra l&apos;overlay Prossimo invece del pulsante Salta Finale.</translation>
     </message>
     <message>
         <source>Show the Seerr button in the navigation bar</source>
@@ -1882,7 +1882,7 @@
     </message>
     <message>
         <source>Use 24-hour time formatting wherever the clock is shown</source>
-        <translation>Utilizza la formattazione dell'ora a 24 ore ovunque venga visualizzato l'orologio</translation>
+        <translation>Utilizza la formattazione dell&apos;ora a 24 ore ovunque venga visualizzato l&apos;orologio</translation>
     </message>
     <message>
         <source>Use Series Thumbnails</source>
@@ -1902,7 +1902,7 @@
     </message>
     <message>
         <source>White is much brighter in HDR than in SDR, so a dimmer style here avoids the glare</source>
-        <translation>Il bianco è molto più luminoso in HDR che in SDR, quindi uno stile più tenue qui evita l'abbagliamento</translation>
+        <translation>Il bianco è molto più luminoso in HDR che in SDR, quindi uno stile più tenue qui evita l&apos;abbagliamento</translation>
     </message>
     <message>
         <source>Genre</source>
