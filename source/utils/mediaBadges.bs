@@ -1,6 +1,7 @@
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/playbackFacts.bs"
 
 ' The technical badges beside a title: what it is encoded as, what it is wrapped in and what
 ' it sounds like. All of them read off the media source, so a title with nothing selected yet
@@ -108,27 +109,86 @@ namespace mediaBadges
         return tr("SD")
     end function
 
-    ' Dolby Vision is called out on its own, and a disc that carries both says so twice
+    ' Dolby Vision with its profile when the server gives one (DV P8), then the layer a set without
+    ' Dolby Vision falls back to. An SDR fallback gets no badge of its own, and Dolby Vision the
+    ' server calls invalid reads as whatever VideoRange says the picture is.
     sub AddRange(badges as object, video as object)
-        rangeType = video.VideoRangeType ?? ""
-
-        if rangeType = "DOVI" or rangeType = "DOVIWithHDR10" or rangeType = "DOVIWithHDR10Plus"
-            badges.push(tr("DV"))
+        if mediaBadges.RangeTypeOf(video) = "DOVIInvalid"
+            range = isStringEqual(video.LookupCI("VideoRange") ?? "", "HDR") ? "HDR" : "SDR"
+        else
+            range = mediaBadges.RangeLabel(video)
         end if
 
-        if rangeType <> "" and rangeType <> "SDR"
-            if rangeType.Instr("HDR10Plus") >= 0
-                badges.push(tr("HDR10+"))
-            else if rangeType.Instr("HDR10") >= 0
-                badges.push(tr("HDR10"))
-            else if rangeType <> "DOVI"
-                badges.push(tr("HDR"))
+        hdrLabel = range
+        if range = "Dolby Vision"
+            hdrLabel = mediaBadges.BaseLayerLabel(video)
+            profile = playbackFacts.DolbyVisionProfile(video)
+            if profile > 0
+                badges.push(tr("DV P{profile}").Replace("{profile}", profile.ToStr()))
+            else
+                badges.push(tr("DV"))
             end if
-            return
         end if
 
-        if isStringEqual(video.VideoRange ?? "", "HDR") then badges.push(tr("HDR"))
+        if hdrLabel = "HDR" then badges.push(tr("HDR"))
+        if hdrLabel = "HDR10" then badges.push(tr("HDR10"))
+        if hdrLabel = "HDR10+" then badges.push(tr("HDR10+"))
+        if hdrLabel = "HLG" then badges.push(tr("HLG"))
     end sub
+
+    ' A range value squashed to capitals and digits, with + spelled out so HDR 10+ doesn't read as HDR10
+    function Squash(value as dynamic) as string
+        if not isValidAndNotEmpty(value) or type(value) <> "roString" and type(value) <> "String" then return ""
+        return CreateObject("roRegex", "[^A-Z0-9]+", "").ReplaceAll(UCase(value.Replace("+", "PLUS")), "")
+    end function
+
+    ' The HDR format a stream carries, from whichever range field the server filled in. Emby types it
+    ' in ExtendedVideoType and writes VideoRange as prose, HDR 10 rather than HDR10.
+    function RangeLabel(video as object) as string
+        range = ""
+        for each field in ["VideoRangeType", "ExtendedVideoType", "VideoRange"]
+            range = mediaBadges.Squash(video.LookupCI(field))
+            if range <> "" then exit for
+        end for
+
+        if range.Instr("DOVI") >= 0 or range.Instr("DOLBYVISION") >= 0 then return "Dolby Vision"
+        ' Ahead of HDR10, which its own name would match first
+        if range.Instr("HDR10PLUS") >= 0 then return "HDR10+"
+        if range.Instr("HDR10") >= 0 then return "HDR10"
+        if range.Instr("HLG") >= 0 or range.Instr("HYPERLOGGAMMA") >= 0 then return "HLG"
+        if range.Instr("HDR") >= 0 then return "HDR"
+        return "SDR"
+    end function
+
+    ' Jellyfin's VideoRangeType for the stream. Emby leaves that off and types Dolby Vision in
+    ' ExtendedVideoType, or the VideoRange it derives from it, with the profile in
+    ' ExtendedVideoSubType, which reads here as the range type Jellyfin gives the same file.
+    function RangeTypeOf(video as object) as string
+        rangeType = video.LookupCI("VideoRangeType")
+        if isValidAndNotEmpty(rangeType) then return rangeType
+
+        kind = mediaBadges.Squash(video.LookupCI("ExtendedVideoType"))
+        if kind = "" then kind = mediaBadges.Squash(video.LookupCI("VideoRange"))
+        if kind <> "DOLBYVISION" then return ""
+
+        subType = mediaBadges.Squash(video.LookupCI("ExtendedVideoSubType"))
+        ' Profiles 8.1 and 6.1 sit on plain HDR10
+        if subType = "DOVIPROFILE61" or subType = "DOVIPROFILE81" then return "DOVIWithHDR10"
+        if Left(subType, 12) = "DOVIPROFILE5" then return "DOVI"
+        if Left(subType, 12) = "DOVIPROFILE7" then return "DOVIWithEL"
+        return "DolbyVision"
+    end function
+
+    ' The format under the Dolby Vision, named after DOVIWith in the range type. A profile 7
+    ' enhancement layer sits on HDR10 unless HDR10+ is named with it, and bare Dolby Vision has
+    ' nothing under it.
+    function BaseLayerLabel(video as object) as string
+        match = CreateObject("roRegex", "^DOVIWITH(?:EL)?(.*)$", "").Match(mediaBadges.Squash(mediaBadges.RangeTypeOf(video)))
+        if match.count() < 2 then return ""
+        layer = match[1]
+        if layer = "" then layer = "HDR10"
+        return mediaBadges.RangeLabel({ VideoRangeType: layer })
+    end function
 
     ' Atmos and DTS:X name themselves, and anything else is described by its channel count
     sub AddChannels(badges as object, audio as object)
