@@ -200,6 +200,7 @@ source += '\n' + await readFile('test/library-order.bs', 'utf8');
 source += '\n' + await readFile('test/detail-sections.bs', 'utf8');
 source += '\n' + await readFile('test/rating-sources.bs', 'utf8');
 source += '\n' + await readFile('test/home-row-groups.bs', 'utf8');
+source += '\n' + await readFile('test/home-reload-settings.bs', 'utf8');
 source += '\n' + await readFile('test/search-groups.bs', 'utf8');
 source += '\n' + await readFile('test/settings-metrics.bs', 'utf8');
 source += '\n' + await readFile('test/library-filters.bs', 'utf8');
@@ -368,7 +369,7 @@ source += '\n' + await readFile('test/ratings-scope.bs', 'utf8');
 // The rest of the row layout uses loops this interpreter cant parse, and the outside lists only need these
 const homeRowLayoutFile = await readFile('source/utils/homeRowLayout.bs', 'utf8');
 source += '\nnamespace homeRowLayout\n' + homeRowLayoutFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['Catalogue', 'Passthrough', 'AsText', 'Sources', 'SourceFor', 'ServerId', 'ServerKey', 'SourceFromId', 'IsOwnServer', 'IsSliderRow']) {
+for (const name of ['Catalogue', 'Passthrough', 'AsText', 'Sources', 'SourceFor', 'ServerId', 'ServerKey', 'SourceFromId', 'IsOwnServer', 'IsSliderRow', 'RowToggles', 'ReloadsHome']) {
     source += '\n' + homeRowLayoutFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
@@ -930,6 +931,43 @@ assert.match(await readFile('components/home/Home.xml', 'utf8'), /rowTitleCompon
 assert.match(await readFile('source/utils/misc.bs', 'utf8'), /if isSeerrFilterRow\(rowId\) or inArray\(\["mdblist_watching_now", "watch_parties", "studios", "audio", "resumeaudio"\], rowId\) then return false/, 'Watching now keeps its wide cards in modern rows, as do Watch Parties, Seerr\'s browse rows, Studios and audio rows');
 assert.match((await readFile('components/settings/settings.bs', 'utf8')).match(/sub dismissPanel\([^]*?end sub/)[0], /if m\.homeRowsSwitched = true[^]*?behind\.callFunc\("reload"\)/, 'Closing settings reloads Home after a row is switched on or off');
 process.stdout.write('PASS: watching now row wiring (15 checks)\n');
+
+// Home stays loaded behind Settings, so every setting that decides which rows Home builds, or what
+// goes in them, has Settings tell Home to build its rows again when it closes
+const reloadSettings = await readFile('components/settings/settings.bs', 'utf8');
+const quotedNames = (name) => [...homeRowLayoutFile.match(new RegExp(`function ${name}\\([^]*?end function`))[0].matchAll(/"([\w.]+)"/g)].map((match) => match[1]);
+const reloadList = quotedNames('ReloadsHome');
+const reloadCovered = [...reloadList, ...quotedNames('RowToggles')];
+const reloadSettingsTree = JSON.parse(await readFile('settings/settings.json', 'utf8'));
+const settingNames = new Set();
+const homeRowSections = ['Home Row Toggles', 'IMDb Lists', 'TMDB Lists', 'Seerr Lists', 'Upcoming Calendars'];
+const homeRowSettingNames = [];
+const sectionsFound = new Set();
+(function walk(node) {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== 'object') return;
+    if (node.settingName) settingNames.add(node.settingName);
+    if (homeRowSections.includes(node.title) && Array.isArray(node.children)) {
+        sectionsFound.add(node.title);
+        for (const child of node.children) if (child.settingName) homeRowSettingNames.push(child.settingName);
+    }
+    Object.values(node).forEach(walk);
+})(reloadSettingsTree);
+assert.equal(sectionsFound.size, homeRowSections.length, 'Every Home row section is found in settings.json');
+for (const name of homeRowSettingNames) assert.ok(reloadCovered.includes(name), `${name} has Home build its rows again`);
+for (const name of reloadList) assert.ok(settingNames.has(name), `${name} is a setting in settings.json`);
+for (const name of ['onKeyGridSubmit', 'boolSettingChanged', 'applyRadioChoice']) {
+    assert.match(reloadSettings.match(new RegExp(`sub ${name}\\([^]*?^end sub`, 'm'))[0], /if homeRowLayout\.ReloadsHome\(selectedSetting\.settingName\) then m\.homeRowsSwitched = true/, `${name} has Home build its rows again for a Home row setting`);
+}
+assert.match(reloadSettings.match(/sub saveHomeRowLayout\([^]*?end sub/)[0], /m\.homeRowsSwitched = true/, 'Saving the Rows layout has Home build its rows again');
+assert.match(reloadSettings.match(/sub dismissPanel\([^]*?end sub/)[0], /commitOpenEditor\(\)[^]*?if m\.homeRowsSwitched = true/, 'The Rows editor is saved before Settings decides whether Home builds its rows again');
+// A refresh skips a row that was switched off without taking it away, so Settings over another screen asks for a reload
+assert.match(reloadSettings.match(/sub dismissPanel\([^]*?end sub/)[0], /if m\.homeRowsSwitched = true[^]*?behind\.callFunc\("reload"\)\s+else[^]*?m\.global\.homeNeedsReload = true\s+end if/, 'Closing Settings over another screen has Home build its rows again once it shows');
+assert.match(await readFile('source/Main.bs', 'utf8'), /homeNeedsReload: false,/, 'The pending Home reload starts off');
+const homeShown = (await readFile('components/home/Home.bs', 'utf8')).match(/sub OnScreenShown\([^]*?^end sub/m)[0];
+assert.match(homeShown, /needsRowReload = chainLookupReturn\(m\.global, "homeNeedsReload", false\)\s+if needsRowReload then m\.global\.homeNeedsReload = false\s+if not m\.isFirstRun/, 'Home clears the pending reload when it shows, first run included');
+assert.match(homeShown, /if needsRowReload[^]*?reload\(\)\s+else if not _isReturning or needsPlaybackRefresh\s+refresh\(\)/, 'Home builds its rows from scratch for the pending reload instead of refreshing them');
+process.stdout.write(`PASS: Home reload settings wiring (${homeRowSettingNames.length + reloadList.length + 10} checks)\n`);
 
 // A picked collection row asks for its members alone, follows a stored Playlist Order and opens
 // a series into its episodes in order when asked
