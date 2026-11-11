@@ -76,7 +76,7 @@ const selections = {
     'source/utils/ratingSourceList.bs': null,
     'source/utils/homeRowGroups.bs': null,
     'source/utils/searchGroups.bs': null,
-    'source/utils/SeerrUtils.bs': ['SeerrEscapeJsonString', 'SeerrJsonFromPairs', 'SeerrFormatJson', 'SeerrFormatJsonValue', 'SeerrStreamingRegion', 'SeerrStreamingProviders', 'SeerrRequestDownloadSummary', 'SeerrQueueHasWork', 'SeerrDownloadKey', 'SeerrIsNumber', 'IsSeerrSeriesPart'],
+    'source/utils/SeerrUtils.bs': ['SeerrEscapeJsonString', 'SeerrJsonFromPairs', 'SeerrFormatJson', 'SeerrFormatJsonValue', 'SeerrStreamingRegion', 'SeerrStreamingProviders', 'SeerrRequestDownloadSummary', 'SeerrDownloadEntryState', 'SeerrDownloadStateRank', 'SeerrParseTimeLeft', 'SeerrTimeLeftText', 'SeerrDownloadLabel', 'SeerrDownloadLabelParts', 'SeerrDownloadStateWord', 'SeerrDownloadBarColor', 'SeerrDownloadSizeText', 'SeerrByteUnit', 'SeerrScaleBytes', 'SeerrQueueHasWork', 'SeerrDownloadKey', 'SeerrIsNumber', 'isValidStringValue', 'IsSeerrSeriesPart', 'SeerrDownloadIsStuck', 'SeerrArrEntryKey', 'SeerrArrGoneFromQueue', 'SeerrArrQueueHasTitle', 'SeerrArrFlagIs', 'SeerrArrQueueForSeasons', 'SeerrArrNotFoundYet', 'SeerrRequestNotFoundYet', 'SeerrArrReason', 'SeerrArrHealthy', 'SeerrArrServiceName', 'SeerrArrQueuePath', 'SeerrArrRemovePath', 'SeerrIdText', 'SeerrLower', 'SeerrArrQueuePathForDetails', 'SeerrDetailDownload', 'SeerrMediaNotFoundYet', 'SeerrReplaceableDownload'],
     'source/utils/libraryOrder.bs': null,
     'source/utils/detailSectionLayout.bs': null,
     'source/utils/trackLabels.bs': null,
@@ -141,7 +141,7 @@ const selections = {
     'components/home/HomeItem.bs': ['onPosterLoadStatusChanged', 'retryPoster'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
     'components/tasks/MultiServerTask.bs': ['withSortFields', 'withField'],
-    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'getBoolSetting', 'getStringSetting', 'appendRadarrCalendar', 'radarrRowRelease', 'appendSonarrCalendar', 'sonarrRowPicks', 'sonarrEpisodeCode', 'calendarSubtitle', 'sortByCalendarDate'],
+    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'getBoolSetting', 'getStringSetting', 'appendRadarrCalendar', 'radarrRowRelease', 'appendSonarrCalendar', 'sonarrRowPicks', 'sonarrEpisodeCode', 'calendarSubtitle', 'sortByCalendarDate', 'rowSortByParam', 'rowSortOrderParam'],
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL', 'chapterImageURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
@@ -202,6 +202,7 @@ source += '\n' + await readFile('test/detail-sections.bs', 'utf8');
 source += '\n' + await readFile('test/rating-sources.bs', 'utf8');
 source += '\n' + await readFile('test/home-row-groups.bs', 'utf8');
 source += '\n' + await readFile('test/home-reload-settings.bs', 'utf8');
+source += '\n' + await readFile('test/row-sort-settings.bs', 'utf8');
 source += '\n' + await readFile('test/search-groups.bs', 'utf8');
 source += '\n' + await readFile('test/settings-metrics.bs', 'utf8');
 source += '\n' + await readFile('test/library-filters.bs', 'utf8');
@@ -988,6 +989,39 @@ assert.match(loadItemsSource.match(/function expandSeriesToEpisodes\([^]*?end fu
 assert.match(await readFile('settings/settings.json', 'utf8'), /"settingName": "ui\.home\.collectionsRowSortBy"[^]*?"id": "playlistOrder"/, 'Playlist Order is offered for the collection rows');
 process.stdout.write('PASS: collection row wiring (4 checks)\n');
 
+// The Collections and Audio rows take their sort and sort order from Row Options, or from another client
+const rowSortSettings = JSON.parse(await readFile('settings/settings.json', 'utf8'));
+const rowSortSetting = (name) => {
+    let found;
+    (function walk(node) {
+        if (found || !node || typeof node !== 'object') return;
+        if (node.settingName === name) found = node;
+        else Object.values(node).forEach(walk);
+    })(rowSortSettings);
+    return found;
+};
+const optionIds = (name) => rowSortSetting(name).options.map((option) => option.id).join(',');
+assert.equal(rowSortSetting('ui.home.collectionsRowSortOrder').default, 'ascending', 'Collections stay ascending until another order is picked');
+assert.equal(optionIds('ui.home.collectionsRowSortOrder'), 'ascending,descending', 'Collections offer both orders under the names the plugin syncs');
+assert.equal(rowSortSetting('ui.home.audioRowsSortBy').default, 'name', 'Audio goes by name until another sort is picked, like Core');
+assert.equal(optionIds('ui.home.audioRowsSortBy'), 'name,dateAdded,premiereDate,runtime,random', 'Audio offers the sorts Core offers, under the names the plugin syncs');
+assert.equal(rowSortSetting('ui.home.audioRowsSortOrder').default, 'ascending', 'Audio goes ascending until another order is picked, like Core');
+assert.equal(optionIds('ui.home.audioRowsSortOrder'), 'ascending,descending', 'Audio offers both orders');
+const rowOptionGroups = (await readFile('components/settings/settings.bs', 'utf8'));
+assert.match(rowOptionGroups, /title: "AUDIO", settings: takeSettings\(configTree, \["ui\.home\.displayAudioRows", "ui\.home\.audioRowsSortBy", "ui\.home\.audioRowsSortOrder"\]\)/, 'The audio sort settings sit under the Audio row in Row Options');
+assert.match(rowOptionGroups, /title: "COLLECTIONS", settings: takeSettings\(configTree, \["ui\.home\.displayCollectionsRows", "ui\.home\.collectionsRowSortBy", "ui\.home\.collectionsRowSortOrder",/, 'The Collections sort order sits under its sort in Row Options');
+for (const [pluginKey, rokuKey] of [['collectionsRowSortOrder', 'ui.home.collectionsRowSortOrder'], ['audioRowsSortBy', 'ui.home.audioRowsSortBy'], ['audioRowsSortOrder', 'ui.home.audioRowsSortOrder']]) {
+    assert.ok(settingsSyncSource.includes(`{ pluginKey: "${pluginKey}", rokuKey: "${rokuKey}", type: "direct" }`), `${rokuKey} syncs with the plugin as ${pluginKey}`);
+}
+assert.match(loadItemsSource.match(/function collectionRowItems\([^]*?end function/)[0], /params\.SortBy = rowSortByParam\(sortBy\)\s+params\.SortOrder = rowSortOrderParam\(getStringSetting\(settings, "ui\.home\.collectionsRowSortOrder", "ascending"\)\)/, 'A collection row is asked for in its sort order, and a stored Playlist Order is left as stored');
+assert.match(loadItemsSource.match(/function loadCollections\([^]*?end function/)[0], /SortOrder: rowSortOrderParam\(getStringSetting\(settings, "ui\.home\.collectionsRowSortOrder", "ascending"\)\)/, 'The Collections row is asked for in its sort order');
+const audioRow = loadItemsSource.match(/function loadAudio\(\)[^]*?end function/)[0];
+assert.match(audioRow, /SortBy: rowSortByParam\(getStringSetting\(settings, "ui\.home\.audioRowsSortBy", "name"\)\)/, 'The Audio row is asked for in its sort');
+assert.match(audioRow, /DateCreated,PremiereDate,SortName",/, 'The Audio row asks for what a list joined from several libraries is sorted on');
+assert.match(loadItemsSource.match(/function loadCollections\([^]*?end function/)[0], /DateCreated,PremiereDate,SortName",/, 'So does the Collections row');
+assert.match(audioRow, /SortOrder: rowSortOrderParam\(getStringSetting\(settings, "ui\.home\.audioRowsSortOrder", "ascending"\)\)/, 'The Audio row is asked for in its sort order');
+process.stdout.write('PASS: Collections and Audio row sort settings wiring (17 checks)\n');
+
 // Chart rows match their titles against the library, by provider id on Emby and through a paged
 // index of the library's ids on Jellyfin, and a TMDB chart types its titles from its path
 assert.match(loadItemsSource.match(/function matchOnEmby\([^]*?end function/)[0], /IncludeItemTypes: "Movie,Series",\s+AnyProviderIdEquals:/, 'Emby filters by provider id on the server');
@@ -1495,6 +1529,12 @@ assert.match(seasonDetailsWiring, /loadSeerrBlock\(json\)/, 'A season page looks
 assert.match(seasonDetailsWiring, /if Left\(action, 5\) = "seerr"/, 'and hands its Seerr buttons to the request flow');
 assert.match(await readFile('source/utils/seerrDetailHost.bs', 'utf8'), /initialSeason/, 'Report Issue starts on the season or episode it was opened from');
 assert.match(await readFile('source/utils/seerrButtons.bs', 'utf8'), /seerrRequestRules\.Cancelable\(requests, true, CanManageRequests\(permissions\), CurrentSeerrUserId\(\)\)/, 'Cancel only shows for a request the viewer can take back');
+assert.match(await readFile('source/utils/seerrButtons.bs', 'utf8'), /seerrButtons\.Entry\("seerrManage", "[^"]+", tr\("Get a different release"\), "seerrDifferentRelease"\)/, 'Get a different release rides in the Manage Requests slot, so the synced arrangement needs no new id');
+assert.match(await readFile('components/details/detailButtonHost.bs', 'utf8'), /seerrButtons\.Candidates\(m\.seerrDetails, seerrMediaType\(\), seerrSwapQueue\(\)\)/, 'The detail row hands the arr queue to its Seerr buttons');
+assert.match(await readFile('source/utils/seerrDetailHost.bs', 'utf8'), /function seerrSwapQueue\(\) as dynamic\n    if isValid\(m\.seerrSeries\) then return invalid\n    if IsSeerrSeriesPart\(seerrItemJson\(\)\) then return invalid/, 'Only the title\'s own page offers a release swap, never a season or episode page');
+assert.match(await readFile('components/seerr/SeerrAPITask.bs', 'utf8'), /if usePluginRoot then urlTransfer\.RetainBodyOnError\(true\)/, 'A plugin endpoint keeps its error body, so a swap can tell a download already gone from a failure');
+assert.match(await readFile('components/seerr/SeerrRequestsScreen.bs', 'utf8'), /sub loadArrQueues\(entries as object\)\n    ' [^\n]+\n    if m\.tab = "issues" then return/, 'The Issues tab reads no arr queues');
+assert.match(await readFile('source/api/MoonfinPlugin.bs', 'utf8'), /arrQueueAvailable: result\.arrQueueAvailable \?\? false/, 'Ping keeps whether Moonbase reads the arr queue, false on older plugins');
 const browseWiring = await readFile('components/seerr/SeerrGenreBrowseScreen.bs', 'utf8');
 assert.match(browseWiring, /const SEERR_POSTER_SIZE_SETTING = "ui\.seerr\.posterSize"/, 'The browse screen keeps a poster size of its own');
 assert.doesNotMatch(syncWiring, /ui\.seerr\.posterSize/, 'and it stays on the device');

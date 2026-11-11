@@ -7557,6 +7557,26 @@
         <translation>Sort Collections rows by date added, release date, alphabetically, and more.</translation>
     </message>
     <message>
+        <source>Sort Collections rows in ascending or descending order.</source>
+        <extracomment>Settings Menu - Description for the Sort Order option of the Collections rows</extracomment>
+        <translation>Sort Collections rows in ascending or descending order.</translation>
+    </message>
+    <message>
+        <source>Audio Rows Sorting</source>
+        <extracomment>Settings Menu - Title for the option that picks how the Audio rows are sorted</extracomment>
+        <translation>Audio Rows Sorting</translation>
+    </message>
+    <message>
+        <source>Sort Audio rows by date added, release date, alphabetically, and more.</source>
+        <extracomment>Settings Menu - Description for the Audio Rows Sorting option</extracomment>
+        <translation>Sort Audio rows by date added, release date, alphabetically, and more.</translation>
+    </message>
+    <message>
+        <source>Sort Audio rows in ascending or descending order.</source>
+        <extracomment>Settings Menu - Description for the Sort Order option of the Audio rows</extracomment>
+        <translation>Sort Audio rows in ascending or descending order.</translation>
+    </message>
+    <message>
         <source>Sort Genres rows by date added, release date, alphabetically, and more.</source>
         <translation>Sort Genres rows by date added, release date, alphabetically, and more.</translation>
     </message>
@@ -10876,6 +10896,86 @@
         <source>Show a banner when someone on this server starts one</source>
         <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one</extracomment>
         <translation>Show a banner when someone on this server starts one</translation>
+    </message>
+    <message>
+        <source>Stalled</source>
+        <extracomment>Seerr download bar - a download that isn't making progress, such as a torrent with no seeders</extracomment>
+        <translation>Stalled</translation>
+    </message>
+    <message>
+        <source>Download failed</source>
+        <extracomment>Seerr download bar - the download client reports the download as failed</extracomment>
+        <translation>Download failed</translation>
+    </message>
+    <message>
+        <source>Downloaded, waiting for import</source>
+        <extracomment>Seerr download bar - the download finished and Radarr or Sonarr hasn't imported it yet</extracomment>
+        <translation>Downloaded, waiting for import</translation>
+    </message>
+    <message>
+        <source>Downloaded</source>
+        <extracomment>Seerr download bar - short form of Downloaded, waiting for import, where the bar is narrow</extracomment>
+        <translation>Downloaded</translation>
+    </message>
+    <message>
+        <source>Queued</source>
+        <extracomment>Seerr download bar - the download is waiting its turn in the download client</extracomment>
+        <translation>Queued</translation>
+    </message>
+    <message>
+        <source>Downloading</source>
+        <extracomment>Seerr download bar - a download with no known size yet</extracomment>
+        <translation>Downloading</translation>
+    </message>
+    <message>
+        <source>%1m left</source>
+        <extracomment>Seerr download bar - time left on a download under an hour, %1 is minutes, keep it</extracomment>
+        <translation>%1m left</translation>
+    </message>
+    <message>
+        <source>%1h left</source>
+        <extracomment>Seerr download bar - time left on a download in whole hours, %1 is hours, keep it</extracomment>
+        <translation>%1h left</translation>
+    </message>
+    <message>
+        <source>%1h %2m left</source>
+        <extracomment>Seerr download bar - time left on a download, %1 is hours and %2 minutes, keep them</extracomment>
+        <translation>%1h %2m left</translation>
+    </message>
+    <message>
+        <source>Import blocked</source>
+        <extracomment>Seerr download bar - the download finished but Radarr or Sonarr refuses to import it, for example because the release contains an executable</extracomment>
+        <translation>Import blocked</translation>
+    </message>
+    <message>
+        <source>Not found yet</source>
+        <extracomment>Seerr - shown where the download bar would be, when a request was approved and Radarr has the released movie but hasn't found a release to download yet</extracomment>
+        <translation>Not found yet</translation>
+    </message>
+    <message>
+        <source>Get a different release</source>
+        <extracomment>Seerr - admin-only button on a title's detail screen, and the title and confirm button of its dialog. It removes a stuck download, blocks that release, and has Radarr or Sonarr search for another one</extracomment>
+        <translation>Get a different release</translation>
+    </message>
+    <message>
+        <source>^0 will remove ^1 from the download client, block it so it isn't grabbed again, and search for another release.</source>
+        <extracomment>Seerr - body of the Get a different release dialog. ^0 is Radarr or Sonarr and ^1 is the release name, keep them</extracomment>
+        <translation>^0 will remove ^1 from the download client, block it so it isn't grabbed again, and search for another release.</translation>
+    </message>
+    <message>
+        <source>Removed. ^0 is searching for another release.</source>
+        <extracomment>Seerr - confirmation after Get a different release removed the stuck download. ^0 is Radarr or Sonarr, keep it</extracomment>
+        <translation>Removed. ^0 is searching for another release.</translation>
+    </message>
+    <message>
+        <source>That download had already left the ^0 queue.</source>
+        <extracomment>Seerr - shown after Get a different release when the stuck download was already gone, so nothing was removed. ^0 is Radarr or Sonarr, keep it</extracomment>
+        <translation>That download had already left the ^0 queue.</translation>
+    </message>
+    <message>
+        <source>Couldn't remove the download</source>
+        <extracomment>Seerr - error when Get a different release could not remove the stuck download</extracomment>
+        <translation>Couldn't remove the download</translation>
     </message>
 </context>
 </TS>

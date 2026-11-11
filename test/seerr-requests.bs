@@ -66,6 +66,197 @@ sub testSeerrRequests()
     assertEqual(summary.done, 14.0, "so the done part is the pack's alone")
     request.media.downloadStatus = [heldBack, heldBack]
     assertEqual(SeerrRequestDownloadSummary(request), invalid, "Only held back releases is no download")
+    assertEqual(SeerrRequestDownloadSummary({ status: 2, media: { status: 3, downloadStatus: [{ downloadId: "A", size: 10.0 }] } }).done, 0.0, "A missing sizeLeft counts as not started, not as done")
+
+    ' What the queue says the download is doing, and how the bar puts it
+    stalled = SeerrRequestDownloadSummary({ status: 2, media: { status: 3, downloadStatus: [{ downloadId: "T", status: "warning", size: 1395864371, sizeLeft: 1395864371 }] } })
+    assertEqual(stalled.state, "stalled", "A torrent with no seeders is stalled")
+    assertEqual(SeerrDownloadLabel(stalled, true, "·"), "Stalled · 0 GB / 1.3 GB · 0%", "A wide bar says why it isnt moving, then the sizes")
+    assertEqual(SeerrDownloadLabel(stalled, false, "·"), "Stalled · 0%", "and a narrow one drops the sizes")
+    assertEqual(SeerrDownloadBarColor(stalled.state, "#FFFFFF"), "#EAB308", "A stalled bar is amber")
+    stateOf = function(status as string, done as boolean) as string
+        return SeerrDownloadEntryState({ status: status }, done)
+    end function
+    assertEqual(stateOf("Failed", true), "failed", "Failed wins even with every byte in, whatever the case")
+    assertEqual(stateOf("downloading", true), "waitingForImport", "A download with every byte in waits on the import")
+    assertEqual(stateOf("completed", false), "waitingForImport", "and so does one the client calls completed")
+    assertEqual(stateOf("downloadClientUnavailable", false), "stalled", "An unreachable client is stalled")
+    assertEqual(stateOf("paused", false), "paused", "A paused download is paused")
+    assertEqual(stateOf("queued", false), "queued", "a queued one is queued")
+    assertEqual(stateOf("", false), "downloading", "and anything else is downloading")
+    assertEqual(SeerrDownloadBarColor("queued", "#FFFFFF"), "#FFFFFF61", "A queued bar is dimmed")
+    assertEqual(SeerrDownloadBarColor("failed", "#FFFFFF"), "#EF4444", "a failed one red")
+
+    queue = [{ downloadId: "A", status: "downloading", size: 100.0, sizeLeft: 55.0, timeLeft: "01:05:00" }, { downloadId: "B", status: "paused", size: 100.0, sizeLeft: 100.0, timeLeft: "00:10:00" }]
+    mixed = SeerrRequestDownloadSummary({ status: 2, media: { status: 3, downloadStatus: queue } })
+    assertEqual(mixed.state, "downloading", "One download on the move outranks a paused one")
+    assertEqual(mixed.timeLeft, invalid, "but the paused one leaves the time left unknown")
+    queue[1] = { downloadId: "B", status: "downloading", size: 100.0, sizeLeft: 35.0, timeLeft: "00:12:30.5" }
+    moving = SeerrRequestDownloadSummary({ status: 2, media: { status: 3, downloadStatus: queue } })
+    assertEqual(moving.timeLeft, 3900, "The time left is the slowest download's")
+    assertEqual(SeerrDownloadLabel(moving, true, "·"), "110 B / 200 B · 55% · 1h 5m left", "A wide bar shows it after the percentage")
+    assertEqual(SeerrDownloadLabel(moving, false, "·"), "110 B / 200 B · 55%", "and a narrow one leaves it out")
+    queue[1] = { downloadId: "B", status: "failed", size: 100.0, sizeLeft: 35.0 }
+    assertEqual(SeerrRequestDownloadSummary({ status: 2, media: { status: 3, downloadStatus: queue } }).state, "failed", "A failed download outranks everything")
+
+    finished = SeerrRequestDownloadSummary({ status: 2, media: { status: 3, downloadStatus: [{ downloadId: "A", status: "downloading", size: 100.0, sizeLeft: 0 }] } })
+    assertEqual(finished.fraction, 1.0, "A finished download fills the bar")
+    assertEqual(SeerrDownloadLabel(finished, true, "·"), "Downloaded, waiting for import", "and says it waits on the import")
+    assertEqual(SeerrDownloadLabel(finished, false, "·"), "Downloaded", "or just that it's downloaded where that doesnt fit")
+    parts = SeerrDownloadLabelParts(stalled, false, "·")
+    assertEqual(parts.lead, "Stalled", "A tile's label splits into what's happening")
+    assertEqual(parts.trail, "0%", "and the percentage it keeps whatever the width")
+    assertEqual(SeerrDownloadLabelParts(finished, false, "·").trail, "", "A finished download has no percentage to show")
+    assertEqual(SeerrDownloadLabel(moving, true, "|"), "110 B / 200 B | 55% | 1h 5m left", "The theme's separator is used throughout")
+    magnet = SeerrRequestDownloadSummary({ status: 2, media: { status: 3, downloadStatus: [{ downloadId: "A", size: 100.0, sizeLeft: 0, status: "downloading" }, { downloadId: "M", status: "queued" }] } })
+    assertEqual(magnet.state, "queued", "A sizeless magnet still counts for its state")
+    assertEqual(magnet.fraction, 0.99, "and holds the bar short of full")
+
+    assertEqual(SeerrParseTimeLeft("2.03:04:05"), 183845, "A TimeSpan reads its days")
+    assertEqual(SeerrParseTimeLeft("00:00:30.1234567"), 30, "and drops a fraction of a second")
+    assertEqual(SeerrParseTimeLeft("soon"), invalid, "Anything else has no estimate")
+    assertEqual(SeerrParseTimeLeft(invalid), invalid, "and neither has a missing one")
+    assertEqual(SeerrTimeLeftText(30), "1m left", "The last minute rounds up")
+    assertEqual(SeerrTimeLeftText(7200), "2h left", "Whole hours say just the hours")
+    assertEqual(SeerrTimeLeftText(90000), "25h left", "and a day out reads in hours")
+
+    big = SeerrRequestDownloadSummary({ status: 2, is4k: true, media: { status: 1, status4k: 3, downloadStatus4k: [{ downloadId: "K", status: "Warning", size: 4724464025&, sizeLeft: 2362232012& }] } })
+    assertEqual(big.state, "stalled", "The 4K track reads its own queue, and an older Sonarr's capitalised status still counts")
+    assertEqual(SeerrDownloadLabel(big, true, "·"), "Stalled · 2.2 GB / 4.4 GB · 50%", "A download past 2 GB adds up")
+    odd = SeerrRequestDownloadSummary({ status: 2, media: { status: 3, downloadStatus: [{ downloadId: "A", size: 100.0, sizeLeft: -5 }, { downloadId: "B", size: 100.0, sizeLeft: 400.0 }] } })
+    assertEqual(odd.done, 100.0, "A sizeLeft below nothing or past the size is held to it")
+    empty = SeerrRequestDownloadSummary({ status: 2, media: { status: 3, downloadStatus: [{ downloadId: "A", size: 0, sizeLeft: 0 }] } })
+    assertEqual(empty.state, "downloading", "A download with no size isnt finished just because nothing is left")
+    assertEqual(SeerrDownloadLabel(empty, true, "·"), "Downloading · 0%", "and says it's downloading")
+    assertEqual(SeerrDownloadLabel(SeerrRequestDownloadSummary({ status: 2, media: { status: 3, downloadStatus: [{ downloadId: "A", size: 1000.0, sizeLeft: 445.0 }] } }), false, "·"), "555 B / 1000 B · 56%", "The percentage rounds rather than cutting off")
+    assertEqual(SeerrParseTimeLeft("25:00:00"), 90000, "Hours past a day without a day count still read")
+    assertEqual(SeerrParseTimeLeft(""), invalid, "An empty estimate is none")
+    assertEqual(SeerrParseTimeLeft(42), invalid, "and so is a number")
+    assertEqual(SeerrParseTimeLeft("10675199.02:48:05.4775807"), invalid, "TimeSpan's maximum is no estimate")
+    done = SeerrRequestDownloadSummary({ status: 2, media: { status: 3, downloadStatus: [{ downloadId: "A", status: "downloading", size: 100.0, sizeLeft: 50.0, timeLeft: "00:00:00" }] } })
+    assertEqual(SeerrDownloadLabel(done, true, "·"), "50 B / 100 B · 50%", "A zero estimate shows no time left")
+
+    ' The arr's own queue through Moonbase, as the plugin answers it
+    magnet = { id: 1621508593, title: "Big.Buck.Bunny.2008.1080p.WEB-DL.x264", status: "warning", trackedDownloadState: "downloading", trackedDownloadStatus: "ok", errorMessage: "qBittorrent cannot resolve magnet link with DHT disabled", statusMessages: [], size: 0, sizeleft: 0, downloadId: "EEEE" }
+    radarr = { service: "radarr", inArr: true, monitored: true, canRemove: true, hasFile: false, isAvailable: true, items: [magnet] }
+    movie = { status: 2, media: { status: 3, downloadStatus: [] } }
+    stuck = SeerrRequestDownloadSummary(movie, radarr)
+    assertEqual(stuck.state, "stalled", "The arr's queue speaks for the title when Seerr's is empty")
+    assertEqual(stuck.reason, "qBittorrent cannot resolve magnet link with DHT disabled", "and carries the arr's reason")
+    assertEqual(stuck.stuckItemId, 1621508593, "and the queue id a swap removes")
+    assertEqual(stuck.stuckRelease, "Big.Buck.Bunny.2008.1080p.WEB-DL.x264", "and the release it names")
+    assertEqual(SeerrRequestDownloadSummary({ status: 2, is4k: true, media: { status: 1, status4k: 3, downloadStatus4k: [] } }, radarr), invalid, "A 4K request ignores it, since Moonbase reads only the HD arr")
+    assertEqual(SeerrRequestDownloadSummary({ status: 2, media: { status: 5, downloadStatus: [] } }, radarr), invalid, "A title already there draws no bar, whatever the arr still lists")
+    elsewhere = { service: "radarr", inArr: false, items: [] }
+    seerrOnly = SeerrRequestDownloadSummary({ status: 2, media: { status: 3, downloadStatus: [{ downloadId: "S", status: "downloading", size: 100.0, sizeLeft: 40.0 }] } }, elsewhere)
+    assertEqual(seerrOnly.state, "downloading", "A title not in the default arr keeps Seerr's queue")
+    assertEqual(seerrOnly.reason, invalid, "which has no reasons")
+    assertEqual(seerrOnly.stuckItemId, invalid, "and nothing to swap")
+
+    blocked = { id: 1789993590, title: "Tears.of.Steel.2012.1080p", status: "completed", trackedDownloadState: "importPending", trackedDownloadStatus: "warning", errorMessage: invalid, statusMessages: [{ title: "Tears.of.Steel.2012.1080p", messages: ["Caution: Found executable file"] }], size: 5056, sizeleft: 0, timeleft: "00:00:00", downloadId: "B9AD" }
+    held = SeerrRequestDownloadSummary(movie, { service: "radarr", inArr: true, canRemove: true, items: [blocked] })
+    assertEqual(held.state, "importBlocked", "An import the arr holds with a warning is blocked")
+    assertEqual(held.fraction, 1.0, "with a full bar, since it finished downloading")
+    assertEqual(held.reason, "Caution: Found executable file", "and the import message as the reason")
+    assertEqual(SeerrDownloadLabel(held, true, "·"), "Import blocked", "The label is the words alone")
+    assertEqual(SeerrDownloadLabelParts(held, false, "·").trail, "", "with no percentage on a tile either")
+    assertEqual(SeerrDownloadBarColor(held.state, "#FFFFFF"), "#EAB308", "and an amber bar")
+    pack = { id: 55, title: "Show.S02.1080p", status: "downloading", trackedDownloadState: "downloading", trackedDownloadStatus: "ok", size: 1000.0, sizeleft: 600.0, downloadId: "D2" }
+    mixed = SeerrRequestDownloadSummary(movie, { service: "sonarr", inArr: true, canRemove: true, items: [blocked, pack] })
+    assertEqual(mixed.state, "importBlocked", "A blocked import speaks for a request with another download still going")
+    assertEqual(mixed.fraction < 1, true, "but the bar stays short of full while that one has bytes left")
+    assertEqual(mixed.done, 5456.0, "with the blocked one counted as downloaded")
+    arrState = function(tracked as string, trackedStatus as string, status as string) as string
+        return SeerrDownloadEntryState({ status: status, trackedDownloadState: tracked, trackedDownloadStatus: trackedStatus }, false)
+    end function
+    assertEqual(arrState("importBlocked", "warning", "completed"), "importBlocked", "importBlocked is blocked")
+    assertEqual(arrState("importing", "error", "completed"), "importBlocked", "and so is an import with an error")
+    assertEqual(arrState("importPending", "ok", "completed"), "waitingForImport", "A clean pending import waits")
+    assertEqual(arrState("imported", "ok", "completed"), "waitingForImport", "and so does an imported one")
+    assertEqual(arrState("failedPending", "warning", "downloading"), "failed", "failedPending is failed")
+    assertEqual(arrState("downloading", "ok", "paused"), "paused", "Otherwise the client's status decides")
+    assertEqual(SeerrDownloadStateRank("importBlocked") > SeerrDownloadStateRank("stalled"), true, "Blocked outranks stalled")
+    assertEqual(SeerrDownloadStateRank("failed") > SeerrDownloadStateRank("importBlocked"), true, "and failed outranks blocked")
+
+    ignored = { id: 7, status: "failed", trackedDownloadState: "ignored", size: 10, sizeleft: 10, downloadId: "IGN" }
+    assertEqual(SeerrRequestDownloadSummary(movie, { service: "radarr", inArr: true, items: [ignored] }), invalid, "An ignored download is skipped")
+    moving = { id: 8, status: "downloading", trackedDownloadState: "downloading", trackedDownloadStatus: "ok", errorMessage: "should not show", size: 100, sizeleft: 50, timeleft: "00:10:00", downloadId: "MOV" }
+    assertEqual(SeerrRequestDownloadSummary(movie, { service: "radarr", inArr: true, items: [moving] }).reason, invalid, "A healthy moving download has no reason line")
+    moving.trackedDownloadStatus = "warning"
+    assertEqual(SeerrRequestDownloadSummary(movie, { service: "radarr", inArr: true, items: [moving] }).reason, "should not show", "but a flagged one does")
+    paused = { id: 9, status: "paused", trackedDownloadState: "downloading", statusMessages: [{ title: "Paused by the user", messages: [] }], size: 100, sizeleft: 100, downloadId: "PAU" }
+    pausedSummary = SeerrRequestDownloadSummary(movie, { service: "radarr", inArr: true, canRemove: true, items: [paused] })
+    assertEqual(pausedSummary.reason, "Paused by the user", "A paused download gets the group title when there are no lines")
+    assertEqual(pausedSummary.stuckItemId, invalid, "but isnt stuck, so there's nothing to swap")
+    quiet = { id: 10, status: "warning", trackedDownloadState: "downloading", size: 100, sizeleft: 100, downloadId: "Q1" }
+    loud = { id: 11, status: "warning", trackedDownloadState: "downloading", errorMessage: "No seeders", size: 100, sizeleft: 100, downloadId: "Q2" }
+    two = SeerrRequestDownloadSummary(movie, { service: "radarr", inArr: true, items: [quiet, loud] })
+    assertEqual(two.reason, "No seeders", "Of two stalled downloads, the one that says why speaks")
+    assertEqual(two.stuckItemId, 11, "and is the one a swap removes")
+    assertEqual(SeerrArrReason({ errorMessage: "  ", statusMessages: [{ title: "T", messages: ["", " Line one "] }] }), "Line one", "A blank error falls through to the first message, trimmed")
+
+    pack = []
+    for episode = 1 to 3
+        pack.push({ id: 100 + episode, title: "The.Expanse.S01", status: "warning", trackedDownloadState: "downloading", errorMessage: "No connections", size: 0, sizeleft: 0, downloadId: "PACK", seasonNumber: 1, episodeNumber: episode })
+    end for
+    pack.push({ id: 200, title: "The.Expanse.S02E01", status: "downloading", trackedDownloadState: "downloading", trackedDownloadStatus: "ok", size: 100, sizeleft: 50, downloadId: "S2", seasonNumber: 2, episodeNumber: 1 })
+    sonarr = { service: "sonarr", inArr: true, monitored: true, canRemove: false, items: pack }
+    seasonOne = SeerrArrQueueForSeasons(sonarr, [{ seasonNumber: 1 }])
+    assertEqual(seasonOne.items.count(), 3, "A season request keeps only its season's items")
+    assertEqual(sonarr.items.count(), 4, "without touching the title's queue")
+    show = { status: 2, media: { status: 3, downloadStatus: [] } }
+    packSummary = SeerrRequestDownloadSummary(show, seasonOne)
+    assertEqual(packSummary.state, "stalled", "A season pack counts once and reads its state")
+    assertEqual(SeerrRequestDownloadSummary(show, SeerrArrQueueForSeasons(sonarr, [{ seasonNumber: 2 }])).state, "downloading", "and the other season reads its own")
+    assertEqual(SeerrArrQueueForSeasons(sonarr, []).items.count(), 4, "No seasons keeps everything")
+    assertEqual(SeerrArrQueueForSeasons(radarr, [{ seasonNumber: 1 }]).items.count(), 1, "and a movie ignores seasons")
+
+    radarr.items = []
+    approved = { status: 2, is4k: false, media: { status: 3 } }
+    assertEqual(SeerrRequestNotFoundYet(approved, radarr), true, "A released movie Radarr watches, without a file or a download, isnt found yet")
+    assertEqual(SeerrRequestNotFoundYet({ status: 2, is4k: true, media: { status: 3 } }, radarr), false, "Never on a 4K request")
+    assertEqual(SeerrRequestNotFoundYet({ status: 1, media: { status: 3 } }, radarr), false, "nor a pending one")
+    assertEqual(SeerrRequestNotFoundYet({ status: 2, media: { status: 4 } }, radarr), false, "nor one partly there")
+    assertEqual(SeerrRequestNotFoundYet(approved, { service: "radarr", inArr: true, monitored: true, hasFile: true, isAvailable: true, items: [] }), false, "A movie with its file, waiting on Seerr's scan, keeps Requested")
+    assertEqual(SeerrRequestNotFoundYet(approved, { service: "radarr", inArr: true, monitored: true, hasFile: false, isAvailable: invalid, items: [] }), false, "An unknown release date isnt enough")
+    assertEqual(SeerrRequestNotFoundYet(approved, { service: "sonarr", inArr: true, monitored: true, hasFile: false, isAvailable: true, items: [] }), false, "Sonarr never says it")
+    assertEqual(SeerrRequestNotFoundYet(approved, {}), false, "and no answer from Moonbase says nothing")
+
+    media = { status: 3, requests: [{ status: 2, is4k: false }], downloadStatus: [] }
+    assertEqual(SeerrDetailDownload(media, radarr).notFoundYet, true, "The detail line says Not found yet where there's no download")
+    radarr.items = [magnet]
+    shown = SeerrDetailDownload(media, radarr)
+    assertEqual(shown.summary.state, "stalled", "and the download once there is one")
+    assertEqual(SeerrDetailDownload({ status: 5 }, radarr), invalid, "and nothing for a title that's there")
+    assertEqual(SeerrReplaceableDownload(media, radarr).stuckItemId, 1621508593, "An admin can swap a stuck download")
+    radarr.canRemove = false
+    assertEqual(SeerrReplaceableDownload(media, radarr), invalid, "and nobody else can")
+    radarr.canRemove = true
+    radarr.items = [moving]
+    assertEqual(SeerrReplaceableDownload(media, radarr), invalid, "A download that's moving has nothing to swap")
+
+    assertEqual(SeerrArrQueuePathForDetails({ id: 10378, mediaInfo: { status: 3 } }, "movie"), "/Moonfin/Seerr/Radarr/Queue?tmdbId=10378", "A movie is read from Radarr by TMDB id")
+    assertEqual(SeerrArrQueuePathForDetails({ id: 63639, mediaInfo: { status: 4, tvdbId: 280619 } }, "tv"), "/Moonfin/Seerr/Sonarr/Queue?tvdbId=280619", "a series from Sonarr by TVDB id")
+    assertEqual(SeerrArrQueuePathForDetails({ id: 63639, mediaInfo: { status: 3 }, externalIds: { tvdbId: 280619 } }, "tv"), "/Moonfin/Seerr/Sonarr/Queue?tvdbId=280619", "falling back on the external ids")
+    assertEqual(SeerrArrQueuePathForDetails({ id: 63639, mediaInfo: { status: 3, tvdbId: "" }, externalIds: { tvdbId: 280619 } }, "tv"), "/Moonfin/Seerr/Sonarr/Queue?tvdbId=280619", "and on them when the media's TVDB id is empty")
+    assertEqual(SeerrArrQueuePathForDetails({ id: 63639, mediaInfo: { status: 3 } }, "tv"), "", "A series with no TVDB id isnt read")
+    assertEqual(SeerrArrQueuePathForDetails({ id: 10378, mediaInfo: { status: 5 } }, "movie"), "", "nor a title already there")
+    assertEqual(SeerrArrRemovePath({ service: "sonarr" }, 2112814211), "/Moonfin/Seerr/Sonarr/Queue/2112814211", "A swap removes from the arr that answered")
+    assertEqual(SeerrArrServiceName({ service: "Radarr" }), "Radarr", "whatever case it names itself in")
+    assertEqual(SeerrIdText(4294967296&), "4294967296", "A long id reads without a leading space")
+    assertEqual(SeerrIdText("603"), "603", "and a string one as it is")
+
+    noDownloadId = { id: 55, status: "warning", trackedDownloadState: "downloading", errorMessage: "Stuck before the client named it", size: 0, sizeleft: 0 }
+    byQueue = SeerrRequestDownloadSummary(movie, { service: "radarr", inArr: true, canRemove: true, items: [noDownloadId, noDownloadId] })
+    assertEqual(byQueue.state, "stalled", "An arr entry with no download id still counts, by its queue id")
+    assertEqual(byQueue.stuckItemId, 55, "and can be swapped")
+    delayed = { id: 56, status: "delay", trackedDownloadState: "downloading", size: 100, sizeleft: 100 }
+    fallback = { id: 57, status: "Fallback", trackedDownloadState: "downloading", size: 100, sizeleft: 100, downloadId: "FB" }
+    assertEqual(SeerrRequestDownloadSummary(movie, { service: "radarr", inArr: true, items: [delayed, fallback] }), invalid, "A delay or fallback release the arr is holding back isnt a download")
+    assertEqual(SeerrRequestDownloadSummary({ status: 2, media: { status: 3, downloadStatus: [{ status: "warning", size: 10, sizeLeft: 10 }] } }), invalid, "Seerr's own entries still need a download id")
+    assertEqual(SeerrArrGoneFromQueue({ success: false, statusCode: 404, error: "That download is no longer in the Radarr queue" }), true, "A 404 saying it left the queue is done")
+    assertEqual(SeerrArrGoneFromQueue({ success: false, statusCode: 404, error: "No Radarr server is configured in Seerr" }), false, "but a 404 for a missing arr is a failure")
+    assertEqual(SeerrArrGoneFromQueue({ success: false, statusCode: 502, error: "no longer in the queue" }), false, "and so is any other status")
 
     assertEqual(IsSeerrSeriesPart({ Type: "Episode", SeriesId: "abc" }), true, "An episode reads its series' Seerr title")
     assertEqual(IsSeerrSeriesPart({ Type: "Season", SeriesId: "" }), false, "A season without a series has none")
