@@ -8,6 +8,7 @@ import "pkg:/source/enums/ItemType.bs"
 import "pkg:/source/utils/blockedContent.bs"
 import "pkg:/source/utils/deviceCapabilities.bs"
 import "pkg:/source/utils/detailSectionLayout.bs"
+import "pkg:/source/utils/episodeCast.bs"
 import "pkg:/source/utils/HomeRecommendations.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/misc.bs"
@@ -600,43 +601,73 @@ function loadNextUp() as object
     return episodes
 end function
 
+function fetchItemPeople(itemId as string) as dynamic
+    if itemId = "" then return invalid
+    if isMultiServer()
+        serverData = getServerData()
+        url = Substitute("Items/{0}", itemId)
+        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, { "fields": "People,SeriesId,SeasonId", "userId": serverData.userId })
+        if isValid(req) then return getJson(req)
+        return invalid
+    else
+        return api.items.GetByID(itemId, { userId: m.global.session.user.id, fields: "People,SeriesId,SeasonId" })
+    end if
+end function
+
+' The actors billed on a season or series, which its episodes and seasons borrow
+function actorsOf(itemId as string) as object
+    actors = []
+    details = fetchItemPeople(itemId)
+    if not isChainValid(details, "People") then return actors
+    for each person in details.People
+        personType = LCase(chainLookupReturn(person, "Type", ""))
+        if personType = "actor" or personType = "gueststar" then actors.push(person)
+    end for
+    return actors
+end function
+
 ' Directors and writers are the crew, and everyone else billed is the cast
 function loadPeople(withCast as boolean, withCrew as boolean) as object
     people = []
     if not withCast and not withCrew then return people
 
-    ' Normalize server URL once if multi-server
-    normalizedServerUrl = ""
-    if isMultiServer()
-        normalizedServerUrl = m.top.serverUrl
-        if normalizedServerUrl.right(1) = "/"
-            normalizedServerUrl = normalizedServerUrl.left(normalizedServerUrl.len() - 1)
-        end if
-    end if
+    itemDetails = fetchItemPeople(m.top.itemId)
+    if not isChainValid(itemDetails, "People") then return people
 
-    ' First get the item details to access the People array
-    ' Use multi-server API if needed
-    itemDetails = invalid
-    if isMultiServer()
-        serverData = getServerData()
-        url = Substitute("Items/{0}", m.top.itemId)
-        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, url, { "fields": "People", "userId": serverData.userId })
-        if isValid(req)
-            itemDetails = getJson(req)
-        end if
+    itemType = LCase(m.top.itemType)
+    if itemType = "" then itemType = LCase(chainLookupReturn(itemDetails, "Type", ""))
+    seriesId = isValidAndNotEmpty(m.top.showID) ? m.top.showID : chainLookupReturn(itemDetails, "SeriesId", "")
+
+    if m.top.isEpisode or itemType = "episode"
+        ' An episode adds the season's regulars, or the series' when the season lists none
+        seasonId = isValidAndNotEmpty(m.top.seasonID) ? m.top.seasonID : chainLookupReturn(itemDetails, "SeasonId", "")
+        parentActors = actorsOf(seasonId)
+        if parentActors.count() = 0 then parentActors = actorsOf(seriesId)
+        mergedPeople = episodeCast.mergeEpisodePeople(itemDetails.People, parentActors)
+    else if itemType = "season"
+        mergedPeople = []
+        seasonCrew = []
+        for each person in itemDetails.People
+            personType = LCase(chainLookupReturn(person, "Type", ""))
+            if personType = "director" or personType = "writer"
+                seasonCrew.push(person)
+            else
+                mergedPeople.push(person)
+            end if
+        end for
+        if mergedPeople.count() = 0 then mergedPeople = actorsOf(seriesId)
+        mergedPeople.append(seasonCrew)
     else
-        itemDetails = api.items.GetByID(m.top.itemId, { userId: m.global.session.user.id, fields: "People" })
+        mergedPeople = itemDetails.People
     end if
 
-    if not isChainValid(itemDetails, "People")
-        return people
-    end if
-
+    ' The details screen keeps every credit, even the ones a hidden section leaves out of the rows
+    m.top.allPeople = mergedPeople
 
     orderedPeople = []
     trailingPeople = []
-    for each person in itemDetails.People
-        personType = LCase(person.Type)
+    for each person in mergedPeople
+        personType = LCase(chainLookupReturn(person, "Type", ""))
         if personType <> "director" and personType <> "writer"
             if withCast then orderedPeople.push(person)
         else if withCrew
@@ -678,14 +709,7 @@ function loadPeople(withCast as boolean, withCrew as boolean) as object
         tmp.labelText = person.Name
         tmp.type = "Person"
 
-        ' Format subtitle: "as [Role]" for actors with roles, otherwise just the person type
-        personType = person.Type
-        personRole = person.Role
-        if LCase(personType) = "actor" and isValid(personRole) and personRole.ToStr().Trim() <> ""
-            tmp.subTitle = "as " + personRole
-        else
-            tmp.subTitle = personType
-        end if
+        tmp.subTitle = episodeCast.personSubtitle(person.Type, person.Role)
 
         people.push(tmp)
     end for

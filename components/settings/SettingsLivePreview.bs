@@ -3,13 +3,20 @@ import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/utils/achievementsModel.bs"
 import "pkg:/source/utils/buttonLayout.bs"
 import "pkg:/source/utils/detailMetadataLayout.bs"
+import "pkg:/source/utils/detailSectionLayout.bs"
+import "pkg:/source/utils/homeCards.bs"
+import "pkg:/source/utils/homeRowLayout.bs"
+import "pkg:/source/utils/homeRowsPreview.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/libraryOrder.bs"
 import "pkg:/source/utils/libraryPreview.bs"
+import "pkg:/source/utils/mediaBarNewRelease.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/parentalControls.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
+import "pkg:/source/utils/playedState.bs"
 import "pkg:/source/utils/ratingsRow.bs"
+import "pkg:/source/utils/serverMessages.bs"
 import "pkg:/source/utils/themeChrome.bs"
 
 ' The stage is the setup wizard's, so the previews' rounded art comes out at the radius it was
@@ -40,6 +47,7 @@ sub init()
     m.libraryPages = {}
     m.libraryTask = invalid
     m.effect = invalid
+    m.homeRowCache = {}
 
     m.inspector.translation = [0, INSPECTOR_TOP]
     m.holder.translation = [0, STAGE_TOP]
@@ -179,7 +187,8 @@ end function
 ' The scene is built again only when what it draws changed, since a preview is a few dozen nodes
 sub drawScene(state as object)
     config = sceneConfig(state)
-    key = config.component + FormatJson(config.fields) + config.variant
+    dialog = dialogColors(state)
+    key = config.component + FormatJson(config.fields) + config.variant + FormatJson(dialog)
     if key = m.sceneKey then return
     m.sceneKey = key
 
@@ -204,6 +213,7 @@ sub drawScene(state as object)
     preview.scale = [STAGE_WIDTH / 1920, STAGE_HEIGHT / 1080]
     if isValid(config.screen)
         m.calendar = CreateObject("roSGNode", config.screen)
+        m.calendar.callFunc("calendarUsePrefs", config.calendarValues)
         m.calendar.callFunc("calendarLoad", m.calendarShared)
         preview.screen = m.calendar
     end if
@@ -213,6 +223,53 @@ sub drawScene(state as object)
         m.effect.scale = preview.scale
         m.effect.callFunc("preview", config.effect)
     end if
+    if isValid(dialog) then drawDialog(dialog)
+end sub
+
+' The colors the app's dialogs take while one of them has focus, or invalid
+function dialogColors(state as object) as dynamic
+    if not inArray(["colorDialogBackground", "colorDialogBorderLine", "colorDialogSelectedText", "colorDialogText"], state.focusKey ?? "") then return invalid
+    values = state.values
+    return {
+        background: formatSceneGraphColor(values.colorDialogBackground, ColorPalette.ELEMENTBACKGROUND),
+        line: formatSceneGraphColor(values.colorDialogBorderLine, ColorPalette.LIGHTBLUE),
+        selected: formatSceneGraphColor(values.colorDialogSelectedText, ColorPalette.WHITE),
+        text: formatSceneGraphColor(values.colorDialogText, ColorPalette.WHITE),
+        focus: formatSceneGraphColor(values.colorCursor, ColorPalette.HIGHLIGHT)
+    }
+end function
+
+' A copy of the system dialog the app raises with these colors, the Playback Options one Home asks
+' with before it resumes a title. Its palette tints the panel, the title, the line under the title,
+' the focus on the first button and that button's words, and the system dims the screen behind it.
+sub drawDialog(colors as object)
+    layer = m.holder.createChild("Group")
+    layer.scale = [STAGE_WIDTH / 1920, STAGE_HEIGHT / 1080]
+    setupPreviewDraw.Rect(layer, 0, 0, 1920, 1080, "0x00000099")
+    buttons = [tr("Resume from ") + ticksToHuman(2520000000&) + ".", tr("Start over from the beginning.")]
+    panelWidth = 1038
+    panelHeight = 48 + 52 + 20 + 3 + 28 + buttons.Count() * 84 + 40
+    x = (1920 - panelWidth) / 2
+    y = Int((1080 - panelHeight) / 2)
+    setupPreviewDraw.Round(layer, x, y, panelWidth, panelHeight, 12, colors.background)
+    title = setupPreviewDraw.TextLabel(layer, tr("Playback Options"), x + 48, y + 48, 36, colors.text, true)
+    title.width = panelWidth - 96
+    title.height = 52
+    title.vertAlign = "center"
+    setupPreviewDraw.Rect(layer, x + 48, y + 120, panelWidth - 96, 3, colors.line)
+    top = y + 151
+    for i = 0 to buttons.Count() - 1
+        ink = colors.text
+        if i = 0
+            setupPreviewDraw.Round(layer, x + 30, top, panelWidth - 60, 76, 10, colors.focus)
+            ink = colors.selected
+        end if
+        label = setupPreviewDraw.TextLabel(layer, buttons[i], x + 66, top, 30, ink, false)
+        label.width = panelWidth - 132
+        label.height = 76
+        label.vertAlign = "center"
+        top += 84
+    end for
 end sub
 
 function sceneConfig(state as object) as object
@@ -223,23 +280,20 @@ function sceneConfig(state as object) as object
     if state.scene = "details"
         hide = values["ui.itemdetail.hideMediaDescription"] = "true"
         shown = items
-        if hide then shown = withoutOverview(items)
+        if hide then shown = withoutField(items, "overview")
         style = values["ui.itemdetail.style"] ?? "frost"
         episode = focusKey = "plugin.tmdb.episodeRatings"
-        fields = { variant: style, ratings: ratingsFields("", sampleItem(not episode), episode), pageLayout: detailLayout(values, style) }
-        return { component: "SetupDetailPreview", fields: fields, items: shown, variant: hide.ToStr() }
+        layout = detailLayout(values, style)
+        ' With the logo off the page shows the title in its place
+        noLogo = layout.hiddenSections.DoesExist("logo")
+        if noLogo then shown = withoutField(shown, "logoUrl")
+        fields = { variant: style, ratings: ratingsFields("", sampleItem(not episode), episode), pageLayout: layout }
+        return { component: "SetupDetailPreview", fields: fields, items: shown, variant: hide.ToStr() + noLogo.ToStr() }
     end if
     if state.scene = "player"
-        moment = "middle"
-        if focusKey = "playback.mediasegments.intro" then moment = "intro"
-        if focusKey = "playback.nextupbehavior" then moment = "end"
-        if Left(focusKey, 20) = "ui.loadingAnimation." then moment = "loading"
-        if Left(focusKey, 19) = "playback.trickplay." then moment = "seek"
-        ' A subtitle's look is judged as it plays, so the controls step out of the way
         styleKey = Left(focusKey, 20) = "playback.subs.style."
-        if styleKey or focusKey = "playback.subs.custom" then moment = "playing"
         hdr = styleKey and (Right(focusKey, 3) = "Hdr" or focusKey = "playback.subs.style.hdrSeparate")
-        return { component: "SettingsPlayerPreview", fields: { moment: moment, values: values, hdr: hdr }, items: items, variant: "" }
+        return { component: "SettingsPlayerPreview", fields: { moment: playerMoment(focusKey), values: values, hdr: hdr }, items: items, variant: "" }
     end if
     if state.scene = "search"
         return { component: "SettingsKeyboardPreview", fields: { keyboardStyle: values["ui.keyboard.style"] ?? "docked" }, items: items, variant: "" }
@@ -247,38 +301,339 @@ function sceneConfig(state as object) as object
     if state.scene = "calendar"
         view = "CalendarAgendaView"
         if values["calendar.style"] = "countdown" then view = "CalendarCountdownView"
-        ' The calendar reads its other settings itself, so it's built again once one is saved
+        ' The week's first day only shows on the month grid both styles open
+        if focusKey = "calendar.weekStart" then view = "CalendarMonthScreen"
+        ' The calendar is handed the pickers' values, tried or saved, and reads its switches itself,
+        ' so it's built again once one of those is saved
+        tried = {}
+        for each key in ["calendar.scope", "calendar.colorBy", "calendar.imageType", "calendar.weekStart", "ui.dateFormat"]
+            tried[key] = values[key]
+        end for
         saves = state.saves ?? 0
-        return { component: "SetupNavbarPreview", fields: navbarFields(values, state.avatar ?? ""), items: items, screen: view, variant: view + saves.ToStr() }
+        return { component: "SetupNavbarPreview", fields: navbarFields(values, state.avatar ?? ""), items: items, screen: view, calendarValues: tried, variant: view + saves.ToStr() + FormatJson(tried) }
     end if
     if state.scene = "library" then return libraryConfig(state)
     ' Hiding descriptions takes the overview off everything on Home, the way the real one does
     hideHome = values["ui.home.hideMediaDescription"] = "true"
-    if hideHome then items = withoutOverview(items)
+    if hideHome then items = withoutField(items, "overview")
     variant = hideHome.ToStr()
-    if focusKey = "ui.home.mediaBarMode" or focusKey = "ui.overlayColor" or focusKey = "ui.overlayOpacity" or Left(focusKey, 20) = "ui.mediaBar.ratings." or focusKey = "ui.home.mediaBarNewReleaseBanner" or focusKey = "ui.home.mediaBarNewReleaseDays"
+    if focusKey = "ui.home.mediaBarMode" or focusKey = "ui.overlayColor" or focusKey = "ui.overlayOpacity" or Left(focusKey, 20) = "ui.mediaBar.ratings." or focusKey = "ui.home.mediaBarNewReleaseBanner" or focusKey = "ui.home.mediaBarNewReleaseDays" or focusKey = "ui.home.mediaBarRowPeek" or focusKey = "ui.home.featuredMediaItems"
         opacity = -1.0
         if values["ui.overlayOpacity"] <> "" then opacity = Val(values["ui.overlayOpacity"])
-        fields = { mode: values["ui.home.mediaBarMode"] ?? "moonfin", overlayColor: values["ui.overlayColor"] ?? "", overlayOpacity: opacity, ratings: ratingsFields("mediaBar", sampleItem(false), false) }
-        banner = values["ui.home.mediaBarNewReleaseBanner"] <> "false"
+        mode = values["ui.home.mediaBarMode"] ?? "moonfin"
+        pages = (values["ui.home.featuredMediaItems"] ?? "").ToInt()
+        if pages <= 0 then pages = 15
+        fields = { mode: mode, overlayColor: values["ui.overlayColor"] ?? "", overlayOpacity: opacity, ratings: ratingsFields("mediaBar", sampleItem(false), false), pages: pages }
+        ' Peek Home Rows leaves the banner and no bar alone, as on Home
+        fields.rowPeek = values["ui.home.mediaBarRowPeek"] = "true" and not inArray(["banner", "off"], mode)
+        peek = invalid
+        if fields.rowPeek then peek = homePeekFields(values)
+        if isValid(peek) then fields.peek = peek
+        days = (values["ui.home.mediaBarNewReleaseDays"] ?? "30").ToInt()
+        banner = values["ui.home.mediaBarNewReleaseBanner"] <> "false" and sampleReleaseShows(days, CreateObject("roDateTime").AsSeconds())
         if banner then items = withNewReleaseSample(items)
         return { component: "SetupMediaBarPreview", fields: fields, items: items, variant: variant + banner.ToStr() }
     end if
-    if focusKey = "ui.home.rowsStyle" or focusKey = "ui.home.hideMediaDescription" or focusKey = "ui.home.backdropStyle" or Left(focusKey, 16) = "ui.home.ratings."
+    ' The library order shows on the bar while it lists each library, and on My Media otherwise
+    librariesOnBar = focusKey = "libraries.order" and values["navbar.show_libraries_individually"] = "true"
+    ownRows = drawsHomeRows(focusKey) and not librariesOnBar
+    if focusKey = "ui.home.rowsStyle" or focusKey = "ui.home.hideMediaDescription" or focusKey = "ui.home.backdropStyle" or Left(focusKey, 16) = "ui.home.ratings." or focusKey = "colorCursor" or ownRows
         modern = values["ui.home.rowsStyle"] <> "v1"
         episode = focusKey = "ui.home.ratings.episodeRatings"
         ' The modern card shows only the plugin's scores
         onItem = sampleItem(not episode)
         if modern then onItem = {}
-        return { component: "SetupHomeRowsPreview", fields: { modern: modern, ratings: ratingsFields("home", onItem, episode), backdrop: getHomeBackdropStyle(values) }, items: items, variant: variant }
+        fields = { modern: modern, ratings: ratingsFields("home", onItem, episode), backdrop: getHomeBackdropStyle(values), cursor: values["colorCursor"] ?? "", focusCard: focusKey = "colorCursor" or ownRows, pageColor: values["colorBackground"] ?? "", blur: homeBlur(values) }
+        ' Opened from anywhere but Home there are no rows to draw, so the sample rows stand in
+        home = invalid
+        if ownRows then home = homeRowsFields(values, focusKey, modern)
+        if isValid(home) then fields.home = home
+        config = { component: "SetupHomeRowsPreview", fields: fields, items: items, variant: variant }
+        ' The effect's followers land on the focused card while their own switch has focus
+        if state.focusedSetting = "seasonal.follower" and values["seasonal.surprise"] <> "none"
+            config.effect = { effect: values["seasonal.surprise"], density: values["seasonal.density"], follow: values["seasonal.follower"] <> "false", target: followerTarget(home, modern) }
+            config.variant = variant + FormatJson(config.effect)
+        end if
+        return config
     end if
-    config = { component: "SetupNavbarPreview", fields: navbarFields(values, state.avatar ?? ""), items: items, variant: variant }
+    ' The rail only paints its color and shows its clock while it's open, which it is with the remote on it
+    railFocus = inArray(["navbar.color", "navbar.opacity", "ui.showClock", "playback.use24hourclock"], focusKey) or librariesOnBar
+    config = { component: "SetupNavbarPreview", fields: navbarFields(values, state.avatar ?? "", railFocus), items: items, variant: variant }
     ' The seasonal effect runs over Home only while its own setting has focus, and None builds nothing
     if inArray(["seasonal.surprise", "seasonal.density"], state.focusedSetting) and values["seasonal.surprise"] <> "none"
         config.effect = { effect: values["seasonal.surprise"], density: values["seasonal.density"] }
         config.variant = variant + config.effect.effect + config.effect.density
     end if
     return config
+end function
+
+' Where in the title the player is shown for the focused setting
+function playerMoment(focusKey as string) as string
+    if focusKey = "playback.mediasegments.intro" then return "intro"
+    for each segment in ["recap", "commercial", "preview"]
+        if focusKey = "playback.mediasegments." + segment then return segment
+    end for
+    if focusKey = "playback.cinemamode.skip" then return "preroll"
+    if focusKey = "playback.mediasegments.countdown" then return "countdown"
+    if focusKey = "playback.mediasegments.outro" or focusKey = "playback.replaceskipoutrowithnextup" then return "outro"
+    if focusKey = "playback.nextupbehavior" or focusKey = "playback.nextuptimeout" then return "end"
+    if focusKey = "playback.showNextAirDate" or focusKey = "ui.dateFormat" then return "airDate"
+    if Left(focusKey, 20) = "ui.loadingAnimation." then return "loading"
+    if Left(focusKey, 19) = "playback.trickplay." then return "seek"
+    ' A subtitle's look is judged as it plays, so the controls step out of the way
+    if Left(focusKey, 20) = "playback.subs.style." or focusKey = "playback.subs.custom" or focusKey = "playback.subs.secondary.enabled" then return "playing"
+    return "middle"
+end function
+
+' The settings Home draws on its own rows, which the sample rows can't show
+function drawsHomeRows(focusKey as string) as boolean
+    if Left(focusKey, Len(settingsSync.ROW_IMAGE_TYPE_KEY)) = settingsSync.ROW_IMAGE_TYPE_KEY then return true
+    return inArray([
+        "ui.home.rowLayout", "ui.home.rowImageTypes", "ui.home.displayRewatchRow", "ui.home.displayFavoritesRows",
+        "ui.home.displayCollectionsRows", "ui.home.displayGenresRows", "ui.home.displayStudiosRows",
+        "ui.home.displayPlaylistsRows", "ui.home.displayAudioRows", "seasonal.row.enabled",
+        "ui.home.mergeContinueWatchingNextUp", "ui.home.mergeRecentRowsByType", "ui.home.genresRowSortBy",
+        "ui.home.collectionsRowSortBy", "ui.home.rewatchSortBy", "ui.tvshows.disableUnwatchedEpisodeCount",
+        "ui.watchedIndicator", "ui.posterLabels", "ui.home.preferThumbnails", "ui.home.classicRowsPadding",
+        "ui.home.modernRowsPadding", "ui.posterSize", "ui.home.modernCardsOnMyMediaRow", "libraries.order",
+        "seerr.showAvailabilityBadges", "seerr.badgeStyle", "colorHomeRowItemBackground", "colorHomeRowItemProgress",
+        "colorHomeRowItemProgressBackground", "colorHomeRowItemTitle", "colorHomeMyListIcon", "colorHomeRowHeaders",
+        "colorBackground", "ui.backdrop.homeBlurAmount", "seasonal.follower"
+    ], focusKey)
+end function
+
+' Home's rows from the one the focused setting changes down to the foot of the screen, with what
+' the values hold put on them, tried or saved, and the Classic info area for the focused card.
+' Invalid when there's no Home behind Settings.
+function homeRowsFields(values as object, focusKey as string, modern as boolean) as dynamic
+    rows = arrangedHomeRows(values)
+    if not isValid(rows) then return invalid
+    if rows.Count() = 0 then return { rows: [], ink: homeCardInk(values) }
+    genresSort = values["ui.home.genresRowSortBy"] ?? "name"
+    if focusKey = "ui.home.genresRowSortBy" and genresSort <> (get_user_setting("ui.home.genresRowSortBy") ?? "name")
+        rows = homeRowsPreview.WithGenresSort(rows, genresSort)
+    end if
+
+    paddingKey = "ui.home.classicRowsPadding"
+    if modern then paddingKey = "ui.home.modernRowsPadding"
+    spacing = homeRowsVerticalSpacing(modern, values[paddingKey])
+    marks = homeCardMarks(values)
+    sizeName = homeCards.CardSizeName(values["ui.posterSize"])
+    infoRoom = homeRowsPreview.MODERN_INFO_ROOM
+    if moonfinPlugin.IsRatingsEnabled("home") then infoRoom += homeRowsPreview.MODERN_RATINGS_ROOM
+
+    ' Home's rows sit under the info area in Classic, and near the top in Modern
+    y = 450
+    if modern then y = 170
+    focusAt = homeRowsPreview.FocusIndex(rows, focusKey)
+    shown = []
+    for i = focusAt to rows.Count() - 1
+        if y >= 1080 then exit for
+        look = homeRowsPreview.Look(rows[i], modern, values[settingsSync.ROW_IMAGE_TYPE_KEY + rows[i].id], sizeName, infoRoom, values["ui.home.modernCardsOnMyMediaRow"] = "true")
+        laid = homeRowsPreview.Laid(rows[i], look, i = focusAt, marks, y)
+        shown.push(laid)
+        y += laid.height + spacing
+    end for
+
+    focused = rows[focusAt].items[0]
+    text = homeRowsPreview.CardText(focused, false)
+    info = { title: text[0], year: focused.year, officialRating: focused.officialRating, genres: focused.genres, overview: focused.overview }
+    return { rows: shown, ink: homeCardInk(values), info: info, backdropUrl: focused.backdrop }
+end function
+
+' Home's first row where Peek Home Rows puts it under the bar, or invalid when there's no Home
+' behind Settings
+function homePeekFields(values as object) as dynamic
+    rows = arrangedHomeRows(values)
+    if not isValid(rows) or rows.Count() = 0 then return invalid
+    look = homeRowsPreview.Look(rows[0], values["ui.home.rowsStyle"] <> "v1", invalid, homeCards.CardSizeName(values["ui.posterSize"]), homeRowsPreview.MODERN_INFO_ROOM, values["ui.home.modernCardsOnMyMediaRow"] = "true")
+    ' The bar keeps focus, so no card in the row is focused
+    return { rows: [homeRowsPreview.Laid(rows[0], look, false, homeCardMarks(values), 890)], ink: homeCardInk(values) }
+end function
+
+' Home's rows in the order the Rows screen and the Display switches give now, merged the way
+' Continue Watching is now. Invalid when there's no Home behind Settings.
+function arrangedHomeRows(values as object) as dynamic
+    rows = homeRowsBehind()
+    if not isValid(rows) then return invalid
+    toggles = homeRowLayout.RowToggles()
+    shownIds = []
+    for each id in homeRowLayout.Arranged(values[homeRowLayout.ORDER_SETTING], values[homeRowLayout.HIDDEN_SETTING])
+        if homeRowOn(id, toggles) then shownIds.push(id)
+    end for
+    titles = { merged: tr("Continue Watching & Next Up"), resume: tr("Continue Watching"), nextUp: tr("Next Up") }
+    arranged = homeRowsPreview.Arrange(rows, shownIds, values["ui.home.mergeContinueWatchingNextUp"] = "true", titles)
+    order = values["libraries.order"] ?? ""
+    for i = 0 to arranged.Count() - 1
+        if arranged[i].id = "smalllibrarytiles" and order <> "" then arranged[i] = { id: arranged[i].id, title: arranged[i].title, items: inLibraryOrder(arranged[i].items, order) }
+    end for
+    return arranged
+end function
+
+' The libraries in the order the Library Order screen holds, with any it doesn't name after them in
+' the order they had
+function inLibraryOrder(libraries as object, orderJson as string) as object
+    ids = invalid
+    if orderJson <> "" then ids = ParseJson(orderJson)
+    if type(ids) <> "roArray" then return libraries
+    byId = {}
+    for each library in libraries
+        byId[toString(library.id)] = library
+    end for
+    ordered = []
+    for each id in ids
+        library = byId[toString(id)]
+        if isValid(library)
+            ordered.push(library)
+            byId.Delete(toString(id))
+        end if
+    end for
+    for each library in libraries
+        if byId.DoesExist(toString(library.id)) then ordered.push(library)
+    end for
+    return ordered
+end function
+
+' The switch a row answers to, the way HomeRows asks before it builds the row. A picked collection,
+' genre or playlist goes with the switch of the list it came from.
+function homeRowOn(id as string, toggles as object) as boolean
+    picked = homeRowLayout.SourceFromId(id)
+    if isValid(picked)
+        entry = homeRowLayout.SourceFor(picked.source)
+        return not isValid(entry) or entry.gate = "" or get_user_setting_bool(entry.gate, false)
+    end if
+    return homeRowLayout.RowToggleOn(id, toggles)
+end function
+
+' The rows Home has behind Settings, read into plain facts, or invalid when Settings was opened
+' somewhere else. A row is read again only when its cards change, since reading a card's json
+' copies it.
+function homeRowsBehind() as dynamic
+    behind = m.global.sceneManager.callFunc("getActiveScene")
+    if not isValid(behind) or not behind.isSubtype("Home") then return invalid
+    list = behind.findNode("homeRows")
+    if not isValid(list) or not isValid(list.content) then return invalid
+    rows = []
+    kept = {}
+    for each node in list.content.getChildren(-1, 0)
+        count = node.getChildCount()
+        ' A row still loading is only its title
+        if count > 0
+            key = `${node.id}|${node.title}|${count}`
+            row = m.homeRowCache[key]
+            if not isValid(row)
+                row = { id: node.id, title: node.title, items: [] }
+                ' The Genres row is read whole, so a sort being tried can reorder all of it
+                limit = homeRowsPreview.MAX_CARDS
+                if node.id = "genres" then limit = count
+                for each child in node.getChildren(limit, 0)
+                    row.items.push(homeCardFacts(child))
+                end for
+            end if
+            kept[key] = row
+            rows.push(row)
+        end if
+    end for
+    m.homeRowCache = kept
+    return rows
+end function
+
+' What the preview needs of one of Home's cards, read the way HomeItem reads it
+function homeCardFacts(node as object) as object
+    json = node.json
+    if not isValid(json) then json = {}
+    userData = json.UserData
+    if type(userData) <> "roAssociativeArray" then userData = {}
+    yearText = toString(json.ProductionYear).Trim()
+    if yearText = "0" then yearText = ""
+    subline = toString(json.Subtitle)
+    if subline = "" then subline = yearText
+    genres = []
+    if type(json.Genres) = "roArray"
+        for each genre in json.Genres
+            if genres.Count() < 3 then genres.push(toString(genre))
+        end for
+    end if
+    return {
+        id: node.id,
+        type: node.type ?? "",
+        name: node.name ?? "",
+        poster: node.posterURL,
+        thumb: node.thumbnailURL,
+        wide: node.widePosterURL,
+        banner: node.bannerURL,
+        backdrop: node.backdropURL,
+        outside: isValid(json.SeerrTmdbId) or isValid(json.CalendarDate),
+        percent: node.PlayedPercentage ?? 0,
+        played: playedState.ShowsWatchedCheck(json),
+        unplayed: userData.UnplayedItemCount ?? 0,
+        favorite: (userData.IsFavorite ?? false) = true,
+        series: toString(json.SeriesName),
+        season: json.ParentIndexNumber,
+        episode: json.IndexNumber,
+        subline: subline,
+        year: yearText,
+        officialRating: toString(json.OfficialRating),
+        genres: genres,
+        overview: toString(json.Overview),
+        labels: node.LookupCI("posterLabels"),
+        seerr: seerrCardStatus(node),
+        icon: toString(node.LookupCI("iconUrl"))
+    }
+end function
+
+' The marks over the cards as the values show them: the watched mark's mode, whether the unwatched
+' count is hidden, Prefer Thumbnails, the poster labels, which only show where Home asked for them,
+' and the Seerr status style
+function homeCardMarks(values as object) as object
+    return {
+        indicatorMode: values["ui.watchedIndicator"] ?? "always",
+        hideUnplayedCount: values["ui.tvshows.disableUnwatchedEpisodeCount"] = "true",
+        preferThumbs: values["ui.home.preferThumbnails"] = "true",
+        labels: values["ui.posterLabels"] = "true",
+        seerrStyle: seerrStyleOf(values)
+    }
+end function
+
+' How posters show a Seerr status, read the way seerrBadgeStyle reads it: none with the badges off,
+' else badge or banner
+function seerrStyleOf(values as object) as string
+    if values["seerr.showAvailabilityBadges"] = "false" then return ""
+    if values["seerr.badgeStyle"] = "banner" then return "banner"
+    return "badge"
+end function
+
+' HomeRowTitle's color and HomeItem's for the art's ground, its icon, the names and the progress bar,
+' as the values show them, with the Seerr style the cards take
+function homeCardInk(values as object) as object
+    return {
+        header: formatSceneGraphColor(values.colorHomeRowHeaders, ColorPalette.WHITE),
+        card: formatSceneGraphColor(values.colorHomeRowItemBackground, ColorPalette.ELEMENTBACKGROUND),
+        icon: formatSceneGraphColor(values.colorHomeMyListIcon, ColorPalette.WHITE),
+        title: formatSceneGraphColor(values.colorHomeRowItemTitle, ColorPalette.WHITE),
+        progress: formatSceneGraphColor(values.colorHomeRowItemProgress, ColorPalette.TRIADBLUE),
+        track: formatSceneGraphColor(values.colorHomeRowItemProgressBackground, ColorPalette.BLACK90),
+        seerrStyle: seerrStyleOf(values)
+    }
+end function
+
+' Home's backdrop blur, read the way getHomeBackdropBlurAmount reads it
+function homeBlur(values as object) as integer
+    blur = Val(values["ui.backdrop.homeBlurAmount"] ?? "10")
+    if blur < 0 or blur > 20 then return 10
+    return Int(blur)
+end function
+
+' Where Home's followers land: on the focused card, the first of the first row where the Home rows
+' preview draws it
+function followerTarget(home as dynamic, modern as boolean) as object
+    if isValid(home) and home.rows.Count() > 0 and home.rows[0].cards.Count() > 0
+        row = home.rows[0]
+        card = row.cards[0]
+        return { landing: "card", rect: [111 + card.x, row.y + row.top, card.w, card.h] }
+    end if
+    if modern then return { landing: "card", rect: [111, 112, 683, 384] }
+    return { landing: "card", rect: [111, 342, 313, 176] }
 end function
 
 ' The library screen's copy, drawn in whatever style and switches the values hold, tried or
@@ -388,7 +743,7 @@ sub onLibraryPageLoaded()
     redraw()
 end sub
 
-function navbarFields(values as object, avatar as string) as object
+function navbarFields(values as object, avatar as string, railFocus = false as boolean) as object
     buttons = navbarButtons(values, navbarContext())
     position = values["navbar.position"] ?? "top"
     opacity = Val(values["navbar.opacity"] ?? "0.7")
@@ -400,6 +755,9 @@ function navbarFields(values as object, avatar as string) as object
         position: position,
         buttons: buttons,
         avatar: avatar,
+        userName: chainLookupReturn(m.global, "session.user.name", ""),
+        realRail: true,
+        railFocus: railFocus,
         expanded: values["navbar.alwaysExpanded"] = "true",
         showClock: values["ui.showClock"] <> "false",
         clock24: values["playback.use24hourclock"] = "true",
@@ -426,7 +784,7 @@ function navbarButtons(values as object, nav as object) as object
     end for
 
     kids = nav.kids = true
-    libraries = nav.libraries ?? []
+    libraries = inLibraryOrder(nav.libraries ?? [], values["libraries.order"] ?? "")
     showLiveTv = not kids and values["navbar.show_livetv"] <> "false" and libraryOrder.HasLiveTv(libraries)
     if showLiveTv then buttons.push({ uri: "pkg:/images/icons/livetv.webp", label: tr("Live TV") })
     if not kids and nav.seerr = true and values["navbar.show_seerr"] = "true" then buttons.push({ uri: "pkg:/images/icons/settings/seerr.webp", label: tr("Seerr") })
@@ -442,9 +800,10 @@ function navbarButtons(values as object, nav as object) as object
         end if
     end if
 
-    ' The real bar also waits for a server message, but here that would make the switch look broken
-    if values["navbar.show_messages"] = "true" then buttons.push({ uri: "pkg:/images/icons/messages.webp", label: tr("Messages") })
+    ' The real bar only has Messages while the server has one up
+    if values["navbar.show_messages"] = "true" and nav.messages = true then buttons.push({ uri: "pkg:/images/icons/messages.webp", label: tr("Messages") })
     if not kids and values["navbar.show_friends"] = "true" and nav.social = true then buttons.push({ uri: "pkg:/images/icons/friends.webp", label: tr("Friends") })
+    if nav.syncPlay = true then buttons.push({ uri: "pkg:/images/icons/userGroup.webp", label: tr("SyncPlay") })
     buttons.push({ uri: "pkg:/images/icons/settings.webp", label: tr("Settings") })
     return buttons
 end function
@@ -452,13 +811,26 @@ end function
 ' What the real bars check before they add a button
 function navbarContext() as object
     userSession = m.global.session
+    manager = m.global.syncPlayManager
+    syncPlay = false
+    if isValid(manager) then syncPlay = manager.callFunc("isEnabled") = true
     return {
+        messages: serverMessages.All().count() > 0,
+        syncPlay: syncPlay,
         kids: kidsMode.Enabled(),
         libraries: libraryOrder.Loaded(),
         seerr: LCase(toString(userSession.user.settings["seerr.enabled"])) = "true",
         social: achievementsModel.SocialAvailable(userSession.achievementsInfo),
         calendar: moonfinPlugin.IsCalendarAvailable()
     }
+end function
+
+' The sample's new season came out three weeks ago, so like a real one it's only flagged while the
+' window reaches back that far
+function sampleReleaseShows(days as integer, now as integer) as boolean
+    aired = CreateObject("roDateTime")
+    aired.FromSeconds(now - 21 * 86400)
+    return mediaBarNewRelease.IsRecentlyAired({ PremiereDate: aired.ToISOString() }, now, days)
 end function
 
 ' The bar only labels a series when something aired lately, so while the banner is on the first
@@ -531,7 +903,9 @@ function detailLayout(values as object, style as string) as object
         metadata: metadata,
         showBackdrop: values["ui.itemdetail.showBackdrop"] <> "false",
         blurAmount: blur,
-        technical: values["ui.library.showTechnicalDetails"] <> "false"
+        technical: values["ui.library.showTechnicalDetails"] <> "false",
+        expandedTabs: values["ui.itemdetail.expandedTabs"] <> "false",
+        hiddenSections: buttonLayout.HiddenLookup(values[DETAIL_SECTIONS_HIDDEN_SETTING])
     }
 end function
 
@@ -573,12 +947,12 @@ function detailButtons(values as object, style as string) as object
     return shown
 end function
 
-function withoutOverview(items as object) as object
+function withoutField(items as object, field as string) as object
     shown = []
     for each item in items
         copy = {}
         copy.Append(item)
-        copy.overview = ""
+        copy[field] = ""
         shown.push(copy)
     end for
     return shown

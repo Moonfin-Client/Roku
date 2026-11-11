@@ -1,5 +1,6 @@
 import "pkg:/components/setup/setupPreviewDraw.bs"
 import "pkg:/source/utils/buttonLayout.bs"
+import "pkg:/source/utils/calendarEntries.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/osdControls.bs"
 import "pkg:/source/utils/playbackOverlay.bs"
@@ -21,6 +22,30 @@ const OSD_THUMB_SIZE = 21
 const OSD_TIME_ROW_HEIGHT = 33
 const OSD_TIME_ROW_GAP = 6
 const SUBTITLE_CONTROLS_GAP = 12
+' The sample's intro and credits, and the point in each where its prompt is shown
+const INTRO_START = 30
+const INTRO_END = 90
+const INTRO_AT = 42
+const OUTRO_START = 560
+const OUTRO_END = 598
+const OUTRO_AT = 572
+' The sample's recap, ad break and preview of the next episode, and where each prompt is shown
+const RECAP_START = 2
+const RECAP_END = 28
+const RECAP_AT = 8
+const COMMERCIAL_START = 320
+const COMMERCIAL_END = 380
+const COMMERCIAL_AT = 332
+const PREVIEW_START = 536
+const PREVIEW_END = 558
+const PREVIEW_AT = 542
+' A Cinema Mode trailer before the episode, a few seconds in, while its Skip button is up
+const PREROLL_DURATION = 150
+const PREROLL_AT = 4
+' Where the player pins its skip button and its Up Next card
+const OVERLAY_EDGE = 35
+const OVERLAY_BOTTOM = 174
+const SKIP_PROMPT_TOP = 780
 
 ' The player mid-episode: its controls with the title, the time, the seek bar and every button the
 ' viewer kept, over the subtitles
@@ -38,8 +63,7 @@ sub redraw()
     items = m.top.items
     values = m.top.values ?? {}
     moment = m.top.moment
-    intro = values["playback.mediasegments.intro"] ?? "asktoskip"
-    nextUp = values["playback.nextupbehavior"] ?? "extended"
+    prompt = promptAt(moment, values)
 
     setupPreviewDraw.Rect(m.top, 0, 0, 1920, 1080, "0x000000FF")
     ' Before the stream starts the picture is still black, under the player's own loading layer
@@ -52,17 +76,31 @@ sub redraw()
         loading.active = true
         return
     end if
+    ' A trailer plays with nothing over it but the Skip button, when that's on
+    if moment = "preroll"
+        setupPreviewDraw.Art(m.top, 0, 0, 1920, 1080, setupPreviewDraw.ItemField(items, 1, "backdropUrl"), pal.surfaceVariant)
+        if values["playback.cinemamode.skip"] = "true" then drawSkipButton(values, "", PREROLL_DURATION - PREROLL_AT, PREROLL_DURATION, tr("Skip"))
+        return
+    end if
     setupPreviewDraw.Art(m.top, 0, 0, 1920, 1080, setupPreviewDraw.ItemField(items, 0, "backdropUrl"), pal.surfaceVariant)
 
     position = 252
-    if moment = "intro"
-        position = 42
-        if intro = "skip" then position = 90
-    else if moment = "end"
-        position = 598
+    span = segmentSpan(moment)
+    if moment = "intro" or moment = "countdown"
+        position = INTRO_AT
+        if moment = "intro" and values["playback.mediasegments.intro"] = "skip" then position = INTRO_END
+    else if moment = "outro"
+        position = OUTRO_AT
+        if values["playback.mediasegments.outro"] = "skip" then position = OUTRO_END
+    else if moment = "end" or moment = "airDate"
+        position = OUTRO_END
+    else if isValid(span)
+        position = span[2]
+        if values["playback.mediasegments." + moment] = "skip" then position = span[1]
     end if
 
-    controls = moment <> "playing"
+    ' The player raises its end cards only while the controls are away
+    controls = moment <> "playing" and prompt <> "nextUp" and prompt <> "airDate"
     ' The player dims the picture while its controls are up, under the subtitles
     if controls then setupPreviewDraw.Rect(m.top, 0, 0, 1920, 1080, "0x0000004D")
     drawSubtitle(values, m.top.hdr, controls)
@@ -75,16 +113,46 @@ sub redraw()
     end if
 
     if moment = "seek" and values["playback.trickplay.enabled"] <> "false" then drawSeekPreview(items)
-    if moment = "end" then drawNextUp(nextUp, items, pal)
-    if moment = "intro" and intro = "asktoskip" then drawSkipIntro()
+    if prompt = "intro" then drawSkipButton(values, "intro", INTRO_END - position, INTRO_END - INTRO_START)
+    if prompt = "outro" then drawSkipButton(values, "outro", OUTRO_END - position, OUTRO_END - OUTRO_START)
+    if prompt = moment and isValid(span) then drawSkipButton(values, moment, span[1] - position, span[1] - span[0])
+    if prompt = "nextUp" or prompt = "airDate" then drawNextUpCard(values, items, prompt = "airDate")
 end sub
 
+' What the player puts up at the moment shown, by its own rules. A segment offers its skip button
+' when it's set to Ask to Skip, and the outro hands that to the Up Next card when asked to. The
+' countdown moment always shows Skip Intro, since that's where the countdown is seen.
+function promptAt(moment as string, values as object) as string
+    nextUp = values["playback.nextupbehavior"] ?? "extended"
+    if moment = "countdown" then return "intro"
+    if moment = "intro" and (values["playback.mediasegments.intro"] ?? "") = "asktoskip" then return "intro"
+    if isValid(segmentSpan(moment)) and (values["playback.mediasegments." + moment] ?? "") = "asktoskip" then return moment
+    if moment = "outro" and (values["playback.mediasegments.outro"] ?? "") = "asktoskip"
+        if (values["playback.replaceskipoutrowithnextup"] ?? "") = "true" and nextUp <> "disabled" then return "nextUp"
+        return "outro"
+    end if
+    if nextUp = "disabled" then return ""
+    if moment = "end" then return "nextUp"
+    if moment = "airDate" and (values["playback.showNextAirDate"] ?? "") <> "false" then return "airDate"
+    return ""
+end function
+
+' The recap, ad break and preview as [start, end, where the prompt shows], or invalid for any other
+' moment
+function segmentSpan(moment as string) as dynamic
+    if moment = "recap" then return [RECAP_START, RECAP_END, RECAP_AT]
+    if moment = "commercial" then return [COMMERCIAL_START, COMMERCIAL_END, COMMERCIAL_AT]
+    if moment = "preview" then return [PREVIEW_START, PREVIEW_END, PREVIEW_AT]
+    return invalid
+end function
+
 ' Drawn the way the player draws it: by the app with the style settings while Custom Subtitles is
-' on, and by the Roku itself otherwise, in its own caption style
+' on or a second track shows, and by the Roku itself otherwise, in its own caption style
 sub drawSubtitle(values as object, hdr as boolean, controls as boolean)
     if values["playback.subs.mode"] = "None" then return
     text = subtitleLine(values["playback.subs.language"] ?? "")
-    if values["playback.subs.custom"] <> "true"
+    secondary = values["playback.subs.secondary.enabled"] = "true"
+    if values["playback.subs.custom"] <> "true" and not secondary
         drawRokuCaption(text, subtitleBottom(values, 1080 * 0.9, controls))
         return
     end if
@@ -97,6 +165,25 @@ sub drawSubtitle(values as object, hdr as boolean, controls as boolean)
     bounds = cue.boundingRect()
     placed = subtitleStyle.Placement(bounds, look.bottomPercent)
     cue.translation = [placed[0], subtitleBottom(values, placed[1] + bounds.height, controls) - bounds.height]
+    if secondary then drawSecondaryLine(text, look, cue.translation[1])
+end sub
+
+' The second track, which the player stacks right above the first in the first one's style, with
+' the size and color its subtitle menu set
+sub drawSecondaryLine(text as string, look as object, primaryTop as float)
+    settings = chainLookupReturn(m.global.session, "user.settings", {})
+    second = {}
+    second.Append(look)
+    size = Int(Val(toString(settings["playback.subs.secondary.size"] ?? "0")))
+    if size > 0 then second.fontSize = size
+    color = toString(settings["playback.subs.secondary.color"] ?? "")
+    if color <> "" then second.textColor = subtitleStyle.Rgba(color, 100)
+    line = subtitleLine("spa")
+    if line = text then line = subtitleLine("")
+    cue = subtitleStyle.Cue([line], second, "")
+    m.top.appendChild(cue)
+    bounds = cue.boundingRect()
+    cue.translation = [(1920 - bounds.width) / 2, primaryTop - 8 - bounds.height]
 end sub
 
 ' The sample subtitle stays clear of the controls while they're up, over the bar's thumb or over the
@@ -259,9 +346,8 @@ end function
 ' The row the player draws: the transport buttons with the glyphs the skip lengths pick, then
 ' every button the viewer kept, with speed reading as text
 sub drawButtons(values as object, moment as string)
-    ' A scrub with a frame to look at pauses the video while Pause While Scrubbing is on
     playGlyph = "pause_rounded"
-    if moment = "seek" and values["playback.trickplay.enabled"] <> "false" and values["playback.trickplay.pauseWhileScrubbing"] <> "false" then playGlyph = "play_arrow_rounded"
+    if moment = "seek" and scrubPauses(values) then playGlyph = "play_arrow_rounded"
     glyphs = ["skip_previous_rounded", osdControls.SeekGlyph(-1, osdControls.SkipSeconds(values, -1)), playGlyph, osdControls.SeekGlyph(1, osdControls.SkipSeconds(values, 1)), "skip_next_rounded"]
 
     transport = m.top.createChild("LayoutGroup")
@@ -283,23 +369,23 @@ sub drawButtons(values as object, moment as string)
     end for
 end sub
 
+' A scrub with a frame to look at pauses the video while Pause While Scrubbing is on
+function scrubPauses(values as object) as boolean
+    return (values["playback.trickplay.enabled"] ?? "") <> "false" and (values["playback.trickplay.pauseWhileScrubbing"] ?? "") <> "false"
+end function
+
 ' The sample has chapters, a season, subtitles and a cast, so every button the viewer kept shows
 function arrangedOsdButtons(values as object) as object
     return buttonLayout.Arrange(buttonLayout.OsdCandidates(true, true, true, true, true), values[OSD_ORDER_SETTING], values[OSD_HIDDEN_SETTING])
 end function
 
-sub drawSkipIntro()
-    prompt = setupPreviewDraw.TextLabel(m.top, tr("Skip Intro"), 0, 0, 30, "0x000000FF", true)
-    width = prompt.boundingRect().width + 80
-    x = 1920 - 72 - width
-    setupPreviewDraw.Round(m.top, x, 780, width, 80, 40, "0xFFFFFFFF")
-    m.top.removeChild(prompt)
-    m.top.appendChild(prompt)
-    prompt.translation = [x, 780]
-    prompt.width = width
-    prompt.height = 80
-    prompt.horizAlign = "center"
-    prompt.vertAlign = "center"
+' The player's own skip button, counting down what's left of its segment. A pre-roll's says Skip.
+sub drawSkipButton(values as object, segmentType as string, secondsLeft as integer, length as integer, label = "" as string)
+    countdownMode = values["playback.mediasegments.countdown"] ?? "both"
+    button = m.top.createChild("SkipSegmentOverlay")
+    button.setFields(playbackOverlay.CountdownLook(countdownMode))
+    button.setFields({ segmentType: segmentType, label: label, secondsRemaining: secondsLeft, progress: secondsLeft / length })
+    button.translation = [1920 - OVERLAY_EDGE - button.overlayWidth, SKIP_PROMPT_TOP]
 end sub
 
 ' The frame a scrub is aiming at, in the tile the player draws over the thumb
@@ -313,28 +399,30 @@ sub drawSeekPreview(items as object)
     setupPreviewDraw.Ring(m.top, x, y, tileWidth, tileHeight, 8, themeChrome.Token("rangeProgress", "#00a4dc"))
 end sub
 
-sub drawNextUp(nextUp as string, items as object, pal as object)
-    nextTitle = setupPreviewDraw.ItemField(items, 1, "title")
-    if nextUp = "extended"
-        x = 1920 - 64 - 540
-        setupPreviewDraw.Round(m.top, x, 56, 540, 420, 24, "0x000000D9")
-        setupPreviewDraw.RoundArt(m.top, x, 56, 540, 280, setupPreviewDraw.ItemField(items, 1, "backdropUrl"), pal.surfaceVariant, 18, "0x000000FF")
-        setupPreviewDraw.TextLabel(m.top, UCase(tr("Up Next")), x + 24, 360, 22, pal.accent, true)
-        name = setupPreviewDraw.TextLabel(m.top, nextTitle, x + 24, 396, 32, "0xFFFFFFFF", true)
-        name.width = 492
-    else if nextUp = "minimal"
-        label = setupPreviewDraw.TextLabel(m.top, `${tr("Up Next")}: ${nextTitle}`, 0, 0, 28, "0xFFFFFFFF", true)
-        width = label.boundingRect().width + 64
-        x = 1920 - 64 - width
-        setupPreviewDraw.Round(m.top, x, 56, width, 72, 36, "0x000000CC")
-        m.top.removeChild(label)
-        m.top.appendChild(label)
-        label.translation = [x, 56]
-        label.width = width
-        label.height = 72
-        label.horizAlign = "center"
-        label.vertAlign = "center"
+' The player's own Up Next card, held at the start of its countdown. With no next episode in the
+' library it's the air date card, which has only its close button.
+sub drawNextUpCard(values as object, items as object, airDate as boolean)
+    countdownMode = values["playback.mediasegments.countdown"] ?? "both"
+    timeoutMs = (values["playback.nextuptimeout"] ?? "7000").ToInt()
+    card = m.top.createChild("NextUpOverlay")
+    card.setFields(playbackOverlay.CountdownLook(countdownMode))
+    fields = {
+        isMinimal: values["playback.nextupbehavior"] = "minimal",
+        seriesTitle: setupPreviewDraw.ItemField(items, 0, "title"),
+        episodeLabel: "S1:E5",
+        secondsRemaining: Int(timeoutMs / 1000),
+        progress: 1.0
+    }
+    if airDate
+        today = calendarEntries.TodayNumber()
+        fields.airsText = calendarEntries.ReleaseIn(today + 3, today, values["ui.dateFormat"] ?? "")
+        fields.focusedButton = 1
+    else
+        fields.episodeTitle = `${tr("Episode")} 5`
+        fields.thumbUri = setupPreviewDraw.ItemField(items, 1, "backdropUrl")
     end if
+    card.setFields(fields)
+    card.translation = [1920 - OVERLAY_EDGE - card.overlayWidth, 1080 - OVERLAY_BOTTOM - card.overlayHeight]
 end sub
 
 function subtitleLine(language as string) as string

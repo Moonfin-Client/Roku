@@ -10283,6 +10283,56 @@
         <translation>A net under the scrubber that saves one miss.</translation>
     </message>
     <message>
+        <source>Episode Director</source>
+        <extracomment>Crew member credited as an episode director</extracomment>
+        <translation>Episode Director</translation>
+    </message>
+    <message>
+        <source>{0} (Episode Director)</source>
+        <extracomment>Episode director with specific title or role</extracomment>
+        <translation>{0} (Episode Director)</translation>
+    </message>
+    <message>
+        <source>Episode Writer</source>
+        <extracomment>Crew member credited as an episode writer</extracomment>
+        <translation>Episode Writer</translation>
+    </message>
+    <message>
+        <source>{0} (Episode Writer)</source>
+        <extracomment>Episode writer with specific title or role</extracomment>
+        <translation>{0} (Episode Writer)</translation>
+    </message>
+    <message>
+        <source>Guest Star</source>
+        <extracomment>Actor credited as a guest star</extracomment>
+        <translation>Guest Star</translation>
+    </message>
+    <message>
+        <source>{0} (Guest Star)</source>
+        <extracomment>Actor character role with guest star tag</extracomment>
+        <translation>{0} (Guest Star)</translation>
+    </message>
+    <message>
+        <source>EPISODE DIRECTOR</source>
+        <extracomment>Heading for single episode director on Classic details screen</extracomment>
+        <translation>EPISODE DIRECTOR</translation>
+    </message>
+    <message>
+        <source>EPISODE DIRECTORS</source>
+        <extracomment>Heading for multiple episode directors on Classic details screen</extracomment>
+        <translation>EPISODE DIRECTORS</translation>
+    </message>
+    <message>
+        <source>EPISODE WRITER</source>
+        <extracomment>Heading for single episode writer on Classic details screen</extracomment>
+        <translation>EPISODE WRITER</translation>
+    </message>
+    <message>
+        <source>EPISODE WRITERS</source>
+        <extracomment>Heading for multiple episode writers on Classic details screen</extracomment>
+        <translation>EPISODE WRITERS</translation>
+    </message>
+    <message>
         <source>In sync</source>
         <extracomment>Watch Parties - a person&apos;s status in a watch party, next to a colored dot</extracomment>
         <translation>In sync</translation>
