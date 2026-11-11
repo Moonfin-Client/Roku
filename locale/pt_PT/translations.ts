@@ -6542,10 +6542,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Configure Popular, Top Rated, and Trending TMDB lists.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Configure the maximum channels of your audio setup. Multichannel streams exceeding this limit will downmix or transcode.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7078,7 +7074,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Toggle Upcoming Calendars from Radarr/Sonarr.</source>
+        <source>Choose what the Radarr and Sonarr rows show.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

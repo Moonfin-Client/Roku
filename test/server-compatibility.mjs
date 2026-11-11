@@ -891,7 +891,11 @@ assert.match(settingsSyncSource.match(/function GetRowToggleMappings\([^]*?end f
 const rowLayoutSource = await readFile('source/utils/homeRowLayout.bs', 'utf8');
 assert.match(rowLayoutSource, /\{ id: "nextup", label: "Next Up" \},\s*\{ id: "seasonal", label: "Seasonal Row" \}/, 'An unarranged seasonal row sits after Next Up');
 assert.match(rowLayoutSource, /seasonal: "seasonal\.row\.enabled"/, 'The seasonal row answers to its own switch');
-assert.match(rowLayoutSource.match(/function IsEnabled\([^]*?end function/)[0], /if id = "seasonal" then return homeRowLayout\.RowToggleOn\(id\)/, 'A layout without the seasonal row leaves it to the switch');
+assert.match(rowLayoutSource.match(/function IsEnabled\([^]*?end function/)[0], /if id = "seasonal" or id = "mdblist_watching_now" then return homeRowLayout\.LegacySwitchOn\(id\)/, 'A layout without the seasonal or watching now row leaves it to the old switch');
+assert.match(rowLayoutSource.match(/function RowToggleOn\([^]*?end function/)[0], /available = homeRowLayout\.ExternalRowAvailable\(sectionKey\)\s+if isValid\(available\) then return available/, 'An external row is offered and built while the server can fill it, not by a switch');
+assert.match(settingsSyncSource.match(/function HomeSectionsPayload\([^]*?end function/)[0], /not homeRowLayout\.IsExternalRow\(id\) and not homeRowLayout\.RowToggleOn\(id, toggles\)/, 'An external row goes over as it\'s set, even while the server can\'t fill it');
+assert.match(settingsSyncSource, /\{ pluginKey: "mdblistApiKey", rokuKey: "plugin\.mdblist\.apiKey", type: "direct", skipRegistry: true, receiveOnly: true \}/, 'The MDBList key is only read');
+assert.match(await readFile('components/settings/settings.bs', 'utf8'), /profile\.Append\(settingsSync\.LegacyRowSwitches\(\)\)/, 'The old row switches follow the layout for older app versions');
 const loadItemsSource = await readFile('components/home/LoadItemsTask.bs', 'utf8');
 assert.match(loadItemsSource, /startsWith\("plugindynamic:"\)\s+m\.top\.content = posterLabels\.Attach\(parentalControls\.WithoutUnratedOrBlockedItems\(/, 'Chart rows drop unrated titles once a rating is blocked');
 assert.match(loadItemsSource, /startsWith\("seerr_"\)\s+m\.top\.content = parentalControls\.WithoutBlockedItems\(/, 'Seerr rows keep the usual filter');
@@ -931,7 +935,6 @@ assert.match(settingsSyncSource, /\{ pluginKey: "mdblistWatchingNowEnabled", rok
 assert.match(settingsSyncSource.match(/function GetRowToggleMappings\([^]*?end function/)[0], /"mdblist_watching_now"/, 'The pulled layout drives the watching now switch');
 assert.match(rowLayoutSource, /\{ id: "mdblist_watching_now", label: "Watching on MDBList" \}/, 'The catalogue offers the watching now row');
 assert.match(rowLayoutSource, /mdblist_watching_now: "mdblist\.watchingnow\.enabled"/, 'The watching now row answers to its own switch');
-assert.match(rowLayoutSource.match(/function IsEnabled\([^]*?end function/)[0], /if id = "mdblist_watching_now" then return homeRowLayout\.RowToggleOn\(id\)/, 'A layout without the watching now row leaves it to the switch');
 assert.match(loadItemsSource.match(/function loadWatchingNowRow\([^]*?end function/)[0], /WithoutUnratedOrBlockedItems\(results\)/, 'Watching now row applies unrated and blocked filters');
 assert.match(loadItemsSource.match(/function loadWatchingNowRow\([^]*?end function/)[0], /APIRequest\("\/Moonfin\/MdbList\/WatchingNow", \{ profile: "tv" \}\)/, 'Watching now asks with the tv profile');
 assert.match(loadItemsSource.match(/function customRowCard\([^]*?end function/)[0], /if not isValidAndNotEmpty\(tmdbId\) and not isValidAndNotEmpty\(imdbId\) then return invalid/, 'Chart titles with only an IMDb id keep their card');

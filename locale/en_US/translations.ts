@@ -7024,10 +7024,6 @@
         <translation>Combine separate libraries of the same type for Recently Added and Recently Released home rows.</translation>
     </message>
     <message>
-        <source>Configure Popular, Top Rated, and Trending TMDB lists.</source>
-        <translation>Configure Popular, Top Rated, and Trending TMDB lists.</translation>
-    </message>
-    <message>
         <source>Configure the maximum channels of your audio setup. Multichannel streams exceeding this limit will downmix or transcode.</source>
         <translation>Configure the maximum channels of your audio setup. Multichannel streams exceeding this limit will downmix or transcode.</translation>
     </message>
@@ -7609,8 +7605,8 @@
         <translation>Subtitle Stream</translation>
     </message>
     <message>
-        <source>Toggle Upcoming Calendars from Radarr/Sonarr.</source>
-        <translation>Toggle Upcoming Calendars from Radarr/Sonarr.</translation>
+        <source>Choose what the Radarr and Sonarr rows show.</source>
+        <translation>Choose what the Radarr and Sonarr rows show.</translation>
     </message>
     <message>
         <source>Trakt</source>
@@ -9166,11 +9162,6 @@
         <source>Watching on MDBList</source>
         <extracomment>Home row of what MDBList users are watching right now, and the setting that turns it on</extracomment>
         <translation>Watching on MDBList</translation>
-    </message>
-    <message>
-        <source>Show what MDBList users are currently watching</source>
-        <extracomment>Description of the Watching on MDBList setting</extracomment>
-        <translation>Show what MDBList users are currently watching</translation>
     </message>
     <message>
         <source>{users} watching now · {movies} movies · {shows} shows</source>
