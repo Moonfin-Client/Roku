@@ -144,6 +144,7 @@ sub init()
     ' The Rows screen's order and off list, which the preview arranges Home's rows by
     m.previewDefaults[homeRowLayout.ORDER_SETTING] = ""
     m.previewDefaults[homeRowLayout.HIDDEN_SETTING] = ""
+    m.previewDefaults[DETAIL_SECTIONS_HIDDEN_SETTING] = ""
     ' The previews draw the library's own art and titles
     m.previewItemsTask = createObject("roSGNode", "SetupPreviewItemsTask")
     m.previewItemsTask.observeField("items", "onPreviewItemsLoaded")
@@ -415,7 +416,12 @@ function previewSceneTable() as object
         "playback.subs.style.backgroundColorHdr": "player",
         "playback.subs.style.backgroundHdr": "player",
         "playback.mediasegments.intro": "player",
+        "playback.mediasegments.outro": "player",
+        "playback.mediasegments.countdown": "player",
         "playback.nextupbehavior": "player",
+        "playback.nextuptimeout": "player",
+        "playback.showNextAirDate": "player",
+        "playback.replaceskipoutrowithnextup": "player",
         "playback.trickplay.enabled": "player",
         "playback.trickplay.pauseWhileScrubbing": "player",
         "ui.loadingAnimation.image": "player",
@@ -460,13 +466,50 @@ function previewSceneTable() as object
         "ui.home.mergeRecentRowsByType": "home",
         "ui.home.genresRowSortBy": "home",
         "ui.home.collectionsRowSortBy": "home",
+        "ui.home.collectionsRowSortOrder": "home",
+        "ui.home.audioRowsSortBy": "home",
+        "ui.home.audioRowsSortOrder": "home",
         "ui.home.rewatchSortBy": "home",
         "ui.tvshows.disableUnwatchedEpisodeCount": "home",
         "ui.watchedIndicator": "home",
         "ui.posterLabels": "home",
         "ui.home.preferThumbnails": "home",
         "ui.home.classicRowsPadding": "home",
-        "ui.home.modernRowsPadding": "home"
+        "ui.home.modernRowsPadding": "home",
+        "ui.home.mediaBarNewReleaseBanner": "home",
+        "ui.home.mediaBarNewReleaseDays": "home",
+        "ui.home.featuredMediaItems": "home",
+        "ui.posterSize": "home",
+        "ui.home.modernCardsOnMyMediaRow": "home",
+        "ui.backdrop.homeBlurAmount": "home",
+        "seasonal.follower": "home",
+        "libraries.order": "home",
+        "seerr.showAvailabilityBadges": "home",
+        "seerr.badgeStyle": "home",
+        "colorBackground": "home",
+        "colorHomeRowItemBackground": "home",
+        "colorHomeRowItemProgress": "home",
+        "colorHomeRowItemProgressBackground": "home",
+        "colorHomeRowItemTitle": "home",
+        "colorHomeMyListIcon": "home",
+        "colorHomeRowHeaders": "home",
+        "colorText": "library",
+        "colorDialogBackground": "dialog",
+        "colorDialogBorderLine": "dialog",
+        "colorDialogSelectedText": "dialog",
+        "colorDialogText": "dialog",
+        "ui.itemdetail.expandedTabs": "details",
+        "ui.itemdetail.sections": "details",
+        "ui.itemdetail.section": "details",
+        "playback.skipBackLength": "player",
+        "playback.skipForwardLength": "player",
+        "playback.mediasegments.recap": "player",
+        "playback.mediasegments.preview": "player",
+        "playback.mediasegments.commercial": "player",
+        "playback.cinemamode.skip": "player",
+        "playback.subs.secondary.enabled": "player",
+        "ui.dateFormat": "calendar",
+        "calendar.weekStart": "calendar"
     }
 end function
 
@@ -476,6 +519,10 @@ function previewSceneFor(settingName as string) as string
     ' Each Home row has an image type setting of its own
     if Left(settingName, Len(settingsSync.ROW_IMAGE_TYPE_KEY)) = settingsSync.ROW_IMAGE_TYPE_KEY then return "home"
     sceneId = m.previewScenes[settingName] ?? ""
+    ' The app's dialogs come up over whatever screen is open
+    if sceneId = "dialog" then return m.previewScene
+    ' Dates show on the player's air date card when there's no calendar
+    if settingName = "ui.dateFormat" and not m.hasCalendar then return "player"
     if sceneId <> "library" then return sceneId
     if settingName = "ui.library.musicStyle" and m.hasMusicLibrary then return sceneId
     if settingName <> "ui.library.musicStyle" and m.hasVideoLibrary then return sceneId
@@ -488,10 +535,11 @@ sub buildPreviewChips()
     libraries = libraryOrder.Loaded()
     m.hasVideoLibrary = isValid(libraryOrder.FirstVideo(libraries))
     m.hasMusicLibrary = isValid(libraryOrder.FirstMusic(libraries))
+    m.hasCalendar = moonfinPlugin.IsCalendarAvailable()
     m.previewChips = []
     for each sceneId in PREVIEW_SCENES
         shown = true
-        if sceneId = "calendar" then shown = moonfinPlugin.IsCalendarAvailable()
+        if sceneId = "calendar" then shown = m.hasCalendar
         if sceneId = "library" then shown = m.hasVideoLibrary or m.hasMusicLibrary
         if shown then m.previewChips.push({ id: sceneId, label: previewSceneName(sceneId) })
     end for
@@ -519,6 +567,7 @@ function previewValues() as object
         values[key] = dynamicToDisplayString(value)
     end for
     values.Append(editorPreviewValues(m.editor))
+    if isValid(m.libraryOrderIds) then values["libraries.order"] = FormatJson(m.libraryOrderIds)
     if m.tryKey <> "" then values[m.tryKey] = dynamicToDisplayString(m.tryValue)
     ' A backdrop style is saved with the switch beside it, so a tried one is drawn with its switch too
     if m.tryKey = "ui.home.backdropStyle" then values["ui.home.showBackdrop"] = (values[m.tryKey] <> "off").ToStr()
@@ -1374,6 +1423,8 @@ end sub
 sub saveHomeRowLayout(order as object, hidden as object)
     set_user_setting(homeRowLayout.ORDER_SETTING, FormatJson(order))
     set_user_setting(homeRowLayout.HIDDEN_SETTING, FormatJson(hidden))
+    ' Home builds its rows again in the new order, with the rows turned on or off, once Settings closes
+    m.homeRowsSwitched = true
     syncHomeRowsToServer()
 end sub
 
@@ -1875,6 +1926,7 @@ sub onKeyGridSubmit()
         return
     end if
     set_user_setting(selectedSetting.settingName, m.integerSetting.text)
+    if homeRowLayout.ReloadsHome(selectedSetting.settingName) then m.homeRowsSwitched = true
     syncSettingToServer(selectedSetting.settingName, m.integerSetting.text)
     refreshCurrentItemValue(selectedSetting)
     hideEditingControls()
@@ -2307,7 +2359,8 @@ sub dismissPanel(animated = false as boolean)
         if isValid(behind) and behind.isSubtype("Home")
             behind.callFunc("reload")
         else
-            m.global.homeNeedsRefresh = true
+            ' A refresh leaves a row that was switched off on screen, so Home builds its rows from scratch once it shows again
+            m.global.homeNeedsReload = true
         end if
     end if
 
@@ -2535,8 +2588,8 @@ function reorderSettingsForFlutter(configTree as object) as object
     continueWatching = takeSettings(configTree, ["ui.home.mergeContinueWatchingNextUp", "ui.home.continueWatchingDefaultAction", "ui.details.maxdaysnextup"])
     recentlyAdded = takeSettings(configTree, ["ui.home.recentlyReleasedSeriesType", "ui.home.mergeRecentRowsByType"])
     rowTypes = [
-        { title: "AUDIO", settings: takeSettings(configTree, ["ui.home.displayAudioRows"]) },
-        { title: "COLLECTIONS", settings: takeSettings(configTree, ["ui.home.displayCollectionsRows", "ui.home.collectionsRowSortBy", "ui.home.collectionsRowShowEpisodes"]) },
+        { title: "AUDIO", settings: takeSettings(configTree, ["ui.home.displayAudioRows", "ui.home.audioRowsSortBy", "ui.home.audioRowsSortOrder"]) },
+        { title: "COLLECTIONS", settings: takeSettings(configTree, ["ui.home.displayCollectionsRows", "ui.home.collectionsRowSortBy", "ui.home.collectionsRowSortOrder", "ui.home.collectionsRowShowEpisodes"]) },
         { title: "FAVORITES", settings: takeSettings(configTree, ["ui.home.displayFavoritesRows"]) },
         { title: "GENRES", settings: takeSettings(configTree, ["ui.home.displayGenresRows", "ui.home.genresRowSortBy", "ui.home.genresRowItemFilter"]) },
         { title: "PLAYLISTS", settings: takeSettings(configTree, ["ui.home.displayPlaylistsRows", "ui.home.playlistsRowShowEpisodes"]) },
@@ -3503,6 +3556,7 @@ sub boolSettingChanged(selectedSetting as object)
         noteMediaBarSourceChange(selectedSetting.settingName)
         ' Home asks for the labels again with its rows, or leaves them off
         if selectedSetting.settingName = "ui.posterLabels" then m.homeRowsSwitched = true
+        if homeRowLayout.ReloadsHome(selectedSetting.settingName) then m.homeRowsSwitched = true
     end if
 
     if isStringEqual(selectedSetting.settingName, "playback.playDefaultAudioTrack")
@@ -3544,6 +3598,8 @@ sub applyRadioChoice(selectedSetting as object, selectedValue as dynamic)
 
     ' Home lays its cards out again for a new size or image type
     if selectedSetting.settingName = "ui.posterSize" or Left(selectedSetting.settingName, Len(settingsSync.ROW_IMAGE_TYPE_KEY)) = settingsSync.ROW_IMAGE_TYPE_KEY then m.homeRowsSwitched = true
+    ' The row options and the Continue Watching and Recently Added choices decide what Home loads
+    if homeRowLayout.ReloadsHome(selectedSetting.settingName) then m.homeRowsSwitched = true
 
     if isStringEqual(selectedSetting.settingName, "playback.media.forceTranscode")
         if isStringEqual(selectedValue, PlaybackMethod.PLAYNORMALLY)
@@ -3868,9 +3924,16 @@ sub showLibraryOrderPanel()
     dialog = createObject("roSGNode", "LibraryOrderPanel")
     dialog.style = m.cleanStyle
     dialog.observeField("closed", "onLibraryOrderPanelClosed")
+    dialog.observeField("order", "onLibraryOrderMoved")
     showPickerPanel(dialog)
     dialog.callFunc("showDialog")
     fitToListColumn(dialog)
+end sub
+
+' The order the panel holds, which the preview keeps drawing once it closes, since a move is saved
+sub onLibraryOrderMoved(event as object)
+    m.libraryOrderIds = event.getData()
+    updatePreview()
 end sub
 
 ' A settings screen drawn as a panel of its own takes the list column's place, so the preview
@@ -3888,6 +3951,7 @@ end sub
 ' since a task nothing references can be collected mid flight
 sub onLibraryOrderPanelClosed(event as object)
     dialog = event.getRoSGNode()
+    dialog.unobserveField("order")
     closePickerPanel(dialog)
 
     held = []

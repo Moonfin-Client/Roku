@@ -164,43 +164,96 @@ namespace libraryScope
 
     ' A sort this cannot reproduce leaves the merged list in the order the libraries answered
     function Sorted(merged as object, params as object) as object
-        field = AsText(chainLookupReturn(params, "SortBy", "")).split(",")[0]
+        fields = AsText(chainLookupReturn(params, "SortBy", "")).split(",")
         ascending = LCase(AsText(chainLookupReturn(params, "SortOrder", "Ascending"))) <> "descending"
 
-        ' The one the server holds on the item rather than beside it
-        if isStringEqual(field, "DatePlayed") then return SortedBy(merged, "UserData.LastPlayedDate", ascending, false)
-        if isStringEqual(field, "SortName") then return SortedBy(merged, "SortName", ascending, false)
-        if isStringEqual(field, "DateCreated") or isStringEqual(field, "PremiereDate") then return SortedBy(merged, field, ascending, false)
-        if isStringEqual(field, "CommunityRating") or isStringEqual(field, "CriticRating") or isStringEqual(field, "ProductionYear") then return SortedBy(merged, field, ascending, true)
-        if isStringEqual(field, "Runtime") then return SortedBy(merged, "RunTimeTicks", ascending, true)
+        if fields.count() = 0 then return merged
+        if isStringEqual(fields[0], "Random") then return shuffleArray(merged)
+        if not isValid(SortSource(fields[0])) then return merged
 
-        return merged
-    end function
+        ' The server breaks a tie on each later field and then on the name, all in the one
+        ' direction, so every item carries its values for each of them
+        sortFields = []
+        for each field in fields
+            sortField = SortSource(field)
+            if isValid(sortField) then sortFields.push(sortField)
+        end for
+        if not inArray(fields, "SortName") then sortFields.push(SortSource("SortName"))
 
-    function SortedBy(merged as object, field as string, ascending as boolean, numeric as boolean) as object
         keyed = []
         for each item in merged
-            keyed.push({ key: SortKey(item, field, numeric), item: item })
+            keys = []
+            for each sortField in sortFields
+                keys.push(SortKey(item, sortField.field, sortField.numeric))
+            end for
+            keyed.push({ keys: keys, item: item })
         end for
 
-        keyed.sortBy("key", ascending ? "i" : "ri")
-
         ordered = []
-        for each entry in keyed
+        for each entry in stableSorted(keyed, libraryScope.Before, ascending)
             ordered.push(entry.item)
         end for
 
         return ordered
     end function
 
-    function SortKey(item as object, field as string, numeric as boolean) as dynamic
-        value = chainLookupReturn(item, field, invalid)
-        if numeric then return Val(AsText(value))
+    function Before(a as object, b as object, ascending as boolean) as boolean
+        for i = 0 to a.keys.count() - 1
+            if a.keys[i] <> b.keys[i]
+                if ascending then return a.keys[i] < b.keys[i]
+                return a.keys[i] > b.keys[i]
+            end if
+        end for
 
-        text = AsText(value)
-        if field = "SortName" and not isValidAndNotEmpty(text) then text = AsText(chainLookupReturn(item, "Name", ""))
+        return false
+    end function
+
+    ' Where the item holds the value for each sort the merge can redo
+    function SortSource(field as string) as dynamic
+        ' The one the server holds on the item rather than beside it
+        if isStringEqual(field, "DatePlayed") then return { field: "UserData.LastPlayedDate", numeric: false }
+        if isStringEqual(field, "SortName") then return { field: "SortName", numeric: false }
+        if isStringEqual(field, "DateCreated") or isStringEqual(field, "PremiereDate") then return { field: field, numeric: false }
+        if isStringEqual(field, "CommunityRating") or isStringEqual(field, "CriticRating") or isStringEqual(field, "ProductionYear") then return { field: field, numeric: true }
+        if isStringEqual(field, "Runtime") then return { field: "RunTimeTicks", numeric: true }
+
+        return invalid
+    end function
+
+    function SortKey(item as object, field as string, numeric as boolean) as dynamic
+        text = AsText(chainLookupReturn(item, field, invalid))
+        ' A missing number sorts below every real one, zero included, the way the server sorts it
+        if numeric then return text = "" ? -1 : Val(text)
+
+        if field = "SortName"
+            if not isValidAndNotEmpty(text) then text = AsText(chainLookupReturn(item, "Name", ""))
+            text = PaddedNumbers(text)
+        end if
+        ' The server dates an item without a premiere date by the first day of its year
+        if field = "PremiereDate" and text = ""
+            year = AsText(chainLookupReturn(item, "ProductionYear", invalid))
+            if year <> "" then text = year + "-01-01T00:00:00.0000000Z"
+        end if
 
         return LCase(text)
+    end function
+
+    ' Emby sorts the numbers in a name by value, and Jellyfin's sort name already pads them to ten
+    ' digits, so padding them here orders both the same way
+    function PaddedNumbers(text as string) as string
+        padded = ""
+        runStart = 1
+        for i = 1 to Len(text) + 1
+            character = Mid(text, i, 1)
+            if character < "0" or character > "9"
+                digits = Mid(text, runStart, i - runStart)
+                if digits <> "" and Len(digits) < 10 then digits = String(10 - Len(digits), "0") + digits
+                padded += digits + character
+                runStart = i + 1
+            end if
+        end for
+
+        return padded
     end function
 
     ' Everything read out of a payload is compared as text, and a missing one reads as empty

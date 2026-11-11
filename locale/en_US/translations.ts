@@ -7557,6 +7557,26 @@
         <translation>Sort Collections rows by date added, release date, alphabetically, and more.</translation>
     </message>
     <message>
+        <source>Sort Collections rows in ascending or descending order.</source>
+        <extracomment>Settings Menu - Description for the Sort Order option of the Collections rows</extracomment>
+        <translation>Sort Collections rows in ascending or descending order.</translation>
+    </message>
+    <message>
+        <source>Audio Rows Sorting</source>
+        <extracomment>Settings Menu - Title for the option that picks how the Audio rows are sorted</extracomment>
+        <translation>Audio Rows Sorting</translation>
+    </message>
+    <message>
+        <source>Sort Audio rows by date added, release date, alphabetically, and more.</source>
+        <extracomment>Settings Menu - Description for the Audio Rows Sorting option</extracomment>
+        <translation>Sort Audio rows by date added, release date, alphabetically, and more.</translation>
+    </message>
+    <message>
+        <source>Sort Audio rows in ascending or descending order.</source>
+        <extracomment>Settings Menu - Description for the Sort Order option of the Audio rows</extracomment>
+        <translation>Sort Audio rows in ascending or descending order.</translation>
+    </message>
+    <message>
         <source>Sort Genres rows by date added, release date, alphabetically, and more.</source>
         <translation>Sort Genres rows by date added, release date, alphabetically, and more.</translation>
     </message>

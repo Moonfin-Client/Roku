@@ -103,10 +103,11 @@ const selections = {
     'source/utils/musicCategories.bs': null,
     'source/utils/moonbaseInstall.bs': null,
     'source/utils/watchPartyModel.bs': null,
-    'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'optionRange', 'optionsFit'],
-    'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt', 'subtitleBottom', 'seekBarY', 'timeRowShows'],
+    'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'inLibraryOrder', 'optionRange', 'optionsFit', 'playerMoment', 'drawsHomeRows', 'sampleReleaseShows', 'seerrStyleOf', 'homeBlur', 'followerTarget'],
+    'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt', 'subtitleBottom', 'seekBarY', 'timeRowShows', 'promptAt', 'segmentSpan', 'scrubPauses'],
+    'components/calendar/calendarHost.bs': ['calendarUsePrefs'],
     'components/settings/settingsEditors.bs': ['editorArrangement'],
-    'components/settings/settings.bs': ['settingPath'],
+    'components/settings/settings.bs': ['settingPath', 'previewSceneTable'],
     'components/details/stage/StageChipRow.bs': ['columnShares'],
     'components/details/QuickLookItemDetails.bs': ['buttonCap'],
     'source/utils/playbackOverlay.bs': null,
@@ -139,7 +140,8 @@ const selections = {
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
     'components/home/HomeItem.bs': ['onPosterLoadStatusChanged', 'retryPoster'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
-    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'getBoolSetting', 'getStringSetting', 'appendRadarrCalendar', 'radarrRowRelease', 'appendSonarrCalendar', 'sonarrRowPicks', 'sonarrEpisodeCode', 'calendarSubtitle', 'sortByCalendarDate'],
+    'components/tasks/MultiServerTask.bs': ['withSortFields', 'withField'],
+    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'getBoolSetting', 'getStringSetting', 'appendRadarrCalendar', 'radarrRowRelease', 'appendSonarrCalendar', 'sonarrRowPicks', 'sonarrEpisodeCode', 'calendarSubtitle', 'sortByCalendarDate', 'rowSortByParam', 'rowSortOrderParam'],
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL', 'chapterImageURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
@@ -199,6 +201,8 @@ source += '\n' + await readFile('test/library-order.bs', 'utf8');
 source += '\n' + await readFile('test/detail-sections.bs', 'utf8');
 source += '\n' + await readFile('test/rating-sources.bs', 'utf8');
 source += '\n' + await readFile('test/home-row-groups.bs', 'utf8');
+source += '\n' + await readFile('test/home-reload-settings.bs', 'utf8');
+source += '\n' + await readFile('test/row-sort-settings.bs', 'utf8');
 source += '\n' + await readFile('test/search-groups.bs', 'utf8');
 source += '\n' + await readFile('test/settings-metrics.bs', 'utf8');
 source += '\n' + await readFile('test/library-filters.bs', 'utf8');
@@ -279,7 +283,7 @@ source += '\n' + await readFile('test/home-cards.bs', 'utf8');
 // Home's rows in the settings preview, without Look, which reads the saved settings
 const homeRowsPreviewFile = await readFile('source/utils/homeRowsPreview.bs', 'utf8');
 source += '\nnamespace homeRowsPreview\n' + homeRowsPreviewFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['Arrange', 'Merged', 'WithGenresSort', 'FocusIndex', 'Shows', 'ItemShows', 'Laid', 'CardArt', 'FirstOf', 'CardText']) {
+for (const name of ['Arrange', 'Merged', 'WithGenresSort', 'FocusIndex', 'Shows', 'ItemShows', 'SeerrMark', 'Laid', 'CardArt', 'FirstOf', 'CardText']) {
     const match = homeRowsPreviewFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
     assert.ok(match, `Missing homeRowsPreview.${name}`);
     source += '\n' + match[0];
@@ -367,10 +371,20 @@ source += '\n' + await readFile('test/ratings-scope.bs', 'utf8');
 // The rest of the row layout uses loops this interpreter cant parse, and the outside lists only need these
 const homeRowLayoutFile = await readFile('source/utils/homeRowLayout.bs', 'utf8');
 source += '\nnamespace homeRowLayout\n' + homeRowLayoutFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['Catalogue', 'Passthrough', 'AsText', 'Sources', 'SourceFor', 'ServerId', 'ServerKey', 'SourceFromId', 'IsOwnServer', 'IsSliderRow']) {
+for (const name of ['Catalogue', 'Passthrough', 'AsText', 'Sources', 'SourceFor', 'ServerId', 'ServerKey', 'SourceFromId', 'IsOwnServer', 'IsSliderRow', 'RowToggles', 'ReloadsHome']) {
     source += '\n' + homeRowLayoutFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
+// The merge sort alone, since the rest of the library scope asks the server
+const libraryScopeFile = await readFile('source/utils/libraryScope.bs', 'utf8');
+source += '\nnamespace libraryScope\n';
+for (const name of ['Sorted', 'Before', 'SortSource', 'SortKey', 'PaddedNumbers', 'AsText']) {
+    const match = libraryScopeFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
+    assert.ok(match, `Missing libraryScope.${name}`);
+    source += '\n' + match[0];
+}
+source += '\nend namespace\n';
+source += '\n' + await readFile('test/multi-server-sort.bs', 'utf8');
 source += '\n' + await readFile('test/media-bar-external.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/mediaBarNewRelease.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/media-bar-new-release.bs', 'utf8');
@@ -757,6 +771,15 @@ const previewTable = settingsScreen.match(/function previewSceneTable\(\)[^]*?en
 const subtitleLooks = [...(await readFile('settings/settings.json', 'utf8')).matchAll(/"settingName": "(playback\.subs\.(?:custom|style\.\w+))"/g)].map(match => match[1]);
 assert.ok(subtitleLooks.length >= 22, 'The subtitle style settings are found');
 for (const key of subtitleLooks) assert.ok(previewTable.includes(`"${key}": "player"`), `${key} shows on the Player preview`);
+// The skip button and the end of episode settings show on the Player preview, which pins its prompts
+// where the player does
+for (const key of ['playback.mediasegments.intro', 'playback.mediasegments.outro', 'playback.mediasegments.countdown', 'playback.nextupbehavior', 'playback.nextuptimeout', 'playback.showNextAirDate', 'playback.replaceskipoutrowithnextup', 'playback.trickplay.pauseWhileScrubbing']) {
+    assert.ok(previewTable.includes(`"${key}": "player"`), `${key} shows on the Player preview`);
+}
+const playerPreviewSource = await readFile('components/settings/SettingsPlayerPreview.bs', 'utf8');
+for (const name of ['OVERLAY_EDGE', 'OVERLAY_BOTTOM', 'SKIP_PROMPT_TOP']) {
+    assert.equal(playerPreviewSource.match(new RegExp(`^const ${name} = (\\d+)`, 'm'))[1], playerView.match(new RegExp(`^const ${name} = (\\d+)`, 'm'))[1], `The preview's ${name} is the player's`);
+}
 const styleRows = settingsScreen.match(/Left\(item\.settingName \?\? "", (\d+)\) = "(playback\.subs\.style\.)"/);
 assert.equal(Number(styleRows[1]), styleRows[2].length, 'The style rows are matched on their whole prefix');
 const episodeOverlay = await readFile('components/video/EpisodeBrowserOverlay.bs', 'utf8');
@@ -784,9 +807,9 @@ assert.match(playerView, /openControlMenu\("showSpeedMenu"[^]*?openControlMenu\(
 assert.match(await readFile('components/manager/ViewCreator.bs', 'utf8'), /callFunc\("showControlsOn", "showAudioMenu"\)[^]*?callFunc\("showControlsOn", "showSubtitleMenu"\)/, 'The audio and subtitle pickers hand back to their buttons');
 process.stdout.write('PASS: player controls wiring (5 checks)\n');
 
-// Every row on the Calendar screen that the calendar draws moves the preview to it. The release types are
-// shared with the Upcoming Movies row, week start only changes the month grid and the select action only
-// acts on a press, so those leave it alone. Card image only shows for the style that draws it
+// Every row on the Calendar screen that the calendar draws moves the preview to it, week start on the month
+// grid. The release types are shared with the Upcoming Movies row and the select action only acts on a
+// press, so those leave it alone. Card image only shows for the style that draws it
 const findCalendarPage = (nodes) => {
     for (const node of nodes) {
         if (node.requires === 'calendar' && node.children) return node;
@@ -798,7 +821,7 @@ const findCalendarPage = (nodes) => {
 const calendarRows = findCalendarPage(JSON.parse(await readFile('settings/settings.json', 'utf8'))).children.filter(row => row.settingName);
 assert.ok(calendarRows.length >= 17, 'The Calendar settings are found');
 for (const { settingName } of calendarRows) {
-    const shared = settingName.startsWith('calendar.radarr.show') || settingName === 'calendar.weekStart' || settingName === 'calendar.selectAction';
+    const shared = settingName.startsWith('calendar.radarr.show') || settingName === 'calendar.selectAction';
     assert.equal(previewTable.includes(`"${settingName}": "calendar"`), !shared, `${settingName} ${shared ? 'leaves the preview where it is' : 'shows on the Calendar preview'}`);
 }
 assert.equal(calendarRows.find(row => row.settingName === 'calendar.imageType').requires, 'setting:calendar.style=countdown', 'Card image only shows with the Countdown style');
@@ -921,6 +944,43 @@ assert.match(await readFile('source/utils/misc.bs', 'utf8'), /if isSeerrFilterRo
 assert.match((await readFile('components/settings/settings.bs', 'utf8')).match(/sub dismissPanel\([^]*?end sub/)[0], /if m\.homeRowsSwitched = true[^]*?behind\.callFunc\("reload"\)/, 'Closing settings reloads Home after a row is switched on or off');
 process.stdout.write('PASS: watching now row wiring (15 checks)\n');
 
+// Home stays loaded behind Settings, so every setting that decides which rows Home builds, or what
+// goes in them, has Settings tell Home to build its rows again when it closes
+const reloadSettings = await readFile('components/settings/settings.bs', 'utf8');
+const quotedNames = (name) => [...homeRowLayoutFile.match(new RegExp(`function ${name}\\([^]*?end function`))[0].matchAll(/"([\w.]+)"/g)].map((match) => match[1]);
+const reloadList = quotedNames('ReloadsHome');
+const reloadCovered = [...reloadList, ...quotedNames('RowToggles')];
+const reloadSettingsTree = JSON.parse(await readFile('settings/settings.json', 'utf8'));
+const settingNames = new Set();
+const homeRowSections = ['Home Row Toggles', 'IMDb Lists', 'TMDB Lists', 'Seerr Lists', 'Upcoming Calendars'];
+const homeRowSettingNames = [];
+const sectionsFound = new Set();
+(function walk(node) {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== 'object') return;
+    if (node.settingName) settingNames.add(node.settingName);
+    if (homeRowSections.includes(node.title) && Array.isArray(node.children)) {
+        sectionsFound.add(node.title);
+        for (const child of node.children) if (child.settingName) homeRowSettingNames.push(child.settingName);
+    }
+    Object.values(node).forEach(walk);
+})(reloadSettingsTree);
+assert.equal(sectionsFound.size, homeRowSections.length, 'Every Home row section is found in settings.json');
+for (const name of homeRowSettingNames) assert.ok(reloadCovered.includes(name), `${name} has Home build its rows again`);
+for (const name of reloadList) assert.ok(settingNames.has(name), `${name} is a setting in settings.json`);
+for (const name of ['onKeyGridSubmit', 'boolSettingChanged', 'applyRadioChoice']) {
+    assert.match(reloadSettings.match(new RegExp(`sub ${name}\\([^]*?^end sub`, 'm'))[0], /if homeRowLayout\.ReloadsHome\(selectedSetting\.settingName\) then m\.homeRowsSwitched = true/, `${name} has Home build its rows again for a Home row setting`);
+}
+assert.match(reloadSettings.match(/sub saveHomeRowLayout\([^]*?end sub/)[0], /m\.homeRowsSwitched = true/, 'Saving the Rows layout has Home build its rows again');
+assert.match(reloadSettings.match(/sub dismissPanel\([^]*?end sub/)[0], /commitOpenEditor\(\)[^]*?if m\.homeRowsSwitched = true/, 'The Rows editor is saved before Settings decides whether Home builds its rows again');
+// A refresh skips a row that was switched off without taking it away, so Settings over another screen asks for a reload
+assert.match(reloadSettings.match(/sub dismissPanel\([^]*?end sub/)[0], /if m\.homeRowsSwitched = true[^]*?behind\.callFunc\("reload"\)\s+else[^]*?m\.global\.homeNeedsReload = true\s+end if/, 'Closing Settings over another screen has Home build its rows again once it shows');
+assert.match(await readFile('source/Main.bs', 'utf8'), /homeNeedsReload: false,/, 'The pending Home reload starts off');
+const homeShown = (await readFile('components/home/Home.bs', 'utf8')).match(/sub OnScreenShown\([^]*?^end sub/m)[0];
+assert.match(homeShown, /needsRowReload = chainLookupReturn\(m\.global, "homeNeedsReload", false\)\s+if needsRowReload then m\.global\.homeNeedsReload = false\s+if not m\.isFirstRun/, 'Home clears the pending reload when it shows, first run included');
+assert.match(homeShown, /if needsRowReload[^]*?reload\(\)\s+else if not _isReturning or needsPlaybackRefresh\s+refresh\(\)/, 'Home builds its rows from scratch for the pending reload instead of refreshing them');
+process.stdout.write(`PASS: Home reload settings wiring (${homeRowSettingNames.length + reloadList.length + 10} checks)\n`);
+
 // A picked collection row asks for its members alone, follows a stored Playlist Order and opens
 // a series into its episodes in order when asked
 assert.match(loadItemsSource.match(/function loadPickedRow\([^]*?end function/)[0], /else if isStringEqual\(picked\.source, "collections"\)\s+params\.ParentId = itemId\s+items = collectionRowItems\(params, settings\)/, 'A collection is asked for its members without Recursive');
@@ -928,6 +988,39 @@ assert.match(loadItemsSource.match(/function collectionRowItems\([^]*?end functi
 assert.match(loadItemsSource.match(/function expandSeriesToEpisodes\([^]*?end function/)[0], /SortBy: "ParentIndexNumber,IndexNumber",\s+SortOrder: "Ascending"/, 'A series opens into its episodes in order');
 assert.match(await readFile('settings/settings.json', 'utf8'), /"settingName": "ui\.home\.collectionsRowSortBy"[^]*?"id": "playlistOrder"/, 'Playlist Order is offered for the collection rows');
 process.stdout.write('PASS: collection row wiring (4 checks)\n');
+
+// The Collections and Audio rows take their sort and sort order from Row Options, or from another client
+const rowSortSettings = JSON.parse(await readFile('settings/settings.json', 'utf8'));
+const rowSortSetting = (name) => {
+    let found;
+    (function walk(node) {
+        if (found || !node || typeof node !== 'object') return;
+        if (node.settingName === name) found = node;
+        else Object.values(node).forEach(walk);
+    })(rowSortSettings);
+    return found;
+};
+const optionIds = (name) => rowSortSetting(name).options.map((option) => option.id).join(',');
+assert.equal(rowSortSetting('ui.home.collectionsRowSortOrder').default, 'ascending', 'Collections stay ascending until another order is picked');
+assert.equal(optionIds('ui.home.collectionsRowSortOrder'), 'ascending,descending', 'Collections offer both orders under the names the plugin syncs');
+assert.equal(rowSortSetting('ui.home.audioRowsSortBy').default, 'name', 'Audio goes by name until another sort is picked, like Core');
+assert.equal(optionIds('ui.home.audioRowsSortBy'), 'name,dateAdded,premiereDate,runtime,random', 'Audio offers the sorts Core offers, under the names the plugin syncs');
+assert.equal(rowSortSetting('ui.home.audioRowsSortOrder').default, 'ascending', 'Audio goes ascending until another order is picked, like Core');
+assert.equal(optionIds('ui.home.audioRowsSortOrder'), 'ascending,descending', 'Audio offers both orders');
+const rowOptionGroups = (await readFile('components/settings/settings.bs', 'utf8'));
+assert.match(rowOptionGroups, /title: "AUDIO", settings: takeSettings\(configTree, \["ui\.home\.displayAudioRows", "ui\.home\.audioRowsSortBy", "ui\.home\.audioRowsSortOrder"\]\)/, 'The audio sort settings sit under the Audio row in Row Options');
+assert.match(rowOptionGroups, /title: "COLLECTIONS", settings: takeSettings\(configTree, \["ui\.home\.displayCollectionsRows", "ui\.home\.collectionsRowSortBy", "ui\.home\.collectionsRowSortOrder",/, 'The Collections sort order sits under its sort in Row Options');
+for (const [pluginKey, rokuKey] of [['collectionsRowSortOrder', 'ui.home.collectionsRowSortOrder'], ['audioRowsSortBy', 'ui.home.audioRowsSortBy'], ['audioRowsSortOrder', 'ui.home.audioRowsSortOrder']]) {
+    assert.ok(settingsSyncSource.includes(`{ pluginKey: "${pluginKey}", rokuKey: "${rokuKey}", type: "direct" }`), `${rokuKey} syncs with the plugin as ${pluginKey}`);
+}
+assert.match(loadItemsSource.match(/function collectionRowItems\([^]*?end function/)[0], /params\.SortBy = rowSortByParam\(sortBy\)\s+params\.SortOrder = rowSortOrderParam\(getStringSetting\(settings, "ui\.home\.collectionsRowSortOrder", "ascending"\)\)/, 'A collection row is asked for in its sort order, and a stored Playlist Order is left as stored');
+assert.match(loadItemsSource.match(/function loadCollections\([^]*?end function/)[0], /SortOrder: rowSortOrderParam\(getStringSetting\(settings, "ui\.home\.collectionsRowSortOrder", "ascending"\)\)/, 'The Collections row is asked for in its sort order');
+const audioRow = loadItemsSource.match(/function loadAudio\(\)[^]*?end function/)[0];
+assert.match(audioRow, /SortBy: rowSortByParam\(getStringSetting\(settings, "ui\.home\.audioRowsSortBy", "name"\)\)/, 'The Audio row is asked for in its sort');
+assert.match(audioRow, /DateCreated,PremiereDate,SortName",/, 'The Audio row asks for what a list joined from several libraries is sorted on');
+assert.match(loadItemsSource.match(/function loadCollections\([^]*?end function/)[0], /DateCreated,PremiereDate,SortName",/, 'So does the Collections row');
+assert.match(audioRow, /SortOrder: rowSortOrderParam\(getStringSetting\(settings, "ui\.home\.audioRowsSortOrder", "ascending"\)\)/, 'The Audio row is asked for in its sort order');
+process.stdout.write('PASS: Collections and Audio row sort settings wiring (17 checks)\n');
 
 // Chart rows match their titles against the library, by provider id on Emby and through a paged
 // index of the library's ids on Jellyfin, and a TMDB chart types its titles from its path
@@ -948,6 +1041,13 @@ for (const nav of ['components/Sidebar.bs', 'components/JFOverhang.bs']) {
 }
 assert.match(await readFile('components/Sidebar.bs', 'utf8'), /if isEmbyServer\(\) then views = withoutHiddenViews\(views, chainLookupReturn\(m\.global, "session\.user\.configuration\.MyMediaExcludes", \[\]\)\)/, 'The nav list drops the libraries an Emby user hid');
 process.stdout.write('PASS: library order wiring (6 checks)\n');
+
+// A list joined from several servers is sorted again, with each server asked for the values it sorts on
+const multiServerTaskSource = await readFile('components/tasks/MultiServerTask.bs', 'utf8');
+assert.match(multiServerTaskSource, /sortsJoinedList = sessions\.count\(\) > 1 and LCase\(endpoint\) = "\/items"/, 'Only a list joined from several servers on the route that sorts by SortBy is sorted again');
+assert.match(multiServerTaskSource, /params = withProviderIds\(params\)\s+if sortsJoinedList then params = withSortFields\(params\)/, 'A list that is sorted again asks for the values it is sorted by');
+assert.match(multiServerTaskSource, /if sortsJoinedList then results = libraryScope\.Sorted\(results, params\)/, 'A list joined from several servers is sorted again');
+process.stdout.write('PASS: multi-server sort wiring (3 checks)\n');
 
 // Deleting or moving a playlist row names its entry id, which Emby keeps apart from the item's id
 assert.match(await readFile('source/api/Items.bs', 'utf8'), /tmp\.playlistItemId = \(item\.LookupCI\("PlaylistItemId"\) \?\? ""\)\.ToStr\(\)/, 'Each playlist row keeps its entry id');
@@ -1072,15 +1172,15 @@ assert.ok(glyphNames.includes(findSetting(settingsTree, 'seasonal.surprise').gly
 assert.ok(glyphNames.includes(findSetting(settingsTree, 'seasonal.density').glyph), 'The density draws its glyph');
 process.stdout.write('PASS: seasonal effects wiring (12 checks)\n');
 
-// The effect previews over Home while its own two rows have focus and goes with them, the follower
-// switch stays unmapped, and only one effect runs at a time since Home's stops under Settings
-for (const key of ['seasonal.surprise', 'seasonal.density']) assert.ok(previewTable.includes(`"${key}": "home"`), `${key} shows on the Home preview`);
-assert.ok(!previewTable.includes('"seasonal.follower"'), 'The follower switch leaves the preview where it is');
+// The effect previews over Home while its own rows have focus and goes with them, the follower lands on
+// Home's focused card while its switch has focus, and only one effect runs at a time since Home's stops
+// under Settings
+for (const key of ['seasonal.surprise', 'seasonal.density', 'seasonal.follower']) assert.ok(previewTable.includes(`"${key}": "home"`), `${key} shows on the Home preview`);
 const effectPreview = await readFile('components/settings/SettingsLivePreview.bs', 'utf8');
 assert.match(effectPreview, /inArray\(\["seasonal\.surprise", "seasonal\.density"\], state\.focusedSetting\)/, 'The effect only runs while one of its rows has focus');
 assert.match(effectPreview, /m\.effect\.callFunc\("halt"\)\s+m\.effect = invalid\s+end if\s+m\.holder\.removeChildrenIndex/, 'The preview stops its effect before it takes it away');
 const effectRunner = await readFile('components/seasonal/SeasonalEffects.bs', 'utf8');
-assert.match(effectRunner.match(/sub preview\([^]*?end sub/)[0], /unobserveFieldScoped\("overlaySettingsChanged"\)[^]*?runEffect\(effect, density, false\)/, 'The preview effect stops listening for saves and builds no followers');
+assert.match(effectRunner.match(/sub preview\([^]*?end sub/)[0], /unobserveFieldScoped\("overlaySettingsChanged"\)[^]*?runEffect\(effect, density, tried\.follow = true and isValid\(tried\.target\)\)/, 'The preview effect stops listening for saves and builds followers only where it\'s told they land');
 assert.match(homeSource.match(/sub onSettingsOpen\([^]*?end sub/)[0], /settingsOpen = true\s+m\.seasonalEffects\.callFunc\("halt"\)[^]*?isSameNode\(m\.top\) then m\.seasonalEffects\.callFunc\("play"\)/, "Home's effect stops under Settings and comes back once it closes over Home");
 // The stage's frame shows only along its edges, so it's clipped to bands there rather than redrawn over the whole stage on every frame of an effect
 assert.doesNotMatch(await readFile('components/settings/SettingsLivePreview.xml', 'utf8'), /stage24/, 'No stage frame image spans the whole stage');
