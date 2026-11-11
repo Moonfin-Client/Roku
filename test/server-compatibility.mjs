@@ -1637,6 +1637,7 @@ const favoritesTask = await readFile('components/favorites/LoadFavoritesTask.bs'
 const watchlistPage = favoritesTask.match(/function watchlistPage\([^]*?end function/)[0];
 assert.match(watchlistPage, /fetched: 0 \}/, 'Library titles don\'t count toward the next watchlist page');
 assert.match(watchlistPage, /result\.fetched = answer\.results\.count\(\)/, 'Only Seerr\'s titles do');
+assert.match(watchlistPage, /if \(answer\.page \?\? page\) >= \(answer\.totalPages \?\? page\) and result\.fetched < result\.total then result\.fetched = result\.total/, 'Until the last page, which leaves nothing more to ask for, so page 1 and the library\'s titles aren\'t asked for again');
 assert.match(watchlistPage, /if isSiloServer\(\)\s+for each node in siloWatchlistNodes\(\)\s+if page = 1 then nodes\.push\(node\)/, 'Every page leaves out what the library already shows, though only the first shows it');
 assert.match(await readFile('components/favorites/FavoritesScreen.bs', 'utf8'), /if pageFetched = 0 then m\.counts\[tabKey\] = m\.fetchedByTab\[tabKey\]/, 'An empty tab page ends paging');
 assert.match(favoritesTask.match(/function watchlistNode\([^]*?end function/)[0], /if title = "" then title = toString\(item\.LookupCI\("name"\) \?\? ""\)/, 'A show on the watchlist takes its name when its title comes back empty');
