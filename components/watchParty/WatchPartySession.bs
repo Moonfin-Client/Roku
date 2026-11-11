@@ -25,6 +25,8 @@ sub init()
     m.reconnecting = false
     m.silo = false
     m.watchedRevision = -1
+    ' What Silo's titles are called, by content id, looked up once each
+    m.contentInfo = {}
     m.top.features = {}
     m.pollTimer = CreateObject("roSGNode", "Timer")
     m.pollTimer.duration = WATCH_PARTY_ROOMS_POLL_SECONDS
@@ -48,10 +50,12 @@ function enter(answer as object) as boolean
     m.offset = 0#
     m.generation = -1
     m.watchedRevision = -1
+    m.contentInfo = {}
     m.lobbyStatus = ""
     m.reconnecting = false
     m.top.pendingResume = {}
     m.top.suggestions = []
+    if m.silo then room = withContentInfo(room)
     m.top.room = room
     m.top.inRoom = true
 
@@ -226,7 +230,46 @@ sub applySiloSnapshot(raw as dynamic, fromSocket = true as boolean)
     held = m.top.room
     if type(held) = "roAssociativeArray" and held.room_id = room.room_id and isValid(held.generation) and isValid(room.generation) and room.generation < held.generation then return
     if fromSocket then m.top.snapshots = m.top.snapshots + 1
-    applyRoom(room)
+    applyRoom(withContentInfo(room))
+end sub
+
+' The selected title's name, type, and an episode's series and numbers, which Moonbase's room carries
+' and Silo's leaves to the client. The first time a title is seen it's looked up.
+function withContentInfo(room as object) as object
+    contentId = toString(room.selected_content_id ?? "")
+    if contentId = "" then return room
+    info = m.contentInfo[contentId]
+    if type(info) = "roAssociativeArray"
+        room.Append(info)
+    else if not isValid(info)
+        m.contentInfo[contentId] = "asked"
+        runTask({ kind: "item", itemId: contentId })
+    end if
+    return room
+end function
+
+sub onContentInfo(result as object)
+    contentId = toString(result.request.itemId ?? "")
+    item = invalid
+    if type(result.data) = "roAssociativeArray" then item = result.data.item
+    if result.status <> 200 or type(item) <> "roAssociativeArray"
+        ' Asked again the next time the title comes up
+        m.contentInfo.Delete(contentId)
+        return
+    end if
+    info = { content_title: toString(item.Name ?? ""), content_type: "Movie" }
+    if item.Type = "Episode"
+        info.content_type = "Episode"
+        info.series_name = toString(item.SeriesName ?? "")
+        info.season = item.ParentIndexNumber ?? 0
+        info.episode = item.IndexNumber ?? 0
+    end if
+    m.contentInfo[contentId] = info
+    room = m.top.room
+    if type(room) = "roAssociativeArray" and toString(room.selected_content_id ?? "") = contentId
+        room.Append(info)
+        m.top.room = room
+    end if
 end sub
 
 sub applyRoom(room as dynamic)
@@ -396,6 +439,10 @@ sub onTaskResult(event as object)
 
     result = event.getData()
     kind = result.request.kind
+    if kind = "item"
+        onContentInfo(result)
+        return
+    end if
     if kind = "rooms"
         onRooms(result)
         return

@@ -8,6 +8,11 @@ const WPP_REPORT_SECONDS = 2
 const WPP_WAITING_REPORT_SECONDS = 0.5
 ' How often a Silo player asks again to have its session attached
 const WPP_ATTACH_SECONDS = 1.5
+' A paused Roku takes a moment to play again, longer on a transcode, so a Silo play starts it this
+' far ahead of the room's time until it has timed its own starts
+const WPP_START_LEAD_DIRECT = 0.5
+const WPP_START_LEAD_TRANSCODE = 1.2
+const WPP_MAX_START_LEAD = 3
 ' After a correcting seek the stream needs a moment before drift means anything again
 const WPP_SETTLE_SECONDS = 5
 const WPP_MAX_LEAD = 5
@@ -56,7 +61,10 @@ sub wpAttach()
         attachSnapshots: 0,
         ' A seek of the party's own, from when it was asked until the player shows where it landed
         seekAt: -1,
-        seekBuffered: false
+        seekBuffered: false,
+        ' How long this player takes from a resume to playing, learned from its starts
+        startLead: invalid,
+        startTiming: invalid
     }
 
     ' A player opening on a paused room starts out playing, so it pauses where the room is
@@ -190,6 +198,8 @@ end sub
 sub wpSchedule(command as object)
     m.wp.pending = command
     delay = watchPartyModel.DelayUntil(watchPartyModel.ParseTime(command.execute_at), m.wp.session.callFunc("serverNow"))
+    ' A play that finds this player paused goes early by the time it takes to get going
+    if m.wp.silo and command.playback_state = "playing" and m.top.state <> "playing" then delay -= wpStartLead()
     if command.countdown = true then m.wp.overlay.center = { mode: "countdown", seconds: delay }
     if delay < 0.05
         wpRunPending()
@@ -241,6 +251,8 @@ sub wpRunPending()
         else if m.top.state = "paused"
             m.wp.expectPaused = false
             m.top.control = "resume"
+            ' A plain start from paused is timed, but not one that waits on a seek
+            if m.wp.silo and m.wp.seekAt < 0 then m.wp.startTiming = { calledAt: m.wp.clock.TotalMilliseconds() / 1000, from: m.top.position + 0# }
         else if m.top.state = "buffering"
             m.wp.expectPaused = false
         else if m.top.state <> "playing" and m.top.state <> "finished"
@@ -289,7 +301,38 @@ function wpPosition() as double
 end function
 
 sub wpOnPosition()
-    if isValid(m.wp) then m.wp.positionAt = m.wp.clock.TotalMilliseconds() / 1000
+    if not isValid(m.wp) then return
+    m.wp.positionAt = m.wp.clock.TotalMilliseconds() / 1000
+    if isValid(m.wp.startTiming) then wpTimeStart()
+end sub
+
+' The lead for a play that finds this player paused: what its starts took, or a first guess
+function wpStartLead() as double
+    if isValid(m.wp.startLead) then return m.wp.startLead
+    if m.isTranscoded = true then return WPP_START_LEAD_TRANSCODE
+    return WPP_START_LEAD_DIRECT
+end function
+
+' How long a start took to move, from a position past where it began: the time since the resume
+' less what it has played. The first sets the lead, and after that each is averaged in, so one slow
+' start doesn't throw the next far early. A sample that jumped (a seek) or came late (a stall) is
+' no measure.
+sub wpTimeStart()
+    timing = m.wp.startTiming
+    since = m.wp.clock.TotalMilliseconds() / 1000 - timing.calledAt
+    if since > 5
+        m.wp.startTiming = invalid
+        return
+    end if
+    played = m.top.position - timing.from
+    if played < 0.1 then return
+    m.wp.startTiming = invalid
+    if played > 5 then return
+    took = since - played
+    if took < 0 then took = 0
+    if took > WPP_MAX_START_LEAD then took = WPP_MAX_START_LEAD
+    if isValid(m.wp.startLead) then took = (m.wp.startLead + took) / 2
+    m.wp.startLead = took
 end sub
 
 ' Paused where the room starts, which is when this device is ready
