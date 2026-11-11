@@ -6842,7 +6842,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>RECENTLY ADDED</source>
+        <source>RECENTLY ADDED AND RELEASED</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
