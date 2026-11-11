@@ -7,6 +7,8 @@ import "pkg:/source/utils/watchPartyModel.bs"
 
 const WATCH_PARTY_ROOMS_POLL_SECONDS = 60
 const WATCH_PARTY_ALERT_SECONDS = 8
+const WATCH_PARTY_AVATAR_POLL_SECONDS = 15
+const WATCH_PARTY_AVATAR_SEND_SECONDS = 600
 
 sub init()
     m.token = ""
@@ -34,6 +36,17 @@ sub init()
     m.pollTimer.duration = WATCH_PARTY_ROOMS_POLL_SECONDS
     m.pollTimer.repeat = true
     m.pollTimer.observeField("fire", "refreshRooms")
+    ' On Silo, Moonbase keeps the members' pictures: read for members who join, and this profile's
+    ' sent again before its signed link runs out, as Core does
+    m.avatars = {}
+    m.avatarPoll = CreateObject("roSGNode", "Timer")
+    m.avatarPoll.duration = WATCH_PARTY_AVATAR_POLL_SECONDS
+    m.avatarPoll.repeat = true
+    m.avatarPoll.observeField("fire", "askAvatars")
+    m.avatarSend = CreateObject("roSGNode", "Timer")
+    m.avatarSend.duration = WATCH_PARTY_AVATAR_SEND_SECONDS
+    m.avatarSend.repeat = true
+    m.avatarSend.observeField("fire", "sendAvatar")
 end sub
 
 ' ===== Joining and leaving =====
@@ -63,6 +76,11 @@ function enter(answer as object) as boolean
 
     if m.silo
         openSiloSocket()
+        m.avatars = {}
+        sendAvatar()
+        askAvatars()
+        m.avatarPoll.control = "start"
+        m.avatarSend.control = "start"
     else
         openMoonbaseTasks()
     end if
@@ -143,6 +161,9 @@ end sub
 
 sub finish(text as string)
     stopTasks()
+    m.avatarPoll.control = "stop"
+    m.avatarSend.control = "stop"
+    m.avatars = {}
     m.roomId = ""
     m.token = ""
     m.memberId = ""
@@ -232,7 +253,34 @@ sub applySiloSnapshot(raw as dynamic, fromSocket = true as boolean)
     held = m.top.room
     if type(held) = "roAssociativeArray" and held.room_id = room.room_id and isValid(held.generation) and isValid(room.generation) and room.generation < held.generation then return
     if fromSocket then m.top.snapshots = m.top.snapshots + 1
-    applyRoom(withContentInfo(room))
+    applyRoom(withAvatars(withContentInfo(room)))
+end sub
+
+sub sendAvatar()
+    if m.roomId <> "" then runTask({ kind: "publishAvatar", roomId: m.roomId })
+end sub
+
+sub askAvatars()
+    if m.roomId <> "" then runTask({ kind: "avatars", roomId: m.roomId })
+end sub
+
+' Each member's picture, where Moonbase has one, for the faces the party draws
+function withAvatars(room as object) as object
+    if type(room.members) <> "roArray" or m.avatars.IsEmpty() then return room
+    for each member in room.members
+        picture = m.avatars[toString(member.profile_id ?? "")]
+        if isString(picture) then member.avatar_url = picture
+    end for
+    return room
+end function
+
+sub onAvatars(result as object)
+    if result.request.roomId <> m.roomId or result.status <> 200 or type(result.data) <> "roAssociativeArray" then return
+    avatars = result.data.avatars
+    if type(avatars) <> "roAssociativeArray" or FormatJson(avatars) = FormatJson(m.avatars) then return
+    m.avatars = avatars
+    room = m.top.room
+    if type(room) = "roAssociativeArray" and room.room_id = m.roomId then m.top.room = withAvatars(room)
 end sub
 
 ' The selected title's name, type, and an episode's series and numbers, which Moonbase's room carries
@@ -445,6 +493,11 @@ sub onTaskResult(event as object)
         onContentInfo(result)
         return
     end if
+    if kind = "avatars"
+        onAvatars(result)
+        return
+    end if
+    if kind = "publishAvatar" then return
     if kind = "pickEpisode"
         if result.status = 200 and type(result.data) = "roAssociativeArray" and type(result.data.item) = "roAssociativeArray"
             episode = result.data.item
