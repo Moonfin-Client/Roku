@@ -140,6 +140,7 @@ const selections = {
     'components/home/Home.bs': ['blurMatchingLoadWidth'],
     'components/home/HomeItem.bs': ['onPosterLoadStatusChanged', 'retryPoster'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
+    'components/tasks/MultiServerTask.bs': ['withSortFields', 'withField'],
     'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'getBoolSetting', 'getStringSetting', 'appendRadarrCalendar', 'radarrRowRelease', 'appendSonarrCalendar', 'sonarrRowPicks', 'sonarrEpisodeCode', 'calendarSubtitle', 'sortByCalendarDate'],
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL', 'chapterImageURL'],
@@ -373,6 +374,16 @@ for (const name of ['Catalogue', 'Passthrough', 'AsText', 'Sources', 'SourceFor'
     source += '\n' + homeRowLayoutFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
+// The merge sort alone, since the rest of the library scope asks the server
+const libraryScopeFile = await readFile('source/utils/libraryScope.bs', 'utf8');
+source += '\nnamespace libraryScope\n';
+for (const name of ['Sorted', 'Before', 'SortSource', 'SortKey', 'PaddedNumbers', 'AsText']) {
+    const match = libraryScopeFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
+    assert.ok(match, `Missing libraryScope.${name}`);
+    source += '\n' + match[0];
+}
+source += '\nend namespace\n';
+source += '\n' + await readFile('test/multi-server-sort.bs', 'utf8');
 source += '\n' + await readFile('test/media-bar-external.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/mediaBarNewRelease.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/media-bar-new-release.bs', 'utf8');
@@ -996,6 +1007,13 @@ for (const nav of ['components/Sidebar.bs', 'components/JFOverhang.bs']) {
 }
 assert.match(await readFile('components/Sidebar.bs', 'utf8'), /if isEmbyServer\(\) then views = withoutHiddenViews\(views, chainLookupReturn\(m\.global, "session\.user\.configuration\.MyMediaExcludes", \[\]\)\)/, 'The nav list drops the libraries an Emby user hid');
 process.stdout.write('PASS: library order wiring (6 checks)\n');
+
+// A list joined from several servers is sorted again, with each server asked for the values it sorts on
+const multiServerTaskSource = await readFile('components/tasks/MultiServerTask.bs', 'utf8');
+assert.match(multiServerTaskSource, /sortsJoinedList = sessions\.count\(\) > 1 and LCase\(endpoint\) = "\/items"/, 'Only a list joined from several servers on the route that sorts by SortBy is sorted again');
+assert.match(multiServerTaskSource, /params = withProviderIds\(params\)\s+if sortsJoinedList then params = withSortFields\(params\)/, 'A list that is sorted again asks for the values it is sorted by');
+assert.match(multiServerTaskSource, /if sortsJoinedList then results = libraryScope\.Sorted\(results, params\)/, 'A list joined from several servers is sorted again');
+process.stdout.write('PASS: multi-server sort wiring (3 checks)\n');
 
 // Deleting or moving a playlist row names its entry id, which Emby keeps apart from the item's id
 assert.match(await readFile('source/api/Items.bs', 'utf8'), /tmp\.playlistItemId = \(item\.LookupCI\("PlaylistItemId"\) \?\? ""\)\.ToStr\(\)/, 'Each playlist row keeps its entry id');
