@@ -32,7 +32,12 @@ sub executeMultiServerRequests()
     requestBody = m.top.requestBody
     timeoutMs = m.top.timeoutSeconds * 1000
 
-    params = withSortFields(withProviderIds(params))
+    ' Each server orders only its own share, so a list joined from several needs the sort redone.
+    ' The other routes ignore SortBy and answer in an order of their own, which the rows keep.
+    sortsJoinedList = sessions.count() > 1 and LCase(endpoint) = "/items"
+
+    params = withProviderIds(params)
+    if sortsJoinedList then params = withSortFields(params)
 
     allResults = []
     allErrors = []
@@ -174,10 +179,8 @@ sub executeMultiServerRequests()
         end if
     end while
 
-    ' Each server ordered only its own share, so the joined list needs the sort redone. The
-    ' other routes ignore SortBy and answer in an order of their own, which the rows keep.
     results = deduplicateMediaItems(allResults)
-    if sessions.count() > 1 and LCase(endpoint) = "/items" then results = libraryScope.Sorted(results, params)
+    if sortsJoinedList then results = libraryScope.Sorted(results, params)
 
     ' Set outputs
     m.top.results = parentalControls.WithoutBlockedItems(results)
@@ -301,16 +304,21 @@ function withProviderIds(params as object) as object
 end function
 
 ' withSortFields: Adds the values the joined list is sorted by to a request's field list
-' The server leaves these out unless asked, and an item without one would sort as the lowest
+' Each server leaves some of these out unless asked, Emby more than Jellyfin, and an item without
+' one would sort as the lowest
 function withSortFields(params as object) as object
-    sortBy = LCase(params.LookupCI("SortBy") ?? "")
-    for each field in ["DateCreated", "SortName"]
-        if Instr(1, sortBy, LCase(field)) > 0 then params = withField(params, field)
-    end for
-    ' Date Episode Added sorts by one name and comes back on the item under another
-    if Instr(1, sortBy, "datelastcontentadded") > 0 then params = withField(params, "DateLastMediaAdded")
+    sortBy = (params.LookupCI("SortBy") ?? "").split(",")
+    if sortBy.count() = 0 or not isValid(libraryScope.SortSource(sortBy[0])) then return params
 
-    return params
+    for each field in sortBy
+        source = libraryScope.SortSource(field)
+        ' The played date comes with the user data, which isn't in the field list
+        if isValid(source) and Instr(1, source.field, ".") = 0 then params = withField(params, source.field)
+    end for
+    ' An undated item sorts by its year, and every tie falls back to the sort name
+    if inArray(sortBy, "PremiereDate") then params = withField(params, "ProductionYear")
+
+    return withField(params, "SortName")
 end function
 
 function withField(params as object, field as string) as object

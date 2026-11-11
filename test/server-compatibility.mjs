@@ -377,7 +377,7 @@ source += '\nend namespace\n';
 // The merge sort alone, since the rest of the library scope asks the server
 const libraryScopeFile = await readFile('source/utils/libraryScope.bs', 'utf8');
 source += '\nnamespace libraryScope\n';
-for (const name of ['Sorted', 'Before', 'SortSource', 'SortKey', 'AsText']) {
+for (const name of ['Sorted', 'Before', 'SortSource', 'SortKey', 'PaddedNumbers', 'AsText']) {
     const match = libraryScopeFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
     assert.ok(match, `Missing libraryScope.${name}`);
     source += '\n' + match[0];
@@ -1000,9 +1000,6 @@ process.stdout.write('PASS: external rows wiring (6 checks)\n');
 
 // Library lists keep each server's order and leave out what an Emby user hid from My Media
 assert.match(await readFile('components/tasks/MultiServerTask.bs', 'utf8'), /itemsArray = withoutHiddenViews\(itemsArray, embyHiddenViews\(userSession\)\)/, 'Multi-server views drop the libraries an Emby user hid');
-const multiServerTaskSource = await readFile('components/tasks/MultiServerTask.bs', 'utf8');
-assert.match(multiServerTaskSource, /params = withSortFields\(withProviderIds\(params\)\)/, 'Multi-server requests ask for the values the joined list is sorted by');
-assert.match(multiServerTaskSource, /if sessions\.count\(\) > 1 and LCase\(endpoint\) = "\/items" then results = libraryScope\.Sorted\(results, params\)/, 'A list joined from several servers is sorted again, and only for the route that sorts by SortBy');
 for (const nav of ['components/Sidebar.bs', 'components/JFOverhang.bs']) {
     const navSource = await readFile(nav, 'utf8');
     assert.match(navSource, /for each lib in librariesByServer\(allLibs\)/, `${nav} keeps each server's library order`);
@@ -1010,6 +1007,13 @@ for (const nav of ['components/Sidebar.bs', 'components/JFOverhang.bs']) {
 }
 assert.match(await readFile('components/Sidebar.bs', 'utf8'), /if isEmbyServer\(\) then views = withoutHiddenViews\(views, chainLookupReturn\(m\.global, "session\.user\.configuration\.MyMediaExcludes", \[\]\)\)/, 'The nav list drops the libraries an Emby user hid');
 process.stdout.write('PASS: library order wiring (6 checks)\n');
+
+// A list joined from several servers is sorted again, with each server asked for the values it sorts on
+const multiServerTaskSource = await readFile('components/tasks/MultiServerTask.bs', 'utf8');
+assert.match(multiServerTaskSource, /sortsJoinedList = sessions\.count\(\) > 1 and LCase\(endpoint\) = "\/items"/, 'Only a list joined from several servers on the route that sorts by SortBy is sorted again');
+assert.match(multiServerTaskSource, /params = withProviderIds\(params\)\s+if sortsJoinedList then params = withSortFields\(params\)/, 'A list that is sorted again asks for the values it is sorted by');
+assert.match(multiServerTaskSource, /if sortsJoinedList then results = libraryScope\.Sorted\(results, params\)/, 'A list joined from several servers is sorted again');
+process.stdout.write('PASS: multi-server sort wiring (3 checks)\n');
 
 // Deleting or moving a playlist row names its entry id, which Emby keeps apart from the item's id
 assert.match(await readFile('source/api/Items.bs', 'utf8'), /tmp\.playlistItemId = \(item\.LookupCI\("PlaylistItemId"\) \?\? ""\)\.ToStr\(\)/, 'Each playlist row keeps its entry id');
