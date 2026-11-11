@@ -1003,9 +1003,9 @@ const rowSortSetting = (name) => {
 const optionIds = (name) => rowSortSetting(name).options.map((option) => option.id).join(',');
 assert.equal(rowSortSetting('ui.home.collectionsRowSortOrder').default, 'ascending', 'Collections stay ascending until another order is picked');
 assert.equal(optionIds('ui.home.collectionsRowSortOrder'), 'ascending,descending', 'Collections offer both orders under the names the plugin syncs');
-assert.equal(rowSortSetting('ui.home.audioRowsSortBy').default, 'dateAdded', 'Audio keeps the newest albums first until another sort is picked');
+assert.equal(rowSortSetting('ui.home.audioRowsSortBy').default, 'name', 'Audio goes by name until another sort is picked, like Core');
 assert.equal(optionIds('ui.home.audioRowsSortBy'), 'name,dateAdded,premiereDate,runtime,random', 'Audio offers the sorts Core offers, under the names the plugin syncs');
-assert.equal(rowSortSetting('ui.home.audioRowsSortOrder').default, 'descending', 'Audio stays newest first until another order is picked');
+assert.equal(rowSortSetting('ui.home.audioRowsSortOrder').default, 'ascending', 'Audio goes ascending until another order is picked, like Core');
 assert.equal(optionIds('ui.home.audioRowsSortOrder'), 'ascending,descending', 'Audio offers both orders');
 const rowOptionGroups = (await readFile('components/settings/settings.bs', 'utf8'));
 assert.match(rowOptionGroups, /title: "AUDIO", settings: takeSettings\(configTree, \["ui\.home\.displayAudioRows", "ui\.home\.audioRowsSortBy", "ui\.home\.audioRowsSortOrder"\]\)/, 'The audio sort settings sit under the Audio row in Row Options');
@@ -1016,10 +1016,10 @@ for (const [pluginKey, rokuKey] of [['collectionsRowSortOrder', 'ui.home.collect
 assert.match(loadItemsSource.match(/function collectionRowItems\([^]*?end function/)[0], /params\.SortBy = rowSortByParam\(sortBy\)\s+params\.SortOrder = rowSortOrderParam\(getStringSetting\(settings, "ui\.home\.collectionsRowSortOrder", "ascending"\)\)/, 'A collection row is asked for in its sort order, and a stored Playlist Order is left as stored');
 assert.match(loadItemsSource.match(/function loadCollections\([^]*?end function/)[0], /SortOrder: rowSortOrderParam\(getStringSetting\(settings, "ui\.home\.collectionsRowSortOrder", "ascending"\)\)/, 'The Collections row is asked for in its sort order');
 const audioRow = loadItemsSource.match(/function loadAudio\(\)[^]*?end function/)[0];
-assert.match(audioRow, /SortBy: rowSortByParam\(getStringSetting\(settings, "ui\.home\.audioRowsSortBy", "dateAdded"\)\)/, 'The Audio row is asked for in its sort');
-assert.match(audioRow, /DateCreated,SortName",/, 'The Audio row asks for what a list joined from several libraries is sorted on');
-assert.match(loadItemsSource.match(/function loadCollections\([^]*?end function/)[0], /DateCreated,SortName",/, 'So does the Collections row');
-assert.match(audioRow, /SortOrder: rowSortOrderParam\(getStringSetting\(settings, "ui\.home\.audioRowsSortOrder", "descending"\)\)/, 'The Audio row is asked for in its sort order');
+assert.match(audioRow, /SortBy: rowSortByParam\(getStringSetting\(settings, "ui\.home\.audioRowsSortBy", "name"\)\)/, 'The Audio row is asked for in its sort');
+assert.match(audioRow, /DateCreated,PremiereDate,SortName",/, 'The Audio row asks for what a list joined from several libraries is sorted on');
+assert.match(loadItemsSource.match(/function loadCollections\([^]*?end function/)[0], /DateCreated,PremiereDate,SortName",/, 'So does the Collections row');
+assert.match(audioRow, /SortOrder: rowSortOrderParam\(getStringSetting\(settings, "ui\.home\.audioRowsSortOrder", "ascending"\)\)/, 'The Audio row is asked for in its sort order');
 process.stdout.write('PASS: Collections and Audio row sort settings wiring (17 checks)\n');
 
 // Chart rows match their titles against the library, by provider id on Emby and through a paged
