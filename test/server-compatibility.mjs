@@ -76,7 +76,7 @@ const selections = {
     'source/utils/ratingSourceList.bs': null,
     'source/utils/homeRowGroups.bs': null,
     'source/utils/searchGroups.bs': null,
-    'source/utils/SeerrUtils.bs': ['SeerrEscapeJsonString', 'SeerrJsonFromPairs', 'SeerrFormatJson', 'SeerrFormatJsonValue', 'SeerrStreamingRegion', 'SeerrStreamingProviders', 'SeerrRequestDownloadSummary', 'SeerrQueueHasWork', 'SeerrDownloadKey', 'SeerrIsNumber', 'IsSeerrSeriesPart'],
+    'source/utils/SeerrUtils.bs': ['SeerrEscapeJsonString', 'SeerrJsonFromPairs', 'SeerrFormatJson', 'SeerrFormatJsonValue', 'SeerrStreamingRegion', 'SeerrStreamingProviders', 'SeerrRequestDownloadSummary', 'SeerrDownloadEntryState', 'SeerrDownloadStateRank', 'SeerrParseTimeLeft', 'SeerrTimeLeftText', 'SeerrDownloadLabel', 'SeerrDownloadLabelParts', 'SeerrDownloadStateWord', 'SeerrDownloadBarColor', 'SeerrDownloadSizeText', 'SeerrByteUnit', 'SeerrScaleBytes', 'SeerrQueueHasWork', 'SeerrDownloadKey', 'SeerrIsNumber', 'isValidStringValue', 'IsSeerrSeriesPart'],
     'source/utils/libraryOrder.bs': null,
     'source/utils/detailSectionLayout.bs': null,
     'source/utils/trackLabels.bs': null,
