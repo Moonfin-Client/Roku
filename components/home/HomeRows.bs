@@ -7,6 +7,7 @@ import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/misc.bs"
 import "pkg:/source/utils/multiserver.bs"
+import "pkg:/source/utils/recentRows.bs"
 import "pkg:/source/utils/seasonalRow.bs"
 import "pkg:/source/utils/settingsSync.bs"
 import "pkg:/source/utils/watchPartyCard.bs"
@@ -1631,7 +1632,7 @@ sub onMultiServerLibrariesLoaded(msg as object)
         ' Configure task for Latest Items endpoint with parentId filter
         task.sessions = [userSession]
         task.endpoint = "/Items/Latest"
-        task.params = {
+        params = {
             UserId: "{userId}",
             Limit: "25",
             ParentId: item.Id,
@@ -1639,6 +1640,9 @@ sub onMultiServerLibrariesLoaded(msg as object)
             ImageTypeLimit: "1",
             EnableTotalRecordCount: "false"
         }
+        ' Hide Watched drops some of what comes back, so it asks for four times as many
+        if get_user_setting_bool(recentRows.HIDE_WATCHED_SETTING, false) then params.Limit = "100"
+        task.params = params
 
         ' Store metadata for the callback
         task.addFields({
@@ -1674,6 +1678,7 @@ sub onMultiServerLatestPerLibraryComplete(msg as object)
 
     sectionName = metadata.sectionName
     results = node.results
+    if get_user_setting_bool(recentRows.HIDE_WATCHED_SETTING, false) then results = recentRows.WithoutWatched(results)
 
 
     if not isValidAndNotEmpty(results)
@@ -1724,7 +1729,7 @@ sub createMultiServerRecentlyReleasedRow(sessions as object)
     ' Configure task for Recently Released endpoint
     task.sessions = sessions
     task.endpoint = "/Items"
-    task.params = {
+    params = {
         UserId: "{userId}",
         Recursive: "true",
         SortBy: "PremiereDate,ProductionYear,SortName",
@@ -1736,6 +1741,8 @@ sub createMultiServerRecentlyReleasedRow(sessions as object)
         ImageTypeLimit: "1",
         EnableTotalRecordCount: "false"
     }
+    if get_user_setting_bool(recentRows.HIDE_WATCHED_SETTING, false) then params.Filters = "IsUnplayed"
+    task.params = params
     task.observeField("isComplete", "onMultiServerRecentlyReleasedComplete")
     task.control = "RUN"
 end sub
@@ -1752,6 +1759,7 @@ sub onMultiServerRecentlyReleasedComplete()
 
     sectionName = tr("Recently Released")
     results = task.results
+    if get_user_setting_bool(recentRows.HIDE_WATCHED_SETTING, false) then results = recentRows.WithoutWatched(results)
 
     if not isValidAndNotEmpty(results)
         removeHomeSection(sectionName)
@@ -2713,7 +2721,10 @@ end sub
 ' Merging puts both calendars in one row, so the row that carries them both says so and
 ' the other one steps aside
 function calendarsMerged() as boolean
-    return get_user_setting_bool("calendar.merge", false) and get_user_setting_bool("calendar.radarr.enabled", false) and get_user_setting_bool("calendar.sonarr.enabled", false)
+    if not get_user_setting_bool("calendar.merge", false) then return false
+    arranged = homeRowLayout.Arranged()
+    ' Both calendars come from the same place, so one answers for the other
+    return inArray(arranged, "radarr_calendar") and inArray(arranged, "sonarr_calendar") and homeRowLayout.RowToggleOn("radarr_calendar")
 end function
 
 ' Which calendar a row comes from, under its title
@@ -2842,6 +2853,7 @@ sub showWatchParties(rooms as object)
             removeHomeRowById("watch_parties")
             keepRowFocus(-1)
         end if
+        m.watchPartyIds = ""
         return
     end if
 
@@ -2872,6 +2884,26 @@ sub showWatchParties(rooms as object)
     if isValid(m.cardSizeName) then layOutRow(row, m.modernRows, m.cardSizeName)
     addOrUpdateHomeRow(row, row.title, "watch_parties")
     if not hadRow then keepRowFocus(1)
+
+    ids = []
+    for each json in cards
+        ids.push(json.Id)
+    end for
+    drawnIds = ids.Join(",")
+    if drawnIds <> (m.watchPartyIds ?? "") then m.watchPartiesFromStart = true
+    m.watchPartyIds = drawnIds
+    showWatchPartiesFromStart()
+end sub
+
+' The list keeps each row's place, so a party that arrives ahead of the card the viewer last had
+' would sit off the left edge. When parties come or go, the row opens on its first card again.
+sub showWatchPartiesFromStart()
+    if m.watchPartiesFromStart <> true then return
+    rowIndex = homeRowIndexById("watch_parties")
+    focused = m.top.rowItemFocused
+    if rowIndex < 0 or type(focused) <> "roArray" or focused.Count() < 2 or focused[0] <> rowIndex then return
+    m.watchPartiesFromStart = false
+    if focused[1] <> 0 then m.top.jumpToRowItem = [rowIndex, 0]
 end sub
 
 ' The list keeps focus by index, so when the row comes or goes above the others the viewer is moved

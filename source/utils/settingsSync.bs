@@ -43,6 +43,7 @@ namespace settingsSync
             { pluginKey: "continueWatchingDefaultAction", rokuKey: "ui.home.continueWatchingDefaultAction", type: "direct" },
             { pluginKey: "enableMultiServerLibraries", rokuKey: "ui.home.enableMultiServer", type: "bool" },
             { pluginKey: "mergeRecentRowsByType", rokuKey: "ui.home.mergeRecentRowsByType", type: "bool" },
+            { pluginKey: "hideWatchedInRecentRows", rokuKey: "ui.home.hideWatchedInRecentRows", type: "bool" },
             { pluginKey: "recentlyReleasedSeriesType", rokuKey: "ui.home.recentlyReleasedSeriesType", type: "direct" },
             { pluginKey: "showMediaDetailsOnLibraryPage", rokuKey: "ui.library.showMediaDetails", type: "bool" },
             { pluginKey: "hideBackdropsInLibraries", rokuKey: "ui.library.showBackdrops", type: "boolInvert" },
@@ -115,6 +116,8 @@ namespace settingsSync
             { pluginKey: "mediaBarMdblistShowRatingBadges", rokuKey: "ui.mediaBar.ratings.showRatingBadges", type: "bool" },
             ' The key only ever arrives from the server, so it's never sent back or reset here
             { pluginKey: "tmdbApiKey", rokuKey: "plugin.tmdb.apiKey", type: "direct", skipRegistry: true, receiveOnly: true },
+            ' Only read, so the Rows screen knows whether the plugin can fill Watching Now
+            { pluginKey: "mdblistApiKey", rokuKey: "plugin.mdblist.apiKey", type: "direct", skipRegistry: true, receiveOnly: true },
 
             ' Settings the server can now store that already had a switch here.
             { pluginKey: "cinemaModeEnabled", rokuKey: "playback.cinemamode", type: "bool" },
@@ -303,6 +306,8 @@ namespace settingsSync
             { pluginKey: "showSyncPlayButton", rokuKey: "navbar.show_syncplay", type: "bool" },
             { pluginKey: "watchPartyChatOverlay", rokuKey: "watchParty.chatOverlay", type: "bool" },
             { pluginKey: "watchPartyAlerts", rokuKey: "watchParty.alerts", type: "bool" },
+            ' Read only, so an account set to start SyncPlay groups isn't offered party picks
+            { pluginKey: "watchPartyService", rokuKey: "watchParty.service", type: "direct", receiveOnly: true },
             ' Speed to Sync stays unmapped because a Roku has no playback rate control
             { pluginKey: "syncPlayEnableSyncCorrection", rokuKey: "syncplay.correction.enabled", type: "bool" },
             { pluginKey: "syncPlayMinDelaySkipToSync", rokuKey: "syncplay.correction.mindelayskip", type: "intToStr" },
@@ -654,7 +659,8 @@ namespace settingsSync
     ' The whole home layout as the other clients read it. Every row this app knows goes over
     ' with its own enabled flag, a row behind an off switch going over as off, and rows
     ' belonging to the other clients keep the place the stored lists hold them in. Sections
-    ' this app can't draw ride along exactly as they arrived.
+    ' this app can't draw ride along exactly as they arrived. An external row goes over as it's
+    ' set even while the server can't fill it, so a missing key doesn't switch it off everywhere.
     function HomeSectionsPayload() as object
         storedOrder = get_user_setting(homeRowLayout.ORDER_SETTING)
         storedHidden = get_user_setting(homeRowLayout.HIDDEN_SETTING)
@@ -689,7 +695,7 @@ namespace settingsSync
 
         for each id in merged.order
             enabled = not isValid(offAll[id])
-            if enabled and not homeRowLayout.RowToggleOn(id, toggles) then enabled = false
+            if enabled and not homeRowLayout.IsExternalRow(id) and not homeRowLayout.RowToggleOn(id, toggles) then enabled = false
 
             ' A picked collection, genre or playlist goes over as the record the other clients
             ' read, typed none the way they write it, since the row id alone can't say which
@@ -1195,6 +1201,28 @@ namespace settingsSync
 
         status = requestResponse(req, "DELETE").status
         return status >= 200 and status < 300
+    end function
+
+    ' Older app versions still show or hide the external rows by their own switches, so each
+    ' switch follows its row. The switches are written here and handed back as the profile
+    ' values that go out with the layout.
+    function LegacyRowSwitches() as object
+        placed = buttonLayout.ToIds(get_user_setting(homeRowLayout.ORDER_SETTING))
+        off = buttonLayout.HiddenLookup(get_user_setting(homeRowLayout.HIDDEN_SETTING))
+        picked = homeRowLayout.DynamicLookup()
+        toggles = homeRowLayout.RowToggles()
+
+        profileData = {}
+        for each row in homeRowLayout.Catalogue()
+            if not homeRowLayout.IsExternalRow(row.id) then continue for
+            mapping = settingsSync.FindMappingByRokuKey(toggles[row.id] ?? "")
+            if not isValid(mapping) then continue for
+
+            enabled = homeRowLayout.IsEnabled(row.id, placed, off, picked)
+            set_user_setting(mapping.rokuKey, enabled ? "true" : "false")
+            profileData[mapping.pluginKey] = enabled
+        end for
+        return profileData
     end function
 
     ' Which switches a pushed layout is allowed to move, keyed by the row id the server

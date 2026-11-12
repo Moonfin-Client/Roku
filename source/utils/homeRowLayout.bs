@@ -1,6 +1,8 @@
+import "pkg:/source/api/MoonfinPlugin.bs"
 import "pkg:/source/utils/buttonLayout.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
 
 ' Which rows the home screen offers and what order they sit in. The layout follows the
 ' viewer between devices through the plugin, so the ids here have to match the ones the
@@ -280,7 +282,9 @@ namespace homeRowLayout
     ' home screen honours those switches, so the picker leaves those rows out rather than
     ' offering to arrange something that never appears.
     ' Which switch each row answers to. One table, since the picker, the home screen and the
-    ' sync all have to agree on what turns a row on.
+    ' sync all have to agree on what turns a row on. The external rows have no switch now
+    ' (ExternalRowAvailable decides for them), but older app versions still read theirs, so
+    ' they stay listed here for the sync to keep in step with the rows.
     function RowToggles() as object
         return {
             favorites: "ui.home.displayFavoritesRows",
@@ -367,6 +371,7 @@ namespace homeRowLayout
             "ui.details.maxdaysnextup",
             "ui.home.recentlyReleasedSeriesType",
             "ui.home.mergeRecentRowsByType",
+            "ui.home.hideWatchedInRecentRows",
             "ui.home.enableMultiServer",
             "imdb.rowsSortBy",
             "imdb.rowsSortOrder",
@@ -393,12 +398,46 @@ namespace homeRowLayout
     ' to come from here. Seerr's rows ship on, every other switch ships off.
     ' Callers looping over rows pass the table in rather than rebuilding it each time.
     function RowToggleOn(sectionKey as string, toggles = invalid as object) as boolean
+        available = homeRowLayout.ExternalRowAvailable(sectionKey)
+        if isValid(available) then return available
+
         if not isValid(toggles) then toggles = homeRowLayout.RowToggles()
 
         settingName = toggles[sectionKey]
         if not isValid(settingName) then return true
 
         return get_user_setting_bool(settingName, Left(settingName, 10) = "seerr.row.")
+    end function
+
+    function IsExternalRow(id as string) as boolean
+        return Left(id, 5) = "imdb_" or Left(id, 5) = "tmdb_" or inArray(["mdblist_watching_now", "seasonal", "radarr_calendar", "sonarr_calendar"], id)
+    end function
+
+    ' The external rows (IMDb, TMDB, MDBList Watching Now, seasonal and the calendars) have no
+    ' switch of their own. The picker offers one, and Home builds it when it's on, only while
+    ' the server can fill it. Invalid for every other row. Silo makes its own seasonal row,
+    ' plugin or not.
+    function ExternalRowAvailable(id as string) as dynamic
+        if not homeRowLayout.IsExternalRow(id) then return invalid
+
+        globalSession = m.global.session
+        plugin = moonfinPlugin.IsEnabled(globalSession)
+        if id = "seasonal" then return plugin or isSiloServer()
+        if not plugin then return false
+        if Left(id, 5) = "imdb_" then return true
+
+        if Left(id, 5) = "tmdb_" then return toBoolean(chainLookupReturn(globalSession, "pluginInfo.tmdbAvailable", false)) or homeRowLayout.AsText(chainLookupReturn(globalSession, "user.settings.`plugin.tmdb.apiKey`", "")) <> ""
+        if id = "mdblist_watching_now" then return toBoolean(chainLookupReturn(globalSession, "pluginInfo.mdblistAvailable", false)) or homeRowLayout.AsText(chainLookupReturn(globalSession, "user.settings.`plugin.mdblist.apiKey`", "")) <> ""
+        return toBoolean(chainLookupReturn(globalSession, "pluginInfo.calendarAvailable", false))
+    end function
+
+    ' The switch an external row used to answer to, which older app versions still read. A
+    ' layout from one of them that never mentions the seasonal or Watching Now row leaves that
+    ' row to it.
+    function LegacySwitchOn(id as string) as boolean
+        settingName = homeRowLayout.RowToggles()[id]
+        if not isValid(settingName) then return false
+        return get_user_setting_bool(settingName, false)
     end function
 
     function Offered() as object
@@ -464,8 +503,7 @@ namespace homeRowLayout
 
         ' The seasonal row answers to its own synced switch, so a layout that never mentions
         ' it leaves it to that switch
-        if id = "seasonal" then return homeRowLayout.RowToggleOn(id)
-        if id = "mdblist_watching_now" then return homeRowLayout.RowToggleOn(id)
+        if id = "seasonal" or id = "mdblist_watching_now" then return homeRowLayout.LegacySwitchOn(id)
 
         return inArray(homeRowLayout.DefaultEnabled(), id)
     end function
@@ -512,7 +550,7 @@ namespace homeRowLayout
         hidden = []
         for each row in homeRowLayout.Catalogue()
             if not inArray(order, row.id)
-                if (row.id = "seasonal" or row.id = "mdblist_watching_now") and homeRowLayout.RowToggleOn(row.id)
+                if (row.id = "seasonal" or row.id = "mdblist_watching_now") and homeRowLayout.LegacySwitchOn(row.id)
                     order.push(row.id)
                 else
                     hidden.push(row.id)

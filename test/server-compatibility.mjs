@@ -104,6 +104,7 @@ const selections = {
     'source/utils/musicCategories.bs': null,
     'source/utils/moonbaseInstall.bs': null,
     'source/utils/watchPartyModel.bs': null,
+    'source/utils/recentRows.bs': null,
     'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'inLibraryOrder', 'optionRange', 'optionsFit', 'playerMoment', 'drawsHomeRows', 'sampleReleaseShows', 'seerrStyleOf', 'homeBlur', 'followerTarget'],
     'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt', 'subtitleBottom', 'seekBarY', 'timeRowShows', 'promptAt', 'segmentSpan', 'scrubPauses'],
     'components/calendar/calendarHost.bs': ['calendarUsePrefs'],
@@ -142,7 +143,7 @@ const selections = {
     'components/home/HomeItem.bs': ['onPosterLoadStatusChanged', 'retryPoster'],
     'components/home/HomeRows.bs': ['toNormalizedString'],
     'components/tasks/MultiServerTask.bs': ['withSortFields', 'withField'],
-    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'getBoolSetting', 'getStringSetting', 'appendRadarrCalendar', 'radarrRowRelease', 'appendSonarrCalendar', 'sonarrRowPicks', 'sonarrEpisodeCode', 'calendarSubtitle', 'sortByCalendarDate', 'rowSortByParam', 'rowSortOrderParam'],
+    'components/home/LoadItemsTask.bs': ['isPlaylistOrder', 'playableMembers', 'normalizeLatestItems', 'oneCardPerSeries', 'seriesCardForLatestItem', 'firstItems', 'providerKeys', 'indexByProviderIds', 'getBoolSetting', 'getStringSetting', 'appendRadarrCalendar', 'radarrRowRelease', 'appendSonarrCalendar', 'sonarrRowPicks', 'sonarrEpisodeCode', 'calendarSubtitle', 'sortByCalendarDate', 'rowSortByParam', 'rowSortOrderParam'],
     'components/home/MediaBarTask.bs': ['pickSlides', 'keepSlide', 'filterAndDedupeItems', 'dedupeKeys', 'externalSlideItem', 'addExternalDetails', 'applyExternalDetails', 'filterItemsByExcludedGenres'],
     'source/api/Image.bs': ['ImageURL', 'metadataPosterURL', 'chapterImageURL'],
     'components/account/AccountDialog.bs': ['accountImageURL'],
@@ -193,6 +194,8 @@ source += '\n' + await readFile('test/live-recovery.bs', 'utf8');
 source += '\n' + await readFile('test/caption-download.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-profiles.bs', 'utf8');
 source += '\n' + (await readFile('components/extras/collectionLookup.bs', 'utf8')).match(/^const MAX_COLLECTIONS = .+$/m)[0];
+source += '\n' + (await readFile('components/home/LoadItemsTask.bs', 'utf8')).match(/^const LATEST_MEDIA_LIMIT = .+$/m)[0];
+source += '\n' + await readFile('test/recent-rows.bs', 'utf8');
 source += '\n' + await readFile('test/collection-lookup.bs', 'utf8');
 source += '\n' + await readFile('test/seerr-missing-collection.bs', 'utf8');
 source += '\n' + await readFile('test/seerr-json.bs', 'utf8');
@@ -535,6 +538,17 @@ for (const locale of ['en_US', 'ca', 'de_DE', 'fr', 'fr_CA', 'pt_BR']) {
 assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /"kind": "pluginDynamic",\s+"type": "none",\s+"enabled": enabled,\s+"order": order,\s+"serverId": owner,\s+"pluginSource": entry\.source,\s+"pluginSection": section,\s+"pluginAdditionalData": entry\.itemId,\s+"pluginDisplayText": entry\.title\s+\}/, 'A picked row goes to the server with its keys as the other clients spell them');
 assert.match(await readFile('components/settings/settings.bs', 'utf8'), /"homeSections": settingsSync\.HomeSectionsPayload\(\),\s+"homeRowOrder": settingsSync\.RowOrderPayload\(\)/, 'The home layout goes to the server under its keys as spelled, since BrightScript lowercases bare keys');
 assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /pluginKey: "hiddenDetailSectionsTv", rokuKey: "ui\.itemdetail\.hiddenSections", type: "jsonArray"/, 'The hidden detail sections travel with the other clients');
+assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /\{ pluginKey: "hideWatchedInRecentRows", rokuKey: "ui\.home\.hideWatchedInRecentRows", type: "bool" \}/, 'Hide Watched travels with the other clients');
+assert.match(await readFile('source/utils/userConfigSync.bs', 'utf8'), /"ui\.home\.hideWatchedInRecentRows"\) then return "HidePlayedInLatest"/, 'Hide Watched follows the account setting the server hides played titles by');
+assert.match(await readFile('source/Main.bs', 'utf8'), /not isValid\(get_user_setting\(recentRows\.HIDE_WATCHED_SETTING\)\) and toBoolean\(chainLookupReturn\(m\.global\.session, "user\.Configuration\.HidePlayedInLatest", false\)\)/, 'Someone who never set Hide Watched starts from their account');
+const recentLoader = await readFile('components/home/LoadItemsTask.bs', 'utf8');
+assert.match(recentLoader.match(/function loadRecentlyReleased\([^]*?end function/)[0], /if hideWatched then params\.filters = "IsUnplayed"/, 'Recently Released asks for unplayed titles while Hide Watched is on');
+assert.match(recentLoader.match(/function loadLatestMedia\([^]*?end function/)[0], /params\.limit = LATEST_FULL_PAGE/, 'A Recently Added row Hide Watched left short asks once for a full page');
+assert.match(await readFile('components/home/HomeRows.bs', 'utf8'), /HIDE_WATCHED_SETTING, false\) then params\.Filters = "IsUnplayed"/, 'The multi-server Recently Released row follows Hide Watched');
+assert.match(await readFile('components/home/MediaBarTask.bs', 'utf8'), /if m\.top\.hideWatched then query\.filters = "IsUnplayed"/, 'The media bar Recently Released pool follows Hide Watched');
+const recentOptions = await readFile('components/settings/settings.bs', 'utf8');
+assert.match(recentOptions, /takeSettings\(configTree, \["ui\.home\.hideWatchedInRecentRows", /, 'Hide Watched leads the recent rows options');
+assert.match(recentOptions, /settingsSection\("RECENTLY ADDED AND RELEASED"\)/, 'The recent rows options name both rows');
 
 const multiServerUtils = await readFile('source/utils/multiserver.bs', 'utf8');
 const imageBuilder = multiServerUtils.match(/function buildImageURLForServer\([^]*?end function/)[0];
@@ -894,7 +908,11 @@ assert.match(settingsSyncSource.match(/function GetRowToggleMappings\([^]*?end f
 const rowLayoutSource = await readFile('source/utils/homeRowLayout.bs', 'utf8');
 assert.match(rowLayoutSource, /\{ id: "nextup", label: "Next Up" \},\s*\{ id: "seasonal", label: "Seasonal Row" \}/, 'An unarranged seasonal row sits after Next Up');
 assert.match(rowLayoutSource, /seasonal: "seasonal\.row\.enabled"/, 'The seasonal row answers to its own switch');
-assert.match(rowLayoutSource.match(/function IsEnabled\([^]*?end function/)[0], /if id = "seasonal" then return homeRowLayout\.RowToggleOn\(id\)/, 'A layout without the seasonal row leaves it to the switch');
+assert.match(rowLayoutSource.match(/function IsEnabled\([^]*?end function/)[0], /if id = "seasonal" or id = "mdblist_watching_now" then return homeRowLayout\.LegacySwitchOn\(id\)/, 'A layout without the seasonal or watching now row leaves it to the old switch');
+assert.match(rowLayoutSource.match(/function RowToggleOn\([^]*?end function/)[0], /available = homeRowLayout\.ExternalRowAvailable\(sectionKey\)\s+if isValid\(available\) then return available/, 'An external row is offered and built while the server can fill it, not by a switch');
+assert.match(settingsSyncSource.match(/function HomeSectionsPayload\([^]*?end function/)[0], /not homeRowLayout\.IsExternalRow\(id\) and not homeRowLayout\.RowToggleOn\(id, toggles\)/, 'An external row goes over as it\'s set, even while the server can\'t fill it');
+assert.match(settingsSyncSource, /\{ pluginKey: "mdblistApiKey", rokuKey: "plugin\.mdblist\.apiKey", type: "direct", skipRegistry: true, receiveOnly: true \}/, 'The MDBList key is only read');
+assert.match(await readFile('components/settings/settings.bs', 'utf8'), /profile\.Append\(settingsSync\.LegacyRowSwitches\(\)\)/, 'The old row switches follow the layout for older app versions');
 const loadItemsSource = await readFile('components/home/LoadItemsTask.bs', 'utf8');
 assert.match(loadItemsSource, /startsWith\("plugindynamic:"\)\s+m\.top\.content = posterLabels\.Attach\(parentalControls\.WithoutUnratedOrBlockedItems\(/, 'Chart rows drop unrated titles once a rating is blocked');
 assert.match(loadItemsSource, /startsWith\("seerr_"\)\s+m\.top\.content = parentalControls\.WithoutBlockedItems\(/, 'Seerr rows keep the usual filter');
@@ -934,7 +952,6 @@ assert.match(settingsSyncSource, /\{ pluginKey: "mdblistWatchingNowEnabled", rok
 assert.match(settingsSyncSource.match(/function GetRowToggleMappings\([^]*?end function/)[0], /"mdblist_watching_now"/, 'The pulled layout drives the watching now switch');
 assert.match(rowLayoutSource, /\{ id: "mdblist_watching_now", label: "Watching on MDBList" \}/, 'The catalogue offers the watching now row');
 assert.match(rowLayoutSource, /mdblist_watching_now: "mdblist\.watchingnow\.enabled"/, 'The watching now row answers to its own switch');
-assert.match(rowLayoutSource.match(/function IsEnabled\([^]*?end function/)[0], /if id = "mdblist_watching_now" then return homeRowLayout\.RowToggleOn\(id\)/, 'A layout without the watching now row leaves it to the switch');
 assert.match(loadItemsSource.match(/function loadWatchingNowRow\([^]*?end function/)[0], /WithoutUnratedOrBlockedItems\(results\)/, 'Watching now row applies unrated and blocked filters');
 assert.match(loadItemsSource.match(/function loadWatchingNowRow\([^]*?end function/)[0], /APIRequest\("\/Moonfin\/MdbList\/WatchingNow", \{ profile: "tv" \}\)/, 'Watching now asks with the tv profile');
 assert.match(loadItemsSource.match(/function customRowCard\([^]*?end function/)[0], /if not isValidAndNotEmpty\(tmdbId\) and not isValidAndNotEmpty\(imdbId\) then return invalid/, 'Chart titles with only an IMDb id keep their card');

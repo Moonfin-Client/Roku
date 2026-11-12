@@ -7024,10 +7024,6 @@
         <translation>Combine separate libraries of the same type for Recently Added and Recently Released home rows.</translation>
     </message>
     <message>
-        <source>Configure Popular, Top Rated, and Trending TMDB lists.</source>
-        <translation>Configure Popular, Top Rated, and Trending TMDB lists.</translation>
-    </message>
-    <message>
         <source>Configure the maximum channels of your audio setup. Multichannel streams exceeding this limit will downmix or transcode.</source>
         <translation>Configure the maximum channels of your audio setup. Multichannel streams exceeding this limit will downmix or transcode.</translation>
     </message>
@@ -7343,8 +7339,8 @@
         <translation>Prioritize SDH/CC subtitle tracks when auto-selecting.</translation>
     </message>
     <message>
-        <source>RECENTLY ADDED</source>
-        <translation>RECENTLY ADDED</translation>
+        <source>RECENTLY ADDED AND RELEASED</source>
+        <translation>RECENTLY ADDED AND RELEASED</translation>
     </message>
     <message>
         <source>REWATCH</source>
@@ -7609,8 +7605,8 @@
         <translation>Subtitle Stream</translation>
     </message>
     <message>
-        <source>Toggle Upcoming Calendars from Radarr/Sonarr.</source>
-        <translation>Toggle Upcoming Calendars from Radarr/Sonarr.</translation>
+        <source>Choose what the Radarr and Sonarr rows show.</source>
+        <translation>Choose what the Radarr and Sonarr rows show.</translation>
     </message>
     <message>
         <source>Trakt</source>
@@ -9166,11 +9162,6 @@
         <source>Watching on MDBList</source>
         <extracomment>Home row of what MDBList users are watching right now, and the setting that turns it on</extracomment>
         <translation>Watching on MDBList</translation>
-    </message>
-    <message>
-        <source>Show what MDBList users are currently watching</source>
-        <extracomment>Description of the Watching on MDBList setting</extracomment>
-        <translation>Show what MDBList users are currently watching</translation>
     </message>
     <message>
         <source>{users} watching now · {movies} movies · {shows} shows</source>
@@ -11129,6 +11120,29 @@
         <source>Moonbase couldn&apos;t keep the subtitles for everyone.</source>
         <extracomment>Watch Parties - shown when saving the Silo host's subtitle choice for the party failed</extracomment>
         <translation>Moonbase couldn&apos;t keep the subtitles for everyone.</translation>
+    </message>
+    <message>
+        <source>Hide Watched</source>
+        <translation>Hide Watched</translation>
+    </message>
+    <message>
+        <source>Hide watched content from Recently Added and Recently Released home rows.</source>
+        <translation>Hide watched content from Recently Added and Recently Released home rows.</translation>
+    </message>
+    <message>
+        <source>Syncing playback to {0}</source>
+        <extracomment>Shown after Watch with group in a SyncPlay group. {0} is the group's name</extracomment>
+        <translation>Syncing playback to {0}</translation>
+    </message>
+    <message>
+        <source>SyncPlay Group</source>
+        <extracomment>Stands in for a SyncPlay group that has no name</extracomment>
+        <translation>SyncPlay Group</translation>
+    </message>
+    <message>
+        <source>No episodes found</source>
+        <extracomment>Shown when a series or season has no episode to pick for the Watch Party</extracomment>
+        <translation>No episodes found</translation>
     </message>
 </context>
 </TS>

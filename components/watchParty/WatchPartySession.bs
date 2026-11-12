@@ -646,6 +646,14 @@ sub onTaskResult(event as object)
         return
     end if
     if kind = "leave" then return
+    if kind = "episode"
+        if isValid(result.data)
+            pickContent(toString(result.data.Id ?? ""), "Episode")
+        else
+            banner([{ title: tr("No episodes found") }])
+        end if
+        return
+    end if
 
     ok = result.status >= 200 and result.status < 300
     if kind = "suggestions"
@@ -675,6 +683,61 @@ sub onTaskResult(event as object)
         if m.silo then applySiloSnapshot(result.data.room, false) else applyRoom(result.data.room)
     end if
     m.top.answer = result
+    if result.request.picked = true then onPicked(result, ok)
+end sub
+
+' ===== Picking from a title's page =====
+
+' The host can pick, and so can anyone in no party, since picking opens one. A Jellyfin account set
+' to start SyncPlay groups starts those instead.
+function canPick() as boolean
+    if not partiesOn() or m.top.serverConfig.enabled <> true then return false
+    if m.top.inRoom then return m.top.room.self_role = "host"
+    syncPlay = m.global.syncPlayManager
+    return not (isValid(syncPlay) and syncPlay.callFunc("isEnabled") and get_user_setting("watchParty.service") = "syncplay")
+end function
+
+' item is { id, type, seriesId }. A room plays files, so a series or a season stands for its next
+' episode.
+sub pickTitle(item as object)
+    if item.type = "Series" or item.type = "Season"
+        runTask({ kind: "episode", item: item })
+        return
+    end if
+    pickContent(item.id, item.type)
+end sub
+
+' In a voting room a movie goes up for the vote. Anything else is the host's pick, so voting is
+' switched off for it.
+sub pickContent(contentId as string, contentType as string)
+    body = { "content_id": contentId }
+    if not m.top.inRoom
+        act({ kind: "create", method: "POST", path: "/Rooms", body: body, picked: true })
+    else if m.top.room.selection_mode <> "vote"
+        act({ kind: "stage", method: "POST", path: "Stage", body: body, picked: true })
+    else if contentType = "Movie"
+        act({ kind: "suggest", method: "POST", path: "Suggestions", body: body, picked: true })
+    else
+        act({ kind: "voting", method: "POST", path: "Voting", body: { "voting": false }, picked: true, contentId: contentId })
+    end if
+end sub
+
+sub onPicked(result as object, ok as boolean)
+    request = result.request
+    if ok and request.kind = "voting"
+        act({ kind: "stage", method: "POST", path: "Stage", body: { "content_id": request.contentId }, picked: true, votingWasOn: true })
+        return
+    end if
+    if not ok
+        ' The vote comes back when the pick it was switched off for didn't go through
+        if request.votingWasOn = true then act({ kind: "voting", method: "POST", path: "Voting", body: { "voting": true } })
+        banner([{ title: watchPartyModel.ErrorText(watchPartyModel.ErrorCode(result)) }])
+        return
+    end if
+    text = tr("Picked for the Watch Party")
+    if request.kind = "suggest" then text = tr("Added to the Watch Party vote")
+    banner([{ title: text, icon: "pkg:/images/watchParty/party.webp" }])
+    open()
 end sub
 
 ' ===== The room list =====
@@ -704,23 +767,29 @@ sub watchRooms(on as boolean)
 end sub
 
 sub refreshRooms()
-    if not partiesOn()
+    onSilo = isSiloServer()
+    m.top.isSilo = onSilo
+    if not onSilo and chainLookupReturn(m.global.session, "pluginInfo.installed", false) <> true
         m.top.rooms = []
         m.top.roomsState = "missing"
         return
     end if
-    onSilo = isSiloServer()
-    m.top.isSilo = onSilo
     if onSilo and not hasWebSocket()
         m.top.rooms = []
         m.top.roomsState = "device"
         return
     end if
-    ' The admin's switches come first, once for each server and account
+    ' The admin's switches come first, once for each server and account. They're read with this
+    ' account's switch off too, since Settings only shows that switch when the server has parties.
     key = chainLookupReturn(m.global.session, "server.url", "") + "|" + chainLookupReturn(m.global.session, "user.id", "")
     if key <> m.configFor
         if m.configFor <> "loading" then runTask({ kind: "config", method: "GET", path: "/Config", key: key })
         m.configFor = "loading"
+        return
+    end if
+    if not partiesOn()
+        m.top.rooms = []
+        m.top.roomsState = "missing"
         return
     end if
     if m.top.serverConfig.enabled <> true
