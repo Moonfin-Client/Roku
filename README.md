@@ -29,8 +29,8 @@ Moonfin for Roku is an enhanced fork of the official Jellyfin Roku client that w
 - **Silo support**, through Silo's own API: the household's profiles with their PINs, signing in with a code approved on another device, Silo's playback plans, skip markers and seek previews, and Silo's own requests.
 - **Watch Parties and SyncPlay.** Watch together on your own devices, with a lobby, voting, chat and reactions, through Moonbase on Jellyfin, Emby and Plex and Silo's own rooms on Silo. Jellyfin's SyncPlay groups work too.
 - **A Calendar and Smart Search** through Moonbase. The Calendar shows what's coming up in Sonarr and Radarr and what aired recently, and Smart Search finds titles from a description in your own words.
-- **Settings sync** through the [Moonfin server plugin](https://github.com/Moonfin-Client/Plugin), or Moonbase for Plex on Plex servers. Your theme, layouts, row order, hidden items, and much more follow you between devices, and Settings is laid out the same way as the other Moonfin apps.
-- **Playback done right**: trickplay previews while scrubbing, pre-playback track selection, an episode browser in the player, dual subtitles, fast forward and rewind at 3x, 15x, and 50x, HDR10+ and Dolby Vision with fallbacks, manual subtitle sync, theme music, and rearrangeable player buttons.
+- **Settings sync** through the [Moonfin server plugin](https://github.com/Moonfin-Client/Plugin), or Moonbase for Plex and Moonbase for Silo on those servers. Your theme, layouts, row order, hidden items, and much more follow you between devices, and Settings is laid out the same way as the other Moonfin apps.
+- **Playback done right**: player controls rebuilt to match Moonfin-Core, trickplay previews while scrubbing, pre-playback track selection, an episode browser in the player, dual subtitles, HDR10+ and Dolby Vision with fallbacks, manual subtitle sync, theme music, and rearrangeable player buttons.
 - **Live TV** with a full screen guide, rewind and Jump to Live, and recording from the guide or the player, with series rules that pick which episodes to record.
 - **Libraries and music your way**, with Classic, Modern and Docked library styles, three music library styles, and a rebuilt music player that keeps going while you browse.
 - **A setup wizard on first run** that shows live previews built from your own artwork, and skips anything you have already chosen, and a Settings screen that previews each change live.
@@ -99,7 +99,7 @@ The deeper reference material lives in the [Wiki](https://github.com/Moonfin-Cli
 | [Features](https://github.com/Moonfin-Client/Roku/wiki/Features) | The full feature list, section by section |
 | [Installation and Sideloading](https://github.com/Moonfin-Client/Roku/wiki/Installation-and-Sideloading) | The Channel Store, Developer Mode, sideloading, and supported devices |
 | [Getting Started](https://github.com/Moonfin-Client/Roku/wiki/Getting-Started) | Picking your server, Quick Connect, the setup wizard, and the settings worth a look on day one |
-| [User Guide](https://github.com/Moonfin-Client/Roku/wiki/User-Guide) | The remote inside the player, typing, finding things, Seerr requests, themes and home rows |
+| [User Guide](https://github.com/Moonfin-Client/Roku/wiki/User-Guide) | The remote inside the player, typing, finding things, Seerr requests, the Calendar, Watch Parties, themes and home rows |
 | [Common Problems](https://github.com/Moonfin-Client/Roku/wiki/Common-Problems) | Plain fixes for connection, sign-in, install, playback, sound, subtitle and sync trouble |
 | [Seerr Setup](https://github.com/Moonfin-Client/Roku/wiki/Seerr-Setup) | Connecting Seerr through the Moonfin server plugin |
 | [Building from Source](https://github.com/Moonfin-Client/Roku/wiki/Building-from-Source) | Toolchain, build steps, and deploying to a device |
