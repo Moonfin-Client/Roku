@@ -20,18 +20,20 @@ Moonfin for Roku is an enhanced fork of the official Jellyfin Roku client that w
 
 ## Features
 
-- **A modern home screen and detail screen**, both on by default. The focused row item grows into a landscape card with metadata and ratings. Detail pages get a cinematic tabbed layout with studio logos, chapters, and an Up Next card. The classic layouts stay selectable.
+- **A modern home screen and nine detail screen styles.** The focused row item grows into a landscape card with metadata and ratings. Frost is the default detail screen, and Modern, Classic, Spotlight, Nouveau, Minimalist, Stage, Premiere and Quick Look stay selectable.
 - **Themes**, with built-in Moonfin, Neon Pulse, and 8-Bit Hero looks, a community Theme Store, and server-shared themes. Your choice syncs across devices.
 - **A featured media bar** with six styles: Moonfin, MakD, Banner, Gallery, Bookshelf, and the rounded Aya hero.
-- **A home screen full of rows** you pick and order yourself, with no cap on how many. Choose from Seerr rows, IMDb and TMDB charts, Radarr and Sonarr calendars, Favorites, Collections, Genres, Playlists, Audio, Since You Watched, Rewatch, and Recently Released, plus rows for one specific collection, genre, or playlist. The whole layout syncs.
+- **A home screen full of rows** you pick and order yourself, with no cap on how many. Choose from Seerr rows, IMDb and TMDB charts, Watching on MDBList, Radarr and Sonarr calendars, Favorites, Collections, Genres, Playlists, Audio, Since You Watched, Rewatch, and Recently Released, plus rows for one specific collection, genre, or playlist. The whole layout syncs.
 - **Seerr built into the detail screen.** Request in HD or 4K with smart season selection, track your requests and issues, filter NSFW content, and get Seerr results in global search. See [Seerr Setup](https://github.com/Moonfin-Client/Roku/wiki/Seerr-Setup).
 - **Jellyfin, Emby and Plex.** Sign in with a server address, a Plex account or Emby Connect, use Quick Connect with a QR code on Jellyfin, and play across your connected Jellyfin and Emby servers. Plex Home users and their PINs work too.
 - **Silo support**, through Silo's own API: the household's profiles with their PINs, signing in with a code approved on another device, Silo's playback plans, skip markers and seek previews, and Silo's own requests.
-- **Settings sync** through the [Moonfin server plugin](https://github.com/Moonfin-Client/Plugin). Your theme, layouts, row order, hidden items, and much more follow you between devices, and Settings is laid out the same way as the other Moonfin apps.
+- **Watch Parties and SyncPlay.** Watch together on your own devices, with a lobby, voting, chat and reactions, through Moonbase on Jellyfin, Emby and Plex and Silo's own rooms on Silo. Jellyfin's SyncPlay groups work too.
+- **A Calendar and Smart Search** through Moonbase. The Calendar shows what's coming up in Sonarr and Radarr and what aired recently, and Smart Search finds titles from a description in your own words.
+- **Settings sync** through the [Moonfin server plugin](https://github.com/Moonfin-Client/Plugin), or Moonbase for Plex on Plex servers. Your theme, layouts, row order, hidden items, and much more follow you between devices, and Settings is laid out the same way as the other Moonfin apps.
 - **Playback done right**: trickplay previews while scrubbing, pre-playback track selection, an episode browser in the player, dual subtitles, fast forward and rewind at 3x, 15x, and 50x, HDR10+ and Dolby Vision with fallbacks, manual subtitle sync, theme music, and rearrangeable player buttons.
 - **Live TV** with a full screen guide, rewind and Jump to Live, and recording from the guide or the player, with series rules that pick which episodes to record.
 - **Libraries and music your way**, with Classic, Modern and Docked library styles, three music library styles, and a rebuilt music player that keeps going while you browse.
-- **A setup wizard on first run** that shows live previews built from your own artwork, and skips anything you have already chosen.
+- **A setup wizard on first run** that shows live previews built from your own artwork, and skips anything you have already chosen, and a Settings screen that previews each change live.
 - **Ratings that follow your sources**, including TMDB episode ratings and extra sources like Letterboxd and MDBList through the plugin.
 - **Quality of life everywhere**: four keyboard styles, in-library search with a full sort and filter dialog, a shuffle dialog with five picks at a time, an account switcher on the navigation bar avatar, sign in PINs kept on your server, and in-app diagnostic logging with a log viewer.
 
