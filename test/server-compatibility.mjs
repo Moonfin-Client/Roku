@@ -720,7 +720,7 @@ for await (const file of glob('{components,source}/**/*.{bs,xml}')) {
     if (/components\/ScreenMask\.(bs|xml)$/.test(file)) continue;
     const code = await readFile(file, 'utf8');
     assert.doesNotMatch(code, /<MaskGroup\b|"MaskGroup"/, `${file} uses ScreenMask rather than MaskGroup`);
-    assert.doesNotMatch(code, /\.mask(Size|Offset)\s*=/, `${file} sets a ScreenMask's size and offset rather than maskSize and maskOffset`);
+    assert.doesNotMatch(code, /mask(Size|Offset)/, `${file} sets a ScreenMask's size and offset rather than maskSize and maskOffset`);
     if (!file.endsWith('.xml')) continue;
     for (const [tag] of code.matchAll(/<ScreenMask\b[^>]*>/g)) {
         screenMaskChecks++;
