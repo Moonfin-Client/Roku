@@ -6,6 +6,13 @@ const WPP_TICK_SECONDS = 0.5
 const WPP_REPORT_SECONDS = 2
 ' The ready wait hears from each player more often, so the start isn't held up
 const WPP_WAITING_REPORT_SECONDS = 0.5
+' How often a Silo player asks again to have its session attached
+const WPP_ATTACH_SECONDS = 1.5
+' A paused Roku takes a moment to play again, longer on a transcode, so a Silo play starts it this
+' far ahead of the room's time until it has timed its own starts
+const WPP_START_LEAD_DIRECT = 0.5
+const WPP_START_LEAD_TRANSCODE = 1.2
+const WPP_MAX_START_LEAD = 3
 ' After a correcting seek the stream needs a moment before drift means anything again
 const WPP_SETTLE_SECONDS = 5
 const WPP_MAX_LEAD = 5
@@ -46,7 +53,18 @@ sub wpAttach()
         reportedAt: -100,
         buffering: false,
         clock: CreateObject("roTimespan"),
-        panel: invalid
+        panel: invalid,
+        ' Silo counts nothing from a player until the server has attached its playback session
+        silo: party.isSilo = true,
+        attached: false,
+        attachSentAt: -100,
+        attachSnapshots: 0,
+        ' A seek of the party's own, from when it was asked until the player shows where it landed
+        seekAt: -1,
+        seekBuffered: false,
+        ' How long this player takes from a resume to playing, learned from its starts
+        startLead: invalid,
+        startTiming: invalid
     }
 
     ' A player opening on a paused room starts out playing, so it pauses where the room is
@@ -66,6 +84,7 @@ sub wpAttach()
     party.observeFieldScoped("command", "wpOnCommand")
     party.observeFieldScoped("room", "wpOnRoom")
     party.observeFieldScoped("inRoom", "wpOnInRoom")
+    party.observeFieldScoped("connection", "wpOnConnection")
     ' Scoped, so the party lets go of them without taking the player's own observers along
     m.top.observeFieldScoped("state", "wpOnState")
     m.top.observeFieldScoped("seek", "wpOnSeek")
@@ -105,8 +124,9 @@ end function
 sub wpDetach(closedByViewer = false as boolean)
     if not isValid(m.wp) then return
     party = m.wp.session
-    if closedByViewer and party.inRoom then party.callFunc("send", [{ "type": "state_report", "session_id": invalid, "position_seconds": 0, "is_paused": true, "status": "not_watching" }])
-    for each name in ["command", "room", "inRoom"]
+    ' Silo hears a player has gone from its session going quiet
+    if closedByViewer and party.inRoom and not m.wp.silo then party.callFunc("send", [{ "type": "state_report", "session_id": invalid, "position_seconds": 0, "is_paused": true, "status": "not_watching" }])
+    for each name in ["command", "room", "inRoom", "connection"]
         party.unobserveFieldScoped(name)
     end for
     for each name in ["state", "seek", "position"]
@@ -125,12 +145,61 @@ sub wpDetach(closedByViewer = false as boolean)
     m.wp = invalid
 end sub
 
+' The host's subtitles for everyone, put on this player when the host changes them, as Core does.
+' index is a stream index, or SubtitleSelection.NONE for off. A track comes in a reload, the way the
+' player's own menu loads one the stream doesn't hold, lined up again with the room as it lands.
+' False while the party isn't on this player yet, so the session tries again.
+function wpApplySubtitle(index as integer) as boolean
+    if not isValid(m.wp) then return false
+    if index = m.top.SelectedSubtitle then return true
+    m.global.queueManager.callFunc("setPreferredSubtitleTrack", { StreamIndex: index })
+    if index = SubtitleSelection.NONE
+        for each item in m.top.fullSubtitleData
+            if item.index = m.top.SelectedSubtitle
+                m.top.previousSubtitleWasEncoded = item.IsEncoded = true
+                exit for
+            end if
+        end for
+        m.top.globalCaptionMode = "Off"
+        m.top.subtitleTrack = ""
+        m.top.SelectedSubtitle = index
+        return true
+    end if
+
+    ' Set without the player's own observer, which would reload from where it is, not the room
+    m.top.unobserveField("selectedSubtitle")
+    m.top.globalCaptionMode = "Off"
+    m.top.SelectedSubtitle = index
+    m.top.observeField("selectedSubtitle", "onSubtitleChange")
+    target = watchPartyModel.ExpectedPosition(m.wp.reference, m.wp.session.callFunc("serverNow"))
+    if m.wp.reference.playing then target = target + WPP_RELOAD_SECONDS
+    m.wp.expectPaused = not m.wp.reference.playing
+    m.wp.landingUntil = m.wp.clock.TotalMilliseconds() / 1000 + WPP_SETTLE_SECONDS
+    retryPlaybackFromServer(target)
+    return true
+end function
+
+' The party closes the video in the same breath as its screen, before the state observer would hear
+' it stop, so the stop goes to the server first. Otherwise the server keeps the stream open.
+sub wpEndPlayback()
+    ReportPlayback("stop")
+    m.top.unobserveField("state")
+    m.top.control = "stop"
+end sub
+
 sub wpOnControlsVisible()
     if isValid(m.wp) then m.wp.overlay.peopleVisible = m.osd.visible
 end sub
 
 sub wpOnInRoom()
     if isValid(m.wp) and not m.wp.session.inRoom then wpDetach()
+end sub
+
+' A new room socket attaches the session again, and the server answers with a command to line it up
+sub wpOnConnection()
+    if not isValid(m.wp) or not m.wp.silo then return
+    m.wp.attached = false
+    m.wp.attachSentAt = -100
 end sub
 
 ' Back in the lobby the video closes, the way it does for everyone
@@ -142,15 +211,16 @@ sub wpOnRoom()
         active = m.global.sceneManager.callFunc("getActiveScene")
         if isValid(active) and active.isSameNode(m.top)
             m.global.queueManager.callFunc("clear")
-            m.top.control = "stop"
+            wpEndPlayback()
             m.global.sceneManager.callFunc("popScene")
         end if
         return
     end if
     ' The anchor follows the host's reports, except one a command set for later, which waits for the
     ' command.
+    ' Silo's snapshot anchor is only good to the second, so its players follow the commands alone
     anchorAt = watchPartyModel.ParseTime(room.anchor_at)
-    if not m.wp.holding and not isValid(m.wp.pending) and anchorAt > 0 and anchorAt <= m.wp.session.callFunc("serverNow")
+    if not m.wp.silo and not m.wp.holding and not isValid(m.wp.pending) and anchorAt > 0 and anchorAt <= m.wp.session.callFunc("serverNow")
         m.wp.reference = watchPartyModel.ReferenceFromRoom(room)
     end if
     if m.wp.holding and not isValid(m.wp.pending) then wpShowWaiting()
@@ -159,12 +229,19 @@ end sub
 ' ===== Commands =====
 
 sub wpOnCommand(event as object)
-    if isValid(m.wp) then wpSchedule(event.getData())
+    if not isValid(m.wp) then return
+    command = event.getData()
+    ' A Silo command can be meant for one member's session only
+    target = toString(command.session_id ?? "")
+    if m.wp.silo and target <> "" and target <> wpSessionId() then return
+    wpSchedule(command)
 end sub
 
 sub wpSchedule(command as object)
     m.wp.pending = command
     delay = watchPartyModel.DelayUntil(watchPartyModel.ParseTime(command.execute_at), m.wp.session.callFunc("serverNow"))
+    ' A play that finds this player paused goes early by the time it takes to get going
+    if m.wp.silo and command.playback_state = "playing" and m.top.state <> "playing" then delay -= wpStartLead()
     if command.countdown = true then m.wp.overlay.center = { mode: "countdown", seconds: delay }
     if delay < 0.05
         wpRunPending()
@@ -216,6 +293,8 @@ sub wpRunPending()
         else if m.top.state = "paused"
             m.wp.expectPaused = false
             m.top.control = "resume"
+            ' A plain start from paused is timed, but not one that waits on a seek
+            if m.wp.silo and m.wp.seekAt < 0 then m.wp.startTiming = { calledAt: m.wp.clock.TotalMilliseconds() / 1000, from: m.top.position + 0# }
         else if m.top.state = "buffering"
             m.wp.expectPaused = false
         else if m.top.state <> "playing" and m.top.state <> "finished"
@@ -226,6 +305,9 @@ sub wpRunPending()
         m.wp.lineUp = true
         if m.top.state = "paused"
             wpLineUp()
+        else if not m.wp.loaded
+            ' A Roku video paused before its first frame never plays, so the pause waits for that frame
+            m.wp.expectPaused = true
         else
             m.wp.expectPaused = true
             m.top.control = "pause"
@@ -264,7 +346,38 @@ function wpPosition() as double
 end function
 
 sub wpOnPosition()
-    if isValid(m.wp) then m.wp.positionAt = m.wp.clock.TotalMilliseconds() / 1000
+    if not isValid(m.wp) then return
+    m.wp.positionAt = m.wp.clock.TotalMilliseconds() / 1000
+    if isValid(m.wp.startTiming) then wpTimeStart()
+end sub
+
+' The lead for a play that finds this player paused: what its starts took, or a first guess
+function wpStartLead() as double
+    if isValid(m.wp.startLead) then return m.wp.startLead
+    if m.isTranscoded = true then return WPP_START_LEAD_TRANSCODE
+    return WPP_START_LEAD_DIRECT
+end function
+
+' How long a start took to move, from a position past where it began: the time since the resume
+' less what it has played. The first sets the lead, and after that each is averaged in, so one slow
+' start doesn't throw the next far early. A sample that jumped (a seek) or came late (a stall) is
+' no measure.
+sub wpTimeStart()
+    timing = m.wp.startTiming
+    since = m.wp.clock.TotalMilliseconds() / 1000 - timing.calledAt
+    if since > 5
+        m.wp.startTiming = invalid
+        return
+    end if
+    played = m.top.position - timing.from
+    if played < 0.1 then return
+    m.wp.startTiming = invalid
+    if played > 5 then return
+    took = since - played
+    if took < 0 then took = 0
+    if took > WPP_MAX_START_LEAD then took = WPP_MAX_START_LEAD
+    if isValid(m.wp.startLead) then took = (m.wp.startLead + took) / 2
+    m.wp.startLead = took
 end sub
 
 ' Paused where the room starts, which is when this device is ready
@@ -278,6 +391,8 @@ end sub
 
 sub wpSeek(target as double)
     if target < 0 then target = 0
+    m.wp.seekAt = m.wp.clock.TotalMilliseconds() / 1000
+    m.wp.seekBuffered = false
     m.wp.landingUntil = m.wp.clock.TotalMilliseconds() / 1000 + WPP_SETTLE_SECONDS
     m.wp.ourSeek = target
     m.top.seek = target
@@ -305,6 +420,8 @@ end sub
 function wpRoomAllows(action as string) as boolean
     room = m.wp.session.room
     if room.self_role = "host" then return true
+    ' Silo lets guests play and pause at most, and says so for this member
+    if m.wp.silo then return action <> "seek" and room.self_can_control_transport = true
     policy = room.guest_control_policy
     if policy = "everyone" then return true
     return policy = "guests_can_pause" and action <> "seek"
@@ -315,6 +432,9 @@ sub wpRefuse()
 end sub
 
 sub wpRequest(action as string, position as double, paused as boolean)
+    ' A Silo player that isn't attached yet has no position worth moving the room to
+    if m.wp.silo and not m.wp.attached then return
+    if position < 0 then position = 0
     m.wp.session.callFunc("send", [{ "type": "transport_request", "action": action, "position_seconds": position, "is_paused": paused }])
 end sub
 
@@ -325,6 +445,14 @@ sub wpOnState()
     position = wpPosition()
     m.wp.playing = state = "playing"
     m.wp.positionAt = -1
+    ' A seek has landed once the player has loaded the new spot and settled on playing or paused
+    if m.wp.seekAt >= 0
+        if state = "buffering"
+            m.wp.seekBuffered = true
+        else if m.wp.seekBuffered and (state = "paused" or state = "playing")
+            m.wp.seekAt = -1
+        end if
+    end if
     if state = "paused" then m.wp.pausedAt = m.wp.clock.TotalMilliseconds() / 1000
 
     if state = "playing" and not m.wp.loaded
@@ -333,6 +461,13 @@ sub wpOnState()
             wpHoldAt(m.wp.reference.position)
             return
         end if
+    end if
+
+    ' A Roku video paused before its first frame never plays, and the party would wait on it, so a
+    ' pause while it still loads is undone. The room's own pause waits for the first frame instead.
+    if state = "paused" and not m.wp.loaded
+        m.top.control = "resume"
+        return
     end if
 
     if state = "buffering"
@@ -400,8 +535,11 @@ end sub
 sub wpNoteStall()
     if m.wp.buffering or not m.wp.loaded or m.wp.holding or not m.wp.reference.playing then return
     if m.wp.clock.TotalMilliseconds() / 1000 < m.wp.landingUntil then return
+    if m.wp.silo and not m.wp.attached then return
     m.wp.buffering = true
-    m.wp.session.callFunc("send", [{ "type": "buffering", "position_seconds": m.top.position, "is_paused": false }])
+    stall = { "type": "buffering", "position_seconds": m.top.position, "is_paused": false }
+    if m.wp.silo then stall["session_id"] = wpSessionId()
+    m.wp.session.callFunc("send", [stall])
 end sub
 
 sub wpOnSeek(event as object)
@@ -441,6 +579,7 @@ sub wpTick()
         return
     end if
     elapsed = m.wp.clock.TotalMilliseconds() / 1000
+    if m.wp.silo and not wpSiloAttached(elapsed) then return
     ' A seek that is still loading once its landing time is up has stalled
     if m.top.state = "buffering" then wpNoteStall()
 
@@ -468,12 +607,50 @@ sub wpTick()
         end if
     end if
 
-    if playing and elapsed - m.wp.reportedAt >= WPP_REPORT_SECONDS then wpReport()
+    ' Silo hears from a paused player too, which is how it catches one that paused on its own
+    reports = playing or (m.wp.silo and m.top.state = "paused")
+    if reports and elapsed - m.wp.reportedAt >= WPP_REPORT_SECONDS then wpReport()
 end sub
+
+' Silo takes nothing from a player until a snapshot sent after its attach names its session. The
+' attach goes again every 1.5 seconds until then, and after every new socket. Once attached, a host
+' who picked a spot to pick up from moves the room there, ahead of its first report.
+function wpSiloAttached(elapsed as double) as boolean
+    party = m.wp.session
+    room = party.room
+    sessionId = wpSessionId()
+    if m.wp.attached and room.attached_session_id <> sessionId then m.wp.attached = false
+    if not m.wp.attached
+        if sessionId = "" then return false
+        if room.attached_session_id = sessionId and m.wp.attachSentAt >= 0 and party.snapshots > m.wp.attachSnapshots
+            m.wp.attached = true
+        else
+            if elapsed - m.wp.attachSentAt >= WPP_ATTACH_SECONDS
+                m.wp.attachSentAt = elapsed
+                m.wp.attachSnapshots = party.snapshots
+                party.callFunc("send", [{ "type": "attach_session", "session_id": sessionId }])
+            end if
+            return false
+        end if
+    end if
+
+    resume = party.pendingResume
+    if room.self_role = "host" and type(resume) = "roAssociativeArray" and isValid(resume.seconds)
+        party.pendingResume = {}
+        if resume.contentId = toString(room.selected_content_id ?? "")
+            party.callFunc("send", [{ "type": "transport_request", "action": "seek", "position_seconds": resume.seconds, "is_paused": false }])
+        end if
+    end if
+    return true
+end function
 
 ' The server judges in step or catching up from the position, so a report only names its status
 ' while waiting to start, or while a seek of this player's own is still landing.
 sub wpReport()
+    if m.wp.silo
+        wpSiloReport()
+        return
+    end if
     elapsed = m.wp.clock.TotalMilliseconds() / 1000
     m.wp.reportedAt = elapsed
     report = {
@@ -498,10 +675,40 @@ sub wpReport()
     m.wp.session.callFunc("send", [report])
 end sub
 
+' Silo's reports carry no status. One says ready only while the room waits on this player, since
+' a ready in a playing room sets off another sync seek, and none goes out while a seek of its own is
+' landing, which the room would take for where it is.
+sub wpSiloReport()
+    elapsed = m.wp.clock.TotalMilliseconds() / 1000
+    m.wp.reportedAt = elapsed
+    if not m.wp.attached then return
+    ' Nothing until the video has shown its first frame: a report while it still loads would read as
+    ' ready to the room, since a load waits paused where the room starts. Nor while it stalls, or while
+    ' a seek of the party's own hasn't landed, which the room would take for where it is.
+    if not m.wp.loaded or m.top.state = "buffering" then return
+    if m.wp.seekAt >= 0 and elapsed - m.wp.seekAt < WPP_SETTLE_SECONDS then return
+    if not m.wp.holding and m.wp.landingUntil > 0 and elapsed < m.wp.landingUntil then return
+    report = {
+        "type": "state_report",
+        "session_id": wpSessionId(),
+        "position_seconds": wpPosition(),
+        "is_paused": m.top.state <> "playing"
+    }
+    if m.wp.commandId <> "" then report["command_id"] = m.wp.commandId
+    if m.wp.holding and m.wp.loaded and m.top.state = "paused" then report["is_ready"] = true
+    m.wp.session.callFunc("send", [report])
+end sub
+
 ' A report needs a session to count, and the item stands in until the stream brings its play
-' session id.
+' session id. Silo's is the playback session itself, without the plan number the app adds to it
+' after a replan.
 function wpSessionId() as string
-    if isValidAndNotEmpty(m.top.PlaySessionId) then return m.top.PlaySessionId
+    if isValidAndNotEmpty(m.top.PlaySessionId)
+        id = m.top.PlaySessionId
+        if m.wp.silo and Instr(1, id, "~") > 0 then id = id.Left(Instr(1, id, "~") - 1)
+        return id
+    end if
+    if m.wp.silo then return ""
     return m.top.id
 end function
 

@@ -411,10 +411,13 @@ for (const name of [
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/achievement-unlocks.bs', 'utf8');
-for (const file of ['source/api/silo/SiloSession.bs', 'source/api/silo/SiloMapper.bs', 'source/api/silo/SiloMediaSources.bs', 'source/api/silo/SiloImages.bs', 'source/api/silo/SiloAccount.bs', 'source/api/silo/SiloPager.bs', 'source/api/silo/SiloCatalog.bs', 'source/api/silo/SiloHome.bs', 'source/api/silo/SiloActions.bs', 'source/api/silo/SiloPlayback.bs', 'source/api/silo/SiloExtras.bs', 'source/api/silo/SiloSeerr.bs', 'source/api/silo/SiloRouter.bs']) {
+for (const file of ['source/api/silo/SiloSession.bs', 'source/api/silo/SiloMapper.bs', 'source/api/silo/SiloMediaSources.bs', 'source/api/silo/SiloImages.bs', 'source/api/silo/SiloAccount.bs', 'source/api/silo/SiloPager.bs', 'source/api/silo/SiloCatalog.bs', 'source/api/silo/SiloHome.bs', 'source/api/silo/SiloActions.bs', 'source/api/silo/SiloPlayback.bs', 'source/api/silo/SiloExtras.bs', 'source/api/silo/SiloSeerr.bs', 'source/api/silo/SiloRouter.bs', 'source/api/silo/SiloWatchParty.bs']) {
     source += '\n' + (await readFile(file, 'utf8')).replace(/^import .*$/gm, '');
 }
 source += '\n' + await readFile('test/silo.bs', 'utf8');
+source += '\n' + await readFile('test/silo-watch-party.bs', 'utf8');
+source += '\n' + (await readFile('source/utils/siloRoomSocket.bs', 'utf8')).replace(/^import .*$/gm, '');
+source += '\n' + await readFile('test/silo-room-socket.bs', 'utf8');
 source += '\n' + await readFile('test/friends-chat.bs', 'utf8');
 // Keep the SDK callers themselves: only their URL-transfer boundary is a fixture.
 const sdk = await readFile('source/api/sdk.bs', 'utf8');

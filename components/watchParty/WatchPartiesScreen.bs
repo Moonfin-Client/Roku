@@ -49,13 +49,16 @@ sub init()
     m.joining = invalid
     m.keyboard = invalid
     m.keyboardFor = ""
+    ' The item the host's resume was asked for, and the answer, both cleared on leaving a room
+    m.resumeFor = ""
+    m.resume = invalid
     m.top.optionsAvailable = false
     m.top.overhangVisible = false
     wpRowsInit(m.top.findNode("lobbyList"), 828, 860)
 end sub
 
 sub OnScreenShown(isReturning = false as boolean)
-    for each name in ["inRoom", "room", "suggestions", "rooms", "roomsState"]
+    for each name in ["inRoom", "room", "suggestions", "rooms", "roomsState", "groupSubtitle", "groupSubtitlesSupported", "subtitleTracks"]
         m.session.observeFieldScoped(name, "onSessionChange")
     end for
     ' Back from the player, the cursor starts on the first button, not where it was before the video
@@ -68,11 +71,13 @@ sub OnScreenShown(isReturning = false as boolean)
 end sub
 
 sub OnScreenHidden()
-    for each name in ["inRoom", "room", "suggestions", "rooms", "roomsState", "answer"]
+    for each name in ["inRoom", "room", "suggestions", "rooms", "roomsState", "answer", "groupSubtitle", "groupSubtitlesSupported", "subtitleTracks"]
         m.session.unobserveFieldScoped(name)
     end for
     m.session.callFunc("watchRooms", false)
     m.top.lastFocus = invalid
+    ' A resume answer that lands while the screen is away goes unheard, so it's asked again on return
+    if not isValid(m.resume) then m.resumeFor = ""
 end sub
 
 sub onRequest()
@@ -120,6 +125,15 @@ sub onAnswer(event as object)
         render()
         return
     end if
+    if kind = "resume"
+        ' An answer for an item the host has since changed from is dropped
+        if toString(answer.request.body.content_id ?? "") = m.resumeFor
+            m.resume = invalid
+            if ok and type(answer.data) = "roAssociativeArray" and type(answer.data.resume) = "roAssociativeArray" then m.resume = answer.data.resume
+            render()
+        end if
+        return
+    end if
     if (kind = "join" or kind = "create") and not ok
         if code = "pin_required"
             openKeyboard("pin", tr("Room PIN"), tr("This party has a PIN"), true)
@@ -137,7 +151,7 @@ sub onAnswer(event as object)
     end if
     if ok and kind = "stage" and answer.request.thenStart = true then act("start", "POST", "Start", { "position_seconds": 0 })
     ' A vote or a suggestion changes the list, which the server only sends without our own votes
-    if ok and (kind = "vote" or kind = "suggest" or kind = "unsuggest") then askSuggestions()
+    if ok and (kind = "vote" or kind = "suggest" or kind = "unsuggest" or kind = "remove") then askSuggestions()
     if ok or kind = "rooms" then return
     ' The lobby has no line of its own for a refusal, so it goes in the banner
     banner = m.top.getScene().findNode("notificationBanner")
@@ -192,7 +206,7 @@ sub onSessionChange()
 end sub
 
 function drawnFrom() as string
-    if m.session.inRoom then return FormatJson({ room: m.session.room, suggestions: m.session.suggestions })
+    if m.session.inRoom then return FormatJson({ room: m.session.room, suggestions: m.session.suggestions, subtitle: m.session.groupSubtitle, subtitles: m.session.groupSubtitlesSupported, tracks: m.session.subtitleTracks })
     return FormatJson({ rooms: m.session.rooms, state: m.session.roomsState })
 end function
 
@@ -205,13 +219,16 @@ sub render()
         renderLobby()
     else
         m.results = invalid
+        m.resumeFor = ""
+        m.resume = invalid
         renderRooms()
     end if
 end sub
 
 sub renderRooms()
     rooms = m.session.rooms
-    if type(rooms) <> "roArray" then rooms = []
+    ' Silo has no room list, only the codes people send
+    if type(rooms) <> "roArray" or m.session.isSilo then rooms = []
     state = m.session.roomsState
     m.title.text = tr("Watch Parties")
     m.subtitle.text = ""
@@ -220,7 +237,7 @@ sub renderRooms()
 
     m.actions.removeChildrenIndex(m.actions.getChildCount(), 0)
     m.actionNodes = []
-    usable = state <> "missing" and state <> "disabled"
+    usable = state <> "missing" and state <> "disabled" and state <> "device"
     if usable
         for each entry in [{ label: tr("Start a watch party"), icon: "add" }, { label: tr("Join with a code"), icon: "key" }]
             group = CreateObject("roSGNode", "Group")
@@ -236,12 +253,17 @@ sub renderRooms()
     end if
 
     m.help.text = tr("Parties you can watch show up here. Got a code from someone? Pick Join with a code.")
+    if m.session.isSilo then m.help.text = tr("Start a party, or join one with the code someone sent you.")
     m.help.visible = usable
     m.grid.removeChildrenIndex(m.grid.getChildCount(), 0)
     m.tiles = []
 
-    if state = "missing"
+    if state = "missing" and m.session.isSilo
+        drawNotice(tr("Watch Parties aren't available on this server."), "")
+    else if state = "missing"
         drawNotice(tr("Watch Parties need Moonbase on this server"), tr("Ask whoever runs the server to install the Moonbase plugin."))
+    else if state = "device"
+        drawNotice(tr("Watch Parties need Roku OS 16 or later."), tr("Update this Roku in Settings > System > System update."))
     else if state = "disabled"
         drawNotice(tr("Watch Parties are turned off on this server."), "")
     else
@@ -346,11 +368,14 @@ sub renderLobby()
     m.top.findNode("inviteCode").text = watchPartyModel.FormatCode(room.code)
     ' Roku has no QR code to hand the link to a phone, so the link is spelled out under the code
     notes = []
-    if isValidAndNotEmpty(room.invite_url) then notes.push(substitute(tr("Or send this link: {0}"), room.invite_url))
-    if room.has_pin = true then notes.push(tr("They'll need the room PIN too."))
+    ' Silo's link opens its web app, and a code is all a TV can be handed, so Silo shows the code alone
+    if isValidAndNotEmpty(room.invite_url) and not m.session.isSilo then notes.push(substitute(tr("Or send this link: {0}"), room.invite_url))
+    if room.has_pin = true and not m.session.isSilo then notes.push(tr("They'll need the room PIN too."))
     m.top.findNode("inviteNote").text = notes.Join(Chr(10))
+    layOutInvite(m.session.isSilo)
 
     drawMembers(room, playing)
+    askResume(room, isHost, playing)
     m.zone = "lobby"
     wpRowsShow(lobbyRows(room, isHost, playing))
 end sub
@@ -361,7 +386,10 @@ sub drawMembers(room as object, playing as boolean)
     heading = tr("In the lobby · {0}")
     if playing then heading = tr("People · {0}")
     m.top.findNode("membersTitle").text = substitute(heading, members.Count().ToStr())
-    m.top.findNode("membersNote").text = tr("Play waits for everyone's player, 10 seconds at most, then counts down 3, 2, 1.")
+    ' Silo has no countdown, so everyone starts together once each player is ready
+    note = tr("Play waits for everyone's player, 10 seconds at most, then counts down 3, 2, 1.")
+    if m.session.isSilo then note = tr("Play waits for everyone's player, then everyone starts together.")
+    m.top.findNode("membersNote").text = note
     m.memberList.removeChildrenIndex(m.memberList.getChildCount(), 0)
     y = 0
     for each member in members
@@ -387,7 +415,7 @@ function lobbyRows(room as object, isHost as boolean, playing as boolean) as obj
             if item.Type = "Episode" then caption = toString(item.SeriesName ?? "")
             hintText = tr("Press OK to pick it for everyone")
             if voting and item.Type = "Movie" then hintText = tr("Press OK to add it to the vote")
-            rows.push({ key: "result-" + toString(item.Id ?? ""), kind: "vote", title: toString(item.Name ?? ""), caption: caption, hintText: hintText, action: "searchPick", arg: { id: item.Id, isMovie: item.Type = "Movie" } })
+            rows.push({ key: "result-" + toString(item.Id ?? ""), kind: "vote", title: toString(item.Name ?? ""), caption: caption, hintText: hintText, action: "searchPick", arg: { id: item.Id, isMovie: item.Type = "Movie", name: toString(item.Name ?? "") } })
         end for
         rows.push({ key: "closeResults", kind: "buttons", buttons: [{ label: tr("Back to the lobby"), action: "closeResults" }] })
         return rows
@@ -395,31 +423,40 @@ function lobbyRows(room as object, isHost as boolean, playing as boolean) as obj
 
     if playing
         rows.push({ key: "playing", kind: "heading", text: tr("Playing") })
+        pushArt(rows, room)
         rows.push({ key: "playingTitle", kind: "text", text: title, color: "#FFFFFFFF", size: 30 })
         rows.push({ key: "watch", kind: "buttons", buttons: [{ label: tr("Watch with the party"), action: "watch" }] })
-        if isHost then rows.push({ key: "stop", kind: "buttons", buttons: [{ label: tr("Back to the lobby"), action: "stop" }] })
+        if isHost and lobbyOffers("stopPlayback") then rows.push({ key: "stop", kind: "buttons", buttons: [{ label: tr("Back to the lobby"), action: "stop" }] })
+        pushGroupSubtitle(rows, isHost)
     else if isValidAndNotEmpty(room.selected_content_id)
         rows.push({ key: "upNext", kind: "heading", text: tr("Up next") })
+        pushArt(rows, room)
         rows.push({ key: "upNextTitle", kind: "text", text: title, color: "#FFFFFFFF", size: 30 })
         if isHost
-            rows.push({ key: "start", kind: "buttons", buttons: [{ label: tr("Start for everyone"), action: "start" }] })
+            for each row in hostStartRows(room)
+                rows.push(row)
+            end for
         else
             rows.push({ key: "waitStart", kind: "text", text: tr("Waiting for the host to start.") })
         end if
+        pushGroupSubtitle(rows, isHost)
     else if not isHost
         rows.push({ key: "waitPick", kind: "text", text: tr("Waiting for the host to pick something.") })
     end if
 
     if not playing
         voting = room.selection_mode = "vote"
-        if isHost or voting then rows.push({ key: "voteHeading", kind: "heading", text: tr("Vote on what to watch") })
-        if isHost then rows.push({ key: "voting", kind: "toggle", label: tr("Let everyone vote on movies"), on: voting, action: "voting" })
+        canVote = isHost and lobbyOffers("selectionModeSwitch")
+        if canVote or voting then rows.push({ key: "voteHeading", kind: "heading", text: tr("Vote on what to watch") })
+        if canVote then rows.push({ key: "voting", kind: "toggle", label: tr("Let everyone vote on movies"), on: voting, action: "voting" })
         if voting
             suggestions = m.session.suggestions
             if type(suggestions) <> "roArray" then suggestions = []
+            help = tr("Vote for what you want to watch. The host plays one.")
+            if isHost then help = tr("Add movies for everyone to vote on, then play the one you want. TV episodes are still your pick.")
+            rows.push({ key: "voteHelp", kind: "text", text: help, lines: 2 })
             if suggestions.Count() = 0 then rows.push({ key: "noSuggestions", kind: "text", text: tr("No movies to vote on yet.") })
             hintText = tr("Press OK to vote")
-            if isHost then hintText = tr("Press OK to play it for everyone")
             for each suggestion in suggestions
                 votes = Int(watchPartyModel.Seconds(suggestion.vote_count))
                 count = substitute(tr("{0} votes"), votes.ToStr())
@@ -427,6 +464,12 @@ function lobbyRows(room as object, isHost as boolean, playing as boolean) as obj
                 caption = toString(suggestion.subtitle ?? "")
                 if suggestion.voted_by_me = true then caption = (caption + "  " + tr("You voted")).Trim()
                 rows.push({ key: "suggestion-" + toString(suggestion.id ?? ""), kind: "vote", title: toString(suggestion.title ?? ""), votes: count, caption: caption, hintText: hintText, action: "suggestion", arg: suggestion })
+                ' The host votes like everyone, and also picks a suggestion or takes it off, as in Core
+                if isHost
+                    buttons = [{ label: tr("Select"), action: "pickSuggestion", arg: suggestion }]
+                    if m.session.isSilo then buttons.push({ label: tr("Remove"), action: "removeSuggestion", arg: suggestion })
+                    rows.push({ key: "suggestionActions-" + toString(suggestion.id ?? ""), kind: "buttons", buttons: buttons })
+                end if
             end for
         else if isHost and not isValidAndNotEmpty(room.selected_content_id)
             rows.push({ key: "pickHelp", kind: "text", text: tr("Search for a movie or an episode to pick what everyone watches."), lines: 2 })
@@ -434,9 +477,168 @@ function lobbyRows(room as object, isHost as boolean, playing as boolean) as obj
         if isHost then rows.push({ key: "search", kind: "buttons", buttons: [{ label: tr("Search movies"), action: "search" }] })
     end if
 
+    ' The host's room settings, as in Core: whether guests may play and pause, at any time, and
+    ' Silo's vote switch here in the lobby, where it can change
+    if isHost and m.session.isSilo
+        rows.push({ key: "settingsHeading", kind: "heading", text: tr("Room settings") })
+        guests = room.guest_control_policy = "guest_play_pause" or room.guest_control_policy = "everyone"
+        rows.push({ key: "policy", kind: "toggle", label: tr("Guests can play and pause"), on: guests, action: "policy" })
+    end if
     rows.push(wpLeaveRow(isHost))
     return rows
 end function
+
+' Silo's card has no link to spell out under the code, so it closes up around the code instead of
+' keeping the room the link would take
+sub layOutInvite(codeOnly as boolean)
+    text = m.top.findNode("inviteText")
+    code = m.top.findNode("inviteCode")
+    note = m.top.findNode("inviteNote")
+    fill = m.top.findNode("inviteFill")
+    note.visible = not codeOnly
+    if codeOnly
+        text.height = 130
+        code.translation = [0, 250]
+        fill.height = 360
+    else
+        text.height = 230
+        code.translation = [0, 380]
+        fill.height = 560
+    end if
+end sub
+
+' The picked title's art above its name, as the room cards pick it: a film's backdrop, an episode's
+' own still
+sub pushArt(rows as object, room as object)
+    contentId = toString(room.selected_content_id ?? "")
+    if contentId = "" then return
+    imageType = "Backdrop"
+    if room.content_type = "Episode" then imageType = "Primary"
+    rows.push({ key: "art-" + contentId, kind: "poster", uri: ImageURL(contentId, imageType, { "maxWidth": 960, "maxHeight": 540 }), artWidth: 480, artHeight: 270 })
+end sub
+
+' Silo's features say what its room can do. Moonbase sends none, so its lobby keeps every control.
+function hasFeature(name as string) as boolean
+    features = m.session.features
+    if type(features) <> "roAssociativeArray" then return false
+    return features[name] = true
+end function
+
+function lobbyOffers(name as string) as boolean
+    if not m.session.isSilo then return true
+    return hasFeature(name)
+end function
+
+' Silo says where a staged item was last watched, asked once for each item the host stages
+sub askResume(room as object, isHost as boolean, playing as boolean)
+    wanted = ""
+    if isHost and not playing and room.selection_mode <> "vote" and hasFeature("memberState")
+        wanted = toString(room.selected_content_id ?? "")
+    end if
+    if wanted = m.resumeFor then return
+    m.resumeFor = wanted
+    m.resume = invalid
+    if wanted <> "" then act("resume", "POST", "MemberState", { "content_id": wanted })
+end sub
+
+' Without Silo's resume answer the host gets the one start button, as before
+function hostStartRows(room as object) as object
+    if not hasFeature("memberState")
+        return [{ key: "start", kind: "buttons", buttons: [{ label: tr("Start for everyone"), action: "start" }] }]
+    end if
+
+    buttons = [{ label: tr("Start from the beginning"), action: "start" }]
+    rows = []
+    if type(m.resume) = "roAssociativeArray"
+        clock = secondsToHuman(Int(watchPartyModel.Seconds(m.resume.seconds)), false)
+        buttons.push({ label: substitute(tr("Resume at {0}"), clock), action: "resumeStart" })
+    end if
+    rows.push({ key: "start", kind: "buttons", buttons: buttons })
+    if type(m.resume) = "roAssociativeArray"
+        rows.push({ key: "resumeNote", kind: "text", text: watchPartyModel.ResumeNote(m.resume, room), lines: 2 })
+    end if
+    return rows
+end function
+
+' Silo's suggestion has a title for the room to show, which Moonbase looks up itself
+function suggestBody(arg as object) as object
+    body = { "content_id": arg.id }
+    if m.session.isSilo then body["title"] = arg.name
+    return body
+end function
+
+' ===== Subtitles for everyone =====
+
+' The host's subtitles for everyone, as a row showing the choice that opens the picker. A member sees
+' the choice. Members can still change their own in the player. Absent without Moonbase to keep the
+' choice. Audio isn't offered: everyone hears the file's default track. As Core's _SubtitleButton.
+sub pushGroupSubtitle(rows as object, isHost as boolean)
+    if not m.session.isSilo or not m.session.groupSubtitlesSupported then return
+    choice = m.session.groupSubtitle
+    tracks = m.session.subtitleTracks
+    if type(tracks) <> "roArray" then tracks = []
+    shown = groupSubtitleLabel(choice, tracks)
+    if isHost
+        if tracks.Count() = 0 then return
+        rows.push({ key: "groupSubtitle", kind: "value", label: tr("Subtitles for everyone"), value: shown, action: "groupSubtitle" })
+    else if type(choice) = "roAssociativeArray" and not choice.IsEmpty()
+        rows.push({ key: "groupSubtitle", kind: "text", text: tr("Subtitles for everyone") + ": " + shown })
+    end if
+end sub
+
+function groupSubtitleLabel(choice as dynamic, tracks as object) as string
+    if type(choice) = "roAssociativeArray" and choice.off = true then return tr("Off")
+    index = watchPartyModel.SubtitleIndexFor(choice, { MediaStreams: tracks })
+    if index <> invalid
+        for each track in tracks
+            if Int(track.Index) = index then return subtitleTrackLabel(track)
+        end for
+    end if
+    return tr("Each person's choice")
+end function
+
+function subtitleTrackLabel(track as object) as string
+    if isString(track.DisplayTitle) and track.DisplayTitle <> "" then return track.DisplayTitle
+    if isString(track.Language) and track.Language <> "" then return track.Language
+    return "#" + Int(track.Index).ToStr()
+end function
+
+sub openGroupSubtitles()
+    tracks = m.session.subtitleTracks
+    if type(tracks) <> "roArray" then tracks = []
+    choice = m.session.groupSubtitle
+    ' -2 stands for each person's own, as the player's SubtitleSelection.NOTSET
+    current = watchPartyModel.SubtitleIndexFor(choice, { MediaStreams: tracks }) ?? -2
+    choices = [
+        { Name: "own", description: tr("Each person's choice"), index: -2 },
+        { Name: "off", description: tr("Off"), index: -1 }
+    ]
+    for each track in tracks
+        choices.push({ Name: "track-" + Int(track.Index).ToStr(), description: subtitleTrackLabel(track), index: Int(track.Index) })
+    end for
+    ' The dialog marks any choice with a selected key, whatever its value, so only the current one has it
+    for each option in choices
+        if option.index = current then option.selected = true
+    end for
+    m.global.sceneManager.callFunc("radioDialog", tr("Subtitles for everyone"), { data: choices })
+    m.global.sceneManager.observeFieldScoped("returnData", "onGroupSubtitlePicked")
+end sub
+
+sub onGroupSubtitlePicked()
+    m.global.sceneManager.unobserveFieldScoped("returnData")
+    m.top.setFocus(true)
+    picked = m.global.sceneManager.returnData
+    if not isValid(picked) or not isString(picked.Name) then return
+    if picked.Name = "own"
+        m.session.callFunc("setGroupSubtitle", {})
+    else if picked.Name = "off"
+        m.session.callFunc("setGroupSubtitle", { off: true })
+    else
+        for each track in m.session.subtitleTracks
+            if "track-" + Int(track.Index).ToStr() = picked.Name then m.session.callFunc("setGroupSubtitle", watchPartyModel.SubtitleChoice(track))
+        end for
+    end if
+end sub
 
 ' ===== Actions =====
 
@@ -448,8 +650,14 @@ sub runLobbyAction(action as string, arg as dynamic)
         act("start", "POST", "Start", { "position_seconds": 0 })
     else if action = "stop"
         act("stop", "POST", "Stop")
+    else if action = "policy"
+        policy = "everyone"
+        if room.guest_control_policy = "guest_play_pause" or room.guest_control_policy = "everyone" then policy = "host_only"
+        act("policy", "POST", "Policy", { "guest_control_policy": policy })
     else if action = "voting"
         act("voting", "POST", "Voting", { "voting": room.selection_mode <> "vote" })
+    else if action = "groupSubtitle"
+        openGroupSubtitles()
     else if action = "search"
         openKeyboard("search", tr("Search movies"), "", false)
     else if action = "closeResults"
@@ -458,17 +666,21 @@ sub runLobbyAction(action as string, arg as dynamic)
     else if action = "searchPick"
         m.results = invalid
         if arg.isMovie and room.selection_mode = "vote"
-            act("suggest", "POST", "Suggestions", { "content_id": arg.id })
+            act("suggest", "POST", "Suggestions", suggestBody(arg))
         else
             act("stage", "POST", "Stage", { "content_id": arg.id })
         end if
         render()
+    else if action = "resumeStart"
+        if type(m.resume) = "roAssociativeArray" then act("start", "POST", "Start", { "position_seconds": m.resume.seconds })
     else if action = "suggestion"
-        if room.self_role = "host"
-            m.session.callFunc("act", { kind: "stage", method: "POST", path: "Stage", body: { "content_id": arg.content_id }, thenStart: true })
-        else
-            act("vote", "POST", "Suggestions/" + toString(arg.id ?? "") + "/Vote", { "voted": arg.voted_by_me <> true })
-        end if
+        act("vote", "POST", "Suggestions/" + toString(arg.id ?? "") + "/Vote", { "voted": arg.voted_by_me <> true })
+    else if action = "pickSuggestion"
+        ' The host's pick of a suggestion ends the vote and stages it for the host to start, as in Core.
+        ' The vote comes back if the stage fails.
+        m.session.callFunc("act", { kind: "voting", method: "POST", path: "Voting", body: { "voting": false }, thenStage: toString(arg.content_id ?? "") })
+    else if action = "removeSuggestion"
+        act("remove", "POST", "Suggestions/" + toString(arg.id ?? ""), { "suggestion_id": toString(arg.id ?? "") })
     else if action = "leave"
         m.session.callFunc("leave", false)
     else if action = "end"
@@ -481,8 +693,15 @@ sub runRoomsAction()
         m.problem.text = ""
         act("create", "POST", "/Rooms", {})
     else
-        openKeyboard("code", tr("Join with a code"), tr("Room code or invite link"), false)
+        openCodeKeyboard()
     end if
+end sub
+
+' The join keyboard, shared by the Join button and Home's Join with a code card
+sub openCodeKeyboard()
+    hint = tr("Room code or invite link")
+    if m.session.isSilo then hint = tr("Party code")
+    openKeyboard("code", tr("Join with a code"), hint, false)
 end sub
 
 ' The screen leaves the stack before it says it closed, so an opener that takes focus back does it

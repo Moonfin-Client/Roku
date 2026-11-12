@@ -15,6 +15,8 @@ namespace watchPartyModel
 
     function FormatCode(code as dynamic) as string
         if not isString(code) then return ""
+        ' Silo's codes are 8 characters, in two groups of four
+        if code.Len() = 8 then return code.Left(4) + " " + code.Mid(4)
         if code.Len() <> 6 then return code
         return code.Left(3) + " " + code.Mid(3)
     end function
@@ -23,6 +25,14 @@ namespace watchPartyModel
     function CodeFrom(text as dynamic) as string
         if not isString(text) then return ""
         typed = text.Trim()
+        ' Silo's invite link carries a join token, which keeps its case and is too long for a code
+        marker = Instr(1, LCase(typed), "token=")
+        if marker > 0
+            typed = typed.Mid(marker + 5)
+            cut = Instr(1, typed, "&")
+            if cut > 0 then typed = typed.Left(cut - 1)
+            return typed
+        end if
         marker = Instr(1, LCase(typed), "/party/")
         if marker > 0
             typed = typed.Mid(marker + 6)
@@ -208,11 +218,57 @@ namespace watchPartyModel
     end function
 
     function Seconds(value as dynamic) as double
-        valueType = LCase(type(value))
-        if valueType = "integer" or valueType = "roint" or valueType = "rointeger" or valueType = "longinteger" or valueType = "rolonginteger" or valueType = "float" or valueType = "rofloat" or valueType = "double" or valueType = "rodouble"
-            return value + 0#
-        end if
+        if watchPartyModel.IsNumber(value) then return value + 0#
         return 0#
+    end function
+
+    ' ===== Subtitles for everyone =====
+
+    ' The choice a subtitle stream stands for, as Core shares it
+    function SubtitleChoice(stream as object) as object
+        choice = { index: Int(stream.Index) }
+        if isString(stream.Language) and stream.Language <> "" then choice.language = stream.Language
+        return choice
+    end function
+
+    ' A source's subtitle streams, in its order
+    function SubtitleStreams(source as dynamic) as object
+        out = []
+        if type(source) <> "roAssociativeArray" or type(source.MediaStreams) <> "roArray" then return out
+        for each stream in source.MediaStreams
+            if type(stream) = "roAssociativeArray" and stream.Type = "Subtitle" and watchPartyModel.IsNumber(stream.Index) then out.Push(stream)
+        end for
+        return out
+    end function
+
+    ' The stream index the host's choice means in source: the same index when that stream has the
+    ' same language, else the first in the language, -1 for off, or invalid to leave it to the member.
+    ' As Core's subtitleIndexFor.
+    function SubtitleIndexFor(choice as dynamic, source as dynamic) as dynamic
+        if type(choice) <> "roAssociativeArray" then return invalid
+        if choice.off = true then return -1
+        if not watchPartyModel.IsNumber(choice.index) then return invalid
+        language = invalid
+        if isString(choice.language) then language = choice.language
+        tracks = watchPartyModel.SubtitleStreams(source)
+        for each track in tracks
+            if Int(track.Index) = choice.index and (language = invalid or watchPartyModel.SameLanguage(track, language)) then return choice.index
+        end for
+        if language = invalid then return invalid
+        for each track in tracks
+            if watchPartyModel.SameLanguage(track, language) then return Int(track.Index)
+        end for
+        return invalid
+    end function
+
+    ' A stream without a language is in none, rather than a type mismatch
+    function SameLanguage(stream as object, language as string) as boolean
+        return isString(stream.Language) and stream.Language = language
+    end function
+
+    function IsNumber(value as dynamic) as boolean
+        valueType = LCase(type(value))
+        return valueType = "integer" or valueType = "roint" or valueType = "rointeger" or valueType = "longinteger" or valueType = "rolonginteger" or valueType = "float" or valueType = "rofloat" or valueType = "double" or valueType = "rodouble"
     end function
 
     ' ===== Words =====
@@ -303,6 +359,12 @@ namespace watchPartyModel
         if code = "not_host" then return tr("Only the host can do that.")
         if code = "not_allowed" then return tr("That isn't allowed in this party.")
         if code = "rate_limited" then return tr("Slow down a little.")
+        ' Silo's refusals, which Moonbase doesn't send
+        if code = "room_not_found" then return tr("That party code didn't match a party.")
+        if code = "room_closed" then return tr("That watch party has ended.")
+        if code = "room_full" then return tr("That watch party is full.")
+        if code = "unsupported" then return tr("This server's watch parties can't do that.")
+        if code = "connection_replaced" then return tr("You joined this party on another device.")
         return tr("That didn't work. Try again in a moment.")
     end function
 
@@ -358,8 +420,24 @@ namespace watchPartyModel
     end function
 
     function PolicyText(policy as dynamic) as string
-        if policy = "everyone" then return tr("Everyone can control playback now")
+        ' Silo's guests-can-play-and-pause policy reads the same as Moonbase's everyone
+        if policy = "everyone" or policy = "guest_play_pause" then return tr("Everyone can control playback now")
         return tr("Only the host can control playback now")
+    end function
+
+    ' Who stopped furthest in a room, and how many have not started it, from Silo's resume answer
+    function ResumeNote(resume as object, room as dynamic) as string
+        member = watchPartyModel.MemberById(room, resume.profileId)
+        text = tr("Picks up where the earliest viewer stopped.")
+        if isValid(member)
+            text = substitute(tr("Picks up where {0} stopped, the earliest anyone got to."), toString(member.display_name ?? ""))
+            if member.is_self = true then text = tr("Picks up where you stopped.")
+        end if
+
+        notStarted = Int(watchPartyModel.Seconds(resume.notStarted))
+        if notStarted = 1 then return text + " " + tr("1 hasn't started it yet.")
+        if notStarted > 1 then return text + " " + substitute(tr("{0} haven't started it yet."), notStarted.ToStr())
+        return text
     end function
 
     ' ===== Lists =====
