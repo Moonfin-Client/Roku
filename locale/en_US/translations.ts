@@ -10984,5 +10984,35 @@
         <source>Hide watched content from Recently Added and Recently Released home rows.</source>
         <translation>Hide watched content from Recently Added and Recently Released home rows.</translation>
     </message>
+    <message>
+        <source>Watch with group</source>
+        <extracomment>Detail screen button that sends the title to the SyncPlay group or picks it for the Watch Party</extracomment>
+        <translation>Watch with group</translation>
+    </message>
+    <message>
+        <source>Syncing playback to {0}</source>
+        <extracomment>Shown after Watch with group in a SyncPlay group. {0} is the group's name</extracomment>
+        <translation>Syncing playback to {0}</translation>
+    </message>
+    <message>
+        <source>SyncPlay Group</source>
+        <extracomment>Stands in for a SyncPlay group that has no name</extracomment>
+        <translation>SyncPlay Group</translation>
+    </message>
+    <message>
+        <source>Picked for the Watch Party</source>
+        <extracomment>Shown after the host picks a title for the Watch Party from its page</extracomment>
+        <translation>Picked for the Watch Party</translation>
+    </message>
+    <message>
+        <source>Added to the Watch Party vote</source>
+        <extracomment>Shown after a movie is put up for the Watch Party vote from its page</extracomment>
+        <translation>Added to the Watch Party vote</translation>
+    </message>
+    <message>
+        <source>No episodes found</source>
+        <extracomment>Shown when a series or season has no episode to pick for the Watch Party</extracomment>
+        <translation>No episodes found</translation>
+    </message>
 </context>
 </TS>
