@@ -11139,10 +11139,5 @@
         <extracomment>Stands in for a SyncPlay group that has no name</extracomment>
         <translation>SyncPlay Group</translation>
     </message>
-    <message>
-        <source>No episodes found</source>
-        <extracomment>Shown when a series or season has no episode to pick for the Watch Party</extracomment>
-        <translation>No episodes found</translation>
-    </message>
 </context>
 </TS>
