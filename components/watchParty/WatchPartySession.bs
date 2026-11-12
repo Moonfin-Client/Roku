@@ -1,10 +1,14 @@
+import "pkg:/source/api/silo/SiloWatchParty.bs"
 import "pkg:/source/enums/PlaybackMethod.bs"
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
 import "pkg:/source/utils/watchPartyModel.bs"
 
 const WATCH_PARTY_ROOMS_POLL_SECONDS = 60
 const WATCH_PARTY_ALERT_SECONDS = 8
+const WATCH_PARTY_AVATAR_POLL_SECONDS = 15
+const WATCH_PARTY_AVATAR_SEND_SECONDS = 600
 
 sub init()
     m.token = ""
@@ -21,10 +25,27 @@ sub init()
     m.lobbyStatus = ""
     m.configFor = ""
     m.reconnecting = false
+    m.silo = false
+    m.watchedRevision = -1
+    ' What Silo's titles are called, by content id, looked up once each
+    m.contentInfo = {}
+    ' Their media sources, for the host's subtitles for everyone
+    m.contentSources = {}
+    ' The subtitle choice last put on the playing item, so a member's own pick after it stays
+    m.subtitleApplied = ""
+    ' Counts the host's saves of it, begun and done, so a read sent before or during one is not
+    ' taken over the choice just made
+    m.subtitleSaves = 0
+    ' A title a page picked while this device was in no party, for the party it opens
+    m.pendingPick = invalid
+    m.top.features = {}
     m.pollTimer = CreateObject("roSGNode", "Timer")
     m.pollTimer.duration = WATCH_PARTY_ROOMS_POLL_SECONDS
     m.pollTimer.repeat = true
     m.pollTimer.observeField("fire", "refreshRooms")
+    m.avatars = {}
+    m.avatarPoll = invalid
+    m.avatarSend = invalid
 end sub
 
 ' ===== Joining and leaving =====
@@ -35,17 +56,69 @@ function enter(answer as object) as boolean
     if type(room) <> "roAssociativeArray" or not isValidAndNotEmpty(answer.token) then return false
 
     stopTasks()
+    m.silo = isSiloServer()
+    m.top.isSilo = m.silo
     m.token = answer.token
     m.roomId = toString(room.room_id ?? "")
     m.memberId = toString(room.self_member_id ?? "")
     m.offset = 0#
     m.generation = -1
+    m.watchedRevision = -1
+    m.contentInfo = {}
+    m.contentSources = {}
+    m.subtitleApplied = ""
+    m.subtitleSaves = 0
+    m.top.groupSubtitle = {}
+    m.top.groupSubtitlesSupported = false
+    m.top.subtitleTracks = []
     m.lobbyStatus = ""
     m.reconnecting = false
+    m.top.pendingResume = {}
     m.top.suggestions = []
+    if m.silo then room = withContentInfo(room)
     m.top.room = room
     m.top.inRoom = true
 
+    if m.silo
+        openSiloSocket()
+        m.avatars = {}
+        sendAvatar()
+        askAvatars()
+        avatarTimers(true)
+    else
+        openMoonbaseTasks()
+    end if
+
+    if room.phase = "playing"
+        watch()
+    else
+        reportLobbyReady()
+    end if
+    return true
+end function
+
+' Silo's room socket carries both ways, so one task stands in for the long poll and the sender
+sub openSiloSocket()
+    socket = CreateObject("roSGNode", "SiloRoomSocketTask")
+    socket.roomId = m.roomId
+    socket.token = m.token
+    socket.active = true
+    socket.observeField("batch", "onBatch")
+    socket.observeField("failure", "onFailure")
+    socket.observeField("recovered", "onRecovered")
+    socket.observeField("replies", "onReplies")
+    socket.observeField("clock", "onClock")
+    socket.observeField("connection", "onConnection")
+    socket.control = "RUN"
+    m.events = socket
+    m.sender = socket
+end sub
+
+sub onConnection(event as object)
+    if isValid(m.events) and m.events.isSameNode(event.getRoSGNode()) then m.top.connection = event.getData()
+end sub
+
+sub openMoonbaseTasks()
     m.events = CreateObject("roSGNode", "WatchPartyEventsTask")
     m.events.roomId = m.roomId
     m.events.token = m.token
@@ -62,23 +135,28 @@ function enter(answer as object) as boolean
     m.sender.observeField("replies", "onReplies")
     m.sender.observeField("clock", "onClock")
     m.sender.control = "RUN"
-
-    if room.phase = "playing"
-        watch()
-    else
-        reportLobbyReady()
-    end if
-    return true
-end function
+end sub
 
 ' A report with no session only sets the lobby status, and never moves the room or counts toward a
 ' start.
 sub reportLobbyReady()
+    if m.silo
+        ' Silo takes no report without a session, and has its own lobby flag where it has one
+        if m.top.features.lobbyReady = true then send([{ "type": "lobby_ready", "ready": true }])
+        return
+    end if
     send([{ "type": "state_report", "session_id": invalid, "position_seconds": 0, "is_paused": true, "status": "ready" }])
 end sub
 
 sub leave(close = false as boolean)
     if m.roomId = "" then return
+    ' Closing the socket is how a Silo member leaves, and a host's room closes on its own two
+    ' minutes later unless they end it
+    if m.silo
+        if close then runTask({ kind: "close", method: "DELETE", path: "", token: m.token, roomId: m.roomId })
+        finish("")
+        return
+    end if
     path = "/Rooms/" + m.roomId + "/Leave"
     if close then path = "/Rooms/" + m.roomId + "/Close"
     runTask({ kind: "leave", method: "POST", path: path, token: m.token })
@@ -87,16 +165,33 @@ end sub
 
 sub finish(text as string)
     stopTasks()
+    avatarTimers(false)
+    m.avatars = {}
+    m.top.groupSubtitle = {}
+    m.top.groupSubtitlesSupported = false
+    m.top.subtitleTracks = []
     m.roomId = ""
     m.token = ""
     m.memberId = ""
     m.generation = -1
+    m.watchedRevision = -1
+    m.top.pendingResume = {}
     m.top.room = {}
     m.top.inRoom = false
     if text <> "" then banner([{ title: text, icon: "pkg:/images/watchParty/party.webp" }])
 end sub
 
 sub stopTasks()
+    ' Silo's one socket task is both of them
+    if isValid(m.events) and isValid(m.sender) and m.events.isSameNode(m.sender)
+        m.events.active = false
+        for each name in ["batch", "failure", "recovered", "replies", "clock", "connection"]
+            m.events.unobserveField(name)
+        end for
+        m.events = invalid
+        m.sender = invalid
+        return
+    end if
     if isValid(m.events)
         m.events.active = false
         for each name in ["batch", "failure", "recovered"]
@@ -123,16 +218,23 @@ end sub
 
 sub handleMessage(message as object)
     kind = message.type
-    if kind = "snapshot"
+    if kind = "snapshot" and m.silo
+        applySiloSnapshot(message.room)
+    else if kind = "snapshot"
         applyRoom(message.room)
     else if kind = "chat"
         if type(message.message) = "roAssociativeArray" then m.top.chatMessage = message.message
     else if kind = "reaction"
         m.top.reaction = message
     else if kind = "suggestions_update"
-        if type(message.suggestions) = "roArray" then m.top.suggestions = message.suggestions
-        ' The update leaves out this member's own votes, so the list is read again for them
-        act({ kind: "suggestions", method: "GET", path: "Suggestions" })
+        if type(message.suggestions) = "roArray" and m.silo
+            ' Silo's broadcast says nobody voted, so this member's own votes carry over, as in Core
+            m.top.suggestions = withOwnVotes(siloParty.SortSuggestions(message.suggestions), message.withVotes = true)
+        else
+            if type(message.suggestions) = "roArray" then m.top.suggestions = message.suggestions
+            ' Moonbase's update leaves out this member's own votes, so the list is read again for them
+            act({ kind: "suggestions", method: "GET", path: "Suggestions" })
+        end if
     else if kind = "transport_command"
         if type(message.command) = "roAssociativeArray" then onCommand(message.command)
     else if kind = "notice"
@@ -142,8 +244,187 @@ sub handleMessage(message as object)
         finish(watchPartyModel.ClosedText(message.reason, watchPartyModel.HostName(m.top.room), m.top.room.self_role = "host"))
     else if kind = "removed"
         finish(tr("You were removed from the watch party."))
+    else if kind = "connection_replaced"
+        finish(tr("You joined this party on another device."))
     else if kind = "error"
         m.top.toast = { text: watchPartyModel.ErrorText(message.code) }
+    end if
+end sub
+
+' Silo's snapshots come with numbers for some ids and without Moonbase's extras, and one older than
+' the room held is dropped. Each socket snapshot is counted, so the player knows when the server has
+' answered its attach.
+sub applySiloSnapshot(raw as dynamic, fromSocket = true as boolean)
+    room = siloParty.NormalizeRoom(raw, siloParty.Context().server)
+    if not isValid(room) then return
+    held = m.top.room
+    if type(held) = "roAssociativeArray" and held.room_id = room.room_id and isValid(held.generation) and isValid(room.generation) and room.generation < held.generation then return
+    if fromSocket then m.top.snapshots = m.top.snapshots + 1
+    applyRoom(withAvatars(withContentInfo(room)))
+end sub
+
+' On Silo, Moonbase keeps the members' pictures: read for members who join, and this profile's sent
+' again before its signed link runs out, as Core does. The timers are made by the thread that runs
+' the room, the first time it needs them.
+sub avatarTimers(running as boolean)
+    if not isValid(m.avatarPoll)
+        if not running then return
+        m.avatarPoll = CreateObject("roSGNode", "Timer")
+        m.avatarPoll.duration = WATCH_PARTY_AVATAR_POLL_SECONDS
+        m.avatarPoll.repeat = true
+        m.avatarPoll.observeField("fire", "askAvatars")
+        m.avatarSend = CreateObject("roSGNode", "Timer")
+        m.avatarSend.duration = WATCH_PARTY_AVATAR_SEND_SECONDS
+        m.avatarSend.repeat = true
+        m.avatarSend.observeField("fire", "sendAvatar")
+    end if
+    control = "stop"
+    if running then control = "start"
+    m.avatarPoll.control = control
+    m.avatarSend.control = control
+end sub
+
+sub sendAvatar()
+    if m.roomId <> "" then runTask({ kind: "publishAvatar", roomId: m.roomId })
+end sub
+
+sub askAvatars()
+    if m.roomId <> "" then runTask({ kind: "avatars", roomId: m.roomId, subtitleSaves: m.subtitleSaves })
+end sub
+
+' Each member's picture, where Moonbase has one, for the faces the party draws
+function withAvatars(room as object) as object
+    if type(room.members) <> "roArray" or m.avatars.IsEmpty() then return room
+    for each member in room.members
+        picture = m.avatars[toString(member.profile_id ?? "")]
+        if isString(picture) then member.avatar_url = picture
+    end for
+    return room
+end function
+
+sub onAvatars(result as object)
+    if result.request.roomId <> m.roomId or result.status <> 200 or type(result.data) <> "roAssociativeArray" then return
+    if not m.top.groupSubtitlesSupported then m.top.groupSubtitlesSupported = true
+    subtitle = result.data.subtitle ?? {}
+    if result.request.subtitleSaves = m.subtitleSaves and FormatJson(subtitle) <> FormatJson(m.top.groupSubtitle) then m.top.groupSubtitle = subtitle
+    ' Also catches a video that was still opening when the choice came
+    applyGroupSubtitle()
+    avatars = result.data.avatars
+    if type(avatars) <> "roAssociativeArray" or FormatJson(avatars) = FormatJson(m.avatars) then return
+    m.avatars = avatars
+    room = m.top.room
+    if type(room) = "roAssociativeArray" and room.room_id = m.roomId then m.top.room = withAvatars(room)
+end sub
+
+function withOwnVotes(suggestions as object, withVotes as boolean) as object
+    if withVotes then return suggestions
+    mine = {}
+    if type(m.top.suggestions) = "roArray"
+        for each suggestion in m.top.suggestions
+            if suggestion.voted_by_me = true then mine[toString(suggestion.id ?? "")] = true
+        end for
+    end if
+    for each suggestion in suggestions
+        suggestion.voted_by_me = mine.DoesExist(suggestion.id)
+    end for
+    return suggestions
+end function
+
+' ===== Subtitles for everyone =====
+
+' Host: subtitles for everyone, kept by Moonbase. choice is { index, language }, { off: true }, or
+' empty for each member's own. As Core's setGroupSubtitle.
+sub setGroupSubtitle(choice as object)
+    room = m.top.room
+    if not m.silo or m.roomId = "" or type(room) <> "roAssociativeArray" or room.self_role <> "host" then return
+    subtitle = invalid
+    if not choice.IsEmpty() then subtitle = choice
+    m.subtitleSaves = m.subtitleSaves + 1
+    runTask({ kind: "groupSubtitle", roomId: m.roomId, subtitle: subtitle, choice: choice })
+end sub
+
+sub onGroupSubtitleSaved(result as object)
+    if result.request.roomId <> m.roomId then return
+    m.subtitleSaves = m.subtitleSaves + 1
+    if result.status < 200 or result.status >= 300
+        message = ""
+        if type(result.data) = "roAssociativeArray" then message = toString(result.data.message ?? "")
+        if message = "" then message = tr("Moonbase couldn't keep the subtitles for everyone.")
+        banner([{ title: message, icon: "pkg:/images/watchParty/party.webp" }])
+        return
+    end if
+    m.top.groupSubtitle = result.request.choice
+    applyGroupSubtitle()
+end sub
+
+' The source the room plays, from the title's lookup
+function partySource() as dynamic
+    room = m.top.room
+    if type(room) <> "roAssociativeArray" then return invalid
+    return siloParty.PartySource(m.contentSources[toString(room.selected_content_id ?? "")], toString(room.selected_file_id ?? ""))
+end function
+
+sub showSubtitleTracks()
+    m.top.subtitleTracks = watchPartyModel.SubtitleStreams(partySource())
+end sub
+
+' Puts the host's choice on the playing item, once per change of it: a member who then picks their
+' own in the player keeps it
+sub applyGroupSubtitle()
+    room = m.top.room
+    if not m.silo or type(room) <> "roAssociativeArray" or room.phase <> "playing" then return
+    key = FormatJson(m.top.groupSubtitle)
+    if key = m.subtitleApplied then return
+    ' Until the title's tracks and the party's player are both there, the choice waits for the next
+    ' try, from the title's lookup or the next read
+    source = partySource()
+    if not isValid(source) then return
+    active = m.global.sceneManager.callFunc("getActiveScene")
+    if not isValid(active) or not active.isSubType("VideoPlayerView") or active.id <> toString(room.selected_content_id ?? "") then return
+    index = watchPartyModel.SubtitleIndexFor(m.top.groupSubtitle, source)
+    if index <> invalid and active.callFunc("wpApplySubtitle", index) <> true then return
+    m.subtitleApplied = key
+end sub
+
+' The selected title's name, type, and an episode's series and numbers, which Moonbase's room carries
+' and Silo's leaves to the client. The first time a title is seen it's looked up.
+function withContentInfo(room as object) as object
+    contentId = toString(room.selected_content_id ?? "")
+    if contentId = "" then return room
+    info = m.contentInfo[contentId]
+    if type(info) = "roAssociativeArray"
+        room.Append(info)
+    else if not isValid(info)
+        m.contentInfo[contentId] = "asked"
+        runTask({ kind: "item", itemId: contentId })
+    end if
+    return room
+end function
+
+sub onContentInfo(result as object)
+    contentId = toString(result.request.itemId ?? "")
+    item = invalid
+    if type(result.data) = "roAssociativeArray" then item = result.data.item
+    if result.status <> 200 or type(item) <> "roAssociativeArray"
+        ' Asked again the next time the title comes up
+        m.contentInfo.Delete(contentId)
+        return
+    end if
+    info = { content_title: toString(item.Name ?? ""), content_type: "Movie" }
+    if item.Type = "Episode"
+        info.content_type = "Episode"
+        info.series_name = toString(item.SeriesName ?? "")
+        info.season = item.ParentIndexNumber ?? 0
+        info.episode = item.IndexNumber ?? 0
+    end if
+    m.contentInfo[contentId] = info
+    m.contentSources[contentId] = { MediaSources: item.MediaSources }
+    room = m.top.room
+    if type(room) = "roAssociativeArray" and toString(room.selected_content_id ?? "") = contentId
+        room.Append(info)
+        m.top.room = room
+        showSubtitleTracks()
+        applyGroupSubtitle()
     end if
 end sub
 
@@ -152,6 +433,11 @@ sub applyRoom(room as dynamic)
     previous = m.top.room
     if isValidAndNotEmpty(room.self_member_id) then m.memberId = room.self_member_id
     m.top.room = room
+    ' A new title takes the host's subtitles afresh, and offers its own tracks
+    if m.silo and (type(previous) <> "roAssociativeArray" or toString(previous.selected_content_id ?? "") <> toString(room.selected_content_id ?? "") or toString(previous.selected_file_id ?? "") <> toString(room.selected_file_id ?? ""))
+        m.subtitleApplied = ""
+        showSubtitleTracks()
+    end if
 
     if type(previous) = "roAssociativeArray" and previous.room_id = room.room_id and isValid(previous.guest_control_policy) and previous.guest_control_policy <> room.guest_control_policy
         m.top.toast = { text: watchPartyModel.PolicyText(room.guest_control_policy) }
@@ -163,6 +449,13 @@ sub applyRoom(room as dynamic)
     if isValid(member) then status = toString(member.status ?? "")
     if room.phase = "lobby" and status <> "" and status <> "ready" and status <> m.lobbyStatus then reportLobbyReady()
     m.lobbyStatus = status
+
+    ' Silo starts, switches and stops by moving the selection revision, which sends everyone to the
+    ' room's video
+    if m.silo and room.phase = "playing"
+        revision = room.selection_revision ?? 0
+        if revision <> m.watchedRevision then watch()
+    end if
 end sub
 
 ' A command moves the room's anchor, and a start or a switch sends everyone to the video
@@ -180,7 +473,7 @@ sub onCommand(command as object)
     text = watchPartyModel.CommandText(command, m.memberId)
     if text <> "" then m.top.toast = { text: text, name: toString(command.by_display_name ?? "") }
 
-    if command.playback_state = "waiting" and command.generation <> m.generation then watch()
+    if not m.silo and command.playback_state = "waiting" and command.generation <> m.generation then watch()
 end sub
 
 sub onFailure(event as object)
@@ -189,6 +482,7 @@ sub onFailure(event as object)
     if failure.final = true
         text = tr("The watch party has ended.")
         if failure.code = "disabled" then text = watchPartyModel.ErrorText("disabled")
+        if failure.code = "connection_replaced" then text = tr("You joined this party on another device.")
         finish(text)
         return
     end if
@@ -234,13 +528,14 @@ sub watch()
     if contentId = "" or room.phase <> "playing" then return
     m.generation = -1
     if isValid(room.generation) then m.generation = room.generation
+    m.watchedRevision = room.selection_revision ?? 0
 
     sceneManager = m.global.sceneManager
     active = sceneManager.callFunc("getActiveScene")
     if isValid(active) and active.isSubType("VideoPlayerView")
         if active.id = contentId then return
         active.callFunc("wpDetach", false)
-        active.control = "stop"
+        active.callFunc("wpEndPlayback")
         sceneManager.callFunc("clearPreviousScene")
     end if
 
@@ -250,7 +545,11 @@ sub watch()
 
     node = CreateObject("roSGNode", "ContentNode")
     node.id = contentId
-    node.addFields({ type: itemType, json: { "Id": contentId, "Type": toString(room.content_type ?? "Movie") }, selectedAudioStreamIndex: 0 })
+    json = { "Id": contentId, "Type": toString(room.content_type ?? "Movie") }
+    ' Everyone in a Silo room plays the one file the room pinned, named as its version of the title
+    fileId = toString(room.selected_file_id ?? "")
+    if m.silo and fileId <> "" then json["_selectedMediaSourceId"] = contentId + "~" + fileId
+    node.addFields({ type: itemType, json: json, selectedAudioStreamIndex: 0 })
     node.addField("startingPoint", "longinteger", false)
     node.startingPoint = Int(position * 1000) * 10000&
 
@@ -258,6 +557,14 @@ sub watch()
     queue.callFunc("setForceTranscode", PlaybackMethod.PLAYNORMALLY)
     queue.callFunc("clear")
     queue.callFunc("resetShuffle")
+    ' The host's subtitles for everyone as the item starts. A member can change theirs after.
+    ' Without the title's tracks yet, the choice goes on once they come
+    source = partySource()
+    if m.silo and isValid(source)
+        m.subtitleApplied = FormatJson(m.top.groupSubtitle)
+        subtitle = watchPartyModel.SubtitleIndexFor(m.top.groupSubtitle, source)
+        if subtitle <> invalid then queue.callFunc("setPreferredSubtitleTrack", { StreamIndex: subtitle })
+    end if
     queue.callFunc("push", node)
     ' Cinema Mode's pre-rolls would leave this device behind everyone
     queue.callFunc("setPrerollStatus", false)
@@ -270,6 +577,15 @@ end sub
 sub act(request as object)
     if request.path.Left(1) <> "/" then request.path = "/Rooms/" + m.roomId + "/" + request.path
     request.token = m.token
+    request.roomId = m.roomId
+    ' Silo starts a title from its beginning, so the host's player moves the room to where they
+    ' picked once it's attached
+    if m.silo and request.kind = "start"
+        seconds = 0
+        if type(request.body) = "roAssociativeArray" and isValid(request.body.position_seconds) then seconds = request.body.position_seconds
+        m.top.pendingResume = {}
+        if seconds > 0 then m.top.pendingResume = { contentId: toString(m.top.room.selected_content_id ?? ""), seconds: seconds }
+    end if
     runTask(request)
 end sub
 
@@ -292,6 +608,28 @@ sub onTaskResult(event as object)
 
     result = event.getData()
     kind = result.request.kind
+    if kind = "item"
+        onContentInfo(result)
+        return
+    end if
+    if kind = "avatars"
+        onAvatars(result)
+        return
+    end if
+    if kind = "publishAvatar" then return
+    if kind = "groupSubtitle"
+        onGroupSubtitleSaved(result)
+        return
+    end if
+    if kind = "pickEpisode"
+        if result.status = 200 and type(result.data) = "roAssociativeArray" and type(result.data.item) = "roAssociativeArray"
+            episode = result.data.item
+            pickResolved({ id: toString(episode.Id ?? ""), type: "Episode", name: toString(episode.Name ?? "") })
+        else
+            banner([{ title: tr("No episodes loaded"), icon: "pkg:/images/watchParty/party.webp" }])
+        end if
+        return
+    end if
     if kind = "rooms"
         onRooms(result)
         return
@@ -301,6 +639,9 @@ sub onTaskResult(event as object)
         m.configFor = result.request.key
         if watchPartyModel.WorthRetrying(result.status) then m.configFor = ""
         m.top.serverConfig = watchPartyModel.ServerConfig(result.status, result.data)
+        features = {}
+        if type(result.data) = "roAssociativeArray" and type(result.data.features) = "roAssociativeArray" then features = result.data.features
+        m.top.features = features
         refreshRooms()
         return
     end if
@@ -312,17 +653,45 @@ sub onTaskResult(event as object)
         return
     end if
     if ok and (kind = "create" or kind = "join") then enter(result.data)
+    if kind = "create" and isValid(m.pendingPick)
+        picked = m.pendingPick
+        m.pendingPick = invalid
+        if ok and m.top.inRoom
+            runPick(picked)
+        else
+            banner([{ title: watchPartyModel.ErrorText(watchPartyModel.ErrorCode(result)), icon: "pkg:/images/watchParty/party.webp" }])
+        end if
+    end if
+    onPickResult(result, ok)
     ' The party panel has no line of its own, so a refusal there shows as a toast over the video
     if not ok and inArray(["promote", "remove", "policy", "pin"], kind) then m.top.toast = { text: watchPartyModel.ErrorText(watchPartyModel.ErrorCode(result)) }
     ' A call answered with the room shows its effect at once, before the long poll brings it
-    if ok and kind <> "create" and kind <> "join" and type(result.data) = "roAssociativeArray" and result.request.token = m.token then applyRoom(result.data.room)
+    if ok and kind <> "create" and kind <> "join" and type(result.data) = "roAssociativeArray" and result.request.token = m.token
+        ' Silo renews the room's proof with each room it sends, and the socket's next ticket asks with it
+        if m.silo and isValidAndNotEmpty(result.data.token)
+            m.token = result.data.token
+            if isValid(m.events) then m.events.token = m.token
+        end if
+        if m.silo then applySiloSnapshot(result.data.room, false) else applyRoom(result.data.room)
+    end if
     m.top.answer = result
 end sub
 
 ' ===== The room list =====
 
 function partiesOn() as boolean
-    return get_user_setting_bool("watchParty.enabled", true) and chainLookupReturn(m.global.session, "pluginInfo.installed", false) = true
+    if not get_user_setting_bool("watchParty.enabled", true) then return false
+    if isSiloServer() then return true
+    return chainLookupReturn(m.global.session, "pluginInfo.installed", false) = true
+end function
+
+' Silo's rooms run over roWebSocket, which Roku OS 16 brought
+function hasWebSocket() as boolean
+    if not isValid(m.hasWebSocket)
+        ' bs:disable-next-line: 1129
+        m.hasWebSocket = type(CreateObject("roWebSocket")) = "roWebSocket"
+    end if
+    return m.hasWebSocket
 end function
 
 sub watchRooms(on as boolean)
@@ -335,21 +704,42 @@ sub watchRooms(on as boolean)
 end sub
 
 sub refreshRooms()
-    if not partiesOn()
+    onSilo = isSiloServer()
+    m.top.isSilo = onSilo
+    if not onSilo and chainLookupReturn(m.global.session, "pluginInfo.installed", false) <> true
         m.top.rooms = []
         m.top.roomsState = "missing"
         return
     end if
-    ' The admin's switches come first, once for each server and account
+    if onSilo and not hasWebSocket()
+        m.top.rooms = []
+        m.top.roomsState = "device"
+        return
+    end if
+    ' The admin's switches come first, once for each server and account. They're read with this
+    ' account's switch off too, since Settings only shows that switch when the server has parties.
     key = chainLookupReturn(m.global.session, "server.url", "") + "|" + chainLookupReturn(m.global.session, "user.id", "")
     if key <> m.configFor
         if m.configFor <> "loading" then runTask({ kind: "config", method: "GET", path: "/Config", key: key })
         m.configFor = "loading"
         return
     end if
+    if not partiesOn()
+        m.top.rooms = []
+        m.top.roomsState = "missing"
+        return
+    end if
     if m.top.serverConfig.enabled <> true
         m.top.rooms = []
         m.top.roomsState = "disabled"
+        if onSilo then m.top.roomsState = "missing"
+        return
+    end if
+    ' Silo lists no rooms: they are joined with their code. Home's row reads the state as the rooms
+    ' change, so the state goes first.
+    if onSilo
+        m.top.roomsState = "ok"
+        m.top.rooms = []
         return
     end if
     if m.roomsBusy then return
@@ -419,4 +809,75 @@ sub open(request = {} as object)
     screen = CreateObject("roSGNode", "WatchPartiesScreen")
     screen.request = request
     sceneManager.callFunc("pushScene", screen)
+end sub
+
+' ===== Picking from a title's page =====
+
+' The host can pick, and so can anyone in no party, since picking opens one. Silo changes what plays
+' only in the lobby. A Jellyfin account set to start SyncPlay groups starts those instead.
+function canPick() as boolean
+    if not partiesOn() or m.top.serverConfig.enabled <> true then return false
+    if m.top.inRoom then return m.top.room.self_role = "host" and (not m.silo or m.top.room.phase = "lobby")
+    if isSiloServer() then return true
+    syncPlay = m.global.syncPlayManager
+    return not (isValid(syncPlay) and syncPlay.callFunc("isEnabled") and get_user_setting("watchParty.service") = "syncplay")
+end function
+
+' Core's Watch with group: the host's pick for the party. A series or season stands for the episode to
+' watch next, and a party is opened first when this device is in none.
+sub pickForParty(item as object)
+    if item.type = "Series" or item.type = "Season"
+        runTask({ kind: "pickEpisode", itemId: item.id, itemType: item.type, seriesId: item.seriesId ?? "" })
+        return
+    end if
+    pickResolved(item)
+end sub
+
+sub pickResolved(item as object)
+    if item.id = "" then return
+    if not m.top.inRoom
+        ' A second press while the party opens picks again, and opens no second party
+        creating = isValid(m.pendingPick)
+        m.pendingPick = item
+        if not creating then act({ kind: "create", method: "POST", path: "/Rooms", body: {} })
+        return
+    end if
+    runPick(item)
+end sub
+
+' A movie goes up for the vote in a voting room. Anything else is the host's pick, so voting goes off
+' for it, and comes back if the pick fails, so the room isn't left with neither.
+sub runPick(item as object)
+    if m.top.room.selection_mode = "vote"
+        if item.type = "Movie"
+            act({ kind: "suggest", method: "POST", path: "Suggestions", body: { "content_id": item.id, "title": item.name }, fromPick: true })
+        else
+            act({ kind: "voting", method: "POST", path: "Voting", body: { "voting": false }, thenStage: item.id })
+        end if
+        return
+    end if
+    act({ kind: "stage", method: "POST", path: "Stage", body: { "content_id": item.id }, fromPick: true })
+end sub
+
+' Says how a pick from a title's page went, and opens the party on it
+sub onPickResult(result as object, ok as boolean)
+    request = result.request
+    if request.kind = "voting" and isValid(request.thenStage)
+        if ok
+            act({ kind: "stage", method: "POST", path: "Stage", body: { "content_id": request.thenStage }, fromPick: true, restoreVoting: true })
+        else
+            banner([{ title: watchPartyModel.ErrorText(watchPartyModel.ErrorCode(result)), icon: "pkg:/images/watchParty/party.webp" }])
+        end if
+        return
+    end if
+    if request.fromPick <> true then return
+    if not ok
+        if request.restoreVoting = true then act({ kind: "voting", method: "POST", path: "Voting", body: { "voting": true } })
+        banner([{ title: watchPartyModel.ErrorText(watchPartyModel.ErrorCode(result)), icon: "pkg:/images/watchParty/party.webp" }])
+        return
+    end if
+    text = tr("Picked for the Watch Party")
+    if request.kind = "suggest" then text = tr("Added to the Watch Party vote")
+    banner([{ title: text, icon: "pkg:/images/watchParty/party.webp" }])
+    open()
 end sub

@@ -7339,8 +7339,8 @@
         <translation>Prioritize SDH/CC subtitle tracks when auto-selecting.</translation>
     </message>
     <message>
-        <source>RECENTLY ADDED</source>
-        <translation>RECENTLY ADDED</translation>
+        <source>RECENTLY ADDED AND RELEASED</source>
+        <translation>RECENTLY ADDED AND RELEASED</translation>
     </message>
     <message>
         <source>REWATCH</source>
@@ -10969,12 +10969,175 @@
         <translation>Couldn't remove the download</translation>
     </message>
     <message>
+        <source>Party code</source>
+        <extracomment>Watch Parties - the hint in the keyboard for joining a party on Silo</extracomment>
+        <translation>Party code</translation>
+    </message>
+    <message>
+        <source>Start a party, or join one with the code someone sent you.</source>
+        <extracomment>Watch Parties - the help line on the Watch Parties screen on Silo</extracomment>
+        <translation>Start a party, or join one with the code someone sent you.</translation>
+    </message>
+    <message>
+        <source>Watch Parties aren&apos;t available on this server.</source>
+        <extracomment>Watch Parties - the heading when Silo has no Watch Parties</extracomment>
+        <translation>Watch Parties aren&apos;t available on this server.</translation>
+    </message>
+    <message>
+        <source>Watch Parties need Roku OS 16 or later.</source>
+        <extracomment>Watch Parties - the heading when this Roku is too old for Watch Parties</extracomment>
+        <translation>Watch Parties need Roku OS 16 or later.</translation>
+    </message>
+    <message>
+        <source>Update this Roku in Settings &gt; System &gt; System update.</source>
+        <extracomment>Watch Parties - the line under the heading when this Roku is too old for Watch Parties</extracomment>
+        <translation>Update this Roku in Settings &gt; System &gt; System update.</translation>
+    </message>
+    <message>
+        <source>Play waits for everyone&apos;s player, then everyone starts together.</source>
+        <extracomment>Watch Parties - the note under the people in the lobby on Silo, which has no countdown</extracomment>
+        <translation>Play waits for everyone&apos;s player, then everyone starts together.</translation>
+    </message>
+    <message>
+        <source>Start from the beginning</source>
+        <extracomment>Watch Parties - the host&apos;s button to start the party from the first second</extracomment>
+        <translation>Start from the beginning</translation>
+    </message>
+    <message>
+        <source>Resume at {0}</source>
+        <extracomment>Watch Parties - the host&apos;s button to start from where the party last stopped. {0} is the time, keep it</extracomment>
+        <translation>Resume at {0}</translation>
+    </message>
+    <message>
+        <source>Picks up where {0} stopped, the earliest anyone got to.</source>
+        <extracomment>Watch Parties - under the resume button, naming who stopped furthest. {0} is their name, keep it</extracomment>
+        <translation>Picks up where {0} stopped, the earliest anyone got to.</translation>
+    </message>
+    <message>
+        <source>Picks up where you stopped.</source>
+        <extracomment>Watch Parties - under the resume button when the viewer is the one who stopped furthest</extracomment>
+        <translation>Picks up where you stopped.</translation>
+    </message>
+    <message>
+        <source>Picks up where the earliest viewer stopped.</source>
+        <extracomment>Watch Parties - under the resume button when the one who stopped furthest has left the party</extracomment>
+        <translation>Picks up where the earliest viewer stopped.</translation>
+    </message>
+    <message>
+        <source>1 hasn&apos;t started it yet.</source>
+        <extracomment>Watch Parties - added to the resume note when one person hasn&apos;t started the item</extracomment>
+        <translation>1 hasn&apos;t started it yet.</translation>
+    </message>
+    <message>
+        <source>{0} haven&apos;t started it yet.</source>
+        <extracomment>Watch Parties - added to the resume note when several people haven&apos;t started the item. {0} is the number, keep it</extracomment>
+        <translation>{0} haven&apos;t started it yet.</translation>
+    </message>
+    <message>
+        <source>That party code didn&apos;t match a party.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one, when Silo doesn&apos;t know the code</extracomment>
+        <translation>That party code didn&apos;t match a party.</translation>
+    </message>
+    <message>
+        <source>That watch party has ended.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video during one, when Silo&apos;s party has closed</extracomment>
+        <translation>That watch party has ended.</translation>
+    </message>
+    <message>
+        <source>That watch party is full.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens when Silo&apos;s party has no room for another person</extracomment>
+        <translation>That watch party is full.</translation>
+    </message>
+    <message>
+        <source>This server&apos;s watch parties can&apos;t do that.</source>
+        <extracomment>Watch Parties - shown on the Watch Parties screens or over the video when Silo can&apos;t do what was asked</extracomment>
+        <translation>This server&apos;s watch parties can&apos;t do that.</translation>
+    </message>
+    <message>
+        <source>You joined this party on another device.</source>
+        <extracomment>Watch Parties - shown over the video when this party was joined from another device</extracomment>
+        <translation>You joined this party on another device.</translation>
+    </message>
+    <message>
+        <source>Guests can play and pause</source>
+        <translation>Guests can play and pause</translation>
+    </message>
+    <message>
+        <source>Watch with group</source>
+        <translation>Watch with group</translation>
+    </message>
+    <message>
+        <source>Picked for the Watch Party</source>
+        <translation>Picked for the Watch Party</translation>
+    </message>
+    <message>
+        <source>Added to the Watch Party vote</source>
+        <translation>Added to the Watch Party vote</translation>
+    </message>
+    <message>
+        <source>No episodes loaded</source>
+        <translation>No episodes loaded</translation>
+    </message>
+    <message>
+        <source>Select</source>
+        <translation>Select</translation>
+    </message>
+    <message>
+        <source>Vote for what you want to watch. The host plays one.</source>
+        <translation>Vote for what you want to watch. The host plays one.</translation>
+    </message>
+    <message>
+        <source>Add movies for everyone to vote on, then play the one you want. TV episodes are still your pick.</source>
+        <translation>Add movies for everyone to vote on, then play the one you want. TV episodes are still your pick.</translation>
+    </message>
+    <message>
+        <source>Watch Parties Button</source>
+        <translation>Watch Parties Button</translation>
+    </message>
+    <message>
+        <source>Show the Watch Parties button on the navigation bar</source>
+        <translation>Show the Watch Parties button on the navigation bar</translation>
+    </message>
+    <message>
         <source>Home Row Info Overlay</source>
         <translation>Home Row Info Overlay</translation>
     </message>
     <message>
         <source>Show title and metadata when browsing home rows</source>
         <translation>Show title and metadata when browsing home rows</translation>
+    </message>
+    <message>
+        <source>Subtitles for everyone</source>
+        <extracomment>Watch Parties - the Silo host's subtitle choice for the whole party, in the lobby</extracomment>
+        <translation>Subtitles for everyone</translation>
+    </message>
+    <message>
+        <source>Each person&apos;s choice</source>
+        <extracomment>Watch Parties - the subtitle option that leaves subtitles to each member</extracomment>
+        <translation>Each person&apos;s choice</translation>
+    </message>
+    <message>
+        <source>Moonbase couldn&apos;t keep the subtitles for everyone.</source>
+        <extracomment>Watch Parties - shown when saving the Silo host's subtitle choice for the party failed</extracomment>
+        <translation>Moonbase couldn&apos;t keep the subtitles for everyone.</translation>
+    </message>
+    <message>
+        <source>Hide Watched</source>
+        <translation>Hide Watched</translation>
+    </message>
+    <message>
+        <source>Hide watched content from Recently Added and Recently Released home rows.</source>
+        <translation>Hide watched content from Recently Added and Recently Released home rows.</translation>
+    </message>
+    <message>
+        <source>Syncing playback to {0}</source>
+        <extracomment>Shown after Watch with group in a SyncPlay group. {0} is the group's name</extracomment>
+        <translation>Syncing playback to {0}</translation>
+    </message>
+    <message>
+        <source>SyncPlay Group</source>
+        <extracomment>Stands in for a SyncPlay group that has no name</extracomment>
+        <translation>SyncPlay Group</translation>
     </message>
 </context>
 </TS>

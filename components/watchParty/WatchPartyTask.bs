@@ -1,6 +1,9 @@
 import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/sdk.bs"
+import "pkg:/source/api/silo/SiloWatchParty.bs"
 import "pkg:/source/api/watchParty.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/serverCompatibility.bs"
 import "pkg:/source/utils/watchPartyModel.bs"
 
 sub init()
@@ -17,6 +20,19 @@ sub runRequest()
         m.top.result = { request: request, status: 200, data: { items: items } }
         return
     end if
+    if request.kind = "pickEpisode"
+        episode = partyEpisode({ id: toString(request.itemId ?? ""), type: request.itemType, seriesId: toString(request.seriesId ?? "") })
+        if not isValid(episode)
+            m.top.result = { request: request, status: 404, data: invalid }
+        else
+            m.top.result = { request: request, status: 200, data: { item: episode } }
+        end if
+        return
+    end if
+    if isSiloServer()
+        m.top.result = runSilo(request)
+        return
+    end if
 
     answer = watchPartyApi.Request(request.method ?? "GET", request.path, request.body, request.token ?? "", 20000)
     ' A lost press is tried again, but not the room list, which polls again soon anyway.
@@ -28,3 +44,84 @@ sub runRequest()
     end while
     m.top.result = { request: request, status: answer.status, data: answer.data }
 end sub
+
+' Silo's own Watch Party, answered in the shapes Moonbase's calls get. Silo's client already
+' refreshes a lost login, and its start and promote must never be sent twice, so nothing is retried.
+function runSilo(request as object) as object
+    kind = request.kind
+    if kind = "config"
+        caps = siloParty.Capabilities(siloParty.Context())
+        if not caps.ok
+            status = caps.status
+            if status = 200 then status = 404
+            return { request: request, status: status, data: invalid }
+        end if
+        features = {
+            memberState: caps.memberState = true,
+            lobbyReady: caps.features.lobby_ready = true,
+            stagedSelection: caps.features.staged_selection = true,
+            selectionModeSwitch: caps.features.selection_mode_switch = true,
+            stopPlayback: caps.features.stop_playback = true,
+            voteHostOverride: caps.features.vote_host_override = true
+        }
+        return { request: request, status: 200, data: { enabled: true, alerts: false, features: features } }
+    end if
+    if kind = "rooms" then return { request: request, status: 200, data: { rooms: [] } }
+    ' The pictures and the host's subtitles for everyone, which Moonbase keeps for the room
+    if kind = "avatars"
+        kept = siloParty.MoonbaseRoom(siloParty.Context(), request.roomId ?? "")
+        if not isValid(kept) then return { request: request, status: 404, data: invalid }
+        return { request: request, status: 200, data: kept }
+    end if
+    if kind = "groupSubtitle"
+        saved = siloParty.SaveGroupSubtitle(siloParty.Context(), request.roomId ?? "", request.subtitle)
+        return { request: request, status: saved.status, data: { message: saved.message } }
+    end if
+    if kind = "publishAvatar"
+        sent = siloParty.PublishAvatar(siloParty.Context(), request.roomId ?? "")
+        return { request: request, status: sent ? 204 : 404, data: invalid }
+    end if
+    ' Silo's room names its title by id alone, so the lobby looks up what to call it
+    if kind = "item"
+        found = api.items.GetByID(toString(request.itemId ?? ""))
+        if type(found) <> "roAssociativeArray" then return { request: request, status: 404, data: invalid }
+        return { request: request, status: 200, data: { item: found } }
+    end if
+    if kind = "resume"
+        contentId = ""
+        if type(request.body) = "roAssociativeArray" then contentId = toString(request.body.content_id ?? "")
+        resume = invalid
+        if contentId <> "" then resume = siloParty.MemberState(siloParty.Context(), request.roomId ?? "", request.token ?? "", contentId)
+        return { request: request, status: 200, data: { resume: resume } }
+    end if
+    answer = siloParty.Execute(request, request.roomId ?? "")
+    if kind = "close" then siloParty.ForgetMoonbaseRoom(siloParty.Context(), request.roomId ?? "")
+    return { request: request, status: answer.status, data: answer.data }
+end function
+
+' A series stands for its Next Up, else its first unwatched episode with specials left out, and a
+' season for its first unwatched episode
+function partyEpisode(item as object) as dynamic
+    userId = currentSessionUserId()
+    seriesId = item.seriesId
+    params = { "UserId": userId, "IsMissing": false, "EnableTotalRecordCount": false }
+    if item.type = "Series"
+        nextUp = api.shows.GetNextUp({ "SeriesId": item.id, "UserId": userId, "Limit": 1, "DisableFirstEpisode": false, "EnableTotalRecordCount": false })
+        if isChainValid(nextUp, "Items") and nextUp.Items.Count() > 0 then return nextUp.Items[0]
+        seriesId = item.id
+    else
+        params.SeasonId = item.id
+    end if
+
+    found = api.shows.GetEpisodes(seriesId, params)
+    if not isChainValid(found, "Items") then return invalid
+    playable = []
+    for each episode in found.Items
+        if episode.LocationType <> "Virtual" and (item.type <> "Series" or episode.ParentIndexNumber <> 0) then playable.push(episode)
+    end for
+    for each episode in playable
+        if chainLookupReturn(episode, "UserData.Played", false) <> true then return episode
+    end for
+    if playable.Count() > 0 then return playable[0]
+    return invalid
+end function

@@ -1,0 +1,512 @@
+import "pkg:/source/api/silo/SiloMapper.bs"
+import "pkg:/source/api/silo/SiloPlayback.bs"
+import "pkg:/source/api/silo/SiloRouter.bs"
+import "pkg:/source/api/silo/SiloSession.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Watch Parties on Silo's /api/v2/watch-together, answered in the Moonbase shapes the Watch Party
+' screens read. Ported from Moonfin-Core's silo_watch_party_api.dart.
+'
+' Plan turns a Moonbase request into a Silo call with no I/O, so the mapping can be tested. Run
+' makes the call. A room's proof of membership (its token) goes in X-Room-Token, and the routes
+' that take it are the ones that act on a room's suggestions and its socket ticket.
+namespace siloParty
+    const BASE = "/api/v2/watch-together"
+    const PROTOCOL = "silo.room.v2"
+    const MIN_RESUME_SECONDS = 30
+    const TIMEOUT_MS = 20000
+    const MEMBER_STATE_TIMEOUT_MS = 5000
+    ' Silo keeps at most 200 suggestions in a room, so two pages of 100 cover it. Five pages
+    ' leaves room for a limit that changes.
+    const SUGGESTION_PAGES = 5
+    const SUGGESTION_PAGE_SIZE = 100
+
+    function Context() as object
+        server = silo.ServerKey(chainLookupReturn(m.global, "session.server.url", ""))
+        profileId = siloMap.IdOf(chainLookupReturn(m.global, "session.user.id", ""))
+        return { server: server, account: silo.ProfileAccount(profileId), profileId: profileId }
+    end function
+
+    function Call(ctx as object, method as string, path as string, body as dynamic, roomToken as string, timeoutMs = 20000 as integer, replay = true as boolean) as object
+        headers = {}
+        if roomToken <> "" then headers["X-Room-Token"] = roomToken
+        return silo.Call(ctx.server, path, { method: method, body: body, account: ctx.account, profileId: ctx.profileId, timeoutMs: timeoutMs, replay: replay, headers: headers })
+    end function
+
+    ' One Silo call the plan makes. Only a retry-safe call is replayed: a start must never run twice
+    function Route(method as string, path as string, body as dynamic, roomToken as boolean, replay = true as boolean, paged = false as boolean) as object
+        return { method: method, path: path, body: body, roomToken: roomToken, replay: replay, paged: paged }
+    end function
+
+    ' Moonbase's policy names, and the one Silo has for guests who may pause and seek
+    function PolicyOf(policy as dynamic) as string
+        if policy = "guests_can_pause" or policy = "everyone" or policy = "guest_play_pause" then return "guest_play_pause"
+        return "host_only"
+    end function
+
+    ' The id after "Suggestions" in a Moonbase path such as "Suggestions/<id>/Vote"
+    function SuggestionIdIn(path as dynamic) as string
+        if not isString(path) then return ""
+        parts = path.Split("/")
+        for index = 0 to parts.Count() - 2
+            if LCase(parts[index]) = "suggestions" then return parts[index + 1]
+        end for
+        return ""
+    end function
+
+    ' The request as Silo's route for it, or invalid when Silo has none. Pure: the new room and
+    ' suggestion ids come from the caller when it has them.
+    function Plan(request as object, roomId as string) as dynamic
+        kind = request.kind ?? ""
+        body = request.body
+        if type(body) <> "roAssociativeArray" then body = {}
+        room = siloParty.BASE + "/rooms/" + roomId
+
+        if kind = "create"
+            roomUuid = siloMap.TextOf(request.roomUuid)
+            if roomUuid = "" then roomUuid = silo.NewUuid()
+            return siloParty.Route("POST", siloParty.BASE + "/rooms", { room_id: roomUuid, selection_mode: "host_pick" }, false)
+        end if
+
+        if kind = "join"
+            if isString(body.join_token) then return siloParty.Route("POST", siloParty.BASE + "/join", { join_token: body.join_token }, false)
+            code = siloMap.TextOf(body.code)
+            if code = "" then return invalid
+            if code.Len() > 12 then return siloParty.Route("POST", siloParty.BASE + "/join", { join_token: code }, false)
+            return siloParty.Route("POST", siloParty.BASE + "/join", { code: UCase(code) }, false)
+        end if
+
+        if kind = "suggestions"
+            return siloParty.Route("GET", room + "/suggestions", invalid, true, true, true)
+        end if
+
+        if kind = "start"
+            return siloParty.Route("POST", room + "/playback/start", invalid, false, false)
+        end if
+
+        if kind = "stop"
+            return siloParty.Route("POST", room + "/playback/stop", invalid, false)
+        end if
+
+        if kind = "voting"
+            mode = "host_pick"
+            if body.voting = true then mode = "vote"
+            return siloParty.Route("PATCH", room + "/selection-mode", { selection_mode: mode }, false)
+        end if
+
+        if kind = "stage"
+            staged = { content_id: body.content_id }
+            if body.file_id <> invalid then staged.file_id = body.file_id
+            return siloParty.Route("PUT", room + "/staged-selection", staged, false)
+        end if
+
+        if kind = "suggest"
+            suggestionUuid = siloMap.TextOf(request.suggestionUuid)
+            if suggestionUuid = "" then suggestionUuid = silo.NewUuid()
+            contentType = "movie"
+            if siloMap.TypeOfId(body.content_id) = "episode" then contentType = "episode"
+            title = ""
+            if isString(body.title) then title = body.title
+            suggestion = { suggestion_id: suggestionUuid, content_id: body.content_id, content_type: contentType, title: title }
+            if isString(body.subtitle) and body.subtitle <> "" then suggestion.subtitle = body.subtitle
+            return siloParty.Route("POST", room + "/suggestions", suggestion, true)
+        end if
+
+        if kind = "vote"
+            suggestionId = siloParty.SuggestionIdIn(request.path)
+            if suggestionId = "" then return invalid
+            votePath = room + "/suggestions/" + suggestionId + "/vote"
+            if body.voted = true then return siloParty.Route("POST", votePath, invalid, true)
+            return siloParty.Route("DELETE", votePath, invalid, true)
+        end if
+
+        ' Moonbase's remove takes a member (member_id) and Silo has no such route, so only a
+        ' suggestion goes through
+        if kind = "remove"
+            suggestionId = siloMap.TextOf(body.suggestion_id)
+            if suggestionId = "" then return invalid
+            return siloParty.Route("DELETE", room + "/suggestions/" + suggestionId, invalid, true)
+        end if
+
+        ' Moonbase's "Make host" takes a member (member_id), which Silo can't promote, so only a
+        ' suggestion goes through
+        if kind = "promote" or kind = "pickSuggestion"
+            suggestionId = siloMap.TextOf(body.suggestion_id)
+            if suggestionId = "" then return invalid
+            return siloParty.Route("POST", room + "/suggestions/promote", { suggestion_id: suggestionId }, true, false)
+        end if
+
+        if kind = "policy"
+            return siloParty.Route("PATCH", room + "/policy", { guest_control_policy: siloParty.PolicyOf(body.guest_control_policy) }, false)
+        end if
+
+        if kind = "close"
+            return siloParty.Route("DELETE", room, invalid, false)
+        end if
+
+        ' Leaving is the socket closing: Silo has no route for it
+        return invalid
+    end function
+
+    function TrimSlash(text as string) as string
+        while text.Right(1) = "/"
+            text = text.Left(text.Len() - 1)
+        end while
+        return text
+    end function
+
+    function ShallowCopy(source as object) as object
+        copy = {}
+        for each key in source
+            copy[key] = source[key]
+        end for
+        return copy
+    end function
+
+    ' A room as the Moonbase screens read it. Ids become text, since the socket sends some as
+    ' numbers, and the statuses Silo's flags imply are the ones the member rows show.
+    function NormalizeRoom(room as dynamic, server = "" as string) as dynamic
+        if type(room) <> "roAssociativeArray" then return invalid
+        roomId = siloMap.IdOf(room.room_id)
+        if roomId = "" then return invalid
+
+        out = siloParty.ShallowCopy(room)
+        out.room_id = roomId
+        out.selected_file_id = siloMap.IdOf(room.selected_file_id)
+        out.selected_library_id = siloMap.IdOf(room.selected_library_id)
+        out.selected_content_id = siloMap.IdOf(room.selected_content_id)
+        phase = siloMap.TextOf(room.phase)
+
+        selfMemberId = ""
+        out.members = []
+        if type(room.members) = "roArray"
+            for each raw in room.members
+                if type(raw) = "roAssociativeArray"
+                    member = siloParty.ShallowCopy(raw)
+                    member.user_id = siloMap.IdOf(raw.user_id)
+                    member.profile_id = siloMap.IdOf(raw.profile_id)
+                    if raw.is_self = true and selfMemberId = "" then selfMemberId = member.profile_id
+                    if member.status = invalid then member.status = siloParty.MemberStatus(phase, raw)
+                    out.members.Push(member)
+                end if
+            end for
+        end if
+
+        out.self_member_id = siloMap.IdOf(room.self_member_id)
+        if out.self_member_id = "" then out.self_member_id = selfMemberId
+        if room.content_type = invalid
+            out.content_type = "Movie"
+            if siloMap.TypeOfId(out.selected_content_id) = "episode" then out.content_type = "Episode"
+        end if
+        if isString(room.invite_path) and room.invite_path <> "" and server <> ""
+            out.invite_url = siloParty.TrimSlash(server) + room.invite_path
+        end if
+        if room.anchor_at = invalid then out.anchor_at = room.anchor_updated_at
+        if room.has_pin = invalid then out.has_pin = false
+        if room.chat_enabled = invalid then out.chat_enabled = false
+        if room.reactions_enabled = invalid then out.reactions_enabled = false
+        return out
+    end function
+
+    ' The member status the rows show, from Silo's flags for the room's phase. In the lobby a member on
+    ' the socket counts as ready, as Core shows presence only: servers without the lobby flag never set
+    ' it, Core never sends it, and the socket snapshot leaves it out while it's false.
+    function MemberStatus(phase as string, member as object) as string
+        if phase = "lobby"
+            if member.lobby_ready = true or member.connected = true then return "ready"
+            return "joining"
+        end if
+        if phase = "playing"
+            if member.connected <> true then return "not_watching"
+            if member.is_buffering = true then return "buffering"
+            if member.is_syncing = true then return "catching_up"
+            if member.is_ready = true then return "in_sync"
+        end if
+        return "joining"
+    end function
+
+    function NormalizeSuggestion(raw as dynamic) as dynamic
+        if type(raw) <> "roAssociativeArray" then return invalid
+        id = siloMap.IdOf(raw.id)
+        contentId = siloMap.IdOf(raw.content_id)
+        if id = "" or contentId = "" then return invalid
+        votes = 0
+        if siloMap.IsNumber(raw.vote_count) then votes = Int(raw.vote_count)
+        return {
+            id: id,
+            content_id: contentId,
+            title: siloMap.TextOf(raw.title),
+            subtitle: siloMap.TextOf(raw.subtitle),
+            vote_count: votes,
+            voted_by_me: raw.voted_by_me = true,
+            created_at: siloMap.TextOf(raw.created_at)
+        }
+    end function
+
+    ' Most votes first, then the older suggestion, then the id, as the room orders them
+    function RanksBefore(a as object, b as object) as boolean
+        if a.vote_count <> b.vote_count then return a.vote_count > b.vote_count
+        if a.created_at <> b.created_at then return a.created_at < b.created_at
+        return a.id < b.id
+    end function
+
+    function SortSuggestions(list as object) as object
+        sorted = []
+        for each raw in list
+            item = siloParty.NormalizeSuggestion(raw)
+            if item <> invalid
+                at = 0
+                while at < sorted.Count() and not siloParty.RanksBefore(item, sorted[at])
+                    at = at + 1
+                end while
+                sorted.Push(item)
+                for index = sorted.Count() - 1 to at + 1 step -1
+                    sorted[index] = sorted[index - 1]
+                end for
+                sorted[at] = item
+            end if
+        end for
+        return sorted
+    end function
+
+    ' Where a room can pick a title up: the earliest point a member stopped at, once they are
+    ' past the first MIN_RESUME_SECONDS. Nobody misses what they haven't seen.
+    function ResumePoint(data as dynamic, contentId as string) as dynamic
+        if contentId = "" or type(data) <> "roAssociativeArray" or type(data.items) <> "roArray" then return invalid
+        entry = invalid
+        for each item in data.items
+            if type(item) = "roAssociativeArray" and siloMap.IdOf(item.content_id) = contentId
+                entry = item
+                exit for
+            end if
+        end for
+        if entry = invalid or type(entry.members) <> "roArray" then return invalid
+
+        earliest = invalid
+        earliestAt = 0
+        notStarted = 0
+        for each member in entry.members
+            if type(member) = "roAssociativeArray"
+                if member.state = "unseen" then notStarted = notStarted + 1
+                position = 0
+                if siloMap.IsNumber(member.position_seconds) then position = member.position_seconds
+                if member.state = "in_progress" and position >= siloParty.MIN_RESUME_SECONDS
+                    if earliest = invalid or position < earliestAt
+                        earliest = member
+                        earliestAt = position
+                    end if
+                end if
+            end if
+        end for
+        if earliest = invalid then return invalid
+        return { seconds: Int(earliestAt), profileId: siloMap.IdOf(earliest.profile_id), notStarted: notStarted }
+    end function
+
+    function ProblemCode(problem as dynamic) as string
+        if type(problem) <> "roAssociativeArray" then return ""
+        return siloMap.TextOf(problem.code)
+    end function
+
+    ' Silo's problem as the screens read it: a code to react to and a line to show
+    function Failure(answer as object) as object
+        code = siloParty.ProblemCode(answer.problem)
+        message = ""
+        if type(answer.problem) = "roAssociativeArray"
+            message = siloMap.TextOf(answer.problem.detail)
+            if message = "" then message = siloMap.TextOf(answer.problem.title)
+        end if
+        return { status: answer.status, data: { code: code, message: message } }
+    end function
+
+    ' Every page of a room's suggestions, in the room's order
+    function Suggestions(ctx as object, planned as object, roomToken as string) as object
+        all = []
+        cursor = ""
+        for page = 1 to siloParty.SUGGESTION_PAGES
+            query = { limit: siloParty.SUGGESTION_PAGE_SIZE }
+            if cursor <> "" then query.cursor = cursor
+            answer = siloParty.Call(ctx, planned.method, planned.path + "?" + silo.EncodeQuery(query), invalid, roomToken, siloParty.TIMEOUT_MS, planned.replay)
+            if answer.ok <> true then return siloParty.Failure(answer)
+
+            data = answer.data
+            if type(data) <> "roAssociativeArray" then exit for
+            if type(data.items) = "roArray"
+                for each item in data.items
+                    all.Push(item)
+                end for
+            end if
+            info = data.page
+            if type(info) <> "roAssociativeArray" or info.has_more <> true then exit for
+            cursor = siloMap.TextOf(info.next_cursor)
+            if cursor = "" then exit for
+        end for
+        return { status: 200, data: { suggestions: siloParty.SortSuggestions(all) } }
+    end function
+
+    ' Runs the plan against Silo and answers in the shapes the Moonbase screens read
+    function Execute(request as object, roomId as string) as object
+        planned = siloParty.Plan(request, roomId)
+        if planned = invalid then return { status: 501, data: { code: "unsupported" } }
+
+        ctx = siloParty.Context()
+        roomToken = ""
+        if planned.roomToken = true then roomToken = siloMap.TextOf(request.token)
+        if planned.paged = true then return siloParty.Suggestions(ctx, planned, roomToken)
+
+        answer = siloParty.Call(ctx, planned.method, planned.path, planned.body, roomToken, siloParty.TIMEOUT_MS, planned.replay)
+        if answer.ok <> true then return siloParty.Failure(answer)
+
+        data = answer.data
+        if type(data) <> "roAssociativeArray" then data = {}
+        room = siloParty.NormalizeRoom(data.room, ctx.server)
+        if room <> invalid
+            out = { room: room }
+            if isString(data.room_access_token) then out.token = data.room_access_token
+            return { status: answer.status, data: out }
+        end if
+        return { status: answer.status, data: data }
+    end function
+
+    function Capabilities(ctx as object) as object
+        answer = siloParty.Call(ctx, "GET", siloParty.BASE + "/capabilities", invalid, "")
+        data = answer.data
+        if type(data) <> "roAssociativeArray" then data = {}
+        maxIds = 0
+        if siloMap.IsNumber(data.max_member_state_ids) then maxIds = Int(data.max_member_state_ids)
+        ok = data.state = "available" and data.allowed = true and data.socket_protocol = siloParty.PROTOCOL
+        return {
+            ok: ok,
+            status: answer.status,
+            features: data,
+            memberState: data.member_state = true and maxIds > 0,
+            maxMemberStateIds: maxIds
+        }
+    end function
+
+    ' Where a member stopped at contentId, for the host's start to resume from. Invalid when
+    ' nobody is part way through, or Silo can't say in time.
+    function MemberState(ctx as object, roomId as string, roomToken as string, contentId as string) as dynamic
+        answer = siloParty.Call(ctx, "POST", siloParty.BASE + "/rooms/" + roomId + "/member-state", { content_ids: [contentId] }, roomToken, siloParty.MEMBER_STATE_TIMEOUT_MS)
+        if answer.ok <> true then return invalid
+        return siloParty.ResumePoint(answer.data, contentId)
+    end function
+
+    ' The single-use credential for the room socket. It goes in the offered protocols, never in the
+    ' URL, and is never logged.
+    function Ticket(ctx as object, roomId as string, roomToken as string) as object
+        answer = siloParty.Call(ctx, "POST", siloParty.BASE + "/rooms/" + roomId + "/ws-ticket", invalid, roomToken)
+        data = answer.data
+        ticketText = ""
+        if type(data) = "roAssociativeArray" and data.protocol = siloParty.PROTOCOL and isString(data.ticket) and data.ticket <> ""
+            ticketText = data.ticket
+        end if
+        code = ""
+        if type(answer.problem) = "roAssociativeArray" then code = siloParty.ProblemCode(answer.problem)
+        return { status: answer.status, ticket: ticketText, code: code }
+    end function
+
+    ' What Moonbase keeps for a Silo room, which Silo doesn't: the members' profile pictures by profile
+    ' id (Silo shows members on other accounts no picture of their own) and the host's subtitles for
+    ' everyone. { avatars, subtitle }, or invalid without Moonbase. As Core's _loadGroupSubtitle.
+    function MoonbaseRoom(ctx as object, roomId as string) as dynamic
+        moonbase = silo.MoonbaseBase(ctx)
+        if moonbase = "" then return invalid
+        answer = silo.Call(ctx.server, moonbase + "/Moonfin/WatchParty/" + roomId, { account: ctx.account, profileId: ctx.profileId })
+        if answer.ok <> true then return invalid
+        data = answer.data
+        if type(data) <> "roAssociativeArray" then data = {}
+        out = { avatars: {}, subtitle: siloParty.SubtitleChoiceOf(data.subtitle) }
+        if type(data.avatars) = "roAssociativeArray"
+            for each profileId in data.avatars
+                link = siloParty.PartyPicture(ctx.server, data.avatars[profileId])
+                if link <> "" then out.avatars[profileId] = link
+            end for
+        end if
+        return out
+    end function
+
+    ' The host's subtitles for everyone, kept by Moonbase for the room: { index, language } for a
+    ' track, { off: true }, or invalid to leave them to each member. { status, message }, with
+    ' Moonbase's own words for a refusal, such as an account's ten rooms a day being used up.
+    function SaveGroupSubtitle(ctx as object, roomId as string, choice as dynamic) as object
+        moonbase = silo.MoonbaseBase(ctx)
+        if moonbase = "" then return { status: 404, message: "" }
+        answer = silo.Call(ctx.server, moonbase + "/Moonfin/WatchParty/" + roomId, { method: "PUT", body: { subtitle: choice }, account: ctx.account, profileId: ctx.profileId })
+        message = ""
+        if type(answer.data) = "roAssociativeArray" then message = siloMap.TextOf(answer.data.Error)
+        return { status: answer.status, message: message }
+    end function
+
+    ' Drops what Moonbase keeps for a room once its host ends it, so the room stops counting toward
+    ' the account's ten. An older Moonbase without the route keeps it for its usual day.
+    sub ForgetMoonbaseRoom(ctx as object, roomId as string)
+        moonbase = silo.MoonbaseBase(ctx)
+        if moonbase = "" or roomId = "" then return
+        silo.Call(ctx.server, moonbase + "/Moonfin/WatchParty/" + roomId, { method: "DELETE", account: ctx.account, profileId: ctx.profileId })
+    end sub
+
+    ' A subtitle choice as Moonbase hands it back, or invalid for each member's own
+    function SubtitleChoiceOf(raw as dynamic) as dynamic
+        if type(raw) <> "roAssociativeArray" then return invalid
+        if raw.off = true then return { off: true }
+        if not siloMap.IsNumber(raw.index) then return invalid
+        choice = { index: Int(raw.index) }
+        if isString(raw.language) and raw.language <> "" then choice.language = raw.language
+        return choice
+    end function
+
+    ' The media source the room plays: its pinned file, else the first. The Roku's own sources are
+    ' named contentId~fileId.
+    function PartySource(item as dynamic, fileId as string) as dynamic
+        if type(item) <> "roAssociativeArray" or type(item.MediaSources) <> "roArray" then return invalid
+        first = invalid
+        for each source in item.MediaSources
+            if type(source) = "roAssociativeArray"
+                if first = invalid then first = source
+                id = siloMap.TextOf(source.Id)
+                parts = id.Split("~")
+                if fileId <> "" and (id = fileId or parts[parts.Count() - 1] = fileId) then return source
+            end if
+        end for
+        return first
+    end function
+
+    ' A member's picture as the Roku can draw it, or "" for their initials. A Roku can't draw SVG:
+    ' a DiceBear preset is asked for as a PNG, and Silo's bundled presets come only as SVG.
+    function PartyPicture(server as string, link as dynamic) as string
+        if not isString(link) or link = "" then return ""
+        link = silo.DrawableAvatar(link)
+        if LCase(link.Split("?")[0]).Right(4) = ".svg" then return ""
+        return silo.ResolveUrl(server, link)
+    end function
+
+    ' Hands Moonbase this profile's picture for the room, so the others can show it. The link Silo
+    ' signs for an upload lasts 15 minutes, so it's sent again every ten.
+    function PublishAvatar(ctx as object, roomId as string) as boolean
+        answer = silo.Call(ctx.server, "/api/v2/profiles", { account: ctx.account, profile: false })
+        if answer.ok <> true or type(answer.data) <> "roAssociativeArray" or type(answer.data.items) <> "roArray" then return false
+        link = ""
+        for each profile in answer.data.items
+            if siloMap.IdOf(profile.id) = ctx.profileId and isString(profile.avatar_url) then link = profile.avatar_url
+        end for
+        if link = "" then return false
+        moonbase = silo.MoonbaseBase(ctx)
+        if moonbase = "" then return false
+        sent = silo.Call(ctx.server, moonbase + "/Moonfin/WatchParty/" + roomId + "/Avatar", { method: "PUT", body: { url: link }, account: ctx.account, profileId: ctx.profileId })
+        return sent.ok = true
+    end function
+
+    function SocketUrl(server as string, roomId as string) as string
+        origin = siloParty.TrimSlash(server)
+        if LCase(origin.Left(8)) = "https://"
+            origin = "wss://" + origin.Mid(8)
+        else if LCase(origin.Left(7)) = "http://"
+            origin = "ws://" + origin.Mid(7)
+        end if
+        return origin + siloParty.BASE + "/rooms/" + roomId + "/ws"
+    end function
+
+    function Protocols(ticketId as string) as string
+        return siloParty.PROTOCOL + ", silo.ticket." + ticketId
+    end function
+end namespace
