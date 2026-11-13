@@ -31,10 +31,14 @@ function trimMarkup(text) {
     return text.replace(/<!--[^]*?-->/g, '').split('\n').map((line) => line.trim()).filter((line) => line !== '').join('\n');
 }
 
+// GetCurrentLocale only ever returns these, so any other locale folder can never load on a Roku
+const deviceLocales = new Set(['en_US', 'en_GB', 'en_CA', 'en_AU', 'fr_CA', 'es_ES', 'es_MX', 'de_DE', 'it_IT', 'pt_BR']);
+
 const zip = new JSZip();
 const entries = await readdir(stagingDir, { recursive: true, withFileTypes: true });
 const files = entries.filter((entry) => entry.isFile())
     .map((entry) => path.relative(stagingDir, path.join(entry.parentPath, entry.name)).split(path.sep).join('/'))
+    .filter((file) => !file.startsWith('locale/') || deviceLocales.has(file.split('/')[1]))
     .sort();
 
 for (const file of files) {
