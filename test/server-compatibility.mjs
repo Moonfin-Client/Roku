@@ -1592,8 +1592,11 @@ for (const file of ['NouveauItemDetails', 'StageItemDetails', 'PremiereItemDetai
   const rebuild = (await readFile(`components/details/${file}.bs`, 'utf8')).match(/sub rebuildSections\(\)[^]*?\nend sub/)[0];
   assert.match(rebuild, /releaseRails\(\)/, `${file} keeps its rails for addRail to reuse when it rebuilds`);
   assert.doesNotMatch(rebuild, /m\.sectionsGroup\.removeChildrenIndex/, `${file} doesn't throw its rails away when it rebuilds`);
+  assert.match(rebuild, /dropUnusedRails\(\)/, `${file} lets go of the rails it didn't use again`);
 }
-assert.match(await readFile('components/details/NouveauItemDetails.bs', 'utf8'), /sub addRail\([^]*?m\.railPool\.DoesExist\(signature\)[^]*?callFunc\("clearFocus"\)/, 'A reused rail comes over with no card lit');
+const addRail = (await readFile('components/details/NouveauItemDetails.bs', 'utf8')).match(/sub addRail\([^]*?\nend sub/)[0];
+assert.match(addRail, /m\.railPool\.DoesExist\(signature\)[^]*?callFunc\("clearFocus"\)/, 'A reused rail comes over with no card lit');
+assert.match(addRail, /if signature <> "" then signature = kind \+ signature/, 'A spec that cannot be written out is never matched to another rail');
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "frost"\)[^]*?minimalistRules\.Draws\(itemType\) then return "FrostItemDetails"\s+return "ModernItemDetails"/, 'Frost draws the video pages and hands the rest to Modern');
 assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "frost" then return "FrostItemDetails"/, 'A title only in Seerr opens in Frost too');
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "quickLook"\)[^]*?minimalistRules\.Draws\(itemType\) and not \(isValid\(top\) and top\.isSubtype\("QuickLookItemDetails"\)\) then return "QuickLookItemDetails"\s+return "ModernItemDetails"/, 'Quick Look draws Stage\'s pages in its drawer, and what the drawer opens and every other page is Modern');
