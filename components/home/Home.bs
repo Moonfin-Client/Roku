@@ -71,6 +71,18 @@ sub init()
     m.modernFocusCard = m.top.findNode("modernFocusCard")
     layOutModernFocusCard()
 
+    m.carouselHomeRows = isCarouselHomeRows()
+    if m.carouselHomeRows
+        m.carouselPanels = m.top.findNode("carouselPanels")
+        m.carouselPanelsFadeIn = m.top.findNode("carouselPanelsFadeIn")
+        ' Each row's panel stays on the card last focused in it, by row
+        m.carouselPicks = {}
+        m.focusedCarouselPanel = invalid
+        m.homeRows.observeField("translation", "layOutCarouselPanels")
+        m.homeRows.observeField("visible", "layOutCarouselPanels")
+        m.homeRows.observeField("rowHeights", "layOutCarouselPanels")
+    end if
+
     ' Set up before the media bar below, since laying that out can hide the card and stop a preview
     previewInit()
 
@@ -510,6 +522,10 @@ sub onHomeRowsKeyPressed(event as object)
         if m.modernHomeRows
             hideModernFocusCard()
         end if
+        if m.carouselHomeRows
+            m.carouselPanelsFadeIn.control = "stop"
+            m.carouselPanels.opacity = 0
+        end if
     end if
 end sub
 
@@ -524,6 +540,7 @@ sub onHomeRowsMoveTarget(event as object)
     row = m.homeRows.content.getChild(target[0])
     if not isValid(row) or row.modernCards <> true then return
     applyModernReflow(target[0], target[1])
+    pickCarouselItem(row, target[1])
 
     item = row.getChild(target[1])
     if not isValid(item) or not m.modernFocusCard.cardShown then return
@@ -654,6 +671,9 @@ const AYA_ROWS_TOP = 884
 
 ' The banner card runs from 130 to 554, and the rows follow it
 const BANNER_ROWS_TOP = 574
+
+' A Carousel row's panel starts under its 56 tall title, its cards and a 24 gap
+const CAROUSEL_PANEL_TOP = 80
 
 ' With Peek Home Rows on, the rows sit low enough that only the first row's label and the
 ' top half of its cards show under the bar. The bar lays itself out above this line.
@@ -1235,6 +1255,7 @@ sub onItemFocusChanged()
         ' focusBitmapUri is set on the whole row list, so it has to follow the focus
         if focusedRow.modernCards = true
             if m.homeRows.focusBitmapUri <> "" then m.homeRows.focusBitmapUri = ""
+            m.modernFocusCard.showInfo = focusedRow.carousel <> true
             applyModernReflow(focused[0], focused[1])
             showModernFocusCard(focusedItem)
             previewOnFocus(focusedItem)
@@ -1242,6 +1263,11 @@ sub onItemFocusChanged()
             if m.homeRows.focusBitmapUri <> m.classicFocusBitmapUri then m.homeRows.focusBitmapUri = m.classicFocusBitmapUri
             hideModernFocusCard()
         end if
+    end if
+    m.focusedCarousel = focusedRow.carousel = true
+    if m.carouselHomeRows
+        pickCarouselItem(focusedRow, focused[1])
+        if m.carouselPanels.opacity < 1 and m.carouselPanelsFadeIn.state <> "running" then m.carouselPanelsFadeIn.control = "start"
     end if
 
     showItemTitle(focusedItem.json, focusedItem.title ?? "")
@@ -1362,6 +1388,7 @@ sub onItemDetailsLoaded()
 
     ' A film or episode's preview reads its sources from here rather than asking again
     m.previewDetails = json
+    if m.focusedCarousel and isValid(m.focusedCarouselPanel) then m.focusedCarouselPanel.callFunc("setDetails", json)
 
     resetFocusedItemDetails()
 
@@ -1449,6 +1476,52 @@ end function
 sub hideModernFocusCard()
     stopPreview()
     if isValid(m.modernFocusCard) then m.modernFocusCard.callFunc("hideCard")
+end sub
+
+' The panel under a Carousel row shows the card last focused in it
+sub pickCarouselItem(row as object, col as integer)
+    if not m.carouselHomeRows then return
+    if row.carousel = true then m.carouselPicks[`${row.id}|${row.title}`] = col
+    layOutCarouselPanels()
+end sub
+
+' Puts a panel under each Carousel row on screen. The row list holds its focused row at the top,
+' with the rows after it at their heights apart.
+sub layOutCarouselPanels()
+    m.carouselPanels.translation = m.homeRows.translation
+    m.carouselPanels.visible = m.homeRows.visible
+    m.focusedCarouselPanel = invalid
+    used = 0
+    content = m.homeRows.content
+    heights = m.homeRows.rowHeights
+    focused = m.homeRows.rowItemFocused
+    first = 0
+    if isValid(focused) and focused.count() > 0 and focused[0] > 0 then first = focused[0]
+    if isValid(content) and isValid(heights)
+        y = 0
+        reach = 1080 - m.homeRows.translation[1]
+        for i = first to content.getChildCount() - 1
+            if y >= reach or i >= heights.count() then exit for
+            row = content.getChild(i)
+            count = row.getChildCount()
+            panelTop = y + CAROUSEL_PANEL_TOP + row.cursorSize[1]
+            if row.carousel = true and count > 0 and panelTop < reach
+                if used >= m.carouselPanels.getChildCount() then m.carouselPanels.createChild("CarouselPanel")
+                panel = m.carouselPanels.getChild(used)
+                used++
+                pick = m.carouselPicks[`${row.id}|${row.title}`] ?? 0
+                if pick >= count then pick = count - 1
+                panel.translation = [0, panelTop]
+                panel.visible = true
+                panel.item = row.getChild(pick)
+                if i = first then m.focusedCarouselPanel = panel
+            end if
+            y += heights[i] + m.homeRows.itemSpacing[1]
+        end for
+    end if
+    for i = used to m.carouselPanels.getChildCount() - 1
+        m.carouselPanels.getChild(i).visible = false
+    end for
 end sub
 
 ' Slides the items after the focused one aside so the focused landscape card has room
@@ -1564,8 +1637,9 @@ sub showItemInfo(json as object, item as object)
         buildInfoRow(json, item)
         m.serverRatings = ratingsRow.ServerEntries(json, "home")
         showHomeRatings([])
-    else if not m.modernHomeRows
-        ' Classic rows without the info area have nowhere to show ratings
+    else if not m.modernHomeRows or m.focusedCarousel = true
+        ' Classic rows without the info area have nowhere to show ratings, and a Carousel panel
+        ' fetches its own
         return
     end if
 

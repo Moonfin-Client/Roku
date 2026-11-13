@@ -115,6 +115,14 @@
         <translation>Chapters</translation>
     </message>
     <message>
+        <source>Carousel</source>
+        <translation>Carousel</translation>
+    </message>
+    <message>
+        <source>Modern cards over a panel with the focused title's details.</source>
+        <translation>Modern cards over a panel with the focused title's details.</translation>
+    </message>
+    <message>
         <source>Cast</source>
         <translation>Cast</translation>
     </message>
