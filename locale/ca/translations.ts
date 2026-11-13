@@ -2794,5 +2794,5785 @@
         <source>Genre</source>
         <translation>Gènere</translation>
     </message>
+    <message>
+        <source>Achievement Badges</source>
+        <translation>Insígnies de fites</translation>
+    </message>
+    <message>
+        <source>Action Buttons</source>
+        <translation>Botons d&apos;acció</translation>
+    </message>
+    <message>
+        <source>Activity</source>
+        <translation>Activitat</translation>
+    </message>
+    <message>
+        <source>Adds a button to the menu for messages sent by your server admin</source>
+        <translation>Afegeix un botó al menú per als missatges enviats per l&apos;administrador del teu servidor</translation>
+    </message>
+    <message>
+        <source>And plenty more</source>
+        <translation>I molt més</translation>
+    </message>
+    <message>
+        <source>Appearance</source>
+        <translation>Aparença</translation>
+    </message>
+    <message>
+        <source>Artwork, one play button and the episodes.</source>
+        <translation>La il·lustració, un botó de reproducció i els episodis.</translation>
+    </message>
+    <message>
+        <source>Avatars</source>
+        <translation>Avatars</translation>
+    </message>
+    <message>
+        <source>Aya</source>
+        <translation>Aya</translation>
+    </message>
+    <message>
+        <source>Back</source>
+        <translation>Enrere</translation>
+    </message>
+    <message>
+        <source>Badges</source>
+        <translation>Insígnies</translation>
+    </message>
+    <message>
+        <source>Badges unlocked</source>
+        <translation>Insígnies desbloquejades</translation>
+    </message>
+    <message>
+        <source>Badges, ranks and quests earned from what you watch</source>
+        <translation>Insígnies, rangs i missions que guanyes pel que mires</translation>
+    </message>
+    <message>
+        <source>Banner</source>
+        <translation>Bàner</translation>
+    </message>
+    <message>
+        <source>Best combo</source>
+        <translation>Millor combo</translation>
+    </message>
+    <message>
+        <source>Best login streak</source>
+        <translation>Millor ratxa d&apos;inicis de sessió</translation>
+    </message>
+    <message>
+        <source>Best watch streak</source>
+        <translation>Millor ratxa de visionat</translation>
+    </message>
+    <message>
+        <source>Bests</source>
+        <translation>Rècords</translation>
+    </message>
+    <message>
+        <source>Bookshelf</source>
+        <translation>Llibreria</translation>
+    </message>
+    <message>
+        <source>Buy this?</source>
+        <translation>Vols comprar-ho?</translation>
+    </message>
+    <message>
+        <source>Checking Direct Play capability...</source>
+        <translation>S&apos;està comprovant la capacitat de reproducció nativa...</translation>
+    </message>
+    <message>
+        <source>Chapters</source>
+        <translation>Capítols</translation>
+    </message>
+    <message>
+        <source>Cast</source>
+        <translation>Emet</translation>
+    </message>
+    <message>
+        <source>Cinematic, with tabs for cast and extras.</source>
+        <translation>Cinemàtic, amb pestanyes per al repartiment i els extres.</translation>
+    </message>
+    <message>
+        <source>Classic</source>
+        <translation>Clàssic</translation>
+    </message>
+    <message>
+        <source>Compact. More rows on screen at once.</source>
+        <translation>Compacte. Més files a la pantalla alhora.</translation>
+    </message>
+    <message>
+        <source>Confirm</source>
+        <translation>Confirmeu</translation>
+    </message>
+    <message>
+        <source>Could not buy that.</source>
+        <translation>No s&apos;ha pogut comprar.</translation>
+    </message>
+    <message>
+        <source>Could not change how the profile looks.</source>
+        <translation>No s&apos;ha pogut canviar l&apos;aspecte del perfil.</translation>
+    </message>
+    <message>
+        <source>Could not load your achievements.</source>
+        <translation>No s&apos;han pogut carregar les teves fites.</translation>
+    </message>
+    <message>
+        <source>Could not use that power-up.</source>
+        <translation>No s&apos;ha pogut utilitzar aquest potenciador.</translation>
+    </message>
+    <message>
+        <source>Could not reroll those quests.</source>
+        <translation>No s&apos;han pogut canviar aquestes missions.</translation>
+    </message>
+    <message>
+        <source>Countries watched</source>
+        <translation>Països vistos</translation>
+    </message>
+    <message>
+        <source>Covers one missed day. Only one can be banked.</source>
+        <translation>Cobreix un dia que hagis perdut. Només en pots guardar un.</translation>
+    </message>
+    <message>
+        <source>Crew</source>
+        <translation>Equip</translation>
+    </message>
+    <message>
+        <source>Custom themes</source>
+        <translation>Temes personalitzats</translation>
+    </message>
+    <message>
+        <source>Daily</source>
+        <translation>Diàriament</translation>
+    </message>
+    <message>
+        <source>Days signed in</source>
+        <translation>Dies amb sessió iniciada</translation>
+    </message>
+    <message>
+        <source>Days watched</source>
+        <translation>Dies de visionat</translation>
+    </message>
+    <message>
+        <source>Decades watched</source>
+        <translation>Dècades vistes</translation>
+    </message>
+    <message>
+        <source>Double Credit</source>
+        <translation>Doble recompte</translation>
+    </message>
+    <message>
+        <source>Doubles score for an hour. Using it again restarts the hour.</source>
+        <translation>Duplica la puntuació durant una hora. Si el tornes a utilitzar, l&apos;hora torna a començar.</translation>
+    </message>
+    <message>
+        <source>Direct Play</source>
+        <translation>Reproducció nativa</translation>
+    </message>
+    <message>
+        <source>Details</source>
+        <translation>Detalls</translation>
+    </message>
+    <message>
+        <source>Default</source>
+        <translation>Per defecte</translation>
+    </message>
+    <message>
+        <source>Done</source>
+        <translation>Fet</translation>
+    </message>
+    <message>
+        <source>Early morning sessions</source>
+        <translation>Sessions de bon matí</translation>
+    </message>
+    <message>
+        <source>Enter your PIN to restore the full app</source>
+        <translation>Introdueix el PIN per recuperar l&apos;aplicació completa</translation>
+    </message>
+    <message>
+        <source>Equipped</source>
+        <translation>Equipat</translation>
+    </message>
+    <message>
+        <source>Exit Kids Mode</source>
+        <translation>Surt del mode infantil</translation>
+    </message>
+    <message>
+        <source>Failed to load</source>
+        <translation>No s&apos;ha pogut carregar</translation>
+    </message>
+    <message>
+        <source>Films watched</source>
+        <translation>Pel·lícules vistes</translation>
+    </message>
+    <message>
+        <source>Forced</source>
+        <translation>Forçat</translation>
+    </message>
+    <message>
+        <source>File Details</source>
+        <translation>Detalls del fitxer</translation>
+    </message>
+    <message>
+        <source>File Information</source>
+        <translation>Informació del fitxer</translation>
+    </message>
+    <message>
+        <source>Gallery</source>
+        <translation>Galeria</translation>
+    </message>
+    <message>
+        <source>Genres watched</source>
+        <translation>Gèneres vistos</translation>
+    </message>
+    <message>
+        <source>Default Action</source>
+        <translation>Acció predeterminada</translation>
+    </message>
+    <message>
+        <source>What selecting a Continue Watching or Next Up item does</source>
+        <translation>Què passa quan selecciones un element de «Continuar mirant» o «Següent»</translation>
+    </message>
+    <message>
+        <source>Go to Details</source>
+        <translation>Ves als detalls</translation>
+    </message>
+    <message>
+        <source>Play immediately</source>
+        <translation>Reprodueix immediatament</translation>
+    </message>
+    <message>
+        <source>Go to Series</source>
+        <translation>Ves a la sèrie</translation>
+    </message>
+    <message>
+        <source>Habits</source>
+        <translation>Hàbits</translation>
+    </message>
+    <message>
+        <source>Hours</source>
+        <translation>Hores</translation>
+    </message>
+    <message>
+        <source>Hidden achievement</source>
+        <translation>Fita oculta</translation>
+    </message>
+    <message>
+        <source>Hours watched</source>
+        <translation>Hores vistes</translation>
+    </message>
+    <message>
+        <source>How should a movie or show look when you open it?</source>
+        <translation>Com hauria de ser l&apos;aspecte d&apos;una pel·lícula o d&apos;una sèrie quan la obres?</translation>
+    </message>
+    <message>
+        <source>How should the top of your Home screen look?</source>
+        <translation>Quin aspecte hauria de tenir la part superior de la pantalla d&apos;inici?</translation>
+    </message>
+    <message>
+        <source>How should your rows look?</source>
+        <translation>Quin aspecte vols per a les teves files?</translation>
+    </message>
+    <message>
+        <source>How you compare with other users on this server</source>
+        <translation>Com et compares amb els altres usuaris d&apos;aquest servidor</translation>
+    </message>
+    <message>
+        <source>Incorrect PIN</source>
+        <translation>PIN incorrecte</translation>
+    </message>
+    <message>
+        <source>It comes straight out of your score bank.</source>
+        <translation>Surt directament de la teva reserva de punts.</translation>
+    </message>
+    <message>
+        <source>Items watched</source>
+        <translation>Elements vistos</translation>
+    </message>
+    <message>
+        <source>Just now</source>
+        <translation>Just ara</translation>
+    </message>
+    <message>
+        <source>Kids Mode</source>
+        <translation>Mode infantil</translation>
+    </message>
+    <message>
+        <source>Languages watched</source>
+        <translation>Idiomes vistos</translation>
+    </message>
+    <message>
+        <source>Larger cards with titles underneath.</source>
+        <translation>Targetes més grans amb títols a sota.</translation>
+    </message>
+    <message>
+        <source>Late night sessions</source>
+        <translation>Sessions de nit</translation>
+    </message>
+    <message>
+        <source>Leaderboard</source>
+        <translation>Classificació</translation>
+    </message>
+    <message>
+        <source>Left Sidebar</source>
+        <translation>Barra lateral esquerra</translation>
+    </message>
+    <message>
+        <source>Libraries visited</source>
+        <translation>Biblioteques visitades</translation>
+    </message>
+    <message>
+        <source>Library completion</source>
+        <translation>Progrés de les biblioteques</translation>
+    </message>
+    <message>
+        <source>Loadout</source>
+        <translation>Equipament</translation>
+    </message>
+    <message>
+        <source>Locked</source>
+        <translation>Bloquejades</translation>
+    </message>
+    <message>
+        <source>Longest single item</source>
+        <translation>Element més llarg</translation>
+    </message>
+    <message>
+        <source>MakD</source>
+        <translation>MakD</translation>
+    </message>
+    <message>
+        <source>Mark all as read</source>
+        <translation>Marca-ho tot com a llegit</translation>
+    </message>
+    <message>
+        <source>Messages</source>
+        <translation>Missatges</translation>
+    </message>
+    <message>
+        <source>Minimalist</source>
+        <translation>Minimalista</translation>
+    </message>
+    <message>
+        <source>Modern</source>
+        <translation>Modern</translation>
+    </message>
+    <message>
+        <source>Month</source>
+        <translation>Mes</translation>
+    </message>
+    <message>
+        <source>Moonfin</source>
+        <translation>Moonfin</translation>
+    </message>
+    <message>
+        <source>More Actions</source>
+        <translation>Més accions</translation>
+    </message>
+    <message>
+        <source>Most common badge</source>
+        <translation>Insígnia més comuna</translation>
+    </message>
+    <message>
+        <source>Most episodes in a day</source>
+        <translation>Més episodis en un dia</translation>
+    </message>
+    <message>
+        <source>Most films in a day</source>
+        <translation>Més pel·lícules en un dia</translation>
+    </message>
+    <message>
+        <source>Next</source>
+        <translation>Següent</translation>
+    </message>
+    <message>
+        <source>No messages from your server yet</source>
+        <translation>Encara no hi ha missatges del teu servidor</translation>
+    </message>
+    <message>
+        <source>Nothing for sale right now.</source>
+        <translation>Ara mateix no hi ha res a la venda.</translation>
+    </message>
+    <message>
+        <source>Nothing here yet.</source>
+        <translation>Encara no hi ha res aquí.</translation>
+    </message>
+    <message>
+        <source>Nothing to suggest for this badge.</source>
+        <translation>No hi ha res a suggerir per a aquesta insígnia.</translation>
+    </message>
+    <message>
+        <source>None held</source>
+        <translation>Cap disponible</translation>
+    </message>
+    <message>
+        <source>Nouveau</source>
+        <translation>Nouveau</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>Desactivat</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>Altres</translation>
+    </message>
+    <message>
+        <source>Owned</source>
+        <translation>Adquirit</translation>
+    </message>
+    <message>
+        <source>PIN must be exactly 4 digits.</source>
+        <translation>El PIN ha de tenir exactament 4 dígits.</translation>
+    </message>
+    <message>
+        <source>Power-ups</source>
+        <translation>Potenciadors</translation>
+    </message>
+    <message>
+        <source>Progress</source>
+        <translation>Progrés</translation>
+    </message>
+    <message>
+        <source>Recap</source>
+        <translation>Resum</translation>
+    </message>
+    <message>
+        <source>Filler</source>
+        <translation>Filler</translation>
+    </message>
+    <message>
+        <source>Manga Canon</source>
+        <translation>Cànon manga</translation>
+    </message>
+    <message>
+        <source>Anime Canon</source>
+        <translation>Cànon anime</translation>
+    </message>
+    <message>
+        <source>Subbed</source>
+        <translation>Sub</translation>
+    </message>
+    <message>
+        <source>Dubbed</source>
+        <translation>Dub</translation>
+    </message>
+    <message>
+        <source>Subbed/Dubbed</source>
+        <translation>Sub/Dub</translation>
+    </message>
+    <message>
+        <source>Sub</source>
+        <translation>SUB</translation>
+    </message>
+    <message>
+        <source>Dub</source>
+        <translation>DUB</translation>
+    </message>
+    <message>
+        <source>Sub/Dub</source>
+        <translation>SUB/DUB</translation>
+    </message>
+    <message>
+        <source>Rewatches</source>
+        <translation>Revisionats</translation>
+    </message>
+    <message>
+        <source>Running now</source>
+        <translation>Actiu ara</translation>
+    </message>
+    <message>
+        <source>Quests</source>
+        <translation>Missions</translation>
+    </message>
+    <message>
+        <source>Recommendations</source>
+        <translation>Recomanacions</translation>
+    </message>
+    <message>
+        <source>Reroll daily quests</source>
+        <translation>Canvia les missions diàries</translation>
+    </message>
+    <message>
+        <source>Reroll these quests?</source>
+        <translation>Vols canviar aquestes missions?</translation>
+    </message>
+    <message>
+        <source>Reroll weekly quests</source>
+        <translation>Canvia les missions setmanals</translation>
+    </message>
+    <message>
+        <source>Reset</source>
+        <translation>Restableix</translation>
+    </message>
+    <message>
+        <source>Score bank</source>
+        <translation>Reserva de punts</translation>
+    </message>
+    <message>
+        <source>Score earned</source>
+        <translation>Punts aconseguits</translation>
+    </message>
+    <message>
+        <source>Score to spend and the boosts you hold</source>
+        <translation>Punts per gastar i els potenciadors que tens</translation>
+    </message>
+    <message>
+        <source>Restart</source>
+        <translation>Reinicieu</translation>
+    </message>
+    <message>
+        <source>Resume</source>
+        <translation>Reprèn</translation>
+    </message>
+    <message>
+        <source>Retry</source>
+        <translation>Torna-ho a provar</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Desa</translation>
+    </message>
+    <message>
+        <source>Score</source>
+        <translation>Puntuació</translation>
+    </message>
+    <message>
+        <source>Seerr requests</source>
+        <translation>Sol·licituds de Seerr</translation>
+    </message>
+    <message>
+        <source>Series finished</source>
+        <translation>Sèries acabades</translation>
+    </message>
+    <message>
+        <source>Simplify the app and lock the way out with a PIN</source>
+        <translation>Simplifica l&apos;aplicació i bloqueja la sortida amb un PIN</translation>
+    </message>
+    <message>
+        <source>Similar</source>
+        <translation>Similars</translation>
+    </message>
+    <message>
+        <source>Skip setup</source>
+        <translation>Omet la configuració</translation>
+    </message>
+    <message>
+        <source>Specials</source>
+        <translation>Especials</translation>
+    </message>
+    <message>
+        <source>Spotlight</source>
+        <translation>Spotlight</translation>
+    </message>
+    <message>
+        <source>Stage</source>
+        <translation>Escenari</translation>
+    </message>
+    <message>
+        <source>Stats</source>
+        <translation>Estadístiques</translation>
+    </message>
+    <message>
+        <source>Streak</source>
+        <translation>Ratxa</translation>
+    </message>
+    <message>
+        <source>Streak Freeze</source>
+        <translation>Congelació de ratxa</translation>
+    </message>
+    <message>
+        <source>Subtitle</source>
+        <translation>Subtítol</translation>
+    </message>
+    <message>
+        <source>Subtitles</source>
+        <translation>Subtítols</translation>
+    </message>
+    <message>
+        <source>The avatar and title on your profile</source>
+        <translation>L&apos;avatar i el títol del teu perfil</translation>
+    </message>
+    <message>
+        <source>Titles</source>
+        <translation>Títols</translation>
+    </message>
+    <message>
+        <source>Your records and how the server is doing</source>
+        <translation>Els teus rècords i com va el servidor</translation>
+    </message>
+    <message>
+        <source>When you watch</source>
+        <translation>Quan mires</translation>
+    </message>
+    <message>
+        <source>Weekend sessions</source>
+        <translation>Sessions de cap de setmana</translation>
+    </message>
+    <message>
+        <source>Variety</source>
+        <translation>Varietat</translation>
+    </message>
+    <message>
+        <source>Users</source>
+        <translation>Usuaris</translation>
+    </message>
+    <message>
+        <source>This server</source>
+        <translation>Aquest servidor</translation>
+    </message>
+    <message>
+        <source>Suggested items to watch</source>
+        <translation>Elements suggerits per mirar</translation>
+    </message>
+    <message>
+        <source>The next thing you finish counts twice towards badges.</source>
+        <translation>El següent que acabis compta doble per a les insígnies.</translation>
+    </message>
+    <message>
+        <source>Swap this set for a different one</source>
+        <translation>Canvia aquest conjunt per un altre</translation>
+    </message>
+    <message>
+        <source>There is more waiting in Settings</source>
+        <translation>Hi ha més esperant a Configuració</translation>
+    </message>
+    <message>
+        <source>Top actors</source>
+        <translation>Actors més vistos</translation>
+    </message>
+    <message>
+        <source>Top Bar</source>
+        <translation>Barra superior</translation>
+    </message>
+    <message>
+        <source>Top directors</source>
+        <translation>Directors més vistos</translation>
+    </message>
+    <message>
+        <source>Top rank reached</source>
+        <translation>Has arribat al rang màxim</translation>
+    </message>
+    <message>
+        <source>Trailer</source>
+        <translation>Tràiler</translation>
+    </message>
+    <message>
+        <source>Unknown Codec</source>
+        <translation>Còdec desconegut</translation>
+    </message>
+    <message>
+        <source>Unlocked</source>
+        <translation>Desbloquejades</translation>
+    </message>
+    <message>
+        <source>Unwatched</source>
+        <translation>Sense veure</translation>
+    </message>
+    <message>
+        <source>Up Next</source>
+        <translation>A continuació</translation>
+    </message>
+    <message>
+        <source>Use this power-up?</source>
+        <translation>Vols utilitzar aquest potenciador?</translation>
+    </message>
+    <message>
+        <source>Used this week, comes back Monday UTC</source>
+        <translation>Ja utilitzat aquesta setmana; torna dilluns UTC</translation>
+    </message>
+    <message>
+        <source>Used today, comes back at midnight UTC</source>
+        <translation>Ja utilitzat avui; torna a mitjanit UTC</translation>
+    </message>
+    <message>
+        <source>XP Boost</source>
+        <translation>Impuls d&apos;XP</translation>
+    </message>
+    <message>
+        <source>You get one daily and one weekly reroll, and this spends it.</source>
+        <translation>Tens un canvi diari i un de setmanal, i això te&apos;l gasta.</translation>
+    </message>
+    <message>
+        <source>It&apos;s spent as soon as you confirm.</source>
+        <translation>Es gasta tan bon punt ho confirmis.</translation>
+    </message>
+    <message>
+        <source>Shop</source>
+        <translation>Botiga</translation>
+    </message>
+    <message>
+        <source>Spend score on more boosts</source>
+        <translation>Gasta punts en més potenciadors</translation>
+    </message>
+    <message>
+        <source>Recently Released</source>
+        <translation>Publicat recentment</translation>
+    </message>
+    <message>
+        <source>Audio &amp; Subtitles</source>
+        <translation>Àudio i subtítols</translation>
+    </message>
+    <message>
+        <source>Week</source>
+        <translation>Setmana</translation>
+    </message>
+    <message>
+        <source>Weekly</source>
+        <translation>Setmanalment</translation>
+    </message>
+    <message>
+        <source>What the server has unlocked lately</source>
+        <translation>Què ha desbloquejat el servidor darrerament</translation>
+    </message>
+    <message>
+        <source>What you watched recently</source>
+        <translation>Què has vist darrerament</translation>
+    </message>
+    <message>
+        <source>Where should navigation go?</source>
+        <translation>On hauria d&apos;anar la navegació?</translation>
+    </message>
+    <message>
+        <source>Up and down to preview · OK to choose · Back twice to skip</source>
+        <translation>Amunt i avall per previsualitzar · OK per triar · Enrere dues vegades per ometre</translation>
+    </message>
+    <message>
+        <source>Navigation Bar</source>
+        <translation>Barra de navegació</translation>
+    </message>
+    <message>
+        <source>Navigation Style</source>
+        <translation>Estil de navegació</translation>
+    </message>
+    <message>
+        <source>Media Bar</source>
+        <translation>Barra de mitjans</translation>
+    </message>
+    <message>
+        <source>Details Page</source>
+        <translation>Pàgina de detalls</translation>
+    </message>
+    <message>
+        <source>Tabs across the top of the screen.</source>
+        <translation>Pestanyes a la part superior de la pantalla.</translation>
+    </message>
+    <message>
+        <source>A slim rail of icons down the left side.</source>
+        <translation>Una barra estreta d&apos;icones al costat esquerre.</translation>
+    </message>
+    <message>
+        <source>Large artwork with the title, details and overview laid over it.</source>
+        <translation>Il·lustració gran amb el títol, els detalls i la visió general superposats.</translation>
+    </message>
+    <message>
+        <source>Large artwork led by a big title logo.</source>
+        <translation>Il·lustració gran encapçalada per un logotip gran del títol.</translation>
+    </message>
+    <message>
+        <source>Titles shelved as book spines, with the featured one face out.</source>
+        <translation>Títols col·locats com a lloms de llibres, amb el destacat de cara.</translation>
+    </message>
+    <message>
+        <source>The featured title opened up, with the next few lined up beside it.</source>
+        <translation>El títol destacat obert, amb els següents alineats al costat.</translation>
+    </message>
+    <message>
+        <source>A shorter banner above your rows, so more of them fit on screen.</source>
+        <translation>Un bàner més baix sobre les teves files, perquè n&apos;hi càpiguen més a la pantalla.</translation>
+    </message>
+    <message>
+        <source>Artwork first in a framed panel, with your rows right underneath.</source>
+        <translation>La il·lustració primer, en un plafó amb marc, i les teves files just a sota.</translation>
+    </message>
+    <message>
+        <source>No featured area. Home opens straight onto your rows.</source>
+        <translation>Sense zona destacada. L&apos;inici s&apos;obre directament a les teves files.</translation>
+    </message>
+    <message>
+        <source>Everything centred in one stack.</source>
+        <translation>Tot està centrat en una sola columna.</translation>
+    </message>
+    <message>
+        <source>Hero-first, with pop-up cards for cast and extras.</source>
+        <translation>Centrat en la imatge principal, amb targetes emergents per al repartiment i els extres.</translation>
+    </message>
+    <message>
+        <source>Full-screen, with sections stacked instead of tabs.</source>
+        <translation>A pantalla completa, amb les seccions apilades en lloc de pestanyes.</translation>
+    </message>
+    <message>
+        <source>The title centered over a full screen backdrop, with everything else down the page.</source>
+        <translation>El títol centrat sobre un teló de fons a pantalla completa, amb tota la resta a sota al llarg de la pàgina.</translation>
+    </message>
+    <message>
+        <source>Quick Look</source>
+        <translation>Vista ràpida</translation>
+    </message>
+    <message>
+        <source>A drawer over the screen you were on, with play and the basics, and the full page a press away.</source>
+        <translation>Un calaix sobre la pantalla on eres, amb el botó de reproducció i el més bàsic, i la pàgina completa a només una pulsació.</translation>
+    </message>
+    <message>
+        <source>Frost</source>
+        <translation>Esmerilat</translation>
+    </message>
+    <message>
+        <source>The title in a glass window over its blurred art, with tabs under the buttons.</source>
+        <translation>El títol en una finestra de vidre sobre la seva il·lustració difuminada, amb pestanyes sota els botons.</translation>
+    </message>
+    <message>
+        <source>Open full page</source>
+        <translation>Obre la pàgina completa</translation>
+    </message>
+    <message>
+        <source>Back to close</source>
+        <translation>Prem Enrere per tancar</translation>
+    </message>
+    <message>
+        <source>The poster up front, with play under it and the details beside it.</source>
+        <translation>El pòster al davant, amb el botó de reproducció a sota i els detalls al costat.</translation>
+    </message>
+    <message>
+        <source>Year</source>
+        <translation>Any</translation>
+    </message>
+    <message>
+        <source>Smart Search</source>
+        <translation>Cerca intel·ligent</translation>
+    </message>
+    <message>
+        <source>Current</source>
+        <translation>Actual</translation>
+    </message>
+    <message>
+        <source>Video Library Style</source>
+        <translation>Estil de la biblioteca de vídeos</translation>
+    </message>
+    <message>
+        <source>Docked</source>
+        <translation>Acoblat</translation>
+    </message>
+    <message>
+        <source>Show</source>
+        <translation>Mostra</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <translation>Mostra</translation>
+    </message>
+    <message>
+        <source>Music Library Style</source>
+        <translation>Estil de la biblioteca de música</translation>
+    </message>
+    <message>
+        <source>Quick Access</source>
+        <translation>Accés ràpid</translation>
+    </message>
+    <message>
+        <source>Immersive</source>
+        <translation>Immersiu</translation>
+    </message>
+    <message>
+        <source>Jump Back In</source>
+        <translation>Torna a escoltar</translation>
+    </message>
+    <message>
+        <source>From This Album</source>
+        <translation>D&apos;aquest àlbum</translation>
+    </message>
+    <message>
+        <source>Search Music</source>
+        <translation>Cerca música</translation>
+    </message>
+    <message>
+        <source>Last Played</source>
+        <translation>Última reproducció</translation>
+    </message>
+    <message>
+        <source>Browse By Genre</source>
+        <translation>Navega per gènere</translation>
+    </message>
+    <message>
+        <source>See All</source>
+        <translation>Veure-ho tot</translation>
+    </message>
+    <message>
+        <source>Release Year</source>
+        <translation>Any de llançament</translation>
+    </message>
+    <message>
+        <source>Collections Row Sorting</source>
+        <translation>Classificació de files de col·leccions</translation>
+    </message>
+    <message>
+        <source>Genres Row Sorting</source>
+        <translation>Classificació de files de gèneres</translation>
+    </message>
+    <message>
+        <source>Genres Row Items</source>
+        <translation>Gèneres Elements de fila</translation>
+    </message>
+    <message>
+        <source>Movies &amp; TV Shows</source>
+        <translation>Pel·lícules i Sèries</translation>
+    </message>
+    <message>
+        <source>Movies Only</source>
+        <translation>Només pel·lícules</translation>
+    </message>
+    <message>
+        <source>TV Shows Only</source>
+        <translation>Només Sèries</translation>
+    </message>
+    <message>
+        <source>Date Added</source>
+        <translation>Data d&apos;afegiment</translation>
+    </message>
+    <message>
+        <source>Playlist Order</source>
+        <translation>Ordre de la llista de reproducció</translation>
+    </message>
+    <message>
+        <source>Playlist Sort Options</source>
+        <translation>Opcions d&apos;ordenació de la llista de reproducció</translation>
+    </message>
+    <message>
+        <source>Server Order</source>
+        <translation>Ordre del servidor</translation>
+    </message>
+    <message>
+        <source>Release Order (Ascending)</source>
+        <translation>Ordre d&apos;estrena (ascendent)</translation>
+    </message>
+    <message>
+        <source>Release Order (Descending)</source>
+        <translation>Ordre d&apos;estrena (descendent)</translation>
+    </message>
+    <message>
+        <source>Alphabetical</source>
+        <translation>Alfabètic</translation>
+    </message>
+    <message>
+        <source>Display Options</source>
+        <translation>Opcions de visualització</translation>
+    </message>
+    <message>
+        <source>Release Date (Ascending)</source>
+        <translation>Data d&apos;estrena (Ascendent)</translation>
+    </message>
+    <message>
+        <source>Release Date (Descending)</source>
+        <translation>Data d&apos;estrena (Descendent)</translation>
+    </message>
+    <message>
+        <source>Group Contributions</source>
+        <translation>Agrupa les contribucions</translation>
+    </message>
+    <message>
+        <source>Group multiple roles</source>
+        <translation>Agrupa múltiples rols</translation>
+    </message>
+    <message>
+        <source>Filmography</source>
+        <translation>Filmografia</translation>
+    </message>
+    <message>
+        <source>Custom Order</source>
+        <translation>Ordre personalitzat</translation>
+    </message>
+    <message>
+        <source>You&apos;re set. Here&apos;s what else is in here.</source>
+        <translation>Ja està tot a punt. Aquí tens què més hi ha.</translation>
+    </message>
+    <message>
+        <source>Home View</source>
+        <translation>Vista d&apos;inici</translation>
+    </message>
+    <message>
+        <source>Library View</source>
+        <translation>Vista de la biblioteca</translation>
+    </message>
+    <message>
+        <source>View style</source>
+        <translation>Estil de visualització</translation>
+    </message>
+    <message>
+        <source>Grid direction</source>
+        <translation>Direcció de la graella</translation>
+    </message>
+    <message>
+        <source>Vertical</source>
+        <translation>Vertical</translation>
+    </message>
+    <message>
+        <source>Horizontal</source>
+        <translation>Horitzontal</translation>
+    </message>
+    <message>
+        <source>No favorites yet</source>
+        <translation>Encara no hi ha cap preferit</translation>
+    </message>
+    <message>
+        <source>No favorites found</source>
+        <translation>No s&apos;ha trobat cap preferit</translation>
+    </message>
+    <message>
+        <source>People</source>
+        <translation>Gent</translation>
+    </message>
+    <message>
+        <source>Music Videos</source>
+        <translation>Vídeos musicals</translation>
+    </message>
+    <message>
+        <source>1 held</source>
+        <translation>1 disponible</translation>
+    </message>
+    <message>
+        <source>Today</source>
+        <translation>Avui</translation>
+    </message>
+    <message>
+        <source>Tomorrow</source>
+        <translation>Demà</translation>
+    </message>
+    <message>
+        <source>Jan</source>
+        <translation>Gener</translation>
+    </message>
+    <message>
+        <source>Feb</source>
+        <translation>Febrer</translation>
+    </message>
+    <message>
+        <source>Mar</source>
+        <translation>Març</translation>
+    </message>
+    <message>
+        <source>Apr</source>
+        <translation>Abril</translation>
+    </message>
+    <message>
+        <source>May</source>
+        <translation>Maig</translation>
+    </message>
+    <message>
+        <source>Jun</source>
+        <translation>Juny</translation>
+    </message>
+    <message>
+        <source>Jul</source>
+        <translation>Juliol</translation>
+    </message>
+    <message>
+        <source>Aug</source>
+        <translation>Agost</translation>
+    </message>
+    <message>
+        <source>Sep</source>
+        <translation>Setembre</translation>
+    </message>
+    <message>
+        <source>Oct</source>
+        <translation>Octubre</translation>
+    </message>
+    <message>
+        <source>Nov</source>
+        <translation>Novembre</translation>
+    </message>
+    <message>
+        <source>Dec</source>
+        <translation>Desembre</translation>
+    </message>
+    <message>
+        <source>Offset</source>
+        <translation>Desplaçament</translation>
+    </message>
+    <message>
+        <source>Subtitle Offset</source>
+        <translation>Desplaçament dels subtítols</translation>
+    </message>
+    <message>
+        <source>Press BACK to close</source>
+        <translation>Prem ENRERE per tancar</translation>
+    </message>
+    <message>
+        <source>Continue Watching &amp; Next Up</source>
+        <translation>Continueu mirant i a continuació</translation>
+    </message>
+    <message>
+        <source>Chapters and Extras</source>
+        <translation>Capítols i extres</translation>
+    </message>
+    <message>
+        <source>1 chapter</source>
+        <translation>1 capítol</translation>
+    </message>
+    <message>
+        <source>{count} chapters</source>
+        <translation>{count} capítols</translation>
+    </message>
+    <message>
+        <source>1 extra</source>
+        <translation>1 extra</translation>
+    </message>
+    <message>
+        <source>{count} extras</source>
+        <translation>{count} extres</translation>
+    </message>
+    <message>
+        <source>1 review</source>
+        <translation>1 ressenya</translation>
+    </message>
+    <message>
+        <source>{count} reviews</source>
+        <translation>{count} ressenyes</translation>
+    </message>
+    <message>
+        <source>Reviews</source>
+        <translation>Ressenyes</translation>
+    </message>
+    <message>
+        <source>{rating} / 10</source>
+        <translation>{rating} / 10</translation>
+    </message>
+    <message>
+        <source>Chapter</source>
+        <translation>Capítol</translation>
+    </message>
+    <message>
+        <source>Behind the Scenes</source>
+        <translation>Darrere les càmeres</translation>
+    </message>
+    <message>
+        <source>Deleted Scenes</source>
+        <translation>Escenes eliminades</translation>
+    </message>
+    <message>
+        <source>Featurettes</source>
+        <translation>Reportatges</translation>
+    </message>
+    <message>
+        <source>Interviews</source>
+        <translation>Entrevistes</translation>
+    </message>
+    <message>
+        <source>Scenes</source>
+        <translation>Escenes</translation>
+    </message>
+    <message>
+        <source>Shorts</source>
+        <translation>Curtmetratges</translation>
+    </message>
+    <message>
+        <source>Trailers</source>
+        <translation>Tràilers</translation>
+    </message>
+    <message>
+        <source>1 collection</source>
+        <translation>1 col·lecció</translation>
+    </message>
+    <message>
+        <source>{count} collections</source>
+        <translation>{count} col·leccions</translation>
+    </message>
+    <message>
+        <source>Collection</source>
+        <translation>Col·lecció</translation>
+    </message>
+    <message>
+        <source>Cast, Crew, and Studios</source>
+        <translation>Repartiment, equip i estudis</translation>
+    </message>
+    <message>
+        <source>1 person</source>
+        <translation>1 persona</translation>
+    </message>
+    <message>
+        <source>{count} people</source>
+        <translation>{count} persones</translation>
+    </message>
+    <message>
+        <source>1 studio</source>
+        <translation>1 estudi</translation>
+    </message>
+    <message>
+        <source>{count} studios</source>
+        <translation>{count} estudis</translation>
+    </message>
+    <message>
+        <source>Writer</source>
+        <translation>Escriptor</translation>
+    </message>
+    <message>
+        <source>Track List</source>
+        <translation>Llista de pistes</translation>
+    </message>
+    <message>
+        <source>1 track</source>
+        <translation>1 pista</translation>
+    </message>
+    <message>
+        <source>{count} tracks</source>
+        <translation>{count} pistes</translation>
+    </message>
+    <message>
+        <source>Playlist</source>
+        <translation>Llista de reproducció</translation>
+    </message>
+    <message>
+        <source>1 album</source>
+        <translation>1 àlbum</translation>
+    </message>
+    <message>
+        <source>{count} albums</source>
+        <translation>{count} àlbums</translation>
+    </message>
+    <message>
+        <source>Disc {number}</source>
+        <translation>Disc {number}</translation>
+    </message>
+    <message>
+        <source>Movies &amp; Shows</source>
+        <translation>Pel·lícules i Sèries</translation>
+    </message>
+    <message>
+        <source>1 movie</source>
+        <translation>1 pel·lícula</translation>
+    </message>
+    <message>
+        <source>{count} movies</source>
+        <translation>{count} pel·lícules</translation>
+    </message>
+    <message>
+        <source>1 show</source>
+        <translation>1 sèrie</translation>
+    </message>
+    <message>
+        <source>{count} shows</source>
+        <translation>{count} sèries</translation>
+    </message>
+    <message>
+        <source>1 item</source>
+        <translation>1 element</translation>
+    </message>
+    <message>
+        <source>{count} items</source>
+        <translation>{count} elements</translation>
+    </message>
+    <message>
+        <source>1 title</source>
+        <translation>1 títol</translation>
+    </message>
+    <message>
+        <source>{count} titles</source>
+        <translation>{count} títols</translation>
+    </message>
+    <message>
+        <source>Moonfin Recommends</source>
+        <translation>Recomanacions Moonfin</translation>
+    </message>
+    <message>
+        <source>TMDb</source>
+        <translation>TMDb</translation>
+    </message>
+    <message>
+        <source>Recommendations (Seerr)</source>
+        <translation>Recomanacions (Seerr)</translation>
+    </message>
+    <message>
+        <source>Similar (Seerr)</source>
+        <translation>Similars (Seerr)</translation>
+    </message>
+    <message>
+        <source>1 season</source>
+        <translation>1 temporada</translation>
+    </message>
+    <message>
+        <source>{count} seasons</source>
+        <translation>{count} temporades</translation>
+    </message>
+    <message>
+        <source>1 episode</source>
+        <translation>1 episodi</translation>
+    </message>
+    <message>
+        <source>{count} episodes</source>
+        <translation>{count} episodis</translation>
+    </message>
+    <message>
+        <source>Show Missing Collection Items</source>
+        <translation>Mostra els elements que falten a les col·leccions</translation>
+    </message>
+    <message>
+        <source>Include missing items on Collection pages</source>
+        <translation>Inclou els elements que falten a les pàgines de col·leccions</translation>
+    </message>
+    <message>
+        <source>Direct Play Capability:</source>
+        <translation>Capacitat de reproducció nativa:</translation>
+    </message>
+    <message>
+        <source>No</source>
+        <translation>No</translation>
+    </message>
+    <message>
+        <source>Show Less</source>
+        <translation>Mostra menys</translation>
+    </message>
+    <message>
+        <source>Container format is not supported by the player.</source>
+        <translation>El reproductor no admet el format del contenidor.</translation>
+    </message>
+    <message>
+        <source>Video codec is not supported.</source>
+        <translation>El còdec de vídeo no és compatible.</translation>
+    </message>
+    <message>
+        <source>Audio codec is not supported.</source>
+        <translation>El còdec d&apos;àudio no és compatible.</translation>
+    </message>
+    <message>
+        <source>Subtitle format is not supported (requires burning).</source>
+        <translation>El format dels subtítols no és compatible (cal incrustar-los al vídeo).</translation>
+    </message>
+    <message>
+        <source>Audio profile is not supported.</source>
+        <translation>El perfil d&apos;àudio no és compatible.</translation>
+    </message>
+    <message>
+        <source>Video profile is not supported.</source>
+        <translation>El perfil de vídeo no és compatible.</translation>
+    </message>
+    <message>
+        <source>Video level is not supported.</source>
+        <translation>El nivell de vídeo no és compatible.</translation>
+    </message>
+    <message>
+        <source>Video resolution is not supported by this device.</source>
+        <translation>Aquest dispositiu no admet la resolució del vídeo.</translation>
+    </message>
+    <message>
+        <source>Video bit depth is not supported.</source>
+        <translation>La profunditat de bits del vídeo no és compatible.</translation>
+    </message>
+    <message>
+        <source>Video framerate is not supported.</source>
+        <translation>La velocitat de fotogrames del vídeo no és compatible.</translation>
+    </message>
+    <message>
+        <source>File bitrate exceeds player streaming limit.</source>
+        <translation>La taxa de bits del fitxer supera el límit de transmissió del reproductor.</translation>
+    </message>
+    <message>
+        <source>Video bitrate exceeds streaming limit.</source>
+        <translation>La taxa de bits del vídeo supera el límit de transmissió.</translation>
+    </message>
+    <message>
+        <source>Audio bitrate exceeds streaming limit.</source>
+        <translation>La taxa de bits de l&apos;àudio supera el límit de transmissió.</translation>
+    </message>
+    <message>
+        <source>Number of audio channels is not supported.</source>
+        <translation>El nombre de canals d&apos;àudio no és compatible.</translation>
+    </message>
+    <message>
+        <source>ASS/SSA subtitles require transcoding because direct play is turned off.</source>
+        <translation>Els subtítols ASS/SSA requereixen transcodificació perquè la reproducció nativa està desactivada.</translation>
+    </message>
+    <message>
+        <source>Video dynamic range (e.g. Dolby Vision / HDR) is not supported by this display.</source>
+        <translation>Aquesta pantalla no admet el rang dinàmic del vídeo (per exemple, Dolby Vision / HDR).</translation>
+    </message>
+    <message>
+        <source>Audio sample rate is not supported.</source>
+        <translation>La freqüència de mostreig de l&apos;àudio no s&apos;admet.</translation>
+    </message>
+    <message>
+        <source>Audio bit depth is not supported.</source>
+        <translation>La profunditat de bits de l&apos;àudio no s&apos;admet.</translation>
+    </message>
+    <message>
+        <source>Video reference frames exceed player limits.</source>
+        <translation>Els fotogrames de referència del vídeo superen els límits del reproductor.</translation>
+    </message>
+    <message>
+        <source>Anamorphic video is not supported.</source>
+        <translation>El vídeo anamòrfic no s&apos;admet.</translation>
+    </message>
+    <message>
+        <source>Interlaced video is not supported.</source>
+        <translation>El vídeo entrellaçat no s&apos;admet.</translation>
+    </message>
+    <message>
+        <source>Secondary audio stream requires transcoding.</source>
+        <translation>La pista d&apos;àudio secundària requereix transcodificació.</translation>
+    </message>
+    <message>
+        <source>Direct play is not supported for this media format.</source>
+        <translation>La reproducció nativa no s&apos;admet per a aquest format multimèdia.</translation>
+    </message>
+    <message>
+        <source>Action Buttons on Screen</source>
+        <translation>Botons d&apos;acció a la pantalla</translation>
+    </message>
+    <message>
+        <source>Auto (Theme Default)</source>
+        <translation>Auto (predeterminat del tema)</translation>
+    </message>
+    <message>
+        <source>1 (Play only)</source>
+        <translation>1 (només Reprodueix)</translation>
+    </message>
+    <message>
+        <source>All (Horizontal Scroll)</source>
+        <translation>Tots (desplaçament horitzontal)</translation>
+    </message>
+    <message>
+        <source>More</source>
+        <translation>Més</translation>
+    </message>
+    <message>
+        <source>Items in Collection</source>
+        <translation>Elements de la col·lecció</translation>
+    </message>
+    <message>
+        <source>Items</source>
+        <translation>Elements</translation>
+    </message>
+    <message>
+        <source>Movie</source>
+        <translation>Pel·lícula</translation>
+    </message>
+    <message>
+        <source>TV Show</source>
+        <translation>Sèrie</translation>
+    </message>
+    <message>
+        <source>More Episodes</source>
+        <translation>Més episodis</translation>
+    </message>
+    <message>
+        <source>1 fact</source>
+        <translation>1 dada</translation>
+    </message>
+    <message>
+        <source>{count} facts</source>
+        <translation>{count} dades</translation>
+    </message>
+    <message>
+        <source>1 tag</source>
+        <translation>1 etiqueta</translation>
+    </message>
+    <message>
+        <source>{count} tags</source>
+        <translation>{count} etiquetes</translation>
+    </message>
+    <message>
+        <source>Genres and Tags</source>
+        <translation>Gèneres i etiquetes</translation>
+    </message>
+    <message>
+        <source>Streaming on</source>
+        <translation>Disponible a</translation>
+    </message>
+    <message>
+        <source>Continuing</source>
+        <translation>Continuant</translation>
+    </message>
+    <message>
+        <source>Ended</source>
+        <translation>S&apos;ha acabat</translation>
+    </message>
+    <message>
+        <source>Declined</source>
+        <translation>Declinat</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>Disponible</translation>
+    </message>
+    <message>
+        <source>Partially Available</source>
+        <translation>Disponible parcialment</translation>
+    </message>
+    <message>
+        <source>Requested</source>
+        <translation>Sol·licitat</translation>
+    </message>
+    <message>
+        <source>Pending</source>
+        <translation>Pendent</translation>
+    </message>
+    <message>
+        <source>Blocklisted</source>
+        <translation>A la llista de bloqueig</translation>
+    </message>
+    <message>
+        <source>Deleted</source>
+        <translation>S&apos;ha suprimit</translation>
+    </message>
+    <message>
+        <source>Not Requested</source>
+        <translation>No sol·licitat</translation>
+    </message>
+    <message>
+        <source>Seerr Availability</source>
+        <translation>Disponibilitat a Seerr</translation>
+    </message>
+    <message>
+        <source>Guest Appearances</source>
+        <translation>Aparicions de convidats</translation>
+    </message>
+    <message>
+        <source>Crew Contributions (Seerr)</source>
+        <translation>Contribucions de l&apos;equip (Seerr)</translation>
+    </message>
+    <message>
+        <source>Appearances (Seerr)</source>
+        <translation>Aparicions (Seerr)</translation>
+    </message>
+    <message>
+        <source>Mark as Watched</source>
+        <translation>Marca com a vist</translation>
+    </message>
+    <message>
+        <source>Mark as Unwatched</source>
+        <translation>Marca com a no vist</translation>
+    </message>
+    <message>
+        <source>Hide from Continue Watching</source>
+        <translation>Amaga de Continuar mirant</translation>
+    </message>
+    <message>
+        <source>Hide from Next Up</source>
+        <translation>Amaga d&apos;A continuació</translation>
+    </message>
+    <message>
+        <source>Add to Favorites</source>
+        <translation>Afegeix a Preferits</translation>
+    </message>
+    <message>
+        <source>Remove from Favorites</source>
+        <translation>Elimina dels preferits</translation>
+    </message>
+    <message>
+        <source>Add to Collection</source>
+        <translation>Afegeix a una col·lecció</translation>
+    </message>
+    <message>
+        <source>Remove from Collection</source>
+        <translation>Elimina de la col·lecció</translation>
+    </message>
+    <message>
+        <source>Add to Playlist</source>
+        <translation>Afegeix a la llista de reproducció</translation>
+    </message>
+    <message>
+        <source>Refresh Metadata</source>
+        <translation>Actualitza les metadades</translation>
+    </message>
+    <message>
+        <source>Identify</source>
+        <translation>Identifica</translation>
+    </message>
+    <message>
+        <source>Change Artwork</source>
+        <translation>Canvia la il·lustració</translation>
+    </message>
+    <message>
+        <source>Artwork updated successfully</source>
+        <translation>La il·lustració s&apos;ha actualitzat correctament</translation>
+    </message>
+    <message>
+        <source>Create New Collection</source>
+        <translation>Crea una col·lecció nova</translation>
+    </message>
+    <message>
+        <source>No collections found</source>
+        <translation>No s&apos;ha trobat cap col·lecció</translation>
+    </message>
+    <message>
+        <source>New Collection</source>
+        <translation>Col·lecció nova</translation>
+    </message>
+    <message>
+        <source>Collection name</source>
+        <translation>Nom de la col·lecció</translation>
+    </message>
+    <message>
+        <source>Added to collection</source>
+        <translation>Afegit a la col·lecció</translation>
+    </message>
+    <message>
+        <source>Created &quot;{name}&quot; and added item</source>
+        <translation>S&apos;ha creat «{name}» i s&apos;hi ha afegit l&apos;element</translation>
+    </message>
+    <message>
+        <source>Remove {item} from {collection}? The item stays in your library.</source>
+        <translation>Vols eliminar {item} de {collection}? L&apos;element es manté a la teva biblioteca.</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Elimina</translation>
+    </message>
+    <message>
+        <source>Delete from Playlist</source>
+        <translation>Suprimeix de la llista de reproducció</translation>
+    </message>
+    <message>
+        <source>Removed from playlist</source>
+        <translation>Eliminat de la llista de reproducció</translation>
+    </message>
+    <message>
+        <source>Create New Playlist</source>
+        <translation>Crea una nova llista de reproducció</translation>
+    </message>
+    <message>
+        <source>No playlists found</source>
+        <translation>No s&apos;han trobat llistes de reproducció</translation>
+    </message>
+    <message>
+        <source>New Playlist</source>
+        <translation>Nova llista de reproducció</translation>
+    </message>
+    <message>
+        <source>Playlist name</source>
+        <translation>Nom de la llista de reproducció</translation>
+    </message>
+    <message>
+        <source>Added to playlist</source>
+        <translation>Afegit a la llista de reproducció</translation>
+    </message>
+    <message>
+        <source>Metadata refresh requested</source>
+        <translation>S&apos;ha sol·licitat l&apos;actualització de metadades</translation>
+    </message>
+    <message>
+        <source>Failed to refresh metadata: {error}</source>
+        <translation>No s&apos;han pogut actualitzar les metadades: {error}</translation>
+    </message>
+    <message>
+        <source>Metadata updated</source>
+        <translation>S&apos;han actualitzat les metadades</translation>
+    </message>
+    <message>
+        <source>Refreshing metadata</source>
+        <translation>S&apos;estan actualitzant les metadades</translation>
+    </message>
+    <message>
+        <source>Enter PIN</source>
+        <translation>Introduïu el PIN</translation>
+    </message>
+    <message>
+        <source>This profile is protected by a 4-digit PIN.</source>
+        <translation>Aquest perfil està protegit amb un PIN de 4 dígits.</translation>
+    </message>
+    <message>
+        <source>4 digits</source>
+        <translation>4 dígits</translation>
+    </message>
+    <message>
+        <source>Unlock</source>
+        <translation>Desbloqueja</translation>
+    </message>
+    <message>
+        <source>Require a PIN to access your account</source>
+        <translation>Requereix un PIN per accedir al teu compte</translation>
+    </message>
+    <message>
+        <source>PIN Code</source>
+        <translation>Codi PIN</translation>
+    </message>
+    <message>
+        <source>Enter a 4-digit PIN used to unlock the app when PIN protection is enabled.</source>
+        <translation>Introdueix un PIN de 4 dígits per desbloquejar l&apos;aplicació quan la protecció amb PIN estigui activada.</translation>
+    </message>
+    <message>
+        <source>Saved Servers</source>
+        <translation>Servidors guardats</translation>
+    </message>
+    <message>
+        <source>Discovered Servers</source>
+        <translation>Servidors descoberts</translation>
+    </message>
+    <message>
+        <source>None found</source>
+        <translation>No s&apos;ha trobat cap</translation>
+    </message>
+    <message>
+        <source>Add Server</source>
+        <translation>Afegeix servidor</translation>
+    </message>
+    <message>
+        <source>Remove Server</source>
+        <translation>Elimina el servidor</translation>
+    </message>
+    <message>
+        <source>Choose how you&apos;d like to connect.</source>
+        <translation>Tria com et vols connectar.</translation>
+    </message>
+    <message>
+        <source>Server Address</source>
+        <translation>Adreça del servidor</translation>
+    </message>
+    <message>
+        <source>Jellyfin, Emby or Silo on your network or online</source>
+        <translation>Jellyfin, Emby o Silo a la teva xarxa o en línia</translation>
+    </message>
+    <message>
+        <source>Emby Connect</source>
+        <translation>Emby Connect</translation>
+    </message>
+    <message>
+        <source>Sign in with your Emby Connect account</source>
+        <translation>Inicieu la sessió amb el vostre compte Emby Connect</translation>
+    </message>
+    <message>
+        <source>The same address you&apos;d open in a browser, including the port.</source>
+        <translation>La mateixa adreça que obriries en un navegador, inclòs el port.</translation>
+    </message>
+    <message>
+        <source>Connect</source>
+        <translation>Connecta&apos;t</translation>
+    </message>
+    <message>
+        <source>Check the address and port, and that the server is running.</source>
+        <translation>Comprova l&apos;adreça i el port, i que el servidor estigui en funcionament.</translation>
+    </message>
+    <message>
+        <source>Server found</source>
+        <translation>S&apos;ha trobat el servidor</translation>
+    </message>
+    <message>
+        <source>Jellyfin</source>
+        <translation>Jellyfin</translation>
+    </message>
+    <message>
+        <source>Continue to choose who&apos;s signing in.</source>
+        <translation>Continua per triar qui inicia la sessió.</translation>
+    </message>
+    <message>
+        <source>Use a different address</source>
+        <translation>Fes servir una altra adreça</translation>
+    </message>
+    <message>
+        <source>Continue</source>
+        <translation>Continua</translation>
+    </message>
+    <message>
+        <source>Who&apos;s watching?</source>
+        <translation>Qui està mirant?</translation>
+    </message>
+    <message>
+        <source>Enter this code on your server&apos;s web dashboard:</source>
+        <translation>Introduïu aquest codi al tauler web del vostre servidor:</translation>
+    </message>
+    <message>
+        <source>Waiting for authorization...</source>
+        <translation>Esperant l&apos;autorització...</translation>
+    </message>
+    <message>
+        <source>Or scan this with a phone that&apos;s signed in to your server</source>
+        <translation>O escaneja-ho amb un telèfon que tingui la sessió iniciada al teu servidor</translation>
+    </message>
+    <message>
+        <source>Quick Connect is disabled</source>
+        <translation>La connexió ràpida està desactivada</translation>
+    </message>
+    <message>
+        <source>Email or Username</source>
+        <translation>Correu electrònic o nom d&apos;usuari</translation>
+    </message>
+    <message>
+        <source>Select Server</source>
+        <translation>Seleccioneu Servidor</translation>
+    </message>
+    <message>
+        <source>Sign Out All Users</source>
+        <translation>Tanqueu la sessió de tots els usuaris</translation>
+    </message>
+    <message>
+        <source>Active</source>
+        <translation>Actius</translation>
+    </message>
+    <message>
+        <source>Signed in on this device</source>
+        <translation>Sessió iniciada en aquest dispositiu</translation>
+    </message>
+    <message>
+        <source>Password required</source>
+        <translation>Cal contrasenya</translation>
+    </message>
+    <message>
+        <source>PIN required</source>
+        <translation>Cal PIN</translation>
+    </message>
+    <message>
+        <source>PIN synced</source>
+        <translation>PIN sincronitzat</translation>
+    </message>
+    <message>
+        <source>Set a new PIN code</source>
+        <translation>Establiu un codi PIN nou</translation>
+    </message>
+    <message>
+        <source>Remove PIN</source>
+        <translation>Elimina el PIN</translation>
+    </message>
+    <message>
+        <source>Remove PIN code protection</source>
+        <translation>Elimina la protecció del codi PIN</translation>
+    </message>
+    <message>
+        <source>Enter your 4-digit PIN</source>
+        <translation>Introdueix el teu PIN de 4 xifres</translation>
+    </message>
+    <message>
+        <source>Forgot PIN?</source>
+        <translation>Heu oblidat el PIN?</translation>
+    </message>
+    <message>
+        <source>The PIN on the server couldn&apos;t be cleared. If it&apos;s still set, ask a server administrator to remove it.</source>
+        <translation>No s&apos;ha pogut esborrar el PIN del servidor. Si encara està definit, demana a un administrador del servidor que l&apos;elimini.</translation>
+    </message>
+    <message>
+        <source>Unable to connect to server</source>
+        <translation>No es pot connectar al servidor</translation>
+    </message>
+    <message>
+        <source>Content rating restrictions</source>
+        <translation>Restriccions de classificació del contingut</translation>
+    </message>
+    <message>
+        <source>Parental Controls</source>
+        <translation>Controls parentals</translation>
+    </message>
+    <message>
+        <source>Block content with the following ratings:</source>
+        <translation>Bloqueja el contingut amb les classificacions següents:</translation>
+    </message>
+    <message>
+        <source>Blocking a rating also blocks everything stronger than it.</source>
+        <translation>Bloquejar una classificació també bloqueja totes les superiors.</translation>
+    </message>
+    <message>
+        <source>Ratings</source>
+        <translation>Valoracions</translation>
+    </message>
+    <message>
+        <source>Only blocks itself</source>
+        <translation>Bloqueja només aquesta classificació</translation>
+    </message>
+    <message>
+        <source>Could not load server ratings. Showing saved ratings only.</source>
+        <translation>No s&apos;han pogut carregar les puntuacions del servidor. Es mostren només les puntuacions desades.</translation>
+    </message>
+    <message>
+        <source>No content ratings were found on this server yet.</source>
+        <translation>Encara no s&apos;han trobat classificacions de contingut en aquest servidor.</translation>
+    </message>
+    <message>
+        <source>Could not refresh ratings from server. Showing saved ratings.</source>
+        <translation>No s&apos;han pogut actualitzar les puntuacions del servidor. Es mostren les puntuacions desades.</translation>
+    </message>
+    <message>
+        <source>This isn&apos;t available</source>
+        <translation>Això no està disponible</translation>
+    </message>
+    <message>
+        <source>Now</source>
+        <translation>Ara</translation>
+    </message>
+    <message>
+        <source>Recordings</source>
+        <translation>Enregistraments</translation>
+    </message>
+    <message>
+        <source>Guide Timeline</source>
+        <translation>Cronologia de la guia</translation>
+    </message>
+    <message>
+        <source>No program data</source>
+        <translation>No hi ha dades del programa</translation>
+    </message>
+    <message>
+        <source>Failed to load guide: {error}</source>
+        <translation>No s&apos;ha pogut carregar la guia: {error}</translation>
+    </message>
+    <message>
+        <source>No channels found</source>
+        <translation>No s&apos;han trobat canals</translation>
+    </message>
+    <message>
+        <source>Sort By</source>
+        <translation>Ordena per</translation>
+    </message>
+    <message>
+        <source>Channel Number</source>
+        <translation>Número de canal</translation>
+    </message>
+    <message>
+        <source>Favorites First</source>
+        <translation>Preferits primer</translation>
+    </message>
+    <message>
+        <source>Select date</source>
+        <translation>Selecciona la data</translation>
+    </message>
+    <message>
+        <source>Sports</source>
+        <translation>Esports</translation>
+    </message>
+    <message>
+        <source>News</source>
+        <translation>Notícies</translation>
+    </message>
+    <message>
+        <source>Kids</source>
+        <translation>Infantil</translation>
+    </message>
+    <message>
+        <source>Premiere</source>
+        <translation>Estrena</translation>
+    </message>
+    <message>
+        <source>Watch</source>
+        <translation>Mira</translation>
+    </message>
+    <message>
+        <source>Watch channel live</source>
+        <translation>Mira el canal en directe</translation>
+    </message>
+    <message>
+        <source>Favorite Channel</source>
+        <translation>Canal preferit</translation>
+    </message>
+    <message>
+        <source>Unfavorite Channel</source>
+        <translation>Desafavoreix el canal</translation>
+    </message>
+    <message>
+        <source>Program set to record</source>
+        <translation>Programa configurat per gravar</translation>
+    </message>
+    <message>
+        <source>Unable to create recording</source>
+        <translation>No es pot crear la gravació</translation>
+    </message>
+    <message>
+        <source>Recording cancelled</source>
+        <translation>Enregistrament cancel·lat</translation>
+    </message>
+    <message>
+        <source>Failed to cancel recording</source>
+        <translation>No s&apos;ha pogut cancel·lar la gravació</translation>
+    </message>
+    <message>
+        <source>Series set to record</source>
+        <translation>Sèrie programada per gravar</translation>
+    </message>
+    <message>
+        <source>Unable to create series recording</source>
+        <translation>No s&apos;ha pogut crear l&apos;enregistrament de sèrie</translation>
+    </message>
+    <message>
+        <source>Series recording cancelled</source>
+        <translation>S&apos;ha cancel·lat l&apos;enregistrament de la sèrie</translation>
+    </message>
+    <message>
+        <source>Failed to cancel series recording</source>
+        <translation>No s&apos;ha pogut cancel·lar la gravació de la sèrie</translation>
+    </message>
+    <message>
+        <source>Added to favorite channels</source>
+        <translation>S&apos;ha afegit als canals preferits</translation>
+    </message>
+    <message>
+        <source>Removed from favorite channels</source>
+        <translation>S&apos;ha eliminat dels canals preferits</translation>
+    </message>
+    <message>
+        <source>Failed to update favorite channel</source>
+        <translation>No s&apos;ha pogut actualitzar el canal preferit</translation>
+    </message>
+    <message>
+        <source>LIVE</source>
+        <translation>En Viu</translation>
+    </message>
+    <message>
+        <source>Failed to play {name}</source>
+        <translation>No s&apos;ha pogut reproduir {name}</translation>
+    </message>
+    <message>
+        <source>Reconnecting… ({attempt} of {total})</source>
+        <translation>S&apos;està reconnectant… ({attempt} de {total})</translation>
+    </message>
+    <message>
+        <source>Schedule</source>
+        <translation>Horari</translation>
+    </message>
+    <message>
+        <source>Series Recordings</source>
+        <translation>Enregistraments de sèries</translation>
+    </message>
+    <message>
+        <source>Scheduled in Next 24 Hours</source>
+        <translation>Programat en les properes 24 hores</translation>
+    </message>
+    <message>
+        <source>Recent Recordings</source>
+        <translation>Enregistraments recents</translation>
+    </message>
+    <message>
+        <source>TV Series</source>
+        <translation>Sèrie de televisió</translation>
+    </message>
+    <message>
+        <source>Yesterday</source>
+        <translation>Ahir</translation>
+    </message>
+    <message>
+        <source>All channels</source>
+        <translation>Tots els canals</translation>
+    </message>
+    <message>
+        <source>No recordings found</source>
+        <translation>No s&apos;han trobat enregistraments</translation>
+    </message>
+    <message>
+        <source>No scheduled recordings</source>
+        <translation>No hi ha enregistraments programats</translation>
+    </message>
+    <message>
+        <source>No series recordings</source>
+        <translation>No hi ha enregistraments de sèrie</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>Suprimeix</translation>
+    </message>
+    <message>
+        <source>Cancel Recording?</source>
+        <translation>Cancel·lar la gravació?</translation>
+    </message>
+    <message>
+        <source>Yes, Cancel</source>
+        <translation>Sí, cancel·la</translation>
+    </message>
+    <message>
+        <source>Show Live TV Button</source>
+        <translation>Mostra el botó de TV en directe</translation>
+    </message>
+    <message>
+        <source>Show the Live TV button in the navigation bar when the server has a Live TV library</source>
+        <translation>Mostra el botó de TV en directe a la barra de navegació quan el servidor tingui una biblioteca de TV en directe</translation>
+    </message>
+    <message>
+        <source>Trick Play</source>
+        <translation>Previsualització</translation>
+    </message>
+    <message>
+        <source>Show preview thumbnails when seeking</source>
+        <translation>Mostra les miniatures de previsualització quan cerques</translation>
+    </message>
+    <message>
+        <source>Pause While Scrubbing</source>
+        <translation>Pausa mentre es cerca</translation>
+    </message>
+    <message>
+        <source>Playback pauses while you seek and resumes when you press play. Turn this off to keep playing and jump straight to the new spot</source>
+        <translation>La reproducció es posa en pausa mentre cerques i es reprèn quan prems reproduir. Desactiva-ho per continuar reproduint i saltar directament al punt nou</translation>
+    </message>
+    <message>
+        <source>Seek Step</source>
+        <translation>Salt de cerca</translation>
+    </message>
+    <message>
+        <source>How far each press moves while scrubbing the progress bar</source>
+        <translation>Quant avança cada pulsació en desplaçar-se per la barra de progrés</translation>
+    </message>
+    <message>
+        <source>5 seconds</source>
+        <translation>5 segons</translation>
+    </message>
+    <message>
+        <source>10 seconds</source>
+        <translation>10 segons</translation>
+    </message>
+    <message>
+        <source>20 seconds</source>
+        <translation>20 segons</translation>
+    </message>
+    <message>
+        <source>30 seconds</source>
+        <translation>30 segons</translation>
+    </message>
+    <message>
+        <source>Chapter Marks</source>
+        <translation>Marques de capítol</translation>
+    </message>
+    <message>
+        <source>Mark where each chapter starts on the seek bar</source>
+        <translation>Marca on comença cada capítol a la barra de progrés</translation>
+    </message>
+    <message>
+        <source>Subtitle Customization</source>
+        <translation>Personalització de subtítols</translation>
+    </message>
+    <message>
+        <source>Subtitle Size</source>
+        <translation>Mida del subtítol</translation>
+    </message>
+    <message>
+        <source>Small</source>
+        <translation>Petit</translation>
+    </message>
+    <message>
+        <source>Medium</source>
+        <translation>Mitjana</translation>
+    </message>
+    <message>
+        <source>Large</source>
+        <translation>Gran</translation>
+    </message>
+    <message>
+        <source>Extra Large</source>
+        <translation>Extragran</translation>
+    </message>
+    <message>
+        <source>Subtitle Position</source>
+        <translation>Posició dels subtítols</translation>
+    </message>
+    <message>
+        <source>Position</source>
+        <translation>Posició</translation>
+    </message>
+    <message>
+        <source>Bottom</source>
+        <translation>A baix</translation>
+    </message>
+    <message>
+        <source>Lower</source>
+        <translation>Més baix</translation>
+    </message>
+    <message>
+        <source>Middle</source>
+        <translation>Al mig</translation>
+    </message>
+    <message>
+        <source>Higher</source>
+        <translation>Més alt</translation>
+    </message>
+    <message>
+        <source>Absolute</source>
+        <translation>Absolut</translation>
+    </message>
+    <message>
+        <source>Absolute Position</source>
+        <translation>Posició absoluta</translation>
+    </message>
+    <message>
+        <source>Text Opacity</source>
+        <translation>Opacitat del text</translation>
+    </message>
+    <message>
+        <source>Text Fill Color</source>
+        <translation>Color de farciment de text</translation>
+    </message>
+    <message>
+        <source>White</source>
+        <translation>Blanc</translation>
+    </message>
+    <message>
+        <source>Light Gray</source>
+        <translation>Gris clar</translation>
+    </message>
+    <message>
+        <source>Gray</source>
+        <translation>Gris</translation>
+    </message>
+    <message>
+        <source>Dark Gray</source>
+        <translation>Gris fosc</translation>
+    </message>
+    <message>
+        <source>Black</source>
+        <translation>Negre</translation>
+    </message>
+    <message>
+        <source>Yellow</source>
+        <translation>groc</translation>
+    </message>
+    <message>
+        <source>Green</source>
+        <translation>Verd</translation>
+    </message>
+    <message>
+        <source>Cyan</source>
+        <translation>Cian</translation>
+    </message>
+    <message>
+        <source>Blue</source>
+        <translation>Blau</translation>
+    </message>
+    <message>
+        <source>Magenta</source>
+        <translation>Magenta</translation>
+    </message>
+    <message>
+        <source>Red</source>
+        <translation>Vermell</translation>
+    </message>
+    <message>
+        <source>Navy</source>
+        <translation>Marina</translation>
+    </message>
+    <message>
+        <source>Transparent</source>
+        <translation>Transparent</translation>
+    </message>
+    <message>
+        <source>Semi-transparent Black</source>
+        <translation>Negre semitransparent</translation>
+    </message>
+    <message>
+        <source>Semi-transparent White</source>
+        <translation>Blanc semitransparent</translation>
+    </message>
+    <message>
+        <source>Background Color</source>
+        <translation>Color de fons</translation>
+    </message>
+    <message>
+        <source>Background Opacity</source>
+        <translation>Opacitat del fons</translation>
+    </message>
+    <message>
+        <source>Separate HDR Style</source>
+        <translation>Estil HDR separat</translation>
+    </message>
+    <message>
+        <source>Subtitle Appearance</source>
+        <translation>Aparença dels subtítols</translation>
+    </message>
+    <message>
+        <source>Loading Animation</source>
+        <translation>Animació de càrrega</translation>
+    </message>
+    <message>
+        <source>Customize the loading animations used throughout Moonfin</source>
+        <translation>Personalitza les animacions de càrrega que utilitza Moonfin</translation>
+    </message>
+    <message>
+        <source>Loading Animation Configuration</source>
+        <translation>Configuració de l&apos;animació de càrrega</translation>
+    </message>
+    <message>
+        <source>Image</source>
+        <translation>Imatge</translation>
+    </message>
+    <message>
+        <source>Moonfin Logo</source>
+        <translation>Logotip de Moonfin</translation>
+    </message>
+    <message>
+        <source>Spinner</source>
+        <translation>Roda de càrrega</translation>
+    </message>
+    <message>
+        <source>Runner</source>
+        <translation>Corredor</translation>
+    </message>
+    <message>
+        <source>Moon Phases</source>
+        <translation>Fases lunars</translation>
+    </message>
+    <message>
+        <source>Moonfin Phases</source>
+        <translation>Fases de Moonfin</translation>
+    </message>
+    <message>
+        <source>Neonfin Phases</source>
+        <translation>Fases de Neonfin</translation>
+    </message>
+    <message>
+        <source>Animation Size</source>
+        <translation>Mida de l&apos;animació</translation>
+    </message>
+    <message>
+        <source>Thumbnail</source>
+        <translation>Miniatura</translation>
+    </message>
+    <message>
+        <source>Animation Position</source>
+        <translation>Posició de l&apos;animació</translation>
+    </message>
+    <message>
+        <source>Top-Left</source>
+        <translation>Superior esquerra</translation>
+    </message>
+    <message>
+        <source>Top-Center</source>
+        <translation>Superior centre</translation>
+    </message>
+    <message>
+        <source>Top-Right</source>
+        <translation>Superior dreta</translation>
+    </message>
+    <message>
+        <source>Middle-Left</source>
+        <translation>Centre esquerra</translation>
+    </message>
+    <message>
+        <source>Middle-Right</source>
+        <translation>Centre dreta</translation>
+    </message>
+    <message>
+        <source>Bottom-Left</source>
+        <translation>Inferior esquerra</translation>
+    </message>
+    <message>
+        <source>Bottom-Center</source>
+        <translation>Inferior centre</translation>
+    </message>
+    <message>
+        <source>Bottom-Right</source>
+        <translation>Inferior dreta</translation>
+    </message>
+    <message>
+        <source>Bouncing</source>
+        <translation>Oscil·lant</translation>
+    </message>
+    <message>
+        <source>Animation Speed</source>
+        <translation>Velocitat de l&apos;animació</translation>
+    </message>
+    <message>
+        <source>Slow</source>
+        <translation>Lenta</translation>
+    </message>
+    <message>
+        <source>Moderate</source>
+        <translation>Moderada</translation>
+    </message>
+    <message>
+        <source>Fast</source>
+        <translation>Ràpida</translation>
+    </message>
+    <message>
+        <source>Ultra</source>
+        <translation>Ultra</translation>
+    </message>
+    <message>
+        <source>Loading Stream...</source>
+        <translation>S&apos;està carregant la transmissió...</translation>
+    </message>
+    <message>
+        <source>You do not have permission to search for subtitles</source>
+        <translation>No tens permís per cercar subtítols</translation>
+    </message>
+    <message>
+        <source>No subtitle provider is set up on the server</source>
+        <translation>No hi ha cap proveïdor de subtítols configurat al servidor</translation>
+    </message>
+    <message>
+        <source>You do not have permission to download subtitles</source>
+        <translation>No tens permís per baixar subtítols</translation>
+    </message>
+    <message>
+        <source>That subtitle is no longer available</source>
+        <translation>Aquest subtítol ja no està disponible</translation>
+    </message>
+    <message>
+        <source>Subtitle download failed</source>
+        <translation>Ha fallat la baixada del subtítol</translation>
+    </message>
+    <message>
+        <source>The subtitle was downloaded but has not appeared yet</source>
+        <translation>El subtítol s&apos;ha baixat però encara no ha aparegut</translation>
+    </message>
+    <message>
+        <source>Show Clock</source>
+        <translation>Mostra el rellotge</translation>
+    </message>
+    <message>
+        <source>Group by Type</source>
+        <translation>Grup per tipus</translation>
+    </message>
+    <message>
+        <source>Video Playlists</source>
+        <translation>Llistes de reproducció de vídeo</translation>
+    </message>
+    <message>
+        <source>Music Video Playlists</source>
+        <translation>Llistes de reproducció de vídeos musicals</translation>
+    </message>
+    <message>
+        <source>Audio Playlists</source>
+        <translation>Llistes de reproducció d&apos;àudio</translation>
+    </message>
+    <message>
+        <source>Audiobook Playlists</source>
+        <translation>Llistes de reproducció d&apos;audiollibres</translation>
+    </message>
+    <message>
+        <source>Book Playlists</source>
+        <translation>Llistes de reproducció de llibres</translation>
+    </message>
+    <message>
+        <source>Photo Playlists</source>
+        <translation>Llistes de reproducció de fotos</translation>
+    </message>
+    <message>
+        <source>Mixed Playlists</source>
+        <translation>Llistes de reproducció mixtes</translation>
+    </message>
+    <message>
+        <source>No items found</source>
+        <translation>No s&apos;han trobat elements</translation>
+    </message>
+    <message>
+        <source>Download subtitles...</source>
+        <translation>Baixa els subtítols...</translation>
+    </message>
+    <message>
+        <source>Search using OpenSubtitles</source>
+        <translation>Cerca amb OpenSubtitles</translation>
+    </message>
+    <message>
+        <source>Download Subtitles</source>
+        <translation>Baixa els subtítols</translation>
+    </message>
+    <message>
+        <source>Searching...</source>
+        <translation>S&apos;està cercant...</translation>
+    </message>
+    <message>
+        <source>No remote subtitles found</source>
+        <translation>No s&apos;ha trobat cap subtítol remot</translation>
+    </message>
+    <message>
+        <source>Subtitle search failed</source>
+        <translation>Ha fallat la cerca de subtítols</translation>
+    </message>
+    <message>
+        <source>Downloading subtitle…</source>
+        <translation>Baixant subtítols…</translation>
+    </message>
+    <message>
+        <source>AI Translated</source>
+        <translation>Traduït per IA</translation>
+    </message>
+    <message>
+        <source>Machine Translated</source>
+        <translation>Traduït automàticament</translation>
+    </message>
+    <message>
+        <source>SDH</source>
+        <translation>SDH</translation>
+    </message>
+    <message>
+        <source>Perfect match</source>
+        <translation>Coincidència perfecte</translation>
+    </message>
+    <message>
+        <source>1 download</source>
+        <translation>1 baixada</translation>
+    </message>
+    <message>
+        <source>{count} downloads</source>
+        <translation>{count} baixades</translation>
+    </message>
+    <message>
+        <source>{fps} fps</source>
+        <translation>{fps} fps</translation>
+    </message>
+    <message>
+        <source>Trailer Preview</source>
+        <translation>Vista prèvia del tràiler</translation>
+    </message>
+    <message>
+        <source>Auto-play trailers in the media bar after 3 seconds</source>
+        <translation>Reprodueix automàticament els tràilers a la barra multimèdia després de 3 segons</translation>
+    </message>
+    <message>
+        <source>Mute Trailer Audio</source>
+        <translation>Silencia l&apos;àudio del tràiler</translation>
+    </message>
+    <message>
+        <source>Mute trailer previews in the featured media bar</source>
+        <translation>Silencia les vistes prèvies dels tràilers a la barra multimèdia destacada</translation>
+    </message>
+    <message>
+        <source>Trailer Captions</source>
+        <translation>Subtítols del Tràiler</translation>
+    </message>
+    <message>
+        <source>Peek Home Rows</source>
+        <translation>Avançament de les files d&apos;inici</translation>
+    </message>
+    <message>
+        <source>Show the top half of the first row along the bottom of the media bar</source>
+        <translation>Mostra la meitat superior de la primera fila a la part inferior de la barra multimèdia</translation>
+    </message>
+    <message>
+        <source>Loading trailer...</source>
+        <translation>S&apos;està carregant el tràiler...</translation>
+    </message>
+    <message>
+        <source>{count} trailers</source>
+        <translation>{count} tràilers</translation>
+    </message>
+    <message>
+        <source>Subtitled</source>
+        <translation>Subtitulat</translation>
+    </message>
+    <message>
+        <source>Media Preview</source>
+        <translation>Vista prèvia dels mitjans</translation>
+    </message>
+    <message>
+        <source>Preview Audio</source>
+        <translation>Vista prèvia d&apos;àudio</translation>
+    </message>
+    <message>
+        <source>Seasonal Row</source>
+        <translation>Fila de temporada</translation>
+    </message>
+    <message>
+        <source>New Year&apos;s</source>
+        <translation>Any nou</translation>
+    </message>
+    <message>
+        <source>Valentine&apos;s Day</source>
+        <translation>Sant Valentí</translation>
+    </message>
+    <message>
+        <source>Easter</source>
+        <translation>Pasqua</translation>
+    </message>
+    <message>
+        <source>Pride</source>
+        <translation>Orgull</translation>
+    </message>
+    <message>
+        <source>Halloween</source>
+        <translation>Halloween</translation>
+    </message>
+    <message>
+        <source>Thanksgiving</source>
+        <translation>Acció de Gràcies</translation>
+    </message>
+    <message>
+        <source>Christmas Movies</source>
+        <translation>Pel·lícules de Nadal</translation>
+    </message>
+    <message>
+        <source>Lunar New Year</source>
+        <translation>Any Nou Lunar</translation>
+    </message>
+    <message>
+        <source>Diwali</source>
+        <translation>Diwali</translation>
+    </message>
+    <message>
+        <source>Library Order</source>
+        <translation>Ordre de les biblioteques</translation>
+    </message>
+    <message>
+        <source>Choose the order of your libraries</source>
+        <translation>Tria l&apos;ordre de les teves biblioteques</translation>
+    </message>
+    <message>
+        <source>Your libraries appear in this order on My Media, the recently added rows and the navigation bar. The order is saved to your server account, so other apps you sign in to use it too.</source>
+        <translation>Les teves biblioteques apareixen en aquest ordre a «La meva biblioteca», a les files d&apos;afegits recentment i a la barra de navegació. L&apos;ordre es desa al teu compte del servidor, de manera que també el fan servir les altres aplicacions on iniciïs la sessió.</translation>
+    </message>
+    <message>
+        <source>Press left or right to move the highlighted library.</source>
+        <translation>Prem esquerra o dreta per moure la biblioteca seleccionada.</translation>
+    </message>
+    <message>
+        <source>Failed to load libraries</source>
+        <translation>No s&apos;han pogut carregar les biblioteques</translation>
+    </message>
+    <message>
+        <source>No libraries found</source>
+        <translation>No s&apos;han trobat biblioteques</translation>
+    </message>
+    <message>
+        <source>Hidden</source>
+        <translation>Ocult</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t save the library order</source>
+        <translation>No s&apos;ha pogut desar l&apos;ordre de les biblioteques</translation>
+    </message>
+    <message>
+        <source>Sections</source>
+        <translation>Seccions</translation>
+    </message>
+    <message>
+        <source>Choose which parts of the Details screen to show</source>
+        <translation>Tria quines parts de la pantalla de detalls es mostren</translation>
+    </message>
+    <message>
+        <source>Header</source>
+        <translation>Capçalera</translation>
+    </message>
+    <message>
+        <source>Person pages</source>
+        <translation>Pàgines de persones</translation>
+    </message>
+    <message>
+        <source>Logo</source>
+        <translation>Logotip</translation>
+    </message>
+    <message>
+        <source>Shows the title as text when off</source>
+        <translation>Mostra el títol com a text quan està desactivat</translation>
+    </message>
+    <message>
+        <source>Tagline</source>
+        <translation>Eslogan</translation>
+    </message>
+    <message>
+        <source>Poster</source>
+        <translation>Pòster</translation>
+    </message>
+    <message>
+        <source>Also on collection pages</source>
+        <translation>També a les pàgines de col·leccions</translation>
+    </message>
+    <message>
+        <source>Directors &amp; writers</source>
+        <translation>Direcció i guió</translation>
+    </message>
+    <message>
+        <source>Also similar albums and artists</source>
+        <translation>També àlbums i artistes similars</translation>
+    </message>
+    <message>
+        <source>More episodes</source>
+        <translation>Més episodis</translation>
+    </message>
+    <message>
+        <source>On episode pages</source>
+        <translation>A les pàgines d&apos;episodis</translation>
+    </message>
+    <message>
+        <source>Media info</source>
+        <translation>Informació multimèdia</translation>
+    </message>
+    <message>
+        <source>Version badge</source>
+        <translation>Insígnia de versió</translation>
+    </message>
+    <message>
+        <source>File, streams and Direct Play check</source>
+        <translation>Fitxer, fluxos i comprovació de reproducció nativa</translation>
+    </message>
+    <message>
+        <source>Genres &amp; tags</source>
+        <translation>Gèneres i etiquetes</translation>
+    </message>
+    <message>
+        <source>Streaming services</source>
+        <translation>Serveis de streaming</translation>
+    </message>
+    <message>
+        <source>Similar titles</source>
+        <translation>Títols similars</translation>
+    </message>
+    <message>
+        <source>Collection banner</source>
+        <translation>Bàner de la col·lecció</translation>
+    </message>
+    <message>
+        <source>Appearances</source>
+        <translation>Aparicions</translation>
+    </message>
+    <message>
+        <source>On person pages</source>
+        <translation>A les pàgines de persones</translation>
+    </message>
+    <message>
+        <source>Crew credits</source>
+        <translation>Crèdits d&apos;equip tècnic</translation>
+    </message>
+    <message>
+        <source>Biography</source>
+        <translation>Biografia</translation>
+    </message>
+    <message>
+        <source>Birthplace</source>
+        <translation>Lloc de naixement</translation>
+    </message>
+    <message>
+        <source>Guest appearances</source>
+        <translation>Aparicions de convidats</translation>
+    </message>
+    <message>
+        <source>Music videos</source>
+        <translation>Vídeos musicals</translation>
+    </message>
+    <message>
+        <source>Clear</source>
+        <translation>Neteja</translation>
+    </message>
+    <message>
+        <source>No results</source>
+        <translation>Sense resultats</translation>
+    </message>
+    <message>
+        <source>View Details</source>
+        <translation>Veure detalls</translation>
+    </message>
+    <message>
+        <source>Move Up</source>
+        <translation>Mou cap amunt</translation>
+    </message>
+    <message>
+        <source>Move Down</source>
+        <translation>Mou cap avall</translation>
+    </message>
+    <message>
+        <source>Playback languages</source>
+        <translation>Idiomes de reproducció</translation>
+    </message>
+    <message>
+        <source>Optional</source>
+        <translation>Opcional</translation>
+    </message>
+    <message>
+        <source>Default Audio Language</source>
+        <translation>Idioma d&apos;àudio per defecte</translation>
+    </message>
+    <message>
+        <source>Prefer Default Audio Track</source>
+        <translation>Prefereix la pista d&apos;àudio predeterminada</translation>
+    </message>
+    <message>
+        <source>Pick the track the file marks as default before matching languages</source>
+        <translation>Tria la pista que el fitxer marca com a predeterminada abans de fer coincidir els idiomes</translation>
+    </message>
+    <message>
+        <source>Subtitle Mode</source>
+        <translation>Mode de subtítols</translation>
+    </message>
+    <message>
+        <source>Default Subtitle Language</source>
+        <translation>Idioma dels subtítols per defecte</translation>
+    </message>
+    <message>
+        <source>Automatically loads and displays subtitles every time a video starts.</source>
+        <translation>Carrega i mostra automàticament els subtítols cada vegada que comença un vídeo.</translation>
+    </message>
+    <message>
+        <source>Automatically turns on subtitles if the default audio track is in a foreign language.</source>
+        <translation>Activa automàticament els subtítols si la pista d&apos;àudio predeterminada és en un idioma estranger.</translation>
+    </message>
+    <message>
+        <source>Only loads subtitles explicitly tagged with the forced metadata flag.</source>
+        <translation>Només carrega els subtítols marcats explícitament amb l&apos;indicador de metadades &quot;forçat&quot;.</translation>
+    </message>
+    <message>
+        <source>Completely disables automatic subtitle loading.</source>
+        <translation>Desactiva completament la càrrega automàtica de subtítols.</translation>
+    </message>
+    <message>
+        <source>Plays tracks internally flagged in the media file&apos;s metadata as &quot;default&quot; or &quot;forced&quot;.</source>
+        <translation>Reprodueix les pistes marcades internament a les metadades del fitxer com a &quot;predeterminada&quot; o &quot;forçada&quot;.</translation>
+    </message>
+    <message>
+        <source>Unlock notifications</source>
+        <translation>Notificacions de desbloqueig</translation>
+    </message>
+    <message>
+        <source>Show a notification when you unlock a badge</source>
+        <translation>Mostra una notificació quan desbloquegis una insígnia</translation>
+    </message>
+    <message>
+        <source>Could not save your settings.</source>
+        <translation>No s&apos;ha pogut desar la configuració.</translation>
+    </message>
+    <message>
+        <source>Achievement unlocked</source>
+        <translation>Fita desbloquejada</translation>
+    </message>
+    <message>
+        <source>Friends and chat from the Achievement Badges plugin</source>
+        <translation>Amics i xat del connector Insígnies de fites</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>Amics</translation>
+    </message>
+    <message>
+        <source>See who&apos;s online and chat with people on this server</source>
+        <translation>Mira qui està en línia i xateja amb la gent d&apos;aquest servidor</translation>
+    </message>
+    <message>
+        <source>Friend requests</source>
+        <translation>Sol·licituds d&apos;amistat</translation>
+    </message>
+    <message>
+        <source>Add friends</source>
+        <translation>Afegeix amics</translation>
+    </message>
+    <message>
+        <source>Privacy</source>
+        <translation>Privadesa</translation>
+    </message>
+    <message>
+        <source>New message</source>
+        <translation>Missatge nou</translation>
+    </message>
+    <message>
+        <source>New group</source>
+        <translation>Grup nou</translation>
+    </message>
+    <message>
+        <source>Group info</source>
+        <translation>Informació del grup</translation>
+    </message>
+    <message>
+        <source>Add people</source>
+        <translation>Afegeix persones</translation>
+    </message>
+    <message>
+        <source>That didn&apos;t work. Try again in a moment.</source>
+        <translation>No ha funcionat. Torna-ho a provar d&apos;aquí a un moment.</translation>
+    </message>
+    <message>
+        <source>Online</source>
+        <translation>En línia</translation>
+    </message>
+    <message>
+        <source>Offline</source>
+        <translation>Fora de línia</translation>
+    </message>
+    <message>
+        <source>No unread messages</source>
+        <translation>Cap missatge sense llegir</translation>
+    </message>
+    <message>
+        <source>1 unread message</source>
+        <translation>1 missatge sense llegir</translation>
+    </message>
+    <message>
+        <source>Nothing waiting</source>
+        <translation>No hi ha res pendent</translation>
+    </message>
+    <message>
+        <source>1 waiting for you</source>
+        <translation>1 t&apos;està esperant</translation>
+    </message>
+    <message>
+        <source>Photo</source>
+        <translation>Foto</translation>
+    </message>
+    <message>
+        <source>Could not load this. Check your connection and try again.</source>
+        <translation>No s&apos;ha pogut carregar. Comprova la connexió i torna-ho a provar.</translation>
+    </message>
+    <message>
+        <source>Find people on this server</source>
+        <translation>Troba gent d&apos;aquest servidor</translation>
+    </message>
+    <message>
+        <source>What your friends can see</source>
+        <translation>Què poden veure els teus amics</translation>
+    </message>
+    <message>
+        <source>No friends yet. Add people from this server to see them here.</source>
+        <translation>Encara no tens amics. Afegeix gent d&apos;aquest servidor per veure-la aquí.</translation>
+    </message>
+    <message>
+        <source>Showcase</source>
+        <translation>Vitrina</translation>
+    </message>
+    <message>
+        <source>Remove friend</source>
+        <translation>Elimina dels amics</translation>
+    </message>
+    <message>
+        <source>Unblock</source>
+        <translation>Desbloqueja</translation>
+    </message>
+    <message>
+        <source>Block</source>
+        <translation>Bloqueja</translation>
+    </message>
+    <message>
+        <source>Send message</source>
+        <translation>Enviar missatge</translation>
+    </message>
+    <message>
+        <source>Add as friend</source>
+        <translation>Afegeix com a amic</translation>
+    </message>
+    <message>
+        <source>No friend requests.</source>
+        <translation>No hi ha sol·licituds d&apos;amistat.</translation>
+    </message>
+    <message>
+        <source>Waiting for you</source>
+        <translation>Pendents de la teva resposta</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>Declinar</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>Accepta</translation>
+    </message>
+    <message>
+        <source>Sent by you</source>
+        <translation>Enviades per tu</translation>
+    </message>
+    <message>
+        <source>Cancel request</source>
+        <translation>Cancel·la la sol·licitud</translation>
+    </message>
+    <message>
+        <source>Search people</source>
+        <translation>Cerca persones</translation>
+    </message>
+    <message>
+        <source>No one matches that name.</source>
+        <translation>Ningú no coincideix amb aquest nom.</translation>
+    </message>
+    <message>
+        <source>Mute during playback</source>
+        <translation>Silencia durant la reproducció</translation>
+    </message>
+    <message>
+        <source>Blocked users</source>
+        <translation>Usuaris bloquejats</translation>
+    </message>
+    <message>
+        <source>Appear offline</source>
+        <translation>Mostra&apos;m fora de línia</translation>
+    </message>
+    <message>
+        <source>Friends always see you as offline</source>
+        <translation>Els amics sempre et veuran fora de línia</translation>
+    </message>
+    <message>
+        <source>Hide what I&apos;m watching</source>
+        <translation>Amaga el que estic veient</translation>
+    </message>
+    <message>
+        <source>Friends still see you online, but not what&apos;s playing</source>
+        <translation>Els amics et continuaran veient en línia, però no què s&apos;està reproduint</translation>
+    </message>
+    <message>
+        <source>Hide my last watched</source>
+        <translation>Amaga el meu últim visionat</translation>
+    </message>
+    <message>
+        <source>Friends won&apos;t see what you watched last while you&apos;re offline</source>
+        <translation>Els amics no veuran què vas veure per última vegada mentre estiguis fora de línia</translation>
+    </message>
+    <message>
+        <source>Message notifications</source>
+        <translation>Notificacions de missatges</translation>
+    </message>
+    <message>
+        <source>Show a banner when a friend messages you</source>
+        <translation>Mostra un bàner quan un amic t&apos;enviï un missatge</translation>
+    </message>
+    <message>
+        <source>Start a chat with a friend</source>
+        <translation>Comença un xat amb un amic</translation>
+    </message>
+    <message>
+        <source>Chat with several friends at once</source>
+        <translation>Xateja amb diversos amics alhora</translation>
+    </message>
+    <message>
+        <source>No messages yet.</source>
+        <translation>Encara no hi ha missatges.</translation>
+    </message>
+    <message>
+        <source>Group name</source>
+        <translation>Nom del grup</translation>
+    </message>
+    <message>
+        <source>Pick at least two friends</source>
+        <translation>Tria almenys dos amics</translation>
+    </message>
+    <message>
+        <source>Create group</source>
+        <translation>Crear grup</translation>
+    </message>
+    <message>
+        <source>edited</source>
+        <translation>editat</translation>
+    </message>
+    <message>
+        <source>Seen</source>
+        <translation>Llegit</translation>
+    </message>
+    <message>
+        <source>Sent</source>
+        <translation>Enviat</translation>
+    </message>
+    <message>
+        <source>Edit</source>
+        <translation>Edita</translation>
+    </message>
+    <message>
+        <source>Delete this message for everyone?</source>
+        <translation>Vols suprimir aquest missatge per a tothom?</translation>
+    </message>
+    <message>
+        <source>Editing message</source>
+        <translation>S&apos;està editant el missatge</translation>
+    </message>
+    <message>
+        <source>Write a message</source>
+        <translation>Escriu un missatge</translation>
+    </message>
+    <message>
+        <source>Send</source>
+        <translation>Enviar</translation>
+    </message>
+    <message>
+        <source>1 member</source>
+        <translation>1 membre</translation>
+    </message>
+    <message>
+        <source>You</source>
+        <translation>Tu</translation>
+    </message>
+    <message>
+        <source>Owner</source>
+        <translation>Propietari</translation>
+    </message>
+    <message>
+        <source>Admin</source>
+        <translation>Admin</translation>
+    </message>
+    <message>
+        <source>Remove admin</source>
+        <translation>Retira els permisos d&apos;administrador</translation>
+    </message>
+    <message>
+        <source>Make admin</source>
+        <translation>Fes administrador</translation>
+    </message>
+    <message>
+        <source>Remove from group</source>
+        <translation>Elimina del grup</translation>
+    </message>
+    <message>
+        <source>No one left to add.</source>
+        <translation>No queda ningú per afegir.</translation>
+    </message>
+    <message>
+        <source>Clear conversation</source>
+        <translation>Buida la conversa</translation>
+    </message>
+    <message>
+        <source>Leave group</source>
+        <translation>Abandonar el grup</translation>
+    </message>
+    <message>
+        <source>Leave this group? Someone will have to add you back to rejoin.</source>
+        <translation>Vols abandonar aquest grup? Algú t&apos;hi haurà de tornar a afegir perquè hi puguis tornar.</translation>
+    </message>
+    <message>
+        <source>Delete every message in this chat for everyone in it?</source>
+        <translation>Vols suprimir tots els missatges d&apos;aquest xat per a tots els participants?</translation>
+    </message>
+    <message>
+        <source>Seasonal Effects</source>
+        <translation>Efectes estacionals</translation>
+    </message>
+    <message>
+        <source>Visual effects and seasonal decorations</source>
+        <translation>Efectes visuals i decoracions de temporada</translation>
+    </message>
+    <message>
+        <source>Seasonal Surprise</source>
+        <translation>Sorpresa de temporada</translation>
+    </message>
+    <message>
+        <source>Snow</source>
+        <translation>Neu</translation>
+    </message>
+    <message>
+        <source>Christmas</source>
+        <translation>Nadal</translation>
+    </message>
+    <message>
+        <source>Fireworks</source>
+        <translation>Focs artificials</translation>
+    </message>
+    <message>
+        <source>Confetti</source>
+        <translation>Confeti</translation>
+    </message>
+    <message>
+        <source>Spring Petals</source>
+        <translation>Pètals de primavera</translation>
+    </message>
+    <message>
+        <source>Fireflies</source>
+        <translation>Cuques de llum</translation>
+    </message>
+    <message>
+        <source>Falling Leaves</source>
+        <translation>Fulles que cauen</translation>
+    </message>
+    <message>
+        <source>Density</source>
+        <translation>Densitat</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>Lleuger</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normal</translation>
+    </message>
+    <message>
+        <source>Heavy</source>
+        <translation>Intens</translation>
+    </message>
+    <message>
+        <source>Focus Follower</source>
+        <translation>Seguidor del focus</translation>
+    </message>
+    <message>
+        <source>A holiday piece, like Halloween&apos;s planchette, follows what you select on Home</source>
+        <translation>Una peça festiva, com la planxeta de Halloween, segueix el que selecciones a l&apos;inici</translation>
+    </message>
+    <message>
+        <source>Auto Hide Skip Button</source>
+        <translation>Amaga automàticament el botó per saltar</translation>
+    </message>
+    <message>
+        <source>Automatically dismiss the skip intro and outro button after a few seconds.</source>
+        <translation>Desactiva automàticament el botó per saltar l&apos;intro i l&apos;outro després de pocs segons.</translation>
+    </message>
+    <message>
+        <source>Cinema Mode Skip Button</source>
+        <translation>Botó per saltar del mode cinema</translation>
+    </message>
+    <message>
+        <source>Show a Skip button during Cinema Mode trailers, commercials, and other pre-rolls.</source>
+        <translation>Mostra un botó «Salta» durant els tràilers, els anuncis i altres vídeos previs del mode cinema.</translation>
+    </message>
+    <message>
+        <source>Transcode Audio Codecs</source>
+        <translation>Còdecs d&apos;àudio a transcodificar</translation>
+    </message>
+    <message>
+        <source>The server converts audio in these formats instead of sending it as is.</source>
+        <translation>El servidor converteix l&apos;àudio en aquests formats en lloc d&apos;enviar-lo tal com és.</translation>
+    </message>
+    <message>
+        <source>Fetching subtitles</source>
+        <translation>S&apos;estan obtenint els subtítols</translation>
+    </message>
+    <message>
+        <source>Skip {segment}</source>
+        <translation>Omet {segment}</translation>
+    </message>
+    <message>
+        <source>Ends in {time}</source>
+        <translation>Finalitza en {time}</translation>
+    </message>
+    <message>
+        <source>Settings Sync</source>
+        <translation>Sincronització de la configuració</translation>
+    </message>
+    <message>
+        <source>This device syncs with the profile you pick until you pick another.</source>
+        <translation>Aquest dispositiu se sincronitza amb el perfil que triïs fins que en triïs un altre.</translation>
+    </message>
+    <message>
+        <source>Desktop</source>
+        <translation>Escriptori</translation>
+    </message>
+    <message>
+        <source>Mobile</source>
+        <translation>Mòbil</translation>
+    </message>
+    <message>
+        <source>TV</source>
+        <translation>TV</translation>
+    </message>
+    <message>
+        <source>Applies everywhere</source>
+        <translation>S&apos;aplica a tot arreu</translation>
+    </message>
+    <message>
+        <source>Overrides Global</source>
+        <translation>Substitueix Global</translation>
+    </message>
+    <message>
+        <source>This device</source>
+        <translation>Aquest dispositiu</translation>
+    </message>
+    <message>
+        <source>Load</source>
+        <translation>Carrega</translation>
+    </message>
+    <message>
+        <source>Server to this device</source>
+        <translation>Del servidor a aquest dispositiu</translation>
+    </message>
+    <message>
+        <source>This device to server</source>
+        <translation>D&apos;aquest dispositiu al servidor</translation>
+    </message>
+    <message>
+        <source>Plugin Not Detected</source>
+        <translation>Connector no detectat</translation>
+    </message>
+    <message>
+        <source>Sync on</source>
+        <translation>Sincronització activada</translation>
+    </message>
+    <message>
+        <source>Sync off</source>
+        <translation>Sincronització desactivada</translation>
+    </message>
+    <message>
+        <source>Source Code</source>
+        <translation>Codi font</translation>
+    </message>
+    <message>
+        <source>Report an Issue</source>
+        <translation>Informar d&apos;un problema</translation>
+    </message>
+    <message>
+        <source>Open the issue tracker on GitHub</source>
+        <translation>Obriu el rastrejador de problemes a GitHub</translation>
+    </message>
+    <message>
+        <source>Join Discord</source>
+        <translation>Uneix-te a Discord</translation>
+    </message>
+    <message>
+        <source>Chat with the community</source>
+        <translation>Xateja amb la comunitat</translation>
+    </message>
+    <message>
+        <source>LEGAL</source>
+        <translation>LEGAL</translation>
+    </message>
+    <message>
+        <source>Licenses</source>
+        <translation>Llicències</translation>
+    </message>
+    <message>
+        <source>Open-source license notices</source>
+        <translation>Avisos de llicència de codi obert</translation>
+    </message>
+    <message>
+        <source>Privacy Policy</source>
+        <translation>Política de privadesa</translation>
+    </message>
+    <message>
+        <source>How Moonfin handles your data</source>
+        <translation>Com Moonfin gestiona les vostres dades</translation>
+    </message>
+    <message>
+        <source>Scan with your phone to open this link</source>
+        <translation>Escaneja-ho amb el mòbil per obrir aquest enllaç</translation>
+    </message>
+    <message>
+        <source>AUDIO</source>
+        <translation>ÀUDIO</translation>
+    </message>
+    <message>
+        <source>Audio Stream</source>
+        <translation>Flux d&apos;àudio</translation>
+    </message>
+    <message>
+        <source>COLLECTIONS</source>
+        <translation>COL·LECCIONS</translation>
+    </message>
+    <message>
+        <source>CONTINUE WATCHING AND NEXT UP</source>
+        <translation>CONTINUA MIRANT I SEGÜENT</translation>
+    </message>
+    <message>
+        <source>Capture media, login and network logs and send them to the server as a report</source>
+        <translation>Captura els registres de mitjans, d&apos;inici de sessió i de xarxa i envia&apos;ls al servidor com a informe</translation>
+    </message>
+    <message>
+        <source>Choose how many Since You Watched rows to display (1-5)</source>
+        <translation>Tria quantes files de «Ja que vas veure» vols mostrar (1-5)</translation>
+    </message>
+    <message>
+        <source>Choose sorting method for completed items</source>
+        <translation>Tria el mètode d&apos;ordenació dels elements completats</translation>
+    </message>
+    <message>
+        <source>Choose type of items to recommend</source>
+        <translation>Tria el tipus d&apos;elements que es recomanaran</translation>
+    </message>
+    <message>
+        <source>Choose which source item to base recommendations on</source>
+        <translation>Tria en quin element d&apos;origen es basen les recomanacions</translation>
+    </message>
+    <message>
+        <source>How a movie or show looks when you open it.</source>
+        <translation>Com es mostra una pel·lícula o una sèrie quan l&apos;obres.</translation>
+    </message>
+    <message>
+        <source>Controls, seeking, player buttons, and trick play</source>
+        <translation>Controls, avançar i retrocedir, botons del reproductor i previsualització</translation>
+    </message>
+    <message>
+        <source>Details Screen Backdrop</source>
+        <translation>Teló de fons de la pantalla de detalls</translation>
+    </message>
+    <message>
+        <source>Diagnostics &amp; Logging</source>
+        <translation>Diagnòstics i registres</translation>
+    </message>
+    <message>
+        <source>Display Rewatch Row</source>
+        <translation>Mostra la fila de tornar a veure</translation>
+    </message>
+    <message>
+        <source>FAVORITES</source>
+        <translation>PREFERITS</translation>
+    </message>
+    <message>
+        <source>GENRES</source>
+        <translation>GÈNERES</translation>
+    </message>
+    <message>
+        <source>HDR</source>
+        <translation>HDR</translation>
+    </message>
+    <message>
+        <source>Hide Media Description</source>
+        <translation>Amaga la descripció dels mitjans</translation>
+    </message>
+    <message>
+        <source>Home Screen Backdrop</source>
+        <translation>Teló de fons de la pantalla d&apos;inici</translation>
+    </message>
+    <message>
+        <source>Full Screen</source>
+        <translation>Pantalla completa</translation>
+    </message>
+    <message>
+        <source>Corner</source>
+        <translation>Cantonada</translation>
+    </message>
+    <message>
+        <source>Top</source>
+        <translation>A dalt</translation>
+    </message>
+    <message>
+        <source>IMDb</source>
+        <translation>IMDb</translation>
+    </message>
+    <message>
+        <source>Include Collections</source>
+        <translation>Inclou les col·leccions</translation>
+    </message>
+    <message>
+        <source>Include Movies</source>
+        <translation>Inclou les pel·lícules</translation>
+    </message>
+    <message>
+        <source>Include Previously Watched</source>
+        <translation>Inclou el que ja s&apos;ha vist</translation>
+    </message>
+    <message>
+        <source>Include Shows</source>
+        <translation>Inclou les sèries</translation>
+    </message>
+    <message>
+        <source>Include watched items in recommendations</source>
+        <translation>Inclou els elements vistos a les recomanacions</translation>
+    </message>
+    <message>
+        <source>Letterboxd</source>
+        <translation>Letterboxd</translation>
+    </message>
+    <message>
+        <source>Library Backdrops</source>
+        <translation>Telons de fons de les biblioteques</translation>
+    </message>
+    <message>
+        <source>Logging</source>
+        <translation>Registre</translation>
+    </message>
+    <message>
+        <source>Moonbase plugin sync and customization profiles</source>
+        <translation>Sincronització amb el connector Moonbase i perfils de personalització</translation>
+    </message>
+    <message>
+        <source>Moonfin scores your own library, Jellyfin takes the picks from the server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</source>
+        <translation>Moonfin puntua la teva pròpia biblioteca, Jellyfin agafa les seleccions del servidor, TMDb fa servir Seerr, i Híbrid comença amb el servidor i després completa amb contingut local</translation>
+    </message>
+    <message>
+        <source>MyAnimeList</source>
+        <translation>MyAnimeList</translation>
+    </message>
+    <message>
+        <source>Navigation, home screen, libraries, details page, and themes</source>
+        <translation>Navegació, pantalla d&apos;inici, biblioteques, pàgina de detalls i temes</translation>
+    </message>
+    <message>
+        <source>Number of Rows to Add</source>
+        <translation>Nombre de files a afegir</translation>
+    </message>
+    <message>
+        <source>PLAYLISTS</source>
+        <translation>LLISTES DE REPRODUCCIÓ</translation>
+    </message>
+    <message>
+        <source>Play is always first. Everything else is up to you.</source>
+        <translation>«Reprodueix» sempre va primer. La resta depèn de tu.</translation>
+    </message>
+    <message>
+        <source>Playback controls are always shown. Everything below is up to you.</source>
+        <translation>Els controls de reproducció sempre es mostren. Tot el que hi ha a sota depèn de tu.</translation>
+    </message>
+    <message>
+        <source>Press left or right to move the highlighted button.</source>
+        <translation>Prem esquerra o dreta per moure el botó seleccionat.</translation>
+    </message>
+    <message>
+        <source>REWATCH</source>
+        <translation>TORNA A VEURE</translation>
+    </message>
+    <message>
+        <source>Read the recorded log and send a report</source>
+        <translation>Llegeix el registre enregistrat i envia un informe</translation>
+    </message>
+    <message>
+        <source>Recommendation Source</source>
+        <translation>Font de les recomanacions</translation>
+    </message>
+    <message>
+        <source>Replace thumbnails on the details page with the series thumbnail</source>
+        <translation>Substitueix les miniatures de la pàgina de detalls per la miniatura de la sèrie</translation>
+    </message>
+    <message>
+        <source>Reports</source>
+        <translation>Informes</translation>
+    </message>
+    <message>
+        <source>Roger Ebert</source>
+        <translation>Roger Ebert</translation>
+    </message>
+    <message>
+        <source>SINCE YOU WATCHED</source>
+        <translation>JA QUE VAS VEURE</translation>
+    </message>
+    <message>
+        <source>STUDIOS</source>
+        <translation>ESTUDIS</translation>
+    </message>
+    <message>
+        <source>Show Individual Episodes</source>
+        <translation>Mostra els episodis individuals</translation>
+    </message>
+    <message>
+        <source>Show Rewatch row in Home Sections</source>
+        <translation>Mostra la fila de tornar a veure a les seccions d&apos;inici</translation>
+    </message>
+    <message>
+        <source>Show captions on YouTube trailers</source>
+        <translation>Mostra els subtítols als tràilers de YouTube</translation>
+    </message>
+    <message>
+        <source>Show the Seerr status on posters and seasons across the app</source>
+        <translation>Mostra l&apos;estat de Seerr als pòsters i a les temporades de tota l&apos;aplicació</translation>
+    </message>
+    <message>
+        <source>Badge Style</source>
+        <translation>Estil de la insígnia</translation>
+    </message>
+    <message>
+        <source>Badge puts Seerr&apos;s dot in a corner. Banner runs the status across the top of the poster.</source>
+        <translation>«Insígnia» posa el punt de Seerr en una cantonada. «Bàner» mostra l&apos;estat a la part superior del pòster.</translation>
+    </message>
+    <message>
+        <source>Badge</source>
+        <translation>Insígnia</translation>
+    </message>
+    <message>
+        <source>Show watched TV shows in the rewatch row</source>
+        <translation>Mostra les sèries vistes a la fila de tornar a veure</translation>
+    </message>
+    <message>
+        <source>Show watched collections in the rewatch row</source>
+        <translation>Mostra les col·leccions vistes a la fila de tornar a veure</translation>
+    </message>
+    <message>
+        <source>Show watched movies in the rewatch row</source>
+        <translation>Mostra les pel·lícules vistes a la fila de tornar a veure</translation>
+    </message>
+    <message>
+        <source>Sign-in, PIN code, Kids Mode, parental controls, and settings sync</source>
+        <translation>Inici de sessió, codi PIN, mode infantil, controls parentals i sincronització de la configuració</translation>
+    </message>
+    <message>
+        <source>Sort Collections rows in ascending or descending order.</source>
+        <translation>Ordena les files de les col·leccions en ordre ascendent o descendent.</translation>
+    </message>
+    <message>
+        <source>Sort Audio rows by date added, release date, alphabetically, and more.</source>
+        <translation>Ordena les files d&apos;àudio per data d&apos;addició, data d&apos;estrena, alfabèticament i més.</translation>
+    </message>
+    <message>
+        <source>Sort Audio rows in ascending or descending order.</source>
+        <translation>Ordena les files d&apos;àudio en ordre ascendent o descendent.</translation>
+    </message>
+    <message>
+        <source>Source Item</source>
+        <translation>Element font</translation>
+    </message>
+    <message>
+        <source>Source Type</source>
+        <translation>Tipus de font</translation>
+    </message>
+    <message>
+        <source>Choose what the Radarr and Sonarr rows show.</source>
+        <translation>Tria què mostren les files de Radarr i Sonarr.</translation>
+    </message>
+    <message>
+        <source>Trakt</source>
+        <translation>Trakt</translation>
+    </message>
+    <message>
+        <source>Turn metadata items on or off, and arrange the order they appear on the details screen.</source>
+        <translation>Activa o desactiva els elements de metadades i organitza l&apos;ordre en què apareixen a la pantalla de detalls.</translation>
+    </message>
+    <message>
+        <source>Turn rows on or off and change their order</source>
+        <translation>Activa o desactiva les files i canvia&apos;n l&apos;ordre</translation>
+    </message>
+    <message>
+        <source>Rows</source>
+        <translation>Files</translation>
+    </message>
+    <message>
+        <source>Seerr</source>
+        <translation>Seerr</translation>
+    </message>
+    <message>
+        <source>Genres and Studios</source>
+        <translation>Gèneres i estudis</translation>
+    </message>
+    <message>
+        <source>External Lists</source>
+        <translation>Llistes externes</translation>
+    </message>
+    <message>
+        <source>This account can&apos;t sign in right now. It may be outside its allowed hours, locked or disabled. Try again later or ask an administrator.</source>
+        <translation>Aquest compte no pot iniciar sessió ara mateix. Pot ser que sigui fora del seu horari permès, o que estigui bloquejat o desactivat. Torna-ho a provar més tard o demana-ho a un administrador.</translation>
+    </message>
+    <message>
+        <source>Lossless</source>
+        <translation>Sense pèrdua</translation>
+    </message>
+    <message>
+        <source>Collections row</source>
+        <translation>Fila de col·leccions</translation>
+    </message>
+    <message>
+        <source>Genres row</source>
+        <translation>Fila de gèneres</translation>
+    </message>
+    <message>
+        <source>Playlists row</source>
+        <translation>Fila de llistes de reproducció</translation>
+    </message>
+    <message>
+        <source>Channel</source>
+        <translation>Canal</translation>
+    </message>
+    <message>
+        <source>Program</source>
+        <translation>Programa</translation>
+    </message>
+    <message>
+        <source>Play Method</source>
+        <translation>Mètode de reproducció</translation>
+    </message>
+    <message>
+        <source>Why</source>
+        <translation>Motiu</translation>
+    </message>
+    <message>
+        <source>Bitrate</source>
+        <translation>Taxa de bits</translation>
+    </message>
+    <message>
+        <source>Quality Limit</source>
+        <translation>Límit de qualitat</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>Resolució</translation>
+    </message>
+    <message>
+        <source>Frame Rate</source>
+        <translation>Velocitat de fotogrames</translation>
+    </message>
+    <message>
+        <source>Track</source>
+        <translation>Pista</translation>
+    </message>
+    <message>
+        <source>Delivery</source>
+        <translation>Lliurament</translation>
+    </message>
+    <message>
+        <source>File</source>
+        <translation>Fitxer</translation>
+    </message>
+    <message>
+        <source>Technical</source>
+        <translation>Informació tècnica</translation>
+    </message>
+    <message>
+        <source>Player</source>
+        <translation>Reproductor</translation>
+    </message>
+    <message>
+        <source>Device</source>
+        <translation>Dispositiu</translation>
+    </message>
+    <message>
+        <source>Transcode Reasons</source>
+        <translation>Raons de transcodificació</translation>
+    </message>
+    <message>
+        <source>Direct Stream</source>
+        <translation>Transmissió directa</translation>
+    </message>
+    <message>
+        <source>Transcoding</source>
+        <translation>Transcodificació</translation>
+    </message>
+    <message>
+        <source>Mono</source>
+        <translation>Mono</translation>
+    </message>
+    <message>
+        <source>Stereo</source>
+        <translation>Estèreo</translation>
+    </message>
+    <message>
+        <source>5.1 surround</source>
+        <translation>5.1 envoltant</translation>
+    </message>
+    <message>
+        <source>7.1 surround</source>
+        <translation>7.1 envoltant</translation>
+    </message>
+    <message>
+        <source>{count} channels</source>
+        <translation>{count} canals</translation>
+    </message>
+    <message>
+        <source>Embedded</source>
+        <translation>Incrustat</translation>
+    </message>
+    <message>
+        <source>External</source>
+        <translation>Extern</translation>
+    </message>
+    <message>
+        <source>Burned in by the server</source>
+        <translation>Incrustats pel servidor</translation>
+    </message>
+    <message>
+        <source>{value} (original {original})</source>
+        <translation>{value} (original {original})</translation>
+    </message>
+    <message>
+        <source>{value} (converted from {source})</source>
+        <translation>{value} (convertit des de {source})</translation>
+    </message>
+    <message>
+        <source>Playing the original file as is.</source>
+        <translation>S&apos;està reproduint el fitxer original tal com és.</translation>
+    </message>
+    <message>
+        <source>The server is repackaging the file without converting it.</source>
+        <translation>El servidor està reempaquetant el fitxer sense convertir-lo.</translation>
+    </message>
+    <message>
+        <source>The server is converting the video so this device can play it.</source>
+        <translation>El servidor està convertint el vídeo perquè aquest dispositiu el pugui reproduir.</translation>
+    </message>
+    <message>
+        <source>The server is converting the audio so this device can play it.</source>
+        <translation>El servidor està convertint l&apos;àudio perquè aquest dispositiu el pugui reproduir.</translation>
+    </message>
+    <message>
+        <source>The server is converting the video and audio so this device can play it.</source>
+        <translation>El servidor està convertint el vídeo i l&apos;àudio perquè aquest dispositiu els pugui reproduir.</translation>
+    </message>
+    <message>
+        <source>The server is converting this file so this device can play it.</source>
+        <translation>El servidor està convertint aquest fitxer perquè aquest dispositiu el pugui reproduir.</translation>
+    </message>
+    <message>
+        <source>Transcoding is forced in settings</source>
+        <translation>La transcodificació està forçada a la configuració</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play this file type</source>
+        <translation>Aquest dispositiu no pot reproduir aquest tipus de fitxer</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play this video format</source>
+        <translation>Aquest dispositiu no pot reproduir aquest format de vídeo</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t display this HDR format</source>
+        <translation>Aquest dispositiu no pot mostrar aquest format HDR</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play this audio format</source>
+        <translation>Aquest dispositiu no pot reproduir aquest format d&apos;àudio</translation>
+    </message>
+    <message>
+        <source>Subtitles are being burned into the video</source>
+        <translation>Els subtítols s&apos;estan incrustant al vídeo</translation>
+    </message>
+    <message>
+        <source>The file couldn&apos;t be played directly</source>
+        <translation>No s&apos;ha pogut reproduir el fitxer directament</translation>
+    </message>
+    <message>
+        <source>{bitrate} is above the {limit} streaming limit</source>
+        <translation>{bitrate} supera el límit de transmissió de {limit}</translation>
+    </message>
+    <message>
+        <source>The bitrate is above the streaming limit</source>
+        <translation>La taxa de bits supera el límit de transmissió</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t open {container} files</source>
+        <translation>Aquest dispositiu no pot obrir fitxers {container}</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {codec} video</source>
+        <translation>Aquest dispositiu no pot reproduir vídeo {codec}</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {codec} {profile} video</source>
+        <translation>Aquest dispositiu no pot reproduir vídeo {codec} {profile}</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {codec} level {level} video</source>
+        <translation>Aquest dispositiu no pot reproduir vídeo {codec} de nivell {level}</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {bits}-bit video</source>
+        <translation>Aquest dispositiu no pot reproduir vídeo de {bits} bits</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {resolution} video</source>
+        <translation>Aquest dispositiu no pot reproduir vídeo {resolution}</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {fps} fps video</source>
+        <translation>Aquest dispositiu no pot reproduir vídeo a {fps} fps</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play interlaced video</source>
+        <translation>Aquest dispositiu no pot reproduir vídeo entrellaçat</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play anamorphic video</source>
+        <translation>Aquest dispositiu no pot reproduir vídeo anamòrfic</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t display {range}</source>
+        <translation>Aquest dispositiu no pot mostrar {range}</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {format} audio</source>
+        <translation>Aquest dispositiu no pot reproduir àudio {format}</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {fullFormat}</source>
+        <translation>Aquest dispositiu no pot reproduir {fullFormat}</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {channels} audio</source>
+        <translation>Aquest dispositiu no pot reproduir àudio {channels}</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {rate} kHz audio</source>
+        <translation>Aquest dispositiu no pot reproduir àudio a {rate} kHz</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {bits}-bit audio</source>
+        <translation>Aquest dispositiu no pot reproduir àudio de {bits} bits</translation>
+    </message>
+    <message>
+        <source>The audio track is in a separate file</source>
+        <translation>La pista d&apos;àudio és en un fitxer separat</translation>
+    </message>
+    <message>
+        <source>This device can only play the first audio track</source>
+        <translation>Aquest dispositiu només pot reproduir la primera pista d&apos;àudio</translation>
+    </message>
+    <message>
+        <source>{format} subtitles are being burned into the video</source>
+        <translation>Els subtítols {format} s&apos;estan incrustant al vídeo</translation>
+    </message>
+    <message>
+        <source>Keyboard Style</source>
+        <translation>Estil del teclat</translation>
+    </message>
+    <message>
+        <source>Native uses your TV&apos;s own keyboard. Classic is the original Moonfin keyboard. Glass is a frosted panel with larger keys. Docked fills the bottom of the screen and shows what you type above the keys.</source>
+        <translation>«Natiu» fa servir el teclat de la teva TV. «Clàssic» és el teclat original de Moonfin. «Glass» és un panell esmerilat amb tecles més grans. «Acoblat» ocupa la part inferior de la pantalla i mostra el que escrius a sobre de les tecles.</translation>
+    </message>
+    <message>
+        <source>Native</source>
+        <translation>Natiu</translation>
+    </message>
+    <message>
+        <source>Glass</source>
+        <translation>Glass</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>Entrada</translation>
+    </message>
+    <message>
+        <source>space</source>
+        <translation>Espai</translation>
+    </message>
+    <message>
+        <source>close</source>
+        <translation>Tanca</translation>
+    </message>
+    <message>
+        <source>Filter</source>
+        <translation>Filtre</translation>
+    </message>
+    <message>
+        <source>Artist</source>
+        <translation>Artista</translation>
+    </message>
+    <message>
+        <source>Runtime</source>
+        <translation>Duració</translation>
+    </message>
+    <message>
+        <source>Release Date</source>
+        <translation>Data d&apos;estrena</translation>
+    </message>
+    <message>
+        <source>Critic Rating</source>
+        <translation>Valoració de la crítica</translation>
+    </message>
+    <message>
+        <source>Play Count</source>
+        <translation>Nombre de reproduccions</translation>
+    </message>
+    <message>
+        <source>Played Status</source>
+        <translation>Estat de reproducció</translation>
+    </message>
+    <message>
+        <source>In Progress</source>
+        <translation>En progrés</translation>
+    </message>
+    <message>
+        <source>Type</source>
+        <translation>Tipus</translation>
+    </message>
+    <message>
+        <source>Clear Filters</source>
+        <translation>Netejar filtres</translation>
+    </message>
+    <message>
+        <source>No tracks match the active filters</source>
+        <translation>Cap pista coincideix amb els filtres actius</translation>
+    </message>
+    <message>
+        <source>Live TV Direct Play</source>
+        <translation>Reproducció nativa de TV en directe</translation>
+    </message>
+    <message>
+        <source>Enable direct play for Live TV</source>
+        <translation>Activa la reproducció directa per a la televisió en directe</translation>
+    </message>
+    <message>
+        <source>Time&apos;s up</source>
+        <translation>S&apos;ha acabat el temps</translation>
+    </message>
+    <message>
+        <source>This account isn&apos;t available right now.</source>
+        <translation>Aquest compte no està disponible ara mateix.</translation>
+    </message>
+    <message>
+        <source>Switch User</source>
+        <translation>Canvia d&apos;usuari</translation>
+    </message>
+    <message>
+        <source>Playlist order</source>
+        <translation>Ordre de la llista de reproducció</translation>
+    </message>
+    <message>
+        <source>Group By</source>
+        <translation>Agrupar per</translation>
+    </message>
+    <message>
+        <source>Decade (Year)</source>
+        <translation>Dècada (Any)</translation>
+    </message>
+    <message>
+        <source>Parental Rating</source>
+        <translation>Classificació per edats</translation>
+    </message>
+    <message>
+        <source>Studio</source>
+        <translation>Estudi</translation>
+    </message>
+    <message>
+        <source>Jump to letter</source>
+        <translation>Salta a la lletra</translation>
+    </message>
+    <message>
+        <source>Album Artists</source>
+        <translation>Artistes de l&apos;àlbum</translation>
+    </message>
+    <message>
+        <source>Like</source>
+        <translation>M&apos;agrada</translation>
+    </message>
+    <message>
+        <source>Dislike</source>
+        <translation>No m&apos;agrada</translation>
+    </message>
+    <message>
+        <source>Library</source>
+        <translation>Biblioteca</translation>
+    </message>
+    <message>
+        <source>All Libraries</source>
+        <translation>Totes les Biblioteques</translation>
+    </message>
+    <message>
+        <source>Scroll Direction</source>
+        <translation>Direcció de desplaçament</translation>
+    </message>
+    <message>
+        <source>Image Type</source>
+        <translation>Tipus d&apos;imatge</translation>
+    </message>
+    <message>
+        <source>Poster Size</source>
+        <translation>Mida del pòster</translation>
+    </message>
+    <message>
+        <source>Grouping</source>
+        <translation>Agrupament</translation>
+    </message>
+    <message>
+        <source>Playlist Types</source>
+        <translation>Tipus de llistes de reproducció</translation>
+    </message>
+    <message>
+        <source>Music Video</source>
+        <translation>Vídeo musical</translation>
+    </message>
+    <message>
+        <source>Audio (Music)</source>
+        <translation>Àudio (Música)</translation>
+    </message>
+    <message>
+        <source>Audiobook</source>
+        <translation>Audiollibre</translation>
+    </message>
+    <message>
+        <source>Book</source>
+        <translation>Llibre</translation>
+    </message>
+    <message>
+        <source>Mixed</source>
+        <translation>Mesclat</translation>
+    </message>
+    <message>
+        <source>Folder View</source>
+        <translation>Vista de carpetes</translation>
+    </message>
+    <message>
+        <source>Titles Under Posters</source>
+        <translation>Títols sota els pòsters</translation>
+    </message>
+    <message>
+        <source>Show each item&apos;s title and details below its artwork in library grids.</source>
+        <translation>Mostra el títol i els detalls de cada element sota la seva il·lustració a les graelles de les biblioteques.</translation>
+    </message>
+    <message>
+        <source>Length</source>
+        <translation>Durada</translation>
+    </message>
+    <message>
+        <source>Track Number</source>
+        <translation>Número de pista</translation>
+    </message>
+    <message>
+        <source>Folders First</source>
+        <translation>Primer les carpetes</translation>
+    </message>
+    <message>
+        <source>Overview</source>
+        <translation>Visió general</translation>
+    </message>
+    <message>
+        <source>Music</source>
+        <translation>Música</translation>
+    </message>
+    <message>
+        <source>Recently Added</source>
+        <translation>Afegit recentment</translation>
+    </message>
+    <message>
+        <source>All Artists</source>
+        <translation>Tots els artistes</translation>
+    </message>
+    <message>
+        <source>A to Z</source>
+        <translation>A-Z</translation>
+    </message>
+    <message>
+        <source>Z to A</source>
+        <translation>Z-A</translation>
+    </message>
+    <message>
+        <source>Shuffle All</source>
+        <translation>Barreja-ho tot</translation>
+    </message>
+    <message>
+        <source>1 artist</source>
+        <translation>1 artista</translation>
+    </message>
+    <message>
+        <source>{count} artists</source>
+        <translation>{count} artistes</translation>
+    </message>
+    <message>
+        <source>Filter by Genre</source>
+        <translation>Filtra per gènere</translation>
+    </message>
+    <message>
+        <source>All Genres</source>
+        <translation>Tots els Gèneres</translation>
+    </message>
+    <message>
+        <source>Open Album</source>
+        <translation>Obre l&apos;àlbum</translation>
+    </message>
+    <message>
+        <source>1 song</source>
+        <translation>1 cançó</translation>
+    </message>
+    <message>
+        <source>{count} songs</source>
+        <translation>{count} cançons</translation>
+    </message>
+    <message>
+        <source>All Songs A to Z</source>
+        <translation>Totes les cançons de la A a la Z</translation>
+    </message>
+    <message>
+        <source>Everything</source>
+        <translation>Tot</translation>
+    </message>
+    <message>
+        <source>300 songs at random</source>
+        <translation>300 cançons a l&apos;atzar</translation>
+    </message>
+    <message>
+        <source>Mix</source>
+        <translation>Mescla</translation>
+    </message>
+    <message>
+        <source>Most Played</source>
+        <translation>Més reproduïdes</translation>
+    </message>
+    <message>
+        <source>Your top 100</source>
+        <translation>El teu top 100</translation>
+    </message>
+    <message>
+        <source>Fresh Arrivals</source>
+        <translation>Novetats</translation>
+    </message>
+    <message>
+        <source>The newest 100 songs</source>
+        <translation>Les 100 cançons més noves</translation>
+    </message>
+    <message>
+        <source>Rediscover</source>
+        <translation>Redescobreix</translation>
+    </message>
+    <message>
+        <source>Favorites you haven&apos;t played lately</source>
+        <translation>Preferides que fa temps que no escoltes</translation>
+    </message>
+    <message>
+        <source>1 play</source>
+        <translation>1 reproducció</translation>
+    </message>
+    <message>
+        <source>{count} plays</source>
+        <translation>{count} reproduccions</translation>
+    </message>
+    <message>
+        <source>1 playlist</source>
+        <translation>1 llista de reproducció</translation>
+    </message>
+    <message>
+        <source>{count} playlists</source>
+        <translation>{count} llistes de reproducció</translation>
+    </message>
+    <message>
+        <source>Open Playlist</source>
+        <translation>Obre la llista de reproducció</translation>
+    </message>
+    <message>
+        <source>1 genre</source>
+        <translation>1 gènere</translation>
+    </message>
+    <message>
+        <source>{count} genres</source>
+        <translation>{count} gèneres</translation>
+    </message>
+    <message>
+        <source>Most Albums</source>
+        <translation>Més àlbums</translation>
+    </message>
+    <message>
+        <source>Show Libraries Individually</source>
+        <translation>Mostra les biblioteques per separat</translation>
+    </message>
+    <message>
+        <source>Show each library as its own button in the navigation bar instead of in the Libraries menu</source>
+        <translation>Mostra cada biblioteca com un botó propi a la barra de navegació en lloc de dins del menú «Biblioteques»</translation>
+    </message>
+    <message>
+        <source>Keep as Complete</source>
+        <translation>Mantén com a complet</translation>
+    </message>
+    <message>
+        <source>Marked as complete</source>
+        <translation>Marcat com a complet</translation>
+    </message>
+    <message>
+        <source>Unable to mark as complete</source>
+        <translation>No s&apos;ha pogut marcar com a complet</translation>
+    </message>
+    <message>
+        <source>Incomplete</source>
+        <translation>Incomplet</translation>
+    </message>
+    <message>
+        <source>No complete showing found</source>
+        <translation>No s&apos;ha trobat cap emissió completa</translation>
+    </message>
+    <message>
+        <source>The series recording will skip this showing</source>
+        <translation>L&apos;enregistrament de la sèrie ometrà aquesta emissió</translation>
+    </message>
+    <message>
+        <source>Series Settings</source>
+        <translation>Configuració de la sèrie</translation>
+    </message>
+    <message>
+        <source>Which episodes should be recorded?</source>
+        <translation>Quins episodis s&apos;han d&apos;enregistrar?</translation>
+    </message>
+    <message>
+        <source>All Episodes</source>
+        <translation>Tots els episodis</translation>
+    </message>
+    <message>
+        <source>Every showing, including repeats</source>
+        <translation>Totes les emissions, incloses les reposicions</translation>
+    </message>
+    <message>
+        <source>Episodes Not Already Recorded</source>
+        <translation>Episodis encara no enregistrats</translation>
+    </message>
+    <message>
+        <source>Skips episodes already in your library and records each episode once</source>
+        <translation>Omet els episodis que ja són a la teva biblioteca i enregistra cada episodi una sola vegada</translation>
+    </message>
+    <message>
+        <source>New Episodes Only</source>
+        <translation>Només episodis nous</translation>
+    </message>
+    <message>
+        <source>First airings only, no repeats</source>
+        <translation>Només primeres emissions, sense reposicions</translation>
+    </message>
+    <message>
+        <source>Series recording updated</source>
+        <translation>S&apos;ha actualitzat l&apos;enregistrament de la sèrie</translation>
+    </message>
+    <message>
+        <source>Unable to update series recording</source>
+        <translation>No s&apos;ha pogut actualitzar l&apos;enregistrament de la sèrie</translation>
+    </message>
+    <message>
+        <source>Failed to load recordings</source>
+        <translation>No s&apos;han pogut carregar les gravacions</translation>
+    </message>
+    <message>
+        <source>Record This Program</source>
+        <translation>Enregistra aquest programa</translation>
+    </message>
+    <message>
+        <source>Record This Episode</source>
+        <translation>Enregistra aquest episodi</translation>
+    </message>
+    <message>
+        <source>Cancel This Recording</source>
+        <translation>Cancel·la aquest enregistrament</translation>
+    </message>
+    <message>
+        <source>Next series recording: {dateTime}</source>
+        <translation>Següent enregistrament de la sèrie: {dateTime}</translation>
+    </message>
+    <message>
+        <source>Series recording is scheduled, but the guide has no upcoming episodes</source>
+        <translation>L&apos;enregistrament de la sèrie està programat, però la guia no té cap episodi pròxim</translation>
+    </message>
+    <message>
+        <source>Record {name}</source>
+        <translation>Enregistra {name}</translation>
+    </message>
+    <message>
+        <source>This showing started 1 minute ago, so the recording will miss the start.</source>
+        <translation>Aquesta emissió ha començat fa 1 minut, així que a l&apos;enregistrament li faltarà l&apos;inici.</translation>
+    </message>
+    <message>
+        <source>This showing started {minutes} minutes ago, so the recording will miss the start.</source>
+        <translation>Aquesta emissió ha començat fa {minutes} minuts, així que a l&apos;enregistrament li faltarà l&apos;inici.</translation>
+    </message>
+    <message>
+        <source>1 min already aired</source>
+        <translation>1 min ja emès</translation>
+    </message>
+    <message>
+        <source>{minutes} min already aired</source>
+        <translation>{minutes} min ja emesos</translation>
+    </message>
+    <message>
+        <source>Future showing</source>
+        <translation>Emissió futura</translation>
+    </message>
+    <message>
+        <source>Already set to record</source>
+        <translation>Ja està programat per enregistrar</translation>
+    </message>
+    <message>
+        <source>Matched by title and description only. Check it&apos;s the same program.</source>
+        <translation>Coincidència només pel títol i la descripció. Comprova que sigui el mateix programa.</translation>
+    </message>
+    <message>
+        <source>The descriptions differ, so this may be a different program.</source>
+        <translation>Les descripcions són diferents; pot ser un altre programa.</translation>
+    </message>
+    <message>
+        <source>Same episode (S{season}E{episode})</source>
+        <translation>Mateix episodi (T{season}E{episode})</translation>
+    </message>
+    <message>
+        <source>Also record the future showing to get a complete recording?</source>
+        <translation>Vols enregistrar també l&apos;emissió futura per tenir un enregistrament complet?</translation>
+    </message>
+    <message>
+        <source>Also record a future showing automatically once one is found, to get a complete recording?</source>
+        <translation>Vols enregistrar automàticament una emissió futura quan se&apos;n trobi una, per tenir un enregistrament complet?</translation>
+    </message>
+    <message>
+        <source>Record Now Only</source>
+        <translation>Enregistra només ara</translation>
+    </message>
+    <message>
+        <source>Record {when} Only</source>
+        <translation>Enregistra només {when}</translation>
+    </message>
+    <message>
+        <source>Record Future Showing Only</source>
+        <translation>Enregistra només l&apos;emissió futura</translation>
+    </message>
+    <message>
+        <source>Record Now and {when}</source>
+        <translation>Enregistra ara i {when}</translation>
+    </message>
+    <message>
+        <source>Record Now and Future Showing</source>
+        <translation>Enregistra ara i l&apos;emissió futura</translation>
+    </message>
+    <message>
+        <source>Recording started. A future showing will be recorded too.</source>
+        <translation>S&apos;ha començat a enregistrar. També s&apos;enregistrarà una emissió posterior.</translation>
+    </message>
+    <message>
+        <source>Recording started, but couldn&apos;t request a future showing.</source>
+        <translation>S&apos;ha començat a enregistrar, però no s&apos;ha pogut sol·licitar una emissió posterior.</translation>
+    </message>
+    <message>
+        <source>The future showing will be recorded.</source>
+        <translation>S&apos;enregistrarà l&apos;emissió futura.</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t request the future showing, so nothing will be recorded.</source>
+        <translation>No s&apos;ha pogut sol·licitar l&apos;emissió futura, així que no s&apos;enregistrarà res.</translation>
+    </message>
+    <message>
+        <source>Sorting</source>
+        <translation>Ordenació</translation>
+    </message>
+    <message>
+        <source>IMDb Row Sorting</source>
+        <translation>Ordenació de les files d&apos;IMDb</translation>
+    </message>
+    <message>
+        <source>Sort IMDb rows by name, release date, rating, and more.</source>
+        <translation>Ordena les files d&apos;IMDb per nom, data d&apos;estrena, valoració i més.</translation>
+    </message>
+    <message>
+        <source>Sort IMDb rows in ascending or descending order.</source>
+        <translation>Ordena les files d&apos;IMDb en ordre ascendent o descendent.</translation>
+    </message>
+    <message>
+        <source>TMDB Row Sorting</source>
+        <translation>Ordenació de les files de TMDB</translation>
+    </message>
+    <message>
+        <source>Sort TMDB rows by name, release date, rating, and more.</source>
+        <translation>Ordena les files de TMDB per nom, data d&apos;estrena, valoració i més.</translation>
+    </message>
+    <message>
+        <source>Sort TMDB rows in ascending or descending order.</source>
+        <translation>Ordena les files de TMDB en ordre ascendent o descendent.</translation>
+    </message>
+    <message>
+        <source>Seerr Row Sorting</source>
+        <translation>Ordenació de les files de Seerr</translation>
+    </message>
+    <message>
+        <source>Sort Seerr rows by name, release date, rating, and more.</source>
+        <translation>Ordena les files de Seerr per nom, data d&apos;estrena, valoració i més.</translation>
+    </message>
+    <message>
+        <source>Sort Seerr rows in ascending or descending order.</source>
+        <translation>Ordena les files de Seerr en ordre ascendent o descendent.</translation>
+    </message>
+    <message>
+        <source>Default (List Order)</source>
+        <translation>Predeterminat (ordre de la llista)</translation>
+    </message>
+    <message>
+        <source>Rating</source>
+        <translation>Valoració</translation>
+    </message>
+    <message>
+        <source>Popularity</source>
+        <translation>Popularitat</translation>
+    </message>
+    <message>
+        <source>IMDb Lists</source>
+        <translation>Llistes d&apos;IMDb</translation>
+    </message>
+    <message>
+        <source>TMDB Lists</source>
+        <translation>Llistes de TMDB</translation>
+    </message>
+    <message>
+        <source>Seerr Discover Sliders</source>
+        <translation>Carrusels de Descobreix de Seerr</translation>
+    </message>
+    <message>
+        <source>Seerr Discovery Rows</source>
+        <translation>Fileres de descoberta Seerr</translation>
+    </message>
+    <message>
+        <source>Title</source>
+        <translation>Títol</translation>
+    </message>
+    <message>
+        <source>Seerr Settings</source>
+        <translation>Configuració de Seerr</translation>
+    </message>
+    <message>
+        <source>Request Collection</source>
+        <translation>Sol·licitar la col·lecció</translation>
+    </message>
+    <message>
+        <source>Select All</source>
+        <translation>Seleccioneu Tot</translation>
+    </message>
+    <message>
+        <source>requested</source>
+        <translation>Sol·licitat</translation>
+    </message>
+    <message>
+        <source>failed</source>
+        <translation>Ha fallat</translation>
+    </message>
+    <message>
+        <source>Series Continuing · Future Seasons Can Be Requested</source>
+        <translation>La sèrie continua · Es poden sol·licitar temporades futures</translation>
+    </message>
+    <message>
+        <source>What&apos;s wrong?</source>
+        <translation>Què passa?</translation>
+    </message>
+    <message>
+        <source>Submit Report</source>
+        <translation>Enviar l&apos;informe</translation>
+    </message>
+    <message>
+        <source>Keep</source>
+        <translation>Mantenir</translation>
+    </message>
+    <message>
+        <source>Failed to cancel request</source>
+        <translation>No s&apos;ha pogut cancel·lar la sol·licitud</translation>
+    </message>
+    <message>
+        <source>Failed to update request</source>
+        <translation>No s&apos;ha pogut actualitzar la sol·licitud</translation>
+    </message>
+    <message>
+        <source>Request failed</source>
+        <translation>Ha fallat la sol·licitud</translation>
+    </message>
+    <message>
+        <source>Requested by</source>
+        <translation>Sol·licitat per</translation>
+    </message>
+    <message>
+        <source>Secondary Subtitles</source>
+        <translation>Subtítols secundaris</translation>
+    </message>
+    <message>
+        <source>Show a second subtitle track at the same time. The subtitle menu then asks for the primary or secondary track first</source>
+        <translation>Mostra una segona pista de subtítols alhora. Aleshores, el menú de subtítols et demana primer si vols la pista principal o la secundària</translation>
+    </message>
+    <message>
+        <source>Preferred Secondary Subtitle Language</source>
+        <translation>Idioma preferit dels subtítols secundaris</translation>
+    </message>
+    <message>
+        <source>Primary</source>
+        <translation>primària</translation>
+    </message>
+    <message>
+        <source>Secondary</source>
+        <translation>Secundari</translation>
+    </message>
+    <message>
+        <source>Secondary Subtitle Track</source>
+        <translation>Pista de subtítols secundària</translation>
+    </message>
+    <message>
+        <source>Vertical Offset</source>
+        <translation>Desplaçament vertical</translation>
+    </message>
+    <message>
+        <source>By address, or with a Plex or Emby Connect account</source>
+        <translation>Per adreça, o amb un compte de Plex o d&apos;Emby Connect</translation>
+    </message>
+    <message>
+        <source>Connecting to server...</source>
+        <translation>S&apos;està connectant al servidor...</translation>
+    </message>
+    <message>
+        <source>Connection timed out. Check the address and your network.</source>
+        <translation>S&apos;ha esgotat el temps d&apos;espera de la connexió. Comprova l&apos;adreça i la xarxa.</translation>
+    </message>
+    <message>
+        <source>Failed to connect. Check the address and try again.</source>
+        <translation>No s&apos;ha pogut connectar. Comprova l&apos;adreça i torna-ho a provar.</translation>
+    </message>
+    <message>
+        <source>Go to plex.tv/link on any device and enter this code</source>
+        <translation>Ves a plex.tv/link des de qualsevol dispositiu i introdueix aquest codi</translation>
+    </message>
+    <message>
+        <source>Invalid username or password.</source>
+        <translation>El nom d&apos;usuari o la contrasenya no són vàlids.</translation>
+    </message>
+    <message>
+        <source>No Plex servers found on this account</source>
+        <translation>No s&apos;ha trobat cap servidor Plex en aquest compte</translation>
+    </message>
+    <message>
+        <source>Or scan this with a phone that&apos;s signed in to Plex</source>
+        <translation>O escaneja aquest codi amb un telèfon que tingui la sessió iniciada a Plex</translation>
+    </message>
+    <message>
+        <source>PIN</source>
+        <translation>PIN</translation>
+    </message>
+    <message>
+        <source>Select a Server</source>
+        <translation>Seleccioneu un servidor</translation>
+    </message>
+    <message>
+        <source>Server error. Please try again later.</source>
+        <translation>Error del servidor. Torna-ho a provar més tard.</translation>
+    </message>
+    <message>
+        <source>Signing in...</source>
+        <translation>S&apos;està iniciant la sessió...</translation>
+    </message>
+    <message>
+        <source>Sign in with a password</source>
+        <translation>Inicia la sessió amb una contrasenya</translation>
+    </message>
+    <message>
+        <source>Sign in with Plex</source>
+        <translation>Inicia la sessió amb Plex</translation>
+    </message>
+    <message>
+        <source>Use your Plex account to find its servers</source>
+        <translation>Fes servir el teu compte de Plex per trobar-ne els servidors</translation>
+    </message>
+    <message>
+        <source>Verification code</source>
+        <translation>Codi de verificació</translation>
+    </message>
+    <message>
+        <source>Waiting for you to approve the code...</source>
+        <translation>S&apos;està esperant que aprovis el codi...</translation>
+    </message>
+    <message>
+        <source>Works with Jellyfin, Emby and Silo. A Plex address opens the Plex sign-in.</source>
+        <translation>Funciona amb Jellyfin, Emby i Silo. Una adreça de Plex obre l&apos;inici de sessió de Plex.</translation>
+    </message>
+    <message>
+        <source>Live preview</source>
+        <translation>Vista prèvia en directe</translation>
+    </message>
+    <message>
+        <source>Not shown in the preview</source>
+        <translation>No es mostra a la vista prèvia</translation>
+    </message>
+    <message>
+        <source>Saved</source>
+        <translation>Guardat</translation>
+    </message>
+    <message>
+        <source>New Seasons &amp; Episodes</source>
+        <translation>Temporades i episodis nous</translation>
+    </message>
+    <message>
+        <source>New Release Banner</source>
+        <translation>Bàner de novetat</translation>
+    </message>
+    <message>
+        <source>Flag series with a new season or new episodes that aired recently.</source>
+        <translation>Destaca les sèries amb una temporada nova o episodis nous emesos recentment.</translation>
+    </message>
+    <message>
+        <source>New Release Window</source>
+        <translation>Període de novetat</translation>
+    </message>
+    <message>
+        <source>How long after an episode airs it still counts as new.</source>
+        <translation>Quant de temps després de l&apos;emissió d&apos;un episodi encara es considera nou.</translation>
+    </message>
+    <message>
+        <source>New Series</source>
+        <translation>Sèrie nova</translation>
+    </message>
+    <message>
+        <source>New Season</source>
+        <translation>Temporada nova</translation>
+    </message>
+    <message>
+        <source>New Episodes</source>
+        <translation>Episodis nous</translation>
+    </message>
+    <message>
+        <source>7 days</source>
+        <translation>7 dies</translation>
+    </message>
+    <message>
+        <source>14 days</source>
+        <translation>14 dies</translation>
+    </message>
+    <message>
+        <source>30 days</source>
+        <translation>30 dies</translation>
+    </message>
+    <message>
+        <source>60 days</source>
+        <translation>60 dies</translation>
+    </message>
+    <message>
+        <source>90 days</source>
+        <translation>90 dies</translation>
+    </message>
+    <message>
+        <source>Watching on MDBList</source>
+        <translation>Ara es mira a MDBList</translation>
+    </message>
+    <message>
+        <source>{users} watching now · {movies} movies · {shows} shows</source>
+        <translation>{users} mirant ara · {movies} pel·lícules · {shows} sèries</translation>
+    </message>
+    <message>
+        <source>{users} watched today · {movies} movies · {shows} shows</source>
+        <translation>{users} han mirat avui · {movies} pel·lícules · {shows} sèries</translation>
+    </message>
+    <message>
+        <source>{count} watching</source>
+        <translation>{count} mirant</translation>
+    </message>
+    <message>
+        <source>Card Size</source>
+        <translation>Mida de la targeta</translation>
+    </message>
+    <message>
+        <source>Grandparents</source>
+        <translation>Per als avis</translation>
+    </message>
+    <message>
+        <source>Image Type per Row</source>
+        <translation>Tipus d&apos;imatge per fila</translation>
+    </message>
+    <message>
+        <source>Configure image type for each enabled home row</source>
+        <translation>Configura el tipus d&apos;imatge per a cada fila d&apos;inici activada</translation>
+    </message>
+    <message>
+        <source>Images</source>
+        <translation>Imatges</translation>
+    </message>
+    <message>
+        <source>Calendar</source>
+        <translation>Calendari</translation>
+    </message>
+    <message>
+        <source>Full calendar</source>
+        <translation>Calendari complet</translation>
+    </message>
+    <message>
+        <source>Upcoming</source>
+        <translation>Properament</translation>
+    </message>
+    <message>
+        <source>Recently aired</source>
+        <translation>Emès recentment</translation>
+    </message>
+    <message>
+        <source>Ready to watch</source>
+        <translation>Llest per veure</translation>
+    </message>
+    <message>
+        <source>Coming up this week</source>
+        <translation>Properament aquesta setmana</translation>
+    </message>
+    <message>
+        <source>Nothing coming up</source>
+        <translation>No hi ha res previst</translation>
+    </message>
+    <message>
+        <source>Nothing aired recently</source>
+        <translation>No s&apos;ha emès res recentment</translation>
+    </message>
+    <message>
+        <source>Nothing on this day</source>
+        <translation>No hi ha res aquest dia</translation>
+    </message>
+    <message>
+        <source>Starts in</source>
+        <translation>Comença d&apos;aquí a</translation>
+    </message>
+    <message>
+        <source>days</source>
+        <translation>dies</translation>
+    </message>
+    <message>
+        <source>hr</source>
+        <translation>h</translation>
+    </message>
+    <message>
+        <source>{day} at {time}</source>
+        <translation>{day} a les {time}</translation>
+    </message>
+    <message>
+        <source>All day</source>
+        <translation>Tot el dia</translation>
+    </message>
+    <message>
+        <source>Series premiere</source>
+        <translation>Estrena de la sèrie</translation>
+    </message>
+    <message>
+        <source>New season</source>
+        <translation>Temporada nova</translation>
+    </message>
+    <message>
+        <source>Finale</source>
+        <translation>Final de temporada</translation>
+    </message>
+    <message>
+        <source>Midseason finale</source>
+        <translation>Final de mitja temporada</translation>
+    </message>
+    <message>
+        <source>Series finale</source>
+        <translation>Final de la sèrie</translation>
+    </message>
+    <message>
+        <source>NEW</source>
+        <translation>NOU</translation>
+    </message>
+    <message>
+        <source>In library</source>
+        <translation>A la biblioteca</translation>
+    </message>
+    <message>
+        <source>Missing</source>
+        <translation>Falta</translation>
+    </message>
+    <message>
+        <source>Not monitored</source>
+        <translation>No monitorat</translation>
+    </message>
+    <message>
+        <source>+{count} more</source>
+        <translation>+{count} més</translation>
+    </message>
+    <message>
+        <source>Movie details</source>
+        <translation>Detalls de la pel·lícula</translation>
+    </message>
+    <message>
+        <source>Request</source>
+        <translation>Sol·licitud</translation>
+    </message>
+    <message>
+        <source>S{season} E{episode}</source>
+        <translation>T{season} E{episode}</translation>
+    </message>
+    <message>
+        <source>Cinema</source>
+        <translation>Cinema</translation>
+    </message>
+    <message>
+        <source>Digital</source>
+        <translation>Digital</translation>
+    </message>
+    <message>
+        <source>Physical</source>
+        <translation>Format físic</translation>
+    </message>
+    <message>
+        <source>The calendar is limited to admins on this server.</source>
+        <translation>En aquest servidor, el calendari només és per als administradors.</translation>
+    </message>
+    <message>
+        <source>An admin needs to sign in to Seerr in Moonfin before the calendar can load.</source>
+        <translation>Cal que un administrador iniciï la sessió a Seerr a Moonfin perquè es pugui carregar el calendari.</translation>
+    </message>
+    <message>
+        <source>No Sonarr or Radarr server is linked yet.</source>
+        <translation>Encara no hi ha cap servidor de Sonarr o Radarr enllaçat.</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t load the calendar.</source>
+        <translation>No s&apos;ha pogut carregar el calendari.</translation>
+    </message>
+    <message>
+        <source>Show Calendar Button</source>
+        <translation>Mostra el botó del calendari</translation>
+    </message>
+    <message>
+        <source>Show the calendar of upcoming episodes and movies in the navigation bar</source>
+        <translation>Mostra el calendari de properes estrenes d&apos;episodis i pel·lícules a la barra de navegació</translation>
+    </message>
+    <message>
+        <source>See All card</source>
+        <translation>Targeta «Veure-ho tot»</translation>
+    </message>
+    <message>
+        <source>End the upcoming rows with a card that opens the calendar</source>
+        <translation>Acaba les files de properes estrenes amb una targeta que obre el calendari</translation>
+    </message>
+    <message>
+        <source>Radarr Calendar</source>
+        <translation>Calendari de Radarr</translation>
+    </message>
+    <message>
+        <source>Sonarr Calendar</source>
+        <translation>Calendari de Sonarr</translation>
+    </message>
+    <message>
+        <source>Radarr and Sonarr Calendars</source>
+        <translation>Calendaris de Radarr i Sonarr</translation>
+    </message>
+    <message>
+        <source>Hide Movies Already on the Server</source>
+        <translation>Amaga les pel·lícules que ja són al servidor</translation>
+    </message>
+    <message>
+        <source>Hide Episodes Already on the Server</source>
+        <translation>Amaga els episodis que ja són al servidor</translation>
+    </message>
+    <message>
+        <source>Next air date at the end</source>
+        <translation>Data de la propera emissió al final</translation>
+    </message>
+    <message>
+        <source>When the next episode isn&apos;t in your library yet, the end of episode card says when it airs</source>
+        <translation>Quan el següent episodi encara no és a la biblioteca, la targeta de final d&apos;episodi indica quan s&apos;emet</translation>
+    </message>
+    <message>
+        <source>Style, filters and actions for the calendar</source>
+        <translation>Estil, filtres i accions del calendari</translation>
+    </message>
+    <message>
+        <source>View</source>
+        <translation>Veure</translation>
+    </message>
+    <message>
+        <source>What shows</source>
+        <translation>Què es mostra</translation>
+    </message>
+    <message>
+        <source>Looks</source>
+        <translation>Aspecte</translation>
+    </message>
+    <message>
+        <source>Actions</source>
+        <translation>Accions</translation>
+    </message>
+    <message>
+        <source>Calendar style</source>
+        <translation>Estil del calendari</translation>
+    </message>
+    <message>
+        <source>What the Calendar button opens. The full month is one button away in both.</source>
+        <translation>Què obre el botó del calendari. En tots dos casos, el mes complet és a un botó de distància.</translation>
+    </message>
+    <message>
+        <source>Agenda</source>
+        <translation>Agenda</translation>
+    </message>
+    <message>
+        <source>Countdown</source>
+        <translation>Compte enrere</translation>
+    </message>
+    <message>
+        <source>Week starts on</source>
+        <translation>La setmana comença</translation>
+    </message>
+    <message>
+        <source>Auto</source>
+        <translation>Automàtic</translation>
+    </message>
+    <message>
+        <source>My shows keeps the series you favorited or started watching</source>
+        <translation>«Les meves sèries» mostra les sèries que has marcat com a preferides o que has començat a veure</translation>
+    </message>
+    <message>
+        <source>My shows</source>
+        <translation>Les meves sèries</translation>
+    </message>
+    <message>
+        <source>Include unmonitored</source>
+        <translation>Inclou els no monitorats</translation>
+    </message>
+    <message>
+        <source>Also list episodes and movies Sonarr and Radarr aren&apos;t set to download</source>
+        <translation>Mostra també els episodis i les pel·lícules que Sonarr i Radarr no tenen configurats per baixar</translation>
+    </message>
+    <message>
+        <source>Season 0 episodes, like extras and holiday specials</source>
+        <translation>Episodis de la temporada 0, com ara extres i especials de festes</translation>
+    </message>
+    <message>
+        <source>Premiere and finale tags</source>
+        <translation>Etiquetes d&apos;estrena i de final</translation>
+    </message>
+    <message>
+        <source>Mark premieres, finales and new seasons</source>
+        <translation>Marca les estrenes, els finals i les temporades noves</translation>
+    </message>
+    <message>
+        <source>Color by</source>
+        <translation>Color segons</translation>
+    </message>
+    <message>
+        <source>Type tells episodes from movies. Status shows what&apos;s in your library, coming up or missing.</source>
+        <translation>«Tipus» distingeix els episodis de les pel·lícules. «Estat» mostra què hi ha a la biblioteca, què arriba aviat o què falta.</translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <translation>Estat</translation>
+    </message>
+    <message>
+        <source>Card image</source>
+        <translation>Imatge de la targeta</translation>
+    </message>
+    <message>
+        <source>The artwork on the Countdown rows</source>
+        <translation>La il·lustració de les files de compte enrere</translation>
+    </message>
+    <message>
+        <source>Spoiler safe</source>
+        <translation>Sense espòilers</translation>
+    </message>
+    <message>
+        <source>Hide episode titles and stills for shows you&apos;re behind on</source>
+        <translation>Amaga els títols i les imatges dels episodis de les sèries que no tens al dia</translation>
+    </message>
+    <message>
+        <source>Selecting an item</source>
+        <translation>En seleccionar un element</translation>
+    </message>
+    <message>
+        <source>What OK or a tap does on something that&apos;s already in your library</source>
+        <translation>Què fa OK o un toc en un element que ja és a la biblioteca</translation>
+    </message>
+    <message>
+        <source>Open details</source>
+        <translation>Obre els detalls</translation>
+    </message>
+    <message>
+        <source>Play when in library</source>
+        <translation>Reprodueix si és a la biblioteca</translation>
+    </message>
+    <message>
+        <source>Request button</source>
+        <translation>Botó de sol·licitud</translation>
+    </message>
+    <message>
+        <source>Show the Seerr request button on missing movies and seasons</source>
+        <translation>Mostra el botó de sol·licitud de Seerr a les pel·lícules i temporades que falten</translation>
+    </message>
+    <message>
+        <source>Add Moonbase to your server</source>
+        <translation>Afegeix Moonbase al servidor</translation>
+    </message>
+    <message>
+        <source>A free server plugin that unlocks more of Moonfin</source>
+        <translation>Un connector de servidor gratuït que desbloqueja més funcions de Moonfin</translation>
+    </message>
+    <message>
+        <source>Moonbase is free and runs on your server. With it, Moonfin gets:</source>
+        <translation>Moonbase és gratuït i s&apos;executa al teu servidor. Amb ell, Moonfin obté:</translation>
+    </message>
+    <message>
+        <source>Only a server admin can install it. Send them this link.</source>
+        <translation>Només un administrador del servidor el pot instal·lar. Envia-li aquest enllaç.</translation>
+    </message>
+    <message>
+        <source>It takes a few steps on your server to install. They&apos;re all at this link.</source>
+        <translation>Cal fer uns quants passos al servidor per instal·lar-lo. Els tens tots en aquest enllaç.</translation>
+    </message>
+    <message>
+        <source>Installing Moonbase...</source>
+        <translation>S&apos;està instal·lant Moonbase...</translation>
+    </message>
+    <message>
+        <source>Moonbase is installed. It turns on when the server restarts, which stops anything playing right now.</source>
+        <translation>Moonbase està instal·lat. S&apos;activarà quan es reiniciï el servidor, cosa que aturarà tot el que s&apos;estigui reproduint ara mateix.</translation>
+    </message>
+    <message>
+        <source>The server is restarting. Moonbase turns on once it&apos;s back.</source>
+        <translation>El servidor s&apos;està reiniciant. Moonbase s&apos;activarà quan torni a estar disponible.</translation>
+    </message>
+    <message>
+        <source>Settings synced across your devices</source>
+        <translation>Configuració sincronitzada entre els teus dispositius</translation>
+    </message>
+    <message>
+        <source>Extra ratings and TMDB reviews</source>
+        <translation>Valoracions addicionals i ressenyes de TMDB</translation>
+    </message>
+    <message>
+        <source>Custom rows from your favorite lists</source>
+        <translation>Files personalitzades a partir de les teves llistes preferides</translation>
+    </message>
+    <message>
+        <source>Retro games with synced saves</source>
+        <translation>Jocs retro amb partides desades sincronitzades</translation>
+    </message>
+    <message>
+        <source>A calendar of what&apos;s coming up</source>
+        <translation>Un calendari del que arriba aviat</translation>
+    </message>
+    <message>
+        <source>Your own order for each collection</source>
+        <translation>El teu propi ordre per a cada col·lecció</translation>
+    </message>
+    <message>
+        <source>Messages from your server admin</source>
+        <translation>Missatges de l&apos;administrador del servidor</translation>
+    </message>
+    <message>
+        <source>Install</source>
+        <translation>Instal·lar</translation>
+    </message>
+    <message>
+        <source>Installed</source>
+        <translation>Instal·lat</translation>
+    </message>
+    <message>
+        <source>Restart Server</source>
+        <translation>Reinicieu el servidor</translation>
+    </message>
+    <message>
+        <source>Poster Labels</source>
+        <translation>Etiquetes dels pòsters</translation>
+    </message>
+    <message>
+        <source>Show the labels on posters, such as 4K or HDR.</source>
+        <translation>Mostra les etiquetes als pòsters, com ara 4K o HDR.</translation>
+    </message>
+    <message>
+        <source>Date Format</source>
+        <translation>Format de la data</translation>
+    </message>
+    <message>
+        <source>Choose between month-day, day-month, or locale default for calendar and release dates</source>
+        <translation>Tria entre mes-dia, dia-mes o el format predeterminat de la configuració regional per a les dates del calendari i d&apos;estrena</translation>
+    </message>
+    <message>
+        <source>Locale Default</source>
+        <translation>Predeterminat de la configuració regional</translation>
+    </message>
+    <message>
+        <source>Month / Day (Nov 10)</source>
+        <translation>Mes / Dia (nov. 10)</translation>
+    </message>
+    <message>
+        <source>Day / Month (10 Nov)</source>
+        <translation>Dia / Mes (10 nov.)</translation>
+    </message>
+    <message>
+        <source>1 more press</source>
+        <translation>1 pulsació més</translation>
+    </message>
+    <message>
+        <source>After Hours unlocked</source>
+        <translation>S&apos;ha desbloquejat After Hours</translation>
+    </message>
+    <message>
+        <source>Endless runner with a gravity flip</source>
+        <translation>Corredor infinit amb inversió de gravetat</translation>
+    </message>
+    <message>
+        <source>Three-lane runner</source>
+        <translation>Corredor de tres carrils</translation>
+    </message>
+    <message>
+        <source>Grid crawler</source>
+        <translation>Serp en quadrícula</translation>
+    </message>
+    <message>
+        <source>One-button stacker</source>
+        <translation>Apilador d&apos;un sol botó</translation>
+    </message>
+    <message>
+        <source>Paddle breaker</source>
+        <translation>Trencamaons</translation>
+    </message>
+    <message>
+        <source>The runner from the loading screen finally gets somewhere to go.</source>
+        <translation>El corredor de la pantalla de càrrega per fi té on anar.</translation>
+    </message>
+    <message>
+        <source>A sprint down three lobby aisles.</source>
+        <translation>Un esprint per tres passadissos del vestíbul.</translation>
+    </message>
+    <message>
+        <source>Steer an HDMI cable around the back of the TV cabinet and plug into signal.</source>
+        <translation>Guia un cable HDMI per darrere del moble de la tele i connecta&apos;l al senyal.</translation>
+    </message>
+    <message>
+        <source>A bad encode left the picture full of blocky artifacts, and they creep down a little every second.</source>
+        <translation>Una codificació dolenta ha deixat la imatge plena d&apos;artefactes de blocs, i baixen una mica cada segon.</translation>
+    </message>
+    <message>
+        <source>Leaderboards</source>
+        <translation>Classificacions</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>Obert</translation>
+    </message>
+    <message>
+        <source>About</source>
+        <translation>Sobre</translation>
+    </message>
+    <message>
+        <source>Top 3 · This server</source>
+        <translation>Top 3 · Aquest servidor</translation>
+    </message>
+    <message>
+        <source>Top 3 · This device</source>
+        <translation>Top 3 · Aquest dispositiu</translation>
+    </message>
+    <message>
+        <source>No scores yet</source>
+        <translation>Encara no hi ha puntuacions</translation>
+    </message>
+    <message>
+        <source>YOU</source>
+        <translation>TU</translation>
+    </message>
+    <message>
+        <source>Pause</source>
+        <translation>Pausa</translation>
+    </message>
+    <message>
+        <source>Paused</source>
+        <translation>En pausa</translation>
+    </message>
+    <message>
+        <source>Quit</source>
+        <translation>Surt</translation>
+    </message>
+    <message>
+        <source>Sound on</source>
+        <translation>So activat</translation>
+    </message>
+    <message>
+        <source>Sound off</source>
+        <translation>So desactivat</translation>
+    </message>
+    <message>
+        <source>Game over</source>
+        <translation>Fi de la partida</translation>
+    </message>
+    <message>
+        <source>Play again</source>
+        <translation>Torna a jugar</translation>
+    </message>
+    <message>
+        <source>Back to the arcade</source>
+        <translation>Torna a la sala de jocs</translation>
+    </message>
+    <message>
+        <source>Scores on this device</source>
+        <translation>Puntuacions d&apos;aquest dispositiu</translation>
+    </message>
+    <message>
+        <source>PERFECT</source>
+        <translation>PERFECTE</translation>
+    </message>
+    <message>
+        <source>BOX SET</source>
+        <translation>ESTOIG</translation>
+    </message>
+    <message>
+        <source>Director&apos;s Cut</source>
+        <translation>Versió del director</translation>
+    </message>
+    <message>
+        <source>Special Edition</source>
+        <translation>Edició especial</translation>
+    </message>
+    <message>
+        <source>How to play</source>
+        <translation>Com s&apos;hi juga</translation>
+    </message>
+    <message>
+        <source>Enemies</source>
+        <translation>Enemics</translation>
+    </message>
+    <message>
+        <source>Obstacles</source>
+        <translation>Obstacles</translation>
+    </message>
+    <message>
+        <source>Powerups</source>
+        <translation>Potenciadors</translation>
+    </message>
+    <message>
+        <source>Start</source>
+        <translation>Inici</translation>
+    </message>
+    <message>
+        <source>Back to the game</source>
+        <translation>Torna al joc</translation>
+    </message>
+    <message>
+        <source>Down</source>
+        <translation>Avall</translation>
+    </message>
+    <message>
+        <source>OK jumps, again mid-air to flip sides. Down slides. On the ceiling Up and Down swap.</source>
+        <translation>OK salta; torna-hi a l&apos;aire per canviar de costat. Avall per esmunyir-te. Al sostre, Amunt i Avall s&apos;inverteixen.</translation>
+    </message>
+    <message>
+        <source>Up and Down change lanes. OK jumps.</source>
+        <translation>Amunt i Avall canvien de carril. OK salta.</translation>
+    </message>
+    <message>
+        <source>Arrows turn. The cable never stops.</source>
+        <translation>Les fletxes giren. El cable no s&apos;atura mai.</translation>
+    </message>
+    <message>
+        <source>OK drops the case.</source>
+        <translation>OK deixa caure la capsa.</translation>
+    </message>
+    <message>
+        <source>Left and Right slide the scrubber.</source>
+        <translation>Esquerra i Dreta mouen la barra.</translation>
+    </message>
+    <message>
+        <source>Lag Bat</source>
+        <translation>Ratpenat del retard</translation>
+    </message>
+    <message>
+        <source>Swoops in at head height. Slide under it.</source>
+        <translation>Baixa en picat a l&apos;altura del cap. Esmuny-te per sota.</translation>
+    </message>
+    <message>
+        <source>Static Gremlin</source>
+        <translation>Follet d&apos;estàtica</translation>
+    </message>
+    <message>
+        <source>Hops along the floor or the ceiling toward you. Jump it.</source>
+        <translation>Salta per terra o pel sostre cap a tu. Salta&apos;l.</translation>
+    </message>
+    <message>
+        <source>Cable Coil</source>
+        <translation>Rotlle de cable</translation>
+    </message>
+    <message>
+        <source>Low on the floor or the ceiling. Jump it.</source>
+        <translation>Baix, a terra o al sostre. Salta&apos;l.</translation>
+    </message>
+    <message>
+        <source>Buffering Banner</source>
+        <translation>Cartell carregant</translation>
+    </message>
+    <message>
+        <source>Slide under the sign. Its pole is a wall on the other side.</source>
+        <translation>Esmuny-te sota el cartell. El pal és una paret a l&apos;altra banda.</translation>
+    </message>
+    <message>
+        <source>A shield that takes one hit.</source>
+        <translation>Un escut que aguanta un cop.</translation>
+    </message>
+    <message>
+        <source>Three seconds of dash that smashes anything.</source>
+        <translation>Tres segons d&apos;embranzida que ho destrossen tot.</translation>
+    </message>
+    <message>
+        <source>Popcorn</source>
+        <translation>Crispetes</translation>
+    </message>
+    <message>
+        <source>25 points a piece.</source>
+        <translation>25 punts cadascuna.</translation>
+    </message>
+    <message>
+        <source>Loose Reel</source>
+        <translation>Bobina solta</translation>
+    </message>
+    <message>
+        <source>Rolls down your lane faster than you run. Jump it.</source>
+        <translation>Roda pel teu carril més de pressa del que corres. Salta-la.</translation>
+    </message>
+    <message>
+        <source>Usher</source>
+        <translation>Acomodador</translation>
+    </message>
+    <message>
+        <source>Walks toward you and changes lanes once.</source>
+        <translation>Camina cap a tu i canvia de carril un cop.</translation>
+    </message>
+    <message>
+        <source>Velvet Rope</source>
+        <translation>Cordó de vellut</translation>
+    </message>
+    <message>
+        <source>Low. Jump it or change lanes.</source>
+        <translation>Baix. Salta&apos;l o canvia de carril.</translation>
+    </message>
+    <message>
+        <source>Popcorn Cart</source>
+        <translation>Carretó de crispetes</translation>
+    </message>
+    <message>
+        <source>Too tall to jump. Change lanes.</source>
+        <translation>Massa alt per saltar-lo. Canvia de carril.</translation>
+    </message>
+    <message>
+        <source>Front Row Pass</source>
+        <translation>Passi de primera fila</translation>
+    </message>
+    <message>
+        <source>Magnet</source>
+        <translation>Imant</translation>
+    </message>
+    <message>
+        <source>Pulls in tickets from every lane for eight seconds.</source>
+        <translation>Atrau les entrades de tots els carrils durant vuit segons.</translation>
+    </message>
+    <message>
+        <source>Ticket</source>
+        <translation>Entrada</translation>
+    </message>
+    <message>
+        <source>Interference Bug</source>
+        <translation>Insecte d&apos;interferències</translation>
+    </message>
+    <message>
+        <source>Wanders at random.</source>
+        <translation>Va voltant a l&apos;atzar.</translation>
+    </message>
+    <message>
+        <source>Tangle</source>
+        <translation>Embolic</translation>
+    </message>
+    <message>
+        <source>Slowly chases your plug.</source>
+        <translation>Persegueix lentament el teu endoll.</translation>
+    </message>
+    <message>
+        <source>Static</source>
+        <translation>Estàtic</translation>
+    </message>
+    <message>
+        <source>A dead cell. One appears every third signal.</source>
+        <translation>Una cel·la morta. N&apos;apareix una cada tres senyals.</translation>
+    </message>
+    <message>
+        <source>Power Brick</source>
+        <translation>Transformador</translation>
+    </message>
+    <message>
+        <source>A 2 by 2 block every fifth signal.</source>
+        <translation>Un bloc de 2 per 2 cada cinc senyals.</translation>
+    </message>
+    <message>
+        <source>Ghost</source>
+        <translation>Fantasma</translation>
+    </message>
+    <message>
+        <source>Five seconds of passing through everything but the edge.</source>
+        <translation>Cinc segons travessant-ho tot menys la vora.</translation>
+    </message>
+    <message>
+        <source>Snip</source>
+        <translation>Tisorada</translation>
+    </message>
+    <message>
+        <source>Cuts the cable in half for bonus points.</source>
+        <translation>Talla el cable per la meitat per obtenir punts extra.</translation>
+    </message>
+    <message>
+        <source>Signal</source>
+        <translation>Senyal</translation>
+    </message>
+    <message>
+        <source>Points, and two more segments.</source>
+        <translation>Punts i dos segments més.</translation>
+    </message>
+    <message>
+        <source>Shelf Cat</source>
+        <translation>Gat de la prestatgeria</translation>
+    </message>
+    <message>
+        <source>Bats a case as it comes in, so that one slides faster.</source>
+        <translation>Colpeja una capsa quan arriba i fa que llisqui més de pressa.</translation>
+    </message>
+    <message>
+        <source>Blu-ray Case</source>
+        <translation>Capsa de Blu-ray</translation>
+    </message>
+    <message>
+        <source>A title from your library. The overhang gets trimmed off.</source>
+        <translation>Un títol de la teva biblioteca. El que sobresurt es retalla.</translation>
+    </message>
+    <message>
+        <source>Steelbook</source>
+        <translation>Steelbook</translation>
+    </message>
+    <message>
+        <source>Every tenth case. Slides much faster.</source>
+        <translation>Una de cada deu capses. Llisca molt més de pressa.</translation>
+    </message>
+    <message>
+        <source>Perfect Drop</source>
+        <translation>Caiguda perfecta</translation>
+    </message>
+    <message>
+        <source>Land it dead on and the stack grows a little wider.</source>
+        <translation>Encerta-la de ple i la pila s&apos;eixampla una mica.</translation>
+    </message>
+    <message>
+        <source>Box Set</source>
+        <translation>Estoig</translation>
+    </message>
+    <message>
+        <source>Three perfect drops in a row grow it a lot wider.</source>
+        <translation>Tres caigudes perfectes seguides l&apos;eixamplen molt més.</translation>
+    </message>
+    <message>
+        <source>Dead Pixel</source>
+        <translation>Píxel mort</translation>
+    </message>
+    <message>
+        <source>Falls from cleared blocks. Catching it shrinks the scrubber.</source>
+        <translation>Cau dels blocs eliminats. Si l&apos;atrapes, la barra s&apos;escurça.</translation>
+    </message>
+    <message>
+        <source>Macroblock</source>
+        <translation>Macrobloc</translation>
+    </message>
+    <message>
+        <source>One hit clears it.</source>
+        <translation>Un cop l&apos;elimina.</translation>
+    </message>
+    <message>
+        <source>Keyframe</source>
+        <translation>Fotograma clau</translation>
+    </message>
+    <message>
+        <source>Takes three hits and drops a powerup.</source>
+        <translation>Aguanta tres cops i deixa anar un potenciador.</translation>
+    </message>
+    <message>
+        <source>A scrubber twice as wide for eight seconds.</source>
+        <translation>Una barra de progrés el doble d&apos;ampla durant vuit segons.</translation>
+    </message>
+    <message>
+        <source>Buffer</source>
+        <translation>Búfer</translation>
+    </message>
+    <message>
+        <source>A net under the scrubber that saves one miss.</source>
+        <translation>Una xarxa sota la barra que salva una errada.</translation>
+    </message>
+    <message>
+        <source>Episode Director</source>
+        <translation>Director de l&apos;episodi</translation>
+    </message>
+    <message>
+        <source>Guest Star</source>
+        <translation>Estrella convidada</translation>
+    </message>
+    <message>
+        <source>In sync</source>
+        <translation>Sincronitzat</translation>
+    </message>
+    <message>
+        <source>Catching up</source>
+        <translation>Posant-se al dia</translation>
+    </message>
+    <message>
+        <source>Buffering</source>
+        <translation>Carregant</translation>
+    </message>
+    <message>
+        <source>Not watching</source>
+        <translation>No està mirant</translation>
+    </message>
+    <message>
+        <source>Ready</source>
+        <translation>A punt</translation>
+    </message>
+    <message>
+        <source>Joining</source>
+        <translation>Unint-se</translation>
+    </message>
+    <message>
+        <source>In the lobby</source>
+        <translation>A la sala d&apos;espera</translation>
+    </message>
+    <message>
+        <source>Playing</source>
+        <translation>Reproduint</translation>
+    </message>
+    <message>
+        <source>Everyone controls</source>
+        <translation>Tothom controla</translation>
+    </message>
+    <message>
+        <source>That PIN didn&apos;t work. Try again.</source>
+        <translation>Aquest PIN no ha funcionat. Torna-ho a provar.</translation>
+    </message>
+    <message>
+        <source>Too many tries. Wait a minute.</source>
+        <translation>Massa intents. Espera un minut.</translation>
+    </message>
+    <message>
+        <source>This party is full.</source>
+        <translation>Aquesta Watch Party és plena.</translation>
+    </message>
+    <message>
+        <source>No room has that code.</source>
+        <translation>Cap sala no té aquest codi.</translation>
+    </message>
+    <message>
+        <source>You don&apos;t have access to what they&apos;re watching.</source>
+        <translation>No tens accés al que estan veient.</translation>
+    </message>
+    <message>
+        <source>You&apos;re the host now</source>
+        <translation>Ara ets l&apos;amfitrió</translation>
+    </message>
+    <message>
+        <source>Everyone can control playback now</source>
+        <translation>Ara tothom pot controlar la reproducció</translation>
+    </message>
+    <message>
+        <source>Reconnecting to the party...</source>
+        <translation>S&apos;està tornant a connectar a la Watch Party...</translation>
+    </message>
+    <message>
+        <source>Back in the party</source>
+        <translation>Has tornat a la Watch Party</translation>
+    </message>
+    <message>
+        <source>Room PIN</source>
+        <translation>PIN de la sala</translation>
+    </message>
+    <message>
+        <source>Watch Parties need Moonbase on this server</source>
+        <translation>Les Watch Parties necessiten Moonbase en aquest servidor</translation>
+    </message>
+    <message>
+        <source>Watch Parties</source>
+        <translation>Watch Parties</translation>
+    </message>
+    <message>
+        <source>Start a watch party</source>
+        <translation>Inicia una Watch Party</translation>
+    </message>
+    <message>
+        <source>Join with a code</source>
+        <translation>Uneix-te amb un codi</translation>
+    </message>
+    <message>
+        <source>Parties you can watch show up here. Got a code from someone? Pick Join with a code.</source>
+        <translation>Aquí apareixen les Watch Parties que pots veure. T&apos;han passat un codi? Tria «Uneix-te amb un codi».</translation>
+    </message>
+    <message>
+        <source>Your watch party</source>
+        <translation>La teva Watch Party</translation>
+    </message>
+    <message>
+        <source>Send the invite</source>
+        <translation>Envia la invitació</translation>
+    </message>
+    <message>
+        <source>Play waits for everyone&apos;s player, 10 seconds at most, then counts down 3, 2, 1.</source>
+        <translation>La reproducció espera que el reproductor de tothom estigui a punt, 10 segons com a màxim, i després fa un compte enrere 3, 2, 1.</translation>
+    </message>
+    <message>
+        <source>Search movies</source>
+        <translation>Cerca pel·lícules</translation>
+    </message>
+    <message>
+        <source>Back to the lobby</source>
+        <translation>Torna a la sala d&apos;espera</translation>
+    </message>
+    <message>
+        <source>Up next</source>
+        <translation>Següent</translation>
+    </message>
+    <message>
+        <source>Start for everyone</source>
+        <translation>Inicia per a tothom</translation>
+    </message>
+    <message>
+        <source>Waiting for the host to pick something.</source>
+        <translation>S&apos;està esperant que l&apos;amfitrió triï alguna cosa.</translation>
+    </message>
+    <message>
+        <source>Let everyone vote on movies</source>
+        <translation>Permet que tothom voti les pel·lícules</translation>
+    </message>
+    <message>
+        <source>No movies to vote on yet.</source>
+        <translation>Encara no hi ha pel·lícules per votar.</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <translation>Surt</translation>
+    </message>
+    <message>
+        <source>End for everyone</source>
+        <translation>Finalitza per a tothom</translation>
+    </message>
+    <message>
+        <source>Room code or invite link</source>
+        <translation>Codi de la sala o enllaç d&apos;invitació</translation>
+    </message>
+    <message>
+        <source>Starting together</source>
+        <translation>Comencem tots alhora</translation>
+    </message>
+    <message>
+        <source>Haha</source>
+        <translation>Haha</translation>
+    </message>
+    <message>
+        <source>Pause please</source>
+        <translation>Pausa, si us plau</translation>
+    </message>
+    <message>
+        <source>Brb</source>
+        <translation>Ara torno</translation>
+    </message>
+    <message>
+        <source>Again!</source>
+        <translation>Un altre cop!</translation>
+    </message>
+    <message>
+        <source>Send to the party</source>
+        <translation>Envia a la Watch Party</translation>
+    </message>
+    <message>
+        <source>Room settings</source>
+        <translation>Configuració de la sala</translation>
+    </message>
+    <message>
+        <source>Everyone can control playback</source>
+        <translation>Tothom pot controlar la reproducció</translation>
+    </message>
+    <message>
+        <source>On</source>
+        <translation>Activat</translation>
+    </message>
+    <message>
+        <source>4 to 8 digits</source>
+        <translation>De 4 a 8 dígits</translation>
+    </message>
+    <message>
+        <source>Host</source>
+        <translation>Amfitrió</translation>
+    </message>
+    <message>
+        <source>Make host</source>
+        <translation>Fes amfitrió</translation>
+    </message>
+    <message>
+        <source>Only the host can control playback.</source>
+        <translation>Només l&apos;amfitrió pot controlar la reproducció.</translation>
+    </message>
+    <message>
+        <source>Watch with friends on this server, everyone in step</source>
+        <translation>Mira contingut amb amics d&apos;aquest servidor, tots sincronitzats</translation>
+    </message>
+    <message>
+        <source>Start one or join one in progress</source>
+        <translation>Inicia&apos;n una o uneix-te a una que ja hagi començat</translation>
+    </message>
+    <message>
+        <source>Show chat over the video</source>
+        <translation>Mostra el xat sobre el vídeo</translation>
+    </message>
+    <message>
+        <source>New messages show for a few seconds</source>
+        <translation>Els missatges nous es mostren uns segons</translation>
+    </message>
+    <message>
+        <source>Party alerts</source>
+        <translation>Alertes de festes</translation>
+    </message>
+    <message>
+        <source>Download failed</source>
+        <translation>Ha fallat la baixada</translation>
+    </message>
+    <message>
+        <source>Downloaded</source>
+        <translation>Baixat</translation>
+    </message>
+    <message>
+        <source>Queued</source>
+        <translation>En cua</translation>
+    </message>
+    <message>
+        <source>Downloading</source>
+        <translation>Baixada</translation>
+    </message>
+    <message>
+        <source>Start from the beginning</source>
+        <translation>Comença des del principi</translation>
+    </message>
+    <message>
+        <source>Guests can play and pause</source>
+        <translation>Els convidats poden reproduir i posar en pausa</translation>
+    </message>
+    <message>
+        <source>Watch with group</source>
+        <translation>Veure amb grup</translation>
+    </message>
+    <message>
+        <source>Picked for the Watch Party</source>
+        <translation>Triat per a la Watch Party</translation>
+    </message>
+    <message>
+        <source>Added to the Watch Party vote</source>
+        <translation>S&apos;ha afegit a la votació de la Watch Party</translation>
+    </message>
+    <message>
+        <source>No episodes loaded</source>
+        <translation>No s&apos;ha carregat cap capítol</translation>
+    </message>
+    <message>
+        <source>Select</source>
+        <translation>Seleccioneu</translation>
+    </message>
+    <message>
+        <source>Vote for what you want to watch. The host plays one.</source>
+        <translation>Vota el que vulguis veure. L&apos;amfitrió en reprodueix una.</translation>
+    </message>
+    <message>
+        <source>Add movies for everyone to vote on, then play the one you want. TV episodes are still your pick.</source>
+        <translation>Afegeix pel·lícules perquè tothom les voti i després reprodueix la que vulguis. Els episodis de sèries els continues triant tu.</translation>
+    </message>
+    <message>
+        <source>Show the Watch Parties button on the navigation bar</source>
+        <translation>Mostra el botó de Watch Parties a la barra de navegació</translation>
+    </message>
+    <message>
+        <source>Home Row Info Overlay</source>
+        <translation>Superposició d&apos;informació de la fila inicial</translation>
+    </message>
+    <message>
+        <source>Show title and metadata when browsing home rows</source>
+        <translation>Mostra el títol i les metadades quan navegueu per les files d&apos;inici</translation>
+    </message>
+    <message>
+        <source>Subtitles for everyone</source>
+        <translation>Subtítols per a tothom</translation>
+    </message>
+    <message>
+        <source>Each person&apos;s choice</source>
+        <translation>A elecció de cadascú</translation>
+    </message>
+    <message>
+        <source>SyncPlay Group</source>
+        <translation>Grup SyncPlay</translation>
+    </message>
 </context>
 </TS>
