@@ -278,7 +278,7 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/minimalist-extras.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n' + settingsSyncFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['SubtitleModes', 'MediaBarSource', 'PluginToRoku', 'RokuToPlugin', 'ImageTypeName', 'EncodeRowImageTypes', 'RowImageTypeKeys', 'DecodeRowImageTypes', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile', 'SiloSectionIn', 'SiloSectionOut']) {
+for (const name of ['SubtitleModes', 'MediaBarSource', 'PluginToRoku', 'RokuToPlugin', 'ImageTypeName', 'EncodeRowImageTypes', 'RowImageTypeKeys', 'DecodeRowImageTypes', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile', 'SiloSectionIn', 'SiloSectionOut', 'WithCombinedFavorites']) {
     source += '\n' + settingsSyncFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
@@ -375,7 +375,7 @@ source += '\n' + await readFile('test/ratings-scope.bs', 'utf8');
 // The rest of the row layout uses loops this interpreter cant parse, and the outside lists only need these
 const homeRowLayoutFile = await readFile('source/utils/homeRowLayout.bs', 'utf8');
 source += '\nnamespace homeRowLayout\n' + homeRowLayoutFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['Catalogue', 'Passthrough', 'AsText', 'Sources', 'SourceFor', 'ServerId', 'ServerKey', 'SourceFromId', 'IsOwnServer', 'IsSliderRow', 'RowToggles', 'ReloadsHome']) {
+for (const name of ['Catalogue', 'ExternalCharts', 'OfficialChart', 'DiscoverChart', 'ExternalChart', 'Passthrough', 'AsText', 'Sources', 'SourceFor', 'ServerId', 'ServerKey', 'ServerOf', 'SourceFromId', 'IsOwnServer', 'IsSliderRow', 'RowToggles', 'ReloadsHome']) {
     source += '\n' + homeRowLayoutFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
