@@ -483,6 +483,8 @@ namespace silo
 
         headers = silo.RequestHeaders(tokens, options.profileId ?? "", options.profile <> false, options.headers)
         port = CreateObject("roMessagePort")
+        ' Each transfer gets its own deadline, so answers to the others don't extend its wait.
+        clock = CreateObject("roTimespan")
         inFlight = {}
         nextCall = 0
         while nextCall < calls.Count() or inFlight.Count() > 0
@@ -490,11 +492,17 @@ namespace silo
                 url = silo.UrlOf(base, calls[nextCall].path, calls[nextCall].query)
                 req = silo.NewRequest(url, headers)
                 req.SetMessagePort(port)
-                if req.AsyncGetToString() then inFlight[req.GetIdentity().ToStr()] = { req: req, index: nextCall, url: url }
+                if req.AsyncGetToString() then inFlight[req.GetIdentity().ToStr()] = { req: req, index: nextCall, url: url, deadline: clock.TotalMilliseconds() + silo.TIMEOUT_MS }
                 nextCall++
             end while
             if inFlight.Count() > 0
-                event = wait(silo.TIMEOUT_MS, port)
+                nearest = invalid
+                for each key in inFlight
+                    if nearest = invalid or inFlight[key].deadline < nearest then nearest = inFlight[key].deadline
+                end for
+                waitMs = nearest - clock.TotalMilliseconds()
+                if waitMs < 1 then waitMs = 1
+                event = wait(waitMs, port)
                 if type(event) = "roUrlEvent" and event.GetInt() = 1
                     key = event.GetSourceIdentity().ToStr()
                     sent = inFlight[key]
@@ -502,13 +510,17 @@ namespace silo
                         answers[sent.index] = silo.AnswerOf(event, "GET", sent.url, "")
                         inFlight.Delete(key)
                     end if
-                else if type(event) <> "roUrlEvent"
-                    for each key in inFlight
-                        inFlight[key].req.AsyncCancel()
-                        diagnostics.Network("Silo GET " + silo.PathOf(inFlight[key].url) + " timed out", diagnostics.LEVEL_WARN)
-                    end for
-                    inFlight.Clear()
                 end if
+                now = clock.TotalMilliseconds()
+                expired = []
+                for each key in inFlight
+                    if inFlight[key].deadline <= now then expired.Push(key)
+                end for
+                for each key in expired
+                    inFlight[key].req.AsyncCancel()
+                    diagnostics.Network("Silo GET " + silo.PathOf(inFlight[key].url) + " timed out", diagnostics.LEVEL_WARN)
+                    inFlight.Delete(key)
+                end for
             end if
         end while
 
