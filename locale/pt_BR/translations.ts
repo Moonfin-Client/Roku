@@ -2867,5 +2867,3869 @@
         <source>Genre</source>
         <translation>Gênero</translation>
     </message>
+    <message>
+        <source>Reroll these quests?</source>
+        <translation>Confirmar troca de missão</translation>
+    </message>
+    <message>
+        <source>Reroll weekly quests</source>
+        <translation>Trocar missão semanal</translation>
+    </message>
+    <message>
+        <source>Reset</source>
+        <translation>Redefinir</translation>
+    </message>
+    <message>
+        <source>Score bank</source>
+        <translation>Banco de pontos</translation>
+    </message>
+    <message>
+        <source>Score earned</source>
+        <translation>Pontuação obtida</translation>
+    </message>
+    <message>
+        <source>Score to spend and the boosts you hold</source>
+        <translation>Escolha os itens que deseja exibir no seu perfil</translation>
+    </message>
+    <message>
+        <source>Restart</source>
+        <translation>Reiniciar</translation>
+    </message>
+    <message>
+        <source>Resume</source>
+        <translation>Continuar</translation>
+    </message>
+    <message>
+        <source>Retry</source>
+        <translation>Tentar novamente</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Salvar</translation>
+    </message>
+    <message>
+        <source>Score</source>
+        <translation>Pontuação de conquistas</translation>
+    </message>
+    <message>
+        <source>Seerr requests</source>
+        <translation>Solicite filmes e séries diretamente pelo aplicativo</translation>
+    </message>
+    <message>
+        <source>Series finished</source>
+        <translation>Séries</translation>
+    </message>
+    <message>
+        <source>Simplify the app and lock the way out with a PIN</source>
+        <translation>Simplifica a interface para crianças</translation>
+    </message>
+    <message>
+        <source>Similar</source>
+        <translation>Semelhante</translation>
+    </message>
+    <message>
+        <source>Skip setup</source>
+        <translation>Pular</translation>
+    </message>
+    <message>
+        <source>Specials</source>
+        <translation>Especiais</translation>
+    </message>
+    <message>
+        <source>Spotlight</source>
+        <translation>Destaque</translation>
+    </message>
+    <message>
+        <source>Stats</source>
+        <translation>Estatísticas</translation>
+    </message>
+    <message>
+        <source>Streak</source>
+        <translation>Sequência</translation>
+    </message>
+    <message>
+        <source>Streak Freeze</source>
+        <translation>Proteção de sequência</translation>
+    </message>
+    <message>
+        <source>Subtitle</source>
+        <translation>Legenda</translation>
+    </message>
+    <message>
+        <source>Subtitles</source>
+        <translation>Legendas</translation>
+    </message>
+    <message>
+        <source>The avatar and title on your profile</source>
+        <translation>Personalize sua aparência nas conquistas</translation>
+    </message>
+    <message>
+        <source>Titles</source>
+        <translation>Títulos</translation>
+    </message>
+    <message>
+        <source>Your records and how the server is doing</source>
+        <translation>Veja suas estatísticas de reprodução e conquistas</translation>
+    </message>
+    <message>
+        <source>When you watch</source>
+        <translation>Tempo</translation>
+    </message>
+    <message>
+        <source>Weekend sessions</source>
+        <translation>Assistidos no fim de semana</translation>
+    </message>
+    <message>
+        <source>Variety</source>
+        <translation>Variedade</translation>
+    </message>
+    <message>
+        <source>Users</source>
+        <translation>Usuários</translation>
+    </message>
+    <message>
+        <source>This server</source>
+        <translation>Servidor</translation>
+    </message>
+    <message>
+        <source>Suggested items to watch</source>
+        <translation>Sugeridas</translation>
+    </message>
+    <message>
+        <source>The next thing you finish counts twice towards badges.</source>
+        <translation>Receba o dobro de créditos durante o período ativo</translation>
+    </message>
+    <message>
+        <source>Swap this set for a different one</source>
+        <translation>Trocar missão</translation>
+    </message>
+    <message>
+        <source>There is more waiting in Settings</source>
+        <translation>E muito mais</translation>
+    </message>
+    <message>
+        <source>Top actors</source>
+        <translation>Atores mais assistidos</translation>
+    </message>
+    <message>
+        <source>Top Bar</source>
+        <translation>Barra superior</translation>
+    </message>
+    <message>
+        <source>Top directors</source>
+        <translation>Diretores mais assistidos</translation>
+    </message>
+    <message>
+        <source>Top rank reached</source>
+        <translation>Melhor posição</translation>
+    </message>
+    <message>
+        <source>Trailer</source>
+        <translation>Trailer</translation>
+    </message>
+    <message>
+        <source>Unknown Codec</source>
+        <translation>Codec desconhecido</translation>
+    </message>
+    <message>
+        <source>Unlocked</source>
+        <translation>Desbloqueadas</translation>
+    </message>
+    <message>
+        <source>Unwatched</source>
+        <translation>Não assistido</translation>
+    </message>
+    <message>
+        <source>Up Next</source>
+        <translation>A seguir</translation>
+    </message>
+    <message>
+        <source>Use this power-up?</source>
+        <translation>Usar power-up</translation>
+    </message>
+    <message>
+        <source>Used this week, comes back Monday UTC</source>
+        <translation>Troca semanal já utilizada</translation>
+    </message>
+    <message>
+        <source>Used today, comes back at midnight UTC</source>
+        <translation>Troca diária já utilizada</translation>
+    </message>
+    <message>
+        <source>XP Boost</source>
+        <translation>Impulso</translation>
+    </message>
+    <message>
+        <source>You get one daily and one weekly reroll, and this spends it.</source>
+        <translation>Deseja substituir esta missão por uma nova?</translation>
+    </message>
+    <message>
+        <source>It&apos;s spent as soon as you confirm.</source>
+        <translation>Deseja ativar este power-up agora?</translation>
+    </message>
+    <message>
+        <source>Shop</source>
+        <translation>Loja</translation>
+    </message>
+    <message>
+        <source>Spend score on more boosts</source>
+        <translation>Use seus pontos para obter recompensas</translation>
+    </message>
+    <message>
+        <source>Recently Released</source>
+        <translation>Lançado recentemente</translation>
+    </message>
+    <message>
+        <source>Audio &amp; Subtitles</source>
+        <translation>Áudio e legendas</translation>
+    </message>
+    <message>
+        <source>Week</source>
+        <translation>Semana</translation>
+    </message>
+    <message>
+        <source>Weekly</source>
+        <translation>Semanalmente</translation>
+    </message>
+    <message>
+        <source>What the server has unlocked lately</source>
+        <translation>Veja suas conquistas e atividades recentes</translation>
+    </message>
+    <message>
+        <source>What you watched recently</source>
+        <translation>Veja um resumo do seu progresso e conquistas</translation>
+    </message>
+    <message>
+        <source>Where should navigation go?</source>
+        <translation>Como você prefere a barra de navegação?</translation>
+    </message>
+    <message>
+        <source>Navigation Bar</source>
+        <translation>Barra de navegação</translation>
+    </message>
+    <message>
+        <source>Navigation Style</source>
+        <translation>Estilo de navegação</translation>
+    </message>
+    <message>
+        <source>Media Bar</source>
+        <translation>Barra de mídia</translation>
+    </message>
+    <message>
+        <source>Details Page</source>
+        <translation>Página de detalhes</translation>
+    </message>
+    <message>
+        <source>Everything centred in one stack.</source>
+        <translation>Tela de detalhes tradicional e familiar</translation>
+    </message>
+    <message>
+        <source>Hero-first, with pop-up cards for cast and extras.</source>
+        <translation>Dá maior destaque à arte e às informações principais</translation>
+    </message>
+    <message>
+        <source>Full-screen, with sections stacked instead of tabs.</source>
+        <translation>Um visual elegante e contemporâneo para a tela de detalhes</translation>
+    </message>
+    <message>
+        <source>Year</source>
+        <translation>Ano</translation>
+    </message>
+    <message>
+        <source>Achievement Badges</source>
+        <translation>Insígnias de conquistas</translation>
+    </message>
+    <message>
+        <source>Action Buttons</source>
+        <translation>Botões da tela de detalhes</translation>
+    </message>
+    <message>
+        <source>Activity</source>
+        <translation>Atividade</translation>
+    </message>
+    <message>
+        <source>Adds a button to the menu for messages sent by your server admin</source>
+        <translation>Exibe o botão de mensagens enviadas pelo servidor</translation>
+    </message>
+    <message>
+        <source>And plenty more</source>
+        <translation>Explore ainda mais recursos e opções de personalização</translation>
+    </message>
+    <message>
+        <source>Appearance</source>
+        <translation>Aparência</translation>
+    </message>
+    <message>
+        <source>Artwork, one play button and the episodes.</source>
+        <translation>Uma tela de detalhes limpa e com menos elementos visuais</translation>
+    </message>
+    <message>
+        <source>Avatars</source>
+        <translation>Avatares</translation>
+    </message>
+    <message>
+        <source>Aya</source>
+        <translation>Aya</translation>
+    </message>
+    <message>
+        <source>Back</source>
+        <translation>Voltar</translation>
+    </message>
+    <message>
+        <source>Badges</source>
+        <translation>Insígnias</translation>
+    </message>
+    <message>
+        <source>Badges unlocked</source>
+        <translation>Insígnias desbloqueadas</translation>
+    </message>
+    <message>
+        <source>Badges, ranks and quests earned from what you watch</source>
+        <translation>Exiba e gerencie suas insígnias de conquistas</translation>
+    </message>
+    <message>
+        <source>Banner</source>
+        <translation>Bandeira</translation>
+    </message>
+    <message>
+        <source>Best combo</source>
+        <translation>Melhor combo</translation>
+    </message>
+    <message>
+        <source>Best login streak</source>
+        <translation>Melhor sequência de acessos</translation>
+    </message>
+    <message>
+        <source>Best watch streak</source>
+        <translation>Melhor sequência assistindo</translation>
+    </message>
+    <message>
+        <source>Bests</source>
+        <translation>Recordes</translation>
+    </message>
+    <message>
+        <source>Bookshelf</source>
+        <translation>Estante</translation>
+    </message>
+    <message>
+        <source>Buy this?</source>
+        <translation>Confirmar compra</translation>
+    </message>
+    <message>
+        <source>Checking Direct Play capability...</source>
+        <translation>Verificando a compatibilidade com reprodução direta...</translation>
+    </message>
+    <message>
+        <source>Chapters</source>
+        <translation>Capítulos</translation>
+    </message>
+    <message>
+        <source>Cast</source>
+        <translation>Transmitir</translation>
+    </message>
+    <message>
+        <source>Cinematic, with tabs for cast and extras.</source>
+        <translation>Tela de detalhes moderna com maior destaque visual</translation>
+    </message>
+    <message>
+        <source>Classic</source>
+        <translation>Clássico</translation>
+    </message>
+    <message>
+        <source>Compact. More rows on screen at once.</source>
+        <translation>Visual tradicional com linhas simples e familiares</translation>
+    </message>
+    <message>
+        <source>Confirm</source>
+        <translation>Confirmar</translation>
+    </message>
+    <message>
+        <source>Could not buy that.</source>
+        <translation>Falha ao concluir a compra</translation>
+    </message>
+    <message>
+        <source>Could not change how the profile looks.</source>
+        <translation>Falha ao carregar os itens de aparência</translation>
+    </message>
+    <message>
+        <source>Could not load your achievements.</source>
+        <translation>Falha ao carregar as conquistas</translation>
+    </message>
+    <message>
+        <source>Could not use that power-up.</source>
+        <translation>Falha ao usar o power-up</translation>
+    </message>
+    <message>
+        <source>Could not reroll those quests.</source>
+        <translation>Falha ao trocar a missão</translation>
+    </message>
+    <message>
+        <source>Countries watched</source>
+        <translation>Países</translation>
+    </message>
+    <message>
+        <source>Covers one missed day. Only one can be banked.</source>
+        <translation>Protege sua sequência caso você perca um dia</translation>
+    </message>
+    <message>
+        <source>Crew</source>
+        <translation>Equipe</translation>
+    </message>
+    <message>
+        <source>Custom themes</source>
+        <translation>Personalize a aparência com diferentes temas</translation>
+    </message>
+    <message>
+        <source>Daily</source>
+        <translation>Diário</translation>
+    </message>
+    <message>
+        <source>Days signed in</source>
+        <translation>Dias conectado</translation>
+    </message>
+    <message>
+        <source>Days watched</source>
+        <translation>Dias</translation>
+    </message>
+    <message>
+        <source>Decades watched</source>
+        <translation>Décadas</translation>
+    </message>
+    <message>
+        <source>Double Credit</source>
+        <translation>Crédito em dobro</translation>
+    </message>
+    <message>
+        <source>Doubles score for an hour. Using it again restarts the hour.</source>
+        <translation>Aumenta temporariamente os pontos obtidos</translation>
+    </message>
+    <message>
+        <source>Direct Play</source>
+        <translation>Reprodução direta</translation>
+    </message>
+    <message>
+        <source>Details</source>
+        <translation>Detalhes</translation>
+    </message>
+    <message>
+        <source>Default</source>
+        <translation>Padrão</translation>
+    </message>
+    <message>
+        <source>Done</source>
+        <translation>Concluído</translation>
+    </message>
+    <message>
+        <source>Early morning sessions</source>
+        <translation>Assistidos de manhã cedo</translation>
+    </message>
+    <message>
+        <source>Enter your PIN to restore the full app</source>
+        <translation>Desative o modo infantil para voltar à interface normal</translation>
+    </message>
+    <message>
+        <source>Equipped</source>
+        <translation>Equipado</translation>
+    </message>
+    <message>
+        <source>Exit Kids Mode</source>
+        <translation>Sair do modo infantil</translation>
+    </message>
+    <message>
+        <source>Failed to load</source>
+        <translation>Falha ao carregar</translation>
+    </message>
+    <message>
+        <source>Films watched</source>
+        <translation>Filmes</translation>
+    </message>
+    <message>
+        <source>Forced</source>
+        <translation>Forçadas</translation>
+    </message>
+    <message>
+        <source>File Details</source>
+        <translation>Detalhes do arquivo em destaque</translation>
+    </message>
+    <message>
+        <source>File Information</source>
+        <translation>Informações do arquivo</translation>
+    </message>
+    <message>
+        <source>Gallery</source>
+        <translation>Galeria</translation>
+    </message>
+    <message>
+        <source>Genres watched</source>
+        <translation>Gêneros</translation>
+    </message>
+    <message>
+        <source>Go to Series</source>
+        <translation>Ir para a série</translation>
+    </message>
+    <message>
+        <source>Habits</source>
+        <translation>Hábitos</translation>
+    </message>
+    <message>
+        <source>Hours</source>
+        <translation>Horas</translation>
+    </message>
+    <message>
+        <source>Hidden achievement</source>
+        <translation>Insígnia oculta</translation>
+    </message>
+    <message>
+        <source>Hours watched</source>
+        <translation>Horas</translation>
+    </message>
+    <message>
+        <source>How should a movie or show look when you open it?</source>
+        <translation>Como você prefere a tela de detalhes?</translation>
+    </message>
+    <message>
+        <source>How should the top of your Home screen look?</source>
+        <translation>Como você prefere a barra de mídia?</translation>
+    </message>
+    <message>
+        <source>How should your rows look?</source>
+        <translation>Como você prefere as linhas da tela inicial?</translation>
+    </message>
+    <message>
+        <source>How you compare with other users on this server</source>
+        <translation>Compare sua pontuação com outros usuários</translation>
+    </message>
+    <message>
+        <source>Incorrect PIN</source>
+        <translation>PIN incorreto</translation>
+    </message>
+    <message>
+        <source>It comes straight out of your score bank.</source>
+        <translation>Deseja comprar este item?</translation>
+    </message>
+    <message>
+        <source>Items watched</source>
+        <translation>Itens</translation>
+    </message>
+    <message>
+        <source>Just now</source>
+        <translation>Agora mesmo</translation>
+    </message>
+    <message>
+        <source>Kids Mode</source>
+        <translation>Modo infantil</translation>
+    </message>
+    <message>
+        <source>Languages watched</source>
+        <translation>Idiomas</translation>
+    </message>
+    <message>
+        <source>Larger cards with titles underneath.</source>
+        <translation>Visual moderno com cards maiores e mais destacados</translation>
+    </message>
+    <message>
+        <source>Late night sessions</source>
+        <translation>Assistidos tarde da noite</translation>
+    </message>
+    <message>
+        <source>Leaderboard</source>
+        <translation>Ranking</translation>
+    </message>
+    <message>
+        <source>Left Sidebar</source>
+        <translation>Barra lateral esquerda</translation>
+    </message>
+    <message>
+        <source>Libraries visited</source>
+        <translation>Bibliotecas</translation>
+    </message>
+    <message>
+        <source>Library completion</source>
+        <translation>Conclusão da biblioteca</translation>
+    </message>
+    <message>
+        <source>Loadout</source>
+        <translation>Equipamento</translation>
+    </message>
+    <message>
+        <source>Locked</source>
+        <translation>Bloqueadas</translation>
+    </message>
+    <message>
+        <source>Longest single item</source>
+        <translation>Item mais longo</translation>
+    </message>
+    <message>
+        <source>MakD</source>
+        <translation>MakD</translation>
+    </message>
+    <message>
+        <source>Mark all as read</source>
+        <translation>Marcar todas como lidas</translation>
+    </message>
+    <message>
+        <source>Messages</source>
+        <translation>Mensagens do servidor</translation>
+    </message>
+    <message>
+        <source>Minimalist</source>
+        <translation>Minimalista</translation>
+    </message>
+    <message>
+        <source>Modern</source>
+        <translation>Moderno</translation>
+    </message>
+    <message>
+        <source>Month</source>
+        <translation>Mês</translation>
+    </message>
+    <message>
+        <source>Moonfin</source>
+        <translation>Moonfin</translation>
+    </message>
+    <message>
+        <source>More Actions</source>
+        <translation>Mais ações</translation>
+    </message>
+    <message>
+        <source>Most common badge</source>
+        <translation>Insígnia mais comum</translation>
+    </message>
+    <message>
+        <source>Most episodes in a day</source>
+        <translation>Maior número de episódios</translation>
+    </message>
+    <message>
+        <source>Most films in a day</source>
+        <translation>Maior número de filmes</translation>
+    </message>
+    <message>
+        <source>Next</source>
+        <translation>Próximo</translation>
+    </message>
+    <message>
+        <source>No messages from your server yet</source>
+        <translation>Nenhuma mensagem do servidor</translation>
+    </message>
+    <message>
+        <source>Nothing for sale right now.</source>
+        <translation>Nenhum item disponível na loja</translation>
+    </message>
+    <message>
+        <source>Nothing here yet.</source>
+        <translation>Nada por aqui</translation>
+    </message>
+    <message>
+        <source>Nothing to suggest for this badge.</source>
+        <translation>Nenhuma sugestão disponível</translation>
+    </message>
+    <message>
+        <source>None held</source>
+        <translation>Nenhum mantido</translation>
+    </message>
+    <message>
+        <source>Nouveau</source>
+        <translation>Estilo Nouveau</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>Desligado</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>Outro</translation>
+    </message>
+    <message>
+        <source>Owned</source>
+        <translation>Adquirido</translation>
+    </message>
+    <message>
+        <source>PIN must be exactly 4 digits.</source>
+        <translation>O PIN deve ter exatamente 4 dígitos.</translation>
+    </message>
+    <message>
+        <source>Power-ups</source>
+        <translation>Power-ups</translation>
+    </message>
+    <message>
+        <source>Progress</source>
+        <translation>Progresso</translation>
+    </message>
+    <message>
+        <source>Recap</source>
+        <translation>Recapitular</translation>
+    </message>
+    <message>
+        <source>Filler</source>
+        <translation>Filler</translation>
+    </message>
+    <message>
+        <source>Manga Canon</source>
+        <translation>Cânone do mangá</translation>
+    </message>
+    <message>
+        <source>Anime Canon</source>
+        <translation>Cânone de anime</translation>
+    </message>
+    <message>
+        <source>Subbed</source>
+        <translation>Legendado</translation>
+    </message>
+    <message>
+        <source>Dubbed</source>
+        <translation>Dublado</translation>
+    </message>
+    <message>
+        <source>Subbed/Dubbed</source>
+        <translation>Legendado/Dublado</translation>
+    </message>
+    <message>
+        <source>Rewatches</source>
+        <translation>Reassistidos</translation>
+    </message>
+    <message>
+        <source>Running now</source>
+        <translation>Power-up ativo</translation>
+    </message>
+    <message>
+        <source>Quests</source>
+        <translation>Missões</translation>
+    </message>
+    <message>
+        <source>Recommendations</source>
+        <translation>Recomendações</translation>
+    </message>
+    <message>
+        <source>Reroll daily quests</source>
+        <translation>Trocar missão diária</translation>
+    </message>
+    <message>
+        <source>Current</source>
+        <translation>Atual</translation>
+    </message>
+    <message>
+        <source>Video Library Style</source>
+        <translation>Estilo da biblioteca</translation>
+    </message>
+    <message>
+        <source>Docked</source>
+        <translation>Acoplado</translation>
+    </message>
+    <message>
+        <source>Show</source>
+        <translation>Mostrar cabeçalho</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <translation>Mostrar</translation>
+    </message>
+    <message>
+        <source>Music Library Style</source>
+        <translation>Estilo da biblioteca de músicas</translation>
+    </message>
+    <message>
+        <source>Quick Access</source>
+        <translation>Acesso rápido</translation>
+    </message>
+    <message>
+        <source>Immersive</source>
+        <translation>Imersivo</translation>
+    </message>
+    <message>
+        <source>Jump Back In</source>
+        <translation>Voltar a ouvir</translation>
+    </message>
+    <message>
+        <source>From This Album</source>
+        <translation>Deste álbum</translation>
+    </message>
+    <message>
+        <source>Search Music</source>
+        <translation>Pesquisar músicas</translation>
+    </message>
+    <message>
+        <source>Last Played</source>
+        <translation>Reproduzido pela última vez</translation>
+    </message>
+    <message>
+        <source>Browse By Genre</source>
+        <translation>Navegar por gênero</translation>
+    </message>
+    <message>
+        <source>See All</source>
+        <translation>Ver tudo</translation>
+    </message>
+    <message>
+        <source>Release Year</source>
+        <translation>Ano</translation>
+    </message>
+    <message>
+        <source>Collections Row Sorting</source>
+        <translation>Ordenação das linhas de coleções</translation>
+    </message>
+    <message>
+        <source>Genres Row Sorting</source>
+        <translation>Ordenação das linhas de gêneros</translation>
+    </message>
+    <message>
+        <source>Genres Row Items</source>
+        <translation>Itens das linhas de gêneros</translation>
+    </message>
+    <message>
+        <source>Movies &amp; TV Shows</source>
+        <translation>Filmes e programas de TV</translation>
+    </message>
+    <message>
+        <source>Movies Only</source>
+        <translation>Apenas filmes</translation>
+    </message>
+    <message>
+        <source>TV Shows Only</source>
+        <translation>Somente programas de TV</translation>
+    </message>
+    <message>
+        <source>Playlist Order</source>
+        <translation>Ordem da playlist</translation>
+    </message>
+    <message>
+        <source>Playlist Sort Options</source>
+        <translation>Opções de ordenação da playlist</translation>
+    </message>
+    <message>
+        <source>Release Order (Ascending)</source>
+        <translation>Ordem de lançamento (crescente)</translation>
+    </message>
+    <message>
+        <source>Release Order (Descending)</source>
+        <translation>Ordem de lançamento (decrescente)</translation>
+    </message>
+    <message>
+        <source>Alphabetical</source>
+        <translation>Alfabético</translation>
+    </message>
+    <message>
+        <source>Display Options</source>
+        <translation>Opções de exibição</translation>
+    </message>
+    <message>
+        <source>Release Date (Ascending)</source>
+        <translation>Data de lançamento (crescente)</translation>
+    </message>
+    <message>
+        <source>Release Date (Descending)</source>
+        <translation>Data de lançamento (decrescente)</translation>
+    </message>
+    <message>
+        <source>Group Contributions</source>
+        <translation>Agrupar contribuições</translation>
+    </message>
+    <message>
+        <source>Group multiple roles</source>
+        <translation>Agrupar múltiplos papéis</translation>
+    </message>
+    <message>
+        <source>Filmography</source>
+        <translation>Filmografia</translation>
+    </message>
+    <message>
+        <source>Custom Order</source>
+        <translation>Ordem personalizada</translation>
+    </message>
+    <message>
+        <source>You&apos;re set. Here&apos;s what else is in here.</source>
+        <translation>Quer conhecer os principais recursos?</translation>
+    </message>
+    <message>
+        <source>Home View</source>
+        <translation>Visualização inicial</translation>
+    </message>
+    <message>
+        <source>Library View</source>
+        <translation>Visualização da biblioteca</translation>
+    </message>
+    <message>
+        <source>View style</source>
+        <translation>Estilo de visualização</translation>
+    </message>
+    <message>
+        <source>Grid direction</source>
+        <translation>Direção da grade</translation>
+    </message>
+    <message>
+        <source>Vertical</source>
+        <translation>Vertical</translation>
+    </message>
+    <message>
+        <source>Horizontal</source>
+        <translation>Horizontal</translation>
+    </message>
+    <message>
+        <source>No favorites yet</source>
+        <translation>Ainda não há favoritos</translation>
+    </message>
+    <message>
+        <source>No favorites found</source>
+        <translation>Nenhum favorito encontrado</translation>
+    </message>
+    <message>
+        <source>People</source>
+        <translation>Pessoas</translation>
+    </message>
+    <message>
+        <source>Music Videos</source>
+        <translation>Videoclipes</translation>
+    </message>
+    <message>
+        <source>1 held</source>
+        <translation>1 mantido</translation>
+    </message>
+    <message>
+        <source>Today</source>
+        <translation>Hoje</translation>
+    </message>
+    <message>
+        <source>Tomorrow</source>
+        <translation>Amanhã</translation>
+    </message>
+    <message>
+        <source>Jan</source>
+        <translation>Jan</translation>
+    </message>
+    <message>
+        <source>Feb</source>
+        <translation>Fev</translation>
+    </message>
+    <message>
+        <source>Mar</source>
+        <translation>Mar</translation>
+    </message>
+    <message>
+        <source>Apr</source>
+        <translation>Abr</translation>
+    </message>
+    <message>
+        <source>May</source>
+        <translation>Mai</translation>
+    </message>
+    <message>
+        <source>Jun</source>
+        <translation>Jun</translation>
+    </message>
+    <message>
+        <source>Jul</source>
+        <translation>Jul</translation>
+    </message>
+    <message>
+        <source>Aug</source>
+        <translation>Ago</translation>
+    </message>
+    <message>
+        <source>Sep</source>
+        <translation>Set</translation>
+    </message>
+    <message>
+        <source>Oct</source>
+        <translation>Out</translation>
+    </message>
+    <message>
+        <source>Nov</source>
+        <translation>Nov</translation>
+    </message>
+    <message>
+        <source>Dec</source>
+        <translation>Dez</translation>
+    </message>
+    <message>
+        <source>Offset</source>
+        <translation>Deslocamento</translation>
+    </message>
+    <message>
+        <source>Subtitle Offset</source>
+        <translation>Deslocamento da legenda</translation>
+    </message>
+    <message>
+        <source>Press BACK to close</source>
+        <translation>Pressione BACK para fechar</translation>
+    </message>
+    <message>
+        <source>Continue Watching &amp; Next Up</source>
+        <translation>Continue assistindo e a seguir</translation>
+    </message>
+    <message>
+        <source>Chapters and Extras</source>
+        <translation>Capítulos e Extras</translation>
+    </message>
+    <message>
+        <source>1 chapter</source>
+        <translation>1 capítulo</translation>
+    </message>
+    <message>
+        <source>{count} chapters</source>
+        <translation>{count} capítulos</translation>
+    </message>
+    <message>
+        <source>1 extra</source>
+        <translation>1 extra</translation>
+    </message>
+    <message>
+        <source>{count} extras</source>
+        <translation>{count} extras</translation>
+    </message>
+    <message>
+        <source>{rating} / 10</source>
+        <translation>{rating} / 10</translation>
+    </message>
+    <message>
+        <source>Chapter</source>
+        <translation>Capítulo</translation>
+    </message>
+    <message>
+        <source>Behind the Scenes</source>
+        <translation>Bastidores</translation>
+    </message>
+    <message>
+        <source>Deleted Scenes</source>
+        <translation>Cenas excluídas</translation>
+    </message>
+    <message>
+        <source>Featurettes</source>
+        <translation>Featurettes</translation>
+    </message>
+    <message>
+        <source>Interviews</source>
+        <translation>Entrevistas</translation>
+    </message>
+    <message>
+        <source>Scenes</source>
+        <translation>Cenas</translation>
+    </message>
+    <message>
+        <source>Shorts</source>
+        <translation>Curtas</translation>
+    </message>
+    <message>
+        <source>Trailers</source>
+        <translation>Trailers</translation>
+    </message>
+    <message>
+        <source>1 collection</source>
+        <translation>1 coleção</translation>
+    </message>
+    <message>
+        <source>{count} collections</source>
+        <translation>{count} coleções</translation>
+    </message>
+    <message>
+        <source>Collection</source>
+        <translation>Coleção</translation>
+    </message>
+    <message>
+        <source>Cast, Crew, and Studios</source>
+        <translation>Elenco, equipe e estúdios</translation>
+    </message>
+    <message>
+        <source>1 person</source>
+        <translation>1 pessoa</translation>
+    </message>
+    <message>
+        <source>{count} people</source>
+        <translation>{count} pessoas</translation>
+    </message>
+    <message>
+        <source>1 studio</source>
+        <translation>1 estúdio</translation>
+    </message>
+    <message>
+        <source>{count} studios</source>
+        <translation>{count} estúdios</translation>
+    </message>
+    <message>
+        <source>Writer</source>
+        <translation>Roteirista</translation>
+    </message>
+    <message>
+        <source>Track List</source>
+        <translation>Lista de faixas</translation>
+    </message>
+    <message>
+        <source>1 track</source>
+        <translation>1 faixa</translation>
+    </message>
+    <message>
+        <source>{count} tracks</source>
+        <translation>{count} faixas</translation>
+    </message>
+    <message>
+        <source>Playlist</source>
+        <translation>Lista de reprodução</translation>
+    </message>
+    <message>
+        <source>1 album</source>
+        <translation>1 álbum</translation>
+    </message>
+    <message>
+        <source>{count} albums</source>
+        <translation>{count} álbuns</translation>
+    </message>
+    <message>
+        <source>Disc {number}</source>
+        <translation>Disco {number}</translation>
+    </message>
+    <message>
+        <source>Movies &amp; Shows</source>
+        <translation>Filmes e séries</translation>
+    </message>
+    <message>
+        <source>1 movie</source>
+        <translation>1 filme</translation>
+    </message>
+    <message>
+        <source>{count} movies</source>
+        <translation>{count} filmes</translation>
+    </message>
+    <message>
+        <source>1 show</source>
+        <translation>1 série</translation>
+    </message>
+    <message>
+        <source>{count} shows</source>
+        <translation>{count} séries</translation>
+    </message>
+    <message>
+        <source>1 item</source>
+        <translation>1 item</translation>
+    </message>
+    <message>
+        <source>{count} items</source>
+        <translation>{count} itens</translation>
+    </message>
+    <message>
+        <source>1 title</source>
+        <translation>1 título</translation>
+    </message>
+    <message>
+        <source>{count} titles</source>
+        <translation>{count} títulos</translation>
+    </message>
+    <message>
+        <source>Moonfin Recommends</source>
+        <translation>Moonfin Recomenda</translation>
+    </message>
+    <message>
+        <source>TMDb</source>
+        <translation>TMDb</translation>
+    </message>
+    <message>
+        <source>Recommendations (Seerr)</source>
+        <translation>Recomendações (Seerr)</translation>
+    </message>
+    <message>
+        <source>Similar (Seerr)</source>
+        <translation>Semelhante (Seerr)</translation>
+    </message>
+    <message>
+        <source>1 season</source>
+        <translation>1 temporada</translation>
+    </message>
+    <message>
+        <source>{count} seasons</source>
+        <translation>{count} temporadas</translation>
+    </message>
+    <message>
+        <source>1 episode</source>
+        <translation>1 episódio</translation>
+    </message>
+    <message>
+        <source>{count} episodes</source>
+        <translation>{count} episódios</translation>
+    </message>
+    <message>
+        <source>Show Missing Collection Items</source>
+        <translation>Mostrar itens ausentes das coleções</translation>
+    </message>
+    <message>
+        <source>Include missing items on Collection pages</source>
+        <translation>Exibe itens que pertencem à coleção, mas ainda não estão disponíveis na biblioteca</translation>
+    </message>
+    <message>
+        <source>Direct Play Capability:</source>
+        <translation>Capacidade de Reprodução Direta:</translation>
+    </message>
+    <message>
+        <source>No</source>
+        <translation>Não</translation>
+    </message>
+    <message>
+        <source>Show Less</source>
+        <translation>Mostrar menos</translation>
+    </message>
+    <message>
+        <source>Container format is not supported by the player.</source>
+        <translation>O formato do contêiner não é compatível com o player.</translation>
+    </message>
+    <message>
+        <source>Video codec is not supported.</source>
+        <translation>O codec de vídeo não é compatível.</translation>
+    </message>
+    <message>
+        <source>Audio codec is not supported.</source>
+        <translation>O codec de áudio não é compatível.</translation>
+    </message>
+    <message>
+        <source>Subtitle format is not supported (requires burning).</source>
+        <translation>O formato da legenda não é compatível (exige incorporação).</translation>
+    </message>
+    <message>
+        <source>Audio profile is not supported.</source>
+        <translation>O perfil de áudio não é compatível.</translation>
+    </message>
+    <message>
+        <source>Video profile is not supported.</source>
+        <translation>O perfil de vídeo não é compatível.</translation>
+    </message>
+    <message>
+        <source>Video level is not supported.</source>
+        <translation>O nível de vídeo não é compatível.</translation>
+    </message>
+    <message>
+        <source>Video resolution is not supported by this device.</source>
+        <translation>A resolução do vídeo não é compatível com este dispositivo.</translation>
+    </message>
+    <message>
+        <source>Video bit depth is not supported.</source>
+        <translation>A profundidade de bits do vídeo não é compatível.</translation>
+    </message>
+    <message>
+        <source>Video framerate is not supported.</source>
+        <translation>A taxa de quadros do vídeo não é compatível.</translation>
+    </message>
+    <message>
+        <source>File bitrate exceeds player streaming limit.</source>
+        <translation>A taxa de bits do arquivo excede o limite de streaming do player.</translation>
+    </message>
+    <message>
+        <source>Video bitrate exceeds streaming limit.</source>
+        <translation>A taxa de bits do vídeo excede o limite de streaming.</translation>
+    </message>
+    <message>
+        <source>Audio bitrate exceeds streaming limit.</source>
+        <translation>A taxa de bits do áudio excede o limite de streaming.</translation>
+    </message>
+    <message>
+        <source>Number of audio channels is not supported.</source>
+        <translation>O número de canais de áudio não é compatível.</translation>
+    </message>
+    <message>
+        <source>ASS/SSA subtitles require transcoding because direct play is turned off.</source>
+        <translation>Gravação de legendas ASS desativada</translation>
+    </message>
+    <message>
+        <source>Video dynamic range (e.g. Dolby Vision / HDR) is not supported by this display.</source>
+        <translation>Faixa dinâmica de vídeo não compatível</translation>
+    </message>
+    <message>
+        <source>Audio sample rate is not supported.</source>
+        <translation>Taxa de amostragem de áudio não compatível</translation>
+    </message>
+    <message>
+        <source>Audio bit depth is not supported.</source>
+        <translation>Profundidade de bits do áudio não compatível</translation>
+    </message>
+    <message>
+        <source>Video reference frames exceed player limits.</source>
+        <translation>Quantidade de quadros de referência não compatível</translation>
+    </message>
+    <message>
+        <source>Anamorphic video is not supported.</source>
+        <translation>Vídeo anamórfico não compatível</translation>
+    </message>
+    <message>
+        <source>Interlaced video is not supported.</source>
+        <translation>Vídeo entrelaçado não compatível</translation>
+    </message>
+    <message>
+        <source>Secondary audio stream requires transcoding.</source>
+        <translation>Áudio secundário não compatível</translation>
+    </message>
+    <message>
+        <source>Direct play is not supported for this media format.</source>
+        <translation>Erro durante a reprodução direta</translation>
+    </message>
+    <message>
+        <source>Action Buttons on Screen</source>
+        <translation>Botões de ação na tela</translation>
+    </message>
+    <message>
+        <source>Auto (Theme Default)</source>
+        <translation>Automático</translation>
+    </message>
+    <message>
+        <source>1 (Play only)</source>
+        <translation>Somente reproduzir</translation>
+    </message>
+    <message>
+        <source>All (Horizontal Scroll)</source>
+        <translation>Todos</translation>
+    </message>
+    <message>
+        <source>More</source>
+        <translation>Mais</translation>
+    </message>
+    <message>
+        <source>Items in Collection</source>
+        <translation>Itens na coleção</translation>
+    </message>
+    <message>
+        <source>Items</source>
+        <translation>Itens</translation>
+    </message>
+    <message>
+        <source>Movie</source>
+        <translation>Filme</translation>
+    </message>
+    <message>
+        <source>TV Show</source>
+        <translation>Programa de TV</translation>
+    </message>
+    <message>
+        <source>More Episodes</source>
+        <translation>Mais episódios</translation>
+    </message>
+    <message>
+        <source>1 fact</source>
+        <translation>1 curiosidade</translation>
+    </message>
+    <message>
+        <source>{count} facts</source>
+        <translation>{count} fatos</translation>
+    </message>
+    <message>
+        <source>1 tag</source>
+        <translation>1 etiqueta</translation>
+    </message>
+    <message>
+        <source>{count} tags</source>
+        <translation>{count} tags</translation>
+    </message>
+    <message>
+        <source>Genres and Tags</source>
+        <translation>Gêneros e tags</translation>
+    </message>
+    <message>
+        <source>Continuing</source>
+        <translation>Continuando</translation>
+    </message>
+    <message>
+        <source>Ended</source>
+        <translation>Terminou</translation>
+    </message>
+    <message>
+        <source>Declined</source>
+        <translation>Recusado</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>Disponível</translation>
+    </message>
+    <message>
+        <source>Partially Available</source>
+        <translation>Parcialmente disponível</translation>
+    </message>
+    <message>
+        <source>Requested</source>
+        <translation>Solicitado</translation>
+    </message>
+    <message>
+        <source>Pending</source>
+        <translation>Pendente</translation>
+    </message>
+    <message>
+        <source>Blocklisted</source>
+        <translation>Na lista de bloqueio</translation>
+    </message>
+    <message>
+        <source>Deleted</source>
+        <translation>Excluído</translation>
+    </message>
+    <message>
+        <source>Not Requested</source>
+        <translation>Não solicitado</translation>
+    </message>
+    <message>
+        <source>Seerr Availability</source>
+        <translation>Disponibilidade no Seerr</translation>
+    </message>
+    <message>
+        <source>Guest Appearances</source>
+        <translation>Participações especiais</translation>
+    </message>
+    <message>
+        <source>Crew Contributions (Seerr)</source>
+        <translation>Contribuições da equipe (Seerr)</translation>
+    </message>
+    <message>
+        <source>Appearances (Seerr)</source>
+        <translation>Participações (Seerr)</translation>
+    </message>
+    <message>
+        <source>Mark as Watched</source>
+        <translation>Marcar como assistido</translation>
+    </message>
+    <message>
+        <source>Mark as Unwatched</source>
+        <translation>Marcar como não assistido</translation>
+    </message>
+    <message>
+        <source>Hide from Continue Watching</source>
+        <translation>Ocultar de Continuar assistindo</translation>
+    </message>
+    <message>
+        <source>Hide from Next Up</source>
+        <translation>Ocultar de Próximo</translation>
+    </message>
+    <message>
+        <source>Add to Favorites</source>
+        <translation>Adicionar aos Favoritos</translation>
+    </message>
+    <message>
+        <source>Remove from Favorites</source>
+        <translation>Remover dos Favoritos</translation>
+    </message>
+    <message>
+        <source>Add to Collection</source>
+        <translation>Adicionar à coleção</translation>
+    </message>
+    <message>
+        <source>Remove from Collection</source>
+        <translation>Remover da coleção</translation>
+    </message>
+    <message>
+        <source>Add to Playlist</source>
+        <translation>Adicionar à lista de reprodução</translation>
+    </message>
+    <message>
+        <source>Refresh Metadata</source>
+        <translation>Atualizar metadados</translation>
+    </message>
+    <message>
+        <source>Identify</source>
+        <translation>Identificar</translation>
+    </message>
+    <message>
+        <source>Change Artwork</source>
+        <translation>Alterar imagens</translation>
+    </message>
+    <message>
+        <source>Artwork updated successfully</source>
+        <translation>Arte atualizada com sucesso</translation>
+    </message>
+    <message>
+        <source>Create New Collection</source>
+        <translation>Criar nova coleção</translation>
+    </message>
+    <message>
+        <source>No collections found</source>
+        <translation>Nenhuma coleção encontrada</translation>
+    </message>
+    <message>
+        <source>New Collection</source>
+        <translation>Nova coleção</translation>
+    </message>
+    <message>
+        <source>Collection name</source>
+        <translation>Nome da coleção</translation>
+    </message>
+    <message>
+        <source>Added to collection</source>
+        <translation>Adicionado à coleção</translation>
+    </message>
+    <message>
+        <source>Created &quot;{name}&quot; and added item</source>
+        <translation>Criado &quot;{name}&quot; e item adicionado</translation>
+    </message>
+    <message>
+        <source>Remove {item} from {collection}? The item stays in your library.</source>
+        <translation>Remover {item} de {collection}? O item continuará na sua biblioteca.</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Remover</translation>
+    </message>
+    <message>
+        <source>Delete from Playlist</source>
+        <translation>Excluir da lista de reprodução</translation>
+    </message>
+    <message>
+        <source>Removed from playlist</source>
+        <translation>Removido da playlist</translation>
+    </message>
+    <message>
+        <source>Create New Playlist</source>
+        <translation>Criar nova lista de reprodução</translation>
+    </message>
+    <message>
+        <source>No playlists found</source>
+        <translation>Nenhuma playlist encontrada</translation>
+    </message>
+    <message>
+        <source>New Playlist</source>
+        <translation>Nova lista de reprodução</translation>
+    </message>
+    <message>
+        <source>Playlist name</source>
+        <translation>Nome da lista de reprodução</translation>
+    </message>
+    <message>
+        <source>Added to playlist</source>
+        <translation>Adicionado à playlist</translation>
+    </message>
+    <message>
+        <source>Metadata refresh requested</source>
+        <translation>Atualização de metadados solicitada</translation>
+    </message>
+    <message>
+        <source>Failed to refresh metadata: {error}</source>
+        <translation>Falha ao atualizar os metadados: {error}</translation>
+    </message>
+    <message>
+        <source>Metadata updated</source>
+        <translation>Metadados atualizados</translation>
+    </message>
+    <message>
+        <source>Refreshing metadata</source>
+        <translation>Atualizando metadados</translation>
+    </message>
+    <message>
+        <source>Enter PIN</source>
+        <translation>Insira o PIN</translation>
+    </message>
+    <message>
+        <source>This profile is protected by a 4-digit PIN.</source>
+        <translation>Este perfil é protegido por um PIN de 4 dígitos.</translation>
+    </message>
+    <message>
+        <source>4 digits</source>
+        <translation>4 dígitos</translation>
+    </message>
+    <message>
+        <source>Unlock</source>
+        <translation>Desbloquear</translation>
+    </message>
+    <message>
+        <source>Require a PIN to access your account</source>
+        <translation>Exigir um PIN para acessar sua conta</translation>
+    </message>
+    <message>
+        <source>PIN Code</source>
+        <translation>Código PIN</translation>
+    </message>
+    <message>
+        <source>Enter a 4-digit PIN used to unlock the app when PIN protection is enabled.</source>
+        <translation>Digite um PIN de 4 dígitos usado para desbloquear o aplicativo quando a proteção por PIN estiver ativada.</translation>
+    </message>
+    <message>
+        <source>Saved Servers</source>
+        <translation>Servidores salvos</translation>
+    </message>
+    <message>
+        <source>Discovered Servers</source>
+        <translation>Servidores descobertos</translation>
+    </message>
+    <message>
+        <source>None found</source>
+        <translation>Nenhum encontrado</translation>
+    </message>
+    <message>
+        <source>Add Server</source>
+        <translation>Adicionar servidor</translation>
+    </message>
+    <message>
+        <source>Remove Server</source>
+        <translation>Remover servidor</translation>
+    </message>
+    <message>
+        <source>Server Address</source>
+        <translation>Endereço do servidor</translation>
+    </message>
+    <message>
+        <source>Emby Connect</source>
+        <translation>Conectar Emby</translation>
+    </message>
+    <message>
+        <source>Sign in with your Emby Connect account</source>
+        <translation>Faça login com sua conta Emby Connect</translation>
+    </message>
+    <message>
+        <source>Connect</source>
+        <translation>Conectar</translation>
+    </message>
+    <message>
+        <source>Jellyfin</source>
+        <translation>Jellyfin</translation>
+    </message>
+    <message>
+        <source>Continue</source>
+        <translation>Continuar</translation>
+    </message>
+    <message>
+        <source>Who&apos;s watching?</source>
+        <translation>Quem está assistindo?</translation>
+    </message>
+    <message>
+        <source>Enter this code on your server&apos;s web dashboard:</source>
+        <translation>Insira este código no painel web do seu servidor:</translation>
+    </message>
+    <message>
+        <source>Waiting for authorization...</source>
+        <translation>Aguardando autorização...</translation>
+    </message>
+    <message>
+        <source>Or scan this with a phone that&apos;s signed in to your server</source>
+        <translation>Ou escaneie este código com um celular que já esteja conectado ao seu servidor</translation>
+    </message>
+    <message>
+        <source>Quick Connect is disabled</source>
+        <translation>Conexão rápida está desativada</translation>
+    </message>
+    <message>
+        <source>Email or Username</source>
+        <translation>E-mail ou nome de usuário</translation>
+    </message>
+    <message>
+        <source>Select Server</source>
+        <translation>Selecione Servidor</translation>
+    </message>
+    <message>
+        <source>Sign Out All Users</source>
+        <translation>Sair de todas as contas</translation>
+    </message>
+    <message>
+        <source>Active</source>
+        <translation>Ativo</translation>
+    </message>
+    <message>
+        <source>Set a new PIN code</source>
+        <translation>Defina um novo código PIN</translation>
+    </message>
+    <message>
+        <source>Remove PIN</source>
+        <translation>Remover PIN</translation>
+    </message>
+    <message>
+        <source>Remove PIN code protection</source>
+        <translation>Remover proteção do código PIN</translation>
+    </message>
+    <message>
+        <source>Forgot PIN?</source>
+        <translation>Esqueceu o PIN?</translation>
+    </message>
+    <message>
+        <source>Unable to connect to server</source>
+        <translation>Não foi possível conectar ao servidor</translation>
+    </message>
+    <message>
+        <source>Content rating restrictions</source>
+        <translation>Restrições de classificação de conteúdo</translation>
+    </message>
+    <message>
+        <source>Parental Controls</source>
+        <translation>Controles dos pais</translation>
+    </message>
+    <message>
+        <source>Block content with the following ratings:</source>
+        <translation>Bloqueie conteúdo com as seguintes classificações:</translation>
+    </message>
+    <message>
+        <source>Blocking a rating also blocks everything stronger than it.</source>
+        <translation>Conteúdos acima desta classificação serão bloqueados</translation>
+    </message>
+    <message>
+        <source>Ratings</source>
+        <translation>Avaliações</translation>
+    </message>
+    <message>
+        <source>Only blocks itself</source>
+        <translation>Conteúdo sem classificação</translation>
+    </message>
+    <message>
+        <source>Could not load server ratings. Showing saved ratings only.</source>
+        <translation>Não foi possível carregar as classificações do servidor. Mostrando apenas avaliações salvas.</translation>
+    </message>
+    <message>
+        <source>No content ratings were found on this server yet.</source>
+        <translation>Nenhuma classificação de conteúdo foi encontrada neste servidor ainda.</translation>
+    </message>
+    <message>
+        <source>Could not refresh ratings from server. Showing saved ratings.</source>
+        <translation>Não foi possível atualizar as classificações do servidor. Mostrando avaliações salvas.</translation>
+    </message>
+    <message>
+        <source>This isn&apos;t available</source>
+        <translation>Item bloqueado pelo controle parental</translation>
+    </message>
+    <message>
+        <source>Now</source>
+        <translation>Agora</translation>
+    </message>
+    <message>
+        <source>Recordings</source>
+        <translation>Gravações</translation>
+    </message>
+    <message>
+        <source>Guide Timeline</source>
+        <translation>Linha do tempo do guia</translation>
+    </message>
+    <message>
+        <source>No program data</source>
+        <translation>Nenhuma informação de programação</translation>
+    </message>
+    <message>
+        <source>Failed to load guide: {error}</source>
+        <translation>Falha ao carregar o guia: {error}</translation>
+    </message>
+    <message>
+        <source>No channels found</source>
+        <translation>Nenhum canal encontrado</translation>
+    </message>
+    <message>
+        <source>Sort By</source>
+        <translation>Ordenar por</translation>
+    </message>
+    <message>
+        <source>Channel Number</source>
+        <translation>Número do canal</translation>
+    </message>
+    <message>
+        <source>Favorites First</source>
+        <translation>Favoritos primeiro</translation>
+    </message>
+    <message>
+        <source>Select date</source>
+        <translation>Selecionar data</translation>
+    </message>
+    <message>
+        <source>Sports</source>
+        <translation>Esportes</translation>
+    </message>
+    <message>
+        <source>News</source>
+        <translation>Notícias</translation>
+    </message>
+    <message>
+        <source>Kids</source>
+        <translation>Crianças</translation>
+    </message>
+    <message>
+        <source>Premiere</source>
+        <translation>Estreia</translation>
+    </message>
+    <message>
+        <source>Watch</source>
+        <translation>Assistir</translation>
+    </message>
+    <message>
+        <source>Watch channel live</source>
+        <translation>Assistir ao canal ao vivo</translation>
+    </message>
+    <message>
+        <source>Favorite Channel</source>
+        <translation>Canal favorito</translation>
+    </message>
+    <message>
+        <source>Unfavorite Channel</source>
+        <translation>Canal não favorito</translation>
+    </message>
+    <message>
+        <source>Program set to record</source>
+        <translation>Program configurado para gravar</translation>
+    </message>
+    <message>
+        <source>Unable to create recording</source>
+        <translation>Não foi possível criar gravação</translation>
+    </message>
+    <message>
+        <source>Recording cancelled</source>
+        <translation>Gravação cancelada</translation>
+    </message>
+    <message>
+        <source>Failed to cancel recording</source>
+        <translation>Falha ao cancelar a gravação</translation>
+    </message>
+    <message>
+        <source>Series set to record</source>
+        <translation>Série programada para gravação</translation>
+    </message>
+    <message>
+        <source>Unable to create series recording</source>
+        <translation>Não foi possível programar a gravação da série</translation>
+    </message>
+    <message>
+        <source>Series recording cancelled</source>
+        <translation>Gravação da série cancelada</translation>
+    </message>
+    <message>
+        <source>Failed to cancel series recording</source>
+        <translation>Falha ao cancelar a gravação da série</translation>
+    </message>
+    <message>
+        <source>Added to favorite channels</source>
+        <translation>Adicionado aos canais favoritos</translation>
+    </message>
+    <message>
+        <source>Removed from favorite channels</source>
+        <translation>Removido dos canais favoritos</translation>
+    </message>
+    <message>
+        <source>Failed to update favorite channel</source>
+        <translation>Falha ao atualizar canal favorito</translation>
+    </message>
+    <message>
+        <source>LIVE</source>
+        <translation>AO VIVO</translation>
+    </message>
+    <message>
+        <source>Failed to play {name}</source>
+        <translation>Falha ao reproduzir {name}</translation>
+    </message>
+    <message>
+        <source>Reconnecting… ({attempt} of {total})</source>
+        <translation>Reconectando… ({attempt} de {total})</translation>
+    </message>
+    <message>
+        <source>Schedule</source>
+        <translation>Agendar</translation>
+    </message>
+    <message>
+        <source>Series Recordings</source>
+        <translation>Gravações de séries</translation>
+    </message>
+    <message>
+        <source>Scheduled in Next 24 Hours</source>
+        <translation>Agendado para as próximas 24 horas</translation>
+    </message>
+    <message>
+        <source>Recent Recordings</source>
+        <translation>Gravações recentes</translation>
+    </message>
+    <message>
+        <source>TV Series</source>
+        <translation>Série de TV</translation>
+    </message>
+    <message>
+        <source>Yesterday</source>
+        <translation>Ontem</translation>
+    </message>
+    <message>
+        <source>All channels</source>
+        <translation>Todos os canais</translation>
+    </message>
+    <message>
+        <source>No recordings found</source>
+        <translation>Nenhuma gravação encontrada</translation>
+    </message>
+    <message>
+        <source>No scheduled recordings</source>
+        <translation>Nenhuma gravação agendada</translation>
+    </message>
+    <message>
+        <source>No series recordings</source>
+        <translation>Sem gravações de série</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>Excluir</translation>
+    </message>
+    <message>
+        <source>Cancel Recording?</source>
+        <translation>Cancelar gravação?</translation>
+    </message>
+    <message>
+        <source>Yes, Cancel</source>
+        <translation>Sim, cancelar</translation>
+    </message>
+    <message>
+        <source>Show Live TV Button</source>
+        <translation>Mostrar botão de TV ao vivo</translation>
+    </message>
+    <message>
+        <source>Show the Live TV button in the navigation bar when the server has a Live TV library</source>
+        <translation>Mostrar botão de TV ao vivo na navegação</translation>
+    </message>
+    <message>
+        <source>Trick Play</source>
+        <translation>Truque</translation>
+    </message>
+    <message>
+        <source>Show preview thumbnails when seeking</source>
+        <translation>Mostrar miniaturas de visualização ao pesquisar</translation>
+    </message>
+    <message>
+        <source>Pause While Scrubbing</source>
+        <translation>Pausar durante a busca</translation>
+    </message>
+    <message>
+        <source>Playback pauses while you seek and resumes when you press play. Turn this off to keep playing and jump straight to the new spot</source>
+        <translation>Pausa a reprodução enquanto você navega pela linha do tempo</translation>
+    </message>
+    <message>
+        <source>Seek Step</source>
+        <translation>Intervalo de busca</translation>
+    </message>
+    <message>
+        <source>How far each press moves while scrubbing the progress bar</source>
+        <translation>Quanto cada pressionamento avança ao navegar pela barra de progresso</translation>
+    </message>
+    <message>
+        <source>5 seconds</source>
+        <translation>5 segundos</translation>
+    </message>
+    <message>
+        <source>10 seconds</source>
+        <translation>10 segundos</translation>
+    </message>
+    <message>
+        <source>20 seconds</source>
+        <translation>20 segundos</translation>
+    </message>
+    <message>
+        <source>30 seconds</source>
+        <translation>30 segundos</translation>
+    </message>
+    <message>
+        <source>Chapter Marks</source>
+        <translation>Mostrar marcadores de capítulos</translation>
+    </message>
+    <message>
+        <source>Mark where each chapter starts on the seek bar</source>
+        <translation>Exibe os capítulos na linha do tempo do reprodutor</translation>
+    </message>
+    <message>
+        <source>Subtitle Customization</source>
+        <translation>Personalização de legendas</translation>
+    </message>
+    <message>
+        <source>Subtitle Size</source>
+        <translation>Tamanho da legenda</translation>
+    </message>
+    <message>
+        <source>Small</source>
+        <translation>Pequeno</translation>
+    </message>
+    <message>
+        <source>Medium</source>
+        <translation>Médio</translation>
+    </message>
+    <message>
+        <source>Large</source>
+        <translation>Grande</translation>
+    </message>
+    <message>
+        <source>Extra Large</source>
+        <translation>Extra Grande</translation>
+    </message>
+    <message>
+        <source>Subtitle Position</source>
+        <translation>Posição da legenda</translation>
+    </message>
+    <message>
+        <source>Position</source>
+        <translation>Posição</translation>
+    </message>
+    <message>
+        <source>Bottom</source>
+        <translation>Inferior</translation>
+    </message>
+    <message>
+        <source>Lower</source>
+        <translation>Menor</translation>
+    </message>
+    <message>
+        <source>Middle</source>
+        <translation>Centro</translation>
+    </message>
+    <message>
+        <source>Higher</source>
+        <translation>Maior</translation>
+    </message>
+    <message>
+        <source>Absolute</source>
+        <translation>Absoluta</translation>
+    </message>
+    <message>
+        <source>Absolute Position</source>
+        <translation>Posição absoluta</translation>
+    </message>
+    <message>
+        <source>Text Opacity</source>
+        <translation>Opacidade do texto</translation>
+    </message>
+    <message>
+        <source>Text Fill Color</source>
+        <translation>Cor de preenchimento de texto</translation>
+    </message>
+    <message>
+        <source>White</source>
+        <translation>Branco</translation>
+    </message>
+    <message>
+        <source>Light Gray</source>
+        <translation>Cinza-claro</translation>
+    </message>
+    <message>
+        <source>Gray</source>
+        <translation>Cinza</translation>
+    </message>
+    <message>
+        <source>Dark Gray</source>
+        <translation>Cinza-escuro</translation>
+    </message>
+    <message>
+        <source>Black</source>
+        <translation>Preto</translation>
+    </message>
+    <message>
+        <source>Yellow</source>
+        <translation>Amarelo</translation>
+    </message>
+    <message>
+        <source>Green</source>
+        <translation>Verde</translation>
+    </message>
+    <message>
+        <source>Cyan</source>
+        <translation>Ciano</translation>
+    </message>
+    <message>
+        <source>Blue</source>
+        <translation>Azul</translation>
+    </message>
+    <message>
+        <source>Magenta</source>
+        <translation>Magenta</translation>
+    </message>
+    <message>
+        <source>Red</source>
+        <translation>Vermelho</translation>
+    </message>
+    <message>
+        <source>Navy</source>
+        <translation>Marinha</translation>
+    </message>
+    <message>
+        <source>Transparent</source>
+        <translation>Transparente</translation>
+    </message>
+    <message>
+        <source>Semi-transparent Black</source>
+        <translation>Preto Semitransparente</translation>
+    </message>
+    <message>
+        <source>Semi-transparent White</source>
+        <translation>Branco semitransparente</translation>
+    </message>
+    <message>
+        <source>Background Color</source>
+        <translation>Cor de fundo</translation>
+    </message>
+    <message>
+        <source>Background Opacity</source>
+        <translation>Opacidade do fundo da tela de detalhes</translation>
+    </message>
+    <message>
+        <source>Separate HDR Style</source>
+        <translation>Configurações separadas de legendas para HDR</translation>
+    </message>
+    <message>
+        <source>Subtitle Appearance</source>
+        <translation>Aparência das legendas</translation>
+    </message>
+    <message>
+        <source>Loading Animation</source>
+        <translation>Animação de carregamento</translation>
+    </message>
+    <message>
+        <source>Customize the loading animations used throughout Moonfin</source>
+        <translation>Personalize a animação exibida durante o carregamento</translation>
+    </message>
+    <message>
+        <source>Loading Animation Configuration</source>
+        <translation>Configuração da animação</translation>
+    </message>
+    <message>
+        <source>Image</source>
+        <translation>Imagem da animação</translation>
+    </message>
+    <message>
+        <source>Moonfin Logo</source>
+        <translation>Logo do Moonfin</translation>
+    </message>
+    <message>
+        <source>Spinner</source>
+        <translation>Indicador giratório</translation>
+    </message>
+    <message>
+        <source>Runner</source>
+        <translation>Corredor</translation>
+    </message>
+    <message>
+        <source>Moon Phases</source>
+        <translation>Fases da Lua</translation>
+    </message>
+    <message>
+        <source>Moonfin Phases</source>
+        <translation>Fases do Moonfin</translation>
+    </message>
+    <message>
+        <source>Neonfin Phases</source>
+        <translation>Fases do Neonfin</translation>
+    </message>
+    <message>
+        <source>Animation Size</source>
+        <translation>Tamanho da animação</translation>
+    </message>
+    <message>
+        <source>Thumbnail</source>
+        <translation>Miniatura</translation>
+    </message>
+    <message>
+        <source>Animation Position</source>
+        <translation>Posição da animação</translation>
+    </message>
+    <message>
+        <source>Top-Left</source>
+        <translation>Superior esquerdo</translation>
+    </message>
+    <message>
+        <source>Top-Center</source>
+        <translation>Superior central</translation>
+    </message>
+    <message>
+        <source>Top-Right</source>
+        <translation>Superior direito</translation>
+    </message>
+    <message>
+        <source>Middle-Left</source>
+        <translation>Centro esquerdo</translation>
+    </message>
+    <message>
+        <source>Middle-Right</source>
+        <translation>Centro direito</translation>
+    </message>
+    <message>
+        <source>Bottom-Left</source>
+        <translation>Inferior esquerdo</translation>
+    </message>
+    <message>
+        <source>Bottom-Center</source>
+        <translation>Inferior central</translation>
+    </message>
+    <message>
+        <source>Bottom-Right</source>
+        <translation>Inferior direito</translation>
+    </message>
+    <message>
+        <source>Bouncing</source>
+        <translation>Flutuante</translation>
+    </message>
+    <message>
+        <source>Animation Speed</source>
+        <translation>Velocidade da animação</translation>
+    </message>
+    <message>
+        <source>Slow</source>
+        <translation>Lenta</translation>
+    </message>
+    <message>
+        <source>Moderate</source>
+        <translation>Moderada</translation>
+    </message>
+    <message>
+        <source>Fast</source>
+        <translation>Rápida</translation>
+    </message>
+    <message>
+        <source>Ultra</source>
+        <translation>Ultrarrápida</translation>
+    </message>
+    <message>
+        <source>Loading Stream...</source>
+        <translation>Carregando transmissão...</translation>
+    </message>
+    <message>
+        <source>You do not have permission to search for subtitles</source>
+        <translation>Você não tem permissão para pesquisar legendas</translation>
+    </message>
+    <message>
+        <source>No subtitle provider is set up on the server</source>
+        <translation>Nenhum provedor de legendas está configurado no servidor</translation>
+    </message>
+    <message>
+        <source>You do not have permission to download subtitles</source>
+        <translation>Você não tem permissão para baixar legendas</translation>
+    </message>
+    <message>
+        <source>That subtitle is no longer available</source>
+        <translation>Essa legenda não está mais disponível</translation>
+    </message>
+    <message>
+        <source>Subtitle download failed</source>
+        <translation>Falha no download da legenda</translation>
+    </message>
+    <message>
+        <source>The subtitle was downloaded but has not appeared yet</source>
+        <translation>A legenda foi baixada, mas ainda não apareceu</translation>
+    </message>
+    <message>
+        <source>Show Clock</source>
+        <translation>Mostrar relógio</translation>
+    </message>
+    <message>
+        <source>Group by Type</source>
+        <translation>Agrupar por tipo</translation>
+    </message>
+    <message>
+        <source>Video Playlists</source>
+        <translation>Playlists de vídeos</translation>
+    </message>
+    <message>
+        <source>Music Video Playlists</source>
+        <translation>Playlists de videoclipes</translation>
+    </message>
+    <message>
+        <source>Audio Playlists</source>
+        <translation>Playlists de áudio</translation>
+    </message>
+    <message>
+        <source>Audiobook Playlists</source>
+        <translation>Playlists de audiolivros</translation>
+    </message>
+    <message>
+        <source>Book Playlists</source>
+        <translation>Playlists de livros</translation>
+    </message>
+    <message>
+        <source>Photo Playlists</source>
+        <translation>Playlists de fotos</translation>
+    </message>
+    <message>
+        <source>Mixed Playlists</source>
+        <translation>Playlists mistas</translation>
+    </message>
+    <message>
+        <source>No items found</source>
+        <translation>Nenhum item encontrado</translation>
+    </message>
+    <message>
+        <source>Download subtitles...</source>
+        <translation>Baixar legendas...</translation>
+    </message>
+    <message>
+        <source>Download Subtitles</source>
+        <translation>Baixar legendas</translation>
+    </message>
+    <message>
+        <source>Searching...</source>
+        <translation>Pesquisando...</translation>
+    </message>
+    <message>
+        <source>No remote subtitles found</source>
+        <translation>Nenhuma legenda remota encontrada</translation>
+    </message>
+    <message>
+        <source>Subtitle search failed</source>
+        <translation>Falha na pesquisa de legendas</translation>
+    </message>
+    <message>
+        <source>Downloading subtitle…</source>
+        <translation>Baixando legenda</translation>
+    </message>
+    <message>
+        <source>AI Translated</source>
+        <translation>Traduzida por IA</translation>
+    </message>
+    <message>
+        <source>Machine Translated</source>
+        <translation>Tradução automática</translation>
+    </message>
+    <message>
+        <source>SDH</source>
+        <translation>Para deficientes auditivos</translation>
+    </message>
+    <message>
+        <source>Perfect match</source>
+        <translation>Combinação perfeita</translation>
+    </message>
+    <message>
+        <source>1 download</source>
+        <translation>1 download</translation>
+    </message>
+    <message>
+        <source>{count} downloads</source>
+        <translation>{count} downloads</translation>
+    </message>
+    <message>
+        <source>{fps} fps</source>
+        <translation>{fps} fps</translation>
+    </message>
+    <message>
+        <source>Trailer Preview</source>
+        <translation>Pré-visualização do trailer</translation>
+    </message>
+    <message>
+        <source>Auto-play trailers in the media bar after 3 seconds</source>
+        <translation>Reproduza trailers automaticamente na barra de mídia após 3 segundos</translation>
+    </message>
+    <message>
+        <source>Mute Trailer Audio</source>
+        <translation>Silenciar áudio dos trailers</translation>
+    </message>
+    <message>
+        <source>Trailer Captions</source>
+        <translation>Legendas dos trailers</translation>
+    </message>
+    <message>
+        <source>Loading trailer...</source>
+        <translation>Carregando trailer...</translation>
+    </message>
+    <message>
+        <source>Media Preview</source>
+        <translation>Visualização de mídia</translation>
+    </message>
+    <message>
+        <source>Preview Audio</source>
+        <translation>Visualizar áudio</translation>
+    </message>
+    <message>
+        <source>Seasonal Row</source>
+        <translation>Linha sazonal</translation>
+    </message>
+    <message>
+        <source>New Year&apos;s</source>
+        <translation>Ano-Novo</translation>
+    </message>
+    <message>
+        <source>Valentine&apos;s Day</source>
+        <translation>Dia dos Namorados</translation>
+    </message>
+    <message>
+        <source>Easter</source>
+        <translation>Páscoa</translation>
+    </message>
+    <message>
+        <source>Pride</source>
+        <translation>Orgulho LGBTQIA+</translation>
+    </message>
+    <message>
+        <source>Halloween</source>
+        <translation>Halloween</translation>
+    </message>
+    <message>
+        <source>Thanksgiving</source>
+        <translation>Dia de Ação de Graças</translation>
+    </message>
+    <message>
+        <source>Christmas Movies</source>
+        <translation>Natal</translation>
+    </message>
+    <message>
+        <source>Lunar New Year</source>
+        <translation>Ano-Novo Lunar</translation>
+    </message>
+    <message>
+        <source>Diwali</source>
+        <translation>Diwali (Festival das Luzes)</translation>
+    </message>
+    <message>
+        <source>Library Order</source>
+        <translation>Ordem das bibliotecas</translation>
+    </message>
+    <message>
+        <source>Choose the order of your libraries</source>
+        <translation>Organize suas bibliotecas</translation>
+    </message>
+    <message>
+        <source>Your libraries appear in this order on My Media, the recently added rows and the navigation bar. The order is saved to your server account, so other apps you sign in to use it too.</source>
+        <translation>Altere a ordem de exibição das bibliotecas</translation>
+    </message>
+    <message>
+        <source>Press left or right to move the highlighted library.</source>
+        <translation>Use o controle para reorganizar as bibliotecas</translation>
+    </message>
+    <message>
+        <source>Failed to load libraries</source>
+        <translation>Falha ao carregar bibliotecas</translation>
+    </message>
+    <message>
+        <source>No libraries found</source>
+        <translation>Nenhuma biblioteca encontrada</translation>
+    </message>
+    <message>
+        <source>Hidden</source>
+        <translation>Escondido</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t save the library order</source>
+        <translation>Não foi possível salvar a ordem das bibliotecas</translation>
+    </message>
+    <message>
+        <source>Sections</source>
+        <translation>Seções de detalhes</translation>
+    </message>
+    <message>
+        <source>Choose which parts of the Details screen to show</source>
+        <translation>Personalize as informações exibidas na tela de detalhes</translation>
+    </message>
+    <message>
+        <source>Header</source>
+        <translation>Cabeçalho</translation>
+    </message>
+    <message>
+        <source>Person pages</source>
+        <translation>Pessoas</translation>
+    </message>
+    <message>
+        <source>Logo</source>
+        <translation>Logotipo</translation>
+    </message>
+    <message>
+        <source>Shows the title as text when off</source>
+        <translation>Exibir o logotipo do conteúdo</translation>
+    </message>
+    <message>
+        <source>Tagline</source>
+        <translation>Slogan</translation>
+    </message>
+    <message>
+        <source>Poster</source>
+        <translation>Pôster</translation>
+    </message>
+    <message>
+        <source>Also on collection pages</source>
+        <translation>Exibir atores e personagens</translation>
+    </message>
+    <message>
+        <source>Directors &amp; writers</source>
+        <translation>Equipe de produção</translation>
+    </message>
+    <message>
+        <source>Also similar albums and artists</source>
+        <translation>Exibir recomendações de conteúdos semelhantes</translation>
+    </message>
+    <message>
+        <source>More episodes</source>
+        <translation>Mais episódios</translation>
+    </message>
+    <message>
+        <source>On episode pages</source>
+        <translation>Exibir outros episódios da série</translation>
+    </message>
+    <message>
+        <source>Media info</source>
+        <translation>Informações da mídia</translation>
+    </message>
+    <message>
+        <source>Version badge</source>
+        <translation>Indicador de versão</translation>
+    </message>
+    <message>
+        <source>File, streams and Direct Play check</source>
+        <translation>Exibir detalhes técnicos do arquivo</translation>
+    </message>
+    <message>
+        <source>Genres &amp; tags</source>
+        <translation>Gêneros e etiquetas do Seerr</translation>
+    </message>
+    <message>
+        <source>Similar titles</source>
+        <translation>Títulos semelhantes do Seerr</translation>
+    </message>
+    <message>
+        <source>Collection banner</source>
+        <translation>Coleção do Seerr</translation>
+    </message>
+    <message>
+        <source>Appearances</source>
+        <translation>Participações</translation>
+    </message>
+    <message>
+        <source>On person pages</source>
+        <translation>Personalize as informações das páginas de pessoas</translation>
+    </message>
+    <message>
+        <source>Crew credits</source>
+        <translation>Equipe de produção no Seerr</translation>
+    </message>
+    <message>
+        <source>Biography</source>
+        <translation>Biografia</translation>
+    </message>
+    <message>
+        <source>Birthplace</source>
+        <translation>Local de nascimento</translation>
+    </message>
+    <message>
+        <source>Guest appearances</source>
+        <translation>Participações especiais</translation>
+    </message>
+    <message>
+        <source>Music videos</source>
+        <translation>Videoclipes</translation>
+    </message>
+    <message>
+        <source>Clear</source>
+        <translation>Limpar</translation>
+    </message>
+    <message>
+        <source>No results</source>
+        <translation>Nenhum resultado</translation>
+    </message>
+    <message>
+        <source>View Details</source>
+        <translation>Ver detalhes</translation>
+    </message>
+    <message>
+        <source>Move Up</source>
+        <translation>Subir</translation>
+    </message>
+    <message>
+        <source>Move Down</source>
+        <translation>Mover para baixo</translation>
+    </message>
+    <message>
+        <source>Playback languages</source>
+        <translation>Idiomas de reprodução</translation>
+    </message>
+    <message>
+        <source>Optional</source>
+        <translation>Opcional</translation>
+    </message>
+    <message>
+        <source>Default Audio Language</source>
+        <translation>Idioma de áudio padrão</translation>
+    </message>
+    <message>
+        <source>Prefer Default Audio Track</source>
+        <translation>Preferir a faixa de áudio padrão</translation>
+    </message>
+    <message>
+        <source>Pick the track the file marks as default before matching languages</source>
+        <translation>Escolha a faixa marcada pelo arquivo como padrão antes de combinar idiomas</translation>
+    </message>
+    <message>
+        <source>Subtitle Mode</source>
+        <translation>Modo de legenda</translation>
+    </message>
+    <message>
+        <source>Default Subtitle Language</source>
+        <translation>Idioma de legenda padrão</translation>
+    </message>
+    <message>
+        <source>Automatically loads and displays subtitles every time a video starts.</source>
+        <translation>Carrega e exibe as legendas automaticamente sempre que um vídeo começa.</translation>
+    </message>
+    <message>
+        <source>Automatically turns on subtitles if the default audio track is in a foreign language.</source>
+        <translation>Ativa as legendas automaticamente se a faixa de áudio padrão estiver em um idioma estrangeiro.</translation>
+    </message>
+    <message>
+        <source>Only loads subtitles explicitly tagged with the forced metadata flag.</source>
+        <translation>Carrega apenas as legendas explicitamente marcadas com o sinalizador de metadados &quot;forçada&quot;.</translation>
+    </message>
+    <message>
+        <source>Completely disables automatic subtitle loading.</source>
+        <translation>Desativa completamente o carregamento automático de legendas.</translation>
+    </message>
+    <message>
+        <source>Plays tracks internally flagged in the media file&apos;s metadata as &quot;default&quot; or &quot;forced&quot;.</source>
+        <translation>Reproduz as faixas sinalizadas internamente como &quot;padrão&quot; ou &quot;forçada&quot; nos metadados do arquivo de mídia.</translation>
+    </message>
+    <message>
+        <source>Unlock notifications</source>
+        <translation>Notificações de conquistas</translation>
+    </message>
+    <message>
+        <source>Show a notification when you unlock a badge</source>
+        <translation>Mostra uma notificação quando você desbloquear uma conquista</translation>
+    </message>
+    <message>
+        <source>Could not save your settings.</source>
+        <translation>Falha ao salvar as configurações de amigos</translation>
+    </message>
+    <message>
+        <source>Achievement unlocked</source>
+        <translation>Conquista desbloqueada</translation>
+    </message>
+    <message>
+        <source>Friends and chat from the Achievement Badges plugin</source>
+        <translation>Exibe o botão de amigos na interface</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>Amigos</translation>
+    </message>
+    <message>
+        <source>See who&apos;s online and chat with people on this server</source>
+        <translation>Conecte-se e interaja com outros usuários</translation>
+    </message>
+    <message>
+        <source>Friend requests</source>
+        <translation>Solicitações de amizade</translation>
+    </message>
+    <message>
+        <source>Add friends</source>
+        <translation>Adicionar amigo</translation>
+    </message>
+    <message>
+        <source>Privacy</source>
+        <translation>Privacidade</translation>
+    </message>
+    <message>
+        <source>New message</source>
+        <translation>Nova conversa</translation>
+    </message>
+    <message>
+        <source>New group</source>
+        <translation>Novo grupo</translation>
+    </message>
+    <message>
+        <source>Group info</source>
+        <translation>Informações do grupo</translation>
+    </message>
+    <message>
+        <source>Add people</source>
+        <translation>Adicionar membro</translation>
+    </message>
+    <message>
+        <source>That didn&apos;t work. Try again in a moment.</source>
+        <translation>Falha ao executar a ação</translation>
+    </message>
+    <message>
+        <source>Online</source>
+        <translation>Online</translation>
+    </message>
+    <message>
+        <source>Offline</source>
+        <translation>Offline</translation>
+    </message>
+    <message>
+        <source>No unread messages</source>
+        <translation>Nenhuma mensagem não lida</translation>
+    </message>
+    <message>
+        <source>1 unread message</source>
+        <translation>1 mensagem não lida</translation>
+    </message>
+    <message>
+        <source>Nothing waiting</source>
+        <translation>Nada pendente</translation>
+    </message>
+    <message>
+        <source>1 waiting for you</source>
+        <translation>1 aguardando você</translation>
+    </message>
+    <message>
+        <source>Photo</source>
+        <translation>Foto</translation>
+    </message>
+    <message>
+        <source>Could not load this. Check your connection and try again.</source>
+        <translation>Falha ao carregar amigos</translation>
+    </message>
+    <message>
+        <source>Find people on this server</source>
+        <translation>Encontre e adicione outros usuários</translation>
+    </message>
+    <message>
+        <source>What your friends can see</source>
+        <translation>Controle o que seus amigos podem ver</translation>
+    </message>
+    <message>
+        <source>No friends yet. Add people from this server to see them here.</source>
+        <translation>Nenhum amigo</translation>
+    </message>
+    <message>
+        <source>Showcase</source>
+        <translation>Destaques</translation>
+    </message>
+    <message>
+        <source>Remove friend</source>
+        <translation>Remover amigo</translation>
+    </message>
+    <message>
+        <source>Unblock</source>
+        <translation>Desbloquear</translation>
+    </message>
+    <message>
+        <source>Block</source>
+        <translation>Bloquear</translation>
+    </message>
+    <message>
+        <source>Send message</source>
+        <translation>Enviar mensagem</translation>
+    </message>
+    <message>
+        <source>Add as friend</source>
+        <translation>Enviar solicitação</translation>
+    </message>
+    <message>
+        <source>No friend requests.</source>
+        <translation>Nenhuma solicitação de amizade</translation>
+    </message>
+    <message>
+        <source>Waiting for you</source>
+        <translation>Recebidas</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>Declínio</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>Aceitar</translation>
+    </message>
+    <message>
+        <source>Sent by you</source>
+        <translation>Enviadas</translation>
+    </message>
+    <message>
+        <source>Cancel request</source>
+        <translation>Cancelar solicitação</translation>
+    </message>
+    <message>
+        <source>Search people</source>
+        <translation>Pesquisar usuários</translation>
+    </message>
+    <message>
+        <source>No one matches that name.</source>
+        <translation>Nenhum usuário encontrado</translation>
+    </message>
+    <message>
+        <source>Mute during playback</source>
+        <translation>Silenciar durante a reprodução</translation>
+    </message>
+    <message>
+        <source>Blocked users</source>
+        <translation>Bloqueado</translation>
+    </message>
+    <message>
+        <source>Appear offline</source>
+        <translation>Aparecer offline</translation>
+    </message>
+    <message>
+        <source>Friends always see you as offline</source>
+        <translation>Mostra seu status como offline para outros usuários</translation>
+    </message>
+    <message>
+        <source>Hide what I&apos;m watching</source>
+        <translation>Ocultar o que estou assistindo</translation>
+    </message>
+    <message>
+        <source>Friends still see you online, but not what&apos;s playing</source>
+        <translation>Impede que amigos vejam o que você está assistindo agora</translation>
+    </message>
+    <message>
+        <source>Hide my last watched</source>
+        <translation>Ocultar o último conteúdo assistido</translation>
+    </message>
+    <message>
+        <source>Friends won&apos;t see what you watched last while you&apos;re offline</source>
+        <translation>Impede que amigos vejam o último conteúdo que você assistiu</translation>
+    </message>
+    <message>
+        <source>Message notifications</source>
+        <translation>Notificações de mensagens</translation>
+    </message>
+    <message>
+        <source>Show a banner when a friend messages you</source>
+        <translation>Receba notificações de novas mensagens</translation>
+    </message>
+    <message>
+        <source>Start a chat with a friend</source>
+        <translation>Inicie uma nova conversa</translation>
+    </message>
+    <message>
+        <source>Chat with several friends at once</source>
+        <translation>Crie uma conversa em grupo</translation>
+    </message>
+    <message>
+        <source>No messages yet.</source>
+        <translation>Nenhuma conversa</translation>
+    </message>
+    <message>
+        <source>Group name</source>
+        <translation>Nome do grupo</translation>
+    </message>
+    <message>
+        <source>Pick at least two friends</source>
+        <translation>Selecionar membros</translation>
+    </message>
+    <message>
+        <source>Create group</source>
+        <translation>Criar grupo</translation>
+    </message>
+    <message>
+        <source>edited</source>
+        <translation>Editada</translation>
+    </message>
+    <message>
+        <source>Seen</source>
+        <translation>Visualizada</translation>
+    </message>
+    <message>
+        <source>Sent</source>
+        <translation>Enviada</translation>
+    </message>
+    <message>
+        <source>Edit</source>
+        <translation>Editar</translation>
+    </message>
+    <message>
+        <source>Delete this message for everyone?</source>
+        <translation>Deseja excluir esta mensagem?</translation>
+    </message>
+    <message>
+        <source>Editing message</source>
+        <translation>Editando</translation>
+    </message>
+    <message>
+        <source>Write a message</source>
+        <translation>Digite uma mensagem</translation>
+    </message>
+    <message>
+        <source>Send</source>
+        <translation>Enviar</translation>
+    </message>
+    <message>
+        <source>1 member</source>
+        <translation>1 membro</translation>
+    </message>
+    <message>
+        <source>You</source>
+        <translation>Você</translation>
+    </message>
+    <message>
+        <source>Owner</source>
+        <translation>Proprietário</translation>
+    </message>
+    <message>
+        <source>Admin</source>
+        <translation>Administrador</translation>
+    </message>
+    <message>
+        <source>Remove admin</source>
+        <translation>Remover administrador</translation>
+    </message>
+    <message>
+        <source>Make admin</source>
+        <translation>Tornar administrador</translation>
+    </message>
+    <message>
+        <source>Remove from group</source>
+        <translation>Remover membro</translation>
+    </message>
+    <message>
+        <source>No one left to add.</source>
+        <translation>Nenhum usuário disponível para adicionar</translation>
+    </message>
+    <message>
+        <source>Clear conversation</source>
+        <translation>Limpar conversa</translation>
+    </message>
+    <message>
+        <source>Leave group</source>
+        <translation>Sair do grupo</translation>
+    </message>
+    <message>
+        <source>Leave this group? Someone will have to add you back to rejoin.</source>
+        <translation>Deseja sair deste grupo?</translation>
+    </message>
+    <message>
+        <source>Delete every message in this chat for everyone in it?</source>
+        <translation>Deseja apagar todas as mensagens desta conversa?</translation>
+    </message>
+    <message>
+        <source>Seasonal Effects</source>
+        <translation>Efeitos sazonais</translation>
+    </message>
+    <message>
+        <source>Visual effects and seasonal decorations</source>
+        <translation>Efeitos visuais e decorações sazonais</translation>
+    </message>
+    <message>
+        <source>Seasonal Surprise</source>
+        <translation>Surpresa sazonal</translation>
+    </message>
+    <message>
+        <source>Snow</source>
+        <translation>Neve</translation>
+    </message>
+    <message>
+        <source>Christmas</source>
+        <translation>Natal</translation>
+    </message>
+    <message>
+        <source>Fireworks</source>
+        <translation>Fogos de artifício</translation>
+    </message>
+    <message>
+        <source>Confetti</source>
+        <translation>Confete</translation>
+    </message>
+    <message>
+        <source>Spring Petals</source>
+        <translation>Pétalas</translation>
+    </message>
+    <message>
+        <source>Fireflies</source>
+        <translation>Vaga-lumes</translation>
+    </message>
+    <message>
+        <source>Falling Leaves</source>
+        <translation>Folhas caindo</translation>
+    </message>
+    <message>
+        <source>Density</source>
+        <translation>Densidade dos efeitos sazonais</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>Leve</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normal</translation>
+    </message>
+    <message>
+        <source>Heavy</source>
+        <translation>Intensa</translation>
+    </message>
+    <message>
+        <source>Auto Hide Skip Button</source>
+        <translation>Ocultar automaticamente o botão de pular</translation>
+    </message>
+    <message>
+        <source>Automatically dismiss the skip intro and outro button after a few seconds.</source>
+        <translation>Oculta automaticamente o botão de pular após alguns segundos</translation>
+    </message>
+    <message>
+        <source>Fetching subtitles</source>
+        <translation>Buscando legendas...</translation>
+    </message>
+    <message>
+        <source>Skip {segment}</source>
+        <translation>Pular {segment}</translation>
+    </message>
+    <message>
+        <source>Ends in {time}</source>
+        <translation>Termina em {time}</translation>
+    </message>
+    <message>
+        <source>Settings Sync</source>
+        <translation>Sincronização de configurações</translation>
+    </message>
+    <message>
+        <source>This device syncs with the profile you pick until you pick another.</source>
+        <translation>Sincronize as configurações com o perfil selecionado</translation>
+    </message>
+    <message>
+        <source>Desktop</source>
+        <translation>Área de trabalho</translation>
+    </message>
+    <message>
+        <source>Mobile</source>
+        <translation>Móvel</translation>
+    </message>
+    <message>
+        <source>TV</source>
+        <translation>TV</translation>
+    </message>
+    <message>
+        <source>Applies everywhere</source>
+        <translation>Aplicar em todos os lugares</translation>
+    </message>
+    <message>
+        <source>Overrides Global</source>
+        <translation>Substituir configurações globais</translation>
+    </message>
+    <message>
+        <source>This device</source>
+        <translation>Este dispositivo</translation>
+    </message>
+    <message>
+        <source>Load</source>
+        <translation>Carregar perfil</translation>
+    </message>
+    <message>
+        <source>Server to this device</source>
+        <translation>Carregar configurações do perfil</translation>
+    </message>
+    <message>
+        <source>This device to server</source>
+        <translation>Salvar configurações neste perfil</translation>
+    </message>
+    <message>
+        <source>Plugin Not Detected</source>
+        <translation>Plug-in não detectado</translation>
+    </message>
+    <message>
+        <source>Sync on</source>
+        <translation>Sincronização ativada</translation>
+    </message>
+    <message>
+        <source>Sync off</source>
+        <translation>Sincronização desativada</translation>
+    </message>
+    <message>
+        <source>Source Code</source>
+        <translation>Código Fonte</translation>
+    </message>
+    <message>
+        <source>Report an Issue</source>
+        <translation>Informar um problema</translation>
+    </message>
+    <message>
+        <source>Open the issue tracker on GitHub</source>
+        <translation>Abra o rastreador de problemas no GitHub</translation>
+    </message>
+    <message>
+        <source>Join Discord</source>
+        <translation>Junte-se a Discord</translation>
+    </message>
+    <message>
+        <source>Chat with the community</source>
+        <translation>Converse com a comunidade</translation>
+    </message>
+    <message>
+        <source>LEGAL</source>
+        <translation>JURÍDICO</translation>
+    </message>
+    <message>
+        <source>Licenses</source>
+        <translation>Licenças</translation>
+    </message>
+    <message>
+        <source>Open-source license notices</source>
+        <translation>Avisos de licença de código aberto</translation>
+    </message>
+    <message>
+        <source>Privacy Policy</source>
+        <translation>política de Privacidade</translation>
+    </message>
+    <message>
+        <source>How Moonfin handles your data</source>
+        <translation>Como Moonfin trata seus dados</translation>
+    </message>
+    <message>
+        <source>Scan with your phone to open this link</source>
+        <translation>Escaneie com seu celular para abrir este link</translation>
+    </message>
+    <message>
+        <source>AUDIO</source>
+        <translation>ÁUDIO</translation>
+    </message>
+    <message>
+        <source>Audio Stream</source>
+        <translation>Fluxo de áudio</translation>
+    </message>
+    <message>
+        <source>COLLECTIONS</source>
+        <translation>COLEÇÕES</translation>
+    </message>
+    <message>
+        <source>CONTINUE WATCHING AND NEXT UP</source>
+        <translation>CONTINUAR ASSISTINDO E A SEGUIR</translation>
+    </message>
+    <message>
+        <source>Capture media, login and network logs and send them to the server as a report</source>
+        <translation>Capturar registros de mídia, login e rede e enviá-los ao servidor como relatório</translation>
+    </message>
+    <message>
+        <source>Choose sorting method for completed items</source>
+        <translation>Escolha o método de ordenação para itens concluídos</translation>
+    </message>
+    <message>
+        <source>Choose type of items to recommend</source>
+        <translation>Escolha o tipo de conteúdo para recomendar</translation>
+    </message>
+    <message>
+        <source>Choose which source item to base recommendations on</source>
+        <translation>Escolha o conteúdo que servirá de base para as recomendações</translation>
+    </message>
+    <message>
+        <source>Controls, seeking, player buttons, and trick play</source>
+        <translation>Personalize os controles e as opções do reprodutor</translation>
+    </message>
+    <message>
+        <source>Diagnostics &amp; Logging</source>
+        <translation>Diagnósticos e registros</translation>
+    </message>
+    <message>
+        <source>Display Rewatch Row</source>
+        <translation>Exibir linha de reassistir</translation>
+    </message>
+    <message>
+        <source>Expand TV shows to display each episode separately.</source>
+        <translation>Inclui episódios individuais na linha de coleções</translation>
+    </message>
+    <message>
+        <source>FAVORITES</source>
+        <translation>FAVORITOS</translation>
+    </message>
+    <message>
+        <source>GENRES</source>
+        <translation>GÊNEROS</translation>
+    </message>
+    <message>
+        <source>HDR</source>
+        <translation>HDR</translation>
+    </message>
+    <message>
+        <source>Hide Media Description</source>
+        <translation>Ocultar descrição da mídia nos detalhes</translation>
+    </message>
+    <message>
+        <source>Hide the movie or episode descriptive text.</source>
+        <translation>Oculta a sinopse na tela de detalhes para evitar spoilers</translation>
+    </message>
+    <message>
+        <source>Full Screen</source>
+        <translation>Completo</translation>
+    </message>
+    <message>
+        <source>Include Collections</source>
+        <translation>Incluir coleções</translation>
+    </message>
+    <message>
+        <source>Include Movies</source>
+        <translation>Incluir filmes</translation>
+    </message>
+    <message>
+        <source>Include Previously Watched</source>
+        <translation>Incluir já assistidos</translation>
+    </message>
+    <message>
+        <source>Include Shows</source>
+        <translation>Incluir séries</translation>
+    </message>
+    <message>
+        <source>Include watched items in recommendations</source>
+        <translation>Incluir itens assistidos nas recomendações</translation>
+    </message>
+    <message>
+        <source>Letterboxd</source>
+        <translation>Letterboxd</translation>
+    </message>
+    <message>
+        <source>Logging</source>
+        <translation>Registro de logs</translation>
+    </message>
+    <message>
+        <source>Metacritic</source>
+        <translation>Metacritic</translation>
+    </message>
+    <message>
+        <source>Moonbase plugin sync and customization profiles</source>
+        <translation>Sincronize suas configurações e preferências entre dispositivos</translation>
+    </message>
+    <message>
+        <source>Moonfin scores your own library, Jellyfin takes the picks from the server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</source>
+        <translation>O Moonfin avalia sua própria biblioteca, o Jellyfin busca as escolhas do servidor, o TMDb usa o Seerr e o Híbrido prioriza o servidor e completa localmente</translation>
+    </message>
+    <message>
+        <source>MyAnimeList</source>
+        <translation>MyAnimeList</translation>
+    </message>
+    <message>
+        <source>Navigation, home screen, libraries, details page, and themes</source>
+        <translation>Personalize a aparência, os temas e a interface do aplicativo</translation>
+    </message>
+    <message>
+        <source>Only the sections the current Details screen style can show are listed. Hiding one hides it in every style that has it.</source>
+        <translation>Escolha quais seções mostrar e organize sua ordem</translation>
+    </message>
+    <message>
+        <source>PLAYLISTS</source>
+        <translation>PLAYLISTS</translation>
+    </message>
+    <message>
+        <source>Play is always first. Everything else is up to you.</source>
+        <translation>Reproduzir sempre aparece primeiro. A ordem dos demais botões fica a seu critério.</translation>
+    </message>
+    <message>
+        <source>Playback controls are always shown. Everything below is up to you.</source>
+        <translation>Os controles de reprodução são sempre exibidos. As demais opções ficam a seu critério.</translation>
+    </message>
+    <message>
+        <source>Press left or right to move the highlighted button.</source>
+        <translation>Pressione esquerda ou direita para mover o botão selecionado.</translation>
+    </message>
+    <message>
+        <source>REWATCH</source>
+        <translation>ASSISTIR NOVAMENTE</translation>
+    </message>
+    <message>
+        <source>Read the recorded log and send a report</source>
+        <translation>Ler o registro gravado e enviar um relatório</translation>
+    </message>
+    <message>
+        <source>Recommendation Source</source>
+        <translation>Fonte de recomendações</translation>
+    </message>
+    <message>
+        <source>Replace thumbnails on the details page with the series thumbnail</source>
+        <translation>Substituir miniaturas na página de detalhes pela miniatura da série</translation>
+    </message>
+    <message>
+        <source>Reports</source>
+        <translation>Relatórios</translation>
+    </message>
+    <message>
+        <source>Roger Ebert</source>
+        <translation>Roger Ebert</translation>
+    </message>
+    <message>
+        <source>SINCE YOU WATCHED</source>
+        <translation>PORQUE VOCÊ ASSISTIU</translation>
+    </message>
+    <message>
+        <source>STUDIOS</source>
+        <translation>ESTÚDIOS</translation>
+    </message>
+    <message>
+        <source>Show Individual Episodes</source>
+        <translation>Mostrar episódios nas coleções</translation>
+    </message>
+    <message>
+        <source>Show Rewatch row in Home Sections</source>
+        <translation>Mostrar linha de reassistir nas seções iniciais</translation>
+    </message>
+    <message>
+        <source>Show watched TV shows in the rewatch row</source>
+        <translation>Mostrar séries assistidas na linha de reassistir</translation>
+    </message>
+    <message>
+        <source>Show watched collections in the rewatch row</source>
+        <translation>Mostrar coleções assistidas na linha de reassistir</translation>
+    </message>
+    <message>
+        <source>Show watched movies in the rewatch row</source>
+        <translation>Mostrar filmes assistidos na linha de reassistir</translation>
+    </message>
+    <message>
+        <source>Sign-in, PIN code, Kids Mode, parental controls, and settings sync</source>
+        <translation>Gerencie sua conta, perfil e preferências pessoais</translation>
+    </message>
+    <message>
+        <source>Sort Collections rows in ascending or descending order.</source>
+        <translation>Define a ordem de classificação da linha de coleções</translation>
+    </message>
+    <message>
+        <source>Sort Audio rows by date added, release date, alphabetically, and more.</source>
+        <translation>Ordene as linhas de áudio por data de adição, data de lançamento, ordem alfabética e muito mais.</translation>
+    </message>
+    <message>
+        <source>Sort Audio rows in ascending or descending order.</source>
+        <translation>Define a ordem de classificação das linhas de áudio</translation>
+    </message>
+    <message>
+        <source>Source Item</source>
+        <translation>Item de origem</translation>
+    </message>
+    <message>
+        <source>Source Type</source>
+        <translation>Tipo de fonte</translation>
+    </message>
+    <message>
+        <source>Choose what the Radarr and Sonarr rows show.</source>
+        <translation>Escolher o que as linhas do Radarr e do Sonarr mostram.</translation>
+    </message>
+    <message>
+        <source>Trakt</source>
+        <translation>Trakt</translation>
+    </message>
+    <message>
+        <source>Turn metadata items on or off, and arrange the order they appear on the details screen.</source>
+        <translation>Ative ou desative itens de metadados e organize a ordem em que aparecem na tela de detalhes.</translation>
+    </message>
+    <message>
+        <source>Turn rows on or off and change their order</source>
+        <translation>Personalize as linhas e os conteúdos exibidos na tela inicial</translation>
+    </message>
+    <message>
+        <source>Rows</source>
+        <translation>Linhas da tela inicial</translation>
+    </message>
+    <message>
+        <source>Seerr</source>
+        <translation>Seerr</translation>
+    </message>
+    <message>
+        <source>Genres and Studios</source>
+        <translation>Gêneros e estúdios</translation>
+    </message>
+    <message>
+        <source>External Lists</source>
+        <translation>Listas externas</translation>
+    </message>
+    <message>
+        <source>Lossless</source>
+        <translation>Sem perda</translation>
+    </message>
+    <message>
+        <source>Channel</source>
+        <translation>Canal</translation>
+    </message>
+    <message>
+        <source>Play Method</source>
+        <translation>Método de reprodução</translation>
+    </message>
+    <message>
+        <source>Bitrate</source>
+        <translation>Taxa de bits</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>Resolução</translation>
+    </message>
+    <message>
+        <source>Track</source>
+        <translation>Faixa</translation>
+    </message>
+    <message>
+        <source>Player</source>
+        <translation>Player</translation>
+    </message>
+    <message>
+        <source>Device</source>
+        <translation>Dispositivo</translation>
+    </message>
+    <message>
+        <source>Transcode Reasons</source>
+        <translation>Razões de transcoding</translation>
+    </message>
+    <message>
+        <source>Direct Stream</source>
+        <translation>Transmissão direta</translation>
+    </message>
+    <message>
+        <source>Transcoding</source>
+        <translation>Transcodificação</translation>
+    </message>
+    <message>
+        <source>Mono</source>
+        <translation>Mono</translation>
+    </message>
+    <message>
+        <source>Stereo</source>
+        <translation>Estéreo</translation>
+    </message>
+    <message>
+        <source>Embedded</source>
+        <translation>Integrado</translation>
+    </message>
+    <message>
+        <source>External</source>
+        <translation>Externo</translation>
+    </message>
+    <message>
+        <source>Glass</source>
+        <translation>Glass</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>Controles e dispositivos de entrada</translation>
+    </message>
+    <message>
+        <source>Filter</source>
+        <translation>Filtro</translation>
+    </message>
+    <message>
+        <source>Artist</source>
+        <translation>Artista</translation>
+    </message>
+    <message>
+        <source>Runtime</source>
+        <translation>Tempo de execução</translation>
+    </message>
+    <message>
+        <source>Critic Rating</source>
+        <translation>Avaliação da crítica</translation>
+    </message>
+    <message>
+        <source>Play Count</source>
+        <translation>Número de reproduções</translation>
+    </message>
+    <message>
+        <source>Played Status</source>
+        <translation>Status reproduzido</translation>
+    </message>
+    <message>
+        <source>In Progress</source>
+        <translation>Em andamento</translation>
+    </message>
+    <message>
+        <source>Type</source>
+        <translation>Tipo</translation>
+    </message>
+    <message>
+        <source>Clear Filters</source>
+        <translation>Limpar filtros</translation>
+    </message>
+    <message>
+        <source>No tracks match the active filters</source>
+        <translation>Nenhuma faixa corresponde aos filtros selecionados</translation>
+    </message>
+    <message>
+        <source>Live TV Direct Play</source>
+        <translation>TV ao vivo direto</translation>
+    </message>
+    <message>
+        <source>Enable direct play for Live TV</source>
+        <translation>Ative a reprodução direta para TV ao vivo</translation>
+    </message>
+    <message>
+        <source>Switch User</source>
+        <translation>Trocar usuário</translation>
+    </message>
+    <message>
+        <source>Playlist order</source>
+        <translation>Ordem da playlist</translation>
+    </message>
+    <message>
+        <source>Group By</source>
+        <translation>Agrupar por título</translation>
+    </message>
+    <message>
+        <source>Decade (Year)</source>
+        <translation>Agrupar por década</translation>
+    </message>
+    <message>
+        <source>Parental Rating</source>
+        <translation>Agrupar por classificação indicativa</translation>
+    </message>
+    <message>
+        <source>Studio</source>
+        <translation>Agrupar por estúdio</translation>
+    </message>
+    <message>
+        <source>Jump to letter</source>
+        <translation>Ir para a letra</translation>
+    </message>
+    <message>
+        <source>Album Artists</source>
+        <translation>Artistas do álbum</translation>
+    </message>
+    <message>
+        <source>Like</source>
+        <translation>Gostei</translation>
+    </message>
+    <message>
+        <source>Dislike</source>
+        <translation>Não gostei</translation>
+    </message>
+    <message>
+        <source>Library</source>
+        <translation>Biblioteca</translation>
+    </message>
+    <message>
+        <source>All Libraries</source>
+        <translation>Todas as bibliotecas</translation>
+    </message>
+    <message>
+        <source>Scroll Direction</source>
+        <translation>Direção da rolagem</translation>
+    </message>
+    <message>
+        <source>Image Type</source>
+        <translation>Tipo de imagem</translation>
+    </message>
+    <message>
+        <source>Poster Size</source>
+        <translation>Tamanho do pôster</translation>
+    </message>
+    <message>
+        <source>Grouping</source>
+        <translation>Agrupamento</translation>
+    </message>
+    <message>
+        <source>Playlist Types</source>
+        <translation>Tipos de playlist</translation>
+    </message>
+    <message>
+        <source>Music Video</source>
+        <translation>Videoclipe</translation>
+    </message>
+    <message>
+        <source>Audio (Music)</source>
+        <translation>Áudio</translation>
+    </message>
+    <message>
+        <source>Audiobook</source>
+        <translation>Audiolivro</translation>
+    </message>
+    <message>
+        <source>Book</source>
+        <translation>Livro</translation>
+    </message>
+    <message>
+        <source>Mixed</source>
+        <translation>Mista</translation>
+    </message>
+    <message>
+        <source>Length</source>
+        <translation>Duração</translation>
+    </message>
+    <message>
+        <source>Track Number</source>
+        <translation>Número da faixa</translation>
+    </message>
+    <message>
+        <source>Folders First</source>
+        <translation>Pastas primeiro</translation>
+    </message>
+    <message>
+        <source>Overview</source>
+        <translation>Visão geral</translation>
+    </message>
+    <message>
+        <source>Music</source>
+        <translation>Música</translation>
+    </message>
+    <message>
+        <source>Recently Added</source>
+        <translation>Adicionado recentemente</translation>
+    </message>
+    <message>
+        <source>A to Z</source>
+        <translation>De A a Z</translation>
+    </message>
+    <message>
+        <source>Shuffle All</source>
+        <translation>Reproduzir tudo aleatoriamente</translation>
+    </message>
+    <message>
+        <source>All Genres</source>
+        <translation>Todos os gêneros</translation>
+    </message>
+    <message>
+        <source>{count} genres</source>
+        <translation>{count} gêneros</translation>
+    </message>
+    <message>
+        <source>All Episodes</source>
+        <translation>Todos os episódios</translation>
+    </message>
+    <message>
+        <source>Failed to load recordings</source>
+        <translation>Falha ao carregar gravações</translation>
+    </message>
+    <message>
+        <source>Record This Program</source>
+        <translation>Gravar programa atual</translation>
+    </message>
+    <message>
+        <source>Record This Episode</source>
+        <translation>Gravar episódio atual</translation>
+    </message>
+    <message>
+        <source>Cancel This Recording</source>
+        <translation>Cancelar gravação atual</translation>
+    </message>
+    <message>
+        <source>Next series recording: {dateTime}</source>
+        <translation>Próxima gravação da série: {dateTime}</translation>
+    </message>
+    <message>
+        <source>Series recording is scheduled, but the guide has no upcoming episodes</source>
+        <translation>Nenhuma gravação futura da série</translation>
+    </message>
+    <message>
+        <source>Rating</source>
+        <translation>Avaliação</translation>
+    </message>
+    <message>
+        <source>Popularity</source>
+        <translation>Popularidade</translation>
+    </message>
+    <message>
+        <source>IMDb Lists</source>
+        <translation>Listas do IMDb</translation>
+    </message>
+    <message>
+        <source>TMDB Lists</source>
+        <translation>Listas TMDB</translation>
+    </message>
+    <message>
+        <source>Seerr Discover Sliders</source>
+        <translation>Carrosséis de descoberta do Seerr</translation>
+    </message>
+    <message>
+        <source>Seerr Discovery Rows</source>
+        <translation>Linhas de descoberta do Seerr</translation>
+    </message>
+    <message>
+        <source>Title</source>
+        <translation>Título</translation>
+    </message>
+    <message>
+        <source>Seerr Settings</source>
+        <translation>Configurações do Seerr</translation>
+    </message>
+    <message>
+        <source>Request Collection</source>
+        <translation>Solicitar coleção</translation>
+    </message>
+    <message>
+        <source>Select All</source>
+        <translation>Selecionar tudo</translation>
+    </message>
+    <message>
+        <source>requested</source>
+        <translation>solicitado</translation>
+    </message>
+    <message>
+        <source>failed</source>
+        <translation>falhou</translation>
+    </message>
+    <message>
+        <source>Series Continuing · Future Seasons Can Be Requested</source>
+        <translation>Série em andamento</translation>
+    </message>
+    <message>
+        <source>What&apos;s wrong?</source>
+        <translation>O que está errado?</translation>
+    </message>
+    <message>
+        <source>Submit Report</source>
+        <translation>Enviar relato</translation>
+    </message>
+    <message>
+        <source>Keep</source>
+        <translation>Manter</translation>
+    </message>
+    <message>
+        <source>Failed to cancel request</source>
+        <translation>Falha ao cancelar solicitação</translation>
+    </message>
+    <message>
+        <source>Failed to update request</source>
+        <translation>Falha ao atualizar solicitação</translation>
+    </message>
+    <message>
+        <source>Request failed</source>
+        <translation>Falha na solicitação</translation>
+    </message>
+    <message>
+        <source>Requested by</source>
+        <translation>Solicitado por</translation>
+    </message>
+    <message>
+        <source>Preferred Secondary Subtitle Language</source>
+        <translation>Idioma preferido da legenda secundária</translation>
+    </message>
+    <message>
+        <source>Primary</source>
+        <translation>Primário</translation>
+    </message>
+    <message>
+        <source>Vertical Offset</source>
+        <translation>Deslocamento vertical</translation>
+    </message>
+    <message>
+        <source>Connecting to server...</source>
+        <translation>Conectando ao servidor...</translation>
+    </message>
+    <message>
+        <source>Connection timed out. Check the address and your network.</source>
+        <translation>Tempo limite de conexão excedido. Verifique o endereço e sua rede.</translation>
+    </message>
+    <message>
+        <source>Failed to connect. Check the address and try again.</source>
+        <translation>Falha ao conectar. Verifique o endereço e tente novamente.</translation>
+    </message>
+    <message>
+        <source>Invalid username or password.</source>
+        <translation>Nome de usuário ou senha inválidos.</translation>
+    </message>
+    <message>
+        <source>PIN</source>
+        <translation>PIN</translation>
+    </message>
+    <message>
+        <source>Select a Server</source>
+        <translation>Selecione um servidor</translation>
+    </message>
+    <message>
+        <source>Server error. Please try again later.</source>
+        <translation>Erro do servidor. Tente novamente mais tarde.</translation>
+    </message>
+    <message>
+        <source>Signing in...</source>
+        <translation>Entrando...</translation>
+    </message>
+    <message>
+        <source>Saved</source>
+        <translation>Salvo</translation>
+    </message>
+    <message>
+        <source>30 days</source>
+        <translation>30 dias</translation>
+    </message>
+    <message>
+        <source>90 days</source>
+        <translation>90 dias</translation>
+    </message>
+    <message>
+        <source>Card Size</source>
+        <translation>Tamanho dos cartões</translation>
+    </message>
+    <message>
+        <source>Grandparents</source>
+        <translation>Avós</translation>
+    </message>
+    <message>
+        <source>Image Type per Row</source>
+        <translation>Tipo de imagem por linha</translation>
+    </message>
+    <message>
+        <source>Configure image type for each enabled home row</source>
+        <translation>Configure o tipo de imagem para cada linha inicial habilitada</translation>
+    </message>
+    <message>
+        <source>Images</source>
+        <translation>Imagens</translation>
+    </message>
+    <message>
+        <source>Missing</source>
+        <translation>Ausente</translation>
+    </message>
+    <message>
+        <source>+{count} more</source>
+        <translation>+{count} mais</translation>
+    </message>
+    <message>
+        <source>Request</source>
+        <translation>Solicitar</translation>
+    </message>
+    <message>
+        <source>S{season} E{episode}</source>
+        <translation>T{season} E{episode}</translation>
+    </message>
+    <message>
+        <source>Digital</source>
+        <translation>Digital</translation>
+    </message>
+    <message>
+        <source>Radarr and Sonarr Calendars</source>
+        <translation>Calendários do Radarr e Sonarr</translation>
+    </message>
+    <message>
+        <source>View</source>
+        <translation>Visualizar</translation>
+    </message>
+    <message>
+        <source>Looks</source>
+        <translation>Aparência</translation>
+    </message>
+    <message>
+        <source>Actions</source>
+        <translation>Ações</translation>
+    </message>
+    <message>
+        <source>Auto</source>
+        <translation>Auto</translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <translation>Status</translation>
+    </message>
+    <message>
+        <source>Install</source>
+        <translation>Instalar</translation>
+    </message>
+    <message>
+        <source>Installed</source>
+        <translation>Instalado</translation>
+    </message>
+    <message>
+        <source>Restart Server</source>
+        <translation>Reinicie o servidor</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>Aberto</translation>
+    </message>
+    <message>
+        <source>About</source>
+        <translation>Sobre</translation>
+    </message>
+    <message>
+        <source>Pause</source>
+        <translation>Pausar</translation>
+    </message>
+    <message>
+        <source>Paused</source>
+        <translation>Pausado</translation>
+    </message>
+    <message>
+        <source>Start</source>
+        <translation>Início</translation>
+    </message>
+    <message>
+        <source>Down</source>
+        <translation>Baixo</translation>
+    </message>
+    <message>
+        <source>Static</source>
+        <translation>Estático</translation>
+    </message>
+    <message>
+        <source>Playing</source>
+        <translation>Reproduzindo</translation>
+    </message>
+    <message>
+        <source>On</source>
+        <translation>Ligado</translation>
+    </message>
+    <message>
+        <source>Download failed</source>
+        <translation>Falha no download</translation>
+    </message>
+    <message>
+        <source>Downloaded</source>
+        <translation>Baixado</translation>
+    </message>
+    <message>
+        <source>Queued</source>
+        <translation>Download na fila</translation>
+    </message>
+    <message>
+        <source>Downloading</source>
+        <translation>Baixando</translation>
+    </message>
+    <message>
+        <source>Watch with group</source>
+        <translation>Assistir em grupo</translation>
+    </message>
+    <message>
+        <source>No episodes loaded</source>
+        <translation>Nenhum episódio carregado</translation>
+    </message>
+    <message>
+        <source>Select</source>
+        <translation>Selecione</translation>
+    </message>
+    <message>
+        <source>Home Row Info Overlay</source>
+        <translation>Sobreposição de informações da linha inicial</translation>
+    </message>
+    <message>
+        <source>Show title and metadata when browsing home rows</source>
+        <translation>Mostrar título e metadados ao navegar nas linhas iniciais</translation>
+    </message>
+    <message>
+        <source>SyncPlay Group</source>
+        <translation>Grupo SyncPlay</translation>
+    </message>
 </context>
 </TS>
