@@ -9,7 +9,7 @@ import "pkg:/source/utils/misc.bs"
 '
 ' The screens speak Seerr's API through Moonbase's /Moonfin/Seerr/Api proxy, so each Seerr path is
 ' answered here with Silo's reply rewritten into the JSON Seerr would have sent. What Silo has no
-' counterpart for (issues, people, collections, quotas, Radarr and Sonarr choices) answers empty. The
+' counterpart for (issues, collections, quotas, Radarr and Sonarr choices) answers empty. The
 ' Discover rows an admin adds on Silo come through as search sliders whose query names the row.
 ' Silo's request ids are 64-bit numbers, handed to the screens as such, so they map straight back.
 namespace silo
@@ -283,6 +283,7 @@ namespace silo
         for each name in silo.SeerrList(d.creators)
             if isString(name) then crew.Push({ id: silo.StableId(name), name: name, job: "Creator", department: "Writing" })
         end for
+        silo.RememberSeerrPeople(cast, crew)
         genres = []
         for each genre in silo.SeerrList(d.genres)
             if isString(genre) then genres.Push({ id: silo.StableId(genre), name: genre })
@@ -312,6 +313,115 @@ namespace silo
         end for
         out.seasons = seasons
         return out
+    end function
+
+    ' People. Silo's request cast has no person ids, so a cast member's id is made from their name.
+    ' Each Seerr request runs on its own task, so the names and photos behind the ids a title's cast
+    ' got are kept on a node of the global node, one field each, for the person screen asking next
+    function SeerrPeopleStore() as dynamic
+        if type(m.global) <> "roSGNode" then return invalid
+        if not m.global.hasField("siloSeerrPeople") then m.global.addFields({ siloSeerrPeople: CreateObject("roSGNode", "Node") })
+        return m.global.siloSeerrPeople
+    end function
+
+    sub RememberSeerrPeople(cast as object, crew as object)
+        store = silo.SeerrPeopleStore()
+        if store = invalid then return
+        fields = {}
+        for each list in [cast, crew]
+            for each member in list
+                field = "p_" + member.id.ToStr()
+                photo = member.profilePath
+                ' Someone in the crew as well keeps their photo from the cast
+                if not isString(photo) and fields[field] <> invalid then photo = fields[field].profilePath
+                known = silo.KnownSeerrPerson(member.id.ToStr())
+                if not isString(photo) then photo = known.profilePath
+                entry = { name: member.name, profilePath: photo }
+                ' The library person found before stays, so the person screen doesn't search again
+                if isString(known.libraryId) then entry.libraryId = known.libraryId
+                fields[field] = entry
+            end for
+        end for
+        if fields.Count() > 0 then store.update(fields, true)
+    end sub
+
+    function KnownSeerrPerson(personId as string) as object
+        store = silo.SeerrPeopleStore()
+        if store <> invalid
+            person = store.getField("p_" + personId)
+            if type(person) = "roAssociativeArray" then return person
+        end if
+        return { name: "", profilePath: invalid }
+    end function
+
+    ' The library person with exactly this cast member's name, case aside, or "". Only a find is kept,
+    ' so a search that was down or a person added since is asked about again
+    function LibraryPersonId(r as object, personId as string) as string
+        known = silo.KnownSeerrPerson(personId)
+        if isString(known.libraryId) then return known.libraryId
+        name = known.name
+        if name = "" then return ""
+        for each person in silo.SearchPeople(r, name, 10).Items
+            if LCase(person.Name) = LCase(name)
+                known.libraryId = person.Id
+                update = {}
+                update["p_" + personId] = known
+                silo.SeerrPeopleStore().update(update, true)
+                return person.Id
+            end if
+        end for
+        return ""
+    end function
+
+    ' The library person's page when the library has them, else the name and photo from the cast
+    function SeerrPerson(r as object, personId as string) as object
+        known = silo.KnownSeerrPerson(personId)
+        out = { id: personId.ToInt(), name: known.name, profilePath: known.profilePath }
+        libraryId = silo.LibraryPersonId(r, personId)
+        if libraryId = "" then return out
+        person = silo.PersonById(r, libraryId)
+        if person = invalid then return out
+        out.biography = person.Overview
+        out.birthday = person.PremiereDate
+        out.deathday = person.EndDate
+        if person.ProductionLocations.Count() > 0 then out.placeOfBirth = person.ProductionLocations[0]
+        return out
+    end function
+
+    ' The library person's films and series, keyed by TMDB id so they open the same request page.
+    ' Their posters are the library's own
+    function SeerrPersonCredits(r as object, personId as string) as object
+        out = { cast: [], crew: [] }
+        libraryId = silo.LibraryPersonId(r, personId)
+        if libraryId = "" then return out
+        titles = {}
+        titles.Append(r)
+        titles.query = { PersonIds: libraryId, IncludeItemTypes: "Movie,Series", Recursive: "true", Limit: "100" }
+        page = silo.GetItems(titles)
+        if type(page) <> "roAssociativeArray" then return out
+        for each item in silo.SeerrList(page.Items)
+            tmdbId = chainLookupReturn(item, "ProviderIds.Tmdb", "")
+            if tmdbId <> "" then out.cast.Push(silo.LibraryCredit(r, item, tmdbId.ToInt()))
+        end for
+        return out
+    end function
+
+    function LibraryCredit(r as object, item as object, tmdbId as integer) as object
+        day = invalid
+        if isString(item.PremiereDate) and item.PremiereDate.Len() >= 10 then day = item.PremiereDate.Left(10)
+        credit = { id: tmdbId, overview: item.Overview, mediaInfo: { id: tmdbId, tmdbId: tmdbId, status: silo.MediaStatusOf("available", invalid), jellyfinMediaId: item.Id, requests: [] } }
+        if item.Type = "Series"
+            credit.mediaType = "tv"
+            credit.name = item.Name
+            credit.firstAirDate = day
+        else
+            credit.mediaType = "movie"
+            credit.title = item.Name
+            credit.releaseDate = day
+        end if
+        poster = chainLookupReturn(item, "ImageTags.Primary", "")
+        if poster <> "" then credit.posterPath = silo.ResolveUrl(r.server, poster)
+        return credit
     end function
 
     ' Silo has one list of recommendations on the detail, which stands in for similar titles too
@@ -575,6 +685,10 @@ namespace silo
             if LCase(second) = "count" then return silo.Ok({})
             return silo.Ok({ pageInfo: { pages: 0, pageSize: 20, results: 0, page: 1 }, results: [] })
         end if
+        if first = "person" and second <> ""
+            if third = "combined_credits" then return silo.Ok(silo.SeerrPersonCredits(r, second))
+            return silo.Ok(silo.SeerrPerson(r, second))
+        end if
         if first = "media" then return silo.Ok({ results: [] })
         if first = "blacklist" then return silo.Ok({ pageInfo: { pages: 0, pageSize: 20, results: 0, page: 1 }, results: [] })
         if first = "languages" or first = "service" then return silo.Ok([])
@@ -584,7 +698,7 @@ namespace silo
             if LCase(second) = "public" then return silo.Ok({ "movie4kEnabled": false, "series4kEnabled": false })
             return silo.Ok({})
         end if
-        ' Quotas, people, collections: Silo has no counterpart
+        ' Quotas, collections: Silo has no counterpart
         return silo.Ok({})
     end function
 
