@@ -715,6 +715,29 @@ for (const image of maskImages) {
 }
 process.stdout.write(`PASS: mask image formats (${maskImages.size} checks)\n`);
 
+// A MaskGroup's size is in screen pixels, which a 720p Roku doesn't scale with the layout, so every
+// mask is a ScreenMask, sized in layout pixels. One left without a size draws its bitmap unscaled.
+let screenMaskChecks = 0;
+for await (const file of glob('{components,source}/**/*.{bs,xml}')) {
+    if (/components\/ScreenMask\.(bs|xml)$/.test(file)) continue;
+    const code = await readFile(file, 'utf8');
+    assert.doesNotMatch(code, /<MaskGroup\b|"MaskGroup"/, `${file} uses ScreenMask rather than MaskGroup`);
+    assert.doesNotMatch(code, /mask(Size|Offset)/, `${file} sets a ScreenMask's size and offset rather than maskSize and maskOffset`);
+    if (!file.endsWith('.xml')) continue;
+    for (const [tag] of code.matchAll(/<ScreenMask\b[^>]*>/g)) {
+        screenMaskChecks++;
+        if (/\bsize=/.test(tag)) continue;
+        const id = tag.match(/\bid="([^"]+)"/)?.[1];
+        assert.ok(id, `${file}: a ScreenMask with no size has an id, so its code can size it`);
+        const script = await readFile(file.replace(/\.xml$/, '.bs'), 'utf8');
+        const lookup = `m.top.findNode("${id}")`;
+        const names = [lookup, ...[...script.matchAll(/([\w.]+) = m\.top\.findNode\("([^"]+)"\)/g)].filter((match) => match[2] === id).map((match) => match[1])];
+        assert.ok(names.some((name) => script.includes(`${name}.size =`)), `${file}: ${id} is given a size`);
+    }
+}
+assert.ok(screenMaskChecks > 30, 'The ScreenMask scan found the masks');
+process.stdout.write(`PASS: masks sized for the screen (${screenMaskChecks} checks)\n`);
+
 // Every details style fills its pickers before a reload returns early, so the lists are there on a
 // first visit, and each style takes in a subtitle downloaded from it.
 const detailStyles = ['ItemDetails', 'ModernItemDetails', 'MinimalistItemDetails', 'NouveauItemDetails', 'SpotlightItemDetails'];
