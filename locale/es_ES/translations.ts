@@ -5700,5 +5700,93 @@
         <source>SyncPlay Group</source>
         <translation>SyncPlay Grupo</translation>
     </message>
+    <message>
+        <source>Hero-first, with pop-up cards for cast and extras.</source>
+        <translation>El héroe principal, con tarjetas desplegables para el reparto y los extras.</translation>
+    </message>
+    <message>
+        <source>Full-screen, with sections stacked instead of tabs.</source>
+        <translation>Pantalla completa, con secciones apiladas en lugar de pestañas.</translation>
+    </message>
+    <message>
+        <source>Header</source>
+        <translation>Cabecera</translation>
+    </message>
+    <message>
+        <source>Genres &amp; tags</source>
+        <translation>Géneros y etiquetas</translation>
+    </message>
+    <message>
+        <source>Guest appearances</source>
+        <translation>Apariciones especiales</translation>
+    </message>
+    <message>
+        <source>Friends and chat from the Achievement Badges plugin</source>
+        <translation>Amigos y chat desde el complemento de insignias de logros</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>Amigos</translation>
+    </message>
+    <message>
+        <source>Friend requests</source>
+        <translation>Solicitudes de amistad</translation>
+    </message>
+    <message>
+        <source>Group info</source>
+        <translation>Información del grupo</translation>
+    </message>
+    <message>
+        <source>Friends always see you as offline</source>
+        <translation>Los amigos siempre te ven como desconectado</translation>
+    </message>
+    <message>
+        <source>Hide what I&apos;m watching</source>
+        <translation>Ocultar lo que estoy viendo</translation>
+    </message>
+    <message>
+        <source>Friends still see you online, but not what&apos;s playing</source>
+        <translation>Tus amigos aún te ven en línea, pero no saben qué estás reproduciendo</translation>
+    </message>
+    <message>
+        <source>Hide my last watched</source>
+        <translation>Ocultar mi último visto</translation>
+    </message>
+    <message>
+        <source>Friends won&apos;t see what you watched last while you&apos;re offline</source>
+        <translation>Tus amigos no verán lo último que viste mientras estás desconectado</translation>
+    </message>
+    <message>
+        <source>GENRES</source>
+        <translation>GENEROS</translation>
+    </message>
+    <message>
+        <source>Hide Media Description</source>
+        <translation>Ocultar descripción multimedia</translation>
+    </message>
+    <message>
+        <source>Grouping</source>
+        <translation>Conjunto</translation>
+    </message>
+    <message>
+        <source>Future showing</source>
+        <translation>Proyecciones futuras</translation>
+    </message>
+    <message>
+        <source>Full calendar</source>
+        <translation>Calendario completo</translation>
+    </message>
+    <message>
+        <source>Hide Movies Already on the Server</source>
+        <translation>Ocultar las películas que ya están en el servidor</translation>
+    </message>
+    <message>
+        <source>Hide Episodes Already on the Server</source>
+        <translation>Ocultar episodios que ya están en el servidor</translation>
+    </message>
+    <message>
+        <source>Hide episode titles and stills for shows you&apos;re behind on</source>
+        <translation>Oculta los títulos de los episodios y las imágenes fijas de las series que te has quedado atrás</translation>
+    </message>
 </context>
 </TS>
