@@ -1596,6 +1596,9 @@ for (const file of ['NouveauItemDetails', 'StageItemDetails', 'PremiereItemDetai
 }
 const addRail = (await readFile('components/details/NouveauItemDetails.bs', 'utf8')).match(/sub addRail\([^]*?\nend sub/)[0];
 assert.match(addRail, /m\.railPool\.DoesExist\(signature\)[^]*?callFunc\("clearFocus"\)/, 'A reused rail comes over with no card lit');
+assert.match(addRail, /callFunc\("clearFocus"\)\s+node\.callFunc\("resetPlacement"\)/, 'A reused rail goes back to where it opened, not where it was last scrolled');
+const nouveauRail = await readFile('components/details/nouveau/NouveauRail.bs', 'utf8');
+assert.match(nouveauRail, /sub resetPlacement\(\)\s+m\.track\.translation = \[0, 0\]\s+if m\.startIndex > 0 then placeStart\(m\.startIndex\)/, 'Resetting a rail puts its track back at its start card');
 assert.match(addRail, /if signature <> "" then signature = kind \+ signature/, 'A spec that cannot be written out is never matched to another rail');
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "frost"\)[^]*?minimalistRules\.Draws\(itemType\) then return "FrostItemDetails"\s+return "ModernItemDetails"/, 'Frost draws the video pages and hands the rest to Modern');
 assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "frost" then return "FrostItemDetails"/, 'A title only in Seerr opens in Frost too');
