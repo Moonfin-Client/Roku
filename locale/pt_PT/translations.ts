@@ -5,15 +5,6 @@
 <context>
     <name>default</name>
     <message>
-        <source>+{0}</source>
-        <extracomment>The score a quest pays out</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>192.168.1.100:8096 or https://example.com/jellyfin</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Achievement Badges</source>
         <translation>Insígnias de conquistas</translation>
     </message>
@@ -31,10 +22,6 @@
         <translation>Adicionar ao menu um botão para as mensagens enviadas pelo administrador do servidor</translation>
     </message>
     <message>
-        <source>All the details on one page.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>And plenty more</source>
         <translation>E muito mais</translation>
     </message>
@@ -42,10 +29,6 @@
         <source>Appearance</source>
         <extracomment>The screen for picking an avatar and a title</extracomment>
         <translation>Aspeto</translation>
-    </message>
-    <message>
-        <source>Artwork first, with cards that open what they name.</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Artwork, one play button and the episodes.</source>
@@ -92,11 +75,6 @@
         <translation>Melhor sequência de dias a ver conteúdo</translation>
     </message>
     <message>
-        <source>Best: {0} days</source>
-        <extracomment>The longest watch streak the viewer has reached</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Bests</source>
         <extracomment>Heading over the viewer&apos;s best figures</extracomment>
         <translation>Recordes pessoais</translation>
@@ -125,10 +103,6 @@
     <message>
         <source>Cast</source>
         <translation>Transmitir</translation>
-    </message>
-    <message>
-        <source>Choose which buttons appear on the details screen action row and what order they run in. Press OK to show or hide a button, and Left or Right to move it. Play, Resume and Restart always lead the row.</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Cinematic, with tabs for cast and extras.</source>
@@ -233,14 +207,6 @@
         <translation>Sessões de manhã cedo</translation>
     </message>
     <message>
-        <source>Ends at %1</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Enter Configuration</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Enter your PIN to restore the full app</source>
         <translation>Introduz o teu PIN para voltar à aplicação completa</translation>
     </message>
@@ -248,10 +214,6 @@
         <source>Equipped</source>
         <extracomment>Shown on the avatar or title the profile wears</extracomment>
         <translation>Equipado</translation>
-    </message>
-    <message>
-        <source>Every section stacked down one page.</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Exit Kids Mode</source>
@@ -333,10 +295,6 @@
         <translation>PIN incorreto</translation>
     </message>
     <message>
-        <source>Instant Mix</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>It comes straight out of your score bank.</source>
         <translation>O custo é descontado diretamente do teu saldo de pontos.</translation>
     </message>
@@ -387,16 +345,8 @@
         <translation>Equipamento</translation>
     </message>
     <message>
-        <source>Loading...</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Locked</source>
         <translation>Bloqueadas</translation>
-    </message>
-    <message>
-        <source>Login attempt failed.</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Longest single item</source>
@@ -410,10 +360,6 @@
     <message>
         <source>Mark all as read</source>
         <translation>Marcar todas como lidas</translation>
-    </message>
-    <message>
-        <source>Mark Watched</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Messages</source>
@@ -488,10 +434,6 @@
         <translation>OK</translation>
     </message>
     <message>
-        <source>Open this on your phone</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Options</source>
         <translation>Opções</translation>
     </message>
@@ -506,24 +448,12 @@
         <translation>Adquirido</translation>
     </message>
     <message>
-        <source>Pick a look</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>PIN must be exactly 4 digits.</source>
         <translation>O PIN deve ter exatamente 4 dígitos.</translation>
     </message>
     <message>
         <source>Play</source>
         <translation>Reproduzir</translation>
-    </message>
-    <message>
-        <source>Play All</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Please sign in</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Power-ups</source>
@@ -543,11 +473,6 @@
         <source>Filler</source>
         <extracomment>Anime marker pill for an episode that isnt part of the original story</extracomment>
         <translation>Não canónico</translation>
-    </message>
-    <message>
-        <source>Mixed Canon/Filler</source>
-        <extracomment>Anime marker pill for an episode that is part story and part filler</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Manga Canon</source>
@@ -632,10 +557,6 @@
         <translation>Tentar novamente</translation>
     </message>
     <message>
-        <source>Run Setup Again</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Save</source>
         <translation>Guardar</translation>
     </message>
@@ -648,25 +569,12 @@
         <translation>Pesquisar</translation>
     </message>
     <message>
-        <source>Season {0}</source>
-        <extracomment>Labels a season on the Nouveau season selector, where {0} is the season number</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Seerr requests</source>
         <translation>Pedidos pelo Seerr</translation>
     </message>
     <message>
         <source>Series finished</source>
         <translation>Séries terminadas</translation>
-    </message>
-    <message>
-        <source>Server not found, is it online?</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Show messages button</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Shuffle</source>
@@ -679,11 +587,6 @@
     <message>
         <source>Simplify the app and lock the way out with a PIN</source>
         <translation>Simplificar a aplicação e exigir um PIN para sair deste modo</translation>
-    </message>
-    <message>
-        <source>Size: {0}  •  Format: {1}</source>
-        <extracomment>File size and container in the Nouveau details footer</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Similar</source>
@@ -714,10 +617,6 @@
     <message>
         <source>Streak Freeze</source>
         <translation>Proteção de sequência</translation>
-    </message>
-    <message>
-        <source>Submit</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Subtitle</source>
@@ -805,11 +704,6 @@
         <translation>Codec desconhecido</translation>
     </message>
     <message>
-        <source>Unlocked {0}</source>
-        <extracomment>The date a badge was earned</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Unlocked</source>
         <translation>Desbloqueadas</translation>
     </message>
@@ -835,14 +729,6 @@
         <source>Used today, comes back at midnight UTC</source>
         <extracomment>Shown once the day&apos;s quest reroll is spent</extracomment>
         <translation>Utilizado hoje; volta a estar disponível à meia-noite UTC</translation>
-    </message>
-    <message>
-        <source>Versions</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Walk through the first run questions again: navigation, media bar, rows, details, and theme.</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Watched</source>
@@ -873,14 +759,6 @@
         <translation>Gastar pontos em mais bónus</translation>
     </message>
     <message>
-        <source>Change User</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Change Server</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Sign Out</source>
         <translation>Terminar sessão</translation>
     </message>
@@ -891,14 +769,6 @@
     <message>
         <source>Profile</source>
         <translation>Perfil</translation>
-    </message>
-    <message>
-        <source>Save Credentials?</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Delete Saved</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>My Media</source>
@@ -913,10 +783,6 @@
         <translation>A seguir</translation>
     </message>
     <message>
-        <source>Recently Added in</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Recently Released</source>
         <translation>Lançados recentemente</translation>
     </message>
@@ -927,14 +793,6 @@
     <message>
         <source>Home</source>
         <translation>Página inicial</translation>
-    </message>
-    <message>
-        <source>Enter a username</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Enter a password</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Name</source>
@@ -985,78 +843,21 @@
         <translation>Episódios</translation>
     </message>
     <message>
-        <source>Error Retrieving Content</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Dialog title when unable to load Content from Server</extracomment>
-    </message>
-    <message>
-        <source>Error During Playback</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Dialog title when error occurs during playback</extracomment>
-    </message>
-    <message>
-        <source>Unable to get playback information</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>There was an error retrieving the data for this item from the server.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Dialog detail when unable to load Content from Server</extracomment>
-    </message>
-    <message>
-        <source>An error was encountered while playing this item.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Dialog detail when error occurs during playback</extracomment>
-    </message>
-    <message>
-        <source>Loading Channel Data</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Error loading Channel Data</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Unable to load Channel Data from the server</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <comment>Message displayed in Item Grid when no item to display. %1 is container type (e.g. Boxset, Collection, Folder, etc)</comment>
-        <source>NO_ITEMS</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <comment>Name or Title field of media item</comment>
         <source>TITLE</source>
         <translation>Nome</translation>
-    </message>
-    <message>
-        <source>IMDB_RATING</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Community Rating</source>
         <translation>Classificação da comunidade</translation>
     </message>
     <message>
-        <source>CRITIC_RATING</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>DATE_ADDED</source>
         <translation>Data de adição</translation>
     </message>
     <message>
-        <source>DATE_PLAYED</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>OFFICIAL_RATING</source>
         <translation>Classificação etária</translation>
-    </message>
-    <message>
-        <source>Date Show Added</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Date Episode Added</source>
@@ -1080,11 +881,6 @@
         <translation>Visualizar</translation>
     </message>
     <message>
-        <comment>Title of Tab for options to sort library content</comment>
-        <source>TAB_SORT</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <comment>Title of Tab for options to filter library content</comment>
         <source>TAB_FILTER</source>
         <translation>Filtro</translation>
@@ -1092,14 +888,6 @@
     <message>
         <source>Born</source>
         <translation>Nascimento</translation>
-    </message>
-    <message>
-        <source>Died</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Age</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Cast &amp; Crew</source>
@@ -1110,40 +898,12 @@
         <translation>Títulos semelhantes</translation>
     </message>
     <message>
-        <source>Press &apos;OK&apos; to Close</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Special Features</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Additional Parts</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Additional parts of a video</extracomment>
-    </message>
-    <message>
         <source>Movies</source>
         <translation>Filmes</translation>
     </message>
     <message>
-        <source>Movies (Presentation)</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Movie library view option</extracomment>
-    </message>
-    <message>
-        <source>Movies (Grid)</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Movie library view option</extracomment>
-    </message>
-    <message>
         <source>TV Shows</source>
         <translation>Séries</translation>
-    </message>
-    <message>
-        <source>today</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Current day</extracomment>
     </message>
     <message>
         <source>Week</source>
@@ -1168,16 +928,6 @@
     <message>
         <source>Year</source>
         <translation>Ano</translation>
-    </message>
-    <message>
-        <source>yesterday</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Previous day</extracomment>
-    </message>
-    <message>
-        <source>tomorrow</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Next day</extracomment>
     </message>
     <message>
         <source>Sunday</source>
@@ -1215,29 +965,9 @@
         <extracomment>Day of Week</extracomment>
     </message>
     <message>
-        <source>Started at</source>
-        <translation type="unfinished"></translation>
-        <extracomment>(Past Tense) For defining time when a program started today (e.g. Started at 08:00) </extracomment>
-    </message>
-    <message>
         <source>Started</source>
         <translation>Iniciado</translation>
         <extracomment>(Past Tense) For defining a day and time when a program started (e.g. Started Wednesday, 08:00) </extracomment>
-    </message>
-    <message>
-        <source>Starts at</source>
-        <translation type="unfinished"></translation>
-        <extracomment>(Future Tense) For defining time when a program will start today (e.g. Starts at 08:00) </extracomment>
-    </message>
-    <message>
-        <source>Starts</source>
-        <translation type="unfinished"></translation>
-        <extracomment>(Future Tense) For defining a day and time when a program will start (e.g. Starts Wednesday, 08:00) </extracomment>
-    </message>
-    <message>
-        <source>Ended at</source>
-        <translation type="unfinished"></translation>
-        <extracomment>(Past Tense) For defining time when a program will ended (e.g. Ended at 08:00) </extracomment>
     </message>
     <message>
         <source>Ends at</source>
@@ -1260,15 +990,6 @@
         <extracomment>Menu option for showing Live TV Channel List</extracomment>
     </message>
     <message>
-        <source>TV Guide</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Menu option for showing Live TV Guide / Schedule</extracomment>
-    </message>
-    <message>
-        <source>View Channel</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Record</source>
         <translation>Gravar</translation>
     </message>
@@ -1289,49 +1010,9 @@
         <translation>Fechar</translation>
     </message>
     <message>
-        <source>Connecting to Server</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Message to display to user while client is attempting to connect to the server</extracomment>
-    </message>
-    <message>
-        <source>Not found</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Title of message box when the requested content is not found on the server</extracomment>
-    </message>
-    <message>
         <source>Unknown</source>
         <translation>Desconhecido</translation>
         <extracomment>Title for a cast member for which we have no information for</extracomment>
-    </message>
-    <message>
-        <source>The requested content does not exist on the server</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Content of message box when the requested content is not found on the server</extracomment>
-    </message>
-    <message>
-        <source>Enter the server name or IP address</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Title of KeyboardDialog when manually entering a server URL</extracomment>
-    </message>
-    <message>
-        <source>Pick a Jellyfin server from the local network</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Instructions on initial app launch when the user is asked to pick a server from a list</extracomment>
-    </message>
-    <message>
-        <source>...or enter server URL manually:</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Instructions on initial app launch when the user is asked to manually enter a server URL</extracomment>
-    </message>
-    <message>
-        <source>Error Getting Playback Information</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Dialog Title: Received error from server when trying to get information about the selected item for playback</extracomment>
-    </message>
-    <message>
-        <source>An error was encountered while playing this item. Server did not provide required transcoding data.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Content of message box when trying to play an item which requires transcoding, and the server did not provide transcode url</extracomment>
     </message>
     <message>
         <source>Version</source>
@@ -1343,36 +1024,6 @@
         <extracomment>Title for Playback section in user setting screen.</extracomment>
     </message>
     <message>
-        <source>Codec Support</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for settings group related to codec support</extracomment>
-    </message>
-    <message>
-        <source>Enable or disable Direct Play for optional codecs</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for settings group related to codec support</extracomment>
-    </message>
-    <message>
-        <source>MPEG-2</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Name of codec used in settings menu</extracomment>
-    </message>
-    <message>
-        <source>Support Direct Play of MPEG-2 content (e.g., Live TV). This will prevent transcoding of MPEG-2 content, but uses significantly more bandwidth.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>MPEG-4</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Name of codec used in settings menu</extracomment>
-    </message>
-    <message>
-        <source>Support Direct Play of MPEG-4 content. This may need to be disabled for playback of DIVX encoded video files.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
         <source>Enabled</source>
         <translation>Ativado</translation>
     </message>
@@ -1381,109 +1032,17 @@
         <translation>Desativado</translation>
     </message>
     <message>
-        <source>User Interface</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Title for User Interface section in user setting screen.</extracomment>
-    </message>
-    <message>
-        <source>Media Grid</source>
-        <translation type="unfinished"></translation>
-        <extracomment>UI -&gt; Media Grid section in user setting screen.</extracomment>
-    </message>
-    <message>
-        <source>Media Grid options.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Item Count</source>
         <translation>Contagem de itens</translation>
         <extracomment>UI -&gt; Media Grid -&gt; Item Count in user setting screen.</extracomment>
-    </message>
-    <message>
-        <source>Show item count in the library and index of selected item.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Description for option in Setting Screen</extracomment>
-    </message>
-    <message>
-        <source>Set Favorite</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Button Text - When pressed, sets item as Favorite</extracomment>
     </message>
     <message>
         <source>Favorited</source>
         <translation>Favorito</translation>
     </message>
     <message>
-        <source>Mark As Favorite</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Set Watched</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Button Text - When pressed, marks item as Warched</extracomment>
-    </message>
-    <message>
-        <source>Resume playing at </source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Start over from the beginning.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Playback Options</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Go to series</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Continue Watching Popup Menu - Navigate to the Series Detail Page</extracomment>
-    </message>
-    <message>
-        <source>Go to season</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Continue Watching Popup Menu - Navigate to the Season Page</extracomment>
-    </message>
-    <message>
-        <source>Go to episode</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Continue Watching Popup Menu - Navigate to the Episode Detail Page</extracomment>
-    </message>
-    <message>
-        <source>Use voice remote to search</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Help text in search voice text box</extracomment>
-    </message>
-    <message>
-        <source>Search now</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Help text in search Box</extracomment>
-    </message>
-    <message>
-        <source>You can search for Titles, People, Live TV Channels and more</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Help text in search results</extracomment>
-    </message>
-    <message>
-        <source>%1 of %2</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Item position and count. %1 = current item. %2 = total number of items</extracomment>
-    </message>
-    <message>
         <source>Quick Connect</source>
         <translation>Ligação rápida</translation>
-    </message>
-    <message>
-        <source>Here is your Quick Connect code:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>(Dialog will close automatically)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>There was an error authenticating via Quick Connect.</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Networks</source>
@@ -1498,140 +1057,13 @@
         <translation>Séries</translation>
     </message>
     <message>
-        <source>Return to Top</source>
-        <translation type="unfinished"></translation>
-        <extracomment>UI -&gt; Media Grid -&gt; Item Title in user setting screen.</extracomment>
-    </message>
-    <message>
-        <source>Use the replay button to slowly animate to the first item in the folder. (If disabled, the folder will reset to the first item immediately).</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Description for option in Setting Screen</extracomment>
-    </message>
-    <message>
-        <source>Hide Taglines</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Option Title in user setting screen</extracomment>
-    </message>
-    <message>
-        <source>Hides tagline text on details pages.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Options for TV Shows.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Description for TV Shows user settings.</extracomment>
-    </message>
-    <message>
-        <source>Blur Unwatched Episodes</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Option Title in user setting screen</extracomment>
-    </message>
-    <message>
-        <source>Skip Details for Single Seasons</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Go directly to the episode list if a TV series has only one season.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Blur images of unwatched episodes.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Design Elements</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Options that alter the design of Jellyfin.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Description for Design Elements user settings.</extracomment>
-    </message>
-    <message>
-        <source>Use Splashscreen as Home Background</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Option Title in user setting screen</extracomment>
-    </message>
-    <message>
-        <source>Use generated splashscreen image as Jellyfin&apos;s home background. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Description for option in Setting Screen</extracomment>
-    </message>
-    <message>
         <source>Cinema Mode</source>
         <translation>Modo cinema</translation>
         <extracomment>Settings Menu - Title for option</extracomment>
     </message>
     <message>
-        <source>Bring the theater experience straight to your living room with the ability to play custom intros before the main feature.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Hide Clock</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Option Title in user setting screen</extracomment>
-    </message>
-    <message>
-        <source>Hide all clocks in Jellyfin. Jellyfin will need to be closed and reopened for changes to take effect.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Next episode</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Play Trailer</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>H.264</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Name of codec used in settings menu</extracomment>
-    </message>
-    <message>
-        <source>Attempt Direct Play for H.264 media with unsupported profile levels before falling back to transcoding if it fails.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>HEVC</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Name of codec used in settings menu</extracomment>
-    </message>
-    <message>
-        <source>Attempt Direct Play for HEVC media with unsupported profile levels before falling back to transcoding if it fails.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Settings relating to playback and supported codec and media types.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Settings relating to how the application looks.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Max Days Next Up</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Option Title in user setting screen</extracomment>
-    </message>
-    <message>
-        <source>Set the maximum amount of days a show should stay in the &apos;Next Up&apos; list without watching it. Maximum value is 1000 days.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
         <source>Playback Information</source>
         <translation>Informações de reprodução</translation>
-    </message>
-    <message>
-        <source>Transcoding Information</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Video Codec</source>
@@ -1640,32 +1072,6 @@
     <message>
         <source>Audio Codec</source>
         <translation>Codec de áudio</translation>
-    </message>
-    <message>
-        <source>direct</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Total Bitrate</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Audio Channels</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Codec Tag</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Level</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Video profile level</extracomment>
-    </message>
-    <message>
-        <source>Bit Rate</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Video streaming bit rate</extracomment>
     </message>
     <message>
         <source>Container</source>
@@ -1678,69 +1084,9 @@
         <extracomment>Video size</extracomment>
     </message>
     <message>
-        <source>Video range type</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Pixel format</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Video pixel format</extracomment>
-    </message>
-    <message>
-        <source>WxH</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Video width x height</extracomment>
-    </message>
-    <message>
-        <source>Unable to find any albums or songs belonging to this artist</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Popup message when we find no audio data for an artist</extracomment>
-    </message>
-    <message>
-        <source>Custom Subtitles</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Name of a setting - custom subtitles that support CJK fonts</extracomment>
-    </message>
-    <message>
-        <source>Replace Roku&apos;s default subtitle functions with custom functions that support CJK fonts. Fallback fonts must be configured and enabled on the server for CJK rendering to work.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Description of a setting - custom subtitles that support CJK fonts</extracomment>
-    </message>
-    <message>
-        <source>Text Subtitles Only</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Name of a setting - should we hide subtitles that might transcode</extracomment>
-    </message>
-    <message>
-        <source>Only display text subtitles to minimize transcoding.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Description of a setting - should we hide subtitles that might transcode</extracomment>
-    </message>
-    <message>
-        <source>all</source>
-        <translation type="unfinished"></translation>
-        <extracomment>all will reset the searchTerm so all data will be availible</extracomment>
-    </message>
-    <message>
         <source>All</source>
         <translation>Todos</translation>
         <extracomment>All in filter</extracomment>
-    </message>
-    <message>
-        <source>Slideshow Off</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Slideshow On</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Slideshow Paused</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>(Favorites)</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Favorites</source>
@@ -1751,30 +1097,8 @@
         <translation>Artistas</translation>
     </message>
     <message>
-        <source>Slideshow Resumed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Random Off</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Random On</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Delete Playlist</source>
         <translation>Eliminar playlist</translation>
-    </message>
-    <message>
-        <source>MPEG-4 Support</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Parental Ratings</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Used in Filter menu</extracomment>
     </message>
     <message>
         <source>Collections</source>
@@ -1790,84 +1114,6 @@
         <extracomment>Used in Filter menu</extracomment>
     </message>
     <message>
-        <source>No items found. Try adjusting your selected filters.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Show What&apos;s New Popup</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Show What&apos;s New popup when Jellyfin is updated to a new version.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Unplayed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Played</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Resumable</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Movie Library Default View</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Default view for Movie Libraries.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Grid View Item Titles</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Title of a setting - when should we show the title text of a grid item</extracomment>
-    </message>
-    <message>
-        <source>Select when to show titles in grid view.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Show On Hover</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Always Show</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Always Hide</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Artists (Presentation)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Album Artist</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Album Artists (Presentation)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Artists (Grid)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Album Artists (Grid)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Songs</source>
         <translation>Músicas</translation>
     </message>
@@ -1880,183 +1126,12 @@
         <translation>Álbuns</translation>
     </message>
     <message>
-        <source>Autoplay Episode Limit</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The number of episodes that will play automatically after the selected episode. Requires &apos;Play next episode automatically&apos; server setting to be enabled.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>View All</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Disable Community Rating for Episodes</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Hide the star and community rating for episodes of a TV show. This is to prevent spoilers of an upcoming good/bad episode.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Configure the maximum playback bitrate.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Biographical information for this person is not currently available.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Enable Limit</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Enable or disable the &apos;Maximum Bitrate&apos; setting.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Bitrate Limit</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Maximum Bitrate</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Set the maximum bitrate in Mbps. Set to 0 to use Roku&apos;s specifications. This setting must be enabled to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Libraries</source>
         <translation>Bibliotecas</translation>
     </message>
     <message>
-        <source>Settings relating to the appearance of Library pages</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>General</source>
         <translation>Geral</translation>
-    </message>
-    <message>
-        <source>Settings relating to the appearance of the Home screen and the program in general.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Grid View Settings</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Settings that apply when Grid views are enabled.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Settings relating to the appearance of pages in TV Libraries.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Settings relating to the appearance of pages in Movie Libraries.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Presentation</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Title of an option - name of presentation view</extracomment>
-    </message>
-    <message>
-        <source>Grid</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Title of an option - name of grid view</extracomment>
-    </message>
-    <message>
-        <source>Disable Unwatched Episode Count</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>If enabled, the number of unwatched episodes in a series/season will be removed.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Loading trailer</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Dialog title in Main.brs</extracomment>
-    </message>
-    <message>
-        <source>Next Episode Button Time</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Set how many seconds before the end of an episode the Next Episode button should appear. Set to 0 to disable.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Preferred Audio Codec</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title of option</extracomment>
-    </message>
-    <message>
-        <source>Use the selected audio codec for transcodes. If the device or stream does not support it, a fallback codec will be used.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Video Codec Support</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Enable or disable Direct Play support for certain codecs.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Video Profile Level Support</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Attempt Direct Play of potentially unsupported profile levels</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Use system settings</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Option title</extracomment>
-    </message>
-    <message>
-        <source>Direct playing</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The source file is entirely compatible with this client and the session is receiving the file without modifications.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Direct play info box text in GetPlaybackInfoTask.brs</extracomment>
-    </message>
-    <message>
-        <source>Maximum Resolution</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title</extracomment>
-    </message>
-    <message>
-        <source>Set the maximum resolution when playing video files on this device.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description</extracomment>
-    </message>
-    <message>
-        <source>Off - Attempt to play all resolutions</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Option title</extracomment>
-    </message>
-    <message>
-        <source>Auto - Use TV resolution</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Option title</extracomment>
     </message>
     <message>
         <source>Mode</source>
@@ -2064,124 +1139,9 @@
         <extracomment>User Setting - Setting title</extracomment>
     </message>
     <message>
-        <source>Value</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Maximum Audio Channels</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title</extracomment>
-    </message>
-    <message>
-        <source>Configure the maximum audio channels when playing video files on this device.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description</extracomment>
-    </message>
-    <message>
-        <source>Off - Attempt to play all channels</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Option title</extracomment>
-    </message>
-    <message>
-        <source>Configure the maximum resolution when playing video files on this device.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description</extracomment>
-    </message>
-    <message>
-        <source>Apply max resolution to all files or only transcoded files.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description</extracomment>
-    </message>
-    <message>
-        <source>All files</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Only transcoded files</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Compatibility</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Attempt to prevent playback failures.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Disable HEVC</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Disable the HEVC codec on this device. This may improve playback for some devices (ultra).</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
         <source>Global</source>
         <translation>Global</translation>
         <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Global settings that affect everyone that uses this Roku device.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Remember Me?</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Remember the currently logged in user and try to log them in again next time you start the Jellyfin app.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Custom Trickplay</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Display custom trickplay images even if this Roku says it&apos;s displaying its own. This may cause the two images to overlay on top of each other.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Force Transcoding</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Force all playable media to be transcoded.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Media Segment Actions</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Settings relating to how Jellyfin should handle media segments.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Commercial Segments</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>What action should Jellyfin take for commercial segments?</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
     </message>
     <message>
         <source>Intro Segments</source>
@@ -2189,44 +1149,9 @@
         <extracomment>User Setting - Title for option</extracomment>
     </message>
     <message>
-        <source>What action should Jellyfin take for intro segments?</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
         <source>Outro Segments</source>
         <translation>Segmentos de créditos finais</translation>
         <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>What action should Jellyfin take for outro segments?</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Preview Segments</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>What action should Jellyfin take for preview segments?</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Recap Segments</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>What action should Jellyfin take for recap segments?</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Ask To Skip</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Options</extracomment>
     </message>
     <message>
         <source>Skip</source>
@@ -2239,253 +1164,21 @@
         <extracomment>User Setting - Options</extracomment>
     </message>
     <message>
-        <source>No Chapter Data Found</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Message shown in OSD when no chapter data is returned by the API</extracomment>
-    </message>
-    <message>
-        <source>Use Web Client&apos;s Home Section Arrangement</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Make the arrangement of the Roku home view sections match the web client&apos;s home screen. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Welcome to version</source>
-        <translation type="unfinished"></translation>
-        <extracomment>WhatsNewDialog title - Welcome to version 2.0.0</extracomment>
-    </message>
-    <message>
-        <source>To view a complete list of changes visit</source>
-        <translation type="unfinished"></translation>
-        <extracomment>WhatsNewDialog body text preceding the changelog URL</extracomment>
-    </message>
-    <message>
         <source>Random</source>
         <translation>Aleatório</translation>
         <extracomment>General use word when we want to randomize data</extracomment>
-    </message>
-    <message>
-        <source>... (Press * to read more)</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Ellipsis Text for when text overflows its container</extracomment>
-    </message>
-    <message>
-        <source>Item Detail Screen</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User interface Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Settings relating to the appearance of the item detail screen.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User interface Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Community and Critical Ratings</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Ratings for how good a movie is</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Overview Content</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>A quick overview of the item selected - typically a short plot outline.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Settings relating to the appearance of Library pages.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Libraries Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Forget Filters</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Libraries Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Forget applied library filters when Jellyfin is closed.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Libraries Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>View All Next Up</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Title for viewing all episodes available in the Next Up section</extracomment>
-    </message>
-    <message>
-        <source>Rewatching Next Up</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Show already watched episodes in &apos;Next Up&apos; sections.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Episode Images Next Up</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>What type of images to use for Episodes shown in the &apos;Next Up&apos; and &apos;Continue Watching&apos; sections.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Use Web Client Setting</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting option title</extracomment>
-    </message>
-    <message>
-        <source>Use Episode Image</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting option title</extracomment>
-    </message>
-    <message>
-        <source>Use Show Image</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting option title</extracomment>
-    </message>
-    <message>
-        <source>The selected Jellyfin server uses version</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>which is not supported by this app. Please update the server to</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>or newer to use this app or install and use the Jellyfin Legacy app from Roku&apos;s Streaming Store</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Return to server select screen</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>CH</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Abbreviation for Channel</extracomment>
-    </message>
-    <message>
-        <source>Use Fallback Font Across App</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Changes the font used in the app to the server&apos;s configured fallback font.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Highlighted Color</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Folders</source>
         <translation>Pastas</translation>
     </message>
     <message>
-        <source>Go To Artist</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>No Results Found</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Format</source>
         <translation>Formato</translation>
     </message>
     <message>
-        <source>downloads</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Series</source>
         <translation>Séries</translation>
-    </message>
-    <message>
-        <source>Part</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Play / Resume from</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Play or Resume from</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>What&apos;s New</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Sort by</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Search is unavailable because the API does not support searching inside boxsets.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Search is unavailable because the API does not support searching inside My List.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Search this library</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Mark As Played</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Add To Playlist</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Remove From My List</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Add To My List</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Press OK to type</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Library Settings</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Display Watched Checkmark</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select Audio</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select Subtitles</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select Language</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Tracks</source>
@@ -2496,69 +1189,12 @@
         <translation>Lançado</translation>
     </message>
     <message>
-        <source>min</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>mins</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Continue Listening</source>
         <translation>Continuar a ouvir</translation>
     </message>
     <message>
-        <source>In My List</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>AppearsOn</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Public Profile</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Saved Profile</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Manage Hidden Users</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select User</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Are you sure you want to forget this user?</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Are you sure you want to delete this subtitle?</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Yes</source>
         <translation>Sim</translation>
-    </message>
-    <message>
-        <source>No, Cancel</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Manual Login</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Unhide Users</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>as</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Used in ExtrasRowList.bs to show the role of a person in a movie or TV show</extracomment>
     </message>
     <message>
         <source>Seasons</source>
@@ -2574,413 +1210,25 @@
         <translation>Episódio</translation>
     </message>
     <message>
-        <source>Section 1</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 2</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 3</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 4</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 5</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 6</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 7</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 8</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 1. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 2. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 3. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 4. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 5. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 6. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 7. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 8. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Live TV</source>
         <translation>TV em direto</translation>
-    </message>
-    <message>
-        <source>My List</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Recently Added Media</source>
         <translation>Conteúdo adicionado recentemente</translation>
     </message>
     <message>
-        <source>Customize the home screen sections</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Home Rows</source>
         <translation>Secções da página inicial</translation>
-    </message>
-    <message>
-        <source>Colors</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Change the colors of elements in the app.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>All Screens</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Colors used across multiple screens.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Background</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The base background color. Background images are layered on top of this color.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Cursor</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The color of the remote control&apos;s cursor.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Primary Text</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The primary text color.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Secondary Text</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The secondary text color.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Watched Check Mark &amp; Unplayed Count</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Colors specific to the watched check mark &amp; unplayed count box.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The background color of the check mark &amp; unplayed count shown in the top right corner of items.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Unplayed Count</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The color of the unplayed count number.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Watched Check Mark</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The color of the watched check mark.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Dialog Popups</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Colors specific to dialog popups</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The background color for all dialog popups.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Bold Text</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color for bold text.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Horizontal Border line</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The color of the thin border line under the header text.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Selected Text</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color for the item the cursor is over.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Text Color</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color for title and items the cursor is not over.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>What&apos;s New Author</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color for the author in the What&apos;s New popup.</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Home Screen</source>
         <translation>Ecrã inicial</translation>
     </message>
     <message>
-        <source>Colors specific to the home screen</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>My List Icon</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The color of the star icon in the My List library item.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Row Headers</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color of the headers of each row.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Row Item Background</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The background color of items. Only seen if no image loads on top of it.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Row Item Progress</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The color of the watched portion of the progress bar.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Row Item Progress Background</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The background color of the progress bar.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Row Item Subtitle</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color of the second line displayed under items.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Row Item Title</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color of the first line displayed under items.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Username In Header</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color of the user&apos;s name in the header.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Shuffle Play Collection</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Note: Force transcode option automatically enabled due to video rotation</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Start Episode List From First Unwatched Episode</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>When opening a season&apos;s list of episodes, automatically scroll down and start the cursor on the first unwatched episode.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Add To Favorites</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Remove From Favorites</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Play Normally</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Force Transcode (Allow Remux)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Force Transcode (Remux Disabled)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>No channels found matching your search criteria</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Are You Still Watching Popup</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>How many minutes of inactivity before playback is stopped between items and a popup is shown to continue? Set to 0 to disable.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Are You Still Watching?</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Yes, continue</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>No, stop playback</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Playback will automatically stop in 1 minute if no buttons are pressed.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Burn in subtitle when transcoding</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Burn in all subtitles when transcoding is triggered. This ensures subtitle synchronization after transcoding at the cost of reduced transcoding speed.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Support Moonfin Development</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Donation Dialog - Title</extracomment>
-    </message>
-    <message>
-        <source>Moonfin is free and open source. If you find it useful, please consider supporting continued development. Scan the QR code below to donate:</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Donation Dialog - Message</extracomment>
-    </message>
-    <message>
-        <source>Thank you for your support!</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Donation Dialog - Thanks message</extracomment>
-    </message>
-    <message>
-        <source>Update Available</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Update Dialog - Title</extracomment>
-    </message>
-    <message>
-        <source>is now available</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Update Dialog - Version availability text</extracomment>
-    </message>
-    <message>
         <source>Current</source>
         <translation>Atual</translation>
         <extracomment>Update Dialog - Current version label</extracomment>
-    </message>
-    <message>
-        <source>A new version is available. Please visit the GitHub releases page to download.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Update Dialog - Default message</extracomment>
-    </message>
-    <message>
-        <source>Library Image Orientation</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Video Library Style</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Choose between the Classic, Modern and Docked library headers.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Docked</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Show</source>
@@ -2991,44 +1239,6 @@
         <source>Display</source>
         <extracomment>A library header control that opens how the library draws its cards</extracomment>
         <translation>Visualização</translation>
-    </message>
-    <message>
-        <source>Music Library Style</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Classic is the original artist and album grid. Quick Access starts with a grid of your recent albums and playlists. Immersive leads with the album you&apos;re listening to.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Quick Access</source>
-        <extracomment>Music library style option: a grid of recent albums and playlists over the rows</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Immersive</source>
-        <extracomment>Music library style option: a full-width album hero over the rows</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Jump Back In</source>
-        <extracomment>Heading over the albums and playlists the user played recently in a music library</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>From This Album</source>
-        <extracomment>Heading over the track list of the album shown in the music library hero</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Search Music</source>
-        <extracomment>Label for the search control in a music library</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Latest {0}</source>
-        <extracomment>Heading over the newest albums in a music library, {0} is the library&apos;s name</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Last Played</source>
@@ -3051,120 +1261,16 @@
         <translation>Ano de lançamento</translation>
     </message>
     <message>
-        <source>Select the poster image orientation for the library views.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Default (Varies By Media Type)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Landscape (Wide)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Portrait (Vertical)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Skip Unknown</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Skip Commercial</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Skip Preview</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Skip Recap</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Skip Outro</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Skip Intro</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Go To Genre</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Play Instant Mix</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Show Next Episode Details After Finish</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>If auto play next episode is disabled, display the next episode&apos;s detail screen after an episode finishes playing. If no next up episode is found, return to the just-played episode&apos;s page.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Favorites Row</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Settings relating to the favorites row on the home screen.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Sort By Field</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Field to sort the row by.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Date Created</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Is Unplayed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Sort Order for the row - Ascending,Descending.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Display Episodes In Two Columns</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Screen Settings</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Collections Row Sorting</source>
         <translation>Ordenação das secções de coleções</translation>
-    </message>
-    <message>
-        <source>Choose sorting for Collections home row</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Genres Row Sorting</source>
         <translation>Ordenação das secções de géneros</translation>
     </message>
     <message>
-        <source>Choose sorting for Genres home row</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Genres Row Items</source>
         <translation>Itens das secções de géneros</translation>
-    </message>
-    <message>
-        <source>Choose which media types are included in Genres home row</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Movies &amp; TV Shows</source>
@@ -3232,108 +1338,8 @@
         <translation>Vídeos musicais</translation>
     </message>
     <message>
-        <source>{0} badges earned</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0} days watched</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0} pts</source>
-        <extracomment>What a badge is worth</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0} ×{1}</source>
-        <extracomment>A pack of power-ups in the shop, such as XP Boost x3</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0} held</source>
-        <extracomment>How many of a power-up the viewer holds</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0} min</source>
-        <extracomment>How long something runs</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>1 held</source>
         <translation>1 disponível</translation>
-    </message>
-    <message>
-        <source>{0} libraries</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0} completed</source>
-        <extracomment>How many quests are finished</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0} day streak</source>
-        <extracomment>How many days running the viewer has watched something</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0} of {1} badges</source>
-        <extracomment>How many badges of a set are unlocked</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0} points to {1}</source>
-        <extracomment>How far the viewer is from the next rank tier, where {1} is the tier name</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0} points</source>
-        <extracomment>The score a rank tier was reached with</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Earned at {0} lifetime score</source>
-        <extracomment>What an avatar or title costs in score earned over time, rather than in score spent</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0} favorites sorted by {1}</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0}m</source>
-        <extracomment>A wait in whole minutes</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0}s</source>
-        <extracomment>A wait in seconds</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Too many attempts. Try again in {0}.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0} unlocked {1}</source>
-        <extracomment>One line of the activity feed, where {0} is a user and {1} is a badge</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0}m ago</source>
-        <extracomment>Minutes since something happened</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0}h ago</source>
-        <extracomment>Hours since something happened</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{0}d ago</source>
-        <extracomment>Days since something happened</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Today</source>
@@ -3449,21 +1455,6 @@
         <source>{count} extras</source>
         <extracomment>Count on a Spotlight card</extracomment>
         <translation>{count} extras</translation>
-    </message>
-    <message>
-        <source>1 review</source>
-        <extracomment>Count on a Spotlight card</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{count} reviews</source>
-        <extracomment>Count on a Spotlight card</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Reviews</source>
-        <extracomment>TMDB reviews of a title on the details screen, and the switch for them in the details screen sections settings</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>{rating} / 10</source>
@@ -3686,11 +1677,6 @@
         <translation>Exibe itens que pertencem à coleção, mas ainda não estão disponíveis na biblioteca</translation>
     </message>
     <message>
-        <source>Date Added: {0}</source>
-        <extracomment>When the file was added, on the File Information tab of the details screen. {0} is a date like Sep 24, 2026</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Direct Play Capability:</source>
         <extracomment>Label before Yes or No on the File Information tab</extracomment>
         <translation>Capacidade de reprodução direta:</translation>
@@ -3699,16 +1685,6 @@
         <source>No</source>
         <extracomment>Direct play answer on the File Information tab</extracomment>
         <translation>Não</translation>
-    </message>
-    <message>
-        <source>Show All ({0}) Audio Tracks</source>
-        <extracomment>Opens the full audio track list on the File Information tab. {0} is how many there are</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Show All ({0}) Subtitle Tracks</source>
-        <extracomment>Opens the full subtitle track list on the File Information tab. {0} is how many there are</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Show Less</source>
@@ -3786,44 +1762,9 @@
         <translation>O número de canais de áudio não é suportado.</translation>
     </message>
     <message>
-        <source>Audio codec ({0}) is not supported directly.</source>
-        <extracomment>Why a file cant direct play, {0} is the codec</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Audio channel count ({0}ch) exceeds the player limit.</source>
-        <extracomment>Why a file cant direct play, {0} is the channel count</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Tip: Adjust &apos;Maximum Audio Channels&apos; in Audio Preferences.</source>
-        <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Subtitle format ({0}) is not supported directly and must be burned in.</source>
-        <extracomment>Why a file cant direct play, {0} is the subtitle format</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>ASS/SSA subtitles require transcoding because direct play is turned off.</source>
         <extracomment>Why a file cant direct play</extracomment>
         <translation>As legendas ASS/SSA requerem transcodificação porque a reprodução direta está desativada.</translation>
-    </message>
-    <message>
-        <source>Tip: Enable &apos;Direct Play ASS Subtitles&apos; in Subtitle Preferences to play directly without transcoding.</source>
-        <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Tip: Increase &apos;Maximum Bitrate&apos; in Video Playback Preferences to allow direct streaming.</source>
-        <extracomment>Hint under a direct play reason. The quoted name is a setting in this app and should match how it is translated</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>File bitrate ({0}) exceeds the configured streaming limit ({1}).</source>
-        <extracomment>Why a file cant direct play, both are bitrates like 42.0 Mbps</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Video dynamic range (e.g. Dolby Vision / HDR) is not supported by this display.</source>
@@ -3869,11 +1810,6 @@
         <source>Action Buttons on Screen</source>
         <extracomment>Details screen setting</extracomment>
         <translation>Botões de ação no ecrã</translation>
-    </message>
-    <message>
-        <source>Choose how many buttons stay on screen before the rest move into More Actions</source>
-        <extracomment>Details screen setting description</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Auto (Theme Default)</source>
@@ -3946,11 +1882,6 @@
         <translation>Géneros e etiquetas</translation>
     </message>
     <message>
-        <source>Streaming on</source>
-        <extracomment>Heading over the logos of the services streaming a Seerr title</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Continuing</source>
         <extracomment>Series status badge</extracomment>
         <translation>Em exibição</translation>
@@ -4019,61 +1950,6 @@
         <source>Appearances (Seerr)</source>
         <extracomment>A rail of titles Seerr credits a person as cast on</extracomment>
         <translation>Participações (Seerr)</translation>
-    </message>
-    <message>
-        <source>January</source>
-        <extracomment>Month in a person&apos;s birth or death date</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>February</source>
-        <extracomment>Month in a person&apos;s birth or death date</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>March</source>
-        <extracomment>Month in a person&apos;s birth or death date</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>April</source>
-        <extracomment>Month in a person&apos;s birth or death date</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>June</source>
-        <extracomment>Month in a person&apos;s birth or death date</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>July</source>
-        <extracomment>Month in a person&apos;s birth or death date</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>August</source>
-        <extracomment>Month in a person&apos;s birth or death date</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>September</source>
-        <extracomment>Month in a person&apos;s birth or death date</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>October</source>
-        <extracomment>Month in a person&apos;s birth or death date</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>November</source>
-        <extracomment>Month in a person&apos;s birth or death date</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>December</source>
-        <extracomment>Month in a person&apos;s birth or death date</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Mark as Watched</source>
@@ -4191,16 +2067,6 @@
         <translation>Removido da playlist</translation>
     </message>
     <message>
-        <source>Failed to remove from collection: {error}</source>
-        <extracomment>Note when the server refuses a removal. {error} is the reason</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Failed to update playlist: {error}</source>
-        <extracomment>Note when the server refuses to delete or move a playlist row. {error} is the reason</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Create New Playlist</source>
         <extracomment>Starts a new playlist, as the first row of the playlist picker or a keyboard title</extracomment>
         <translation>Criar nova playlist</translation>
@@ -4236,21 +2102,6 @@
         <translation>Falha ao atualizar metadados: {error}</translation>
     </message>
     <message>
-        <source>Unauthorized</source>
-        <extracomment>Reason a card menu request failed, when the server wants the viewer signed in again</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Forbidden</source>
-        <extracomment>Reason a card menu request failed, when the viewer isnt allowed to do it</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>HTTP error</source>
-        <extracomment>Reason a card menu request failed, when the server gave nothing more specific</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Metadata updated</source>
         <extracomment>Note after an item was matched with Identify</extracomment>
         <translation>Metadados atualizados</translation>
@@ -4281,11 +2132,6 @@
         <translation>Desbloquear</translation>
     </message>
     <message>
-        <source>PIN Code Protection</source>
-        <extracomment>Setting that asks for a PIN after signing in</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Require a PIN to access your account</source>
         <extracomment>Description of the PIN Code Protection setting</extracomment>
         <translation>Exigir um PIN para aceder à tua conta</translation>
@@ -4296,24 +2142,9 @@
         <translation>Código PIN</translation>
     </message>
     <message>
-        <source>Default PIN: 0000</source>
-        <extracomment>Description of the PIN Code setting before a PIN has been chosen</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Enter a 4-digit PIN used to unlock the app when PIN protection is enabled.</source>
         <extracomment>Shown beside the keypad when choosing the PIN the PIN screen asks for</extracomment>
         <translation>Introduz um PIN de 4 dígitos para desbloquear a aplicação quando a proteção por PIN estiver ativada.</translation>
-    </message>
-    <message>
-        <source>Configured 4-digit PIN</source>
-        <extracomment>Description of the PIN Code setting once a PIN has been chosen</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Blocked Ratings</source>
-        <extracomment>Setting that opens the list of content ratings to block</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Content rating restrictions</source>
@@ -4434,41 +2265,6 @@
         <source>Premiere</source>
         <extracomment>Guide filter and program tag for a program&apos;s first airing</extracomment>
         <translation>Estreia</translation>
-    </message>
-    <message>
-        <source>Sun</source>
-        <extracomment>Short name for Sunday in the guide&apos;s date heading</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Mon</source>
-        <extracomment>Short name for Monday in the guide&apos;s date heading</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Tue</source>
-        <extracomment>Short name for Tuesday in the guide&apos;s date heading</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Wed</source>
-        <extracomment>Short name for Wednesday in the guide&apos;s date heading</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Thu</source>
-        <extracomment>Short name for Thursday in the guide&apos;s date heading</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Fri</source>
-        <extracomment>Short name for Friday in the guide&apos;s date heading</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Sat</source>
-        <extracomment>Short name for Saturday in the guide&apos;s date heading</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Watch</source>
@@ -4619,21 +2415,6 @@
         <source>Cancel Recording?</source>
         <extracomment>Title of the question asked before a scheduled recording is cancelled</extracomment>
         <translation>Cancelar gravação?</translation>
-    </message>
-    <message>
-        <source>Cancel Series Recording?</source>
-        <extracomment>Title of the question asked before a series recording is cancelled</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Stop recording {name}?</source>
-        <extracomment>Asked before a series recording is cancelled, {name} is the series</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Cancel scheduled recording of {name}?</source>
-        <extracomment>Asked before a scheduled recording is cancelled, {name} is the program</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Yes, Cancel</source>
@@ -4866,21 +2647,6 @@
         <translation>Branco semitransparente</translation>
     </message>
     <message>
-        <source>Shadow Color</source>
-        <extracomment>Setting for the color of the outline around subtitle text</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Shadow Opacity</source>
-        <extracomment>Setting for how see-through the outline around subtitle text is</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Shadow Size (Blur)</source>
-        <extracomment>Setting for how thick the outline around subtitle text is</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Background Color</source>
         <extracomment>Setting for the color of the box behind subtitle text</extracomment>
         <translation>Cor de fundo</translation>
@@ -4891,24 +2657,9 @@
         <translation>Opacidade do fundo</translation>
     </message>
     <message>
-        <source>HDR Subtitles</source>
-        <extracomment>Settings page for a subtitle style used while HDR plays</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>A separate style used while HDR is playing</source>
-        <extracomment>Description of the HDR Subtitles settings page</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Separate HDR Style</source>
         <extracomment>Setting that turns on a separate subtitle style for HDR</extracomment>
         <translation>Estilo separado para HDR</translation>
-    </message>
-    <message>
-        <source>Use the style below whenever HDR content is playing. White is much brighter in HDR than in SDR, so a dimmer color here avoids the glare.</source>
-        <extracomment>Description of the Separate HDR Style setting</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Subtitle Appearance</source>
@@ -5051,11 +2802,6 @@
         <translation>Ultrarrápida</translation>
     </message>
     <message>
-        <source>Show Text?</source>
-        <extracomment>Setting that shows the label under the loading animation</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Loading Stream...</source>
         <extracomment>Shown under the loading animation while a video starts</extracomment>
         <translation>A carregar fluxo...</translation>
@@ -5094,11 +2840,6 @@
         <source>Show Clock</source>
         <extracomment>Setting that shows or hides the clock in the top bar and the sidebar</extracomment>
         <translation>Mostrar relógio</translation>
-    </message>
-    <message>
-        <source>Show or hide the clock in the top bar and the sidebar</source>
-        <extracomment>Description of the Show Clock setting</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Group by Type</source>
@@ -5149,11 +2890,6 @@
         <source>Download subtitles...</source>
         <extracomment>Subtitle track menu entry that opens the subtitle search</extracomment>
         <translation>Transferir legendas...</translation>
-    </message>
-    <message>
-        <source>Search using OpenSubtitles</source>
-        <extracomment>Description under the subtitle search entry in the subtitle track menu</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Download Subtitles</source>
@@ -5216,11 +2952,6 @@
         <translation>{fps} fps</translation>
     </message>
     <message>
-        <source>Trailers played behind the media bar</source>
-        <extracomment>Description of the media bar settings section for trailers</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Trailer Preview</source>
         <extracomment>Setting that plays the current title&apos;s trailer behind the media bar</extracomment>
         <translation>Pré-visualização do trailer</translation>
@@ -5236,19 +2967,9 @@
         <translation>Silenciar áudio dos trailers</translation>
     </message>
     <message>
-        <source>Mute trailer previews in the featured media bar</source>
-        <extracomment>Description of the Mute Trailer Audio setting</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Trailer Captions</source>
         <extracomment>Setting that shows YouTube captions on media bar trailers</extracomment>
         <translation>Legendas dos trailers</translation>
-    </message>
-    <message>
-        <source>Show captions on media bar trailer previews when YouTube has them</source>
-        <extracomment>Description of the Trailer Captions setting</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Loading trailer...</source>
@@ -5256,44 +2977,14 @@
         <translation>A carregar trailer...</translation>
     </message>
     <message>
-        <source>Trailer Not Available</source>
-        <extracomment>Title of the message shown when a trailer cant be played</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>{count} trailers</source>
-        <extracomment>Count in the header of the trailer picker on the details screen</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Subtitled</source>
-        <extracomment>Chip on a trailer in the trailer picker whose video has subtitles burned in</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>This trailer is a link to a web page, which cant be opened here.</source>
-        <extracomment>Shown when a title&apos;s trailer link isnt a YouTube video</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Media Preview</source>
         <extracomment>Setting that plays a short clip of the focused home row card</extracomment>
         <translation>Pré-visualização do conteúdo</translation>
     </message>
     <message>
-        <source>Play a short clip of the focused card after a moment on it. A series plays its next episode.</source>
-        <extracomment>Description of the Media Preview setting</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Preview Audio</source>
         <extracomment>Setting that plays the sound of a media preview</extracomment>
         <translation>Pré-visualizar áudio</translation>
-    </message>
-    <message>
-        <source>Play the sound of a media preview. Off keeps previews silent.</source>
-        <extracomment>Description of the Preview Audio setting</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Seasonal Row</source>
@@ -5346,16 +3037,6 @@
         <translation>Diwali</translation>
     </message>
     <message>
-        <source>All holidays</source>
-        <extracomment>Summary of the holiday picker when none is hidden</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Since you watched %1</source>
-        <extracomment>Home row title, %1 is the title the recommendations come from</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Library Order</source>
         <extracomment>Settings entry and panel title for arranging the libraries</extracomment>
         <translation>Ordem das bibliotecas</translation>
@@ -5404,16 +3085,6 @@
         <source>Choose which parts of the Details screen to show</source>
         <extracomment>Description of the Sections setting</extracomment>
         <translation>Escolher as partes do ecrã de detalhes a apresentar</translation>
-    </message>
-    <message>
-        <source>Only the sections the current Details screen style can show</source>
-        <extracomment>First line of the note over the Sections list, which runs on into the next line</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>are listed. Hiding one hides it in every style that has it.</source>
-        <extracomment>Second line of the note over the Sections list</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Header</source>
@@ -5489,11 +3160,6 @@
         <source>Genres &amp; tags</source>
         <extracomment>Seerr section on the details screen</extracomment>
         <translation>Géneros e etiquetas</translation>
-    </message>
-    <message>
-        <source>Streaming services</source>
-        <extracomment>Seerr section on the details screen</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Similar titles</source>
@@ -5646,21 +3312,6 @@
         <translation>Conquista desbloqueada</translation>
     </message>
     <message>
-        <source>{0} achievements unlocked</source>
-        <extracomment>Banner heading for several badges unlocked at once</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>+{0} more</source>
-        <extracomment>After the first few badge names in a banner, how many more there are</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Show friends button</source>
-        <extracomment>Navigation bar setting for the Friends button</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Friends and chat from the Achievement Badges plugin</source>
         <extracomment>Under the Show friends button setting</extracomment>
         <translation>Amigos e conversas através do plugin Achievement Badges</translation>
@@ -5716,29 +3367,9 @@
         <translation>Não foi possível concluir. Tenta novamente dentro de momentos.</translation>
     </message>
     <message>
-        <source>Request sent to {0}</source>
-        <extracomment>A friend request went to that user</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Watching {0}</source>
-        <extracomment>What an online friend is watching</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Online</source>
         <extracomment>A friend who is on now, and the heading over them</extracomment>
         <translation>Online</translation>
-    </message>
-    <message>
-        <source>Last watched {0}</source>
-        <extracomment>What an offline friend watched last</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Last seen {0}</source>
-        <extracomment>When an offline friend was last on, like 5m ago</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Offline</source>
@@ -5756,11 +3387,6 @@
         <translation>1 mensagem por ler</translation>
     </message>
     <message>
-        <source>{0} unread messages</source>
-        <extracomment>Under the Messages row</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Nothing waiting</source>
         <extracomment>Under the Friend requests row when none are waiting</extracomment>
         <translation>Nenhum pedido pendente</translation>
@@ -5771,19 +3397,9 @@
         <translation>1 pedido à tua espera</translation>
     </message>
     <message>
-        <source>{0} waiting for you</source>
-        <extracomment>Under the Friend requests row</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Photo</source>
         <extracomment>Stands in for a photo sent in a chat</extracomment>
         <translation>Fotografia</translation>
-    </message>
-    <message>
-        <source>You: {0}</source>
-        <extracomment>A chat preview of the last message, when the user sent it</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Could not load this. Check your connection and try again.</source>
@@ -5806,24 +3422,9 @@
         <translation>Ainda não tens amigos. Adiciona pessoas deste servidor para as veres aqui.</translation>
     </message>
     <message>
-        <source>{0} keeps their profile private.</source>
-        <extracomment>A user who hides their profile</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Best streak: {0} days</source>
-        <extracomment>A user&apos;s best watch streak on their profile</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Showcase</source>
         <extracomment>The badges a user chose to show on their profile</extracomment>
         <translation>Destaques</translation>
-    </message>
-    <message>
-        <source>Remove {0} from your friends? You can add them again later.</source>
-        <extracomment>Asked before removing a friend</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Remove friend</source>
@@ -5831,19 +3432,9 @@
         <translation>Remover amigo</translation>
     </message>
     <message>
-        <source>Unblock {0}?</source>
-        <extracomment>Asked before unblocking a user</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Unblock</source>
         <extracomment>Lets a blocked user message again</extracomment>
         <translation>Desbloquear</translation>
-    </message>
-    <message>
-        <source>Block {0}? Neither of you will be able to message the other directly. Group chats you share stay open.</source>
-        <extracomment>Asked before blocking a user</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Block</source>
@@ -5854,11 +3445,6 @@
         <source>Send message</source>
         <extracomment>Opens a chat with this friend</extracomment>
         <translation>Enviar mensagem</translation>
-    </message>
-    <message>
-        <source>Open {0}</source>
-        <extracomment>Opens the title a friend is watching</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Add as friend</source>
@@ -5874,11 +3460,6 @@
         <source>Waiting for you</source>
         <extracomment>Heading over friend requests other users sent</extracomment>
         <translation>À tua espera</translation>
-    </message>
-    <message>
-        <source>{0} wants to be friends</source>
-        <extracomment>Under a friend request from that user</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Decline</source>
@@ -5901,11 +3482,6 @@
         <translation>Cancelar pedido</translation>
     </message>
     <message>
-        <source>Take back the request you sent to {0}?</source>
-        <extracomment>Asked before taking back a friend request</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Search people</source>
         <extracomment>Placeholder and keyboard title for searching users</extracomment>
         <translation>Pesquisar pessoas</translation>
@@ -5919,11 +3495,6 @@
         <source>Mute during playback</source>
         <extracomment>Friends privacy switch for message banners during playback</extracomment>
         <translation>Silenciar durante a reprodução</translation>
-    </message>
-    <message>
-        <source>No message banners while a video is playing</source>
-        <extracomment>Under the Mute during playback switch</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Blocked users</source>
@@ -6046,11 +3617,6 @@
         <translation>1 membro</translation>
     </message>
     <message>
-        <source>{0} members</source>
-        <extracomment>How many people are in a group chat</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>You</source>
         <extracomment>The user themselves in a group member list</extracomment>
         <translation>Tu</translation>
@@ -6104,11 +3670,6 @@
         <source>Delete every message in this chat for everyone in it?</source>
         <extracomment>Asked before clearing a group chat</extracomment>
         <translation>Eliminar todas as mensagens desta conversa para todos os participantes?</translation>
-    </message>
-    <message>
-        <source>New message from {0}</source>
-        <extracomment>Banner heading for a chat message from that user</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Seasonal Effects</source>
@@ -6186,16 +3747,6 @@
         <translation>Sincronização de definições</translation>
     </message>
     <message>
-        <source>Server Plugin Sync</source>
-        <extracomment>Settings entry that opens the settings sync panel</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Sync status, profile, load, save and reset</source>
-        <extracomment>Description of the Server Plugin Sync setting</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>This device syncs with the profile you pick until you pick another.</source>
         <extracomment>Caption under the Profile heading on the settings sync panel</extracomment>
         <translation>Este dispositivo sincroniza com o perfil escolhido até selecionares outro.</translation>
@@ -6246,29 +3797,9 @@
         <translation>Deste dispositivo para o servidor</translation>
     </message>
     <message>
-        <source>Reset {0} Profile</source>
-        <extracomment>Settings sync button, {0} is the profile name</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Connected, version {0}</source>
-        <extracomment>Settings sync panel, {0} is the Moonbase plugin version</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Plugin Not Detected</source>
         <extracomment>Settings sync panel when the Moonbase plugin can&apos;t be reached</extracomment>
         <translation>Plugin não detetado</translation>
-    </message>
-    <message>
-        <source>Install Moonbase on your server and turn on Enable Plugin.</source>
-        <extracomment>Settings sync panel when the Moonbase plugin can&apos;t be reached</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Settings sync is turned off on the server.</source>
-        <extracomment>Settings sync panel when the server admin has switched sync off</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Sync on</source>
@@ -6279,51 +3810,6 @@
         <source>Sync off</source>
         <extracomment>Under the settings sync switch while it is off</extracomment>
         <translation>Sincronização desativada</translation>
-    </message>
-    <message>
-        <source>Reset the {0} profile?</source>
-        <extracomment>Title of the prompt before a settings sync profile is reset, {0} is the profile name</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The server forgets what this profile holds, and every synced setting on this device goes back to its default.</source>
-        <extracomment>Prompt before a device settings sync profile is reset</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The server forgets every profile it holds for you, and every synced setting on this device goes back to its default.</source>
-        <extracomment>Prompt before the Global settings sync profile is reset</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Loaded the {0} profile</source>
-        <extracomment>Note after settings were loaded from the server, {0} is the profile name</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Couldn&apos;t load settings from the server</source>
-        <extracomment>Note when loading settings from the server failed</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Saved to the {0} profile</source>
-        <extracomment>Note after this device&apos;s settings were saved to the server, {0} is the profile name</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Couldn&apos;t save settings to the server</source>
-        <extracomment>Note when saving settings to the server failed</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Reset the {0} profile</source>
-        <extracomment>Note after a settings sync profile was reset, {0} is the profile name</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Couldn&apos;t reset the {0} profile</source>
-        <extracomment>Note when resetting a settings sync profile failed, {0} is the profile name</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>24-Hour Clock</source>
@@ -6490,10 +3976,6 @@
         <translation>Escolhe entre vários estilos de barra de conteúdo ou desativa a barra de conteúdo</translation>
     </message>
     <message>
-        <source>Choose how many Since You Watched rows to display (1-5)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Choose sorting method for completed items</source>
         <translation>Escolher o método de ordenação dos itens concluídos</translation>
     </message>
@@ -6526,10 +4008,6 @@
         <translation>Escolher as indicações de tempo apresentadas junto da barra de progresso.</translation>
     </message>
     <message>
-        <source>Classic is the original centered moonfin layout. Modern is a responsive cinematic layout. Spotlight is a hero-first layout with pop-up content cards. Nouveau is a full-screen layout with sections stacked down the page. Minimalist is artwork, one play button and the episodes.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Classic keeps per-row image type and info overlay. Modern uses portrait-to-backdrop rows.</source>
         <translation>Clássico mantém o tipo de imagem e as informações sobrepostas de cada secção. Moderno apresenta cartões que passam de imagens verticais para imagens de fundo.</translation>
     </message>
@@ -6560,10 +4038,6 @@
     <message>
         <source>Customize subtitle appearance</source>
         <translation>Personalizar a aparência das legendas</translation>
-    </message>
-    <message>
-        <source>Details Screen Backdrop</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Details Screen Style</source>
@@ -6666,10 +4140,6 @@
         <translation>Ocultar o texto descritivo do filme ou do episódio.</translation>
     </message>
     <message>
-        <source>Home Screen Backdrop</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>How long a show stays in Next Up after you last watched it</source>
         <translation>Durante quanto tempo uma série permanece em A seguir após a última vez que a viste</translation>
     </message>
@@ -6700,10 +4170,6 @@
     <message>
         <source>Letterboxd</source>
         <translation>Letterboxd</translation>
-    </message>
-    <message>
-        <source>Library Backdrops</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Limit the maximum resolution the player will request. Higher-resolution content will be transcoded down.</source>
@@ -6794,10 +4260,6 @@
         <translation>Apresentação de A seguir</translation>
     </message>
     <message>
-        <source>Number of Rows to Add</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Only the sections the current Details screen style can show are listed. Hiding one hides it in every style that has it.</source>
         <translation>Só são apresentadas as secções disponíveis no estilo atual do ecrã de detalhes. Ocultar uma secção oculta-a em todos os estilos que a incluam.</translation>
     </message>
@@ -6840,10 +4302,6 @@
     <message>
         <source>Prioritize SDH/CC subtitle tracks when auto-selecting.</source>
         <translation>Prioriza faixas de legenda SDH/CC ao selecionar automaticamente.</translation>
-    </message>
-    <message>
-        <source>RECENTLY ADDED AND RELEASED</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>REWATCH</source>
@@ -6922,10 +4380,6 @@
         <translation>ESTÚDIOS</translation>
     </message>
     <message>
-        <source>Send Crash Reports to Server</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Show Audio rows in Home Sections.</source>
         <translation>Mostrar secções de áudio na página inicial.</translation>
     </message>
@@ -6982,10 +4436,6 @@
         <translation>Mostrar texto</translation>
     </message>
     <message>
-        <source>Show captions on YouTube trailers</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Show codec, resolution, and stream information in banner summary</source>
         <translation>Mostrar o codec, a resolução e as informações do fluxo no resumo do banner</translation>
     </message>
@@ -7004,10 +4454,6 @@
     <message>
         <source>Show ratings on individual episodes</source>
         <translation>Mostrar classificações em episódios individuais</translation>
-    </message>
-    <message>
-        <source>Show season availability badges on media details pages</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Show the Next Up overlay instead of the Skip Outro button.</source>
@@ -7098,10 +4544,6 @@
         <translation>Utilizar miniaturas da série</translation>
     </message>
     <message>
-        <source>Version {0}</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Video Player</source>
         <translation>Leitor de vídeo</translation>
     </message>
@@ -7131,19 +4573,9 @@
         <extracomment>Heading of a group of disabled rows in the Home Rows editor</extracomment>
     </message>
     <message>
-        <source>Genres and Studios</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Heading of a group of disabled rows in the Home Rows editor</extracomment>
-    </message>
-    <message>
         <source>External Lists</source>
         <translation>Listas externas</translation>
         <extracomment>Heading of a group of disabled rows in the Home Rows editor</extracomment>
-    </message>
-    <message>
-        <source>This account can&apos;t sign in right now. It may be outside its allowed hours, locked or disabled. Try again later or ask an administrator.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Shown when the server refuses a sign in because the account can&apos;t be used right now, for example outside its access schedule</extracomment>
     </message>
     <message>
         <source>Lossless</source>
@@ -7151,34 +4583,9 @@
         <extracomment>Part of the audio quality badge on the music player, for a lossless codec such as FLAC</extracomment>
     </message>
     <message>
-        <source>Collections row</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Under a collection&apos;s own row in the Home Rows editor</extracomment>
-    </message>
-    <message>
-        <source>Collections row from {0}</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Under a collection&apos;s own row in the Home Rows editor when it comes from another server. {0} is that server&apos;s name</extracomment>
-    </message>
-    <message>
-        <source>Genres row</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Under a genre&apos;s own row in the Home Rows editor</extracomment>
-    </message>
-    <message>
-        <source>Playlists row</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Under a playlist&apos;s own row in the Home Rows editor</extracomment>
-    </message>
-    <message>
         <source>Channel</source>
         <translation>Canal</translation>
         <extracomment>A row label in the player&apos;s Playback Information panel, for the Live TV channel playing</extracomment>
-    </message>
-    <message>
-        <source>Program</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A row label in the player&apos;s Playback Information panel, for the Live TV program airing now</extracomment>
     </message>
     <message>
         <source>Play Method</source>
@@ -7186,19 +4593,9 @@
         <extracomment>A row label in the player&apos;s Playback Information panel: Direct Play, Direct Stream or Transcoding</extracomment>
     </message>
     <message>
-        <source>Why</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A row label in the player&apos;s Playback Information panel, listing why the server is converting the file</extracomment>
-    </message>
-    <message>
         <source>Bitrate</source>
         <translation>Taxa de bits</translation>
         <extracomment>A row label in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>Quality Limit</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A row label in the player&apos;s Playback Information panel, for the maximum streaming bitrate the viewer picked</extracomment>
     </message>
     <message>
         <source>Resolution</source>
@@ -7206,29 +4603,9 @@
         <extracomment>A row label in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
-        <source>Frame Rate</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A row label in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
         <source>Track</source>
         <translation>Faixa</translation>
         <extracomment>A row label in the player&apos;s Playback Information panel, naming the audio or subtitle track playing</extracomment>
-    </message>
-    <message>
-        <source>Delivery</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A row label in the player&apos;s Playback Information panel, for how the subtitles reach the player</extracomment>
-    </message>
-    <message>
-        <source>File</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A section title in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>Technical</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A section title in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
         <source>Player</source>
@@ -7266,21 +4643,6 @@
         <extracomment>Audio channels in the player&apos;s Playback Information panel</extracomment>
     </message>
     <message>
-        <source>5.1 surround</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Audio channels in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>7.1 surround</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Audio channels in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>{count} channels</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Audio channels in the player&apos;s Playback Information panel. {count} is the number of channels</extracomment>
-    </message>
-    <message>
         <source>Embedded</source>
         <translation>Integrado</translation>
         <extracomment>Subtitle delivery in the player&apos;s Playback Information panel, for subtitles inside the file</extracomment>
@@ -7291,209 +4653,6 @@
         <extracomment>Subtitle delivery in the player&apos;s Playback Information panel, for subtitles in a file of their own</extracomment>
     </message>
     <message>
-        <source>Burned in by the server</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Subtitle delivery in the player&apos;s Playback Information panel, for subtitles the server draws into the picture</extracomment>
-    </message>
-    <message>
-        <source>{value} (original {original})</source>
-        <translation type="unfinished"></translation>
-        <extracomment>The bitrate row in the player&apos;s Playback Information panel while the server streams the file. {value} is what reaches the device and {original} is the file&apos;s own bitrate</extracomment>
-    </message>
-    <message>
-        <source>{value} (converted from {source})</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A row value in the player&apos;s Playback Information panel when the server converts it, for example AAC (converted from Dolby TrueHD)</extracomment>
-    </message>
-    <message>
-        <source>{value} ({size}, converted from {source})</source>
-        <translation type="unfinished"></translation>
-        <extracomment>The resolution row in the player&apos;s Playback Information panel when the server scales the video, for example 1080p (1920×1080, converted from 4K)</extracomment>
-    </message>
-    <message>
-        <source>Playing the original file as is.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>The note under Direct Play in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>The server is repackaging the file without converting it.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>The note under Direct Stream in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>The server is converting the video so this device can play it.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>The note under Transcoding in the player&apos;s Playback Information panel when only the video is converted</extracomment>
-    </message>
-    <message>
-        <source>The server is converting the audio so this device can play it.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>The note under Transcoding in the player&apos;s Playback Information panel when only the audio is converted</extracomment>
-    </message>
-    <message>
-        <source>The server is converting the video and audio so this device can play it.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>The note under Transcoding in the player&apos;s Playback Information panel when both are converted</extracomment>
-    </message>
-    <message>
-        <source>The server is converting this file so this device can play it.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>The note under Transcoding in the player&apos;s Playback Information panel when it isn&apos;t known which part is converted</extracomment>
-    </message>
-    <message>
-        <source>Transcoding is forced in settings</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play this file type</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, when the container isn&apos;t supported</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play this video format</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t display this HDR format</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play this audio format</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>Subtitles are being burned into the video</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>The file couldn&apos;t be played directly</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for any reason the others don&apos;t cover</extracomment>
-    </message>
-    <message>
-        <source>{bitrate} is above the {limit} streaming limit</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example 68.4 Mbps is above the 20 Mbps streaming limit</extracomment>
-    </message>
-    <message>
-        <source>The bitrate is above the streaming limit</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, when the file&apos;s bitrate is over the limit</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t open {container} files</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t open MKV files</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play {codec} video</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play HEVC video</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play {codec} {profile} video</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play HEVC Main 10 video</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play {codec} level {level} video</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play HEVC level 5.1 video</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play {bits}-bit video</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play 10-bit video</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play {resolution} video</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play 4K video</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play {fps} fps video</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play 59.94 fps video</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play interlaced video</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play anamorphic video</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t display {range}</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t display Dolby Vision Profile 7</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play {format} audio</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play DTS audio</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play {fullFormat}</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play Dolby TrueHD with Atmos</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play {channels} audio</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play 7.1 audio</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play {rate} kHz audio</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play 96 kHz audio</extracomment>
-    </message>
-    <message>
-        <source>This device can&apos;t play {bits}-bit audio</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example This device can&apos;t play 24-bit audio</extracomment>
-    </message>
-    <message>
-        <source>The audio track is in a separate file</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>This device can only play the first audio track</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel</extracomment>
-    </message>
-    <message>
-        <source>{format} subtitles are being burned into the video</source>
-        <translation type="unfinished"></translation>
-        <extracomment>A reason in the player&apos;s Playback Information panel, for example PGS subtitles are being burned into the video</extracomment>
-    </message>
-    <message>
-        <source>Roku native player</source>
-        <translation type="unfinished"></translation>
-        <extracomment>The Player row in the player&apos;s Playback Information panel, naming the Roku&apos;s own video player</extracomment>
-    </message>
-    <message>
-        <source>Keyboard Style</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Native uses your TV&apos;s own keyboard. Classic is the original Moonfin keyboard. Glass is a frosted panel with larger keys. Docked fills the bottom of the screen and shows what you type above the keys.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Native</source>
-        <extracomment>Keyboard style option: the TV&apos;s own keyboard</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Glass</source>
         <extracomment>Keyboard style option: a see-through panel with larger keys</extracomment>
         <translation>Glass</translation>
@@ -7502,21 +4661,6 @@
         <source>Input</source>
         <extracomment>Settings heading over the keyboard options</extracomment>
         <translation>Entrada</translation>
-    </message>
-    <message>
-        <source>space</source>
-        <extracomment>Label on the on-screen keyboard&apos;s space bar</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>for accents</source>
-        <extracomment>On-screen keyboard hint shown after the remote&apos;s options key, which opens the accents behind a key</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>close</source>
-        <extracomment>On-screen keyboard hint shown after the remote&apos;s back key</extracomment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Audio &amp; Subtitles</source>
