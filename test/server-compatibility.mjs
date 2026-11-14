@@ -134,7 +134,7 @@ const selections = {
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting', 'settingOr', 'getSavedUsers', 'savedUserFirst'],
     'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'isLocalhost', 'isSupportedMediaServer', 'isSiloSystemInfo', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'shuffleArray'],
-    'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
+    'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras', 'isSeerrCastMember'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
     'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'retryAction', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel', 'rokuAudioTrack'],
@@ -227,6 +227,8 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/poster-labels.bs', 'utf8');
 source += '\n' + await readFile('test/transcode-audio.bs', 'utf8');
 source += '\n' + await readFile('test/person-role.bs', 'utf8');
+source += '\n' + await readFile('test/seerr-person.bs', 'utf8');
+assert.match(await readFile('source/utils/seerrDetailItem.bs', 'utf8'), /function Person\([^]*?_seerrPerson: true/, 'A Seerr title\'s cast is marked as it\'s read');
 source += '\n' + await readFile('test/episode-cast.bs', 'utf8');
 // The rest of the Plex playback rules reach for the server
 const plexPlaybackFile = await readFile('source/api/plex/PlexPlayback.bs', 'utf8');
