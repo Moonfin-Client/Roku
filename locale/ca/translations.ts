@@ -927,8 +927,8 @@
         <extracomment>Settings Menu - Title for option</extracomment>
     </message>
     <message>
-        <source>Show What&apos;s New popup when Jellyfin is updated to a new version.</source>
-        <translation>Mostra la finestra emergent quan Jellyfin s&apos;actualitzi a una nova versió.</translation>
+        <source>Show What&apos;s New popup when Moonfin is updated to a new version.</source>
+        <translation>Mostra la finestra emergent quan Moonfin s&apos;actualitzi a una nova versió.</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
@@ -1523,8 +1523,8 @@
         <translation>Força la trancodificació</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for recap segments?</source>
-        <translation>Quina acció hauria de prendre Jellyfin per als segments de recapitulació?</translation>
+        <source>What action should Moonfin take for recap segments?</source>
+        <translation>Quina acció hauria de prendre Moonfin per als segments de recapitulació?</translation>
     </message>
     <message>
         <source>Force all playable media to be transcoded.</source>
@@ -1539,24 +1539,24 @@
         <translation>Segments comercials</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for outro segments?</source>
-        <translation>Quina acció hauria d&apos;emprendre Jellyfin per als segments finals?</translation>
+        <source>What action should Moonfin take for outro segments?</source>
+        <translation>Quina acció hauria d&apos;emprendre Moonfin per als segments finals?</translation>
     </message>
     <message>
-        <source>Settings relating to how Jellyfin should handle media segments.</source>
-        <translation>Configuració sobre com Jellyfin ha de gestionar els segments multimèdia.</translation>
+        <source>Settings relating to how Moonfin should handle media segments.</source>
+        <translation>Configuració sobre com Moonfin ha de gestionar els segments multimèdia.</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for commercial segments?</source>
-        <translation>Quines accions hauria de prendre Jellyfin per als segments comercials?</translation>
+        <source>What action should Moonfin take for commercial segments?</source>
+        <translation>Quines accions hauria de prendre Moonfin per als segments comercials?</translation>
     </message>
     <message>
         <source>Intro Segments</source>
         <translation>Segments introductoris</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for intro segments?</source>
-        <translation>Quina acció hauria d&apos;emprendre Jellyfin per als segments introductoris?</translation>
+        <source>What action should Moonfin take for intro segments?</source>
+        <translation>Quina acció hauria d&apos;emprendre Moonfin per als segments introductoris?</translation>
     </message>
     <message>
         <source>Media Segment Actions</source>
@@ -1583,8 +1583,8 @@
         <translation>Pitgeu D&apos;acord per a escriure</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for preview segments?</source>
-        <translation>Quina acció hauria d&apos;emprendre Jellyfin per als segments de previsualització?</translation>
+        <source>What action should Moonfin take for preview segments?</source>
+        <translation>Quina acció hauria d&apos;emprendre Moonfin per als segments de previsualització?</translation>
     </message>
     <message>
         <source>Ask To Skip</source>
@@ -6215,8 +6215,8 @@
         <translation>Sincronització amb el connector Moonbase i perfils de personalització</translation>
     </message>
     <message>
-        <source>Moonfin scores your own library, Jellyfin takes the picks from the server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</source>
-        <translation>Moonfin puntua la teva pròpia biblioteca, Jellyfin agafa les seleccions del servidor, TMDb fa servir Seerr, i Híbrid comença amb el servidor i després completa amb contingut local</translation>
+        <source>Moonfin scores your own library, Server takes the picks from your media server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</source>
+        <translation>Moonfin puntua la teva pròpia biblioteca, Servidor agafa les seleccions del teu servidor multimèdia, TMDb fa servir Seerr, i Híbrid comença amb el servidor i després completa amb contingut local</translation>
     </message>
     <message>
         <source>MyAnimeList</source>

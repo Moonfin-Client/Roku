@@ -973,8 +973,8 @@
         <translation>Von vorne beginnen.</translation>
     </message>
     <message>
-        <source>Settings relating to how Jellyfin should handle media segments.</source>
-        <translation>Einstellungen, wie Jellyfin mit Mediensegmenten umgehen sollte.</translation>
+        <source>Settings relating to how Moonfin should handle media segments.</source>
+        <translation>Einstellungen, wie Moonfin mit Mediensegmenten umgehen sollte.</translation>
     </message>
     <message>
         <source>No Results Found</source>
@@ -1157,32 +1157,32 @@
         <translation>Kommerzielle Segmente</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for commercial segments?</source>
-        <translation>Welche Maßnahmen sollte Jellyfin für kommerzielle Segmente ergreifen?</translation>
+        <source>What action should Moonfin take for commercial segments?</source>
+        <translation>Welche Maßnahmen sollte Moonfin für kommerzielle Segmente ergreifen?</translation>
     </message>
     <message>
         <source>Intro Segments</source>
         <translation>Intro-Segmente</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for intro segments?</source>
-        <translation>Welche Maßnahmen sollte Jellyfin für Intro-Segmente ergreifen?</translation>
+        <source>What action should Moonfin take for intro segments?</source>
+        <translation>Welche Maßnahmen sollte Moonfin für Intro-Segmente ergreifen?</translation>
     </message>
     <message>
         <source>Outro Segments</source>
         <translation>Outro-Segmente</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for outro segments?</source>
-        <translation>Welche Maßnahmen sollte Jellyfin für die Outro-Segmente ergreifen?</translation>
+        <source>What action should Moonfin take for outro segments?</source>
+        <translation>Welche Maßnahmen sollte Moonfin für die Outro-Segmente ergreifen?</translation>
     </message>
     <message>
         <source>Preview Segments</source>
         <translation>Vorschau-Segmente</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for preview segments?</source>
-        <translation>Welche Maßnahmen sollte Jellyfin für die Vorschau-Segmente ergreifen?</translation>
+        <source>What action should Moonfin take for preview segments?</source>
+        <translation>Welche Maßnahmen sollte Moonfin für die Vorschau-Segmente ergreifen?</translation>
     </message>
     <message>
         <source>Saved Profile</source>
@@ -1229,8 +1229,8 @@
         <translation>Zusammenfassungssegmente</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for recap segments?</source>
-        <translation>Welche Maßnahmen sollte Jellyfin in Bezug auf die Zusammenfassungssegmente ergreifen?</translation>
+        <source>What action should Moonfin take for recap segments?</source>
+        <translation>Welche Maßnahmen sollte Moonfin in Bezug auf die Zusammenfassungssegmente ergreifen?</translation>
     </message>
     <message>
         <source>Item Detail Screen</source>
@@ -2235,8 +2235,8 @@
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
-        <source>Show What&apos;s New popup when Jellyfin is updated to a new version.</source>
-        <translation>Zeige Was ist neu Popup nach einem Jellyfin update.</translation>
+        <source>Show What&apos;s New popup when Moonfin is updated to a new version.</source>
+        <translation>Zeige Was ist neu Popup nach einem Moonfin update.</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>

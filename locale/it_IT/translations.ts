@@ -711,8 +711,8 @@
         <extracomment>Description of a setting - should we hide subtitles that might transcode</extracomment>
     </message>
     <message>
-        <source>Show What&apos;s New popup when Jellyfin is updated to a new version.</source>
-        <translation>Visualizza il popup Novità quando Jellyfin viene aggiornato ad una nuova versione.</translation>
+        <source>Show What&apos;s New popup when Moonfin is updated to a new version.</source>
+        <translation>Visualizza il popup Novità quando Moonfin viene aggiornato ad una nuova versione.</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
@@ -5425,8 +5425,8 @@
         <translation>Sincronizzazione con il plugin Moonbase e profili di personalizzazione</translation>
     </message>
     <message>
-        <source>Moonfin scores your own library, Jellyfin takes the picks from the server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</source>
-        <translation>Moonfin valuta la tua libreria, Jellyfin prende i suggerimenti dal server, TMDb usa Seerr e Ibrido parte dal server e poi integra in locale</translation>
+        <source>Moonfin scores your own library, Server takes the picks from your media server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</source>
+        <translation>Moonfin valuta la tua libreria, Server prende i suggerimenti dal tuo server multimediale, TMDb usa Seerr e Ibrido parte dal server e poi integra in locale</translation>
     </message>
     <message>
         <source>MyAnimeList</source>
