@@ -1424,13 +1424,24 @@ process.stdout.write('PASS: play on select wiring (4 checks)\n');
 
 // The server's answer to /Users/Me decides whether an access schedule has closed
 const scheduleTask = await readFile('components/accessSchedule/AccessScheduleTask.bs', 'utf8');
-assert.match(scheduleTask, /if not exempt and entries\.Count\(\) > 0 then refused = accessSchedule\.RefusedBy\(requestResponse\(APIRequest\("Users\/Me"\), "GET"\)\.status\)/, 'Only a user with a schedule who isnt an administrator asks the server');
+assert.match(scheduleTask, /if not exempt and entries\.Count\(\) > 0\s+refused = accessSchedule\.RefusedBy\(requestResponse\(APIRequest\("Users\/Me"\), "GET"\)\.status\)/, 'Only a user with a schedule who isnt an administrator asks the server');
+assert.match(scheduleTask, /if m\.top\.askClock(?:\s+'[^\n]*)*\s+timeResponse = requestResponse\(APIRequest\("Moonfin\/Time"\), "GET", "", CLOCK_TIMEOUT_MS\)/, 'The server time comes from the plugin, only when the watcher still wants it, and waits only briefly');
+assert.match(scheduleTask, /const CLOCK_TIMEOUT_MS = 5000/, 'A stalled server clock read holds up a refused look by at most 5 seconds');
+assert.match(scheduleTask, /clockMissing = timeResponse\.status = 404/, 'A server without Moonfin/Time is told apart from one that failed');
 const scheduleWatcher = await readFile('components/accessSchedule/AccessScheduleWatcher.bs', 'utf8');
 assert.match(scheduleWatcher, /status = accessSchedule\.Status\(m\.entries, refused, day, secondOfDay\)/, 'The server answer decides whether the user is blocked');
 assert.match(scheduleWatcher, /sub onRefused\(\)(?:\s+'[^\n]*)*\s+if m\.top\.userId = "" or m\.top\.blocked then return/, 'A refused request starts no look while blocked, and asks for another while one is under way');
 assert.match(scheduleWatcher, /if result\.ok[^]*?else(?:\s+'[^\n]*)*\s+startTimer\(RETRY_SECONDS\)/, 'A failed read keeps the last answer and asks again');
 assert.match(scheduleWatcher, /if m\.exempt then return\s+delay = POLL_SECONDS\s+if m\.entries\.Count\(\) = 0 then delay = IDLE_SECONDS/, 'An administrator isnt polled and a user without a schedule is polled every 15 minutes');
-process.stdout.write('PASS: access schedule wiring (5 checks)\n');
+assert.match(scheduleWatcher, /if m\.serverClock <> invalid\s+server = accessSchedule\.ServerWallClock\(m\.serverClock, now\.AsSeconds\(\)\)/, 'The schedule is judged on the server clock when the plugin reports it');
+assert.match(scheduleWatcher, /if result\.clockMissing then m\.askClock = false\s+if result\.clock <> invalid or result\.clockMissing then m\.serverClock = result\.clock/, 'A server without Moonfin/Time is not asked again and a failed read keeps the last clock');
+assert.match(scheduleWatcher, /m\.task\.askClock = m\.askClock\n/, 'The server clock is asked for once the time is up too, since the plugin answers it outside the schedule');
+assert.match(scheduleWatcher, /setBlocked\(true, withDate\(status\.next, wallSeconds\)\)/, 'The next opening carries its date on the clock the schedule was judged on');
+assert.match(scheduleWatcher, /wallSeconds = server\.wallSeconds[^]*?wallSeconds = now\.AsSeconds\(\)/, 'That clock is the server wall clock with the plugin, and this device\'s local clock without it');
+const timesUpSource = await readFile('components/accessSchedule/TimesUp.bs', 'utf8');
+assert.match(timesUpSource, /months\[opening\.month - 1\], opening\.dayOfMonth\.ToStr\(\)/, 'Times up names the date the opening carries');
+assert.doesNotMatch(timesUpSource, /ToLocalTime/, 'Times up never moves the opening into this device\'s zone');
+process.stdout.write('PASS: access schedule wiring (10 checks)\n');
 
 // The library header, its dialogs and its settings: Home goes home, the display choices sync, and
 // a removed card leaves every view of it
