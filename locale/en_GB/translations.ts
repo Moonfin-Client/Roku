@@ -750,8 +750,8 @@
         <translation>Settings relating to the appearance of the Home screen and the program in general.</translation>
     </message>
     <message>
-        <source>Show What&apos;s New popup when Jellyfin is updated to a new version.</source>
-        <translation>Show What&apos;s New popup when Jellyfin is updated to a new version.</translation>
+        <source>Show What&apos;s New popup when Moonfin is updated to a new version.</source>
+        <translation>Show What&apos;s New popup when Moonfin is updated to a new version.</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>

@@ -687,9 +687,14 @@ process.stdout.write('PASS: Jellyfin review regressions (65 checks)\n');
 // Shared Roku settings labels should describe the connected server, not Jellyfin only.
 const settingsConfig = await readFile('settings/settings.json', 'utf8');
 assert.match(settingsConfig, /"title": "Server Recommends"/, 'Recommendation source label is server-neutral');
-assert.doesNotMatch(settingsConfig, /Jellyfin Recommends|stock Jellyfin server similarity|What action should Jellyfin take|when Jellyfin is updated|installed on your Jellyfin server/, 'Settings avoid Jellyfin-only wording for shared features');
+const jellyfinOnlyWording = /Jellyfin Recommends|Jellyfin takes the picks|how Jellyfin should handle|What action should Jellyfin take|when Jellyfin is updated|installed on your Jellyfin server/;
+assert.doesNotMatch(settingsConfig, jellyfinOnlyWording, 'Settings avoid Jellyfin-only wording for shared features');
 assert.doesNotMatch(await readFile('components/settings/settings.bs', 'utf8'), /installed on your Jellyfin server/, 'Plugin connection error is server-neutral');
-process.stdout.write('PASS: server-neutral settings labels (3 checks)\n');
+// Translations are keyed by the English text, so the template has to follow settings.json.
+const enTemplate = await readFile('locale/en_US/translations.ts', 'utf8');
+assert.match(enTemplate, /<source>Server Recommends<\/source>/, 'Translation template has the Server Recommends label');
+assert.doesNotMatch(enTemplate, jellyfinOnlyWording, 'Translation template has no stale Jellyfin-only settings wording');
+process.stdout.write('PASS: server-neutral settings labels (5 checks)\n');
 
 // Names that share a glyph share one file, so every alias needs its target and no file of its own.
 const achievementIcons = await readFile('source/utils/achievementsIcons.bs', 'utf8');

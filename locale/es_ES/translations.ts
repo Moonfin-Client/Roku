@@ -1016,20 +1016,20 @@
         <translation>Forzar la transcodificación de todos los medios.</translation>
     </message>
     <message>
-        <source>Settings relating to how Jellyfin should handle media segments.</source>
-        <translation>Configuraciones relacionadas con cómo Jellyfin debería manejar los segmentos multimedia.</translation>
+        <source>Settings relating to how Moonfin should handle media segments.</source>
+        <translation>Configuraciones relacionadas con cómo Moonfin debería manejar los segmentos multimedia.</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for commercial segments?</source>
-        <translation>¿Qué acción debería tomar Jellyfin para los segmentos comerciales?</translation>
+        <source>What action should Moonfin take for commercial segments?</source>
+        <translation>¿Qué acción debería tomar Moonfin para los segmentos comerciales?</translation>
     </message>
     <message>
         <source>Intro Segments</source>
         <translation>Segmentos de introducción</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for intro segments?</source>
-        <translation>¿Que acción debería tomar Jellyfin para los segmentos de introducción?</translation>
+        <source>What action should Moonfin take for intro segments?</source>
+        <translation>¿Que acción debería tomar Moonfin para los segmentos de introducción?</translation>
     </message>
     <message>
         <source>Are you sure you want to delete this subtitle?</source>
@@ -1048,8 +1048,8 @@
         <translation>Segmentos finales</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for preview segments?</source>
-        <translation>¿Qué acción debe realizar Jellyfin para los segmentos de vista previa?</translation>
+        <source>What action should Moonfin take for preview segments?</source>
+        <translation>¿Qué acción debe realizar Moonfin para los segmentos de vista previa?</translation>
     </message>
     <message>
         <source>Preview Segments</source>
@@ -1060,8 +1060,8 @@
         <translation>Segmentos de recapitulación</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for recap segments?</source>
-        <translation>¿Qué acción debe realizar Jellyfin para los segmentos de recapitulación?</translation>
+        <source>What action should Moonfin take for recap segments?</source>
+        <translation>¿Qué acción debe realizar Moonfin para los segmentos de recapitulación?</translation>
     </message>
     <message>
         <source>Ask To Skip</source>
@@ -1208,8 +1208,8 @@
         <translation>Ajustes relacionados con la apariencia de las páginas de la Biblioteca.</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for outro segments?</source>
-        <translation>¿Qué acción debería realizar Jellyfin para los segmentos finales?</translation>
+        <source>What action should Moonfin take for outro segments?</source>
+        <translation>¿Qué acción debería realizar Moonfin para los segmentos finales?</translation>
     </message>
     <message>
         <source>Settings relating to the appearance of the item detail screen.</source>
@@ -2337,8 +2337,8 @@
         <extracomment>Used in Filter menu</extracomment>
     </message>
     <message>
-        <source>Show What&apos;s New popup when Jellyfin is updated to a new version.</source>
-        <translation>Enseñar popup de Novedades cuando Jellyfin se actualiza a una nueva versión.</translation>
+        <source>Show What&apos;s New popup when Moonfin is updated to a new version.</source>
+        <translation>Enseñar popup de Novedades cuando Moonfin se actualiza a una nueva versión.</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>

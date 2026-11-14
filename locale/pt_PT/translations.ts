@@ -4228,8 +4228,8 @@
         <translation>Sincronização com o plugin Moonbase e perfis de personalização</translation>
     </message>
     <message>
-        <source>Moonfin scores your own library, Jellyfin takes the picks from the server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</source>
-        <translation>O Moonfin ordena os itens da tua biblioteca por relevância. O Jellyfin utiliza as recomendações do servidor. O TMDB utiliza o Seerr. Híbrido começa pelas recomendações do servidor e acrescenta sugestões locais.</translation>
+        <source>Moonfin scores your own library, Server takes the picks from your media server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</source>
+        <translation>O Moonfin ordena os itens da tua biblioteca por relevância. O Servidor utiliza as recomendações do teu servidor multimédia. O TMDB utiliza o Seerr. Híbrido começa pelas recomendações do servidor e acrescenta sugestões locais.</translation>
     </message>
     <message>
         <source>Music Player</source>

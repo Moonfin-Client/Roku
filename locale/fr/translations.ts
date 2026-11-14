@@ -927,8 +927,8 @@
         <extracomment>Settings Menu - Title for option</extracomment>
     </message>
     <message>
-        <source>Show What&apos;s New popup when Jellyfin is updated to a new version.</source>
-        <translation>Afficher la fenêtre contextuelle des nouveautés lorsque que Jellyfin est mise à jour avec la dernière version.</translation>
+        <source>Show What&apos;s New popup when Moonfin is updated to a new version.</source>
+        <translation>Afficher la fenêtre contextuelle des nouveautés lorsque que Moonfin est mise à jour avec la dernière version.</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
@@ -1454,12 +1454,12 @@
         <translation>Segments d&apos;introduction</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for intro segments?</source>
-        <translation>Quelle action Jellyfin doit-il prendre pour les segments d&apos;introduction ?</translation>
+        <source>What action should Moonfin take for intro segments?</source>
+        <translation>Quelle action Moonfin doit-il prendre pour les segments d&apos;introduction ?</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for outro segments?</source>
-        <translation>Quelle action Jellyfin doit-il prendre pour les segments d&apos;outro ?</translation>
+        <source>What action should Moonfin take for outro segments?</source>
+        <translation>Quelle action Moonfin doit-il prendre pour les segments d&apos;outro ?</translation>
     </message>
     <message>
         <source>Preview Segments</source>
@@ -1470,8 +1470,8 @@
         <translation>Segments récapitulatifs</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for recap segments?</source>
-        <translation>Quelle action Jellyfin doit-il prendre pour les segments récapitulatifs ?</translation>
+        <source>What action should Moonfin take for recap segments?</source>
+        <translation>Quelle action Moonfin doit-il prendre pour les segments récapitulatifs ?</translation>
     </message>
     <message>
         <source>Ask To Skip</source>
@@ -1674,8 +1674,8 @@
         <translation>Listes de lecture</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for preview segments?</source>
-        <translation>Quelle action Jellyfin doit-il prendre pour les segments d&apos;aperçu ?</translation>
+        <source>What action should Moonfin take for preview segments?</source>
+        <translation>Quelle action Moonfin doit-il prendre pour les segments d&apos;aperçu ?</translation>
     </message>
     <message>
         <source>Delete Playlist</source>
@@ -1698,8 +1698,8 @@
         <translation>Afficher des images TrickPlay personnalisées même si ce Roku indique afficher les siennes. Cela peut entraîner une superposition des deux images.</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for commercial segments?</source>
-        <translation>Quelle action Jellyfin devrait-elle prendre pour les segments commerciaux ?</translation>
+        <source>What action should Moonfin take for commercial segments?</source>
+        <translation>Quelle action Moonfin devrait-elle prendre pour les segments commerciaux ?</translation>
     </message>
     <message>
         <source>Settings relating to the appearance of pages in all Libraries.</source>
@@ -1710,8 +1710,8 @@
         <translation>Transcodage forcé</translation>
     </message>
     <message>
-        <source>Settings relating to how Jellyfin should handle media segments.</source>
-        <translation>Paramètres relatifs à la façon dont Jellyfin doit gérer les segments multimédias.</translation>
+        <source>Settings relating to how Moonfin should handle media segments.</source>
+        <translation>Paramètres relatifs à la façon dont Moonfin doit gérer les segments multimédias.</translation>
     </message>
     <message>
         <source>Settings relating to the appearance of the item detail screen.</source>
@@ -6214,8 +6214,8 @@
         <translation>Synchronisation du plugin Moonbase et profils de personnalisation</translation>
     </message>
     <message>
-        <source>Moonfin scores your own library, Jellyfin takes the picks from the server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</source>
-        <translation>Moonfin note votre propre bibliothèque, Jellyfin reprend les choix du serveur, TMDb passe par Seerr, et Hybrid combine le serveur puis complète localement</translation>
+        <source>Moonfin scores your own library, Server takes the picks from your media server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</source>
+        <translation>Moonfin note votre propre bibliothèque, Serveur reprend les choix de votre serveur multimédia, TMDb passe par Seerr, et Hybrid combine le serveur puis complète localement</translation>
     </message>
     <message>
         <source>Navigation, home screen, libraries, details page, and themes</source>

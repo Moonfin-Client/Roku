@@ -725,8 +725,8 @@
         <translation>Afficher la fenêtre contextuelle des nouveautés</translation>
     </message>
     <message>
-        <source>Show What&apos;s New popup when Jellyfin is updated to a new version.</source>
-        <translation>Afficher la fenêtre contextuelle des nouveautés lorsque que Jellyfin est mise à jour avec la dernière version.</translation>
+        <source>Show What&apos;s New popup when Moonfin is updated to a new version.</source>
+        <translation>Afficher la fenêtre contextuelle des nouveautés lorsque que Moonfin est mise à jour avec la dernière version.</translation>
     </message>
     <message>
         <source>Unplayed</source>
@@ -1261,16 +1261,16 @@
         <translation>Prise en charge du profil vidéo par niveau</translation>
     </message>
     <message>
-        <source>Settings relating to how Jellyfin should handle media segments.</source>
-        <translation>Paramètres relatifs à la façon dont Jellyfin doit gérer les segments multimédias.</translation>
+        <source>Settings relating to how Moonfin should handle media segments.</source>
+        <translation>Paramètres relatifs à la façon dont Moonfin doit gérer les segments multimédias.</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for commercial segments?</source>
-        <translation>Quelle action Jellyfin devrait-elle prendre pour les segments commerciaux ?</translation>
+        <source>What action should Moonfin take for commercial segments?</source>
+        <translation>Quelle action Moonfin devrait-elle prendre pour les segments commerciaux ?</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for intro segments?</source>
-        <translation>Quelle action Jellyfin doit-il prendre pour les segments d&apos;introduction ?</translation>
+        <source>What action should Moonfin take for intro segments?</source>
+        <translation>Quelle action Moonfin doit-il prendre pour les segments d&apos;introduction ?</translation>
     </message>
     <message>
         <source>Preview Segments</source>
@@ -1281,16 +1281,16 @@
         <translation>Segments d&apos;outro</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for preview segments?</source>
-        <translation>Quelle action Jellyfin doit-il prendre pour les segments d&apos;aperçu ?</translation>
+        <source>What action should Moonfin take for preview segments?</source>
+        <translation>Quelle action Moonfin doit-il prendre pour les segments d&apos;aperçu ?</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for outro segments?</source>
-        <translation>Quelle action Jellyfin doit-il prendre pour les segments d&apos;outro ?</translation>
+        <source>What action should Moonfin take for outro segments?</source>
+        <translation>Quelle action Moonfin doit-il prendre pour les segments d&apos;outro ?</translation>
     </message>
     <message>
-        <source>What action should Jellyfin take for recap segments?</source>
-        <translation>Quelle action Jellyfin doit-il prendre pour les segments récapitulatifs ?</translation>
+        <source>What action should Moonfin take for recap segments?</source>
+        <translation>Quelle action Moonfin doit-il prendre pour les segments récapitulatifs ?</translation>
     </message>
     <message>
         <source>Settings relating to the appearance of pages in all Libraries.</source>

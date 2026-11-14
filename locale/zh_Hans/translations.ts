@@ -1008,8 +1008,8 @@
         <extracomment>Settings Menu - Title for option</extracomment>
     </message>
     <message>
-        <source>Show What&apos;s New popup when Jellyfin is updated to a new version.</source>
-        <translation>在Jellyfin更新到新版本时显示“更新内容”弹窗。</translation>
+        <source>Show What&apos;s New popup when Moonfin is updated to a new version.</source>
+        <translation>在Moonfin更新到新版本时显示“更新内容”弹窗。</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
@@ -1367,8 +1367,8 @@
         <extracomment>User Setting - Title for option</extracomment>
     </message>
     <message>
-        <source>Settings relating to how Jellyfin should handle media segments.</source>
-        <translation>与Jellyfin如何处理媒体片段相关的设置。</translation>
+        <source>Settings relating to how Moonfin should handle media segments.</source>
+        <translation>与Moonfin如何处理媒体片段相关的设置。</translation>
         <extracomment>User Setting - Description for option</extracomment>
     </message>
     <message>
@@ -1377,8 +1377,8 @@
         <extracomment>User Setting - Title for option</extracomment>
     </message>
     <message>
-        <source>What action should Jellyfin take for commercial segments?</source>
-        <translation>Jellyfin 应对广告片段执行什么操作？</translation>
+        <source>What action should Moonfin take for commercial segments?</source>
+        <translation>Moonfin 应对广告片段执行什么操作？</translation>
         <extracomment>User Setting - Description for option</extracomment>
     </message>
     <message>
@@ -1387,8 +1387,8 @@
         <extracomment>User Setting - Title for option</extracomment>
     </message>
     <message>
-        <source>What action should Jellyfin take for intro segments?</source>
-        <translation>Jellyfin 应对片头片段执行什么操作？</translation>
+        <source>What action should Moonfin take for intro segments?</source>
+        <translation>Moonfin 应对片头片段执行什么操作？</translation>
         <extracomment>User Setting - Description for option</extracomment>
     </message>
     <message>
@@ -1397,8 +1397,8 @@
         <extracomment>User Setting - Title for option</extracomment>
     </message>
     <message>
-        <source>What action should Jellyfin take for outro segments?</source>
-        <translation>Jellyfin 应对片尾片段执行什么操作？</translation>
+        <source>What action should Moonfin take for outro segments?</source>
+        <translation>Moonfin 应对片尾片段执行什么操作？</translation>
         <extracomment>User Setting - Description for option</extracomment>
     </message>
     <message>
@@ -1407,8 +1407,8 @@
         <extracomment>User Setting - Title for option</extracomment>
     </message>
     <message>
-        <source>What action should Jellyfin take for preview segments?</source>
-        <translation>Jellyfin 应对预览片段执行什么操作？</translation>
+        <source>What action should Moonfin take for preview segments?</source>
+        <translation>Moonfin 应对预览片段执行什么操作？</translation>
         <extracomment>User Setting - Description for option</extracomment>
     </message>
     <message>
@@ -1417,8 +1417,8 @@
         <extracomment>User Setting - Title for option</extracomment>
     </message>
     <message>
-        <source>What action should Jellyfin take for recap segments?</source>
-        <translation>Jellyfin 应对剧情回顾片段执行什么操作？</translation>
+        <source>What action should Moonfin take for recap segments?</source>
+        <translation>Moonfin 应对剧情回顾片段执行什么操作？</translation>
         <extracomment>User Setting - Description for option</extracomment>
     </message>
     <message>
