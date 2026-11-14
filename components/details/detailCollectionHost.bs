@@ -1,6 +1,7 @@
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/utils/collectionSort.bs"
 import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/seerrMissingCollection.bs"
 
 ' A collection's action row and how it plays, shared by every details screen that draws one.
 ' These run in the host screen's scope, so m is whichever screen imported them.
@@ -11,10 +12,18 @@ import "pkg:/source/utils/misc.bs"
 '   function collectionMembers() as object
 '   function collectionOrder() as object, the ids the collection was arranged in through Moonbase
 '   sub collectionSortChanged(), only on a screen that opens the sort picker
+'   sub collectionPageAdded(), draws the titles loaded so far
 
-' Takes a title out of the list Play reads, and says whether it was there
+' Takes a title out of the list Play reads and out of the titles loaded so far, and says whether it
+' was there. The server's list closes up behind it, so the next page starts one sooner.
 function dropCollectionMember(itemId as string) as boolean
-    members = collectionMembers()
+    paging = m.collectionPaging
+    loaded = isValid(paging) and dropById(paging.library, itemId)
+    if loaded and paging.next > 0 then paging.next = paging.next - 1
+    return dropById(collectionMembers(), itemId) or loaded
+end function
+
+function dropById(members as object, itemId as string) as boolean
     for i = members.count() - 1 to 0 step -1
         if chainLookupReturn(members[i], "json.Id", "") = itemId
             members.Delete(i)
@@ -81,8 +90,11 @@ function isPartWatched(item as object) as boolean
 end function
 
 ' One left part way through carries on, otherwise the first unwatched, so a run through a set
-' of films picks up where it was. A collection watched all the way through starts over.
+' of films picks up where it was. A collection watched all the way through starts over. Play takes in
+' the whole collection, so the titles not loaded yet are fetched first.
 sub playCollection(shuffle as boolean)
+    if fetchingRestFor({ shuffle: shuffle }) then return
+
     queue = collectionQueue()
     if queue.count() = 0 then return
 
@@ -121,7 +133,34 @@ end sub
 sub playCollectionFrom(index as integer)
     queue = collectionQueue()
     if index < 0 or index >= queue.count() then return
+    if fetchingRestFor({ fromId: chainLookupReturn(queue[index], "json.Id", "") }) then return
     startCollectionQueue(queue, index, true)
+end sub
+
+' A run takes in the whole collection, so the titles not loaded yet are fetched first and the press
+' is answered once they land
+function fetchingRestFor(press as object) as boolean
+    paging = m.collectionPaging
+    if not isValid(paging) or not paging.hasMore then return false
+    paging.pendingPlay = press
+    loadMoreCollectionMembers(true)
+    return true
+end function
+
+' The press that was waiting on the rest of the collection. A title picked from the playlist is found
+' again by its id, since the titles that came in may sit ahead of it.
+sub answerPendingPlay(press as object)
+    if not isValid(press.fromId)
+        playCollection(press.shuffle)
+        return
+    end if
+    queue = collectionQueue()
+    for i = 0 to queue.count() - 1
+        if chainLookupReturn(queue[i], "json.Id", "") = press.fromId
+            playCollectionFrom(i)
+            return
+        end if
+    end for
 end sub
 
 ' Only the first title resumes, the rest of the run starts each one from the top
@@ -142,22 +181,83 @@ sub startCollectionQueue(queue as object, start as integer, resume as boolean)
     m.global.queueManager.callFunc("playQueue")
 end sub
 
-' Coming back from playback, the titles are asked for again and laid over the cards already
-' showing, so the next Play picks up from where the run got to
+' Coming back from playback, the titles loaded so far are asked for again and laid over the cards
+' already showing, so the next Play picks up from where the run got to
 sub refreshCollectionMembers()
+    loaded = COLLECTION_PAGE_SIZE
+    if isValid(m.collectionPaging) then loaded = m.collectionPaging.next
+    if loaded <= 0 then return
     if isValid(m.collectionRefreshTask) then m.collectionRefreshTask.unobserveField("done")
-    m.collectionRefreshTask = startCollectionMembersTask("onCollectionMembersRefreshed")
+    m.collectionRefreshTask = startCollectionMembersTask("onCollectionMembersRefreshed", 0, loaded, true)
 end sub
 
-function startCollectionMembersTask(handler as string, findsMissing = false as boolean) as object
+function startCollectionMembersTask(handler as string, startIndex as integer, limit as integer, titlesOnly as boolean, withPeople = false as boolean) as object
     task = CreateObject("roSGNode", "LoadCollectionsTask")
     task.mode = "members"
-    task.titlesOnly = true
-    task.findsMissing = findsMissing
+    task.titlesOnly = titlesOnly
+    task.withPeople = withPeople
+    task.startIndex = startIndex
+    task.limit = limit
     task.itemJson = m.top.itemContent.json
     task.observeField("done", handler)
     task.control = TaskControl.RUN
     return task
+end function
+
+' ===== Pages =====
+
+' A collection's titles load a page at a time. The first page brings the order saved through Moonbase
+' and the titles the library is missing, and each one after it adds to the titles loaded so far. Only
+' a screen that gathers the cast and crew from the titles asks for the people in them.
+sub loadCollectionMembers(withPeople = false as boolean)
+    m.collectionPaging = { library: [], missing: [], order: [], next: 0, hasMore: true, loading: false, pendingPlay: invalid, withPeople: withPeople }
+    loadMoreCollectionMembers()
+end sub
+
+' Classic and Modern get the first page along with the rest of the page's rows, and carry on from it
+sub continueCollectionPages(row as object)
+    library = []
+    for each node in row.getChildren(-1, 0)
+        if chainLookupReturn(node, "json.SeerrMissing", false) <> true then library.push(node)
+    end for
+    m.collectionPaging = { library: library, missing: row.missing ?? [], order: row.order ?? [], next: row.nextIndex ?? 0, hasMore: row.hasMore ?? false, loading: false, pendingPlay: invalid, withPeople: false }
+end sub
+
+' The next page, or with everything set, all the titles still to come for Play, without the people in
+' them. A page already on its way is left to land first.
+sub loadMoreCollectionMembers(everything = false as boolean)
+    paging = m.collectionPaging
+    if not isValid(paging) or paging.loading or not paging.hasMore then return
+    paging.loading = true
+    limit = COLLECTION_PAGE_SIZE
+    if everything then limit = 0
+    m.collectionPageTask = startCollectionMembersTask("onCollectionPageLoaded", paging.next, limit, everything, paging.withPeople and not everything)
+end sub
+
+sub onCollectionPageLoaded(event as object)
+    task = event.getRoSGNode()
+    paging = m.collectionPaging
+    if not isValid(paging) or not task.isSameNode(m.collectionPageTask) then return
+    if task.startIndex = 0
+        paging.missing = task.missing ?? []
+        paging.order = task.order ?? []
+    end if
+    paging.library.append(task.items ?? [])
+    paging.next = task.nextIndex
+    paging.hasMore = task.hasMore
+    paging.loading = false
+    collectionPageAdded()
+
+    press = paging.pendingPlay
+    paging.pendingPlay = invalid
+    if isValid(press) then answerPendingPlay(press)
+end sub
+
+' The titles loaded so far, with the ones the library is missing slotted in by release
+function loadedCollection() as object
+    paging = m.collectionPaging
+    if not isValid(paging) then return []
+    return seerrMissingCollection.SlotByRelease(paging.library, paging.missing)
 end function
 
 sub onCollectionMembersRefreshed()

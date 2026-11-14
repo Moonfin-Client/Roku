@@ -30,6 +30,25 @@ sub testCollectionLookup()
     m.collectionServer.members = { "box-alien": [{ Id: "movie-2" }] }
     assertEqual(collectionIds(findParents({ Id: "movie-2", ProviderIds: {} })), "box-alien", "The next account asks again instead of reading the last one's answers")
     assertEqual(m.collectionServer.asked, 6, "Every collection was asked again")
+
+    ' A collection's own titles come a page at a time, each from where the last one stopped
+    m.collectionServer.members = { "box-big": [{ Id: "a" }, { Id: "b" }, { Id: "c" }, { Id: "d" }, { Id: "e" }] }
+    firstPage = collectionPage("box-big", 0, 2, "")
+    assertEqual(collectionIds(firstPage.items), "a,b", "The first page holds as many titles as were asked for")
+    assertEqual(firstPage.nextIndex, 2, "The next page starts after them")
+    assertEqual(firstPage.hasMore, true, "and the server's total says there is one")
+    lastPage = collectionPage("box-big", 4, 2, "")
+    assertEqual(collectionIds(lastPage.items), "e", "The last page holds what is left")
+    assertEqual(lastPage.hasMore, false, "and nothing comes after it")
+    rest = collectionPage("box-big", 2, 0, "")
+    assertEqual(collectionIds(rest.items), "c,d,e", "Play reads every title left in one go")
+    assertEqual(rest.hasMore, false, "which leaves nothing to load")
+
+    m.collectionServer.noTotal = true
+    assertEqual(collectionPage("box-big", 0, 2, "").hasMore, true, "A server that sends no total is taken to have more behind a full page")
+    assertEqual(collectionPage("box-big", 4, 2, "").hasMore, false, "and none behind a short one")
+    m.collectionServer.Delete("noTotal")
+    assertEqual(collectionPage("box-gone", 0, 2, "").hasMore, false, "A page that brings nothing ends the run, so nothing keeps asking")
 end sub
 
 ' Stands in for the server the lookup asks: the Jellyfin 12 route, the list of collections, then
@@ -39,7 +58,18 @@ function fetch(path as string, params as object) as dynamic
     if path.Instr("/Collections") >= 0 then return server.route
     if isValid(params.ParentId)
         server.asked = server.asked + 1
-        return { Items: server.members[params.ParentId] ?? [] }
+        members = server.members[params.ParentId] ?? []
+        if not isValid(params.StartIndex) then return { Items: members }
+
+        ' A page from StartIndex, Limit long when there is one
+        page = []
+        final = members.count() - 1
+        if isValid(params.Limit) and params.StartIndex + params.Limit - 1 < final then final = params.StartIndex + params.Limit - 1
+        for i = params.StartIndex to final
+            page.push(members[i])
+        end for
+        if server.DoesExist("noTotal") then return { Items: page }
+        return { Items: page, TotalRecordCount: members.count() }
     end if
     return { Items: server.collections }
 end function

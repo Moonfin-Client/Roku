@@ -225,6 +225,13 @@ sub loadSections()
         return
     end if
 
+    ' A collection's page is its titles, the way Nouveau draws one
+    if isCollection()
+        loadCollectionMembers(detailSectionLayout.Shows("cast") or detailSectionLayout.Shows("crew"))
+        rebuildSections()
+        return
+    end if
+
     task = CreateObject("roSGNode", "LoadExtrasTask")
     task.itemId = m.top.id
     task.itemType = m.top.itemType
@@ -406,21 +413,26 @@ function chosenTrack(tracks as object) as string
     return tr("None")
 end function
 
-' Who directed and wrote a title and the studios behind it
+' Who directed and wrote a title and the studios behind it, under a heading that turns plural when
+' there's more than one
 function factChoices(itemData as object) as object
     choices = []
     ' Read off the item, since the people rail's list keeps someone who both wrote and directed
     ' only once
     if detailSectionLayout.Shows("crew")
-        people = chainLookupReturn(itemData, "People", [])
-        for each role in [["Director", tr("Director")], ["Writer", tr("Writer")]]
+        people = itemPeople(itemData)
+        for each role in [["Director", tr("Director"), tr("Directors")], ["Writer", tr("Writer"), tr("Writers")]]
+            found = []
             for each person in people
-                if isStringEqual(person.LookupCI("Type") ?? "", role[0])
-                    node = CreateObject("roSGNode", "HomeData")
-                    node.json = person
-                    node.type = "Person"
-                    choices.push({ label: role[1], value: person.LookupCI("Name") ?? "", person: node })
-                end if
+                if isStringEqual(person.LookupCI("Type") ?? "", role[0]) then found.push(person)
+            end for
+            label = role[1]
+            if found.count() > 1 then label = role[2]
+            for each person in found
+                node = CreateObject("roSGNode", "HomeData")
+                node.json = person
+                node.type = "Person"
+                choices.push({ label: label, value: person.LookupCI("Name") ?? "", person: node })
             end for
         end for
     end if
@@ -433,6 +445,30 @@ function factChoices(itemData as object) as object
     end if
     return choices
 end function
+
+' The people behind the page. A collection's are gathered from its titles as they load.
+function itemPeople(itemData as object) as object
+    if isCollection() then return m.collectionCrew ?? []
+    return chainLookupReturn(itemData, "People", [])
+end function
+
+' A collection's directors, writers and cast come from the titles loaded so far, so each page brings
+' in whoever is in it
+sub collectionPageAdded()
+    m.sectionData.collection = loadedCollection()
+    m.sectionData.collectionOrder = m.collectionPaging.order
+    people = collectionPeople(m.collectionPaging.library)
+    m.collectionCrew = []
+    m.collectionCrew.append(people.directors)
+    m.collectionCrew.append(people.writers)
+    m.sectionData.cast = []
+    if detailSectionLayout.Shows("cast")
+        for each person in people.actors
+            m.sectionData.cast.push(collectionPersonNode(person))
+        end for
+    end if
+    rebuildSections()
+end sub
 
 ' The chip row only needs the words, and the people behind the fact chips stay on this screen. Every
 ' section that lands rebuilds the page, so a row is only drawn again when its chips change.
@@ -448,8 +484,8 @@ end sub
 ' ===== Sections =====
 
 ' Beside the poster: an overview with more to read, the track chips, the people and studios behind
-' a film, and a show's seasons and episodes. Full width under it: an episode's run, the cast,
-' extras, collections, more like it and Seerr's rows.
+' a film, and a show's seasons and episodes. Full width under it: an episode's run, a collection's
+' movies, shows and other titles, the cast, extras, collections, more like it and Seerr's rows.
 sub rebuildSections()
     if not isChainValid(m.top.itemContent, "json") then return
     itemData = m.top.itemContent.json
@@ -485,6 +521,9 @@ sub rebuildSections()
         addEpisodes(false)
     end if
 
+    for each group in collectionGroups(m.sectionData.collection)
+        addPosterRail(group.title, group.items)
+    end for
     addCastRail()
     addExtrasRail()
     for each collection in m.sectionData.parentCollections
@@ -506,7 +545,7 @@ sub rebuildSections()
     restoreStageFocus(held)
 end sub
 
-' Collections, More Like This and Seerr's titles all use the same poster size
+' A collection's titles, collections, More Like This and Seerr's titles all use the same poster size
 sub addPosterRail(title as string, items as object)
     if items.count() = 0 then return
     spec = posterSpec(title, items, false, true)
@@ -1303,13 +1342,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
     if m.overflowMenu.visible then return false
 
-    if key = KeyCode.OPTIONS and m.focusZone = "rail" and m.focusRail >= 0 and m.focusRail < m.rails.count()
-        rail = m.rails[m.focusRail]
-        if rail.kind <> "poster" and rail.kind <> "episode" then return false
-        index = rail.node.callFunc("cardIndexForStop", rail.node.focusedStop)
-        if index < 0 or index >= rail.items.count() then return false
-        return showItemMenu(rail.items[index], itemMenuPageOptions())
-    end if
+    if key = KeyCode.OPTIONS and openRailItemMenu() then return true
 
     if m.focusZone = "buttons"
         if buttonKey(key) then return true
@@ -1348,6 +1381,17 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     return false
+end function
+
+' The card menu for the title a row has in focus. On a collection's page it offers to take the title
+' out of the collection.
+function openRailItemMenu() as boolean
+    if m.focusZone <> "rail" or m.focusRail < 0 or m.focusRail >= m.rails.count() then return false
+    rail = m.rails[m.focusRail]
+    if rail.kind <> "poster" and rail.kind <> "episode" then return false
+    index = rail.node.callFunc("cardIndexForStop", rail.node.focusedStop)
+    if index < 0 or index >= rail.items.count() then return false
+    return showItemMenu(rail.items[index], itemMenuPageOptions())
 end function
 
 function buttonKey(key as string) as boolean
@@ -1447,6 +1491,7 @@ end sub
 function railKey(key as string) as boolean
     if m.focusRail < 0 or m.focusRail >= m.rails.count() then return false
     rail = m.rails[m.focusRail]
+    askForMoreNear(rail)
     stopIndex = rail.node.focusedStop
 
     if key = KeyCode.LEFT

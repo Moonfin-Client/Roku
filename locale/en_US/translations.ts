@@ -989,6 +989,10 @@
         <translation>Director</translation>
     </message>
     <message>
+        <source>Directors</source>
+        <translation>Directors</translation>
+    </message>
+    <message>
         <source>Video</source>
         <translation>Video</translation>
     </message>
@@ -3759,6 +3763,10 @@
         <source>Writer</source>
         <extracomment>A crew member credited as a writer</extracomment>
         <translation>Writer</translation>
+    </message>
+    <message>
+        <source>Writers</source>
+        <translation>Writers</translation>
     </message>
     <message>
         <source>Track List</source>

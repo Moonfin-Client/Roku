@@ -194,11 +194,13 @@ end function
 
 ' ===== Content =====
 
-' Nouveau calls this once the facts are filled in. A show's seasons and the episode it would resume
-' are all the drawer asks the server for.
+' Nouveau calls this once the facts are filled in. A show's seasons and the episode it would resume,
+' or a collection's titles, are all the drawer asks the server for.
 sub loadSections()
     itemData = m.top.itemContent.json
     showHeader(itemData)
+
+    if isCollection() then loadCollectionMembers(detailSectionLayout.Shows("crew"))
 
     if isSeries() and not m.top.seerrOnly
         task = CreateObject("roSGNode", "LoadExtrasTask")
@@ -367,12 +369,16 @@ end sub
 
 ' ===== Sections =====
 
-' Under the overview: the audio, subtitle and version chips, then a show's seasons or the people
-' behind a film, then where Seerr says it's streaming. Open full page stays pinned under them all.
+' Under the overview: the audio, subtitle and version chips, then a show's seasons or a collection's
+' titles, then the people behind a film, then where Seerr says it's streaming. Open full page stays
+' pinned under them all.
 sub rebuildSections()
     if not isChainValid(m.top.itemContent, "json") then return
     itemData = m.top.itemContent.json
     held = m.focusZone
+    heldRail = m.focusRail
+    heldStop = -1
+    if held = "rail" and heldRail >= 0 and heldRail < m.rails.count() then heldStop = m.rails[heldRail].node.focusedStop
 
     m.sectionParts = []
     m.chain = []
@@ -382,6 +388,14 @@ sub rebuildSections()
 
     m.seasonCards.visible = isSeries() and buildSeasonCards()
     if m.seasonCards.visible then addPart(m.seasonCards, QL_SEASON_HEIGHT, "seasons")
+
+    m.sectionsGroup.removeChildrenIndex(m.sectionsGroup.getChildCount(), 0)
+    m.rails = []
+    m.pieces = []
+    for each group in collectionGroups(m.sectionData.collection)
+        addPosterRail(group.title, group.items)
+        addPart(m.rails.peek().node, m.rails.peek().node.railHeight, "rail", m.rails.count() - 1)
+    end for
 
     factsHeight = 0
     if not isSeries() then factsHeight = buildFacts(itemData)
@@ -402,7 +416,15 @@ sub rebuildSections()
     ' it back when its row has gone
     if held = "buttons" then return
     for i = 0 to m.chain.count() - 1
-        if m.chain[i].zone = held
+        entry = m.chain[i]
+        if entry.zone = held and entry.rail = heldRail
+            ' A rail is drawn anew, so its card takes the remote back, or its last card when the one
+            ' it had was taken out of the collection
+            if held = "rail"
+                if heldStop >= entry.node.stopCount then heldStop = entry.node.stopCount - 1
+                if not entry.node.callFunc("focusStop", heldStop) then exit for
+                holdFocus("rail", heldRail, entry.node)
+            end if
             showStopFocus()
             revealPiece(i)
             return
@@ -411,9 +433,19 @@ sub rebuildSections()
     toActions()
 end sub
 
+' A collection's rows carry their titles as written rather than in Premiere's capitals
+function railSpec(spec as object, _beside as boolean, titleGap as integer) as object
+    spec.viewport = railViewport(false)
+    spec.titleSize = STAGE_ROW_TITLE
+    spec.titleRegular = true
+    spec.titleGap = titleGap
+    spec.textScale = STAGE_CARD_TEXT
+    return spec
+end function
+
 ' A part of the page under the overview, and a stop for the remote when it has a zone
-sub addPart(node as object, height as float, zone as string)
-    part = { node: node, height: height, zone: zone, rail: -1 }
+sub addPart(node as object, height as float, zone as string, rail = -1 as integer)
+    part = { node: node, height: height, zone: zone, rail: rail }
     m.sectionParts.push(part)
     if zone <> "" then m.chain.push(part)
 end sub
@@ -567,7 +599,7 @@ function buildFacts(itemData as object) as float
     m.factColumns.removeChildrenIndex(m.factColumns.getChildCount(), 0)
     facts = []
     if detailSectionLayout.Shows("crew")
-        people = chainLookupReturn(itemData, "People", [])
+        people = itemPeople(itemData)
         for each role in [["Director", tr("Director")], ["Writer", tr("Writer")]]
             for each person in people
                 name = person.LookupCI("Name") ?? ""
@@ -665,17 +697,23 @@ function focusStop(index as integer) as boolean
     if index < 0 or index >= m.chain.count() then return false
     entry = m.chain[index]
     clearZoneFocus()
-    holdFocus(entry.zone, -1, entry.node)
+    holdFocus(entry.zone, entry.rail, entry.node)
     if entry.zone = "chips" then m.trackChips.focusIndex = 0
     if entry.zone = "seasons" then focusSeason(0)
     showStopFocus()
-    entry.node.setFocus(true)
+    ' A rail hands the remote to its card rather than holding it itself
+    if entry.zone = "rail"
+        entry.node.callFunc("focusStop", entry.node.entryStop)
+    else
+        entry.node.setFocus(true)
+    end if
     revealPiece(index)
     return true
 end function
 
 sub clearZoneFocus()
     if m.focusZone = "buttons" then unhighlightAllButtons()
+    if m.focusZone = "rail" and m.focusRail >= 0 and m.focusRail < m.rails.count() then m.rails[m.focusRail].node.callFunc("clearFocus")
     m.trackChips.focusIndex = -1
     focusSeason(-1)
     showOpenFocus(false)
@@ -778,8 +816,9 @@ end sub
 
 ' ===== Keys =====
 
-' Down from the buttons walks the chips, the seasons and Open full page, and Up walks back to the
-' button that had focus last. Left and Right stay in their row, and Back closes the drawer.
+' Down from the buttons walks the chips, the seasons or a collection's rows, and Open full page, and
+' Up walks back to the button that had focus last. Left and Right stay in their row, and Back closes
+' the drawer.
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
     if m.closing then return true
@@ -792,6 +831,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return true
     end if
     if m.overflowMenu.visible then return false
+    if key = KeyCode.OPTIONS and openRailItemMenu() then return true
 
     if key = KeyCode.BACK
         closeDrawer()
@@ -799,6 +839,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     index = currentChainIndex()
+    if m.focusZone = "rail" and m.focusRail >= 0 and m.focusRail < m.rails.count() then askForMoreNear(m.rails[m.focusRail])
     if m.focusZone = "buttons"
         if key = KeyCode.OK
             handleButtonSelect()
@@ -836,6 +877,9 @@ sub stepAlongRow(forward as boolean)
     else if m.focusZone = "seasons"
         index = m.seasonIndex + delta
         if index >= 0 and index < m.seasonParts.count() then focusSeason(index)
+    else if m.focusZone = "rail" and m.focusRail >= 0 and m.focusRail < m.rails.count()
+        rail = m.rails[m.focusRail].node
+        rail.callFunc("focusStop", rail.focusedStop + delta)
     end if
 end sub
 
@@ -844,6 +888,8 @@ sub pickStop()
         chipChosen(m.trackChips.focusIndex)
     else if m.focusZone = "seasons"
         pickSeason()
+    else if m.focusZone = "rail"
+        selectRailItem()
     else if m.focusZone = "open"
         openFullPage()
     end if
