@@ -2662,5 +2662,21 @@
         <source>SyncPlay Group</source>
         <translation>SyncPlay المجموعة</translation>
     </message>
+    <message>
+        <source>Date Added</source>
+        <translation>اضيف تاريخ</translation>
+    </message>
+    <message>
+        <source>Filter</source>
+        <translation>تصفية</translation>
+    </message>
+    <message>
+        <source>Play Count</source>
+        <translation>عدّاد التشغيل</translation>
+    </message>
+    <message>
+        <source>Parental Rating</source>
+        <translation>تقييم ابوي</translation>
+    </message>
 </context>
 </TS>
