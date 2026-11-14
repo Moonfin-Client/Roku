@@ -1244,7 +1244,8 @@ assert.match(syncFunction('GetMappings'), /\{ pluginKey: "keyboardStyle", rokuKe
 const keyboardStyle = findSetting(settingsTree, 'ui.keyboard.style');
 assert.equal(keyboardStyle.default, 'docked', 'Docked is the keyboard default');
 const keyboardSource = await readFile('components/keyboards/TVKeyboard.bs', 'utf8');
-assert.match(keyboardSource, /settingOr\(KB_STYLE_SETTING, "docked"\)/, 'The keyboard falls back to the default the setting shows');
+assert.match(keyboardSource, /settingOr\(tvKeyboard\.STYLE_SETTING, "docked"\)/, 'Signed in, the keyboard falls back to the default the setting shows');
+assert.match(keyboardSource, /get_setting\(tvKeyboard\.DEVICE_STYLE_SETTING, "docked"\)/, 'Signed out, the keyboard reads the device style with the same default');
 assert.match(keyboardSource, /if entry = "IME"\s+openStylePicker\(\)/, 'The keyboard key opens the style picker');
 assert.match(keyboardSource, /if m\.pickingStyle\s+pickStyle\(value\)/, 'Picking a style saves it and switches the keyboard');
 assert.deepEqual(keyboardStyle.options.map(option => option.id), ['native', 'classic', 'glass', 'docked'], 'The keyboard styles keep the values the profile stores');
