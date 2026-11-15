@@ -172,22 +172,32 @@ end sub
 ' dropEarlierRowWork: A new build replaces what earlier ones still had queued or running, such as rows left
 ' over when a build timed out. Their queued tasks are dropped and late answers ignored, so a row the new
 ' build doesn't have never comes back. A row it does have watches its task again, which then runs again.
-' The held back rows still loading lose their callbacks too, so their slots are freed here.
+' The held back rows still loading lose their callbacks too, so their slots are freed here, and rows
+' waiting for the flush are dropped with the build they came from.
 sub dropEarlierRowWork()
     m.lateRows = {}
     m.lateRowQueue = []
+    m.pendingRows = []
+    m.flushTimer.control = "stop"
+    m.flushScheduled = false
     for each task in m.rowQueue
-        task.unobserveField("content")
+        dropRowCallbacks(task)
     end for
     m.rowQueue = []
     kept = []
     for each task in m.pooledTasks
         if task.rowRunning
-            task.unobserveField("content")
+            dropRowCallbacks(task)
             kept.push(task)
         end if
     end for
     m.pooledTasks = kept
+end sub
+
+' Row tasks answer on content, and multi-server ones on isComplete
+sub dropRowCallbacks(task as object)
+    task.unobserveField("content")
+    if task.hasField("isComplete") then task.unobserveField("isComplete")
 end sub
 
 ' A library reload outranks a layout reload, which outranks a plain update
@@ -258,10 +268,13 @@ sub refreshCacheScope()
     if not isValidAndNotEmpty(userId) or not isString(userId) then return
 
     m.cacheDir = homeCache.Dir(toString(get_url()), userId)
+    ' Folder names are shortened, so two accounts could share one. The key names the account in full,
+    ' so neither reads the other's rows.
     ' The same expression addHomeSection reads, so the key matches the rows it builds
     mergeContinueWatching = kidsMode.MergesContinueWatching(isStringEqual(get_user_setting("ui.home.mergeContinueWatchingNextUp"), "true"))
     ' Row titles are translated, so the locale is part of the key
     m.cacheKey = FormatJson([
+        homeCache.Owner(toString(get_url()), userId),
         m.global.app.version,
         localRowOrder(),
         mergeContinueWatching,
@@ -3293,13 +3306,18 @@ sub updateCustomDynamicRowItems(event as object)
 
     ' Found by its key, since a picked row can carry the same title as another one
     if not isValidAndNotEmpty(itemData)
+        ' An empty row may be the last one the build was waiting on
         if rowId = "mdblist_watching_now"
             startWatchingNowRefreshTimer()
             ' As in Core, a refresh that fails or comes back empty leaves the cards already up
-            if homeRowIndexById(rowId) >= 0 then return
+            if homeRowIndexById(rowId) >= 0
+                finishIfAllRowsIn()
+                return
+            end if
         end if
         m.emptySections[LCase(sectionName).Replace(" ", "")] = true
         removeHomeRowById(rowId)
+        finishIfAllRowsIn()
         return
     end if
 

@@ -1002,7 +1002,7 @@ assert.match(loadItemsSource.match(/function customRowCard\([^]*?end function/)[
 const watchingNowRows = await readFile('components/home/HomeRows.bs', 'utf8');
 assert.match(watchingNowRows.match(/sub onWatchingNowRefreshFired\([^]*?end sub/)[0], /kidsMode\.Enabled\(\) or /, 'Kids Mode stops the watching now refresh');
 assert.match(watchingNowRows.match(/sub onWatchingNowRefreshFired\([^]*?end sub/)[0], /activeScene\.isSubType\("VideoPlayerView"\) then return/, 'The watching now refresh waits out the video player, as in Core');
-assert.match(watchingNowRows.match(/sub updateCustomDynamicRowItems\([^]*?end sub/)[0], /if homeRowIndexById\(rowId\) >= 0 then return/, 'A failed or empty refresh keeps the watching now cards up, as in Core');
+assert.match(watchingNowRows.match(/sub updateCustomDynamicRowItems\([^]*?end sub/)[0], /if homeRowIndexById\(rowId\) >= 0\s+finishIfAllRowsIn\(\)\s+return/, 'A failed or empty refresh keeps the watching now cards up, as in Core');
 assert.match(loadItemsSource.match(/function loadWatchingNowRow\([^]*?end function/)[0], /customRowCard\(item, \{\}\)/, 'Watching now cards are outside titles, as in Core');
 assert.match(await readFile('components/home/Home.xml', 'utf8'), /rowTitleComponentName="HomeRowTitle"/, 'Home rows draw their titles with the row title component');
 assert.match(await readFile('source/utils/misc.bs', 'utf8'), /if isSeerrFilterRow\(rowId\) or inArray\(\["mdblist_watching_now", "watch_parties", "studios", "audio", "resumeaudio"\], rowId\) then return false/, 'Watching now keeps its wide cards in modern rows, as do Watch Parties, Seerr\'s browse rows, Studios and audio rows');
