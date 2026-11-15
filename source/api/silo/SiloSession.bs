@@ -442,37 +442,53 @@ namespace silo
         return copied
     end function
 
-    function MemoFresh(entry as dynamic, now as integer) as boolean
+    ' An entry is fresh while it is young and no write has happened anywhere since its request went out
+    function MemoFresh(entry as dynamic, now as integer, generation as integer) as boolean
         if type(entry) <> "roAssociativeArray" then return false
-        if not isValid(entry.at) then return false
+        if not isValid(entry.at) or entry.generation <> generation then return false
         return now - entry.at < silo.MEMO_MS
     end function
 
+    ' How many times any thread has cleared the memo. Each thread keeps its own copies, so this is
+    ' how a write on one thread reaches the copies on the others.
+    function MemoGeneration() as integer
+        if not isValid(m) or not isValid(m.global) then return 0
+        generation = m.global.siloMemoGeneration
+        if type(generation) <> "roInt" and type(generation) <> "Integer" then return 0
+        return generation
+    end function
+
     ' A fresh entry from this thread's memo, or from the global one (copied into this thread's memo)
-    function MemoEntry(key as string) as dynamic
+    function MemoEntry(key as string, generation as integer) as dynamic
         if not isValid(m) then return invalid
         if type(m.siloMemo) <> "roAssociativeArray" then m.siloMemo = {}
         now = Int(UpTime(0) * 1000)
         entry = m.siloMemo[key]
-        if silo.MemoFresh(entry, now) then return entry
+        if silo.MemoFresh(entry, now, generation) then return entry
+        m.siloMemo.Delete(key)
 
         if not isValid(m.global) then return invalid
         shared = m.global.siloMemo
         if type(shared) <> "roAssociativeArray" then return invalid
         entry = shared[key]
-        if not silo.MemoFresh(entry, now) then return invalid
+        if not silo.MemoFresh(entry, now, generation) then return invalid
         m.siloMemo[key] = entry
         return entry
     end function
 
-    ' Keeps an answer for the next lookup of the same key. The global copy is rewritten whole, so
-    ' two threads may race and lose an entry, which only costs one more request
-    sub MemoStore(key as string, kind as string, status as integer, result as object)
+    ' Keeps an answer for the next lookup of the same key, under the generation its request went out
+    ' in. The global copy is rewritten whole, so two threads may race and lose an entry, which only
+    ' costs one more request
+    sub MemoStore(key as string, kind as string, status as integer, result as object, generation as integer)
         if not ((kind = "ok" and status >= 200 and status < 300) or (kind = "missing" and status = 404)) then return
         if not isValid(m) then return
         now = Int(UpTime(0) * 1000)
-        entry = { at: now, result: silo.MemoCopy(result) }
+        entry = { at: now, generation: generation, result: silo.MemoCopy(result) }
         if type(m.siloMemo) <> "roAssociativeArray" then m.siloMemo = {}
+        ' Long lived tasks keep their memo, so old answers go as new ones come in
+        for each oldKey in m.siloMemo.Keys()
+            if not silo.MemoFresh(m.siloMemo[oldKey], now, generation) then m.siloMemo.Delete(oldKey)
+        end for
         m.siloMemo[key] = entry
         if not isValid(m.global) then return
 
@@ -480,19 +496,20 @@ namespace silo
         current = m.global.siloMemo
         if type(current) = "roAssociativeArray"
             for each oldKey in current
-                if silo.MemoFresh(current[oldKey], now) then shared[oldKey] = current[oldKey]
+                if silo.MemoFresh(current[oldKey], now, generation) then shared[oldKey] = current[oldKey]
             end for
         end if
         shared[key] = entry
         m.global.siloMemo = shared
     end sub
 
-    ' Drops every memoed answer, so no read after a write or a sign-out is answered from before it
+    ' Drops every memoed answer, so no read after a write or a sign-out is answered from before it.
+    ' Other threads' copies go stale with the generation.
     sub ForgetMemos(reason as string)
         if not isValid(m) then return
-        ' Only write when something is there, so a POST with an empty memo costs no cross-thread write
         if type(m.siloMemo) = "roAssociativeArray" and m.siloMemo.Count() > 0 then m.siloMemo = {}
         if isValid(m.global)
+            m.global.siloMemoGeneration = silo.MemoGeneration() + 1
             shared = m.global.siloMemo
             if type(shared) = "roAssociativeArray" and shared.Count() > 0 then m.global.siloMemo = {}
         end if
@@ -534,13 +551,15 @@ namespace silo
         ' A write clears the memo, so a read after it is never answered from before it
         memoKey = ""
         memoRule = ""
+        memoGeneration = 0
         if method <> "GET"
             silo.ForgetMemos(method)
         else if options.body = invalid
             memoRule = silo.MemoKind(silo.PathOf(url))
             if memoRule <> ""
                 memoKey = base + "|" + accountId + "|" + profileId + "|" + url
-                entry = silo.MemoEntry(memoKey)
+                memoGeneration = silo.MemoGeneration()
+                entry = silo.MemoEntry(memoKey, memoGeneration)
                 if isValid(entry)
                     homeLoadLog.Log("silo memo hit " + silo.PathOf(url))
                     return silo.MemoCopy(entry.result)
@@ -574,7 +593,7 @@ namespace silo
             end if
         end if
         result = silo.ResultOf(answer)
-        if memoRule <> "" then silo.MemoStore(memoKey, memoRule, answer.status, result)
+        if memoRule <> "" then silo.MemoStore(memoKey, memoRule, answer.status, result, memoGeneration)
         return result
     end function
 

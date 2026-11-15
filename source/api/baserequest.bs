@@ -4,7 +4,6 @@ import "pkg:/source/utils/diagnostics.bs"
 import "pkg:/source/utils/homeLoadLog.bs"
 import "pkg:/source/utils/plexUrls.bs"
 import "pkg:/source/utils/serverCompatibility.bs"
-import "pkg:/source/utils/startupPrefetch.bs"
 ' Functions for making requests to the API
 function buildParams(params = {} as object) as string
     ' Take an object of parameters and construct the URL query
@@ -206,12 +205,9 @@ function getJson(req)
     started = diagnostics.StartTrace("GET", req)
     path = homeLoadPath(req.GetUrl())
     netStart = Int(UpTime(0) * 1000)
-    url = req.GetUrl()
-    startupPrefetch.Note(url)
-    prefetched = startupPrefetch.Take(url)
+    prefetched = startupPrefetchAnswer(req.GetUrl())
     if isValid(prefetched)
         data = prefetched.GetString()
-        if prefetched.GetResponseCode() = 403 then noteAccessRefused()
         path = path + " (prefetched)"
     else
         data = req.GetToString()
@@ -539,9 +535,11 @@ function postString(req, data = "" as string)
     return resp.getString()
 end function
 
-function buildAuthHeader() as string
+' deviceId: sends this DeviceId instead of the thread's own (the startup prefetch, before sign in names the device)
+function buildAuthHeader(deviceId = "" as string) as string
     QUOTE = Chr(34)
     headerContext = getAuthHeaderContext()
+    if deviceId <> "" then headerContext.deviceId = deviceId
 
     auth = serverAuthScheme(get_url() ?? "") + " Client=" + QUOTE + headerContext.appName + " Roku" + QUOTE
     auth = auth + ", Device=" + QUOTE + headerContext.deviceName + " (" + headerContext.deviceModel + ")" + QUOTE
@@ -564,11 +562,14 @@ function getAuthHeaderContext() as object
         authToken: invalid
     }
 
-    ' A thread that already holds the identity never asks the global node again
+    authToken = getAuthTokenFromRegistry()
+    ' A thread that already holds the identity doesn't ask the global node again, except that sign in
+    ' names the device after the user, so a task asks again for the DeviceId (see identityStillCurrent)
+    if isValid(context.deviceId) and not identityStillCurrent(authToken) then context.deviceId = invalid
     heldOnThread = identityIsComplete(context)
     applyGlobalIdentity(context)
     applyDeviceIdentity(context)
-    if not heldOnThread and identityIsComplete(context) then rememberIdentityOnThread(context)
+    if not heldOnThread and identityIsComplete(context) then rememberIdentityOnThread(context, authToken)
 
     fillIdentity(context, "appName", "Moonfin")
     fillIdentity(context, "appVersion", "0.0.0")
@@ -576,7 +577,6 @@ function getAuthHeaderContext() as object
     fillIdentity(context, "deviceModel", "Roku")
     fillIdentity(context, "deviceId", "Roku")
 
-    authToken = getAuthTokenFromRegistry()
     if isValidAndNotEmpty(authToken)
         context.authToken = authToken
     end if
@@ -596,15 +596,29 @@ end function
 ' Each task thread asked the global node for the same identity on every request, and each read
 ' waits for the render thread. Keeping the real values in this thread's GetGlobalAA lets
 ' applyGlobalIdentity and applyDeviceIdentity return early from the next request on.
-sub rememberIdentityOnThread(context as object)
+sub rememberIdentityOnThread(context as object, authToken as dynamic)
     runtimeContext = GetGlobalAA()
     if not isValid(runtimeContext) then return
+    if onTaskThread()
+        runtimeContext["moonfin.identityReadAt"] = Int(UpTime(0) * 1000)
+        runtimeContext["moonfin.identityToken"] = authToken ?? ""
+    end if
     runtimeContext["moonfin.appName"] = context.appName
     runtimeContext["moonfin.appVersion"] = context.appVersion
     runtimeContext["moonfin.deviceName"] = context.deviceName
     runtimeContext["moonfin.deviceModel"] = context.deviceModel
     runtimeContext["moonfin.deviceId"] = context.deviceId
 end sub
+
+' The DeviceId a task holds changes when sign in renames the device for another user. Main and sign in
+' keep the main thread's own copy current, and a task trusts its copy for a second and for one token.
+function identityStillCurrent(authToken as dynamic) as boolean
+    if not onTaskThread() then return true
+    runtimeContext = GetGlobalAA()
+    heldToken = runtimeContext["moonfin.identityToken"]
+    if not isString(heldToken) or heldToken <> (authToken ?? "") then return false
+    return reusableOnTask(runtimeContext["moonfin.deviceId"], runtimeContext["moonfin.identityReadAt"], Int(UpTime(0) * 1000))
+end function
 
 ' Every thread keeps its own GetGlobalAA, so what the main thread stored there is
 ' invisible to a task. Without this a task reports itself as a different device
