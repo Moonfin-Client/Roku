@@ -170,7 +170,7 @@ const selections = {
     'source/utils/parsedUrl.bs': ['ParsedUrl', '__ParsedUrl_ToString'],
     'source/utils/plexUrls.bs': null,
     'source/api/plex/PlexMapper.bs': null,
-    'source/api/baserequest.bs': ['plexServerURL', 'plexAnswer', 'plexAnswered', 'plexAnswerText', 'buildParams', 'buildServerURL', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer', 'APIRequest', 'APIRequestForServer', 'authRequest', 'authRequestForServer', 'setCertificateAuthority', 'getJson', 'homeLoadPath', 'noteAccessRefused', 'noteRefusalIn', 'postPlaybackInfo', 'requestCanceled'],
+    'source/api/baserequest.bs': ['plexServerURL', 'plexAnswer', 'plexAnswered', 'plexAnswerText', 'buildParams', 'buildServerURL', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer', 'APIRequest', 'APIRequestForServer', 'authRequest', 'authRequestForServer', 'setCertificateAuthority', 'getJson', 'noteAccessRefused', 'noteRefusalIn', 'postPlaybackInfo', 'requestCanceled'],
 };
 let source = 'namespace bslib\n' + bslib.source + '\nend namespace\n' + await readFile('source/enums/String.bs', 'utf8');
 for (const [file, names] of Object.entries(selections)) {
@@ -185,8 +185,6 @@ for (const [file, names] of Object.entries(selections)) {
         }
     }
 }
-// The Home load log only prints, behind a manifest constant this build has no manifest for
-source += '\nnamespace homeLoadLog\n    sub Log(message as string)\n    end sub\nend namespace\n';
 source += '\n' + (await readFile('source/ShowScenes.bs', 'utf8')).match(/^const minimumServerVersion = .+$/m)[0];
 source += '\n' + (await readFile('components/details/QuickLookItemDetails.bs', 'utf8')).match(/^const QL_MAX_BUTTONS = .+$/m)[0];
 source += '\n' + (await readFile('components/settings/SettingsPlayerPreview.bs', 'utf8')).match(/^const \w+ = .+$/gm).join('\n');
@@ -1575,7 +1573,7 @@ assert.match(mediaBarTaskWiring, /parentIds = filterIdsBySelection\(libraryIds, 
 for (const file of ['components/JFOverhang.bs', 'components/Sidebar.bs']) {
     assert.match(await readFile(file, 'utf8'), /callFunc\("getActiveScene"\)\?\.subtype\(\), "Home"\)\s+m\.top\.itemSelected = "homeAgain"/, `${file} tells Home it was pressed on Home`);
 }
-assert.match(await readFile('components/home/Home.bs', 'utf8'), /selectedItem = "homeAgain"\s+(?:homeLoadLog\.Log\([^\n]*\)\s+)?m\.homeRows\.callFunc\("updateHomeRows"\)\s+if isValid\(m\.mediaBar\) then m\.mediaBar\.callFunc\("drawNewSet"\)/, 'Home pressed on Home draws a new media bar set');
+assert.match(await readFile('components/home/Home.bs', 'utf8'), /selectedItem = "homeAgain"\s+m\.homeRows\.callFunc\("updateHomeRows"\)\s+if isValid\(m\.mediaBar\) then m\.mediaBar\.callFunc\("drawNewSet"\)/, 'Home pressed on Home draws a new media bar set');
 const mediaBarWiring = await readFile('components/home/MediaBar.bs', 'utf8');
 assert.match(mediaBarWiring, /if newSet and allItems\.count\(\) = 0 then return/, 'An empty new set keeps the one showing');
 assert.match(mediaBarWiring, /if item\.id <> m\.failedBannerId then art = bannerArtUrl\(item\)/, 'Banner art that failed falls back to the backdrop');

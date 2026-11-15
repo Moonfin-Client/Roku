@@ -1,6 +1,5 @@
 import "pkg:/source/utils/config.bs"
 import "pkg:/source/utils/diagnostics.bs"
-import "pkg:/source/utils/homeLoadLog.bs"
 import "pkg:/source/utils/misc.bs"
 
 ' Requests to Silo's native /api/v2: its headers, its Problem Details errors and the account's
@@ -157,7 +156,7 @@ namespace silo
 
     ' Forgets the login and every profile proof that went with it
     sub CloseSession(server as string, accountId as string)
-        silo.ForgetMemos("sign-out")
+        silo.ForgetMemos()
         registry_delete(silo.SessionKey(server, accountId), silo.SESSIONS_SECTION)
         registry_delete("lock|" + silo.SessionKey(server, accountId), silo.SESSIONS_SECTION)
         reg = CreateObject("roRegistrySection", silo.PROFILES_SECTION)
@@ -288,7 +287,6 @@ namespace silo
 
     ' One HTTP exchange. Answers { status, data, text, retryAfter }, status 0 when nothing came back
     function Exchange(method as string, url as string, headers as object, body = invalid as dynamic, timeoutMs = 0 as integer) as object
-        exchangeStart = Int(UpTime(0) * 1000)
         if timeoutMs <= 0 then timeoutMs = silo.TIMEOUT_MS
         req = CreateObject("roUrlTransfer")
         req.SetUrl(url)
@@ -303,9 +301,7 @@ namespace silo
         method = UCase(method)
         started = false
         payload = ""
-        sentAt = 0
         if method = "GET"
-            sentAt = Int(UpTime(0) * 1000)
             started = req.AsyncGetToString()
         else
             if body <> invalid
@@ -319,32 +315,22 @@ namespace silo
             ' A POST goes as the app's own do, without naming the method: the Roku sent named POSTs
             ' to Silo without their body
             if method <> "POST" then req.SetRequest(method)
-            sentAt = Int(UpTime(0) * 1000)
             started = req.AsyncPostFromString(payload)
         end if
         answer = { status: 0, data: invalid, text: "", retryAfter: "" }
         if not started then return answer
         event = wait(timeoutMs, port)
-        netMs = Int(UpTime(0) * 1000) - sentAt
-        setupMs = sentAt - exchangeStart
         if type(event) <> "roUrlEvent"
             req.AsyncCancel()
             diagnostics.Network("Silo " + method + " " + silo.PathOf(url) + " timed out", diagnostics.LEVEL_WARN)
-            homeLoadLog.Log("silo " + method + " " + silo.PathOf(url) + " timed out after " + timeoutMs.ToStr() + "ms")
             return answer
         end if
         answer.status = event.GetResponseCode()
         if answer.status < 0 then answer.status = 0
         answer.text = event.GetString() ?? ""
         ' Silo answers unknown paths with its web app, and some routes with plain text
-        parseMs = 0
         first = answer.text.Trim().Left(1)
-        if first = "{" or first = "["
-            parseStart = Int(UpTime(0) * 1000)
-            answer.data = ParseJson(answer.text)
-            parseMs = Int(UpTime(0) * 1000) - parseStart
-        end if
-        homeLoadLog.Log("silo " + method + " " + silo.PathOf(url) + " setup " + setupMs.ToStr() + "ms net " + netMs.ToStr() + "ms parse " + parseMs.ToStr() + "ms " + Len(answer.text).ToStr() + "B status " + answer.status.ToStr())
+        if first = "{" or first = "[" then answer.data = ParseJson(answer.text)
         responseHeaders = event.GetResponseHeaders()
         if type(responseHeaders) = "roAssociativeArray" and isValid(responseHeaders["retry-after"]) then answer.retryAfter = responseHeaders["retry-after"]
         if answer.status < 200 or answer.status >= 300
@@ -445,7 +431,8 @@ namespace silo
     ' An entry is fresh while it is young and no write has happened anywhere since its request went out
     function MemoFresh(entry as dynamic, now as integer, generation as integer) as boolean
         if type(entry) <> "roAssociativeArray" then return false
-        if not isValid(entry.at) or entry.generation <> generation then return false
+        if not isValid(entry.at) or not isValid(entry.generation) then return false
+        if entry.generation <> generation then return false
         return now - entry.at < silo.MEMO_MS
     end function
 
@@ -505,7 +492,7 @@ namespace silo
 
     ' Drops every memoed answer, so no read after a write or a sign-out is answered from before it.
     ' Other threads' copies go stale with the generation.
-    sub ForgetMemos(reason as string)
+    sub ForgetMemos()
         if not isValid(m) then return
         if type(m.siloMemo) = "roAssociativeArray" and m.siloMemo.Count() > 0 then m.siloMemo = {}
         if isValid(m.global)
@@ -513,7 +500,6 @@ namespace silo
             shared = m.global.siloMemo
             if type(shared) = "roAssociativeArray" and shared.Count() > 0 then m.global.siloMemo = {}
         end if
-        homeLoadLog.Log("silo memo cleared by " + reason)
     end sub
 
     ' One request to Silo's /api/v2.
@@ -553,7 +539,7 @@ namespace silo
         memoRule = ""
         memoGeneration = 0
         if method <> "GET"
-            silo.ForgetMemos(method)
+            silo.ForgetMemos()
         else if options.body = invalid
             memoRule = silo.MemoKind(silo.PathOf(url))
             if memoRule <> ""
@@ -561,13 +547,11 @@ namespace silo
                 memoGeneration = silo.MemoGeneration()
                 entry = silo.MemoEntry(memoKey, memoGeneration)
                 if isValid(entry)
-                    homeLoadLog.Log("silo memo hit " + silo.PathOf(url))
                     return silo.MemoCopy(entry.result)
                 end if
             end if
         end if
 
-        tokensStart = Int(UpTime(0) * 1000)
         tokens = invalid
         if accountId <> ""
             tokens = silo.LoadTokens(base, accountId)
@@ -578,14 +562,8 @@ namespace silo
                 if not isValid(tokens) then return silo.Failed(401)
             end if
         end if
-        headersStart = Int(UpTime(0) * 1000)
-        headers = silo.RequestHeaders(tokens, profileId, useProfile, options.headers)
-        headersEnd = Int(UpTime(0) * 1000)
-        tokensMs = headersStart - tokensStart
-        headersMs = headersEnd - headersStart
-        if tokensMs + headersMs > 20 then homeLoadLog.Log("silo call " + silo.PathOf(url) + " tokens " + tokensMs.ToStr() + "ms headers " + headersMs.ToStr() + "ms")
 
-        answer = silo.Exchange(method, url, headers, options.body, options.timeoutMs ?? 0)
+        answer = silo.Exchange(method, url, silo.RequestHeaders(tokens, profileId, useProfile, options.headers), options.body, options.timeoutMs ?? 0)
         if answer.status = 401 and isValid(tokens) and canReplay
             if silo.Refresh(base, accountId, tokens.access)
                 tokens = silo.LoadTokens(base, accountId)

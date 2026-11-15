@@ -4,7 +4,6 @@ import "pkg:/source/enums/KeyCode.bs"
 import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/utils/homeCache.bs"
 import "pkg:/source/utils/homeCards.bs"
-import "pkg:/source/utils/homeLoadLog.bs"
 import "pkg:/source/utils/homeRowLayout.bs"
 import "pkg:/source/utils/kidsMode.bs"
 import "pkg:/source/utils/misc.bs"
@@ -91,7 +90,6 @@ sub init()
 
     ' Rows that land after the first of a build are held here until the flush timer adds them
     m.pendingRows = []
-    m.flushCount = 0
     m.flushedThisBuild = false
     m.flushScheduled = false
     m.flushTimer = createObject("roSGNode", "Timer")
@@ -142,7 +140,6 @@ sub init()
     m.buildInFlight = false
     m.queuedBuild = ""
     m.buildCount = 0
-    m.buildStartedAt = 0
     m.cacheDir = ""
     m.cacheKey = ""
     m.buildTimeout = createObject("roSGNode", "Timer")
@@ -154,25 +151,17 @@ sub init()
     m.labelNodes = {}
     m.labelIdsWaiting = []
     m.labelIdsAsked = []
-    m.labelsAskedAt = 0
     m.labelsTask = createObject("roSGNode", "LoadItemsTask")
     m.labelsTask.itemsToLoad = "posterLabels"
     m.labelsTask.observeField("state", "onLabelsTaskState")
 end sub
 
-function nowMs() as integer
-    return Int(UpTime(0) * 1000)
-end function
-
 sub beginBuild(kind as string)
     m.buildInFlight = true
     m.buildCount++
-    m.buildStartedAt = nowMs()
     m.flushedThisBuild = false
-    m.flushCount = 0
     m.buildTimeout.control = "stop"
     m.buildTimeout.control = "start"
-    homeLoadLog.Log("build " + m.buildCount.ToStr() + " start (" + kind + ")")
 end sub
 
 ' A library reload outranks a layout reload, which outranks a plain update
@@ -185,17 +174,14 @@ end function
 
 sub queueBuild(kind as string)
     if buildRank(kind) > buildRank(m.queuedBuild) then m.queuedBuild = kind
-    homeLoadLog.Log("build queued " + m.queuedBuild + " behind build " + m.buildCount.ToStr())
 end sub
 
 ' markPainted: Fires the AppLaunchComplete beacon once, when rows are on screen. Roku measures launch time with it.
 '
-' @param {string} source - What put the rows up, for the log: "cache", "flush" or "build done"
-sub markPainted(source as string)
+sub markPainted()
     if m.global.app_loaded then return
     m.top.signalBeacon("AppLaunchComplete") ' Roku Performance monitoring
     m.global.app_loaded = true
-    homeLoadLog.Log("AppLaunchComplete (" + source + ") at +" + (nowMs() - m.buildStartedAt).ToStr() + "ms")
 end sub
 
 sub finishBuild(reason as string)
@@ -204,14 +190,9 @@ sub finishBuild(reason as string)
     m.buildInFlight = false
     m.buildTimeout.control = "stop"
 
-    elapsed = nowMs() - m.buildStartedAt
-    processed = m.processedRowCount ?? 0
-    expected = m.expectedRowCount ?? 0
-    homeLoadLog.Log("build " + m.buildCount.ToStr() + " done (" + reason + ") in " + elapsed.ToStr() + "ms, rows " + processed.ToStr() + "/" + expected.ToStr())
-
     ' Fallback for a layout whose rows are all empty, so no flush ever paints one. Rows still waiting
     ' for a flush are not on screen yet, so they leave the beacon to that flush.
-    if m.pendingRows.count() = 0 then markPainted("build done")
+    if m.pendingRows.count() = 0 then markPainted()
 
     ' A full build removes the painted rows it didn't replace, such as a library that was removed
     if reason = "all rows"
@@ -223,7 +204,6 @@ sub finishBuild(reason as string)
                 removed++
             end if
         end for
-        homeLoadLog.Log("cache leftovers removed " + removed.ToStr())
         if removed > 0 then setRowItemSize()
     end if
 
@@ -244,7 +224,6 @@ sub refreshCacheScope()
     if isMultiServerEnabled() and getAllServerSessions().count() > 0
         m.cacheDir = ""
         m.cacheKey = ""
-        homeLoadLog.Log("cache off (multi-server)")
         return
     end if
 
@@ -264,7 +243,6 @@ sub refreshCacheScope()
         homeCards.CardSizeName(),
         CreateObject("roDeviceInfo").GetCurrentLocale()
     ])
-    homeLoadLog.Log("cache key " + Len(m.cacheKey).ToStr() + " chars")
 end sub
 
 ' cacheRowFor: The cache record a single-server row's task saves its items under. Empty when this build isn't cached.
@@ -295,16 +273,13 @@ sub loadLibraries()
     ' The cache read starts first, so its rows are built while the libraries load
     if m.cacheDir <> "" and not hasRows
         m.cacheReadTask.cacheRead = { dir: m.cacheDir, key: m.cacheKey }
-        homeLoadLog.Log("cache read for paint")
         m.cacheReadTask.control = "RUN"
     else
-        homeLoadLog.Log("cache read skipped")
     end if
     m.LoadLibrariesTask.observeField("content", "onLibrariesLoaded")
     m.LoadLibrariesTask.control = "RUN"
 
     ' The rows that don't read the libraries start now, and the library rows follow when the list lands
-    homeLoadLog.Log("rows start before libraries")
     startHomeRowsLoading()
 end sub
 
@@ -332,7 +307,6 @@ sub runRowTask(task as object, first = false as boolean)
 
     ' The OS would drop a second RUN on a running task, and its content observer is already set
     if task.state = "run"
-        homeLoadLog.Log("task already running " + rowTaskLabel(task))
         return
     end if
 
@@ -360,23 +334,16 @@ sub runRowTask(task as object, first = false as boolean)
         else
             m.rowQueue.push(task)
         end if
-        homeLoadLog.Log("task queued " + rowTaskLabel(task) + " (queue " + m.rowQueue.count().ToStr() + ")")
     end if
 end sub
 
-' startRowTask: Sets a row task running, and records when it started so its finish can be timed
+' startRowTask: Sets a row task running
 '
 ' @param {object} task - The row task to start
 sub startRowTask(task as object)
     m.rowsInFlight++
     task.rowRunning = true
-    ' The start time lives on the task as a field, so it stays with the task while it is queued
-    if not task.hasField("rowStartedAt")
-        task.addFields({ rowStartedAt: 0 })
-    end if
-    task.rowStartedAt = nowMs()
     task.control = "RUN"
-    homeLoadLog.Log("task start " + rowTaskLabel(task) + " (running " + m.rowsInFlight.ToStr() + ", queued " + m.rowQueue.count().ToStr() + ")")
 end sub
 
 ' onRowTaskState: Frees a pool slot when a row task stops, then starts the queued tasks that fit
@@ -392,8 +359,6 @@ sub onRowTaskState(msg as object)
     if not task.rowRunning then return
     task.rowRunning = false
     if m.rowsInFlight > 0 then m.rowsInFlight = m.rowsInFlight - 1
-    elapsed = nowMs() - task.rowStartedAt
-    homeLoadLog.Log("task done " + rowTaskLabel(task) + " in " + elapsed.ToStr() + "ms")
 
     while m.rowsInFlight < ROW_POOL_SIZE and m.rowQueue.count() > 0
         nextTask = m.rowQueue.shift()
@@ -401,21 +366,6 @@ sub onRowTaskState(msg as object)
         if nextTask.state <> "run" then startRowTask(nextTask)
     end while
 end sub
-
-' rowTaskLabel: Names a row task in the log by what it loads and, for library rows, which library
-'
-' @param {object} task - The row task
-' @return {string} The label
-function rowTaskLabel(task as object) as string
-    label = task.subtype()
-    if task.hasField("itemsToLoad") and isValidAndNotEmpty(task.itemsToLoad)
-        label = task.itemsToLoad
-    end if
-    if task.hasField("itemId") and isValidAndNotEmpty(task.itemId)
-        label = label + " " + task.itemId
-    end if
-    return label
-end function
 
 ' getOrCreateTask: Lazily creates and returns a LoadItemsTask for the given type
 '
@@ -580,7 +530,6 @@ function addLibraryPlaceholder() as boolean
     row = m.top.content.CreateChild("HomeRow")
     row.id = "smalllibrarytiles"
     row.title = title
-    homeLoadLog.Log("placeholder My Media")
     return true
 end function
 
@@ -738,7 +687,6 @@ sub processUserSections()
         if m.librariesPending and needsLibraries(sectionName) then continue for
         if not holdsBack(i, sectionName) then m.expectedRowCount = m.expectedRowCount + getExpectedRowContribution(sectionName)
     end for
-    homeLoadLog.Log("sections " + homeSectionCount().ToStr() + ", expecting " + m.expectedRowCount.ToStr() + " rows")
 
     ' Add home sections in order based on user settings
     m.loadedSectionCount = 0
@@ -761,10 +709,8 @@ sub processUserSections()
         ' Count how many sections with data are loaded
         if sectionLoaded then m.loadedSectionCount++
     end for
-    homeLoadLog.Log("sections added, " + m.processedRowCount.ToStr() + "/" + m.expectedRowCount.ToStr() + " rows already answered")
 
     if m.librarySections.Count() > 0
-        homeLoadLog.Log("waiting for libraries: " + m.librarySections.Join(","))
     end if
 
     ' Library sections that are still out will count toward the first load, so focus waits for them
@@ -799,11 +745,6 @@ sub onLibrariesLoaded()
     m.LoadLibrariesTask.unobserveField("content")
     m.LoadLibrariesTask.content = []
 
-    libraryCount = 0
-    if isValid(m.libraryData) then libraryCount = m.libraryData.Count()
-    elapsed = nowMs() - m.buildStartedAt
-    homeLoadLog.Log("libraries landed " + libraryCount.ToStr() + " in " + elapsed.ToStr() + "ms after build start")
-
     m.librariesPending = false
     waiting = m.librarySections
     m.librarySections = []
@@ -814,7 +755,6 @@ sub onLibrariesLoaded()
         extraRows += getExpectedRowContribution(sectionName)
     end for
     m.expectedRowCount = m.expectedRowCount + extraRows
-    homeLoadLog.Log("library sections expect " + extraRows.ToStr() + " more rows")
 
     for each sectionName in waiting
         if addHomeSection(sectionName) then m.loadedSectionCount++
@@ -833,7 +773,6 @@ sub onCachedRecords()
     if not isArrayValue(records) or records.count() = 0 then return
     m.cacheReadTask.cachedRecords = []
 
-    started = nowMs()
     imageContext = activeImageContext()
     rows = []
     for each record in records
@@ -855,7 +794,6 @@ sub onCachedRecords()
         end for
         rows.push(row)
     end for
-    homeLoadLog.Log("cache nodes built " + rows.count().ToStr() + " rows in " + (nowMs() - started).ToStr() + "ms")
 
     paintCachedRows(rows)
 end sub
@@ -866,7 +804,6 @@ end sub
 ' @param {object} rows - The HomeRow nodes built from the saved records
 sub paintCachedRows(rows as object)
     painted = 0
-    skipped = 0
     for each row in rows
         searchSectionTitle = LCase(row.title).Replace(" ", "")
         index = getSectionIndex(row.title, row.id)
@@ -879,7 +816,6 @@ sub paintCachedRows(rows as object)
         end for
 
         if pendingMatch or (isValid(existing) and existing.getChildCount() > 0)
-            skipped++
             continue for
         end if
 
@@ -893,8 +829,7 @@ sub paintCachedRows(rows as object)
 
     sortHomeRows()
     setRowItemSize()
-    homeLoadLog.Log("cache painted " + painted.ToStr() + " rows, skipped " + skipped.ToStr() + " at +" + (nowMs() - m.buildStartedAt).ToStr() + "ms")
-    if painted > 0 then markPainted("cache")
+    if painted > 0 then markPainted()
 end sub
 
 ' getOriginalSectionIndex: Gets the index of a section from user settings and adds count of currently known latest media sections
@@ -956,7 +891,6 @@ sub addOrUpdateHomeRow(row as object, sectionName as string, originalSectionKey 
         end if
     end for
     if not replaced then m.pendingRows.push(entry)
-    homeLoadLog.Log("row landed " + sectionName + " (" + row.getChildCount().ToStr() + " items) at +" + (nowMs() - m.buildStartedAt).ToStr() + "ms")
 
     if not m.flushedThisBuild
         flushPendingRows()
@@ -974,10 +908,7 @@ sub flushPendingRows()
     if m.pendingRows.count() = 0 then return
 
     flushedRows = []
-    findMs = 0
-    placeMs = 0
     for each entry in m.pendingRows
-        findStarted = nowMs()
         exists = sectionExists(entry.sectionName, entry.key)
         if exists
             index = getSectionIndex(entry.sectionName, entry.key)
@@ -985,7 +916,6 @@ sub flushPendingRows()
             index = getOriginalSectionIndex(entry.key)
         end if
 
-        placeStarted = nowMs()
         kept = false
         if exists
             existing = m.top.content.getChild(index)
@@ -993,39 +923,20 @@ sub flushPendingRows()
             if kept then entry.row = existing
         end if
         if kept
-            homeLoadLog.Log("kept cached " + entry.sectionName)
         else if exists
             m.top.content.replaceChild(entry.row, index)
         else
             m.top.content.insertChild(entry.row, index)
         end if
-        placeEnded = nowMs()
-
-        entryFindMs = placeStarted - findStarted
-        entryPlaceMs = placeEnded - placeStarted
-        findMs += entryFindMs
-        placeMs += entryPlaceMs
-        if entryFindMs + entryPlaceMs > 200
-            homeLoadLog.Log("slow row " + entry.sectionName + " find " + entryFindMs.ToStr() + "ms place " + entryPlaceMs.ToStr() + "ms items " + entry.row.getChildCount().ToStr())
-        end if
         flushedRows.push(entry.row)
     end for
-    count = m.pendingRows.count()
     m.pendingRows = []
 
     ' Set before the layout, since it can finish the build and start a queued one that resets these
     m.flushedThisBuild = true
-    m.flushCount++
-    flushNumber = m.flushCount.ToStr()
-    homeLoadLog.Log("flush " + flushNumber + ": " + count.ToStr() + " rows, find " + findMs.ToStr() + "ms, place " + placeMs.ToStr() + "ms")
 
-    layoutStarted = nowMs()
     sortHomeRows()
     setRowItemSize()
-    homeLoadLog.Log("flush " + flushNumber + " laid out in " + (nowMs() - layoutStarted).ToStr() + "ms")
-    for each row in flushedRows
-        homeLoadLog.Log("row shown " + row.title)
-    end for
 
     queueLabels(flushedRows)
 
@@ -1033,7 +944,7 @@ sub flushPendingRows()
     for each row in flushedRows
         if row.getChildCount() > 0 then painted = true
     end for
-    if painted then markPainted("flush")
+    if painted then markPainted()
 end sub
 
 '' keepCachedCards: Keeps a row drawn from the launch cache when the fresh row matches it, so its cards
@@ -1090,9 +1001,7 @@ sub startLabels()
     m.labelIdsAsked = m.labelIdsWaiting
     m.labelIdsWaiting = []
     m.labelsTask.itemIds = m.labelIdsAsked
-    m.labelsAskedAt = nowMs()
     m.labelsTask.control = "RUN"
-    homeLoadLog.Log("labels ask " + m.labelIdsAsked.count().ToStr() + " ids")
 end sub
 
 ' onLabelsTaskState: Puts the labels a request brought back on the cards waiting for them
@@ -1120,7 +1029,6 @@ sub onLabelsTaskState(msg as object)
         end if
     end for
     m.labelIdsAsked = []
-    homeLoadLog.Log("labels applied to " + applied.ToStr() + " cards in " + (nowMs() - m.labelsAskedAt).ToStr() + "ms")
 
     startLabels()
 end sub
@@ -1271,7 +1179,6 @@ sub removeHomeSection(sectionTitleToRemove as string)
     for i = m.pendingRows.count() - 1 to 0 step -1
         if LCase(m.pendingRows[i].sectionName).Replace(" ", "") = sectionTitle then m.pendingRows.delete(i)
     end for
-    homeLoadLog.Log("row empty " + sectionTitleToRemove)
     ' A row that was never on screen leaves the layout as it is, but may still be the build's last answer
     if not sectionExists(sectionTitle)
         finishIfAllRowsIn()
