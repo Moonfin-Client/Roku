@@ -7828,5 +7828,17 @@
         <source>SyncPlay Group</source>
         <translation>Gruppo SyncPlay</translation>
     </message>
+    <message>
+        <source>Directors</source>
+        <translation>Registi</translation>
+    </message>
+    <message>
+        <source>Writers</source>
+        <translation>Sceneggiatori</translation>
+    </message>
+    <message>
+        <source>Server Recommends</source>
+        <translation>Suggerimenti del server</translation>
+    </message>
 </context>
 </TS>
