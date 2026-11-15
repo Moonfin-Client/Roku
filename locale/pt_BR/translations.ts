@@ -6731,5 +6731,9 @@
         <source>SyncPlay Group</source>
         <translation>Grupo SyncPlay</translation>
     </message>
+    <message>
+        <source>Server Recommends</source>
+        <translation>Recomendações do servidor</translation>
+    </message>
 </context>
 </TS>

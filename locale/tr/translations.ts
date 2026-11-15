@@ -6469,5 +6469,9 @@
         <source>SyncPlay Group</source>
         <translation>SyncPlay Grup</translation>
     </message>
+    <message>
+        <source>Server Recommends</source>
+        <translation>Sunucu Önerileri</translation>
+    </message>
 </context>
 </TS>

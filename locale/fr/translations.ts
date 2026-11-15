@@ -8521,5 +8521,9 @@
         <source>SyncPlay Group</source>
         <translation>Groupe SyncPlay</translation>
     </message>
+    <message>
+        <source>Server Recommends</source>
+        <translation>Recommandé par le serveur</translation>
+    </message>
 </context>
 </TS>

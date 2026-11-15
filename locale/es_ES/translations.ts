@@ -5788,5 +5788,105 @@
         <source>Hide episode titles and stills for shows you&apos;re behind on</source>
         <translation>Oculta los títulos de los episodios y las imágenes fijas de las series que te has quedado atrás</translation>
     </message>
+    <message>
+        <source>Large artwork with the title, details and overview laid over it.</source>
+        <translation>Obra de arte grande con el título, los detalles y la descripción general sobre ella.</translation>
+    </message>
+    <message>
+        <source>Large artwork led by a big title logo.</source>
+        <translation>Gran obra de arte encabezada por un gran logotipo de título.</translation>
+    </message>
+    <message>
+        <source>Jump Back In</source>
+        <translation>Volver a Entrar</translation>
+    </message>
+    <message>
+        <source>Loading Animation Configuration</source>
+        <translation>Cargando la configuración de la animación</translation>
+    </message>
+    <message>
+        <source>Loading Stream...</source>
+        <translation>Cargando transmisión...</translation>
+    </message>
+    <message>
+        <source>Lunar New Year</source>
+        <translation>Año Nuevo Lunar</translation>
+    </message>
+    <message>
+        <source>Library Order</source>
+        <translation>Orden de la biblioteca</translation>
+    </message>
+    <message>
+        <source>Media info</source>
+        <translation>Información Multimedia</translation>
+    </message>
+    <message>
+        <source>Message notifications</source>
+        <translation>Notificaciones de mensajes</translation>
+    </message>
+    <message>
+        <source>Make admin</source>
+        <translation>Crear administrador</translation>
+    </message>
+    <message>
+        <source>Leave this group? Someone will have to add you back to rejoin.</source>
+        <translation>¿Abandonas este grupo? Alguien tendrá que añadirte de nuevo para que puedas reincorporarte.</translation>
+    </message>
+    <message>
+        <source>Load</source>
+        <translation>Cargar</translation>
+    </message>
+    <message>
+        <source>Mixed</source>
+        <translation>Mezclado</translation>
+    </message>
+    <message>
+        <source>Mix</source>
+        <translation>Mezcla</translation>
+    </message>
+    <message>
+        <source>Marked as complete</source>
+        <translation>Marcado como completo</translation>
+    </message>
+    <message>
+        <source>Matched by title and description only. Check it&apos;s the same program.</source>
+        <translation>Coinciden únicamente por título y descripción. Comprueba que se trata del mismo programa.</translation>
+    </message>
+    <message>
+        <source>Midseason finale</source>
+        <translation>Final de mitad de temporada</translation>
+    </message>
+    <message>
+        <source>Looks</source>
+        <translation>Aspecto</translation>
+    </message>
+    <message>
+        <source>It takes a few steps on your server to install. They&apos;re all at this link.</source>
+        <translation>La instalación requiere algunos pasos en tu servidor. Los encontrarás todos en este enlace.</translation>
+    </message>
+    <message>
+        <source>Messages from your server admin</source>
+        <translation>Mensajes del administrador de su servidor</translation>
+    </message>
+    <message>
+        <source>Joining</source>
+        <translation>Unirse</translation>
+    </message>
+    <message>
+        <source>Join with a code</source>
+        <translation>Únete con un código</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <translation>Abandonar</translation>
+    </message>
+    <message>
+        <source>Make host</source>
+        <translation>Hacer anfitrión</translation>
+    </message>
+    <message>
+        <source>Server Recommends</source>
+        <translation>Server Recommends</translation>
+    </message>
 </context>
 </TS>

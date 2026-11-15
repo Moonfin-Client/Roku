@@ -5330,5 +5330,9 @@
         <source>SyncPlay Group</source>
         <translation>Grupo SyncPlay</translation>
     </message>
+    <message>
+        <source>Server Recommends</source>
+        <translation>Servidor Recomenda</translation>
+    </message>
 </context>
 </TS>

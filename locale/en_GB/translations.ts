@@ -4727,5 +4727,9 @@
         <source>SyncPlay Group</source>
         <translation>SyncPlay Group</translation>
     </message>
+    <message>
+        <source>Server Recommends</source>
+        <translation>Server Recommends</translation>
+    </message>
 </context>
 </TS>
