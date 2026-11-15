@@ -8574,5 +8574,17 @@
         <source>SyncPlay Group</source>
         <translation>Grup SyncPlay</translation>
     </message>
+    <message>
+        <source>Directors</source>
+        <translation>Direcció</translation>
+    </message>
+    <message>
+        <source>Writers</source>
+        <translation>Guió</translation>
+    </message>
+    <message>
+        <source>Server Recommends</source>
+        <translation>Recomanacions del servidor</translation>
+    </message>
 </context>
 </TS>

@@ -5632,5 +5632,13 @@
         <source>SyncPlay Group</source>
         <translation>SyncPlay-Gruppe</translation>
     </message>
+    <message>
+        <source>Directors</source>
+        <translation>Regisseure</translation>
+    </message>
+    <message>
+        <source>Server Recommends</source>
+        <translation>Server-Empfehlungen</translation>
+    </message>
 </context>
 </TS>
