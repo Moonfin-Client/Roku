@@ -10,7 +10,7 @@
 ' share the request code don't each load it.
 namespace startupPrefetch
     const ROOT = "cachefs:/startupPrefetch"
-    const MAX_URLS = 20
+    const MAX_URLS = 16
     ' An answer older than this is not used, so a launch that sat on a sign in screen asks again
     const MAX_AGE_MS = 20000
     ' Silo calls in flight at once. Each new HTTPS connection costs the device a TLS handshake while
@@ -79,7 +79,8 @@ namespace startupPrefetch
                 tokens = invalid
                 if call.account <> "" then tokens = silo.LoadTokens(base, call.account)
                 ' A login due a refresh refreshes before its first call, which then goes out with new headers
-                if call.account = "" or (isValid(tokens) and not silo.NeedsRefresh(tokens))
+                ' A profile whose PIN is asked every time is never acted as before its PIN is entered
+                if (call.account = "" or (isValid(tokens) and not silo.NeedsRefresh(tokens))) and (call.profile = "" or silo.RemembersPin(call.profile))
                     headers = silo.RequestHeaders(tokens, call.profile, call.useProfile = true, invalid)
                     ' Sign in names the device after the user, so a call goes out under the DeviceId it had
                     if isString(call.device) and call.device <> "" and headers.DoesExist("X-Silo-Device-Id") then headers["X-Silo-Device-Id"] = call.device
@@ -88,12 +89,19 @@ namespace startupPrefetch
                 end if
             end if
         end for
+        ' A write clears what was read before it, so answers sent before a write aren't taken after it
+        state.siloGeneration = silo.MemoGeneration()
         startupPrefetch.SendSilo(state)
     end sub
 
-    ' Sends queued Silo calls until SILO_IN_FLIGHT are out
+    ' Sends queued Silo calls until SILO_IN_FLIGHT are still on their way. An answer that is in but
+    ' not taken yet doesn't hold a place
     sub SendSilo(state as object)
-        while state.inflight.Count() < startupPrefetch.SILO_IN_FLIGHT and state.siloQueue.Count() > 0
+        running = 0
+        for each url in state.inflight
+            if state.inflight[url].GetMessagePort().PeekMessage() = invalid then running++
+        end for
+        while running < startupPrefetch.SILO_IN_FLIGHT and state.siloQueue.Count() > 0
             url = state.siloQueue.Shift()
             headers = state.sentHeaders[url]
             req = CreateObject("roUrlTransfer")
@@ -104,7 +112,10 @@ namespace startupPrefetch
                 req.AddHeader(name, headers[name])
             end for
             req.SetMessagePort(CreateObject("roMessagePort"))
-            if req.AsyncGetToString() then state.inflight[url] = req
+            if req.AsyncGetToString()
+                state.inflight[url] = req
+                running++
+            end if
         end while
     end sub
 
@@ -165,7 +176,7 @@ namespace startupPrefetch
 
     ' Take for a Silo call: the answer only counts if its request went out with the same headers
     ' (token, profile and its PIN proof, device) the call has now. Called on the state.
-    function TakeSilo(url as string, headers as object) as dynamic
+    function TakeSilo(url as string, headers as object, timeoutMs as integer) as dynamic
         req = m.inflight[url]
         m.inflight.Delete(url)
         ' One not sent yet is made by the caller, and the next queued ones go out in its place
@@ -183,16 +194,16 @@ namespace startupPrefetch
                 if not sent.DoesExist(name) or sent[name] <> headers[name] then same = false
             end for
         end if
-        if not same or Int(UpTime(0) * 1000) - m.startedAt > startupPrefetch.MAX_AGE_MS
+        if not same or Int(UpTime(0) * 1000) - m.startedAt > startupPrefetch.MAX_AGE_MS or silo.MemoGeneration() <> m.siloGeneration
             req.AsyncCancel()
             return invalid
         end if
-        return startupPrefetch.Await(m, req)
+        return startupPrefetch.Await(m, req, timeoutMs)
     end function
 
     ' Waits for a prefetched request's answer: its roUrlEvent when it is a 2xx, else invalid
-    function Await(state as object, req as object) as dynamic
-        event = wait(15000, req.GetMessagePort())
+    function Await(state as object, req as object, timeoutMs = 15000 as integer) as dynamic
+        event = wait(timeoutMs, req.GetMessagePort())
         if type(event) <> "roUrlEvent"
             ' The server isn't answering, so the rest are dropped too: each caller then waits only
             ' for its own request, rather than for its prefetch first
