@@ -493,1766 +493,182 @@
         <extracomment>Content of message box when the requested content is not found on the server</extracomment>
     </message>
     <message>
-        <source>Enter the server name or IP address</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Title of KeyboardDialog when manually entering a server URL</extracomment>
-    </message>
-    <message>
-        <source>Pick a Jellyfin server from the local network</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Instructions on initial app launch when the user is asked to pick a server from a list</extracomment>
-    </message>
-    <message>
-        <source>...or enter server URL manually:</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Instructions on initial app launch when the user is asked to manually enter a server URL</extracomment>
-    </message>
-    <message>
-        <source>Error Getting Playback Information</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Dialog Title: Received error from server when trying to get information about the selected item for playback</extracomment>
-    </message>
-    <message>
-        <source>An error was encountered while playing this item. Server did not provide required transcoding data.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Content of message box when trying to play an item which requires transcoding, and the server did not provide transcode url</extracomment>
-    </message>
-    <message>
         <source>Version</source>
-        <translation type="unfinished"></translation>
+        <translation>إصدار</translation>
     </message>
     <message>
         <source>Playback</source>
-        <translation type="unfinished"></translation>
+        <translation>التشغيل</translation>
         <extracomment>Title for Playback section in user setting screen.</extracomment>
     </message>
     <message>
-        <source>Codec Support</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for settings group related to codec support</extracomment>
-    </message>
-    <message>
-        <source>Enable or disable Direct Play for optional codecs</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for settings group related to codec support</extracomment>
-    </message>
-    <message>
-        <source>MPEG-2</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Name of codec used in settings menu</extracomment>
-    </message>
-    <message>
-        <source>Support Direct Play of MPEG-2 content (e.g., Live TV). This will prevent transcoding of MPEG-2 content, but uses significantly more bandwidth.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>MPEG-4</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Name of codec used in settings menu</extracomment>
-    </message>
-    <message>
-        <source>Support Direct Play of MPEG-4 content. This may need to be disabled for playback of DIVX encoded video files.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
         <source>Enabled</source>
-        <translation type="unfinished"></translation>
+        <translation>مفعّل</translation>
     </message>
     <message>
         <source>Disabled</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>User Interface</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Title for User Interface section in user setting screen.</extracomment>
-    </message>
-    <message>
-        <source>Media Grid</source>
-        <translation type="unfinished"></translation>
-        <extracomment>UI -&gt; Media Grid section in user setting screen.</extracomment>
-    </message>
-    <message>
-        <source>Media Grid options.</source>
-        <translation type="unfinished"></translation>
+        <translation>معطّل</translation>
     </message>
     <message>
         <source>Item Count</source>
-        <translation type="unfinished"></translation>
+        <translation>عدد العناصر</translation>
         <extracomment>UI -&gt; Media Grid -&gt; Item Count in user setting screen.</extracomment>
     </message>
     <message>
-        <source>Show item count in the library and index of selected item.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Description for option in Setting Screen</extracomment>
-    </message>
-    <message>
-        <source>Set Favorite</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Button Text - When pressed, sets item as Favorite</extracomment>
-    </message>
-    <message>
         <source>Favorited</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Mark As Favorite</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Set Watched</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Button Text - When pressed, marks item as Warched</extracomment>
-    </message>
-    <message>
-        <source>Resume playing at </source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Start over from the beginning.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Playback Options</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Go to series</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Continue Watching Popup Menu - Navigate to the Series Detail Page</extracomment>
-    </message>
-    <message>
-        <source>Go to season</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Continue Watching Popup Menu - Navigate to the Season Page</extracomment>
-    </message>
-    <message>
-        <source>Go to episode</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Continue Watching Popup Menu - Navigate to the Episode Detail Page</extracomment>
-    </message>
-    <message>
-        <source>Use voice remote to search</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Help text in search voice text box</extracomment>
-    </message>
-    <message>
-        <source>Search now</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Help text in search Box</extracomment>
-    </message>
-    <message>
-        <source>You can search for Titles, People, Live TV Channels and more</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Help text in search results</extracomment>
-    </message>
-    <message>
-        <source>%1 of %2</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Item position and count. %1 = current item. %2 = total number of items</extracomment>
+        <translation>المفضلة</translation>
     </message>
     <message>
         <source>Quick Connect</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Here is your Quick Connect code:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>(Dialog will close automatically)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>There was an error authenticating via Quick Connect.</source>
-        <translation type="unfinished"></translation>
+        <translation>Quick Connect</translation>
     </message>
     <message>
         <source>Networks</source>
-        <translation type="unfinished"></translation>
+        <translation>الشبكات</translation>
     </message>
     <message>
         <source>Studios</source>
-        <translation type="unfinished"></translation>
+        <translation>استوديوهات</translation>
     </message>
     <message>
         <source>Shows</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Return to Top</source>
-        <translation type="unfinished"></translation>
-        <extracomment>UI -&gt; Media Grid -&gt; Item Title in user setting screen.</extracomment>
-    </message>
-    <message>
-        <source>Use the replay button to slowly animate to the first item in the folder. (If disabled, the folder will reset to the first item immediately).</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Description for option in Setting Screen</extracomment>
-    </message>
-    <message>
-        <source>Hide Taglines</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Option Title in user setting screen</extracomment>
-    </message>
-    <message>
-        <source>Hides tagline text on details pages.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Options for TV Shows.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Description for TV Shows user settings.</extracomment>
-    </message>
-    <message>
-        <source>Blur Unwatched Episodes</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Option Title in user setting screen</extracomment>
-    </message>
-    <message>
-        <source>Skip Details for Single Seasons</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Go directly to the episode list if a TV series has only one season.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Blur images of unwatched episodes.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Design Elements</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Options that alter the design of Jellyfin.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Description for Design Elements user settings.</extracomment>
-    </message>
-    <message>
-        <source>Use Splashscreen as Home Background</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Option Title in user setting screen</extracomment>
-    </message>
-    <message>
-        <source>Use generated splashscreen image as Jellyfin&apos;s home background. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Description for option in Setting Screen</extracomment>
+        <translation>المسلسلات</translation>
     </message>
     <message>
         <source>Cinema Mode</source>
-        <translation type="unfinished"></translation>
+        <translation>وضع السينما</translation>
         <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Bring the theater experience straight to your living room with the ability to play custom intros before the main feature.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Hide Clock</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Option Title in user setting screen</extracomment>
-    </message>
-    <message>
-        <source>Hide all clocks in Jellyfin. Jellyfin will need to be closed and reopened for changes to take effect.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Next episode</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Play Trailer</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>H.264</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Name of codec used in settings menu</extracomment>
-    </message>
-    <message>
-        <source>Attempt Direct Play for H.264 media with unsupported profile levels before falling back to transcoding if it fails.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>HEVC</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Name of codec used in settings menu</extracomment>
-    </message>
-    <message>
-        <source>Attempt Direct Play for HEVC media with unsupported profile levels before falling back to transcoding if it fails.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Settings relating to playback and supported codec and media types.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Settings relating to how the application looks.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Max Days Next Up</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Option Title in user setting screen</extracomment>
-    </message>
-    <message>
-        <source>Set the maximum amount of days a show should stay in the &apos;Next Up&apos; list without watching it.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
         <source>Playback Information</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Transcoding Information</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Reason</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Force Transcoding setting is enabled</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Force Transcode option is enabled</source>
-        <translation type="unfinished"></translation>
+        <translation>معلومات التشغيل</translation>
     </message>
     <message>
         <source>Video Codec</source>
-        <translation type="unfinished"></translation>
+        <translation>برنامج ترميز الفيديو</translation>
     </message>
     <message>
         <source>Audio Codec</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>direct</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Total Bitrate</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Audio Channels</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Stream Information</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Codec</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Codec Tag</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Level</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Video profile level</extracomment>
-    </message>
-    <message>
-        <source>Bit Rate</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Video streaming bit rate</extracomment>
+        <translation>ترميز الصوت</translation>
     </message>
     <message>
         <source>Container</source>
-        <translation type="unfinished"></translation>
+        <translation>حاوية</translation>
         <extracomment>Video streaming container</extracomment>
     </message>
     <message>
-        <source>Size</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Video size</extracomment>
-    </message>
-    <message>
-        <source>Video range type</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Pixel format</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Video pixel format</extracomment>
-    </message>
-    <message>
-        <source>WxH</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Video width x height</extracomment>
-    </message>
-    <message>
-        <source>Unable to find any albums or songs belonging to this artist</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Popup message when we find no audio data for an artist</extracomment>
-    </message>
-    <message>
-        <source>Custom Subtitles</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Name of a setting - custom subtitles that support CJK fonts</extracomment>
-    </message>
-    <message>
-        <source>Replace Roku&apos;s default subtitle functions with custom functions that support CJK fonts. Fallback fonts must be configured and enabled on the server for CJK rendering to work.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Description of a setting - custom subtitles that support CJK fonts</extracomment>
-    </message>
-    <message>
-        <source>Text Subtitles Only</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Name of a setting - should we hide subtitles that might transcode</extracomment>
-    </message>
-    <message>
-        <source>Only display text subtitles to minimize transcoding.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Description of a setting - should we hide subtitles that might transcode</extracomment>
-    </message>
-    <message>
-        <source>all</source>
-        <translation type="unfinished"></translation>
-        <extracomment>all will reset the searchTerm so all data will be availible</extracomment>
-    </message>
-    <message>
         <source>All</source>
-        <translation type="unfinished"></translation>
+        <translation>الجميع</translation>
         <extracomment>All in filter</extracomment>
     </message>
     <message>
-        <source>Aired</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Aired date label</extracomment>
-    </message>
-    <message>
-        <source>Slideshow Off</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Slideshow On</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Slideshow Paused</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>(Favorites)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Favorites</source>
-        <translation type="unfinished"></translation>
+        <translation>المفضلة</translation>
     </message>
     <message>
         <source>Artists</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Slideshow Resumed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Random Off</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Random On</source>
-        <translation type="unfinished"></translation>
+        <translation>الفنانون</translation>
     </message>
     <message>
         <source>Delete Playlist</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>MPEG-4 Support</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Parental Ratings</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Used in Filter menu</extracomment>
+        <translation>حذف قائمة التشغيل</translation>
     </message>
     <message>
         <source>Collections</source>
-        <translation type="unfinished"></translation>
+        <translation>المجموعات</translation>
     </message>
     <message>
         <source>Playlists</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Years</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Used in Filter menu</extracomment>
-    </message>
-    <message>
-        <source>No items found. Try adjusting your selected filters.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Show What&apos;s New Popup</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Show What&apos;s New popup when Jellyfin is updated to a new version.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Unplayed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Played</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Resumable</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Movie Library Default View</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Default view for Movie Libraries.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Grid View Item Titles</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Title of a setting - when should we show the title text of a grid item</extracomment>
-    </message>
-    <message>
-        <source>Select when to show titles in grid view.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Show On Hover</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Always Show</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Always Hide</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Artists (Presentation)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Album Artist</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Album Artists (Presentation)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Artists (Grid)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Album Artists (Grid)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Song</source>
-        <translation type="unfinished"></translation>
+        <translation>قوائم التشغيل</translation>
     </message>
     <message>
         <source>Songs</source>
-        <translation type="unfinished"></translation>
+        <translation>أغاني</translation>
     </message>
     <message>
         <source>Album</source>
-        <translation type="unfinished"></translation>
+        <translation>الألبوم</translation>
     </message>
     <message>
         <source>Albums</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Autoplay Episode Limit</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The number of episodes that will play automatically after the selected episode. Requires &apos;Play next episode automatically&apos; server setting to be enabled.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>View All</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Disable Community Rating for Episodes</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Hide the star and community rating for episodes of a TV show. This is to prevent spoilers of an upcoming good/bad episode.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Configure the maximum playback bitrate.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Biographical information for this person is not currently available.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Enable Limit</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Enable or disable the &apos;Maximum Bitrate&apos; setting.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Bitrate Limit</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Maximum Bitrate</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Set the maximum bitrate in Mbps. Set to 0 to use Roku&apos;s specifications. This setting must be enabled to take effect.</source>
-        <translation type="unfinished"></translation>
+        <translation>الألبومات</translation>
     </message>
     <message>
         <source>Libraries</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Settings relating to the appearance of Library pages</source>
-        <translation type="unfinished"></translation>
+        <translation>المكتبات</translation>
     </message>
     <message>
         <source>General</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Settings relating to the appearance of the Home screen and the program in general.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Grid View Settings</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Settings that apply when Grid views are enabled.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Settings relating to the appearance of pages in TV Libraries.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Settings relating to the appearance of pages in Movie Libraries.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Presentation</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Title of an option - name of presentation view</extracomment>
-    </message>
-    <message>
-        <source>Grid</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Title of an option - name of grid view</extracomment>
-    </message>
-    <message>
-        <source>Disable Unwatched Episode Count</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>If enabled, the number of unwatched episodes in a series/season will be removed.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Loading trailer</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Dialog title in Main.brs</extracomment>
-    </message>
-    <message>
-        <source>Next Episode Button Time</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Set how many seconds before the end of an episode the Next Episode button should appear. Set to 0 to disable.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Preferred Audio Codec</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title of option</extracomment>
-    </message>
-    <message>
-        <source>Use the selected audio codec for transcodes. If the device or stream does not support it, a fallback codec will be used.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Video Codec Support</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Enable or disable Direct Play support for certain codecs.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Video Profile Level Support</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Attempt Direct Play of potentially unsupported profile levels</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Use system settings</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Option title</extracomment>
-    </message>
-    <message>
-        <source>Direct playing</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The source file is entirely compatible with this client and the session is receiving the file without modifications.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Direct play info box text in GetPlaybackInfoTask.brs</extracomment>
-    </message>
-    <message>
-        <source>Maximum Resolution</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title</extracomment>
-    </message>
-    <message>
-        <source>Set the maximum resolution when playing video files on this device.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description</extracomment>
-    </message>
-    <message>
-        <source>Off - Attempt to play all resolutions</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Option title</extracomment>
-    </message>
-    <message>
-        <source>Auto - Use TV resolution</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Option title</extracomment>
+        <translation>عام</translation>
     </message>
     <message>
         <source>Mode</source>
-        <translation type="unfinished"></translation>
+        <translation>الوضع</translation>
         <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Value</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Maximum Audio Channels</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title</extracomment>
-    </message>
-    <message>
-        <source>Configure the maximum audio channels when playing video files on this device.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description</extracomment>
-    </message>
-    <message>
-        <source>Off - Attempt to play all channels</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Option title</extracomment>
-    </message>
-    <message>
-        <source>Configure the maximum resolution when playing video files on this device.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description</extracomment>
-    </message>
-    <message>
-        <source>Apply max resolution to all files or only transcoded files.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description</extracomment>
-    </message>
-    <message>
-        <source>All files</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Only transcoded files</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Compatibility</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Attempt to prevent playback failures.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Disable HEVC</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Disable the HEVC codec on this device. This may improve playback for some devices (ultra).</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
     </message>
     <message>
         <source>Global</source>
-        <translation type="unfinished"></translation>
+        <translation>عالمي</translation>
         <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Global settings that affect everyone that uses this Roku device.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Remember Me?</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Remember the currently logged in user and try to log them in again next time you start the Jellyfin app.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Custom Trickplay</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Display custom trickplay images even if this Roku says it&apos;s displaying its own. This may cause the two images to overlay on top of each other.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Force Transcoding</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Force all playable media to be transcoded.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Media Segment Actions</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Settings relating to how Jellyfin should handle media segments.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Commercial Segments</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>What action should Jellyfin take for commercial segments?</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Intro Segments</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>What action should Jellyfin take for intro segments?</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Outro Segments</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>What action should Jellyfin take for outro segments?</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Preview Segments</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>What action should Jellyfin take for preview segments?</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Recap Segments</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Title for option</extracomment>
-    </message>
-    <message>
-        <source>What action should Jellyfin take for recap segments?</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Ask To Skip</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Options</extracomment>
     </message>
     <message>
         <source>Skip</source>
-        <translation type="unfinished"></translation>
+        <translation>يتخطى</translation>
         <extracomment>User Setting - Options</extracomment>
     </message>
     <message>
         <source>None</source>
-        <translation type="unfinished"></translation>
+        <translation>بدون</translation>
         <extracomment>User Setting - Options</extracomment>
     </message>
     <message>
-        <source>No Chapter Data Found</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Message shown in OSD when no chapter data is returned by the API</extracomment>
-    </message>
-    <message>
-        <source>Use Web Client&apos;s Home Section Arrangement</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Make the arrangement of the Roku home view sections match the web client&apos;s home screen. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Welcome to version</source>
-        <translation type="unfinished"></translation>
-        <extracomment>WhatsNewDialog title - Welcome to version 2.0.0</extracomment>
-    </message>
-    <message>
-        <source>To view a complete list of changes visit</source>
-        <translation type="unfinished"></translation>
-        <extracomment>WhatsNewDialog body text preceding the changelog URL</extracomment>
-    </message>
-    <message>
-        <source>Random</source>
-        <translation type="unfinished"></translation>
-        <extracomment>General use word when we want to randomize data</extracomment>
-    </message>
-    <message>
-        <source>... (Press * to read more)</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Ellipsis Text for when text overflows its container</extracomment>
-    </message>
-    <message>
-        <source>Item Detail Screen</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User interface Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Settings relating to the appearance of the item detail screen.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User interface Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Community and Critical Ratings</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Ratings for how good a movie is</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Overview Content</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>A quick overview of the item selected - typically a short plot outline.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Settings relating to the appearance of Library pages.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Libraries Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Forget Filters</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Libraries Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Forget applied library filters when Jellyfin is closed.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Libraries Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Library Landscape Column Count</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Libraries Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Number of columns in library view when showing landscape (wide) images</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Libraries Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Library Portrait Column Count</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Libraries Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Number of columns in library view when showing portrait (tall) images</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Libraries Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Library Square Column Count</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Libraries Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Number of columns in library view when showing square images</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Libraries Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>View All Next Up</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Title for viewing all episodes available in the Next Up section</extracomment>
-    </message>
-    <message>
-        <source>Rewatching Next Up</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>Show already watched episodes in &apos;Next Up&apos; sections.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Episode Images Next Up</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting title</extracomment>
-    </message>
-    <message>
-        <source>What type of images to use for Episodes shown in the &apos;Next Up&apos; and &apos;Continue Watching&apos; sections.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting description</extracomment>
-    </message>
-    <message>
-        <source>Use Web Client Setting</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting option title</extracomment>
-    </message>
-    <message>
-        <source>Use Episode Image</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting option title</extracomment>
-    </message>
-    <message>
-        <source>Use Show Image</source>
-        <translation type="unfinished"></translation>
-        <extracomment>User Setting - Setting option title</extracomment>
-    </message>
-    <message>
-        <source>The selected Jellyfin server uses version</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>which is not supported by this app. Please update the server to</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>or newer to use this app or install and use the Jellyfin Legacy app from Roku&apos;s Streaming Store</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Return to server select screen</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>CH</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Abbreviation for Channel</extracomment>
-    </message>
-    <message>
-        <source>Use Fallback Font Across App</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Changes the font used in the app to the server&apos;s configured fallback font.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Highlighted Color</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Folders</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Go To Artist</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>No Results Found</source>
-        <translation type="unfinished"></translation>
+        <translation>المجلدات</translation>
     </message>
     <message>
         <source>Format</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>downloads</source>
-        <translation type="unfinished"></translation>
+        <translation>شكل</translation>
     </message>
     <message>
         <source>Series</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Part</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Play / Resume from</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Play or Resume from</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>What&apos;s New</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Sort by</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Search is unavailable because the API does not support searching inside boxsets.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Search is unavailable because the API does not support searching inside My List.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Search this library</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Mark As Unplayed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Mark As Played</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Add To Playlist</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Remove From My List</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Add To My List</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Press OK to type</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Library Settings</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Display Watched Checkmark</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Playback Info</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select Audio</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select Subtitles</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select Language</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Tracks</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Released</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>min</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>mins</source>
-        <translation type="unfinished"></translation>
+        <translation>المسلسلات</translation>
     </message>
     <message>
         <source>Continue Listening</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>In My List</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>AppearsOn</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Public Profile</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Saved Profile</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Manage Hidden Users</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select User</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Are you sure you want to forget this user?</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Are you sure you want to delete this subtitle?</source>
-        <translation type="unfinished"></translation>
+        <translation>مواصلة الاستماع</translation>
     </message>
     <message>
         <source>Yes</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>No, Cancel</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Manual Login</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Unhide Users</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Play Normally - disabled because of selected force transcoding setting</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>as</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Used in ExtrasRowList.bs to show the role of a person in a movie or TV show</extracomment>
+        <translation>نعم</translation>
     </message>
     <message>
         <source>Seasons</source>
-        <translation type="unfinished"></translation>
+        <translation>المواسم</translation>
         <extracomment>Used in TVSeasonRow.bs to show the title of a row containing seasons</extracomment>
     </message>
     <message>
         <source>Season</source>
-        <translation type="unfinished"></translation>
+        <translation>موسم</translation>
     </message>
     <message>
         <source>Episode</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 1</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 2</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 3</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 4</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 5</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 6</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 7</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Section 8</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 1. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 2. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 3. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 4. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 5. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 6. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 7. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select what to show in section 8. This setting has no effect if \&quot;Use Web Client&apos;s Home Section Arrangement\&quot; is enabled. Jellyfin will need to be closed and reopened for change to take effect.</source>
-        <translation type="unfinished"></translation>
+        <translation>حلقة</translation>
     </message>
     <message>
         <source>Live TV</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>My List</source>
-        <translation type="unfinished"></translation>
+        <translation>البث التلفزيوني المباشر</translation>
     </message>
     <message>
         <source>Recently Added Media</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Customize the home screen sections</source>
-        <translation type="unfinished"></translation>
+        <translation>أحدث الوسائط</translation>
     </message>
     <message>
         <source>Home Rows</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Colors</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Change the colors of elements in the app.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>All Screens</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Colors used across multiple screens.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Background</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The base background color. Background images are layered on top of this color.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Cursor</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The color of the remote control&apos;s cursor.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Primary Text</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The primary text color.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Secondary Text</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The secondary text color.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Watched Check Mark &amp; Unplayed Count</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Colors specific to the watched check mark &amp; unplayed count box.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The background color of the check mark &amp; unplayed count shown in the top right corner of items.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Unplayed Count</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The color of the unplayed count number.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Watched Check Mark</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The color of the watched check mark.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Dialog Popups</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Colors specific to dialog popups</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The background color for all dialog popups.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Bold Text</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color for bold text.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Horizontal Border line</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The color of the thin border line under the header text.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Selected Text</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color for the item the cursor is over.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Text Color</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color for title and items the cursor is not over.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>What&apos;s New Author</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color for the author in the What&apos;s New popup.</source>
-        <translation type="unfinished"></translation>
+        <translation>صفوف المنزل</translation>
     </message>
     <message>
         <source>Home Screen</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Colors specific to the home screen</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>My List Icon</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The color of the star icon in the My List library item.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Row Headers</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color of the headers of each row.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Row Item Background</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The background color of items. Only seen if no image loads on top of it.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Row Item Progress</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The color of the watched portion of the progress bar.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Row Item Progress Background</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The background color of the progress bar.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Row Item Subtitle</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color of the second line displayed under items.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Row Item Title</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color of the first line displayed under items.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Username In Header</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The text color of the user&apos;s name in the header.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Shuffle Play Collection</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Note: Force transcode option automatically enabled due to video rotation</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Start Episode List From First Unwatched Episode</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>When opening a season&apos;s list of episodes, automatically scroll down and start the cursor on the first unwatched episode.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Add To Favorites</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Remove From Favorites</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Play Normally</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Force Transcode (Allow Remux)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Force Transcode (Allow Remux) - disabled because of selected force transcoding setting</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Force Transcode (Remux Disabled)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Force Transcode (Remux Disabled) - disabled because of selected force transcoding setting</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>No channels found matching your search criteria</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Are You Still Watching Popup</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>How many minutes of inactivity before playback is stopped between items and a popup is shown to continue? Set to 0 to disable.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Are You Still Watching?</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Yes, continue</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>No, stop playback</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Playback will automatically stop in 1 minute if no buttons are pressed.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Burn in subtitle when transcoding</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Title for option</extracomment>
-    </message>
-    <message>
-        <source>Burn in all subtitles when transcoding is triggered. This ensures subtitle synchronization after transcoding at the cost of reduced transcoding speed.</source>
-        <translation type="unfinished"></translation>
-        <extracomment>Settings Menu - Description for option</extracomment>
-    </message>
-    <message>
-        <source>Library Image Orientation</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select the poster image orientation for the library views.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Default (Varies By Media Type)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Landscape (Wide)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Portrait (Vertical)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Skip Unknown</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Skip Commercial</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Skip Preview</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Skip Recap</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Skip Outro</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Skip Intro</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Go To Genre</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Play Instant Mix</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Show Next Episode Details After Finish</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>If auto play next episode is disabled, display the next episode&apos;s detail screen after an episode finishes playing. If no next up episode is found, return to the just-played episode&apos;s page.</source>
-        <translation type="unfinished"></translation>
+        <translation>الشاشة الرئيسية</translation>
     </message>
     <message>
         <source>Adjust Subtitle Timing</source>
@@ -2676,7 +1092,7 @@
     </message>
     <message>
         <source>When resuming playback (from Continue Watching or a media item page), how many seconds should be rewound?</source>
-        <translation>عند استئناف التشغيل (من "متابعة المشاهدة" أو من صفحة عنصر الوسائط)، ما هو عدد الثواني التي يجب إرجاعها؟</translation>
+        <translation>عند استئناف التشغيل (من &quot;متابعة المشاهدة&quot; أو من صفحة عنصر الوسائط)، ما هو عدد الثواني التي يجب إرجاعها؟</translation>
     </message>
     <message>
         <source>When resuming playback after pressing the pause button, how many seconds should be rewound?</source>
@@ -2685,6 +1101,1582 @@
     <message>
         <source>Genre</source>
         <translation>النوع</translation>
+    </message>
+    <message>
+        <source>Activity</source>
+        <translation>نشاط</translation>
+    </message>
+    <message>
+        <source>Appearance</source>
+        <translation>المظهر</translation>
+    </message>
+    <message>
+        <source>Back</source>
+        <translation>رجوع</translation>
+    </message>
+    <message>
+        <source>Banner</source>
+        <translation>راية</translation>
+    </message>
+    <message>
+        <source>Checking Direct Play capability...</source>
+        <translation>جارٍ التحقق من إمكانية التشغيل المباشر...</translation>
+    </message>
+    <message>
+        <source>Chapters</source>
+        <translation>فصول</translation>
+    </message>
+    <message>
+        <source>Cast</source>
+        <translation>إرسال</translation>
+    </message>
+    <message>
+        <source>Classic</source>
+        <translation>كلاسيكي</translation>
+    </message>
+    <message>
+        <source>Confirm</source>
+        <translation>يتأكد</translation>
+    </message>
+    <message>
+        <source>Crew</source>
+        <translation>طاقم</translation>
+    </message>
+    <message>
+        <source>Daily</source>
+        <translation>يوميًا</translation>
+    </message>
+    <message>
+        <source>Direct Play</source>
+        <translation>اللعب المباشر</translation>
+    </message>
+    <message>
+        <source>Details</source>
+        <translation>تفاصيل</translation>
+    </message>
+    <message>
+        <source>Default</source>
+        <translation>تقصير</translation>
+    </message>
+    <message>
+        <source>Done</source>
+        <translation>تم</translation>
+    </message>
+    <message>
+        <source>Failed to load</source>
+        <translation>فشل التحميل</translation>
+    </message>
+    <message>
+        <source>Forced</source>
+        <translation>المفروضة</translation>
+    </message>
+    <message>
+        <source>File Information</source>
+        <translation>معلومات الملف</translation>
+    </message>
+    <message>
+        <source>Go to Series</source>
+        <translation>اذهب إلى السلسلة</translation>
+    </message>
+    <message>
+        <source>Incorrect PIN</source>
+        <translation>رقم التعريف الشخصي غير صحيح</translation>
+    </message>
+    <message>
+        <source>Just now</source>
+        <translation>الآن</translation>
+    </message>
+    <message>
+        <source>Left Sidebar</source>
+        <translation>الشريط الجانبي الأيسر</translation>
+    </message>
+    <message>
+        <source>MakD</source>
+        <translation>ماكد</translation>
+    </message>
+    <message>
+        <source>Modern</source>
+        <translation>حديث</translation>
+    </message>
+    <message>
+        <source>Moonfin</source>
+        <translation>Moonfin</translation>
+    </message>
+    <message>
+        <source>Next</source>
+        <translation>التالي</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>إيقاف</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>آخر</translation>
+    </message>
+    <message>
+        <source>Recommendations</source>
+        <translation>التوصيات</translation>
+    </message>
+    <message>
+        <source>Reset</source>
+        <translation>إعادة تعيين</translation>
+    </message>
+    <message>
+        <source>Restart</source>
+        <translation>إعادة تشغيل</translation>
+    </message>
+    <message>
+        <source>Resume</source>
+        <translation>استئناف</translation>
+    </message>
+    <message>
+        <source>Retry</source>
+        <translation>أعد المحاولة</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>حفظ</translation>
+    </message>
+    <message>
+        <source>Similar</source>
+        <translation>مشابه</translation>
+    </message>
+    <message>
+        <source>Specials</source>
+        <translation>العروض الخاصة</translation>
+    </message>
+    <message>
+        <source>Subtitles</source>
+        <translation>ترجمات</translation>
+    </message>
+    <message>
+        <source>Titles</source>
+        <translation>العناوين</translation>
+    </message>
+    <message>
+        <source>Users</source>
+        <translation>المستخدمين</translation>
+    </message>
+    <message>
+        <source>Top Bar</source>
+        <translation>الشريط العلوي</translation>
+    </message>
+    <message>
+        <source>Trailer</source>
+        <translation>الإعلان التشويقي</translation>
+    </message>
+    <message>
+        <source>Unwatched</source>
+        <translation>لم تتم مشاهدته</translation>
+    </message>
+    <message>
+        <source>Up Next</source>
+        <translation>التالي</translation>
+    </message>
+    <message>
+        <source>Recently Released</source>
+        <translation>صدر مؤخرا</translation>
+    </message>
+    <message>
+        <source>Weekly</source>
+        <translation>أسبوعي</translation>
+    </message>
+    <message>
+        <source>Navigation Style</source>
+        <translation>نمط التنقل</translation>
+    </message>
+    <message>
+        <source>Media Bar</source>
+        <translation>شريط الوسائط</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <translation>عرض</translation>
+    </message>
+    <message>
+        <source>Last Played</source>
+        <translation>آخر لعب</translation>
+    </message>
+    <message>
+        <source>Browse By Genre</source>
+        <translation>تصفح حسب النوع</translation>
+    </message>
+    <message>
+        <source>See All</source>
+        <translation>رؤية الكل</translation>
+    </message>
+    <message>
+        <source>Collections Row Sorting</source>
+        <translation>فرز صف المجموعات</translation>
+    </message>
+    <message>
+        <source>Genres Row Sorting</source>
+        <translation>تصنيف الصف الأنواع</translation>
+    </message>
+    <message>
+        <source>Genres Row Items</source>
+        <translation>أنواع عناصر الصف</translation>
+    </message>
+    <message>
+        <source>Movies &amp; TV Shows</source>
+        <translation>الأفلام والبرامج التلفزيونية</translation>
+    </message>
+    <message>
+        <source>Movies Only</source>
+        <translation>أفلام فقط</translation>
+    </message>
+    <message>
+        <source>TV Shows Only</source>
+        <translation>البرامج التلفزيونية فقط</translation>
+    </message>
+    <message>
+        <source>Playlist Sort Options</source>
+        <translation>خيارات ترتيب قائمة التشغيل</translation>
+    </message>
+    <message>
+        <source>Release Order (Ascending)</source>
+        <translation>ترتيب الإصدار (تصاعديًا)</translation>
+    </message>
+    <message>
+        <source>Release Order (Descending)</source>
+        <translation>ترتيب الإصدار (تنازليًا)</translation>
+    </message>
+    <message>
+        <source>Alphabetical</source>
+        <translation>أبجديا</translation>
+    </message>
+    <message>
+        <source>Display Options</source>
+        <translation>خيارات العرض</translation>
+    </message>
+    <message>
+        <source>Release Date (Ascending)</source>
+        <translation>تاريخ الإصدار (تصاعديًا)</translation>
+    </message>
+    <message>
+        <source>Release Date (Descending)</source>
+        <translation>تاريخ الإصدار (تنازليًا)</translation>
+    </message>
+    <message>
+        <source>Group Contributions</source>
+        <translation>تجميع المساهمات</translation>
+    </message>
+    <message>
+        <source>Group multiple roles</source>
+        <translation>تجميع الأدوار المتعددة</translation>
+    </message>
+    <message>
+        <source>Vertical</source>
+        <translation>عمودي</translation>
+    </message>
+    <message>
+        <source>Horizontal</source>
+        <translation>أفقي</translation>
+    </message>
+    <message>
+        <source>No favorites yet</source>
+        <translation>لا يوجد مفضلة بعد</translation>
+    </message>
+    <message>
+        <source>People</source>
+        <translation>الناس</translation>
+    </message>
+    <message>
+        <source>Music Videos</source>
+        <translation>فيديوهات موسيقية</translation>
+    </message>
+    <message>
+        <source>Today</source>
+        <translation>اليوم</translation>
+    </message>
+    <message>
+        <source>Continue Watching &amp; Next Up</source>
+        <translation>متابعة المشاهدة والتالي</translation>
+    </message>
+    <message>
+        <source>Chapter</source>
+        <translation>الفصل</translation>
+    </message>
+    <message>
+        <source>Behind the Scenes</source>
+        <translation>خلف الكواليس</translation>
+    </message>
+    <message>
+        <source>Deleted Scenes</source>
+        <translation>مشاهد محذوفة</translation>
+    </message>
+    <message>
+        <source>Featurettes</source>
+        <translation>مقاطع تعريفية</translation>
+    </message>
+    <message>
+        <source>Interviews</source>
+        <translation>مقابلات</translation>
+    </message>
+    <message>
+        <source>Scenes</source>
+        <translation>مشاهد</translation>
+    </message>
+    <message>
+        <source>Shorts</source>
+        <translation>أفلام قصيرة</translation>
+    </message>
+    <message>
+        <source>Trailers</source>
+        <translation>الإعلانات التشويقية</translation>
+    </message>
+    <message>
+        <source>Collection</source>
+        <translation>مجموعة</translation>
+    </message>
+    <message>
+        <source>Track List</source>
+        <translation>قائمة المسار</translation>
+    </message>
+    <message>
+        <source>{count} tracks</source>
+        <translation>{count} المسارات</translation>
+    </message>
+    <message>
+        <source>Playlist</source>
+        <translation>قائمة التشغيل</translation>
+    </message>
+    <message>
+        <source>1 album</source>
+        <translation>ألبوم واحد</translation>
+    </message>
+    <message>
+        <source>Disc {number}</source>
+        <translation>القرص {number}</translation>
+    </message>
+    <message>
+        <source>{count} items</source>
+        <translation>{count} العناصر</translation>
+    </message>
+    <message>
+        <source>Moonfin Recommends</source>
+        <translation>Moonfin Recommends</translation>
+    </message>
+    <message>
+        <source>No</source>
+        <translation>لا</translation>
+    </message>
+    <message>
+        <source>Show Less</source>
+        <translation>عرض أقل</translation>
+    </message>
+    <message>
+        <source>Container format is not supported by the player.</source>
+        <translation>صيغة الحاوية غير مدعومة من المشغّل.</translation>
+    </message>
+    <message>
+        <source>Video codec is not supported.</source>
+        <translation>مرمّز الفيديو غير مدعوم.</translation>
+    </message>
+    <message>
+        <source>Audio codec is not supported.</source>
+        <translation>مرمّز الصوت غير مدعوم.</translation>
+    </message>
+    <message>
+        <source>Subtitle format is not supported (requires burning).</source>
+        <translation>صيغة الترجمة غير مدعومة (تتطلب الدمج).</translation>
+    </message>
+    <message>
+        <source>Audio profile is not supported.</source>
+        <translation>الملف التعريفي للصوت غير مدعوم.</translation>
+    </message>
+    <message>
+        <source>Video profile is not supported.</source>
+        <translation>الملف التعريفي للفيديو غير مدعوم.</translation>
+    </message>
+    <message>
+        <source>Video level is not supported.</source>
+        <translation>مستوى الفيديو غير مدعوم.</translation>
+    </message>
+    <message>
+        <source>Video resolution is not supported by this device.</source>
+        <translation>دقة الفيديو غير مدعومة على هذا الجهاز.</translation>
+    </message>
+    <message>
+        <source>Video bit depth is not supported.</source>
+        <translation>عمق ألوان الفيديو غير مدعوم.</translation>
+    </message>
+    <message>
+        <source>Video framerate is not supported.</source>
+        <translation>معدل إطارات الفيديو غير مدعوم.</translation>
+    </message>
+    <message>
+        <source>File bitrate exceeds player streaming limit.</source>
+        <translation>معدل بت الملف يتجاوز حد البث في المشغّل.</translation>
+    </message>
+    <message>
+        <source>Video bitrate exceeds streaming limit.</source>
+        <translation>معدل بت الفيديو يتجاوز حد البث.</translation>
+    </message>
+    <message>
+        <source>Audio bitrate exceeds streaming limit.</source>
+        <translation>معدل بت الصوت يتجاوز حد البث.</translation>
+    </message>
+    <message>
+        <source>Number of audio channels is not supported.</source>
+        <translation>عدد قنوات الصوت غير مدعوم.</translation>
+    </message>
+    <message>
+        <source>1 (Play only)</source>
+        <translation>تشغيل</translation>
+    </message>
+    <message>
+        <source>More</source>
+        <translation>أكثر</translation>
+    </message>
+    <message>
+        <source>Items</source>
+        <translation>العناصر</translation>
+    </message>
+    <message>
+        <source>Movie</source>
+        <translation>فيلم</translation>
+    </message>
+    <message>
+        <source>Continuing</source>
+        <translation>مستمر</translation>
+    </message>
+    <message>
+        <source>Ended</source>
+        <translation>انتهى</translation>
+    </message>
+    <message>
+        <source>Declined</source>
+        <translation>انخفض</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>متاح</translation>
+    </message>
+    <message>
+        <source>Partially Available</source>
+        <translation>متاح جزئيا</translation>
+    </message>
+    <message>
+        <source>Requested</source>
+        <translation>مطلوب</translation>
+    </message>
+    <message>
+        <source>Pending</source>
+        <translation>قيد الانتظار</translation>
+    </message>
+    <message>
+        <source>Blocklisted</source>
+        <translation>تم إدراجه في القائمة المحظورة</translation>
+    </message>
+    <message>
+        <source>Deleted</source>
+        <translation>تم الحذف</translation>
+    </message>
+    <message>
+        <source>Not Requested</source>
+        <translation>غير مطلوب</translation>
+    </message>
+    <message>
+        <source>Guest Appearances</source>
+        <translation>ظهورات الضيوف</translation>
+    </message>
+    <message>
+        <source>Crew Contributions (Seerr)</source>
+        <translation>مساهمات طاقم العمل (Seerr)</translation>
+    </message>
+    <message>
+        <source>Appearances (Seerr)</source>
+        <translation>الظهور (Seerr)</translation>
+    </message>
+    <message>
+        <source>Mark as Watched</source>
+        <translation>وضع علامة &quot;تمت مشاهدته&quot;.</translation>
+    </message>
+    <message>
+        <source>Mark as Unwatched</source>
+        <translation>وضع علامة &quot;غير مراقب&quot;.</translation>
+    </message>
+    <message>
+        <source>Hide from Continue Watching</source>
+        <translation>إخفاء من مواصلة المشاهدة</translation>
+    </message>
+    <message>
+        <source>Hide from Next Up</source>
+        <translation>إخفاء من التالي</translation>
+    </message>
+    <message>
+        <source>Add to Favorites</source>
+        <translation>أضف إلى المفضلة</translation>
+    </message>
+    <message>
+        <source>Remove from Favorites</source>
+        <translation>إزالة من المفضلة</translation>
+    </message>
+    <message>
+        <source>Add to Collection</source>
+        <translation>إضافة إلى مجموعة</translation>
+    </message>
+    <message>
+        <source>Add to Playlist</source>
+        <translation>أضف إلى قائمة التشغيل</translation>
+    </message>
+    <message>
+        <source>Refresh Metadata</source>
+        <translation>تحديث البيانات الوصفية</translation>
+    </message>
+    <message>
+        <source>Identify</source>
+        <translation>تحديد الهوية</translation>
+    </message>
+    <message>
+        <source>Change Artwork</source>
+        <translation>تغيير الصور الفنية</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>إزالة</translation>
+    </message>
+    <message>
+        <source>Delete from Playlist</source>
+        <translation>حذف من قائمة التشغيل</translation>
+    </message>
+    <message>
+        <source>Create New Playlist</source>
+        <translation>إنشاء قائمة تشغيل جديدة</translation>
+    </message>
+    <message>
+        <source>No playlists found</source>
+        <translation>لم يتم العثور على قوائم التشغيل</translation>
+    </message>
+    <message>
+        <source>New Playlist</source>
+        <translation>قائمة تشغيل جديدة</translation>
+    </message>
+    <message>
+        <source>Playlist name</source>
+        <translation>اسم قائمة التشغيل</translation>
+    </message>
+    <message>
+        <source>Metadata refresh requested</source>
+        <translation>تم طلب تحديث بيانات التعريف</translation>
+    </message>
+    <message>
+        <source>Failed to refresh metadata: {error}</source>
+        <translation>فشل تحديث البيانات التعريفية: {error}</translation>
+    </message>
+    <message>
+        <source>Enter PIN</source>
+        <translation>أدخل رقم التعريف الشخصي</translation>
+    </message>
+    <message>
+        <source>Require a PIN to access your account</source>
+        <translation>تتطلب رقم التعريف الشخصي للوصول إلى حسابك</translation>
+    </message>
+    <message>
+        <source>PIN Code</source>
+        <translation>رمز التعريف الشخصي</translation>
+    </message>
+    <message>
+        <source>Saved Servers</source>
+        <translation>الخوادم المحفوظة</translation>
+    </message>
+    <message>
+        <source>Discovered Servers</source>
+        <translation>الخوادم المكتشفة</translation>
+    </message>
+    <message>
+        <source>None found</source>
+        <translation>لم يتم العثور على أي شيء</translation>
+    </message>
+    <message>
+        <source>Add Server</source>
+        <translation>أضف الخادم</translation>
+    </message>
+    <message>
+        <source>Remove Server</source>
+        <translation>إزالة الخادم</translation>
+    </message>
+    <message>
+        <source>Server Address</source>
+        <translation>عنوان الخادم</translation>
+    </message>
+    <message>
+        <source>Emby Connect</source>
+        <translation>Emby تواصل</translation>
+    </message>
+    <message>
+        <source>Sign in with your Emby Connect account</source>
+        <translation>قم بتسجيل الدخول باستخدام حساب Emby Connect الخاص بك</translation>
+    </message>
+    <message>
+        <source>Connect</source>
+        <translation>يتصل</translation>
+    </message>
+    <message>
+        <source>Jellyfin</source>
+        <translation>Jellyfin</translation>
+    </message>
+    <message>
+        <source>Continue</source>
+        <translation>يكمل</translation>
+    </message>
+    <message>
+        <source>Who&apos;s watching?</source>
+        <translation>من يراقب؟</translation>
+    </message>
+    <message>
+        <source>Enter this code on your server&apos;s web dashboard:</source>
+        <translation>أدخل هذا الرمز في لوحة تحكم الويب الخاصة بخادمك:</translation>
+    </message>
+    <message>
+        <source>Waiting for authorization...</source>
+        <translation>في انتظار الترخيص...</translation>
+    </message>
+    <message>
+        <source>Email or Username</source>
+        <translation>البريد الإلكتروني أو اسم المستخدم</translation>
+    </message>
+    <message>
+        <source>Select Server</source>
+        <translation>حدد الخادم</translation>
+    </message>
+    <message>
+        <source>Sign Out All Users</source>
+        <translation>تسجيل الخروج لجميع المستخدمين</translation>
+    </message>
+    <message>
+        <source>Active</source>
+        <translation>نشيط</translation>
+    </message>
+    <message>
+        <source>Set a new PIN code</source>
+        <translation>قم بتعيين رمز PIN جديد</translation>
+    </message>
+    <message>
+        <source>Remove PIN</source>
+        <translation>قم بإزالة رقم التعريف الشخصي</translation>
+    </message>
+    <message>
+        <source>Remove PIN code protection</source>
+        <translation>قم بإزالة حماية رمز PIN</translation>
+    </message>
+    <message>
+        <source>Forgot PIN?</source>
+        <translation>هل نسيت رقم التعريف الشخصي؟</translation>
+    </message>
+    <message>
+        <source>Unable to connect to server</source>
+        <translation>غير قادر على الاتصال بالخادم</translation>
+    </message>
+    <message>
+        <source>Content rating restrictions</source>
+        <translation>قيود تصنيف المحتوى</translation>
+    </message>
+    <message>
+        <source>Parental Controls</source>
+        <translation>الضوابط الأبوية</translation>
+    </message>
+    <message>
+        <source>Block content with the following ratings:</source>
+        <translation>حظر المحتوى بالتقييمات التالية:</translation>
+    </message>
+    <message>
+        <source>Ratings</source>
+        <translation>التقييمات</translation>
+    </message>
+    <message>
+        <source>Could not load server ratings. Showing saved ratings only.</source>
+        <translation>تعذر تحميل تقييمات الخادم. عرض التقييمات المحفوظة فقط.</translation>
+    </message>
+    <message>
+        <source>No content ratings were found on this server yet.</source>
+        <translation>لم يتم العثور على تقييمات المحتوى على هذا الخادم حتى الآن.</translation>
+    </message>
+    <message>
+        <source>Could not refresh ratings from server. Showing saved ratings.</source>
+        <translation>لا يمكن تحديث التقييمات من الخادم. عرض التقييمات المحفوظة.</translation>
+    </message>
+    <message>
+        <source>Now</source>
+        <translation>الآن</translation>
+    </message>
+    <message>
+        <source>Recordings</source>
+        <translation>التسجيلات</translation>
+    </message>
+    <message>
+        <source>Guide Timeline</source>
+        <translation>دليل الجدول الزمني</translation>
+    </message>
+    <message>
+        <source>Failed to load guide: {error}</source>
+        <translation>فشل تحميل الدليل: {error}</translation>
+    </message>
+    <message>
+        <source>No channels found</source>
+        <translation>لم يتم العثور على قنوات</translation>
+    </message>
+    <message>
+        <source>Sort By</source>
+        <translation>فرز حسب</translation>
+    </message>
+    <message>
+        <source>Sports</source>
+        <translation>الرياضة</translation>
+    </message>
+    <message>
+        <source>News</source>
+        <translation>أخبار</translation>
+    </message>
+    <message>
+        <source>Kids</source>
+        <translation>أطفال</translation>
+    </message>
+    <message>
+        <source>Premiere</source>
+        <translation>العرض الأول</translation>
+    </message>
+    <message>
+        <source>Watch</source>
+        <translation>مشاهدة</translation>
+    </message>
+    <message>
+        <source>Favorite Channel</source>
+        <translation>القناة المفضلة</translation>
+    </message>
+    <message>
+        <source>Unfavorite Channel</source>
+        <translation>قناة غير مفضلة</translation>
+    </message>
+    <message>
+        <source>Program set to record</source>
+        <translation>تم ضبط البرنامج للتسجيل</translation>
+    </message>
+    <message>
+        <source>Unable to create recording</source>
+        <translation>غير قادر على إنشاء التسجيل</translation>
+    </message>
+    <message>
+        <source>Recording cancelled</source>
+        <translation>تم إلغاء التسجيل</translation>
+    </message>
+    <message>
+        <source>Failed to cancel recording</source>
+        <translation>فشل في إلغاء التسجيل</translation>
+    </message>
+    <message>
+        <source>Failed to cancel series recording</source>
+        <translation>فشل في إلغاء تسجيل المسلسل</translation>
+    </message>
+    <message>
+        <source>Added to favorite channels</source>
+        <translation>تمت إضافته إلى القنوات المفضلة</translation>
+    </message>
+    <message>
+        <source>Removed from favorite channels</source>
+        <translation>تمت إزالته من القنوات المفضلة</translation>
+    </message>
+    <message>
+        <source>Failed to update favorite channel</source>
+        <translation>فشل في تحديث القناة المفضلة</translation>
+    </message>
+    <message>
+        <source>LIVE</source>
+        <translation>يعيش</translation>
+    </message>
+    <message>
+        <source>Failed to play {name}</source>
+        <translation>فشل تشغيل {name}</translation>
+    </message>
+    <message>
+        <source>Schedule</source>
+        <translation>جدول</translation>
+    </message>
+    <message>
+        <source>Series Recordings</source>
+        <translation>تسجيلات المسلسلات</translation>
+    </message>
+    <message>
+        <source>Scheduled in Next 24 Hours</source>
+        <translation>المقرر في ال 24 ساعة القادمة</translation>
+    </message>
+    <message>
+        <source>Recent Recordings</source>
+        <translation>التسجيلات الأخيرة</translation>
+    </message>
+    <message>
+        <source>TV Series</source>
+        <translation>مسلسل تلفزيوني</translation>
+    </message>
+    <message>
+        <source>Yesterday</source>
+        <translation>أمس</translation>
+    </message>
+    <message>
+        <source>No recordings found</source>
+        <translation>لم يتم العثور على تسجيلات</translation>
+    </message>
+    <message>
+        <source>No scheduled recordings</source>
+        <translation>لا توجد تسجيلات مجدولة</translation>
+    </message>
+    <message>
+        <source>No series recordings</source>
+        <translation>لا يوجد تسجيلات للمسلسل</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>حذف</translation>
+    </message>
+    <message>
+        <source>Cancel Recording?</source>
+        <translation>هل تريد إلغاء التسجيل؟</translation>
+    </message>
+    <message>
+        <source>Yes, Cancel</source>
+        <translation>نعم، إلغاء</translation>
+    </message>
+    <message>
+        <source>Trick Play</source>
+        <translation>اللعب بالخدعة</translation>
+    </message>
+    <message>
+        <source>Show preview thumbnails when seeking</source>
+        <translation>إظهار الصور المصغرة للمعاينة عند البحث</translation>
+    </message>
+    <message>
+        <source>5 seconds</source>
+        <translation>5 ثواني</translation>
+    </message>
+    <message>
+        <source>10 seconds</source>
+        <translation>10 ثواني</translation>
+    </message>
+    <message>
+        <source>30 seconds</source>
+        <translation>30 ثانية</translation>
+    </message>
+    <message>
+        <source>Subtitle Customization</source>
+        <translation>تخصيص الترجمة</translation>
+    </message>
+    <message>
+        <source>Subtitle Size</source>
+        <translation>حجم الترجمة</translation>
+    </message>
+    <message>
+        <source>Small</source>
+        <translation>صغير</translation>
+    </message>
+    <message>
+        <source>Medium</source>
+        <translation>واسطة</translation>
+    </message>
+    <message>
+        <source>Large</source>
+        <translation>كبير</translation>
+    </message>
+    <message>
+        <source>Extra Large</source>
+        <translation>كبير جدا</translation>
+    </message>
+    <message>
+        <source>Position</source>
+        <translation>موضع</translation>
+    </message>
+    <message>
+        <source>Text Fill Color</source>
+        <translation>لون تعبئة النص</translation>
+    </message>
+    <message>
+        <source>White</source>
+        <translation>أبيض</translation>
+    </message>
+    <message>
+        <source>Gray</source>
+        <translation>رمادي</translation>
+    </message>
+    <message>
+        <source>Black</source>
+        <translation>أسود</translation>
+    </message>
+    <message>
+        <source>Yellow</source>
+        <translation>أصفر</translation>
+    </message>
+    <message>
+        <source>Green</source>
+        <translation>أخضر</translation>
+    </message>
+    <message>
+        <source>Cyan</source>
+        <translation>سماوي</translation>
+    </message>
+    <message>
+        <source>Red</source>
+        <translation>أحمر</translation>
+    </message>
+    <message>
+        <source>Navy</source>
+        <translation>البحرية</translation>
+    </message>
+    <message>
+        <source>Transparent</source>
+        <translation>شفاف</translation>
+    </message>
+    <message>
+        <source>Semi-transparent Black</source>
+        <translation>أسود شبه شفاف</translation>
+    </message>
+    <message>
+        <source>Background Color</source>
+        <translation>لون الخلفية</translation>
+    </message>
+    <message>
+        <source>Thumbnail</source>
+        <translation>صورة مصغرة</translation>
+    </message>
+    <message>
+        <source>Bouncing</source>
+        <translation>مرتد</translation>
+    </message>
+    <message>
+        <source>Show Clock</source>
+        <translation>عرض الساعة</translation>
+    </message>
+    <message>
+        <source>Audio Playlists</source>
+        <translation>قوائم تشغيل الصوت</translation>
+    </message>
+    <message>
+        <source>No items found</source>
+        <translation>لم يتم العثور على أي عناصر</translation>
+    </message>
+    <message>
+        <source>Download subtitles...</source>
+        <translation>تحميل ترجمات...</translation>
+    </message>
+    <message>
+        <source>Download Subtitles</source>
+        <translation>تحميل ترجمات</translation>
+    </message>
+    <message>
+        <source>Downloading subtitle…</source>
+        <translation>يتم تحميل الترجمة…</translation>
+    </message>
+    <message>
+        <source>AI Translated</source>
+        <translation>مترجمة بالذكاء الإصطناعي</translation>
+    </message>
+    <message>
+        <source>SDH</source>
+        <translation>لضعاف السمع</translation>
+    </message>
+    <message>
+        <source>Perfect match</source>
+        <translation>مباراة مثالية</translation>
+    </message>
+    <message>
+        <source>{count} downloads</source>
+        <translation>{count} التنزيلات</translation>
+    </message>
+    <message>
+        <source>Trailer Preview</source>
+        <translation>معاينة مقطورة</translation>
+    </message>
+    <message>
+        <source>Auto-play trailers in the media bar after 3 seconds</source>
+        <translation>تشغيل المقطورات تلقائيًا في شريط الوسائط بعد 3 ثوانٍ</translation>
+    </message>
+    <message>
+        <source>Media Preview</source>
+        <translation>معاينة الوسائط</translation>
+    </message>
+    <message>
+        <source>Preview Audio</source>
+        <translation>معاينة الصوت</translation>
+    </message>
+    <message>
+        <source>Failed to load libraries</source>
+        <translation>فشل تحميل المكتبات</translation>
+    </message>
+    <message>
+        <source>No libraries found</source>
+        <translation>لم يتم العثور على مكتبات</translation>
+    </message>
+    <message>
+        <source>Hidden</source>
+        <translation>مختفي</translation>
+    </message>
+    <message>
+        <source>Logo</source>
+        <translation>الشعار</translation>
+    </message>
+    <message>
+        <source>Tagline</source>
+        <translation>سطر الوصف</translation>
+    </message>
+    <message>
+        <source>Poster</source>
+        <translation>ملصق</translation>
+    </message>
+    <message>
+        <source>Appearances</source>
+        <translation>الظهور</translation>
+    </message>
+    <message>
+        <source>Biography</source>
+        <translation>سيرة</translation>
+    </message>
+    <message>
+        <source>Clear</source>
+        <translation>مسح</translation>
+    </message>
+    <message>
+        <source>No results</source>
+        <translation>لا توجد نتائج</translation>
+    </message>
+    <message>
+        <source>View Details</source>
+        <translation>عرض التفاصيل</translation>
+    </message>
+    <message>
+        <source>Move Up</source>
+        <translation>تحرك لأعلى</translation>
+    </message>
+    <message>
+        <source>Move Down</source>
+        <translation>تحرك للأسفل</translation>
+    </message>
+    <message>
+        <source>Default Audio Language</source>
+        <translation>لغة الصوت الافتراضية</translation>
+    </message>
+    <message>
+        <source>Prefer Default Audio Track</source>
+        <translation>تفضيل مسار الصوت الافتراضي</translation>
+    </message>
+    <message>
+        <source>Subtitle Mode</source>
+        <translation>وضع الترجمة</translation>
+    </message>
+    <message>
+        <source>Default Subtitle Language</source>
+        <translation>لغة الترجمة الافتراضية</translation>
+    </message>
+    <message>
+        <source>Automatically loads and displays subtitles every time a video starts.</source>
+        <translation>يحمّل الترجمات ويعرضها تلقائيًا في كل مرة يبدأ فيها الفيديو.</translation>
+    </message>
+    <message>
+        <source>Automatically turns on subtitles if the default audio track is in a foreign language.</source>
+        <translation>يفعّل الترجمات تلقائيًا إذا كان مسار الصوت الافتراضي بلغة أجنبية.</translation>
+    </message>
+    <message>
+        <source>Only loads subtitles explicitly tagged with the forced metadata flag.</source>
+        <translation>يحمّل الترجمات المُعلَّمة صراحةً بعلامة &quot;مفروضة&quot; فقط.</translation>
+    </message>
+    <message>
+        <source>Completely disables automatic subtitle loading.</source>
+        <translation>يعطّل التحميل التلقائي للترجمات تمامًا.</translation>
+    </message>
+    <message>
+        <source>Plays tracks internally flagged in the media file&apos;s metadata as &quot;default&quot; or &quot;forced&quot;.</source>
+        <translation>يشغّل المسارات المُعلَّمة داخليًا في بيانات ملف الوسائط على أنها &quot;افتراضية&quot; أو &quot;مفروضة&quot;.</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>انخفاض</translation>
+    </message>
+    <message>
+        <source>Group name</source>
+        <translation>اسم المجموعة</translation>
+    </message>
+    <message>
+        <source>Create group</source>
+        <translation>إنشاء مجموعة</translation>
+    </message>
+    <message>
+        <source>Edit</source>
+        <translation>تعديل</translation>
+    </message>
+    <message>
+        <source>Send</source>
+        <translation>يرسل</translation>
+    </message>
+    <message>
+        <source>Admin</source>
+        <translation>مسؤل</translation>
+    </message>
+    <message>
+        <source>Leave group</source>
+        <translation>مغادرة المجموعة</translation>
+    </message>
+    <message>
+        <source>Seasonal Effects</source>
+        <translation>التأثيرات الموسمية</translation>
+    </message>
+    <message>
+        <source>Visual effects and seasonal decorations</source>
+        <translation>المؤثرات البصرية والديكورات الموسمية</translation>
+    </message>
+    <message>
+        <source>Seasonal Surprise</source>
+        <translation>مفاجأة موسمية</translation>
+    </message>
+    <message>
+        <source>Snow</source>
+        <translation>ثلج</translation>
+    </message>
+    <message>
+        <source>Fireworks</source>
+        <translation>ألعاب نارية</translation>
+    </message>
+    <message>
+        <source>Confetti</source>
+        <translation>حلويات</translation>
+    </message>
+    <message>
+        <source>Falling Leaves</source>
+        <translation>الأوراق المتساقطة</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>طبيعي</translation>
+    </message>
+    <message>
+        <source>Skip {segment}</source>
+        <translation>تخطي {segment}</translation>
+    </message>
+    <message>
+        <source>Ends in {time}</source>
+        <translation>ينتهي خلال {time}</translation>
+    </message>
+    <message>
+        <source>Desktop</source>
+        <translation>سطح المكتب</translation>
+    </message>
+    <message>
+        <source>Mobile</source>
+        <translation>متحرك</translation>
+    </message>
+    <message>
+        <source>TV</source>
+        <translation>تلفزيون</translation>
+    </message>
+    <message>
+        <source>Plugin Not Detected</source>
+        <translation>لم يتم الكشف عن البرنامج المساعد</translation>
+    </message>
+    <message>
+        <source>Source Code</source>
+        <translation>كود المصدر</translation>
+    </message>
+    <message>
+        <source>Report an Issue</source>
+        <translation>الإبلاغ عن مشكلة</translation>
+    </message>
+    <message>
+        <source>Open the issue tracker on GitHub</source>
+        <translation>افتح أداة تعقب المشكلات على GitHub</translation>
+    </message>
+    <message>
+        <source>Join Discord</source>
+        <translation>انضم إلى Discord</translation>
+    </message>
+    <message>
+        <source>Chat with the community</source>
+        <translation>الدردشة مع المجتمع</translation>
+    </message>
+    <message>
+        <source>LEGAL</source>
+        <translation>قانوني</translation>
+    </message>
+    <message>
+        <source>Licenses</source>
+        <translation>التراخيص</translation>
+    </message>
+    <message>
+        <source>Open-source license notices</source>
+        <translation>إشعارات الترخيص مفتوحة المصدر</translation>
+    </message>
+    <message>
+        <source>Privacy Policy</source>
+        <translation>سياسة الخصوصية</translation>
+    </message>
+    <message>
+        <source>How Moonfin handles your data</source>
+        <translation>كيف يتعامل Moonfin مع بياناتك</translation>
+    </message>
+    <message>
+        <source>IMDb</source>
+        <translation>IMDb</translation>
+    </message>
+    <message>
+        <source>MyAnimeList</source>
+        <translation>MyAnimeList</translation>
+    </message>
+    <message>
+        <source>Sort Audio rows by date added, release date, alphabetically, and more.</source>
+        <translation>رتّب صفوف الصوت حسب تاريخ الإضافة أو تاريخ الإصدار أو أبجديًا وغير ذلك.</translation>
+    </message>
+    <message>
+        <source>Trakt</source>
+        <translation>Trakt</translation>
+    </message>
+    <message>
+        <source>Seerr</source>
+        <translation>Seerr</translation>
+    </message>
+    <message>
+        <source>External Lists</source>
+        <translation>القوائم الخارجية</translation>
+    </message>
+    <message>
+        <source>Play Method</source>
+        <translation>طريقة اللعب</translation>
+    </message>
+    <message>
+        <source>Bitrate</source>
+        <translation>معدل البت</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>دقة</translation>
+    </message>
+    <message>
+        <source>Track</source>
+        <translation>المسار</translation>
+    </message>
+    <message>
+        <source>Player</source>
+        <translation>المشغّل</translation>
+    </message>
+    <message>
+        <source>Transcode Reasons</source>
+        <translation>أسباب التحويل</translation>
+    </message>
+    <message>
+        <source>Direct Stream</source>
+        <translation>تيار مباشر</translation>
+    </message>
+    <message>
+        <source>Transcoding</source>
+        <translation>تحويل الشفرة</translation>
+    </message>
+    <message>
+        <source>Mono</source>
+        <translation>أحادي</translation>
+    </message>
+    <message>
+        <source>Stereo</source>
+        <translation>ستيريو</translation>
+    </message>
+    <message>
+        <source>Embedded</source>
+        <translation>مغروس</translation>
+    </message>
+    <message>
+        <source>External</source>
+        <translation>خارجي</translation>
+    </message>
+    <message>
+        <source>Glass</source>
+        <translation>زجاجي</translation>
+    </message>
+    <message>
+        <source>Runtime</source>
+        <translation>وقت التشغيل</translation>
+    </message>
+    <message>
+        <source>Release Date</source>
+        <translation>تاريخ الافراج عنه</translation>
+    </message>
+    <message>
+        <source>Played Status</source>
+        <translation>حالة اللعب</translation>
+    </message>
+    <message>
+        <source>Type</source>
+        <translation>يكتب</translation>
+    </message>
+    <message>
+        <source>Enable direct play for Live TV</source>
+        <translation>تمكين اللعب المباشر للتلفزيون المباشر</translation>
+    </message>
+    <message>
+        <source>Switch User</source>
+        <translation>تبديل المستخدم</translation>
+    </message>
+    <message>
+        <source>Album Artists</source>
+        <translation>فنانين الالبوم</translation>
+    </message>
+    <message>
+        <source>Library</source>
+        <translation>المكتبة</translation>
+    </message>
+    <message>
+        <source>All Libraries</source>
+        <translation>جميع المكتبات</translation>
+    </message>
+    <message>
+        <source>Scroll Direction</source>
+        <translation>اتجاه التمرير</translation>
+    </message>
+    <message>
+        <source>Image Type</source>
+        <translation>نوع الصورة</translation>
+    </message>
+    <message>
+        <source>Poster Size</source>
+        <translation>حجم الملصق</translation>
+    </message>
+    <message>
+        <source>Audiobook</source>
+        <translation>كتاب صوتي</translation>
+    </message>
+    <message>
+        <source>Book</source>
+        <translation>كتاب</translation>
+    </message>
+    <message>
+        <source>Overview</source>
+        <translation>ملخص</translation>
+    </message>
+    <message>
+        <source>Music</source>
+        <translation>موسيقى</translation>
+    </message>
+    <message>
+        <source>Recently Added</source>
+        <translation>أضيفت مؤخرا</translation>
+    </message>
+    <message>
+        <source>Shuffle All</source>
+        <translation>الكل عشوائي</translation>
+    </message>
+    <message>
+        <source>All Genres</source>
+        <translation>جميع الأنواع</translation>
+    </message>
+    <message>
+        <source>{count} genres</source>
+        <translation>{count} الأنواع</translation>
+    </message>
+    <message>
+        <source>All Episodes</source>
+        <translation>كل الحلقات</translation>
+    </message>
+    <message>
+        <source>Failed to load recordings</source>
+        <translation>فشل في تحميل التسجيلات</translation>
+    </message>
+    <message>
+        <source>Seerr Discovery Rows</source>
+        <translation>صفوف استكشاف Seerr</translation>
+    </message>
+    <message>
+        <source>Title</source>
+        <translation>العنوان</translation>
+    </message>
+    <message>
+        <source>Seerr Settings</source>
+        <translation>إعدادات Seerr</translation>
+    </message>
+    <message>
+        <source>Request Collection</source>
+        <translation>طلب المجموعة</translation>
+    </message>
+    <message>
+        <source>Select All</source>
+        <translation>حدد الكل</translation>
+    </message>
+    <message>
+        <source>requested</source>
+        <translation>مطلوب</translation>
+    </message>
+    <message>
+        <source>failed</source>
+        <translation>فشل</translation>
+    </message>
+    <message>
+        <source>What&apos;s wrong?</source>
+        <translation>ما المشكلة؟</translation>
+    </message>
+    <message>
+        <source>Submit Report</source>
+        <translation>إرسال البلاغ</translation>
+    </message>
+    <message>
+        <source>Keep</source>
+        <translation>يحفظ</translation>
+    </message>
+    <message>
+        <source>Primary</source>
+        <translation>أساسي</translation>
+    </message>
+    <message>
+        <source>Vertical Offset</source>
+        <translation>إزاحة عمودية</translation>
+    </message>
+    <message>
+        <source>Connecting to server...</source>
+        <translation>جارٍ الاتصال بالخادم...</translation>
+    </message>
+    <message>
+        <source>Select a Server</source>
+        <translation>حدد الخادم</translation>
+    </message>
+    <message>
+        <source>Saved</source>
+        <translation>تم الحفظ</translation>
+    </message>
+    <message>
+        <source>Card Size</source>
+        <translation>حجم البطاقة</translation>
+    </message>
+    <message>
+        <source>Configure image type for each enabled home row</source>
+        <translation>قم بتكوين نوع الصورة لكل صف رئيسي ممكّن</translation>
+    </message>
+    <message>
+        <source>Images</source>
+        <translation>الصور</translation>
+    </message>
+    <message>
+        <source>Missing</source>
+        <translation>مفقود</translation>
+    </message>
+    <message>
+        <source>+{count} more</source>
+        <translation>+{count} المزيد</translation>
+    </message>
+    <message>
+        <source>Request</source>
+        <translation>طلب</translation>
+    </message>
+    <message>
+        <source>S{season} E{episode}</source>
+        <translation>م{season} ح{episode}</translation>
+    </message>
+    <message>
+        <source>View</source>
+        <translation>منظر</translation>
+    </message>
+    <message>
+        <source>Actions</source>
+        <translation>الإجراءات</translation>
+    </message>
+    <message>
+        <source>Auto</source>
+        <translation>آلي</translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <translation>حالة</translation>
+    </message>
+    <message>
+        <source>Install</source>
+        <translation>ثَبَّتَ</translation>
+    </message>
+    <message>
+        <source>Installed</source>
+        <translation>تم التثبيت</translation>
+    </message>
+    <message>
+        <source>Restart Server</source>
+        <translation>إعادة تشغيل الخادم</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>مفتوحة</translation>
+    </message>
+    <message>
+        <source>About</source>
+        <translation>عن</translation>
+    </message>
+    <message>
+        <source>Pause</source>
+        <translation>إيقاف مؤقت</translation>
+    </message>
+    <message>
+        <source>Paused</source>
+        <translation>متوقف مؤقتًا</translation>
+    </message>
+    <message>
+        <source>Start</source>
+        <translation>البداية</translation>
+    </message>
+    <message>
+        <source>Static</source>
+        <translation>ثابت</translation>
+    </message>
+    <message>
+        <source>Playing</source>
+        <translation>اللعب</translation>
+    </message>
+    <message>
+        <source>On</source>
+        <translation>تشغيل</translation>
+    </message>
+    <message>
+        <source>Download failed</source>
+        <translation>فشل التنزيل</translation>
+    </message>
+    <message>
+        <source>Downloaded</source>
+        <translation>تم التنزيل</translation>
+    </message>
+    <message>
+        <source>Queued</source>
+        <translation>في الانتظار</translation>
+    </message>
+    <message>
+        <source>Downloading</source>
+        <translation>جارٍ التنزيل</translation>
+    </message>
+    <message>
+        <source>Watch with group</source>
+        <translation>شاهد مع المجموعة</translation>
+    </message>
+    <message>
+        <source>No episodes loaded</source>
+        <translation>لم يتم تحميل أي حلقات</translation>
+    </message>
+    <message>
+        <source>Select</source>
+        <translation>يختار</translation>
+    </message>
+    <message>
+        <source>Home Row Info Overlay</source>
+        <translation>تراكب معلومات الصف الرئيسي</translation>
+    </message>
+    <message>
+        <source>Show title and metadata when browsing home rows</source>
+        <translation>إظهار العنوان والبيانات الوصفية عند تصفح صفوف الصفحة الرئيسية</translation>
+    </message>
+    <message>
+        <source>SyncPlay Group</source>
+        <translation>SyncPlay المجموعة</translation>
+    </message>
+    <message>
+        <source>Date Added</source>
+        <translation>اضيف تاريخ</translation>
+    </message>
+    <message>
+        <source>Filter</source>
+        <translation>تصفية</translation>
+    </message>
+    <message>
+        <source>Play Count</source>
+        <translation>عدّاد التشغيل</translation>
+    </message>
+    <message>
+        <source>Parental Rating</source>
+        <translation>تقييم ابوي</translation>
     </message>
 </context>
 </TS>

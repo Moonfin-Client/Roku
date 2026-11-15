@@ -115,7 +115,7 @@ const selections = {
     'source/utils/playbackOverlay.bs': null,
     'source/utils/subtitleStyle.bs': null,
     'components/music/musicCategoryHost.bs': ['landingCell', 'enteredCell'],
-    'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership'],
+    'components/extras/collectionLookup.bs': ['findParents', 'namedCollection', 'namedFirst', 'membership', 'collectionPage'],
     'components/extras/LoadExtrasTask.bs': ['personRoleIn', 'sortedFeatures', 'featureComesFirst'],
     'components/details/detailTrackHost.bs': ['SetUpVideoOptions', 'SetUpAudioOptions', 'detailServerSubtitleIndex', 'audioOrdinal', 'audioStreamPosition'],
     'source/enums/VideoType.bs': null,
@@ -133,7 +133,7 @@ const selections = {
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting', 'settingOr', 'getSavedUsers', 'savedUserFirst'],
-    'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'isLocalhost', 'isSupportedMediaServer', 'isSiloSystemInfo', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'shuffleArray'],
+    'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'isLocalhost', 'isSupportedMediaServer', 'isSiloSystemInfo', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'collectionGroups', 'collectionLabel', 'nearsCollectionEnd', 'collectionPeople', 'shuffleArray'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
@@ -194,6 +194,7 @@ source += '\n' + await readFile('test/live-recovery.bs', 'utf8');
 source += '\n' + await readFile('test/caption-download.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-profiles.bs', 'utf8');
 source += '\n' + (await readFile('components/extras/collectionLookup.bs', 'utf8')).match(/^const MAX_COLLECTIONS = .+$/m)[0];
+source += '\n' + (await readFile('source/utils/misc.bs', 'utf8')).match(/^const COLLECTION_NEAR_END = .+$/m)[0];
 source += '\n' + (await readFile('components/home/LoadItemsTask.bs', 'utf8')).match(/^const LATEST_MEDIA_LIMIT = .+$/m)[0];
 source += '\n' + await readFile('test/recent-rows.bs', 'utf8');
 source += '\n' + await readFile('test/collection-lookup.bs', 'utf8');
@@ -278,7 +279,7 @@ source += '\nend namespace\n';
 source += '\n' + await readFile('test/minimalist-extras.bs', 'utf8');
 const settingsSyncFile = await readFile('source/utils/settingsSync.bs', 'utf8');
 source += '\nnamespace settingsSync\n' + settingsSyncFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['SubtitleModes', 'MediaBarSource', 'PluginToRoku', 'RokuToPlugin', 'ImageTypeName', 'EncodeRowImageTypes', 'RowImageTypeKeys', 'DecodeRowImageTypes', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile', 'SiloSectionIn', 'SiloSectionOut']) {
+for (const name of ['SubtitleModes', 'MediaBarSource', 'PluginToRoku', 'RokuToPlugin', 'ImageTypeName', 'EncodeRowImageTypes', 'RowImageTypeKeys', 'DecodeRowImageTypes', 'ProfileNames', 'NormalizeProfile', 'ActiveProfile', 'ProfileTitle', 'ProfilePath', 'ResolvedPath', 'ResetPath', 'ProfilePush', 'ProfileBody', 'DeleteProfile', 'SiloSectionIn', 'SiloSectionOut', 'WithCombinedFavorites']) {
     source += '\n' + settingsSyncFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
@@ -375,7 +376,7 @@ source += '\n' + await readFile('test/ratings-scope.bs', 'utf8');
 // The rest of the row layout uses loops this interpreter cant parse, and the outside lists only need these
 const homeRowLayoutFile = await readFile('source/utils/homeRowLayout.bs', 'utf8');
 source += '\nnamespace homeRowLayout\n' + homeRowLayoutFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['Catalogue', 'Passthrough', 'AsText', 'Sources', 'SourceFor', 'ServerId', 'ServerKey', 'SourceFromId', 'IsOwnServer', 'IsSliderRow', 'RowToggles', 'ReloadsHome']) {
+for (const name of ['Catalogue', 'ExternalCharts', 'OfficialChart', 'DiscoverChart', 'ExternalChart', 'Passthrough', 'AsText', 'Sources', 'SourceFor', 'ServerId', 'ServerKey', 'ServerOf', 'SourceFromId', 'IsOwnServer', 'IsSliderRow', 'RowToggles', 'ReloadsHome']) {
     source += '\n' + homeRowLayoutFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
 }
 source += '\nend namespace\n';
@@ -571,6 +572,8 @@ assert.ok(scannedRoutes > 100, 'The route scan found the app sources');
 // The device lowercases a bare key in a literal, which the player API turns away, and brs doesnt.
 const youtubeSource = await readFile('source/utils/youtubeTrailer.bs', 'utf8');
 assert.ok(['"videoId":', '"clientName":', '"clientVersion":', '"contentCheckOk":', '"racyCheckOk":', '["visitorData"]'].every(key => youtubeSource.includes(key)), 'The YouTube request keeps its camelCase keys');
+// brs has no roEVPDigest, so the SponsorBlock lookup is pinned here instead of run.
+assert.match(youtubeSource.match(/function SponsorRequestUrl[^]*?end function/)[0], /digest\.Setup\("sha256"\)[^]*SPONSOR_URL \+ "\/" \+ LCase\(Left\(digest\.Process\(bytes\), 4\)\) \+ "\?categories="/, 'SponsorBlock is asked by hash prefix, not by video ID');
 
 const seerrTask = await readFile('components/seerr/SeerrAPITask.bs', 'utf8');
 assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParams\)/, 'Plugin proxy preserves saved server query through shared compositor');
@@ -680,6 +683,18 @@ const identifyDialog = await readFile('components/IdentifyDialog.bs', 'utf8');
 assert.match(identifyDialog, /serverData: m\.top\.serverData[^]*?Items\/RemoteSearch[^]*?serverData: m\.top\.serverData[^]*?Items\/RemoteSearch\/Apply/, 'Identify requests stay on the item server');
 
 process.stdout.write('PASS: Jellyfin review regressions (65 checks)\n');
+
+// Shared Roku settings labels should describe the connected server, not Jellyfin only.
+const settingsConfig = await readFile('settings/settings.json', 'utf8');
+assert.match(settingsConfig, /"title": "Server Recommends"/, 'Recommendation source label is server-neutral');
+const jellyfinOnlyWording = /Jellyfin Recommends|Jellyfin takes the picks|how Jellyfin should handle|What action should Jellyfin take|when Jellyfin is updated|installed on your Jellyfin server/;
+assert.doesNotMatch(settingsConfig, jellyfinOnlyWording, 'Settings avoid Jellyfin-only wording for shared features');
+assert.doesNotMatch(await readFile('components/settings/settings.bs', 'utf8'), /installed on your Jellyfin server/, 'Plugin connection error is server-neutral');
+// Translations are keyed by the English text, so the template has to follow settings.json.
+const enTemplate = await readFile('locale/en_US/translations.ts', 'utf8');
+assert.match(enTemplate, /<source>Server Recommends<\/source>/, 'Translation template has the Server Recommends label');
+assert.doesNotMatch(enTemplate, jellyfinOnlyWording, 'Translation template has no stale Jellyfin-only settings wording');
+process.stdout.write('PASS: server-neutral settings labels (5 checks)\n');
 
 // Names that share a glyph share one file, so every alias needs its target and no file of its own.
 const achievementIcons = await readFile('source/utils/achievementsIcons.bs', 'utf8');
@@ -913,12 +928,18 @@ process.stdout.write('PASS: parent collections wiring (3 checks)\n');
 assert.match(await readFile('components/details/detailCollectionHost.bs', 'utf8'), /function collectionQueue\(\) as object\s+return collectionSort\.Apply\(collectionPlaylist\(collectionMembers\(\)\)/, 'Play, Shuffle and the playlist rows all follow the order picked');
 assert.match(parentCollection, /parentNode\.appendChild\(collectionCard\(collection\)\)\s+for each item in/, 'Each collection row leads with the collection itself');
 assert.match(extrasTask, /itemKind = "series"\) and not hidden\.DoesExist\("collections"\) then loadParentCollection/, 'A show looks up the collections it is in');
-assert.match(extrasTask, /seerrMissingCollection\.SlotByRelease\(parentalControls\.WithoutBlockedItems\(held\), missing\)/, 'A collection\'s own page slots its missing titles in by release');
-assert.match(await readFile('components/details/SpotlightItemDetails.bs', 'utf8'), /itemType = "series"\) and detailSectionLayout\.Shows\("collections"\) then mode = "parents"/, 'So does Spotlight');
+assert.match(extrasTask, /seerrMissingCollection\.SlotByRelease\(library, missing\)/, 'A collection\'s own page slots its missing titles in by release');
+assert.match(await readFile('components/details/SpotlightItemDetails.bs', 'utf8'), /itemType = "series"\) and detailSectionLayout\.Shows\("collections"\)\) then return/, 'So does Spotlight');
 assert.match(await readFile('components/details/ModernItemDetails.bs', 'utf8'), /TAB_RANK_STUDIOS = 5\n[^]*?TAB_RANK_PLAYLIST = 6\nconst TAB_RANK_CHAPTERS = 7/, 'Modern puts the Playlist tab after Studios and before Chapters');
 assert.match(await readFile('components/details/SpotlightCards.bs', 'utf8'), /items = s\.collectionQueue[^]*?headerAction: \{ label: s\.collectionSortLabel \}/, 'Spotlight\'s playlist order lists the sorted queue under a sort button');
 assert.match(await readFile('source/utils/nouveauLayout.bs', 'utf8'), /NOUVEAU_SECTION_EXTRAS\)\s+if state\.parentCollectionCount > 0 and state\.itemType <> "boxset" then sections\.push\(NOUVEAU_SECTION_PARENT_COLLECTIONS\)\s+if IncludesDiscovery/, 'Nouveau puts the collection rails after the extras and before discovery, never on a collection');
 process.stdout.write('PASS: collection sort wiring (8 checks)\n');
+
+// Only the screens that gather a collection's cast and crew ask for the people in its titles
+assert.match(await readFile('components/extras/LoadCollectionsTask.bs', 'utf8'), /if m\.top\.withPeople then fields \+= ",People"/, 'A collection page asks for People only when told to');
+assert.match(await readFile('components/details/NouveauItemDetails.bs', 'utf8'), /if isCollection\(\)\s+loadCollectionMembers\(\)\s+return/, 'Nouveau loads a collection without the people');
+assert.match(await readFile('components/details/StageItemDetails.bs', 'utf8'), /loadCollectionMembers\(detailSectionLayout\.Shows\("cast"\) or detailSectionLayout\.Shows\("crew"\)\)/, 'Stage asks for them while the cast or crew shows');
+process.stdout.write('PASS: collection people wiring (3 checks)\n');
 
 // The row's sync keys, layout slot and strict filter live in files the harness cant load
 // whole, so they are checked where they are declared.
@@ -1605,11 +1626,11 @@ assert.match(trackHostWiring, /rememberTrack\("audio", m\.top\.selectedAudioStre
 assert.match(await readFile('components/manager/ViewCreator.bs', 'utf8'), /trackMemory\.Remember\(m\.view\.videoId, m\.view\.showID, "subtitle"/, 'and so is a subtitle pick in the player');
 assert.match(await readFile('components/ItemGrid/LoadVideoContentTask.bs', 'utf8'), /not rememberedSubtitle and toBoolean/, 'A remembered subtitle isn\'t dropped by the text only setting');
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if itemType = "playlist" then return "ModernItemDetails"/, 'A playlist opens in Modern under every style but Classic');
-assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "stage"\)[^]*?minimalistRules\.Draws\(itemType\) then return "StageItemDetails"\s+return "ModernItemDetails"/, 'Stage draws the video pages and hands the rest to Modern');
+assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "stage"\)[^]*?minimalistRules\.Draws\(itemType\) then return "StageItemDetails"\s+return "ModernItemDetails"/, 'Stage draws the video and collection pages and hands the rest to Modern');
 assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "stage" then return "StageItemDetails"/, 'A title only in Seerr opens in Stage too');
-assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "premiere"\)[^]*?minimalistRules\.Draws\(itemType\) then return "PremiereItemDetails"\s+return "ModernItemDetails"/, 'Premiere draws the video pages and hands the rest to Modern');
+assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "premiere"\)[^]*?minimalistRules\.Draws\(itemType\) then return "PremiereItemDetails"\s+return "ModernItemDetails"/, 'Premiere draws the video and collection pages and hands the rest to Modern');
 assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "premiere" then return "PremiereItemDetails"/, 'A title only in Seerr opens in Premiere too');
-assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "frost"\)[^]*?minimalistRules\.Draws\(itemType\) then return "FrostItemDetails"\s+return "ModernItemDetails"/, 'Frost draws the video pages and hands the rest to Modern');
+assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "frost"\)[^]*?minimalistRules\.Draws\(itemType\) then return "FrostItemDetails"\s+return "ModernItemDetails"/, 'Frost draws the video and collection pages and hands the rest to Modern');
 assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "frost" then return "FrostItemDetails"/, 'A title only in Seerr opens in Frost too');
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "quickLook"\)[^]*?minimalistRules\.Draws\(itemType\) and not \(isValid\(top\) and top\.isSubtype\("QuickLookItemDetails"\)\) then return "QuickLookItemDetails"\s+return "ModernItemDetails"/, 'Quick Look draws Stage\'s pages in its drawer, and what the drawer opens and every other page is Modern');
 assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "quickLook" then return "QuickLookItemDetails"/, 'A title only in Seerr opens in the drawer too');

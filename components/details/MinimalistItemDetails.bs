@@ -1,4 +1,5 @@
 import "pkg:/components/details/detailButtonHost.bs"
+import "pkg:/components/details/detailCollectionHost.bs"
 import "pkg:/components/details/detailMetadataHost.bs"
 import "pkg:/components/details/detailPopulationHost.bs"
 import "pkg:/components/details/detailScreenHost.bs"
@@ -21,7 +22,7 @@ import "pkg:/source/enums/TaskControl.bs"
 import "pkg:/source/enums/ViewLoadStatus.bs"
 
 ' The smallest detail screen: artwork, the title, one row of buttons and the episodes. No cast, no
-' chapters, no collection, no recommendations.
+' chapters, no recommendations. Extras and a collection's own titles each sit behind a button.
 '
 ' Kids Mode always shows this one. Outside Kids Mode it is an ordinary style, for anyone who wants
 ' the screen to get out of the way.
@@ -108,7 +109,11 @@ sub init()
     m.extras = []
     m.extrasModal = m.top.findNode("extrasModal")
     m.extrasModal.observeField("extraChosen", "onExtraChosen")
+    m.extrasModal.observeField("sectionItemSelected", "onCollectionItemChosen")
+    m.extrasModal.observeField("nearEnd", "onSheetNearEnd")
     m.extrasModal.observeField("modalClosed", "closeExtras")
+    m.collection = []
+    m.collectionOrder = []
     m.sectionItems = []
     m.tabGrid = invalid
 
@@ -191,6 +196,7 @@ sub renderDetailContent()
     if not isSeries() and not isSeason() then SetUpTrackOptions(itemData)
 
     if m.loadStatus = ViewLoadStatus.RELOAD
+        if isCollection() then refreshCollectionMembers()
         stopLoadingSpinner()
         return
     end if
@@ -210,7 +216,11 @@ sub renderDetailContent()
 
     watchDetailIncompleteRecording(itemData)
     loadEpisodes(itemData)
-    loadExtras(itemData)
+    if isCollection()
+        loadCollectionMembers()
+    else
+        loadExtras(itemData)
+    end if
     layoutContainer()
     stopLoadingSpinner()
 end sub
@@ -264,8 +274,54 @@ end sub
 sub closeExtras()
     m.extrasModal.visible = false
     for i = 0 to m.buttonGroups.count() - 1
-        if m.buttonGroups[i].id = "extrasButton" then focusButton(i)
+        if m.buttonGroups[i].id = "extrasButton" or m.buttonGroups[i].id = "collectionItemsButton" then focusButton(i)
     end for
+end sub
+
+' ===== Collection =====
+
+' The missing titles are slotted in by release, leaving the server's order alone, and the row is drawn
+' again to bring in the button for them. An open sheet takes in each page as it lands.
+sub collectionPageAdded()
+    m.collection = loadedCollection()
+    m.collectionOrder = m.collectionPaging.order
+    rebuildButtonRow()
+    if m.extrasModal.visible and chainLookupReturn(m.extrasModal.card, "id", "") = "collectionItems" then m.extrasModal.card = collectionSheet()
+end sub
+
+' The sheet loads a collection a page at a time, asking for more as focus nears its foot
+sub onSheetNearEnd()
+    if chainLookupReturn(m.extrasModal.card, "id", "") = "collectionItems" then loadMoreCollectionMembers()
+end sub
+
+function collectionMembers() as object
+    return m.collection
+end function
+
+function collectionOrder() as object
+    return m.collectionOrder
+end function
+
+' The same sheet the extras open in, a section for each kind of title
+sub openCollectionItems()
+    m.extrasModal.visible = true
+    m.extrasModal.card = collectionSheet()
+end sub
+
+function collectionSheet() as object
+    sections = []
+    for each group in collectionGroups(m.collection)
+        sections.push({ kind: "media", title: group.title, count: group.items.count(), items: group.items, aspect: "portrait" })
+    end for
+    return { id: "collectionItems", title: chainLookupReturn(m.top.itemContent, "json.Name", ""), iconKey: "boxset_items", sections: sections }
+end function
+
+' A title opens on its own page, or on Seerr's when the library is missing it
+sub onCollectionItemChosen(event as object)
+    item = event.getData()
+    if not isValid(item) then return
+    closeExtras()
+    m.top.selectedItem = item
 end sub
 
 ' An extra plays from its start rather than opening a page of its own
@@ -511,7 +567,7 @@ sub onLogoImageURIChanged()
     layoutContainer()
 end sub
 
-' This screen has no collection rows
+' Nothing on this screen offers to take a title out of a collection
 sub collectionMemberRemoved(_itemId as string)
 end sub
 
@@ -523,9 +579,13 @@ sub appendButtonNode(config as object)
     m.buttonRow.appendChild(buttonGroup)
     m.buttonGroups.push(buttonGroup)
 
-    ' Extras rides straight after Play or Restart, ahead of the arranged buttons
+    ' Extras rides straight after Play or Restart, ahead of the arranged buttons, and a collection's
+    ' own titles ride after its Play the same way, in Kids Mode too, since they're what the page is for
     if (config.id = "playButton" or config.id = "restartButton") and minimalistRules.ShowsExtrasButton(m.top.itemType, m.extras.count(), kidsMode.Enabled())
         appendButtonNode({ icon: "pkg:/images/icons/video_library_outlined.webp", label: tr("Extras"), action: "openExtras", id: "extrasButton" })
+    end if
+    if config.id = "playButton" and isCollection() and m.collection.count() > 0
+        appendButtonNode({ icon: "pkg:/images/icons/collections_bookmark_outlined.webp", label: collectionLabel(collectionGroups(m.collection)), action: "openCollectionItems", id: "collectionItemsButton" })
     end if
 end sub
 
@@ -544,9 +604,11 @@ sub commitButtonRow()
     layoutButtonRow(0)
 end sub
 
-' No item type here brings a row of its own, so the host's set stands
+' A collection brings its own Play and Shuffle, and every other type takes the host's set
 function typeSpecificButtons() as boolean
-    return false
+    if not isCollection() then return false
+    addCollectionButtons()
+    return true
 end function
 
 function markActiveButton(config as object, isActive as boolean, ink as string) as object
@@ -619,6 +681,10 @@ sub handleScreenButtonAction(action as string)
         m.global.queueManager.callFunc("clear")
         m.global.queueManager.callFunc("push", item)
         m.global.queueManager.callFunc("playQueue")
+    else if action = "collectionPlay" or action = "collectionShuffle"
+        playCollection(action = "collectionShuffle")
+    else if action = "openCollectionItems"
+        openCollectionItems()
     else if action = "openExtras"
         openExtras()
     else if action = "favorite"
