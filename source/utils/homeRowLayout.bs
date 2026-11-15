@@ -25,7 +25,7 @@ namespace homeRowLayout
     ' these apart, favourites by media type for instance, and Save carries those ids
     ' through untouched. Declaration order decides where a row nobody arranged ends up.
     function Catalogue() as object
-        return [
+        rows = [
             { id: "resume", label: "Continue Watching" },
             { id: "nextup", label: "Next Up" },
             { id: "seasonal", label: "Seasonal Row" },
@@ -84,6 +84,60 @@ namespace homeRowLayout
             { id: "tmdb_trending_tv_weekly", label: "TMDB Trending TV (Weekly)" },
             { id: "tmdb_trending_all_weekly", label: "TMDB Trending All (Weekly)" }
         ]
+        for each chart in homeRowLayout.ExternalCharts()
+            rows.push({ id: chart.id, label: chart.label })
+        end for
+        return rows
+    end function
+
+    ' The outside chart rows, with what the plugin's custom rows endpoint is asked for. A regional
+    ' chart also sends the viewer's country. The table is built once, since the row checks read it
+    ' for every row Home lays out.
+    function ExternalCharts() as object
+        if isValid(m.homeRowExternalCharts) then return m.homeRowExternalCharts
+
+        m.homeRowExternalCharts = [
+            homeRowLayout.OfficialChart("mdblist_most_watched_week_movies", "Most Watched Movies This Week", "most-watched-week", "movie"),
+            homeRowLayout.OfficialChart("mdblist_most_watched_week_shows", "Most Watched Shows This Week", "most-watched-week", "show"),
+            homeRowLayout.OfficialChart("mdblist_most_watched_year_movies", "Most Watched Movies This Year", "most-watched", "movie"),
+            homeRowLayout.OfficialChart("mdblist_most_watched_year_shows", "Most Watched Shows This Year", "most-watched", "show"),
+            homeRowLayout.OfficialChart("mdblist_anticipated_movies", "Most Anticipated Movies", "anticipated", "movie"),
+            homeRowLayout.OfficialChart("mdblist_anticipated_shows", "Most Anticipated Shows", "anticipated", "show"),
+            homeRowLayout.OfficialChart("mdblist_streaming_charts_movies", "Streaming Chart Movies", "streaming-charts", "movie"),
+            homeRowLayout.OfficialChart("mdblist_streaming_charts_shows", "Streaming Chart Shows", "streaming-charts", "show"),
+            { id: "justwatch_top_movies", label: "Top Streaming Movies Today", source: "justwatch", type: "movie", params: {}, regional: true },
+            { id: "justwatch_top_shows", label: "Top Streaming Shows Today", source: "justwatch", type: "show", params: {}, regional: true },
+            { id: "tmdb_trending_all_daily", label: "Trending All (Daily)", source: "tmdb_chart", type: "trending/all/day", params: {}, regional: false },
+            homeRowLayout.DiscoverChart("tmdb_korean_dramas", "Korean Dramas", "korean_dramas", false),
+            homeRowLayout.DiscoverChart("tmdb_anime", "Popular Anime", "anime", false),
+            homeRowLayout.DiscoverChart("tmdb_new_digital_movies", "New Digital Releases", "new_digital_movies", true),
+            homeRowLayout.DiscoverChart("tmdb_hidden_gems", "Hidden Gems", "hidden_gems", false),
+            homeRowLayout.DiscoverChart("tmdb_netflix", "Popular on Netflix", "provider_netflix", true),
+            homeRowLayout.DiscoverChart("tmdb_prime_video", "Popular on Prime Video", "provider_prime_video", true),
+            homeRowLayout.DiscoverChart("tmdb_disney_plus", "Popular on Disney+", "provider_disney_plus", true),
+            homeRowLayout.DiscoverChart("tmdb_hbo_max", "Popular on HBO Max", "provider_hbo_max", true),
+            homeRowLayout.DiscoverChart("tmdb_apple_tv", "Popular on Apple TV", "provider_apple_tv", true),
+            homeRowLayout.DiscoverChart("tmdb_paramount_plus", "Popular on Paramount+", "provider_paramount_plus", true)
+        ]
+        return m.homeRowExternalCharts
+    end function
+
+    ' One of MDBList's official lists, cut down to its movies or its shows
+    function OfficialChart(id as string, label as string, listName as string, mediaType as string) as object
+        return { id: id, label: label, source: "mdblist", type: "list", params: { username: "official", listname: listName, mediatype: mediaType }, regional: false }
+    end function
+
+    ' One of the TMDB discover charts Moonbase serves by name
+    function DiscoverChart(id as string, label as string, chartName as string, regional as boolean) as object
+        return { id: id, label: label, source: "tmdb_discover", type: chartName, params: {}, regional: regional }
+    end function
+
+    function ExternalChart(id as string) as dynamic
+        lowerId = LCase(id)
+        for each entry in homeRowLayout.ExternalCharts()
+            if entry.id = lowerId then return entry
+        end for
+        return invalid
     end function
 
     ' The three lists the server can be asked for, each offered as one row per item. The
@@ -137,7 +191,15 @@ namespace homeRowLayout
         itemId = parts[parts.Count() - 1]
         head = Len(homeRowLayout.DYNAMIC_PREFIX) + Len(parts[1]) + 1
         tail = Len(parts[parts.Count() - 2]) + Len(itemId) + 2
-        return { source: entry.key, itemId: itemId, server: Mid(text, head + 1, Len(text) - head - tail) }
+        return { source: entry.key, itemId: itemId, server: homeRowLayout.ServerOf(Mid(text, head + 1, Len(text) - head - tail)) }
+    end function
+
+    ' Builds from early November 2026 wrote "Function: homerowlayout_serverkey" where a row's server
+    ' goes, after the transpiler swapped a parameter named serverKey for the function of that name.
+    ' Such a row was always picked on this server, so it reads as this server.
+    function ServerOf(server as string) as string
+        if LCase(server).startsWith("function:") then return homeRowLayout.ServerId()
+        return server
     end function
 
     ' This server the way a Seerr slider row spells it, since clients write it with and without a
@@ -410,7 +472,7 @@ namespace homeRowLayout
     end function
 
     function IsExternalRow(id as string) as boolean
-        return Left(id, 5) = "imdb_" or Left(id, 5) = "tmdb_" or inArray(["mdblist_watching_now", "seasonal", "radarr_calendar", "sonarr_calendar"], id)
+        return Left(id, 5) = "imdb_" or Left(id, 5) = "tmdb_" or Left(id, 8) = "mdblist_" or Left(id, 10) = "justwatch_" or inArray(["seasonal", "radarr_calendar", "sonarr_calendar"], id)
     end function
 
     ' The external rows (IMDb, TMDB, MDBList Watching Now, seasonal and the calendars) have no
@@ -426,8 +488,12 @@ namespace homeRowLayout
         if not plugin then return false
         if Left(id, 5) = "imdb_" then return true
 
+        ' JustWatch and the TMDB discover charts need a Moonbase that serves them
+        chart = homeRowLayout.ExternalChart(id)
+        if isValid(chart) and (chart.source = "justwatch" or chart.source = "tmdb_discover") and not toBoolean(chainLookupReturn(globalSession, "pluginInfo.discoverChartsSupported", false)) then return false
+
         if Left(id, 5) = "tmdb_" then return toBoolean(chainLookupReturn(globalSession, "pluginInfo.tmdbAvailable", false)) or homeRowLayout.AsText(chainLookupReturn(globalSession, "user.settings.`plugin.tmdb.apiKey`", "")) <> ""
-        if id = "mdblist_watching_now" then return toBoolean(chainLookupReturn(globalSession, "pluginInfo.mdblistAvailable", false)) or homeRowLayout.AsText(chainLookupReturn(globalSession, "user.settings.`plugin.mdblist.apiKey`", "")) <> ""
+        if Left(id, 8) = "mdblist_" or Left(id, 10) = "justwatch_" then return toBoolean(chainLookupReturn(globalSession, "pluginInfo.mdblistAvailable", false)) or homeRowLayout.AsText(chainLookupReturn(globalSession, "user.settings.`plugin.mdblist.apiKey`", "")) <> ""
         return toBoolean(chainLookupReturn(globalSession, "pluginInfo.calendarAvailable", false))
     end function
 
@@ -488,8 +554,7 @@ namespace homeRowLayout
     end function
 
     ' A row in neither list is one this app started offering after the viewer last arranged
-    ' their layout, and those start off, since every row but the opening three is declared
-    ' off across the clients.
+    ' their layout, or one a layout from the server left out, and those start off.
     function IsEnabled(id as string, placed as object, off as object, picked as object) as boolean
         seedIndex = homeRowLayout.SeedRowIndex(id)
         if seedIndex > 0 and seedIndex > homeRowLayout.SeedRowCount() then return false
@@ -505,7 +570,9 @@ namespace homeRowLayout
         ' it leaves it to that switch
         if id = "seasonal" or id = "mdblist_watching_now" then return homeRowLayout.LegacySwitchOn(id)
 
-        return inArray(homeRowLayout.DefaultEnabled(), id)
+        ' A layout that leaves out an opening row has it off. The opening rows only start on for a
+        ' viewer with no layout at all.
+        return placed.Count() = 0 and inArray(homeRowLayout.DefaultEnabled(), id)
     end function
 
     ' The rows the viewer left on, in the order they put them. Only the ids come back,

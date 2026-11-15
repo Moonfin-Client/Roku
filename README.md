@@ -111,11 +111,11 @@ Contributions are welcome. Check the existing issues first, and open an issue be
 
 To submit a change, fork the repo, create a feature branch, make your changes with clear commit messages, and open a pull request with a clear description.
 
-## Help translate Moonfin [here](https://translate.moonfin.io/engage/roku/)
+## Help translate Moonfin [here](https://translate.moonfin.io/projects/moonfin/roku/)
 
-<a href="https://translate.moonfin.io/engage/roku/">
+<a href="https://translate.moonfin.io/projects/moonfin/roku/">
   <img
-    src="https://translate.moonfin.io/widgets/roku/-/multi-auto.svg"
+    src="https://translate.moonfin.io/widget/moonfin/roku/multi-auto.svg"
     alt="Moonfin Roku translation status by language"
   />
 </a>

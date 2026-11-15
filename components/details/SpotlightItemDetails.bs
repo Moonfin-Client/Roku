@@ -129,6 +129,7 @@ sub init()
     m.sectionModal.observeField("menuRequested", "onModalMenuRequested")
     m.sectionModal.observeField("trackMenuRequested", "onModalTrackMenuRequested")
     m.sectionModal.observeField("headerActionChosen", "openCollectionSort")
+    m.sectionModal.observeField("nearEnd", "onSheetNearEnd")
     m.cardBand = m.top.findNode("cardBand")
     m.cardBandAnim = m.top.findNode("cardBandAnim")
     m.cardBandInterp = m.top.findNode("cardBandInterp")
@@ -611,19 +612,21 @@ sub showStudios()
     updateCardState({ studioCards: cards })
 end sub
 
-' A collection loads its own titles, and a film, a video or a show looks up the collections it's in
+' A collection loads its own titles a page at a time, and a film, a video or a show looks up the
+' collections it's in
 sub loadCollections(itemData as object)
     if m.top.seerrOnly then return
 
+    if isCollection()
+        loadCollectionMembers(detailSectionLayout.Shows("cast") or detailSectionLayout.Shows("crew"))
+        return
+    end if
     itemType = LCase(m.top.itemType)
-    mode = ""
-    if itemType = "boxset" then mode = "members"
-    if (itemType = "movie" or itemType = "video" or itemType = "series") and detailSectionLayout.Shows("collections") then mode = "parents"
-    if mode = "" then return
+    if not ((itemType = "movie" or itemType = "video" or itemType = "series") and detailSectionLayout.Shows("collections")) then return
 
     if isValid(m.collectionsTask) then m.collectionsTask.unobserveField("done")
     m.collectionsTask = CreateObject("roSGNode", "LoadCollectionsTask")
-    m.collectionsTask.mode = mode
+    m.collectionsTask.mode = "parents"
     m.collectionsTask.itemJson = {
         Id: itemData.Id,
         Name: itemData.Name,
@@ -638,22 +641,50 @@ sub loadCollections(itemData as object)
 end sub
 
 sub onCollectionsTaskDone()
-    task = m.collectionsTask
-    if task.mode = "members"
-        people = task.people ?? {}
-        hidden = detailSectionLayout.HiddenIds()
-        updateCardState({
-            collectionItems: task.items ?? [],
-            collectionOrder: task.order ?? [],
-            collectionMissing: task.missing ?? [],
-            cast: hidden.DoesExist("cast") ? [] : people.cast ?? [],
-            crew: hidden.DoesExist("crew") ? [] : people.crew ?? []
-        })
-        return
-    end if
-
-    updateCardState({ parentCollections: task.collections ?? [] })
+    updateCardState({ parentCollections: m.collectionsTask.collections ?? [] })
 end sub
+
+' Each page of a collection's titles brings the people in it to the people card
+sub collectionPageAdded()
+    paging = m.collectionPaging
+    people = pooledCollectionPeople(paging.library)
+    hidden = detailSectionLayout.HiddenIds()
+    cast = []
+    if not hidden.DoesExist("cast") then cast = people.cast
+    crew = []
+    if not hidden.DoesExist("crew") then crew = people.crew
+    updateCardState({
+        collectionItems: paging.library,
+        collectionOrder: paging.order,
+        collectionMissing: paging.missing,
+        cast: cast,
+        crew: crew
+    })
+end sub
+
+' Everyone in a collection's titles, each person once by id, the actors as the cast and everyone else
+' as the crew
+function pooledCollectionPeople(members as object) as object
+    cast = []
+    crew = []
+    castIds = {}
+    crewIds = {}
+    for each member in members
+        for each person in chainLookupReturn(member, "people", [])
+            key = person.Id ?? ""
+            if key = "" then key = person.Name ?? ""
+            isActor = (person.Type ?? "") = "Actor"
+            if key <> "" and isActor and not castIds.DoesExist(key)
+                castIds[key] = true
+                cast.push(collectionPersonNode(person))
+            else if key <> "" and not isActor and not crewIds.DoesExist(key)
+                crewIds[key] = true
+                crew.push(collectionPersonNode(person))
+            end if
+        end for
+    end for
+    return { cast: cast, crew: crew }
+end function
 
 ' The lists this screen is handed carry no item json, so the cards fetch their own the way the
 ' other clients do
@@ -1195,6 +1226,13 @@ sub openFocusedCard()
     ' the card rather than the group, which would take it straight back off them
     m.sectionModal.visible = true
     m.sectionModal.card = m.cards[m.openCardIndex]
+end sub
+
+' A collection's titles and its playlist load a page at a time, asking for more as focus nears the
+' foot of the sheet
+sub onSheetNearEnd()
+    openId = chainLookupReturn(m.sectionModal.card, "id", "")
+    if openId = "boxset_items" or openId = "playlist_order" then loadMoreCollectionMembers()
 end sub
 
 sub onModalClosed()

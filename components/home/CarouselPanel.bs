@@ -1,0 +1,235 @@
+import "pkg:/source/api/MoonfinPlugin.bs"
+import "pkg:/source/utils/fileFacts.bs"
+import "pkg:/source/utils/mediaBadges.bs"
+import "pkg:/source/utils/misc.bs"
+import "pkg:/source/utils/multiserver.bs"
+import "pkg:/source/utils/ratingsRow.bs"
+
+sub init()
+    m.faces = [m.top.findNode("faceA"), m.top.findNode("faceB")]
+    m.front = 0
+    m.shownId = invalid
+    m.crossfade = m.top.findNode("crossfade")
+    m.fadeIn = m.top.findNode("fadeIn")
+    m.fadeOut = m.top.findNode("fadeOut")
+    m.detailsWait = m.top.findNode("detailsWait")
+    m.detailsWait.observeField("fire", "loadDetails")
+    ' Fetched once per item: its full details, which carry the media streams, and the plugin's scores
+    m.details = {}
+    m.pluginRatings = {}
+end sub
+
+sub onFlatChanged()
+    for each face in m.faces
+        face.flat = m.top.flat
+    end for
+end sub
+
+sub onItemChanged()
+    node = m.top.item
+    if not isValid(node) then return
+    m.json = node.json
+    if not isValid(m.json) then m.json = {}
+    id = toString(m.json.Id ?? node.id)
+
+    ' The same card's json was written again, a watched mark for instance
+    if isValid(m.shownId) and m.shownId = id
+        redraw()
+        return
+    end if
+    m.shownId = id
+
+    params = panelParams()
+    if m.faces[m.front].opacity <= 0 and m.crossfade.state <> "running"
+        m.faces[m.front].callFunc("draw", params)
+        m.faces[m.front].opacity = 1
+    else if m.crossfade.state = "running"
+        ' A held direction only changes what the incoming face shows
+        m.faces[m.front].callFunc("draw", params)
+    else
+        incoming = 1 - m.front
+        m.faces[incoming].callFunc("draw", params)
+        m.fadeIn.fieldToInterp = m.faces[incoming].id + ".opacity"
+        m.fadeOut.fieldToInterp = m.faces[m.front].id + ".opacity"
+        m.front = incoming
+        m.crossfade.control = "start"
+    end if
+
+    ' Home never sets a preview, and an unset assocarray field can read back as an empty one
+    if isValidAndNotEmpty(m.top.preview) then return
+    if m.details.DoesExist(id)
+        loadRatings(m.details[id])
+    else if outsideCard(m.json)
+        loadRatings(m.json)
+    else
+        m.detailsWait.control = "stop"
+        m.detailsWait.control = "start"
+    end if
+end sub
+
+sub redraw()
+    m.faces[m.front].callFunc("draw", panelParams())
+end sub
+
+sub setDetails(json as object)
+    if not isValid(json) or not isValid(json.Id) then return
+    ' Full details are large, so a long browse doesn't keep every one it passed
+    if m.details.Count() >= 40 then m.details.Clear()
+    m.details[json.Id] = json
+    if json.Id <> m.shownId then return
+    m.detailsWait.control = "stop"
+    redraw()
+    loadRatings(json)
+end sub
+
+' Calendar releases, Seerr results and watch parties aren't in the library, so there's nothing to look up
+function outsideCard(json as object) as boolean
+    return isValid(json.CalendarDate) or isValid(json.SeerrTmdbId) or isStringEqual(json.Type, "CalendarSeeAll") or isStringEqual(json.Type, "WatchPartyRoom") or isStringEqual(json.Type, "WatchPartyStart")
+end function
+
+sub loadDetails()
+    if not isValidAndNotEmpty(m.shownId) or m.details.DoesExist(m.shownId) then return
+    if isValid(m.detailsTask) then m.detailsTask.unobserveFieldScoped("content")
+    m.detailsTask = CreateObject("roSGNode", "LoadItemsTask")
+    m.detailsTask.itemsToLoad = "metaData"
+    m.detailsTask.itemId = m.shownId
+    ' A card from another signed in server is asked of that server
+    if isValidAndNotEmpty(m.json._serverUrl)
+        m.detailsTask.serverUrl = m.json._serverUrl
+        m.detailsTask.serverUserId = m.json._userId
+        m.detailsTask.serverAuthToken = m.json._authToken
+    end if
+    m.detailsTask.observeFieldScoped("content", "onDetailsLoaded")
+    m.detailsTask.control = "RUN"
+end sub
+
+sub onDetailsLoaded(event as object)
+    loaded = event.getData()
+    if not isValidAndNotEmpty(loaded) or not isValid(loaded[0]) then return
+    setDetails(loaded[0].json)
+end sub
+
+' Scores follow the home rows settings, an episode's from its own switch
+sub loadRatings(json as object)
+    id = toString(json.Id)
+    if m.pluginRatings.DoesExist(id) then return
+    itemType = toString(json.Type)
+    if itemType = "Episode"
+        if not moonfinPlugin.IsEpisodeRatingsEnabled("home") then return
+    else if not moonfinPlugin.IsRatingsEnabled("home") or moonfinPlugin.GetTmdbId(json.ProviderIds ?? invalid) = ""
+        return
+    end if
+
+    if isValid(m.ratingsTask) then m.ratingsTask.unobserveFieldScoped("ratings")
+    m.ratingsTask = createObject("roSGNode", "FetchRatingsTask")
+    m.ratingsTask.itemData = json
+    m.ratingsTask.scope = "home"
+    m.ratingsTask.observeFieldScoped("ratings", "onRatingsLoaded")
+    m.ratingsId = id
+    m.ratingsTask.control = "RUN"
+end sub
+
+sub onRatingsLoaded(event as object)
+    result = event.getData()
+    if not isValid(result) then return
+    m.pluginRatings[m.ratingsId] = result.data ?? []
+    if m.ratingsId = m.shownId then redraw()
+end sub
+
+' What the face draws for the shown card, from its full details once they're in
+function panelParams() as object
+    json = m.json
+    info = m.details[m.shownId]
+    if not isValid(info) then info = json
+    isEpisode = isStringEqual(info.Type, "Episode")
+
+    title = toString(info.Name)
+    episode = ""
+    if isEpisode
+        if isValidAndNotEmpty(info.SeriesName) then title = info.SeriesName
+        episode = toString(info.Name)
+        if isValid(info.ParentIndexNumber) and isValid(info.IndexNumber) then episode = `S${info.ParentIndexNumber}:E${info.IndexNumber} - ${episode}`
+    end if
+
+    parts = []
+    if isValid(info.ProductionYear) and info.ProductionYear > 0 then parts.push({ text: info.ProductionYear.toStr() })
+    if isValidAndNotEmpty(info.OfficialRating) then parts.push({ text: info.OfficialRating, pill: true })
+    minutes = 0
+    if isValid(info.RunTimeTicks) then minutes = Int(info.RunTimeTicks / 600000000&)
+    if minutes > 0 and not isStringEqual(info.Type, "Series")
+        runtime = `${minutes}m`
+        if minutes >= 60 then runtime = `${Int(minutes / 60)}h ${minutes mod 60}m`
+        parts.push({ text: runtime })
+    end if
+    genres = []
+    for each genre in info.Genres ?? []
+        if genres.count() < 3 then genres.push(genre)
+    end for
+    if genres.count() > 0 then parts.push({ text: genres.Join(", ") })
+
+    preview = m.top.preview
+    hasPreview = isValidAndNotEmpty(preview)
+    if hasPreview
+        hideOverview = preview.hideOverview = true
+    else
+        hideOverview = moonfinPlugin.ParseBoolSetting(chainLookupReturn(m.global.session, "user.settings.`ui.home.hideMediaDescription`", false), false)
+    end if
+    overview = ""
+    if not hideOverview then overview = toString(info.Overview)
+
+    ratings = invalid
+    ' The settings preview brings its own scores. The wizard's brings none, so the sample's own show.
+    if hasPreview and isValid(preview.ratings) and isValid(preview.ratings.data)
+        ratings = preview.ratings
+    else
+        entries = ratingsRow.Merge(ratingsRow.ServerEntries(info, "home"), m.pluginRatings[m.shownId])
+        if entries.count() > 0 then ratings = { data: entries, showNames: moonfinPlugin.RatingsBool("home", "showRatingNames", false), showBadges: moonfinPlugin.RatingsBool("home", "showRatingBadges", true) }
+    end if
+
+    return { title: title, episode: episode, info: parts, ratings: ratings, pills: mediaPills(info), overview: overview, backdrop: backdropUri(json) }
+end function
+
+' Resolution, HDR type, video codec, audio codec and channels, each only when the streams say
+function mediaPills(info as object) as object
+    pills = []
+    source = fileFacts.PickedSource(info, "")
+    if not isValid(source) then return pills
+    streams = source.MediaStreams
+    if not isValidAndNotEmpty(streams) then streams = info.MediaStreams
+    video = mediaBadges.StreamOfType(streams, "Video")
+    audio = mediaBadges.StreamOfType(streams, "Audio")
+    if isValid(video)
+        resolution = mediaBadges.ResolutionLabel(info)
+        if resolution <> "" then pills.push(resolution)
+        mediaBadges.AddRange(pills, video)
+        codec = mediaBadges.VideoCodecLabel(video.Codec)
+        if codec <> "" then pills.push(codec)
+    end if
+    if isValid(audio)
+        codec = mediaBadges.AudioCodecLabel(audio.Codec)
+        if codec <> "" then pills.push(codec)
+        mediaBadges.AddChannels(pills, audio)
+    end if
+    return pills
+end function
+
+' The item's own backdrop, else its parent's, the series' for an episode. A title from outside the
+' library brings its own.
+function backdropUri(json as object) as string
+    preview = m.top.preview
+    if isValid(preview) and isValid(preview.backdrop) then return preview.backdrop
+    params = { "maxWidth": 1280, "quality": 90 }
+    serverData = { serverUrl: json._serverUrl }
+    uri = invalid
+    if isValidAndNotEmpty(json.BackdropImageTags)
+        params["Tag"] = json.BackdropImageTags[0]
+        uri = getImageURL(toString(json.Id), "Backdrop", params, serverData)
+    else if isValidAndNotEmpty(json.ParentBackdropImageTags) and isValidAndNotEmpty(json.ParentBackdropItemId)
+        params["Tag"] = json.ParentBackdropImageTags[0]
+        uri = getImageURL(json.ParentBackdropItemId, "Backdrop", params, serverData)
+    else if outsideCard(json)
+        uri = m.top.item.backdropURL
+    end if
+    if not isString(uri) then return ""
+    return uri
+end function
