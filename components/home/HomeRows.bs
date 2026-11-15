@@ -70,6 +70,8 @@ function isFeaturedMediaEnabled() as boolean
 end function
 
 sub init()
+    ' The row list reads settings many times per build, and there is one of it, so it keeps a session copy (see sessionNow)
+    m.keepsSessionCopy = true
     m.scene = m.top.getScene()
 
     m.overhang = getActiveNav(m.scene)
@@ -140,6 +142,7 @@ sub init()
     m.buildInFlight = false
     m.queuedBuild = ""
     m.buildCount = 0
+    m.cacheScopeBuild = -1
     m.cacheDir = ""
     m.cacheKey = ""
     m.buildTimeout = createObject("roSGNode", "Timer")
@@ -156,7 +159,7 @@ sub init()
     m.labelsTask.observeField("state", "onLabelsTaskState")
 end sub
 
-sub beginBuild(kind as string)
+sub beginBuild()
     m.buildInFlight = true
     m.buildCount++
     m.flushedThisBuild = false
@@ -221,13 +224,17 @@ end sub
 ' refreshCacheScope: Sets where this build's rows are cached, and the layout and settings they were built
 ' for. Multi-server rows mix servers, so they stay out of the cache while more than one server is signed in.
 sub refreshCacheScope()
-    if isMultiServerEnabled() and getAllServerSessions().count() > 0
-        m.cacheDir = ""
-        m.cacheKey = ""
-        return
-    end if
+    ' Once per build: loadLibraries sets it before painting, then startHomeRowsLoading asks again
+    if m.cacheScopeBuild = m.buildCount then return
+    m.cacheScopeBuild = m.buildCount
+    m.cacheDir = ""
+    m.cacheKey = ""
+    if isMultiServerEnabled() and getAllServerSessions().count() > 0 then return
+    ' A refresh during sign-out or a user switch has no user to cache for
+    userId = chainLookupReturn(m.global.session, "user.id", "")
+    if not isValidAndNotEmpty(userId) or not isString(userId) then return
 
-    m.cacheDir = homeCache.Dir(toString(get_url()), m.global.session.user.id)
+    m.cacheDir = homeCache.Dir(toString(get_url()), userId)
     ' The same expression addHomeSection reads, so the key matches the rows it builds
     mergeContinueWatching = kidsMode.MergesContinueWatching(isStringEqual(get_user_setting("ui.home.mergeContinueWatchingNextUp"), "true"))
     ' Row titles are translated, so the locale is part of the key
@@ -262,8 +269,8 @@ sub loadLibraries()
         return
     end if
 
+    beginBuild()
     refreshCacheScope()
-    beginBuild("libraries")
     m.librariesPending = true
     ' A launch, or a reload that emptied the rows, paints the rows saved last time while the libraries load
     hasRows = false
@@ -274,7 +281,6 @@ sub loadLibraries()
     if m.cacheDir <> "" and not hasRows
         m.cacheReadTask.cacheRead = { dir: m.cacheDir, key: m.cacheKey }
         m.cacheReadTask.control = "RUN"
-    else
     end if
     m.LoadLibrariesTask.observeField("content", "onLibrariesLoaded")
     m.LoadLibrariesTask.control = "RUN"
@@ -710,9 +716,6 @@ sub processUserSections()
         if sectionLoaded then m.loadedSectionCount++
     end for
 
-    if m.librarySections.Count() > 0
-    end if
-
     ' Library sections that are still out will count toward the first load, so focus waits for them
     if m.loadedSectionCount = 0 and m.librarySections.Count() = 0
         m.overhang.setfocus(true)
@@ -772,6 +775,9 @@ sub onCachedRecords()
     records = m.cacheReadTask.cachedRecords
     if not isArrayValue(records) or records.count() = 0 then return
     m.cacheReadTask.cachedRecords = []
+    ' Only a build removes the cached rows its fresh ones didn't replace, so a read that lands after
+    ' the build is dropped rather than left on screen
+    if not m.buildInFlight then return
 
     imageContext = activeImageContext()
     rows = []
@@ -815,7 +821,8 @@ sub paintCachedRows(rows as object)
             if sectionMatches({ title: entry.sectionName, id: entry.key }, searchSectionTitle, row.id) then pendingMatch = true
         end for
 
-        if pendingMatch or (isValid(existing) and existing.getChildCount() > 0)
+        ' A row that already came back empty this build stays off, rather than showing its old copy
+        if pendingMatch or knownEmpty(row.title) or (isValid(existing) and existing.getChildCount() > 0)
             continue for
         end if
 
@@ -2483,7 +2490,7 @@ sub updateHomeRows()
         return
     end if
 
-    beginBuild("update")
+    beginBuild()
     startHomeRowsLoading()
 end sub
 
@@ -2496,7 +2503,7 @@ sub reloadHomeRows()
     end if
 
     m.top.content = CreateObject("roSGNode", "ContentNode")
-    beginBuild("reload")
+    beginBuild()
     startHomeRowsLoading()
 end sub
 
