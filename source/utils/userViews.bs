@@ -15,6 +15,9 @@ namespace userViews
 
     function Get(userId as string) as dynamic
         scope = toString(get_url()) + "|" + userId
+        ' A fetch that was under way when Forget ran can still store its answer, so the memo is only
+        ' used under the generation it was fetched in
+        generation = userViews.CurrentGeneration()
 
         ' Each read of m.global from a task is an expensive cross-thread call, so read it once. A memo
         ' that is empty or missing is replaced with an empty AA, so its keys read as invalid, not as a crash.
@@ -23,13 +26,13 @@ namespace userViews
         now = Int(UpTime(0) * 1000)
 
         ' Nested ifs: BrightScript doesn't stop an "and" early, so arithmetic on a missing value would still run
-        if isStringEqual(memo.scope, scope) and isValid(memo.data) and isValid(memo.at)
+        if isStringEqual(memo.scope, scope) and isValid(memo.data) and isValid(memo.at) and userViews.InGeneration(memo, generation)
             if now - memo.at < MAX_AGE_MS
                 return memo.data
             end if
         end if
 
-        if isStringEqual(memo.scope, scope) and isValid(memo.pendingAt)
+        if isStringEqual(memo.scope, scope) and isValid(memo.pendingAt) and userViews.InGeneration(memo, generation)
             if now - memo.pendingAt < WAIT_MS
                 ' Told when the other fetch stores its answer, rather than asking the global node over and
                 ' over: each ask waits on the render thread, which is busiest while Home starts
@@ -40,12 +43,12 @@ namespace userViews
                 memo = m.global.userViewsMemo
                 while true
                     if type(memo) <> "roAssociativeArray" then memo = {}
-                    if isStringEqual(memo.scope, scope) and isValid(memo.data)
+                    if isStringEqual(memo.scope, scope) and isValid(memo.data) and userViews.InGeneration(memo, generation)
                         m.global.unobserveFieldScoped("userViewsMemo")
                         return memo.data
                     end if
                     ' The pending marker is gone when the other fetch failed
-                    if not isStringEqual(memo.scope, scope) or not isValid(memo.pendingAt) then exit while
+                    if not isStringEqual(memo.scope, scope) or not isValid(memo.pendingAt) or not userViews.InGeneration(memo, generation) then exit while
                     left = WAIT_MS - (Int(UpTime(0) * 1000) - waitStart)
                     if left <= 0 then exit while
                     msg = wait(left, port)
@@ -57,7 +60,7 @@ namespace userViews
         end if
 
         fetchStart = Int(UpTime(0) * 1000)
-        m.global.userViewsMemo = { scope: scope, pendingAt: fetchStart }
+        m.global.userViewsMemo = { scope: scope, pendingAt: fetchStart, generation: generation }
 
         data = api.GetUserViews({ "userId": userId })
         ' Forget, or a newer fetch, replaces the pending marker. Libraries asked for before that may
@@ -69,7 +72,7 @@ namespace userViews
         if stillOurs
             if isChainValid(data, "items")
                 fetchEnd = Int(UpTime(0) * 1000)
-                m.global.userViewsMemo = { scope: scope, at: fetchEnd, data: data }
+                m.global.userViewsMemo = { scope: scope, at: fetchEnd, data: data, generation: generation }
             else
                 ' Clear the pending marker so a waiting task fetches instead of timing out
                 m.global.userViewsMemo = {}
@@ -79,7 +82,23 @@ namespace userViews
         return data
     end function
 
+    ' How many times the memo has been forgotten
+    function CurrentGeneration() as integer
+        generation = m.global.userViewsGeneration
+        if type(generation) <> "roInt" and type(generation) <> "Integer" then return 0
+        return generation
+    end function
+
+    ' Whether the memo was written under this generation. A memo from before generations, or an
+    ' empty one, has none and is not used.
+    function InGeneration(memo as object, generation as integer) as boolean
+        value = memo.generation
+        if type(value) <> "roInt" and type(value) <> "Integer" then return false
+        return value = generation
+    end function
+
     sub Forget()
+        m.global.userViewsGeneration = userViews.CurrentGeneration() + 1
         m.global.userViewsMemo = {}
     end sub
 end namespace

@@ -955,7 +955,10 @@ assert.match(settingsSyncSource.match(/function HomeSectionsPayload\([^]*?end fu
 assert.match(settingsSyncSource, /\{ pluginKey: "mdblistApiKey", rokuKey: "plugin\.mdblist\.apiKey", type: "direct", skipRegistry: true, receiveOnly: true \}/, 'The MDBList key is only read');
 assert.match(await readFile('components/settings/settings.bs', 'utf8'), /profile\.Append\(settingsSync\.LegacyRowSwitches\(\)\)/, 'The old row switches follow the layout for older app versions');
 const loadItemsSource = await readFile('components/home/LoadItemsTask.bs', 'utf8');
-assert.match(loadItemsSource, /startsWith\("plugindynamic:"\)\s+m\.top\.content = withLabels\(parentalControls\.WithoutUnratedOrBlockedItems\(/, 'Chart rows drop unrated titles once a rating is blocked');
+assert.match(loadItemsSource, /if isOutsideTitlesRow\(itemsToLoad\)\s+m\.top\.content = withLabels\(parentalControls\.WithoutUnratedOrBlockedItems\(/, 'Chart rows drop unrated titles once a rating is blocked');
+assert.match(loadItemsSource.match(/function isOutsideTitlesRow\([^]*?end function/)[0], /startsWith\("plugindynamic:"\)/, 'Rows the plugin proxies count as chart rows');
+assert.match(loadItemsSource, /records = withoutBlockedCachedItems\(homeCache\.ReadRows\(/, 'Saved rows go through the parental filter before Home shows them');
+assert.match(loadItemsSource.match(/function withoutBlockedCachedItems\([^]*?end function/)[0], /isOutsideTitlesRow\(record\.id\)\s+record\.items = parentalControls\.WithoutUnratedOrBlockedItems\([^]*?WithoutBlockedItems\(record\.items\)/, 'Saved chart rows get the strict filter and the rest the usual one');
 assert.match(loadItemsSource, /startsWith\("seerr_"\)\s+m\.top\.content = parentalControls\.WithoutBlockedItems\(/, 'Seerr rows keep the usual filter');
 assert.match(loadItemsSource.match(/function loadSeasonalRow\([^]*?end function/)[0], /WithoutBlockedItems\(owned\)[^]*?WithoutUnratedOrBlockedItems\(suggestions\)/, 'Owned titles keep the usual filter and suggestions the strict one');
 assert.match(loadItemsSource.match(/function loadSeasonalRow\([^]*?end function/)[0], /seasonalRow\.ALL_YEAR_SETTING, false\) then params\.allYear = "true"/, 'Show All Year asks the plugin for a row outside the holiday dates');
