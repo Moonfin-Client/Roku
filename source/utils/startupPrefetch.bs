@@ -1,0 +1,95 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/utils/homeCache.bs"
+import "pkg:/source/utils/misc.bs"
+
+' Sign in asks the server for the same handful of things on every launch, one after another, and
+' each waits for the one before. This remembers which GETs the main thread made up to Home, and on
+' the next launch asks for all of them at once as Main starts, while the scene is still being built.
+' getJson and ServerInfo then take an answer that is already in, or wait for the one on its way.
+' A request nobody takes is dropped. Only the main thread records and takes, since that's where sign in runs.
+namespace startupPrefetch
+    const ROOT = "cachefs:/startupPrefetch"
+    const MAX_URLS = 16
+    ' An answer older than this is not used, so a launch that sat on a sign in screen asks again
+    const MAX_AGE_MS = 20000
+
+    ' One file per server and user, so another account's requests are never sent with this one's token
+    function FilePath(serverUrl as string, userId as string) as string
+        return ROOT + "/" + homeCache.SafeName(LCase(serverUrl) + "_" + userId) + ".json"
+    end function
+
+    ' Starts the remembered requests and begins recording this launch's. Called by Main as it starts.
+    sub Start()
+        m.startupPrefetch = { recording: true, urls: [], inflight: {}, startedAt: Int(UpTime(0) * 1000) }
+        serverUrl = get_url()
+        userId = getActiveUserIdFromRegistry()
+        if serverUrl = invalid or not isValidAndNotEmpty(userId) then return
+        ' Silo and Plex answer through their own bridges, which getJson asks before any request goes out
+        serverType = serverTypeOf(serverUrl)
+        if serverType <> "jellyfin" and serverType <> "emby" then return
+        m.startupPrefetch.file = FilePath(serverUrl, userId)
+
+        saved = ParseJson(ReadAsciiFile(m.startupPrefetch.file))
+        if type(saved) <> "roArray" then return
+        header = buildAuthHeader()
+        for each url in saved
+            if isString(url) and url <> ""
+                req = CreateObject("roUrlTransfer")
+                req.SetUrl(url)
+                req.AddHeader("Accept", "application/json")
+                addServerAuthorization(req, header, serverUrl)
+                if LCase(Left(url, 8)) = "https://" then setCertificateAuthority(req)
+                req.SetMessagePort(CreateObject("roMessagePort"))
+                if req.AsyncGetToString() then m.startupPrefetch.inflight[url] = req
+            end if
+        end for
+    end sub
+
+    ' Notes a GET the main thread made, while this launch is still recording
+    sub Note(url as string)
+        state = m.startupPrefetch
+        if type(state) <> "roAssociativeArray" or state.recording <> true then return
+        if state.urls.count() >= MAX_URLS then return
+        for each known in state.urls
+            if known = url then return
+        end for
+        state.urls.push(url)
+    end sub
+
+    ' Stops recording and saves what this launch asked for, for the next one
+    sub Finish()
+        state = m.startupPrefetch
+        if type(state) <> "roAssociativeArray" or state.recording <> true then return
+        state.recording = false
+        ' A sign in that changed server or user saves under the new one
+        serverUrl = get_url()
+        userId = getActiveUserIdFromRegistry()
+        if serverUrl = invalid or not isValidAndNotEmpty(userId) then return
+        files = CreateObject("roFileSystem")
+        if not files.Exists(ROOT) then CreateDirectory(ROOT)
+        WriteAsciiFile(FilePath(serverUrl, userId), FormatJson(state.urls))
+        ' Answers nobody took are dropped with their requests
+        for each url in state.inflight
+            state.inflight[url].AsyncCancel()
+        end for
+        state.inflight = {}
+    end sub
+
+    ' The answer to a prefetched GET of this url as an roUrlEvent, or invalid when there is none to
+    ' take, it failed to arrive or it is too old. Each answer is taken once.
+    function Take(url as string) as dynamic
+        state = m.startupPrefetch
+        if type(state) <> "roAssociativeArray" then return invalid
+        req = state.inflight[url]
+        if not isValid(req) then return invalid
+        state.inflight.Delete(url)
+        if Int(UpTime(0) * 1000) - state.startedAt > MAX_AGE_MS
+            req.AsyncCancel()
+            return invalid
+        end if
+        event = wait(15000, req.GetMessagePort())
+        if type(event) <> "roUrlEvent" then return invalid
+        if event.GetInt() <> 1 then return invalid
+        return event
+    end function
+end namespace

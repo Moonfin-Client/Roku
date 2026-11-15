@@ -6,6 +6,7 @@ const readFile = async (...args) => {
 };
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { Writable } from 'node:stream';
 import bsc from 'brighterscript';
 import brs from 'brs';
@@ -48,11 +49,28 @@ brs.types.RoRegex.prototype.getMethod = function (name) {
     });
 };
 
+// brs has no UpTime; the device returns seconds since the app started.
+const { Environment } = createRequire(import.meta.url)('brs/lib/interpreter/Environment.js');
+const startedAt = performance.now();
+const upTime = new brs.types.Callable('UpTime', {
+    signature: {
+        args: [new brs.types.StdlibArgument('dummy', brs.types.ValueKind.Int32)],
+        returns: brs.types.ValueKind.Float,
+    },
+    impl: () => new brs.types.Float((performance.now() - startedAt) / 1000),
+});
+const originalDefine = Environment.prototype.define;
+Environment.prototype.define = function (scope, name, value) {
+    originalDefine.call(this, scope, name, value);
+    if (name === '_brs_') originalDefine.call(this, scope, 'UpTime', upTime);
+};
+
 // Execute production functions after BrighterScript transpilation. Only the
 // device registry and authentication context are replaced with deterministic fixtures.
 const selections = {
     'source/utils/serverCompatibility.bs': null,
     'source/utils/accentFolding.bs': null,
+    'source/utils/startupPrefetch.bs': null,
     'source/utils/libraryFilters.bs': null,
     'source/utils/itemMenu.bs': null,
     'source/utils/logRedaction.bs': null,
@@ -105,6 +123,7 @@ const selections = {
     'source/utils/moonbaseInstall.bs': null,
     'source/utils/watchPartyModel.bs': null,
     'source/utils/recentRows.bs': null,
+    'source/utils/homeCache.bs': null,
     'components/settings/SettingsLivePreview.bs': ['headerLayout', 'navbarButtons', 'inLibraryOrder', 'optionRange', 'optionsFit', 'playerMoment', 'drawsHomeRows', 'sampleReleaseShows', 'seerrStyleOf', 'homeBlur', 'followerTarget'],
     'components/settings/SettingsPlayerPreview.bs': ['arrangedOsdButtons', 'osdTimeText', 'clockAt', 'subtitleBottom', 'seekBarY', 'timeRowShows', 'promptAt', 'segmentSpan', 'scrubPauses'],
     'components/calendar/calendarHost.bs': ['calendarUsePrefs'],
@@ -133,7 +152,7 @@ const selections = {
     'components/ItemGrid/LoadItemsTask2.bs': ['getTargetImageURL', 'getTargetServerUrl', 'isUsingRemoteServer'],
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting', 'settingOr', 'getSavedUsers', 'savedUserFirst'],
-    'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'isLocalhost', 'isSupportedMediaServer', 'isSiloSystemInfo', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'collectionGroups', 'collectionLabel', 'nearsCollectionEnd', 'collectionPeople', 'shuffleArray'],
+    'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'sessionNow', 'storeSession', 'serverIdentityNow', 'reusableOnTask', 'isLocalhost', 'isSupportedMediaServer', 'isSiloSystemInfo', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'collectionGroups', 'collectionLabel', 'nearsCollectionEnd', 'collectionPeople', 'shuffleArray'],
     'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
@@ -151,7 +170,7 @@ const selections = {
     'source/utils/parsedUrl.bs': ['ParsedUrl', '__ParsedUrl_ToString'],
     'source/utils/plexUrls.bs': null,
     'source/api/plex/PlexMapper.bs': null,
-    'source/api/baserequest.bs': ['plexServerURL', 'plexAnswer', 'plexAnswered', 'plexAnswerText', 'buildParams', 'buildServerURL', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer', 'APIRequest', 'APIRequestForServer', 'authRequest', 'authRequestForServer', 'setCertificateAuthority', 'getJson', 'noteAccessRefused', 'noteRefusalIn', 'postPlaybackInfo', 'requestCanceled'],
+    'source/api/baserequest.bs': ['plexServerURL', 'plexAnswer', 'plexAnswered', 'plexAnswerText', 'buildParams', 'buildServerURL', 'buildURL', 'buildURLForServer', 'buildAuthHeader', 'buildAuthHeaderForServer', 'APIRequest', 'APIRequestForServer', 'authRequest', 'authRequestForServer', 'setCertificateAuthority', 'getJson', 'homeLoadPath', 'noteAccessRefused', 'noteRefusalIn', 'postPlaybackInfo', 'requestCanceled'],
 };
 let source = 'namespace bslib\n' + bslib.source + '\nend namespace\n' + await readFile('source/enums/String.bs', 'utf8');
 for (const [file, names] of Object.entries(selections)) {
@@ -166,6 +185,8 @@ for (const [file, names] of Object.entries(selections)) {
         }
     }
 }
+// The Home load log only prints, behind a manifest constant this build has no manifest for
+source += '\nnamespace homeLoadLog\n    sub Log(message as string)\n    end sub\nend namespace\n';
 source += '\n' + (await readFile('source/ShowScenes.bs', 'utf8')).match(/^const minimumServerVersion = .+$/m)[0];
 source += '\n' + (await readFile('components/details/QuickLookItemDetails.bs', 'utf8')).match(/^const QL_MAX_BUTTONS = .+$/m)[0];
 source += '\n' + (await readFile('components/settings/SettingsPlayerPreview.bs', 'utf8')).match(/^const \w+ = .+$/gm).join('\n');
@@ -226,6 +247,7 @@ for (const name of ['Context', 'WordSet', 'ItemIdOf', 'Shown', 'Entry', 'SizeFac
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/poster-labels.bs', 'utf8');
+source += '\n' + await readFile('test/home-cache.bs', 'utf8');
 source += '\n' + await readFile('test/transcode-audio.bs', 'utf8');
 source += '\n' + await readFile('test/person-role.bs', 'utf8');
 source += '\n' + await readFile('test/episode-cast.bs', 'utf8');
@@ -935,7 +957,7 @@ assert.match(settingsSyncSource.match(/function HomeSectionsPayload\([^]*?end fu
 assert.match(settingsSyncSource, /\{ pluginKey: "mdblistApiKey", rokuKey: "plugin\.mdblist\.apiKey", type: "direct", skipRegistry: true, receiveOnly: true \}/, 'The MDBList key is only read');
 assert.match(await readFile('components/settings/settings.bs', 'utf8'), /profile\.Append\(settingsSync\.LegacyRowSwitches\(\)\)/, 'The old row switches follow the layout for older app versions');
 const loadItemsSource = await readFile('components/home/LoadItemsTask.bs', 'utf8');
-assert.match(loadItemsSource, /startsWith\("plugindynamic:"\)\s+m\.top\.content = posterLabels\.Attach\(parentalControls\.WithoutUnratedOrBlockedItems\(/, 'Chart rows drop unrated titles once a rating is blocked');
+assert.match(loadItemsSource, /startsWith\("plugindynamic:"\)\s+m\.top\.content = withLabels\(parentalControls\.WithoutUnratedOrBlockedItems\(/, 'Chart rows drop unrated titles once a rating is blocked');
 assert.match(loadItemsSource, /startsWith\("seerr_"\)\s+m\.top\.content = parentalControls\.WithoutBlockedItems\(/, 'Seerr rows keep the usual filter');
 assert.match(loadItemsSource.match(/function loadSeasonalRow\([^]*?end function/)[0], /WithoutBlockedItems\(owned\)[^]*?WithoutUnratedOrBlockedItems\(suggestions\)/, 'Owned titles keep the usual filter and suggestions the strict one');
 assert.match(loadItemsSource.match(/function loadSeasonalRow\([^]*?end function/)[0], /seasonalRow\.ALL_YEAR_SETTING, false\) then params\.allYear = "true"/, 'Show All Year asks the plugin for a row outside the holiday dates');
@@ -1020,8 +1042,9 @@ assert.match(reloadSettings.match(/sub dismissPanel\([^]*?end sub/)[0], /if m\.h
 assert.match(await readFile('source/Main.bs', 'utf8'), /homeNeedsReload: false,/, 'The pending Home reload starts off');
 const homeShown = (await readFile('components/home/Home.bs', 'utf8')).match(/sub OnScreenShown\([^]*?^end sub/m)[0];
 assert.match(homeShown, /needsRowReload = chainLookupReturn\(m\.global, "homeNeedsReload", false\)\s+if needsRowReload then m\.global\.homeNeedsReload = false\s+if not m\.isFirstRun/, 'Home clears the pending reload when it shows, first run included');
-assert.match(homeShown, /if needsRowReload[^]*?reload\(\)\s+else if not _isReturning or needsPlaybackRefresh\s+refresh\(\)/, 'Home builds its rows from scratch for the pending reload instead of refreshing them');
-process.stdout.write(`PASS: Home reload settings wiring (${homeRowSettingNames.length + reloadList.length + 10} checks)\n`);
+assert.match(homeShown, /if needsRowReload[^]*?reload\(\)\s+else if needsPlaybackRefresh[^]*?refresh\(\)/, 'Home builds its rows from scratch for the pending reload instead of refreshing them');
+assert.match(homeShown, /else if not _isReturning[^]*?applyRowChrome\(\)\s+end if/, 'The launch push leaves the rows to the build loadLibraries started, so they are built once');
+process.stdout.write(`PASS: Home reload settings wiring (${homeRowSettingNames.length + reloadList.length + 11} checks)\n`);
 
 // A picked collection row asks for its members alone, follows a stored Playlist Order and opens
 // a series into its episodes in order when asked
@@ -1343,7 +1366,7 @@ assert.match(await readFile('components/home/Home.xml', 'utf8'), /<ModernFocusCa
 // Settings are stored flat, so a dotted path that splits the key never finds Prefer Thumbnails
 const homeRowsSource = await readFile('components/home/HomeRows.bs', 'utf8');
 assert.doesNotMatch(miscSource, /"user\.settings\.ui\.home\.preferThumbnails"/, 'Prefer Thumbnails is read by its flat key');
-assert.match(miscSource, /chainLookupReturn\(m\.global\.session, "user\.settings\.`ui\.home\.preferThumbnails`", false\)/, 'Prefer Thumbnails has one reader');
+assert.match(miscSource, /chainLookupReturn\(sessionNow\(\), "user\.settings\.`ui\.home\.preferThumbnails`", false\)/, 'Prefer Thumbnails has one reader');
 // Every row's cards take Core's sizes and the art for the row's image type in one place
 assert.doesNotMatch(homeRowsSource, /usePoster = not prefersThumbnails\(\)|imageWidth = row\.imageWidth/, 'No row picks its own card size or art');
 assert.match(homeRowsSource.match(/sub layOutRow\([^]*?end sub/)[0], /imageType = homeCards\.RowImageType\(rowId, musicRow\)/, 'A Classic row takes its image type');
@@ -1552,7 +1575,7 @@ assert.match(mediaBarTaskWiring, /parentIds = filterIdsBySelection\(libraryIds, 
 for (const file of ['components/JFOverhang.bs', 'components/Sidebar.bs']) {
     assert.match(await readFile(file, 'utf8'), /callFunc\("getActiveScene"\)\?\.subtype\(\), "Home"\)\s+m\.top\.itemSelected = "homeAgain"/, `${file} tells Home it was pressed on Home`);
 }
-assert.match(await readFile('components/home/Home.bs', 'utf8'), /selectedItem = "homeAgain"\s+m\.homeRows\.callFunc\("updateHomeRows"\)\s+if isValid\(m\.mediaBar\) then m\.mediaBar\.callFunc\("drawNewSet"\)/, 'Home pressed on Home draws a new media bar set');
+assert.match(await readFile('components/home/Home.bs', 'utf8'), /selectedItem = "homeAgain"\s+(?:homeLoadLog\.Log\([^\n]*\)\s+)?m\.homeRows\.callFunc\("updateHomeRows"\)\s+if isValid\(m\.mediaBar\) then m\.mediaBar\.callFunc\("drawNewSet"\)/, 'Home pressed on Home draws a new media bar set');
 const mediaBarWiring = await readFile('components/home/MediaBar.bs', 'utf8');
 assert.match(mediaBarWiring, /if newSet and allItems\.count\(\) = 0 then return/, 'An empty new set keeps the one showing');
 assert.match(mediaBarWiring, /if item\.id <> m\.failedBannerId then art = bannerArtUrl\(item\)/, 'Banner art that failed falls back to the backdrop');

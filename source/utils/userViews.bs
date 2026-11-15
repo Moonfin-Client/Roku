@@ -1,0 +1,82 @@
+import "pkg:/source/api/baserequest.bs"
+import "pkg:/source/api/sdk.bs"
+import "pkg:/source/utils/homeLoadLog.bs"
+import "pkg:/source/utils/misc.bs"
+
+' The user's libraries (/UserViews), fetched once and shared by the nav, the Home rows and the media
+' bar. All three ask for them within moments of launch, so without this the server gets the same
+' request three times. Only called from Task threads: the memo lives on m.global and is shared across
+' threads, and a task that finds another task already fetching waits for that result instead of asking again.
+namespace userViews
+    ' Views change rarely, so a minute of reuse covers a Home load without showing stale libraries for long
+    const MAX_AGE_MS = 60000
+
+    ' How long a task waits on another task's fetch before fetching itself
+    const WAIT_MS = 5000
+
+    function Get(userId as string) as dynamic
+        scope = toString(get_url()) + "|" + userId
+
+        ' Each read of m.global from a task is an expensive cross-thread call, so read it once. A memo
+        ' that is empty or missing is replaced with an empty AA, so its keys read as invalid, not as a crash.
+        memo = m.global.userViewsMemo
+        if type(memo) <> "roAssociativeArray" then memo = {}
+        now = Int(UpTime(0) * 1000)
+
+        ' Nested ifs: BrightScript doesn't stop an "and" early, so arithmetic on a missing value would still run
+        if isStringEqual(memo.scope, scope) and isValid(memo.data) and isValid(memo.at)
+            if now - memo.at < MAX_AGE_MS
+                homeLoadLog.Log("views memo hit")
+                return memo.data
+            end if
+        end if
+
+        if isStringEqual(memo.scope, scope) and isValid(memo.pendingAt)
+            if now - memo.pendingAt < WAIT_MS
+                ' Told when the other fetch stores its answer, rather than asking the global node over and
+                ' over: each ask waits on the render thread, which is busiest while Home starts
+                waitStart = now
+                port = CreateObject("roMessagePort")
+                m.global.observeFieldScoped("userViewsMemo", port)
+                ' It may have landed before the observer was in place
+                memo = m.global.userViewsMemo
+                while true
+                    if type(memo) <> "roAssociativeArray" then memo = {}
+                    if isStringEqual(memo.scope, scope) and isValid(memo.data)
+                        m.global.unobserveFieldScoped("userViewsMemo")
+                        homeLoadLog.Log("views memo waited " + (Int(UpTime(0) * 1000) - waitStart).ToStr() + "ms")
+                        return memo.data
+                    end if
+                    ' The pending marker is gone when the other fetch failed
+                    if not isStringEqual(memo.scope, scope) or not isValid(memo.pendingAt) then exit while
+                    left = WAIT_MS - (Int(UpTime(0) * 1000) - waitStart)
+                    if left <= 0 then exit while
+                    msg = wait(left, port)
+                    if type(msg) <> "roSGNodeEvent" then exit while
+                    memo = msg.getData()
+                end while
+                m.global.unobserveFieldScoped("userViewsMemo")
+            end if
+        end if
+
+        fetchStart = Int(UpTime(0) * 1000)
+        m.global.userViewsMemo = { scope: scope, pendingAt: fetchStart }
+        homeLoadLog.Log("views fetch")
+
+        data = api.GetUserViews({ "userId": userId })
+        if isChainValid(data, "items")
+            fetchEnd = Int(UpTime(0) * 1000)
+            m.global.userViewsMemo = { scope: scope, at: fetchEnd, data: data }
+            homeLoadLog.Log("views fetched " + (fetchEnd - fetchStart).ToStr() + "ms")
+        else
+            ' Clear the pending marker so a waiting task fetches instead of timing out
+            m.global.userViewsMemo = {}
+        end if
+
+        return data
+    end function
+
+    sub Forget()
+        m.global.userViewsMemo = {}
+    end sub
+end namespace

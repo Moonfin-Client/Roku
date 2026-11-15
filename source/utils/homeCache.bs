@@ -1,0 +1,177 @@
+import "pkg:/source/utils/misc.bs"
+
+' A launch cache for Home rows. Each row's items are saved as JSON in cachefs, which is RAM-backed:
+' it survives the app closing but goes when the device reboots or runs low on memory, so every read
+' checks the file is there first. The next launch paints these rows at once, then fresh rows replace them.
+namespace homeCache
+    const ROOT = "cachefs:/homeRows"
+    ' Three days, the same as Moonfin Core
+    const MAX_AGE_SECONDS = 259200
+    ' The itemsToLoad values whose rows are built from item JSON alone. Rows that need a live query
+    ' or a node's own state stay out of the cache.
+    const CACHEABLE_ROWS = "continue mergedContinueWatching nextUp continueListening latest recentlyReleased favorites mylist"
+
+    ' Turns anything that isn't a letter or digit into an underscore, so the text is safe in a file name
+    function SafeName(text as string) as string
+        safe = ""
+        for i = 1 to Len(text)
+            code = Asc(Mid(text, i, 1))
+            isLetterOrDigit = (code >= 48 and code <= 57) or (code >= 65 and code <= 90) or (code >= 97 and code <= 122)
+            if isLetterOrDigit
+                safe = safe + Mid(text, i, 1)
+            else
+                safe = safe + "_"
+            end if
+        end for
+        ' Long titles would make file names the device can't open
+        return Left(safe, 80)
+    end function
+
+    ' One folder per server and user, so two accounts never see each other's rows
+    function Dir(serverUrl as string, userId as string) as string
+        return ROOT + "/" + SafeName(LCase(serverUrl) + "_" + userId)
+    end function
+
+    ' The row id comes first so two rows with the same title still get separate files
+    function FileName(rowId as string, title as string) as string
+        return SafeName(LCase(rowId) + "_" + title) + ".json"
+    end function
+
+    function Cacheable(itemsToLoad as string) as boolean
+        for each word in CACHEABLE_ROWS.Split(" ")
+            if word = itemsToLoad then return true
+        end for
+        return false
+    end function
+
+    ' The saved JSON for one row. The key ties the file to the layout it was built for.
+    function Record(cacheRow as object, items as object, seconds as integer, itemsSig = "" as string) as object
+        order = 0
+        if isValid(cacheRow.order) then order = cacheRow.order
+        return { key: cacheRow.key, at: seconds, id: cacheRow.id, title: cacheRow.title, order: order, items: items, sig: itemsSig }
+    end function
+
+    ' A fingerprint of a row's items. A fresh row with the same one as its saved copy keeps the cards
+    ' already drawn from that copy, so the render thread doesn't draw them all again.
+    function Signature(items as object) as string
+        digest = CreateObject("roEVPDigest")
+        digest.Setup("md5")
+        bytes = CreateObject("roByteArray")
+        bytes.FromAsciiString(FormatJson(items))
+        return digest.Process(bytes)
+    end function
+
+    ' The fingerprint saved with a row, or "" when there is no fresh saved copy of it
+    function SavedSignature(cacheRow as dynamic) as string
+        if type(cacheRow) <> "roAssociativeArray" then return ""
+        if not isText(cacheRow.dir) or not isText(cacheRow.key) then return ""
+        if not isText(cacheRow.id) or not isText(cacheRow.title) then return ""
+        path = cacheRow.dir + "/" + FileName(cacheRow.id, cacheRow.title)
+        if not CreateObject("roFileSystem").Exists(path) then return ""
+        saved = ParseJson(ReadAsciiFile(path))
+        if not IsFresh(saved, cacheRow.key, NowSeconds()) then return ""
+        if not isText(saved.sig) then return ""
+        return saved.sig
+    end function
+
+    ' Whether a saved row can still be shown. Anything missing or odd is rejected, so a damaged file
+    ' is treated the same as an old one.
+    function IsFresh(saved as dynamic, key as string, seconds as integer) as boolean
+        if type(saved) <> "roAssociativeArray" then return false
+        if not isText(key) then return false
+        if not isText(saved.key) then return false
+        if saved.key <> key then return false
+        if not IsInteger(saved.at) then return false
+        age = seconds - saved.at
+        if age < 0 or age > MAX_AGE_SECONDS then return false
+        if not isText(saved.id) or not isText(saved.title) then return false
+        return isValidAndNotEmpty(saved.items) and type(saved.items) = "roArray"
+    end function
+
+    ' Returns a new array sorted by order. Insertion sort keeps equal orders in the order they came in.
+    function SortRecords(records as object) as object
+        sorted = []
+        for each entry in records
+            sorted.Push(entry)
+            i = sorted.Count() - 1
+            while i > 0
+                previous = sorted[i - 1]
+                current = sorted[i]
+                if previous.order <= current.order then exit while
+                sorted[i - 1] = current
+                sorted[i] = previous
+                i = i - 1
+            end while
+        end for
+        return sorted
+    end function
+
+    function NowSeconds() as integer
+        return CreateObject("roDateTime").AsSeconds()
+    end function
+
+    ' Saves one row. Empty items remove the file, so a row that loaded nothing doesn't come back next launch.
+    sub WriteRow(cacheRow as dynamic, items as object, itemsSig = "" as string)
+        if type(cacheRow) <> "roAssociativeArray" then return
+        if not isText(cacheRow.dir) or not isText(cacheRow.key) then return
+        if not isText(cacheRow.id) or not isText(cacheRow.title) then return
+        ' The cache is best effort. The device's file calls report failure through their return values,
+        ' so a failed write only means the next launch starts that row empty.
+        path = cacheRow.dir + "/" + FileName(cacheRow.id, cacheRow.title)
+        if not isValidAndNotEmpty(items)
+            DeleteFile(path)
+            return
+        end if
+        files = CreateObject("roFileSystem")
+        if not files.Exists(ROOT) then CreateDirectory(ROOT)
+        if not files.Exists(cacheRow.dir) then CreateDirectory(cacheRow.dir)
+        WriteAsciiFile(path, FormatJson(Record(cacheRow, items, NowSeconds(), itemsSig)))
+    end sub
+
+    ' Every fresh row saved in folder, sorted by order. Stale or damaged files are deleted as they're found.
+    function ReadRows(folder as string, key as string) as object
+        fresh = []
+        files = CreateObject("roFileSystem")
+        if not files.Exists(folder) then return fresh
+        now = NowSeconds()
+        for each name in ListDir(folder)
+            ' A damaged file parses to invalid, which IsFresh rejects, so it is deleted like a stale one
+            if LCase(Right(name, 5)) = ".json"
+                path = folder + "/" + name
+                saved = ParseJson(ReadAsciiFile(path))
+                if IsFresh(saved, key, now)
+                    fresh.Push(saved)
+                else
+                    DeleteFile(path)
+                end if
+            end if
+        end for
+        return homeCache.SortRecords(fresh)
+    end function
+
+    ' Removes the saved file for one row
+    sub Remove(folder as string, rowId as string, title as string)
+        if not isText(folder) or not isText(rowId) or not isText(title) then return
+        DeleteFile(folder + "/" + FileName(rowId, title))
+    end sub
+
+    ' Removes every saved row for one server and user
+    sub Clear(folder as string)
+        if not isText(folder) then return
+        files = CreateObject("roFileSystem")
+        if not files.Exists(folder) then return
+        for each name in ListDir(folder)
+            DeleteFile(folder + "/" + name)
+        end for
+    end sub
+
+    ' Non-empty strings only. Anything else (invalid, numbers, arrays) is refused.
+    function isText(value as dynamic) as boolean
+        return isString(value) and isValidAndNotEmpty(value)
+    end function
+
+    function IsInteger(value as dynamic) as boolean
+        kind = LCase(type(value))
+        return kind = "rointeger" or kind = "integer"
+    end function
+end namespace

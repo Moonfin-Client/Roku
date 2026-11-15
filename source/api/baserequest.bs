@@ -1,8 +1,10 @@
 import "pkg:/source/api/silo/SiloImages.bs"
 import "pkg:/source/api/silo/SiloRouter.bs"
 import "pkg:/source/utils/diagnostics.bs"
+import "pkg:/source/utils/homeLoadLog.bs"
 import "pkg:/source/utils/plexUrls.bs"
 import "pkg:/source/utils/serverCompatibility.bs"
+import "pkg:/source/utils/startupPrefetch.bs"
 ' Functions for making requests to the API
 function buildParams(params = {} as object) as string
     ' Take an object of parameters and construct the URL query
@@ -179,37 +181,68 @@ function plexAnswerText(answer as object) as string
     return FormatJson(answer.data)
 end function
 
+' The request path for the Home load log: scheme, host and query are cut off
+' (a query can hold tokens), so "https://host/a/b?token=x" logs as "/a/b"
+function homeLoadPath(url as string) as string
+    slashAt = 0
+    for i = 1 to 3
+        slashAt = Instr(slashAt + 1, url, "/")
+        if slashAt = 0 then return ""
+    end for
+    path = Mid(url, slashAt)
+    q = Instr(1, path, "?")
+    if q > 0 then path = Left(path, q - 1)
+    return path
+end function
+
 ' APIRequest hands back invalid when there is no server to build a URL against,
 ' so callers can reach here before a server has been picked
 function getJson(req)
-    if silo.Owns(req) then return siloResponse(req, "GET").data
+    if silo.Owns(req) then return siloResponse(req, "GET", invalid, false).data
     if req = invalid then return invalid
     plex = plexAnswer(req, "GET")
     if plex <> invalid then return plex.data
 
     started = diagnostics.StartTrace("GET", req)
-    data = req.GetToString()
+    path = homeLoadPath(req.GetUrl())
+    netStart = Int(UpTime(0) * 1000)
+    url = req.GetUrl()
+    startupPrefetch.Note(url)
+    prefetched = startupPrefetch.Take(url)
+    if isValid(prefetched)
+        data = prefetched.GetString()
+        if prefetched.GetResponseCode() = 403 then noteAccessRefused()
+        path = path + " (prefetched)"
+    else
+        data = req.GetToString()
+    end if
+    netMs = Int(UpTime(0) * 1000) - netStart
 
     if data = invalid or data = ""
         noteRefusalIn(req)
+        homeLoadLog.Log("GET " + path + " net " + netMs.ToStr() + "ms no body")
         diagnostics.EndTrace(started, "no body", diagnostics.LEVEL_WARN)
         return invalid
     end if
 
+    parseStart = Int(UpTime(0) * 1000)
     json = ParseJson(data)
+    parseMs = Int(UpTime(0) * 1000) - parseStart
     if json = invalid
         noteRefusalIn(req)
+        homeLoadLog.Log("GET " + path + " net " + netMs.ToStr() + "ms parse " + parseMs.ToStr() + "ms unparseable " + Len(data).ToStr() + "B")
         diagnostics.EndTrace(started, "unparseable", diagnostics.LEVEL_WARN)
         return invalid
     end if
 
+    homeLoadLog.Log("GET " + path + " net " + netMs.ToStr() + "ms parse " + parseMs.ToStr() + "ms " + Len(data).ToStr() + "B")
     diagnostics.EndTrace(started, "ok")
     return json
 end function
 
 ' getJson for a lookup that is only worth a short wait
 function getJsonWithin(req, timeoutMs as integer) as dynamic
-    if silo.Owns(req) then return siloResponse(req, "GET").data
+    if silo.Owns(req) then return siloResponse(req, "GET", invalid, false).data
     if req = invalid then return invalid
     plex = plexAnswer(req, "GET", "", timeoutMs)
     if plex <> invalid then return plex.data
@@ -240,7 +273,7 @@ function getJsonWithin(req, timeoutMs as integer) as dynamic
 end function
 
 function postVoid(req, data = "" as string) as boolean
-    if silo.Owns(req) then return siloResponse(req, "POST", data).ok
+    if silo.Owns(req) then return siloResponse(req, "POST", data, false).ok
     plex = plexAnswer(req, "POST", data)
     if plex <> invalid then return plexAnswered(plex)
     started = diagnostics.StartTrace("POST", req)
@@ -264,7 +297,7 @@ function postVoid(req, data = "" as string) as boolean
 end function
 
 function headVoid(req) as boolean
-    if silo.Owns(req) then return siloResponse(req, "GET").ok
+    if silo.Owns(req) then return siloResponse(req, "GET", invalid, false).ok
     started = diagnostics.StartTrace("HEAD", req)
     req.setMessagePort(CreateObject("roMessagePort"))
     req.AddHeader("Content-Type", "application/json")
@@ -286,7 +319,7 @@ function headVoid(req) as boolean
 end function
 
 function getVoid(req) as boolean
-    if silo.Owns(req) then return siloResponse(req, "GET").ok
+    if silo.Owns(req) then return siloResponse(req, "GET", invalid, false).ok
     started = diagnostics.StartTrace("GET", req)
     req.setMessagePort(CreateObject("roMessagePort"))
     req.AddHeader("Content-Type", "application/json")
@@ -309,7 +342,7 @@ function getVoid(req) as boolean
 end function
 
 function postJson(req, data = "" as string)
-    if silo.Owns(req) then return siloResponse(req, "POST", data).data
+    if silo.Owns(req) then return siloResponse(req, "POST", data, false).data
     plex = plexAnswer(req, "POST", data)
     if plex <> invalid then return plex.data
     started = diagnostics.StartTrace("POST", req)
@@ -337,7 +370,7 @@ function postJson(req, data = "" as string)
 end function
 
 function deleteVoid(req)
-    if silo.Owns(req) then return siloResponse(req, "DELETE").ok
+    if silo.Owns(req) then return siloResponse(req, "DELETE", invalid, false).ok
     plex = plexAnswer(req, "DELETE")
     if plex <> invalid then return plexAnswered(plex)
     started = diagnostics.StartTrace("DELETE", req)
@@ -454,8 +487,8 @@ function getAuthTokenFromRegistry() as dynamic
         end if
     end if
 
-    if isValid(m) and isChainValid(m, "global.session.user.authToken")
-        authToken = chainLookupReturn(m, "global.session.user.authToken", invalid)
+    if isValid(m) and isChainValid(sessionNow(), "user.authToken")
+        authToken = chainLookupReturn(sessionNow(), "user.authToken", invalid)
         if isValidAndNotEmpty(authToken)
             return authToken
         end if
@@ -531,8 +564,11 @@ function getAuthHeaderContext() as object
         authToken: invalid
     }
 
+    ' A thread that already holds the identity never asks the global node again
+    heldOnThread = identityIsComplete(context)
     applyGlobalIdentity(context)
     applyDeviceIdentity(context)
+    if not heldOnThread and identityIsComplete(context) then rememberIdentityOnThread(context)
 
     fillIdentity(context, "appName", "Moonfin")
     fillIdentity(context, "appVersion", "0.0.0")
@@ -556,6 +592,19 @@ end sub
 function identityIsComplete(context as object) as boolean
     return isValidAndNotEmpty(context.appName) and isValidAndNotEmpty(context.appVersion) and isValidAndNotEmpty(context.deviceName) and isValidAndNotEmpty(context.deviceModel) and isValidAndNotEmpty(context.deviceId)
 end function
+
+' Each task thread asked the global node for the same identity on every request, and each read
+' waits for the render thread. Keeping the real values in this thread's GetGlobalAA lets
+' applyGlobalIdentity and applyDeviceIdentity return early from the next request on.
+sub rememberIdentityOnThread(context as object)
+    runtimeContext = GetGlobalAA()
+    if not isValid(runtimeContext) then return
+    runtimeContext["moonfin.appName"] = context.appName
+    runtimeContext["moonfin.appVersion"] = context.appVersion
+    runtimeContext["moonfin.deviceName"] = context.deviceName
+    runtimeContext["moonfin.deviceModel"] = context.deviceModel
+    runtimeContext["moonfin.deviceId"] = context.deviceId
+end sub
 
 ' Every thread keeps its own GetGlobalAA, so what the main thread stored there is
 ' invisible to a task. Without this a task reports itself as a different device
@@ -743,7 +792,7 @@ end sub
 function requestResponse(req as object, method = "GET" as string, body = "" as string, timeoutMs = 30000 as integer, cancelNode = invalid as dynamic) as object
     if req = invalid then return { status: 0, data: invalid }
     if silo.Owns(req)
-        answer = siloResponse(req, method, body)
+        answer = siloResponse(req, method, body, false)
         return { status: answer.status, data: answer.data }
     end if
     if requestCanceled(cancelNode) then return { status: 0, data: invalid }
@@ -778,13 +827,17 @@ end function
 
 ' A request for a Silo server is answered by the Silo router instead of being sent. A method the
 ' caller set on the request wins over the helper's own
-function siloResponse(req as object, method as string, body = invalid as dynamic) as object
+' withText false skips the FormatJson for callers that only read the data
+function siloResponse(req as object, method as string, body = invalid as dynamic, withText = true as boolean) as object
     requested = UCase(req.GetRequest() ?? "")
     if requested <> "" and requested <> "GET" then method = requested
+    respondStart = Int(UpTime(0) * 1000)
     answer = silo.Respond(method, req.GetUrl(), body)
+    respondMs = Int(UpTime(0) * 1000) - respondStart
+    homeLoadLog.Log("silo respond " + silo.PathOf(req.GetUrl()) + " in " + respondMs.ToStr() + "ms")
     ok = answer.status >= 200 and answer.status < 300
     text = ""
-    if ok and answer.data <> invalid then text = FormatJson(answer.data)
+    if withText and ok and answer.data <> invalid then text = FormatJson(answer.data)
     data = invalid
     if ok then data = answer.data
     return { ok: ok, status: answer.status, data: data, text: text }
