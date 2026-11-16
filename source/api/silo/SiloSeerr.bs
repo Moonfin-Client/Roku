@@ -316,57 +316,44 @@ namespace silo
     end function
 
     ' People. Silo's request cast has no person ids, so a cast member's id is made from their name.
-    ' Each Seerr request runs on its own task, so the names and photos behind the ids a title's cast
-    ' got are kept on a node of the global node, one field each, for the person screen asking next
+    ' Each Seerr request runs on its own task, so the name, photo and library match behind each id are
+    ' kept on a node of the global node, a field each, which a title writes without reading them first
     function SeerrPeopleStore() as dynamic
         if type(m.global) <> "roSGNode" then return invalid
-        if not m.global.hasField("siloSeerrPeople") then m.global.addFields({ siloSeerrPeople: CreateObject("roSGNode", "Node") })
         return m.global.siloSeerrPeople
     end function
 
+    ' A photo is only ever added, so someone without one on this title keeps the one they had
     sub RememberSeerrPeople(cast as object, crew as object)
         store = silo.SeerrPeopleStore()
         if store = invalid then return
         fields = {}
         for each list in [cast, crew]
             for each member in list
-                field = "p_" + member.id.ToStr()
-                photo = member.profilePath
-                ' Someone in the crew as well keeps their photo from the cast
-                if not isString(photo) and fields[field] <> invalid then photo = fields[field].profilePath
-                known = silo.KnownSeerrPerson(member.id.ToStr())
-                if not isString(photo) then photo = known.profilePath
-                entry = { name: member.name, profilePath: photo }
-                ' The library person found before stays, so the person screen doesn't search again
-                if isString(known.libraryId) then entry.libraryId = known.libraryId
-                fields[field] = entry
+                id = member.id.ToStr()
+                fields["n_" + id] = member.name
+                if isString(member.profilePath) then fields["i_" + id] = member.profilePath
             end for
         end for
-        if fields.Count() > 0 then store.update(fields, true)
+        store.update(fields, true)
     end sub
 
     function KnownSeerrPerson(personId as string) as object
         store = silo.SeerrPeopleStore()
-        if store <> invalid
-            person = store.getField("p_" + personId)
-            if type(person) = "roAssociativeArray" then return person
-        end if
-        return { name: "", profilePath: invalid }
+        if store = invalid then return { name: "", profilePath: invalid, library: invalid }
+        return { name: store.getField("n_" + personId) ?? "", profilePath: store.getField("i_" + personId), library: store.getField("l_" + personId) }
     end function
 
     ' The library person with exactly this cast member's name, case aside, or "". Only a find is kept,
-    ' so a search that was down or a person added since is asked about again
-    function LibraryPersonId(r as object, personId as string) as string
-        known = silo.KnownSeerrPerson(personId)
-        if isString(known.libraryId) then return known.libraryId
-        name = known.name
-        if name = "" then return ""
-        for each person in silo.SearchPeople(r, name, 10).Items
-            if LCase(person.Name) = LCase(name)
-                known.libraryId = person.Id
-                update = {}
-                update["p_" + personId] = known
-                silo.SeerrPeopleStore().update(update, true)
+    ' with its server, so a search that was down, a person added since or another server asks again
+    function LibraryPersonId(r as object, personId as string, known as object) as string
+        if type(known.library) = "roAssociativeArray" and known.library.server = r.server then return known.library.id
+        if known.name = "" then return ""
+        for each person in silo.SearchPeople(r, known.name, 10).Items
+            if LCase(person.Name) = LCase(known.name)
+                found = {}
+                found["l_" + personId] = { server: r.server, id: person.Id }
+                silo.SeerrPeopleStore().update(found, true)
                 return person.Id
             end if
         end for
@@ -377,7 +364,7 @@ namespace silo
     function SeerrPerson(r as object, personId as string) as object
         known = silo.KnownSeerrPerson(personId)
         out = { id: personId.ToInt(), name: known.name, profilePath: known.profilePath }
-        libraryId = silo.LibraryPersonId(r, personId)
+        libraryId = silo.LibraryPersonId(r, personId, known)
         if libraryId = "" then return out
         person = silo.PersonById(r, libraryId)
         if person = invalid then return out
@@ -392,7 +379,7 @@ namespace silo
     ' Their posters are the library's own
     function SeerrPersonCredits(r as object, personId as string) as object
         out = { cast: [], crew: [] }
-        libraryId = silo.LibraryPersonId(r, personId)
+        libraryId = silo.LibraryPersonId(r, personId, silo.KnownSeerrPerson(personId))
         if libraryId = "" then return out
         titles = {}
         titles.Append(r)
