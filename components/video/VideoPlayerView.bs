@@ -68,6 +68,11 @@ sub init()
     m.mediaRuntime = 0
     m.top.observeField("availableAudioTracks", "applyChosenAudioTrack")
 
+    ' An administrator ending this playback on Silo closes the player
+    m.endedOnServer = false
+    if not m.global.hasField("siloPlaybackEnded") then m.global.addFields({ siloPlaybackEnded: "" })
+    m.global.observeFieldScoped("siloPlaybackEnded", "onSiloPlaybackEnded")
+
     ' Carries on through the rest of the queue, the way it does in the other clients
     m.subtitleOffset = m.global.queueManager.callFunc("getSubtitleOffset")
 
@@ -1357,6 +1362,35 @@ sub onPlaybackErrorDialogClosed(msg)
     m.global.sceneManager.callFunc("popScene")
 end sub
 
+' Whether Silo said an administrator ended the session this player is playing. A session the
+' player has moved on from (Next, another episode) closes nothing
+function isEndedOnServer() as boolean
+    ended = m.global.siloPlaybackEnded ?? ""
+    playing = m.top.PlaySessionId ?? ""
+    return ended <> "" and playing <> "" and playing.Split("~")[0] = ended
+end function
+
+sub onSiloPlaybackEnded()
+    if isEndedOnServer() then closeEndedOnServer()
+end sub
+
+' Stops at once, so no reload or retry asks for the stream again, and says why once
+sub closeEndedOnServer()
+    if m.endedOnServer then return
+    m.endedOnServer = true
+    m.global.unobserveFieldScoped("siloPlaybackEnded")
+    abandonLoad()
+    m.bufferCheckTimer.control = "stop"
+    stopLoadingSpinner()
+    ' The stop lets go of the ended session, so playing the item again starts a new one. A retry
+    ' that kept the session had held it back
+    m.suppressStopReport = false
+    ReportPlayback("stop")
+    m.suppressStopReport = true
+    m.top.control = VideoControl.STOP
+    showPlaybackErrorDialog(tr("Playback was ended on the Silo server."))
+end sub
+
 sub onPlaybackErrorButtonSelected(msg)
     sourceNode = msg.getRoSGNode()
     sourceNode.close = true
@@ -1403,6 +1437,7 @@ end sub
 ' still running, and would answer with what it was first asked, so a load still out is set aside
 ' and a fresh task carries this one.
 sub runLoad()
+    if m.endedOnServer then return
     if m.loadInFlight then replaceLoadTask()
     m.loadInFlight = true
     m.LoadMetaDataTask.observeField("content", "onVideoContentLoaded")
@@ -1577,6 +1612,10 @@ sub onVideoContentLoaded(event as object)
         end if
         if isValid(m.liveChannel)
             onLiveChannelLost()
+            return
+        end if
+        if isEndedOnServer()
+            closeEndedOnServer()
             return
         end if
         showPlaybackErrorDialog(tr("There was an error retrieving the data for this item from the server."))
@@ -2582,6 +2621,9 @@ sub onState()
             if action <> "fail"
                 m.playbackRetries = m.playbackRetries + 1
                 m.lastBufferError = currentTime
+                ' A Silo stream answering 410 may be a session an administrator ended. Its retry replans
+                ' that session rather than stopping it first, so Silo can say so, and one it still has goes on
+                if action = "server" and playsFromSilo() and Instr(1, m.top.errorStr ?? "", "last_err:410") > 0 then m.suppressStopReport = true
 
                 if action = "restart"
                     diagnostics.Playback(`Player error, restarting the stream, retry ${m.playbackRetries} of ${REPLAY_RETRIES}`, diagnostics.LEVEL_WARN)
@@ -2653,7 +2695,8 @@ sub onState()
         m.playbackTimer.control = "stop"
         ' A live stream has no end, so reaching one means the source starved, and the live recovery
         ' asks for the channel again
-        if not isValid(m.liveChannel) then ReportPlayback("stop")
+        ' A retry that keeps its Silo session is still under way, and the stopped state that follows clears it
+        if not isValid(m.liveChannel) and not m.suppressStopReport then ReportPlayback("stop")
         m.playReported = false
     end if
 

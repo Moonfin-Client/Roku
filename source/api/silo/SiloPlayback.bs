@@ -542,6 +542,11 @@ namespace silo
             ' saving it never takes the count back
             stored = sessions[sessionId]
             if type(stored) = "roAssociativeArray" and siloMap.IsNumber(stored.sequence) and stored.sequence > playing.sequence then playing.sequence = stored.sequence
+            ' nor brings back a playing an administrator ended meanwhile
+            if type(stored) = "roAssociativeArray" and stored.endedByServer = true
+                playing.ended = true
+                playing.endedByServer = true
+            end if
             sessions[sessionId] = playing
         end if
         m.global.siloPlayback = sessions
@@ -554,6 +559,41 @@ namespace silo
             if playing.itemId = itemId and playing.ended <> true then return playing
         end for
         return invalid
+    end function
+
+    ' Whether an administrator ended the playing of this title, which then isn't started again until
+    ' the player's stop lets it go
+    function EndedByServerOf(itemId as string) as boolean
+        sessions = silo.PlaybackSessions()
+        for each sessionId in sessions
+            playing = sessions[sessionId]
+            if playing.itemId = itemId and playing.endedByServer = true then return true
+        end for
+        return false
+    end function
+
+    ' Silo's answer once an administrator ended the playing. A 410 also retires an old API
+    ' (client_upgrade_required), and a 404 is a playing that expired, which starts again
+    function EndedByServer(answer as object) as boolean
+        return answer.status = 410 and isValid(answer.problem) and answer.problem.code = "playback_session_ended"
+    end function
+
+    ' Nothing plays this session again, and the player showing it closes with a message
+    sub MarkEndedByServer(playing as object)
+        diagnostics.Playback("Silo playback " + playing.sessionId + " was ended on the server", diagnostics.LEVEL_WARN)
+        playing.ended = true
+        playing.endedByServer = true
+        silo.SavePlaybackSession(playing, playing.sessionId)
+        ' The thread asking learns it too, since a failed answer reaches it without its body
+        m.siloEndedByServer = playing.sessionId
+        ' Silo counts the play an administrator ended, like a stop
+        silo.ForgetCatalog()
+        if not m.global.hasField("siloPlaybackEnded") then m.global.addFields({ siloPlaybackEnded: "" })
+        m.global.siloPlaybackEnded = playing.sessionId
+    end sub
+
+    function EndedAnswer() as object
+        return { status: 410, data: { ErrorCode: "SiloEnded", Message: tr("Playback was ended on the Silo server.") } }
     end function
 
     ' Network trouble, a timeout, a busy or failing server are worth asking again, waiting longer each time
@@ -685,18 +725,16 @@ namespace silo
         body = r.body
         if type(body) <> "roAssociativeArray" then body = {}
         owner = siloMap.ItemIdOfSource(itemId)
-        live = invalid
-        if owner <> ""
-            live = silo.LiveSessionOf(owner)
-        else
-            live = silo.LiveSessionOf(itemId)
-        end if
+        if owner = "" then owner = itemId
+        live = silo.LiveSessionOf(owner)
         ' The Playback Information panel asks with IsPlayback false: it reads the plan, it doesn't change it
         if LCase((r.query.LookupCI("IsPlayback") ?? "").ToStr()) = "false"
             if live = invalid then return silo.StatusOnly(404)
             return silo.PlayingAnswer(r, live, live.subtitleStreamIndex)
         end if
         if live <> invalid then return silo.Replan(r, live)
+        ' A seek, a track change or a retry after the stream failed doesn't undo an administrator's end
+        if silo.EndedByServerOf(owner) then return silo.EndedAnswer()
         return silo.StartPlayback(r, itemId, body)
     end function
 
@@ -895,6 +933,10 @@ namespace silo
         answer = silo.SendWithRetries(r, "POST", "/api/v2/playback/" + playing.sessionId.EncodeUriComponent() + "/replan", sent, silo.REPLAN_RETRY_MS, true)
         silo.Trace("play: replan answered " + answer.status.ToStr())
         if not answer.ok
+            if silo.EndedByServer(answer)
+                silo.MarkEndedByServer(playing)
+                return silo.EndedAnswer()
+            end if
             if answer.status = 404 or answer.status = 410 or (answer.status = 409 and isValid(answer.problem) and answer.problem.code = "installation_changed")
                 ' The playing is gone on Silo: this request starts a new one
                 silo.SavePlaybackSession(invalid, playing.sessionId)
@@ -964,7 +1006,9 @@ namespace silo
             if answer.ok then return silo.NoContent()
             if not (answer.status = 409 and isValid(answer.problem) and answer.problem.code = "progress_conflict") then exit for
         end for
-        if silo.SessionGone(answer)
+        if silo.EndedByServer(answer)
+            silo.MarkEndedByServer(playing)
+        else if silo.SessionGone(answer)
             playing.ended = true
             silo.SavePlaybackSession(playing, playing.sessionId)
         end if
