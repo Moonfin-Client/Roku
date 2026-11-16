@@ -20,6 +20,8 @@ namespace silo
     const START_RETRY_MS = 60000
     const REPLAN_RETRY_MS = 30000
     const STOP_RETRY_MS = 30000
+    ' Longer than a replan's retries, so a retry still out is refused too
+    const ENDED_HOLD_SECONDS = 60
     const START_TIMEOUT_MS = 45000
 
     function NewUuid() as string
@@ -535,12 +537,15 @@ namespace silo
 
     sub SavePlaybackSession(playing as dynamic, sessionId as string)
         sessions = silo.PlaybackSessions()
+        stored = sessions[sessionId]
         if playing = invalid
-            sessions.Delete(sessionId)
+            ' Kept as a mark, so a request still out for it can't save it back
+            sessions[sessionId] = { sessionId: sessionId, itemId: "", ended: true, released: true }
+        else if type(stored) = "roAssociativeArray" and stored.released = true
+            return
         else
             ' A replan holds its copy through a slow request while progress reports number on, so
             ' saving it never takes the count back
-            stored = sessions[sessionId]
             if type(stored) = "roAssociativeArray" and siloMap.IsNumber(stored.sequence) and stored.sequence > playing.sequence then playing.sequence = stored.sequence
             ' nor brings back a playing an administrator ended meanwhile
             if type(stored) = "roAssociativeArray" and stored.endedByServer = true
@@ -561,13 +566,13 @@ namespace silo
         return invalid
     end function
 
-    ' Whether an administrator ended the playing of this title, which then isn't started again until
-    ' the player's stop lets it go
-    function EndedByServerOf(itemId as string) as boolean
+    ' Whether an administrator just ended this profile's playing of this title, which isn't started
+    ' again until the player's stop lets it go, or for a minute should that stop never come
+    function EndedByServerOf(itemId as string, profileId as string) as boolean
         sessions = silo.PlaybackSessions()
         for each sessionId in sessions
             playing = sessions[sessionId]
-            if playing.itemId = itemId and playing.endedByServer = true then return true
+            if playing.itemId = itemId and playing.profileId = profileId and playing.endedByServer = true and CreateObject("roDateTime").AsSeconds() - (playing.endedAt ?? 0) < silo.ENDED_HOLD_SECONDS then return true
         end for
         return false
     end function
@@ -583,18 +588,14 @@ namespace silo
         diagnostics.Playback("Silo playback " + playing.sessionId + " was ended on the server", diagnostics.LEVEL_WARN)
         playing.ended = true
         playing.endedByServer = true
+        playing.endedAt = CreateObject("roDateTime").AsSeconds()
         silo.SavePlaybackSession(playing, playing.sessionId)
         ' The thread asking learns it too, since a failed answer reaches it without its body
         m.siloEndedByServer = playing.sessionId
         ' Silo counts the play an administrator ended, like a stop
         silo.ForgetCatalog()
-        if not m.global.hasField("siloPlaybackEnded") then m.global.addFields({ siloPlaybackEnded: "" })
         m.global.siloPlaybackEnded = playing.sessionId
     end sub
-
-    function EndedAnswer() as object
-        return { status: 410, data: { ErrorCode: "SiloEnded", Message: tr("Playback was ended on the Silo server.") } }
-    end function
 
     ' Network trouble, a timeout, a busy or failing server are worth asking again, waiting longer each time
     function RetryableStart(answer as object) as boolean
@@ -734,7 +735,10 @@ namespace silo
         end if
         if live <> invalid then return silo.Replan(r, live)
         ' A seek, a track change or a retry after the stream failed doesn't undo an administrator's end
-        if silo.EndedByServerOf(owner) then return silo.EndedAnswer()
+        if silo.EndedByServerOf(owner, r.profileId)
+            m.siloEndedByServer = owner
+            return silo.StatusOnly(410)
+        end if
         return silo.StartPlayback(r, itemId, body)
     end function
 
@@ -935,7 +939,7 @@ namespace silo
         if not answer.ok
             if silo.EndedByServer(answer)
                 silo.MarkEndedByServer(playing)
-                return silo.EndedAnswer()
+                return silo.StatusOnly(410)
             end if
             if answer.status = 404 or answer.status = 410 or (answer.status = 409 and isValid(answer.problem) and answer.problem.code = "installation_changed")
                 ' The playing is gone on Silo: this request starts a new one

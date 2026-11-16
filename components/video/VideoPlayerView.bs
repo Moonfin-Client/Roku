@@ -70,7 +70,6 @@ sub init()
 
     ' An administrator ending this playback on Silo closes the player
     m.endedOnServer = false
-    if not m.global.hasField("siloPlaybackEnded") then m.global.addFields({ siloPlaybackEnded: "" })
     m.global.observeFieldScoped("siloPlaybackEnded", "onSiloPlaybackEnded")
 
     ' Carries on through the rest of the queue, the way it does in the other clients
@@ -1370,6 +1369,12 @@ function isEndedOnServer() as boolean
     return ended <> "" and playing <> "" and playing.Split("~")[0] = ended
 end function
 
+' Whether the stream's server answered 410, which an HLS stream reports as last_err:410 and a file
+' as its HTTP status
+function answered410() as boolean
+    return CreateObject("roRegex", "\b410\b", "").IsMatch((m.top.errorStr ?? "") + " " + FormatJson(m.top.errorInfo ?? {}))
+end function
+
 sub onSiloPlaybackEnded()
     if isEndedOnServer() then closeEndedOnServer()
 end sub
@@ -1383,9 +1388,10 @@ sub closeEndedOnServer()
     m.bufferCheckTimer.control = "stop"
     stopLoadingSpinner()
     ' The stop lets go of the ended session, so playing the item again starts a new one. A retry
-    ' that kept the session had held it back
-    m.suppressStopReport = false
-    ReportPlayback("stop")
+    ' that kept the session had held it back. It goes on a task of its own, since the shared one
+    ' may still be running the progress report that heard of the end, and would drop it
+    restoreCaptionMode()
+    sendPlaystate("stop", playbackReportParams(), true)
     m.suppressStopReport = true
     m.top.control = VideoControl.STOP
     showPlaybackErrorDialog(tr("Playback was ended on the Silo server."))
@@ -2623,7 +2629,7 @@ sub onState()
                 m.lastBufferError = currentTime
                 ' A Silo stream answering 410 may be a session an administrator ended. Its retry replans
                 ' that session rather than stopping it first, so Silo can say so, and one it still has goes on
-                if action = "server" and playsFromSilo() and Instr(1, m.top.errorStr ?? "", "last_err:410") > 0 then m.suppressStopReport = true
+                if action = "server" and playsFromSilo() and answered410() then m.suppressStopReport = true
 
                 if action = "restart"
                     diagnostics.Playback(`Player error, restarting the stream, retry ${m.playbackRetries} of ${REPLAY_RETRIES}`, diagnostics.LEVEL_WARN)
