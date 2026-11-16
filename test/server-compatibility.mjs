@@ -829,11 +829,12 @@ const previewTable = settingsScreen.match(/function previewSceneTable\(\)[^]*?en
 const subtitleLooks = [...(await readFile('settings/settings.json', 'utf8')).matchAll(/"settingName": "(playback\.subs\.(?:custom|style\.\w+))"/g)].map(match => match[1]);
 assert.ok(subtitleLooks.length >= 22, 'The subtitle style settings are found');
 for (const key of subtitleLooks) assert.ok(previewTable.includes(`"${key}": "player"`), `${key} shows on the Player preview`);
-// The skip button and the end of episode settings show on the Player preview, which pins its prompts
-// where the player does
-for (const key of ['playback.mediasegments.intro', 'playback.mediasegments.outro', 'playback.mediasegments.countdown', 'playback.nextupbehavior', 'playback.nextuptimeout', 'playback.showNextAirDate', 'playback.replaceskipoutrowithnextup', 'playback.trickplay.pauseWhileScrubbing']) {
+// The skip button, the end of episode settings and the paused description show on the Player
+// preview, which pins its prompts where the player does
+for (const key of ['playback.mediasegments.intro', 'playback.mediasegments.outro', 'playback.mediasegments.countdown', 'playback.nextupbehavior', 'playback.nextuptimeout', 'playback.showNextAirDate', 'playback.replaceskipoutrowithnextup', 'playback.trickplay.pauseWhileScrubbing', 'playback.showDescriptionOnPause']) {
     assert.ok(previewTable.includes(`"${key}": "player"`), `${key} shows on the Player preview`);
 }
+assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /\{ pluginKey: "showDescriptionOnPause", rokuKey: "playback\.showDescriptionOnPause", type: "bool" \}/, 'Show Description on Pause syncs with the server profile');
 const playerPreviewSource = await readFile('components/settings/SettingsPlayerPreview.bs', 'utf8');
 for (const name of ['OVERLAY_EDGE', 'OVERLAY_BOTTOM', 'SKIP_PROMPT_TOP']) {
     assert.equal(playerPreviewSource.match(new RegExp(`^const ${name} = (\\d+)`, 'm'))[1], playerView.match(new RegExp(`^const ${name} = (\\d+)`, 'm'))[1], `The preview's ${name} is the player's`);
