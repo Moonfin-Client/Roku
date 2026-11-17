@@ -14,14 +14,15 @@ import bslib from '@rokucommunity/bslib';
 brs.registerExtension(() => new sceneGraph.BrightScriptExtension());
 
 // brs-node reads \1 as a captured group in Replace but hands ReplaceAll its replacement untouched,
-// where the device reads it there too.
+// where the device reads it there too, and \0 as the whole match.
 const originalRegisterMethods = brs.types.RoRegex.prototype.registerMethods;
 brs.types.RoRegex.prototype.registerMethods = function (methods) {
     const replaceAll = this.replaceAll;
+    assert.ok(replaceAll?.signatures?.[0]?.impl, 'brs-node built roRegex differently; the ReplaceAll stand in needs a look');
     this.replaceAll = new brs.types.Callable('replaceAll', {
         signature: replaceAll.signatures[0].signature,
         impl: (interpreter, str, replacement) => replaceAll.signatures[0].impl(
-            interpreter, str, new brs.types.BrsString(replacement.value.replace(/\$/g, '$$$$').replace(/\\(\d)/g, '$$$1'))
+            interpreter, str, new brs.types.BrsString(replacement.value.replace(/\$/g, '$$$$').replace(/\\0/g, '$$&').replace(/\\([1-9])/g, '$$$1'))
         ),
     });
     methods.ifRegex = methods.ifRegex.map(method => method === replaceAll ? this.replaceAll : method);
@@ -399,7 +400,7 @@ try {
     const device = { ...brs.DefaultDeviceInfo, timeZone: 'UTC', timeZoneIANA: 'UTC', timeZoneAuto: false, timeZoneOffset: 0 };
     const payload = await brs.createPayloadFromFiles([path.basename(output)], device, new Map(), directory);
     const result = await brs.executeFile(payload).catch(error => { throw new Error(stderr + stdout, { cause: error }); });
-    assert.notEqual(result.exitReason, brs.AppExitReason.Crashed, stderr + stdout);
+    assert.equal(result.exitReason, brs.AppExitReason.UserNav, stderr + stdout);
     assert.equal(stderr, '', stderr);
     assert.doesNotMatch(stdout, /FAIL:/, stdout);
     assert.match(stdout, /PASS: server compatibility/, stdout);
