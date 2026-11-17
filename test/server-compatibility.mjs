@@ -6,46 +6,26 @@ const readFile = async (...args) => {
 };
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { Writable } from 'node:stream';
 import bsc from 'brighterscript';
-import brs from 'brs';
+import brs from 'brs-node';
+import sceneGraph from 'brs-node/bin/brs-sg.node.js';
 import bslib from '@rokucommunity/bslib';
 
-// brs predates these two Roku string methods; supply their platform semantics.
-const originalGetMethod = brs.types.RoString.prototype.getMethod;
-brs.types.RoString.prototype.getMethod = function (name) {
-    const method = name.toLowerCase();
-    if (method === 'startswith' || method === 'endswith') {
-        return new brs.types.Callable(name, {
-            signature: {
-                args: [new brs.types.StdlibArgument('value', brs.types.ValueKind.String)],
-                returns: brs.types.ValueKind.Boolean,
-            },
-            impl: (_interpreter, value) => brs.types.BrsBoolean.from(
-                method === 'startswith' ? this.getValue().startsWith(value.value) : this.getValue().endsWith(value.value)
-            ),
-        });
-    }
-    return originalGetMethod.call(this, name);
-};
+brs.registerExtension(() => new sceneGraph.BrightScriptExtension());
 
-// brs hands ReplaceAll its replacement untouched, where the device reads \1 as a captured group.
-const originalRegexMethod = brs.types.RoRegex.prototype.getMethod;
-brs.types.RoRegex.prototype.getMethod = function (name) {
-    if (name.toLowerCase() !== 'replaceall') return originalRegexMethod.call(this, name);
-    return new brs.types.Callable(name, {
-        signature: {
-            args: [
-                new brs.types.StdlibArgument('str', brs.types.ValueKind.String),
-                new brs.types.StdlibArgument('replacement', brs.types.ValueKind.String),
-            ],
-            returns: brs.types.ValueKind.String,
-        },
-        impl: (_interpreter, str, replacement) => {
-            const global = new RegExp(this.jsRegex.source, this.jsRegex.flags.replace('g', '') + 'g');
-            return new brs.types.BrsString(str.value.replace(global, replacement.value.replace(/\\(\d)/g, '$$$1')));
-        },
+// brs-node reads \1 as a captured group in Replace but hands ReplaceAll its replacement untouched,
+// where the device reads it there too.
+const originalRegisterMethods = brs.types.RoRegex.prototype.registerMethods;
+brs.types.RoRegex.prototype.registerMethods = function (methods) {
+    const replaceAll = this.replaceAll;
+    this.replaceAll = new brs.types.Callable('replaceAll', {
+        signature: replaceAll.signatures[0].signature,
+        impl: (interpreter, str, replacement) => replaceAll.signatures[0].impl(
+            interpreter, str, new brs.types.BrsString(replacement.value.replace(/\$/g, '$$$$').replace(/\\(\d)/g, '$$$1'))
+        ),
     });
+    methods.ifRegex = methods.ifRegex.map(method => method === replaceAll ? this.replaceAll : method);
+    return originalRegisterMethods.call(this, methods);
 };
 
 // Execute production functions after BrighterScript transpilation. Only the
@@ -441,12 +421,18 @@ try {
     await writeFile(output, code);
     let stdout = '';
     let stderr = '';
-    const capture = callback => new Writable({ write(chunk, encoding, done) { callback(chunk.toString()); done(); } });
-    await brs.execute([output], {
-        root: directory,
-        stdout: capture(text => { stdout += text; }),
-        stderr: capture(text => { stderr += text; }),
-    }).catch(error => { throw new Error(stderr + stdout, { cause: error }); });
+    brs.registerCallback(message => {
+        if (typeof message !== 'string') return;
+        const comma = message.indexOf(',');
+        const [kind, text] = [message.slice(0, comma), message.slice(comma + 1)];
+        if (kind === 'print') stdout += text;
+        else if (kind === 'warning' || kind === 'error') stderr += text;
+    });
+    // Times in the tests are UTC, as on a device set to it
+    const device = { ...brs.DefaultDeviceInfo, timeZone: 'UTC', timeZoneIANA: 'UTC', timeZoneAuto: false, timeZoneOffset: 0 };
+    const payload = await brs.createPayloadFromFiles([path.basename(output)], device, new Map(), directory);
+    const result = await brs.executeFile(payload).catch(error => { throw new Error(stderr + stdout, { cause: error }); });
+    assert.notEqual(result.exitReason, brs.AppExitReason.Crashed, stderr + stdout);
     assert.equal(stderr, '', stderr);
     assert.doesNotMatch(stdout, /FAIL:/, stdout);
     assert.match(stdout, /PASS: server compatibility/, stdout);
