@@ -194,10 +194,12 @@ sub dropEarlierRowWork()
     m.pooledTasks = kept
 end sub
 
-' Row tasks answer on content, and multi-server ones on isComplete
+' Row tasks answer on content, and multi-server ones on isComplete. A rerun an earlier build asked for
+' is dropped too, since it would watch that build's callback again when it starts.
 sub dropRowCallbacks(task as object)
     task.unobserveField("content")
     if task.hasField("isComplete") then task.unobserveField("isComplete")
+    if task.hasField("rowRerun") then task.rowRerun = false
 end sub
 
 ' A library reload outranks a layout reload, which outranks a plain update
@@ -340,8 +342,10 @@ end sub
 ' runRowTask: Starts a Home row's task through the pool, or queues it behind the tasks already running
 '
 ' @param {object} task - The LoadItemsTask or MultiServerTask that fills a row
+' @param {string} field - The field the task answers on, content or isComplete
+' @param {string} handler - The callback for the answer, watched from the moment the run starts
 ' @param {boolean} first - True for Continue Watching, Next Up and the merged row, which go to the front
-sub runRowTask(task as object, first = false as boolean)
+sub runRowTask(task as object, field as string, handler as string, first = false as boolean)
     if not isValid(task) then return
 
     ' A pooled row only tags its cards, and Home asks for their labels once per flush in queueLabels
@@ -349,13 +353,17 @@ sub runRowTask(task as object, first = false as boolean)
 
     ' Each task is watched once, since a second observeField would call the handler twice
     if not task.hasField("rowPooled")
-        task.addFields({ rowPooled: true, rowRunning: false, rowRerun: false })
+        task.addFields({ rowPooled: true, rowRunning: false, rowRerun: false, rowField: "", rowHandler: "" })
         task.observeField("state", "onRowTaskState")
     end if
+    task.rowField = field
+    task.rowHandler = handler
 
     ' The OS would drop a second RUN on a running task. Its answer may already be in, so it runs again
-    ' once it stops (onRowTaskState)
+    ' once it stops (onRowTaskState). The running answer is ignored, and the callback is watched again
+    ' when the new run starts.
     if task.state = "run"
+        task.unobserveField(field)
         task.rowRerun = true
         return
     end if
@@ -389,6 +397,9 @@ sub startRowTask(task as object)
     task.rowRunning = true
     task.rowRerun = false
     m.pooledTasks.push(task)
+    ' Watched only here, so an answer from a run started for an earlier build never reaches it
+    task.unobserveField(task.rowField)
+    task.observeField(task.rowField, task.rowHandler)
     task.control = "RUN"
 end sub
 
@@ -409,7 +420,7 @@ sub onRowTaskState(msg as object)
     if m.rowsInFlight > 0 then m.rowsInFlight = m.rowsInFlight - 1
     if task.rowRerun
         task.rowRerun = false
-        runRowTask(task)
+        runRowTask(task, task.rowField, task.rowHandler)
     end if
 
     while m.rowsInFlight < ROW_POOL_SIZE and m.rowQueue.count() > 0
@@ -858,6 +869,9 @@ end sub
 ' @param {object} rows - The HomeRow nodes built from the saved records
 sub paintCachedRows(rows as object)
     painted = 0
+    ' Rows that share an id, such as the latest row of each library, all map to one section index. The
+    ' records come sorted by their saved order, so each goes after the one painted before it.
+    lastById = {}
     for each row in rows
         searchSectionTitle = LCase(row.title).Replace(" ", "")
         index = getSectionIndex(row.title, row.id)
@@ -877,8 +891,20 @@ sub paintCachedRows(rows as object)
         if isValid(existing)
             m.top.content.replaceChild(row, index)
         else
-            m.top.content.insertChild(row, getOriginalSectionIndex(row.id))
+            insertAt = getOriginalSectionIndex(row.id)
+            previous = lastById[row.id]
+            if isValid(previous)
+                children = m.top.content.getChildren(-1, 0)
+                for i = 0 to children.count() - 1
+                    if children[i].isSameNode(previous)
+                        insertAt = i + 1
+                        exit for
+                    end if
+                end for
+            end if
+            m.top.content.insertChild(row, insertAt)
         end if
+        lastById[row.id] = row
         painted++
     end for
 
@@ -1624,8 +1650,7 @@ sub createLatestInRows()
                 m.latestRequests[sectionName] = { itemIds: libIds, itemId: firstLib.id, metadata: metadata }
 
                 loadLatest.cacheRow = cacheRowFor("latestmedia", sectionName, i)
-                loadLatest.observeField("content", "updateLatestItems")
-                runRowTask(loadLatest)
+                runRowTask(loadLatest, "content", "updateLatestItems")
             catch e
                 removeHomeSection(sectionName)
                 m.global.sceneManager.callFunc("standardDialog", `Error creating Recently Added rows`, { data: ["<p>" + `Error Message: ${e.message}` + "</p>"] })
@@ -1655,8 +1680,7 @@ sub createLatestInRows()
                 m.latestRequests[sectionName] = { itemIds: [], itemId: lib.id, metadata: metadata }
 
                 loadLatest.cacheRow = cacheRowFor("latestmedia", sectionName, i)
-                loadLatest.observeField("content", "updateLatestItems")
-                runRowTask(loadLatest)
+                runRowTask(loadLatest, "content", "updateLatestItems")
             catch e
                 removeHomeSection(sectionName)
                 m.global.sceneManager.callFunc("standardDialog", `Error creating Recently Added rows`, { data: ["<p>" + `Error Message: ${e.message}` + "</p>"] })
@@ -1689,8 +1713,7 @@ sub createRecentlyReleasedRow()
                 loadLatest.metadata = metadata
 
                 loadLatest.cacheRow = cacheRowFor("recentlyreleased", sectionName, i)
-                loadLatest.observeField("content", "updateRecentlyReleasedItems")
-                runRowTask(loadLatest)
+                runRowTask(loadLatest, "content", "updateRecentlyReleasedItems")
             catch e
                 removeHomeSection(sectionName)
                 m.global.sceneManager.callFunc("standardDialog", `Error creating Recently Released rows`, { data: ["<p>" + `Error Message: ${e.message}` + "</p>"] })
@@ -1706,8 +1729,7 @@ sub createSinceYouWatchedRow(rowIndex as integer)
     task = createObject("roSGNode", "LoadItemsTask")
     task.itemsToLoad = "sinceYouWatched"
     task.metadata = { rowIndex: rowIndex }
-    task.observeField("content", "updateSinceYouWatchedItems")
-    runRowTask(task)
+    runRowTask(task, "content", "updateSinceYouWatchedItems")
 end sub
 
 function homeRowIndexById(rowId as string) as integer
@@ -1786,8 +1808,7 @@ sub createRewatchRow()
     end if
 
     task = getOrCreateTask("rewatch")
-    task.observeField("content", "updateRewatchItems")
-    runRowTask(task)
+    runRowTask(task, "content", "updateRewatchItems")
 end sub
 
 ' updateRewatchItems: Processes LoadItemsTask content for the Rewatch row
@@ -1889,8 +1910,7 @@ sub createLiveTVRow()
 
     ' Load the On Now Data (lazy task creation)
     task = getOrCreateTask("onNow")
-    task.observeField("content", "updateOnNowItems")
-    runRowTask(task)
+    runRowTask(task, "content", "updateOnNowItems")
 end sub
 
 ' createContinueWatchingRow: Creates a row displaying items the user can continue watching
@@ -1911,8 +1931,7 @@ sub createContinueWatchingRow()
     ' Load the Continue Watching Data (lazy task creation)
     task = getOrCreateTask("continue")
     task.cacheRow = cacheRowFor("resume", sectionName)
-    task.observeField("content", "updateContinueWatchingItems")
-    runRowTask(task, true)
+    runRowTask(task, "content", "updateContinueWatchingItems", true)
 end sub
 
 ' createMultiServerContinueWatchingRow: Creates a row with continue watching from all servers
@@ -1922,8 +1941,7 @@ sub createMultiServerContinueWatchingRow()
     if sessions.count() = 0
         task = getOrCreateTask("continue")
         task.cacheRow = cacheRowFor("resume", tr("Continue Watching"))
-        task.observeField("content", "updateContinueWatchingItems")
-        runRowTask(task, true)
+        runRowTask(task, "content", "updateContinueWatchingItems", true)
         return
     end if
 
@@ -1950,8 +1968,7 @@ sub createMultiServerContinueWatchingRow()
         EnableImageTypes: "Primary,Backdrop,Thumb",
         ImageTypeLimit: "1"
     }
-    task.observeField("isComplete", "onMultiServerContinueWatchingComplete")
-    runRowTask(task, true)
+    runRowTask(task, "isComplete", "onMultiServerContinueWatchingComplete", true)
 end sub
 
 ' onMultiServerContinueWatchingComplete: Handler for multi-server continue watching results
@@ -2032,8 +2049,7 @@ sub createMergedContinueWatchingRow()
     ' Load the Merged Continue Watching Data (lazy task creation)
     task = getOrCreateTask("mergedContinueWatching")
     task.cacheRow = cacheRowFor("resume", sectionName)
-    task.observeField("content", "updateMergedContinueWatchingItems")
-    runRowTask(task, true)
+    runRowTask(task, "content", "updateMergedContinueWatchingItems", true)
 end sub
 
 ' createContinueListeningRow: Creates a row displaying items the user can continue listening
@@ -2049,8 +2065,7 @@ sub createContinueListeningRow()
     ' Load the Continue Listening Data (lazy task creation)
     task = getOrCreateTask("continueListening")
     task.cacheRow = cacheRowFor("resumeaudio", sectionName)
-    task.observeField("content", "updateContinueListeningItems")
-    runRowTask(task)
+    runRowTask(task, "content", "updateContinueListeningItems")
 end sub
 
 ' createNextUpRow: Creates a row displaying next episodes up to watch
@@ -2070,8 +2085,7 @@ sub createNextUpRow()
 
     task = getOrCreateTask("nextUp")
     task.cacheRow = cacheRowFor("nextup", sectionName)
-    task.observeField("content", "updateNextUpItems")
-    runRowTask(task, true)
+    runRowTask(task, "content", "updateNextUpItems", true)
 end sub
 
 ' createMultiServerNextUpRow: Creates a row with next up episodes from all servers
@@ -2081,8 +2095,7 @@ sub createMultiServerNextUpRow()
     if sessions.count() = 0
         task = getOrCreateTask("nextUp")
         task.cacheRow = cacheRowFor("nextup", tr("Next Up"))
-        task.observeField("content", "updateNextUpItems")
-        runRowTask(task, true)
+        runRowTask(task, "content", "updateNextUpItems", true)
         return
     end if
 
@@ -2109,8 +2122,7 @@ sub createMultiServerNextUpRow()
         EnableTotalRecordCount: "false",
         EnableImageTypes: "Primary,Backdrop,Thumb"
     }
-    task.observeField("isComplete", "onMultiServerNextUpComplete")
-    runRowTask(task, true)
+    runRowTask(task, "isComplete", "onMultiServerNextUpComplete", true)
 end sub
 
 ' onMultiServerNextUpComplete: Handler for multi-server next up results
@@ -2279,8 +2291,7 @@ sub onMultiServerLibrariesLoaded(msg as object)
             }
         })
 
-        task.observeField("isComplete", "onMultiServerLatestPerLibraryComplete")
-        runRowTask(task)
+        runRowTask(task, "isComplete", "onMultiServerLatestPerLibraryComplete")
     end for
 
 end sub
@@ -2369,8 +2380,7 @@ sub createMultiServerRecentlyReleasedRow(sessions as object)
     }
     if get_user_setting_bool(recentRows.HIDE_WATCHED_SETTING, false) then params.Filters = "IsUnplayed"
     task.params = params
-    task.observeField("isComplete", "onMultiServerRecentlyReleasedComplete")
-    runRowTask(task)
+    runRowTask(task, "isComplete", "onMultiServerRecentlyReleasedComplete")
 end sub
 
 ' onMultiServerRecentlyReleasedComplete: Handler for multi-server recently released results
@@ -2445,8 +2455,7 @@ sub createMultiServerFavoritesRow(sessions as object)
         EnableImageTypes: "Primary,Backdrop,Thumb",
         ImageTypeLimit: "1"
     }
-    task.observeField("isComplete", "onMultiServerFavoritesComplete")
-    runRowTask(task)
+    runRowTask(task, "isComplete", "onMultiServerFavoritesComplete")
 end sub
 
 ' onMultiServerFavoritesComplete: Handler for multi-server favorites results
@@ -2509,8 +2518,7 @@ sub createMyListRow()
     ' Load the My List Data (lazy task creation)
     task = getOrCreateTask("mylist")
     task.cacheRow = cacheRowFor("mylist", sectionName)
-    task.observeField("content", "updateMyListItems")
-    runRowTask(task)
+    runRowTask(task, "content", "updateMyListItems")
 end sub
 
 ' createFavoritesRow: Creates a row displaying items from the user's favorites list
@@ -2526,8 +2534,7 @@ sub createFavoritesRow()
     ' Load the Favorites Data (lazy task creation)
     task = getOrCreateTask("favorites")
     task.cacheRow = cacheRowFor("favorites", sectionName)
-    task.observeField("content", "updateFavoritesItems")
-    runRowTask(task)
+    runRowTask(task, "content", "updateFavoritesItems")
 end sub
 
 ' updateHomeRows: Update function exposed to outside components
@@ -3273,8 +3280,7 @@ function createCustomDynamicRow(row as object) as boolean
         task.additionalData = additionalDataVal
     end if
 
-    task.observeField("content", "updateCustomDynamicRowItems")
-    runRowTask(task)
+    runRowTask(task, "content", "updateCustomDynamicRowItems")
     return true
 end function
 
@@ -3467,8 +3473,7 @@ end function
 
 sub createInternalRow(taskKey as string)
     task = getOrCreateTask(taskKey)
-    task.observeField("content", "updateInternalRowItems")
-    runRowTask(task)
+    runRowTask(task, "content", "updateInternalRowItems")
 end sub
 
 sub updateInternalRowItems(event as object)
