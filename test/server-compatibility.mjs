@@ -231,15 +231,7 @@ for (const name of ['ConnectionRank', 'ServerFromResource', 'Settled', 'MachineI
 }
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/plex-tv.bs', 'utf8');
-// The rest of the guide rules use loops this interpreter cant parse
-const liveTvGuideFile = await readFile('source/utils/liveTvGuide.bs', 'utf8');
-source += '\n' + liveTvGuideFile.match(/^const GUIDE_MINUTE = .+$/m)[0] + '\nnamespace liveTvGuide\n';
-for (const name of ['ParseTime', 'EpisodeTitleOf', 'SeasonEpisodeLabel', 'EpisodeLine', 'HasTimer', 'HasSeriesTimer', 'RecordingMark', 'SeriesChoices', 'SeriesChoiceOf', 'SeriesChoiceFlags', 'IsUpcomingTimer', 'UpcomingTimers', 'TimerFor', 'LiveRecording', 'StartOfDay']) {
-    const match = liveTvGuideFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
-    assert.ok(match, `Missing liveTvGuide.${name}`);
-    source += '\n' + match[0];
-}
-source += '\nend namespace\n';
+source += '\n' + (await readFile('source/utils/liveTvGuide.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/live-tv-guide.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/recordAiring.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/record-airing.bs', 'utf8');
@@ -295,21 +287,11 @@ source += '\n' + await readFile('test/seasonal-effects.bs', 'utf8');
 source += '\n' + await readFile('test/audio-track.bs', 'utf8');
 source += '\n' + await readFile('test/audio-quality.bs', 'utf8');
 source += '\n' + await readFile('test/subtitle-selection.bs', 'utf8');
-// The registry reads and writes stay out, since this interpreter has no registry, so nothing is
-// remembered when a screen asks
-const trackMemoryFile = await readFile('source/utils/trackMemory.bs', 'utf8');
-source += '\n' + trackMemoryFile.match(/^const TRACK_MEMORY_\w+ = .+$/gm).join('\n') + '\nnamespace trackMemory\n';
-for (const name of ['Empty', 'WithPick', 'Take', 'Push', 'Pick', 'RememberedAudio', 'RememberedSubtitle', 'SeriesPref', 'MatchSeries', 'NamedTracks', 'OfType', 'Position', 'StreamWithIndex', 'HasIndex', 'StreamIndex', 'TrackLanguage', 'TrackName', 'SaysForced']) {
-    const match = trackMemoryFile.match(new RegExp(`^    (?:function|sub) ${name}\\([^]*?^    end (?:function|sub)`, 'm'));
-    assert.ok(match, `Missing trackMemory.${name}`);
-    source += '\n' + match[0];
-}
-source += '\n    function Load() as object\n        return trackMemory.Empty()\n    end function\nend namespace\n';
+source += '\n' + (await readFile('source/utils/trackMemory.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/track-memory.bs', 'utf8');
-// The PIN decisions without the registry or the server, and with a stand in for the hash, which
-// this interpreter has no digest for
+// The PIN decisions without the registry or the server
 for (const [file, constants, space, names, extra] of [
-    ['source/utils/pinLockout.bs', /^const PIN_\w+ = .+$/gm, 'pinLockout', ['IsPinShaped', 'Matches', 'RecordRemaining', 'RecordFailure', 'FormatWait', 'TooManyAttempts'], '    function HashPin(pin as string) as string\n        return "#" + pin\n    end function\n'],
+    ['source/utils/pinLockout.bs', /^const PIN_\w+ = .+$/gm, 'pinLockout', ['HashPin', 'IsPinShaped', 'Matches', 'RecordRemaining', 'RecordFailure', 'FormatWait', 'TooManyAttempts'], ''],
     ['source/api/serverPin.bs', /^const SERVER_PIN_\w+ = .+$/gm, 'serverPin', ['VerifyVerdict', 'WriteVerdict', 'Locked', 'IsBoolean', 'ErrorIs'], ''],
     ['source/utils/signInPin.bs', /^const SIGN_IN_\w+ = .+$/gm, 'signInPin', ['NoPin', 'RecordFrom', 'IsEnabled', 'Patched', 'Settled', 'VerifyHere', 'AfterStatus', 'AfterVerify', 'Refusal', 'AfterStore', 'Message', 'AccountKey', 'MarkForgotten', 'TakeForgottenUsername', 'NoteProvedSignIn', 'TakeProvedSignIn', 'TakeForgotten'], '']
 ]) {
@@ -334,16 +316,7 @@ source += '\n' + await readFile('test/person-credits.bs', 'utf8');
 source += '\n' + await readFile('test/spotlight-person.bs', 'utf8');
 source += '\n' + await readFile('test/music-categories.bs', 'utf8');
 source += '\n' + await readFile('test/incomplete-recordings.bs', 'utf8');
-// The rest of the arrangement helpers use loops this interpreter can't parse, and the stand ins in
-// test/detail-sections.bs cover them
-const buttonLayoutFile = await readFile('source/utils/buttonLayout.bs', 'utf8');
-source += '\n' + buttonLayoutFile.match(/^const OSD_\w+ = .+$/gm).join('\n') + '\nnamespace buttonLayout\n' + buttonLayoutFile.match(/^    const OSD_\w+ = .+$/gm).join('\n') + '\n';
-for (const name of ['OsdCandidates', 'OsdSecondaryX', 'Ordered', 'Arrange']) {
-    const match = buttonLayoutFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'));
-    assert.ok(match, `Missing buttonLayout.${name}`);
-    source += '\n' + match[0];
-}
-source += '\nend namespace\n';
+source += '\n' + (await readFile('source/utils/buttonLayout.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/settings-live-preview.bs', 'utf8');
 const moonfinPluginFile = await readFile('source/api/MoonfinPlugin.bs', 'utf8');
 source += '\nnamespace moonfinPlugin\n';
@@ -355,13 +328,8 @@ for (const name of ['InfoFromPing', 'WithUserToken', 'AreTmdbThumbsAvailable', '
 source += '\nend namespace\n';
 source += '\n' + await readFile('test/tmdb-thumbs.bs', 'utf8');
 source += '\n' + await readFile('test/ratings-scope.bs', 'utf8');
-// The rest of the row layout uses loops this interpreter cant parse, and the outside lists only need these
 const homeRowLayoutFile = await readFile('source/utils/homeRowLayout.bs', 'utf8');
-source += '\nnamespace homeRowLayout\n' + homeRowLayoutFile.match(/^    const .+$/gm).join('\n') + '\n';
-for (const name of ['Catalogue', 'ExternalCharts', 'OfficialChart', 'DiscoverChart', 'ExternalChart', 'Passthrough', 'AsText', 'Sources', 'SourceFor', 'ServerId', 'ServerKey', 'ServerOf', 'SourceFromId', 'IsOwnServer', 'IsSliderRow', 'RowToggles', 'ReloadsHome']) {
-    source += '\n' + homeRowLayoutFile.match(new RegExp(`^    function ${name}\\([^]*?^    end function`, 'm'))[0];
-}
-source += '\nend namespace\n';
+source += '\n' + homeRowLayoutFile.replace(/^import .*$/gm, '');
 // The merge sort alone, since the rest of the library scope asks the server
 const libraryScopeFile = await readFile('source/utils/libraryScope.bs', 'utf8');
 source += '\nnamespace libraryScope\n';
@@ -380,8 +348,7 @@ source += '\n' + await readFile('test/seerr-sliders.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/SeerrUtils.bs', 'utf8')).match(/^const SEERR_(?:MEDIA|REQUEST)_\w+ = .+$/gm).join('\n');
 source += '\n' + (await readFile('source/utils/seerrRequestRules.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/seerr-requests.bs', 'utf8');
-// The whole markdown reader uses loops this interpreter cant parse, and the reviews only need Strip
-source += '\nnamespace messageMarkdown\n' + (await readFile('source/utils/messageMarkdown.bs', 'utf8')).match(/^    function Strip\([^]*?^    end function/m)[0] + '\nend namespace\n';
+source += '\n' + await readFile('source/utils/messageMarkdown.bs', 'utf8');
 source += '\n' + await readFile('test/tmdb-reviews.bs', 'utf8');
 const achievementsModelFile = await readFile('source/utils/achievementsModel.bs', 'utf8');
 source += '\nnamespace achievementsModel\n';
@@ -557,11 +524,9 @@ for await (const file of glob('{components,source}/**/*.{bs,xml}')) {
 }
 assert.ok(scannedRoutes > 100, 'The route scan found the app sources');
 
-// The device lowercases a bare key in a literal, which the player API turns away, and brs doesnt.
+// The device lowercases a bare key in a literal, which the player API turns away, and brs-node doesnt.
 const youtubeSource = await readFile('source/utils/youtubeTrailer.bs', 'utf8');
 assert.ok(['"videoId":', '"clientName":', '"clientVersion":', '"contentCheckOk":', '"racyCheckOk":', '["visitorData"]'].every(key => youtubeSource.includes(key)), 'The YouTube request keeps its camelCase keys');
-// brs has no roEVPDigest, so the SponsorBlock lookup is pinned here instead of run.
-assert.match(youtubeSource.match(/function SponsorRequestUrl[^]*?end function/)[0], /digest\.Setup\("sha256"\)[^]*SPONSOR_URL \+ "\/" \+ LCase\(Left\(digest\.Process\(bytes\), 4\)\) \+ "\?categories="/, 'SponsorBlock is asked by hash prefix, not by video ID');
 
 const seerrTask = await readFile('components/seerr/SeerrAPITask.bs', 'utf8');
 assert.match(seerrTask, /url = buildServerURL\(serverUrl, targetPath, queryParams\)/, 'Plugin proxy preserves saved server query through shared compositor');
