@@ -153,7 +153,7 @@ const selections = {
     'source/api/userauth.bs': ['passwordLoginRequest', 'validPasswordLogin', 'passwordLoginError', 'signInRefusedMessage', 'AuthenticateViaQuickConnect'],
     'source/utils/config.bs': ['current_user_id', 'get_user_setting', 'settingOr', 'getSavedUsers', 'savedUserFirst'],
     'source/utils/misc.bs': ['normalizeDetailScreenStyleToken', 'sessionNow', 'storeSession', 'serverIdentityNow', 'reusableOnTask', 'onTaskThread', 'startupPrefetchAnswer', 'isLocalhost', 'isSupportedMediaServer', 'isSiloSystemInfo', 'urlCandidates', 'isValid', 'isAllValid', 'isStringEqual', 'isChainValid', 'chainLookupReturn', 'chainLookup', 'isValidAndNotEmpty', 'serverVersionMeetsMinimumRequirements', 'playlistRenumbersAfterDelete', 'toString', 'isSeerrFilterRow', 'getHomeBackdropBlurAmount', 'getHomeBackdropStyle', 'inArray', 'guidKey', 'isString', 'toBoolean', 'leftPad', 'secondsToHuman', 'isServerDate', 'releaseDay', 'stableSorted', 'arrangeByStoredOrder', 'collectionPlaylist', 'collectionGroups', 'collectionLabel', 'nearsCollectionEnd', 'collectionPeople', 'shuffleArray'],
-    'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras'],
+    'source/ShowScenes.bs': ['ServerVersionCheck', 'startDetailExtras', 'isSeerrCastMember'],
     'source/utils/multiserver.bs': ['buildURLForSession', 'buildImageURLForServer', 'librariesByServer'],
     'source/api/Items.bs': ['ItemMetaData', 'playbackDeviceProfile', 'asksForServerStream', 'audioQualityLabel'],
     'components/video/VideoPlayerView.bs': ['startEmbyPreview', 'nextTranscodeStep', 'retryAction', 'streamSummary', 'liveFallbackMethod', 'liveReResolveRequest', 'liveReconnectingLabel', 'rokuAudioTrack'],
@@ -248,6 +248,8 @@ source += '\n' + await readFile('test/poster-labels.bs', 'utf8');
 source += '\n' + await readFile('test/home-cache.bs', 'utf8');
 source += '\n' + await readFile('test/transcode-audio.bs', 'utf8');
 source += '\n' + await readFile('test/person-role.bs', 'utf8');
+source += '\n' + await readFile('test/seerr-person.bs', 'utf8');
+assert.match(await readFile('source/utils/seerrDetailItem.bs', 'utf8'), /function Person\([^]*?_seerrPerson: true/, 'A Seerr title\'s cast is marked as it\'s read');
 source += '\n' + await readFile('test/episode-cast.bs', 'utf8');
 // The rest of the Plex playback rules reach for the server
 const plexPlaybackFile = await readFile('source/api/plex/PlexPlayback.bs', 'utf8');
@@ -748,6 +750,29 @@ for (const image of maskImages) {
 }
 process.stdout.write(`PASS: mask image formats (${maskImages.size} checks)\n`);
 
+// A MaskGroup's size is in screen pixels, which a 720p Roku doesn't scale with the layout, so every
+// mask is a ScreenMask, sized in layout pixels. One left without a size draws its bitmap unscaled.
+let screenMaskChecks = 0;
+for await (const file of glob('{components,source}/**/*.{bs,xml}')) {
+    if (/components\/ScreenMask\.(bs|xml)$/.test(file)) continue;
+    const code = await readFile(file, 'utf8');
+    assert.doesNotMatch(code, /<MaskGroup\b|"MaskGroup"/, `${file} uses ScreenMask rather than MaskGroup`);
+    assert.doesNotMatch(code, /mask(Size|Offset)/, `${file} sets a ScreenMask's size and offset rather than maskSize and maskOffset`);
+    if (!file.endsWith('.xml')) continue;
+    for (const [tag] of code.matchAll(/<ScreenMask\b[^>]*>/g)) {
+        screenMaskChecks++;
+        if (/\bsize=/.test(tag)) continue;
+        const id = tag.match(/\bid="([^"]+)"/)?.[1];
+        assert.ok(id, `${file}: a ScreenMask with no size has an id, so its code can size it`);
+        const script = await readFile(file.replace(/\.xml$/, '.bs'), 'utf8');
+        const lookup = `m.top.findNode("${id}")`;
+        const names = [lookup, ...[...script.matchAll(/([\w.]+) = m\.top\.findNode\("([^"]+)"\)/g)].filter((match) => match[2] === id).map((match) => match[1])];
+        assert.ok(names.some((name) => script.includes(`${name}.size =`)), `${file}: ${id} is given a size`);
+    }
+}
+assert.ok(screenMaskChecks > 30, 'The ScreenMask scan found the masks');
+process.stdout.write(`PASS: masks sized for the screen (${screenMaskChecks} checks)\n`);
+
 // Every details style fills its pickers before a reload returns early, so the lists are there on a
 // first visit, and each style takes in a subtitle downloaded from it.
 const detailStyles = ['ItemDetails', 'ModernItemDetails', 'MinimalistItemDetails', 'NouveauItemDetails', 'SpotlightItemDetails'];
@@ -824,11 +849,12 @@ const previewTable = settingsScreen.match(/function previewSceneTable\(\)[^]*?en
 const subtitleLooks = [...(await readFile('settings/settings.json', 'utf8')).matchAll(/"settingName": "(playback\.subs\.(?:custom|style\.\w+))"/g)].map(match => match[1]);
 assert.ok(subtitleLooks.length >= 22, 'The subtitle style settings are found');
 for (const key of subtitleLooks) assert.ok(previewTable.includes(`"${key}": "player"`), `${key} shows on the Player preview`);
-// The skip button and the end of episode settings show on the Player preview, which pins its prompts
-// where the player does
-for (const key of ['playback.mediasegments.intro', 'playback.mediasegments.outro', 'playback.mediasegments.countdown', 'playback.nextupbehavior', 'playback.nextuptimeout', 'playback.showNextAirDate', 'playback.replaceskipoutrowithnextup', 'playback.trickplay.pauseWhileScrubbing']) {
+// The skip button, the end of episode settings and the paused description show on the Player
+// preview, which pins its prompts where the player does
+for (const key of ['playback.mediasegments.intro', 'playback.mediasegments.outro', 'playback.mediasegments.countdown', 'playback.nextupbehavior', 'playback.nextuptimeout', 'playback.showNextAirDate', 'playback.replaceskipoutrowithnextup', 'playback.trickplay.pauseWhileScrubbing', 'playback.showDescriptionOnPause']) {
     assert.ok(previewTable.includes(`"${key}": "player"`), `${key} shows on the Player preview`);
 }
+assert.match(await readFile('source/utils/settingsSync.bs', 'utf8'), /\{ pluginKey: "showDescriptionOnPause", rokuKey: "playback\.showDescriptionOnPause", type: "bool" \}/, 'Show Description on Pause syncs with the server profile');
 const playerPreviewSource = await readFile('components/settings/SettingsPlayerPreview.bs', 'utf8');
 for (const name of ['OVERLAY_EDGE', 'OVERLAY_BOTTOM', 'SKIP_PROMPT_TOP']) {
     assert.equal(playerPreviewSource.match(new RegExp(`^const ${name} = (\\d+)`, 'm'))[1], playerView.match(new RegExp(`^const ${name} = (\\d+)`, 'm'))[1], `The preview's ${name} is the player's`);

@@ -5144,6 +5144,16 @@
         <translation>Mark where each chapter starts on the seek bar</translation>
     </message>
     <message>
+        <source>Show Description on Pause</source>
+        <extracomment>Setting that shows the title and overview over the paused video</extracomment>
+        <translation>Show Description on Pause</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <extracomment>Description of the Show Description on Pause setting</extracomment>
+        <translation>Dim video and show overview text while paused</translation>
+    </message>
+    <message>
         <source>Subtitle Customization</source>
         <extracomment>Heading over the subtitle style settings</extracomment>
         <translation>Subtitle Customization</translation>
@@ -9866,7 +9876,7 @@
     </message>
     <message>
         <source>Paused</source>
-        <extracomment>After Hours - Title of the pause menu</extracomment>
+        <extracomment>After Hours - Title of the pause menu. Also shown in capitals over the description of a paused video.</extracomment>
         <translation>Paused</translation>
     </message>
     <message>
