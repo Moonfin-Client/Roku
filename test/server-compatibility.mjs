@@ -1646,7 +1646,7 @@ assert.match(addRail, /m\.railPool\.DoesExist\(signature\)[^]*?callFunc\("clearF
 assert.match(addRail, /callFunc\("clearFocus"\)\s+node\.callFunc\("resetPlacement"\)/, 'A reused rail goes back to where it opened, not where it was last scrolled');
 const nouveauRail = await readFile('components/details/nouveau/NouveauRail.bs', 'utf8');
 assert.match(nouveauRail, /sub resetPlacement\(\)\s+m\.track\.translation = \[0, 0\]\s+if m\.startIndex > 0 then placeStart\(m\.startIndex\)/, 'Resetting a rail puts its track back at its start card');
-assert.match(addRail, /if signature <> "" then signature = kind \+ signature/, 'A spec that cannot be written out is never matched to another rail');
+assert.match(addRail, /if signature <> "" then signature = kind \+ railLook\(\) \+ signature/, 'A spec that cannot be written out is never matched to another rail, and a rail drawn under other theme or Seerr badge settings is built again');
 assert.match(await readFile('components/details/StageItemDetails.bs', 'utf8'), /cards\.push\(\{ title: item\.title, sdPosterUrl: item\.sdPosterUrl/, "Stage's Seerr cards carry the title's values, not its node, so a rebuild can reuse their rail");
 assert.match(await readFile('source/ShowScenes.bs', 'utf8'), /if isStringEqual\(style, "frost"\)[^]*?minimalistRules\.Draws\(itemType\) then return "FrostItemDetails"\s+return "ModernItemDetails"/, 'Frost draws the video and collection pages and hands the rest to Modern');
 assert.match(await readFile('source/utils/SeerrUtils.bs', 'utf8'), /if style = "frost" then return "FrostItemDetails"/, 'A title only in Seerr opens in Frost too');
