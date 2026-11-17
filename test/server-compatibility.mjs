@@ -13,24 +13,34 @@ import bslib from '@rokucommunity/bslib';
 
 brs.registerExtension(() => new sceneGraph.BrightScriptExtension());
 
-// brs-node reads \1 as a captured group in Replace but hands ReplaceAll its replacement untouched,
-// where the device reads it there too, and \0 as the whole match.
+// The device reads \0 in a Replace or ReplaceAll replacement as the whole match, \1 to \9 as captured
+// groups and $ as itself. brs-node hands ReplaceAll its replacement untouched and reads every \ in
+// Replace as a $, and its ReplaceAll leaves the regex global, so both run here on a copy of the pattern.
+const deviceReplacement = text => text.replace(/\$/g, '$$$$').replace(/\\0/g, '$$&').replace(/\\([1-9])/g, '$$$1');
 const originalRegisterMethods = brs.types.RoRegex.prototype.registerMethods;
 brs.types.RoRegex.prototype.registerMethods = function (methods) {
-    const replaceAll = this.replaceAll;
-    assert.ok(replaceAll?.signatures?.[0]?.impl, 'brs-node built roRegex differently; the ReplaceAll stand in needs a look');
-    this.replaceAll = new brs.types.Callable('replaceAll', {
-        signature: replaceAll.signatures[0].signature,
-        impl: (interpreter, str, replacement) => replaceAll.signatures[0].impl(
-            interpreter, str, new brs.types.BrsString(replacement.value.replace(/\$/g, '$$$$').replace(/\\0/g, '$$&').replace(/\\([1-9])/g, '$$$1'))
-        ),
+    const replacing = (name, global) => new brs.types.Callable(name, {
+        signature: {
+            args: [
+                new brs.types.StdlibArgument('str', brs.types.ValueKind.String),
+                new brs.types.StdlibArgument('replacement', brs.types.ValueKind.String),
+            ],
+            returns: brs.types.ValueKind.String,
+        },
+        impl: (_interpreter, str, replacement) => {
+            const flags = this.jsRegex.flags.replace('g', '') + (global ? 'g' : '');
+            return new brs.types.BrsString(str.value.replace(new RegExp(this.jsRegex.source, flags), deviceReplacement(replacement.value)));
+        },
     });
-    methods.ifRegex = methods.ifRegex.map(method => method === replaceAll ? this.replaceAll : method);
+    assert.ok(this.replace && this.replaceAll, 'brs-node built roRegex differently; the Replace stand ins need a look');
+    const stand = new Map([[this.replace, replacing('replace', false)], [this.replaceAll, replacing('replaceAll', true)]]);
+    methods.ifRegex = methods.ifRegex.map(method => stand.get(method) ?? method);
     return originalRegisterMethods.call(this, methods);
 };
 
-// Execute production functions after BrighterScript transpilation. Only the
-// device registry and authentication context are replaced with deterministic fixtures.
+// Execute production functions after BrighterScript transpilation. Only the server answers, the
+// user registry and the authentication context are replaced with deterministic fixtures; the
+// device registry starts empty on every run.
 const selections = {
     'source/utils/serverCompatibility.bs': null,
     'source/utils/accentFolding.bs': null,
@@ -291,13 +301,13 @@ source += '\n' + await readFile('test/subtitle-selection.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/trackMemory.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/track-memory.bs', 'utf8');
 // The PIN decisions without the registry or the server
-for (const [file, constants, space, names, extra] of [
-    ['source/utils/pinLockout.bs', /^const PIN_\w+ = .+$/gm, 'pinLockout', ['HashPin', 'IsPinShaped', 'Matches', 'RecordRemaining', 'RecordFailure', 'FormatWait', 'TooManyAttempts'], ''],
-    ['source/api/serverPin.bs', /^const SERVER_PIN_\w+ = .+$/gm, 'serverPin', ['VerifyVerdict', 'WriteVerdict', 'Locked', 'IsBoolean', 'ErrorIs'], ''],
-    ['source/utils/signInPin.bs', /^const SIGN_IN_\w+ = .+$/gm, 'signInPin', ['NoPin', 'RecordFrom', 'IsEnabled', 'Patched', 'Settled', 'VerifyHere', 'AfterStatus', 'AfterVerify', 'Refusal', 'AfterStore', 'Message', 'AccountKey', 'MarkForgotten', 'TakeForgottenUsername', 'NoteProvedSignIn', 'TakeProvedSignIn', 'TakeForgotten'], '']
+for (const [file, constants, space, names] of [
+    ['source/utils/pinLockout.bs', /^const PIN_\w+ = .+$/gm, 'pinLockout', ['HashPin', 'IsPinShaped', 'Matches', 'RecordRemaining', 'RecordFailure', 'FormatWait', 'TooManyAttempts']],
+    ['source/api/serverPin.bs', /^const SERVER_PIN_\w+ = .+$/gm, 'serverPin', ['VerifyVerdict', 'WriteVerdict', 'Locked', 'IsBoolean', 'ErrorIs']],
+    ['source/utils/signInPin.bs', /^const SIGN_IN_\w+ = .+$/gm, 'signInPin', ['NoPin', 'RecordFrom', 'IsEnabled', 'Patched', 'Settled', 'VerifyHere', 'AfterStatus', 'AfterVerify', 'Refusal', 'AfterStore', 'Message', 'AccountKey', 'MarkForgotten', 'TakeForgottenUsername', 'NoteProvedSignIn', 'TakeProvedSignIn', 'TakeForgotten']]
 ]) {
     const text = await readFile(file, 'utf8');
-    source += '\n' + text.match(constants).join('\n') + `\nnamespace ${space}\n` + extra;
+    source += '\n' + text.match(constants).join('\n') + `\nnamespace ${space}\n`;
     for (const name of names) {
         const match = text.match(new RegExp(`^    (?:function|sub) ${name}\\([^]*?^    end (?:function|sub)`, 'm'));
         assert.ok(match, `Missing ${space}.${name}`);
@@ -349,7 +359,7 @@ source += '\n' + await readFile('test/seerr-sliders.bs', 'utf8');
 source += '\n' + (await readFile('source/utils/SeerrUtils.bs', 'utf8')).match(/^const SEERR_(?:MEDIA|REQUEST)_\w+ = .+$/gm).join('\n');
 source += '\n' + (await readFile('source/utils/seerrRequestRules.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/seerr-requests.bs', 'utf8');
-source += '\n' + await readFile('source/utils/messageMarkdown.bs', 'utf8');
+source += '\n' + (await readFile('source/utils/messageMarkdown.bs', 'utf8')).replace(/^import .*$/gm, '');
 source += '\n' + await readFile('test/tmdb-reviews.bs', 'utf8');
 const achievementsModelFile = await readFile('source/utils/achievementsModel.bs', 'utf8');
 source += '\nnamespace achievementsModel\n';
