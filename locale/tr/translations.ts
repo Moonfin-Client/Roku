@@ -6473,5 +6473,17 @@
         <source>Server Recommends</source>
         <translation>Sunucu Önerileri</translation>
     </message>
+    <message>
+        <source>Carousel</source>
+        <translation>Atlıkarınca</translation>
+    </message>
+    <message>
+        <source>Show Description on Pause</source>
+        <translation>Duraklatıldığında Açıklamayı Göster</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <translation>Duraklatıldığında videoyu karart ve özet metnini göster</translation>
+    </message>
 </context>
 </TS>
