@@ -989,6 +989,10 @@
         <translation>Director</translation>
     </message>
     <message>
+        <source>Directors</source>
+        <translation>Directors</translation>
+    </message>
+    <message>
         <source>Video</source>
         <translation>Video</translation>
     </message>
@@ -1973,8 +1977,8 @@
         <extracomment>Settings Menu - Title for option</extracomment>
     </message>
     <message>
-        <source>Show What&apos;s New popup when Jellyfin is updated to a new version.</source>
-        <translation>Show What&apos;s New popup when Jellyfin is updated to a new version.</translation>
+        <source>Show What&apos;s New popup when Moonfin is updated to a new version.</source>
+        <translation>Show What&apos;s New popup when Moonfin is updated to a new version.</translation>
         <extracomment>Settings Menu - Description for option</extracomment>
     </message>
     <message>
@@ -2328,8 +2332,8 @@
         <extracomment>User Setting - Title for option</extracomment>
     </message>
     <message>
-        <source>Settings relating to how Jellyfin should handle media segments.</source>
-        <translation>Settings relating to how Jellyfin should handle media segments.</translation>
+        <source>Settings relating to how Moonfin should handle media segments.</source>
+        <translation>Settings relating to how Moonfin should handle media segments.</translation>
         <extracomment>User Setting - Description for option</extracomment>
     </message>
     <message>
@@ -2338,8 +2342,8 @@
         <extracomment>User Setting - Title for option</extracomment>
     </message>
     <message>
-        <source>What action should Jellyfin take for commercial segments?</source>
-        <translation>What action should Jellyfin take for commercial segments?</translation>
+        <source>What action should Moonfin take for commercial segments?</source>
+        <translation>What action should Moonfin take for commercial segments?</translation>
         <extracomment>User Setting - Description for option</extracomment>
     </message>
     <message>
@@ -2348,8 +2352,8 @@
         <extracomment>User Setting - Title for option</extracomment>
     </message>
     <message>
-        <source>What action should Jellyfin take for intro segments?</source>
-        <translation>What action should Jellyfin take for intro segments?</translation>
+        <source>What action should Moonfin take for intro segments?</source>
+        <translation>What action should Moonfin take for intro segments?</translation>
         <extracomment>User Setting - Description for option</extracomment>
     </message>
     <message>
@@ -2358,8 +2362,8 @@
         <extracomment>User Setting - Title for option</extracomment>
     </message>
     <message>
-        <source>What action should Jellyfin take for outro segments?</source>
-        <translation>What action should Jellyfin take for outro segments?</translation>
+        <source>What action should Moonfin take for outro segments?</source>
+        <translation>What action should Moonfin take for outro segments?</translation>
         <extracomment>User Setting - Description for option</extracomment>
     </message>
     <message>
@@ -2368,8 +2372,8 @@
         <extracomment>User Setting - Title for option</extracomment>
     </message>
     <message>
-        <source>What action should Jellyfin take for preview segments?</source>
-        <translation>What action should Jellyfin take for preview segments?</translation>
+        <source>What action should Moonfin take for preview segments?</source>
+        <translation>What action should Moonfin take for preview segments?</translation>
         <extracomment>User Setting - Description for option</extracomment>
     </message>
     <message>
@@ -2378,8 +2382,8 @@
         <extracomment>User Setting - Title for option</extracomment>
     </message>
     <message>
-        <source>What action should Jellyfin take for recap segments?</source>
-        <translation>What action should Jellyfin take for recap segments?</translation>
+        <source>What action should Moonfin take for recap segments?</source>
+        <translation>What action should Moonfin take for recap segments?</translation>
         <extracomment>User Setting - Description for option</extracomment>
     </message>
     <message>
@@ -3761,6 +3765,10 @@
         <translation>Writer</translation>
     </message>
     <message>
+        <source>Writers</source>
+        <translation>Writers</translation>
+    </message>
+    <message>
         <source>Track List</source>
         <extracomment>Spotlight card that holds an album&apos;s tracks</extracomment>
         <translation>Track List</translation>
@@ -3844,6 +3852,11 @@
         <source>Moonfin Recommends</source>
         <extracomment>Recommendations scored by Moonfin</extracomment>
         <translation>Moonfin Recommends</translation>
+    </message>
+    <message>
+        <source>Server Recommends</source>
+        <extracomment>Recommendations from the connected media server</extracomment>
+        <translation>Server Recommends</translation>
     </message>
     <message>
         <source>TMDb</source>
@@ -5129,6 +5142,16 @@
         <source>Mark where each chapter starts on the seek bar</source>
         <extracomment>Description of the Chapter Marks setting</extracomment>
         <translation>Mark where each chapter starts on the seek bar</translation>
+    </message>
+    <message>
+        <source>Show Description on Pause</source>
+        <extracomment>Setting that shows the title and overview over the paused video</extracomment>
+        <translation>Show Description on Pause</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <extracomment>Description of the Show Description on Pause setting</extracomment>
+        <translation>Dim video and show overview text while paused</translation>
     </message>
     <message>
         <source>Subtitle Customization</source>
@@ -7267,8 +7290,8 @@
         <translation>Moonbase plugin sync and customization profiles</translation>
     </message>
     <message>
-        <source>Moonfin scores your own library, Jellyfin takes the picks from the server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</source>
-        <translation>Moonfin scores your own library, Jellyfin takes the picks from the server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</translation>
+        <source>Moonfin scores your own library, Server takes the picks from your media server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</source>
+        <translation>Moonfin scores your own library, Server takes the picks from your media server, TMDb uses Seerr, and Hybrid leads with the server then tops up locally</translation>
     </message>
     <message>
         <source>Music Player</source>
@@ -9853,7 +9876,7 @@
     </message>
     <message>
         <source>Paused</source>
-        <extracomment>After Hours - Title of the pause menu</extracomment>
+        <extracomment>After Hours - Title of the pause menu. Also shown in capitals over the description of a paused video.</extracomment>
         <translation>Paused</translation>
     </message>
     <message>
