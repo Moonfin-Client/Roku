@@ -52,19 +52,31 @@ sub probePlaybackInfo()
     if m.top.audioStreamIndex > -1 then params.AudioStreamIndex = m.top.audioStreamIndex
     if m.top.subtitleStreamIndex > -1 then params.SubtitleStreamIndex = m.top.subtitleStreamIndex
 
-    path = Substitute("Items/{0}/PlaybackInfo", itemId)
+    ' Silo has no PlaybackInfo to ask: any request starts a playback session. The line is worked out
+    ' here from the item's own versions and this profile instead, like Core does, and Silo makes the
+    ' real choice when playback starts
     if isValid(serverData)
-        req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, path, params)
-        emby = isEmbyServer(serverData.serverUrl)
+        onSilo = isSiloServer(serverData.serverUrl)
     else
-        req = APIRequest(path, params)
-        emby = isEmbyServer()
+        onSilo = isSiloServer()
     end if
 
     resp = invalid
-    if isValid(req)
-        req.SetRequest("POST")
-        resp = postPlaybackInfo(req, body, emby)
+    if onSilo
+        resp = { MediaSources: chainLookupReturn(itemJson, "MediaSources", []) }
+    else
+        path = Substitute("Items/{0}/PlaybackInfo", itemId)
+        if isValid(serverData)
+            req = APIRequestForServer(serverData.serverUrl, serverData.userId, serverData.authToken, path, params)
+            emby = isEmbyServer(serverData.serverUrl)
+        else
+            req = APIRequest(path, params)
+            emby = isEmbyServer()
+        end if
+        if isValid(req)
+            req.SetRequest("POST")
+            resp = postPlaybackInfo(req, body, emby)
+        end if
     end if
 
     if not isValid(resp) or not isValidAndNotEmpty(resp.MediaSources)
@@ -78,11 +90,13 @@ sub probePlaybackInfo()
         return
     end if
 
-    direct = source.SupportsDirectPlay = true
+    ' Silo's versions all say they play directly, so only the reasons worked out below decide it
+    direct = source.SupportsDirectPlay = true and not onSilo
     reasons = []
     shortReasons = []
     if not direct
-        serverReasons = transcodeReasonsOf(source, resp)
+        serverReasons = []
+        if not onSilo then serverReasons = transcodeReasonsOf(source, resp)
         known = matchingSource(chainLookupReturn(itemJson, "MediaSources", []))
         streams = chainLookupReturn(source, "MediaStreams", [])
         if streams.count() = 0 then streams = chainLookupReturn(known, "MediaStreams", [])
@@ -92,7 +106,7 @@ sub probePlaybackInfo()
         audioIndex = invalid
         if m.top.audioStreamIndex > -1 then audioIndex = m.top.audioStreamIndex
 
-        reasons = directPlayReasons.BuildItems({
+        details = directPlayReasons.ResolveDetails({
             serverReasons: serverReasons,
             mediaStreams: streams,
             container: source.Container ?? chainLookupReturn(known, "Container", invalid),
@@ -102,6 +116,16 @@ sub probePlaybackInfo()
             subtitleStreamIndex: subtitleIndex,
             deviceProfile: deviceProfile
         })
+
+        for each detail in details
+            reasons.push(directPlayReasons.Format(detail))
+        end for
+        if onSilo
+            direct = details.count() = 0
+            for each detail in details
+                serverReasons.push(detail.reason)
+            end for
+        end if
 
         for each reason in serverReasons
             shortReasons.push(directPlayReasons.Format({ reason: reason }).description)
