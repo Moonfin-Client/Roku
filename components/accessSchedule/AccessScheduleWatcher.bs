@@ -16,8 +16,6 @@ sub init()
     m.entries = []
     m.exempt = false
     m.windowUnsupported = false
-    ' When the allowed window the plugin last reported closes, in m.clock milliseconds
-    m.windowCloses = invalid
     m.task = invalid
     m.lookAgain = false
     m.lastRefusalLook = 0
@@ -34,7 +32,6 @@ sub onUserChange()
     m.entries = []
     m.exempt = false
     m.windowUnsupported = false
-    m.windowCloses = invalid
     m.lookAgain = false
     m.lastRefusalLook = 0
     setBlocked(false, invalid)
@@ -74,8 +71,6 @@ sub look()
         m.lookAgain = true
         return
     end if
-    ' The plugin's durations count from about now, when it's asked
-    m.lookStarted = m.clock.TotalMilliseconds()
     m.task = CreateObject("roSGNode", "AccessScheduleTask")
     m.task.userId = m.top.userId
     m.task.askWindow = not m.windowUnsupported
@@ -88,18 +83,17 @@ sub onResult(event as object)
     m.task.unobserveField("result")
     m.task = invalid
 
-    ' A plugin that can't answer the window won't start to for this user
-    flag = result.windowUnsupported
-    if (type(flag) = "roBoolean" or type(flag) = "Boolean") and flag then m.windowUnsupported = true
-
     if result.ok and result.window <> invalid
-        applyWindow(result.window, m.clock.TotalMilliseconds() - m.lookStarted)
+        applyWindow(result.window)
     else if result.ok
+        ' A plugin that can't answer the window won't start to for this user
+        if result.windowUnsupported = true then m.windowUnsupported = true
         m.entries = result.entries
         m.exempt = result.exempt
         apply(result.refused)
     else
-        keepLastAnswer()
+        ' A schedule that couldn't be read leaves the last answer in place
+        startTimer(RETRY_SECONDS)
     end if
 
     if m.lookAgain
@@ -109,9 +103,6 @@ sub onResult(event as object)
 end sub
 
 sub apply(refused as dynamic)
-    ' An answer from Users/Me that lets the user in says nothing of when the window closes, so the
-    ' close the plugin reported still holds for looks with no answer
-    if (type(refused) = "roBoolean" or type(refused) = "Boolean") and refused then m.windowCloses = invalid
     now = CreateObject("roDateTime")
     now.ToLocalTime()
     day = now.GetDayOfWeek()
@@ -130,28 +121,17 @@ sub apply(refused as dynamic)
     if m.entries.Count() = 0 then delay = IDLE_SECONDS
     boundary = accessSchedule.SecondsToBoundary(m.entries, day, secondOfDay)
     if boundary <> invalid and boundary < delay then delay = boundary
-    ' A close the plugin reported is a moment the answer can change too
-    if m.windowCloses <> invalid
-        closes = (m.windowCloses - m.clock.TotalMilliseconds() + 999) \ 1000
-        if closes < delay then delay = closes
-    end if
     startTimer(delay)
 end sub
 
 ' The plugin's answer alone decides and times the next look
-' The plugin worked its answer out somewhere in the elapsedMs the look took. The next look counts
-' from the start of it, so it can only come early, and the opening from halfway through, which is out
-' by at most half the time the answer took
-sub applyWindow(window as object, elapsedMs as integer)
-    m.windowCloses = invalid
+sub applyWindow(window as object)
     if window.allowed
         setBlocked(false, invalid)
-        remaining = accessSchedule.SecondsLeft(window.untilClose, elapsedMs)
-        ' Counted from now, so a look with no answer can't end it early
-        if window.untilClose <> invalid then m.windowCloses = m.clock.TotalMilliseconds() + window.untilClose * 1000
+        remaining = window.untilClose
     else
-        remaining = accessSchedule.SecondsLeft(window.untilOpen, elapsedMs)
-        setBlocked(true, openingIn(window.untilOpen, elapsedMs))
+        setBlocked(true, openingIn(window.untilOpen))
+        remaining = window.untilOpen
     end if
 
     ' Allowed with nothing to close is a user with no schedule, or one open all week
@@ -164,33 +144,15 @@ end sub
 ' The opening the plugin says is seconds away, named on this device's clock to the nearest
 ' minute: a schedule opens on a minute, and a clock a moment behind the server's would otherwise
 ' name the minute before
-function openingIn(seconds as dynamic, elapsedMs as integer) as dynamic
+function openingIn(seconds as dynamic) as dynamic
     if seconds = invalid then return invalid
     now = CreateObject("roDateTime")
     opening = CreateObject("roDateTime")
-    opening.FromSeconds(accessSchedule.NearestMinute(now.AsSeconds() + seconds - elapsedMs \ 2000))
+    opening.FromSeconds(accessSchedule.NearestMinute(now.AsSeconds() + seconds))
     now.ToLocalTime()
     opening.ToLocalTime()
     return accessSchedule.OpeningAt(now.AsSeconds(), opening.AsSeconds(), seconds)
 end function
-
-' A look with no answer from the server keeps the last decision and tries again, but an allowed
-' decision ends at the close the plugin reported for it, with no opening to name. The Roku's clock
-' doesn't get to judge an older schedule meanwhile.
-sub keepLastAnswer()
-    delay = RETRY_SECONDS
-    if m.windowCloses <> invalid
-        leftMs = m.windowCloses - m.clock.TotalMilliseconds()
-        if leftMs <= 0
-            m.windowCloses = invalid
-            if not m.top.blocked then setBlocked(true, invalid)
-        else
-            left = (leftMs + 999) \ 1000
-            if left < delay then delay = left
-        end if
-    end if
-    startTimer(delay)
-end sub
 
 sub startTimer(seconds as integer)
     if seconds < 1 then seconds = 1
