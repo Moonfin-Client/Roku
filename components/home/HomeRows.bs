@@ -28,6 +28,10 @@ const NEAR_ROWS_ABOVE = 2
 const NEAR_ROWS_BELOW = 5
 const LATE_ROW_LOADS = 3
 
+' The Recently Added rows a build counts for each server before that server's libraries are known.
+' The count is corrected to the real number once they are.
+const MULTI_SERVER_LATEST_ROWS = 5
+
 ' Row tasks run at most this many at a time. Low-end Rokus have four cores, and each row task parses
 ' its own answer, so more running at once would only slow each other down
 const ROW_POOL_SIZE = 4
@@ -84,6 +88,8 @@ sub init()
     ' Initialize libraryData to prevent access before loading
     m.libraryData = []
     m.filteredLatest = []
+    m.libraryRowOrder = {}
+    m.multiServerEstimates = {}
     m.emptySections = {}
 
     ' Library sections wait for the library list. Until it lands, they are kept in librarySections.
@@ -162,6 +168,8 @@ end sub
 
 sub beginBuild()
     dropEarlierRowWork()
+    m.libraryRowOrder = {}
+    m.multiServerEstimates = {}
     m.buildInFlight = true
     m.buildCount++
     m.flushedThisBuild = false
@@ -363,8 +371,9 @@ sub runRowTask(task as object, field as string, handler as string, first = false
 
     ' The OS would drop a second RUN on a running task. Its answer may already be in, so it runs again
     ' once it stops (onRowTaskState). The running answer is ignored, and the callback is watched again
-    ' when the new run starts.
-    if task.state = "run"
+    ' when the new run starts. A task that has stopped still holds its slot until onRowTaskState
+    ' frees it, so starting it now would count it twice.
+    if task.state = "run" or task.rowRunning
         task.unobserveField(field)
         task.rowRerun = true
         return
@@ -635,12 +644,12 @@ function getExpectedRowContribution(sectionName as string) as integer
         if isMultiServerEnabled()
             sessions = getAllServerSessions()
             if sessions.Count() > 0
-                ' Multi-server latest media builds 5 rows per server, while
+                ' Multi-server latest media builds a row per library on each server, while
                 ' recently released aggregates every server into a single row
                 if sectionName = "recentlyreleased"
                     return 1
                 end if
-                return sessions.Count() * 5
+                return sessions.Count() * MULTI_SERVER_LATEST_ROWS
             end if
         end if
 
@@ -854,6 +863,7 @@ sub onCachedRecords()
         row.title = record.title
         ' Home can tell a cached row from a fresh one, so it can swap the fresh one in without a jump
         row.fromCache = true
+        if isString(record.sig) then row.cacheSig = record.sig
         for each item in record.items
             child = CreateObject("roSGNode", "HomeData")
             child.imageContext = imageContext
@@ -1046,7 +1056,9 @@ function keepCachedCards(cached as dynamic, fresh as object) as boolean
     if not isValid(cached) or not cached.hasField("fromCache") or cached.fromCache <> true then return false
     count = fresh.getChildCount()
     if count = 0 or count <> cached.getChildCount() then return false
-    if fresh.getChild(0).sameAsCached <> true then return false
+    ' Compared with what was painted rather than the saved file, which a run that timed out may have
+    ' rewritten since
+    if cached.cacheSig = "" or fresh.getChild(0).cacheSig <> cached.cacheSig then return false
 
     for i = 0 to count - 1
         cachedCard = cached.getChild(i)
@@ -1083,9 +1095,10 @@ sub queueLabels(rows as object)
 end sub
 
 ' startLabels: Asks Home for the labels of the ids waiting, unless a request is still out. Its answer
-' starts the next one.
+' starts the next one. A request is out until its answer clears labelIdsAsked, even once the task has
+' stopped, so a new one never replaces the ids still waiting for that answer.
 sub startLabels()
-    if m.labelIdsWaiting.count() = 0 or m.labelsTask.state = "run" then return
+    if m.labelIdsWaiting.count() = 0 or m.labelIdsAsked.count() > 0 then return
 
     m.labelIdsAsked = m.labelIdsWaiting
     m.labelIdsWaiting = []
@@ -1134,10 +1147,15 @@ sub sortHomeRows()
     ' Resolve the section names and localized titles once so scoring stays cheap
     matchers = buildSectionMatchers()
 
-    ' Score every row once rather than recomputing during each comparison
+    ' Score every row once rather than recomputing during each comparison. Each library's row shares
+    ' its section's place, so the library order this build read breaks the tie. A cached row from
+    ' before the libraries came back keeps its saved place until then.
     indexes = []
     for each child in children
-        indexes.push(getOriginalSettingIndexForNode(child, matchers))
+        index = getOriginalSettingIndexForNode(child, matchers) * 1000
+        libraryOrder = m.libraryRowOrder[child.title]
+        if isValid(libraryOrder) then index += libraryOrder
+        indexes.push(index)
     end for
 
     ' Stable insertion sort based on settings index
@@ -1657,6 +1675,7 @@ sub createLatestInRows()
                 loadLatest.metadata = metadata
                 m.latestRequests[sectionName] = { itemIds: libIds, itemId: firstLib.id, metadata: metadata }
 
+                m.libraryRowOrder[sectionName] = i
                 loadLatest.cacheRow = cacheRowFor("latestmedia", sectionName, i)
                 runRowTask(loadLatest, "content", "updateLatestItems")
             catch e
@@ -1687,6 +1706,7 @@ sub createLatestInRows()
                 loadLatest.metadata = metadata
                 m.latestRequests[sectionName] = { itemIds: [], itemId: lib.id, metadata: metadata }
 
+                m.libraryRowOrder[sectionName] = i
                 loadLatest.cacheRow = cacheRowFor("latestmedia", sectionName, i)
                 runRowTask(loadLatest, "content", "updateLatestItems")
             catch e
@@ -1720,6 +1740,7 @@ sub createRecentlyReleasedRow()
                 metadata.Append({ "contentType": lib.json.CollectionType })
                 loadLatest.metadata = metadata
 
+                m.libraryRowOrder[sectionName] = i
                 loadLatest.cacheRow = cacheRowFor("recentlyreleased", sectionName, i)
                 runRowTask(loadLatest, "content", "updateRecentlyReleasedItems")
             catch e
@@ -2209,9 +2230,19 @@ sub createMultiServerLatestRows(sessions as object)
         })
 
         task.observeField("isComplete", "onMultiServerLibrariesLoaded")
+        m.multiServerEstimates[userSession.serverId] = true
         task.control = "RUN"
     end for
 
+end sub
+
+' Swaps the server's estimate for the rows it really started, once per build, since a late answer
+' from an earlier build can land in this one
+sub settleMultiServerEstimate(serverId as string, started as integer)
+    if not m.multiServerEstimates.DoesExist(serverId) then return
+    m.multiServerEstimates.Delete(serverId)
+    m.expectedRowCount += started - MULTI_SERVER_LATEST_ROWS
+    finishIfAllRowsIn()
 end sub
 
 ' onMultiServerLibrariesLoaded: Handler for library list loaded from a server
@@ -2233,6 +2264,7 @@ sub onMultiServerLibrariesLoaded(msg as object)
     results = node.results
 
     if not isValidAndNotEmpty(results)
+        settleMultiServerEstimate(userSession.serverId, 0)
         return
     end if
 
@@ -2244,6 +2276,7 @@ sub onMultiServerLibrariesLoaded(msg as object)
 
 
     ' Create a row for each library
+    started = 0
     for each item in results
         collectionType = ""
         if isValid(item.CollectionType) then collectionType = LCase(item.CollectionType)
@@ -2300,8 +2333,10 @@ sub onMultiServerLibrariesLoaded(msg as object)
         })
 
         runRowTask(task, "isComplete", "onMultiServerLatestPerLibraryComplete")
+        started++
     end for
 
+    settleMultiServerEstimate(userSession.serverId, started)
 end sub
 
 ' onMultiServerLatestPerLibraryComplete: Handler for per-library per-server latest items
@@ -2680,10 +2715,6 @@ end sub
 sub updateNextUpItems()
     m.processedRowCount++
     itemData = getTaskContentAndCleanup("nextUp")
-    ' Stop the task for Next Up
-    if m.contentTasks.doesExist("nextUp")
-        m.contentTasks["nextUp"].control = "STOP"
-    end if
 
     sectionName = tr("Next Up")
 

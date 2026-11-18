@@ -1613,6 +1613,16 @@ assert.match(homeRowsWiring, /m\.emptySections\[sectionTitle\] = true/, 'A secti
 assert.equal((homeRowsWiring.match(/if not sectionExists\(sectionName\) and not knownEmpty\(sectionName\)/g) || []).length, 12, 'Every placeholder skips a section known to be empty');
 assert.match(homeRowsWiring, /const EAGER_SECTION_COUNT = 8\s+const NEAR_ROWS_ABOVE = 2\s+const NEAR_ROWS_BELOW = 5\s+const LATE_ROW_LOADS = 3/, 'Picked rows past the first eight wait for focus to come near');
 assert.match(homeRowsWiring, /if holdsBack\(i, sectionName\)\s+holdBack\(sectionName\)/, 'Held back rows only get a placeholder');
+assert.match(homeRowsWiring, /if task\.state = "run" or task\.rowRunning\s+task\.unobserveField\(field\)\s+task\.rowRerun = true/, 'A row task that stopped but still holds its slot runs again once it frees it, so it is never counted twice');
+assert.match(homeRowsWiring, /sub startLabels\(\)\s+if m\.labelIdsWaiting\.count\(\) = 0 or m\.labelIdsAsked\.count\(\) > 0 then return/, 'A label request waits for the last answer, so the ids still out are never dropped');
+assert.match(homeRowsWiring, /index = getOriginalSettingIndexForNode\(child, matchers\) \* 1000\s+libraryOrder = m\.libraryRowOrder\[child\.title\]/, "Each library's row sorts by the library order the build read, not where its saved copy was painted");
+assert.equal((homeRowsWiring.match(/m\.libraryRowOrder\[sectionName\] = i/g) || []).length, 3, 'Every Recently Added and Recently Released row records its library order');
+assert.match(homeRowsWiring, /if cached\.cacheSig = "" or fresh\.getChild\(0\)\.cacheSig <> cached\.cacheSig then return false/, 'Cached cards are kept only when the fresh items are the ones they were painted from');
+assert.match(homeRowsWiring, /row\.fromCache = true\s+if isString\(record\.sig\) then row\.cacheSig = record\.sig/, 'A cached row carries the signature of the items it was painted from');
+assert.match(homeRowsWiring, /m\.expectedRowCount \+= started - MULTI_SERVER_LATEST_ROWS/, "A server's Recently Added estimate is corrected to the rows it really started, so the build doesn't wait for rows that never come");
+assert.doesNotMatch(homeRowsWiring, /contentTasks\["nextUp"\]\.control = "STOP"/, 'Next Up ends on its own, so its cache write is never cut off');
+assert.match(await readFile('source/api/silo/SiloSession.bs', 'utf8'), /reg\.Flush\(\)\s+' [^\n]*\s+silo\.ForgetMemos\(\)\s+end sub/, 'A sign-out clears the memo after the login is gone');
+assert.match(await readFile('components/home/LoadItemsTask.bs', 'utf8'), /itemsSig = homeCache\.Signature\(items\) \+ "@" \+ toString\(cacheRow\.order\)/, 'A saved row moved by a library reorder is saved again');
 const syncWiring = await readFile('source/utils/settingsSync.bs', 'utf8');
 for (const key of ['imdb', 'tmdb', 'seerr']) {
     assert.match(syncWiring, new RegExp(`\\{ pluginKey: "${key}RowsSortBy", rokuKey: "${key}\\.rowsSortBy", type: "direct" \\}`), `The ${key} sort syncs`);
