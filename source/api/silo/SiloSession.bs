@@ -284,14 +284,7 @@ namespace silo
     ' One HTTP exchange. Answers { status, data, text, retryAfter }, status 0 when nothing came back
     function Exchange(method as string, url as string, headers as object, body = invalid as dynamic, timeoutMs = 0 as integer) as object
         if timeoutMs <= 0 then timeoutMs = silo.TIMEOUT_MS
-        req = CreateObject("roUrlTransfer")
-        req.SetUrl(url)
-        if LCase(url).Left(8) = "https://" then req.SetCertificatesFile("common:/certs/ca-bundle.crt")
-        req.RetainBodyOnError(true)
-        req.AddHeader("Accept", "application/json, application/problem+json")
-        for each name in headers
-            req.AddHeader(name, headers[name])
-        end for
+        req = silo.NewRequest(url, headers)
         port = CreateObject("roMessagePort")
         req.SetMessagePort(port)
         method = UCase(method)
@@ -321,6 +314,23 @@ namespace silo
             diagnostics.Network("Silo " + method + " " + silo.PathOf(url) + " timed out", diagnostics.LEVEL_WARN)
             return answer
         end if
+        return silo.AnswerOf(event, method, url, payload)
+    end function
+
+    function NewRequest(url as string, headers as object) as object
+        req = CreateObject("roUrlTransfer")
+        req.SetUrl(url)
+        if LCase(url).Left(8) = "https://" then req.SetCertificatesFile("common:/certs/ca-bundle.crt")
+        req.RetainBodyOnError(true)
+        req.AddHeader("Accept", "application/json, application/problem+json")
+        for each name in headers
+            req.AddHeader(name, headers[name])
+        end for
+        return req
+    end function
+
+    function AnswerOf(event as object, method as string, url as string, payload as string) as object
+        answer = { status: 0, data: invalid, text: "", retryAfter: "" }
         answer.status = event.GetResponseCode()
         if answer.status < 0 then answer.status = 0
         answer.text = event.GetString() ?? ""
@@ -422,16 +432,7 @@ namespace silo
         useProfile = options.profile <> false
         canRefresh = options.refresh <> false
         canReplay = canRefresh and options.replay <> false
-        url = path
-        if LCase(path).Left(4) <> "http" then url = base + path
-        query = silo.EncodeQuery(options.query)
-        if query <> ""
-            if Instr(1, url, "?") > 0
-                url = url + "&" + query
-            else
-                url = url + "?" + query
-            end if
-        end if
+        url = silo.UrlOf(base, path, options.query)
 
         tokens = invalid
         if accountId <> ""
@@ -452,6 +453,103 @@ namespace silo
             end if
         end if
         return silo.ResultOf(answer)
+    end function
+
+    ' Several GETs on one account, at most four in flight, answered in the order asked. One that
+    ' comes back 401 goes again through Call, which refreshes the token and replays it.
+    function CallMany(server as string, calls as object, options = {} as object) as object
+        if calls.Count() = 0 then return []
+        base = silo.ServerKey(server)
+        accountId = options.account ?? ""
+        tokens = invalid
+        if accountId <> ""
+            tokens = silo.LoadTokens(base, accountId)
+            if isValid(tokens) and options.refresh <> false and silo.NeedsRefresh(tokens)
+                silo.Refresh(base, accountId, tokens.access)
+                tokens = silo.LoadTokens(base, accountId)
+            end if
+        end if
+        if accountId <> "" and not isValid(tokens)
+            results = []
+            for each call in calls
+                results.Push(silo.Failed(401))
+            end for
+            return results
+        end if
+        answers = []
+        for each call in calls
+            answers.Push({ status: 0, data: invalid, text: "", retryAfter: "" })
+        end for
+
+        headers = silo.RequestHeaders(tokens, options.profileId ?? "", options.profile <> false, options.headers)
+        port = CreateObject("roMessagePort")
+        ' Each transfer gets its own deadline, so answers to the others don't extend its wait.
+        clock = CreateObject("roTimespan")
+        inFlight = {}
+        nextCall = 0
+        while nextCall < calls.Count() or inFlight.Count() > 0
+            while nextCall < calls.Count() and inFlight.Count() < 4
+                url = silo.UrlOf(base, calls[nextCall].path, calls[nextCall].query)
+                req = silo.NewRequest(url, headers)
+                req.SetMessagePort(port)
+                if req.AsyncGetToString() then inFlight[req.GetIdentity().ToStr()] = { req: req, index: nextCall, url: url, deadline: clock.TotalMilliseconds() + silo.TIMEOUT_MS }
+                nextCall++
+            end while
+            if inFlight.Count() > 0
+                nearest = invalid
+                for each key in inFlight
+                    if nearest = invalid or inFlight[key].deadline < nearest then nearest = inFlight[key].deadline
+                end for
+                waitMs = nearest - clock.TotalMilliseconds()
+                if waitMs < 1 then waitMs = 1
+                event = wait(waitMs, port)
+                if type(event) = "roUrlEvent" and event.GetInt() = 1
+                    key = event.GetSourceIdentity().ToStr()
+                    sent = inFlight[key]
+                    if sent <> invalid
+                        answers[sent.index] = silo.AnswerOf(event, "GET", sent.url, "")
+                        inFlight.Delete(key)
+                    end if
+                end if
+                now = clock.TotalMilliseconds()
+                expired = []
+                for each key in inFlight
+                    if inFlight[key].deadline <= now then expired.Push(key)
+                end for
+                for each key in expired
+                    inFlight[key].req.AsyncCancel()
+                    diagnostics.Network("Silo GET " + silo.PathOf(inFlight[key].url) + " timed out", diagnostics.LEVEL_WARN)
+                    inFlight.Delete(key)
+                end for
+            end if
+        end while
+
+        results = []
+        for i = 0 to calls.Count() - 1
+            if answers[i].status = 401 and isValid(tokens) and options.refresh <> false and options.replay <> false
+                again = {}
+                again.Append(options)
+                again.query = calls[i].query
+                results.Push(silo.Call(server, calls[i].path, again))
+            else
+                results.Push(silo.ResultOf(answers[i]))
+            end if
+        end for
+        return results
+    end function
+
+    function UrlOf(base as string, path as string, query as dynamic) as string
+        url = path
+        if LCase(path).Left(4) <> "http" then url = base + path
+        encoded = silo.EncodeQuery(query)
+        if encoded <> ""
+            if Instr(1, url, "?") > 0
+                url = url + "&" + encoded
+            else
+                url = url + "?" + encoded
+            end if
+        end if
+        return url
     end function
 
     function RequestHeaders(tokens as dynamic, profileId as string, useProfile as boolean, extra as dynamic) as object
