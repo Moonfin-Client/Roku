@@ -5648,5 +5648,9 @@
         <source>Dim video and show overview text while paused</source>
         <translation>Video abdunkeln und Übersichtstext bei Pause anzeigen</translation>
     </message>
+    <message>
+        <source>Hide Unwatched Count</source>
+        <translation>Anzahl ungesehener Elemente ausblenden</translation>
+    </message>
 </context>
 </TS>
