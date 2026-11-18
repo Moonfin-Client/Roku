@@ -4621,5 +4621,3141 @@
         <source>Dim video and show overview text while paused</source>
         <translation>暂停时调暗视频并显示简介文本</translation>
     </message>
+    <message>
+        <source>Semi-transparent White</source>
+        <translation>半透明白色</translation>
+    </message>
+    <message>
+        <source>Background Opacity</source>
+        <translation>详情页背景不透明度</translation>
+    </message>
+    <message>
+        <source>Music Video Playlists</source>
+        <translation>音乐视频播放列表</translation>
+    </message>
+    <message>
+        <source>Peek Home Rows</source>
+        <translation>预览首页栏目</translation>
+    </message>
+    <message>
+        <source>Show the top half of the first row along the bottom of the media bar</source>
+        <translation>在媒体栏底部显示第一行栏目的上半部分</translation>
+    </message>
+    <message>
+        <source>Subtitled</source>
+        <translation>带字幕</translation>
+    </message>
+    <message>
+        <source>Seasonal Row</source>
+        <translation>节日推荐行</translation>
+    </message>
+    <message>
+        <source>New Year&apos;s</source>
+        <translation>新年</translation>
+    </message>
+    <message>
+        <source>Valentine&apos;s Day</source>
+        <translation>情人节</translation>
+    </message>
+    <message>
+        <source>Easter</source>
+        <translation>复活节</translation>
+    </message>
+    <message>
+        <source>Pride</source>
+        <translation>骄傲月</translation>
+    </message>
+    <message>
+        <source>Halloween</source>
+        <translation>万圣节</translation>
+    </message>
+    <message>
+        <source>Thanksgiving</source>
+        <translation>感恩节</translation>
+    </message>
+    <message>
+        <source>Christmas Movies</source>
+        <translation>圣诞电影</translation>
+    </message>
+    <message>
+        <source>Lunar New Year</source>
+        <translation>农历新年</translation>
+    </message>
+    <message>
+        <source>Diwali</source>
+        <translation>排灯节</translation>
+    </message>
+    <message>
+        <source>Library Order</source>
+        <translation>媒体库顺序</translation>
+    </message>
+    <message>
+        <source>Choose the order of your libraries</source>
+        <translation>选择媒体库的顺序</translation>
+    </message>
+    <message>
+        <source>Your libraries appear in this order on My Media, the recently added rows and the navigation bar. The order is saved to your server account, so other apps you sign in to use it too.</source>
+        <translation>你的媒体库会按此顺序显示在“我的媒体”、最近添加栏目和导航栏中。此顺序会保存到你的服务器账号，因此你登录的其他应用也会使用它。</translation>
+    </message>
+    <message>
+        <source>Press left or right to move the highlighted library.</source>
+        <translation>按左或右方向键移动高亮的媒体库。</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t save the library order</source>
+        <translation>无法保存媒体库顺序</translation>
+    </message>
+    <message>
+        <source>Sections</source>
+        <translation>分区</translation>
+    </message>
+    <message>
+        <source>Choose which parts of the Details screen to show</source>
+        <translation>选择详情页要显示的分区</translation>
+    </message>
+    <message>
+        <source>Person pages</source>
+        <translation>人物页面</translation>
+    </message>
+    <message>
+        <source>Shows the title as text when off</source>
+        <translation>关闭时以文字形式显示标题</translation>
+    </message>
+    <message>
+        <source>Also on collection pages</source>
+        <translation>也显示在合集页面上</translation>
+    </message>
+    <message>
+        <source>Directors &amp; writers</source>
+        <translation>导演与编剧</translation>
+    </message>
+    <message>
+        <source>Also similar albums and artists</source>
+        <translation>也包括相似专辑和艺术家</translation>
+    </message>
+    <message>
+        <source>More episodes</source>
+        <translation>更多集数</translation>
+    </message>
+    <message>
+        <source>On episode pages</source>
+        <translation>在剧集页面上</translation>
+    </message>
+    <message>
+        <source>Media info</source>
+        <translation>媒体信息</translation>
+    </message>
+    <message>
+        <source>Version badge</source>
+        <translation>版本徽章</translation>
+    </message>
+    <message>
+        <source>File, streams and Direct Play check</source>
+        <translation>文件、媒体流和直接播放检查</translation>
+    </message>
+    <message>
+        <source>Genres &amp; tags</source>
+        <translation>类型与标签</translation>
+    </message>
+    <message>
+        <source>Streaming services</source>
+        <translation>流媒体服务</translation>
+    </message>
+    <message>
+        <source>Similar titles</source>
+        <translation>相似作品</translation>
+    </message>
+    <message>
+        <source>Collection banner</source>
+        <translation>合集横幅</translation>
+    </message>
+    <message>
+        <source>On person pages</source>
+        <translation>在人物页面上</translation>
+    </message>
+    <message>
+        <source>Crew credits</source>
+        <translation>幕后作品</translation>
+    </message>
+    <message>
+        <source>Birthplace</source>
+        <translation>出生地</translation>
+    </message>
+    <message>
+        <source>Guest appearances</source>
+        <translation>客串演出</translation>
+    </message>
+    <message>
+        <source>Music videos</source>
+        <translation>音乐视频</translation>
+    </message>
+    <message>
+        <source>Playback languages</source>
+        <translation>播放语言</translation>
+    </message>
+    <message>
+        <source>Optional</source>
+        <translation>可选</translation>
+    </message>
+    <message>
+        <source>Show a notification when you unlock a badge</source>
+        <translation>解锁徽章时显示通知</translation>
+    </message>
+    <message>
+        <source>Could not save your settings.</source>
+        <translation>无法保存设置。</translation>
+    </message>
+    <message>
+        <source>Achievement unlocked</source>
+        <translation>成就已解锁</translation>
+    </message>
+    <message>
+        <source>Friends and chat from the Achievement Badges plugin</source>
+        <translation>来自 Achievement Badges 插件的好友与聊天功能</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>好友</translation>
+    </message>
+    <message>
+        <source>See who&apos;s online and chat with people on this server</source>
+        <translation>查看谁在线，并与此服务器上的用户聊天</translation>
+    </message>
+    <message>
+        <source>Friend requests</source>
+        <translation>好友请求</translation>
+    </message>
+    <message>
+        <source>Add friends</source>
+        <translation>添加好友</translation>
+    </message>
+    <message>
+        <source>Privacy</source>
+        <translation>隐私</translation>
+    </message>
+    <message>
+        <source>New message</source>
+        <translation>新消息</translation>
+    </message>
+    <message>
+        <source>New group</source>
+        <translation>新建群组</translation>
+    </message>
+    <message>
+        <source>Group info</source>
+        <translation>群组信息</translation>
+    </message>
+    <message>
+        <source>Add people</source>
+        <translation>添加成员</translation>
+    </message>
+    <message>
+        <source>That didn&apos;t work. Try again in a moment.</source>
+        <translation>操作失败。请稍后重试。</translation>
+    </message>
+    <message>
+        <source>Online</source>
+        <translation>在线</translation>
+    </message>
+    <message>
+        <source>Could not load this. Check your connection and try again.</source>
+        <translation>无法加载。请检查网络连接后重试。</translation>
+    </message>
+    <message>
+        <source>Find people on this server</source>
+        <translation>在此服务器上查找用户</translation>
+    </message>
+    <message>
+        <source>What your friends can see</source>
+        <translation>你的好友可以看到的内容</translation>
+    </message>
+    <message>
+        <source>No friends yet. Add people from this server to see them here.</source>
+        <translation>还没有好友。添加此服务器上的用户后，他们会显示在这里。</translation>
+    </message>
+    <message>
+        <source>Showcase</source>
+        <translation>展示柜</translation>
+    </message>
+    <message>
+        <source>Remove friend</source>
+        <translation>移除好友</translation>
+    </message>
+    <message>
+        <source>Unblock</source>
+        <translation>取消屏蔽</translation>
+    </message>
+    <message>
+        <source>Block</source>
+        <translation>屏蔽</translation>
+    </message>
+    <message>
+        <source>Send message</source>
+        <translation>发送消息</translation>
+    </message>
+    <message>
+        <source>No friend requests.</source>
+        <translation>暂无好友请求。</translation>
+    </message>
+    <message>
+        <source>Waiting for you</source>
+        <translation>等待你处理</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>接受</translation>
+    </message>
+    <message>
+        <source>Sent by you</source>
+        <translation>由你发出</translation>
+    </message>
+    <message>
+        <source>Cancel request</source>
+        <translation>取消请求</translation>
+    </message>
+    <message>
+        <source>Search people</source>
+        <translation>搜索用户</translation>
+    </message>
+    <message>
+        <source>No one matches that name.</source>
+        <translation>没有找到与该名称匹配的用户。</translation>
+    </message>
+    <message>
+        <source>Blocked users</source>
+        <translation>已屏蔽用户</translation>
+    </message>
+    <message>
+        <source>Friends always see you as offline</source>
+        <translation>好友始终看到你处于离线状态</translation>
+    </message>
+    <message>
+        <source>Friends still see you online, but not what&apos;s playing</source>
+        <translation>好友仍能看到你在线，但看不到你正在播放的内容</translation>
+    </message>
+    <message>
+        <source>Friends won&apos;t see what you watched last while you&apos;re offline</source>
+        <translation>离线时，好友看不到你最近观看的内容</translation>
+    </message>
+    <message>
+        <source>Show a banner when a friend messages you</source>
+        <translation>好友发来消息时显示横幅通知</translation>
+    </message>
+    <message>
+        <source>Start a chat with a friend</source>
+        <translation>与好友开始聊天</translation>
+    </message>
+    <message>
+        <source>Chat with several friends at once</source>
+        <translation>与多位好友同时聊天</translation>
+    </message>
+    <message>
+        <source>No messages yet.</source>
+        <translation>暂无消息。</translation>
+    </message>
+    <message>
+        <source>Pick at least two friends</source>
+        <translation>至少选择两位好友</translation>
+    </message>
+    <message>
+        <source>edited</source>
+        <translation>已编辑</translation>
+    </message>
+    <message>
+        <source>Seen</source>
+        <translation>已读</translation>
+    </message>
+    <message>
+        <source>Sent</source>
+        <translation>已发送</translation>
+    </message>
+    <message>
+        <source>Christmas</source>
+        <translation>圣诞节</translation>
+    </message>
+    <message>
+        <source>Spring Petals</source>
+        <translation>春日花瓣</translation>
+    </message>
+    <message>
+        <source>Fireflies</source>
+        <translation>萤火虫</translation>
+    </message>
+    <message>
+        <source>Density</source>
+        <translation>密度</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>稀疏</translation>
+    </message>
+    <message>
+        <source>A holiday piece, like Halloween&apos;s planchette, follows what you select on Home</source>
+        <translation>节日装饰（如万圣节的灵应牌）会跟随你在首页上的选择</translation>
+    </message>
+    <message>
+        <source>Cinema Mode Skip Button</source>
+        <translation>影院模式跳过按钮</translation>
+    </message>
+    <message>
+        <source>Show a Skip button during Cinema Mode trailers, commercials, and other pre-rolls.</source>
+        <translation>在影院模式的预告片、广告和其他片前内容播放期间显示“跳过”按钮。</translation>
+    </message>
+    <message>
+        <source>Transcode Audio Codecs</source>
+        <translation>音频转码编解码器</translation>
+    </message>
+    <message>
+        <source>The server converts audio in these formats instead of sending it as is.</source>
+        <translation>服务器会转换这些格式的音频，而不是原样发送。</translation>
+    </message>
+    <message>
+        <source>Fetching subtitles</source>
+        <translation>正在获取字幕</translation>
+    </message>
+    <message>
+        <source>Settings Sync</source>
+        <translation>设置同步</translation>
+    </message>
+    <message>
+        <source>This device syncs with the profile you pick until you pick another.</source>
+        <translation>此设备会与所选配置方案保持同步，直到你选择另一个。</translation>
+    </message>
+    <message>
+        <source>Overrides Global</source>
+        <translation>覆盖全局</translation>
+    </message>
+    <message>
+        <source>This device</source>
+        <translation>此设备</translation>
+    </message>
+    <message>
+        <source>Load</source>
+        <translation>加载</translation>
+    </message>
+    <message>
+        <source>Server to this device</source>
+        <translation>从服务器到此设备</translation>
+    </message>
+    <message>
+        <source>This device to server</source>
+        <translation>从此设备到服务器</translation>
+    </message>
+    <message>
+        <source>Audio Stream</source>
+        <translation>音频流</translation>
+    </message>
+    <message>
+        <source>Choose and reorder what metadata the details screen shows</source>
+        <translation>选择并重新排列详情页显示的元数据</translation>
+    </message>
+    <message>
+        <source>Choose how many Since You Watched rows to display (1-5)</source>
+        <translation>选择要显示的“观看之后”行数（1-5）</translation>
+    </message>
+    <message>
+        <source>Choose type of items to recommend</source>
+        <translation>选择要推荐的媒体项类型</translation>
+    </message>
+    <message>
+        <source>Choose which source item to base recommendations on</source>
+        <translation>选择作为推荐依据的来源媒体项</translation>
+    </message>
+    <message>
+        <source>How a movie or show looks when you open it.</source>
+        <translation>Moonfin 是经典布局；Modern 是自适应影院风布局。Spotlight 是一种以主视觉区优先、带有弹出式内容卡片的布局。Nouveau 是一种全屏布局，各个版块沿页面自上而下堆叠。Minimalist 是有封面图、一个播放按钮和各集列表。</translation>
+    </message>
+    <message>
+        <source>Controls, seeking, player buttons, and trick play</source>
+        <translation>控制、跳转、播放器按钮和 trickplay</translation>
+    </message>
+    <message>
+        <source>Customize how many action buttons appear before folding into the More Actions menu.</source>
+        <translation>自定义在折叠到“更多操作”菜单之前显示多少个操作按钮。</translation>
+    </message>
+    <message>
+        <source>Display customizable posters that expand on focus. Disable to always show landscape thumbnail.</source>
+        <translation>显示可自定义的海报，获得焦点时展开。关闭后始终显示横向缩略图。</translation>
+    </message>
+    <message>
+        <source>Include Previously Watched</source>
+        <translation>包含已观看内容</translation>
+    </message>
+    <message>
+        <source>Include watched items in recommendations</source>
+        <translation>在推荐中包含已观看的媒体项</translation>
+    </message>
+    <message>
+        <source>Library Backdrops</source>
+        <translation>媒体库背景图</translation>
+    </message>
+    <message>
+        <source>Moonbase plugin sync and customization profiles</source>
+        <translation>Moonbase 插件同步和自定义配置方案</translation>
+    </message>
+    <message>
+        <source>Navigation, home screen, libraries, details page, and themes</source>
+        <translation>导航、主屏幕、媒体库、详情页面和主题</translation>
+    </message>
+    <message>
+        <source>Number of Rows to Add</source>
+        <translation>添加的行数</translation>
+    </message>
+    <message>
+        <source>Recommendation Source</source>
+        <translation>推荐来源</translation>
+    </message>
+    <message>
+        <source>Show the Seerr status on posters and seasons across the app</source>
+        <translation>在整个应用的海报和季上显示 Seerr 状态</translation>
+    </message>
+    <message>
+        <source>Badge Style</source>
+        <translation>徽章样式</translation>
+    </message>
+    <message>
+        <source>Badge puts Seerr&apos;s dot in a corner. Banner runs the status across the top of the poster.</source>
+        <translation>徽章将 Seerr 的圆点放在角落。横幅将状态显示在海报顶部。</translation>
+    </message>
+    <message>
+        <source>Badge</source>
+        <translation>徽章</translation>
+    </message>
+    <message>
+        <source>Source Type</source>
+        <translation>来源类型</translation>
+    </message>
+    <message>
+        <source>Turn rows on or off and change their order</source>
+        <translation>开启或关闭栏目并调整其顺序</translation>
+    </message>
+    <message>
+        <source>Rows</source>
+        <translation>栏目</translation>
+    </message>
+    <message>
+        <source>Genres and Studios</source>
+        <translation>类型和制作公司</translation>
+    </message>
+    <message>
+        <source>This account can&apos;t sign in right now. It may be outside its allowed hours, locked or disabled. Try again later or ask an administrator.</source>
+        <translation>此账号当前无法登录。可能不在允许的时间段内、已被锁定或已禁用。请稍后重试或联系管理员。</translation>
+    </message>
+    <message>
+        <source>Channel</source>
+        <translation>频道</translation>
+    </message>
+    <message>
+        <source>Program</source>
+        <translation>节目</translation>
+    </message>
+    <message>
+        <source>Why</source>
+        <translation>原因</translation>
+    </message>
+    <message>
+        <source>Quality Limit</source>
+        <translation>画质限制</translation>
+    </message>
+    <message>
+        <source>Frame Rate</source>
+        <translation>帧率</translation>
+    </message>
+    <message>
+        <source>Delivery</source>
+        <translation>传输方式</translation>
+    </message>
+    <message>
+        <source>File</source>
+        <translation>文件</translation>
+    </message>
+    <message>
+        <source>Technical</source>
+        <translation>技术信息</translation>
+    </message>
+    <message>
+        <source>Device</source>
+        <translation>设备</translation>
+    </message>
+    <message>
+        <source>Burned in by the server</source>
+        <translation>由服务器压制</translation>
+    </message>
+    <message>
+        <source>{value} (original {original})</source>
+        <translation>{value}（原始 {original}）</translation>
+    </message>
+    <message>
+        <source>{value} (converted from {source})</source>
+        <translation>{value}（由 {source} 转换而来）</translation>
+    </message>
+    <message>
+        <source>Playing the original file as is.</source>
+        <translation>正在按原样播放原始文件。</translation>
+    </message>
+    <message>
+        <source>The server is repackaging the file without converting it.</source>
+        <translation>服务器正在重新封装文件，但不进行转码。</translation>
+    </message>
+    <message>
+        <source>The server is converting the video so this device can play it.</source>
+        <translation>服务器正在转码视频，以便此设备播放。</translation>
+    </message>
+    <message>
+        <source>The server is converting the audio so this device can play it.</source>
+        <translation>服务器正在转码音频，以便此设备播放。</translation>
+    </message>
+    <message>
+        <source>The server is converting the video and audio so this device can play it.</source>
+        <translation>服务器正在转码视频和音频，以便此设备播放。</translation>
+    </message>
+    <message>
+        <source>The server is converting this file so this device can play it.</source>
+        <translation>服务器正在转码此文件，以便此设备播放。</translation>
+    </message>
+    <message>
+        <source>Transcoding is forced in settings</source>
+        <translation>设置中已强制转码</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play this file type</source>
+        <translation>此设备无法播放此文件类型</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t display this HDR format</source>
+        <translation>此设备无法显示此 HDR 格式</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play this audio format</source>
+        <translation>此设备无法播放此音频格式</translation>
+    </message>
+    <message>
+        <source>Subtitles are being burned into the video</source>
+        <translation>服务器正在将字幕压制到视频中</translation>
+    </message>
+    <message>
+        <source>The file couldn&apos;t be played directly</source>
+        <translation>无法直接播放此文件</translation>
+    </message>
+    <message>
+        <source>{bitrate} is above the {limit} streaming limit</source>
+        <translation>{bitrate} 超过 {limit} 的串流限制</translation>
+    </message>
+    <message>
+        <source>The bitrate is above the streaming limit</source>
+        <translation>码率超过串流限制</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t open {container} files</source>
+        <translation>此设备无法打开 {container} 文件</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {codec} video</source>
+        <translation>此设备无法播放 {codec} 视频</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {codec} {profile} video</source>
+        <translation>此设备无法播放 {codec} {profile} 视频</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {codec} level {level} video</source>
+        <translation>此设备无法播放 {codec} {level} 级别视频</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {bits}-bit video</source>
+        <translation>此设备无法播放 {bits} 位视频</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {resolution} video</source>
+        <translation>此设备无法播放 {resolution} 视频</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {fps} fps video</source>
+        <translation>此设备无法播放 {fps} fps 视频</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play interlaced video</source>
+        <translation>此设备无法播放隔行视频</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play anamorphic video</source>
+        <translation>此设备无法播放变形视频</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t display {range}</source>
+        <translation>此设备无法显示 {range}</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {format} audio</source>
+        <translation>此设备无法播放 {format} 音频</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {fullFormat}</source>
+        <translation>此设备无法播放 {fullFormat}</translation>
+    </message>
+    <message>
+        <source>Native uses your TV&apos;s own keyboard. Classic is the original Moonfin keyboard. Glass is a frosted panel with larger keys. Docked fills the bottom of the screen and shows what you type above the keys.</source>
+        <translation>原生使用电视自带的键盘。经典是 Moonfin 原有的键盘。玻璃是带更大按键的磨砂面板。停靠式占据屏幕底部，并在按键上方显示你输入的内容。</translation>
+    </message>
+    <message>
+        <source>Native</source>
+        <translation>原生</translation>
+    </message>
+    <message>
+        <source>No tracks match the active filters</source>
+        <translation>没有符合当前筛选条件的曲目</translation>
+    </message>
+    <message>
+        <source>Live TV Direct Play</source>
+        <translation>直播电视直接播放</translation>
+    </message>
+    <message>
+        <source>Time&apos;s up</source>
+        <translation>时间到</translation>
+    </message>
+    <message>
+        <source>This account isn&apos;t available right now.</source>
+        <translation>此账号当前不可用。</translation>
+    </message>
+    <message>
+        <source>Jump to letter</source>
+        <translation>跳转到字母</translation>
+    </message>
+    <message>
+        <source>Music Video</source>
+        <translation>音乐视频</translation>
+    </message>
+    <message>
+        <source>Folder View</source>
+        <translation>文件夹视图</translation>
+    </message>
+    <message>
+        <source>Titles Under Posters</source>
+        <translation>海报下方显示标题</translation>
+    </message>
+    <message>
+        <source>Show each item&apos;s title and details below its artwork in library grids.</source>
+        <translation>在媒体库网格中，于每个媒体项的图片下方显示标题和详情。</translation>
+    </message>
+    <message>
+        <source>A 2 by 2 block every fifth signal.</source>
+        <translation>每五个信号出现一个 2×2 方块。</translation>
+    </message>
+    <message>
+        <source>Vote for what you want to watch. The host plays one.</source>
+        <translation>为你想看的内容投票。房主会播放其中一部。</translation>
+    </message>
+    <message>
+        <source>Add movies for everyone to vote on, then play the one you want. TV episodes are still your pick.</source>
+        <translation>添加电影供大家投票，然后播放选中的那部。</translation>
+    </message>
+    <message>
+        <source>Hide Watch Progress</source>
+        <translation>隐藏观看进度</translation>
+    </message>
+    <message>
+        <source>Hide the progress bar on posters you&apos;ve started watching.</source>
+        <translation>隐藏已开始观看内容的海报上的进度条。</translation>
+    </message>
+    <message>
+        <source>Hide Unwatched Count</source>
+        <translation>隐藏未观看数量</translation>
+    </message>
+    <message>
+        <source>Hide the badge showing how many episodes are left to watch.</source>
+        <translation>隐藏显示剩余未观看集数的角标。</translation>
+    </message>
+    <message>
+        <source>Length</source>
+        <translation>时长</translation>
+    </message>
+    <message>
+        <source>Track Number</source>
+        <translation>曲目编号</translation>
+    </message>
+    <message>
+        <source>Folders First</source>
+        <translation>文件夹优先</translation>
+    </message>
+    <message>
+        <source>All Artists</source>
+        <translation>所有艺人</translation>
+    </message>
+    <message>
+        <source>A to Z</source>
+        <translation>A 到 Z</translation>
+    </message>
+    <message>
+        <source>Z to A</source>
+        <translation>Z 到 A</translation>
+    </message>
+    <message>
+        <source>Filter by Genre</source>
+        <translation>按类型筛选</translation>
+    </message>
+    <message>
+        <source>Open Album</source>
+        <translation>打开专辑</translation>
+    </message>
+    <message>
+        <source>All Songs A to Z</source>
+        <translation>所有歌曲 A 到 Z</translation>
+    </message>
+    <message>
+        <source>Everything</source>
+        <translation>全部</translation>
+    </message>
+    <message>
+        <source>300 songs at random</source>
+        <translation>随机 300 首歌曲</translation>
+    </message>
+    <message>
+        <source>Mix</source>
+        <translation>混合</translation>
+    </message>
+    <message>
+        <source>Most Played</source>
+        <translation>最常播放</translation>
+    </message>
+    <message>
+        <source>Your top 100</source>
+        <translation>你的前 100 首</translation>
+    </message>
+    <message>
+        <source>Fresh Arrivals</source>
+        <translation>新上架</translation>
+    </message>
+    <message>
+        <source>The newest 100 songs</source>
+        <translation>最新的 100 首歌曲</translation>
+    </message>
+    <message>
+        <source>Rediscover</source>
+        <translation>重新发现</translation>
+    </message>
+    <message>
+        <source>Favorites you haven&apos;t played lately</source>
+        <translation>你最近未播放的收藏</translation>
+    </message>
+    <message>
+        <source>Open Playlist</source>
+        <translation>打开播放列表</translation>
+    </message>
+    <message>
+        <source>Most Albums</source>
+        <translation>专辑最多</translation>
+    </message>
+    <message>
+        <source>Keep as Complete</source>
+        <translation>保留为完整</translation>
+    </message>
+    <message>
+        <source>Unable to mark as complete</source>
+        <translation>无法标记为完整</translation>
+    </message>
+    <message>
+        <source>Incomplete</source>
+        <translation>不完整</translation>
+    </message>
+    <message>
+        <source>No complete showing found</source>
+        <translation>未找到完整场次</translation>
+    </message>
+    <message>
+        <source>The series recording will skip this showing</source>
+        <translation>剧集录制将跳过本次播出</translation>
+    </message>
+    <message>
+        <source>Series Settings</source>
+        <translation>剧集设置</translation>
+    </message>
+    <message>
+        <source>Which episodes should be recorded?</source>
+        <translation>要录制哪些集？</translation>
+    </message>
+    <message>
+        <source>Every showing, including repeats</source>
+        <translation>所有播出场次，包括重播</translation>
+    </message>
+    <message>
+        <source>Episodes Not Already Recorded</source>
+        <translation>尚未录制的集数</translation>
+    </message>
+    <message>
+        <source>Skips episodes already in your library and records each episode once</source>
+        <translation>跳过媒体库中已有的集数，每集只录制一次</translation>
+    </message>
+    <message>
+        <source>New Episodes Only</source>
+        <translation>仅新集数</translation>
+    </message>
+    <message>
+        <source>First airings only, no repeats</source>
+        <translation>仅首播，不含重播</translation>
+    </message>
+    <message>
+        <source>Series recording updated</source>
+        <translation>剧集录制已更新</translation>
+    </message>
+    <message>
+        <source>Unable to update series recording</source>
+        <translation>无法更新剧集录制</translation>
+    </message>
+    <message>
+        <source>Record This Program</source>
+        <translation>录制本节目</translation>
+    </message>
+    <message>
+        <source>Record This Episode</source>
+        <translation>录制本集</translation>
+    </message>
+    <message>
+        <source>Same episode (S{season}E{episode})</source>
+        <translation>同一集（S{season}E{episode}）</translation>
+    </message>
+    <message>
+        <source>The future showing will be recorded.</source>
+        <translation>将录制后续场次。</translation>
+    </message>
+    <message>
+        <source>TMDB Row Sorting</source>
+        <translation>TMDb 行排序</translation>
+    </message>
+    <message>
+        <source>Sort TMDB rows by name, release date, rating, and more.</source>
+        <translation>按名称、发布日期、评分等方式排序 TMDb 行。</translation>
+    </message>
+    <message>
+        <source>Sort TMDB rows in ascending or descending order.</source>
+        <translation>对 TMDb 行执行升序或降序排序。</translation>
+    </message>
+    <message>
+        <source>Seerr Row Sorting</source>
+        <translation>Seerr 行排序</translation>
+    </message>
+    <message>
+        <source>Sort Seerr rows by name, release date, rating, and more.</source>
+        <translation>按名称、发布日期、评分等方式排序 Seerr 行。</translation>
+    </message>
+    <message>
+        <source>Sort Seerr rows in ascending or descending order.</source>
+        <translation>对 Seerr 行执行升序或降序排序。</translation>
+    </message>
+    <message>
+        <source>Default (List Order)</source>
+        <translation>默认（列表顺序）</translation>
+    </message>
+    <message>
+        <source>Rating</source>
+        <translation>评分</translation>
+    </message>
+    <message>
+        <source>Popularity</source>
+        <translation>热度</translation>
+    </message>
+    <message>
+        <source>Seerr Discover Sliders</source>
+        <translation>Seerr 发现页滑块</translation>
+    </message>
+    <message>
+        <source>Preferred Secondary Subtitle Language</source>
+        <translation>首选次要字幕语言</translation>
+    </message>
+    <message>
+        <source>By address, or with a Plex or Emby Connect account</source>
+        <translation>通过地址，或使用 Plex 或 Emby Connect 账户</translation>
+    </message>
+    <message>
+        <source>PIN</source>
+        <translation>PIN</translation>
+    </message>
+    <message>
+        <source>Signing in...</source>
+        <translation>正在登录…</translation>
+    </message>
+    <message>
+        <source>Works with Jellyfin, Emby and Silo. A Plex address opens the Plex sign-in.</source>
+        <translation>适用于 Jellyfin、Emby 和 Silo。Plex 地址将打开 Plex 登录界面。</translation>
+    </message>
+    <message>
+        <source>New Series</source>
+        <translation>新剧集</translation>
+    </message>
+    <message>
+        <source>New Season</source>
+        <translation>新一季</translation>
+    </message>
+    <message>
+        <source>New Episodes</source>
+        <translation>新单集</translation>
+    </message>
+    <message>
+        <source>{users} watched today · {movies} movies · {shows} shows</source>
+        <translation>今日 {users} 人观看 · {movies} 部电影 · {shows} 部剧集</translation>
+    </message>
+    <message>
+        <source>{count} watching</source>
+        <translation>{count} 人正在观看</translation>
+    </message>
+    <message>
+        <source>Grandparents</source>
+        <translation>祖父母</translation>
+    </message>
+    <message>
+        <source>Nothing coming up</source>
+        <translation>暂无即将播出的内容</translation>
+    </message>
+    <message>
+        <source>Nothing aired recently</source>
+        <translation>暂无最近播出的内容</translation>
+    </message>
+    <message>
+        <source>Nothing on this day</source>
+        <translation>当日无内容</translation>
+    </message>
+    <message>
+        <source>days</source>
+        <translation>天</translation>
+    </message>
+    <message>
+        <source>hr</source>
+        <translation>小时</translation>
+    </message>
+    <message>
+        <source>{day} at {time}</source>
+        <translation>{day} {time}</translation>
+    </message>
+    <message>
+        <source>All day</source>
+        <translation>全天</translation>
+    </message>
+    <message>
+        <source>Series premiere</source>
+        <translation>剧集首播</translation>
+    </message>
+    <message>
+        <source>New season</source>
+        <translation>新一季</translation>
+    </message>
+    <message>
+        <source>Not monitored</source>
+        <translation>未监控</translation>
+    </message>
+    <message>
+        <source>No Sonarr or Radarr server is linked yet.</source>
+        <translation>尚未关联 Sonarr 或 Radarr 服务器。</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t load the calendar.</source>
+        <translation>无法加载日历。</translation>
+    </message>
+    <message>
+        <source>Show Calendar Button</source>
+        <translation>显示日历按钮</translation>
+    </message>
+    <message>
+        <source>Show the calendar of upcoming episodes and movies in the navigation bar</source>
+        <translation>在导航栏中显示即将播出的剧集和电影的日历</translation>
+    </message>
+    <message>
+        <source>See All card</source>
+        <translation>“查看全部”卡片</translation>
+    </message>
+    <message>
+        <source>End the upcoming rows with a card that opens the calendar</source>
+        <translation>在“即将播出”栏目末尾添加一张可打开日历的卡片</translation>
+    </message>
+    <message>
+        <source>Radarr Calendar</source>
+        <translation>Radarr 日历</translation>
+    </message>
+    <message>
+        <source>Sonarr Calendar</source>
+        <translation>Sonarr 日历</translation>
+    </message>
+    <message>
+        <source>Radarr and Sonarr Calendars</source>
+        <translation>Radarr 和 Sonarr 日历</translation>
+    </message>
+    <message>
+        <source>Style, filters and actions for the calendar</source>
+        <translation>日历的样式、筛选和操作</translation>
+    </message>
+    <message>
+        <source>What shows</source>
+        <translation>显示内容</translation>
+    </message>
+    <message>
+        <source>Looks</source>
+        <translation>外观</translation>
+    </message>
+    <message>
+        <source>Calendar style</source>
+        <translation>日历样式</translation>
+    </message>
+    <message>
+        <source>My shows</source>
+        <translation>我的剧集</translation>
+    </message>
+    <message>
+        <source>Include unmonitored</source>
+        <translation>包含未监控内容</translation>
+    </message>
+    <message>
+        <source>Also list episodes and movies Sonarr and Radarr aren&apos;t set to download</source>
+        <translation>同时列出 Sonarr 和 Radarr 未设置为下载的剧集和电影</translation>
+    </message>
+    <message>
+        <source>Season 0 episodes, like extras and holiday specials</source>
+        <translation>第 0 季剧集，如花絮和节日特辑</translation>
+    </message>
+    <message>
+        <source>Premiere and finale tags</source>
+        <translation>首播和大结局标签</translation>
+    </message>
+    <message>
+        <source>Mark premieres, finales and new seasons</source>
+        <translation>标记首播、大结局和新一季</translation>
+    </message>
+    <message>
+        <source>Type tells episodes from movies. Status shows what&apos;s in your library, coming up or missing.</source>
+        <translation>“类型”可区分剧集和电影。“状态”可显示媒体库中已有的、即将播出的或缺失的内容。</translation>
+    </message>
+    <message>
+        <source>Add Moonbase to your server</source>
+        <translation>将 Moonbase 添加到你的服务器</translation>
+    </message>
+    <message>
+        <source>A free server plugin that unlocks more of Moonfin</source>
+        <translation>一个免费的服务器插件，可解锁 Moonfin 的更多功能</translation>
+    </message>
+    <message>
+        <source>Settings synced across your devices</source>
+        <translation>设置在你所有设备间同步</translation>
+    </message>
+    <message>
+        <source>Extra ratings and TMDB reviews</source>
+        <translation>更多评分和 TMDb 评论</translation>
+    </message>
+    <message>
+        <source>Custom rows from your favorite lists</source>
+        <translation>根据你喜爱的列表自定义栏目</translation>
+    </message>
+    <message>
+        <source>Retro games with synced saves</source>
+        <translation>复古游戏，存档同步</translation>
+    </message>
+    <message>
+        <source>A calendar of what&apos;s coming up</source>
+        <translation>即将推出内容的日历</translation>
+    </message>
+    <message>
+        <source>Your own order for each collection</source>
+        <translation>为每个合集自定义排序</translation>
+    </message>
+    <message>
+        <source>Messages from your server admin</source>
+        <translation>来自服务器管理员的消息</translation>
+    </message>
+    <message>
+        <source>Poster Labels</source>
+        <translation>海报标签</translation>
+    </message>
+    <message>
+        <source>Day / Month (10 Nov)</source>
+        <translation>日 / 月（10 / 11）</translation>
+    </message>
+    <message>
+        <source>After Hours unlocked</source>
+        <translation>深夜档已解锁</translation>
+    </message>
+    <message>
+        <source>Endless runner with a gravity flip</source>
+        <translation>可翻转重力的无尽跑酷</translation>
+    </message>
+    <message>
+        <source>Three-lane runner</source>
+        <translation>三跑道跑酷</translation>
+    </message>
+    <message>
+        <source>Grid crawler</source>
+        <translation>网格爬行</translation>
+    </message>
+    <message>
+        <source>One-button stacker</source>
+        <translation>单键叠放游戏</translation>
+    </message>
+    <message>
+        <source>Paddle breaker</source>
+        <translation>打砖块游戏</translation>
+    </message>
+    <message>
+        <source>Play again</source>
+        <translation>再玩一次</translation>
+    </message>
+    <message>
+        <source>Back to the arcade</source>
+        <translation>返回街机</translation>
+    </message>
+    <message>
+        <source>Scores on this device</source>
+        <translation>此设备上的分数</translation>
+    </message>
+    <message>
+        <source>PERFECT</source>
+        <translation>完美</translation>
+    </message>
+    <message>
+        <source>BOX SET</source>
+        <translation>套装</translation>
+    </message>
+    <message>
+        <source>How to play</source>
+        <translation>玩法说明</translation>
+    </message>
+    <message>
+        <source>Obstacles</source>
+        <translation>障碍物</translation>
+    </message>
+    <message>
+        <source>Powerups</source>
+        <translation>道具</translation>
+    </message>
+    <message>
+        <source>Back to the game</source>
+        <translation>返回游戏</translation>
+    </message>
+    <message>
+        <source>Hops along the floor or the ceiling toward you. Jump it.</source>
+        <translation>沿着地板或天花板向你跳来。跳起躲开。</translation>
+    </message>
+    <message>
+        <source>Cable Coil</source>
+        <translation>线缆线圈</translation>
+    </message>
+    <message>
+        <source>Low on the floor or the ceiling. Jump it.</source>
+        <translation>贴近地板或天花板。跳起躲开。</translation>
+    </message>
+    <message>
+        <source>Three seconds of dash that smashes anything.</source>
+        <translation>三秒冲刺，可撞碎一切。</translation>
+    </message>
+    <message>
+        <source>Loose Reel</source>
+        <translation>松脱的胶片卷</translation>
+    </message>
+    <message>
+        <source>Rolls down your lane faster than you run. Jump it.</source>
+        <translation>沿你的跑道滚下，速度比你奔跑还快。跳起躲开。</translation>
+    </message>
+    <message>
+        <source>Usher</source>
+        <translation>引座员</translation>
+    </message>
+    <message>
+        <source>Walks toward you and changes lanes once.</source>
+        <translation>向你走来，并会切换一次跑道。</translation>
+    </message>
+    <message>
+        <source>Velvet Rope</source>
+        <translation>天鹅绒围栏</translation>
+    </message>
+    <message>
+        <source>Low. Jump it or change lanes.</source>
+        <translation>位置较低。跳起躲开或切换跑道。</translation>
+    </message>
+    <message>
+        <source>Ticket</source>
+        <translation>电影票</translation>
+    </message>
+    <message>
+        <source>Interference Bug</source>
+        <translation>干扰虫</translation>
+    </message>
+    <message>
+        <source>Wanders at random.</source>
+        <translation>随机游荡。</translation>
+    </message>
+    <message>
+        <source>Tangle</source>
+        <translation>缠结</translation>
+    </message>
+    <message>
+        <source>Slowly chases your plug.</source>
+        <translation>缓慢追逐你的插头。</translation>
+    </message>
+    <message>
+        <source>Cuts the cable in half for bonus points.</source>
+        <translation>将线缆剪成两半以获得奖励分数。</translation>
+    </message>
+    <message>
+        <source>Signal</source>
+        <translation>信号</translation>
+    </message>
+    <message>
+        <source>Points, and two more segments.</source>
+        <translation>得分，并增加两段线缆。</translation>
+    </message>
+    <message>
+        <source>Shelf Cat</source>
+        <translation>架子猫</translation>
+    </message>
+    <message>
+        <source>Bats a case as it comes in, so that one slides faster.</source>
+        <translation>在光盘盒落下时拍击它，使其下滑得更快。</translation>
+    </message>
+    <message>
+        <source>Box Set</source>
+        <translation>套装</translation>
+    </message>
+    <message>
+        <source>Dead Pixel</source>
+        <translation>坏点</translation>
+    </message>
+    <message>
+        <source>Falls from cleared blocks. Catching it shrinks the scrubber.</source>
+        <translation>从清除的方块中掉落。接住它可缩小进度条滑块。</translation>
+    </message>
+    <message>
+        <source>Macroblock</source>
+        <translation>宏块</translation>
+    </message>
+    <message>
+        <source>Buffer</source>
+        <translation>缓冲</translation>
+    </message>
+    <message>
+        <source>A net under the scrubber that saves one miss.</source>
+        <translation>进度条滑块下方的网，可挽救一次失误。</translation>
+    </message>
+    <message>
+        <source>Episode Writer</source>
+        <translation>本集编剧</translation>
+    </message>
+    <message>
+        <source>Not watching</source>
+        <translation>未观看</translation>
+    </message>
+    <message>
+        <source>Joining</source>
+        <translation>正在加入</translation>
+    </message>
+    <message>
+        <source>In the lobby</source>
+        <translation>在大厅中</translation>
+    </message>
+    <message>
+        <source>That PIN didn&apos;t work. Try again.</source>
+        <translation>PIN 码不正确。请重试。</translation>
+    </message>
+    <message>
+        <source>Too many tries. Wait a minute.</source>
+        <translation>尝试次数过多。请稍后再试。</translation>
+    </message>
+    <message>
+        <source>This party is full.</source>
+        <translation>该派对已满。</translation>
+    </message>
+    <message>
+        <source>No room has that code.</source>
+        <translation>没有使用该房间码的房间。</translation>
+    </message>
+    <message>
+        <source>You&apos;re the host now</source>
+        <translation>你现在是房主</translation>
+    </message>
+    <message>
+        <source>Everyone can control playback now</source>
+        <translation>现在所有人都可以控制播放</translation>
+    </message>
+    <message>
+        <source>It&apos;s first in Watch Parties on Home</source>
+        <translation>它在首页的观影派对中排在第一位</translation>
+    </message>
+    <message>
+        <source>Room PIN</source>
+        <translation>房间 PIN 码</translation>
+    </message>
+    <message>
+        <source>Watch Parties need Moonbase on this server</source>
+        <translation>观影派对需要此服务器安装 Moonbase</translation>
+    </message>
+    <message>
+        <source>Watch Parties</source>
+        <translation>SyncPlay 已启用</translation>
+    </message>
+    <message>
+        <source>Start a watch party</source>
+        <translation>发起观影派对</translation>
+    </message>
+    <message>
+        <source>Your watch party</source>
+        <translation>你的观影派对</translation>
+    </message>
+    <message>
+        <source>Send the invite</source>
+        <translation>发送邀请</translation>
+    </message>
+    <message>
+        <source>Play waits for everyone&apos;s player, 10 seconds at most, then counts down 3, 2, 1.</source>
+        <translation>播放会等待所有人的播放器，最多 10 秒，然后倒数 3、2、1。</translation>
+    </message>
+    <message>
+        <source>Search movies</source>
+        <translation>搜索电影</translation>
+    </message>
+    <message>
+        <source>Back to the lobby</source>
+        <translation>返回大厅</translation>
+    </message>
+    <message>
+        <source>Up next</source>
+        <translation>接下来播放</translation>
+    </message>
+    <message>
+        <source>Start for everyone</source>
+        <translation>为所有人播放</translation>
+    </message>
+    <message>
+        <source>Waiting for the host to pick something.</source>
+        <translation>正在等待房主选择内容。</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <translation>离开</translation>
+    </message>
+    <message>
+        <source>No way</source>
+        <translation>不会吧</translation>
+    </message>
+    <message>
+        <source>Pause please</source>
+        <translation>请暂停</translation>
+    </message>
+    <message>
+        <source>Everyone can control playback</source>
+        <translation>所有人都可以控制播放</translation>
+    </message>
+    <message>
+        <source>4 to 8 digits</source>
+        <translation>4 到 8 位数字</translation>
+    </message>
+    <message>
+        <source>Host</source>
+        <translation>房主</translation>
+    </message>
+    <message>
+        <source>Make host</source>
+        <translation>设为房主</translation>
+    </message>
+    <message>
+        <source>Only the host can control playback.</source>
+        <translation>只有房主可以控制播放。</translation>
+    </message>
+    <message>
+        <source>Show chat over the video</source>
+        <translation>在视频上显示聊天</translation>
+    </message>
+    <message>
+        <source>New messages show for a few seconds</source>
+        <translation>新消息会显示几秒钟</translation>
+    </message>
+    <message>
+        <source>Party alerts</source>
+        <translation>派对提醒</translation>
+    </message>
+    <message>
+        <source>Stalled</source>
+        <translation>已停滞</translation>
+    </message>
+    <message>
+        <source>Get a different release</source>
+        <translation>获取其他版本</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t remove the download</source>
+        <translation>无法移除下载任务</translation>
+    </message>
+    <message>
+        <source>Start from the beginning</source>
+        <translation>从头开始</translation>
+    </message>
+    <message>
+        <source>Achievement Badges</source>
+        <translation>成就徽章</translation>
+    </message>
+    <message>
+        <source>Artwork, one play button and the episodes.</source>
+        <translation>图片、一个播放按钮和各集列表。</translation>
+    </message>
+    <message>
+        <source>Avatars</source>
+        <translation>头像</translation>
+    </message>
+    <message>
+        <source>Badges</source>
+        <translation>徽章</translation>
+    </message>
+    <message>
+        <source>Badges unlocked</source>
+        <translation>已解锁徽章</translation>
+    </message>
+    <message>
+        <source>Badges, ranks and quests earned from what you watch</source>
+        <translation>通过观看内容获得的徽章、等级和任务</translation>
+    </message>
+    <message>
+        <source>Best combo</source>
+        <translation>最佳连击</translation>
+    </message>
+    <message>
+        <source>Best login streak</source>
+        <translation>最长连续登录天数</translation>
+    </message>
+    <message>
+        <source>Best watch streak</source>
+        <translation>最长连续观看天数</translation>
+    </message>
+    <message>
+        <source>Bests</source>
+        <translation>最佳纪录</translation>
+    </message>
+    <message>
+        <source>Buy this?</source>
+        <translation>购买此商品？</translation>
+    </message>
+    <message>
+        <source>Could not buy that.</source>
+        <translation>无法购买该商品。</translation>
+    </message>
+    <message>
+        <source>Could not change how the profile looks.</source>
+        <translation>无法更改个人资料的外观。</translation>
+    </message>
+    <message>
+        <source>Could not load your achievements.</source>
+        <translation>无法加载你的成就。</translation>
+    </message>
+    <message>
+        <source>Covers one missed day. Only one can be banked.</source>
+        <translation>可抵消一天未观看。最多储备一个。</translation>
+    </message>
+    <message>
+        <source>Days signed in</source>
+        <translation>登录天数</translation>
+    </message>
+    <message>
+        <source>Days watched</source>
+        <translation>观看天数</translation>
+    </message>
+    <message>
+        <source>Doubles score for an hour. Using it again restarts the hour.</source>
+        <translation>积分翻倍，持续一小时。再次使用会重新计算这一小时。</translation>
+    </message>
+    <message>
+        <source>Early morning sessions</source>
+        <translation>清晨场次</translation>
+    </message>
+    <message>
+        <source>Equipped</source>
+        <translation>已装备</translation>
+    </message>
+    <message>
+        <source>Exit Kids Mode</source>
+        <translation>退出儿童模式</translation>
+    </message>
+    <message>
+        <source>Films watched</source>
+        <translation>已观看电影</translation>
+    </message>
+    <message>
+        <source>File Details</source>
+        <translation>文件详情</translation>
+    </message>
+    <message>
+        <source>Genres watched</source>
+        <translation>观看过的类型</translation>
+    </message>
+    <message>
+        <source>Default Action</source>
+        <translation>默认操作</translation>
+    </message>
+    <message>
+        <source>What selecting a Continue Watching or Next Up item does</source>
+        <translation>选择“继续观看”或“接下来播放”中的媒体项时执行的操作</translation>
+    </message>
+    <message>
+        <source>Go to Details</source>
+        <translation>前往详情页</translation>
+    </message>
+    <message>
+        <source>Play immediately</source>
+        <translation>立即播放</translation>
+    </message>
+    <message>
+        <source>Habits</source>
+        <translation>观看习惯</translation>
+    </message>
+    <message>
+        <source>Hours</source>
+        <translation>小时</translation>
+    </message>
+    <message>
+        <source>Hidden achievement</source>
+        <translation>隐藏成就</translation>
+    </message>
+    <message>
+        <source>Hours watched</source>
+        <translation>观看小时数</translation>
+    </message>
+    <message>
+        <source>How you compare with other users on this server</source>
+        <translation>你与此服务器上其他用户的对比</translation>
+    </message>
+    <message>
+        <source>Leaderboard</source>
+        <translation>排行榜</translation>
+    </message>
+    <message>
+        <source>Libraries visited</source>
+        <translation>访问过的媒体库</translation>
+    </message>
+    <message>
+        <source>Library completion</source>
+        <translation>媒体库完成度</translation>
+    </message>
+    <message>
+        <source>Loadout</source>
+        <translation>装备</translation>
+    </message>
+    <message>
+        <source>Locked</source>
+        <translation>未解锁</translation>
+    </message>
+    <message>
+        <source>Minimalist</source>
+        <translation>极简</translation>
+    </message>
+    <message>
+        <source>Month</source>
+        <translation>月</translation>
+    </message>
+    <message>
+        <source>More Actions</source>
+        <translation>更多操作</translation>
+    </message>
+    <message>
+        <source>Most common badge</source>
+        <translation>最常见的徽章</translation>
+    </message>
+    <message>
+        <source>Most episodes in a day</source>
+        <translation>单日最多观看集数</translation>
+    </message>
+    <message>
+        <source>Most films in a day</source>
+        <translation>单日最多观看电影数</translation>
+    </message>
+    <message>
+        <source>Nothing for sale right now.</source>
+        <translation>当前暂无商品出售。</translation>
+    </message>
+    <message>
+        <source>Nothing here yet.</source>
+        <translation>这里还没有内容。</translation>
+    </message>
+    <message>
+        <source>Nothing to suggest for this badge.</source>
+        <translation>此徽章暂无推荐内容。</translation>
+    </message>
+    <message>
+        <source>Nouveau</source>
+        <translation>新潮</translation>
+    </message>
+    <message>
+        <source>Power-ups</source>
+        <translation>增益道具</translation>
+    </message>
+    <message>
+        <source>Subbed</source>
+        <translation>字幕版</translation>
+    </message>
+    <message>
+        <source>Rewatches</source>
+        <translation>重看次数</translation>
+    </message>
+    <message>
+        <source>Score bank</source>
+        <translation>积分账户</translation>
+    </message>
+    <message>
+        <source>Score earned</source>
+        <translation>已获得积分</translation>
+    </message>
+    <message>
+        <source>Score to spend and the boosts you hold</source>
+        <translation>可用积分与持有的增益</translation>
+    </message>
+    <message>
+        <source>Score</source>
+        <translation>积分</translation>
+    </message>
+    <message>
+        <source>Series finished</source>
+        <translation>已看完剧集</translation>
+    </message>
+    <message>
+        <source>Spotlight</source>
+        <translation>聚光灯</translation>
+    </message>
+    <message>
+        <source>Stage</source>
+        <translation>舞台</translation>
+    </message>
+    <message>
+        <source>Stats</source>
+        <translation>统计</translation>
+    </message>
+    <message>
+        <source>Streak</source>
+        <translation>连续天数</translation>
+    </message>
+    <message>
+        <source>Streak Freeze</source>
+        <translation>连续天数冻结</translation>
+    </message>
+    <message>
+        <source>The avatar and title on your profile</source>
+        <translation>个人资料上的头像和称号</translation>
+    </message>
+    <message>
+        <source>Your records and how the server is doing</source>
+        <translation>你的纪录和服务器的整体情况</translation>
+    </message>
+    <message>
+        <source>When you watch</source>
+        <translation>观看时间</translation>
+    </message>
+    <message>
+        <source>Weekend sessions</source>
+        <translation>周末场次</translation>
+    </message>
+    <message>
+        <source>Variety</source>
+        <translation>多样性</translation>
+    </message>
+    <message>
+        <source>This server</source>
+        <translation>此服务器</translation>
+    </message>
+    <message>
+        <source>Suggested items to watch</source>
+        <translation>推荐观看的媒体项</translation>
+    </message>
+    <message>
+        <source>Top actors</source>
+        <translation>最常观看的演员</translation>
+    </message>
+    <message>
+        <source>Top directors</source>
+        <translation>最常观看的导演</translation>
+    </message>
+    <message>
+        <source>Top rank reached</source>
+        <translation>达到的最高等级</translation>
+    </message>
+    <message>
+        <source>Unlocked</source>
+        <translation>已解锁</translation>
+    </message>
+    <message>
+        <source>Used today, comes back at midnight UTC</source>
+        <translation>今日已使用，将在 UTC 时间午夜恢复</translation>
+    </message>
+    <message>
+        <source>XP Boost</source>
+        <translation>积分加成</translation>
+    </message>
+    <message>
+        <source>You get one daily and one weekly reroll, and this spends it.</source>
+        <translation>你每天和每周各有一次重掷机会，本次将消耗其中一次。</translation>
+    </message>
+    <message>
+        <source>It&apos;s spent as soon as you confirm.</source>
+        <translation>确认后将立即消耗。</translation>
+    </message>
+    <message>
+        <source>The title centered over a full screen backdrop, with everything else down the page.</source>
+        <translation>片名居中显示在全屏背景图上，其余内容沿页面向下排列。</translation>
+    </message>
+    <message>
+        <source>Quick Look</source>
+        <translation>速览</translation>
+    </message>
+    <message>
+        <source>A drawer over the screen you were on, with play and the basics, and the full page a press away.</source>
+        <translation>在当前画面上弹出抽屉，包含播放和基本信息，再按一下即可打开完整页面。</translation>
+    </message>
+    <message>
+        <source>Frost</source>
+        <translation>磨砂</translation>
+    </message>
+    <message>
+        <source>The title in a glass window over its blurred art, with tabs under the buttons.</source>
+        <translation>片名显示在模糊图片之上的玻璃窗口中，标签页位于按钮下方。</translation>
+    </message>
+    <message>
+        <source>Open full page</source>
+        <translation>打开完整页面</translation>
+    </message>
+    <message>
+        <source>Back to close</source>
+        <translation>返回以关闭</translation>
+    </message>
+    <message>
+        <source>The poster up front, with play under it and the details beside it.</source>
+        <translation>海报在前，播放按钮在其下方，详情在旁边。</translation>
+    </message>
+    <message>
+        <source>Smart Search</source>
+        <translation>智能搜索</translation>
+    </message>
+    <message>
+        <source>Playlist Order</source>
+        <translation>播放列表顺序</translation>
+    </message>
+    <message>
+        <source>Server Order</source>
+        <translation>服务器顺序</translation>
+    </message>
+    <message>
+        <source>Filmography</source>
+        <translation>作品列表</translation>
+    </message>
+    <message>
+        <source>The same address you&apos;d open in a browser, including the port.</source>
+        <translation>在浏览器中打开的同一地址，包括端口。</translation>
+    </message>
+    <message>
+        <source>Blocking a rating also blocks everything stronger than it.</source>
+        <translation>屏蔽某个分级也会屏蔽比它更高的所有分级。</translation>
+    </message>
+    <message>
+        <source>Only blocks itself</source>
+        <translation>仅屏蔽自身</translation>
+    </message>
+    <message>
+        <source>This isn&apos;t available</source>
+        <translation>此内容不可用</translation>
+    </message>
+    <message>
+        <source>No program data</source>
+        <translation>无节目数据</translation>
+    </message>
+    <message>
+        <source>Watch channel live</source>
+        <translation>观看频道直播</translation>
+    </message>
+    <message>
+        <source>Reconnecting… ({attempt} of {total})</source>
+        <translation>正在重新连接…（第 {attempt} 次，共 {total} 次）</translation>
+    </message>
+    <message>
+        <source>Show Live TV Button</source>
+        <translation>显示直播电视按钮</translation>
+    </message>
+    <message>
+        <source>Show the Live TV button in the navigation bar when the server has a Live TV library</source>
+        <translation>当服务器有直播电视媒体库时，在导航栏显示“直播电视”按钮</translation>
+    </message>
+    <message>
+        <source>Pause While Scrubbing</source>
+        <translation>拖动进度时暂停</translation>
+    </message>
+    <message>
+        <source>Playback pauses while you seek and resumes when you press play. Turn this off to keep playing and jump straight to the new spot</source>
+        <translation>拖动进度时暂停播放，按播放键后恢复。关闭此选项可在跳转时继续播放并直接跳到新位置</translation>
+    </message>
+    <message>
+        <source>Chapter Marks</source>
+        <translation>章节标记</translation>
+    </message>
+    <message>
+        <source>Mark where each chapter starts on the seek bar</source>
+        <translation>在进度条上标记每一章的开始位置</translation>
+    </message>
+    <message>
+        <source>Light Gray</source>
+        <translation>浅灰色</translation>
+    </message>
+    <message>
+        <source>Dark Gray</source>
+        <translation>深灰色</translation>
+    </message>
+    <message>
+        <source>Blue</source>
+        <translation>蓝色</translation>
+    </message>
+    <message>
+        <source>Magenta</source>
+        <translation>洋红色</translation>
+    </message>
+    <message>
+        <source>Playlist order</source>
+        <translation>播放列表顺序</translation>
+    </message>
+    <message>
+        <source>Movie details</source>
+        <translation>电影详情</translation>
+    </message>
+    <message>
+        <source>When the next episode isn&apos;t in your library yet, the end of episode card says when it airs</source>
+        <translation>当下一集尚未加入媒体库时，剧集末尾的卡片会显示其播出时间</translation>
+    </message>
+    <message>
+        <source>Enemies</source>
+        <translation>敌人</translation>
+    </message>
+    <message>
+        <source>Popcorn</source>
+        <translation>爆米花</translation>
+    </message>
+    <message>
+        <source>You don&apos;t have access to what they&apos;re watching.</source>
+        <translation>你没有权限观看他们正在播放的内容。</translation>
+    </message>
+    <message>
+        <source>Server Recommends</source>
+        <translation>服务器推荐</translation>
+    </message>
+    <message>
+        <source>Audio &amp; Subtitles</source>
+        <translation>音频与字幕</translation>
+    </message>
+    <message>
+        <source>Week</source>
+        <translation>周</translation>
+    </message>
+    <message>
+        <source>What the server has unlocked lately</source>
+        <translation>服务器上最近解锁的内容</translation>
+    </message>
+    <message>
+        <source>What you watched recently</source>
+        <translation>你最近观看的内容</translation>
+    </message>
+    <message>
+        <source>Up and down to preview · OK to choose · Back twice to skip</source>
+        <translation>上下键预览 · 确定键选择 · 连按两次返回键跳过</translation>
+    </message>
+    <message>
+        <source>Navigation Bar</source>
+        <translation>导航栏</translation>
+    </message>
+    <message>
+        <source>Details Page</source>
+        <translation>详情页面</translation>
+    </message>
+    <message>
+        <source>Tabs across the top of the screen.</source>
+        <translation>标签位于屏幕顶部。</translation>
+    </message>
+    <message>
+        <source>A slim rail of icons down the left side.</source>
+        <translation>左侧一条细长的图标栏。</translation>
+    </message>
+    <message>
+        <source>Large artwork with the title, details and overview laid over it.</source>
+        <translation>大尺寸图片，片名、详情和简介叠加显示其上。</translation>
+    </message>
+    <message>
+        <source>Large artwork led by a big title logo.</source>
+        <translation>大尺寸图片，以醒目的片名标识为主。</translation>
+    </message>
+    <message>
+        <source>Titles shelved as book spines, with the featured one face out.</source>
+        <translation>片名以书脊形式排列在书架上，精选内容正面朝外展示。</translation>
+    </message>
+    <message>
+        <source>The featured title opened up, with the next few lined up beside it.</source>
+        <translation>精选内容展开显示，接下来几部在其旁边依次排列。</translation>
+    </message>
+    <message>
+        <source>A shorter banner above your rows, so more of them fit on screen.</source>
+        <translation>栏目上方显示较短的横幅，让屏幕上能容纳更多栏目。</translation>
+    </message>
+    <message>
+        <source>Artwork first in a framed panel, with your rows right underneath.</source>
+        <translation>图片置于带边框的面板中，栏目紧随其下。</translation>
+    </message>
+    <message>
+        <source>No featured area. Home opens straight onto your rows.</source>
+        <translation>不显示精选区域。首页打开后直接显示各栏目。</translation>
+    </message>
+    <message>
+        <source>Hero-first, with pop-up cards for cast and extras.</source>
+        <translation>以主视觉区优先，演员和花絮以弹出式卡片呈现。</translation>
+    </message>
+    <message>
+        <source>Full-screen, with sections stacked instead of tabs.</source>
+        <translation>全屏布局，各版块自上而下堆叠，不使用标签页。</translation>
+    </message>
+    <message>
+        <source>Current</source>
+        <translation>当前</translation>
+    </message>
+    <message>
+        <source>Video Library Style</source>
+        <translation>视频媒体库样式</translation>
+    </message>
+    <message>
+        <source>Docked</source>
+        <translation>停靠</translation>
+    </message>
+    <message>
+        <source>Music Library Style</source>
+        <translation>音乐媒体库样式</translation>
+    </message>
+    <message>
+        <source>Quick Access</source>
+        <translation>快捷访问</translation>
+    </message>
+    <message>
+        <source>Immersive</source>
+        <translation>沉浸式</translation>
+    </message>
+    <message>
+        <source>Jump Back In</source>
+        <translation>快速继续</translation>
+    </message>
+    <message>
+        <source>From This Album</source>
+        <translation>来自此专辑</translation>
+    </message>
+    <message>
+        <source>Search Music</source>
+        <translation>搜索音乐</translation>
+    </message>
+    <message>
+        <source>Release Year</source>
+        <translation>发行年份</translation>
+    </message>
+    <message>
+        <source>Skip Intro</source>
+        <translation>跳过片头</translation>
+    </message>
+    <message>
+        <source>Tomorrow</source>
+        <translation>明天</translation>
+    </message>
+    <message>
+        <source>Chapters and Extras</source>
+        <translation>章节和花絮</translation>
+    </message>
+    <message>
+        <source>Reviews</source>
+        <translation>评论</translation>
+    </message>
+    <message>
+        <source>Cast, Crew, and Studios</source>
+        <translation>演员、工作人员和制作公司</translation>
+    </message>
+    <message>
+        <source>Movies &amp; Shows</source>
+        <translation>电影和电视剧</translation>
+    </message>
+    <message>
+        <source>Recommendations (Seerr)</source>
+        <translation>推荐（Seerr）</translation>
+    </message>
+    <message>
+        <source>Similar (Seerr)</source>
+        <translation>相似推荐（Seerr）</translation>
+    </message>
+    <message>
+        <source>Show Missing Collection Items</source>
+        <translation>显示合集中缺失的媒体项</translation>
+    </message>
+    <message>
+        <source>Include missing items on Collection pages</source>
+        <translation>在合集页面中包含缺失的媒体项</translation>
+    </message>
+    <message>
+        <source>ASS/SSA subtitles require transcoding because direct play is turned off.</source>
+        <translation>由于已关闭直接播放，ASS/SSA 字幕需要转码。</translation>
+    </message>
+    <message>
+        <source>Video dynamic range (e.g. Dolby Vision / HDR) is not supported by this display.</source>
+        <translation>此显示屏不支持视频动态范围（如 Dolby Vision / HDR）。</translation>
+    </message>
+    <message>
+        <source>Audio sample rate is not supported.</source>
+        <translation>不支持音频采样率。</translation>
+    </message>
+    <message>
+        <source>Audio bit depth is not supported.</source>
+        <translation>不支持音频位深。</translation>
+    </message>
+    <message>
+        <source>Video reference frames exceed player limits.</source>
+        <translation>视频参考帧数超过播放器上限。</translation>
+    </message>
+    <message>
+        <source>Anamorphic video is not supported.</source>
+        <translation>不支持变形宽银幕视频。</translation>
+    </message>
+    <message>
+        <source>Interlaced video is not supported.</source>
+        <translation>不支持隔行扫描视频。</translation>
+    </message>
+    <message>
+        <source>Secondary audio stream requires transcoding.</source>
+        <translation>次要音频流需要转码。</translation>
+    </message>
+    <message>
+        <source>Direct play is not supported for this media format.</source>
+        <translation>此媒体格式不支持直接播放。</translation>
+    </message>
+    <message>
+        <source>Action Buttons on Screen</source>
+        <translation>屏幕上的操作按钮</translation>
+    </message>
+    <message>
+        <source>Auto (Theme Default)</source>
+        <translation>自动（主题默认）</translation>
+    </message>
+    <message>
+        <source>1 (Play only)</source>
+        <translation>1（仅播放）</translation>
+    </message>
+    <message>
+        <source>All (Horizontal Scroll)</source>
+        <translation>全部（横向滚动）</translation>
+    </message>
+    <message>
+        <source>More Episodes</source>
+        <translation>更多集数</translation>
+    </message>
+    <message>
+        <source>Streaming on</source>
+        <translation>流媒体服务</translation>
+    </message>
+    <message>
+        <source>Seerr Availability</source>
+        <translation>Seerr 可用状态</translation>
+    </message>
+    <message>
+        <source>Remove from Collection</source>
+        <translation>从合集移除</translation>
+    </message>
+    <message>
+        <source>Remove {item} from {collection}? The item stays in your library.</source>
+        <translation>要从 {collection} 中移除 {item} 吗？该媒体项仍会保留在你的媒体库中。</translation>
+    </message>
+    <message>
+        <source>Unlock</source>
+        <translation>解锁</translation>
+    </message>
+    <message>
+        <source>Choose how you&apos;d like to connect.</source>
+        <translation>请选择连接方式。</translation>
+    </message>
+    <message>
+        <source>Jellyfin, Emby or Silo on your network or online</source>
+        <translation>局域网或在线的 Jellyfin、Emby 或 Silo</translation>
+    </message>
+    <message>
+        <source>Check the address and port, and that the server is running.</source>
+        <translation>请检查地址和端口，并确认服务器正在运行。</translation>
+    </message>
+    <message>
+        <source>Server found</source>
+        <translation>已找到服务器</translation>
+    </message>
+    <message>
+        <source>Continue to choose who&apos;s signing in.</source>
+        <translation>继续选择要登录的用户。</translation>
+    </message>
+    <message>
+        <source>Use a different address</source>
+        <translation>使用其他地址</translation>
+    </message>
+    <message>
+        <source>Or scan this with a phone that&apos;s signed in to your server</source>
+        <translation>或使用已登录服务器的手机扫描此代码</translation>
+    </message>
+    <message>
+        <source>Signed in on this device</source>
+        <translation>已在此设备登录</translation>
+    </message>
+    <message>
+        <source>Password required</source>
+        <translation>需要密码</translation>
+    </message>
+    <message>
+        <source>PIN required</source>
+        <translation>需要 PIN</translation>
+    </message>
+    <message>
+        <source>PIN synced</source>
+        <translation>PIN 已同步</translation>
+    </message>
+    <message>
+        <source>Header</source>
+        <translation>头部</translation>
+    </message>
+    <message>
+        <source>Offline</source>
+        <translation>离线</translation>
+    </message>
+    <message>
+        <source>Add as friend</source>
+        <translation>添加为好友</translation>
+    </message>
+    <message>
+        <source>Delete this message for everyone?</source>
+        <translation>要对所有人删除这条消息吗？</translation>
+    </message>
+    <message>
+        <source>Editing message</source>
+        <translation>正在编辑消息</translation>
+    </message>
+    <message>
+        <source>Write a message</source>
+        <translation>输入消息</translation>
+    </message>
+    <message>
+        <source>You</source>
+        <translation>你</translation>
+    </message>
+    <message>
+        <source>Owner</source>
+        <translation>群主</translation>
+    </message>
+    <message>
+        <source>Remove admin</source>
+        <translation>撤销管理员</translation>
+    </message>
+    <message>
+        <source>Make admin</source>
+        <translation>设为管理员</translation>
+    </message>
+    <message>
+        <source>Remove from group</source>
+        <translation>移出群组</translation>
+    </message>
+    <message>
+        <source>No one left to add.</source>
+        <translation>没有可添加的用户了。</translation>
+    </message>
+    <message>
+        <source>Clear conversation</source>
+        <translation>清空对话</translation>
+    </message>
+    <message>
+        <source>Leave this group? Someone will have to add you back to rejoin.</source>
+        <translation>要退出此群组吗？之后需要有人重新添加你才能再次加入。</translation>
+    </message>
+    <message>
+        <source>Delete every message in this chat for everyone in it?</source>
+        <translation>要对群内所有人删除此聊天中的全部消息吗？</translation>
+    </message>
+    <message>
+        <source>Heavy</source>
+        <translation>密集</translation>
+    </message>
+    <message>
+        <source>Focus Follower</source>
+        <translation>焦点跟随</translation>
+    </message>
+    <message>
+        <source>Applies everywhere</source>
+        <translation>适用于所有位置</translation>
+    </message>
+    <message>
+        <source>Only the sections the current Details screen style can show are listed. Hiding one hides it in every style that has it.</source>
+        <translation>仅列出当前详情页样式可以显示的分区。隐藏某个分区会在所有包含该分区的样式中将其隐藏。</translation>
+    </message>
+    <message>
+        <source>Show Friends Button</source>
+        <translation>显示好友按钮</translation>
+    </message>
+    <message>
+        <source>Sign-in, PIN code, Kids Mode, parental controls, and settings sync</source>
+        <translation>登录、PIN 码、儿童模式、家长控制和设置同步</translation>
+    </message>
+    <message>
+        <source>Source Item</source>
+        <translation>来源媒体项</translation>
+    </message>
+    <message>
+        <source>5.1 surround</source>
+        <translation>5.1 环绕声</translation>
+    </message>
+    <message>
+        <source>7.1 surround</source>
+        <translation>7.1 环绕声</translation>
+    </message>
+    <message>
+        <source>{count} channels</source>
+        <translation>{count} 个声道</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play this video format</source>
+        <translation>此设备无法播放此视频格式</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {channels} audio</source>
+        <translation>此设备无法播放 {channels} 音频</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {rate} kHz audio</source>
+        <translation>此设备无法播放 {rate} kHz 音频</translation>
+    </message>
+    <message>
+        <source>This device can&apos;t play {bits}-bit audio</source>
+        <translation>此设备无法播放 {bits} 位音频</translation>
+    </message>
+    <message>
+        <source>The audio track is in a separate file</source>
+        <translation>音轨位于单独的文件中</translation>
+    </message>
+    <message>
+        <source>This device can only play the first audio track</source>
+        <translation>此设备只能播放第一条音轨</translation>
+    </message>
+    <message>
+        <source>{format} subtitles are being burned into the video</source>
+        <translation>服务器正在将 {format} 字幕压制到视频中</translation>
+    </message>
+    <message>
+        <source>Keyboard Style</source>
+        <translation>键盘样式</translation>
+    </message>
+    <message>
+        <source>close</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <source>Critic Rating</source>
+        <translation>影评人评分</translation>
+    </message>
+    <message>
+        <source>Show Libraries Individually</source>
+        <translation>单独显示媒体库</translation>
+    </message>
+    <message>
+        <source>Show each library as its own button in the navigation bar instead of in the Libraries menu</source>
+        <translation>在导航栏中将每个媒体库显示为独立按钮，而不是放在“媒体库”菜单中</translation>
+    </message>
+    <message>
+        <source>Marked as complete</source>
+        <translation>已标记为完整</translation>
+    </message>
+    <message>
+        <source>Cancel This Recording</source>
+        <translation>取消此录制</translation>
+    </message>
+    <message>
+        <source>Next series recording: {dateTime}</source>
+        <translation>下次剧集录制：{dateTime}</translation>
+    </message>
+    <message>
+        <source>Series recording is scheduled, but the guide has no upcoming episodes</source>
+        <translation>已安排剧集录制，但节目指南中没有即将播出的集数</translation>
+    </message>
+    <message>
+        <source>Record {name}</source>
+        <translation>录制 {name}</translation>
+    </message>
+    <message>
+        <source>Future showing</source>
+        <translation>后续场次</translation>
+    </message>
+    <message>
+        <source>Already set to record</source>
+        <translation>已设置为录制</translation>
+    </message>
+    <message>
+        <source>Matched by title and description only. Check it&apos;s the same program.</source>
+        <translation>仅通过标题和简介匹配。请确认是否为同一节目。</translation>
+    </message>
+    <message>
+        <source>The descriptions differ, so this may be a different program.</source>
+        <translation>简介不同，因此可能是不同的节目。</translation>
+    </message>
+    <message>
+        <source>Also record the future showing to get a complete recording?</source>
+        <translation>是否也录制后续场次，以获得完整录制？</translation>
+    </message>
+    <message>
+        <source>Also record a future showing automatically once one is found, to get a complete recording?</source>
+        <translation>是否在找到后续场次后自动录制，以获得完整录制？</translation>
+    </message>
+    <message>
+        <source>Record Now Only</source>
+        <translation>仅立即录制</translation>
+    </message>
+    <message>
+        <source>Record {when} Only</source>
+        <translation>仅录制{when}</translation>
+    </message>
+    <message>
+        <source>Record Future Showing Only</source>
+        <translation>仅录制后续场次</translation>
+    </message>
+    <message>
+        <source>Record Now and {when}</source>
+        <translation>立即录制，并录制{when}</translation>
+    </message>
+    <message>
+        <source>Record Now and Future Showing</source>
+        <translation>立即录制并录制后续场次</translation>
+    </message>
+    <message>
+        <source>Recording started. A future showing will be recorded too.</source>
+        <translation>录制已开始。后续场次也将被录制。</translation>
+    </message>
+    <message>
+        <source>Recording started, but couldn&apos;t request a future showing.</source>
+        <translation>录制已开始，但无法请求录制后续场次。</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t request the future showing, so nothing will be recorded.</source>
+        <translation>无法请求录制后续场次，因此不会进行录制。</translation>
+    </message>
+    <message>
+        <source>Sorting</source>
+        <translation>排序</translation>
+    </message>
+    <message>
+        <source>IMDb Row Sorting</source>
+        <translation>IMDb 行排序</translation>
+    </message>
+    <message>
+        <source>Sort IMDb rows by name, release date, rating, and more.</source>
+        <translation>按名称、发布日期、评分等方式排序 IMDb 行。</translation>
+    </message>
+    <message>
+        <source>Sort IMDb rows in ascending or descending order.</source>
+        <translation>对 IMDb 行执行升序或降序排序。</translation>
+    </message>
+    <message>
+        <source>Requested by</source>
+        <translation>请求者</translation>
+    </message>
+    <message>
+        <source>Secondary Subtitles</source>
+        <translation>次要字幕</translation>
+    </message>
+    <message>
+        <source>Show a second subtitle track at the same time. The subtitle menu then asks for the primary or secondary track first</source>
+        <translation>同时显示第二条字幕轨道。启用后，字幕菜单会先询问选择主轨道还是次轨道</translation>
+    </message>
+    <message>
+        <source>Go to plex.tv/link on any device and enter this code</source>
+        <translation>在任意设备上访问 plex.tv/link 并输入此代码</translation>
+    </message>
+    <message>
+        <source>No Plex servers found on this account</source>
+        <translation>此账号下未找到 Plex 服务器</translation>
+    </message>
+    <message>
+        <source>Sign in with a password</source>
+        <translation>使用密码登录</translation>
+    </message>
+    <message>
+        <source>Sign in with Plex</source>
+        <translation>使用 Plex 登录</translation>
+    </message>
+    <message>
+        <source>Use your Plex account to find its servers</source>
+        <translation>使用你的 Plex 账户查找其服务器</translation>
+    </message>
+    <message>
+        <source>Verification code</source>
+        <translation>验证码</translation>
+    </message>
+    <message>
+        <source>Waiting for you to approve the code...</source>
+        <translation>正在等待你批准代码…</translation>
+    </message>
+    <message>
+        <source>Live preview</source>
+        <translation>实时预览</translation>
+    </message>
+    <message>
+        <source>Not shown in the preview</source>
+        <translation>未在预览中显示</translation>
+    </message>
+    <message>
+        <source>New Release Banner</source>
+        <translation>新发布横幅</translation>
+    </message>
+    <message>
+        <source>How long after an episode airs it still counts as new.</source>
+        <translation>单集播出后多长时间内仍算作新内容。</translation>
+    </message>
+    <message>
+        <source>Watching on MDBList</source>
+        <translation>正在 MDBList 上观看</translation>
+    </message>
+    <message>
+        <source>{users} watching now · {movies} movies · {shows} shows</source>
+        <translation>{users} 人正在观看 · {movies} 部电影 · {shows} 部剧集</translation>
+    </message>
+    <message>
+        <source>Image Type per Row</source>
+        <translation>每个栏目的图片类型</translation>
+    </message>
+    <message>
+        <source>Calendar</source>
+        <translation>日历</translation>
+    </message>
+    <message>
+        <source>Full calendar</source>
+        <translation>完整日历</translation>
+    </message>
+    <message>
+        <source>Upcoming</source>
+        <translation>即将播出</translation>
+    </message>
+    <message>
+        <source>Recently aired</source>
+        <translation>最近播出</translation>
+    </message>
+    <message>
+        <source>Ready to watch</source>
+        <translation>可观看</translation>
+    </message>
+    <message>
+        <source>Coming up this week</source>
+        <translation>本周即将播出</translation>
+    </message>
+    <message>
+        <source>Starts in</source>
+        <translation>距开始</translation>
+    </message>
+    <message>
+        <source>Finale</source>
+        <translation>大结局</translation>
+    </message>
+    <message>
+        <source>Midseason finale</source>
+        <translation>季中结局</translation>
+    </message>
+    <message>
+        <source>Series finale</source>
+        <translation>剧集大结局</translation>
+    </message>
+    <message>
+        <source>NEW</source>
+        <translation>新</translation>
+    </message>
+    <message>
+        <source>In library</source>
+        <translation>已在媒体库</translation>
+    </message>
+    <message>
+        <source>Cinema</source>
+        <translation>影院上映</translation>
+    </message>
+    <message>
+        <source>Physical</source>
+        <translation>实体发行</translation>
+    </message>
+    <message>
+        <source>The calendar is limited to admins on this server.</source>
+        <translation>此服务器上的日历仅限管理员使用。</translation>
+    </message>
+    <message>
+        <source>An admin needs to sign in to Seerr in Moonfin before the calendar can load.</source>
+        <translation>需要先在 Moonfin 中登录 Seerr，日历才能加载。</translation>
+    </message>
+    <message>
+        <source>Hide Movies Already on the Server</source>
+        <translation>隐藏服务器上已有的电影</translation>
+    </message>
+    <message>
+        <source>Hide Episodes Already on the Server</source>
+        <translation>隐藏服务器上已有的单集</translation>
+    </message>
+    <message>
+        <source>Next air date at the end</source>
+        <translation>在末尾显示下次播出日期</translation>
+    </message>
+    <message>
+        <source>What the Calendar button opens. The full month is one button away in both.</source>
+        <translation>“日历”按钮打开的内容。两种样式下都只需再按一个按钮即可查看完整月份。</translation>
+    </message>
+    <message>
+        <source>Agenda</source>
+        <translation>日程</translation>
+    </message>
+    <message>
+        <source>Countdown</source>
+        <translation>倒计时</translation>
+    </message>
+    <message>
+        <source>Week starts on</source>
+        <translation>每周起始日</translation>
+    </message>
+    <message>
+        <source>My shows keeps the series you favorited or started watching</source>
+        <translation>“我的剧集”仅保留你已收藏或已开始观看的剧集</translation>
+    </message>
+    <message>
+        <source>Card image</source>
+        <translation>卡片图片</translation>
+    </message>
+    <message>
+        <source>The artwork on the Countdown rows</source>
+        <translation>“倒计时”栏目中的图片</translation>
+    </message>
+    <message>
+        <source>Spoiler safe</source>
+        <translation>剧透防护</translation>
+    </message>
+    <message>
+        <source>Hide episode titles and stills for shows you&apos;re behind on</source>
+        <translation>对你尚未追上的剧集隐藏剧集标题和剧照</translation>
+    </message>
+    <message>
+        <source>Selecting an item</source>
+        <translation>选择媒体项</translation>
+    </message>
+    <message>
+        <source>What OK or a tap does on something that&apos;s already in your library</source>
+        <translation>对媒体库中已有的内容按“确定”或轻触时执行的操作</translation>
+    </message>
+    <message>
+        <source>Open details</source>
+        <translation>打开详情</translation>
+    </message>
+    <message>
+        <source>Play when in library</source>
+        <translation>媒体库中可直接播放</translation>
+    </message>
+    <message>
+        <source>Request button</source>
+        <translation>请求按钮</translation>
+    </message>
+    <message>
+        <source>Show the Seerr request button on missing movies and seasons</source>
+        <translation>在缺失的电影和季上显示 Seerr 请求按钮</translation>
+    </message>
+    <message>
+        <source>Moonbase is free and runs on your server. With it, Moonfin gets:</source>
+        <translation>Moonbase 免费且运行在你的服务器上。安装后，Moonfin 将获得：</translation>
+    </message>
+    <message>
+        <source>Only a server admin can install it. Send them this link.</source>
+        <translation>只有服务器管理员才能安装。请将此链接发送给他们。</translation>
+    </message>
+    <message>
+        <source>It takes a few steps on your server to install. They&apos;re all at this link.</source>
+        <translation>安装需要在服务器上完成几个步骤，全部步骤请见此链接。</translation>
+    </message>
+    <message>
+        <source>Installing Moonbase...</source>
+        <translation>正在安装 Moonbase…</translation>
+    </message>
+    <message>
+        <source>Moonbase is installed. It turns on when the server restarts, which stops anything playing right now.</source>
+        <translation>Moonbase 已安装。它将在服务器重启后启用，这会中断当前正在播放的内容。</translation>
+    </message>
+    <message>
+        <source>The server is restarting. Moonbase turns on once it&apos;s back.</source>
+        <translation>服务器正在重启。恢复后 Moonbase 将启用。</translation>
+    </message>
+    <message>
+        <source>Show the labels on posters, such as 4K or HDR.</source>
+        <translation>在海报上显示标签，例如 4K 或 HDR。</translation>
+    </message>
+    <message>
+        <source>Date Format</source>
+        <translation>日期格式</translation>
+    </message>
+    <message>
+        <source>Choose between month-day, day-month, or locale default for calendar and release dates</source>
+        <translation>在“月-日”、“日-月”或区域设置默认格式之间选择，用于日历日期和发行日期</translation>
+    </message>
+    <message>
+        <source>Locale Default</source>
+        <translation>区域设置默认</translation>
+    </message>
+    <message>
+        <source>Month / Day (Nov 10)</source>
+        <translation>月 / 日（11 / 10）</translation>
+    </message>
+    <message>
+        <source>Leaderboards</source>
+        <translation>排行榜</translation>
+    </message>
+    <message>
+        <source>No scores yet</source>
+        <translation>暂无分数</translation>
+    </message>
+    <message>
+        <source>Game over</source>
+        <translation>游戏结束</translation>
+    </message>
+    <message>
+        <source>Arrows turn. The cable never stops.</source>
+        <translation>方向键转向。线缆永不停歇。</translation>
+    </message>
+    <message>
+        <source>OK drops the case.</source>
+        <translation>按“确定”放下光盘盒。</translation>
+    </message>
+    <message>
+        <source>Left and Right slide the scrubber.</source>
+        <translation>按“左”和“右”移动进度条滑块。</translation>
+    </message>
+    <message>
+        <source>Lag Bat</source>
+        <translation>延迟球棒</translation>
+    </message>
+    <message>
+        <source>Swoops in at head height. Slide under it.</source>
+        <translation>在头部高度俯冲而来。从下方滑行穿过。</translation>
+    </message>
+    <message>
+        <source>Static Gremlin</source>
+        <translation>静电小精灵</translation>
+    </message>
+    <message>
+        <source>Buffering Banner</source>
+        <translation>缓冲横幅</translation>
+    </message>
+    <message>
+        <source>Slide under the sign. Its pole is a wall on the other side.</source>
+        <translation>从标牌下滑过。它的立柱在另一侧相当于一堵墙。</translation>
+    </message>
+    <message>
+        <source>A shield that takes one hit.</source>
+        <translation>可抵挡一次攻击的护盾。</translation>
+    </message>
+    <message>
+        <source>25 points a piece.</source>
+        <translation>每个 25 分。</translation>
+    </message>
+    <message>
+        <source>Popcorn Cart</source>
+        <translation>爆米花车</translation>
+    </message>
+    <message>
+        <source>Too tall to jump. Change lanes.</source>
+        <translation>太高，无法跳过。切换跑道。</translation>
+    </message>
+    <message>
+        <source>Front Row Pass</source>
+        <translation>前排通行证</translation>
+    </message>
+    <message>
+        <source>Magnet</source>
+        <translation>磁铁</translation>
+    </message>
+    <message>
+        <source>Pulls in tickets from every lane for eight seconds.</source>
+        <translation>八秒内从每条跑道吸走电影票。</translation>
+    </message>
+    <message>
+        <source>A dead cell. One appears every third signal.</source>
+        <translation>一个失效单元。每隔三个信号出现一次。</translation>
+    </message>
+    <message>
+        <source>Power Brick</source>
+        <translation>电源适配器</translation>
+    </message>
+    <message>
+        <source>Ghost</source>
+        <translation>幽灵</translation>
+    </message>
+    <message>
+        <source>Five seconds of passing through everything but the edge.</source>
+        <translation>五秒内可穿过除边缘外的所有物体。</translation>
+    </message>
+    <message>
+        <source>Snip</source>
+        <translation>剪刀</translation>
+    </message>
+    <message>
+        <source>A title from your library. The overhang gets trimmed off.</source>
+        <translation>你媒体库中的一部作品。超出边缘的部分会被削掉。</translation>
+    </message>
+    <message>
+        <source>Steelbook</source>
+        <translation>铁盒装</translation>
+    </message>
+    <message>
+        <source>Every tenth case. Slides much faster.</source>
+        <translation>每十个盒子出现一个。下滑速度快得多。</translation>
+    </message>
+    <message>
+        <source>Perfect Drop</source>
+        <translation>完美落位</translation>
+    </message>
+    <message>
+        <source>Land it dead on and the stack grows a little wider.</source>
+        <translation>精准落下可使塔身稍微变宽。</translation>
+    </message>
+    <message>
+        <source>One hit clears it.</source>
+        <translation>一次撞击即可清除。</translation>
+    </message>
+    <message>
+        <source>Keyframe</source>
+        <translation>关键帧</translation>
+    </message>
+    <message>
+        <source>Takes three hits and drops a powerup.</source>
+        <translation>需要三次撞击，并掉落一个道具。</translation>
+    </message>
+    <message>
+        <source>A scrubber twice as wide for eight seconds.</source>
+        <translation>八秒内进度条滑块宽度翻倍。</translation>
+    </message>
+    <message>
+        <source>Guest Star</source>
+        <translation>客串演员</translation>
+    </message>
+    <message>
+        <source>In sync</source>
+        <translation>已同步</translation>
+    </message>
+    <message>
+        <source>Catching up</source>
+        <translation>正在追赶</translation>
+    </message>
+    <message>
+        <source>Buffering</source>
+        <translation>正在缓冲</translation>
+    </message>
+    <message>
+        <source>Ready</source>
+        <translation>已就绪</translation>
+    </message>
+    <message>
+        <source>Everyone controls</source>
+        <translation>所有人可控制</translation>
+    </message>
+    <message>
+        <source>Reconnecting to the party...</source>
+        <translation>正在重新连接到派对…</translation>
+    </message>
+    <message>
+        <source>Back in the party</source>
+        <translation>已返回派对</translation>
+    </message>
+    <message>
+        <source>Let everyone vote on movies</source>
+        <translation>让大家一起投票选电影</translation>
+    </message>
+    <message>
+        <source>No movies to vote on yet.</source>
+        <translation>暂无可供投票的电影。</translation>
+    </message>
+    <message>
+        <source>Brb</source>
+        <translation>马上回来</translation>
+    </message>
+    <message>
+        <source>Again!</source>
+        <translation>再来一次！</translation>
+    </message>
+    <message>
+        <source>Send to the party</source>
+        <translation>发送到派对</translation>
+    </message>
+    <message>
+        <source>Room settings</source>
+        <translation>房间设置</translation>
+    </message>
+    <message>
+        <source>Watch with friends on this server, everyone in step</source>
+        <translation>播放组会话的同步逻辑</translation>
+    </message>
+    <message>
+        <source>Open Watch Parties</source>
+        <translation>打开播放组</translation>
+    </message>
+    <message>
+        <source>Start one or join one in progress</source>
+        <translation>创建、加入或管理 SyncPlay 播放组</translation>
+    </message>
+    <message>
+        <source>Downloaded, waiting for import</source>
+        <translation>已下载，等待导入</translation>
+    </message>
+    <message>
+        <source>Import blocked</source>
+        <translation>导入受阻</translation>
+    </message>
+    <message>
+        <source>Not found yet</source>
+        <translation>尚未找到</translation>
+    </message>
+    <message>
+        <source>Show the Watch Parties button on the navigation bar</source>
+        <translation>在导航栏上显示 SyncPlay 按钮</translation>
+    </message>
+    <message>
+        <source>Subtitles for everyone</source>
+        <translation>所有人共用字幕</translation>
+    </message>
+    <message>
+        <source>Carousel</source>
+        <translation>轮播</translation>
+    </message>
+    <message>
+        <source>Could not use that power-up.</source>
+        <translation>无法使用该增益道具。</translation>
+    </message>
+    <message>
+        <source>Could not reroll those quests.</source>
+        <translation>无法重掷这些任务。</translation>
+    </message>
+    <message>
+        <source>Countries watched</source>
+        <translation>观看过的国家</translation>
+    </message>
+    <message>
+        <source>Decades watched</source>
+        <translation>观看过的年代</translation>
+    </message>
+    <message>
+        <source>Double Credit</source>
+        <translation>双倍积分</translation>
+    </message>
+    <message>
+        <source>Enter your PIN to restore the full app</source>
+        <translation>输入 PIN 码以恢复完整应用</translation>
+    </message>
+    <message>
+        <source>It comes straight out of your score bank.</source>
+        <translation>费用将直接从你的积分账户中扣除。</translation>
+    </message>
+    <message>
+        <source>Items watched</source>
+        <translation>已观看媒体项</translation>
+    </message>
+    <message>
+        <source>Kids Mode</source>
+        <translation>儿童模式</translation>
+    </message>
+    <message>
+        <source>Languages watched</source>
+        <translation>观看过的语言</translation>
+    </message>
+    <message>
+        <source>Late night sessions</source>
+        <translation>深夜场次</translation>
+    </message>
+    <message>
+        <source>Longest single item</source>
+        <translation>时长最长的媒体项</translation>
+    </message>
+    <message>
+        <source>Owned</source>
+        <translation>已拥有</translation>
+    </message>
+    <message>
+        <source>Progress</source>
+        <translation>进度</translation>
+    </message>
+    <message>
+        <source>Recap</source>
+        <translation>回顾</translation>
+    </message>
+    <message>
+        <source>Manga Canon</source>
+        <translation>漫画原作</translation>
+    </message>
+    <message>
+        <source>Anime Canon</source>
+        <translation>动画原创</translation>
+    </message>
+    <message>
+        <source>Dubbed</source>
+        <translation>配音版</translation>
+    </message>
+    <message>
+        <source>Subbed/Dubbed</source>
+        <translation>字幕/配音版</translation>
+    </message>
+    <message>
+        <source>Sub</source>
+        <translation>字幕</translation>
+    </message>
+    <message>
+        <source>Dub</source>
+        <translation>配音</translation>
+    </message>
+    <message>
+        <source>Sub/Dub</source>
+        <translation>字幕/配音</translation>
+    </message>
+    <message>
+        <source>Running now</source>
+        <translation>生效中</translation>
+    </message>
+    <message>
+        <source>Quests</source>
+        <translation>任务</translation>
+    </message>
+    <message>
+        <source>Reroll daily quests</source>
+        <translation>重掷每日任务</translation>
+    </message>
+    <message>
+        <source>Reroll these quests?</source>
+        <translation>重掷这些任务？</translation>
+    </message>
+    <message>
+        <source>Reroll weekly quests</source>
+        <translation>重掷每周任务</translation>
+    </message>
+    <message>
+        <source>Simplify the app and lock the way out with a PIN</source>
+        <translation>简化应用界面，并通过 PIN 码锁定退出</translation>
+    </message>
+    <message>
+        <source>The next thing you finish counts twice towards badges.</source>
+        <translation>你下一次完成的内容将按两倍计入徽章进度。</translation>
+    </message>
+    <message>
+        <source>Swap this set for a different one</source>
+        <translation>将这组任务换成另一组</translation>
+    </message>
+    <message>
+        <source>Use this power-up?</source>
+        <translation>使用此增益道具？</translation>
+    </message>
+    <message>
+        <source>Used this week, comes back Monday UTC</source>
+        <translation>本周已使用，将在 UTC 时间周一恢复</translation>
+    </message>
+    <message>
+        <source>Shop</source>
+        <translation>商店</translation>
+    </message>
+    <message>
+        <source>Spend score on more boosts</source>
+        <translation>用积分兑换更多增益道具</translation>
+    </message>
+    <message>
+        <source>Sync on</source>
+        <translation>同步已开启</translation>
+    </message>
+    <message>
+        <source>Sync off</source>
+        <translation>同步已关闭</translation>
+    </message>
+    <message>
+        <source>Details Screen Backdrop</source>
+        <translation>详情页面背景图</translation>
+    </message>
+    <message>
+        <source>Home Screen Backdrop</source>
+        <translation>主屏幕背景图</translation>
+    </message>
+    <message>
+        <source>Corner</source>
+        <translation>角落</translation>
+    </message>
+    <message>
+        <source>Top</source>
+        <translation>顶部</translation>
+    </message>
+    <message>
+        <source>Show captions on YouTube trailers</source>
+        <translation>在媒体栏的 YouTube 预告片中显示字幕</translation>
+    </message>
+    <message>
+        <source>Choose what the Radarr and Sonarr rows show.</source>
+        <translation>选择 Radarr 和 Sonarr 行显示的内容。</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>输入</translation>
+    </message>
+    <message>
+        <source>space</source>
+        <translation>空格</translation>
+    </message>
+    <message>
+        <source>Color by</source>
+        <translation>着色依据</translation>
+    </message>
+    <message>
+        <source>OK jumps, again mid-air to flip sides. Down slides. On the ceiling Up and Down swap.</source>
+        <translation>按“确定”跳跃，空中再按一次翻转到另一侧。按“下”滑行。在天花板上时“上”和“下”互换。</translation>
+    </message>
+    <message>
+        <source>Up and Down change lanes. OK jumps.</source>
+        <translation>按“上”和“下”切换跑道，按“确定”跳跃。</translation>
+    </message>
+    <message>
+        <source>Blu-ray Case</source>
+        <translation>Blu-ray 光盘盒</translation>
+    </message>
+    <message>
+        <source>Three perfect drops in a row grow it a lot wider.</source>
+        <translation>连续三次完美落位可使其大幅变宽。</translation>
+    </message>
+    <message>
+        <source>Episode Director</source>
+        <translation>本集导演</translation>
+    </message>
+    <message>
+        <source>Join with a code</source>
+        <translation>使用房间码加入</translation>
+    </message>
+    <message>
+        <source>Parties you can watch show up here. Got a code from someone? Pick Join with a code.</source>
+        <translation>你可以观看的派对会显示在这里。拿到了别人的房间码？选择“使用房间码加入”。</translation>
+    </message>
+    <message>
+        <source>End for everyone</source>
+        <translation>为所有人结束派对</translation>
+    </message>
+    <message>
+        <source>Room code or invite link</source>
+        <translation>房间码或邀请链接</translation>
+    </message>
+    <message>
+        <source>Starting together</source>
+        <translation>正在同时开始</translation>
+    </message>
+    <message>
+        <source>Haha</source>
+        <translation>哈哈</translation>
+    </message>
+    <message>
+        <source>Guests can play and pause</source>
+        <translation>访客可播放和暂停</translation>
+    </message>
+    <message>
+        <source>Picked for the Watch Party</source>
+        <translation>已选入观影派对</translation>
+    </message>
+    <message>
+        <source>Added to the Watch Party vote</source>
+        <translation>已加入观影派对投票</translation>
+    </message>
+    <message>
+        <source>Each person&apos;s choice</source>
+        <translation>各自选择</translation>
+    </message>
+    <message>
+        <source>Hide Watched</source>
+        <translation>隐藏已观看内容</translation>
+    </message>
+    <message>
+        <source>Hide watched content from Recently Added and Recently Released home rows.</source>
+        <translation>从“最近添加”和“最近发布”首页栏目中隐藏已观看的内容。</translation>
+    </message>
 </context>
 </TS>
