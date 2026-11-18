@@ -8533,5 +8533,21 @@
         <source>Dim video and show overview text while paused</source>
         <translation>Assombrir la vidéo et afficher le résumé pendant la pause</translation>
     </message>
+    <message>
+        <source>Hide Watch Progress</source>
+        <translation>Masquer la progression de lecture</translation>
+    </message>
+    <message>
+        <source>Hide the progress bar on posters you&apos;ve started watching.</source>
+        <translation>Masque la barre de progression sur les affiches des titres déjà commencés.</translation>
+    </message>
+    <message>
+        <source>Hide Unwatched Count</source>
+        <translation>Masquer le compteur d&apos;inédits</translation>
+    </message>
+    <message>
+        <source>Hide the badge showing how many episodes are left to watch.</source>
+        <translation>Masque le compteur indiquant combien d&apos;épisodes restent à voir.</translation>
+    </message>
 </context>
 </TS>
