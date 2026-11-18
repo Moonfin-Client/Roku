@@ -28,6 +28,10 @@ const NEAR_ROWS_ABOVE = 2
 const NEAR_ROWS_BELOW = 5
 const LATE_ROW_LOADS = 3
 
+' The Recently Added rows a build counts for each server before that server's libraries are known.
+' The count is corrected to the real number once they are.
+const MULTI_SERVER_LATEST_ROWS = 5
+
 ' Row tasks run at most this many at a time. Low-end Rokus have four cores, and each row task parses
 ' its own answer, so more running at once would only slow each other down
 const ROW_POOL_SIZE = 4
@@ -85,6 +89,7 @@ sub init()
     m.libraryData = []
     m.filteredLatest = []
     m.libraryRowOrder = {}
+    m.multiServerEstimates = {}
     m.emptySections = {}
 
     ' Library sections wait for the library list. Until it lands, they are kept in librarySections.
@@ -164,6 +169,7 @@ end sub
 sub beginBuild()
     dropEarlierRowWork()
     m.libraryRowOrder = {}
+    m.multiServerEstimates = {}
     m.buildInFlight = true
     m.buildCount++
     m.flushedThisBuild = false
@@ -638,12 +644,12 @@ function getExpectedRowContribution(sectionName as string) as integer
         if isMultiServerEnabled()
             sessions = getAllServerSessions()
             if sessions.Count() > 0
-                ' Multi-server latest media builds 5 rows per server, while
+                ' Multi-server latest media builds a row per library on each server, while
                 ' recently released aggregates every server into a single row
                 if sectionName = "recentlyreleased"
                     return 1
                 end if
-                return sessions.Count() * 5
+                return sessions.Count() * MULTI_SERVER_LATEST_ROWS
             end if
         end if
 
@@ -854,6 +860,7 @@ sub onCachedRecords()
         row.title = record.title
         ' Home can tell a cached row from a fresh one, so it can swap the fresh one in without a jump
         row.fromCache = true
+        if isString(record.sig) then row.cacheSig = record.sig
         for each item in record.items
             child = CreateObject("roSGNode", "HomeData")
             child.imageContext = imageContext
@@ -1046,12 +1053,9 @@ function keepCachedCards(cached as dynamic, fresh as object) as boolean
     if not isValid(cached) or not cached.hasField("fromCache") or cached.fromCache <> true then return false
     count = fresh.getChildCount()
     if count = 0 or count <> cached.getChildCount() then return false
-    if fresh.getChild(0).sameAsCached <> true then return false
-    ' A run that timed out may have rewritten the saved file after these cards were painted, so the
-    ' cards themselves have to match too
-    for i = 0 to count - 1
-        if cached.getChild(i).id <> fresh.getChild(i).id then return false
-    end for
+    ' Compared with what was painted rather than the saved file, which a run that timed out may have
+    ' rewritten since
+    if cached.cacheSig = "" or fresh.getChild(0).cacheSig <> cached.cacheSig then return false
 
     for i = 0 to count - 1
         cachedCard = cached.getChild(i)
@@ -2223,9 +2227,19 @@ sub createMultiServerLatestRows(sessions as object)
         })
 
         task.observeField("isComplete", "onMultiServerLibrariesLoaded")
+        m.multiServerEstimates[userSession.serverId] = true
         task.control = "RUN"
     end for
 
+end sub
+
+' Swaps the server's estimate for the rows it really started, once per build, since a late answer
+' from an earlier build can land in this one
+sub settleMultiServerEstimate(serverId as string, started as integer)
+    if not m.multiServerEstimates.DoesExist(serverId) then return
+    m.multiServerEstimates.Delete(serverId)
+    m.expectedRowCount += started - MULTI_SERVER_LATEST_ROWS
+    finishIfAllRowsIn()
 end sub
 
 ' onMultiServerLibrariesLoaded: Handler for library list loaded from a server
@@ -2247,6 +2261,7 @@ sub onMultiServerLibrariesLoaded(msg as object)
     results = node.results
 
     if not isValidAndNotEmpty(results)
+        settleMultiServerEstimate(userSession.serverId, 0)
         return
     end if
 
@@ -2258,6 +2273,7 @@ sub onMultiServerLibrariesLoaded(msg as object)
 
 
     ' Create a row for each library
+    started = 0
     for each item in results
         collectionType = ""
         if isValid(item.CollectionType) then collectionType = LCase(item.CollectionType)
@@ -2314,8 +2330,10 @@ sub onMultiServerLibrariesLoaded(msg as object)
         })
 
         runRowTask(task, "isComplete", "onMultiServerLatestPerLibraryComplete")
+        started++
     end for
 
+    settleMultiServerEstimate(userSession.serverId, started)
 end sub
 
 ' onMultiServerLatestPerLibraryComplete: Handler for per-library per-server latest items
@@ -2694,10 +2712,6 @@ end sub
 sub updateNextUpItems()
     m.processedRowCount++
     itemData = getTaskContentAndCleanup("nextUp")
-    ' Stop the task for Next Up
-    if m.contentTasks.doesExist("nextUp")
-        m.contentTasks["nextUp"].control = "STOP"
-    end if
 
     sectionName = tr("Next Up")
 
