@@ -6432,5 +6432,261 @@
         <source>Dim video and show overview text while paused</source>
         <translation>Atenuar vídeo y mostrar sinopsis</translation>
     </message>
+    <message>
+        <source>Search Music</source>
+        <translation>Buscar Música</translation>
+    </message>
+    <message>
+        <source>Secondary audio stream requires transcoding.</source>
+        <translation>La transmisión de audio secundario requiere transcodificación.</translation>
+    </message>
+    <message>
+        <source>Remove from Collection</source>
+        <translation>Eliminar de la colección</translation>
+    </message>
+    <message>
+        <source>Remove {item} from {collection}? The item stays in your library.</source>
+        <translation>¿Eliminar {item} de {collection}? El elemento permanece en tu biblioteca.</translation>
+    </message>
+    <message>
+        <source>Show the top half of the first row along the bottom of the media bar</source>
+        <translation>Muestra la mitad superior de la primera fila en la parte inferior de la barra multimedia</translation>
+    </message>
+    <message>
+        <source>Seasonal Row</source>
+        <translation>Fila de Temporada</translation>
+    </message>
+    <message>
+        <source>Sections</source>
+        <translation>Secciones</translation>
+    </message>
+    <message>
+        <source>Shows the title as text when off</source>
+        <translation>Muestra el título como texto cuando está desactivado</translation>
+    </message>
+    <message>
+        <source>Similar titles</source>
+        <translation>Títulos similares</translation>
+    </message>
+    <message>
+        <source>Music videos</source>
+        <translation>Vídeos musicales</translation>
+    </message>
+    <message>
+        <source>Show a notification when you unlock a badge</source>
+        <translation>Mostrar una notificación cuando desbloquees una insignia</translation>
+    </message>
+    <message>
+        <source>See who&apos;s online and chat with people on this server</source>
+        <translation>Mira quién está en línea y chatea con la gente en este servidor</translation>
+    </message>
+    <message>
+        <source>Remove friend</source>
+        <translation>Eliminar amigo</translation>
+    </message>
+    <message>
+        <source>Send message</source>
+        <translation>Enviar mensaje</translation>
+    </message>
+    <message>
+        <source>Sent by you</source>
+        <translation>Enviado por ti</translation>
+    </message>
+    <message>
+        <source>Search people</source>
+        <translation>Buscar personas</translation>
+    </message>
+    <message>
+        <source>Mute during playback</source>
+        <translation>Silenciar durante la reproducción</translation>
+    </message>
+    <message>
+        <source>Show a banner when a friend messages you</source>
+        <translation>Mostrar un banner cuando un amigo te envíe un mensaje</translation>
+    </message>
+    <message>
+        <source>Seen</source>
+        <translation>Visto</translation>
+    </message>
+    <message>
+        <source>Sent</source>
+        <translation>Enviado</translation>
+    </message>
+    <message>
+        <source>Remove admin</source>
+        <translation>Eliminar administrador</translation>
+    </message>
+    <message>
+        <source>Remove from group</source>
+        <translation>Eliminar del grupo</translation>
+    </message>
+    <message>
+        <source>Show a Skip button during Cinema Mode trailers, commercials, and other pre-rolls.</source>
+        <translation>Mostrar un botón de &quot;Omitir&quot; durante los trailers, anuncios y otros pre-rollos del modo Cine.</translation>
+    </message>
+    <message>
+        <source>Server to this device</source>
+        <translation>Servidor a este dispositivo</translation>
+    </message>
+    <message>
+        <source>Navigation, home screen, libraries, details page, and themes</source>
+        <translation>Navegación, pantalla de inicio, bibliotecas, página de detalles y temas</translation>
+    </message>
+    <message>
+        <source>REWATCH</source>
+        <translation>VOLVER A VER</translation>
+    </message>
+    <message>
+        <source>Reports</source>
+        <translation>Informes</translation>
+    </message>
+    <message>
+        <source>SINCE YOU WATCHED</source>
+        <translation>DESDE QUE LO VISTE</translation>
+    </message>
+    <message>
+        <source>Show Friends Button</source>
+        <translation>Mostrar Botón de Amigos</translation>
+    </message>
+    <message>
+        <source>Show Messages Button</source>
+        <translation>Mostrar Boton de Mensajes</translation>
+    </message>
+    <message>
+        <source>Show Text</source>
+        <translation>Mostrar Texto</translation>
+    </message>
+    <message>
+        <source>Show captions on YouTube trailers</source>
+        <translation>Mostrar subtítulos en los trailers de YouTube</translation>
+    </message>
+    <message>
+        <source>Rows</source>
+        <translation>Filas</translation>
+    </message>
+    <message>
+        <source>Music Video</source>
+        <translation>Vídeo Musical</translation>
+    </message>
+    <message>
+        <source>Show each item&apos;s title and details below its artwork in library grids.</source>
+        <translation>Muestra el título y los detalles de cada elemento debajo de su ilustración en las cuadrículas de la biblioteca.</translation>
+    </message>
+    <message>
+        <source>Rediscover</source>
+        <translation>Redescubrir</translation>
+    </message>
+    <message>
+        <source>Record {name}</source>
+        <translation>Grabar {name}</translation>
+    </message>
+    <message>
+        <source>Same episode (S{season}E{episode})</source>
+        <translation>Mismo episodio (T{season}E{episode})</translation>
+    </message>
+    <message>
+        <source>Record {when} Only</source>
+        <translation>Solo grabar {when}</translation>
+    </message>
+    <message>
+        <source>Recording started. A future showing will be recorded too.</source>
+        <translation>La grabación ha comenzado. Una futura emisión también quedará grabada.</translation>
+    </message>
+    <message>
+        <source>Recording started, but couldn&apos;t request a future showing.</source>
+        <translation>La grabación comenzó, pero no fue posible solicitar una proyección futura.</translation>
+    </message>
+    <message>
+        <source>Series Continuing · Future Seasons Can Be Requested</source>
+        <translation>Serie en curso · Se pueden solicitar futuras temporadas</translation>
+    </message>
+    <message>
+        <source>Secondary</source>
+        <translation>Secundario</translation>
+    </message>
+    <message>
+        <source>Series premiere</source>
+        <translation>Estreno de la Serie</translation>
+    </message>
+    <message>
+        <source>Series finale</source>
+        <translation>Final de la Serie</translation>
+    </message>
+    <message>
+        <source>NEW</source>
+        <translation>NUEVO</translation>
+    </message>
+    <message>
+        <source>Show Calendar Button</source>
+        <translation>Mostrar Botón del Calendario</translation>
+    </message>
+    <message>
+        <source>Show the calendar of upcoming episodes and movies in the navigation bar</source>
+        <translation>Muestra el calendario de próximos episodios y películas en la barra de navegación</translation>
+    </message>
+    <message>
+        <source>See All card</source>
+        <translation>Ver Todas las tarjetas</translation>
+    </message>
+    <message>
+        <source>My shows keeps the series you favorited or started watching</source>
+        <translation>Mis programas guardan las series que marcaste como favoritas o que empezaste a ver</translation>
+    </message>
+    <message>
+        <source>My shows</source>
+        <translation>Mis programas</translation>
+    </message>
+    <message>
+        <source>Season 0 episodes, like extras and holiday specials</source>
+        <translation>Episodios de la temporada 0, como extras y especiales navideños</translation>
+    </message>
+    <message>
+        <source>Mark premieres, finales and new seasons</source>
+        <translation>Estrenos marcados, finales y nuevas temporadas</translation>
+    </message>
+    <message>
+        <source>Selecting an item</source>
+        <translation>Seleccionar un elemento</translation>
+    </message>
+    <message>
+        <source>Request button</source>
+        <translation>Botón de solicitud</translation>
+    </message>
+    <message>
+        <source>Settings synced across your devices</source>
+        <translation>Configuración sincronizada en todos tus dispositivos</translation>
+    </message>
+    <message>
+        <source>Retro games with synced saves</source>
+        <translation>Juegos retro con guardado sincronizado</translation>
+    </message>
+    <message>
+        <source>Room PIN</source>
+        <translation>PIN de la habitación</translation>
+    </message>
+    <message>
+        <source>Send the invite</source>
+        <translation>Enviar la invitación</translation>
+    </message>
+    <message>
+        <source>Send to the party</source>
+        <translation>Enviar a la fiesta</translation>
+    </message>
+    <message>
+        <source>Open Watch Parties</source>
+        <translation>Fiestas de visionado abiertas</translation>
+    </message>
+    <message>
+        <source>Show a banner when someone on this server starts one</source>
+        <translation>Mostrar un banner cuando alguien en este servidor inicie uno</translation>
+    </message>
+    <message>
+        <source>Show the Watch Parties button on the navigation bar</source>
+        <translation>Mostrar el botón de Fiestas de visualización en la barra de navegación</translation>
+    </message>
+    <message>
+        <source>Hide Unwatched Count</source>
+        <translation>Ocultar conteo de no vistos</translation>
+    </message>
 </context>
 </TS>
