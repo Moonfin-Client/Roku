@@ -8525,5 +8525,13 @@
         <source>Server Recommends</source>
         <translation>Recommandé par le serveur</translation>
     </message>
+    <message>
+        <source>Show Description on Pause</source>
+        <translation>Afficher la description en pause</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <translation>Assombrir la vidéo et afficher le résumé pendant la pause</translation>
+    </message>
 </context>
 </TS>
