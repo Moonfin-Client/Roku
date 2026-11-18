@@ -5640,5 +5640,13 @@
         <source>Server Recommends</source>
         <translation>Server-Empfehlungen</translation>
     </message>
+    <message>
+        <source>Show Description on Pause</source>
+        <translation>Beschreibung bei Pause anzeigen</translation>
+    </message>
+    <message>
+        <source>Dim video and show overview text while paused</source>
+        <translation>Video abdunkeln und Übersichtstext bei Pause anzeigen</translation>
+    </message>
 </context>
 </TS>

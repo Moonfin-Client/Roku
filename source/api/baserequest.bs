@@ -182,13 +182,18 @@ end function
 ' APIRequest hands back invalid when there is no server to build a URL against,
 ' so callers can reach here before a server has been picked
 function getJson(req)
-    if silo.Owns(req) then return siloResponse(req, "GET").data
+    if silo.Owns(req) then return siloResponse(req, "GET", invalid, false).data
     if req = invalid then return invalid
     plex = plexAnswer(req, "GET")
     if plex <> invalid then return plex.data
 
     started = diagnostics.StartTrace("GET", req)
-    data = req.GetToString()
+    prefetched = startupPrefetchAnswer(req.GetUrl())
+    if isValid(prefetched)
+        data = prefetched.GetString()
+    else
+        data = req.GetToString()
+    end if
 
     if data = invalid or data = ""
         noteRefusalIn(req)
@@ -209,7 +214,7 @@ end function
 
 ' getJson for a lookup that is only worth a short wait
 function getJsonWithin(req, timeoutMs as integer) as dynamic
-    if silo.Owns(req) then return siloResponse(req, "GET").data
+    if silo.Owns(req) then return siloResponse(req, "GET", invalid, false).data
     if req = invalid then return invalid
     plex = plexAnswer(req, "GET", "", timeoutMs)
     if plex <> invalid then return plex.data
@@ -240,7 +245,7 @@ function getJsonWithin(req, timeoutMs as integer) as dynamic
 end function
 
 function postVoid(req, data = "" as string) as boolean
-    if silo.Owns(req) then return siloResponse(req, "POST", data).ok
+    if silo.Owns(req) then return siloResponse(req, "POST", data, false).ok
     plex = plexAnswer(req, "POST", data)
     if plex <> invalid then return plexAnswered(plex)
     started = diagnostics.StartTrace("POST", req)
@@ -264,7 +269,7 @@ function postVoid(req, data = "" as string) as boolean
 end function
 
 function headVoid(req) as boolean
-    if silo.Owns(req) then return siloResponse(req, "GET").ok
+    if silo.Owns(req) then return siloResponse(req, "GET", invalid, false).ok
     started = diagnostics.StartTrace("HEAD", req)
     req.setMessagePort(CreateObject("roMessagePort"))
     req.AddHeader("Content-Type", "application/json")
@@ -286,7 +291,7 @@ function headVoid(req) as boolean
 end function
 
 function getVoid(req) as boolean
-    if silo.Owns(req) then return siloResponse(req, "GET").ok
+    if silo.Owns(req) then return siloResponse(req, "GET", invalid, false).ok
     started = diagnostics.StartTrace("GET", req)
     req.setMessagePort(CreateObject("roMessagePort"))
     req.AddHeader("Content-Type", "application/json")
@@ -309,7 +314,7 @@ function getVoid(req) as boolean
 end function
 
 function postJson(req, data = "" as string)
-    if silo.Owns(req) then return siloResponse(req, "POST", data).data
+    if silo.Owns(req) then return siloResponse(req, "POST", data, false).data
     plex = plexAnswer(req, "POST", data)
     if plex <> invalid then return plex.data
     started = diagnostics.StartTrace("POST", req)
@@ -337,7 +342,7 @@ function postJson(req, data = "" as string)
 end function
 
 function deleteVoid(req)
-    if silo.Owns(req) then return siloResponse(req, "DELETE").ok
+    if silo.Owns(req) then return siloResponse(req, "DELETE", invalid, false).ok
     plex = plexAnswer(req, "DELETE")
     if plex <> invalid then return plexAnswered(plex)
     started = diagnostics.StartTrace("DELETE", req)
@@ -454,8 +459,8 @@ function getAuthTokenFromRegistry() as dynamic
         end if
     end if
 
-    if isValid(m) and isChainValid(m, "global.session.user.authToken")
-        authToken = chainLookupReturn(m, "global.session.user.authToken", invalid)
+    if isValid(m) and isChainValid(sessionNow(), "user.authToken")
+        authToken = chainLookupReturn(sessionNow(), "user.authToken", invalid)
         if isValidAndNotEmpty(authToken)
             return authToken
         end if
@@ -506,9 +511,11 @@ function postString(req, data = "" as string)
     return resp.getString()
 end function
 
-function buildAuthHeader() as string
+' deviceId: sends this DeviceId instead of the thread's own (the startup prefetch, before sign in names the device)
+function buildAuthHeader(deviceId = "" as string) as string
     QUOTE = Chr(34)
     headerContext = getAuthHeaderContext()
+    if deviceId <> "" then headerContext.deviceId = deviceId
 
     auth = serverAuthScheme(get_url() ?? "") + " Client=" + QUOTE + headerContext.appName + " Roku" + QUOTE
     auth = auth + ", Device=" + QUOTE + headerContext.deviceName + " (" + headerContext.deviceModel + ")" + QUOTE
@@ -531,8 +538,14 @@ function getAuthHeaderContext() as object
         authToken: invalid
     }
 
+    authToken = getAuthTokenFromRegistry()
+    ' A thread that already holds the identity doesn't ask the global node again, except that sign in
+    ' names the device after the user, so a task asks again for the DeviceId (see identityStillCurrent)
+    if isValid(context.deviceId) and not identityStillCurrent(authToken) then context.deviceId = invalid
+    heldOnThread = identityIsComplete(context)
     applyGlobalIdentity(context)
     applyDeviceIdentity(context)
+    if not heldOnThread and identityIsComplete(context) then rememberIdentityOnThread(context, authToken)
 
     fillIdentity(context, "appName", "Moonfin")
     fillIdentity(context, "appVersion", "0.0.0")
@@ -540,7 +553,6 @@ function getAuthHeaderContext() as object
     fillIdentity(context, "deviceModel", "Roku")
     fillIdentity(context, "deviceId", "Roku")
 
-    authToken = getAuthTokenFromRegistry()
     if isValidAndNotEmpty(authToken)
         context.authToken = authToken
     end if
@@ -555,6 +567,33 @@ end sub
 
 function identityIsComplete(context as object) as boolean
     return isValidAndNotEmpty(context.appName) and isValidAndNotEmpty(context.appVersion) and isValidAndNotEmpty(context.deviceName) and isValidAndNotEmpty(context.deviceModel) and isValidAndNotEmpty(context.deviceId)
+end function
+
+' Each task thread asked the global node for the same identity on every request, and each read
+' waits for the render thread. Keeping the real values in this thread's GetGlobalAA lets
+' applyGlobalIdentity and applyDeviceIdentity return early from the next request on.
+sub rememberIdentityOnThread(context as object, authToken as dynamic)
+    runtimeContext = GetGlobalAA()
+    if not isValid(runtimeContext) then return
+    if onTaskThread()
+        runtimeContext["moonfin.identityReadAt"] = Int(UpTime(0) * 1000)
+        runtimeContext["moonfin.identityToken"] = authToken ?? ""
+    end if
+    runtimeContext["moonfin.appName"] = context.appName
+    runtimeContext["moonfin.appVersion"] = context.appVersion
+    runtimeContext["moonfin.deviceName"] = context.deviceName
+    runtimeContext["moonfin.deviceModel"] = context.deviceModel
+    runtimeContext["moonfin.deviceId"] = context.deviceId
+end sub
+
+' The DeviceId a task holds changes when sign in renames the device for another user. Main and sign in
+' keep the main thread's own copy current, and a task trusts its copy for a second and for one token.
+function identityStillCurrent(authToken as dynamic) as boolean
+    if not onTaskThread() then return true
+    runtimeContext = GetGlobalAA()
+    heldToken = runtimeContext["moonfin.identityToken"]
+    if not isString(heldToken) or heldToken <> (authToken ?? "") then return false
+    return reusableOnTask(runtimeContext["moonfin.deviceId"], runtimeContext["moonfin.identityReadAt"], Int(UpTime(0) * 1000))
 end function
 
 ' Every thread keeps its own GetGlobalAA, so what the main thread stored there is
@@ -743,7 +782,7 @@ end sub
 function requestResponse(req as object, method = "GET" as string, body = "" as string, timeoutMs = 30000 as integer, cancelNode = invalid as dynamic) as object
     if req = invalid then return { status: 0, data: invalid }
     if silo.Owns(req)
-        answer = siloResponse(req, method, body)
+        answer = siloResponse(req, method, body, false)
         return { status: answer.status, data: answer.data }
     end if
     if requestCanceled(cancelNode) then return { status: 0, data: invalid }
@@ -778,13 +817,14 @@ end function
 
 ' A request for a Silo server is answered by the Silo router instead of being sent. A method the
 ' caller set on the request wins over the helper's own
-function siloResponse(req as object, method as string, body = invalid as dynamic) as object
+' withText false skips the FormatJson for callers that only read the data
+function siloResponse(req as object, method as string, body = invalid as dynamic, withText = true as boolean) as object
     requested = UCase(req.GetRequest() ?? "")
     if requested <> "" and requested <> "GET" then method = requested
     answer = silo.Respond(method, req.GetUrl(), body)
     ok = answer.status >= 200 and answer.status < 300
     text = ""
-    if ok and answer.data <> invalid then text = FormatJson(answer.data)
+    if withText and ok and answer.data <> invalid then text = FormatJson(answer.data)
     data = invalid
     if ok then data = answer.data
     return { ok: ok, status: answer.status, data: data, text: text }
