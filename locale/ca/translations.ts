@@ -9810,5 +9810,21 @@
         <source>Dim video and show overview text while paused</source>
         <translation>Atenua el vídeo i mostra el text general mentre estàs en pausa</translation>
     </message>
+    <message>
+        <source>Hide Watch Progress</source>
+        <translation>Amaga el progrés de visualització</translation>
+    </message>
+    <message>
+        <source>Hide the progress bar on posters you&apos;ve started watching.</source>
+        <translation>Amaga la barra de progrés als pòsters del contingut que has començat a veure.</translation>
+    </message>
+    <message>
+        <source>Hide Unwatched Count</source>
+        <translation>Amaga el recompte de no vistos</translation>
+    </message>
+    <message>
+        <source>Hide the badge showing how many episodes are left to watch.</source>
+        <translation>Amaga la insígnia que mostra quants episodis queden per veure.</translation>
+    </message>
 </context>
 </TS>
