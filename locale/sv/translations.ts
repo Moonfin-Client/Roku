@@ -2770,5 +2770,93 @@
         <source>Dim video and show overview text while paused</source>
         <translation>Dimma videon och visa översiktstext medan den är pausad</translation>
     </message>
+    <message>
+        <source>Size</source>
+        <translation>Storlek</translation>
+    </message>
+    <message>
+        <source>No program data</source>
+        <translation>Inga programuppgifter</translation>
+    </message>
+    <message>
+        <source>Watch channel live</source>
+        <translation>Se kanalen live</translation>
+    </message>
+    <message>
+        <source>Series set to record</source>
+        <translation>Serien är redo att slå rekord</translation>
+    </message>
+    <message>
+        <source>Unable to create series recording</source>
+        <translation>Det går inte att skapa en serieinspelning</translation>
+    </message>
+    <message>
+        <source>Series recording cancelled</source>
+        <translation>Serieinspelningen har ställts in</translation>
+    </message>
+    <message>
+        <source>Reconnecting… ({attempt} of {total})</source>
+        <translation>Återansluter… ({attempt} of {total})</translation>
+    </message>
+    <message>
+        <source>The series recording will skip this showing</source>
+        <translation>Serien kommer att hoppa över detta avsnitt vid inspelningen</translation>
+    </message>
+    <message>
+        <source>Series Settings</source>
+        <translation>Serieinställningar</translation>
+    </message>
+    <message>
+        <source>Which episodes should be recorded?</source>
+        <translation>Vilka avsnitt bör spelas in?</translation>
+    </message>
+    <message>
+        <source>Every showing, including repeats</source>
+        <translation>Varje sändning, inklusive repriser</translation>
+    </message>
+    <message>
+        <source>Episodes Not Already Recorded</source>
+        <translation>Avsnitt som ännu inte har spelats in</translation>
+    </message>
+    <message>
+        <source>Skips episodes already in your library and records each episode once</source>
+        <translation>Hoppar över avsnitt som redan finns i ditt bibliotek och spelar in varje avsnitt en gång</translation>
+    </message>
+    <message>
+        <source>New Episodes Only</source>
+        <translation>Endast nya avsnitt</translation>
+    </message>
+    <message>
+        <source>First airings only, no repeats</source>
+        <translation>Endast första sändningar, inga repriser</translation>
+    </message>
+    <message>
+        <source>Series recording updated</source>
+        <translation>Uppdatering av serieinspelningarna</translation>
+    </message>
+    <message>
+        <source>Unable to update series recording</source>
+        <translation>Det går inte att uppdatera serieinspelningen</translation>
+    </message>
+    <message>
+        <source>Record This Program</source>
+        <translation>Spela in det här programmet</translation>
+    </message>
+    <message>
+        <source>Record This Episode</source>
+        <translation>Spela in det här avsnittet</translation>
+    </message>
+    <message>
+        <source>Cancel This Recording</source>
+        <translation>Avbryt denna inspelning</translation>
+    </message>
+    <message>
+        <source>Next series recording: {dateTime}</source>
+        <translation>Nästa inspelning av serien: {dateTime}</translation>
+    </message>
+    <message>
+        <source>Series recording is scheduled, but the guide has no upcoming episodes</source>
+        <translation>Serien är schemalagd för inspelning, men i programguiden finns inga kommande avsnitt</translation>
+    </message>
 </context>
 </TS>
