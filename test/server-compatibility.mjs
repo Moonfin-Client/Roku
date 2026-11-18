@@ -1622,6 +1622,7 @@ assert.match(homeRowsWiring, /row\.fromCache = true\s+if isString\(record\.sig\)
 assert.match(homeRowsWiring, /m\.expectedRowCount \+= started - MULTI_SERVER_LATEST_ROWS/, "A server's Recently Added estimate is corrected to the rows it really started, so the build doesn't wait for rows that never come");
 assert.doesNotMatch(homeRowsWiring, /contentTasks\["nextUp"\]\.control = "STOP"/, 'Next Up ends on its own, so its cache write is never cut off');
 assert.match(await readFile('source/api/silo/SiloSession.bs', 'utf8'), /reg\.Flush\(\)\s+' [^\n]*\s+silo\.ForgetMemos\(\)\s+end sub/, 'A sign-out clears the memo after the login is gone');
+assert.match(await readFile('source/utils/startupPrefetch.bs', 'utf8'), /startupPrefetch\.SendSilo\(m\)\s+m\.inflight\.Delete\(url\)/, 'A taken Silo prefetch holds its place until its answer is in');
 assert.match(await readFile('components/home/LoadItemsTask.bs', 'utf8'), /itemsSig = homeCache\.Signature\(items\) \+ "@" \+ toString\(cacheRow\.order\)/, 'A saved row moved by a library reorder is saved again');
 const syncWiring = await readFile('source/utils/settingsSync.bs', 'utf8');
 for (const key of ['imdb', 'tmdb', 'seerr']) {
