@@ -220,9 +220,10 @@ function loadLatestMedia() as object
             if widened > fetchLimit then fetchLimit = widened
         end if
         seenIds = {}
+        userId = chainLookup(sessionNow(), "user.id")
         for each pId in targetParentIds
             params = {
-                userId: m.global.session.user.id,
+                userId: userId,
                 limit: fetchLimit,
                 parentId: pId,
                 groupItems: true,
@@ -256,6 +257,7 @@ function loadLatestMedia() as object
 
     if not isValidAndNotEmpty(data) then return results
 
+    libraryId = m.top.itemId
     for each item in data
         if not isStringEqual(item.Type, ItemType.BOOK)
             tmp = newHomeCard()
@@ -290,7 +292,7 @@ function loadLatestMedia() as object
                 ParentBackdropItemId: item.LookupCI("ParentBackdropItemId"),
                 SeriesPrimaryImageTag: item.LookupCI("SeriesPrimaryImageTag"),
                 BackdropImageTags: item.LookupCI("BackdropImageTags"),
-                LibraryId: m.top.itemId
+                LibraryId: libraryId
             }
             results.push(tmp)
         end if
@@ -1347,13 +1349,13 @@ function loadMergedContinueWatching() as object
         SortBy: "DatePlayed",
         SortOrder: "Descending",
         ImageTypeLimit: 1,
-        UserId: m.global.session.user.id,
+        UserId: chainLookup(sessionNow(), "user.id"),
         DisableFirstEpisode: false,
         limit: 25,
         EnableTotalRecordCount: false
     }
 
-    maxDaysInNextUp = m.global.session.user.settings["ui.details.maxdaysnextup"].ToInt()
+    maxDaysInNextUp = sessionNow().user.settings["ui.details.maxdaysnextup"].ToInt()
     if isValid(maxDaysInNextUp)
         if maxDaysInNextUp > 0
             dateToday = CreateObject("roDateTime")
@@ -1406,28 +1408,39 @@ function loadMergedContinueWatching() as object
         end for
     end if
 
-    recentPlayedParams = {
-        includeItemTypes: "Episode",
-        filters: "IsPlayed",
-        recursive: true,
-        sortBy: "DatePlayed",
-        sortOrder: "Descending",
-        limit: 100,
-        fields: "UserData,SeriesId",
-        UserId: m.global.session.user.id
-    }
-    recentPlayedResponse = api.items.get(recentPlayedParams)
-
-    ' Create a lookup map of series LastPlayedDate to populate nextup
-    seriesLastPlayedMap = {}
-    if isChainValid(recentPlayedResponse, "Items")
-        for each item in recentPlayedResponse.Items
-            sId = item.LookupCI("SeriesId")
+    ' Next Up cards without a last played date take their series' from the recently played episodes.
+    ' Silo dates its cards itself, and then the 100 episodes aren't read
+    needsDates = false
+    if isChainValid(nextUpData, "Items")
+        for each item in nextUpData.Items
             userData = item.LookupCI("UserData")
-            if isValid(sId) and isValid(userData) and seriesLastPlayedMap[sId] = invalid
-                seriesLastPlayedMap[sId] = userData["LastPlayedDate"]
-            end if
+            if not isValid(userData) or userData["LastPlayedDate"] = invalid then needsDates = true
         end for
+    end if
+    seriesLastPlayedMap = {}
+    if needsDates
+        recentPlayedParams = {
+            includeItemTypes: "Episode",
+            filters: "IsPlayed",
+            recursive: true,
+            sortBy: "DatePlayed",
+            sortOrder: "Descending",
+            limit: 100,
+            fields: "UserData,SeriesId",
+            UserId: chainLookup(sessionNow(), "user.id")
+        }
+        recentPlayedResponse = api.items.get(recentPlayedParams)
+
+        ' Create a lookup map of series LastPlayedDate to populate nextup
+        if isChainValid(recentPlayedResponse, "Items")
+            for each item in recentPlayedResponse.Items
+                sId = item.LookupCI("SeriesId")
+                userData = item.LookupCI("UserData")
+                if isValid(sId) and isValid(userData) and seriesLastPlayedMap[sId] = invalid
+                    seriesLastPlayedMap[sId] = userData["LastPlayedDate"]
+                end if
+            end for
+        end if
     end if
     ' Add Next Up items that aren't already in Continue Watching
     if isChainValid(nextUpData, "Items")
@@ -2199,13 +2212,16 @@ end function
 ' Libraries, genres, studios, playlists and single lookups carry no rating, so only rows of titles
 ' are filtered
 sub loadItemsFor()
-    if not isValidAndNotEmpty(m.global.session.user.id)
+    ' A task's read of m.top waits for the render thread, which is busy drawing Home while the rows
+    ' load, so the row kind is read once
+    itemsToLoad = m.top.itemsToLoad
+    if not isValidAndNotEmpty(chainLookup(sessionNow(), "user.id"))
         m.top.content = []
         return
     end if
 
     ' Home asks for the labels of all its rows in one go, after they have landed
-    if isStringEqual(m.top.itemsToLoad, "posterLabels")
+    if isStringEqual(itemsToLoad, "posterLabels")
         ids = m.top.itemIds
         found = {}
         if type(ids) = "roArray"
@@ -2216,7 +2232,7 @@ sub loadItemsFor()
     end if
 
     ' Rows saved at the last launch are read on their own task, and Home builds the rows from them
-    if isStringEqual(m.top.itemsToLoad, "homeCacheRead")
+    if isStringEqual(itemsToLoad, "homeCacheRead")
         cacheRead = m.top.cacheRead
         records = []
         if type(cacheRead) = "roAssociativeArray" and homeCache.isText(cacheRead.dir) and homeCache.isText(cacheRead.key)
@@ -2228,20 +2244,20 @@ sub loadItemsFor()
 
     ' A picked collection, genre or playlist shares the pluginDynamic prefix with the rows
     ' the plugin proxies, so it has to be recognised before that branch claims it
-    picked = homeRowLayout.SourceFromId(m.top.itemsToLoad)
+    picked = homeRowLayout.SourceFromId(itemsToLoad)
     if isValid(picked)
         m.top.content = withLabels(parentalControls.WithoutBlockedItems(loadPickedRow(picked)))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "pickable")
+    if isStringEqual(itemsToLoad, "pickable")
         m.top.content = loadPickable(m.top.itemId)
         return
     end if
 
     ' Row ids reach us lowercased when they come from settings and camel cased when they
     ' come from the server, so match the prefix case-insensitively
-    lowerItemsToLoad = LCase(m.top.itemsToLoad)
+    lowerItemsToLoad = LCase(itemsToLoad)
     if lowerItemsToLoad = "seasonal"
         m.top.content = loadSeasonalRow()
         return
@@ -2255,62 +2271,62 @@ sub loadItemsFor()
     ' A chart's titles come from outside the library, so one with no rating was never looked
     ' up and stays out once a rating is blocked. Seerr carries no ratings at all, so its rows
     ' keep the usual filter.
-    if homeRowLayout.IsSliderRow(m.top.itemsToLoad)
-        m.top.content = parentalControls.WithoutBlockedItems(loadSeerrSliderRow(m.top.itemsToLoad))
+    if homeRowLayout.IsSliderRow(itemsToLoad)
+        m.top.content = parentalControls.WithoutBlockedItems(loadSeerrSliderRow(itemsToLoad))
         return
     end if
 
-    if isOutsideTitlesRow(m.top.itemsToLoad)
-        m.top.content = withLabels(parentalControls.WithoutUnratedOrBlockedItems(loadCustomDynamicList(m.top.itemsToLoad, m.top.additionalData)))
+    if isOutsideTitlesRow(itemsToLoad)
+        m.top.content = withLabels(parentalControls.WithoutUnratedOrBlockedItems(loadCustomDynamicList(itemsToLoad, m.top.additionalData)))
         return
     end if
 
     if lowerItemsToLoad.startsWith("seerr_")
-        m.top.content = parentalControls.WithoutBlockedItems(loadCustomDynamicList(m.top.itemsToLoad, m.top.additionalData))
+        m.top.content = parentalControls.WithoutBlockedItems(loadCustomDynamicList(itemsToLoad, m.top.additionalData))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "libraries")
+    if isStringEqual(itemsToLoad, "libraries")
         m.top.content = loadLibraries()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "latest")
+    if isStringEqual(itemsToLoad, "latest")
         setRowContent(withLabels(parentalControls.WithoutBlockedItems(loadLatestMedia())))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "recentlyReleased")
+    if isStringEqual(itemsToLoad, "recentlyReleased")
         setRowContent(withLabels(parentalControls.WithoutBlockedItems(loadRecentlyReleased())))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "sinceYouWatched")
+    if isStringEqual(itemsToLoad, "sinceYouWatched")
         m.top.content = withLabels(parentalControls.WithoutBlockedItems(loadSinceYouWatched()))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "rewatch")
+    if isStringEqual(itemsToLoad, "rewatch")
         m.top.content = withLabels(parentalControls.WithoutBlockedItems(loadRewatch()))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "continue")
+    if isStringEqual(itemsToLoad, "continue")
         setRowContent(withLabels(parentalControls.WithoutBlockedItems(loadContinueWatching())))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "mergedContinueWatching")
+    if isStringEqual(itemsToLoad, "mergedContinueWatching")
         setRowContent(withLabels(parentalControls.WithoutBlockedItems(loadMergedContinueWatching())))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "nextUp")
+    if isStringEqual(itemsToLoad, "nextUp")
         setRowContent(withLabels(parentalControls.WithoutBlockedItems(loadNextUp())))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "seasonOfEpisodes")
+    if isStringEqual(itemsToLoad, "seasonOfEpisodes")
         try
             m.top.content = loadSeasonOfEpisodes()
         catch _e
@@ -2319,62 +2335,62 @@ sub loadItemsFor()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "favorites")
+    if isStringEqual(itemsToLoad, "favorites")
         setRowContent(withLabels(parentalControls.WithoutBlockedItems(loadFavorites())))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "mylist")
+    if isStringEqual(itemsToLoad, "mylist")
         setRowContent(withLabels(parentalControls.WithoutBlockedItems(loadMyList())))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "playlists")
+    if isStringEqual(itemsToLoad, "playlists")
         m.top.content = loadPlaylists()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "homeplaylists")
+    if isStringEqual(itemsToLoad, "homeplaylists")
         m.top.content = loadHomePlaylists()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "collections")
+    if isStringEqual(itemsToLoad, "collections")
         m.top.content = parentalControls.WithoutBlockedItems(loadCollections())
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "genres")
+    if isStringEqual(itemsToLoad, "genres")
         m.top.content = loadGenres()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "studios")
+    if isStringEqual(itemsToLoad, "studios")
         m.top.content = loadStudios()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "radarr_calendar")
+    if isStringEqual(itemsToLoad, "radarr_calendar")
         m.top.content = loadArrCalendar("radarr")
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "sonarr_calendar")
+    if isStringEqual(itemsToLoad, "sonarr_calendar")
         m.top.content = loadArrCalendar("sonarr")
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "audio")
+    if isStringEqual(itemsToLoad, "audio")
         m.top.content = loadAudio()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "isInMyList")
+    if isStringEqual(itemsToLoad, "isInMyList")
         m.top.content = loadIsInMyList()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "backdropImage")
+    if isStringEqual(itemsToLoad, "backdropImage")
         serverData = loadItemsTaskServerData()
         if isValid(serverData)
             m.top.content = [backdropImageForServer(m.top.itemId, serverData)]
@@ -2384,7 +2400,7 @@ sub loadItemsFor()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "audioStream")
+    if isStringEqual(itemsToLoad, "audioStream")
         serverData = loadItemsTaskServerData()
         if isValid(serverData)
             m.top.content = [loadAudioStreamForServer(m.top.itemId, serverData)]
@@ -2394,7 +2410,7 @@ sub loadItemsFor()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "metaData")
+    if isStringEqual(itemsToLoad, "metaData")
         serverData = loadItemsTaskServerData()
         if isValid(serverData)
             m.top.content = [ItemMetaDataForServer(serverData, m.top.itemId)]
@@ -2404,57 +2420,57 @@ sub loadItemsFor()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "personSeries")
+    if isStringEqual(itemsToLoad, "personSeries")
         m.top.content = loadItemsByPerson(ItemType.SERIES)
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "nextup")
+    if isStringEqual(itemsToLoad, "nextup")
         m.top.content = loadNextUpForShow()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "personTVShows")
+    if isStringEqual(itemsToLoad, "personTVShows")
         m.top.content = loadItemsByPerson(ItemType.EPISODE, { MaxWidth: 502, MaxHeight: 300 })
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "personMovies")
+    if isStringEqual(itemsToLoad, "personMovies")
         m.top.content = loadItemsByPerson(ItemType.MOVIE)
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "people")
+    if isStringEqual(itemsToLoad, "people")
         m.top.content = loadPeople()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "likethis")
+    if isStringEqual(itemsToLoad, "likethis")
         m.top.content = loadMoreLikeThis()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "similarartists")
+    if isStringEqual(itemsToLoad, "similarartists")
         m.top.content = loadSimilarArtists()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "specialfeatures")
+    if isStringEqual(itemsToLoad, "specialfeatures")
         m.top.content = loadSpecialFeatures()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "seasons")
+    if isStringEqual(itemsToLoad, "seasons")
         m.top.content = loadSeasons()
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "continueListening")
+    if isStringEqual(itemsToLoad, "continueListening")
         setRowContent(parentalControls.WithoutBlockedItems(loadContinueListening()))
         return
     end if
 
-    if isStringEqual(m.top.itemsToLoad, "onNow")
+    if isStringEqual(itemsToLoad, "onNow")
         m.top.content = parentalControls.WithoutBlockedItems(loadLiveTVOnNow())
         return
     end if
@@ -3182,7 +3198,7 @@ function loadSeasonalRow() as object
     params = {}
     country = seasonalRow.CountryParam(get_user_setting(seasonalRow.COUNTRY_SETTING), m.global.device.countryCode)
     if country <> "" then params.country = country
-    if getBoolSetting(m.global.session.user.settings, seasonalRow.ALL_YEAR_SETTING, false) then params.allYear = "true"
+    if getBoolSetting(sessionNow().user.settings, seasonalRow.ALL_YEAR_SETTING, false) then params.allYear = "true"
 
     data = getJson(APIRequest("/Moonfin/Seasonal/Row", params))
     if not isValid(data) then return []
@@ -3355,9 +3371,9 @@ function loadPickedRow(picked as object) as object
     itemId = picked.itemId
     if not isValidAndNotEmpty(itemId) then return results
 
-    settings = m.global.session.user.settings
+    settings = sessionNow().user.settings
     params = {
-        UserId: m.global.session.user.id,
+        UserId: chainLookup(sessionNow(), "user.id"),
         Limit: 40,
         Fields: PICKED_ROW_FIELDS,
         EnableTotalRecordCount: false
